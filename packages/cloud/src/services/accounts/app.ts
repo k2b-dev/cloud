@@ -339,7 +339,8 @@ export const accountsAppService = {
         hasNext: result.pagination.has_next,
       };
     },
-    get: async (config: { id: string } | { uid: string }): Promise<User | null> => users.get(config),
+    get: async (config: { id: string } | { uid: string }, options?: Parameters<typeof users.get>[1]): Promise<User | null> =>
+      users.get(config, options),
     getMinimal: async (config: { id: string } | { uid: string }) => users.getMinimal(config),
     getAvatar: async (config: { id: string }) => users.getAvatar(config),
     setAvatar: async (config: { actor: AccountsActor; id: string; dataUrl: string }) => {

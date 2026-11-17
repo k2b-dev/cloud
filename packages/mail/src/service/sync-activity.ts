@@ -45,6 +45,7 @@ export const takeFolderSyncActivity = (): {
 /** Logs this process's folder sync requests and batch outcomes every ten minutes in which any happened. */
 export const startFolderSyncActivityReport = (): void => {
   if (reportTimer) return;
+  // runtime-timer: logs counters only; it starts no work.
   reportTimer = setInterval(() => {
     const activity = takeFolderSyncActivity();
     if (Object.keys(activity.triggers).length === 0 && Object.keys(activity.batches).length === 0) return;

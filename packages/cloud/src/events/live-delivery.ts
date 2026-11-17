@@ -81,6 +81,7 @@ export const startLiveDelivery = async (appId: string): Promise<(() => Promise<v
   const outbox = liveOutbox(appId, (row) => topic.publish({ data: row.payload, orderingKey: row.ordering_key, idempotencyKey: row.id }));
   outbox.start();
   dispatchers.set(appId, () => void outbox.notify());
+  // runtime-timer: serves open live connections (request side); quiesce stops background work only.
   const staleCheck = setInterval(() => {
     logStaleRows(appId).catch((error) =>
       log.warn("Live outbox check failed", { appId, error: error instanceof Error ? error.message : String(error) }),

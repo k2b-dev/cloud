@@ -1,5 +1,9 @@
 import { CopyButton, DataTable, type DataTableSort, DataTableTools, filterRows, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
+import { BlockActions, BlockFoot, useBlockFrame } from "../../blocks/block-actions";
+import { blockFileName, saveBlob, tableCopy, tableCsv } from "../../blocks/block-copy";
+import { blockWords } from "../../blocks/messages";
+import { SearchToggle } from "../../blocks/search-toggle";
 import type { CloudAiChartRow } from "../chart-block";
 import { type CloudTableDescription, cloudAiTableTsv, cloudAiViewTable, sortCloudAiViewRows } from "../view-block";
 import { aiChatMessages } from "./messages";
@@ -22,6 +26,7 @@ export function CloudTableView(props: {
 }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
+  const frame = useBlockFrame();
   const table = createMemo(() => (props.input ? cloudAiViewTable(props.input, locale()) : null));
   // The view's own order applies until the reader picks one.
   const [picked, setSort] = createSignal<DataTableSort>();
@@ -36,6 +41,12 @@ export function CloudTableView(props: {
     return !value ? [] : order ? sortCloudAiViewRows(value.rows, order, locale()) : value.rows;
   });
   const [query, setQuery] = createSignal("");
+  // In a chat answer a searchable table names what its search finds, and on a phone its search folds into a sign.
+  // In an answer every table's head has its search (Feinschliff v3 §5: "search, tables only"); elsewhere the view's own
+  // `search` decides.
+  const searchable = () => frame !== undefined || props.summary.search === true;
+  const counted = () => frame !== undefined;
+  const [searching, setSearching] = createSignal(false);
   const [groupBy, setGroupBy] = createSignal<string | null>(null);
   // Search matches the cells as they are shown; Copy data keeps every row of the view.
   const shown = createMemo(() => {
@@ -62,20 +73,37 @@ export function CloudTableView(props: {
   const number = () => new Intl.NumberFormat(locale());
   const refColumns = createMemo(() => new Set(props.input?.columns.flatMap((column) => (column.type === "ref" ? [column.id] : []))));
   return (
-    <section class="grid min-w-0 gap-3" aria-labelledby={props.id}>
+    <section
+      class={
+        counted()
+          ? `cloud-table-frame grid min-w-0 gap-3${searching() || query() !== "" ? " cloud-table-frame--searching" : ""}`
+          : "grid min-w-0 gap-3"
+      }
+      aria-labelledby={props.id}
+    >
       <ViewHeading
         id={props.id}
         title={props.input?.title ?? props.summary.title}
         subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
         actions={
-          <div class="flex min-w-0 flex-wrap items-center gap-2">
+          <div class="cloud-table-tools flex min-w-0 flex-wrap items-center gap-2">
             {/* The summary reserves the tools from the first frame; they wait, disabled, for the rows. */}
-            <Show when={props.summary.search || props.summary.grouped}>
-              <div ref={tools} class="contents">
+            <Show when={counted()}>
+              <SearchToggle
+                label={blockWords(locale()).searchTable}
+                describedBy={props.id}
+                disabled={!table()}
+                onOpen={() => setSearching(true)}
+              />
+            </Show>
+            <Show when={searchable() || props.summary.grouped}>
+              <div ref={tools} class="cloud-table-search-host contents" onFocusOut={() => setSearching(false)}>
                 <DataTableTools
-                  label={props.input?.title ?? props.summary.title}
+                  // A fixed word, never the view's title: the heading names the table for the field too.
+                  label={blockWords(locale()).table}
+                  describedBy={props.id}
                   query={query()}
-                  onQueryChange={props.summary.search ? setQuery : undefined}
+                  onQueryChange={searchable() ? setQuery : undefined}
                   groups={props.summary.grouped ? (groups() ?? []) : undefined}
                   groupBy={groupBy()}
                   onGroupByChange={props.summary.grouped ? setGroupBy : undefined}
@@ -83,7 +111,37 @@ export function CloudTableView(props: {
                 />
               </div>
             </Show>
-            <CopyButton text={copyText()} label={t().viewCopyData} iconOnly size="sm" variant="ghost" disabled={!table()} />
+            {/* In a chat answer Copy (text with tabs and an HTML table) and Maximize come from the frame. */}
+            <Show
+              when={frame}
+              fallback={<CopyButton text={copyText()} label={t().viewCopyData} iconOnly size="sm" variant="ghost" disabled={!table()} />}
+            >
+              <BlockActions
+                kind="table"
+                name={props.input?.title ?? props.summary.title}
+                copy={() => {
+                  const value = table();
+                  if (!value) throw new Error("No rows");
+                  const rows = [...value.rows, ...(value.footer ? [value.footer] : [])];
+                  return tableCopy(
+                    value.columns.map((column) => column.label),
+                    rows.map((row) => value.columns.map((column) => row.cells[column.id] ?? "")),
+                  );
+                }}
+                download={() => {
+                  const value = table();
+                  if (!value) return;
+                  saveBlob(
+                    tableCsv(
+                      value.columns.map((column) => column.label),
+                      value.rows.map((row) => value.columns.map((column) => row.cells[column.id] ?? "")),
+                    ),
+                    blockFileName(props.input?.title ?? props.summary.title, "csv"),
+                  );
+                }}
+                content={() => <CloudTableView {...props} />}
+              />
+            </Show>
           </div>
         }
       />
@@ -155,10 +213,26 @@ export function CloudTableView(props: {
           )}
         </Show>
       </div>
-      <Show when={props.summary.rows > VISIBLE_ROWS}>
-        <p class="text-sm text-secondary">
-          {t().viewRowsCapped({ shown: number().format(VISIBLE_ROWS), total: number().format(props.summary.rows) })}
-        </p>
+      <Show
+        when={counted()}
+        fallback={
+          <Show when={props.summary.rows > VISIBLE_ROWS}>
+            <p class="text-sm text-secondary">
+              {t().viewRowsCapped({ shown: number().format(VISIBLE_ROWS), total: number().format(props.summary.rows) })}
+            </p>
+          </Show>
+        }
+      >
+        <BlockFoot
+          query={query()}
+          shown={shown().length}
+          total={props.summary.rows}
+          idle={
+            props.summary.rows > VISIBLE_ROWS
+              ? t().viewRowsCapped({ shown: number().format(VISIBLE_ROWS), total: number().format(props.summary.rows) })
+              : undefined
+          }
+        />
       </Show>
     </section>
   );

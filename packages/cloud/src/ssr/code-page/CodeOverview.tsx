@@ -136,7 +136,14 @@ function Did(props: { state: CodePageReady; live: CodeLive; text: PageText }) {
       loadingRows={4}
     >
       <Show when={counters().length > 0 || props.live.effects().length > 0} fallback={<p class="cloud-code__quiet-line">{t().didEmpty}</p>}>
-        <Show when={counters().length > 0}>
+        <Show
+          when={counters().length > 0}
+          fallback={
+            <div class="cloud-code__did-counts">
+              <p class="cloud-code__did-counts-none">{t().didNoneThisWeek}</p>
+            </div>
+          }
+        >
           <div class="cloud-code__did-counts">
             <For each={counters()}>
               {(counter) => (

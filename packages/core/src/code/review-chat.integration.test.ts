@@ -290,6 +290,8 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
     await deliverCodeReviewChatFacts(await f.effects());
     await sql`UPDATE ai.conversations SET draft_content='[{"type":"text","text":"My unsent answer"}]',draft_revision=7 WHERE id=${f.chat.id}::uuid`;
     await sql`UPDATE auth.users SET display_name='send mail' WHERE id=${admin}::uuid`;
+    await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status,error,automation_source)
+      VALUES(${crypto.randomUUID()}::uuid,${f.chat.id}::uuid,'{}','[]','failed','code_inactive','automation:paused-code')`;
     const prepare = spyOn(runtime, "prepareAiChatTurn").mockImplementation(async (input) => ({
       conversationId: input.conversationId,
       modelId: "fixture",

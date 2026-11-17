@@ -141,7 +141,9 @@ export type AiDraftContentPart =
   | { type: "text"; text: string }
   | { type: "resource"; ref: CloudResourceRef; title?: string; icon?: string; href?: string; inline?: boolean }
   | { type: "file"; path: string; mediaType: string; size: number; version: number; inline?: boolean }
-  | { type: "project-file"; path: string; inline?: boolean };
+  | { type: "project-file"; path: string; inline?: boolean }
+  /** A passage quoted from a message of this conversation; the server checks it and sets `from` when the turn is sent. */
+  | { type: "quote"; messageId: string; from?: import("./quote-markers").AiQuoteSource; text: string };
 
 export type AiConversationDraft = {
   content: AiDraftContentPart[];
@@ -301,6 +303,23 @@ export type AiCodeAuthoringStop = {
   unsubmitted: number;
 };
 
+/** One row of a quote check: a message a quote names, one text part of a quoted answer, or an answer over the bound. */
+export type AiQuoteSourceRow =
+  | {
+      part: "quoted";
+      shortId: string;
+      role: string;
+      loopId: string | null;
+      /** A user message whole; nothing for other roles. */
+      message: Message | null;
+      quotes?: import("./quote-markers").AiMessageQuote[];
+      automation: boolean;
+    }
+  /** One text part of a quoted answer, in order; `key` is its turn, or the message itself outside a turn. */
+  | { part: "answer"; key: string; seq: number; text: string }
+  /** A quoted answer longer than `AI_MESSAGE_SEARCH_TEXT_MAX_CHARS`, whose text is not read. */
+  | { part: "over"; key: string };
+
 export type AiStoredMessage = {
   /** Personal composer hint, projected only for the person who triggered the latest completed answer. */
   suggestedNextMessage?: { text: string; dismissedAt: string | null };
@@ -332,6 +351,8 @@ export type AiStoredMessage = {
     submittedDraftRevision?: number;
     codeAuthoringStop?: AiCodeAuthoringStop;
     codeOrigin?: AiCodeOrigin;
+    /** Passages this user message quotes, checked by the server against their messages; the only source of quotes. */
+    quotes?: import("./quote-markers").AiMessageQuote[];
     /** Cloud's visible start of its one scoped automatic revision. */
     codeReviewStart?: { codeId: string; versionId: string };
     /** A Cloud-authored fact, never an instruction or an assistant answer. */
@@ -718,6 +739,8 @@ export type AiChatTurnRunConfig = {
   codeReview?: { codeId: string; versionId: string };
   /** Trusted host attribution; never grants tool authority. */
   codeOrigin?: AiCodeOrigin;
+  /** Quotes the server checked for this turn's user message; stored as its `meta.quotes`. */
+  quotes?: import("./quote-markers").AiMessageQuote[];
   background?: RetiredRoutineContext;
   selectedSkillIds?: string[];
   /** Server-owned marker: model grants apply only to interactive Assistant chat. */
@@ -807,6 +830,8 @@ export type AiConversationService = {
     requestId?: string;
     ownerUserId: string;
     title?: string;
+    /** The title without `title`, such as the default in the request locale; a replay may differ in it. */
+    defaultTitle?: string;
     description?: string;
     projectId?: string;
     draft?: AiDraftContentPart[];
@@ -1033,6 +1058,11 @@ export type AiConversationService = {
     summary: Message;
     modelId?: string | null;
   }): Promise<void>;
+  /**
+   * What quotes need of the messages they name: a quoted user message whole (bounded like any message), a quoted
+   * answer as the text parts of its turn's messages when the answer stays within `AI_MESSAGE_SEARCH_TEXT_MAX_CHARS`.
+   */
+  listQuoteSources(input: { conversationId: string; messageIds: readonly string[] }): Promise<AiQuoteSourceRow[]>;
   listTurnMessages(input: {
     conversationId: string;
     loopId: string;
@@ -1052,6 +1082,8 @@ export type AiConversationService = {
     input: {
       choice?: import("./choices").AiChoiceSubmission;
       queuedMessageId?: string;
+      /** Revision observed under the conversation lock by the queue dispatcher. */
+      queuedMessageRevision?: string;
       conversationId: string;
       modelId: string;
       runConfig: AiChatTurnRunConfig;
@@ -1066,6 +1098,8 @@ export type AiConversationService = {
       resources?: AiConversationResourceObservation[];
       /** Retry source whose immutable turn-file bytes are copied into the new turn. */
       retrySourceTurnId?: string;
+      /** The person changed the retried text: the writer becomes the person. */
+      retryEdited?: true;
     },
     db?: SQL,
   ): Promise<{ turn: AiTurn; message: AiStoredMessage }>;
@@ -1145,6 +1179,8 @@ export type AiConversationService = {
     turnId: string;
     callId: string;
     event: InboundEvent;
+    /** Whether the answer comes from a person's signed-in session; otherwise a tool result restricts the turn. */
+    signedInSession: boolean;
   }): Promise<AiPendingTurnActionRecord | null>;
   markPendingTurnActionConsumedInline(input: { conversationId: string; turnId: string; callId: string }): Promise<void>;
   clearPendingTurnActions(input: { conversationId: string; turnId: string }): Promise<void>;
@@ -1153,6 +1189,8 @@ export type AiConversationService = {
     turnId: string;
     clientRequestId: string;
     text: string;
+    /** Whether the text comes from a person's signed-in session; otherwise it restricts the turn. */
+    signedInSession: boolean;
   }): Promise<AiTurnSteerEnqueueResult>;
   listTurnSteers(input: { conversationId: string; turnId: string }): Promise<AiTurnSteer[]>;
   /** Atomically make pending steers visible to the model and return them in order. */

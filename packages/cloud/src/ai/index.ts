@@ -303,6 +303,7 @@ export {
 } from "./protocol";
 export { createAiProvider } from "./provider";
 export { AiQuotaError } from "./quotas";
+export type { AiMessageQuote, AiQuoteDraft, AiQuoteSource } from "./quote-markers";
 export { isConversationResourceCursor } from "./resource-refs";
 export { describeAiResourceTypeCounts } from "./resource-type-counts";
 export type { AiRoutes } from "./routes";
@@ -464,6 +465,7 @@ export {
   CLOUD_AI_TABLE_MAX_COLUMNS,
   CLOUD_AI_TABLE_MAX_ROWS,
   CLOUD_AI_VIEW_DIRECTORY,
+  CLOUD_AI_VIEW_ICONS,
   CLOUD_AI_VIEW_MAX_BYTES,
   CLOUD_AI_VIEW_SUFFIX,
   type CloudAiChartView,
@@ -474,6 +476,7 @@ export {
   type CloudAiStatsView,
   type CloudAiTableView,
   type CloudAiView,
+  type CloudAiViewKind,
   type CloudAiViewReference,
   type CloudAiViewSummary,
   CloudAiViewSummarySchema,
@@ -493,6 +496,7 @@ export {
   cloudAiStatsTiles,
   cloudAiTableTsv,
   cloudAiViewDescription,
+  cloudAiViewKindOfIcon,
   cloudAiViewSummary,
   cloudAiViewTable,
   isAiViewFile,

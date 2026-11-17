@@ -3,10 +3,12 @@ import { sql } from "@k2b/cloud";
 import * as publicAi from "@k2b/cloud/ai";
 import { AiQuotaError, aiConversations, createAiProvider } from "@k2b/cloud/ai";
 import * as runtime from "@k2b/cloud/ai/runtime";
+import { AiQueuedChatStartError } from "@k2b/cloud/ai/runtime";
 import { CODE_BOUND_CHAT_ID } from "@k2b/cloud/code";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { coreSettings } from "@k2b/cloud/services";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
+import { signInvocationToken, verifyInvocationToken } from "@k2b/cloud/services/identity/invocation-token";
 import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
 import { z } from "zod";
@@ -14,21 +16,26 @@ import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import {
   AiTurnExecutor,
   aiAssignmentFixture,
+  aiModelCatalog,
   aiModelFixture,
   aiModelSettings,
   aiQuotas,
   aiSettingsFixture,
   beginAiCall,
+  codeCapabilityOperation,
   compileCapabilities,
+  createCodeCapabilityRoutes,
   drainQueuedMessages,
+  editQueuedMessage,
   finishAiCall,
   invokeCompiledCapability,
+  listQueuedMessages,
+  updateQueuedMessage,
 } from "../../../scripts/fixtures/code-platform";
+import { meterSql } from "../../../scripts/fixtures/sql-meter";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
-import { createCodeCapabilityRoutes } from "../../cloud/src/ai/code-capability-routes";
-import { codeCapabilityOperation } from "../../cloud/src/ai/code-capability-transport";
-import { signInvocationToken, verifyInvocationToken } from "../../cloud/src/services/identity/invocation-token";
-import { aiChatSendAction } from "./ai-chat-send";
+import { validateQueuedChatStart } from "./ai-chat-queue";
+import { aiChatSendAction, lockOwnerCodeChats } from "./ai-chat-send";
 import { aiCapabilities } from "./capabilities";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "./code/ai-budget";
 import { codeSettings } from "./code/settings";
@@ -111,7 +118,7 @@ const start = async (context = ctx()) => {
   expect(response.ok).toBeTrue();
   if (!response.ok) throw new Error(response.error.message);
   const data = dataSchema.parse(response.data.data);
-  await drainQueuedMessages(async () => {}, chat.id);
+  await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
   return data;
 };
 
@@ -138,8 +145,13 @@ suiteFor(
   });
 
   const setup = async () => {
+    await sql`UPDATE code.codes SET state='active',active_version_id=${versionId}::uuid WHERE id=${codeId}`;
     // Business keys span runs and callers within an account; each case owns a fresh key space.
     await sql`DELETE FROM ai.queued_messages`;
+    await sql`DELETE FROM ai.chat_send_receipts`;
+    // One open Code turn across chats is the rule under test; earlier cases leave none behind.
+    await sql`UPDATE ai.turns SET status='aborted',completed_at=clock_timestamp()
+      WHERE status IN ('queued','running','waiting_for_action') AND run_config ? 'codeOrigin'`;
     runId = `4f000000-0000-4000-8000-${String(++ordinal).padStart(12, "0")}`;
     await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
       VALUES(${runId}::uuid,${codeId},${versionId}::uuid,'schedule','morning','running',32768,10)`;
@@ -175,9 +187,12 @@ suiteFor(
       },
     });
     const prepare = spyOn(runtime, "prepareAiChatTurn").mockImplementation(prepareTurn);
-    spyOn(aiModelSettings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture({ profiles: [aiModelFixture({ id: "fixture" })] }));
+    const readSettings = spyOn(aiModelSettings, "readAiSettingsState").mockResolvedValue(
+      aiSettingsFixture({ profiles: [aiModelFixture({ id: "fixture" })] }),
+    );
+    const selectModel = spyOn(publicAi, "selectAssistantAiModel").mockResolvedValue({ id: "fixture" });
     const enqueue = spyOn(runtime, "wakeAiMessageQueue").mockImplementation(() => {});
-    return { prepare, enqueue, prepareTurn };
+    return { prepare, enqueue, prepareTurn, readSettings, selectModel };
   };
 
   const personContext = (): CapabilityExecutionContext => ({ ...ctx(), actor: { kind: "user", user } });
@@ -187,6 +202,23 @@ suiteFor(
     expect(sent.origin).toEqual({ kind: "person", id: owner });
     const [entry] = await sql<{ author_user_id: string | null }[]>`SELECT author_user_id FROM ai.queued_messages WHERE id=${sent.id}::uuid`;
     expect(entry?.author_user_id).toBe(owner);
+  });
+  test("an edit without a signed-in session starts the current message with its source restriction", async () => {
+    await setup();
+    const accepted = await invoke(chat.shortId, personContext());
+    if (!accepted.ok) throw new Error(accepted.error.message);
+    const sent = dataSchema.parse(accepted.data.data);
+    expect(await editQueuedMessage(chat.id, sent.id, "Edited from the terminal", { signedInSession: false })).toBeTrue();
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
+    expect(turn).not.toBeNull();
+    expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: turn!.id })).toMatchObject({
+      sourceRestricted: true,
+      send: { id: sent.id },
+    });
+    expect((await aiConversations.listMessages({ conversationId: chat.id }))[0]?.message).toMatchObject({
+      content: [{ type: "text", text: "Edited from the terminal" }],
+    });
   });
   test.each(["Gustav", "code_run"])("%s keeps the verified source turn through its invocation lease", async (sourceKind) => {
     await setup();
@@ -259,7 +291,7 @@ suiteFor(
         dispatch: async (input) => {
           expect(input.assistantTurn).toEqual({ conversationId: source.id, turnId: submitted.turn.id });
           expect(input.origin).toBe("assistant");
-          expect(input.authority.scopes).toEqual([]);
+          expect(input.authority?.scopes).toEqual([]);
           expect(input.target).toEqual({ type: "core.ai.chat", id: chat.shortId });
           return Response.json(await invoke(chat.shortId, context));
         },
@@ -280,6 +312,17 @@ suiteFor(
       ok: true,
       data: { data: { origin: { kind: "chat", id: source.shortId, turnId: submitted.turn.shortId } } },
     });
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    const forwardedTurn = await aiConversations.getLatestTurn({ conversationId: chat.id });
+    expect(forwardedTurn).not.toBeNull();
+    expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: forwardedTurn!.id })).toMatchObject({
+      turnTrigger: { kind: "chat", id: source.shortId },
+      writerOrigin: { kind: "chat", id: source.shortId, turnId: submitted.turn.shortId },
+    });
+    await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${forwardedTurn!.id}::uuid`;
+    const pendingSource = await invoke(chat.shortId, { ...context, idempotencyKey: "revalidate-source" });
+    if (!pendingSource.ok) throw new Error(pendingSource.error.message);
+    const pendingSourceId = dataSchema.parse(pendingSource.data.data).id;
     for (const kind of ["automation", "chat"] as const) {
       await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{turnTrigger}',${JSON.stringify(
         kind === "chat" ? { kind, id: source.shortId } : { kind, id: codeId },
@@ -297,6 +340,11 @@ suiteFor(
     await sql`UPDATE ai.conversations SET allowed_tools=NULL WHERE id=${source.id}::uuid`;
     await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{sourceRestricted}','true'::jsonb) WHERE id=${submitted.turn.id}::uuid`;
     expect(await invoke(chat.shortId, context)).toMatchObject({ ok: false, error: { code: "source_restricted" } });
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(await read(pendingSourceId)).toMatchObject({
+      ok: true,
+      data: { data: { message: { status: "failed", reason: "source_restricted" } } },
+    });
   });
   test("App sessions, scoped authority and service accounts cannot start a personal turn", async () => {
     const { prepare } = await setup();
@@ -340,26 +388,50 @@ suiteFor(
       sourceRestricted: true,
     });
     expect(await read(sent.id)).toMatchObject({ ok: true, data: { data: { message: { id: sent.id, origin: sent.origin } } } });
+    // The person's retry runs on their own allowance: no Code budget attribution carries over.
+    const retried = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: retry.turn.id });
+    expect(retried && retried.kind !== "compact" ? retried.codeOrigin : "compact").toBeUndefined();
+    // Editing the text before retrying makes the person its writer; initiator and receipt stay.
+    await sql`UPDATE ai.turns SET status='completed' WHERE id=${retry.turn.id}::uuid`;
+    const edited = await aiConversations.submitChatTurn({
+      conversationId: chat.id,
+      modelId: "fixture",
+      retrySourceTurnId: retry.turn.id,
+      retryEdited: true,
+      userMessage: { role: "user", content: [{ type: "text", text: "Edited" }] },
+      runConfig: { kind: "chat", input: "Edited", actor: { kind: "user", user } },
+    });
+    expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: edited.turn.id })).toMatchObject({
+      writerOrigin: { kind: "person", id: owner },
+      turnTrigger: { kind: "automation", id: codeId },
+      send: { id: sent.id },
+    });
   });
 
-  test("cutover refuses pending legacy messages and then removes delivery storage without losing text", async () => {
+  test("cutover fails pending legacy messages visibly and removes delivery storage without losing text", async () => {
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     if (!turn) throw new Error("Missing fixture turn");
     const target = await aiConversations.createConversation({ ownerUserId: owner });
+    const legacy = async (shortId: string, key: string) =>
+      sql`INSERT INTO ai.inter_chat_messages(short_id,source_conversation_id,source_turn_id,source_call_id,target_conversation_id,actor_user_id,text,idempotency_key)
+        VALUES(${shortId},${chat.id}::uuid,${turn.id}::uuid,${key},${target.id}::uuid,${owner}::uuid,'Already accepted',${key})`;
+    const statuses = async () =>
+      sql<{ key: string; status: string; reason: string | null }[]>`SELECT idempotency_key AS key,status,error AS reason
+        FROM ai.inter_chat_messages WHERE idempotency_key LIKE 'legacy-%' ORDER BY idempotency_key`;
+    // Upgrading straight from main: no feat/code delivery tables, a pending message from ai.chat.message.
+    await legacy("OldMain", "legacy-main");
+    await migrateCode();
+    expect(await statuses()).toEqual([{ key: "legacy-main", status: "failed", reason: expect.stringContaining("Send it again") }]);
+    // Upgrading from an earlier integration build that still has its delivery tables.
     await sql`CREATE TABLE code.chat_deliveries(id uuid)`;
     await sql`CREATE TABLE code.chat_runs(id uuid)`;
     await sql`UPDATE ai.messages SET meta=meta || '{"codeDelivery":{"runId":"legacy"}}'::jsonb WHERE loop_id=${turn.id}`;
-    await sql`INSERT INTO ai.inter_chat_messages(short_id,source_conversation_id,source_turn_id,source_call_id,target_conversation_id,actor_user_id,text,idempotency_key)
-      VALUES('OldMsg',${chat.id}::uuid,${turn.id}::uuid,'legacy-call',${target.id}::uuid,${owner}::uuid,'Already accepted','legacy-cutover')`;
-    await expect(migrateCode()).rejects.toThrow("Deliver pending inter-chat messages");
-    expect(await sql<{ relation: string | null }[]>`SELECT to_regclass('code.chat_deliveries')::text AS relation`).toEqual([
-      { relation: "code.chat_deliveries" },
-    ]);
-    await sql`UPDATE ai.inter_chat_messages SET status='delivered' WHERE idempotency_key='legacy-cutover'`;
+    await legacy("OldCut", "legacy-cutover");
     await migrateCode();
     await migrateCode();
+    expect((await statuses()).map((row) => row.status)).toEqual(["failed", "failed"]);
     expect(
       await sql<
         { delivery: string | null; runs: string | null }[]
@@ -388,7 +460,7 @@ suiteFor(
       },
     });
     expect(results[1]).toEqual(results[0]);
-    await drainQueuedMessages(async () => {}, chat.id);
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
     const messages = await aiConversations.listMessages({ conversationId: chat.id });
     expect(messages).toHaveLength(1);
     expect(messages[0]?.meta?.codeOrigin).toMatchObject({ codeId, runId, label: "Started by Code Morning review" });
@@ -409,7 +481,10 @@ suiteFor(
     expect(await invoke()).toEqual(results[0]);
     expect(await invoke(chat.shortId, ctx(), "Changed instructions")).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT" } });
     const otherChat = await aiConversations.createConversation({ ownerUserId: owner });
-    expect(await invoke(otherChat.shortId)).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT" } });
+    expect(await invoke(otherChat.shortId)).toMatchObject({
+      ok: true,
+      data: { data: { id: dataSchema.parse(results[0]!.ok ? results[0]!.data.data : null).id, chatId: chat.shortId } },
+    });
     const [debit] = await sql<{ cost: string }[]>`SELECT ai_reference_cost::text AS cost FROM code.runs WHERE id=${runId}::uuid`;
     expect(Number(debit?.cost)).toBe(0);
   });
@@ -442,7 +517,7 @@ suiteFor(
     expect(second.origin).toEqual({ kind: "person", id: other });
   });
 
-  test("queue admission retains its receipt and trigger after promotion and maps removed turns and retryable quota", async () => {
+  test("queue admission retains its receipt and trigger after promotion and maps removed turns and terminal automation quota", async () => {
     await setup();
     const sent = await start();
     const [entry] = await sql<
@@ -462,7 +537,7 @@ suiteFor(
     if (!response.ok) throw new Error(response.error.message);
     const queued = dataSchema.parse(response.data.data);
     await sql`UPDATE ai.queued_messages SET status='failed',error='quota_exhausted' WHERE id=${queued.id}::uuid`;
-    expect(await read(queued.id)).toMatchObject({ ok: true, data: { data: { message: { status: "queued", reason: "quota_exhausted" } } } });
+    expect(await read(queued.id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed", reason: "quota_exhausted" } } } });
     await sql`UPDATE ai.queued_messages SET error='dispatch_failed' WHERE id=${queued.id}::uuid`;
     expect(await read(queued.id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed" } } } });
   });
@@ -727,6 +802,8 @@ suiteFor(
     );
     chat = await aiConversations.createConversation({ ownerUserId: owner });
     spyOn(codeSettings, "get").mockResolvedValue(0.2);
+    // The earlier turn's state no longer holds the owner; its live call still reserves.
+    await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${turn!.id}::uuid`;
     try {
       expect(await invoke(chat.shortId, ctx("reserved"))).toMatchObject({ ok: false, error: { code: "code_ai_owner_daily_budget_limit" } });
     } finally {
@@ -869,6 +946,298 @@ suiteFor(
     }
   }, 30_000);
 
+  test("queued code sends count against the daily budget", async () => {
+    await setup();
+    const results = [];
+    for (let i = 0; i < 32; i++) results.push(await invoke(chat.shortId, ctx(`burst-${i}`)));
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => !result.ok && result.error.code === "chat_busy")).toHaveLength(31);
+    // The same Code cannot spread across chats either.
+    const chats = await Promise.all(Array.from({ length: 40 }, () => aiConversations.createConversation({ ownerUserId: owner })));
+    const spread = [];
+    for (const [i, other] of chats.entries()) spread.push(await invoke(other.shortId, ctx(`spread-${i}`)));
+    expect(spread.filter((result) => result.ok)).toHaveLength(0);
+    const [queued] = await sql<{ id: string }[]>`SELECT id FROM ai.queued_messages WHERE conversation_id=${chat.id}::uuid`;
+    // The day is spent while the message waits: it must not start a turn, and its refusal is final.
+    await sql`INSERT INTO ai.inference_calls(id,user_id,model_profile_id,kind,task,provider_model,code_id,pricing,cost,finished_at,lease_expires_at)
+      VALUES(${crypto.randomUUID()}::uuid,${owner}::uuid,'fixture','chat','chat','fixture',${codeId},
+        '{"inputPerMillion":1,"outputPerMillion":1}',1,clock_timestamp(),clock_timestamp())`;
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
+    expect(await read(queued!.id)).toMatchObject({
+      ok: true,
+      data: { data: { message: { status: "failed", reason: "code_ai_owner_daily_budget_limit" } } },
+    });
+    // The refused entry holds back neither the person nor the next schedule.
+    expect((await invoke(chat.shortId, personContext(), "My own question")).ok).toBeTrue();
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    const passed = await aiConversations.getLatestTurn({ conversationId: chat.id });
+    expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: passed!.id })).toMatchObject({
+      writerOrigin: { kind: "person", id: owner },
+    });
+    await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${passed!.id}::uuid`;
+    await sql`DELETE FROM ai.inference_calls WHERE code_id=${codeId}`;
+    expect(await invoke(chat.shortId, ctx("next-day"))).toMatchObject({ ok: true, data: { data: { status: "queued" } } });
+    // Without a host check, a Code-started message waits instead of starting unchecked.
+    await drainQueuedMessages(async () => {}, chat.id);
+    expect((await aiConversations.getLatestTurn({ conversationId: chat.id }))?.id).toBe(passed!.id);
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect((await aiConversations.getLatestTurn({ conversationId: chat.id }))?.id).not.toBe(passed!.id);
+  });
+  test("a paused Code's queued message is withdrawn with its reason and blocks nothing", async () => {
+    await setup();
+    const sent = await invoke();
+    if (!sent.ok) throw new Error(sent.error.message);
+    const id = dataSchema.parse(sent.data.data).id;
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
+    expect(await read(id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed", reason: "code_inactive" } } } });
+    // The person's keys share one space with their Codes, so the person picks a fresh key.
+    expect((await invoke(chat.shortId, { ...personContext(), idempotencyKey: "still-mine" }, "Still mine")).ok).toBeTrue();
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).not.toBeNull();
+  });
+  /** Another enabled Code of the same person, with a running run, as a caller context. */
+  const otherCode = async (n: number) => {
+    const id = `c_owner${n}`;
+    const version = `4f000000-0000-4000-8000-0000000003${String(n).padStart(2, "0")}`;
+    const run = crypto.randomUUID();
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title) VALUES(${id},'person',${owner}::uuid,${`Fictional ${n}`})
+      ON CONFLICT (id) DO NOTHING`;
+    await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,source_bytes,bundle_bytes)
+      VALUES(${version}::uuid,${id},1,'{}','fixture',${"c".repeat(64)},${"d".repeat(64)},0,7) ON CONFLICT (id) DO NOTHING`;
+    await sql`UPDATE code.codes SET state='active', active_version_id=${version}::uuid WHERE id=${id}`;
+    await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
+      VALUES(${run}::uuid,${id},${version}::uuid,'schedule','morning','running',32768,10)`;
+    return (key: string): CapabilityExecutionContext => {
+      const base = ctx(key);
+      const delegation = base.actor.kind === "user" ? base.actor.delegation : undefined;
+      if (!delegation) throw new Error("Missing fixture delegation");
+      return { ...base, actor: { kind: "user", user, delegation: { ...delegation, workloadId: version, workloadRun: run } } };
+    };
+  };
+  test("one open Code message per person: twenty Codes admit one, and parallel sends never deadlock", async () => {
+    await setup();
+    const callers = [];
+    for (let n = 0; n < 20; n++) callers.push(await otherCode(n));
+    const results = [];
+    for (const [n, caller] of callers.entries()) results.push(await invoke(chat.shortId, caller(`owner-${n}`)));
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => !result.ok && result.error.code === "chat_busy")).toHaveLength(19);
+    // Two sends of one Code into two chats at once take the locks in one order.
+    await setup();
+    const second = await aiConversations.createConversation({ ownerUserId: owner });
+    const parallel = await Promise.all([invoke(chat.shortId, ctx("parallel-a")), invoke(second.shortId, ctx("parallel-b"))]);
+    expect(parallel.filter((result) => result.ok)).toHaveLength(1);
+    expect(parallel.find((result) => !result.ok)).toMatchObject({ ok: false, error: { code: "chat_busy" } });
+  });
+  test("a Code message that cannot start fails with its reason and holds nothing back", async () => {
+    await setup();
+    const sent = await invoke();
+    if (!sent.ok) throw new Error(sent.error.message);
+    const id = dataSchema.parse(sent.data.data).id;
+    // The chat changes its Project while the Code message waits: the start fails for good.
+    const projectId = "4f000000-0000-4000-8000-0000000004a1";
+    await sql`INSERT INTO ai.projects(id,short_id,name) VALUES(${projectId}::uuid,'Proj4g','Moved Project') ON CONFLICT (id) DO NOTHING`;
+    await sql`UPDATE ai.conversations SET project_id=${projectId}::uuid WHERE id=${chat.id}::uuid`;
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(await read(id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed", reason: "chat_changed" } } } });
+    // Refused, it no longer holds the person's other chats.
+    const elsewhere = await aiConversations.createConversation({ ownerUserId: owner });
+    expect((await invoke(elsewhere.shortId, ctx("after-move"))).ok).toBeTrue();
+    // A Code message whose run is gone is withdrawn with its own reason.
+    await setup();
+    const gone = await invoke();
+    if (!gone.ok) throw new Error(gone.error.message);
+    await sql`DELETE FROM code.runs WHERE id=${runId}::uuid`;
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(await read(dataSchema.parse(gone.data.data).id)).toMatchObject({
+      ok: true,
+      data: { data: { message: { status: "failed", reason: "code_run_gone" } } },
+    });
+  });
+  test("a refused Code message lets the person finish and archive the chat", async () => {
+    await setup();
+    const sent = await invoke();
+    if (!sent.ok) throw new Error(sent.error.message);
+    await sql`INSERT INTO ai.inference_calls(id,user_id,model_profile_id,kind,task,provider_model,code_id,pricing,cost,finished_at,lease_expires_at)
+      VALUES(${crypto.randomUUID()}::uuid,${owner}::uuid,'fixture','chat','chat','fixture',${codeId},
+        '{"inputPerMillion":1,"outputPerMillion":1}',1,clock_timestamp(),clock_timestamp())`;
+    try {
+      await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+      expect(await read(dataSchema.parse(sent.data.data).id)).toMatchObject({
+        ok: true,
+        data: { data: { message: { status: "failed" } } },
+      });
+      expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: owner, done: true })).toMatchObject({
+        ok: true,
+      });
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toBeTrue();
+    } finally {
+      await sql`DELETE FROM ai.inference_calls WHERE code_id=${codeId}`;
+    }
+  });
+  test("a refused Code message never holds the person after archiving and restoring its chat", async () => {
+    await setup();
+    const first = await invoke();
+    if (!first.ok) throw new Error(first.error.message);
+    const m1 = dataSchema.parse(first.data.data).id;
+    await sql`INSERT INTO ai.inference_calls(id,user_id,model_profile_id,kind,task,provider_model,code_id,pricing,cost,finished_at,lease_expires_at)
+      VALUES(${crypto.randomUUID()}::uuid,${owner}::uuid,'fixture','chat','chat','fixture',${codeId},
+        '{"inputPerMillion":1,"outputPerMillion":1}',1,clock_timestamp(),clock_timestamp())`;
+    try {
+      await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+      expect(await read(m1)).toMatchObject({ ok: true, data: { data: { message: { status: "failed" } } } });
+      // A refused automation entry leaves the chat's queue.
+      expect(await listQueuedMessages(chat.id)).toEqual([]);
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toBeTrue();
+    } finally {
+      await sql`DELETE FROM ai.inference_calls WHERE code_id=${codeId}`;
+    }
+    const other = await aiConversations.createConversation({ ownerUserId: owner });
+    expect((await invoke(other.shortId, ctx("after-archive"))).ok).toBeTrue();
+    await aiConversations.restoreConversation({ conversationId: chat.id, ownerUserId: owner });
+    await drainQueuedMessages(async () => {}, other.id, validateQueuedChatStart);
+    expect(await aiConversations.getLatestTurn({ conversationId: other.id })).not.toBeNull();
+  });
+  test("a queued turn never starts in an archived chat", async () => {
+    await setup();
+    await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner });
+    await expect(
+      aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "fixture",
+        queuedMessageId: crypto.randomUUID(),
+        userMessage: { role: "user", content: [{ type: "text", text: "Late" }] },
+        runConfig: { kind: "chat", input: "Late", actor: { kind: "user", user } },
+      }),
+    ).rejects.toThrow("archived");
+  });
+  test("a fixed key queues a new message once the person's 24-hour key window has passed", async () => {
+    await setup();
+    const first = await invoke(chat.shortId, ctx("daily-briefing"));
+    if (!first.ok) throw new Error(first.error.message);
+    const old = dataSchema.parse(first.data.data).id;
+    // Yesterday's message ended; the same key on the next day is a new occurrence.
+    await sql`UPDATE ai.queued_messages SET status='cancelled',created_at=clock_timestamp()-interval '25 hours' WHERE id=${old}::uuid`;
+    // Receipts are immutable; only the fixture ages this one.
+    await sql`ALTER TABLE ai.chat_send_receipts DISABLE TRIGGER chat_send_receipt_immutable`;
+    await sql`UPDATE ai.chat_send_receipts SET created_at=clock_timestamp()-interval '25 hours' WHERE id=${old}::uuid`;
+    await sql`ALTER TABLE ai.chat_send_receipts ENABLE TRIGGER chat_send_receipt_immutable`;
+    const next = await invoke(chat.shortId, ctx("daily-briefing"), "Today's briefing.");
+    expect(next.ok).toBeTrue();
+    if (!next.ok) return;
+    expect(dataSchema.parse(next.data.data).id).not.toBe(old);
+    expect(await read(old)).toMatchObject({ ok: true, data: { data: { message: { id: old, status: "cancelled" } } } });
+  });
+  test("an expired Code message leaves the queue even behind a blocked person message, and a retry cannot revive it", async () => {
+    await setup();
+    // A person's message ahead of it failed for good and holds the chat's order.
+    const blocker = crypto.randomUUID();
+    await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status,error)
+      VALUES(${blocker}::uuid,${chat.id}::uuid,'{"runConfig":{"kind":"chat"}}','[]','failed','dispatch_failed')`;
+    const sent = await invoke();
+    if (!sent.ok) throw new Error(sent.error.message);
+    const id = dataSchema.parse(sent.data.data).id;
+    // Still pending, never refused, but accepted on an earlier budget day.
+    await sql`UPDATE ai.queued_messages SET created_at=clock_timestamp()-interval '2 days' WHERE id=${id}::uuid`;
+    expect(await updateQueuedMessage(chat.id, id, "retry")).toBeFalse();
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(await read(id)).toMatchObject({
+      ok: true,
+      data: { data: { message: { status: "failed", reason: "code_budget_day_ended" } } },
+    });
+    // The person's other Codes are free again.
+    const other = await aiConversations.createConversation({ ownerUserId: owner });
+    expect((await invoke(other.shortId, ctx("after-expiry"))).ok).toBeTrue();
+    await sql`DELETE FROM ai.queued_messages WHERE id=${blocker}::uuid`;
+  });
+  test("one drain retires any number of expired Code messages in one statement", async () => {
+    await setup();
+    const sent = await invoke();
+    if (!sent.ok) throw new Error(sent.error.message);
+    const template = dataSchema.parse(sent.data.data).id;
+    const second = await aiConversations.createConversation({ ownerUserId: owner });
+    // Each chat is held by a failed person message ahead; its Code messages were accepted on an earlier budget day.
+    const fill = async (conversationId: string, count: number) => {
+      await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status,error)
+        VALUES(${crypto.randomUUID()}::uuid,${conversationId}::uuid,'{"runConfig":{"kind":"chat"}}','[]','failed','dispatch_failed')`;
+      await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status,created_at)
+        SELECT gen_random_uuid(),${conversationId}::uuid,q.submission #- '{runConfig,send,keyHash}',q.content,'pending',clock_timestamp()-interval '2 days'
+        FROM ai.queued_messages q CROSS JOIN generate_series(1,${count}) WHERE q.id=${template}::uuid`;
+    };
+    await fill(chat.id, 1);
+    await fill(second.id, 6);
+    // Beside them: a message whose budget day never ends, with a fine Code and run, walks every branch and
+    // stays whatever the day, and a malformed run id retires its message without failing the statement.
+    const [current, malformed] = [crypto.randomUUID(), crypto.randomUUID()];
+    await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status,created_at)
+      SELECT ${current}::uuid,${second.id}::uuid,q.submission #- '{runConfig,send,keyHash}',q.content,'pending','infinity'::timestamptz
+      FROM ai.queued_messages q WHERE q.id=${template}::uuid`;
+    await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status)
+      SELECT ${malformed}::uuid,${second.id}::uuid,jsonb_set(q.submission #- '{runConfig,send,keyHash}','{runConfig,codeOrigin,runId}','"run-7"'),q.content,'pending'
+      FROM ai.queued_messages q WHERE q.id=${template}::uuid`;
+    await sql`DELETE FROM ai.queued_messages WHERE id=${template}::uuid`;
+    const meter = await meterSql();
+    try {
+      const one = await meter.during(() => drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart));
+      const six = await meter.during(() => drainQueuedMessages(async () => {}, second.id, validateQueuedChatStart));
+      console.log("SQL BUDGET queue drain with expired Code messages", one.length, six.length, six);
+      // In a held chat, nothing is promoted: the retirement itself and the head query, nothing per entry.
+      expect(one).toHaveLength(2);
+      expect(six).toHaveLength(2);
+      expect(six[0]).toStartWith("WITH expired AS");
+    } finally {
+      await meter.close();
+    }
+    const left = await sql<{ id: string; status: string; error: string | null; send: boolean }[]>`
+      SELECT id,status,error,submission->'runConfig' ? 'send' AS send FROM ai.queued_messages
+      WHERE conversation_id IN (${chat.id}::uuid,${second.id}::uuid) AND error IS DISTINCT FROM 'dispatch_failed'`;
+    const expired = left.filter((entry) => entry.id !== current && entry.id !== malformed);
+    expect(expired).toHaveLength(7);
+    expect(expired.every((entry) => entry.status === "failed" && entry.error === "code_budget_day_ended" && entry.send)).toBeTrue();
+    expect(left.find((entry) => entry.id === current)).toMatchObject({ status: "pending", error: null });
+    expect(left.find((entry) => entry.id === malformed)).toMatchObject({ status: "failed", error: "code_run_gone" });
+  });
+  test("a chat turn cannot send into its own chat, and an unreadable lease asks to retry", async () => {
+    await setup();
+    const source = await aiConversations.createConversation({ ownerUserId: owner });
+    const submitted = await aiConversations.submitChatTurn({
+      conversationId: source.id,
+      modelId: "fixture",
+      userMessage: { role: "user", content: [{ type: "text", text: "Delegate" }] },
+      runConfig: {
+        kind: "chat",
+        input: "Delegate",
+        writerOrigin: { kind: "person", id: owner },
+        turnTrigger: { kind: "person", id: owner },
+        actor: { kind: "user", user },
+      },
+    });
+    await sql`UPDATE ai.turns SET status='running' WHERE id=${submitted.turn.id}::uuid`;
+    const lease = spyOn(nestedInvocationLeases, "read").mockResolvedValue({
+      appId: "core",
+      origin: "assistant",
+      deadline: 9999999999999,
+      assistantTurn: { conversationId: source.id, turnId: submitted.turn.id },
+    });
+    const context: CapabilityExecutionContext = {
+      ...personContext(),
+      origin: "assistant",
+      actor: {
+        kind: "user",
+        user,
+        delegation: { kind: "invocation", credentialKind: "session", callingAppId: "core", invocationId: "source" },
+      },
+    };
+    expect(await invoke(source.shortId, context)).toMatchObject({ ok: false, error: { status: 400 } });
+    lease.mockResolvedValue(null);
+    expect(await invoke(chat.shortId, context)).toMatchObject({ ok: false, error: { code: "source_unavailable", status: 409 } });
+    expect(
+      await sql<{ id: string }[]>`SELECT id FROM ai.queued_messages WHERE conversation_id IN (${source.id}::uuid,${chat.id}::uuid)`,
+    ).toHaveLength(0);
+  });
   test("an unavailable wake-up leaves durable queued work and the draft untouched", async () => {
     await setup();
     await sql`UPDATE ai.conversations SET draft_content='[{"type":"text","text":"Unsent draft"}]'::jsonb WHERE id=${chat.id}::uuid`;
@@ -877,7 +1246,322 @@ suiteFor(
     expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
     const current = await aiConversations.getConversation({ conversationId: chat.id });
     expect(current?.draft.content).toEqual([{ type: "text", text: "Unsent draft" }]);
-    await drainQueuedMessages(async () => {}, chat.id);
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
     expect(await aiConversations.listMessages({ conversationId: chat.id })).toHaveLength(1);
+  });
+  test("one pending entry per source; cancellation frees its slot and replay ignores a changed target", async () => {
+    await setup();
+    const first = await invoke();
+    if (!first.ok) throw new Error(first.error.message);
+    const sent = dataSchema.parse(first.data.data);
+    expect(await invoke(chat.shortId, ctx("another-key"))).toMatchObject({ ok: false, error: { code: "chat_busy" } });
+    expect(await updateQueuedMessage(chat.id, sent.id, "cancel")).toBeTrue();
+    expect(await invoke(chat.shortId, ctx("another-key"))).toMatchObject({ ok: true });
+    const changed = await aiConversations.createConversation({ ownerUserId: owner });
+    expect(await invoke(changed.shortId)).toMatchObject({
+      ok: true,
+      data: { data: { id: sent.id, chatId: chat.shortId, status: "cancelled" } },
+    });
+    await expect(sql`UPDATE ai.chat_send_receipts SET chat_id=${changed.shortId} WHERE id=${sent.id}::uuid`.execute()).rejects.toThrow(
+      "immutable",
+    );
+    await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+    expect(await invoke(changed.shortId)).toMatchObject({
+      ok: true,
+      data: { data: { id: sent.id, chatId: chat.shortId, status: "cancelled" } },
+    });
+    // Unattended calls are reviewed with the run's current authority first; paused Code reaches no receipt.
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
+    expect(await invoke(changed.shortId)).toMatchObject({ ok: false, error: { status: 404 } });
+    expect(
+      await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.queued_messages WHERE conversation_id=${changed.id}::uuid`,
+    ).toEqual([{ count: 0 }]);
+  });
+
+  test("disabled Code is withdrawn permanently, frees FIFO, and does not revive when enabled", async () => {
+    await setup();
+    const response = await invoke();
+    if (!response.ok) throw new Error(response.error.message);
+    const sent = dataSchema.parse(response.data.data);
+    const person = await invoke(chat.shortId, { ...personContext(), idempotencyKey: "person-after-code" }, "Person follows.");
+    expect(person.ok).toBeTrue();
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
+    const jobs: unknown[] = [];
+    await drainQueuedMessages(
+      async (job) => {
+        jobs.push(job);
+      },
+      chat.id,
+      validateQueuedChatStart,
+    );
+    expect(jobs).toHaveLength(1);
+    expect(await read(sent.id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed", reason: "code_inactive" } } } });
+    const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
+    expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: turn!.id })).toMatchObject({
+      writerOrigin: { kind: "person" },
+    });
+    await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${turn!.id}::uuid`;
+    await sql`UPDATE code.codes SET state='active' WHERE id=${codeId}`;
+    await drainQueuedMessages(
+      async (job) => {
+        jobs.push(job);
+      },
+      chat.id,
+      validateQueuedChatStart,
+    );
+    expect(jobs).toHaveLength(1);
+    expect(await updateQueuedMessage(chat.id, sent.id, "retry")).toBeFalse();
+  });
+
+  test("quota refusal at queue start is terminal and permits the next source", async () => {
+    await setup();
+    const response = await invoke();
+    if (!response.ok) throw new Error(response.error.message);
+    const sent = dataSchema.parse(response.data.data);
+    const assertQuota = spyOn(aiQuotas, "assertAllowed").mockRejectedValueOnce(new AiQuotaError("quota_exhausted", "Empty"));
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(assertQuota).toHaveBeenCalled();
+    expect(await read(sent.id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed", reason: "quota_exhausted" } } } });
+    expect(await invoke(chat.shortId, ctx("next-schedule"))).toMatchObject({ ok: true, data: { data: { status: "queued" } } });
+    expect(await invoke()).toMatchObject({ ok: true, data: { data: { id: sent.id, status: "failed" } } });
+  });
+  test.each(["code_ai_daily_budget_limit", "model_policy_mismatch"])(
+    "final %s survives day end and archiving without retaining input",
+    async (reason) => {
+      await setup();
+      const accepted = await invoke();
+      if (!accepted.ok) throw new Error(accepted.error.message);
+      const id = dataSchema.parse(accepted.data.data).id;
+      await drainQueuedMessages(
+        async () => {},
+        chat.id,
+        async () => {
+          throw new AiQueuedChatStartError(reason);
+        },
+      );
+      const final = async (legacy = false) => {
+        const [row] = await sql`SELECT status,error,content,submission FROM ai.queued_messages WHERE id=${id}::uuid`;
+        expect(row).toMatchObject({
+          status: "failed",
+          error: reason,
+          content: [],
+          submission: { runConfig: { send: { id }, turnTrigger: { kind: "automation" } } },
+        });
+        expect(Object.keys(row!.submission.runConfig).sort()).toEqual(
+          legacy ? ["codeOrigin", "send", "turnTrigger"] : ["send", "turnTrigger"],
+        );
+      };
+      await final();
+      // Older failed rows retain Code attribution. Day-end and archive must preserve these too.
+      await sql`UPDATE ai.queued_messages SET submission=jsonb_set(submission,'{runConfig,codeOrigin}',
+        (${JSON.stringify({ codeId, runId })}::text)::jsonb) WHERE id=${id}::uuid`;
+      await sql`UPDATE ai.queued_messages SET created_at=clock_timestamp()-interval '2 days' WHERE id=${id}::uuid`;
+      await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+      await final(true);
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toBeTrue();
+      await final(true);
+      expect(await read(id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed", reason } } } });
+    },
+  );
+
+  test("queue start takes the owner lock before the Code row during overlapping send admission", async () => {
+    await setup();
+    expect((await invoke()).ok).toBeTrue();
+    type Outcome = { ok: true } | { ok: false; error: unknown };
+    let drain: Promise<Outcome> | undefined;
+    try {
+      await sql.begin(async (send) => {
+        await send`SET LOCAL lock_timeout='3s'`;
+        await lockOwnerCodeChats(owner, send);
+        const [session] = await send<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        drain = drainQueuedMessages(
+          async () => {},
+          chat.id,
+          async (...args) => {
+            await args[1]`SET LOCAL lock_timeout='3s'`;
+            return validateQueuedChatStart(...args);
+          },
+        ).then(
+          (): Outcome => ({ ok: true }),
+          (error: unknown): Outcome => ({ ok: false, error }),
+        );
+        for (let waited = 0; ; waited++) {
+          const [blocked] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE ${session!.pid}::int=ANY(pg_blocking_pids(pid))`;
+          if (blocked?.count) break;
+          if (waited > 200) throw new Error("The dispatcher never waited for the owner lock");
+          await Bun.sleep(10);
+        }
+        // The old start held a Code SHARE lock while waiting for the owner: this UPDATE deadlocked.
+        await send`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
+      });
+    } finally {
+      await drain;
+    }
+    expect(await drain).toEqual({ ok: true });
+    expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).not.toBeNull();
+  });
+
+  test("queue start never waits for a reviewer holding Code before taking the chat", async () => {
+    await setup();
+    const accepted = await invoke();
+    if (!accepted.ok) throw new Error(accepted.error.message);
+    const id = dataSchema.parse(accepted.data.data).id;
+    await sql.begin(async (review) => {
+      await review`SET LOCAL lock_timeout='3s'`;
+      await review`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
+      // NOWAIT rolls back the attempt and releases its chat lock before the reviewer needs it.
+      let refusal: unknown;
+      await drainQueuedMessages(
+        async () => {},
+        chat.id,
+        async (...args) => {
+          await args[1]`SET LOCAL lock_timeout='3s'`;
+          try {
+            return await validateQueuedChatStart(...args);
+          } catch (error) {
+            refusal = error;
+            throw error;
+          }
+        },
+      );
+      expect(refusal).toBeInstanceOf(Error);
+      if (!(refusal instanceof Error)) throw new Error("The Code lock was not refused");
+      expect(refusal.message).toContain("could not obtain lock");
+      await review`SELECT id FROM ai.conversations WHERE id=${chat.id}::uuid FOR UPDATE`;
+    });
+    expect(Array.from(await sql`SELECT status,error FROM ai.queued_messages WHERE id=${id}::uuid`)).toMatchObject([
+      { status: "pending", error: null },
+    ]);
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).not.toBeNull();
+  });
+
+  test("send refuses a reviewer's Code lock promptly and accepts a retry with the same key", async () => {
+    await setup();
+    type Outcome = { result: Awaited<ReturnType<typeof invoke>> } | { error: unknown };
+    let outcome: Outcome | undefined;
+    let whileLocked: Outcome | undefined;
+    let sending: Promise<void> | undefined;
+    const context = ctx("reviewer-contention");
+    try {
+      await sql.begin(async (review) => {
+        await review`SET LOCAL lock_timeout='3s'`;
+        await review`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
+        const [session] = await review<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        sending = invoke(chat.shortId, context).then(
+          (result) => {
+            outcome = { result };
+          },
+          (error: unknown) => {
+            outcome = { error };
+          },
+        );
+        for (let waited = 0; !outcome; waited++) {
+          const [blocked] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE ${session!.pid}::int=ANY(pg_blocking_pids(pid))`;
+          if (blocked?.count) break;
+          if (waited > 200) throw new Error("Send neither refused nor waited for the reviewer's Code lock");
+          await Bun.sleep(10);
+        }
+        whileLocked = outcome;
+        // A refusal has rolled back its Chat lock, so the reviewer can safely take it next.
+        if (whileLocked) await review`SELECT id FROM ai.conversations WHERE id=${chat.id}::uuid FOR UPDATE`;
+      });
+    } finally {
+      await sending;
+    }
+    expect(whileLocked).toMatchObject({ result: { ok: false, error: { code: "chat_busy", status: 409 } } });
+    expect(await sql`SELECT id FROM ai.chat_send_receipts WHERE conversation_id=${chat.id}::uuid`).toHaveLength(0);
+    const accepted = await invoke(chat.shortId, context);
+    expect(accepted.ok).toBeTrue();
+    if (!accepted.ok) throw new Error(accepted.error.message);
+    const id = dataSchema.parse(accepted.data.data).id;
+    const replayed = await invoke(chat.shortId, context);
+    expect(replayed).toMatchObject({ ok: true, data: { data: { id } } });
+    expect(await sql`SELECT id FROM ai.chat_send_receipts WHERE conversation_id=${chat.id}::uuid`).toHaveLength(1);
+  });
+
+  test("unknown Code start errors stop retrying at the existing budget-day expiry", async () => {
+    await setup();
+    const accepted = await invoke();
+    if (!accepted.ok) throw new Error(accepted.error.message);
+    const id = dataSchema.parse(accepted.data.data).id;
+    await drainQueuedMessages(
+      async () => {},
+      chat.id,
+      async () => {
+        throw new TypeError("Transient provider setup");
+      },
+    );
+    expect(await read(id)).toMatchObject({ ok: true, data: { data: { message: { status: "queued", reason: "dispatch_failed" } } } });
+    await sql`UPDATE ai.queued_messages SET created_at=clock_timestamp()-interval '2 days' WHERE id=${id}::uuid`;
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(await read(id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed", reason: "code_budget_day_ended" } } } });
+  });
+
+  test("composer settings and catalog prefetch do not hold the chat lock", async () => {
+    const { readSettings } = await setup();
+    expect((await invoke(chat.shortId, personContext())).ok).toBeTrue();
+    readSettings.mockImplementation(async (db) => {
+      expect(db).toBeUndefined();
+      await sql.begin(async (probe) => {
+        await probe`SET LOCAL lock_timeout='3s'`;
+        await probe`SELECT id FROM ai.conversations WHERE id=${chat.id}::uuid FOR UPDATE`;
+      });
+      return aiSettingsFixture({ profiles: [aiModelFixture({ id: "fixture" })] });
+    });
+    const jobs: string[] = [];
+    await drainQueuedMessages(
+      async (job) => {
+        jobs.push(job.turnId);
+      },
+      chat.id,
+      validateQueuedChatStart,
+    );
+    expect(jobs).toHaveLength(1);
+  });
+
+  test("dequeue uses one real catalog snapshot and current model grants under its transaction", async () => {
+    const { readSettings, selectModel } = await setup();
+    await aiModelCatalog.createProvider({ id: "queue-provider", type: "ollama", label: "Queue fixture", dataBoundary: "private" }, owner);
+    await aiModelCatalog.createModels(
+      "queue-provider",
+      [{ id: "fixture", label: "Queue fixture", providerModel: "fixture", capabilities: ["tools"] }],
+      owner,
+    );
+    const accepted = await invoke();
+    expect(accepted.ok).toBeTrue();
+    readSettings.mockRestore();
+    selectModel.mockRestore();
+    const meter = await meterSql();
+    const jobs: string[] = [];
+    try {
+      const statements = await meter.during(() =>
+        drainQueuedMessages(
+          async (job) => {
+            jobs.push(job.turnId);
+          },
+          chat.id,
+          validateQueuedChatStart,
+        ),
+      );
+      expect(jobs).toHaveLength(1);
+      // The native catalog is read once per start and shared with access selection and quotas.
+      for (const table of ["providers", "models", "model_variants", "model_assignments"])
+        expect(statements.filter((text) => text.includes(`FROM ai.${table} `))).toHaveLength(1);
+      expect(statements.filter((text) => /^BEGIN\b/i.test(text))).toHaveLength(1);
+    } finally {
+      await meter.close();
+    }
+    await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${jobs[0]}::uuid`;
+    await sql`DELETE FROM auth.access WHERE id IN(SELECT access_id FROM ai.model_access WHERE model_id='fixture')`;
+    const pending = await invoke(chat.shortId, ctx("revoked-model"));
+    if (!pending.ok) throw new Error(pending.error.message);
+    await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
+    expect(await read(dataSchema.parse(pending.data.data).id)).toMatchObject({
+      ok: true,
+      data: { data: { message: { status: "failed", reason: "model_policy_mismatch" } } },
+    });
   });
 });

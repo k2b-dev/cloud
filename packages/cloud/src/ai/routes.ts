@@ -36,10 +36,12 @@ import { coreSettings } from "../services/settings/api";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { readThemeFromCookieHeader } from "../shared/theme";
 import { type AiStoredActionReview, isLegacyActionReview, isUnknownActionOutcome, storedActionReview } from "./action-review";
+import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { assistantAiSettingsState, peopleAiModels, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog, buildAiCapabilityHistoryCatalog } from "./capabilities";
 import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
+import { userVisibleTextFromMessage } from "./chat/message-utils";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
 import { createAiChoiceRoutes } from "./choice-routes";
@@ -49,6 +51,7 @@ import { watchAiConversation } from "./conversation-watchers";
 import { createCloudAiLocalBashTool, createCloudAiLocalTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { enqueueAiDictation } from "./dictation-runtime";
 import { AiDictationConflict, AiDictationListSchema, AiDictationStartSchema, aiDictations } from "./dictations";
+import { aiDraftQuotes, aiDraftTurnContent } from "./draft-content";
 import { normalizeAiUploadMediaType } from "./file-media-type";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, decodeAiFileContent, guessAiMediaType, normalizeAiFilePath } from "./files-store";
@@ -62,11 +65,13 @@ import {
   AiSaveConversationDraftInputSchema,
   AiSteerInputSchema,
   AiSubmitConversationDraftInputSchema,
+  aiDraftContentProblem,
   aiInputToUserMessage,
   aiTurnInputToContent,
   toAiActionFailureResponse,
   toAiErrorResponse,
 } from "./http";
+import { AI_MESSAGE_SEARCH_TEXT_MAX_CHARS } from "./limits";
 import { aiLive, subscribeAiConversationAccess } from "./live";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema } from "./local-tool-contracts";
 import { aiMaintenanceJobs } from "./maintenance";
@@ -76,6 +81,7 @@ import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import {
   AiMessageQueueConflict,
+  AiQueuedMessageTooLarge,
   editQueuedMessage,
   enqueueChatMessage,
   listQueuedMessages,
@@ -91,10 +97,12 @@ import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import type { AiResourceContext } from "./projects-authorization";
 import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
+import { publicAiToolInput } from "./public-tool-input";
+import { type AiMessageQuote, aiQuoteModelText } from "./quote-markers";
+import { AiQuoteError, type AiQuoteErrorReason, resolveAiQuotes } from "./quote-sources";
 import { AiRecentResourceSchema, listAiRecentResources } from "./recent-resources";
 import { RECENT_SENT_REF_LIMIT } from "./recent-sent-refs";
 import { type AiChatRequestContext, resolveAiChatRequestContext as resolveContext } from "./request-context";
-import { aiResourceMarker } from "./resource-markers";
 import { isConversationResourceCursor } from "./resource-refs";
 import {
   AiTurnActionSchema,
@@ -281,9 +289,9 @@ const rememberLastUsedModel = (actor: RequestActor, model: import("../shared/ai-
   void aiUserPrefs.update(userId, { selection: model }).catch(() => undefined);
 };
 
-const conversationDetail = async (conversation: AiConversation, subject: AiResourceContext) => {
+const conversationDetail = async (conversation: AiConversation, subject: AiResourceContext, locale: string) => {
   const [state, timeline, publicView] = await Promise.all([
-    loadAiStreamState(conversation, subject.actor?.kind === "user" ? subject.actor.user.id : null),
+    loadAiStreamState(conversation, subject.actor?.kind === "user" ? subject.actor.user.id : null, locale),
     aiConversations.listConversationTimeline({ conversationId: conversation.id }),
     publicConversationFor(conversation, subject),
   ]);
@@ -306,7 +314,7 @@ const publicPendingAction = (
   action: Awaited<ReturnType<typeof listPendingAiTurnActions>>[number],
   conversationId: string,
   turnId: string,
-) => ({ ...action, conversationId, turnId });
+) => ({ ...action, args: publicAiToolInput(action.name, action.args), conversationId, turnId });
 
 const prepareConversationForMessageRetry = async (conversationId: string): Promise<"ready" | "busy"> => {
   const active = await aiConversations.getActiveTurn({ conversationId });
@@ -338,6 +346,14 @@ const prepareLaunchDraft = async (
 
 export const __aiRoutesTest = { prepareConversationForMessageRetry, prepareLaunchDraft };
 
+/** The person's message for a quote the server refused, in the request's language; the stable code travels beside it. */
+const aiQuoteErrorText = (reason: AiQuoteErrorReason, locale: string): string => {
+  const t = aiChatMessages(locale);
+  if (reason === "missing") return t.quoteMissing;
+  if (reason === "not_quotable") return t.quoteNotQuotable;
+  if (reason === "mismatch") return t.quoteMismatch;
+  return t.quoteTooLong({ max: new Intl.NumberFormat(locale).format(AI_MESSAGE_SEARCH_TEXT_MAX_CHARS) });
+};
 export const aiRoutes = (() => {
   const loadConversation = async (c: Context<AuthContext>, ctx: AiChatRequestContext, archived = false): Promise<AiConversation | null> => {
     const conversationId = c.req.param("conversationId");
@@ -742,6 +758,8 @@ export const aiRoutes = (() => {
             requestId: body.requestId,
             ownerUserId: ctx.ownerUserId,
             title: body.title,
+            // An untitled chat, such as one from `cld assistant chats create`, is named in the caller's language.
+            defaultTitle: aiChatMessages(getLocale(c)).newChat,
             projectId: project?.id,
             draft: draft.data.content,
             preloadTools: preloadTools.map((name) => name!),
@@ -764,7 +782,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        return respond(c, ok(await conversationDetail(conversation, resourceContext(c))));
+        return respond(c, ok(await conversationDetail(conversation, resourceContext(c), getLocale(c))));
       })
       .get(
         "/conversations/:conversationId/submission/:draftRevision",
@@ -799,7 +817,12 @@ export const aiRoutes = (() => {
           c,
           ok({
             ...page,
-            messages: await publicAiStoredMessages(page.messages, conversation, ctx.actor.kind === "user" ? ctx.actor.user.id : null),
+            messages: await publicAiStoredMessages(
+              page.messages,
+              conversation,
+              ctx.actor.kind === "user" ? ctx.actor.user.id : null,
+              getLocale(c),
+            ),
           }),
         );
       })
@@ -815,7 +838,7 @@ export const aiRoutes = (() => {
           beforeSeq: query.before,
           limit: query.limit ?? 50,
         });
-        return respond(c, ok({ ...page, messages: await publicAiStoredMessages(page.messages, conversation) }));
+        return respond(c, ok({ ...page, messages: await publicAiStoredMessages(page.messages, conversation, null, getLocale(c)) }));
       })
       .delete("/conversations/:conversationId/messages/:messageId/suggested-next-message", async (c) => {
         const ctx = await resolveContext(c);
@@ -1013,8 +1036,7 @@ export const aiRoutes = (() => {
           });
           return restored ? respond(c, ok(await publicConversationFor(restored, resourceContext(c)))) : notFound(c);
         } catch (error) {
-          if (error instanceof AiConversationRestoreConflict)
-            return respond(c, fail({ ...err.conflict("Place chat"), message: error.message }));
+          if (error instanceof AiConversationRestoreConflict) return respond(c, fail(err.conflict(error.message)));
           throw error;
         }
       })
@@ -1043,9 +1065,16 @@ export const aiRoutes = (() => {
           if (ctx instanceof Response) return ctx;
           const conversation = await loadConversation(c, ctx);
           if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
-          return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text))
-            ? respond(c, ok({ ok: true }))
-            : notFound(c);
+          try {
+            return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text, {
+              signedInSession: ctx.signedInSession,
+            }))
+              ? respond(c, ok({ ok: true }))
+              : notFound(c);
+          } catch (error) {
+            if (error instanceof AiQueuedMessageTooLarge) return respond(c, fail(err.badInput(error.message)));
+            throw error;
+          }
         },
       )
       .delete("/conversations/:conversationId/queue/:messageId", async (c) => {
@@ -1101,17 +1130,16 @@ export const aiRoutes = (() => {
         }
         if (conversation.draft.content.length === 0) return respond(c, fail(err.badInput("The conversation draft is empty.")));
         const resourceParts = conversation.draft.content.filter((part) => part.type === "resource");
-        const turnContent = conversation.draft.content.map((part) => {
-          if (part.type === "text") return { type: "text" as const, text: part.text };
-          if (part.type === "project-file") return { type: "text" as const, text: `Project file: ${part.path}` };
-          if (part.type === "file") {
-            return { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size };
-          }
-          return {
-            type: "text" as const,
-            text: aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }),
-          };
-        });
+        // Each quote must stand in a message of this chat; whose words they are comes from that message.
+        let quotes: AiMessageQuote[];
+        try {
+          quotes = await resolveAiQuotes(conversation.id, aiDraftQuotes(conversation.draft.content), aiConversations);
+        } catch (error) {
+          if (error instanceof AiQuoteError)
+            return respond(c, { ok: false, error: aiQuoteErrorText(error.reason, getLocale(c)), status: 400, code: error.message });
+          throw error;
+        }
+        const turnContent = aiDraftTurnContent(conversation.draft.content, quotes);
         const { input, message } = aiInputToUserMessage(aiTurnInputToContent({ content: turnContent }));
         const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, resourceContext(c)) : null;
         if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
@@ -1140,6 +1168,7 @@ export const aiRoutes = (() => {
             toolApprovalContext: ctx.toolApprovalContext,
             expectedDraftRevision: body.draftRevision,
             expectedProjectId: conversation.projectId,
+            ...(quotes.length ? { quotes } : {}),
             resources: resourceParts.map((part) => ({ ref: part.ref, title: part.title, icon: part.icon, href: part.href })),
             expectedFiles: conversation.draft.content.flatMap((part) =>
               part.type === "file" ? [{ path: part.path, version: part.version }] : [],
@@ -1186,6 +1215,7 @@ export const aiRoutes = (() => {
           turnId: turn.id,
           clientRequestId: body.clientRequestId,
           text: body.message,
+          signedInSession: ctx.signedInSession,
         });
         if (!result.ok) {
           if (result.reason === "not_found") return respond(c, fail(err.notFound("Turn")));
@@ -1211,8 +1241,23 @@ export const aiRoutes = (() => {
         }
 
         const body = c.req.valid("json");
-        const content = body.content?.length ? aiTurnInputToContent({ content: body.content }) : target.message.content;
+        // The quotes of the message stay as the server checked them; edited text from the client never carries any.
+        const quotes = target.meta?.quotes ?? [];
+        const edited = body.content?.length ? aiTurnInputToContent({ content: body.content }) : null;
+        const content = edited
+          ? [
+              ...(typeof edited === "string" ? [{ type: "text" as const, text: edited }] : edited),
+              ...quotes.map((quote) => ({ type: "text" as const, text: aiQuoteModelText(quote) })),
+            ]
+          : target.message.content;
         const { input, message } = aiInputToUserMessage(content as never);
+        // The bound counts the person's own words, as on send: attached items and the checked quotes' model text are
+        // not words, the quotes count by their passage.
+        const problem = aiDraftContentProblem([
+          { type: "text", text: userVisibleTextFromMessage(message, quotes) },
+          ...quotes.map((quote) => ({ type: "quote" as const, messageId: quote.messageId, text: quote.text })),
+        ]);
+        if (problem) return respond(c, fail(err.badInput(problem)));
         const instruction = retryInstruction(body.mode);
         const systemPrompt = instruction ?? undefined;
         const originalRunConfig = target.loopId
@@ -1233,10 +1278,11 @@ export const aiRoutes = (() => {
           }
           const result = await submitAiChatTurn({
             assistantChat: true,
+            // Editing makes the message the person's own; retrying keeps its writer. Either way the
+            // person's retry runs on their own allowance, without the Code's budget attribution.
             writerOrigin: originalRunConfig?.kind !== "compact" ? originalRunConfig?.writerOrigin : undefined,
             turnTrigger: originalRunConfig?.kind !== "compact" ? originalRunConfig?.turnTrigger : undefined,
             send: originalRunConfig?.kind !== "compact" ? originalRunConfig?.send : undefined,
-            codeOrigin: originalRunConfig?.kind !== "compact" ? originalRunConfig?.codeOrigin : undefined,
             ...(!ctx.signedInSession || (originalRunConfig?.kind !== "compact" && originalRunConfig?.sourceRestricted)
               ? { sourceRestricted: true as const }
               : {}),
@@ -1256,8 +1302,10 @@ export const aiRoutes = (() => {
             toolSource: { kind: "default", appTools: true },
             toolApprovalContext: ctx.toolApprovalContext,
             truncateFromSeq: target.seq,
+            ...(quotes.length ? { quotes } : {}),
             fileSnapshot: originalRunConfig?.kind !== "compact" ? originalRunConfig?.files : undefined,
             retrySourceTurnId: target.loopId ?? undefined,
+            ...(body.content?.length ? { retryEdited: true as const } : {}),
             // Local context and tools belong to the retrying client, not the original workspace.
             clientToolIds:
               body.clientToolIds ??
@@ -1314,7 +1362,7 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
           title: body.title ?? conversation.title,
         });
-        return respond(c, ok(await conversationDetail(forked, resourceContext(c))));
+        return respond(c, ok(await conversationDetail(forked, resourceContext(c), getLocale(c))));
       })
       .get("/conversations/:conversationId/enrichment", async (c) => {
         const ctx = await resolveContext(c);
@@ -1526,7 +1574,7 @@ export const aiRoutes = (() => {
             const record = records.find((record) => record.callId === action.callId);
             const request = record?.approvalId ? await approvals.get(record.approvalId, undefined, true) : null;
             const reviewCallId = record?.kind === "custom_approval" ? action.callId.replace(/-approval-[0-9]+$/, "") : action.callId;
-            const stored = reviews.get(reviewCallId);
+            const stored = reviews.get(record?.rememberToolName === AI_WEBSITE_APPROVAL_TOOL ? action.callId : reviewCallId);
             let review: AiStoredActionReview | null = stored && !isLegacyActionReview(stored) ? stored : null;
             if (!review && request) {
               review = pendingApprovalReview({ storedReview: null, details: request.details });
@@ -1569,6 +1617,7 @@ export const aiRoutes = (() => {
         c.set("appAccessGuard", { eventOnly: true });
         return createAiConversationStreamResponse({
           viewerUserId: ctx.actor.kind === "user" ? ctx.actor.user.id : null,
+          locale: getLocale(c),
           conversation,
           signal: c.req.raw.signal,
           ...(expiresAt !== undefined ? { expiresAt } : {}),
@@ -1854,7 +1903,7 @@ export const aiRoutes = (() => {
         if (aiProjectFilePathFromMount(to) !== null) return respond(c, fail(err.badInput("The /project namespace is reserved.")));
         const renamed = await aiFileStore.rename({ conversationId: conversation.id, from, to });
         if (renamed === "not_found") return notFound(c);
-        if (renamed === "conflict") return respond(c, fail(err.conflict(`File "${to}"`)));
+        if (renamed === "conflict") return respond(c, fail(err.conflict(`File "${to}" already exists`)));
         return respond(c, ok({ renamed: true }));
       })
   );

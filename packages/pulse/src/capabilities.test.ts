@@ -214,9 +214,9 @@ test("dashboard mutations take the Base from the capability target", async () =>
   const draft = { name: "Dashboard", definition };
   const revision = { dashboardId: "Dash01", expectedRevision: 1 };
   const publication = { ...revision, columns: { visits: ["visits"] } };
-  const save = spyOn(dashboards, "save").mockResolvedValue(fail(err.conflict("Fixture")));
-  const publish = spyOn(dashboards, "publish").mockResolvedValue(fail(err.conflict("Fixture")));
-  const remove = spyOn(dashboards, "remove").mockResolvedValue(fail(err.conflict("Fixture")));
+  const save = spyOn(dashboards, "save").mockResolvedValue(fail(err.conflict("Fixture already exists")));
+  const publish = spyOn(dashboards, "publish").mockResolvedValue(fail(err.conflict("Fixture already exists")));
+  const remove = spyOn(dashboards, "remove").mockResolvedValue(fail(err.conflict("Fixture already exists")));
   try {
     const actions = pulseCapabilities.actions;
     for (const [action, input] of [

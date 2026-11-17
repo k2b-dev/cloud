@@ -8,15 +8,17 @@ import {
   listAiConversationFiles,
   personalAiModelPolicy,
 } from "@k2b/cloud/ai";
-import { AiMessageQueueConflict, enqueueChatMessage, prepareAiChatTurn, wakeAiMessageQueue } from "@k2b/cloud/ai/runtime";
+import { AiMessageQueueConflict, enqueueAutomationChatMessage, prepareAiChatTurn, wakeAiMessageQueue } from "@k2b/cloud/ai/runtime";
+import { CAPABILITY_CLAIM_RETENTION_HOURS } from "@k2b/cloud/capabilities/store";
 import { type CapabilityExecutionContext, CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { accounts, coreSettings } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { err, fail, i18n, ok } from "@k2b/stdlib";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { aiChatSendData, chatSendSnapshot } from "./ai-chat-send-result";
-import { chatWriteAuthority, ownedActiveChat } from "./ai-code-chat";
+import { chatWriteAuthority, ownedActiveChat, sendsToItself } from "./ai-code-chat";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
 import { resolveCodeChatDestination } from "./code/chat-binding";
 import { codeSettings } from "./code/settings";
@@ -35,6 +37,8 @@ const messages = i18n.define({
       ai_disabled: "AI is disabled. Ask an administrator to enable it before trying again.",
       ai_no_model: "No model is available for this chat. Check the AI model settings before trying again.",
       model_policy_mismatch: "The Code owner may not use this model. Choose a model their account may use.",
+      busy: "A Code message of this person is already waiting or running in a chat. Try again after it finishes.",
+      run_gone: "The Code run that sent this message has ended.",
     },
     de: {
       origin: ({ name }: { name: string }) => `Gestartet von Code ${name}`,
@@ -43,11 +47,14 @@ const messages = i18n.define({
       ai_disabled: "KI ist deaktiviert. Bitte die Administration, sie vor einem weiteren Versuch zu aktivieren.",
       ai_no_model: "Für diesen Chat ist kein Modell verfügbar. Prüfe die KI-Modelleinstellungen vor einem weiteren Versuch.",
       model_policy_mismatch: "Der Code-Eigentümer darf dieses Modell nicht verwenden. Wähle ein für sein Konto freigegebenes Modell.",
+      busy: "Eine Code-Nachricht dieser Person wartet oder läuft schon in einem Chat. Versuche es erneut, wenn sie fertig ist.",
+      run_gone: "Der Code-Lauf, der diese Nachricht gesendet hat, ist beendet.",
     },
   },
 });
 
-/** Logical admission key; public queue IDs are independently generated. */
+/** Logical admission key; public queue IDs are independently generated. Like every Action key,
+ * it is scoped to the acting person: personal Codes of one owner share it (see the Code SDK). */
 const sendKeyHash = (account: string, key: string) =>
   createHash("sha256")
     .update(JSON.stringify([account, "ai.chat.send", key]))
@@ -62,6 +69,27 @@ const result = async (conversationId: string, chatId: string, id: string) => {
       })
     : snapshot;
 };
+/** Until the whole-turn reservation of slice 6 lands, the daily checks see only booked or running
+ * inference. At most one waiting Code message or unfinished Code turn per owner, across all chats and
+ * Codes, keeps them exact. Send/start lock Chat → owner → Code NOWAIT → run/budget rows.
+ * Review locks Code → Chat, so no path holding Chat may wait for Code. */
+export const lockOwnerCodeChats = (owner: string, db: SQL) =>
+  db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.owner:${owner}`},0))`;
+/** A refused automation entry is final and does not count. At start, only messages queued before
+ * this one count, so two waiting messages never block each other. */
+export const openOwnerCodeChatWork = async (owner: string, db: SQL, startingMessageId?: string) => {
+  const [open] = await db`SELECT 1 FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
+      WHERE c.created_by_user_id=${owner}::uuid AND c.archived_at IS NULL
+        AND q.status='pending' AND q.submission->'runConfig' ? 'codeOrigin'
+        AND (${startingMessageId ?? null}::uuid IS NULL
+          OR q.position < (SELECT position FROM ai.queued_messages WHERE id=${startingMessageId ?? null}::uuid))
+    UNION ALL SELECT 1 FROM ai.turns t JOIN ai.conversations c ON c.id=t.conversation_id
+      WHERE c.created_by_user_id=${owner}::uuid AND t.status IN ('queued','running','waiting_for_action')
+        AND NOT COALESCE(t.run_config ? 'background',false) AND t.run_config ? 'codeOrigin'
+    LIMIT 1`;
+  return Boolean(open);
+};
+
 export const aiChatSendAction = {
   target: "ai.chat",
   title: "Write to a chat",
@@ -81,6 +109,7 @@ export const aiChatSendAction = {
     if (!destination.ok) return destination;
     const chat = await ownedActiveChat(context.user.id, destination.data.chatId, sql);
     if (!chat) return fail(err.notFound("Chat"));
+    if (sendsToItself(source.data.origin, chat.short_id)) return fail(err.badInput("Choose another chat"));
     const de = context.locale.split("-")[0] === "de";
     return ok({
       locale: de ? "de" : "en",
@@ -121,6 +150,7 @@ export const aiChatSendAction = {
     });
   },
   async run(input: z.infer<typeof aiChatSendInput>, context: CapabilityExecutionContext) {
+    // Unattended Code calls are reviewed with this same authority first, so a replay never outlives it.
     const source = await chatWriteAuthority(context, sql);
     if (!source.ok) return source;
     if (!context.user) return fail(err.forbidden("Chat writes require their owner"));
@@ -129,23 +159,28 @@ export const aiChatSendAction = {
     if (!key.success || !parsed.success) return fail(err.badInput("Supply text and a valid idempotency key"));
     const owner = context.user.id;
     const keyHash = sendKeyHash(owner, key.data);
-    const id = crypto.randomUUID();
-    const destination = await resolveCodeChatDestination(context, sql);
-    if (!destination.ok) return destination;
-    const hash = approvalArgsDigest({ chatId: destination.data.chatId, ...parsed.data });
-    const chat = await ownedActiveChat(owner, destination.data.chatId, sql);
-    if (!chat) return fail(err.notFound("Chat"));
+    // A key holds for the dispatcher's claim retention, per person; afterwards it starts a new message.
     const existing = async (db = sql) => {
-      const [row] = await db<{ id: string; hash: string; conversation_id: string }[]>`
-        SELECT id,submission->'runConfig'->'send'->>'requestHash' AS hash,conversation_id FROM ai.queued_messages
-        WHERE submission#>>'{runConfig,send,accountId}'=${owner} AND submission#>>'{runConfig,send,keyHash}'=${keyHash}`;
+      const [row] = await db<{ id: string; input_hash: string; conversation_id: string; chat_id: string }[]>`
+        SELECT id,input_hash,conversation_id,chat_id FROM ai.chat_send_receipts
+        WHERE account_id=${owner}::uuid AND operation='ai.chat.send' AND key_hash=${keyHash}
+          AND created_at > clock_timestamp() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})
+        ORDER BY created_at DESC LIMIT 1`;
       if (!row) return null;
-      return row.hash === hash && row.conversation_id === chat.id
-        ? result(chat.id, chat.short_id, row.id)
+      // Hash against the originally resolved destination, before looking at today's binding or limits.
+      return row.input_hash === approvalArgsDigest({ chatId: row.chat_id, ...parsed.data })
+        ? result(row.conversation_id, row.chat_id, row.id)
         : fail(capabilityIdempotencyConflict("The key was used for a different chat message"));
     };
     const previous = await existing();
     if (previous) return previous;
+    const id = crypto.randomUUID();
+    const destination = await resolveCodeChatDestination(context, sql);
+    if (!destination.ok) return destination;
+    const chat = await ownedActiveChat(owner, destination.data.chatId, sql);
+    if (!chat) return fail(err.notFound("Chat"));
+    if (sendsToItself(source.data.origin, chat.short_id)) return fail(err.badInput("Choose another chat"));
+    const hash = approvalArgsDigest({ chatId: chat.short_id, ...parsed.data });
     const user = await accounts.users.get({ id: owner });
     if (!user || isAccountExpired(user.accountExpires)) return fail(err.forbidden("The chat owner is inactive"));
     const actor = { kind: "user" as const, user };
@@ -203,19 +238,30 @@ export const aiChatSendAction = {
         await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send:${keyHash}`},0))`;
         const previous = await existing(db);
         if (previous) return previous;
-        if (code && limits) {
-          await db`SELECT id FROM code.codes WHERE id=${code.id} FOR SHARE`;
-          await db`SELECT id FROM code.runs WHERE id=${code.runId}::uuid FOR UPDATE`;
-          const current = await chatWriteAuthority(context, db);
-          if (!current.ok) return current;
-          const refused = await checkCodeChatRunBudget(code.runId, db, limits);
-          if (refused) return fail({ code: refused, message: t.budget, status: 409 as const });
-        }
         const currentChat = await ownedActiveChat(owner, chat.short_id, db, { lock: true });
         if (!currentChat) return fail(err.notFound("Chat"));
         if (currentChat.project_id !== chat.project_id)
           return fail({ code: "chat_changed", message: "The chat Project changed; read the chat again.", status: 409 as const });
-        await enqueueChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
+        if (code) {
+          await lockOwnerCodeChats(owner, db);
+          if (await openOwnerCodeChatWork(owner, db)) return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
+        }
+        if (code && limits) {
+          await db`SELECT id FROM code.codes WHERE id=${code.id} FOR SHARE NOWAIT`;
+          await db`SELECT id FROM code.runs WHERE id=${code.runId}::uuid FOR UPDATE`;
+          const current = await chatWriteAuthority(context, db);
+          if (!current.ok) return current;
+          const refused = await checkCodeChatRunBudget(code.runId, db, limits);
+          if (refused) return fail({ code: refused, message: refused === "code_run_gone" ? t.run_gone : t.budget, status: 409 as const });
+        }
+        // An expired use of this key keeps its message, receipt and status but releases the key.
+        await db`UPDATE ai.queued_messages SET submission=submission #- '{runConfig,send,keyHash}'
+          WHERE submission#>>'{runConfig,send,accountId}'=${owner} AND submission#>>'{runConfig,send,keyHash}'=${keyHash}
+            AND created_at <= clock_timestamp() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})`;
+        await enqueueAutomationChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
+        await db`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)
+          VALUES(${id}::uuid,${owner}::uuid,'ai.chat.send',${keyHash},${hash},${chat.id}::uuid,${chat.short_id},
+            (${JSON.stringify(source.data.origin)}::text)::jsonb,(${JSON.stringify(source.data.turnTrigger)}::text)::jsonb,${id}::uuid)`;
         return ok(null);
       });
       if (!admitted.ok) return admitted;
@@ -223,6 +269,12 @@ export const aiChatSendAction = {
       wakeAiMessageQueue(chat.id);
       return result(chat.id, chat.short_id, id);
     } catch (cause) {
+      if (
+        typeof cause === "object" &&
+        cause !== null &&
+        (("errno" in cause && cause.errno === "55P03") || ("code" in cause && cause.code === "55P03"))
+      )
+        return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
       if (cause instanceof AiMessageQueueConflict) return fail({ code: "chat_busy", message: cause.message, status: 409 as const });
       if (cause instanceof AiQuotaError) return fail({ code: cause.code, message: cause.message, status: 409 as const });
       if (isAiSettingsError(cause))

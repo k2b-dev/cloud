@@ -7,6 +7,8 @@ export type AssistantQueuedMessage = {
   text: string;
   editableText?: string;
   failed?: boolean;
+  error?: string | null;
+  retrying?: boolean;
 };
 
 export default function AssistantQueuedMessages(props: {
@@ -35,10 +37,17 @@ export default function AssistantQueuedMessages(props: {
                 }
                 aria-hidden="true"
               />
-              <span class="min-w-0 flex-1 truncate" title={message.text}>
-                {message.text}
-              </span>
-              <Show when={message.failed}>
+              <div class="min-w-0 flex-1">
+                <span class="block truncate" title={message.text}>
+                  {message.text}
+                </span>
+                <Show when={message.error === "dispatch_failed"}>
+                  <span class="block text-[var(--k2b-danger-text)]" role="status">
+                    {message.retrying ? t().queueDispatchRetrying : t().queueDispatchFailed}
+                  </span>
+                </Show>
+              </div>
+              <Show when={message.failed && !message.retrying}>
                 <button
                   type="button"
                   class="shrink-0 rounded-md px-1.5 py-1 text-[0.6875rem] font-medium text-[var(--k2b-text-muted)] transition-colors hover:text-[var(--k2b-ai-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)] disabled:cursor-wait disabled:opacity-50"

@@ -8,7 +8,7 @@ import { lazySync } from "../_internal/process-sync";
 import type { RequestActor } from "../server";
 import { type ApprovalDecisionChannel, approvals } from "../services/approvals";
 import { logger } from "../services/logging";
-import { superviseRuntimeTask } from "../services/runtime-lifecycle";
+import { startRuntimeInterval, superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { coreSettings } from "../services/settings/api";
 import type { AiModelRequest } from "../shared/ai-models";
 import {
@@ -25,13 +25,24 @@ import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import { AiClientToolResultSchema } from "./http";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
-import { drainQueuedMessages } from "./message-queue";
+import { drainQueuedMessages, type ValidateQueuedChatStart } from "./message-queue";
+import { AI_QUEUE_SWEEP_INTERVAL_MS } from "./queue-waits";
 
-export { AiMessageQueueConflict, enqueueChatMessage } from "./message-queue";
+export type { QueuedChatSubmission, ValidateQueuedChatStart } from "./message-queue";
+export {
+  AiMessageQueueConflict,
+  AiQueuedChatStartError,
+  AUTOMATION_QUEUE_LIMIT,
+  AUTOMATION_QUEUE_SOURCE_LIMIT,
+  enqueueAutomationChatMessage,
+  enqueueChatMessage,
+} from "./message-queue";
+export { AI_QUEUE_RETRYABLE_ERRORS, isAiQueueRetryableError } from "./queue-waits";
 
 import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
+import type { AiMessageQuote } from "./quote-markers";
 import { parseAiResourceMarker } from "./resource-markers";
 import { assertInteractiveChatTurn, isRetiredRoutineConfig } from "./retired-routines";
 import { isAiVisionModelConfigured, readAiSettingsState } from "./settings";
@@ -70,8 +81,6 @@ const AI_TURN_HEARTBEAT_MS = 3_000;
 const AI_TURN_WORKER_CONCURRENCY = 8;
 const AI_TURN_MAX_ATTEMPTS = 5;
 
-const AI_SWEEP_INTERVAL_MS = 15_000;
-
 // ---------------------------------------------------------------------------
 // Queue
 // ---------------------------------------------------------------------------
@@ -94,7 +103,7 @@ const enqueueAiTurn = (job: AiTurnJob): Promise<unknown> => aiTurnQueue().send({
 
 /** Wake the durable queue promptly; the periodic sweep retries a failed wake-up. */
 export const wakeAiMessageQueue = (conversationId: string): void => {
-  void drainQueuedMessages(enqueueAiTurn, conversationId).catch(() =>
+  void drainQueuedMessages(enqueueAiTurn, conversationId, running?.validateQueuedChatStart).catch(() =>
     log.warn("AI message queue wake-up failed", { code: "queue_wakeup_failed", conversationId }),
   );
 };
@@ -141,9 +150,13 @@ export type SubmitAiChatTurnInput = {
   expectedDraftRevision?: number;
   expectedProjectId?: string | null;
   resources?: AiConversationResourceObservation[];
+  /** Quotes the server checked against their messages; the user message keeps them as `meta.quotes`. */
+  quotes?: AiMessageQuote[];
   expectedFiles?: ReadonlyArray<{ path: string; version: number }>;
   fileSnapshot?: AiConversationFileSnapshot;
   retrySourceTurnId?: string;
+  /** The person changed the retried text: the new message is the person's own. */
+  retryEdited?: true;
 };
 
 export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
@@ -235,6 +248,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     localContext: input.localContext,
     toolSource: input.toolSource ?? { kind: "none" },
     toolApprovalContext: input.toolApprovalContext,
+    ...(input.quotes?.length ? { quotes: input.quotes } : {}),
   };
 
   return {
@@ -247,6 +261,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     expectedProjectId: input.expectedProjectId,
     resources: input.resources,
     retrySourceTurnId: input.retrySourceTurnId,
+    ...(input.retryEdited ? { retryEdited: true as const } : {}),
   };
 };
 
@@ -467,6 +482,7 @@ export const submitAiTurnAction = async (input: {
 
     const resolved = await aiConversations.resolvePendingTurnAction({
       ...input,
+      signedInSession: input.signedInSession === true,
       event: { type: "approval_response", callId: input.callId, approved: input.action.approved },
     });
     if (!resolved) {
@@ -479,6 +495,7 @@ export const submitAiTurnAction = async (input: {
     if (pending.kind !== "client_tool") return { ok: false, status: 400, message: "Approval requests require an approval response." };
     const resolved = await aiConversations.resolvePendingTurnAction({
       ...input,
+      signedInSession: input.signedInSession === true,
       event: { type: "tool_result", callId: input.callId, result: input.action.result },
     });
     if (!resolved) {
@@ -550,6 +567,7 @@ const processMessage = async (
 ): Promise<void> => {
   const leaseOwner = `${AI_WORKER_ID}:${message.messageId}:${crypto.randomUUID()}`;
   let heartbeatFailed = false;
+  // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
   const touch = setInterval(() => {
     void message
       .heartbeat()
@@ -605,7 +623,7 @@ const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: stri
 
 export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>): Promise<void> => {
   await aiQuotas.prune().catch(() => log.warn("Quota retention failed", { code: "quota_retention_failed" }));
-  await drainQueuedMessages(enqueueAiTurn);
+  await drainQueuedMessages(enqueueAiTurn, undefined, running?.validateQueuedChatStart);
   const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS });
   await Promise.all([
     ...sweep.requeued.map((job) =>
@@ -632,6 +650,7 @@ export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEv
 type AiRuntimeState = {
   listeners: Set<(event: AiTurnFinalizedEvent) => Promise<void>>;
   approvalListeners: Set<ApprovalRequestedListener>;
+  validateQueuedChatStart?: ValidateQueuedChatStart;
   stop: () => void;
 };
 
@@ -643,6 +662,8 @@ export const startAiRuntime = (
     /** Host-owned tools for default Assistant turns. Register on the first runtime start. */
     tools?: readonly AiRuntimeTool[];
     concurrency?: number;
+    /** Host-owned admission policy; runs on the current queued snapshot under the conversation lock. */
+    validateQueuedChatStart?: ValidateQueuedChatStart;
     onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
     onApprovalRequested?: ApprovalRequestedListener;
   } = {},
@@ -677,6 +698,7 @@ export const startAiRuntime = (
     if (errors.length) throw new AggregateError(errors, `${errors.length} AI approval requested listener(s) failed`);
   };
 
+  // runtime-timer: supervises the Sync worker, which follows quiesce and retries its resume without a limit.
   void superviseRuntimeTask({
     name: "AI turn worker",
     signal: controller.signal,
@@ -701,23 +723,24 @@ export const startAiRuntime = (
       }),
   });
 
-  const runSweep = () =>
-    void sweepAiRuntime(dispatchTurnFinalized).catch((error) =>
-      log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
-    );
-  runSweep();
-  const sweepTimer = setInterval(runSweep, AI_SWEEP_INTERVAL_MS);
-  if (typeof sweepTimer === "object" && "unref" in sweepTimer) sweepTimer.unref();
+  const sweep = startRuntimeInterval({
+    run: async () => {
+      await sweepAiRuntime(dispatchTurnFinalized);
+    },
+    intervalMs: AI_QUEUE_SWEEP_INTERVAL_MS,
+    onError: (error) => log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
+  });
 
   const stopDictations = startAiDictationRuntime();
   const state: AiRuntimeState = {
     listeners,
     approvalListeners,
+    validateQueuedChatStart: input.validateQueuedChatStart,
     stop: () => {
       if (running !== state) return;
       controller.abort();
       stopDictations();
-      clearInterval(sweepTimer);
+      void sweep.stop();
       listeners.clear();
       approvalListeners.clear();
       running = null;

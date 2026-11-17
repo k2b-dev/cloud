@@ -655,7 +655,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     scrollToAnchor: (anchor) => scrollToAnchor(anchor),
     gone: () => void reloadList(true).catch(() => undefined),
   });
-  const jump = (question: AiOpenQuestion) => {
+  const jump = (question: Pick<AiOpenQuestion, "conversationId" | "anchor" | "href">) => {
     if (question.href) {
       window.location.assign(question.href);
       return;
@@ -1002,6 +1002,10 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                     onCheckAction: (request) => chat.checkAction(request),
                     onEditDraft: (request, values, digest) => chat.editDraft(request, values, digest),
                     onChoice: (request, blockId, ids) => chat.submitChoice(request, blockId, ids),
+                    onShowQuestion: (anchor) => {
+                      const conversationId = chat.activeConversationId();
+                      if (conversationId) jump({ conversationId, anchor });
+                    },
                     onApproval: async (request, input) => {
                       if (await chat.respondToApproval(request, input)) return;
                       // The card says itself that the answer is not confirmed; the field's hint line stays free.

@@ -57,6 +57,7 @@ export const discussionReview = (
   body: string,
   locale?: string,
   revision?: number,
+  quotes: readonly { text: string; author: string }[] = [],
 ): CapabilityActionCallReview => {
   const language = locale?.startsWith("de") ? "de" : "en";
   const label =
@@ -70,16 +71,16 @@ export const discussionReview = (
     slots: { item: { kind: "object", title: label, ...(item ? { ref: item } : {}) } },
     view: {
       version: 1,
-      blocks:
+      blocks: [
+        ...quotes.map((quote) => ({ kind: "Text" as const, text: `> ${quote.text} — ${quote.author}` })),
         operation === "delete"
-          ? [{ kind: "Text", text: body }]
-          : [
-              {
-                kind: "Draft",
-                context: [{ label: language === "de" ? "Ort" : "Place", value: label }],
-                fields: [{ name: "body", label: language === "de" ? "Text" : "Body", type: "textarea", value: body }],
-              },
-            ],
+          ? { kind: "Text", text: body }
+          : {
+              kind: "Draft",
+              context: [{ label: language === "de" ? "Ort" : "Place", value: label }],
+              fields: [{ name: "body", label: language === "de" ? "Text" : "Body", type: "textarea", value: body }],
+            },
+      ],
     },
     ...(operation === "post" ? { reach: "shared" as const } : {}),
   };

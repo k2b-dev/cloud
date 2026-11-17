@@ -907,7 +907,18 @@ when a person must answer; do not poll for approval.
 One required key identifies the intended message across Code runs for the same
 account and operation. Repeating it recovers the accepted message; the dispatcher
 may replay its admission response. Use `ai.chat.read` for current state. Changing
-text, context or destination under that key returns `idempotency_conflict`.
+text or context under that key returns `idempotency_conflict`. The accepted
+receipt keeps its original destination after a chat-binding change, queue
+removal, or a later budget refusal. A new destination needs a new key.
+
+Automation and inter-chat sends have 32 pending places per chat, separate from
+the person's composer queue. Each source Code or source chat can occupy one
+place in a destination chat. Further sends return `chat_busy`; use a later
+scheduled run to try again. Cloud rechecks ownership, source authority, enabled
+Code and allowances when the message starts. A failure at this point is final
+for that message, releases its place, and lets the next queued message start.
+Re-enabling Code does not restart failed messages. The person may remove a
+waiting automation message, but cannot edit or retry it.
 
 An unrestricted signed-in person, a person-initiated Gustav turn and personal
 Code may send to that person's active chat. App sessions and source chats with

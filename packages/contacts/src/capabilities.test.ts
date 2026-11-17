@@ -3,6 +3,7 @@ import { bindView, validateBlocks } from "@k2b/cloud/blocks";
 import { capabilityCallFromTool, normalizeCapabilityCall } from "@k2b/cloud/capabilities/server";
 import {
   assertCapabilityReview,
+  assertDiscussionContainersPage,
   assertResourceOpenLink,
   assertResourceView,
   compileCapabilityManifest,
@@ -1212,9 +1213,14 @@ describe("Contacts discussion provider", () => {
     if (!first.ok) throw new Error("Container list failed");
     expect(query.data.safeParse(first.data.data).success).toBeTrue();
     expect(first.data.data.items).toEqual([{ ref: { type: "contacts.book", id: publicBookId }, title: book.name }]);
-    expect(first.data.data.next).toBeString();
+    const next = first.data.data.next;
+    if (!next) throw new Error("Expected a continuation cursor");
+    // A paginated Query's page mirrors its continuation cursor.
+    expect(first.data.page).toEqual({ hasMore: true, nextCursor: next });
+    assertDiscussionContainersPage(first.data);
     const last = await query.run(query.input.parse({ query: "Test", limit: 3, cursor: first.data.data.next }), context);
-    expect(last).toMatchObject({ ok: true, data: { data: { next: null } } });
+    expect(last).toMatchObject({ ok: true, data: { data: { next: null }, page: { hasMore: false } } });
+    if (last.ok) assertDiscussionContainersPage(last.data);
     expect(list).toHaveBeenLastCalledWith(
       expect.objectContaining({
         subject: context.accessSubject,

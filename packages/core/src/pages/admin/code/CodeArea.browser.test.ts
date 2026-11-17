@@ -65,6 +65,89 @@ const boxes = (selectors: string[]) =>
   );
 const tab = (name: string) => page.getByRole("tab", { name: new RegExp(`^${name}\\b`) });
 
+test("an approval keeps its version in one line next to a long title, on a wide screen and a phone", async () => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 780 },
+  ]) {
+    await goto("sec=approvals&state=long", viewport);
+    await settled(page);
+    const versions = await page.locator(".core-code-approvals__version").evaluateAll((elements) =>
+      elements.map((element) => {
+        const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
+        return { text: element.textContent, lines: Math.round(element.getBoundingClientRect().height / lineHeight) };
+      }),
+    );
+    expect(versions.length).toBeGreaterThan(0);
+    for (const version of versions)
+      expect({ ...version, viewport: viewport.width }).toEqual({ ...version, lines: 1, viewport: viewport.width });
+  }
+}, 30_000);
+
+test("approval rows give each column the width it needs: changes stay whole, columns line up, nothing overlaps", async () => {
+  /** Per row: lines of the title and of the main change, where the change starts, and whether parts overlap. */
+  const measure = () =>
+    page.locator(".core-code-approvals__row").evaluateAll((elements) =>
+      elements.map((row) => {
+        const lines = (element: Element | null) => {
+          if (!element) return 0;
+          const height = Number.parseFloat(getComputedStyle(element).lineHeight);
+          return Math.round(element.getBoundingClientRect().height / height);
+        };
+        const parts = [".core-code-approvals__what", ".core-code-approvals__change", ".core-code-approvals__when"].map((selector) =>
+          row.querySelector(selector)!.getBoundingClientRect(),
+        );
+        const overlaps = parts.some((box, index) =>
+          parts.some(
+            (other, otherIndex) =>
+              otherIndex > index &&
+              box.left < other.right - 1 &&
+              other.left < box.right - 1 &&
+              box.top < other.bottom - 1 &&
+              other.top < box.bottom - 1,
+          ),
+        );
+        return {
+          title: lines(row.querySelector(".core-code-approvals__title")),
+          change: lines(row.querySelector(".core-code-approvals__main span")),
+          changeLeft: Math.round(parts[1]!.left),
+          overlaps,
+        };
+      }),
+    );
+  // The walkthrough's title is longer than its row's share: it wraps alone, every change sentence stays one line.
+  await goto("sec=approvals&state=long", { width: 1440, height: 900 });
+  await settled(page);
+  const wide = await measure();
+  expect(wide.map((row) => row.change)).toEqual(wide.map(() => 1));
+  expect(new Set(wide.map((row) => row.changeLeft)).size).toBe(1);
+  expect(wide.some((row) => row.overlaps)).toBe(false);
+  // Decided: short chips leave the title the width it needs.
+  await goto("sec=approvals&tab=decided&state=long", { width: 1440, height: 900 });
+  await settled(page);
+  expect((await measure()).map((row) => row.title)).toEqual([1, 1, 1]);
+  // Beside the two navigation columns the list is narrow; it stacks instead of squeezing a column.
+  for (const width of [780, 1024, 1180]) {
+    await goto("sec=approvals&state=long", { width, height: 900 });
+    await settled(page);
+    expect({ width, overlaps: (await measure()).some((row) => row.overlaps) }).toEqual({ width, overlaps: false });
+  }
+}, 60_000);
+
+test("the area without a section shows the approvals next to the area column, and only the area on a phone", async () => {
+  await goto("");
+  expect(await page.getByRole("heading", { name: "Freigaben" }).first().isVisible()).toBe(true);
+  expect(await page.locator(".core-code-approvals__row").first().isVisible()).toBe(true);
+  await goto("", { width: 390, height: 780 });
+  expect(await page.locator(".core-code-approvals__row").first().isVisible()).toBe(false);
+  expect(
+    await page
+      .getByRole("link", { name: /Freigaben/ })
+      .first()
+      .isVisible(),
+  ).toBe(true);
+}, 30_000);
+
 test("a review opens at its head with one row of tabs, and the approval with three decisions in view", async () => {
   for (const viewport of [
     { width: 1440, height: 900 },
@@ -91,6 +174,8 @@ test("switching tabs keeps head and tabs in place, writes ?tab= and survives a r
   const before = await boxes(fixed);
   await tab("Code").click();
   await page.locator(".k2b-code-diff").first().waitFor();
+  // Source remains available in the administrator's dedicated approval review.
+  expect(await page.locator(".k2b-code-diff").first().innerText()).toContain("@sdk");
   expect(new URL(page.url()).searchParams.get("tab")).toBe("code");
   expect(await boxes(fixed)).toEqual(before);
   await tab("Diff").click();
@@ -173,6 +258,7 @@ test("requesting changes asks for a text in a dialog that names who gets it, kee
   await dialog.getByText("3 Kommentare am Code gehen mit.").waitFor();
   // The decision dialog is Cloud's administration, not AI: it never carries the approval's AI colour scope.
   expect(await page.evaluate(() => document.querySelector("dialog[open]")?.closest("[data-k2b-primary]") === null)).toBe(true);
+  await settled(page);
   const buttons = await dialog.getByRole("button", { name: "Änderungen anfordern" }).boundingBox();
   await dialog.getByRole("button", { name: "Änderungen anfordern" }).click();
   await dialog.getByText("Schreib kurz, was sich ändern soll.").waitFor();

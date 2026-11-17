@@ -762,18 +762,19 @@ describe("Code page in a browser", () => {
       await page.evaluate(() => {
         const seen = window as unknown as { valueWhenScannerLeft?: string };
         let opened = false;
-        // The label's card is a closed dialog beside the page all along; the scanner is the other one.
-        const scanner = '[role="dialog"]:not(.code-page-provenance__card)';
+        // Closing removes [open] immediately; the inert frame and its content stay until the exit fade ends.
+        const scanner = '[role="dialog"][open]:not(.code-page-provenance__card)';
         const observer = new MutationObserver(() => {
           if (document.querySelector(scanner)) opened = true;
           if (!opened || document.querySelector(scanner)) return;
           seen.valueWhenScannerLeft = document.querySelector<HTMLInputElement>('input[name="barcode"]')!.value;
           observer.disconnect();
         });
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["open"] });
       });
       await page.getByRole("button", { name: "Scan", exact: true }).click();
       await page.getByRole("dialog", { name: "Scan code" }).waitFor({ state: "detached" });
+      await page.waitForFunction(() => (window as unknown as { valueWhenScannerLeft?: string }).valueWhenScannerLeft !== undefined);
       expect(await page.evaluate(() => (window as unknown as { valueWhenScannerLeft?: string }).valueWhenScannerLeft)).toBe("W-42");
       expect(await page.locator('input[name="barcode"]').inputValue()).toBe("W-42");
       // Closing the scanner leaves its history entry at the same address: nothing loads and nothing is sent.

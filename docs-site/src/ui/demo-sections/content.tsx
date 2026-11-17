@@ -3,6 +3,8 @@ import {
   BalanceSummary,
   Button,
   Chart,
+  Chat,
+  ChatComposerQuotes,
   CodeDisplay,
   createDataTableView,
   DataTable,
@@ -46,6 +48,7 @@ import {
   MatchText,
   MessageEventGroup,
   MessageEventRow,
+  MessageQuote,
   MessageRow,
   type MessageRowAttachment,
   type MessageRowStatus,
@@ -63,6 +66,7 @@ import {
   ReactionBar,
   reactionPeople,
   SegmentedControl,
+  SelectionAction,
   StatusBadge,
   Steps,
   StructuredDataPreview,
@@ -1820,6 +1824,144 @@ const MessageRowsDemo = () => {
   );
 };
 
+/** One quoted passage outside a MessageRow, as an assistant chat shows it: author and passage, a long one, one to jump back from. */
+const MessageQuoteDemo = () => {
+  const [jumps, setJumps] = createSignal(0);
+  const long =
+    "The stand gets one power socket with 3 kW, included in the offer. Internet comes from the fair, billed separately per day, and the cable run to the stand is ordered with it no later than two weeks before the build-up starts.";
+  return (
+    <DemoCard
+      id="message-quote"
+      chip={{ kind: "component", name: "MessageQuote", from: "@k2b/ui" }}
+      description="A quoted passage for a message that is not a MessageRow. It shows the passage in at most two lines and its author below; a long passage ends with an ellipsis. With onSelect it is a button that jumps back to the original."
+      code={`<div class="k2b-message-quotes">
+  <MessageQuote quote={{ author: "Gustav", text: passage }} />
+  <MessageQuote quote={{ author: "Lea Muster", text: passage, onSelect: () => jumpTo(id) }} />
+</div>`}
+    >
+      <div style={{ display: "grid", gap: "0.75rem", "max-width": "28rem" }}>
+        <div class="k2b-message-quotes">
+          <MessageQuote quote={{ author: "Gustav", text: "The power socket with 3 kW is included in the offer." }} />
+        </div>
+        <div class="k2b-message-quotes">
+          <MessageQuote quote={{ author: "Lea Muster", text: long }} />
+        </div>
+        <div class="k2b-message-quotes">
+          <MessageQuote
+            quote={{ author: "Ben Schulz", text: "I send my notes by four.", onSelect: () => setJumps((count) => count + 1) }}
+          />
+        </div>
+        <p class="text-xs text-dimmed" aria-live="polite">
+          {jumps() ? `Jumped back to the original ${jumps()} times.` : "Select the last quote to jump back to its original."}
+        </p>
+      </div>
+    </DemoCard>
+  );
+};
+
+type QuoteEntry = { id: string; author: string; own?: boolean; text: string; quotes?: { id: string; author: string; text: string }[] };
+/** Select part of a message, quote it, and answer: the quotes stand above the field and then above the sent text. */
+const MessageQuotesDemo = () => {
+  const [entries, setEntries] = createSignal<QuoteEntry[]>([
+    { id: "q1", author: "Lea Muster", text: "The quarterly report is ready for review, the numbers are in the shared folder." },
+    { id: "q2", author: "Ben Schulz", text: "Thanks! I read it after lunch and send my notes by four." },
+  ]);
+  const [quotes, setQuotes] = createSignal<{ key: string; id: string; author: string; text: string }[]>([]);
+  const [draft, setDraft] = createSignal("");
+  let feed: VirtualFeedController | undefined;
+  let history!: HTMLDivElement;
+  return (
+    <DemoCard
+      id="message-quotes"
+      chip={[
+        { kind: "component", name: "SelectionAction", from: "@k2b/ui" },
+        { kind: "component", name: "ChatComposerQuotes", from: "@k2b/ui" },
+        { kind: "component", name: "MessageRow", from: "@k2b/ui" },
+      ]}
+      description="Select words in a message and press Quote, or Tab after a keyboard selection. The passage waits above the field; the sent message shows it above its text, and a click on it jumps back and tints the passage."
+      code={`<SelectionAction root={history} label="Quote" icon="ti ti-quote"
+  within={(node) => (node instanceof Element ? node : node.parentElement)?.closest(".k2b-message-row__text")}
+  onAction={({ text, element }) => addQuote(keyOf(element), text)} />
+<Chat.Composer variant="conversation" accessory={draft.quotes.length ? <ChatComposerQuotes quotes={draft.quotes.map((quote) => ({ ...quote, onRemove: () => remove(quote) }))} /> : undefined} … />
+<MessageRow quotes={message.quotes.map((quote) => ({ ...quote,
+  onSelect: () => feed.scrollToKey(quote.id, { highlight: true, highlightText: quote.text }) }))} … />`}
+    >
+      <div ref={history} style={{ display: "flex", "flex-direction": "column", gap: "0.5rem", "max-width": "40rem" }}>
+        <div style={{ display: "flex", height: "20rem" }}>
+          <VirtualFeed
+            items={entries()}
+            getKey={(entry) => entry.id}
+            estimateSize={() => 60}
+            label="Quotes demo"
+            controller={(controller) => (feed = controller)}
+          >
+            {(entry) => (
+              <MessageRow
+                author={{ name: entry.author }}
+                own={entry.own}
+                text={entry.text}
+                time="10:24"
+                quotes={entry.quotes?.map((quote) => ({
+                  author: quote.author,
+                  text: quote.text,
+                  onSelect: () => void feed?.scrollToKey(quote.id, { highlight: true, highlightText: quote.text }),
+                }))}
+              />
+            )}
+          </VirtualFeed>
+        </div>
+        <Chat.Composer
+          variant="conversation"
+          value={draft()}
+          onValueChange={setDraft}
+          inputLabel="Answer"
+          placeholder="Write an answer"
+          accessory={
+            quotes().length ? (
+              <ChatComposerQuotes
+                quotes={quotes().map((quote) => ({
+                  id: quote.key,
+                  author: quote.author,
+                  text: quote.text,
+                  onRemove: () => setQuotes((list) => list.filter((other) => other.key !== quote.key)),
+                  onSelect: () => void feed?.scrollToKey(quote.id, { highlight: true, highlightText: quote.text }),
+                }))}
+              />
+            ) : undefined
+          }
+          onSubmit={({ text }) => {
+            setEntries((list) => [
+              ...list,
+              {
+                id: `q${list.length + 1}`,
+                author: "You",
+                own: true,
+                text,
+                quotes: quotes().map(({ id, author, text }) => ({ id, author, text })),
+              },
+            ]);
+            setQuotes([]);
+            requestAnimationFrame(() => feed?.scrollToEnd());
+            return true;
+          }}
+        />
+      </div>
+      <SelectionAction
+        root={history}
+        label="Quote"
+        icon="ti ti-quote"
+        within={(node) => (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>(".k2b-message-row__text")}
+        onAction={({ text, element }) => {
+          const id = element.closest<HTMLElement>(".k2b-virtual-feed__item")?.dataset.key;
+          const entry = entries().find((candidate) => candidate.id === id);
+          if (entry)
+            setQuotes((list) => [...list, { key: `${id}-${list.length}-${text.length}`, id: entry.id, author: entry.author, text }]);
+        }}
+      />
+    </DemoCard>
+  );
+};
+
 const StructuredDemo = () => (
   <DemoCard
     id="structured-data"
@@ -2669,6 +2811,8 @@ const demos: DemoSection = {
   "message-rows": () => (
     <DemoGrid columns="one">
       <MessageRowsDemo />
+      <MessageQuotesDemo />
+      <MessageQuoteDemo />
     </DemoGrid>
   ),
   "reaction-bar": () => <ReactionBarDemos />,

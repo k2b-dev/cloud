@@ -21,8 +21,12 @@ const continued: string[] = [];
 const opened: string[] = [];
 const approvals: unknown[] = [];
 const revoked: string[] = [];
+const checks: string[] = [];
+const shownQuestions: string[] = [];
 Object.assign(window, {
   continued,
+  checks,
+  shownQuestions,
   approvals,
   revoked,
   opened,
@@ -42,6 +46,11 @@ render(
   () => (
     <AiChatActionsProvider
       actions={{
+        onShowQuestion: (anchor) => void shownQuestions.push(anchor),
+        onCheckAction: async (request) => {
+          checks.push(request.callId);
+          return { state: "done", at: "2026-10-07T10:00:00Z" };
+        },
         onContinueTurn: (message) => void continued.push(message),
         onApproval: async (request, input) => void approvals.push({ callId: request.callId, ...input }),
         onRevokeWebsite: async (origin) => void revoked.push(origin),
@@ -56,7 +65,7 @@ render(
             <i class="ti ti-circle-check" aria-hidden="true" />
             <p style="margin:0">Jana Probe hat Version {entry.meta?.codeDecision?.number} freigegeben</p>
             <Button type="button" size="sm" variant="secondary">
-              Einschalten …
+              Zur Karte
             </Button>
           </div>
         ),

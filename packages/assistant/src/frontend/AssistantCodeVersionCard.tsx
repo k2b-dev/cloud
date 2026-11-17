@@ -1,4 +1,5 @@
 import { ApprovalFrame, type ApprovalFrameProps } from "@k2b/cloud/approvals/ui";
+import { formatCodeMoment } from "@k2b/cloud/code/schedule";
 import type { CodeVersionReadModel } from "@k2b/cloud/contracts/code-read-model";
 import { Avatar, Button, ChangeList, type ChangeListItem, Chat, type ChatOutcomeLine, Skeleton, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
@@ -19,7 +20,7 @@ import {
   stopCodeReviewRevision,
   withdrawCodeVersion,
 } from "./code-activation";
-import { browserCodeInvoke, formatCodeTime } from "./code-client";
+import { browserCodeInvoke } from "./code-client";
 import { codeVersionCardMessages } from "./code-version-card-messages";
 
 const POLLS = 90;
@@ -271,18 +272,19 @@ export default function AssistantCodeVersionCard(props: {
   };
   /** The version that runs until this one is switched on; `null` for a first version. */
   const keep = () => current()?.preview.running ?? null;
+  /** `short` is the moment as every Code surface writes it; `phrase` sets it in a sentence ("today at 10:13", "on …"). */
   const when = (iso: string) => {
+    const short = formatCodeMoment(iso, { locale: locale(), timeZone: props.timeZone });
     const day = (date: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: props.timeZone, dateStyle: "short" }).format(date);
     try {
       if (day(new Date(iso)) === day(new Date())) {
         const time = new Intl.DateTimeFormat(locale(), { timeZone: props.timeZone, timeStyle: "short" }).format(new Date(iso));
-        return { short: time, phrase: t().todayAt({ time }) };
+        return { short, phrase: t().todayAt({ time }) };
       }
     } catch {
-      /* An unknown time zone falls back to the full date below. */
+      /* An unknown time zone reads as a date; the moment itself falls back to UTC. */
     }
-    const date = formatCodeTime(iso, locale(), props.timeZone);
-    return { short: date, phrase: t().onDate({ date }) };
+    return { short, phrase: t().onDate({ date: short }) };
   };
   const relativeRun = (iso: string) => {
     const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60_000);
@@ -745,6 +747,8 @@ export default function AssistantCodeVersionCard(props: {
     return {
       ...base,
       state: "open",
+      // The head always says where the version stands: approved by an admin, or ready without one (v12 §9).
+      status: approved ? { tone: "done", label: words.statusApproved } : { tone: "waiting", label: words.statusReady, icon: "ti ti-power" },
       sentence: sentence(words.askOn),
       reason: versionReason(false),
       unavailable: blocked,

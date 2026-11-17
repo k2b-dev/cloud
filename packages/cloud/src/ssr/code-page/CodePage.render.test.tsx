@@ -1428,3 +1428,22 @@ test("personal Code without a chat offers its owner to choose one", () => {
   expect(page).not.toContain("Diese Automation hat noch keinen Chat.");
   expect(page).not.toContain("Chat wählen …");
 });
+
+// Rundgang 6, Fable 8: a new week without counted effects says so where the two numbers stand, above the latest results.
+test("a week without counted effects says so in place of the numbers", () => {
+  const data = codePageFixture("week-start");
+  const page = renderedText(
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    ),
+    " ",
+  );
+  expect(page).toContain("Diese Woche noch nichts gezählt. Darunter stehen die letzten Ergebnisse.");
+  expect(page).toContain("Lieferung Polsterei Weber");
+  expect(page.indexOf("Diese Woche noch nichts gezählt.")).toBeLessThan(page.indexOf("Lieferung Polsterei Weber"));
+});

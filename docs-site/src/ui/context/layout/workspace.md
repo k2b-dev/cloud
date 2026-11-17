@@ -915,7 +915,11 @@ compositions. A `SidebarSection` in the content area, such as a list page
 that replaces the sidebar on a phone, keeps its header and actions at every
 width. With a mouse or trackpad, including a tablet with a mouse,
 section actions stay hidden until the header is hovered or contains keyboard
-focus. Touch-only screens always show them. An open dropdown keeps its section
+focus. Touch-only screens always show them. Wrap an action that people must
+find, such as an entry point for discovering more, in
+`AppWorkspace.SidebarSectionAction visibility="always"`; it stays shown in the
+same reserved box, while unwrapped actions and the default `"hover"` keep the
+behavior above. An open dropdown keeps its section
 action visible and interactive until the menu closes.
 
 Section titles are quiet sentence-case labels. Keep them short and let the
@@ -1306,7 +1310,7 @@ type AppWorkspaceSidebarSwitcherProps = {
 };
 
 type AppWorkspaceSwitcherOption = {
-  id: string; label: string; description?: string; icon?: string; color?: string; href: string;
+  id: string; label: string; description?: string; descriptionVisual?: () => JSX.Element; icon?: string; color?: string; href: string;
 };
 
 type AppWorkspaceSwitcherAction = {

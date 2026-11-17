@@ -3,7 +3,7 @@ import { dropdownPosition } from "../actions/Dropdown";
 import { prefersMenuSheet } from "../actions/phone-sheet";
 import { dialogCore } from "../feedback/dialog-core";
 import { LocaleProvider, useLocale } from "../intl/locale";
-import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
+import { withBottomSheet } from "../layout/bottom-sheet-load";
 import { Avatar, type AvatarShape, type AvatarTone } from "./Avatar";
 import { useAvatarMessages } from "./avatar-messages";
 
@@ -220,8 +220,11 @@ export function AvatarStack(props: AvatarStackProps): JSX.Element {
     setOpen(true);
     let chosen: AvatarStackPerson | undefined;
     const current = locale();
-    void dialogCore
-      .open<void>(
+    let loaded = false;
+    // The sheet's code loads on a phone in the background; a wide screen never needs it.
+    void withBottomSheet(({ default: BottomSheet, bottomSheetOptions }) => {
+      loaded = true;
+      return dialogCore.open<void>(
         (close, context) => (
           <LocaleProvider locale={current}>
             <BottomSheet onDismiss={context.requestDismiss}>
@@ -243,11 +246,23 @@ export function AvatarStack(props: AvatarStackProps): JSX.Element {
           </LocaleProvider>
         ),
         { ...bottomSheetOptions, ariaLabel: props.title, history: true, signal: disposed.signal },
+      );
+    })
+      .then(
+        () => chosen?.onSelect?.(),
+        (error: unknown) => {
+          if (loaded) throw error;
+          globalThis.reportError(error);
+          // The sheet's code did not load: the same list opens beside the stack, and the next tap tries the sheet again.
+          if (disposed.signal.aborted || !trigger.isConnected) return;
+          popover.showPopover();
+          place();
+        },
       )
-      .then(() => chosen?.onSelect?.())
       .finally(() => {
         sheetOpen = false;
-        setOpen(false);
+        // The popover that opened in place of a sheet reports its own state.
+        if (!popover.matches(":popover-open")) setOpen(false);
       });
   };
 

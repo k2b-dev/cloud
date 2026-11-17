@@ -5,7 +5,7 @@ section: Operations
 order: 1166
 description: Read administrator diagnostics, configure settings, and approve dangerous actions through cld.
 tags: [cli, administration, security, operations]
-updated: 2026-10-31
+updated: 2026-11-16
 ---
 
 # Administer Cloud through the CLI
@@ -34,6 +34,16 @@ OAuth reads redact payload previews, reasons and raw errors without explicit `ad
 scope. Schedule error text and metadata follow the same rule. Existing app and
 resource restrictions remain. Read the selected module's reference before
 using its commands: `cld admin reference` and `cld pulse reference`.
+
+## Switch maintenance mode
+
+`cld admin maintenance on|until|off|status` switches the whole Cloud into
+maintenance and back; `on --quiesce` also lets background work in every app go
+quiet, and `on --no-quiesce` resumes it while maintenance stays; see
+[Maintenance mode](/en/docs/operations/maintenance-mode).
+While it is on, other `cld` commands print one sentence and exit with code
+`75`. `cld admin maintenance bypass` prints a personal link that shows you
+the Cloud during the maintenance.
 
 ## Discover and configure settings
 

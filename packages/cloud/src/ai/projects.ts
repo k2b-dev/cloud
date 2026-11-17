@@ -301,8 +301,8 @@ const toAdminProject = (row: AdminProjectRow): AiProjectAdminListItem => ({
   updatedAt: iso(row.updated_at),
 });
 
-const getRow = async (projectId: string): Promise<ProjectRow | null> => {
-  const rows = await sql<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid`;
+const getRow = async (projectId: string, db: SQL = sql): Promise<ProjectRow | null> => {
+  const rows = await db<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid`;
   return rows[0] ?? null;
 };
 
@@ -387,10 +387,11 @@ const requireProject = async (
   projectId: string,
   subject: AiResourceContext | null,
   permission: AiProjectPermission = "read",
+  db: SQL = sql,
 ): Promise<AiProject | null> => {
-  const row = await getRow(projectId);
+  const row = await getRow(projectId, db);
   if (!row) return null;
-  const project = await toProject(row, subject);
+  const project = await toProject(row, subject, db);
   return project && hasPermission(project.permission, permission) ? project : null;
 };
 

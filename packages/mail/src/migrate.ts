@@ -935,6 +935,7 @@ const buildBackgroundIndex = async (index: BackgroundIndex, pool: SqlClient): Pr
     const mutex = indexBuildMutex();
     const lease = await mutex.acquire({ resource: "mail-indexes" });
     if (!lease) return "busy";
+    // runtime-timer: lease of a migration step during startup, which is not background work.
     const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
     renewal.unref();
     try {
@@ -1057,6 +1058,7 @@ export const buildOptionalSearchIndex = async (): Promise<"unavailable" | "ready
     const mutex = indexBuildMutex();
     const lease = await mutex.acquire({ resource: "mail-indexes" });
     if (!lease) return "busy";
+    // runtime-timer: lease of a migration step during startup, which is not background work.
     const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
     renewal.unref();
     try {

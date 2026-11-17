@@ -87,7 +87,7 @@ text. `status === 403` means forbidden, while `status === 404` means missing.
 | `code_file_invalid`, `code_file_size_limit`, `code_file_size_mismatch`, `code_file_spent` | A FileRef from another run, expired, changed, too large, incomplete or already used | Read a fresh reference in this run right before the import or AI call ([FileRef](file-ref.md)) |
 | `code_result_unknown` | A call's outcome is unknown after a lost attempt | Inspect the target before running again |
 | `idempotency_conflict` | The same key with different input | Derive the key from all of the effect's input |
-| `chat_busy` | The Gustav chat is in another turn | Try at a later schedule |
+| `chat_busy` | The chat is full, or a Code of this person already has a message waiting or running | Try at a later schedule |
 | **Skipped, previous run is still running** | A tick overlapped the previous run | Make the run shorter or the schedule rarer |
 | `previous_schedule_running` | Same as above, as a stable outcome | As above |
 

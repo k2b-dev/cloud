@@ -1,4 +1,5 @@
 import { sql } from "../runtime/clients";
+import { aiNextMessageText } from "./next-message-text";
 import type { AiStoredMessage } from "./types";
 
 /** Separate answer metadata: model history, exports, indexing and notifications never load these columns. */
@@ -23,7 +24,7 @@ export const saveAiNextMessage = async (input: { conversationId: string; turnId:
         AND t.run_config->'actor'->>'kind' = 'user' AND t.run_config->'actor'->'user'->>'id' = ${input.userId}
         AND NOT EXISTS (SELECT 1 FROM ai.turn_steers WHERE turn_id = t.id AND status <> 'discarded')
         AND NOT EXISTS (SELECT 1 FROM ai.pending_actions WHERE turn_id = t.id AND status = 'pending')
-        AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = m.conversation_id AND status IN ('pending','failed'))
+        AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = m.conversation_id AND (status='pending' OR (status='failed' AND automation_source IS NULL)))
       ORDER BY m.seq DESC LIMIT 1
     ) AND suggested_next_message IS NULL
   `;
@@ -45,12 +46,14 @@ export const projectAiNextMessages = async (
       AND m.seq = (SELECT max(seq) FROM ai.messages WHERE conversation_id = m.conversation_id AND kind = 'message')
       AND NOT EXISTS (SELECT 1 FROM ai.turn_steers WHERE turn_id = t.id AND status <> 'discarded')
       AND NOT EXISTS (SELECT 1 FROM ai.pending_actions WHERE turn_id = t.id AND status = 'pending')
-      AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = m.conversation_id AND status IN ('pending','failed'))
+      AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = m.conversation_id AND (status='pending' OR (status='failed' AND automation_source IS NULL)))
   `;
   const suggestions = new Map(rows.map((row) => [row.short_id, row.suggested_next_message]));
   return messages.map(({ suggestedNextMessage: _, ...message }) => {
     const suggestion = suggestions.get(message.shortId);
-    return suggestion ? { ...message, suggestedNextMessage: suggestion } : message;
+    // A suggestion stored before its rules held, such as "null", never reaches the composer.
+    const text = aiNextMessageText(suggestion?.text);
+    return suggestion && text ? { ...message, suggestedNextMessage: { ...suggestion, text } } : message;
   });
 };
 

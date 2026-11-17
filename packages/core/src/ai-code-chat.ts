@@ -21,6 +21,8 @@ export const personalCodeRun = (context: CapabilityExecutionContext) => {
     ? { userId: context.user.id, versionId: delegation.workloadId, runId: delegation.workloadRun }
     : null;
 };
+/** A chat's own turn never writes into the same chat; it answers there directly. */
+export const sendsToItself = (origin: AiChatOrigin, chatShortId: string) => origin.kind === "chat" && origin.id === chatShortId;
 export const ownedActiveChat = async (account: string, chatId: string, db: SQL, options: { lock?: boolean } = {}) => {
   const [chat] = await db<{ id: string; short_id: string; title: string; project_id: string | null }[]>`
     SELECT id,short_id,title,project_id FROM ai.conversations
@@ -84,7 +86,16 @@ export const chatWriteAuthority = async (context: CapabilityExecutionContext, db
       : restricted();
   if (delegation.credentialKind !== "session") return restricted();
   const lease = await nestedInvocationLeases.read(delegation.invocationId);
-  if (!lease) return restricted();
+  // The source may still be valid; its lease is just not readable now. Never misreport that as a restriction.
+  // 409, not 503: the dispatcher releases the key, so the same call can be repeated.
+  if (!lease)
+    return fail({
+      code: "source_unavailable",
+      message: de
+        ? "Die Herkunft dieses Aufrufs lässt sich gerade nicht prüfen. Versuch es gleich noch einmal."
+        : "The source of this call cannot be checked right now. Try again shortly.",
+      status: 409 as const,
+    });
   if (!lease.assistantTurn)
     return lease.proof?.kind === "session" && lease.proof.userId === actor.user.id
       ? ok({

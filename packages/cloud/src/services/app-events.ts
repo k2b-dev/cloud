@@ -67,6 +67,7 @@ export const startAppEventBroker = async (): Promise<() => Promise<void>> => {
     log.warn("App event wake subscription failed; safety scan will recover", { error: message(error) });
   }
   const controller = new AbortController();
+  // runtime-timer: reads app event declarations from the registry; the dispatcher itself follows quiesce.
   const registryReader = superviseRuntimeTask({
     name: "App event declarations",
     signal: controller.signal,

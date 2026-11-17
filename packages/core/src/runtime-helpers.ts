@@ -7,6 +7,7 @@ import { startAppCatalogMaintenance } from "@k2b/cloud/services/app-catalogs";
 import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
+import { validateQueuedChatStart } from "./ai-chat-queue";
 import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activation-maintenance";
 import { createCodeAuthoringChatTools } from "./code/chat-tools";
 import { codeDatabaseRetentionRuntime } from "./code/database-retention-runtime";
@@ -124,6 +125,7 @@ const startAppSkillsWatcher = async (): Promise<void> => {
   if (appSkillsTask) return;
   await refreshAppSkills();
   appSkillsAbort = new AbortController();
+  // runtime-timer: registry watcher for help skills that requests read.
   appSkillsTask = superviseRuntimeTask({
     name: "App skills watcher",
     signal: appSkillsAbort.signal,
@@ -238,6 +240,7 @@ export const startCoreServices = async (
     await retireChatTaskSchedules();
     stopCloudAiRuntime = startAiRuntime({
       tools: createCodeAuthoringChatTools(),
+      validateQueuedChatStart,
       onApprovalRequested: async ({ approvalId }) => {
         const [notice] = await Promise.allSettled([
           aiNotifications.notifyApprovalWaiting(approvalId),

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../../../ui/test/browser";
 import { startChatGallery } from "./chat-gallery.browser-fixture";
 
 // The Gustav chat's details are measured in a real browser: sizes, corners, and baselines depend on fonts and layout.
@@ -206,21 +206,36 @@ test("what a message brings along stands above it: images as previews, files as 
 }, 60_000);
 
 for (const width of [1440, 390])
-  test(`the work line says in one line what the turn did, with ✦ and app tiles, and opens the steps in words (${width} px)`, async () => {
+  test(`the work line says in one line what the turn did, with only ✦, its steps and time on the right, and opens the steps on one grid (${width} px)`, async () => {
     const { page, close } = await open("antwort", width);
     try {
       const line = ".ai-turn-work > summary";
-      expect(await page.locator(`${line} .ai-turn-work__text`).textContent()).toBe(
-        "In Mail und Dateien nachgesehen · 5 Schritte, 1 ohne Zugriff",
-      );
-      // The sentence gives way first: the step count and what did not go through are never cut.
+      // The sentence names only what the turn did; steps and time stand right in their own columns (Feinschliff 4).
+      expect(await page.locator(`${line} .ai-turn-work__sentence`).textContent()).toBe("In Mail und Dateien nachgesehen");
+      // The sentence is never cut: a phone gives it two 18 px lines in its 44 px row (Feinschliff 2). The whole sentence
+      // is also in the title.
+      const sentenceFits = await page
+        .locator(`${line} .ai-turn-work__sentence`)
+        .evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5 && node.scrollHeight <= node.clientHeight + 0.5);
+      expect(sentenceFits).toBe(true);
+      expect(await page.locator(`${line} .ai-turn-work__sentence`).getAttribute("title")).toBe("In Mail und Dateien nachgesehen");
+      // The steps and what did not go through stand in meta, never cut; on a phone the plain count gives way beside a
+      // status, which takes the warning colour.
       const whole = await page.locator(`${line} .ai-turn-work__steps`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5);
       expect(whole).toBe(true);
-      // On a phone the plain step count gives way to the sentence; what did not go through stays.
-      const visible = (await page.locator(`${line} .ai-turn-work__steps`).innerText()).replace(/\s+/g, " ").trim();
-      expect(visible).toBe(width < 768 ? "· 1 ohne Zugriff" : "· 5 Schritte, 1 ohne Zugriff");
-      // ✦ in the AI colour, then one 20 px tile per app that went through, in the app's colour on its tint.
-      const spark = await page.locator(`${line} .ai-turn-work__lead > i`).evaluate((node) => getComputedStyle(node).color);
+      const meta = (await page.locator(`${line} .ai-turn-work__steps`).innerText()).replace(/\s+/g, " ").trim();
+      expect(meta).toBe(width < 768 ? "1 ohne Zugriff" : "5 Schritte · 1 ohne Zugriff");
+      const warning = await page.locator(`${line} .ai-turn-work__steps [data-tone="warning"]`).evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--k2b-warning-text)";
+        document.body.append(probe);
+        const value = getComputedStyle(probe).color;
+        probe.remove();
+        return getComputedStyle(node).color === value;
+      });
+      expect(warning).toBe(true);
+      // Only ✦ in the AI colour, without a tinted surface; the apps' icons stand at their steps (F4 A).
+      const spark = await page.locator(`${line} .k2b-chat-activity__leading`).evaluate((node) => getComputedStyle(node).color);
       const plum = await page.evaluate(() => {
         const probe = document.createElement("span");
         probe.style.color = "var(--k2b-ai-accent)";
@@ -230,55 +245,63 @@ for (const width of [1440, 390])
         return value;
       });
       expect(spark).toBe(plum);
-      const tiles = page.locator(`${line} .ai-app-tile`);
-      expect(await tiles.count()).toBe(2);
-      const tile = await box(page, `${line} .ai-app-tile`);
-      expect([tile.width, tile.height, tile.radius]).toEqual([20, 20, "6px"]);
-      // One line in 13 px, the time in 12 px tabular figures on the right, the chevron last.
+      expect(await page.locator(`${line} .ai-app-tile`).count()).toBe(0);
+      // One row of 32 px (44 px on a phone): the sentence in 13 px, meta and time in 12 px tabular figures.
       const row = await box(page, line);
-      expect(row.height).toBe(28);
-      expect(await page.locator(`${line} .ai-turn-work__text`).evaluate((node) => getComputedStyle(node).fontSize)).toBe("13px");
-      const time = page.locator(`${line} .ai-turn-work__meta`);
+      expect(row.height).toBe(width < 768 ? 44 : 32);
+      expect(await page.locator(`${line} .ai-turn-work__sentence`).evaluate((node) => getComputedStyle(node).fontSize)).toBe("13px");
+      const time = page.locator(`${line} .k2b-chat-activity__duration`);
       expect(await time.evaluate((node) => [getComputedStyle(node).fontSize, getComputedStyle(node).fontVariantNumeric])).toEqual([
         "12px",
         "tabular-nums",
       ]);
-      const ends = await page.locator(line).evaluate((node) => {
-        const chevron = node.querySelector(".k2b-chat-activity__chevron")!.getBoundingClientRect();
-        const meta = node.querySelector(".ai-turn-work__meta")!.getBoundingClientRect();
-        return {
-          chevronBehindTime: chevron.left >= meta.right,
-          rowRight: node.getBoundingClientRect().right - chevron.right,
-          chevronAfterTime: chevron.left - meta.right,
-        };
-      });
-      // The time and the chevron end the row, right-aligned on the work's right axis (Valentin, 15.11.).
-      expect(ends.chevronBehindTime).toBe(true);
-      expect(ends.chevronAfterTime).toBeLessThan(12);
-      expect(ends.rowRight).toBeLessThan(12);
+      // The right columns end on the right edge of the person's message (Valentin, 15.11.).
+      const edge = await page
+        .locator(line)
+        .evaluate((node) => node.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(node).paddingRight));
+      const bubble = await box(page, ".k2b-chat-message[data-role=user] .k2b-chat-message__bubble");
+      expect(Math.abs(edge - bubble.right)).toBeLessThanOrEqual(0.5);
 
-      // Opened: the steps in words, each with its tile on one axis; a refused step says why and what followed.
+      // Opened: one row per step, each icon without a surface on one axis; a refused step says so in meta.
       await page.locator(line).click();
       await settled(page);
       const steps = page.locator(".ai-turn-steps > .k2b-chat-activity");
       expect(await steps.count()).toBe(5);
-      expect(await steps.first().innerText()).toContain("Nachgedacht");
+      expect(await steps.first().locator(".k2b-chat-activity__copy").innerText()).toBe("Nachgedacht");
       // Finished reading steps say what happened, in the app's own past form (v12 image 03).
-      expect(await steps.nth(1).innerText()).toContain("In Mail gesucht");
-      expect(await steps.nth(2).innerText()).toContain("Unterhaltung gelesen");
-      expect(await steps.nth(3).innerText()).toContain("Datei gelesen");
+      expect(await steps.nth(1).locator(".k2b-chat-activity__copy").innerText()).toContain("In Mail gesucht");
+      expect(await steps.nth(2).locator(".k2b-chat-activity__copy").innerText()).toContain("Unterhaltung gelesen");
+      expect(await steps.nth(3).locator(".k2b-chat-activity__copy").innerText()).toContain("Datei gelesen");
+      expect(await page.locator(".ai-turn-steps .ai-app-tile").count()).toBe(0);
       const axis = await steps.evaluateAll((nodes) =>
-        nodes.map((node) => Math.round(node.querySelector(".ai-app-tile")!.getBoundingClientRect().left)),
+        nodes.map((node) => Math.round(node.querySelector(".k2b-chat-activity__leading")!.getBoundingClientRect().left)),
       );
       expect(new Set(axis).size).toBe(1);
       const denied = steps.last();
-      expect(await denied.innerText()).toContain("Kein Zugriff. Ohne dieses Ergebnis weitergearbeitet.");
-      expect(await denied.locator("small").evaluate((node) => getComputedStyle(node).color)).not.toBe(
-        await steps
-          .nth(1)
-          .locator("small")
-          .evaluate((node) => getComputedStyle(node).color),
-      );
+      expect(await denied.locator(".k2b-chat-activity__meta").innerText()).toBe("Kein Zugriff");
+      expect(await denied.locator(".k2b-chat-activity__meta").getAttribute("data-tone")).toBe("warning");
+      // Its card says why and what followed; opening and closing it moves no row.
+      const rows = () =>
+        page.locator(".ai-turn-work .k2b-chat-activity__row").evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const rect = node.getBoundingClientRect();
+            return [rect.top, rect.left, rect.width, rect.height];
+          }),
+        );
+      const before = await rows();
+      // A resting pointer opens the card of a step without actions.
+      await hoverInPlace(denied.getByRole("button", { name: /^Details: / }));
+      const card = page.locator(".k2b-hover-card:popover-open");
+      await card.waitFor();
+      const said = (await card.innerText()).replace(/\s+/g, " ");
+      expect(said).toContain("Folge: Ohne dieses Ergebnis weitergearbeitet.");
+      // The outcome stands once, in the card's second line.
+      expect(said.split("Kein Zugriff").length - 1).toBe(1);
+      expect(await rows()).toEqual(before);
+      await page.keyboard.press("Escape");
+      await card.waitFor({ state: "detached" }).catch(() => undefined);
+      expect(await page.locator(".k2b-hover-card:popover-open").count()).toBe(0);
+      expect(await rows()).toEqual(before);
       expect(await page.locator(".ai-turn-steps").innerText()).not.toContain("FORBIDDEN");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     } finally {
@@ -304,7 +327,7 @@ test("the running work line has the finished line's height, shimmers in 2.2 s, a
       }));
       if (motion === "reduce") expect(sentence.name).toBe("none");
       else expect(sentence).toEqual({ name: "k2b-chat-activity-shimmer", duration: "2.2s" });
-      // Tiles keep their colours while the sentence shimmers.
+      // ✦ keeps its colour while the sentence shimmers.
       expect(await page.locator(`${line} .k2b-chat-activity__leading`).evaluate((node) => getComputedStyle(node).animationName)).toBe(
         "none",
       );
@@ -391,13 +414,33 @@ for (const width of [1440, 390])
           Array.from(work.querySelectorAll<HTMLElement>(selector))
             .filter((node) => node.getClientRects().length > 0)
             .map((node) => node.getBoundingClientRect().right);
-        return { chevrons: right(".k2b-chat-activity__chevron"), metas: right(".ai-turn-work__meta") };
+        return {
+          ends: right(".k2b-chat-activity__row > .k2b-chat-activity__chevron, .k2b-chat-activity__info"),
+          metas: right(".k2b-chat-activity__meta"),
+          durations: right(".k2b-chat-activity__duration"),
+        };
       });
-      // The work line, its steps and the folded rows: at least three chevrons and three counts or times.
-      expect(edges.chevrons.length).toBeGreaterThanOrEqual(3);
+      // The work line, its steps and the folded rows: at least three chevrons or ⓘ and three counts.
+      expect(edges.ends.length).toBeGreaterThanOrEqual(3);
       expect(edges.metas.length).toBeGreaterThanOrEqual(3);
-      for (const list of [edges.chevrons, edges.metas]) expect(Math.max(...list) - Math.min(...list)).toBeLessThanOrEqual(0.5);
+      for (const list of [edges.ends, edges.metas, edges.durations].filter((list) => list.length > 0))
+        expect(Math.max(...list) - Math.min(...list)).toBeLessThanOrEqual(0.5);
     } finally {
       await close();
     }
   }, 60_000);
+
+test("a prepared automation reads as its effect and its examples, whole and without Code's tile (Feinschliff 4)", async () => {
+  const { page, close } = await open("automation", 1440);
+  try {
+    const line = ".ai-turn-work > summary";
+    expect(await page.locator(`${line} .ai-turn-work__sentence`).textContent()).toBe(
+      "Automation vorbereitet · 3 von 3 Beispielen erfolgreich",
+    );
+    expect(await page.locator(`${line} .ai-turn-work__sentence`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5)).toBe(true);
+    expect(await page.locator(`${line} .ai-app-tile`).count()).toBe(0);
+    expect((await page.locator(`${line} .ai-turn-work__steps`).innerText()).trim()).toBe("4 Schritte");
+  } finally {
+    await close();
+  }
+}, 60_000);

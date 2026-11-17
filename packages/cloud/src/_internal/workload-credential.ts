@@ -116,6 +116,7 @@ export const createAppWorkloadCredential = (options: {
   };
   const schedule = () => {
     if (!running) return;
+    // runtime-timer: keeps the workload credential valid that requests still use while quiet.
     timer = setTimeout(
       () => {
         void refreshOnce().finally(schedule);

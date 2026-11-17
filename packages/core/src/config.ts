@@ -126,7 +126,7 @@ export const app = defineApp({
     capabilities: { module: "src/cli/capabilities.ts", references: "src/cli-references/capabilities" },
   },
   panel: { href: "/panel", label: "Help", icon: "ti ti-help-circle" },
-  name: "Core",
+  name: "Cloud",
   icon: "ti ti-cloud",
   description: "Auth, search, admin, and platform services.",
   presentation: {
@@ -134,7 +134,7 @@ export const app = defineApp({
     translations: {
       de: {
         panelLabel: "Hilfe",
-        name: "Core",
+        name: "Cloud",
         description: "Anmeldung, Suche, Administration und Plattformdienste.",
         legalLinks: {
           "/impressum": "Impressum",
@@ -188,6 +188,7 @@ export const app = defineApp({
     "/api/admin/account-lifecycle",
     "/api/admin/core",
     "/api/admin/apps",
+    "/api/admin/maintenance",
     "/api/openapi.json",
     "/.well-known/cloud-session-jwks.json",
     "/.well-known/cloud-invocation-jwks.json",

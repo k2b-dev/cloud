@@ -8,6 +8,7 @@ import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences"
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityView } from "./capability-result";
 import { CapabilityViewBlock, gustavOrigin, gustavViewBlock, isKeyFigureView } from "./capability-view";
+import { CodeRunStepBody, isCodeRunStep } from "./code-run-step";
 import { isCodeStepResult } from "./code-step-words";
 import { CodeStepBody, CodeStepResult, hasCodeStepView } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
@@ -287,14 +288,6 @@ export function SurveyToolView(props: { turnId: string; block: ToolBlock; active
     props.block.status === "completed" && isRecord(props.block.result) && props.block.result.submitted === true ? props.block.result : null;
   return (
     <Switch fallback={<CloudSurveyBlock args={props.block.args} disabled />}>
-      <Match when={props.block.status === "awaiting_client"}>
-        <CloudSurveyBlock
-          args={props.block.args}
-          disabled={!submit || actions.actionDisabled?.()}
-          disabledLabel={actions.actionDisabled?.() ? aiChatMessages(locale()).stoppingResponse : undefined}
-          onSubmit={submit ? (result) => submit(request(), result) : undefined}
-        />
-      </Match>
       <Match when={submittedResult()}>
         {(result) => (
           // biome-ignore lint/a11y/useValidAriaRole: Chat.Message uses a conversation role, not an ARIA role.
@@ -302,6 +295,19 @@ export function SurveyToolView(props: { turnId: string; block: ToolBlock; active
             <CloudSurveyResultBlock args={props.block.args} result={result()} />
           </Chat.Message>
         )}
+      </Match>
+      {/* The turn ended without an answer: the question can never be answered here again, so its choices are gone and
+          one sentence says so. Why the turn ended stands in its notice below. */}
+      <Match when={!props.active}>
+        <CloudSurveyBlock args={props.block.args} unanswered />
+      </Match>
+      <Match when={props.block.status === "awaiting_client"}>
+        <CloudSurveyBlock
+          args={props.block.args}
+          disabled={!submit || actions.actionDisabled?.()}
+          disabledLabel={actions.actionDisabled?.() ? aiChatMessages(locale()).stoppingResponse : undefined}
+          onSubmit={submit ? (result) => submit(request(), result) : undefined}
+        />
       </Match>
     </Switch>
   );
@@ -419,6 +425,11 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
       >
         {/* A question, and every outcome of an app Action, is one card v4 element. */}
         <Match when={actionState()}>{(state) => <ToolActionView block={props.block} turnId={props.turnId} state={state()} />}</Match>
+        <Match when={isCodeRunStep(props.block.name)}>
+          <Chat.Activity label={displayToolName(props.block.name, locale())} icon={aiToolIcon(props.block.name)}>
+            <CodeRunStepBody block={props.block} />
+          </Chat.Activity>
+        </Match>
         <Match when={props.block.presentation?.kind === "capability"}>
           <CapabilityToolView block={props.block} />
         </Match>
@@ -608,7 +619,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
   };
   // A lasting Code step names no file: the person does not read the source.
   const detail = () =>
-    sentence() || hasCodeStepView(props.block.name)
+    sentence() || hasCodeStepView(props.block.name) || isCodeRunStep(props.block.name)
       ? undefined
       : [args().path, args().name, args().query, args().title].find((value) => typeof value === "string");
   const waiting = () => props.block.status === "awaiting_client" || props.block.status === "awaiting_approval";
@@ -674,9 +685,14 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           return (
             <div class="flex min-w-0 flex-col gap-2">
               {/* Lasting Code steps say what they did in words; their input and output stay with the model and `cld`. */}
-              <Show when={hasCodeStepView(props.block.name)} fallback={inputOutput()}>
-                <CodeStepBody block={props.block} />
-              </Show>
+              <Switch fallback={inputOutput()}>
+                <Match when={isCodeRunStep(props.block.name)}>
+                  <CodeRunStepBody block={props.block} />
+                </Match>
+                <Match when={hasCodeStepView(props.block.name)}>
+                  <CodeStepBody block={props.block} />
+                </Match>
+              </Switch>
               {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
               <Show when={image()}>
                 {(viewed) => <StepImage path={viewed().path} src={viewed().src} description={viewed().description} />}

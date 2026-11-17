@@ -29,6 +29,8 @@ const { layoutAiTurn } = await import("./turn-layout");
 const { createAiToolDisclosureState } = await import("./tool-disclosure");
 const { CloudSurveyBlock, CloudTextEditorBlock } = await import("./visual-tools");
 const { Chat, LocaleProvider } = await import("@k2b/ui");
+const { ViewFrame } = await import("./capability-view");
+const { useBlockFrame } = await import("../../blocks/block-actions");
 
 const hasOpenDetails = (html: string): boolean => /<details\b[^>]*\sopen(?:=""|(?=[\s>]))/.test(html);
 const hasOpenDetailsContaining = (html: string, text: string): boolean => {
@@ -102,15 +104,13 @@ describe("Gustav's own charts", () => {
     result,
     view: capabilityResultView(result) ?? undefined,
   });
-  test("a chart whose result carries its view stands under Cloud's head with Gustav as its origin", () => {
+  test("a chart whose result carries its view stands as an island without an origin line above it", () => {
     const html = renderToString(() => createComponent(AiTurnBlockView, { block: chartBlock(chartToolResult(revenue)), turnId: "turn-1" }));
     expect(html).toContain('class="cloud-capability-view"');
-    expect(html).toContain("<strong>Gustav</strong>");
-    // The head names the kind of view; the chart's own title stands in its island, once.
-    expect(html).toContain("· Chart");
+    // No origin line above the block (Feinschliff v3): the chart's own head carries its title and actions.
+    expect(html).not.toContain("<strong>Gustav</strong>");
+    expect(html).not.toContain('aria-label="Open large"');
     expect(html.split("Revenue per month").length - 1).toBeGreaterThan(0);
-    expect(html).toContain('aria-label="Open large"');
-    expect(html).toContain('aria-label="Show data"');
     expect(html).toContain('data-kind="Chart"');
     // No step row of its own above the view.
     expect(html).not.toContain("k2b-chat-activity");
@@ -729,10 +729,12 @@ describe("capability tool presentation", () => {
     const storedHtml = renderSegment(blocks, { workedMs: 190_000 });
     const liveHtml = renderSegment(blocks, { phase: "running" });
 
-    expect(storedHtml).toContain("Worked 3 min");
-    expect(storedHtml).toContain("3 steps");
-    // The work line says what the turn did, then how long and how many steps.
-    expect(storedHtml).toContain('aria-label="Created files. Worked 3 minutes, 3 steps"');
+    // Presenting a file stores nothing new, so there is no confirmed outcome to name: the sentence says the turn worked,
+    // and its steps and time stand right in their own column (Feinschliff 4).
+    expect(storedHtml).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Worked</);
+    expect(storedHtml).toMatch(/ai-turn-work__count[^>]*>(?:<!--[^>]*-->)*3 steps/);
+    expect(storedHtml).toMatch(/k2b-chat-activity__duration[^>]*>(?:<!--[^>]*-->)*3 min/);
+    expect(storedHtml).toContain('aria-label="Worked 3 minutes, 3 steps"');
     expect(hasOpenDetails(storedHtml)).toBe(false);
     for (const html of [storedHtml, liveHtml]) {
       expect(html).not.toContain("Before tool");
@@ -774,7 +776,9 @@ describe("capability tool presentation", () => {
 
     const folded = renderSegment(blocks, { workedMs: 2_000 });
     expect(hasOpenDetails(folded)).toBe(false);
-    expect(folded).not.toContain('data-tone="danger"');
+    // The work line names the failure in its meta, in red; no row turns into a warning.
+    expect(folded).toContain('<span data-tone="danger">1 failed</span>');
+    expect(folded).not.toContain('class="k2b-chat-activity ai-work-step" data-tone="danger"');
     expect(folded).not.toContain("Mailbox is required");
     expect(folded).toContain("I could not finish that.");
 
@@ -782,11 +786,11 @@ describe("capability tool presentation", () => {
     disclosureState.set("work:ai-turn:turn-1:0", true);
     disclosureState.set("failed-tool", true);
     const expanded = renderSegment(blocks, { disclosureState });
-    // Opened, the failed step says in words that it did not work and that the turn went on; the app's code and message
+    // Opened, the failed step says "Failed" in its meta and offers its details behind its ⓘ; the app's code and message
     // stay in the data.
     expect(expanded).toContain("Unknown tool");
-    expect(expanded).toContain("This did not work. Went on without this result.");
-    expect(expanded).not.toContain('data-tone="danger"');
+    expect(expanded).toMatch(/class="k2b-chat-activity__meta k2b-truncate-fade" data-tone="danger"[^>]*>Failed</);
+    expect(expanded).toContain('aria-label="Details: Unknown tool"');
     expect(expanded).not.toContain("Mailbox is required");
     expect(expanded).not.toContain("VALIDATION_FAILED");
   });
@@ -1613,7 +1617,7 @@ describe("text editor presentation", () => {
     expect(activeHtml).toContain('class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70');
     expect(activeHtml).toContain("Hello **Ada**");
     expect(activeHtml).not.toContain("<strong>Ada</strong>");
-    expect(activeHtml).not.toContain("Waiting for the assistant to continue");
+    expect(activeHtml).not.toContain("Waiting for Gustav to continue");
     expect(historicalHtml).toContain("Review mail · submitted");
   });
 
@@ -1983,16 +1987,40 @@ describe("turn places in the reader's language", () => {
       view: capabilityResultView(chartResult) ?? undefined,
     };
     const html = renderPlaces([...figures, chart], { locale: "de" });
-    // One head for the three figures and one for the chart, both Gustav's; the figures are one flat row.
-    expect(html.split("<strong>Gustav</strong>").length - 1).toBe(2);
-    expect(html).toContain("· Kennzahlen");
+    // No origin line above either; the figures are one flat row with Copy and Maximize at its end.
+    expect(html).not.toContain("<strong>Gustav</strong>");
     expect(html.split('data-kind="Stats"').length - 1).toBe(1);
+    expect(html).toContain('class="cloud-block-figures"');
+    expect(html).toContain('aria-label="Kennzahlen kopieren"');
+    expect(html).toContain('aria-label="Maximieren"');
     // The tiles' code loads after the first frame, like an app's key figures: the labels stand, the figures wait in place.
     for (const label of ["Girokonto", "Tagesgeld", "Kreditkarte"]) expect(html).toContain(`>${label}</span>`);
     expect(html).toContain('data-kind="Chart"');
     expect(html).not.toContain("ti ti-mood");
-    // The head reads its time in the reader's zone, as every time in the chat does: 10:47 UTC is 11:47 in Berlin.
-    const berlin = renderPlaces([{ ...chart, at: "2026-11-15T10:47:00.000Z" }], { locale: "de", timeZone: "Europe/Berlin" });
+    // The frame reads the time in the reader's zone, as every time in the chat does: 10:47 UTC is 11:47 in Berlin. The
+    // Lightbox names it ("Gustav · Diagramm · Stand 15.11., 11:47").
+    const Probe = () => useBlockFrame()?.asOf ?? "";
+    const berlin = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AiReaderTimeZoneProvider, {
+            value: "Europe/Berlin",
+            get children() {
+              return createComponent(ViewFrame, {
+                origin: { name: "Gustav", icon: "ti ti-moustache" },
+                title: "Diagramm",
+                at: "2026-11-15T10:47:00.000Z",
+                data: {},
+                get children() {
+                  return createComponent(Probe, {});
+                },
+              });
+            },
+          });
+        },
+      }),
+    );
     expect(berlin).toContain("Stand 15.11., 11:47");
     expect(berlin).not.toContain("10:47");
     // An older stored card or chart without a view keeps the tool's own drawing.
@@ -2014,7 +2042,6 @@ describe("turn places in the reader's language", () => {
       [{ ...chart, id: "s1", callId: "s1", args: statArgs, result: statResult, view: capabilityResultView(statResult) ?? undefined }],
       { locale: "de" },
     );
-    expect(stats).toContain("· Kennzahlen");
     expect(stats.split('data-kind="Stats"').length - 1).toBe(1);
     expect(stats).not.toContain('data-kind="Chart"');
     for (const label of ["Offene Aufgaben", "Diese Woche fällig", "Ohne Fälligkeit"]) expect(stats).toContain(`>${label}</span>`);
@@ -2039,12 +2066,11 @@ describe("turn places in the reader's language", () => {
       },
     };
     const html = renderPlaces([query], { locale: "de" });
-    // The head is Cloud's: app and view, then "Open large" and "Data"; Gustav's text says what the rows mean.
-    expect(html).toContain("<strong>Grids</strong>");
-    expect(html).toContain("· Abfrage ausführen");
-    expect(html).toContain('aria-label="Groß öffnen"');
+    // No origin line: the table's own head carries Copy and Maximize; the Lightbox names Grids.
+    expect(html).not.toContain("<strong>Grids</strong>");
+    expect(html).toContain('aria-label="Tabelle kopieren"');
+    expect(html).toContain('aria-label="Maximieren"');
     expect(html).toContain("<table");
-    expect(html.indexOf("<strong>Grids</strong>")).toBeLessThan(html.indexOf("<table"));
 
     // An action that returns a table shows its summary and links in its receipt, not twice.
     const action = renderPlaces(
@@ -2063,11 +2089,14 @@ describe("turn places in the reader's language", () => {
       { id: "tool-run", kind: "tool", callId: "run", name: "memory", status: "completed", result: {} },
     ];
     const english = renderPlaces(blocks, { phase: "failed", workedMs: 240_000 });
-    expect(english).toContain("Worked 4 min · interrupted");
+    expect(english).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Interrupted</);
+    expect(english).toMatch(/k2b-chat-activity__duration[^>]*>(?:<!--[^>]*-->)*4 min/);
     expect(english).toContain('aria-label="Worked 4 minutes, interrupted, 1 step"');
     expect(english).not.toContain("Now I build the dashboard.");
-    expect(renderPlaces(blocks, { phase: "failed", workedMs: 240_000, locale: "de" })).toContain("4 Min. gearbeitet · abgebrochen");
-    expect(renderPlaces(blocks, { phase: "stopped", workedMs: 240_000 })).toContain("Worked 4 min · stopped");
+    expect(renderPlaces(blocks, { phase: "failed", workedMs: 240_000, locale: "de" })).toMatch(
+      /ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Abgebrochen</,
+    );
+    expect(renderPlaces(blocks, { phase: "stopped", workedMs: 240_000 })).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Stopped</);
     expect(renderPlaces(blocks, { workedMs: 240_000 })).not.toMatch(/interrupted|stopped/);
   });
 });
@@ -2206,7 +2235,7 @@ describe("Code check steps", () => {
     ];
     const english = renderExpanded(blocks, { open: ["group:check-failed"] });
     expect(english).toContain("3 findings");
-    expect(english).toContain("<strong>Checks</strong><small>successful</small>");
+    expect(english).toContain('<strong title="Checks">Checks</strong><small>successful</small>');
     expect(english).toContain("ti-alert-triangle");
     expect(english).toContain("ti-circle-check");
     expect(english).not.toContain('data-tone="danger"');
@@ -2276,10 +2305,10 @@ describe("Code check steps", () => {
       status: "completed",
       result: { version: 1, submission: { version: { id: "v-3", number: 3 } } },
     };
-    const german = renderExpanded([...blocks, submit, viewed("/checks/abc/desktop.png")], {
-      locale: "de",
-      open: ["group:tool-code_init"],
-    });
+    // Inspect every label independently: a long work list renders only its newest six rows until opened further.
+    const german = [...blocks, submit, viewed("/checks/abc/desktop.png")]
+      .map((block) => renderExpanded([block], { locale: "de" }))
+      .join("");
     for (const label of [
       "Legt die Automation an",
       "Schlägt nach, was Apps anbieten",
@@ -2427,7 +2456,7 @@ test("a presented explorer reserves its title, control rows and 18rem viewport b
   }
 });
 
-test("a view file stands under Gustav's head like an app's result, and still loads on demand", () => {
+test("a view file stands as an island with its own head, like an app's result, and still loads on demand", () => {
   const path = "/views/orders-12345678.view.json";
   const block: AiTurnBlock = {
     id: "view",
@@ -2440,9 +2469,10 @@ test("a view file stands under Gustav's head like an app's result, and still loa
   };
   const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
   expect(html).toContain('class="cloud-capability-view"');
-  expect(html).toContain("<strong>Gustav</strong>");
-  expect(html).toContain("· Table");
-  expect(html).toContain('aria-label="Open large"');
+  // No origin line: the table's head holds Copy and Maximize from the first frame, while the file still loads.
+  expect(html).not.toContain("<strong>Gustav</strong>");
+  expect(html).toContain('aria-label="Copy table"');
+  expect(html).toContain('aria-label="Maximize"');
   expect(html).toContain(`data-view-path="${path}"`);
   expect(html).toContain("Loading");
   // A table or chart from a file is an island like an app's (v12 section 9).

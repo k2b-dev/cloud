@@ -472,7 +472,7 @@ export const integrityCapabilities = defineCapabilities({
             if (!confirmed.ok) return confirmed;
             const issued = await documentIssuanceService.completeQueryDocument(await confirmationRequest(input, context));
             if (!issued.ok) return issued;
-            if ("kind" in issued.data) return fail(err.conflict("Confirmation required."));
+            if ("kind" in issued.data) return fail(err.conflict("This document needs a confirmation before it is issued."));
             const [document] = await projectDocuments([issued.data]);
             return ok({ data: DocumentCapabilityDataSchema.parse(document), refs: [{ type: "grids.document", id: issued.data.shortId }] });
           }),
@@ -1007,7 +1007,9 @@ const runBaseContainers = async (input: z.infer<typeof DiscussionContainersInput
     if (permission.ok) items.push({ ref: { type: "grids.base", id: base.shortId }, title: base.name });
   }
   const nextOffset = cursor.data + result.items.length;
-  return ok({ data: { items, next: nextOffset < result.total ? encodeCursor(nextOffset) : null } });
+  const next = nextOffset < result.total ? encodeCursor(nextOffset) : null;
+  // The page mirrors `next`, as every paginated Query's result does.
+  return ok({ data: { items, next }, page: capabilityPage(next) });
 };
 
 const requireTable = async (tableShortId: string, access: GridsAccessContext, required: "read" | "write", locale?: string) => {

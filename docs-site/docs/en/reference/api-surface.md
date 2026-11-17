@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-15
+updated: 2026-11-16
 ---
 
 # API surface
@@ -318,10 +318,11 @@ For [resource discussions](/en/docs/platform/resource-types-and-discussions),
 `ResourceReadableInputSchema`, `ResourceReadableDataSchema`,
 `ResourceManagersInputSchema`, `ResourceManagersDataSchema`,
 `ResourceActivityEventSchema`, the `Discussion*Schema` values,
-`typeViewIssues`, and `discussionsIssues` come from `@k2b/cloud/contracts`.
+`typeViewIssues`, `discussionsIssues`, and `discussionContainersPageIssues`
+come from `@k2b/cloud/contracts`.
 `discussionProviders`, `readResourcePrincipals`, `listResourceManagers`, and `ResourceReaderRateLimited` come from
-`@k2b/cloud/capabilities/server`; `assertResourceView` comes from
-`@k2b/cloud/capabilities/testing`. The generated Query's context is
+`@k2b/cloud/capabilities/server`; `assertResourceView` and
+`assertDiscussionContainersPage` come from `@k2b/cloud/capabilities/testing`. The generated Query's context is
 `CapabilityAppExecutionContext`.
 
 For [calendar sources](/en/docs/platform/calendar-sources), `calendarSource`,
@@ -515,6 +516,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/live` | Supported, server-only | `aiLive`: the cursor of AI live updates for server-rendered state; Core mounts its socket | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/live-events` | Supported, browser and server | `AiInvalidationSchema` and `AI_INVALIDATION_DOMAINS`, the data of AI live updates | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/question-text` | Platform-owned, browser and server | The plain-text form of an Assistant question (`approvalCard`, `actionCardText`, `actionQuestionLines`) that `cld`, notifications, and Cloud Login show | [Tools and approvals](/en/docs/ai/tools-and-approvals) |
+| `@k2b/cloud/maintenance-game` | Platform-owned, browser source | The waiting game the gateway maintenance page inlines and the generic 404 and 5xx pages load, with its message catalog and the rule which error pages may offer it | [Maintenance mode](/en/docs/operations/maintenance-mode) |
 | `@k2b/cloud/ai/app-frame` | Platform-owned, browser/runner | Lightweight chart, native-view and text-AI contracts for the chat SDK, without the full `ai/browser` entrypoint | [Studio retirement](/en/docs/operations/studio-retirement) |
 | `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime, turn submission and transactional background message delivery | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/server` | Supported, server-only | Load the consent-filtered place state and the person's chat with `loadPlaceAssistant(c, scope)`; share `PlaceAssistantState` with the panel | [Assistant at a place](/en/docs/ai/assistant-places) |
@@ -563,7 +565,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/services/pdf` | Supported, server-only | Render PDFs; merge, extract, split, rotate and reorder pages; prepare print images | [PDF and templates](/en/docs/platform/pdf-and-templates), [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/services/outbox` | Supported, server-only | `createPgOutbox`: deliver the rows of an application's own outbox table after commit, in order per key | [Migrations and transactions](/en/docs/data/migrations-and-transactions#deliver-an-outbox) |
 | `@k2b/cloud/ssr/code-nav-status` | Supported, browser | `CodeNavStatus` and `codeNavAttentionLabel`: the warning dot of an owner's "Code" navigation entry | [Code page](/en/docs/platform/code-page) |
-| `@k2b/cloud/code/schedule` | Supported, portable | `describeCodeSchedule`, `describeCodeTiming`: localized schedule sentences shared by server read models and browser surfaces | [Code page](/en/docs/platform/code-page) |
+| `@k2b/cloud/code/schedule` | Supported, portable | `describeCodeSchedule`, `describeCodeTiming`: localized schedule sentences shared by server read models and browser surfaces; `formatCodeMoment` and `formatCodeDay`: one Code moment, or its day, as every Code surface writes it | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/code-schedule` | Supported, browser | `describeCodeSchedule`: a five-field schedule as a short localized sentence | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/code-live` | Supported, browser | `followCodeRuns`: follow payload-free Core run hints, with resync and disposal | [Code run updates](/en/docs/platform/code-page#follow-run-updates) |
 | `@k2b/cloud/ssr/code-page` | Supported, browser | `CodePage`: the shared Code page of a resource, rendered in an island; `CodeDatabaseStatus`: authorized database usage, deadline and export controls; `CodeDatabaseDelete`: confirmed unused-database removal | [Code page](/en/docs/platform/code-page) |

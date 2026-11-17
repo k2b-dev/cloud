@@ -10,6 +10,12 @@ import { cloudAiNumberFormatters } from "../chart-block";
 import type { AiTurnBlock } from "../protocol";
 import { cloudAiViewSummary, parseCloudAiView } from "../view-block";
 
+/**
+ * A view's loading or unavailable state. A searchable table's foot and a block's "Copied" note in a chat answer are
+ * statuses too, but no state of the view.
+ */
+const VIEW_STATE = "[data-view-path] [role=status]:not(.cloud-block-foot, .cloud-block-actions *)";
+
 // Whether a presented view moves anything when its file arrives depends on real layout, fonts and themes, so this
 // measures the blocks in a browser.
 const ui = resolve(import.meta.dir, "../../../../ui");
@@ -678,7 +684,7 @@ for (const view of [
         await page.waitForSelector('[data-view-path] [data-chart-kind="stat"]');
         expect(await page.locator('[data-view-path] [data-interactive="true"]').count()).toBe(7);
         await page.waitForFunction(() => document.querySelectorAll("[data-view-path] table").length === 2);
-        await page.waitForFunction(() => document.querySelectorAll('[data-view-path] [role="status"]').length === 1);
+        await page.waitForFunction((state) => document.querySelectorAll(state).length === 1, VIEW_STATE);
         // Every series name stays inside its chart's column, also on a phone.
         const legends = await page.evaluate(() =>
           Array.from(document.querySelectorAll(".k2b-chart-legend li")).map((item) => {
@@ -727,7 +733,7 @@ for (const view of [
         // The hidden copy that sizes the record keeps its eight rows beside the eight loaded ones.
         await page.waitForFunction(() => document.querySelectorAll("[data-view-path] dt").length === 16);
         await page.waitForFunction(() => document.querySelectorAll("[data-view-path] table").length === 1);
-        expect(await page.locator('[data-view-path] [role="status"]').count()).toBe(0);
+        expect(await page.locator(VIEW_STATE).count()).toBe(0);
         expect(await boxes(page)).toEqual(loading);
         // Five tiles leave no empty slot in any column count: the last one reaches the grid's end.
         const gap = await page.evaluate(() => {
@@ -808,15 +814,18 @@ for (const view of [
         ],
       );
       await page.waitForSelector("[data-view-path] .k2b-data-table-tools");
-      // The tools wait, disabled, in the place they keep once the rows arrive.
-      const search = page.getByRole("searchbox", { name: "Search Campaigns" });
-      expect(await search.isDisabled()).toBe(true);
+      // The tools wait, disabled, in the place they keep once the rows arrive. On a phone the search is a sign.
+      const search = page.getByRole("searchbox", { name: "Search table" });
+      const sign = page.getByRole("button", { name: "Search table" });
+      const phone = view.width < 480;
+      expect(await (phone ? sign : search).isDisabled()).toBe(true);
       await settled(page);
       const loading = await boxes(page);
       loaded();
       await page.waitForSelector("[data-view-path] table");
       await settled(page);
       expect(await boxes(page)).toEqual(loading);
+      if (phone) await sign.click();
       await search.fill("deliv");
       expect(await page.locator("[data-view-path] tbody tr.k2b-data-table__row").count()).toBe(2);
       await search.fill("");
@@ -847,6 +856,36 @@ const stock = {
   ],
 };
 files["/views/stock-2b3c4d5e.view.json"] = stock;
+
+for (const width of [1280, 390])
+  test(`a table in an answer has its search in the head even when its view names none (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+      // The stock view sets no `search`: in an answer its head still has search, Copy and Maximize (Feinschliff v3 §5).
+      const parsed = parseCloudAiView(stock);
+      if (!parsed) throw new Error("Invalid stock fixture");
+      await page.evaluate((block) => window.show([block]), present("/views/stock-2b3c4d5e.view.json", cloudAiViewSummary(parsed)));
+      await page.waitForSelector("[data-view-path] table");
+      await settled(page);
+      const search = page.getByRole("searchbox", { name: "Search table" });
+      // On a phone the search is a sign that opens it over the title.
+      if (width < 480) await page.getByRole("button", { name: "Search table" }).click();
+      // The label never carries the view's title; the heading names the table for the field and the sign.
+      expect(await search.getAttribute("aria-describedby")).toBeTruthy();
+      expect(await search.evaluate((input) => document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent)).toBe(
+        "Stock",
+      );
+      await search.fill("hall");
+      await page.locator("[data-view-path] .cloud-block-foot", { hasText: "1 match" }).waitFor();
+      expect(await page.locator("[data-view-path] tbody tr").count()).toBe(1);
+      if (process.env.VIEW_SHOTS)
+        await page.screenshot({ path: `${process.env.VIEW_SHOTS}/n5-tabelle-suche-light-${width}.png`, fullPage: true });
+    } finally {
+      await context.close();
+    }
+  });
 
 for (const theme of ["light", "dark"] as const)
   test(`a table view stands in an island without a frame of its own; a Markdown table keeps its frame, both share the header band and cell padding (${theme})`, async () => {
@@ -1201,10 +1240,10 @@ test("a view file edited after present shows unavailable instead of what its sum
       ],
     );
     // Both charts of the group, the single chart, both stats views, the record, the table and the two edited explorers.
-    await page.waitForFunction(() => {
-      const statuses = Array.from(document.querySelectorAll('[data-view-path] [role="status"]')).filter((node) => node.textContent?.trim());
+    await page.waitForFunction((state) => {
+      const statuses = Array.from(document.querySelectorAll(state)).filter((node) => node.textContent?.trim());
       return statuses.length === 9 && statuses.every((node) => node.textContent?.startsWith("This view is no longer available"));
-    });
+    }, VIEW_STATE);
     // Only the invisible size reserve of a stats view may still hold a (hidden, unfocusable) trend sparkline.
     expect(await page.locator('[data-view-path] [data-interactive="true"]:visible').count()).toBe(0);
   } finally {
@@ -1599,6 +1638,8 @@ for (const locale of ["en", "de"])
           cloudAiNumberFormatters({ style: "percent", decimals: 1 }, locale).value(0.461),
         );
         expect(await boxes(page)).toEqual(loading);
+        // A key figure that names no icon has the neutral sign before its name (v12 §9), and it moves nothing.
+        expect(await page.locator(".k2b-stat-cell__head > .k2b-stat-cell__icon .ti-hash").count()).toBe(1);
         if (process.env.VIEW_SHOTS && locale === "en")
           await page.screenshot({ path: `${process.env.VIEW_SHOTS}/stats-light-${width}.png`, fullPage: true });
       } finally {
@@ -1627,11 +1668,15 @@ for (const width of [1280, 390])
         },
         present(path, cloudAiViewSummary(parsed)),
       );
-      await page.waitForSelector("[data-view-path] .k2b-data-table-tools .k2b-skeleton");
+      // On a phone the search waits as a sign, disabled, in the place it keeps.
+      const phone = width < 480;
+      await page.waitForSelector(
+        phone ? "[data-view-path] .cloud-table-search-toggle" : "[data-view-path] .k2b-data-table-tools .k2b-skeleton",
+      );
       await settled(page);
       const first = await boxes(page);
       code();
-      const search = page.getByRole("searchbox", { name: "Search Campaigns" });
+      const search = phone ? page.getByRole("button", { name: "Search table" }) : page.getByRole("searchbox", { name: "Search table" });
       await search.waitFor();
       expect(await search.isDisabled()).toBe(true);
       await settled(page);
@@ -1663,9 +1708,7 @@ test("a failed table module keeps its frame and offers a reload", async () => {
     );
     await page.getByText("Part of this page could not load. Reload the page and try again.").waitFor();
     expect(await page.getByRole("button", { name: "Reload", exact: true }).count()).toBe(1);
-    expect(await page.locator("[data-view-path] [role=status]").textContent()).toBe(
-      "This view is no longer available. Its file was changed or deleted.",
-    );
+    expect(await page.locator(VIEW_STATE).textContent()).toBe("This view is no longer available. Its file was changed or deleted.");
     expect(await page.locator("[data-view-path]").boundingBox()).not.toBeNull();
   } finally {
     await context.close();
@@ -1687,7 +1730,7 @@ for (const width of [1280, 390])
       const parsed = parseCloudAiView(comparedStats);
       if (!parsed) throw new Error("Invalid stats fixture");
       await page.evaluate((block) => window.show([block]), present(path, cloudAiViewSummary(parsed)));
-      await page.waitForSelector("[data-view-path] [role=status]");
+      await page.waitForSelector(VIEW_STATE);
       await settled(page);
       const first = await boxes(page);
       const response = page.waitForResponse((response) => new URL(response.url()).searchParams.get("path") === path);
@@ -1695,7 +1738,7 @@ for (const width of [1280, 390])
       await response;
       await settled(page);
       expect(await boxes(page)).toEqual(first);
-      expect(await page.locator("[data-view-path] [role=status]").textContent()).toBe("Loading…");
+      expect(await page.locator(VIEW_STATE).textContent()).toBe("Loading…");
       code();
       await page.locator('.k2b-stat-cell__delta[role="img"]').waitFor();
       await settled(page);
@@ -1719,15 +1762,13 @@ test("a failed stats module preserves its frame and offers a reload", async () =
     const parsed = parseCloudAiView(comparedStats);
     if (!parsed) throw new Error("Invalid stats fixture");
     await page.evaluate((block) => window.show([block]), present("/views/compared-12345678.view.json", cloudAiViewSummary(parsed)));
-    await page.waitForSelector("[data-view-path] [role=status]");
+    await page.waitForSelector(VIEW_STATE);
     await settled(page);
     const first = await boxes(page);
     failure.resolve();
     await page.getByText("Part of this page could not load. Reload the page and try again.").waitFor();
     expect(await page.getByRole("button", { name: "Reload", exact: true }).count()).toBe(1);
-    expect(await page.locator("[data-view-path] [role=status]").textContent()).toBe(
-      "This view is no longer available. Its file was changed or deleted.",
-    );
+    expect(await page.locator(VIEW_STATE).textContent()).toBe("This view is no longer available. Its file was changed or deleted.");
     await settled(page);
     expect(await boxes(page)).toEqual(first);
   } finally {
@@ -2103,7 +2144,7 @@ for (const width of [1440, 390])
         const look = (element: Element) => ({ color: getComputedStyle(element).color, size: getComputedStyle(element).fontSize });
         return { quietColor, chart: look(chart), table: look(table) };
       });
-      expect(heads.chart).toEqual({ color: heads.quietColor, size: "13px" });
+      expect(heads.chart).toEqual({ color: heads.quietColor, size: "12px" });
       expect(heads.table).toEqual(heads.chart);
       expect(points[0]!.fill).not.toBe(points[0]!.stroke);
       if (process.env.VIEW_SHOTS)
@@ -2113,7 +2154,7 @@ for (const width of [1440, 390])
     }
   });
 
-test('"Open large" shows a view file\'s table in the Lightbox from the file the chat loaded, and gives the focus back', async () => {
+test('"Maximize" shows a view file\'s table in the Lightbox from the file the chat loaded, and gives the focus back', async () => {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
   try {
     const page = await context.newPage();
@@ -2137,7 +2178,7 @@ test('"Open large" shows a view file\'s table in the Lightbox from the file the 
       ],
     );
     await page.waitForSelector("[data-view-path] tbody tr");
-    const opener = page.getByRole("button", { name: "Open large" });
+    const opener = page.getByRole("button", { name: "Maximize" });
     await opener.click();
     const lightbox = page.locator(".k2b-lightbox[open]");
     await lightbox.locator(".k2b-lightbox__view tbody tr").first().waitFor();
@@ -2208,3 +2249,72 @@ test("a table names a reference by its title and shows one it cannot name as not
     await context.close();
   }
 });
+
+// A line over dates starts its axis at its first value, and its dates follow the room: a wide chart shows a date every
+// two or three days, a phone fewer, and no two dates ever meet.
+const returns = {
+  view: "chart",
+  kind: "line",
+  title: "Rückläufer pro Tag",
+  subtitle: "November 2026",
+  area: true,
+  series: [
+    {
+      label: "Rückläufer",
+      data: [0, 0, 0, 4, 0, 0, 0, 6, 1, 0, 0, 0, 3, 0, 2].map((y, index) => ({ x: `2026-11-${String(index + 1).padStart(2, "0")}`, y })),
+    },
+  ],
+};
+files["/views/returns-per-day-4d5e6f7a.view.json"] = returns;
+for (const width of [1440, 390])
+  test(`a line over 15 dates labels no date before its first value and shows as many as fit (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 700 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de`);
+      await page.evaluate(
+        (value) => window.show(value),
+        [
+          present("/views/returns-per-day-4d5e6f7a.view.json", {
+            view: "chart",
+            kind: "line",
+            title: returns.title,
+            subtitle: returns.subtitle,
+          }),
+        ],
+      );
+      await page.waitForFunction(() => document.querySelector("[data-view-path] .k2b-chart[data-chart-kind] svg path"));
+      await settled(page);
+      const look = await page.evaluate(() => {
+        const svg = document.querySelector<SVGSVGElement>("[data-view-path] .k2b-chart svg")!;
+        const dates = Array.from(
+          svg.querySelectorAll<SVGTextElement>("text.stdlib-chart-tick-label[text-anchor='middle'], text.k2b-line-time-tick"),
+        )
+          .filter((label) => Number(getComputedStyle(label).opacity) > 0.5)
+          .map((label) => {
+            const box = label.getBoundingClientRect();
+            return { text: label.textContent, left: box.left, right: box.right, center: box.left + box.width / 2 };
+          })
+          .sort((a, b) => a.left - b.left);
+        const line = svg.querySelector<SVGPathElement>("path.stdlib-chart-line")!.getBoundingClientRect();
+        return { dates, firstValue: line.left };
+      });
+      if (width === 1440) expect(look.dates.length).toBeGreaterThanOrEqual(5);
+      else expect(look.dates.length).toBeGreaterThanOrEqual(2);
+      expect(look.dates.every((date) => date.text?.endsWith("Nov."))).toBe(true);
+      // The first date's mark is not before the first value.
+      expect(look.dates[0]!.center).toBeGreaterThanOrEqual(look.firstValue - 0.5);
+      for (const [index, date] of look.dates.entries()) {
+        const next = look.dates[index + 1];
+        if (next) expect(next.left - date.right).toBeGreaterThanOrEqual(2);
+      }
+      if (width === 390) {
+        const wide = await page.evaluate(() => document.querySelectorAll("[data-view-path] .k2b-chart svg [data-time-tick]").length);
+        expect(look.dates.length).toBeLessThan(wide);
+      }
+      if (process.env.VIEW_SHOTS)
+        await page.screenshot({ path: `${process.env.VIEW_SHOTS}/79-zeitachse-light-${width}.png`, fullPage: true });
+    } finally {
+      await context.close();
+    }
+  });

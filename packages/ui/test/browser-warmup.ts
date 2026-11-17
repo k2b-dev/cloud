@@ -5,14 +5,15 @@
  * A fresh Playwright container has no shader cache, so whichever test draws first compiles
  * about 100 shaders and loses its 5 s to it (#2149). Each suite starts its own browser and
  * shares only that on-disk cache with this process, so no test sees any other state from here.
- * Any failure exits non-zero: the runner stops, since the first test would otherwise fail in disguise.
+ * Any failure exits non-zero: the runner stops, since the first test would otherwise fail in disguise. So does a runner
+ * too slow for 5 s tests, which would otherwise fail them one by one as if they hung (#3526).
  */
 import { resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import tailwind from "bun-plugin-tailwind";
-import { browserName, launchBrowser } from "./browser";
+import { browserName, launchBrowser, slowRunnerError } from "./browser";
 
 if (Bun.argv.includes("--help")) {
   console.log(
@@ -51,6 +52,7 @@ if (!styles.success) throw new AggregateError(styles.logs, "Browser warm-up styl
 const bundle = await script.outputs[0]!.text();
 const css = await styles.outputs[0]!.text();
 
+const sceneMs: number[] = [];
 const browser = await launchBrowser();
 try {
   for (const width of [390, 1440])
@@ -77,9 +79,16 @@ try {
       await dialog.waitFor({ state: "hidden" });
       await page.close();
       if (errors.length) throw new Error(`Browser warm-up page errors: ${errors.join("; ")}`);
-      console.log(`browser warm-up ${browserName} ${width} ${dark ? "dark" : "light"}: ${Math.round(performance.now() - sceneBegan)} ms`);
+      const ms = Math.round(performance.now() - sceneBegan);
+      sceneMs.push(ms);
+      console.log(`browser warm-up ${browserName} ${width} ${dark ? "dark" : "light"}: ${ms} ms`);
     }
 } finally {
   await browser.close();
 }
 console.log(`browser warm-up ${browserName}: ${((performance.now() - began) / 1000).toFixed(1)} s`);
+const slow = slowRunnerError(sceneMs.slice(1));
+if (slow) {
+  console.log(`::error title=Browser runner too slow::${slow}`);
+  process.exit(1);
+}

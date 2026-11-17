@@ -203,6 +203,7 @@ const config :Workerd.Config = (
         checking: false,
         runs: members,
         retire,
+        // runtime-timer: watchdog for the workerd process already in flight; maintenance must not suspend its limits.
         watchdog: setInterval(() => {
           void this.#check(group, config);
         }, 100),

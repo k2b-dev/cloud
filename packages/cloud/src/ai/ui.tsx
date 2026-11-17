@@ -50,6 +50,7 @@ export {
   type AiChatTurnNavigatorProps,
   createAiChatTimeline,
 } from "./chat/presentation";
+export { CloudViewFile } from "./chat/view-block";
 
 export const aiLatestUsage = latestUsage;
 export const aiLatestLoopUsage = latestLoopUsage;

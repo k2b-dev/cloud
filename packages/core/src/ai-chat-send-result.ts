@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { AiChatOriginSchema } from "@k2b/cloud/ai";
+import { isAiQueueRetryableError } from "@k2b/cloud/ai/runtime";
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 
@@ -11,7 +12,7 @@ export const aiChatSendData = z.strictObject({
   origin: AiChatOriginSchema,
 });
 
-/** Slice 1 uses the existing queue. A separate automation receipt and capacity belong to slice 2. */
+/** Immutable admission is independent of mutable queue payloads and the current chat binding. */
 export const chatSendSnapshot = async (conversationId: string, chatId: string, id: string) => {
   const [entry] = await sql<
     {
@@ -23,12 +24,13 @@ export const chatSendSnapshot = async (conversationId: string, chatId: string, i
       turn_error: string | null;
     }[]
   >`
-    SELECT q.status,q.error,q.origin,
+    SELECT COALESCE(q.status,'cancelled') AS status,q.error,r.origin,
       latest.id AS turn_id,latest.status AS turn_status,latest.error AS turn_error
-    FROM ai.queued_messages q LEFT JOIN LATERAL (
-      SELECT id,status,error FROM ai.turns WHERE conversation_id=q.conversation_id AND run_config->'send'->>'id'=q.id::text
+    FROM ai.chat_send_receipts r LEFT JOIN ai.queued_messages q ON q.id=r.queued_message_id
+    LEFT JOIN LATERAL (
+      SELECT id,status,error FROM ai.turns WHERE conversation_id=r.conversation_id AND run_config->'send'->>'id'=r.id::text
       ORDER BY created_at DESC,id DESC LIMIT 1
-    ) latest ON true WHERE q.id=${id}::uuid AND q.conversation_id=${conversationId}::uuid`;
+    ) latest ON true WHERE r.id=${id}::uuid AND r.conversation_id=${conversationId}::uuid`;
   if (!entry) return fail(err.notFound("Sent chat message"));
   const origin = AiChatOriginSchema.safeParse(entry.origin);
   if (!origin.success) return fail(err.notFound("Sent chat message"));
@@ -40,7 +42,7 @@ export const chatSendSnapshot = async (conversationId: string, chatId: string, i
         : entry.turn_status === "waiting_for_action"
           ? "waiting"
           : entry.turn_status === "failed" ||
-              (entry.status === "failed" && !["quota_exhausted", "quota_usage_unknown"].includes(entry.error ?? ""))
+              (entry.status === "failed" && (origin.data.kind !== "person" || !isAiQueueRetryableError(entry.error)))
             ? "failed"
             : entry.turn_status === "running"
               ? "running"

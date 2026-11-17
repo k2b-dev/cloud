@@ -1,31 +1,22 @@
-import { logger } from "@k2b/cloud/services";
+import { logger, startRuntimeInterval } from "@k2b/cloud/services";
 import { expireCodeChatDrafts } from "./chat-drafts";
 import { expireCodePageReports } from "./page-reports";
 import { expireCodeRuns } from "./store";
 
 /** Core lifecycle owns one bounded batch per minute; replicas skip each other's locked rows. Stop drains the in-flight batch. */
 export const startCodeRunRetention = (): (() => Promise<void>) => {
-  let pending: Promise<void> | undefined;
-  const sweep = () => {
-    if (pending) return;
-    pending = expireCodeRuns({ now: new Date(), limit: 1000 })
-      .then(() => expireCodeChatDrafts({ now: new Date(), limit: 1000 }))
-      .then(() => expireCodePageReports({ now: new Date(), limit: 1000 }))
-      .then(() => undefined)
-      .catch((error) => {
-        logger("core:code-retention").error("Code run retention failed; the next sweep will retry", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      })
-      .finally(() => {
-        pending = undefined;
+  const retention = startRuntimeInterval({
+    intervalMs: 60_000,
+    run: async () => {
+      await expireCodeRuns({ now: new Date(), limit: 1000 });
+      await expireCodeChatDrafts({ now: new Date(), limit: 1000 });
+      await expireCodePageReports({ now: new Date(), limit: 1000 });
+    },
+    onError: (error) => {
+      logger("core:code-retention").error("Code run retention failed; the next sweep will retry", {
+        error: error instanceof Error ? error.message : String(error),
       });
-  };
-  sweep();
-  const timer = setInterval(sweep, 60_000);
-  timer.unref?.();
-  return async () => {
-    clearInterval(timer);
-    await pending;
-  };
+    },
+  });
+  return () => retention.stop();
 };

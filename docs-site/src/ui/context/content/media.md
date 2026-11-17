@@ -37,13 +37,13 @@ import {
 
 ## Lightbox
 
-Pass `items`, the shown `index`, `onIndexChange`, and `onClose`; the caller owns the index, so it can follow a selection behind the Lightbox, and removes the component on close. Each `LightboxItem` has a `name` (it never wraps; the pill gives way with an ellipsis) and gives what the file has:
+Pass `items`, the shown `index`, `onIndexChange`, and `onClose`; the caller owns the index, so it can follow a selection behind the Lightbox, and removes the component on close. The Lightbox fades in without moving. On close, focus returns to the opener and `onClose` runs at once, so the owner can open the next file right away; the Lightbox leaves without a fade. Each `LightboxItem` has a `name` (it never wraps; the pill gives way with an ellipsis) and gives what the file has:
 
 - `src`: an address on this site the browser reads directly, for an image, a video, an audio file, or a PDF; a function resolves it when the file is shown, such as a short-lived signed address, and **Try again** asks it for a fresh one;
 - `load`: text, Markdown, code, or a PDF's bytes, drawn by the `FileView` renderers;
 - `preview`: a preview PDF, such as one converted from an Office file; a rejection shows **Preview not possible** with Open and Download;
 - `file`: path, media type, and size, which choose the renderer as in `FileView`; it defaults to the name.
-- `content`: anything else shown large that the page already holds, such as a chart, table, or row of key figures; it stands on one surface in the middle of the stage, a dashboard frame inside it drops its own edge, and nothing loads again. Render the Lightbox inside the view that opens it, so the content keeps that view's context.
+- `content`: anything else shown large that the page already holds, such as a chart, table, or row of key figures; it stands on one surface in the middle of the stage, a dashboard frame inside it drops its own edge, and nothing loads again. Render the Lightbox inside the view that opens it, so the content keeps that view's context. Keys typed into a field inside the content stay in the field: only Escape closes from there, so a search never steps to the next item.
 
 Each loader receives an `AbortSignal` that aborts when the person moves to another file, closes the Lightbox, or tries again; pass it to `fetch` so nothing keeps loading. A video plays in `VideoPlayer`, which asks a `src` function for a fresh address when a signed one runs out and goes on at the same time. On a video or audio file, ← and → seek five seconds and Space plays and pauses, wherever the focus is and in every engine; the edge buttons and the film strip step to the next file.
 
