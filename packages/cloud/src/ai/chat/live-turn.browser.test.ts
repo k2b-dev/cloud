@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { hoverInPlace, launchBrowser } from "../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../../../ui/test/browser";
 import type { AiWireEvent } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { truncatedAnswer } from "./stop-notice.test-fixture";
@@ -139,7 +139,7 @@ const frames = (page: Page) => page.evaluate(() => new Promise((done) => request
  * Waits until no transition runs in a subtree. Reduced motion shortens every transition to 0.01 ms rather than removing
  * it, so a typography switch still runs as one, and WebKit can hold its start or a mixed value for more than two frames.
  */
-const settled = (page: Page, selector: string) =>
+const transitionsEnded = (page: Page, selector: string) =>
   page.waitForFunction(
     (query) =>
       document
@@ -821,7 +821,7 @@ for (const view of [
           },
         });
         const card = ".ai-turn__action .k2b-chat-decision__card";
-        await settled(page, ".ai-turn");
+        await transitionsEnded(page, ".ai-turn");
         const cardBox = (await viewportBox(page, card))!;
         const workBox = await viewportBox(page, ".ai-turn-work");
         const textBox = await viewportBox(page, ".ai-turn__text");
@@ -848,7 +848,7 @@ for (const view of [
 
         // Approving collapses the card at once to its outcome line in its place, with focus on it; nothing above moves.
         await approve.click();
-        await settled(page, ".ai-turn");
+        await transitionsEnded(page, ".ai-turn");
         expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
           { callId: "send", approved: true },
         ]);
@@ -942,7 +942,7 @@ for (const view of [
   { name: "desktop", width: 1280, height: 800, touch: false },
   { name: "phone", width: 390, height: 844, touch: true },
 ] as const)
-  test(`a live text turns quiet in place when a step starts after it, and nothing moves (${view.name})`, async () => {
+  test(`a live text keeps answer typography when a step starts after it, and nothing moves (${view.name})`, async () => {
     const context = await browser.newContext({
       viewport: { width: view.width, height: view.height },
       isMobile: view.touch,
@@ -967,7 +967,7 @@ for (const view of [
       const place = ".ai-turn__text";
       const receipt = ".ai-turn__action .k2b-chat-outcome";
       const style = async (selector: string) => {
-        await settled(page, selector);
+        await transitionsEnded(page, selector);
         return page.$eval(`${selector} .assistant-markdown-block`, (node) => {
           const computed = getComputedStyle(node);
           return { color: computed.color, fontSize: computed.fontSize, lineHeight: computed.lineHeight };
@@ -1000,15 +1000,14 @@ for (const view of [
         receipt: await viewportBox(page, receipt),
       };
 
-      // A step starts after it: the same element reads as a status, together with the work line's new step, and keeps its
-      // place, so the receipt below does not move.
+      // A step starts after it: the same element becomes an intermediate status, keeping its typography and place,
+      // so the receipt below does not move.
       await emit(page, { ...base, seq: 5, type: "block_set", block: { ...write, status: "running" } });
       expect(await page.locator(".ai-turn-work > summary").innerText()).toContain("app.js");
       expect(await page.locator(place).innerText()).toBe(status);
       expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(1);
       const statusStyle = await style(place);
-      expect(statusStyle.fontSize).toBe("12px");
-      expect(statusStyle.color).not.toBe(answerStyle.color);
+      expect(statusStyle).toEqual(answerStyle);
       expect(await viewportBox(page, ".ai-turn-work")).toEqual(before.work);
       expect(await viewportBox(page, place)).toEqual(before.text);
       expect(await viewportBox(page, receipt)).toEqual(before.receipt);
@@ -1068,7 +1067,7 @@ for (const view of [
       const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Summarize the chart for Jana" }] });
       await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
       expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(1);
-      await settled(page, place);
+      await transitionsEnded(page, place);
       const before = { text: await viewportBox(page, place), receipt: await viewportBox(page, receipt) };
 
       // The turn ends without another text: the status becomes the final message in answer typography within the height
@@ -1114,7 +1113,7 @@ for (const view of [
         ],
       });
       expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(0);
-      await settled(page, place);
+      await transitionsEnded(page, place);
       expect(await page.$eval(`${place} .assistant-markdown-block`, (node) => getComputedStyle(node).fontSize)).toBe("14px");
       expect(await page.locator(`${receipt} .k2b-chat-outcome__text[data-current="true"]`).innerText()).toBe(`${sent}10:00`);
       expect(await viewportBox(page, place)).toEqual(before.text);
@@ -1183,7 +1182,7 @@ for (const width of [390, 320])
         },
       });
       const card = ".ai-turn__action .k2b-chat-decision__card";
-      await settled(page, ".ai-turn");
+      await transitionsEnded(page, ".ai-turn");
       const boxes = await page.evaluate((query) => {
         const box = (selector: string) => document.querySelector(`${query} ${selector}`)!.getBoundingClientRect();
         const answers = Array.from(document.querySelectorAll(`${query} .k2b-chat-decision__answer`)).map((node) =>
@@ -1670,7 +1669,7 @@ for (const view of [
 
         // The next step starts: the text turns quiet, shows three lines, and the chevron says what it does.
         await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(2, "running") });
-        await settled(page, ".k2b-chat-timeline__content");
+        await transitionsEnded(page, ".k2b-chat-timeline__content");
         state = await clampState(page, place);
         expect(state.height).toBeCloseTo(3 * state.lineHeight, 0);
         expect(state.full).toBeGreaterThan(state.height);
@@ -1680,7 +1679,7 @@ for (const view of [
 
         // Opening shows the whole text below its first lines; nothing above it and the chevron move.
         await page.locator(`${place} .ai-turn-clamp__toggle`).last().click();
-        await settled(page, ".k2b-chat-timeline__content");
+        await transitionsEnded(page, ".k2b-chat-timeline__content");
         state = await clampState(page, place);
         expect([state.expanded, state.label]).toEqual(["true", "Weniger zeigen"]);
         expect(state.height).toBe(state.full);
@@ -1692,7 +1691,7 @@ for (const view of [
         // The keyboard closes it again from the same place.
         await page.locator(`${place} .ai-turn-clamp__toggle`).last().focus();
         await page.keyboard.press("Enter");
-        await settled(page, ".k2b-chat-timeline__content");
+        await transitionsEnded(page, ".k2b-chat-timeline__content");
         expect(await clampState(page, place)).toEqual(closed.state);
         expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
       } finally {
@@ -1729,8 +1728,8 @@ for (const view of [
         delta: "Der Check ist erfolgreich. Jetzt der Test.",
       });
       await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(3, "running") });
-      await settled(page, ".k2b-chat-timeline__content");
-      await settled(page, ".k2b-chat-timeline__content");
+      await transitionsEnded(page, ".k2b-chat-timeline__content");
+      await transitionsEnded(page, ".k2b-chat-timeline__content");
       if (view.width === 1280) await page.screenshot({ path: "/tmp/chat-steps-shots/after-replaced-1280.png" });
       const space = await page.evaluate(() => {
         const place = Array.from(document.querySelectorAll<HTMLElement>(".ai-turn__text")).at(-1)!;
@@ -1767,7 +1766,7 @@ test("the final answer shows whole, and a long quiet text that becomes it unfold
     await emit(page, { ...base, seq: 3, type: "block_set", block: tool(1, "completed") });
     await emit(page, { ...base, seq: 4, type: "block_delta", blockId: "text-1", blockKind: "text", delta: longStatus });
     await emit(page, { ...base, seq: 5, type: "block_set", block: tool(2, "running") });
-    await settled(page, ".k2b-chat-timeline__content");
+    await transitionsEnded(page, ".k2b-chat-timeline__content");
     const before = await clampState(page, ".ai-turn__text");
     expect(before.toggle).not.toBeNull();
     const work = await viewportBox(page, ".ai-turn-work");
@@ -1801,7 +1800,7 @@ test("the final answer shows whole, and a long quiet text that becomes it unfold
         ),
       ],
     });
-    await settled(page, ".k2b-chat-timeline__content");
+    await transitionsEnded(page, ".k2b-chat-timeline__content");
     const after = await clampState(page, ".ai-turn__text");
     expect(after.toggle).toBeNull();
     expect(after.height).toBe(after.full);
@@ -1828,7 +1827,7 @@ test("each text in the expanded work is a step of its own whose card holds the w
     await emit(page, { ...base, seq: 5, type: "block_set", block: tool(2, "completed") });
     await emit(page, { ...base, seq: 6, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Both files are read." });
     await emit(page, { ...base, seq: 7, type: "block_set", block: tool(3, "running") });
-    await settled(page, ".ai-turn-work");
+    await transitionsEnded(page, ".ai-turn-work");
     const summary = await viewportBox(page, ".ai-turn-work > summary");
     await page.locator(".ai-turn-work > summary").click();
     await page.locator(".ai-turn-steps").waitFor();
@@ -1854,7 +1853,7 @@ test("each text in the expanded work is a step of its own whose card holds the w
     expect(await viewportBox(page, ".ai-turn-work > summary")).toEqual(summary);
     await page.keyboard.press("Escape");
     await card.waitFor({ state: "hidden" });
-    await settled(page, ".ai-turn-work");
+    await transitionsEnded(page, ".ai-turn-work");
     expect(await rows()).toEqual(before);
   } finally {
     await context.close();
@@ -1923,12 +1922,12 @@ test("a link in the visible lines keeps a clamped text closed, and one in the hi
     await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(1, "completed") });
     await emit(page, { ...base, seq: seq++, type: "block_delta", blockId: "text-1", blockKind: "text", delta: text });
     await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(2, "running") });
-    await settled(page, ".k2b-chat-timeline__content");
+    await transitionsEnded(page, ".k2b-chat-timeline__content");
     const place = page.locator(".ai-turn__text").last();
     const toggle = place.locator(".ai-turn-clamp__toggle");
 
     await place.getByRole("link", { name: "the import guide" }).focus();
-    await settled(page, ".k2b-chat-timeline__content");
+    await transitionsEnded(page, ".k2b-chat-timeline__content");
     expect(await toggle.getAttribute("aria-expanded")).toBe("false");
 
     const hidden = place.getByRole("link", { name: "the order list" });
@@ -1945,3 +1944,213 @@ test("a link in the visible lines keeps a clamped text closed, and one in the hi
     await context.close();
   }
 }, 30_000);
+
+for (const theme of ["light", "dark"] as const)
+  for (const width of [1440, 390])
+    for (const lang of ["de", "en"])
+      for (const reducedMotion of ["reduce", "no-preference"] as const)
+        test(`work typography stays readable across every phase (${theme}, ${width}px, ${lang}, ${reducedMotion})`, async () => {
+          const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion });
+          const page = await context.newPage();
+          try {
+            await page.addInitScript(pinPageDate, testNow);
+            await page.goto(`http://127.0.0.1:${server.port}/?lang=${lang}&theme=${theme}`);
+            const text = "Die Ergebnisse liegen vor.\n\nIch prüfe die Einzelheiten.";
+            const read = {
+              id: "read",
+              kind: "tool" as const,
+              callId: "read",
+              name: "read_file",
+              args: { path: "/notes.txt" },
+              status: "completed" as const,
+              result: "OK",
+            };
+            let seq = 1;
+            await emit(page, {
+              ...base,
+              seq: seq++,
+              type: "turn_started",
+              modelId: "m",
+              providerModel: "m",
+              blocks: [read, { id: "note", kind: "text", text }],
+            });
+            const measure = async () => {
+              await settled(page);
+              return page.evaluate(() => {
+                const turn = document.querySelector(".ai-turn")!;
+                const row = turn.querySelector(".ai-turn-work > .k2b-chat-activity__row")!;
+                const sentence = row.querySelector(".ai-turn-work__sentence")!;
+                const label =
+                  [...sentence.querySelectorAll(".k2b-chat-activity__word, .k2b-chat-activity__word-rest")].find(
+                    (node) => getComputedStyle(node).display !== "none",
+                  ) ?? sentence;
+                const note = turn.querySelector(".ai-turn__text .assistant-markdown-block p")!;
+                const style = (node: Element) => {
+                  const css = getComputedStyle(node);
+                  return { fontSize: css.fontSize, lineHeight: css.lineHeight, color: css.color };
+                };
+                const box = (node: Element) => {
+                  const b = node.getBoundingClientRect();
+                  return { x: b.x, y: b.y, width: b.width, height: b.height };
+                };
+                const probe = document.createElement("span");
+                probe.style.color = "var(--k2b-text-secondary)";
+                document.body.append(probe);
+                const expectedLabelColor = getComputedStyle(probe).color;
+                probe.remove();
+                return {
+                  label: style(label),
+                  note: style(note),
+                  row: box(row),
+                  text: box(note),
+                  paragraphs: [...turn.querySelectorAll(".ai-turn__text .assistant-markdown-block p")].map(box),
+                  expectedLabelColor,
+                  // Computed colour alone misses text painted through a transparent fill and a gradient.
+                  shimmer: getComputedStyle(label).backgroundImage,
+                };
+              });
+            };
+            const writing = await measure();
+            const snapshots = [{ phase: "writing", ...writing }];
+            const shoot = async (phase: string) => {
+              if (process.env.K2B_UI_SHOTS && lang === "de" && reducedMotion === "reduce") {
+                mkdirSync(process.env.K2B_UI_SHOTS, { recursive: true });
+                await page.screenshot({ path: `${process.env.K2B_UI_SHOTS}/work-${phase}-${theme}-${width}.png`, fullPage: true });
+              }
+            };
+            await shoot("writing");
+            for (const block of [
+              { id: "phase", kind: "thinking" as const, text: "Ich prüfe die Ergebnisse." },
+              { id: "phase", kind: "tool" as const, callId: "phase", name: "calculate", args: {}, status: "running" as const },
+              {
+                id: "phase",
+                kind: "tool" as const,
+                callId: "phase",
+                name: "calculate",
+                args: {},
+                status: "completed" as const,
+                result: "OK",
+              },
+            ]) {
+              await emit(page, { ...base, seq: seq++, type: "block_set", block });
+              snapshots.push({ phase: block.kind === "thinking" ? "thinking" : block.status, ...(await measure()) });
+              if (block.kind === "tool" && block.status === "completed") await shoot("thinking");
+            }
+            await reconnect(page, true);
+            snapshots.push({ phase: "reconnecting", ...(await measure()) });
+            await reconnect(page, false);
+            const waiting = {
+              id: "phase",
+              kind: "tool" as const,
+              callId: "phase",
+              name: "calculate",
+              args: {},
+              status: "awaiting_approval" as const,
+            };
+            await emit(page, { ...base, seq: seq++, type: "block_set", block: waiting });
+            snapshots.push({ phase: "waiting", ...(await measure()) });
+            await emit(page, { ...base, seq: seq++, type: "block_set", block: { ...waiting, status: "completed", result: "OK" } });
+            // Each label family uses the same row, including labels supplied by third-party applications.
+            for (const name of [
+              "read_file",
+              "list_files",
+              "view_image",
+              "write_file",
+              "todo_write",
+              "present",
+              "code_present",
+              "card",
+              "chart",
+              "code_write",
+              "code_run",
+              "code_check",
+              "code_inspect",
+              "code_other",
+              "markdown_to_pdf",
+              "load_tools",
+              "web_search",
+              "memory",
+              "calculate",
+              "third_party_tool",
+            ]) {
+              await emit(page, {
+                ...base,
+                seq: seq++,
+                type: "block_set",
+                block: { ...read, id: "phase", callId: "phase", name, status: "running", args: undefined },
+              });
+              snapshots.push({ phase: name, ...(await measure()) });
+            }
+            await emit(page, {
+              ...base,
+              seq: seq++,
+              type: "block_set",
+              block: {
+                ...read,
+                id: "phase",
+                callId: "phase",
+                status: "running",
+                presentation: {
+                  kind: "capability",
+                  appId: "example",
+                  appName: "Beispiel",
+                  appIcon: "ti ti-box",
+                  title: "Nachsehen",
+                  capabilityKind: "query",
+                },
+              },
+            });
+            snapshots.push({ phase: "application", ...(await measure()) });
+            for (const status of ["running", "completed"] as const) {
+              await emit(page, { ...base, seq: seq++, type: "block_set", block: { id: "phase", kind: "compaction", status } });
+              snapshots.push({ phase: `compaction-${status}`, ...(await measure()) });
+            }
+            // A trailing text restores the writing label before completion and interruption.
+            await emit(page, { ...base, seq: seq++, type: "block_delta", blockId: "answer", blockKind: "text", delta: text });
+            snapshots.push({ phase: "writing-again", ...(await measure()) });
+            const history = (reason: "stop" | "aborted" | "error") => [
+              storedMessage(1, "turn", {
+                role: "assistant",
+                content: [{ type: "tool_call", id: "read", name: "read_file", args: read.args }],
+              }),
+              storedMessage(2, "turn", { role: "tool_result", callId: "read", name: "read_file", result: "OK", isError: false }),
+              storedMessage(3, "turn", { role: "assistant", content: [{ type: "text", text }] }, { loopDoneReason: reason }),
+            ];
+            for (const status of ["completed", "aborted", "failed"] as const) {
+              if (status !== "completed") {
+                await page.reload();
+                await emit(page, {
+                  ...base,
+                  seq: 1,
+                  type: "turn_started",
+                  modelId: "m",
+                  providerModel: "m",
+                  blocks: [read, { id: "answer", kind: "text", text }],
+                });
+                seq = 2;
+              }
+              const messages = history(status === "completed" ? "stop" : status === "aborted" ? "aborted" : "error");
+              await emit(page, { ...base, seq: seq++, type: "turn_finished", status, error: null, messages });
+              snapshots.push({ phase: status, ...(await measure()) });
+              await page.reload();
+              await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+              await emit(page, { ...base, seq: 2, type: "turn_finished", status, error: null, messages });
+              snapshots.push({ phase: `saved-${status}`, ...(await measure()) });
+            }
+            for (const snapshot of snapshots) {
+              expect({ phase: snapshot.phase, style: snapshot.label }).toEqual({ phase: snapshot.phase, style: snapshots[1]!.label });
+              expect(snapshot.label.color).toBe(snapshot.expectedLabelColor);
+              if (snapshot.shimmer !== "none") {
+                expect(snapshot.shimmer).toContain(`${snapshot.label.color} 40%`);
+                expect(snapshot.shimmer).toContain(`${snapshot.label.color} 60%`);
+              }
+              expect({ phase: snapshot.phase, style: snapshot.note }).toEqual({ phase: snapshot.phase, style: writing.note });
+              expect(snapshot.note.fontSize).toBe("14px");
+              expect(snapshot.row).toEqual(writing.row);
+              expect(snapshot.text).toEqual(writing.text);
+              expect(snapshot.paragraphs).toEqual(writing.paragraphs);
+            }
+          } finally {
+            await context.close();
+          }
+        }, 60_000);

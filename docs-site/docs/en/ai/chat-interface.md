@@ -307,7 +307,9 @@ order:
    notice at its end; a failed turn from an earlier release, which recorded no
    reason, reads "Worked 4 min · interrupted". The line and every row of the
    expanded work share one `Chat.Activity` grid: icon, one line of text, meta,
-   duration, and the chevron or ⓘ. The line spans the message column, so its
+   duration, and the chevron or ⓘ. Its label keeps the same size and text colour
+   while thinking, writing, using tools, waiting, reconnecting, and after the
+   turn ends or reloads. The line spans the message column, so its
    right columns end on the right edge of the person's messages. Finished, its
    meta names the steps and what did not go through, such as "6 steps · 1
    failed", with a failure in red and "unclear" or "without access" in the
@@ -470,12 +472,9 @@ order:
    [Tools and approvals](/en/docs/ai/tools-and-approvals) defines these contracts.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed.
-   A text that ends the
-   turn so far may still be the answer and keeps answer typography. As soon as
-   a step starts after it, it reads quietly in the muted, smaller style of the
-   intermediate texts in the expanded work line, also while an approval or
-   survey waits for the user; its card says what is asked. It changes together
-   with the work line's new step and keeps its line height. A quiet text
+   The text keeps normal answer size, line height, and colour throughout the
+   turn, including after a step starts, while an approval or survey waits,
+   and in saved history. An intermediate text
    longer than three lines shows three, its last line fading, and a chevron
    beside its first line shows the rest; the chevron keeps its place when the
    text opens or closes, and a new status starts closed. Keyboard focus on a
