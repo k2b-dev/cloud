@@ -126,12 +126,16 @@ describe("Gustav's authoring stop", () => {
         try {
           const de = locale === "de";
           const card = page.locator(".assistant-authoring-stop");
-          expect(await card.locator(".k2b-notice-card__title").textContent()).toBe(de ? "Gustav hat angehalten" : "Gustav stopped");
+          expect(await card.locator(".k2b-notice-card__title").textContent()).toBe(
+            de ? "Gustav macht eine Pause" : "Gustav is taking a break",
+          );
           expect(await card.locator(".k2b-notice-card__description").textContent()).toBe(
-            de ? "Dasselbe Problem blieb nach mehreren Versuchen." : "The same problem remained after several attempts.",
+            de
+              ? "Derselbe Fehler kam mehrmals. Er wartet jetzt auf dich."
+              : "The same error came up several times. He is waiting for you now.",
           );
           // One still task list (Chat.TaskList): done steps checked, open ones open, nothing turning.
-          const list = page.getByRole("list", { name: de ? "Gustav hat angehalten" : "Gustav stopped" });
+          const list = page.getByRole("list", { name: de ? "Gustav macht eine Pause" : "Gustav is taking a break" });
           const rows = await list
             .locator(".k2b-chat-task")
             .evaluateAll((nodes) =>
@@ -152,7 +156,7 @@ describe("Gustav's authoring stop", () => {
           );
           expect(await list.locator('.k2b-chat-task[data-status="in_progress"]').count()).toBe(0);
           expect(await card.locator(".assistant-authoring-stop__meta").innerText()).toBe(
-            de ? "Der Entwurf ist gespeichert." : "The draft is saved.",
+            de ? "Der Entwurf ist gesichert, aber noch keine Version." : "The draft is safe, but there is no version yet.",
           );
           const button = page.getByRole("button", { name: de ? "Weiterarbeiten" : "Continue" });
           expect(await button.getAttribute("data-variant")).toBe("secondary");

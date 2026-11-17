@@ -39,18 +39,18 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
   const [sent, setSent] = createSignal(false);
   const disabled = () => !props.continuable() || !actions.onContinueTurn || actions.actionDisabled?.() || sending() || sent();
   const progress = () => authoringProgress(props.state, t());
-  const reason = () =>
-    props.state.reason === "repeated_error"
-      ? t().authoringStopRepeated
-      : props.state.reason === "model_calls"
-        ? t().authoringStopAttempts
-        : t().authoringStopBudget;
+  const reason = () => (props.state.reason === "repeated_error" ? t().authoringStopRepeated : t().authoringStopTried);
   const saved = () =>
     props.state.drafts === 0
       ? t().authoringStopNoDraft
-      : props.state.unsubmitted > 0
-        ? t().authoringStopSaved({ drafts: props.state.drafts })
-        : t().authoringStopSubmitted({ drafts: props.state.drafts });
+      : props.state.unsubmitted > 0 && props.state.unsubmitted < props.state.drafts
+        ? t().authoringStopPartlySubmitted({
+            unsubmitted: props.state.unsubmitted,
+            submitted: props.state.drafts - props.state.unsubmitted,
+          })
+        : props.state.unsubmitted > 0
+          ? t().authoringStopSaved({ drafts: props.state.drafts })
+          : t().authoringStopSubmitted({ drafts: props.state.drafts });
   const continueWork = async () => {
     if (disabled()) return;
     setSending(true);
