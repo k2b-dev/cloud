@@ -178,7 +178,11 @@ While it is on:
   after an update.
 - The shared workstation's sign-out warning always comes first: while it is
   open the privacy screen neither starts nor lifts, and its **Continue
-  working** also lifts the privacy screen.
+  working** also lifts the privacy screen. Covered content stays blurred while
+  the warning counts down. Its main action stays blue, including over an AI page.
+
+Cloud's global search, resource pickers, file-saving dialog, and app menus also
+keep the normal blue primary palette when opened over AI work.
 
 Applications need no code for this. Mark only the exceptions with
 `data-cloud-privacy`:

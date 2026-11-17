@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-31
+updated: 2026-11-17
 ---
 
 # Files, Projects, Skills, and personalization
@@ -672,6 +672,13 @@ value, and typed Cloud resource where applicable. Failed and no-change runs
 remain visible; deleted source chats keep their title snapshot but no longer
 link to the chat.
 
+## Organization instructions
+
+Administrators set **Global instructions** in **Administration > AI**. Cloud
+adds this Liquid template to every AI conversation after the platform rules.
+Instructions reach the model and can appear in its answers. Do not put secrets
+or confidential policy here.
+
 ## Instructions for local clients
 
 **Administration > AI > Instructions for local clients** sets
@@ -679,6 +686,9 @@ link to the chat.
 is empty: Cloud uses its shipped local client instructions, which can improve
 with each release. Custom text replaces that default completely. **Show
 built-in text** lets an administrator copy it as a starting point.
+
+These instructions also reach the model and can appear in its answers. Do not
+put secrets or confidential policy here.
 
 Interactive turns carrying `client` get a **Local client** section directly
 after organization instructions. It identifies the terminal or ACP editor,

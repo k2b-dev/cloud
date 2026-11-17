@@ -79,6 +79,7 @@ export const createFileSaving = (
       ),
       {
         ...panelDialogWorkspaceOptions,
+        primary: "blue",
         panelClassName: `${panelDialogWorkspaceOptions.panelClassName} cloud-file-chooser-dialog`,
         // Focus starts on the open application, or on the dialog itself while the catalog still loads.
         initialFocus: (dialog) => dialog.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]') ?? dialog,

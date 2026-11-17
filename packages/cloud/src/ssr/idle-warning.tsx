@@ -44,6 +44,7 @@ export const createIdleWarning = (locale: () => string) => {
         {
           // A short question, not an editor: the prompt width, as `AccessDialog` sizes its PanelDialog.
           panelClassName: "k2b-dialog k2b-dialog--small",
+          primary: "blue",
           role: "alertdialog",
           ariaLabel: t.warningTitle,
           cancelBehavior: "ignore",
