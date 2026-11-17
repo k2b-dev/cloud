@@ -69,6 +69,16 @@ for (const [path, file] of plexFiles) plex = plex.replaceAll(`./fonts/${file.spl
 /** What Core answers while the person switches on: the activation's final state. */
 let activationEnd: "active" | "owner_refused" | "unavailable" | "lost-active" | "silent" = "active";
 const activations: unknown[] = [];
+/** What the chat chooser of personal Code asked Core to bind. */
+const chatBindingSets: { input?: unknown; target?: unknown }[] = [];
+/** Core answers a change at revision 1 with a conflict: someone chose another chat meanwhile. */
+let chatBindingConflict = false;
+let chatBindingReads = 0;
+const chatView = (id: string, title: string) => ({
+  ref: { type: "core.ai.chat", id },
+  title,
+  links: [{ rel: "open", href: `/app/assistant?conversation=${id}` }],
+});
 const unexpectedRoutes: string[] = [];
 const server = Bun.serve({
   port: 0,
@@ -112,6 +122,37 @@ const server = Bun.serve({
         },
       });
     }
+    // Personal Code's chat chooser: the owner's active chats, then the binding change.
+    if (url.pathname === "/api/capabilities/v1/queries/core/ai.chats.search") {
+      const query = ((await request.json()) as { input?: { query?: string } }).input?.query?.toLowerCase() ?? "";
+      const chats = [chatView("Wk7chat", "Wochenbericht"), chatView("Lyon42", "Reise nach Lyon")];
+      return Response.json({ data: chats.filter((chat) => chat.title.toLowerCase().includes(query)) });
+    }
+    if (url.pathname === "/api/capabilities/v1/queries/core/code.chat_binding.read") {
+      chatBindingReads++;
+      return Response.json({
+        data: {
+          codeId: "c_woche1",
+          revision: 2,
+          canChange: true,
+          chat: { state: "available", id: "Wk7chat", title: "Wochenbericht", project: null, href: "/app/assistant" },
+        },
+      });
+    }
+    if (url.pathname === "/api/capabilities/v1/actions/core/code.chat_binding.set") {
+      const body = (await request.json()) as { input?: { chatId?: string; revision?: number }; target?: unknown };
+      chatBindingSets.push(body);
+      if (chatBindingConflict && body.input?.revision === 1)
+        return Response.json({ code: "CONFLICT", message: "Chat binding changed. Read it again." }, { status: 409 });
+      return Response.json({
+        data: {
+          codeId: "c_woche1",
+          revision: 2,
+          canChange: true,
+          chat: { state: "available", id: body.input?.chatId ?? "", title: "Reise nach Lyon", project: null, href: "/app/assistant" },
+        },
+      });
+    }
     if (url.pathname.startsWith("/api/")) unexpectedRoutes.push(url.pathname);
     return new Response(
       '<!doctype html><html class="light" style="--app-accent:#2563eb"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -143,7 +184,7 @@ if (shots) mkdirSync(shots, { recursive: true });
 const load = async (
   state: string,
   width: number,
-  options: { phone?: boolean; dark?: boolean; catchUp?: string; locale?: "de" | "en" } = {},
+  options: { phone?: boolean; dark?: boolean; catchUp?: string; locale?: "de" | "en"; usesBoundChat?: boolean } = {},
 ): Promise<Page> => {
   const page = await (await browser.newContext(contextFor(width))).newPage();
   await page.goto(server.url.href);
@@ -153,6 +194,7 @@ const load = async (
     locale: options.locale ?? "de",
     phone: options.phone,
     catchUp: options.catchUp,
+    usesBoundChat: options.usesBoundChat,
   });
   await settled(page);
   return page;
@@ -277,6 +319,130 @@ describe("Mailbox Code page in a browser", () => {
       await page.context().close();
     }
   });
+
+  // Automations v5, 4.4: the owner chooses the chat their personal Code writes to; the page never moves for it.
+  test("the owner chooses another chat for personal Code in a dialog, with Core's revision", async () => {
+    for (const width of [1440, 390]) {
+      chatBindingSets.length = 0;
+      const page = await load("personal", width);
+      try {
+        const row = page.locator(".cloud-code__may .cloud-code__row", { hasText: "In den Chat „Wochenbericht“ schreiben" });
+        await row.getByRole("button", { name: "Anderen Chat wählen" }).click();
+        const dialog = page.getByRole("dialog", { name: "Chat für diese Automation" });
+        await dialog.getByText("Gustav antwortet im gewählten Chat, mit dessen Projekt, Modell und Dateien.", { exact: false }).waitFor();
+        await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).waitFor();
+        // The current chat is marked; choosing it again changes nothing.
+        expect(await dialog.getByText("Aktuell").count()).toBe(1);
+        expect(await dialog.getByRole("button", { name: "Diesen Chat nehmen" }).isDisabled()).toBe(true);
+        await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).check();
+        await dialog.getByRole("button", { name: "Diesen Chat nehmen", disabled: false }).waitFor();
+        await shoot(page, `chat-chooser-${width}`);
+        const box = await dialog.boundingBox();
+        expect(box !== null && box.x >= 0 && box.x + box.width <= width).toBe(true);
+        await dialog.getByRole("button", { name: "Diesen Chat nehmen" }).click();
+        // The dialog closes only after Core answered.
+        await dialog.waitFor({ state: "hidden" });
+        expect(chatBindingSets).toHaveLength(1);
+        expect(chatBindingSets[0]).toMatchObject({
+          input: { chatId: "Lyon42", revision: 1 },
+          target: { type: "core.code", id: "c_woche1" },
+        });
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
+
+  test("the chat chooser saves only a visible choice, says when nothing matches, and recovers from a conflict in place", async () => {
+    chatBindingSets.length = 0;
+    chatBindingConflict = true;
+    chatBindingReads = 0;
+    const page = await load("personal", 1440);
+    try {
+      await page.locator(".cloud-code__may").getByRole("button", { name: "Anderen Chat wählen" }).click();
+      const dialog = page.getByRole("dialog", { name: "Chat für diese Automation" });
+      const save = dialog.getByRole("button", { name: "Diesen Chat nehmen" });
+      await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).check();
+      expect(await save.isDisabled()).toBe(false);
+      // A search that hides the choice takes it out of reach; nothing invisible is saved.
+      const search = dialog.getByRole("searchbox", { name: "Deine Chats durchsuchen" });
+      await search.fill("Woch");
+      await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).waitFor({ state: "detached" });
+      expect(await save.isDisabled()).toBe(true);
+      await search.fill("Zürich");
+      await dialog.getByText("Kein aktiver Chat passt zu „Zürich“.").waitFor();
+      await search.fill("");
+      await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).waitFor();
+      expect(await save.isDisabled()).toBe(false);
+      // Someone changed the chat meanwhile: the dialog stays, says so, and works on with Core's current revision.
+      await save.click();
+      await dialog.getByText("Der Chat wurde inzwischen geändert.").waitFor();
+      await dialog.getByRole("button", { name: "Diesen Chat nehmen", disabled: false }).waitFor();
+      await shoot(page, "chat-chooser-conflict-1440");
+      expect(chatBindingReads).toBe(1);
+      expect(await dialog.isVisible()).toBe(true);
+      await save.click();
+      await dialog.waitFor({ state: "hidden" });
+      expect(chatBindingSets.map((set) => set.input)).toEqual([
+        { chatId: "Lyon42", revision: 1 },
+        { chatId: "Lyon42", revision: 2 },
+      ]);
+    } finally {
+      chatBindingConflict = false;
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("an unused archived chat binding adds no notice or needs-you state", async () => {
+    for (const width of [1440, 390]) {
+      for (const locale of ["de", "en"] as const) {
+        const page = await load("personal-chat-missing", width, { locale, dark: width === 390, usesBoundChat: false });
+        try {
+          expect(await page.locator(".cloud-code__state").getAttribute("data-tone")).toBe("ok");
+          expect(await page.getByRole("button", { name: locale === "de" ? "Chat wählen …" : "Choose a chat…", exact: true }).count()).toBe(
+            0,
+          );
+          expect(
+            await page.getByRole("button", { name: locale === "de" ? "Chat wiederherstellen" : "Restore chat", exact: true }).count(),
+          ).toBe(0);
+          expect(
+            await page
+              .locator(".k2b-notice-card")
+              .filter({ hasText: locale === "de" ? "ist archiviert" : "is archived" })
+              .count(),
+          ).toBe(0);
+          expect(await overflow(page)).toBe(0);
+        } finally {
+          await page.context().close();
+        }
+      }
+    }
+  }, 60_000);
+
+  test("a missing chat is said above the page, with choose and restore for the owner, at a fixed place", async () => {
+    for (const width of [1440, 390]) {
+      const page = await load("personal-chat-missing", width);
+      try {
+        const notice = page.getByText("Der Chat „Wochenbericht“ ist archiviert.");
+        await notice.waitFor();
+        await page.getByRole("button", { name: "Chat wählen …" }).first().waitFor();
+        await page.getByRole("button", { name: "Chat wiederherstellen" }).waitFor();
+        const geometry = await page.evaluate(() => {
+          const may = document.querySelector(".cloud-code__may");
+          const notice = Array.from(document.querySelectorAll(".k2b-notice-card")).find((card) =>
+            card.textContent?.includes("ist archiviert"),
+          );
+          return {
+            aboveMay: Boolean(notice && may && notice.getBoundingClientRect().bottom <= may.getBoundingClientRect().top),
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          };
+        });
+        expect(geometry).toEqual({ aboveMay: true, overflow: 0 });
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
 
   test("the sidebar shows a warning dot, never a number, when the Code needs attention", async () => {
     for (const [state, dot] of [

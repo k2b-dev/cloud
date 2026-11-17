@@ -49,7 +49,10 @@ SDK property segments use camelCase: `spaces.space(id).task.setCompleted`,
 `grids.table(id).record.upsertExternal`, and `mail.mailbox(id).mailingList`.
 Snake_case segments from Pulse and Venue follow the same rule. Capability
 and event IDs keep their original spelling. Files imports as `files`;
-its app and event IDs stay `filesv2` and `filesv2.*`.
+its app and event IDs stay `filesv2` and `filesv2.*`. The Chat application
+imports as `_chat`, for example `_chat.message.post({ conversation, body,
+idempotencyKey })`; capability IDs remain `chat.*`. The reserved `chat` export
+addresses the bound Gustav chat in personal Code through `chat.send`.
 
 Application authors may set `sdkExportName` in `defineCapabilities()` to
 choose a module export. The optional manifest field accepts a JavaScript
@@ -828,6 +831,60 @@ activation. The automation list shows its `at`, `timeZone`, and a null
 
 ## Write to your Gustav chat
 
+Personal Code can write to its currently bound chat with `chat.send`. Code
+created through `code_init` starts bound to the chat where Gustav created it:
+
+```ts
+import { app, chat } from "@sdk";
+
+app.schedule({ cron: "0 9 * * 1", name: "morning-briefing" }, async ({ runId }) => {
+  await chat.send({
+    text: "Prepare my morning briefing using these facts.",
+    context: "Fictional source data",
+    idempotencyKey: `morning-briefing:${runId}`,
+  });
+});
+export default app;
+```
+
+`chat.send` has exactly the same input and result as `core.ai.chat(id).send`.
+The `chat` export is available only for personal Code, when the live catalog
+offers `core.ai.chat.send`; resource Code and one-off `code_run` do not export it.
+The binding is read at each call, so choosing another chat needs no source
+change, new version or administrator approval. The chat's Project, model and
+files determine the resulting turn. Admission checks the binding revision again
+under the Code row lock. A changed revision returns `chat_busy` (409) before
+queuing; retry with the same idempotency key to use the current binding.
+Already queued messages keep their target.
+The binding is a default destination; explicit chat handles remain available.
+Saved Code calls Send directly with fixed instructions; it cannot pass
+`chat.send` to `ai.generate` or `ai.decide` as a model-controlled tool.
+
+Only the personal owner may change the binding; a shared Code editor cannot.
+Read its revision and state through
+[`code.chat_binding.read`](/en/docs/platform/code-data-model#choose-a-personal-codes-chat).
+`chat_unbound` means that no chat is bound. `chat_unavailable` means that the
+bound chat was archived or deleted, or is no longer the owner's active chat.
+Both return HTTP 409 during bound-chat resolution, before queuing a message.
+Choose another own active chat or restore the
+archived chat. When the running version, or the newest version before activation,
+uses `chat.send`, a missing, archived or deleted bound chat supplies the
+`chat_missing` attention reason and a recoverable notice on the Code page and in
+Waiting for you. This also applies before the first binding. Code that does not
+use `chat.send` needs no bound chat.
+Explicit chat handles return `NOT_FOUND` (404) for missing, archived or foreign
+chats, keeping those targets hidden. If a resolved bound chat becomes unavailable
+during preparation, the subsequent chat lookup also returns `NOT_FOUND`.
+
+The checker records `chat.send` as `core.ai.chat.send` with dynamic target
+`{ type: "core.ai.chat", id: null }`; normal policy, authority and chain checks
+still apply. At runtime, `chat` is an ordinary chat handle whose fixed ID is
+`CODE_BOUND_CHAT_ID` (`"bound-chat"`, exported by `@k2b/cloud/code`). Send resolves
+the current binding for a personal Code run; the bridge uses its normal call
+shape. Explicit use of this reserved ID also counts as a dynamic target. For fake test fixtures, match
+`target: { type: "core.ai.chat", id: "bound-chat" }`; no real chat is looked up
+during testing.
+
 Use `core.ai.chat(chatId).send` to write one exact message to an owned active
 chat. Gustav answers using the person's current model grants, tools and approval
 rules. Discover the actual chat ID and generated handle first:
@@ -862,7 +919,8 @@ The Action returns `{ id, chatId, status, reason, origin }` promptly. Status is
 `queued`, `running`, `waiting`, `done`, `failed` or `cancelled`. A busy chat keeps
 the message in its existing queue, without consuming the person's draft. Read
 one later snapshot with `core.ai.chat.read({ id: "Chat23", message: sent.id })`;
-the Query returns `{ data: { chat, messages, message } }`. An automatic budget
+the Query returns `{ data: { chat, view, messages, message } }`. The canonical
+reader's `view` supplies the authorized title and permission. An automatic budget
 stop remains in `messages` with `safetyStop.reason` (`model_calls`, `input_tokens`, `output_tokens` or `repeated_error`)
 and a localized notice in `text`. This also covers Code-authoring stops and
 keeps every returned message text nonempty. Finish the Code run

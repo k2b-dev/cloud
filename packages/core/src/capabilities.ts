@@ -53,6 +53,7 @@ import { coreCapabilityPresentation } from "./capability-presentation";
 import { CodeDataError, codePerson } from "./code/access";
 import { codeAttentionContracts, listCodeAttention, readCodeAttention, readCodeSummary } from "./code/attention";
 import { codeAutomationContracts, listCodeAutomations } from "./code/automations";
+import { codeChatBindingContracts, getCodeChatBinding, reviewCodeChatBinding, setCodeChatBinding } from "./code/chat-binding";
 import { CodeIdSchema, codeQueryContracts } from "./code/contracts";
 import { readCodeDetails } from "./code/database";
 import { cancelCodeEventCatchup, readCodeEventCatchup, resumeCodeEventCatchup, startCodeEventCatchup } from "./code/event-catchup";
@@ -764,6 +765,13 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodes(input, ctx)),
     },
+    "code.chat_binding.read": {
+      title: "Read Code chat",
+      description: "Read a Code's chat binding and revision. Chat titles stay private to its owner.",
+      ...codeChatBindingContracts.read,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => getCodeChatBinding(input, ctx)),
+    },
     "code.read": {
       title: "Read Code",
       description: "Read Code identity, owner and current permission by codeId.",
@@ -1065,7 +1073,7 @@ export const aiCapabilities = defineCapabilities({
       description:
         "Read visible text from one core.ai.chat ref returned by ai.chats.search or a Core Action. Use ai.chat.search for text lookup inside the known chat and ai.chat.resources for referenced Cloud resources.",
       input: ChatReadInputSchema.extend({ message: z.uuid().optional().describe("Message ID returned by ai.chat.send.") }),
-      data: ChatMessagesDataSchema,
+      data: ChatMessagesDataSchema.extend({ view: CloudResourceReaderViewSchema }),
       openWorld: false,
       async run(input, context) {
         if (!context.user) return fail(err.forbidden("AI conversations require a user-backed actor"));
@@ -1085,6 +1093,7 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: {
               chat: chatSummary(chat),
+              view: { title: chat.title, permission: "write" as const },
               message: sent.data.data,
               messages: messages.flatMap((message) => visibleMessage(message, context.locale) ?? []).slice(-input.limit),
             },
@@ -1099,7 +1108,11 @@ export const aiCapabilities = defineCapabilities({
         const page = await aiConversations.listMessagesPage({ conversationId: chat.id, beforeSeq, limit: input.limit });
         const oldestSeq = page.messages[0]?.seq;
         return ok({
-          data: { chat: chatSummary(chat), messages: page.messages.flatMap((message) => visibleMessage(message, context.locale) ?? []) },
+          data: {
+            chat: chatSummary(chat),
+            view: { title: chat.title, permission: "write" as const },
+            messages: page.messages.flatMap((message) => visibleMessage(message, context.locale) ?? []),
+          },
           summary: coreCapabilityMessages(context.locale).t.chatRead({ title: chat.title }),
           refs: [chatReference(chat)],
           links: [{ rel: "open", href: chatHref(chat.shortId) }],
@@ -1280,6 +1293,40 @@ export const aiCapabilities = defineCapabilities({
       review: (input, context) =>
         reviewCodeOperation({ codeId: codeTargetId(context), entrypoint: input.deliveryId }, context, "redeliver"),
       run: (input, context) => runCodeQuery(context, (ctx) => replayCodeEventDelivery(codeTargetId(context), input.deliveryId, ctx)),
+    },
+    "code.chat_binding.set": {
+      title: "Choose Code chat",
+      description:
+        "Only the personal Code owner may choose an own active chat at the current binding revision. Queued messages keep their destination.",
+      target: "code",
+      code: false,
+      unattended: false,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      input: codeChatBindingContracts.set.input.omit({ codeId: true }),
+      data: codeChatBindingContracts.set.data,
+      policy: { silent: "you" },
+      async review(input, context) {
+        const result = await runCodeQuery(context, (ctx) => reviewCodeChatBinding({ ...input, codeId: codeTargetId(context) }, ctx));
+        if (!result.ok) return result;
+        const { t, locale } = coreCapabilityMessages(context.locale);
+        const { row, chat } = result.data.data;
+        return ok({
+          locale,
+          reach: "you" as const,
+          scope: row.id,
+          slots: { code: { kind: "text" as const, value: row.title }, chat: { kind: "text" as const, value: chat.title } },
+          sentence: {
+            action: t.codeChatBindingAction,
+            running: t.codeChatBindingRunning,
+            done: t.codeChatBindingDone,
+            confirm: t.codeChatBindingConfirm,
+            decline: t.codeOperationDecline,
+          },
+        });
+      },
+      run: (input, context) => runCodeQuery(context, (ctx) => setCodeChatBinding({ ...input, codeId: codeTargetId(context) }, ctx)),
     },
     "code.secret.set": {
       title: "Set Code secret",

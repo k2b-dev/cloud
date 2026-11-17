@@ -222,6 +222,16 @@ test("attention stops after its bounded windows and says where to continue", asy
   expect(calls).toBe(4);
 });
 
+test("personal missing-chat attention stays in the shared Waiting feed instead of duplicating the place section", async () => {
+  const core = fakeCore({
+    "code.attention.list": () => ({
+      items: [{ code: { ...code("c_personal"), owner: { kind: "person" } }, reasons: ["chat_missing"], lastRunAt: null }],
+      nextCursor: null,
+    }),
+  });
+  expect(await loadCodeAttention(core.invoke)).toEqual({ items: [], nextCursor: null });
+});
+
 test("a Code with a page and an event keeps its schedule's next run", async () => {
   const entry = (entrypoint: string, kind: string, nextRunAt: string | null) => ({
     entrypoint,
