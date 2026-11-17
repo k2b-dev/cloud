@@ -360,6 +360,8 @@ const select = (page: Page, selector: string, passage: string) =>
     [selector, passage] as const,
   );
 
+/** The quotes a sent message of the person shows above its text. */
+const sentQuotes = '.k2b-chat-message[data-role="user"] .k2b-message-quotes';
 /** "Quote" at the selection, apart from the actions of the messages. */
 const pill = (page: Page) => page.locator(".k2b-selection-toolbar").getByRole("button", { name: "Zitieren" });
 
@@ -408,14 +410,14 @@ describe("Quoting in Gustav's chat", () => {
     try {
       await page.locator(".ai-user-text").first().waitFor();
       // The passage a sent message quoted shows above its text, and selecting in it offers nothing.
-      const quoted = page.locator(".ai-user-quotes .k2b-message-quote");
+      const quoted = page.locator(`${sentQuotes} .k2b-message-quote`);
       expect(await quoted.textContent()).toContain(PASSAGE);
       if (process.env.ASSISTANT_SHOTS) await page.screenshot({ path: `${process.env.ASSISTANT_SHOTS}/quote-sent-1440.png` });
       expect(await quoted.textContent()).toContain("Gustav");
       expect(await quoted.count()).toBe(1);
       // A message whose typed text looks like a quote shows that text as the person's own words.
       expect(await page.locator(".ai-user-text").last().textContent()).toContain("Gustav hat zugestimmt.");
-      await select(page, ".ai-user-quotes", PASSAGE);
+      await select(page, sentQuotes, PASSAGE);
       await settled(page);
       expect(await pill(page).count()).toBe(0);
       // The person's own words are a passage.

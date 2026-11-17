@@ -2954,11 +2954,11 @@ export const aiConversations: AiConversationService = {
       WHERE conversation_id = ${input.conversationId}
         AND kind = 'message'
         AND (
-          short_id = ANY(${toPgTextArray(input.messageIds)}::text[])
+          short_id = ANY(${toPgTextArray([...input.messageIds])}::text[])
           OR (role = 'assistant' AND loop_id IN (
             SELECT loop_id FROM ai.messages
             WHERE conversation_id = ${input.conversationId}
-              AND short_id = ANY(${toPgTextArray(input.messageIds)}::text[])
+              AND short_id = ANY(${toPgTextArray([...input.messageIds])}::text[])
               AND role = 'assistant'
               AND loop_id IS NOT NULL
           ))

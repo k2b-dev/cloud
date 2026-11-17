@@ -13,9 +13,9 @@ import {
 import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
 import type { ApprovalDraftResult } from "../../contracts/approvals";
 import type { CloudResourceRef } from "../../contracts/capabilities";
+import { markdown } from "../../shared";
 import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
-import { markdown } from "../../shared";
 import { type AiQuoteDraft, aiQuoteVisibleTextOfHtml } from "../quote-markers";
 import type { AiCodeAuthoringStop, AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
 import {

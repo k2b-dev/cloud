@@ -1025,7 +1025,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
                   : [
                       {
                         type: "text" as const,
-                        text: part.type === "text" ? part.text : part.type === "file" ? aiAttachmentMarker(part) : aiDraftPartTurnText(part),
+                        text:
+                          part.type === "text" ? part.text : part.type === "file" ? aiAttachmentMarker(part) : aiDraftPartTurnText(part),
                       },
                     ],
               ),

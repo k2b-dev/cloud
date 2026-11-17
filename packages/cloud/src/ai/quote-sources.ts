@@ -1,12 +1,6 @@
 import { markdown } from "../shared";
 import { userVisibleTextFromMessage } from "./chat/message-utils";
-import {
-  type AiMessageQuote,
-  type AiQuoteDraft,
-  type AiQuoteSource,
-  aiQuoteStandsIn,
-  aiQuoteVisibleTextOfHtml,
-} from "./quote-markers";
+import { type AiMessageQuote, type AiQuoteDraft, type AiQuoteSource, aiQuoteStandsIn, aiQuoteVisibleTextOfHtml } from "./quote-markers";
 import { assistantVisibleTextFromMessage } from "./timeline";
 import type { AiStoredMessage } from "./types";
 

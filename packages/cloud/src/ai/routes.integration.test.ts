@@ -338,8 +338,8 @@ suite("global AI conversation boundaries", () => {
     });
     await sql`
       INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, search_text)
-      VALUES (${answerId}, ${chat.id}::uuid, 1, 'message', 'assistant', ${answer}::jsonb, 'Strom'),
-        (${elsewhereId}, ${other.id}::uuid, 1, 'message', 'assistant', ${answer}::jsonb, 'Strom')
+      VALUES (${answerId}, ${chat.id}::uuid, 1, 'message', 'assistant', ${answer}::text::jsonb, 'Strom'),
+        (${elsewhereId}, ${other.id}::uuid, 1, 'message', 'assistant', ${answer}::text::jsonb, 'Strom')
     `;
     const submissions: Parameters<typeof aiRuntime.submitAiChatTurn>[0][] = [];
     const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (submission) => {

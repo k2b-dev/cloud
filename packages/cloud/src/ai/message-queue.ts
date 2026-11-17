@@ -6,8 +6,8 @@ import { aiDraftTurnContent, editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
 import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT } from "./files-store";
 import { aiDraftContentProblem, aiInputToUserMessage, aiTurnInputToContent } from "./http";
-import { aiNeutralizeQuoteMarkers } from "./quote-markers";
 import { AiQuotaError, aiQuotas } from "./quotas";
+import { aiNeutralizeQuoteMarkers } from "./quote-markers";
 import { aiConversations } from "./store";
 import type { AiConversationService, AiDraftContentPart } from "./types";
 
