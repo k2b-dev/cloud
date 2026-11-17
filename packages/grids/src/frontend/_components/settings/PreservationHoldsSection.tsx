@@ -215,7 +215,9 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
           close={close}
           setDismissHandler={context.setDismissHandler}
           save={async (input) => {
-            if ((await createHold.mutate(input)) === "error") throw createHold.error();
+            const outcome = await createHold.mutate(input);
+            if (outcome === "error") throw createHold.error();
+            if (outcome !== "success") throw new DOMException("Hold creation did not run", "AbortError");
           }}
         />
       ),
