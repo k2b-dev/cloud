@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-11-11
+updated: 2026-11-17
 ---
 
 # Runtime configuration
@@ -18,6 +18,17 @@ For the services and optional integrations needed by each app, start with
 
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
+
+## AI conversation read responses
+
+Conversation read APIs and SSE updates now return empty thinking text. Thinking
+message blocks omit the provider fields `signature`, `redacted`, and `details`.
+Update consumers that expect these fields or use thinking text as step details.
+This also applies to existing history, live snapshots, and background-run reads.
+
+Internal provider replay continues to use the original canonical thinking
+content. Stored conversations and provider replay are unchanged; no data
+migration is needed.
 
 ## Anonymous internal Geo autocomplete
 
