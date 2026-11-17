@@ -98,6 +98,11 @@ const open = async (
   // Reuse each locale/device's HTTP cache; every page still starts with a fresh DOM and timeline.
   const key = `${locale}/${width}`;
   let context = contexts.get(key);
+  // Bun may terminate a timed-out test's browser; let the shared launcher replace it next time.
+  if (context && !context.browser()?.isConnected()) {
+    contexts.delete(key);
+    context = undefined;
+  }
   if (!context) {
     context = await browser.newContext({
       viewport: { width, height: width < 600 ? 780 : 900 },
@@ -313,8 +318,8 @@ describe("the v10 pause card", () => {
   }
 
   for (const theme of ["light", "dark"] as const) {
-    test(`a historical receipt has no action and remains neutral (${theme})`, async () => {
-      for (const width of [1440, 390]) {
+    for (const width of [1440, 390]) {
+      test(`a historical receipt has no action and remains neutral (${theme}, ${width})`, async () => {
         const { page, errors, close } = await open("de", width, theme, "input_tokens", "draft", "retired");
         try {
           expect(await page.locator(".assistant-authoring-stop").getByRole("button").count()).toBe(0);
@@ -324,7 +329,7 @@ describe("the v10 pause card", () => {
         } finally {
           await close();
         }
-      }
-    });
+      });
+    }
   }
 });
