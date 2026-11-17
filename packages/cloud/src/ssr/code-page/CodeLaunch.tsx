@@ -53,7 +53,7 @@ export function CodeLaunch(props: { state: CodePageReady; text: PageText; run: C
             aria-disabled="true"
             onClick={(event) => event.preventDefault()}
           >
-            <i class="ti ti-player-play" aria-hidden="true" />
+            <i class="ti ti-browser" aria-hidden="true" />
             {t().launchOpen}
           </Button>
         </Show>
@@ -100,7 +100,7 @@ export function CodeLaunch(props: { state: CodePageReady; text: PageText; run: C
             when={items().length}
             fallback={
               <ButtonLink variant={variant()} class="cloud-code__launch" href={routeHref(props.state.code.id, home())}>
-                <i class="ti ti-player-play" aria-hidden="true" />
+                <i class="ti ti-browser" aria-hidden="true" />
                 {t().launchOpen}
               </ButtonLink>
             }
@@ -115,7 +115,7 @@ export function CodeLaunch(props: { state: CodePageReady; text: PageText; run: C
               phone="sheet"
               menuPosition="bottom-right"
             >
-              <i class="ti ti-player-play" aria-hidden="true" />
+              <i class="ti ti-browser" aria-hidden="true" />
               {t().launchOpen}
             </SplitButton>
           </Show>

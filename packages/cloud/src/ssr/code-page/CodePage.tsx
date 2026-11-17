@@ -405,8 +405,7 @@ function ReadyPage(props: {
                 <Button
                   type="button"
                   variant={changeFilled() ? "primary" : "secondary"}
-                  class="cloud-code__change"
-                  classList={{ "cloud-code__change--alone": !hasLaunch() && !paused() }}
+                  class={`cloud-code__change${!hasLaunch() && !paused() ? " cloud-code__change--alone" : ""}`}
                   aria-label={t().changeWith({ name: panel().label })}
                   onClick={() => openPanel(panel().provider)}
                 >
