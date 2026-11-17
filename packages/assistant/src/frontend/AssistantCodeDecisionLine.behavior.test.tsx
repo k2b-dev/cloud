@@ -95,6 +95,19 @@ test("a card without an answer takes the focus on its question", () => {
   expect(jumpToCodeVersionCard("missing", dom.root)).toBe(false);
 });
 
+test("jumping to a NoticeCard focuses its neutral primary link, even when the secondary link comes first", () => {
+  const dom = createDomTestHarness();
+  restore.push(() => dom.cleanup());
+  const card = document.createElement("article");
+  card.className = "k2b-notice-card";
+  card.setAttribute("data-chat-anchor", "notice-version");
+  card.innerHTML =
+    '<a href="/runs">Läufe ansehen</a><a href="/version" data-code-version-primary data-variant="secondary">Alles ansehen</a>';
+  dom.root.append(card);
+  expect(jumpToCodeVersionCard("notice-version", dom.root)).toBe(true);
+  expect(document.activeElement).toBe(card.querySelector("a[href='/version']"));
+});
+
 test("a card not on the page is revealed by the host first; if that fails, the line says where it is", async () => {
   const asked: string[] = [];
   const { line } = mount(decision("rejected"), {

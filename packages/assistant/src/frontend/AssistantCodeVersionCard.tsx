@@ -133,7 +133,7 @@ export default function AssistantCodeVersionCard(props: {
   };
   const check = async () => {
     clearTimeout(recheck);
-    setActivation({ kind: "progress" });
+    setActivation({ kind: "checking" });
     const read = await readCodeVersionActivation(props.codeId, activationId);
     if (disposed) return;
     if (read.ok) {
@@ -149,7 +149,7 @@ export default function AssistantCodeVersionCard(props: {
     recheck = setTimeout(() => void check(), RECHECK_MS);
   };
   const start = async () => {
-    if (activation().kind === "progress" || actionBusy()) return;
+    if (activation().kind === "progress" || activation().kind === "checking" || actionBusy()) return;
     const held =
       document.activeElement instanceof HTMLElement && document.activeElement.hasAttribute("data-code-version-primary")
         ? document.activeElement
@@ -171,7 +171,7 @@ export default function AssistantCodeVersionCard(props: {
     }
   };
   const mutate = async (kind: "stop" | "askAgain" | "withdraw") => {
-    if (actionBusy() || activation().kind === "progress") return;
+    if (actionBusy() || activation().kind === "progress" || activation().kind === "checking") return;
     setActionBusy(true);
     setActionError(null);
     try {

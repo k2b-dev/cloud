@@ -15,7 +15,7 @@ export type CodeVersionCardLoaded = {
   pages: CodePageLinks | null;
   latest: { id: string; number: number } | null;
 };
-export type CodeVersionCardActivation = { kind: "idle" | "progress" | "unknown" | "unreadable" | "failed" };
+export type CodeVersionCardActivation = { kind: "idle" | "progress" | "checking" | "unknown" | "unreadable" | "failed" };
 export type CodeVersionCardAction = {
   id: "activate" | "retry" | "check" | "load" | "withdraw" | "stop" | "askAgain" | "rework" | "different" | "page" | "runs" | "open";
   label: string;
@@ -225,7 +225,7 @@ export function describeCodeVersionCard(input: {
       secondary: details,
     };
   } else {
-    const progress = act.kind === "progress";
+    const progress = act.kind === "progress" || act.kind === "checking";
     const blocked = !preview.allowed.allowed
       ? preview.allowed.reason === "phone"
         ? t.phone
@@ -235,8 +235,15 @@ export function describeCodeVersionCard(input: {
         : null;
     result = {
       kind: progress ? "switching" : "ready",
-      main: progress ? t.lineSwitching({ version }) : review?.status === "approved" ? c.approved({ version, name }) : c.ready({ version }),
-      quiet: blocked ?? summary,
+      main:
+        act.kind === "checking"
+          ? c.checking
+          : progress
+            ? t.lineSwitching({ version })
+            : review?.status === "approved"
+              ? c.approved({ version, name })
+              : c.ready({ version }),
+      quiet: act.kind === "checking" ? c.unknownQuiet : (blocked ?? summary),
       busy: progress,
       primary: { ...action("activate", c.activate, true), busy: progress, disabled: Boolean(blocked) },
       secondary: details,

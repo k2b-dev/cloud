@@ -247,6 +247,28 @@ test("the durable pending identity is checked on reload rather than starting aga
   expect(status(dom.root)).toContain("not yet clear");
 });
 
+test("checking a lost activation says checking while Core has not answered", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { dom } = await mount(
+    {
+      "activation/preview": () => ({ json: { data: preview() } }),
+      "activation/read": async () => {
+        await held;
+        return { status: 503 };
+      },
+    },
+    { pending: "pending-check" },
+  );
+  expect(status(dom.root)).toBe("Cloud is checking the activation …");
+  expect(button(dom.root, "Switch on")?.hasAttribute("disabled")).toBe(true);
+  release();
+  await tick();
+  expect(status(dom.root)).toContain("not yet clear");
+});
+
 test("a successful activation with an older read keeps its durable identity and cannot start a second attempt", async () => {
   const { dom, calls } = await mount({
     "activation/preview": () => ({ json: { data: preview() } }),

@@ -137,7 +137,7 @@ describe("v10 approval card in Chromium", () => {
         const h = await open(width, theme);
         try {
           const first = await boxes(h.page);
-          for (const state of [...approvalStates, "loading", "failed", "denied"]) {
+          for (const state of [...approvalStates, "on-single-page", "loading", "failed", "denied", "unknown", "checking"]) {
             await setState(h.page, state);
             const measured = await boxes(h.page);
             expect({ state, measured }).toEqual({ state, measured: first });
@@ -161,6 +161,8 @@ describe("v10 approval card in Chromium", () => {
               expect(a.y).toBeGreaterThanOrEqual(measured.quiet.y + measured.quiet.height);
               expect(await card.locator("[data-code-version-primary]").getAttribute("data-variant")).toBe("ai");
             }
+            if (state === "on-single-page")
+              expect(await card.getByRole("link", { name: "Öffnen", exact: true }).getAttribute("href")).toBe("/code/c_info01/home");
             if (state === "on") expect(await card.locator(".k2b-split-button").count()).toBe(1);
             else expect(await card.getByRole("button", { name: "Öffnen", exact: true }).count()).toBe(0);
             await screenshot(h.page, state, theme, width);

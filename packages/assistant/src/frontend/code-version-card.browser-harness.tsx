@@ -11,17 +11,31 @@ import { CodeVersionCardView } from "./code-version-card-view";
 const query = new URLSearchParams(location.search);
 const locale = query.get("lang") === "en" ? "en" : "de";
 const [state, setState] = createSignal<ApprovalState>("waiting");
-const [extra, setExtra] = createSignal<"loading" | "failed" | "denied" | null>(null);
+const [extra, setExtra] = createSignal<"loading" | "failed" | "denied" | "unknown" | "checking" | "on-single-page" | null>(null);
 const model = createMemo(() => {
   const value = extra();
+  if (value === "on-single-page") {
+    const loaded = approvalFixture("on", locale);
+    if (loaded.pages) loaded.pages.pages = loaded.pages.pages.slice(0, 1);
+    return describeCodeVersionCard({
+      value: loaded,
+      version: 1,
+      versionId: approvalVersionId,
+      locale,
+      timeZone: "UTC",
+      activation: { kind: "idle" },
+      nextRun: "2026-11-17T09:00:00.000Z",
+      canAsk: true,
+    });
+  }
   return value
     ? describeCodeVersionCard({
-        value: value === "loading" ? null : value,
+        value: value === "loading" ? null : value === "unknown" || value === "checking" ? approvalFixture("ready", locale) : value,
         version: 1,
         versionId: approvalVersionId,
         locale,
         timeZone: "UTC",
-        activation: { kind: "idle" },
+        activation: { kind: value === "unknown" || value === "checking" ? value : "idle" },
         nextRun: null,
         canAsk: true,
       })
@@ -88,7 +102,15 @@ Object.assign(window, {
     if (normal) {
       setExtra(null);
       setState(normal);
-    } else if (value === "loading" || value === "failed" || value === "denied") setExtra(value);
+    } else if (
+      value === "loading" ||
+      value === "failed" ||
+      value === "denied" ||
+      value === "unknown" ||
+      value === "checking" ||
+      value === "on-single-page"
+    )
+      setExtra(value);
   },
   failActivation: () => finish?.(),
 });

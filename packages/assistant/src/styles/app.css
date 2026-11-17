@@ -1133,10 +1133,9 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 @container (max-width: 35rem) {
   .k2b-ui .assistant-code-version[data-tone][data-card-icon] > .k2b-notice-card__content {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(2.625rem, auto) 3.5625rem minmax(3.625rem, auto);
+    grid-template-rows: minmax(2.625rem, auto) 2.375rem minmax(3.625rem, auto);
     row-gap: 0.5rem;
   }
-  .assistant-code-version__quiet { -webkit-line-clamp: 3; }
   .k2b-ui .assistant-code-version .k2b-notice-card__actions {
     grid-column: 1;
     grid-row: 3;
