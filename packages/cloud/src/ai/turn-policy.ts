@@ -97,7 +97,7 @@ const withPrompt = (systemPrompt: string | undefined, suffix: string | null) =>
  * attempt gave is not remembered.
  */
 /** nessi lets the model repair two responses in a row whose calls it could not use (malformed or cut off). */
-const AI_MODEL_REPAIR_TURNS = 2;
+export const AI_MODEL_REPAIR_TURNS = 2;
 
 export const applyAiTurnPolicy = (input: {
   provider: Provider;

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { sql } from "../runtime/clients";
 import { ConfigConflict } from "../services/config-conflict";
 import { stripImageDataUrlMetadata } from "../services/image-metadata";
+import { AiModelPricingSchema } from "../shared/ai-costs";
 import {
   AI_MODEL_CLASSES,
   AiAssignmentSchema,
@@ -402,7 +403,7 @@ export const flattenAiModelVariant = (provider: AiProvider, model: AiModel, vari
   extraBody: { ...model.extraBody, ...variant.extraBody },
   maxLoadedTools: model.maxLoadedTools ?? undefined,
   maxToolRounds: model.maxToolRounds ?? undefined,
-  pricing: variant.pricing ?? model.pricing ?? undefined,
+  pricing: variant.pricing ? AiModelPricingSchema.parse({ ...model.pricing, ...variant.pricing }) : (model.pricing ?? undefined),
 });
 export const readAiModelProfiles = async (db = sql): Promise<AiModelProfile[]> => {
   const [providers, models, variants] = await Promise.all([

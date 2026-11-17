@@ -228,7 +228,7 @@ export const redactAiCallError = (message: string): string => message.replace(/\
 
 export async function finishAiCall(
   id: string,
-  usage: { input: number; output: number; estimated?: boolean } | undefined,
+  usage: { input: number; output: number; cacheRead?: number; estimated?: boolean } | undefined,
   status: AiCallStatus,
   details: AiCallDetails = {},
 ) {
@@ -242,12 +242,12 @@ export async function finishAiCall(
     const cost =
       status === "failed" && details.firstByteMs === undefined && !usage
         ? "0"
-        : call.pricing?.inputPerMillion === 0 && call.pricing.outputPerMillion === 0
+        : call.pricing && !hasBillableAiPricing(call.pricing)
           ? "0"
           : call.pricing && usage
-            ? aiCostDecimal(aiCostUnits(call.pricing, usage.input, usage.output))
+            ? aiCostDecimal(aiCostUnits(call.pricing, usage.input, usage.output, usage.cacheRead))
             : null;
-    await db`UPDATE ai.inference_calls SET input=${usage?.input ?? null},output=${usage?.output ?? null},estimated=${usage?.estimated ?? false},
+    await db`UPDATE ai.inference_calls SET input=${usage?.input ?? null},output=${usage?.output ?? null},cache_read=${usage?.cacheRead ?? null},estimated=${usage?.estimated ?? false},
       audio_ms=${ms(details.audioMs)},cost=${cost}::numeric,reserved=0,finished_at=clock_timestamp(),status=${status},error_code=${status === "failed" ? "ai_provider_call_failed" : null},
       error=${status === "failed" && details.error ? redactAiCallError(details.error) : null},cancelled=${details.cancelled ?? false},
       request_started_at=${details.requestStartedAt === undefined ? null : new Date(details.requestStartedAt)},
