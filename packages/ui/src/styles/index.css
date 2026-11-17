@@ -5739,7 +5739,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-panel-dialog__body {
-  @apply flex min-h-0 flex-1 flex-col overflow-y-auto;
+  @apply flex min-h-0 flex-col overflow-y-auto;
+  /* A content basis releases the natural height after the frame was pinned;
+     WebKit can retain the old intrinsic size with a zero percentage basis. */
+  flex: 1 1 auto;
   gap: 0.5rem;
   padding: 0.25rem var(--k2b-panel-dialog-inset, 1.5rem) 1.5rem;
 }

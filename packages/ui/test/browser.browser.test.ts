@@ -170,24 +170,52 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   }, 20_000);
 
-  test("settled() includes layout motion scheduled for the next frame", async () => {
-    const context = await browser.newContext();
-    try {
-      const page = await context.newPage();
-      await page.setContent('<div id="sample">sample</div>');
-      await page.evaluate(() => {
-        requestAnimationFrame(() => {
-          document.querySelector("#sample")!.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 100 });
-        });
-      });
-      await settled(page);
-      expect(
-        await page.evaluate(() => document.getAnimations().filter((animation) => animation.timeline === document.timeline).length),
-      ).toBe(0);
-    } finally {
-      await context.close();
-    }
-  });
+  for (const sizeReport of [false, true])
+    test(`settled() includes layout motion scheduled ${sizeReport ? "by the first size report" : "for the next frame"}`, async () => {
+      const context = await browser.newContext();
+      try {
+        const page = await context.newPage();
+        await page.setContent('<div id="sample">sample</div>');
+        await page.evaluate((sizeReport) => {
+          const ready = document.fonts.ready;
+          let scheduled = false;
+          // The helper's first fonts.ready read schedules the animation in the SAME browser task as its snapshot.
+          // A paused clock prevents a slow engine from making the old helper pass by missing the entire animation.
+          Object.defineProperty(document.fonts, "ready", {
+            get() {
+              if (!scheduled) {
+                scheduled = true;
+                const start = () => {
+                  const animation = document.querySelector("#sample")!.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 100 });
+                  animation.pause();
+                  Object.defineProperty(animation, "playState", { get: () => "running" });
+                  Object.defineProperty(animation, "finished", {
+                    get() {
+                      animation.cancel();
+                      return Promise.resolve(animation);
+                    },
+                  });
+                };
+                if (sizeReport) {
+                  const sizes = new ResizeObserver(() => {
+                    sizes.disconnect();
+                    requestAnimationFrame(start);
+                  });
+                  sizes.observe(document.documentElement);
+                } else requestAnimationFrame(start);
+              }
+              return ready;
+            },
+          });
+        }, sizeReport);
+        await settled(page);
+        expect(
+          await page.evaluate(() => document.getAnimations().filter((animation) => animation.timeline === document.timeline).length),
+        ).toBe(0);
+      } finally {
+        await context.close();
+      }
+    });
 
   test("a retried hover() scrolls the page, and hoverInPlace() never does", async () => {
     const context = await browser.newContext({ viewport: { width: 400, height: 600 } });

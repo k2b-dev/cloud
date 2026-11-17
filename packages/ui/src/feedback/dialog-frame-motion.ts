@@ -8,7 +8,7 @@
  * The frame also follows its content's height while it is open: when a notice comes or goes, fields appear, or text
  * grows, the frame goes from the height the eye sees to the new one over `--k2b-motion-fold` with `--k2b-ease-glide`,
  * and new content fades in over `--k2b-motion-fast` from 40 % of that time. Its top edge stays where it is: it grows
- * downwards and moves up only when the room below runs out; a sheet grows from the bottom edge. Frames with a size of
+ * downwards and moves up together with growth only when the room below runs out; a sheet grows from the bottom edge. Frames with a size of
  * their own (fixed, workspace, full, sheets with detents) never follow. Neither the first open, the close, a window
  * resize, nor the on-screen keyboard animate.
  *
@@ -54,6 +54,8 @@ export type FrameMotion = {
   follow: (level: HTMLElement) => void;
   /** Ends every motion now and runs the pending endings, for a frame that leaves the document. */
   stop: () => void;
+  /** An explicit position wins over a fold, including its pending completion. */
+  position: () => void;
   /**
    * For a frame that closes and fades out: keeps the size, place and contents exactly as the eye sees them now, and
    * returns the pending endings to run once the frame has left.
@@ -173,28 +175,37 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   let level: HTMLElement | undefined;
   /** Between measurements the frame holds its height; content never grows it ahead of a fold. */
   let rested = 0;
-  let pinned = 0;
+  let placed = false;
+  let followingAnchor: Anchor | undefined;
+  let initialMeasure = false;
+  let viewportHeight = window.innerHeight;
   let queued = 0;
   let resized = false;
   let firstRest = false;
   let restFrame = 0;
   let busy = false;
   let loadingChange = false;
-  let arrived: HTMLElement[] = [];
+  let arrived = new Set<HTMLElement>();
 
   const ownSize = () => dialog.matches(OWN_SIZE) || (dialog.matches("[data-sheet-detents]") && anchor() === "bottom");
-  const isBusy = () => Boolean(level?.matches('[aria-busy="true"]') || level?.querySelector('[aria-busy="true"]'));
+  const BUSY_CONTENT = '[aria-busy="true"]:not(button, [role="button"])';
+  const isBusyNode = (node: Element) => node.matches(BUSY_CONTENT) || Boolean(node.querySelector(BUSY_CONTENT));
+  const isBusy = () => Boolean(level && isBusyNode(level));
+  const textFocused = () => {
+    const active = document.activeElement;
+    return active instanceof HTMLElement && level?.contains(active) && (active.matches("input, textarea") || active.isContentEditable);
+  };
   const place = (offset: number) => {
-    pinned = offset;
-    if (offset) dialog.style.top = `calc(50% + ${offset}px)`;
+    placed = offset !== 0;
+    if (placed) dialog.style.top = `${window.innerHeight / 2 + offset}px`;
     else dialog.style.removeProperty("top");
   };
-  /** Keep the top edge, moving up before growth only as far as the new height needs. */
+  /** Keep the top edge, moving up with growth only as far as the new height needs. */
   const edgeFor = (shown: ReturnType<typeof seen>, height: number) => {
     const viewport = window.visualViewport;
     const bottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
     const cap = Number.parseFloat(getComputedStyle(dialog).maxHeight);
-    const margin = Number.isFinite(cap) ? Math.max(0, (window.innerHeight - cap) / 2) : 0;
+    const margin = Number.isFinite(cap) ? Math.max(0, ((viewport?.height ?? window.innerHeight) - cap) / 2) : 0;
     return Math.max((viewport?.offsetTop ?? 0) + margin, Math.min(shown.top - shown.height / 2, bottom - margin - height));
   };
   const holdHeight = (height: number) => {
@@ -211,14 +222,49 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
 
   const fold = () => {
     if (!level || started || frameKind === "morph") return;
+    // A child already animating its height owns that motion. Measure its final height once, rather than folding
+    // the frame towards intermediate samples and then folding it a second time.
+    const heightMotion = dialog
+      .getAnimations({ subtree: true })
+      .filter(
+        (animation) =>
+          animation !== frame &&
+          animation.timeline === document.timeline &&
+          Number.isFinite(animation.effect?.getComputedTiming().endTime) &&
+          (animation.playState === "running" || animation.playState === "paused") &&
+          animation.effect instanceof KeyframeEffect &&
+          animation.effect.target !== dialog &&
+          animation.effect.getKeyframes().some((keyframe) => "height" in keyframe || "maxHeight" in keyframe || "minHeight" in keyframe),
+      );
+    if (heightMotion.length) {
+      for (const animation of heightMotion)
+        if (!waiting.has(animation)) {
+          waiting.add(animation);
+          void animation.finished.catch(() => {}).then(changed);
+        }
+      return;
+    }
+    if (refreshShells) {
+      refreshShells = false;
+      observeContent(level);
+    }
     const added = arrived;
-    arrived = [];
+    arrived = new Set();
     const loading = busy || loadingChange || isBusy();
     busy = isBusy();
     loadingChange = false;
     const wasResize = resized;
     resized = false;
+    const where = anchor();
+    // Release only the top owned here, before own-size/detent handling and natural-height measurement.
+    const anchorChanged = followingAnchor !== where;
+    if (anchorChanged) {
+      if (placed) place(0);
+      followingAnchor = where;
+    }
     const shown = seen();
+    if (wasResize && where === "center" && !placed && !anchorChanged) shown.top -= (window.innerHeight - viewportHeight) / 2;
+    viewportHeight = window.innerHeight;
     const interrupted = Boolean(frame);
     if (interrupted) endFrame();
     // All measurement and layout writes run here, in a frame, never inside an observer delivery.
@@ -227,28 +273,29 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       rested = dialog.offsetHeight;
       return;
     }
-    if (wasResize && pinned && anchor() === "center") place(0);
-    const height = dialog.offsetHeight;
-    const where = anchor();
+    const natural = dialog.offsetHeight;
+    const height = !wasResize && textFocused() ? Math.max(natural, shown.height) : natural;
     const from = interrupted ? shown.height : rested;
     const edge = edgeFor({ ...shown, height: from }, height);
     const offset = edge + height / 2 - window.innerHeight / 2;
     const moving = dialog.getAnimations().filter((animation) => animation.playState === "running" || animation.playState === "paused");
-    const duration = firstRest && !loading && !wasResize && !moving.length && animatable() ? token("--k2b-motion-fold") : 0;
+    const duration =
+      firstRest && !initialMeasure && !loading && !wasResize && !moving.length && animatable() ? token("--k2b-motion-fold") : 0;
+    initialMeasure = false;
     holdHeight(height);
     if (!duration || Math.abs(height - from) < 1) {
-      if (where === "center" && !wasResize) place(offset);
+      if (where === "center") place(firstRest && !anchorChanged ? offset : 0);
       if (Math.abs(height - from) >= 1 || wasResize) dialog.dispatchEvent(new Event("k2b-frame-resize"));
       return;
     }
-    // If growth would put the footer below the view, move up first. Then the height folds below that edge.
-    const top = Math.min(shown.top - from / 2, edge);
-    if (where === "center") place(top + from / 2 - window.innerHeight / 2);
+    // Both edges begin where the eye sees them. Top and height share one curve, so the bottom stays in view.
+    const top = shown.top - from / 2;
+    if (where === "center") place(offset);
     const keyframes =
       where === "center"
         ? [
             { height: `${from}px`, top: `${top + from / 2}px` },
-            { height: `${height}px`, top: `calc(50% + ${offset}px)` },
+            { height: `${height}px`, top: `${window.innerHeight / 2 + offset}px` },
           ]
         : [{ height: `${from}px` }, { height: `${height}px` }];
     dialog.dataset.k2bFrameMotion = "";
@@ -265,62 +312,127 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     };
     if (height > from) {
       const fast = token("--k2b-motion-fast");
-      for (const element of new Set(added)) if (element.isConnected) fade(element, 1, fast, duration * FOLD_DELAY_SHARE, () => {});
+      const active = document.activeElement;
+      for (const element of added)
+        if (element.isConnected && !element.contains(active) && !active?.contains(element))
+          fade(element, 1, fast, duration * FOLD_DELAY_SHARE, () => {});
     }
   };
 
-  // A held level does not resize when an intrinsic child grows (an image, font or line wrap), so watch its descendants
-  // too. During a fold only mutations count; its own stretched content is remeasured once the fold reaches rest.
+  const waiting = new WeakSet<Animation>();
+  const known = new WeakSet<Element>();
+  let firstDelivery = true;
+  let followingMorph = false;
   const measured = new WeakMap<Element, { width: number; height: number }>();
+  const watched = new Set<Element>();
+  const shells = new WeakSet<Element>();
+  let refreshShells = false;
   const sizes =
     typeof ResizeObserver === "function"
       ? new ResizeObserver((entries) => {
           let resized = false;
+          const initial = firstDelivery;
+          firstDelivery = false;
           for (const {
             target,
             contentRect: { width, height },
           } of entries) {
             const previous = measured.get(target);
             measured.set(target, { width, height });
-            resized ||= previous !== undefined && (width !== previous.width || height !== previous.height);
+            resized ||=
+              previous === undefined ||
+              !Number.isFinite(previous.width) ||
+              !Number.isFinite(previous.height) ||
+              Math.abs(width - previous.width) >= 0.01 ||
+              Math.abs(height - previous.height) >= 0.01;
           }
-          // The first delivery establishes each child's size. It is no content change and needs no layout work.
+          initialMeasure ||= initial && resized && !followingMorph;
           if (resized && frameKind !== "fold") changed();
         })
       : undefined;
-  const observeTree = (element: Element, observe: boolean) => {
-    if (observe) sizes?.observe(element);
-    else sizes?.unobserve(element);
-    for (const child of element.querySelectorAll("*")) {
-      if (observe) sizes?.observe(child);
-      else sizes?.unobserve(child);
+
+  // Watch the structural shells down to natural-flow content, not every rendered row, word, or editor overlay.
+  // A flex/grid or scrolling shell can be stretched by the held frame, so its children report intrinsic changes.
+  // This traversal runs once per level; a preview replacing hundreds of descendants needs no observe/unobserve calls.
+  const observeContent = (element: Element, pending: Element[] = []) => {
+    const style = getComputedStyle(element);
+    // Positioned overlays (for example MarkdownEditor's highlighted copy) do not contribute to the frame's height.
+    if (element !== level && (style.position === "absolute" || style.position === "fixed")) return;
+    if (!watched.has(element)) {
+      watched.add(element);
+      // Capture the content box before registering any roots: an intrinsic change between follow() and the first
+      // delivery must not become an invisible baseline. Computed dimensions round CSS pixels to decimal text;
+      // the delivery comparison ignores only that sub-hundredth-pixel serialization difference.
+      const inset = (axis: "width" | "height") =>
+        style.boxSizing !== "border-box"
+          ? 0
+          : axis === "width"
+            ? Number.parseFloat(style.paddingLeft) +
+              Number.parseFloat(style.paddingRight) +
+              Number.parseFloat(style.borderLeftWidth) +
+              Number.parseFloat(style.borderRightWidth)
+            : Number.parseFloat(style.paddingTop) +
+              Number.parseFloat(style.paddingBottom) +
+              Number.parseFloat(style.borderTopWidth) +
+              Number.parseFloat(style.borderBottomWidth);
+      measured.set(element, {
+        width: Number.parseFloat(style.width) - inset("width"),
+        height: Number.parseFloat(style.height) - inset("height"),
+      });
+      pending.push(element);
     }
+    // A non-shrinking child already reports its natural height, including all its descendants.
+    if (element !== level && style.flexGrow === "0" && style.flexShrink === "0") return;
+    if (element === level || /flex|grid|contents/.test(style.display) || /auto|scroll/.test(style.overflowY)) {
+      shells.add(element);
+      for (const child of element.children) observeContent(child, pending);
+    }
+    if (element === level) for (const target of pending) sizes?.observe(target);
   };
   const changes =
     typeof MutationObserver === "function"
       ? new MutationObserver((records) => {
+          // Remember moved nodes before arrivals, even when an insertion record precedes its removal record.
+          for (const record of records) for (const node of record.removedNodes) if (node instanceof Element) known.add(node);
           for (const record of records) {
             if (record.type === "childList") {
               for (const node of record.removedNodes)
                 if (node instanceof Element) {
-                  loadingChange ||= node.matches('[aria-busy="true"]') || Boolean(node.querySelector('[aria-busy="true"]'));
-                  observeTree(node, false);
+                  loadingChange ||= isBusyNode(node);
+                  if (node instanceof HTMLElement) arrived.delete(node);
+                  for (const target of watched)
+                    if (node === target || node.contains(target)) {
+                      sizes?.unobserve(target);
+                      watched.delete(target);
+                    }
                 }
               for (const node of record.addedNodes)
                 if (node instanceof HTMLElement) {
-                  arrived.push(node);
-                  loadingChange ||= node.matches('[aria-busy="true"]') || Boolean(node.querySelector('[aria-busy="true"]'));
-                  observeTree(node, true);
+                  if (!known.has(node)) arrived.add(node);
+                  known.add(node);
+                  loadingChange ||= isBusyNode(node);
+                  if (record.target instanceof Element && shells.has(record.target)) {
+                    // A structural shell acquired a new direct content root. Its first actual size report schedules the
+                    // measurement; mutations themselves never read layout. Ordinary preview descendants are not observed.
+                    watched.add(node);
+                    sizes?.observe(node);
+                    refreshShells = true;
+                  }
                 }
-            } else if (record.type === "attributes") {
-              if (record.attributeName === "aria-busy" && record.oldValue === "true") loadingChange = true;
-              if (record.attributeName === "hidden" && record.target instanceof HTMLElement && !record.target.hidden)
-                arrived.push(record.target);
+            } else if (record.type === "attributes" && record.target instanceof HTMLElement) {
+              if (record.attributeName === "aria-busy" && record.oldValue === "true" && !record.target.matches('button, [role="button"]'))
+                loadingChange = true;
+              if (record.attributeName === "hidden") {
+                if (!record.target.hidden) arrived.add(record.target);
+                changed();
+              }
             }
           }
-          changed();
         })
       : undefined;
+  const onFocusOut = () => {
+    if (level && !textFocused()) changed();
+  };
   const onResize = () => {
     resized = true;
     changed();
@@ -328,11 +440,17 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
 
   const follow: FrameMotion["follow"] = (next) => {
     sizes?.disconnect();
+    watched.clear();
     changes?.disconnect();
     if (queued) cancelAnimationFrame(queued);
     queued = 0;
     level = next;
-    arrived = [];
+    firstDelivery = true;
+    followingMorph = frameKind === "morph";
+    initialMeasure = false;
+    followingAnchor = anchor();
+    viewportHeight = window.innerHeight;
+    arrived = new Set();
     busy = isBusy();
     loadingChange = busy;
     // A morph's pinned content has its final size already. Its observer begins measuring after the morph releases it.
@@ -340,15 +458,17 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       rested = dialog.offsetHeight;
       if (!ownSize()) holdHeight(rested);
     }
-    observeTree(next, true);
+    known.add(next);
+    for (const child of next.querySelectorAll("*")) known.add(child);
+    observeContent(next);
     changes?.observe(next, {
       subtree: true,
       childList: true,
-      characterData: true,
       attributes: true,
       attributeOldValue: true,
-      attributeFilter: ["hidden", "class", "style", "open", "aria-busy"],
+      attributeFilter: ["hidden", "aria-busy"],
     });
+    next.addEventListener("focusout", onFocusOut);
     window.addEventListener("resize", onResize);
     window.visualViewport?.addEventListener("resize", onResize);
     if (!firstRest) {
@@ -367,11 +487,13 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   };
   const unfollow = () => {
     sizes?.disconnect();
+    watched.clear();
     changes?.disconnect();
     if (queued) cancelAnimationFrame(queued);
     if (restFrame) cancelAnimationFrame(restFrame);
     restFrame = 0;
     queued = 0;
+    level?.removeEventListener("focusout", onFocusOut);
     level = undefined;
     window.removeEventListener("resize", onResize);
     window.visualViewport?.removeEventListener("resize", onResize);
@@ -510,5 +632,14 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     };
   };
 
-  return { begin, arrive, announce, follow, stop, freeze };
+  const position = () => {
+    if (frameKind === "fold") {
+      holdHeight(seen().height);
+      endFrame();
+    }
+    placed = false;
+    followingAnchor = undefined;
+  };
+
+  return { begin, arrive, announce, follow, stop, freeze, position };
 };

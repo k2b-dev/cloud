@@ -53,10 +53,15 @@ replaces another, the dialog core morphs the frame's width and height with
 own sizes and the frame clips them. When an open dialog's content changes
 height, the frame folds to the new height with `--k2b-motion-fold` and
 `--k2b-ease-glide`, its top edge staying put. If growth needs more room below,
-the frame moves up first so its footer stays in view. Between folds it holds
-its height. Loading regions marked `aria-busy="true"`, the change that clears
-busy, and changes before the entrance has finished and the first rest take
-their new height without a fold.
+the top and height animate together from their visible positions so the footer
+stays in view throughout. Between folds it holds its height. Non-control loading
+regions marked `aria-busy="true"`, the change that clears busy, and changes
+before the entrance has finished and the first rest take their new height
+without a fold; centred frames stay centred before first rest. Loading buttons do
+not suppress a notice fold. A focused text field prevents shrinking until focus
+leaves the level's text fields. Content already animating its height finishes
+before the frame measures its final height. A viewport resize keeps the top
+edge and only clamps into the visible area.
 
 Choose the duration by what changes. Use the standard curve for ordinary
 entry motion. A large surface that grows, shrinks, or moves uses the morph

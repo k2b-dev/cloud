@@ -463,8 +463,10 @@ export const createDialogCore = () => {
     if (dialog.className !== entry.panelClassName) dialog.className = entry.panelClassName;
     applyUiScope(dialog, entry.uiScope);
     const position = entry.position;
+    const wasPositioned = dialog.style.position === "fixed";
     dialog.style.position = position ? "fixed" : "";
-    dialog.style.inset = position ? `${position.y}px auto auto ${position.x}px` : "";
+    if (position) dialog.style.inset = `${position.y}px auto auto ${position.x}px`;
+    else if (wasPositioned) dialog.style.inset = "";
     dialog.style.margin = position ? "0" : "";
     dialog.style.transform = position ? "none" : "";
     dialog.dataset.modeless = String(!entry.modal);
@@ -755,6 +757,10 @@ export const createDialogCore = () => {
                   },
                   setPosition: (position) => {
                     if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) return;
+                    if (state.stack[state.stack.length - 1] === entry) {
+                      state.motion?.position();
+                      dialog.style.inset = "";
+                    }
                     entry.position = position;
                     applyPresentation(entry);
                   },
