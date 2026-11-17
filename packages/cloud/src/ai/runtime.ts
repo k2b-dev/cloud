@@ -26,6 +26,7 @@ import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } fr
 import { AiClientToolResultSchema } from "./http";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
 import { drainQueuedMessages, type ValidateQueuedChatStart } from "./message-queue";
+import { AI_QUEUE_SWEEP_INTERVAL_MS } from "./queue-waits";
 
 export type { QueuedChatSubmission, ValidateQueuedChatStart } from "./message-queue";
 export {
@@ -78,8 +79,6 @@ const AI_TURN_HEARTBEAT_MS = 3_000;
 // Local turn orchestration (tools and approval waits included), not a model-provider quota.
 const AI_TURN_WORKER_CONCURRENCY = 8;
 const AI_TURN_MAX_ATTEMPTS = 5;
-
-const AI_SWEEP_INTERVAL_MS = 15_000;
 
 // ---------------------------------------------------------------------------
 // Queue
@@ -724,7 +723,7 @@ export const startAiRuntime = (
     run: async () => {
       await sweepAiRuntime(dispatchTurnFinalized);
     },
-    intervalMs: AI_SWEEP_INTERVAL_MS,
+    intervalMs: AI_QUEUE_SWEEP_INTERVAL_MS,
     onError: (error) => log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
   });
 

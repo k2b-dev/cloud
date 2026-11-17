@@ -31,6 +31,31 @@ describe("Assistant queued messages", () => {
     expect(html).not.toContain("opacity-0");
   });
 
+  test("makes a pending infrastructure failure visible and keeps removal available", () => {
+    const html = renderToString(() =>
+      createComponent(AssistantQueuedMessages, {
+        messages: [{ id: "pending", text: "Still waiting", failed: true, error: "dispatch_failed", retrying: true }],
+        onRetry: () => undefined,
+        onDelete: () => undefined,
+      }),
+    );
+    expect(html).toContain("Could not start. Retrying shortly.");
+    expect(html).toContain('aria-label="Queued message actions"');
+    expect(html).not.toContain(">Retry<");
+  });
+
+  test("makes an expired infrastructure failure visible without claiming another automatic attempt", () => {
+    const html = renderToString(() =>
+      createComponent(AssistantQueuedMessages, {
+        messages: [{ id: "failed", text: "Still waiting", failed: true, error: "dispatch_failed", retrying: false }],
+        onRetry: () => undefined,
+        onDelete: () => undefined,
+      }),
+    );
+    expect(html).toContain("Could not start. Please retry or remove.");
+    expect(html).not.toContain("Retrying shortly");
+  });
+
   test("keeps a failed item available for retry", () => {
     const html = renderToString(() =>
       createComponent(AssistantQueuedMessages, {

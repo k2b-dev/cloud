@@ -1592,8 +1592,10 @@ or quota admission would now refuse a new one. The dispatcher can replay an
 admission response; the read Query gives current state. Different text or context
 under that key returns `IDEMPOTENCY_CONFLICT`. Replay keeps the original
 resolved destination, including after a chat-binding change or removal from the
-queue. Automation entries have 32 separate places per chat and one per source
-Code or chat; they never spend a person's composer places. A full queue
+queue. Receipts are durable evidence and status references, retained for the account's lifetime
+(including after queue removal or chat deletion); the 24-hour window limits key reuse, not receipt retention.
+Automation entries have 32 separate places per chat and one per source
+Code or chat; they never spend a person's 20 composer places. A full queue
 returns `chat_busy`; a Project change during preparation returns `chat_changed`.
 At start, Core rechecks ownership, source authority, the Code run and enabled
 Code, model access and allowances under the chat lock. A failed automation entry
@@ -1602,8 +1604,13 @@ daily limit), frees its place and does not block the next entry or the person.
 A person's Codes have at most one waiting or running message across all chats;
 another send returns `chat_busy` until it finishes. At start, only older Code
 messages of the person count. A Code message never outlives the budget day it
-was accepted on. Expired or invalid Code entries are withdrawn independently of
-FIFO, even behind a blocked person message; retry does not revive them. Archiving
+was accepted on. Expired or invalid Code entries become `failed` with their original refusal reason independently of
+FIFO, even behind a blocked person message; retry does not revive them. Later expiry or
+archiving never overwrites a final refusal. Final automation refusals discard input and context.
+Unexpected infrastructure errors remain queued with visible `dispatch_failed`; retries wait at least
+15 seconds and log each failed attempt. They end as `failed/dispatch_failed` at the existing
+30-minute queued-turn start deadline, measured from acceptance (or earlier at the Code budget-day end).
+The person can remove the queued entry at any time. Archiving
 a chat prevents its pending entries from starting, including after restoration.
 A turn never sends into its own chat. A send whose invocation source cannot be checked right
 now returns `409 source_unavailable`; repeat the same call later. A key holds

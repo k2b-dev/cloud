@@ -252,3 +252,14 @@ removes `code.chat_deliveries`, its recovery path, `code.chat_runs` and old
 `meta.codeDelivery` markers. Existing message text stays readable. Send uses
 the normal turn-completion notification path. Rollback requires the pre-upgrade
 database backup together with its matching application release.
+
+Chat-send receipts are retained for the owner's account lifetime as admission evidence and
+status references, including after queue removal or chat deletion. The 24-hour key window does
+not limit receipt retention. The legacy queue backfill runs once; the immutable receipt trigger is created in
+the same transaction as the backfill and marks completion.
+
+Unknown queued-chat start errors remain pending with `dispatch_failed`, visible to the person
+and removable. Recovery attempts are at least 15 seconds apart and reuse the existing 30-minute
+queued-turn start deadline, measured from acceptance; pending Code messages can expire earlier
+at their budget-day end. Final refusals retain their original reason through later expiry and
+archiving, and automation refusals discard input, context and attachments.

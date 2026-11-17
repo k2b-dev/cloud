@@ -28,7 +28,7 @@ import { aiTurnErrorText } from "./chat/turn-error";
 import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
-import { queuedMessageHoldsChat } from "./queue-waits";
+import { AI_QUEUED_START_TIMEOUT_MS, queuedMessageHoldsChat } from "./queue-waits";
 import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
 import {
   compactCapabilityReview,
@@ -88,8 +88,6 @@ const choiceMessageRows = (db: SQL, conversationId: string): Promise<MessageRow[
 
 /** A queued turn this old without a claim is considered lost and re-enqueued by the sweep. */
 const SWEEP_STALE_QUEUED_MS = 15_000;
-/** A queued turn this old that never started is failed outright. */
-const SWEEP_DEAD_QUEUED_MS = 30 * 60_000;
 const SEARCH_TEXT_MAX_CHARS = 50_000;
 const CONVERSATION_BM25_INDEX = "ai.conversations_search_bm25_idx";
 const MESSAGE_BM25_INDEX = "ai.messages_search_bm25_idx";
@@ -2520,7 +2518,7 @@ export const aiConversations: AiConversationService = {
         SET status = 'cancelled', error = 'chat_archived', content = '[]'::jsonb,
           submission = jsonb_build_object('runConfig', jsonb_build_object('send', submission#>'{runConfig,send}', 'turnTrigger', submission#>'{runConfig,turnTrigger}'))
         WHERE conversation_id IN (SELECT id FROM archived)
-          AND status IN ('pending', 'failed') AND submission->'runConfig' ? 'codeOrigin'
+          AND status = 'pending' AND submission->'runConfig' ? 'codeOrigin'
         RETURNING id
       ), withdrawn_code_files AS (
         DELETE FROM ai.queued_message_files WHERE message_id IN (SELECT id FROM withdrawn_code_messages)
@@ -3249,7 +3247,6 @@ export const aiConversations: AiConversationService = {
         };
       }
       if (input.queuedMessageId) {
-        if (conversation.archived_at) throw new Error("Queued message is no longer ready.");
         const [head] = await tx<
           { id: string; status: string; revision: string; submission: Parameters<AiConversationService["submitChatTurn"]>[0] }[]
         >`SELECT id,status,revision::text,submission FROM ai.queued_messages WHERE conversation_id=${input.conversationId}::uuid
@@ -3819,7 +3816,7 @@ export const aiConversations: AiConversationService = {
         WHERE status IN ('queued', 'running')
           AND (
             (deadline IS NOT NULL AND deadline < now())
-            OR (status = 'queued' AND deadline IS NULL AND created_at < now() - (${SWEEP_DEAD_QUEUED_MS} * interval '1 millisecond'))
+            OR (status = 'queued' AND deadline IS NULL AND created_at < now() - (${AI_QUEUED_START_TIMEOUT_MS} * interval '1 millisecond'))
           )
           AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now())
         LIMIT ${limit}
