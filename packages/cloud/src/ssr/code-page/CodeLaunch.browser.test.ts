@@ -69,8 +69,7 @@ beforeAll(async () => {
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
-      if (url.pathname === "/__head.js")
-        return new Response(harness, { headers: { ...assets, "content-type": "text/javascript" } });
+      if (url.pathname === "/__head.js") return new Response(harness, { headers: { ...assets, "content-type": "text/javascript" } });
       if (url.pathname === "/__head.css")
         return new Response(`${plex}\n${css}\n${icons}`, { headers: { ...assets, "content-type": "text/css" } });
       const font = fonts.get(url.pathname);
