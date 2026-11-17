@@ -53,8 +53,10 @@ if (isServer) {
       requireReader: true,
     };
     try {
+      dom.document.body.dataset.k2bPrimary = "ai";
       const result = openCloudResourcePicker(options);
       await waitFor(() => Boolean(dom.document.querySelector("section button")), "streamed picker result");
+      expect(dom.document.querySelector("dialog[open]")?.getAttribute("data-k2b-primary")).toBe("blue");
       const url = new URL(requests[0]!, "http://localhost");
       expect(url.pathname).toBe("/api/search");
       expect(Object.fromEntries(url.searchParams)).toMatchObject({ app: "notebooks", scope_tag: "note", q: "q3", require_reader: "true" });

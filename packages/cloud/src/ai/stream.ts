@@ -13,7 +13,7 @@ import {
   steerAppliedBlockId,
   steerMessageBlockId,
 } from "./protocol";
-import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
+import { projectPublicAiStoredMessages, publicAiStoredMessages, publicAiTurnBlock, publicAiWireEvent } from "./public-projection";
 import { aiConversations } from "./store";
 import type { AiConversation } from "./types";
 
@@ -98,7 +98,7 @@ const publishLiveTopicEvent = async (event: AiLiveTopicEvent): Promise<void> => 
  */
 export const publishAiWireEvent = async (event: AiWireEvent): Promise<void> => {
   try {
-    await publishLiveTopicEvent(event);
+    await publishLiveTopicEvent(publicAiWireEvent(event));
   } catch (error) {
     if (!(error instanceof PayloadTooLargeError)) throw error;
     const { v, conversationId, turnId, attempt, seq } = event;
@@ -135,7 +135,7 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
   attempt: active.turn.attempt,
   status: active.turn.status,
   seq: active.liveSeq,
-  blocks: [...active.liveBlocks],
+  blocks: active.liveBlocks.map(publicAiTurnBlock),
   modelId: active.turn.modelId,
   createdAt: active.turn.createdAt,
   actionWaitMs: active.actionWaitMs,
@@ -381,7 +381,7 @@ export async function* streamAiConversationEvents(input: {
       if (message) yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId, message };
       continue;
     }
-    yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId };
+    yield { ...publicAiWireEvent(event), conversationId: input.conversation.shortId, turnId: publicTurnId };
   }
 }
 

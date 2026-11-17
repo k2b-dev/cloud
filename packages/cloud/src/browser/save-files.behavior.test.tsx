@@ -140,9 +140,11 @@ const open = async (
   const { createProviderList } = await import("./provider-list");
   const list = createProviderList(async () => providers);
   const saving = createFileSaving(list, () => ({ locale: "en", fetch }));
+  dom.document.body.dataset.k2bPrimary = "ai";
   const result = saving.saveFiles([{ name, content: new Blob(["hello"], { type: "application/pdf" }) }]);
   for (let attempt = 0; attempt < 100 && !dom.document.querySelector("dialog[open] .cloud-file-chooser"); attempt++) await Bun.sleep(10);
   await settle();
+  expect(dom.document.querySelector("dialog[open]")?.getAttribute("data-k2b-primary")).toBe("blue");
   const dialog = () => dom.document.querySelector("dialog[open] .cloud-file-chooser");
   const button = (label: string) =>
     [...(dialog()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((element) => element.textContent?.trim() === label);

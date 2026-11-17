@@ -10941,6 +10941,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
 }
 
+/* TimeInput: digits keep their width, so 11:11 and 08:08 line up in a column of times. */
+.k2b-ui .k2b-time-input .k2b-input {
+  font-variant-numeric: tabular-nums;
+}
+
 .k2b-ui .k2b-date-time {
   display: grid;
   min-width: 0;
@@ -20148,6 +20153,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: conic-gradient(var(--k2b-ai-accent) 0 28%, color-mix(in srgb, var(--k2b-ai-accent) 22%, var(--k2b-surface)) 0);
   box-shadow: none;
   mask: radial-gradient(circle, transparent 5px, #000 5.5px);
+}
+/* Interrupted or waiting, the plan stands: its progress ring turns grey, so it never reads as work that runs. */
+.k2b-ui .k2b-chat-tasks[data-paused] .k2b-chat-tasks__ring {
+  background: conic-gradient(var(--k2b-text-muted) var(--k2b-chat-tasks-progress), var(--k2b-border-strong) 0);
 }
 .k2b-ui .k2b-chat-tasks:not([data-paused]) .k2b-chat-task[data-status="in_progress"] .k2b-chat-task__mark {
   animation: k2b-chat-task-spin var(--k2b-motion-spin) linear infinite;

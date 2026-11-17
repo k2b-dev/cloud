@@ -172,15 +172,16 @@ domTest("rows a reader sees in the open work list stay when later reasoning or a
     // Reasoning streams in after the group, then the next housekeeping step: the reasoning row stays.
     setBlocks([...work, { id: "t", kind: "thinking", text: "Which reference?" }]);
     const thought = view.steps()[3]!;
-    // Thinking is a step in words; its reasoning stands in the card behind its ⓘ, and the row itself never opens.
+    // A running thinking step offers its duration, never model text.
     expect(thought.textContent).toContain("Thinking");
     expect(thought.querySelector("details")).toBeNull();
-    // The ⓘ card's code loads on demand; bounded by the test's timeout.
-    while (!thought.querySelector(".k2b-hover-card")) await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(thought.querySelector(".k2b-hover-card")?.textContent).toContain("Which reference?");
+    expect(Boolean(thought.querySelector(".k2b-chat-activity__info"))).toBe(true);
+    expect(thought.textContent).not.toContain("Which reference?");
     setBlocks([...work, { id: "t", kind: "thinking", text: "Which reference?" }, tool("c", "load_skill")]);
     expect(view.steps()[2]).toBe(group);
     expect(view.steps()[3]).toBe(thought);
+    expect(thought.textContent).toContain("Thought it over");
+    expect(Boolean(thought.querySelector(".k2b-chat-activity__info"))).toBe(false);
     expect(group.querySelector("summary")?.textContent).toContain("2 steps");
 
     // A file read starts without its arguments, so it shows as a step; its skill path arrives later and it stays.

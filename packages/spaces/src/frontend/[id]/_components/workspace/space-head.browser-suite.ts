@@ -346,6 +346,7 @@ const pageHtml = (url: URL, cookie: string | undefined) => {
             initialActivity: { items: overviewActivity, nextCursor: null },
             initialActivityError: null,
             dateConfig: { locale: "en", timeZone: TIME_ZONE },
+            now: TIME,
           }),
         )
       : renderToString(() =>
@@ -432,9 +433,16 @@ const open = async (path: string, width = 1440) => {
     timezoneId: TIME_ZONE,
     reducedMotion: "reduce",
   });
+  // Only Date stands at TIME, as the server rendered it; timers and animation frames stay real.
+  await context.addInitScript((at: number) => {
+    const Real = Date;
+    window.Date = new Proxy(Real, {
+      construct: (target, args) => new target(...((args.length > 0 ? args : [at]) as [number])),
+      get: (target, key) => (key === "now" ? () => at : Reflect.get(target, key)),
+    });
+  }, Date.parse(TIME));
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
-  await page.clock.setFixedTime(new Date(TIME));
   try {
     await page.goto(new URL(path, server.url).href);
     await ready(page);

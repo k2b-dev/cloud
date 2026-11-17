@@ -163,6 +163,16 @@
   }
 }
 
+/* While one level replaces another, the dialog core morphs the frame's size
+ * (`dialog-frame-motion.ts`): the frame clips the contents, which stand at
+ * their own sizes, so nothing rewraps and no scrollbar takes room. Hidden, not
+ * clip: the frame stays a scroll container, so a level's kept scroll place can
+ * be given back. */
+.k2b-ui .k2b-dialog[data-k2b-frame-motion] {
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
 .k2b-ui .k2b-dialog[data-modeless="true"] {
   z-index: 100;
 }

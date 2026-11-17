@@ -151,8 +151,15 @@ function WorkItemRow(props: { item: AiWorkItem | undefined; active: boolean }) {
 export function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; work: AiWorkContextValue }) {
   const locale = useLocale();
   const shown = new Set<string>();
+  let root: HTMLDivElement | undefined;
   const items = createMemo(() => {
     const work = groupWorkBlocks(props.blocks, shown);
+    // Finishing replaces live rows with stored rows. Hand focus back before that replacement disposes an open card.
+    if (!props.active) {
+      const focused = root?.ownerDocument.activeElement;
+      if (focused?.hasAttribute("data-ai-live-detail") && root?.contains(focused))
+        root.closest(".ai-turn-work")?.querySelector<HTMLElement>(":scope > summary")?.focus({ preventScroll: true });
+    }
     for (const item of work) if (item.kind === "step") shown.add(item.entry.id);
     return new Map(work.map((item) => [workItemKey(item), item]));
   });
@@ -163,7 +170,7 @@ export function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; wor
   const row = (key: string) => <WorkItemRow item={items().get(key)} active={props.active && key === keys().at(-1)} />;
   return (
     <AiWorkContext.Provider value={props.work}>
-      <div class="ai-turn-steps">
+      <div ref={root} class="ai-turn-steps">
         <Show when={earlier > 0}>
           <Chat.Activity
             class="ai-turn-steps__earlier"

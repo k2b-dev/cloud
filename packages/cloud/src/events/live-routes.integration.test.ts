@@ -268,6 +268,9 @@ suite("live routes", () => {
     const finishInitial = Promise.withResolvers<void>();
     const catchupRead = Promise.withResolvers<void>();
     const finishCatchup = Promise.withResolvers<void>();
+    const hintRead = Promise.withResolvers<void>();
+    const finishHintRead = Promise.withResolvers<void>();
+    let hintDelivered = false;
     const authenticate = session.authenticateRequest;
     let reconnecting = false;
     let checks = 0;
@@ -282,6 +285,9 @@ suite("live routes", () => {
         } else if (checks === 2) {
           catchupRead.resolve();
           await finishCatchup.promise;
+        } else if (hintDelivered) {
+          hintRead.resolve();
+          await finishHintRead.promise;
         }
       }
       return result;
@@ -345,25 +351,34 @@ suite("live routes", () => {
       await catchupRead.promise;
       const delivered = Promise.withResolvers<void>();
       stopHint = subscribeIdentityAccessChanged((subject) => {
-        if (subject?.userId === ada.id) delivered.resolve();
+        if (subject?.userId === ada.id) {
+          hintDelivered = true;
+          delivered.resolve();
+        }
       });
       deliverHint.resolve();
       await delivered.promise;
       finishCatchup.resolve();
       second.sub("s", "item", { key: "delayed-identity" }, applied);
+      // A delivered hint must cause a fresh check after the held catch-up read.
+      // Other invalidations may cause more checks; their scheduling is not a contract.
+      await hintRead.promise;
+      expect(second.of("s")).toEqual([]);
+      expect(second.state.closed).toBeNull();
+      finishHintRead.resolve();
       await until(() => second.of("s").some((frame) => frame.t === "ready") || second.state.closed !== null);
       expect(second.state.closed).toBeNull();
       expect(second.of("s").map((frame) => [frame.t, frame.data?.n])).toEqual([
         ["event", 3],
         ["ready", undefined],
       ]);
-      expect(checks).toBe(3);
     } finally {
       publishHint.resolve();
       deliverHint.resolve();
       releaseStartup.resolve();
       finishInitial.resolve();
       finishCatchup.resolve();
+      finishHintRead.resolve();
       stopHint();
       publishing.mockRestore();
       hintReader.abort();
