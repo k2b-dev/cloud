@@ -160,13 +160,13 @@ suiteFor(
       const tail = await replayCodeOutput(runId);
       expect(tail.entries).toEqual([
         {
-          kind: "log" as const, at: new Date(fixed).toISOString(), level: "log",
+          id: "1:1:0", kind: "log" as const, at: new Date(fixed).toISOString(), level: "log",
           text: [
             { type: "text", text: "first " },
             { type: "secret", name: "TOKEN" },
           ],
         },
-        { kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "last" }] },
+        { id: "1:2:0", kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "last" }] },
       ]);
       expect(tail.droppedLines).toBe(1);
       expect(tail.droppedBytes).toBeGreaterThan(0);
@@ -252,7 +252,7 @@ suiteFor(
     expect((await replayCodeOutput(runId)).droppedLines).toBe(1);
     setSystemTime(fixed + 2000);
     await receiveCodeOutput(newer, batch(2, "new attempt"));
-    expect((await replayCodeOutput(runId)).entries).toEqual([{ kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "new attempt" }] }]);
+    expect((await replayCodeOutput(runId)).entries).toEqual([{ id: "2:1:0", kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "new attempt" }] }]);
     // Newline expansion adds structured per-line overhead. Both the broker frame
     // and the retained tail must stay bounded after that expansion, with counted loss.
     for (let seq = 3; seq <= 5; seq++) {
@@ -313,7 +313,7 @@ suiteFor(
     } finally {
       await meter.close();
     }
-    expect((await replayCodeOutput(proof.runId)).entries).toEqual([{ kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "secret", name: "TOKEN" }] }]);
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual([{ id: "1:2:0", kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "secret", name: "TOKEN" }] }]);
   });
   test("harden bounded replacement admission, deduplication and compiled revision reuse", async () => {
     setSystemTime(fixed);
@@ -372,7 +372,7 @@ suiteFor(
     }
     await expect(rememberCodeOutputSecrets(scoped, [entry])).rejects.toMatchObject({ code: "code_http_output_redaction_unavailable" });
     await persistCodeOutput(proof.runId);
-    expect((await replayCodeOutput(proof.runId)).entries).toEqual([{ kind: "log" as const, at: new Date(fixed).toISOString(), level: "log", text: [{ type: "secret", name: "TOKEN" }] }]);
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual([{ id: "1:2:0", kind: "log" as const, at: new Date(fixed).toISOString(), level: "log", text: [{ type: "secret", name: "TOKEN" }] }]);
   });
   test("harden above-cadence counters without rewriting the retained window or compiling replacements", async () => {
     setSystemTime(fixed);
@@ -406,7 +406,7 @@ suiteFor(
     await renewCodeOutput({ ...claims, ...proof }, fixed + 300_000);
     await openCodeOutput({ ...proof, codeId, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, 32768);
     await expect(receiveCodeOutput(proof, batch(2, "closed"))).rejects.toBeInstanceOf(RunnerLeaseLostError);
-    expect((await replayCodeOutput(proof.runId)).entries).toEqual([{ kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "retained" }] }]);
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual([{ id: "1:1:0", kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "retained" }] }]);
     const delayed = await attempt();
     await redis.send("DEL", [`core:code-output:v1:${delayed.runId}`, `core:code-output:v1:${delayed.runId}:lease:1`]);
     await closeCodeOutput(delayed.runId, 1);

@@ -787,6 +787,7 @@ Laufinhalte erfordern Bearbeitungsrechte."
       seq: 1,
       entries: [
         {
+          id: "1:1:0",
           kind: "log",
           at: "2030-01-02T00:00:00.000Z",
           level: "log",

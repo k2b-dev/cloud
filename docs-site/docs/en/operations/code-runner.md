@@ -658,7 +658,7 @@ Core's Code migration adds `code.runs.console_output`; the signed runner
 protocol adds `/_internal/code/runner/output`. A run's console stays inside
 its dynamic workerd isolate and uses that run's existing bridge binding.
 Saved windows and live deltas use the same structured `entries` records
-(`kind`, `level`, `at`, `text`); see the [output contract](/en/docs/platform/code-runs#follow-calls-and-console-output).
+(`kind`, `id`, `level`, `at`, `text`); see the [output contract](/en/docs/platform/code-runs#follow-calls-and-console-output).
 Readers retain unknown entry kinds in their bounded window and skip rendering them,
 so adding a future kind does not require a storage migration.
 Several runs may share a workerd process: process stderr is never a source

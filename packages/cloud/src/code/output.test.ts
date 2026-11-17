@@ -14,7 +14,7 @@ import {
   emptyCodeOutput,
 } from "./output";
 
-const line = (text: string): CodeOutputKnownEntry => ({ kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: [{ type: "text", text }] });
+const line = (text: string): CodeOutputKnownEntry => ({ id: text, kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: [{ type: "text", text }] });
 test("the same whole-line tail and loss counters apply on Core, replay and browser", () => {
   const lines = [line("first"), line("second"), line("third")];
   const budget = new TextEncoder().encode(JSON.stringify(lines.slice(1))).length;
@@ -50,10 +50,29 @@ test("terminal sequences, C1 CSI, controls and direction marks are removed; HTML
 });
 
 test("future entry kinds survive snapshot and live window accounting without becoming log entries", () => {
-  const future = { kind: "step", level: "info", at: "2030-01-02T00:00:00.000Z", text: [{ type: "text", text: "future" }], state: "done" };
+  const future = {
+    kind: "step",
+    id: "step-fixture",
+    at: "2030-01-02T00:00:00.000Z",
+    label: "Read document",
+    icon: "file-text",
+    description: "Read the document's text and positions.",
+    status: "failed",
+    startedAt: "2030-01-02T00:00:01.000Z",
+    endedAt: "2030-01-02T00:00:02.000Z",
+    message: "Document unavailable",
+  };
+  // Only log production is implemented today; tolerant reads do not grant a new
+  // raw step submission path before its sanitization and lifecycle are added.
+  expect(CodeOutputBatchSchema.safeParse({ seq: 1, entries: [future], droppedLines: 0, droppedBytes: 0 }).success).toBe(false);
   const known = line("recent");
   const window = CodeOutputWindowSchema.parse({ ...emptyCodeOutput(1), seq: 1, entries: [future, known] });
   expect(window.entries).toEqual([future, known]);
+  expect(CodeOutputWindowSchema.parse(JSON.parse(JSON.stringify(window)))).toEqual(window);
+  for (const status of ["pending", "running", "succeeded", "failed", "skipped"]) {
+    const entry = { ...future, status };
+    expect(CodeOutputWindowSchema.parse({ ...window, entries: [entry] }).entries).toEqual([entry]);
+  }
   expect(window.entries.filter(isCodeOutputLogEntry)).toEqual([known]);
   const event = CodeOutputEventSchema.parse({ ...window, type: "code.output", runId: "11111111-1111-4111-8111-111111111111", budget: 32768 });
   expect(applyCodeOutputEvent(emptyCodeOutput(), event)).toEqual(window);
@@ -62,7 +81,7 @@ test("future entry kinds survive snapshot and live window accounting without bec
   expect(trimmed.entries).toEqual([known]);
   expect(trimmed.droppedLines).toBe(1);
   expect(trimmed.droppedBytes).toBe(Buffer.byteLength(JSON.stringify(future)));
-  for (const invalid of [{ kind: "log" }, { ...known, at: "not-a-date" }, { ...known, text: "raw" }]) {
+  for (const invalid of [{ kind: "log" }, { ...known, id: "" }, { ...known, at: "not-a-date" }, { ...known, text: "raw" }]) {
     expect(CodeOutputWindowSchema.safeParse({ ...window, entries: [invalid] }).success).toBe(false);
   }
 });

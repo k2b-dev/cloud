@@ -1,6 +1,7 @@
 import { type CodeOutputBatch, type CodeOutputKnownEntry, cleanCodeOutput, codeOutputParts } from "@k2b/cloud/code";
 
 type Fragment = CodeOutputBatch["entries"][number];
+type RedactedOutputEntry = Omit<CodeOutputKnownEntry, "id">;
 type Node = { next: Map<string, Node>; marker?: string; descendant?: string };
 export type OutputRedactionPending = (Fragment & { name: string }) | null;
 
@@ -39,7 +40,7 @@ export function redactOutput(
   redactor: OutputRedactor,
   pending: OutputRedactionPending = null,
   final = false,
-): { entries: CodeOutputKnownEntry[]; pending: OutputRedactionPending } {
+): { entries: RedactedOutputEntry[]; pending: OutputRedactionPending } {
   if (final && pending && input.length === 0)
     return { entries: [{ kind: pending.kind, level: pending.level, at: pending.at, text: [{ type: "secret", name: pending.name }] }], pending: null };
   const fragments = [

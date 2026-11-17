@@ -495,7 +495,7 @@ suiteFor(
     await expect(receiveCodeOutput(lease, { seq: 2, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
       RunnerLeaseLostError,
     );
-    expect((await replayCodeOutput(lease.runId)).entries).toEqual([{ kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before recovery" }] }]);
+    expect((await replayCodeOutput(lease.runId)).entries).toEqual([{ id: "1:1:0", kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before recovery" }] }]);
   });
   test("HTTP failure never requeues even before the first effect", async () => {
     const code = await fixture(owner, true, true);
@@ -1330,7 +1330,7 @@ suiteFor(
     await expect(receiveCodeOutput(first, { seq: 2, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
       RunnerLeaseLostError,
     );
-    expect((await replayCodeOutput(first.runId)).entries).toEqual([{ kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before retry" }] }]);
+    expect((await replayCodeOutput(first.runId)).entries).toEqual([{ id: "1:1:0", kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before retry" }] }]);
     const next = await take();
     expect(next.runId).toBe(first.runId);
     expect(next.generation).toBe(2);

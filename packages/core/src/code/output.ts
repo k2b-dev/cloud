@@ -276,7 +276,12 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
     ? PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))))
     : null;
   const redacted = redactOutput(batch.entries, await redactorFor(claims, state.deadlineAt, state.redactionRevision), pending);
-  const entries = redacted.entries;
+  // Identity belongs to the accepted stream position, survives window eviction and
+  // replay, and needs neither caller-selected keys nor another persistence model.
+  const entries = redacted.entries.map((entry, index) => ({
+    ...entry,
+    id: `${state.generation}:${state.window.seq + 1}:${index}`,
+  }));
   const dropped = { lines: batch.droppedLines, bytes: batch.droppedBytes };
   // Reserve the maximum encoded counter/sequence widths, derived from the safe-integer wire schema.
   // Trim in linear time before windowing: one raw text can contain many newline-separated lines.
@@ -383,7 +388,7 @@ export async function closeCodeOutput(runId: string, generation?: number): Promi
     const pending = PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))));
     window = appendCodeOutput(
       { ...window, seq: window.seq + 1 },
-      [{ kind: pending.kind, level: pending.level, at: pending.at, text: [{ type: "secret", name: pending.name }] }],
+      [{ kind: pending.kind, level: pending.level, at: pending.at, id: `${state.generation}:${window.seq + 1}:0`, text: [{ type: "secret", name: pending.name }] }],
       state.budget,
     );
   }

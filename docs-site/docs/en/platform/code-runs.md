@@ -311,6 +311,7 @@ The current discriminated record is:
 
 ```ts
 type LogEntry = {
+  id: string, // stable within this run
   kind: "log",
   level: "log" | "info" | "debug" | "warn" | "error",
   at: string, // ISO 8601 UTC timestamp captured by the invocation's console
@@ -322,13 +323,26 @@ type LogEntry = {
 keep their level. `console.error` and uncaught errors with stacks use
 `level: "error"`. Multiline text produces entries with the same timestamp.
 The timestamp describes capture time, not trusted execution order; `generation`
-and `seq` order transport deltas.
+and `seq` order transport deltas. Core assigns each published log entry an
+`id` from its generation, delta sequence and position in that delta. The ID
+survives window eviction, snapshot reads and replay; it is not an author-supplied key.
 
 Readers retain unknown `kind` values as opaque objects in the same bounded
 window and skip their rendering. Use `isCodeOutputLogEntry` from
 `@k2b/cloud/code` before reading log fields. Malformed known entries are
 rejected. This extensible JSON format allows future kinds, including steps,
-without a database migration; no step API is available yet.
+without a database migration; no step API is available yet. In particular,
+future `kind: "step"` records can retain `id`, creation time `at`, `label`,
+optional `icon` and `description`, `status` (`pending`, `running`, `succeeded`,
+`failed` or `skipped`), and optional `startedAt`, `endedAt` and `message` for
+the result or reason in this same array. Current readers preserve those fields
+without interpreting step transitions. The later step implementation owns
+updates of the same step ID and the step lifecycle.
+
+At the RunLog display boundary, render named secret parts as text labels and
+map console `log`/`debug` to the display level `info`. Never pass raw HTML.
+Step descriptions and reasons will need the same text sanitization and secret
+redaction as log text before publication when step production is added.
 
 The window contains `generation`, `seq`, `entries`, `droppedLines` and
 `droppedBytes`. It keeps whole recent lines within the run's pinned

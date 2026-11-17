@@ -26,7 +26,7 @@ export const CodeOutputPartSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("secret"), name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/) }).strict(),
 ]);
 export const CodeOutputKnownEntrySchema = z.discriminatedUnion("kind", [
-  z.object({ ...logMetadata, text: z.array(CodeOutputPartSchema) }).strict(),
+  z.object({ ...logMetadata, id: z.string().min(1), text: z.array(CodeOutputPartSchema) }).strict(),
 ]);
 export type CodeOutputKnownEntry = z.infer<typeof CodeOutputKnownEntrySchema>;
 const knownKinds = new Set<string>(CodeOutputKnownEntrySchema.options.map((entry) => entry.shape.kind.value));
