@@ -291,8 +291,13 @@ recognized echoes of secrets used by the attempt with `{ type: "secret",
 name }` parts. Other parts are `{ type: "text", text }`. Render text parts
 with text nodes, and secret parts by name; never use HTML or a terminal
 interpreter. The replacement spellings match HTTP response redaction,
-including supported encodings; arbitrary transformations by remote services
-cannot be recognized. Possible secret prefixes wait in a bounded, encrypted
+including supported encodings.
+
+Cloud hides known secret values in output to protect against accidental
+printing. Code that deliberately changes a secret before printing it can
+still reveal it. Only authorized Code editors can view the output.
+
+Possible secret prefixes wait in a bounded, encrypted
 redaction buffer across lines and bundles. An unresolved final fragment becomes
 a named secret marker; deferred fragments can be combined into one line.
 

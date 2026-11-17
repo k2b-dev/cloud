@@ -624,6 +624,10 @@ are unchanged.
 
 ## Code output boundary and rollout
 
+Cloud hides known secret values in output to protect against accidental
+printing. Code that deliberately changes a secret before printing it can
+still reveal it. Only authorized Code editors can view the output.
+
 Update Core and Runner together before enabling console output consumers.
 Core's Code migration adds `code.runs.console_output`; the signed runner
 protocol adds `/_internal/code/runner/output`. A run's console stays inside
