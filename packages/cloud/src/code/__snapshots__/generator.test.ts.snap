@@ -585,6 +585,7 @@ export type KnownCodeErrorCode =
   | "code_route_not_found"
   | "code_route_unchecked"
   | "code_run_entrypoint"
+  | "code_run_gone"
   | "code_run_lease_unavailable"
   | "code_runner_metrics_unavailable"
   | "code_runner_required"

@@ -68,7 +68,7 @@ const step = (name: string, result: unknown, locale = "en") =>
       },
     }),
   );
-const label = (html: string) => /<strong>([^<]*)<\/strong>/.exec(html)?.[1] ?? "";
+const label = (html: string) => /<strong\b[^>]*>([^<]*)<\/strong>/.exec(html)?.[1] ?? "";
 const failed = (html: string) => html.includes('data-tone="danger"');
 
 test("SDK diagnostics stay out of the human step label", () => {

@@ -1,8 +1,9 @@
+import { sql } from "@k2b/cloud";
 import { aiProjects, isAiSettingsError, personalAiModelPolicy, selectAssistantAiModel } from "@k2b/cloud/ai";
 import { AiQueuedChatStartError, type ValidateQueuedChatStart } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
-import { openCodeChatWork } from "./ai-chat-send";
+import { lockOwnerCodeChats, openOwnerCodeChatWork } from "./ai-chat-send";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
 import { codeSettings } from "./code/settings";
 
@@ -18,7 +19,6 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
     !trigger ||
     trigger.kind !== origin.kind ||
     trigger.id !== origin.id ||
-    config.sourceRestricted ||
     config.mandate ||
     config.actor?.kind !== "user" ||
     config.actor.user.id !== owner ||
@@ -54,16 +54,25 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
       throw new AiQueuedChatStartError("chat_chain_forbidden");
   }
   if (origin.kind === "automation") {
-    if (!origin.runId) throw new AiQueuedChatStartError("source_restricted");
+    if (!origin.runId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(origin.runId))
+      throw new AiQueuedChatStartError("code_run_gone");
+    const timeZone = (await coreSettings.get<string>("app.timezone", db)) || "UTC";
+    const [entry] = await db<{ stale: boolean }[]>`SELECT
+      (created_at AT TIME ZONE ${timeZone})::date < (clock_timestamp() AT TIME ZONE ${timeZone})::date AS stale
+      FROM ai.queued_messages WHERE id=${messageId}::uuid`;
+    if (entry?.stale) throw new AiQueuedChatStartError("code_budget_day_ended");
+    const [run] = await db`SELECT 1 FROM code.runs WHERE id=${origin.runId}::uuid AND code_id=${origin.id}`;
+    if (!run) throw new AiQueuedChatStartError("code_run_gone");
+    // Match send: chat, owner, Code. Never wait for a reviewer holding Code before its chat.
+    await lockOwnerCodeChats(owner, db);
     const [code] = await db`SELECT c.id FROM code.codes c JOIN code.runs r ON r.code_id=c.id
       WHERE c.id=${origin.id} AND r.id=${origin.runId ?? null}::uuid
         AND c.owner_kind='person' AND c.owner_user_id=${owner}::uuid AND c.state='active'
-        AND c.active_version_id=r.version_id FOR SHARE OF c`;
+        AND c.active_version_id=r.version_id FOR SHARE OF c NOWAIT`;
     if (!code || config.codeOrigin?.codeId !== origin.id || config.codeOrigin.runId !== origin.runId)
       throw new AiQueuedChatStartError("code_inactive");
-    // Until the whole-turn reservation lands, one open message or turn per Code across chats.
-    await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.code:${origin.id}`},0))`;
-    if (await openCodeChatWork(origin.id, db, messageId)) throw new AiQueuedChatStartError("code_busy");
+    // Until the whole-turn reservation lands, one open Code message or turn per owner across chats.
+    if (await openOwnerCodeChatWork(owner, db, messageId)) throw new AiQueuedChatStartError("code_busy");
     const refused = await checkCodeChatRunBudget(origin.runId, db, {
       code: await codeSettings.get("core.code.ai_daily_budget_usd", db),
       owner: await codeSettings.get("core.code.ai_owner_daily_budget_usd", db),
@@ -79,4 +88,19 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
   }
   // Refresh account identity before execution: a queued snapshot cannot retain revoked roles.
   return { ...input, runConfig: { ...config, actor: { kind: "user", user } } };
+};
+
+/** Final Code refusals are retired independently of FIFO, in one bounded queue statement. */
+validateQueuedChatStart.expiredReason = async () => {
+  const timeZone = (await coreSettings.get<string>("app.timezone")) || "UTC";
+  // The first branch proves the run id a UUID before the last one casts it, so a malformed id retires
+  // its message instead of failing the drain, and the run lookup uses the primary key.
+  const expression = sql`(CASE
+      WHEN q.submission#>>'{runConfig,send,accountId}' IS NULL
+        OR NOT COALESCE(q.submission#>>'{runConfig,codeOrigin,runId}' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', false) THEN 'code_run_gone'
+      WHEN NOT EXISTS (SELECT 1 FROM code.codes c WHERE c.id = q.submission#>>'{runConfig,codeOrigin,codeId}' AND c.state = 'active') THEN 'code_inactive'
+      WHEN (q.created_at AT TIME ZONE ${timeZone})::date < (clock_timestamp() AT TIME ZONE ${timeZone})::date THEN 'code_budget_day_ended'
+      WHEN NOT EXISTS (SELECT 1 FROM code.runs r WHERE r.id = (q.submission#>>'{runConfig,codeOrigin,runId}')::uuid) THEN 'code_run_gone'
+    END)`;
+  return { expression };
 };

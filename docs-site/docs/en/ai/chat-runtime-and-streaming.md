@@ -28,15 +28,14 @@ that draft revision and preserves its text, resource references, model selection
 and exact attachment bytes. Repeating the same `queueId` is idempotent, including
 after the message has started. A later composer draft remains independent.
 
-Each conversation accepts up to 32 pending or failed messages. Queued attachment
+Each conversation accepts up to 20 pending or failed person messages. Queued attachment
 snapshots share a 250 MiB budget. The existing turn worker processes messages in
 acceptance order, one active turn per conversation. Queues survive navigation,
 reloads and worker restarts. Completion, failure or cancellation of a turn allows
-the next queued message to start; a dispatch failure keeps the failed entry at the
-head until the user retries or removes it. This retry behavior applies to
-person entries. Automation entries fail permanently and release their place;
-the next entry may start immediately. Approval waits keep the current turn
-active and do not advance the queue.
+the next queued message to start. A final refusal keeps a person's failed entry at
+the head until the person retries or removes it. A final automation refusal releases
+its place immediately. Transient infrastructure errors remain pending as described
+below. Approval waits keep the current turn active and do not advance the queue.
 
 `AUTOMATION_QUEUE_LIMIT = 32` bounds pending automation entries separately from
 the person's composer capacity. `AUTOMATION_QUEUE_SOURCE_LIMIT = 1` prevents a
@@ -50,7 +49,12 @@ composer submission continues through `enqueueChatMessage`. On dequeue, Cloud
 reads the current payload and revision under the conversation lock.
 `submitChatTurn` consumes that stored payload and rejects a mismatched
 `queuedMessageRevision`. Core registers `validateQueuedChatStart` on the first
-`startAiRuntime` call: before promotion it checks current ownership, source
+`startAiRuntime` call. Its `expiredReason` hook supplies a scalar SQL expression
+wrapped in `{ expression }` (SQL queries are thenable). One bounded statement
+marks pending expired or invalid Code entries `failed` independently of FIFO and deletes their
+input, context and attachments. Pending Code entries expire at their accepted budget day's end;
+retry never revives them. A final refusal keeps its status and reason through later day changes
+and archiving. Before promotion it checks current ownership, source
 authority, enabled Code, model access and allowances. Automation work fails
 closed when that host policy is absent: entries remain pending until the host
 registers its policy, including across runtime shutdown. The validator uses the
@@ -59,13 +63,24 @@ quota reads. It checks Project access without loading Project content. One
 model-catalog snapshot serves both the validator and quota check. These services
 accept optional transaction executors so a dequeue
 never needs another pool connection while holding its chat lock. Settings
-reads with an executor bypass the cache and read the stored value and defaults.
+reads with an executor bypass the cache and read the stored value and defaults. Composer
+entries instead prefetch cached settings and a catalog snapshot before taking the chat lock.
+Code starts lock chat, owner and Code in that order, taking the Code row with `NOWAIT` to avoid
+waiting for a reviewer that holds Code before chat.
+
+Only typed quota, settings and source-policy refusals are final. Unknown start errors keep the
+entry pending with visible `dispatch_failed` and log each failed attempt's reason and error class.
+`quota_checked_at` also schedules these retries at least 15 seconds apart; it never proves that
+quota admission succeeded. They end at the existing 30-minute queued-turn start deadline,
+measured from acceptance, or earlier at a Code's budget-day end. The person can remove the entry;
+a final person failure keeps FIFO until the person retries or removes it.
 
 `ai.chat.send` stores an immutable admission in `ai.chat_send_receipts`: account,
 operation, key hash, input hash, original destination, origin, initiator and
 queue ID. Turn state is read from the associated turns; retries retain the send
 ID. Queue payload cleanup and conversation deletion do not remove the receipt.
-Account deletion removes that account's receipts.
+Receipts are durable evidence and status references, retained for the account's lifetime;
+24-hour idempotency does not expire that evidence. Account deletion removes its receipts.
 Replay reads it before resolving today's destination or checking allowances,
 so it never redirects an accepted message. The caller's current authority is
 checked first: paused Code or an ended run gets no receipt back. Read current state with
@@ -73,7 +88,8 @@ checked first: paused Code or an ended run gets no receipt back. Read current st
 
 The owner-authorized queue API provides:
 
-- `GET /conversations/:id/queue`: ordered pending and failed entries.
+- `GET /conversations/:id/queue`: ordered pending and failed person entries, plus pending automation entries;
+  each item includes `error` and `retrying` for a visible infrastructure retry.
 - `PATCH /conversations/:id/queue/:messageId` with `{ text }`: edit queued text
   while retaining attachments and resource references.
 - `DELETE /conversations/:id/queue/:messageId`: remove an entry that has not started.
@@ -83,6 +99,13 @@ All paths above use the `/api/ai` prefix. Editing or deleting races safely with
 promotion: once an entry becomes a turn, the queue endpoint returns not found.
 Normal submissions cannot overtake the queue. Chats with pending entries cannot
 be archived or marked done and do not become done through inactivity.
+
+Text from a source without a signed-in session restricts the turn it enters:
+a queued message, a queue edit, a steer or a tool result sent with `cld`, an API
+key or another delegated credential. The text is still accepted and the turn
+keeps running, but it loses rights that need a person's session, such as
+writing to another chat with `ai.chat.send`. An approval without text does not
+restrict the turn.
 
 ## List place chats
 
@@ -134,8 +157,9 @@ per-conversation socket is required.
 Use the existing Core log and trace views. Filter logs by `ai:runtime`,
 `ai:message-queue`, `ai:executor`, `ai:files`, or `ai:transcription`. AI live
 updates log under `events:live` with the application ID `core`.
-Queue dispatch errors carry `conversationId`, `messageId` and
-`queue_dispatch_failed`. Heartbeat, recovery and completion-publication warnings
+Queue start failures carry `conversationId`, `messageId`, the stable refusal `code`
+(or `dispatch_failed`), and `errorType`. Each failed attempt is logged, including
+the transition to the retry deadline. Heartbeat, recovery and completion-publication warnings
 carry conversation and turn IDs. A heartbeat warning is emitted once per failure
 streak; recovery uses the existing durable turn state.
 
@@ -193,8 +217,8 @@ archived conversation is unavailable; the request never creates a replacement.
 Project access is checked again on replay. Use a new UUID only for a new,
 deliberate creation. Without `requestId`, each request creates a conversation.
 
-The structured composer draft contains text, exact stored-file versions, and
-zero or more Cloud resource refs. Save it with `PUT
+The structured composer draft contains text, exact stored-file versions,
+zero or more Cloud resource refs, and up to ten quotes. Save it with `PUT
 /api/ai/conversations/:id/draft` and an `expectedRevision`. Identical autosaves
 are idempotent; stale writes return a conflict. In the browser controller, a
 failed `saveDraft`, `send`, or `queueMessage` answers `null` or `false`.
@@ -215,6 +239,31 @@ when the request sends none, and the original selected local Skills when a
 local client retries. Background and mandate runs do not
 receive local client context. The transaction consumes and clears exactly that revision, so
 text and attachments cannot drift between save and send.
+
+A quote is `{ type: "quote", messageId, text }`: a passage of an earlier message
+in the same conversation, named by that message's public id. `text` holds at
+most 2,000 characters, and quotes count towards the draft's 20,000 characters.
+`from` is optional and only a hint for the composer. When the turn is submitted,
+Cloud checks that the message is in the conversation and that `text` stands in
+its visible text, compared without whitespace. An answer's visible text is the
+rendered Markdown of all text in its turn. Cloud checks answers of up to 50,000
+characters, counting a blank line between the turn's messages; that is as much as
+it keeps of one message for search. Cloud then sets `from` from that message:
+`assistant` for an answer, `user` for the person's own message, `automation` for
+a message an automation sent. A quote that fails returns HTTP 400, nothing is
+sent, and the response carries a stable `code` with a message in the request's
+language: `quote_missing` (the message is not in the conversation),
+`quote_not_quotable` (not an answer or a user message), `quote_mismatch` (the
+passage is not in the message), or `quote_too_long` (the answer is longer than
+50,000 characters). The user message keeps the checked quotes in `meta.quotes`, the
+only source a client reads them from. The model reads each quote as a text part
+Cloud writes. Text never counts as a quote: Cloud breaks quote markers in sent,
+edited, and steered text, and again in every user message it gives a model,
+unless `meta.quotes` holds that quote. Background models that read a chat, such as
+titles, search summaries, and memory learning, read only the person's own words,
+without quotes. Editing a queued message and retrying a
+message keep the checked quotes and apply the same bounds; the bounds count the
+person's words and the quoted passages, not attached items.
 
 If a turn response is lost, retain the confirmed draft revision and the exact
 submit options. `GET /api/ai/conversations/:id/submission/:draftRevision` returns
@@ -327,7 +376,9 @@ work from model text or trigger language-dependent automatic retries.
 ### Conversation titles
 
 A title given at creation, such as the localized "New chat" of the web chat,
-stays a default title. The first message's text replaces it, and enrichment may
+stays a default title. A chat created without a title gets the same default in
+the request locale, so `cld assistant chats create` names a chat "Neuer Chat"
+for a German caller. The first message's text replaces it, and enrichment may
 rename it. Renaming through `PATCH /api/ai/conversations/:id` marks the title as
 the user's (`titleSource: "user"`). Neither the first message nor enrichment
 replaces that title, for web and API clients alike. Renaming to the current title
@@ -336,7 +387,8 @@ changes nothing.
 The CLI is one consumer of this rule. `--title` on `cld assistant -p` and
 `cld assistant chats create` creates the chat and then renames it through this
 endpoint. The CLI trims the title and checks the 1 to 120 character limit before
-creating anything. The exact title `New chat` keeps automatic naming.
+creating anything. A `--title` equal to the default title the chat got keeps
+automatic naming.
 
 ## Chat route groups
 
@@ -415,6 +467,11 @@ separators. `turn_finished` carries the complete text, also when the turn ended
 during a reconnect. Tool progress and approval matching use canonical capability
 IDs such as `spaces.task.create`. Persisted provider tool names stay unchanged;
 hashed names that cannot be decoded retain their stored name.
+
+A turn stores each capability step's app name as it was then. History, the
+stream state, and finished turns name the app as the catalog does now, by its
+app ID and in the reader's language; an app the registry does not know keeps
+its stored name.
 
 Assistant renders capability table presentation metadata in both web chat and
 text-mode CLI output. The CLI shows up to 100 returned rows, shortens long cells,

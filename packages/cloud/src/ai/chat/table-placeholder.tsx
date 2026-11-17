@@ -37,7 +37,10 @@ export function CloudTablePlaceholder(props: { id: string; summary: TableSummary
   const t = () => aiChatMessages(locale());
   const frame = useBlockFrame();
   // The same head and foot as the loaded table in a chat answer, so nothing moves when the rows arrive.
-  const counted = () => frame !== undefined && props.summary.search;
+  // In an answer every table's head has its search (Feinschliff v3 §5: "search, tables only"); elsewhere the view's own
+  // `search` decides.
+  const searchable = () => frame !== undefined || props.summary.search === true;
+  const counted = () => frame !== undefined;
   const number = () => new Intl.NumberFormat(locale());
   return (
     <section class={counted() ? "cloud-table-frame grid min-w-0 gap-3" : "grid min-w-0 gap-3"} aria-labelledby={props.id}>
@@ -48,11 +51,11 @@ export function CloudTablePlaceholder(props: { id: string; summary: TableSummary
         actions={
           <div class="cloud-table-tools flex min-w-0 flex-wrap items-center gap-2">
             <Show when={counted()}>
-              <SearchToggle label={blockWords(locale()).searchIn({ title: props.summary.title })} disabled />
+              <SearchToggle label={blockWords(locale()).searchTable} describedBy={props.id} disabled />
             </Show>
-            <Show when={props.summary.search || props.summary.grouped}>
+            <Show when={searchable() || props.summary.grouped}>
               <div class="cloud-table-search-host k2b-data-table-tools" aria-hidden="true">
-                <Show when={props.summary.search}>
+                <Show when={searchable()}>
                   <Skeleton class="k2b-data-table-tools__search h-9" />
                 </Show>
                 <Show when={props.summary.grouped}>

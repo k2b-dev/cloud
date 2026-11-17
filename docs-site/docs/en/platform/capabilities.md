@@ -1592,15 +1592,34 @@ or quota admission would now refuse a new one. The dispatcher can replay an
 admission response; the read Query gives current state. Different text or context
 under that key returns `IDEMPOTENCY_CONFLICT`. Replay keeps the original
 resolved destination, including after a chat-binding change or removal from the
-queue. Automation entries have 32 separate places per chat and one per source
-Code or chat; they never spend a person's composer places. A full queue
+queue. Receipts are durable evidence and status references, retained for the account's lifetime
+(including after queue removal or chat deletion); the 24-hour window limits key reuse, not receipt retention.
+Automation entries have 32 separate places per chat and one per source
+Code or chat; they never spend a person's 20 composer places. A full queue
 returns `chat_busy`; a Project change during preparation returns `chat_changed`.
-At start, Core rechecks ownership, source authority, enabled Code, model access
-and allowances under the chat lock. A failed automation entry is final, frees
-its place and does not block the next entry.
-One Code has at most one waiting or running message across all chats; another
-send returns `chat_busy` until it finishes. A turn never sends into its own
-chat.
+At start, Core rechecks ownership, source authority, the Code run and enabled
+Code, model access and allowances under the chat lock. A failed automation entry
+is final with its reason (for example `code_inactive`, `code_run_gone` or a
+daily limit), frees its place and does not block the next entry or the person.
+A person's Codes have at most one waiting or running message across all chats;
+another send returns `chat_busy` until it finishes. At start, only older Code
+messages of the person count. A Code message never outlives the budget day it
+was accepted on. Expired or invalid Code entries become `failed` with their original refusal reason independently of
+FIFO, even behind a blocked person message; retry does not revive them. Later expiry or
+archiving never overwrites a final refusal. Final automation refusals discard input and context.
+Unexpected infrastructure errors remain queued with visible `dispatch_failed`; retries wait at least
+15 seconds and log each failed attempt. They end as `failed/dispatch_failed` at the existing
+30-minute queued-turn start deadline, measured from acceptance (or earlier at the Code budget-day end).
+An entry already older than 30 minutes at its first unknown failure has only that one start
+attempt; the next due sweep marks it finally failed with visible `dispatch_failed`.
+Lock contention and transaction retries leave the entry unchanged and do not count as unknown failures.
+The person can remove the queued entry at any time. Archiving
+a chat prevents its pending entries from starting, including after restoration.
+A turn never sends into its own chat. A send whose invocation source cannot be checked right
+now returns `409 source_unavailable`; repeat the same call later. A key holds
+for 24 hours per person, like every Action key; after that, the same key queues
+a new message. When the person retries a sent message, the retry runs on the
+person's allowance; the initiator stays for the chain rule.
 
 Code classifies `ai.generate` and `ai.decide` as `ai`, `ai.chat.send` as
 `ai_chat_you`, and chat reads as `read`. The executed model needs a positive
@@ -1620,19 +1639,24 @@ Assistant budgets or unpriced models have no owner cost ceiling. There is no new
 or flat charge. Normal per-turn loop and step limits bound each invocation.
 
 The existing `core.code.ai_daily_budget_usd` and
-`core.code.ai_owner_daily_budget_usd` limits include Code-started chat turns,
-including their background compaction, alongside text AI. Days follow
-`app.timezone`. At start, a priced turn reserves its 192,000-input allocation,
-one 32,000-token call for the last estimate's possible error, and its 12,000
-output tokens. The reservation is atomic across owner and Code; parallel starts
-cannot reuse it. A known context window is required. Each ordinary and
-compaction request receives an explicit output ceiling of at most 4,096 tokens,
-and never more than the turn has left.
-Missing or estimated usage keeps the maximum spent. Worker suspension and
-resumption reuse it; finalization releases the known unused remainder on its
-original day. A receipt retry starts no inference and adds no cost.
-The per-attempt `core.code.ai_budget_usd` continues to bound separate
-`core.ai.generate` and `core.ai.decide` calls. Model admission can also return
+`core.code.ai_owner_daily_budget_usd` limits also include the actual costs of
+Code-started chat calls, alongside text AI usage, per installation calendar day
+in `app.timezone`. Live inference reservations count until they settle; unknown
+priced chat costs block new turn admission. They do not create an extra unknown-usage
+block for text AI calls; those retain the normal owner quota rules. Unknown
+Code chat costs block new turns until the next installation calendar day; an
+Assistant allowance reset does not reset the Code daily check. These limits
+default to 1 each and return
+`code_ai_daily_budget_limit` or `code_ai_owner_daily_budget_limit` when exhausted.
+For example, three turns costing 0.02 each use 0.06 of the daily allowance,
+leaving 0.94 for further turns or `core.ai.generate` / `core.ai.decide`.
+The Code daily checks refuse new invocations once that allowance is spent;
+an already admitted turn can exceed the remaining Code allowance. Its owner
+quota still applies at each provider call. Compaction retains normal background
+accounting and is excluded from these chat costs.
+Turns never allocate the full `core.code.ai_budget_usd` attempt allowance:
+that setting continues to bound the separate text AI calls. A receipt retry
+starts no inference and adds no cost. Model admission can also return
 `ai_disabled`, `ai_no_model` or `model_policy_mismatch` before starting a turn.
 
 Accepted queue entries survive a failed wake-up and retain their initiator when

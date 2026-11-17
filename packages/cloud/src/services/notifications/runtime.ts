@@ -109,6 +109,7 @@ const lifecycle = createRuntimeLifecycle({
       handleDelivery,
     );
     await recover();
+    // runtime-timer: the callback runs through a task tracker, which quiesce gates.
     timer = setInterval(() => void recover(), recoveryIntervalMs);
     if (typeof timer === "object" && "unref" in timer) timer.unref();
   },

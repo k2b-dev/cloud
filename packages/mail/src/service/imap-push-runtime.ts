@@ -621,6 +621,7 @@ const consumeHints = async (params: {
       });
   };
 
+  // runtime-timer: fallback poll of one IMAP push binding; quiesce stops the push runtime lifecycle and with it the binding.
   const fallbackTimer = setInterval(() => {
     if (fallbackTask || params.signal.aborted || flushError) return;
     fallbackTask = applyImapReconciliationHint({
@@ -1087,6 +1088,7 @@ export const createImapPushRuntime = (
     start: async () => {
       stopping = false;
       await reconcile();
+      // runtime-timer: runs only while its runtime lifecycle is started; quiesce stops that lifecycle.
       scanTimer = setInterval(() => {
         void reconcile().catch((error) => {
           log.warn("IMAP push binding scan failed", { code: providerErrorCode(error, "IMAP_PUSH_SCAN_FAILED") });

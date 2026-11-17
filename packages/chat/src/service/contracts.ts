@@ -581,6 +581,14 @@ export const validMentionRanges = (body: string, mentions: readonly Mention[]) =
   }
   return true;
 };
+/** A quoted passage as it is compared and stored: Unicode NFC, each run of whitespace one space, trimmed. */
+export const quoteText = (text: string) => text.normalize("NFC").replace(/\s+/gu, " ").trim();
+/** A passage of another message in the same chat, frozen as it was quoted; a deleted original leaves `deleted`. */
+export const MessageQuoteSchema = z.union([
+  z.strictObject({ id: MessageIdSchema, author: AuthorSchema, text: z.string() }),
+  z.strictObject({ deleted: z.literal(true) }),
+]);
+export type MessageQuote = z.infer<typeof MessageQuoteSchema>;
 export const MessageSchema = z.object({
   attachments: z.array(AttachmentViewSchema).max(MAX_MESSAGE_ATTACHMENTS),
   mentions: z.array(MentionSchema.extend({ name: z.string() })).max(MAX_MENTIONS),
@@ -598,6 +606,8 @@ export const MessageSchema = z.object({
       z.strictObject({ deleted: z.literal(true) }),
     ])
     .nullable(),
+  /** Passages of earlier messages this one quotes, in the order the author added them. */
+  quotes: z.array(MessageQuoteSchema).max(MAX_MESSAGE_REFS).optional(),
   id: MessageIdSchema,
   conversationId: ShortIdSchema,
   seq: z.number().int().nonnegative(),
@@ -644,6 +654,26 @@ const MessageRefsSchema = z
       return true;
     });
   });
+/** Quoted passages a send names: shared by the app and the discussion capability, so both check the same way. */
+export const MessageQuotesInputSchema = z
+  .array(
+    z.strictObject({
+      message: MessageIdSchema,
+      // PostgreSQL jsonb cannot store NUL or unpaired UTF-16 surrogates.
+      text: z
+        .string()
+        // UTF-16 units; the sum below counts code points.
+        .max(MESSAGE_MAX_CODE_POINTS * 2)
+        .transform(quoteText)
+        .refine((text) => text !== "" && !/[\u0000\uD800-\uDFFF]/u.test(text)),
+    }),
+  )
+  .max(MAX_MESSAGE_REFS)
+  .refine((quotes) => quotes.reduce((sum, quote) => sum + [...quote.text].length, 0) <= MESSAGE_MAX_CODE_POINTS)
+  // The same passage of the same message once, in the order first given.
+  .transform((quotes) =>
+    quotes.filter((quote, index) => quotes.findIndex((other) => other.message === quote.message && other.text === quote.text) === index),
+  );
 export const SendMessageSchema = z
   .strictObject({
     clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
@@ -657,6 +687,8 @@ export const SendMessageSchema = z
     mentions: z.array(MentionSchema).max(MAX_MENTIONS).optional(),
     thread: ThreadIdSchema.optional(),
     replyTo: MessageIdSchema.optional(),
+    /** Passages of messages in the same thread; each text must occur in its message. */
+    quotes: MessageQuotesInputSchema.optional(),
   })
   .refine((message) => message.body !== "" || (message.refs?.length ?? 0) > 0 || (message.attachments?.length ?? 0) > 0)
   .refine((message) => validMentionRanges(message.body, message.mentions ?? []));

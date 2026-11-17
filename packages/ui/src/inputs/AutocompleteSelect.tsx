@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { optionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
 import { ChoiceGroups } from "./ChoiceGroups";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabledChoiceIndex } from "./choice";
@@ -490,7 +491,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
                   </Show>
                   <span>
                     <strong>{option.label}</strong>
-                    <Show when={option.description}>{(description) => <small>{description()}</small>}</Show>
+                    {optionDescription(option)}
                   </span>
                 </button>
               )}

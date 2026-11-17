@@ -55,6 +55,26 @@ databaseSuite()("listMessagesPage (integration)", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("public message pages omit a Code run's source while execution history retains it", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const source = "export default async () => cloud.spaces.task.create({ title: 'Delivery' })";
+    try {
+      await insertMessage({
+        conversationId: chat.id,
+        seq: 1,
+        role: "assistant",
+        text: "Run",
+        content: [{ type: "tool_call", id: "run", name: "code_run", args: { code: source } }],
+      });
+      const page = await aiConversations.listMessagesPage({ conversationId: chat.id, limit: 20 });
+      const messages = await publicAiStoredMessages(page.messages, chat, userId, "de");
+      expect(JSON.stringify(messages)).not.toContain(source);
+      expect(JSON.stringify(page.messages)).toContain(source);
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
+  });
   test("projects internal message loop ids to the public Turn id", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];

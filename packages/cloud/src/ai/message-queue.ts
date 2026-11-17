@@ -2,34 +2,42 @@ import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
 
 import { logger } from "../services/logging";
+import { coreSettings } from "../services/settings/api";
 import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
-import { editAiDraftText } from "./draft-content";
+import { aiDraftTurnContent, editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
 import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT } from "./files-store";
-import { aiInputToUserMessage, aiTurnInputToContent } from "./http";
-import { AI_QUEUE_RETRYABLE_ERRORS, isAiQueueRetryableError } from "./queue-waits";
+import { aiDraftContentProblem, aiInputToUserMessage, aiTurnInputToContent } from "./http";
+import { AI_QUEUE_RETRYABLE_ERRORS, AI_QUEUE_SWEEP_INTERVAL_MS, AI_QUEUED_START_TIMEOUT_MS, isAiQueueRetryableError } from "./queue-waits";
 import { AiQuotaError, aiQuotas } from "./quotas";
-import { aiResourceMarker } from "./resource-markers";
+import { aiNeutralizeQuoteMarkers } from "./quote-markers";
 import { readAiSettingsState } from "./settings";
 import { aiConversations } from "./store";
 import type { AiConversationService, AiDraftContentPart, AiSettingsState } from "./types";
+import { isAiSettingsError } from "./validate";
 
 const log = logger("ai:message-queue");
-export const AI_MESSAGE_QUEUE_LIMIT = 32;
+/** Composer capacity agreed for the queue; automation places are counted separately below. */
+export const AI_MESSAGE_QUEUE_LIMIT = 20;
 /** Separate from composer capacity: bound automation bursts without spending a person's slots. */
 export const AUTOMATION_QUEUE_LIMIT = 32;
 /** A scheduled source may leave one pending message; its next run must observe chat_busy. */
 export const AUTOMATION_QUEUE_SOURCE_LIMIT = 1;
+/** Operational breadth per drain, retained at 32 chats to bound serial transactions independently of queue capacity. */
+const AI_QUEUE_SWEEP_CHAT_LIMIT = 32;
 export class AiMessageQueueConflict extends Error {}
 
 export type QueuedChatSubmission = Parameters<AiConversationService["submitChatTurn"]>[0];
 type Submission = QueuedChatSubmission;
-export type ValidateQueuedChatStart = (
+export type ValidateQueuedChatStart = ((
   input: Submission,
   db: SQL,
   state: AiSettingsState | undefined,
   messageId: string,
-) => Promise<Submission>;
+) => Promise<Submission>) & {
+  /** One scalar SQL expression over queued row q; wrapped because queries are thenable. */
+  expiredReason?: () => Promise<{ expression: SQL.Query<unknown> }>;
+};
 export class AiQueuedChatStartError extends Error {
   constructor(readonly code: string) {
     super(code);
@@ -61,6 +69,8 @@ export const migrateAiMessageQueue = async () => {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_queued_messages_send_key
     ON ai.queued_messages((submission#>>'{runConfig,send,accountId}'),(submission#>>'{runConfig,send,keyHash}'))
     WHERE submission#>>'{runConfig,send,keyHash}' IS NOT NULL`.simple();
+  // Last quota refusal check for fair sweep ordering; also schedules the next dispatch_failed attempt after 15 seconds.
+  // This timestamp never proves successful quota admission: assertAllowed runs afresh on every attempt.
   await sql`ALTER TABLE ai.queued_messages ADD COLUMN IF NOT EXISTS quota_checked_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE ai.queued_messages ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS automation_source text`.simple();
@@ -71,23 +81,32 @@ export const migrateAiMessageQueue = async () => {
     id uuid PRIMARY KEY, account_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, operation text NOT NULL CHECK(operation='ai.chat.send'),
     key_hash text NOT NULL, input_hash text NOT NULL, conversation_id uuid NOT NULL, chat_id text NOT NULL,
     origin jsonb NOT NULL, turn_trigger jsonb NOT NULL, queued_message_id uuid NOT NULL UNIQUE,
-    created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(account_id,operation,key_hash)
+    created_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
-  await sql`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)
+  await sql`CREATE INDEX IF NOT EXISTS ai_chat_send_receipts_key ON ai.chat_send_receipts(account_id,operation,key_hash,created_at DESC)`.simple();
+  await sql`CREATE OR REPLACE FUNCTION ai.chat_send_receipt_immutable() RETURNS trigger AS $$
+    BEGIN RAISE EXCEPTION 'Chat send receipts are immutable'; END;
+    $$ LANGUAGE plpgsql`.simple();
+  // The immutable trigger follows a completed backfill, including on earlier versions of this migration.
+  // Backfill and trigger commit together now; a failed start can repeat safely without rescanning on every start.
+  await sql.begin(async (tx) => {
+    await tx`LOCK TABLE ai.chat_send_receipts IN SHARE ROW EXCLUSIVE MODE`;
+    const [migration] = await tx<{ done: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pg_trigger
+      WHERE tgrelid='ai.chat_send_receipts'::regclass AND tgname='chat_send_receipt_immutable') AS done`;
+    if (!migration!.done) {
+      await tx`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id,created_at)
     SELECT q.id,(q.submission#>>'{runConfig,send,accountId}')::uuid,'ai.chat.send',
       q.submission#>>'{runConfig,send,keyHash}',q.submission#>>'{runConfig,send,requestHash}',q.conversation_id,c.short_id,
-      q.origin,q.submission#>'{runConfig,turnTrigger}',q.id
+      q.origin,q.submission#>'{runConfig,turnTrigger}',q.id,q.created_at
     FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
       JOIN auth.users owner ON owner.id=(q.submission#>>'{runConfig,send,accountId}')::uuid
     WHERE q.submission#>>'{runConfig,send,keyHash}' IS NOT NULL
       AND q.origin IS NOT NULL AND q.submission#>'{runConfig,turnTrigger}' IS NOT NULL
     ON CONFLICT DO NOTHING`.simple();
-  await sql`CREATE OR REPLACE FUNCTION ai.chat_send_receipt_immutable() RETURNS trigger AS $$
-    BEGIN RAISE EXCEPTION 'Chat send receipts are immutable'; END;
-    $$ LANGUAGE plpgsql`.simple();
-  await sql`DROP TRIGGER IF EXISTS chat_send_receipt_immutable ON ai.chat_send_receipts`.simple();
-  await sql`CREATE TRIGGER chat_send_receipt_immutable BEFORE UPDATE ON ai.chat_send_receipts
-    FOR EACH ROW EXECUTE FUNCTION ai.chat_send_receipt_immutable()`.simple();
+      await tx`CREATE TRIGGER chat_send_receipt_immutable BEFORE UPDATE ON ai.chat_send_receipts
+        FOR EACH ROW EXECUTE FUNCTION ai.chat_send_receipt_immutable()`.simple();
+    }
+  });
   await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_pending ON ai.queued_messages(conversation_id, position) WHERE status IN ('pending','failed')`.simple();
   await sql`CREATE TABLE IF NOT EXISTS ai.queued_message_files (
     message_id uuid NOT NULL REFERENCES ai.queued_messages(id) ON DELETE CASCADE,
@@ -105,10 +124,16 @@ export const migrateAiMessageQueue = async () => {
 };
 
 export const listQueuedMessages = async (conversationId: string) => {
-  const rows = await sql<{ id: string; content: AiDraftContentPart[]; error: string | null }[]>`
-    SELECT id, content, error FROM ai.queued_messages
+  const rows = await sql<{ id: string; content: AiDraftContentPart[]; status: string; error: string | null }[]>`
+    SELECT id, content, status, error FROM ai.queued_messages
     WHERE conversation_id = ${conversationId}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL)) ORDER BY position`;
-  return rows.map((row) => ({ id: row.id, content: row.content, failed: Boolean(row.error) }));
+  return rows.map((row) => ({
+    id: row.id,
+    content: row.content,
+    failed: Boolean(row.error),
+    error: row.error,
+    retrying: row.status === "pending" && row.error === "dispatch_failed",
+  }));
 };
 
 export const queuedMessageAccepted = async (conversationId: string, id: string) => {
@@ -176,13 +201,16 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
 };
 
 /** Cancellation and retry share the conversation lock with promotion. */
-export const updateQueuedMessage = async (conversationId: string, id: string, action: "cancel" | "retry") =>
-  sql.begin(async (tx) => {
+export const updateQueuedMessage = async (conversationId: string, id: string, action: "cancel" | "retry") => {
+  const timeZone = action === "retry" ? (await coreSettings.get<string>("app.timezone")) || "UTC" : "UTC";
+  return sql.begin(async (tx) => {
     await tx`SELECT id FROM ai.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
     const changed =
       await tx`UPDATE ai.queued_messages SET status = ${action === "cancel" ? "cancelled" : "pending"}, error = NULL, revision=revision+1
     WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL))
-      AND (${action}='cancel' OR automation_source IS NULL) RETURNING id`;
+      AND (${action}='cancel' OR automation_source IS NULL)
+      AND (${action}='cancel' OR NOT (submission->'runConfig' ? 'codeOrigin')
+        OR (created_at AT TIME ZONE ${timeZone})::date >= (clock_timestamp() AT TIME ZONE ${timeZone})::date) RETURNING id`;
     if (action === "cancel" && changed.length) {
       await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${id}::uuid`;
       await tx`UPDATE ai.queued_messages SET submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END,
@@ -190,25 +218,28 @@ export const updateQueuedMessage = async (conversationId: string, id: string, ac
     }
     return Boolean(changed.length);
   });
+};
 
-/** Edit only queued text; immutable attachments and the independent composer draft stay intact. */
-export const editQueuedMessage = async (conversationId: string, id: string, text: string) =>
+/** An edit that would break the bounds of one message; the person hears why and the queued message stays as it was. */
+export class AiQueuedMessageTooLarge extends Error {}
+
+/**
+ * Edit only queued text; immutable attachments, checked quotes, and the independent composer draft stay intact. Text
+ * from a source without a signed-in session restricts the queued turn; editing stays possible.
+ */
+export const editQueuedMessage = async (conversationId: string, id: string, text: string, source: { signedInSession: boolean }) =>
   sql.begin(async (tx) => {
     await tx`SELECT id FROM ai.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
     const [row] = await tx<{ submission: Submission; content: AiDraftContentPart[] }[]>`SELECT submission, content FROM ai.queued_messages
     WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND status IN ('pending','failed') FOR UPDATE`;
     if (!row) return false;
     if (row.submission.runConfig.writerOrigin && row.submission.runConfig.writerOrigin.kind !== "person") return false;
-    const content = editAiDraftText(row.content, text);
-    const parts = content.map((part) =>
-      part.type === "text"
-        ? part
-        : part.type === "project-file"
-          ? { type: "text" as const, text: `Project file: ${part.path}` }
-          : part.type === "file"
-            ? { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size }
-            : { type: "text" as const, text: aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }) },
-    );
+    // Typed text never passes for a quote; the edited message keeps the bounds of any message, quotes included.
+    const content = editAiDraftText(row.content, aiNeutralizeQuoteMarkers(text));
+    const problem = aiDraftContentProblem(content);
+    if (problem) throw new AiQueuedMessageTooLarge(problem);
+    // The quotes stay as the server checked them when the message was queued.
+    const parts = aiDraftTurnContent(content, row.submission.runConfig.quotes ?? []);
     const { message } = aiInputToUserMessage(aiTurnInputToContent({ content: parts }));
     const userMessage = canonicalizeAiConversationAttachments(message, row.submission.runConfig.files);
     if (userMessage.role !== "user") throw new Error("Queued message must be a user message.");
@@ -217,6 +248,7 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
       userMessage,
       runConfig: {
         ...row.submission.runConfig,
+        ...(source.signedInSession ? {} : { sourceRestricted: true as const }),
         input: userMessage.content,
         selectedSkillIds: [
           ...new Set(content.flatMap((part) => (part.type === "resource" && part.ref.type === "core.ai.skill" ? [part.ref.id] : []))),
@@ -228,15 +260,49 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
     return true;
   });
 
+/** What a retired entry keeps: only its send receipt and initiator. */
+const retiredSubmission = (db: SQL) =>
+  db`CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END`;
+
+/** Expired or invalid Code messages leave the queue even while something ahead of them blocks the chat;
+ * otherwise one stuck chat would keep its owner's other Codes busy. One statement, bounded by the queue
+ * limit; rows another dispatcher holds are left to it. */
+const retireExpiredCodeStarts = async (
+  expiredReason: NonNullable<ValidateQueuedChatStart["expiredReason"]>,
+  conversationId: string | undefined,
+) => {
+  const { expression: reason } = await expiredReason();
+  await sql`WITH expired AS (
+      SELECT q.id, ${reason} AS reason FROM ai.queued_messages q
+      WHERE q.status='pending' AND q.submission->'runConfig' ? 'codeOrigin' AND ${reason} IS NOT NULL
+        AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id = ${conversationId ?? null}::uuid)
+      ORDER BY q.position LIMIT ${AUTOMATION_QUEUE_LIMIT} FOR UPDATE OF q SKIP LOCKED
+    ), retired AS (
+      UPDATE ai.queued_messages SET status='failed', error=expired.reason, submission=${retiredSubmission(sql)}, content='[]'::jsonb
+      FROM expired WHERE ai.queued_messages.id = expired.id RETURNING ai.queued_messages.id
+    )
+    DELETE FROM ai.queued_message_files f USING retired WHERE f.message_id = retired.id`;
+};
+
 /** Read the current payload and revision only after taking the same lock as edits/cancellation. */
 export const drainQueuedMessages = async (
   enqueue: (job: { conversationId: string; turnId: string }) => Promise<unknown>,
   conversationId?: string,
   validateStart?: ValidateQueuedChatStart,
 ) => {
-  const chats = await sql<{ conversation_id: string }[]>`
-    SELECT q.conversation_id FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
+  if (validateStart?.expiredReason)
+    await retireExpiredCodeStarts(validateStart.expiredReason, conversationId).catch((error) =>
+      log.warn("Expired Code messages could not be retired", {
+        code: "queue_expiry_failed",
+        conversationId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  const chats = await sql<{ conversation_id: string; person: boolean }[]>`
+    SELECT q.conversation_id,q.automation_source IS NULL AS person FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
     WHERE (q.status='pending' OR (q.status='failed' AND q.automation_source IS NULL AND q.error IN ${sql([...AI_QUEUE_RETRYABLE_ERRORS])}))
+      AND (q.error IS DISTINCT FROM 'dispatch_failed' OR q.quota_checked_at IS NULL
+        OR q.quota_checked_at <= clock_timestamp() - (${AI_QUEUE_SWEEP_INTERVAL_MS} * interval '1 millisecond'))
       AND (${Boolean(validateStart)} OR q.automation_source IS NULL)
       AND (q.automation_source IS NOT NULL OR (c.archived_at IS NULL AND c.created_by_user_id IS NOT NULL))
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages earlier WHERE earlier.conversation_id=q.conversation_id
@@ -244,8 +310,15 @@ export const drainQueuedMessages = async (
       AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id=${conversationId ?? null}::uuid)
       AND NOT EXISTS (SELECT 1 FROM ai.turns t WHERE t.conversation_id=q.conversation_id
         AND NOT COALESCE(t.run_config ? 'background',false) AND t.status IN ('queued','running','waiting_for_action'))
-    ORDER BY q.quota_checked_at NULLS FIRST,q.position LIMIT ${AI_MESSAGE_QUEUE_LIMIT}`;
+    ORDER BY q.quota_checked_at NULLS FIRST,q.position LIMIT ${AI_QUEUE_SWEEP_CHAT_LIMIT}`;
   for (const chat of chats) {
+    // Composer settings use their normal cache; load the catalog snapshot before holding the chat lock.
+    const personSettings = chat.person
+      ? await readAiSettingsState().then(
+          (state) => ({ state }),
+          (error: unknown) => ({ error }),
+        )
+      : undefined;
     // At most the automation capacity can fail in one drain; person failures still stop FIFO.
     for (let remaining = AUTOMATION_QUEUE_LIMIT + 1; remaining > 0; remaining--) {
       const outcome = await sql
@@ -261,23 +334,47 @@ export const drainQueuedMessages = async (
               submission: Submission;
               revision: string;
               status: string;
+              quota_checked_at: Date | null;
+              created_at: Date;
               error: string | null;
               automation_source: string | null;
             }[]
           >`
-          SELECT id,submission,revision::text,status,error,automation_source FROM ai.queued_messages
+          SELECT id,submission,revision::text,status,error,automation_source,quota_checked_at,created_at FROM ai.queued_messages
           WHERE conversation_id=${chat.conversation_id}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL))
           ORDER BY position LIMIT 1 FOR UPDATE`;
           if (!row || (row.status === "failed" && !isAiQueueRetryableError(row.error))) return null;
           if (!row.automation_source && (!conversation || conversation.archived_at || !conversation.created_by_user_id)) return null;
+          // Recheck the retry deadline after locking: another dispatcher may just have failed this head.
+          let dispatchExpired = false;
+          if (row.error === "dispatch_failed" && row.quota_checked_at) {
+            const [retry] = await tx<{ due: boolean; expired: boolean }[]>`SELECT ${row.created_at}::timestamptz <=
+              clock_timestamp() - (${AI_QUEUED_START_TIMEOUT_MS} * interval '1 millisecond') AS expired,
+              ${row.quota_checked_at}::timestamptz <=
+              clock_timestamp() - (${AI_QUEUE_SWEEP_INTERVAL_MS} * interval '1 millisecond') AS due`;
+            dispatchExpired = retry!.expired;
+            if (!retry!.due && !dispatchExpired) return null;
+          }
+          const needsSettings = isAssistantChatTurn(row.submission.runConfig) || Boolean(row.submission.runConfig.send);
+          // If a different kind of head replaced the selected one, prefetch on the next sweep.
+          if (!row.automation_source && needsSettings && !personSettings) return null;
           // Runtime startup/shutdown is not a permanent source refusal. Leave work for the next host sweep.
           if (row.automation_source && !validateStart) return null;
           try {
+            // Reuse the queued-turn deadline; composer entries otherwise have no expiry.
+            if (dispatchExpired) throw new AiQueuedChatStartError("dispatch_failed");
             // Savepoint prevents a failed submission from committing partial turn/message writes.
             const result = await tx.savepoint(async (attempt) => {
               let input = row.submission;
               if (row.automation_source && !input.runConfig.send) throw new AiQueuedChatStartError("source_restricted");
-              const state = isAssistantChatTurn(input.runConfig) || input.runConfig.send ? await readAiSettingsState(attempt) : undefined;
+              if (!row.automation_source && needsSettings && personSettings && "error" in personSettings) throw personSettings.error;
+              const state = !needsSettings
+                ? undefined
+                : row.automation_source
+                  ? await readAiSettingsState(attempt)
+                  : personSettings && "state" in personSettings
+                    ? personSettings.state
+                    : undefined;
               if (validateStart && input.runConfig.send) input = await validateStart(input, attempt, state, row.id);
               await attempt`UPDATE ai.queued_messages SET submission=(${JSON.stringify(input)}::text)::jsonb WHERE id=${row.id}::uuid`;
               input = { ...input, queuedMessageId: row.id, queuedMessageRevision: row.revision };
@@ -289,26 +386,51 @@ export const drainQueuedMessages = async (
             });
             return { turnId: result.turn.id };
           } catch (error) {
-            if (
-              typeof error === "object" &&
-              error !== null &&
-              (("errno" in error && ["40P01", "40001", "55P03", "57014"].includes(String(error.errno))) ||
-                ("code" in error && ["40P01", "40001", "55P03", "57014"].includes(String(error.code))))
-            )
-              return null;
+            // The savepoint rolled back: lock contention, serialization retries and cancellation leave admission unchanged.
+            if (typeof error === "object" && error !== null) {
+              const sqlState = ["errno" in error ? String(error.errno) : "", "code" in error ? String(error.code) : ""].find((state) =>
+                ["55P03", "40P01", "40001", "57014"].includes(state),
+              );
+              if (sqlState) {
+                log.warn("Queued message start contended", {
+                  code: "queue_start_contended",
+                  conversationId: chat.conversation_id,
+                  messageId: row.id,
+                  sqlState,
+                });
+                return null;
+              }
+            }
             const reason = error instanceof Error ? error.message : String(error);
             if (reason === "Queued message is no longer ready." || reason.includes("idx_ai_turns_one_active_per_conversation")) return null;
-            const code = error instanceof AiQuotaError || error instanceof AiQueuedChatStartError ? error.code : "dispatch_failed";
-            await tx`UPDATE ai.queued_messages SET status='failed',error=${code},quota_checked_at=clock_timestamp(),revision=revision+1 WHERE id=${row.id}::uuid`;
-            if (row.automation_source) await tx`DELETE FROM ai.queued_message_files WHERE message_id=${row.id}::uuid`;
-            log.warn("Queued message could not start", { conversationId: chat.conversation_id, messageId: row.id, code });
-            return row.automation_source ? { failed: true as const } : null;
+            const code =
+              error instanceof AiQuotaError || error instanceof AiQueuedChatStartError
+                ? error.code
+                : isAiSettingsError(error)
+                  ? error.aiError.code
+                  : "dispatch_failed";
+            const terminal = error instanceof AiQuotaError || error instanceof AiQueuedChatStartError || isAiSettingsError(error);
+            await tx`UPDATE ai.queued_messages SET status=${terminal ? "failed" : "pending"},error=${code},
+              quota_checked_at=clock_timestamp(),revision=revision+1,
+              submission=CASE WHEN ${terminal && Boolean(row.automation_source)} THEN ${retiredSubmission(tx)} ELSE submission END,
+              content=CASE WHEN ${terminal && Boolean(row.automation_source)} THEN '[]'::jsonb ELSE content END
+              WHERE id=${row.id}::uuid`;
+            if (terminal && row.automation_source) await tx`DELETE FROM ai.queued_message_files WHERE message_id=${row.id}::uuid`;
+            log.warn("Queued message could not start", {
+              conversationId: chat.conversation_id,
+              messageId: row.id,
+              code,
+              retryExpired: dispatchExpired,
+              errorType: error instanceof Error ? error.constructor.name : "unknown",
+            });
+            return terminal && row.automation_source ? { failed: true as const } : null;
           }
         })
         .catch((error: unknown) => {
           log.warn("Queued chat dispatch will be retried", {
+            code: "dispatch_failed",
             conversationId: chat.conversation_id,
-            errorType: error instanceof Error ? error.name : "unknown",
+            errorType: error instanceof Error ? error.constructor.name : "unknown",
           });
           return null;
         });

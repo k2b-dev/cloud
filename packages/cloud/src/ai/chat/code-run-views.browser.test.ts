@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { AiTurnBlock, AiWireEvent } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { cloudAiViewSummary, parseCloudAiView } from "../view-block";
@@ -289,3 +289,77 @@ for (const view of [
       await context.close();
     }
   }, 30_000);
+
+for (const width of [1440, 390])
+  for (const theme of ["light", "dark"] as const)
+    test(`expanded Code run details use words and retain focus and row position (${width}, ${theme})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width, height: width === 390 ? 780 : 900 },
+        reducedMotion: "reduce",
+        colorScheme: theme,
+      });
+      try {
+        const page = await context.newPage();
+        await page.addInitScript(pinPageClock, Date.parse("2026-11-08T10:13:00Z"));
+        await page.goto(`http://127.0.0.1:${server.port}/`);
+        await page.evaluate((value) => {
+          document.documentElement.className = value;
+        }, theme);
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+        const source = "export default async () => cloud.spaces.task.create({ title: 'Delivery' })";
+        await emit(page, {
+          ...base,
+          seq: 2,
+          type: "block_set",
+          block: { ...run, args: { code: source }, result: { status: "ready", output: source, logs: [{ text: source }] } },
+        });
+        const work = page.locator(".ai-turn-work > summary");
+        await work.focus();
+        await page.keyboard.press("Enter");
+        const step = page.locator(".ai-turn-steps summary").first();
+        await step.waitFor();
+        await step.focus();
+        await settled(page);
+        const before = await step.boundingBox();
+        await page.keyboard.press("Enter");
+        await page.locator(".ai-code-step__note").waitFor();
+        expect(await page.locator(".ai-code-step__note").innerText()).toContain("Daten für deine Anfrage verarbeitet");
+        expect(await step.boundingBox()).toEqual(before);
+        expect(await step.evaluate((node) => node === document.activeElement)).toBe(true);
+        expect(await page.locator("body").innerText()).not.toContain("export default");
+        expect(await page.locator(".ai-turn-steps pre, .ai-turn-steps code").count()).toBe(0);
+        expect(["12px", "13px", "14px", "18px"]).toContain(
+          await page.locator(".ai-code-step__note").evaluate((node) => getComputedStyle(node).fontSize),
+        );
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+        await page.screenshot({ path: `/tmp/gustav-lane-v-3607/code-step-${theme}-${width}.png` });
+
+        await emit(page, {
+          ...base,
+          seq: 3,
+          type: "block_set",
+          block: {
+            ...run,
+            status: "awaiting_approval",
+            args: { code: source },
+            presentation: {
+              kind: "capability",
+              appId: "spaces",
+              appName: "Spaces",
+              appIcon: "ti ti-layout-kanban",
+              title: "Lieferaufgabe anlegen",
+              capabilityKind: "action",
+            },
+            approval: { allowAlways: false, review: { message: "Die Lieferaufgabe in Spaces anlegen.", details: [] } },
+          },
+        });
+        const card = page.locator(".ai-turn__action .k2b-chat-decision");
+        await card.waitFor();
+        expect(await card.locator(".k2b-chat-decision__reason").innerText()).toContain("Spaces");
+        expect(await card.locator(".k2b-chat-decision__reason").innerText()).not.toContain("Cloud");
+        expect(await card.innerText()).not.toContain("export default");
+        await page.screenshot({ path: `/tmp/gustav-lane-v-3607/code-approval-${theme}-${width}.png` });
+      } finally {
+        await context.close();
+      }
+    }, 30_000);

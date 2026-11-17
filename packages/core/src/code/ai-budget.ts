@@ -211,7 +211,7 @@ export async function checkCodeChatRunBudget(
   const [run] = await db<{ code_id: string; owner_key: string; owner_user_id: string }[]>`
     SELECT c.id AS code_id,json_build_array('person',c.owner_user_id)::text AS owner_key,c.owner_user_id
     FROM code.runs r JOIN code.codes c ON c.id=r.code_id WHERE r.id=${runId}::uuid`;
-  if (!run) return "code_ai_budget_limit";
+  if (!run) return "code_run_gone";
   const [period] = await db<{ day: string }[]>`SELECT (clock_timestamp() AT TIME ZONE ${limits.timeZone})::date::text AS day`;
   const day = period!.day;
   for (const [kind, key, limit] of [

@@ -42,7 +42,10 @@ export function CloudTableView(props: {
   });
   const [query, setQuery] = createSignal("");
   // In a chat answer a searchable table names what its search finds, and on a phone its search folds into a sign.
-  const counted = () => frame !== undefined && props.summary.search;
+  // In an answer every table's head has its search (Feinschliff v3 §5: "search, tables only"); elsewhere the view's own
+  // `search` decides.
+  const searchable = () => frame !== undefined || props.summary.search === true;
+  const counted = () => frame !== undefined;
   const [searching, setSearching] = createSignal(false);
   const [groupBy, setGroupBy] = createSignal<string | null>(null);
   // Search matches the cells as they are shown; Copy data keeps every row of the view.
@@ -87,17 +90,20 @@ export function CloudTableView(props: {
             {/* The summary reserves the tools from the first frame; they wait, disabled, for the rows. */}
             <Show when={counted()}>
               <SearchToggle
-                label={blockWords(locale()).searchIn({ title: props.input?.title ?? props.summary.title })}
+                label={blockWords(locale()).searchTable}
+                describedBy={props.id}
                 disabled={!table()}
                 onOpen={() => setSearching(true)}
               />
             </Show>
-            <Show when={props.summary.search || props.summary.grouped}>
+            <Show when={searchable() || props.summary.grouped}>
               <div ref={tools} class="cloud-table-search-host contents" onFocusOut={() => setSearching(false)}>
                 <DataTableTools
-                  label={props.input?.title ?? props.summary.title}
+                  // A fixed word, never the view's title: the heading names the table for the field too.
+                  label={blockWords(locale()).table}
+                  describedBy={props.id}
                   query={query()}
-                  onQueryChange={props.summary.search ? setQuery : undefined}
+                  onQueryChange={searchable() ? setQuery : undefined}
                   groups={props.summary.grouped ? (groups() ?? []) : undefined}
                   groupBy={groupBy()}
                   onGroupByChange={props.summary.grouped ? setGroupBy : undefined}

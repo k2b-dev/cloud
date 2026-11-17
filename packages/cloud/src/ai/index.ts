@@ -303,6 +303,7 @@ export {
 } from "./protocol";
 export { createAiProvider } from "./provider";
 export { AiQuotaError } from "./quotas";
+export type { AiMessageQuote, AiQuoteDraft, AiQuoteSource } from "./quote-markers";
 export { isConversationResourceCursor } from "./resource-refs";
 export { describeAiResourceTypeCounts } from "./resource-type-counts";
 export type { AiRoutes } from "./routes";

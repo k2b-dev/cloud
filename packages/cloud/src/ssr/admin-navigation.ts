@@ -93,6 +93,7 @@ export const buildAdminGroups = (
             ? { waiting: { count: codeApprovals, label: approvalMessages.resolve([locale]).t.waiting({ count: codeApprovals }) } }
             : {}),
         },
+        { href: "/admin/settings/maintenance", icon: "ti-barrier-block", label: t.maintenance },
         ...(observabilityPaths.length > 0
           ? [
               {

@@ -87,17 +87,15 @@ export const chatWriteAuthority = async (context: CapabilityExecutionContext, db
   if (delegation.credentialKind !== "session") return restricted();
   const lease = await nestedInvocationLeases.read(delegation.invocationId);
   // The source may still be valid; its lease is just not readable now. Never misreport that as a restriction.
+  // 409, not 503: the dispatcher releases the key, so the same call can be repeated.
   if (!lease)
-    return {
-      ok: false as const,
-      error: {
-        code: "source_unavailable",
-        message: de
-          ? "Die Herkunft dieses Aufrufs lässt sich gerade nicht prüfen. Versuch es gleich noch einmal."
-          : "The source of this call cannot be checked right now. Try again shortly.",
-        status: 503 as const,
-      },
-    };
+    return fail({
+      code: "source_unavailable",
+      message: de
+        ? "Die Herkunft dieses Aufrufs lässt sich gerade nicht prüfen. Versuch es gleich noch einmal."
+        : "The source of this call cannot be checked right now. Try again shortly.",
+      status: 409 as const,
+    });
   if (!lease.assistantTurn)
     return lease.proof?.kind === "session" && lease.proof.userId === actor.user.id
       ? ok({

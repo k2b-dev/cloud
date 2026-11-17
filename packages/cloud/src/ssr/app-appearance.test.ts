@@ -58,7 +58,7 @@ const read = (style: string | undefined, property: string): HexColor => {
 const iconStyle = (style: string | undefined) => ({ light: read(style, "--app-bar-icon-light"), dark: read(style, "--app-bar-icon-dark") });
 
 const apps: RuntimeAppMeta[] = [
-  { id: "core", name: "Core", icon: "ti ti-cloud", description: "Core", routes: ["/", "/help"] },
+  { id: "core", name: "Cloud", icon: "ti ti-cloud", description: "Core", routes: ["/", "/help"] },
   ...["spaces", "timetrack"].map((id) => ({ id, name: id, icon: "ti ti-apps", description: id, routes: [`/app/${id}`] })),
 ];
 

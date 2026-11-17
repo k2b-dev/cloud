@@ -224,6 +224,20 @@ export type ChatComposerReply = {
   onSelect?: () => void;
 };
 
+/** A passage the draft quotes, such as part of a message the person selected. */
+export type ChatComposerQuote = {
+  /** Stable among the draft's quotes. */
+  id: string;
+  /** Who wrote the passage. */
+  author: string;
+  /** The passage; it shows at most two lines. */
+  text: string;
+  /** Takes the quote out of the draft. */
+  onRemove: () => void;
+  /** Makes the quote a button, for example to jump to the passage. */
+  onSelect?: () => void;
+};
+
 /**
  * A suggested next message. It stands in the empty field instead of the placeholder, wraps and grows the field like
  * typed text, and ends in a hint: "Tab accept" with a keyboard, an Accept button on touch-only devices. Tab or the hint
@@ -281,7 +295,10 @@ export type ChatComposerProps = {
   onMentionsChange?: (mentions: readonly ChatMention[]) => void;
   /** Suggests people after `@`; needs `mentions` and `onMentionsChange`. */
   people?: ChatComposerPeople;
-  /** Shared surface above the editor; suggestions temporarily replace this content. */
+  /**
+   * Shared surface above the editor, such as the passages a draft quotes in `ChatComposerQuotes`; suggestions
+   * temporarily replace this content.
+   */
   accessory?: JSX.Element;
   contextUsage?: ChatContextUsageData;
   /**

@@ -29,7 +29,7 @@ import {
   withinMessageMutationWindow,
 } from "./service/contracts";
 import { authorizeDiscussion, checkDiscussionCredentialScope } from "./service/discussion-access";
-import { changeDiscussionMessage, listDiscussion, postDiscussion, resolveDiscussionMessage } from "./service/discussions";
+import { changeDiscussionMessage, listDiscussion, postDiscussion, resolveDiscussionMessage, reviewQuotes } from "./service/discussions";
 import { messages } from "./service/messages";
 import { notificationPreferences } from "./service/notification-preferences";
 import { threadFollows } from "./service/thread-follows";
@@ -58,6 +58,8 @@ const reviewChange = async (
       operation === "edit" ? input.body! : (message.body ?? ""),
       context.locale,
       input.revision,
+      // The passages the message quotes stay with it.
+      (message.quotes ?? []).flatMap((quote) => ("deleted" in quote ? [] : [{ text: quote.text, author: quote.author.name }])),
     ),
   );
 };
@@ -244,8 +246,12 @@ export const chatCapabilities = defineCapabilities({
       review: async (input, context) => {
         const access = await authorizeDiscussion(input.ref, context, true);
         if (!access.ok) return access;
+        // The words that will be stored, not the words sent: sending widens a passage to whole words.
+        const quoted = await reviewQuotes(input.ref, input.quotes, access.data);
+        if (!quoted.ok) return quoted;
+        const quotes = quoted.data.flatMap((quote) => ("deleted" in quote ? [] : [{ text: quote.text, author: quote.author.name }]));
         return ok({
-          ...discussionReview("post", input.ref, access.data.decision.title, input.body, context.locale),
+          ...discussionReview("post", input.ref, access.data.decision.title, input.body, context.locale, undefined, quotes),
           scope: discussionApprovalScope(access.data.container.ref),
         });
       },

@@ -126,6 +126,7 @@ export class Runner {
         if (error instanceof RunnerLeaseLostError) controller.abort();
         else if (!controller.signal.aborted) this.log("runner_job_heartbeat_unavailable");
       }
+      // runtime-timer: renew the lease of a job already in flight while maintenance drains it.
       if (!controller.signal.aborted) beatTimer = setTimeout(beat, lease.heartbeatMs);
     };
     expire();
@@ -210,6 +211,7 @@ export class Runner {
           controller.abort();
         } else if (!controller.signal.aborted) this.log("runner_heartbeat_unavailable");
       }
+      // runtime-timer: renew the lease of a run already in flight while maintenance drains it.
       if (!controller.signal.aborted) heartbeat = setTimeout(beat, Math.min(lease.heartbeatMs, Math.max(1, expiresAt - Date.now())));
     };
     const deadline = setTimeout(

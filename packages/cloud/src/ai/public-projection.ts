@@ -1,5 +1,9 @@
+import { getApp } from "../_internal/registry";
+import type { AppRegistryEntry } from "../contracts/registry";
+import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { projectAiChoices } from "./choices";
 import { projectAiNextMessages } from "./next-message-store";
+import { publicAiToolInput, publicAiToolResult } from "./public-tool-input";
 import { capabilityResultView } from "./result-view";
 import { aiConversations, resolveAiTurnShortIds } from "./store";
 import type { AiConversation, AiStoredMessage } from "./types";
@@ -34,13 +38,39 @@ export const projectPublicAiStoredMessages = (
   choiceContext: readonly AiStoredMessage[] = messages,
 ): AiStoredMessage[] =>
   projectAiChoices(messages, choiceContext).map((message) => {
+    const toolNames = new Map(
+      message.message.role === "assistant"
+        ? message.message.content.flatMap((block) => (block.type === "tool_call" ? [[block.id, block.name] as const] : []))
+        : [],
+    );
     const view = message.message.role === "tool_result" && !message.message.isError ? capabilityResultView(message.message.result) : null;
     return {
       ...message,
+      message:
+        message.message.role === "assistant"
+          ? {
+              ...message.message,
+              content: message.message.content.map((block) =>
+                block.type === "tool_call" ? { ...block, args: publicAiToolInput(block.name, block.args) } : block,
+              ),
+            }
+          : message.message.role === "tool_result"
+            ? { ...message.message, result: publicAiToolResult(message.message.name, message.message.result) }
+            : message.message,
       meta:
         message.meta || view
           ? {
               ...message.meta,
+              ...(message.meta?.toolInterimResults
+                ? {
+                    toolInterimResults: Object.fromEntries(
+                      Object.entries(message.meta.toolInterimResults).map(([callId, result]) => [
+                        callId,
+                        publicAiToolResult(toolNames.get(callId) ?? "", result),
+                      ]),
+                    ),
+                  }
+                : {}),
               ...(view ? { resultView: view } : {}),
               ...(message.meta?.choice
                 ? { choice: { ...message.meta.choice, turnId: turnShortIds.get(message.meta.choice.turnId) ?? message.meta.choice.turnId } }
@@ -53,24 +83,79 @@ export const projectPublicAiStoredMessages = (
     };
   });
 
+/**
+ * A turn stores its steps' presentation, app name included, as it was then. An app that renames itself must read the
+ * same everywhere. Relayed Code approvals keep the review's turn locale so their name, title and question agree;
+ * other steps use the reader's locale. Legacy Code approvals without a recorded locale keep their stored name.
+ * The registry is an in-memory view, so this reads no SQL; an unknown app keeps its stored name.
+ */
+export const withCurrentAppNames = async (
+  messages: readonly AiStoredMessage[],
+  locale?: string,
+  readApp: (appId: string) => Promise<Pick<AppRegistryEntry, "name" | "description" | "presentation"> | null> = getApp,
+): Promise<AiStoredMessage[]> => {
+  const appIds = new Set(
+    messages.flatMap((message) =>
+      Object.values(message.meta?.toolPresentations ?? {}).flatMap((presentation) =>
+        presentation.kind === "capability" ? [presentation.appId] : [],
+      ),
+    ),
+  );
+  if (appIds.size === 0) return [...messages];
+  const apps = new Map(
+    (
+      await Promise.all(
+        [...appIds].map(async (appId) => {
+          const app = await readApp(appId).catch(() => null);
+          return app ? ([[appId, app]] as const) : [];
+        }),
+      )
+    ).flat(),
+  );
+  if (apps.size === 0) return [...messages];
+  return messages.map((message) => {
+    const presentations = message.meta?.toolPresentations;
+    if (!presentations) return message;
+    const codeCalls = new Set(
+      message.message.role === "assistant"
+        ? message.message.content.flatMap((block) => (block.type === "tool_call" && block.name === "code_run" ? [block.id] : []))
+        : [],
+    );
+    const current = Object.fromEntries(
+      Object.entries(presentations).map(([callId, presentation]) => {
+        const review = message.meta?.toolReviews?.[callId];
+        const displayLocale = codeCalls.has(callId) ? (review && "locale" in review ? review.locale : null) : locale;
+        const app = presentation.kind === "capability" ? apps.get(presentation.appId) : undefined;
+        const appName =
+          app && displayLocale !== null ? (displayLocale ? resolveAppIdentityPresentation(app, displayLocale).name : app.name) : undefined;
+        return [callId, appName && appName !== presentation.appName ? { ...presentation, appName } : presentation];
+      }),
+    );
+    return { ...message, meta: { ...message.meta, toolPresentations: current } };
+  });
+};
+
 export const publicAiStoredMessages = async (
   messages: readonly AiStoredMessage[],
   conversation: Pick<AiConversation, "id" | "shortId">,
   viewerUserId?: string | null,
+  locale?: string,
   loadedChoiceContext?: readonly AiStoredMessage[],
 ): Promise<AiStoredMessage[]> => {
-  const choiceContext =
+  const [choiceContext, turnShortIds, named] = await Promise.all([
     loadedChoiceContext ??
-    (messagesNeedChoiceContext(messages) ? await aiConversations.listChoiceMessages({ conversationId: conversation.id }) : []);
-  const turnShortIds = await resolveAiTurnShortIds({
-    conversationId: conversation.id,
-    turnIds: messages.flatMap((message) => [
-      ...(message.loopId ? [message.loopId] : []),
-      ...(message.meta?.choice ? [message.meta.choice.turnId] : []),
-    ]),
-  });
+      (messagesNeedChoiceContext(messages) ? aiConversations.listChoiceMessages({ conversationId: conversation.id }) : []),
+    resolveAiTurnShortIds({
+      conversationId: conversation.id,
+      turnIds: messages.flatMap((message) => [
+        ...(message.loopId ? [message.loopId] : []),
+        ...(message.meta?.choice ? [message.meta.choice.turnId] : []),
+      ]),
+    }),
+    withCurrentAppNames(messages, locale),
+  ]);
   return projectAiNextMessages(
-    projectPublicAiStoredMessages(messages, conversation.shortId, turnShortIds, choiceContext),
+    projectPublicAiStoredMessages(named, conversation.shortId, turnShortIds, choiceContext),
     conversation.id,
     viewerUserId,
   );

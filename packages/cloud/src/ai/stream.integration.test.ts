@@ -118,6 +118,117 @@ suite("AI conversation stream repair", () => {
     await connection.drain();
   });
 
+  test("Code source stays out of the initial snapshot, live step and resumed baseline", async () => {
+    const chat = await createChat();
+    const { save, event } = await startTurn(chat);
+    const source = "export default async () => cloud.spaces.task.create({ title: 'Delivery' })";
+    const block: AiTurnBlock = { id: "tool-run", kind: "tool", callId: "run", name: "code_run", args: { code: source }, status: "running" };
+    await save([block], 1);
+    const stream = follow(chat);
+    const initial = expectState(await stream.next());
+    expect(initial.activeTurn?.blocks[0]).toMatchObject({ args: {} });
+    expect(JSON.stringify(initial)).not.toContain(source);
+    await publishAiWireEvent(event(2, { type: "block_set", block }));
+    expect(JSON.stringify(await stream.next())).not.toContain(source);
+    await publishAiWireEvent(event(3, { type: "turn_started", blocks: [block], modelId: "fixture", providerModel: "fixture" }));
+    expect(JSON.stringify(await stream.next())).not.toContain(source);
+  });
+
+  test("lasting Code source and raw diagnostics stay out of SSE history, live results and resumed baselines", async () => {
+    const chat = await createChat();
+    const { turn, save, event } = await startTurn(chat);
+    const source = "export default () => 'sse-source-fixture'";
+    const literal = "sse-diagnostic-source-fixture";
+    const diagnostic = {
+      code: "TS2322",
+      message: `Type '"${literal}"' is not assignable to type '"allowed"'.`,
+      file: "code.ts",
+      line: 1,
+      column: 7,
+    };
+    const words = {
+      notices: [{ severity: "block", text: "The draft needs a correction.", consequence: "This version cannot be submitted." }],
+      mayDo: [],
+    };
+    const blocks: AiTurnBlock[] = [
+      {
+        id: "tool-write",
+        kind: "tool",
+        callId: "write",
+        name: "code_write",
+        args: { path: "code.ts", content: source },
+        status: "completed",
+      },
+      ...["code_read", "code_pull"].map(
+        (name): AiTurnBlock => ({
+          id: `tool-${name}`,
+          kind: "tool",
+          callId: name,
+          name,
+          args: { codeId: "ABCDEF" },
+          status: "completed",
+          result: { version: 1, files: { "code.ts": source } },
+        }),
+      ),
+      ...["code_check", "code_test", "code_simulate"].map((name): AiTurnBlock => {
+        const checked = { ok: false, diagnostics: [diagnostic], warnings: [diagnostic] };
+        return {
+          id: `tool-${name}`,
+          kind: "tool",
+          callId: name,
+          name,
+          args: { codeId: "ABCDEF" },
+          status: "completed",
+          result: name === "code_check" ? { version: 1, result: checked, words } : { version: 1, ...checked, words },
+        };
+      }),
+    ];
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, modelId: "fixture" });
+    await store.append({
+      role: "assistant",
+      content: [
+        { type: "tool_call", id: "write", name: "code_write", args: { path: "code.ts", content: source } },
+        ...["code_read", "code_pull", "code_check", "code_test", "code_simulate"].map((name) => ({
+          type: "tool_call" as const,
+          id: name,
+          name,
+          args: { codeId: "ABCDEF" },
+        })),
+      ],
+    });
+    for (const block of blocks) {
+      if (block.kind === "tool" && block.result !== undefined)
+        await store.append({ role: "tool_result", callId: block.callId, name: block.name, result: block.result });
+    }
+    await save(blocks, 1);
+    const stream = follow(chat);
+    const expectPublic = (value: unknown) => {
+      const serialized = JSON.stringify(value);
+      expect(serialized).not.toContain(source);
+      expect(serialized).not.toContain(literal);
+    };
+    const initial = expectState(await stream.next());
+    expectPublic(initial);
+    expect(initial.activeTurn?.blocks.find((block) => block.kind === "tool" && block.name === "code_check")).toMatchObject({
+      result: { result: { diagnostics: [{ code: "TS2322", file: "code.ts", line: 1, column: 7 }], warnings: [{ code: "TS2322" }] }, words },
+    });
+    for (const [index, block] of blocks.entries()) {
+      await publishAiWireEvent(event(index + 2, { type: "block_set", block }));
+      expectPublic(await stream.next());
+    }
+    await publishAiWireEvent(event(blocks.length + 2, { type: "turn_started", blocks, modelId: "fixture", providerModel: "fixture" }));
+    expectPublic(await stream.next());
+    const message = (await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id })).find(
+      (message) => message.message.role === "tool_result" && message.message.name === "code_check",
+    );
+    if (!message) throw new Error("Expected a canonical message");
+    await publishAiWireEvent(event(blocks.length + 3, { type: "message_saved", message }));
+    expectPublic(await stream.next());
+    const canonical = JSON.stringify(await store.load());
+    expect(canonical).toContain(source);
+    expect(canonical).toContain(literal);
+  });
+
   test("a lost live event: the stream sends the saved state once it holds the next event, then continues without a hole", async () => {
     const chat = await createChat();
     const { turn, event, save } = await startTurn(chat);

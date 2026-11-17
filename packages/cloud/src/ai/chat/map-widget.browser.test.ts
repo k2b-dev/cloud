@@ -353,7 +353,8 @@ test("ambiguity calculates only after choosing a server candidate; options prese
     await dialog(page)
       .getByRole("button", { name: /2 Beispielgasse.*Als Stopp übernehmen/ })
       .click();
-    await dialog(page).getByRole("listbox", { name: "Welcher Ort ist gemeint?" }).waitFor({ state: "detached" });
+    // Loading also detaches the candidate list; the route's stops appear only after calculation.
+    await dialog(page).getByRole("listbox", { name: "Stopps", exact: true }).waitFor();
     expect(fixture.geo.calls.slice(calls)).toContain("calculate");
     await menu(page, "Optionen");
     await dialog(page).getByLabel("Autobahn", { exact: true }).click();

@@ -720,7 +720,7 @@ describe("AI capability catalog", () => {
   });
 
   test("recovers a wrong app hint through discovery, loading and execution", async () => {
-    const core = capabilityApp("core", "Core");
+    const core = capabilityApp("core", "Cloud");
     const query = core.manifest.queries[0]!;
     core.manifest.queries = [
       {
@@ -852,7 +852,7 @@ describe("AI capability catalog", () => {
   });
 
   test.each(["scope", "hidden", "offline"] as const)("search fallback preserves %s exclusions", async (exclusion) => {
-    const core = capabilityApp("core", "Core", { title: "Show a map", description: "Return a Cloud map style URL." });
+    const core = capabilityApp("core", "Cloud", { title: "Show a map", description: "Return a Cloud map style URL." });
     const venue = capabilityApp("venue", "Venue");
     const tools = await createAiToolResolver({
       conversationId: "restricted-discovery",

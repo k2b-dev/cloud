@@ -763,6 +763,82 @@ describe("Waiting for you", () => {
       }
     }, 60_000);
 
+  for (const view of [desktop, phone])
+    test(`at ${view.name} "To the newest message" stands above the waiting row, and the conversation never shows through it`, async () => {
+      const { page, errors, unrouted, close } = await open(view, { locale: "de", scenario: "three" });
+      try {
+        await strip(page).waitFor();
+        const pill = page.getByRole("button", { name: "Zur neuesten Nachricht" });
+        // Scrolled up as a person does, again while the chat still lays out its end and follows it (WebKit, 1440).
+        await until(
+          page,
+          async () => {
+            await scrollTimeline(page, "top");
+            return pill.isVisible();
+          },
+          "the pill shows",
+        );
+        await settled(page);
+        const withRow = await rect(page, ".k2b-chat-timeline__latest");
+        const row = await rect(page, "nav.assistant-waiting");
+        // Nothing covers the pill, and the pill covers nothing of the row: no chip, no "+n", no gap between them.
+        const topmost = await page.evaluate(
+          ([x, y]) => document.elementFromPoint(x!, y!)?.closest(".k2b-chat-timeline__latest") !== null,
+          [(withRow.left + withRow.right) / 2, withRow.top + withRow.height / 2],
+        );
+        expect(topmost).toBe(true);
+        expect(withRow.bottom).toBeLessThanOrEqual(row.top);
+        // Set ASSISTANT_SHOTS to a directory to keep a picture of the chat at this width.
+        if (process.env.ASSISTANT_SHOTS) {
+          mkdirSync(process.env.ASSISTANT_SHOTS, { recursive: true });
+          await page.screenshot({ path: resolve(process.env.ASSISTANT_SHOTS, `latest-over-waiting-${view.name}.png`) });
+        }
+
+        // The row lies on the timeline's free end (v12 §9): from its top down to the field, the conversation scrolled
+        // behind it never shows, between the chips neither. The band looks the same with the conversation hidden.
+        const field = await rect(page, ".assistant-chat-composer__column");
+        const band = { x: row.left, y: row.top, width: row.right - row.left, height: field.top - row.top };
+        const behind = await page.evaluate((band) => {
+          const content = document.querySelector(".k2b-chat-timeline__content")!;
+          const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+          const range = document.createRange();
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (!node.textContent?.trim()) continue;
+            range.selectNodeContents(node);
+            for (const box of range.getClientRects())
+              if (box.bottom > band.y && box.top < band.y + band.height && box.right > band.x && box.left < band.x + band.width)
+                return true;
+          }
+          return false;
+        }, band);
+        // Text of the conversation lies behind the band, so the comparison below means something.
+        expect(behind).toBe(true);
+        // Only what lies behind the row counts: the row itself steps out of the picture, keeping its place and the mask, so
+        // the browser's text rendering of its chips, which can change with what lies under them, compares nothing.
+        await page.addStyleTag({ content: "nav.assistant-waiting { visibility: hidden !important; }" });
+        await settled(page);
+        const shown = await page.screenshot({ clip: band });
+        await page.addStyleTag({ content: ".k2b-chat-timeline__content { visibility: hidden !important; }" });
+        await settled(page);
+        const without = await page.screenshot({ clip: band });
+        expect(shown.equals(without)).toBe(true);
+        await page.evaluate(() => {
+          document.querySelector("style:last-of-type")?.remove();
+          document.querySelector("style:last-of-type")?.remove();
+        });
+        await settled(page);
+
+        // The same place without a row: a floating control never jumps with another one.
+        await page.evaluate(() => document.querySelector("nav.assistant-waiting")?.remove());
+        await settled(page);
+        expect(await rect(page, ".k2b-chat-timeline__latest")).toEqual(withRow);
+        expect(errors).toEqual([]);
+        expect(unrouted).toEqual([]);
+      } finally {
+        await close();
+      }
+    }, 60_000);
+
   test("a second press while the other chat opens keeps the chat it started from in the history", async () => {
     // Two entries, so the other chat's chip stands in the row beside this chat's one.
     const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "two" }, { slowChat: "Tops42" });

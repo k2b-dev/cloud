@@ -150,12 +150,12 @@ const save = async (
         let id: string;
         if (before) {
           id = before.id;
-          await tx`UPDATE pulse.dashboards SET name=${name},definition=(${JSON.stringify(definition)}::jsonb #>> '{}')::jsonb,
+          await tx`UPDATE pulse.dashboards SET name=${name},definition=${JSON.stringify(definition)}::text::jsonb,
           revision=revision+1,updated_at=now(),public_token_hash=CASE WHEN ${revoke} THEN NULL ELSE public_token_hash END,
           public_exposure=CASE WHEN ${revoke} THEN NULL ELSE public_exposure END WHERE id=${id}::uuid`;
         } else {
           const [created] = await tx<{ id: string }[]>`INSERT INTO pulse.dashboards(short_id,base_id,name,definition)
-          VALUES(${shortId},${baseId}::uuid,${name},(${JSON.stringify(definition)}::jsonb #>> '{}')::jsonb) RETURNING id`;
+          VALUES(${shortId},${baseId}::uuid,${name},${JSON.stringify(definition)}::text::jsonb) RETURNING id`;
           if (!created) return fail(err.internal("Could not save dashboard"));
           id = created.id;
         }

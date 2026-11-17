@@ -68,10 +68,15 @@ type ClaimRow = { state: CapabilityClaimState; request_hash: string; response_st
  * or still unknown.
  */
 export const claimCapabilityIdempotency = async (scope: CapabilityClaimScope, requestHash: string): Promise<CapabilityClaimOutcome> => {
+  // A key holds for the retention window from its first claim; afterwards the same key starts a new
+  // call at once, atomically, without waiting for the retention sweep to delete the old row.
   const [inserted] = await sql<{ inserted: boolean }[]>`
     INSERT INTO capabilities.idempotency_claims (app_id, capability, principal, key_hash, request_hash, state)
     VALUES (${scope.appId}, ${scope.capability}, ${scope.principal}, ${scope.keyHash}, ${requestHash}, 'in_flight')
-    ON CONFLICT (app_id, capability, principal, key_hash) DO NOTHING
+    ON CONFLICT (app_id, capability, principal, key_hash) DO UPDATE
+      SET request_hash = EXCLUDED.request_hash, state = 'in_flight', response_status = NULL, response_body = NULL,
+        created_at = now(), updated_at = now()
+      WHERE capabilities.idempotency_claims.created_at <= now() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})
     RETURNING true AS inserted
   `;
   if (inserted) return { state: "claimed" };

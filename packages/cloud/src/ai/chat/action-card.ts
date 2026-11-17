@@ -478,7 +478,7 @@ export const toolActionCard = (
       subject,
       title,
       outcome: context.outcome(subject),
-      input: block.args,
+      input: block.name === "code_run" ? undefined : block.args,
     },
     cardContext,
   );

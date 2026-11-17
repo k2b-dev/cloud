@@ -64,6 +64,7 @@ export async function checkCode(request: CodeCheckRequest, host: CodeCheckHost, 
     signal?.addEventListener("abort", cancel, { once: true });
     const timer = setTimeout(() => stop("code_check_time_limit"), Math.max(1, deadline - performance.now()));
     let readingMemory = false;
+    // runtime-timer: memory watchdog for the sandbox child already in flight, including during maintenance drain.
     const memory = setInterval(async () => {
       if (readingMemory) return;
       readingMemory = true;

@@ -31,6 +31,8 @@ import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import type { AiStreamEvent } from "./protocol";
 import { buildBlocksFromMessages } from "./protocol";
+import { aiQuoteModelText } from "./quote-markers";
+import { aiResourceMarker } from "./resource-markers";
 import { __aiRoutesTest, aiRoutes } from "./routes";
 import * as aiRuntime from "./runtime";
 import { createAiShortId } from "./short-id";
@@ -104,6 +106,201 @@ suite("global AI conversation boundaries", () => {
     } finally {
       await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (${userId}::uuid, ${otherId}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherId}::uuid)`;
+    }
+  });
+
+  test("an untitled chat is named in the caller's language and keeps automatic naming", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const post = (language: string, body: object = {}) =>
+      aiRoutes.request("/conversations", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Accept-Language": language },
+        body: JSON.stringify(body),
+      });
+    try {
+      const german = await post("de-DE");
+      expect(german.status).toBe(201);
+      expect(await german.json()).toMatchObject({ title: "Neuer Chat", titleSource: "default" });
+      const english = await post("en");
+      expect(english.status).toBe(201);
+      expect(await english.json()).toMatchObject({ title: "New chat", titleSource: "default" });
+      // The default follows the language, the replay identity does not: a retry in another language is the same chat.
+      const requestId = crypto.randomUUID();
+      const first = await (await post("de", { requestId })).json();
+      const replay = await post("en", { requestId });
+      expect(replay.status).toBe(201);
+      expect(await replay.json()).toMatchObject({ id: first.id, title: "Neuer Chat" });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("REST history omits lasting Code source and raw diagnostics, keeping words and turn locale", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Accept-Language": "en" };
+    const source = "export default () => 'rest-source-fixture'";
+    const literal = "rest-diagnostic-source-fixture";
+    const diagnostic = {
+      code: "TS2322",
+      message: `Type '"${literal}"' is not assignable to type '"allowed"'.`,
+      file: "code.ts",
+      line: 1,
+      column: 7,
+    };
+    const words = {
+      notices: [{ severity: "block", text: "The draft needs a correction.", consequence: "This version cannot be submitted." }],
+      mayDo: [],
+    };
+    const app = spyOn(registry, "getApp").mockResolvedValue({
+      id: "notebooks",
+      name: "Notebooks",
+      description: "Notes",
+      icon: "ti ti-app",
+      baseUrl: "http://notebooks:3000",
+      routes: ["/app/notebooks"],
+      presentation: { baseLocale: "en", translations: { de: { name: "Notizbücher" } } },
+    });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "fixture",
+        runConfig: { kind: "chat", input: "Notiz erstellen", locale: "de" },
+        userMessage: { role: "user", content: [{ type: "text", text: "Notiz erstellen" }] },
+      });
+      const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, modelId: "fixture" });
+      await store.append({
+        role: "assistant",
+        content: [
+          { type: "tool_call", id: "run", name: "code_run", args: { code: source } },
+          { type: "tool_call", id: "write", name: "code_write", args: { codeId: "ABCDEF", path: "code.ts", content: source } },
+          { type: "tool_call", id: "read", name: "code_read", args: { codeId: "ABCDEF" } },
+          { type: "tool_call", id: "pull", name: "code_pull", args: { codeId: "ABCDEF" } },
+          ...["code_check", "code_test", "code_simulate"].map((name) => ({
+            type: "tool_call" as const,
+            id: name,
+            name,
+            args: { codeId: "ABCDEF" },
+          })),
+        ],
+      });
+      for (const name of ["code_read", "code_pull"])
+        await store.append({
+          role: "tool_result",
+          callId: name === "code_read" ? "read" : "pull",
+          name,
+          result: { version: 1, files: { "code.ts": source } },
+        });
+      for (const name of ["code_check", "code_test", "code_simulate"]) {
+        const checked = { ok: false, diagnostics: [diagnostic], warnings: [diagnostic] };
+        await store.append({
+          role: "tool_result",
+          callId: name,
+          name,
+          result: name === "code_check" ? { version: 1, result: checked, words } : { version: 1, ...checked, words },
+        });
+      }
+      await recordAiToolReview({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "run",
+        review: { ...reviewFixture(), locale: "de" },
+        presentation: {
+          kind: "capability",
+          appId: "notebooks",
+          appName: "Notizbücher",
+          appIcon: "ti ti-app",
+          title: "Notiz erstellen",
+          capabilityKind: "action",
+        },
+      });
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/messages`, { headers });
+      expect(response.status).toBe(200);
+      const page = await response.json();
+      expect(JSON.stringify(page)).not.toContain(source);
+      expect(JSON.stringify(page)).not.toContain(literal);
+      for (const name of ["code_check", "code_test", "code_simulate"]) {
+        const result = page.messages.find(
+          (message: { message: { role: string; name?: string } }) =>
+            message.message.role === "tool_result" && message.message.name === name,
+        ).message.result;
+        expect(result.words).toEqual(words);
+        const checked = name === "code_check" ? result.result : result;
+        expect(checked.diagnostics).toEqual([{ code: "TS2322", file: "code.ts", line: 1, column: 7 }]);
+        expect(checked.warnings).toEqual(checked.diagnostics);
+      }
+      expect(
+        page.messages.find((message: { meta?: { toolPresentations?: unknown } }) => message.meta?.toolPresentations).meta.toolPresentations
+          .run,
+      ).toMatchObject({ appName: "Notizbücher", title: "Notiz erstellen" });
+      const canonical = JSON.stringify(await store.load());
+      expect(canonical).toContain(source);
+      expect(canonical).toContain(literal);
+    } finally {
+      app.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("a resumed website approval's pending read does not reuse its parent Action review", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "fixture",
+        runConfig: { kind: "chat", input: "Read", locale: "de" },
+        userMessage: { role: "user", content: [{ type: "text", text: "Read" }] },
+      });
+      const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, modelId: "fixture" });
+      await store.append({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "run", name: "code_run", args: { code: "export default () => 1" } }],
+      });
+      await recordAiToolReview({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "run",
+        review: reviewFixture(),
+        presentation: {
+          kind: "capability",
+          appId: "spaces",
+          appName: "Spaces",
+          appIcon: "ti ti-app",
+          title: "Create task",
+          capabilityKind: "action",
+        },
+      });
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "run-approval-1",
+        kind: "custom_approval",
+        status: "pending",
+        name: "code_run",
+        args: {},
+        message: "Read example.com?",
+        approvalScope: "https://example.com",
+        rememberToolName: AI_WEBSITE_APPROVAL_TOOL,
+        allowAlways: false,
+        allowChat: true,
+        resolvedEvent: null,
+      });
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/pending-actions/${turn.shortId}`, {
+        headers: { Authorization: `Bearer ${await createTestSession(userId)}` },
+      });
+      expect(response.status).toBe(200);
+      const actions = await response.json();
+      expect(actions).toHaveLength(1);
+      expect(actions[0]).not.toHaveProperty("review");
+      expect(JSON.stringify(actions)).not.toContain("Spaces");
+      expect((await aiConversations.listTurnToolReviews({ conversationId: chat.id, turnId: turn.id })).get("run")).toEqual(reviewFixture());
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
 
@@ -324,6 +521,162 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
+  test("a quote names a message of the chat: Cloud checks its passage, says whose words it is, and keeps it as metadata", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const other = await aiConversations.createConversation({ ownerUserId: userId });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" };
+    const answerId = createAiShortId();
+    const elsewhereId = createAiShortId();
+    const answer = JSON.stringify({
+      role: "assistant",
+      content: [{ type: "text", text: "Der **Stromanschluss** mit 3 kW ist enthalten." }],
+    });
+    await sql`
+      INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, search_text)
+      VALUES (${answerId}, ${chat.id}::uuid, 1, 'message', 'assistant', ${answer}::text::jsonb, 'Strom'),
+        (${elsewhereId}, ${other.id}::uuid, 1, 'message', 'assistant', ${answer}::text::jsonb, 'Strom')
+    `;
+    const submissions: Parameters<typeof aiRuntime.submitAiChatTurn>[0][] = [];
+    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (submission) => {
+      submissions.push(submission);
+      return aiConversations.submitChatTurn({
+        conversationId: submission.conversationId,
+        modelId: "fixture-model",
+        userMessage: submission.userMessage,
+        expectedDraftRevision: submission.expectedDraftRevision,
+        runConfig: {
+          kind: "chat",
+          input: submission.input,
+          toolSource: { kind: "none" },
+          ...(submission.quotes ? { quotes: submission.quotes } : {}),
+        },
+      });
+    });
+    const send = async (quote: { messageId: string; text: string; from?: string }, locale = "en") => {
+      const current = await aiConversations.getConversation({ conversationId: chat.id });
+      const saved = await aiRoutes.request(`/conversations/${chat.shortId}/draft`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          expectedRevision: current!.draft.revision,
+          content: [
+            { type: "text", text: "Und das Internet?" },
+            { type: "quote", ...quote },
+          ],
+        }),
+      });
+      expect(saved.status).toBe(200);
+      const { revision } = (await saved.json()) as { revision: number };
+      return aiRoutes.request(`/conversations/${chat.shortId}/turns`, {
+        method: "POST",
+        headers: { ...headers, "Accept-Language": locale },
+        body: JSON.stringify({ draftRevision: revision, model: { id: "fixture-model" } }),
+      });
+    };
+    try {
+      // A sentence Gustav never said, and a message of another chat, are refused with a reason; nothing is sent.
+      // Each refusal carries a stable code and the person's message in the request's language.
+      const invented = await send({ messageId: answerId, text: "Strom ist kostenlos" });
+      expect(invented.status).toBe(400);
+      expect(await invented.json()).toMatchObject({
+        code: "quote_mismatch",
+        message: expect.stringContaining("does not match its message"),
+      });
+      const german = await send({ messageId: answerId, text: "Strom ist kostenlos" }, "de");
+      expect(german.status).toBe(400);
+      expect(await german.json()).toMatchObject({ code: "quote_mismatch", message: expect.stringContaining("passt nicht mehr") });
+      const foreign = await send({ messageId: elsewhereId, text: "Stromanschluss" });
+      expect(foreign.status).toBe(400);
+      expect(await foreign.json()).toMatchObject({ code: "quote_missing", message: expect.stringContaining("not in this chat") });
+      expect(submissions).toHaveLength(0);
+
+      // The client claims the person wrote it; Cloud says it is Gustav's answer and stores the checked quote.
+      const sent = await send({ messageId: answerId, from: "user", text: "Stromanschluss mit 3 kW" });
+      expect(sent.status).toBe(201);
+      const checked = { messageId: answerId, from: "assistant" as const, text: "Stromanschluss mit 3 kW" };
+      expect(submissions[0]?.quotes).toEqual([checked]);
+      const [stored] = await sql<{ meta: { quotes?: unknown }; message: { content: { text: string }[] } }[]>`
+        SELECT meta, message FROM ai.messages WHERE conversation_id = ${chat.id}::uuid AND role = 'user'
+      `;
+      expect(stored!.meta.quotes).toEqual([checked]);
+      expect(stored!.message.content.map((part) => part.text)).toEqual(["Und das Internet?", aiQuoteModelText(checked)]);
+    } finally {
+      submit.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id IN (${chat.id}::uuid, ${other.id}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test.each([false, true])(
+    "a retry keeps the message's checked quotes and the bound of 20000 characters with them, counting words only: edited=%p",
+    async (edited) => {
+      const userId = await insertUser();
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      const model = spyOn(assistantModels, "selectAssistantAiModel").mockResolvedValue({ id: "test-model" });
+      const submissions: Parameters<typeof aiRuntime.submitAiChatTurn>[0][] = [];
+      const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (submission) => {
+        submissions.push(submission);
+        return aiConversations.submitChatTurn({
+          conversationId: submission.conversationId,
+          modelId: "test-model",
+          userMessage: submission.userMessage,
+          truncateFromSeq: submission.truncateFromSeq,
+          runConfig: { kind: "chat", input: submission.input, toolSource: { kind: "none" }, quotes: submission.quotes },
+        });
+      });
+      const quotes = Array.from({ length: 10 }, (_, index) => ({
+        messageId: `Ans${index}`,
+        from: "assistant" as const,
+        text: `${index}`.repeat(1_999),
+      }));
+      try {
+        const first = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "test-model",
+          userMessage: {
+            role: "user",
+            content: [{ type: "text", text: "Kurz" }, ...quotes.map((quote) => ({ type: "text" as const, text: aiQuoteModelText(quote) }))],
+          },
+          runConfig: { kind: "chat", input: "Kurz", toolSource: { kind: "none" }, quotes },
+        });
+        await sql`UPDATE ai.turns SET status='completed' WHERE id=${first.turn.id}::uuid`;
+        const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" };
+        const retry = (content?: { type: "text"; text: string }[]) =>
+          aiRoutes.request(`/conversations/${chat.shortId}/messages/${first.message.shortId}/retry`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(content ? { content } : {}),
+          });
+        if (edited) {
+          // Ten long quotes leave room for six characters: a longer edit is refused with the reason.
+          const tooLong = await retry([{ type: "text", text: "Etwas mehr Text" }]);
+          expect(tooLong.status).toBe(400);
+          expect(((await tooLong.json()) as { message: string }).message).toContain("20000");
+          expect(submissions).toHaveLength(0);
+        }
+        // Unedited, the message goes again as it was. Edited, an attached Cloud item the edit dialog keeps is no words of
+        // the person, so the same message sends as it did. Either way the quotes come from the message.
+        const item = aiResourceMarker({ ref: { type: "grids.table", id: "t1" }, title: "Tabelle Messe" });
+        const kept = await retry(
+          edited
+            ? [
+                { type: "text", text: "Kurz" },
+                { type: "text", text: item },
+              ]
+            : undefined,
+        );
+        expect(kept.status).toBe(201);
+        expect(submissions[0]?.quotes).toEqual(quotes);
+      } finally {
+        model.mockRestore();
+        submit.mockRestore();
+        await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    },
+  );
+
   test.each([false, true])("message retry uses the retrying client's local context: local=%p", async (local) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
@@ -350,12 +703,16 @@ suite("global AI conversation boundaries", () => {
         },
       }),
     );
-    const provenance = {
+    // A person's retry keeps writer, initiator, receipt and restriction, but runs on the person's allowance.
+    const retained = {
       writerOrigin: { kind: "person" as const, id: userId },
       turnTrigger: { kind: "automation" as const, id: "c_report" },
       send: { id: "11111111-1111-4111-8111-111111111112", accountId: userId, keyHash: "a".repeat(64), requestHash: "b".repeat(64) },
-      codeOrigin: { codeId: "c_report", runId: "run", title: "Report", requestId: "request", label: "Started by Code Report" },
       sourceRestricted: true as const,
+    };
+    const provenance = {
+      ...retained,
+      codeOrigin: { codeId: "c_report", runId: "run", title: "Report", requestId: "request", label: "Started by Code Report" },
     };
     const selectedSkills = [{ name: "invoice", directory: "/original/.agents/skills/invoice", instructions: "Original selection." }];
     const client = { kind: "cli" as const, cwd: "/current", os: "Linux", shell: "bash", localTools: "ask" as const };
@@ -386,13 +743,15 @@ suite("global AI conversation boundaries", () => {
       });
       expect(response.status).toBe(201);
       expect(submit).toHaveBeenCalledTimes(1);
-      expect(submit.mock.calls[0]?.[0]).toMatchObject(provenance);
+      expect(submit.mock.calls[0]?.[0]).toMatchObject(retained);
+      expect(submit.mock.calls[0]?.[0].codeOrigin).toBeUndefined();
       const active = await aiConversations.getActiveTurn({ conversationId: chat.id });
       expect(active).not.toBeNull();
       if (!active) throw new Error("Missing retry turn");
       const config = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: active.turn.id });
       if (!config || config.kind !== "chat") throw new Error("Missing retry run config");
-      expect(config).toMatchObject(provenance);
+      expect(config).toMatchObject(retained);
+      expect(config.codeOrigin).toBeUndefined();
       expect(config.clientToolIds).toEqual(local ? ["local_read", "code_secret"] : []);
       expect(config.client).toEqual(local ? client : undefined);
       expect(config.localContext).toEqual(local ? { ...localContext, selectedSkills } : undefined);

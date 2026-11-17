@@ -81,7 +81,7 @@ const requireCoreAccess: MiddlewareHandler<AuthContext> = async (c, next) => {
     if (core) recordAppAccessDenied(core.id);
     c.header("Cache-Control", "private, no-store");
     c.header("X-Cloud-App-Access-Denied", "core");
-    return c.json(appAccessDeniedBody(core ?? { id: "core", name: "Core" }), 403);
+    return c.json(appAccessDeniedBody(core ?? { id: "core", name: "Cloud" }), 403);
   }
   await next();
 };

@@ -575,7 +575,7 @@ function TableLeaf(props: { block: Leaf<"Table">; spec: DescriptionObject; local
             <>
               <Show when={props.block.search}>
                 <Show when={counted()}>
-                  <SearchToggle label={words().searchIn({ title: props.block.title })} disabled />
+                  <SearchToggle label={words().searchTable} disabled />
                 </Show>
                 <TextInput
                   class={counted() ? "cloud-table-search" : undefined}
