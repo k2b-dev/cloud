@@ -684,7 +684,7 @@ for (const theme of ["light", "dark"])
         expect(colors.transition.split(",").every((duration) => duration.trim() === "0s")).toBe(true);
         expect(harnessErrors.get(page)).toEqual([]);
         if (process.env.CODE_HEAD_SHOTS)
-          await page.screenshot({ path: resolve(process.env.CODE_HEAD_SHOTS, `mailbox-dark-${width}.png`), fullPage: false });
+          await page.screenshot({ path: resolve(process.env.CODE_HEAD_SHOTS, `mailbox-en-dark-${width}.png`), fullPage: false });
       },
     );
   }
