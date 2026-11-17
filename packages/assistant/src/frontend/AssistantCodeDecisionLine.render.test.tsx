@@ -63,6 +63,7 @@ test("multiple pages keep the home card and quiet additional text links", () => 
 });
 test("no page or no current management access shows no card, and approval alone never opens a page", () => {
   expect(render(null)).not.toContain("k2b-link-card");
+  expect(render(handoff([]))).not.toContain("k2b-link-card");
   expect(render(handoff(), "de", "approved")).not.toContain("k2b-link-card");
 });
 test("unnamed home uses the app name; other unnamed pages use their readable path; English is complete", () => {

@@ -163,7 +163,7 @@ export default function AssistantCodeDecisionLine(props: {
       </Show>
       <Show when={props.decision.outcome === "activated" && props.decision.pageCount !== 0}>
         <Show
-          when={pages()}
+          when={pages()?.pages.pages.length ? pages() : null}
           fallback={
             <Show when={pageState() !== "ready"}>
               <div
