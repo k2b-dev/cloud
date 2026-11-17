@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { AiChatActionsProvider, createAiChatTimeline } from "@k2b/cloud/ai/ui";
-import { Chat, LocaleProvider } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import AssistantAuthoringStop from "./AssistantAuthoringStop";
 import { authoringStopNow, authoringStopState, createStoppedAuthoringFixture } from "./authoring-stop.test-fixture";
+
+// Shared UI modules register DOM events when they load, as in neighbouring behavior tests.
+const bootstrap = createDomTestHarness();
+const [{ AiChatActionsProvider, createAiChatTimeline }, { Chat, LocaleProvider }, { default: AssistantAuthoringStop }] = await Promise.all([
+  import("@k2b/cloud/ai/ui"),
+  import("@k2b/ui"),
+  import("./AssistantAuthoringStop"),
+]);
+bootstrap.cleanup();
 
 const domTest = isServer ? test.skip : test;
 beforeEach(() => setSystemTime(new Date(authoringStopNow)));
