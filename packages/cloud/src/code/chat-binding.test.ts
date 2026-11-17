@@ -69,7 +69,7 @@ test("bound Gustav chat and the Chat application keep separate SDK exports and i
   ]);
 });
 
-test("bound send stays bound through generated AI tools and requires the dynamic checked permission", async () => {
+test("bound send keeps its low-level AI tool target, while saved Code rejects model-chosen instructions", async () => {
   const generated = sdk();
   const calls: CodeSdkInvocation[] = [];
   const module = await import(`data:text/javascript;base64,${Buffer.from(`// AI tool fixture\n${generated.runtime}`).toString("base64")}`);
@@ -135,7 +135,8 @@ app.schedule({ cron: "0 8 * * *", name: "morning" }, async () => {
 }); export default app;`,
     },
   });
-  expect(result.diagnostics).toEqual([]);
+  // The transport keeps the bound target, but saved Code cannot delegate its fixed instruction to an AI tool.
+  expect(result.diagnostics).toEqual([expect.objectContaining({ code: "code_chat_text_fixed", file: "code.ts", line: 3 })]);
   expect(result.permissions).toContainEqual(
     expect.objectContaining({ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null } }),
   );
