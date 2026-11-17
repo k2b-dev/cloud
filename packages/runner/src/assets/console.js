@@ -15,6 +15,12 @@ export function createCodeConsole(cloud, limits) {
     droppedLines = sum(droppedLines, 1);
     droppedBytes = sum(droppedBytes, bytes(line));
   };
+  const enqueue = (entry) => {
+    if (limits.enabled === false) return;
+    if (bytes({ ...batch(), entries: [entry] }) > limits.bytes) return drop(entry);
+    entries.push(entry);
+    while (entries.length && bytes(batch()) > limits.bytes) drop(entries.shift());
+  };
   const append = (level, args) => {
     let text;
     try {
@@ -32,12 +38,7 @@ export function createCodeConsole(cloud, limits) {
     const at = new Date().toISOString();
     for (const textLine of text.split(/\r\n|\n|\r/)) {
       const line = { kind: "log", level, at, text: textLine };
-      if (bytes({ ...batch(), entries: [line] }) > limits.bytes) {
-        drop(line);
-        continue;
-      }
-      entries.push(line);
-      while (entries.length && bytes(batch()) > limits.bytes) drop(entries.shift());
+      enqueue(line);
     }
   };
   const send = async () => {
@@ -68,12 +69,118 @@ export function createCodeConsole(cloud, limits) {
   const console = Object.freeze(
     Object.fromEntries(["log", "info", "debug", "warn", "error"].map((level) => [level, (...args) => append(level, args)])),
   );
+  // Lifetime IDs and retained handle metadata share the existing raw output budget.
+  // The trusted host derives field/count limits from the serialized live-frame contract.
+  const steps = new Map();
+  let stepBytes = 0;
+  const refuse = (code) => {
+    throw Object.assign(new Error(code), { code });
+  };
+  const checkText = (value) => {
+    if (typeof value !== "string") refuse("code_output_invalid_text");
+    if (bytes(value) > limits.step.textBytes) refuse("code_output_text_limit");
+    return value;
+  };
+  const clipped = (value, budget = limits.step.textBytes) => {
+    let end = value.length;
+    if (bytes(value) <= budget) return value;
+    let start = 0;
+    while (start < end) {
+      const middle = Math.ceil((start + end) / 2);
+      if (bytes(value.slice(0, middle)) <= budget) start = middle;
+      else end = middle - 1;
+    }
+    return value.slice(0, end);
+  };
+  const terminal = (status) => ["succeeded", "failed", "skipped"].includes(status);
+  // Reserve lifecycle timestamps at creation, so an automatic failure can always settle.
+  const stepCost = (entry) =>
+    bytes({ ...entry, status: "succeeded", startedAt: entry.at, endedAt: entry.at, message: entry.message ?? "" });
+  const update = (entry) => {
+    const previous = steps.get(entry.id);
+    const nextBytes = stepBytes - (previous ? stepCost(previous) : 0) + stepCost(entry);
+    if (nextBytes > limits.bytes) refuse("code_output_step_limit");
+    stepBytes = nextBytes;
+    steps.set(entry.id, entry);
+    enqueue(entry);
+  };
+  const logger = Object.freeze({
+    ...Object.fromEntries(
+      ["info", "warn", "error"].map((level) => [
+        level,
+        (text) => {
+          if (typeof text !== "string") refuse("code_output_invalid_text");
+          append(level, [text]);
+        },
+      ]),
+    ),
+    step(label, options = {}) {
+      if (label && typeof label === "object") {
+        options = label;
+        label = options.label;
+      }
+      if (!options || typeof options !== "object" || Array.isArray(options)) refuse("code_output_invalid_step");
+      if (steps.size >= limits.step.count) refuse("code_output_step_limit");
+      const id = steps.size + 1;
+      const entry = {
+        kind: "step",
+        id,
+        at: new Date().toISOString(),
+        label: checkText(label),
+        status: "pending",
+        ...(options.icon === undefined ? {} : { icon: checkText(options.icon) }),
+        ...(options.description === undefined ? {} : { description: checkText(options.description) }),
+      };
+      update(entry);
+      const settle = (status, message) => {
+        const current = steps.get(id);
+        if (terminal(current.status) || (current.status === "pending" && status !== "skipped")) return;
+        if ((status === "failed" || status === "skipped") && message === undefined) refuse("code_output_invalid_text");
+        update({
+          ...current,
+          status,
+          endedAt: new Date().toISOString(),
+          ...(message === undefined ? {} : { message: checkText(message) }),
+        });
+      };
+      return Object.freeze({
+        start() {
+          const current = steps.get(id);
+          if (current.status !== "pending") return;
+          update({ ...current, status: "running", startedAt: new Date().toISOString() });
+        },
+        succeed: (message) => settle("succeeded", message),
+        fail: (reason) => settle("failed", reason),
+        skip: (reason) => settle("skipped", reason),
+      });
+    },
+  });
   // runtime-timer: flush only while this sandbox invocation is in flight; finish clears and joins it.
-  const timer = setInterval(() => {
-    void flush();
-  }, limits.intervalMs);
+  const timer =
+    limits.enabled === false
+      ? undefined
+      : setInterval(() => {
+          void flush();
+        }, limits.intervalMs);
   return {
     console,
+    logger,
+    error(error) {
+      let text = "[unprintable]";
+      try {
+        text = String(error instanceof Error ? error.message : error);
+      } catch {
+        /* Preserve settlement for unprintable throws. */
+      }
+      for (const entry of steps.values())
+        if (entry.status === "running") {
+          const base = { ...entry, status: "failed", endedAt: new Date().toISOString(), message: "" };
+          const remaining = limits.bytes - stepBytes + stepCost(entry) - stepCost(base);
+          const message = clipped(text, Math.min(limits.step.textBytes, Math.max(bytes(""), remaining + bytes(""))));
+          update({ ...base, message });
+        }
+      console.error(error);
+    },
     async finish() {
       clearInterval(timer);
       await sending;

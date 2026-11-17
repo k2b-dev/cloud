@@ -1,12 +1,17 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
-import { CODE_OUTPUT_INTERVAL_MS, CODE_OUTPUT_OPERATION, type CodeOutputBatch } from "@k2b/cloud/code";
+import { CODE_OUTPUT_INTERVAL_MS, CODE_OUTPUT_OPERATION, CODE_OUTPUT_STEP_LIMITS, type CodeOutputBatch } from "@k2b/cloud/code";
 import { LIVE_LIMITS } from "@k2b/cloud/events/limits";
 
 const source = await Bun.file(new URL("../src/assets/console.js", import.meta.url)).text();
 const { createCodeConsole } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 const fixed = Date.UTC(2030, 0, 2);
 afterEach(() => setSystemTime());
-const limits = { bytes: LIVE_LIMITS.frameBytes, intervalMs: CODE_OUTPUT_INTERVAL_MS, operation: CODE_OUTPUT_OPERATION };
+const limits = {
+  bytes: LIVE_LIMITS.frameBytes,
+  intervalMs: CODE_OUTPUT_INTERVAL_MS,
+  operation: CODE_OUTPUT_OPERATION,
+  step: CODE_OUTPUT_STEP_LIMITS,
+};
 test("a run owns its console; error stacks travel only through its bounded output call", async () => {
   setSystemTime(fixed);
   const batches: { operation: string; batch: CodeOutputBatch }[] = [];
@@ -29,8 +34,10 @@ test("a run owns its console; error stacks travel only through its bounded outpu
     level: "log",
     text: 'hello {"answer":42}',
   });
-  expect(batches[0]!.batch.entries.some((line) => line.level === "error" && line.text.includes("sandbox failure"))).toBe(true);
-  expect(batches[0]!.batch.entries.some((line) => line.text.includes("console.test.ts"))).toBe(true);
+  expect(
+    batches[0]!.batch.entries.some((line) => line.kind === "log" && line.level === "error" && line.text.includes("sandbox failure")),
+  ).toBe(true);
+  expect(batches[0]!.batch.entries.some((line) => line.kind === "log" && line.text.includes("console.test.ts"))).toBe(true);
 });
 test("oversized lines and a full buffer are counted and dropped, keeping the same frame limit", async () => {
   setSystemTime(fixed);
@@ -116,4 +123,163 @@ test("console methods capture log metadata before the bundle is flushed", async 
       text,
     })),
   ]);
+});
+
+test("logger steps start pending, keep a run-local ID and settle once; pending steps can skip", async () => {
+  setSystemTime(fixed);
+  const batches: CodeOutputBatch[] = [];
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
+  const first = output.logger.step("Read", { icon: "file-text", description: "Read the document" });
+  const skipped = output.logger.step({ label: "Save" });
+  output.logger.info("Information");
+  output.logger.warn("Warning");
+  output.logger.error("Error");
+  first.succeed("Too early");
+  first.start();
+  first.start();
+  setSystemTime(fixed + 200);
+  first.succeed("Read it");
+  first.fail("Ignored");
+  first.skip("Ignored");
+  first.start();
+  skipped.skip("Already saved");
+  skipped.start();
+  skipped.succeed();
+  await output.finish();
+  const entries = batches.flatMap((batch) => batch.entries);
+  expect(entries.filter((entry) => entry.kind === "log").map((entry) => entry.level)).toEqual(["info", "warn", "error"]);
+  const steps = entries.filter((entry) => entry.kind === "step");
+  expect(steps.map((entry) => entry.status)).toEqual(["pending", "pending", "running", "succeeded", "skipped"]);
+  expect(steps.map((entry) => entry.id)).toEqual([1, 2, 1, 1, 2]);
+  expect(steps.at(-2)).toMatchObject({
+    at: new Date(fixed).toISOString(),
+    startedAt: new Date(fixed).toISOString(),
+    endedAt: new Date(fixed + 200).toISOString(),
+    message: "Read it",
+  });
+});
+
+test("unhandled errors fail running steps only and retain pending steps; success leaves pending for RunLog", async () => {
+  setSystemTime(fixed);
+  const batches: CodeOutputBatch[] = [];
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
+  const running = output.logger.step("Working");
+  output.logger.step("Later");
+  running.start();
+  output.error(new Error("Document unavailable"));
+  await output.finish();
+  expect(
+    batches
+      .flatMap((batch) => batch.entries)
+      .filter((entry) => entry.kind === "step")
+      .map((entry) => [entry.id, entry.status, entry.message]),
+  ).toEqual([
+    [1, "pending", undefined],
+    [2, "pending", undefined],
+    [1, "running", undefined],
+    [1, "failed", "Document unavailable"],
+  ]);
+});
+
+test("step text and handle storage stay within budgets; invalid or excess steps refuse visibly", async () => {
+  setSystemTime(fixed);
+  const batches: CodeOutputBatch[] = [];
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
+  expect(() => output.logger.step("x".repeat(CODE_OUTPUT_STEP_LIMITS.textBytes))).toThrow("code_output_text_limit");
+  expect(() => output.logger.step(12)).toThrow("code_output_invalid_text");
+  let accepted = 0;
+  for (let index = 0; index <= CODE_OUTPUT_STEP_LIMITS.count; index++) {
+    try {
+      output.logger.step("Read");
+      accepted++;
+    } catch (error) {
+      expect(error).toMatchObject({ code: "code_output_step_limit" });
+      break;
+    }
+  }
+  expect(accepted).toBeGreaterThan(0);
+  expect(accepted).toBeLessThanOrEqual(CODE_OUTPUT_STEP_LIMITS.count);
+  await output.finish();
+  expect(batches.every((batch) => Buffer.byteLength(JSON.stringify(batch)) <= limits.bytes)).toBe(true);
+});
+
+test("successful completion keeps unstarted steps pending for the display to interpret", async () => {
+  setSystemTime(fixed);
+  const batches: CodeOutputBatch[] = [];
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
+  output.logger.step("Never started");
+  await output.finish();
+  expect(batches[0]!.entries).toEqual([
+    { kind: "step", id: 1, at: new Date(fixed).toISOString(), label: "Never started", status: "pending" },
+  ]);
+});
+
+test("automatic failure fits reserved lifecycle metadata even when handle storage is full", async () => {
+  setSystemTime(fixed);
+  const batches: CodeOutputBatch[] = [];
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
+  for (let index = 0; index < CODE_OUTPUT_STEP_LIMITS.count; index++) {
+    try {
+      output.logger.step("x".repeat(CODE_OUTPUT_STEP_LIMITS.textBytes / 2)).start();
+    } catch {
+      break;
+    }
+  }
+  expect(() => output.error(new Error("x".repeat(CODE_OUTPUT_STEP_LIMITS.textBytes)))).not.toThrow();
+  await output.finish();
+  expect(batches.flatMap((batch) => batch.entries).some((entry) => entry.kind === "step" && entry.status === "failed")).toBe(true);
+});
+
+test("disabled production output still supplies logger handles without bridge traffic", async () => {
+  setSystemTime(fixed);
+  const calls: unknown[] = [];
+  const output = createCodeConsole(
+    {
+      call: async (...args: unknown[]) => {
+        calls.push(args);
+      },
+    },
+    { ...limits, enabled: false },
+  );
+  const step = output.logger.step("Read");
+  step.start();
+  output.logger.info("Information");
+  output.error(new Error("Document unavailable"));
+  await output.finish();
+  expect(calls).toEqual([]);
 });

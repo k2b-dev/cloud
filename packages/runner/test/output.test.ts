@@ -63,3 +63,32 @@ test("harden the complete output envelope after loss aggregation", async () => {
   expect(sent[0]).toMatchObject({ entries: [], droppedLines: 1 });
   expect(Buffer.byteLength(JSON.stringify({ ...proof, batch: sent[0] }))).toBeLessThanOrEqual(LIVE_LIMITS.frameBytes);
 });
+
+test("supervisor loss aggregation counts a step revision once, independent of its fields", async () => {
+  setSystemTime(now);
+  const sent: CodeOutputBatch[] = [];
+  const output = new RunnerOutput(async (batch) => {
+    sent.push(batch);
+  }, proof);
+  const step: CodeOutputBatch = {
+    seq: 1,
+    entries: [
+      {
+        kind: "step",
+        id: 1,
+        at: new Date(now).toISOString(),
+        label: "Read",
+        description: "Document",
+        message: "Reason",
+        status: "pending",
+      },
+    ],
+    droppedLines: 0,
+    droppedBytes: 0,
+  };
+  await output.write(step);
+  await output.write({ ...step, seq: 2 });
+  setSystemTime(now + CODE_OUTPUT_INTERVAL_MS);
+  await output.write({ ...step, seq: 3 });
+  expect(sent[1]!.droppedLines).toBe(1);
+});

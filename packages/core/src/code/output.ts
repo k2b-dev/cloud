@@ -12,6 +12,7 @@ import {
   type CodeOutputWindow,
   CodeOutputWindowSchema,
   codeDetailsKey,
+  codeOutputEntryLines,
   emptyCodeOutput,
 } from "@k2b/cloud/code";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
@@ -21,6 +22,8 @@ import { purposeSecretCipher } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
 import {
+  assembleCodeOutput,
+  codeOutputFragments,
   compileOutputRedaction,
   type OutputRedactor,
   OutputRedactionPendingSchema as PendingSchema,
@@ -198,10 +201,12 @@ async function redactorFor(claims: Pick<CodeRunTokenClaims, "runId" | "generatio
   return redactor;
 }
 export function sanitizeCodeOutput(batch: CodeOutputBatch, replacements: ReadonlyMap<string, string>) {
-  return redactOutput(batch.entries, compileOutputRedaction(replacements), null, true, {
-    lost: batch.droppedLines > 0 || batch.droppedBytes > 0,
-    skip: 0,
-  }).entries;
+  return assembleCodeOutput(
+    redactOutput(codeOutputFragments(batch.entries, 0), compileOutputRedaction(replacements), null, true, {
+      lost: batch.droppedLines > 0 || batch.droppedBytes > 0,
+      skip: 0,
+    }).entries,
+  );
 }
 const sum = (a: number, b: number) => Math.min(Number.MAX_SAFE_INTEGER, a + b);
 async function uncountedDrops(runId: string, state: State) {
@@ -262,7 +267,7 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
       String(
         sum(
           batch.droppedLines,
-          batch.entries.reduce((total, line) => sum(total, line.text.split(/\r\n|\n|\r/).length), 0),
+          batch.entries.reduce((total, line) => sum(total, codeOutputEntryLines(line)), 0),
         ),
       ),
       String(sum(batch.droppedBytes, Buffer.byteLength(JSON.stringify(batch.entries)))),
@@ -278,20 +283,26 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
   const pending = state.pending
     ? PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))))
     : null;
-  const redacted = redactOutput(batch.entries, await redactorFor(claims, state.deadlineAt, state.redactionRevision), pending, false, {
-    // Counters locate no individual gap within a batch. Sequence gaps also cover
-    // failed delivery and saturated loss counters without touching the hot-path fence.
-    lost: batch.droppedLines > 0 || batch.droppedBytes > 0 || counts.seq > state.inputSeq || batch.seq > state.inputSeq + 1,
-    skip: state.redactionSkip,
-    // Core cadence/sequence gaps precede this batch; supervisor counters cannot
-    // locate a gap within it. Preserve that distinction when resuming output.
-    lossBeforeBatch: batch.droppedLines === 0 && batch.droppedBytes === 0,
-  });
+  const redacted = redactOutput(
+    codeOutputFragments(batch.entries, state.generation),
+    await redactorFor(claims, state.deadlineAt, state.redactionRevision),
+    pending,
+    false,
+    {
+      // Counters locate no individual gap within a batch. Sequence gaps also cover
+      // failed delivery and saturated loss counters without touching the hot-path fence.
+      lost: batch.droppedLines > 0 || batch.droppedBytes > 0 || counts.seq > state.inputSeq || batch.seq > state.inputSeq + 1,
+      skip: state.redactionSkip,
+      // Core cadence/sequence gaps precede this batch; supervisor counters cannot
+      // locate a gap within it. Preserve that distinction when resuming output.
+      lossBeforeBatch: batch.droppedLines === 0 && batch.droppedBytes === 0,
+    },
+  );
   // Identity belongs to the accepted stream position, survives window eviction and
   // replay, and needs neither caller-selected keys nor another persistence model.
-  const entries = redacted.entries.map((entry, index) => ({
+  const entries = assembleCodeOutput(redacted.entries).map((entry, index) => ({
     ...entry,
-    id: `${state.generation}:${state.window.seq + 1}:${index}`,
+    id: entry.kind === "step" ? entry.id : `${state.generation}:${state.window.seq + 1}:${index}`,
   }));
   const dropped = { lines: sum(batch.droppedLines, redacted.dropped.lines), bytes: sum(batch.droppedBytes, redacted.dropped.bytes) };
   // Reserve the maximum encoded counter/sequence widths, derived from the safe-integer wire schema.
@@ -313,6 +324,23 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
     lines: frame.droppedLines,
     bytes: frame.droppedBytes,
   });
+  if (
+    redacted.pending?.step &&
+    Buffer.byteLength(JSON.stringify(redacted.pending.step.entry)) > Math.min(state.budget, LIVE_LIMITS.frameBytes - envelopeBytes)
+  ) {
+    // Expansion into named parts can evict the whole snapshot. Keep only its
+    // bounded metadata with the unresolved suffix, never an oversized hidden window.
+    const { icon: _icon, ...entry } = redacted.pending.step.entry;
+    redacted.pending.step = {
+      ...redacted.pending.step,
+      entry: {
+        ...entry,
+        label: [],
+        ...(entry.description === undefined ? {} : { description: [] }),
+        ...(entry.message === undefined ? {} : { message: [] }),
+      },
+    };
+  }
   const event: CodeOutputEvent = { ...nextWindow, entries: frame.entries, type: "code.output", runId: claims.runId, budget: state.budget };
   const next: State = {
     ...state,
@@ -398,21 +426,16 @@ export async function closeCodeOutput(runId: string, generation?: number): Promi
   let window = withDrops(state, counts);
   if (state.pending) {
     const pending = PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))));
-    if ((pending.hidden ?? 0) < pending.text.length || pending.covered) {
+    const final = assembleCodeOutput(redactOutput([], compileOutputRedaction(new Map()), pending, true).entries);
+    if (final.length)
       window = appendCodeOutput(
         { ...window, seq: window.seq + 1 },
-        [
-          {
-            kind: pending.kind,
-            level: pending.level,
-            at: pending.at,
-            id: `${state.generation}:${window.seq + 1}:0`,
-            text: [{ type: "secret", name: pending.name }],
-          },
-        ],
+        final.map((entry, index) => ({
+          ...entry,
+          id: entry.kind === "step" ? entry.id : `${state.generation}:${window.seq + 1}:${index}`,
+        })),
         state.budget,
       );
-    }
   }
   const next: State = { ...state, pending: null, redactionSkip: 0, window, countedDropLines: counts.lines, countedDropBytes: counts.bytes };
   await redis.send("EVAL", [

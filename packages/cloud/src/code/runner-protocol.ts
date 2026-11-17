@@ -133,7 +133,7 @@ export type RunnerBundleRequest = z.infer<typeof RunnerBundleRequestSchema>;
 /** Core records these bounded, payload-free terminal outcomes; lease_lost stays owned by Core's lease reconciler. */
 export const RunnerOutcomeSchema = z.enum(["succeeded", "failed", "wall_clock_limit", "memory_limit", "stalled", "lease_lost"]);
 export type RunnerOutcome = z.infer<typeof RunnerOutcomeSchema>;
-/** Terminal reports still carry no exception text. Sandbox console/error text may
+/** Terminal reports still carry no exception text. Sandbox console, step and error text may
  * leave only through the separate bounded output route, where Core redacts it
  * before any publication or storage; it never becomes a terminal error message.
  */

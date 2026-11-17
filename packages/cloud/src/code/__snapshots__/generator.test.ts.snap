@@ -551,6 +551,10 @@ export type KnownCodeErrorCode =
   | "code_owner_read"
   | "code_owner_reports_pending"
   | "code_owner_source_invalid"
+  | "code_output_invalid_step"
+  | "code_output_invalid_text"
+  | "code_output_step_limit"
+  | "code_output_text_limit"
   | "code_page_blocks"
   | "code_page_chart"
   | "code_page_child"
@@ -760,6 +764,23 @@ export type CodeGenerationOutput<Input> = Input extends { output: infer Output }
       ? CodeJsonOutput<Schema>
       : unknown
   : unknown;
+
+/** A run-local step. Its first terminal result wins; later calls do nothing. */
+export type CodeLogStep = {
+  start(): void;
+  succeed(message?: string): void;
+  fail(reason: string): void;
+  skip(reason: string): void;
+};
+export type CodeLogStepOptions = { icon?: string; description?: string };
+/** Structured output visible only to people who may manage the Code. */
+export type CodeLogger = {
+  info(text: string): void;
+  warn(text: string): void;
+  error(text: string): void;
+  step(label: string, options?: CodeLogStepOptions): CodeLogStep;
+  step(options: CodeLogStepOptions & { label: string }): CodeLogStep;
+};
 /** Catalog input. */
 export type Work$hshop_Catalog_ListInput = Record<string, never>;
 export type Work$hshop_Catalog_ListData = Array<string>;
@@ -981,6 +1002,7 @@ export declare namespace jsx {
 export declare const secrets: Readonly<Record<string, CodeSecret>>;
 export declare const http: CodeHttp;
 export declare const db: CodeDatabase;
+export declare const logger: CodeLogger;
 "
 `;
 
@@ -1013,6 +1035,11 @@ const db = Object.freeze({
   exec: (sql, params = []) => invoke("db.exec", { sql, params }),
   batch: statements => invoke("db.batch", { statements: statements.map(({ sql, params = [] }) => ({ sql, params })) }),
 });
+// The loader binds the run-local output object, never a second bridge or credential.
+const logger = Object.freeze(Object.fromEntries(["info", "warn", "error", "step"].map(method => [method, (...args) => {
+  if (!bridge?.logger) throw new CodeError("code_sdk_bridge_unbound");
+  return bridge.logger[method](...args);
+}])));
 const handles = new WeakMap();
 const aiTools = new WeakMap();
 let bridge;
@@ -1203,7 +1230,7 @@ const http = Object.freeze({
 const builtPages = new WeakSet();
 const __codeSdk = Object.freeze({
   markPage: page => { builtPages.add(page); return page; },
-  namespaces, chat, owner, app, secrets, http, db, CodeError,
+  namespaces, chat, owner, app, secrets, http, db, logger, CodeError,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new CodeError("code_sdk_invalid_bridge");
     bridge = cloud;
@@ -1306,6 +1333,7 @@ const __codeSdk = Object.freeze({
 
 return __codeSdk;
 })();
+export const logger = __codeSdk.logger;
 export const secrets = __codeSdk.secrets;
 export const http = __codeSdk.http;
 export { __codeSdk };

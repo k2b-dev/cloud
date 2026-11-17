@@ -359,3 +359,129 @@ test("harden preceding-gap continuations inside UTF-16 pairs", () => {
     expect(partial.entries).toEqual([]);
   }
 });
+
+for (const spelling of replacements.keys()) {
+  test(`step text shares redaction across fields and bundles: ${Buffer.from(spelling).toString("hex")}`, async () => {
+    const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
+    const middle = Math.floor(spelling.length / 2);
+    const step = {
+      kind: "step" as const,
+      id: 1,
+      at: line("").at,
+      status: "running" as const,
+      label: "Read",
+      description: spelling.slice(0, middle),
+    };
+    const redactor = compileOutputRedaction(replacements);
+    const first = redactOutput(codeOutputFragments([step], 1), redactor);
+    const visible = assembleCodeOutput(first.entries);
+    expect(visible).toMatchObject([{ kind: "step", id: "1:step:1", label: [{ type: "text", text: "Read" }] }]);
+    expect(first.pending?.step?.field).toBe("description");
+    // Match the real encrypted JSON boundary: metadata aliases must survive as values.
+    const pending = OutputRedactionPendingSchema.parse(JSON.parse(JSON.stringify(first.pending)));
+    const second = redactOutput([line(spelling.slice(middle) + "!")], redactor, pending);
+    const updated = assembleCodeOutput(second.entries);
+    expect(updated[0]).toMatchObject({ kind: "step", id: "1:step:1", description: [{ type: "secret", name: "TOKEN" }] });
+    expect(JSON.stringify([...visible, ...updated])).not.toContain(value);
+    const terminal = redactOutput(
+      codeOutputFragments([{ ...step, description: "", label: spelling.slice(0, middle), message: spelling.slice(middle) }], 1),
+      redactor,
+      null,
+      true,
+    );
+    const sanitized = assembleCodeOutput(terminal.entries);
+    expect(sanitized).toMatchObject([{ kind: "step", label: [{ type: "secret", name: "TOKEN" }] }]);
+    expect(JSON.stringify(sanitized)).not.toContain(value);
+  });
+}
+
+test("step fields are cleaned, final pending text updates the same ID, and icons remain identifiers", async () => {
+  const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
+  const raw = {
+    kind: "step" as const,
+    id: 1,
+    at: line("").at,
+    status: "failed" as const,
+    label: "\x1b[31mRead\u202e",
+    icon: "file-text",
+    description: "\x00plain",
+    message: "ab",
+  };
+  const redactor = compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]]));
+  const first = redactOutput(codeOutputFragments([raw], 2), redactor);
+  expect(assembleCodeOutput(first.entries)).toEqual([
+    {
+      kind: "step",
+      id: "2:step:1",
+      at: raw.at,
+      status: "failed",
+      label: [{ type: "text", text: "Read" }],
+      icon: "file-text",
+      description: [{ type: "text", text: "plain" }],
+      message: [],
+    },
+  ]);
+  const final = assembleCodeOutput(redactOutput([], redactor, first.pending, true).entries);
+  expect(final).toMatchObject([{ kind: "step", id: "2:step:1", message: [{ type: "secret", name: "TOKEN" }] }]);
+  const unsafe = assembleCodeOutput(
+    redactOutput(codeOutputFragments([{ ...raw, icon: "abcdefgh", message: "" }], 2), redactor, null, true).entries,
+  );
+  expect(unsafe[0]).not.toHaveProperty("icon");
+});
+
+test("a pending step field keeps the continuous matcher across counted loss", async () => {
+  const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
+  const redactor = compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]]));
+  const first = redactOutput(
+    codeOutputFragments([{ kind: "step", id: 1, at: line("").at, status: "running", label: "Read", message: "abcd" }], 1),
+    redactor,
+  );
+  assembleCodeOutput(first.entries);
+  const gap = redactOutput([line("efgh")], redactor, first.pending, false, { lost: true, skip: 0 });
+  const entries = assembleCodeOutput(gap.entries);
+  expect(entries[0]).toMatchObject({ kind: "step", id: "1:step:1", message: [{ type: "secret", name: "TOKEN" }] });
+  expect(JSON.stringify(entries)).not.toContain("abcd");
+  const next = redactOutput([line("ordinary text!")], redactor, gap.pending, false, { lost: false, skip: gap.skip });
+  expect(JSON.stringify(assembleCodeOutput(next.entries))).not.toContain("abcd");
+});
+
+test("deferred step text settles its latest lifecycle revision", async () => {
+  const { appendCodeOutput, emptyCodeOutput } = await import("@k2b/cloud/code");
+  const { LIVE_LIMITS } = await import("@k2b/cloud/events/limits");
+  const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
+  const redactor = compileOutputRedaction(new Map([["aaaaaaaa", "[secret:TOKEN]"]]));
+  let pending: OutputRedactionPending = null;
+  let window = emptyCodeOutput(1);
+  const at = line("").at;
+  for (const status of ["pending", "running", "succeeded"] as const) {
+    const result = redactOutput(codeOutputFragments([{ kind: "step", id: 1, at, label: "a", status }], 1), redactor, pending);
+    window = appendCodeOutput(
+      window,
+      assembleCodeOutput(result.entries).map((entry) => ({ ...entry, id: "1:step:1" })),
+      LIVE_LIMITS.frameBytes,
+    );
+    pending = OutputRedactionPendingSchema.parse(JSON.parse(JSON.stringify(result.pending)));
+  }
+  const final = assembleCodeOutput(redactOutput([], redactor, pending, true).entries);
+  window = appendCodeOutput(
+    window,
+    final.map((entry) => ({ ...entry, id: "1:step:1" })),
+    LIVE_LIMITS.frameBytes,
+  );
+  expect(window.entries).toEqual([{ kind: "step", id: "1:step:1", at, status: "succeeded", label: [{ type: "secret", name: "TOKEN" }] }]);
+});
+
+test("suppressed fields count as one lost step revision", async () => {
+  const { codeOutputFragments } = await import("./output-redaction");
+  const result = redactOutput(
+    codeOutputFragments(
+      [{ kind: "step", id: 1, at: line("").at, label: "Read", description: "Document", message: "Reason", status: "running" }],
+      1,
+    ),
+    compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]])),
+    null,
+    false,
+    { lost: true, skip: 0 },
+  );
+  expect(result.dropped.lines).toBe(1);
+});

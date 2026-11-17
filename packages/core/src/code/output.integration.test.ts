@@ -295,6 +295,84 @@ suiteFor(
     await openCodeOutput({ ...proof, codeId, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, budget);
     return proof;
   }
+  test("steps upsert in one window with zero SQL per update and one final write", async () => {
+    const proof = await attempt();
+    setSystemTime(fixed);
+    const step = { kind: "step" as const, id: 1, at: new Date(fixed).toISOString(), label: "Read", status: "pending" as const };
+    const meter = await meterSql();
+    try {
+      const submit = (seq: number, entry: Parameters<typeof receiveCodeOutput>[1]["entries"][number]) =>
+        receiveCodeOutput(proof, { seq, entries: [entry], droppedLines: 0, droppedBytes: 0 });
+      expect(await meter.during(() => submit(1, step))).toEqual([]);
+      setSystemTime(fixed + 1000);
+      expect(await meter.during(() => submit(2, { ...step, status: "running", startedAt: step.at }))).toEqual([]);
+      setSystemTime(fixed + 2000);
+      expect(
+        await meter.during(() =>
+          submit(3, { ...step, status: "succeeded", startedAt: step.at, endedAt: new Date().toISOString(), message: "Done" }),
+        ),
+      ).toEqual([]);
+      const window = await replayCodeOutput(proof.runId);
+      expect(window.entries).toEqual([
+        {
+          ...step,
+          id: "1:step:1",
+          label: [{ type: "text", text: "Read" }],
+          status: "succeeded",
+          startedAt: step.at,
+          endedAt: new Date().toISOString(),
+          message: [{ type: "text", text: "Done" }],
+        },
+      ]);
+      let replay = emptyCodeOutput();
+      for await (const event of codeOutputTopic().replay({ tenantId: proof.runId })) replay = applyCodeOutputEvent(replay, event.data);
+      expect(replay).toEqual(window);
+      expect(await meter.during(() => persistCodeOutput(proof.runId))).toHaveLength(1);
+      const [row] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${proof.runId}::uuid`;
+      expect(row!.console_output).toEqual(window);
+      for (const id of [owner, reader]) {
+        const user = await accounts.users.get({ id });
+        if (!user) throw new Error("Missing step fixture user");
+        const result = await readCodeRun(
+          { codeId, runId: proof.runId },
+          {
+            authority: {
+              actor: { kind: "user", user },
+              accessSubject: { type: "user", userId: id },
+              credentialKind: "session",
+              scopes: [],
+            },
+          },
+        );
+        if (id === reader) expect(result.contents).toBeNull();
+        else expect(result.contents?.consoleOutput).toEqual(window);
+      }
+    } finally {
+      await meter.close();
+    }
+  });
+  test("final settlement completes a pending step field in the same persisted row", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    await rememberCodeOutputSecrets({ ...claims, runId: proof.runId }, [{ name: "TOKEN", value: "abcdefgh", sent: "Bearer abcdefgh" }]);
+    const step = {
+      kind: "step" as const,
+      id: 1,
+      at: new Date(fixed).toISOString(),
+      label: "Read",
+      status: "failed" as const,
+      message: "abcd",
+    };
+    await receiveCodeOutput(proof, { seq: 1, entries: [step], droppedLines: 0, droppedBytes: 0 });
+    expect((await replayCodeOutput(proof.runId)).entries).toHaveLength(1);
+    await persistCodeOutput(proof.runId);
+    const window = await replayCodeOutput(proof.runId);
+    expect(window.entries).toEqual([
+      { ...step, id: "1:step:1", label: [{ type: "text", text: "Read" }], message: [{ type: "secret", name: "TOKEN" }] },
+    ]);
+    const [row] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${proof.runId}::uuid`;
+    expect(row!.console_output).toEqual(window);
+  });
   test("harden output continuity and finalization across transport boundaries", async () => {
     const value = 'abcdefgh /+"value';
     const inserted = [{ name: "TOKEN", value, sent: `Bearer ${value}` }];

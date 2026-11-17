@@ -308,16 +308,24 @@ The same permission-aware service serves API, CLI and agent calls. SSR exposes
 the window as `CodePageRunDetail.consoleOutput`.
 
 Stored snapshots and live deltas carry an `entries` array of structured records.
-The current discriminated record is:
+The discriminated records are:
 
 ```ts
+type OutputText = Array<{ type: "text", text: string } | { type: "secret", name: string }>;
 type LogEntry = {
   id: string, // stable within this run
   kind: "log",
   level: "log" | "info" | "debug" | "warn" | "error",
   at: string, // ISO 8601 UTC timestamp captured by the invocation's console
-  text: Array<{ type: "text", text: string } | { type: "secret", name: string }>
+  text: OutputText
 };
+type StepEntry = {
+  kind: "step"; id: string; at: string;
+  label: OutputText; icon?: string; description?: OutputText;
+  status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+  startedAt?: string; endedAt?: string; message?: OutputText;
+};
+type RunEntry = LogEntry | StepEntry;
 ```
 
 `console.log` produces `kind: "log", level: "log"`; the other console methods
@@ -329,21 +337,77 @@ and `seq` order transport deltas. Core assigns each published log entry an
 survives window eviction, snapshot reads and replay; it is not an author-supplied key.
 
 Readers retain unknown `kind` values as opaque objects in the same bounded
-window and skip their rendering. Use `isCodeOutputLogEntry` from
-`@k2b/cloud/code` before reading log fields. Malformed known entries are
-rejected. This extensible JSON format allows future kinds, including steps,
-without a database migration; no step API is available yet. In particular,
-future `kind: "step"` records can retain `id`, creation time `at`, `label`,
-optional `icon` and `description`, `status` (`pending`, `running`, `succeeded`,
-`failed` or `skipped`), and optional `startedAt`, `endedAt` and `message` for
-the result or reason in this same array. Current readers preserve those fields
-without interpreting step transitions. The later step implementation owns
-updates of the same step ID and the step lifecycle.
+window and skip their rendering. Use `isCodeOutputLogEntry` and
+`isCodeOutputStepEntry` from `@k2b/cloud/code` before reading known fields.
+Malformed known entries are rejected. Steps use the existing JSON storage;
+no migration is needed. Core derives each step ID from the attempt generation
+and its run-local ordinal. A new revision replaces the same ID at its original
+position in the retained window. Apply live events with `applyCodeOutputEvent`
+to get the same result as stored snapshots and replay.
 
 At the RunLog display boundary, render named secret parts as text labels and
 map console `log`/`debug` to the display level `info`. Never pass raw HTML.
-Step descriptions and reasons will need the same text sanitization and secret
-redaction as log text before publication when step production is added.
+Step labels, descriptions and messages use the same text parts, cleaning and
+continuous secret redaction as logs, including across fields and bundles.
+Deferred text retains the originating field. Icons are optional identifiers;
+unusable or redacted icons are omitted.
+
+### Report steps with logger
+
+Import `logger` from the Code SDK. Declare the steps at the start of the
+handler so viewers can see the planned work before it starts:
+
+```ts
+import { app, logger } from "@k2b/cloud/code";
+
+app.schedule({ cron: "0 8 * * *", name: "report" }, async () => {
+  const read = logger.step("Read document", {
+    icon: "file-text", description: "Read the document and its positions."
+  });
+  const save = logger.step({ label: "Save positions", icon: "table-plus" });
+
+  read.start();
+  logger.info("Reading positions");
+  read.succeed("Document read");
+
+  save.skip("Already saved");
+});
+export default app;
+```
+
+`logger.step(label, { icon?, description? })` and
+`logger.step({ label, icon?, description? })` immediately create a `pending`
+entry and return a `CodeLogStep` handle. Call `start()` to make it `running`,
+then `succeed(message?)`, `fail(reason)` or `skip(reason)`. You can also skip a
+pending step. Starting twice, completing an unstarted step with `succeed` or
+`fail`, and all calls after the first terminal result have no effect.
+Each handle keeps one row; there is no separate step definition or string key.
+`CodeLogger`, `CodeLogStep` and `CodeLogStepOptions` are public SDK types.
+
+`logger.info(text)`, `logger.warn(text)` and `logger.error(text)` produce
+ordinary `kind: "log"` entries with that level. Existing console methods keep
+their behavior. These methods report output; calling `fail` or `error` does
+not itself fail the run or throw an exception.
+
+An uncaught Code exception fails every running step and sets its `message`
+to the exception message, within the output limits. Its text and stack also
+appear as error logs. Pending steps stay `pending` in storage: after a
+successful run, RunLog displays them as skipped; after a failed run it displays
+them as pending. The display owns this distinction. A forced termination may
+lose the last unflushed update, just like console output.
+
+Steps and logs share the existing output window and loss counters.
+`CODE_OUTPUT_STEP_LIMITS` derives a lifetime step count from the
+serialized complete step and `LIVE_LIMITS.frameBytes`. Its per-field encoded
+JSON byte limit divides the remaining frame among label, icon, description
+and message. Run-local handle metadata also fits one raw output frame,
+including reserved lifecycle timestamps. Invalid text throws
+`code_output_invalid_text`; an oversized field throws `code_output_text_limit`;
+excess handles or metadata throw `code_output_step_limit`. Shorten the text or
+use fewer steps. Automatic exception messages are shortened to available
+space so running steps can still settle. Output batches remain subject to the
+same frame, cadence and window limits, so a busy run can lose step updates.
+Only authorized Code editors see steps, including through API, CLI and agents.
 
 The window contains `generation`, `seq`, `entries`, `droppedLines` and
 `droppedBytes`. It keeps whole recent lines within the run's pinned

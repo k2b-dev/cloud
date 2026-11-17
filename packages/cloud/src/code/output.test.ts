@@ -3,6 +3,7 @@ import { LIVE_LIMITS } from "../events/live-engine";
 import {
   appendCodeOutput,
   applyCodeOutputEvent,
+  CODE_OUTPUT_STEP_LIMITS,
   CodeOutputBatchSchema,
   type CodeOutputEvent,
   CodeOutputEventSchema,
@@ -12,9 +13,10 @@ import {
   codeOutputParts,
   emptyCodeOutput,
   isCodeOutputLogEntry,
+  isCodeOutputStepEntry,
 } from "./output";
 
-const line = (text: string): CodeOutputKnownEntry => ({
+const line = (text: string): Extract<CodeOutputKnownEntry, { kind: "log" }> => ({
   id: text,
   kind: "log" as const,
   at: "2030-01-02T00:00:00.000Z",
@@ -65,7 +67,7 @@ test("terminal sequences, C1 CSI, controls and direction marks are removed; HTML
 
 test("future entry kinds survive snapshot and live window accounting without becoming log entries", () => {
   const future = {
-    kind: "step",
+    kind: "future-step",
     id: "step-fixture",
     at: "2030-01-02T00:00:00.000Z",
     label: "Read document",
@@ -76,8 +78,7 @@ test("future entry kinds survive snapshot and live window accounting without bec
     endedAt: "2030-01-02T00:00:02.000Z",
     message: "Document unavailable",
   };
-  // Only log production is implemented today; tolerant reads do not grant a new
-  // raw step submission path before its sanitization and lifecycle are added.
+  // Tolerant reads do not allow unsupported kinds into the raw submission path.
   expect(CodeOutputBatchSchema.safeParse({ seq: 1, entries: [future], droppedLines: 0, droppedBytes: 0 }).success).toBe(false);
   const known = line("recent");
   const window = CodeOutputWindowSchema.parse({ ...emptyCodeOutput(1), seq: 1, entries: [future, known] });
@@ -102,5 +103,51 @@ test("future entry kinds survive snapshot and live window accounting without bec
   expect(trimmed.droppedBytes).toBe(Buffer.byteLength(JSON.stringify(future)));
   for (const invalid of [{ kind: "log" }, { ...known, id: "" }, { ...known, at: "not-a-date" }, { ...known, text: "raw" }]) {
     expect(CodeOutputWindowSchema.safeParse({ ...window, entries: [invalid] }).success).toBe(false);
+  }
+});
+
+test("step revisions replace the same row in creation order in stored, live and replayed windows", () => {
+  const pending = {
+    kind: "step" as const,
+    id: "1:step:1",
+    at: "2030-01-02T00:00:00.000Z",
+    status: "pending" as const,
+    label: codeOutputParts("Read document"),
+  };
+  const second = { ...pending, id: "1:step:2", label: codeOutputParts("Save") };
+  const running = { ...pending, status: "running" as const, startedAt: pending.at };
+  const done = { ...running, status: "succeeded" as const, endedAt: pending.at, message: codeOutputParts("Done") };
+  const budget = LIVE_LIMITS.frameBytes;
+  let window = appendCodeOutput(emptyCodeOutput(1), [pending, line("between"), second], budget);
+  const initial = window;
+  window = appendCodeOutput(window, [running, done], budget);
+  expect(window.entries).toEqual([done, line("between"), second]);
+  expect(window.droppedLines).toBe(0);
+  expect(CodeOutputWindowSchema.parse(window)).toEqual(window);
+  const event: CodeOutputEvent = {
+    ...window,
+    seq: 2,
+    type: "code.output",
+    runId: "11111111-1111-4111-8111-111111111111",
+    budget,
+    entries: [running, done],
+  };
+  expect(applyCodeOutputEvent(initial, event)).toEqual({ ...window, seq: 2 });
+  expect(window.entries.filter(isCodeOutputStepEntry)).toHaveLength(2);
+});
+
+test("incoming steps use bounded run-local ordinals and known sanitized fields", () => {
+  const step = { kind: "step", id: 1, at: "2030-01-02T00:00:00.000Z", label: "Read", status: "pending" };
+  const batch = (entry: unknown) => ({ seq: 1, entries: [entry], droppedLines: 0, droppedBytes: 0 });
+  expect(CodeOutputBatchSchema.safeParse(batch(step)).success).toBe(true);
+  for (const change of [
+    { id: 0 },
+    { id: CODE_OUTPUT_STEP_LIMITS.count + 1 },
+    { id: "other-run" },
+    { status: "unknown" },
+    { label: "x".repeat(CODE_OUTPUT_STEP_LIMITS.textBytes) },
+    { kind: "future" },
+  ]) {
+    expect(CodeOutputBatchSchema.safeParse(batch({ ...step, ...change })).success).toBe(false);
   }
 });

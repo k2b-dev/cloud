@@ -1,8 +1,23 @@
-import { type CodeOutputBatch, CodeOutputBatchSchema, type CodeOutputKnownEntry, cleanCodeOutput, codeOutputParts } from "@k2b/cloud/code";
+import {
+  CODE_OUTPUT_STEP_TEXT_FIELDS,
+  type CodeOutputBatch,
+  type CodeOutputKnownEntry,
+  CodeOutputLogInputSchema,
+  CodeOutputStepEntrySchema,
+  type CodeOutputText,
+  cleanCodeOutput,
+  codeOutputParts,
+} from "@k2b/cloud/code";
 
 import { z } from "zod";
 
-type RedactedOutputEntry = Omit<CodeOutputKnownEntry, "id">;
+const StepFragmentSchema = z.object({
+  entry: CodeOutputStepEntrySchema,
+  field: z.enum(CODE_OUTPUT_STEP_TEXT_FIELDS),
+});
+const FragmentSchema = CodeOutputLogInputSchema.extend({ step: StepFragmentSchema.optional() });
+type Fragment = z.infer<typeof FragmentSchema>;
+type RedactedOutputEntry = Omit<Fragment, "text"> & { text: CodeOutputText };
 type Match = { length: number; marker: string };
 type Node = {
   next: Map<string, Node>;
@@ -11,7 +26,7 @@ type Node = {
   match?: Match;
   descendant?: string;
 };
-export const OutputRedactionPendingSchema = CodeOutputBatchSchema.shape.entries.element.extend({
+export const OutputRedactionPendingSchema = FragmentSchema.extend({
   text: z.string(),
   name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/),
   /** UTF-16 prefix already counted as suppressed; never release it as plain text. */
@@ -145,7 +160,7 @@ function scan(text: string, redactor: OutputRedactor, covered?: Span) {
  * join a pre-gap candidate to post-gap text or release it after a mismatch.
  */
 export function redactOutput(
-  input: CodeOutputBatch["entries"],
+  input: readonly Fragment[],
   redactor: OutputRedactor,
   pending: OutputRedactionPending = null,
   final = false,
@@ -157,11 +172,17 @@ export function redactOutput(
   const hadPending = pending !== null;
   if (pending && ((final && !input.length) || continuity.lost)) {
     if ((pending.hidden ?? 0) < pending.text.length || pending.covered)
-      entries.push({ kind: pending.kind, level: pending.level, at: pending.at, text: [{ type: "secret", name: pending.name }] });
+      entries.push({
+        kind: pending.kind,
+        level: pending.level,
+        at: pending.at,
+        ...(pending.step ? { step: pending.step } : {}),
+        text: [{ type: "secret", name: pending.name }],
+      });
     pending = null;
   }
-  const cleaned = input.flatMap(({ kind, level, at, text }) =>
-    text.split(/\r\n|\n|\r/).map((text) => ({ kind, level, at, text: cleanCodeOutput(text) })),
+  const cleaned = input.flatMap(({ text, ...metadata }) =>
+    text.split(/\r\n|\n|\r/).map((text) => ({ ...metadata, text: cleanCodeOutput(text) })),
   );
   // With a resolved previous boundary and loss known to precede this whole batch,
   // unrelated text can resume immediately. Unknown positions and open candidates
@@ -173,13 +194,15 @@ export function redactOutput(
     skip === 0 &&
     !couldContinueOutput(cleaned.map((fragment) => fragment.text).join(""), redactor.spellings);
   const suppressBatch = continuity.lost && redactor.longest > 0 && !resumes;
+  const suppressedSteps = new Set<object>();
   const fragments = [
     ...(pending ? [{ ...pending, suppressed: (pending.hidden ?? 0) === pending.text.length && !pending.covered }] : []),
     ...cleaned.map((fragment) => {
       const suppressed = suppressBatch || skip > 0;
       if (suppressed) {
         if (!suppressBatch) skip = Math.max(0, skip - fragment.text.length);
-        dropped.lines++;
+        if (!fragment.step || !suppressedSteps.has(fragment.step.entry)) dropped.lines++;
+        if (fragment.step) suppressedSteps.add(fragment.step.entry);
         dropped.bytes += Buffer.byteLength(JSON.stringify(fragment));
       }
       return { ...fragment, suppressed };
@@ -234,6 +257,7 @@ export function redactOutput(
     for (const fragment of fragments) {
       if (position + fragment.text.length > metadataAt) {
         held = {
+          ...(fragment.step ? { step: fragment.step } : {}),
           kind: fragment.kind,
           level: fragment.level,
           at: fragment.at,
@@ -252,9 +276,87 @@ export function redactOutput(
     ...fragments.flatMap((fragment, index) => {
       const before = start;
       start += fragment.text.length;
-      if (!emitted[index] && (fragment.suppressed || (held && before >= end))) return [];
-      return [{ kind: fragment.kind, level: fragment.level, at: fragment.at, text: codeOutputParts(cleanCodeOutput(emitted[index]!)) }];
+      if (!emitted[index] && !fragment.step && (fragment.suppressed || (held && before >= end))) return [];
+      return [
+        {
+          kind: fragment.kind,
+          level: fragment.level,
+          at: fragment.at,
+          ...(fragment.step ? { step: fragment.step } : {}),
+          text: codeOutputParts(cleanCodeOutput(emitted[index]!)),
+        },
+      ];
     }),
   );
+  if (held?.step) {
+    // A deferred suffix may span several revisions of the same step. Its later
+    // completion must update the latest snapshot, without restoring an old status.
+    const stepId = held.step.entry.id;
+    const latest = input.findLast((fragment) => fragment.step?.entry.id === stepId)?.step;
+    if (latest) held.step = { ...held.step, entry: latest.entry };
+  }
   return { entries, pending: held, skip, dropped };
+}
+
+/** Step fields participate in the same continuous matcher as console text. Only sanitized
+ * snapshots travel in fragment metadata. An unresolved field suffix stays in the encrypted
+ * pending envelope and completes the same step ID in a later delta or at final settlement.
+ */
+export function codeOutputFragments(input: CodeOutputBatch["entries"], generation: number): Fragment[] {
+  return input.flatMap((entry): Fragment[] => {
+    if (entry.kind === "log") return [entry];
+    const safe: z.infer<typeof CodeOutputStepEntrySchema> = {
+      kind: "step",
+      id: `${generation}:step:${entry.id}`,
+      at: entry.at,
+      status: entry.status,
+      label: [],
+      ...(entry.description === undefined ? {} : { description: [] }),
+      ...(entry.message === undefined ? {} : { message: [] }),
+      ...(entry.startedAt === undefined ? {} : { startedAt: entry.startedAt }),
+      ...(entry.endedAt === undefined ? {} : { endedAt: entry.endedAt }),
+    };
+    return CODE_OUTPUT_STEP_TEXT_FIELDS.flatMap((field) =>
+      entry[field] === undefined
+        ? []
+        : [
+            {
+              kind: "log",
+              level: "info",
+              at: entry.at,
+              text: entry[field],
+              step: { entry: safe, field },
+            },
+          ],
+    );
+  });
+}
+export function assembleCodeOutput(
+  fragments: readonly RedactedOutputEntry[],
+): Array<Omit<Extract<CodeOutputKnownEntry, { kind: "log" }>, "id"> | Extract<CodeOutputKnownEntry, { kind: "step" }>> {
+  const entries: ReturnType<typeof assembleCodeOutput> = [];
+  const snapshots = new Set<object>();
+  for (const { step, ...fragment } of fragments) {
+    if (!step) {
+      entries.push(fragment);
+      continue;
+    }
+    if (step.field === "icon") {
+      // Icons are identifiers, never display text or secret placeholders.
+      const value = (step.entry.icon ?? "") + fragment.text.map((part) => (part.type === "text" ? part.text : "")).join("");
+      if (fragment.text.every((part) => part.type === "text") && /^[a-z][a-z0-9-]*$/.test(value)) step.entry.icon = value;
+      else delete step.entry.icon;
+    } else {
+      const parts = step.entry[step.field] ?? [];
+      parts.push(...fragment.text);
+      step.entry[step.field] = parts;
+    }
+    // The same safe snapshot may have several fields/fragments. Preserve its first
+    // stream position; the shared window reducer upserts separate revisions by ID.
+    if (!snapshots.has(step.entry)) {
+      snapshots.add(step.entry);
+      entries.push(step.entry);
+    }
+  }
+  return entries;
 }

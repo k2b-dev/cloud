@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const reservedCodeSdkExports = new Set([
   "chat",
+  "logger",
   "atob",
   "decodeURIComponent",
   "constructor",

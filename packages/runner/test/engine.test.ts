@@ -325,8 +325,9 @@ test("shared workerd keeps console output and uncaught stacks bound to their own
           expect(operation).toBe(CODE_OUTPUT_OPERATION);
           const batch = CodeOutputBatchSchema.parse(input);
           expect(batch.entries.every((entry) => entry.kind === "log" && Number.isFinite(Date.parse(entry.at)))).toBe(true);
-          for (const entry of batch.entries) if (entry.text.includes("sandbox stack right")) expect(entry.level).toBe("error");
-          received.set(run.runId, [...(received.get(run.runId) ?? []), ...batch.entries.map((line) => line.text)]);
+          const logs = batch.entries.filter((entry) => entry.kind === "log");
+          for (const entry of logs) if (entry.text.includes("sandbox stack right")) expect(entry.level).toBe("error");
+          received.set(run.runId, [...(received.get(run.runId) ?? []), ...logs.map((line) => line.text)]);
           return null;
         },
         signal,
@@ -400,3 +401,43 @@ test("harden supervisor output pacing for direct calls in the native isolate", a
     setSystemTime();
   }
 }, 10000);
+
+test("generated logger steps use the isolate output binding and settle on an exception", async () => {
+  const { generateCodeSdk, CodeOutputBatchSchema } = await import("@k2b/cloud/code");
+  const sdk = generateCodeSdk([], { mode: "personal" });
+  const code = `${sdk.runtime}
+export async function main(input, cloud) {
+  __codeSdk.bind(cloud);
+  const a=logger.step("Read",{icon:"file-text"});
+  logger.step({label:"Later"});
+  a.start(); logger.info("Reading"); throw new Error("Document unavailable");
+}`;
+  const engine = new WorkerdEngine();
+  const batches: unknown[] = [];
+  const run = lease();
+  try {
+    await engine.load(
+      run,
+      code,
+      config,
+      async (operation, input) => {
+        expect(operation).toBe(CODE_OUTPUT_OPERATION);
+        batches.push(CodeOutputBatchSchema.parse(input));
+        return null;
+      },
+      new AbortController().signal,
+    );
+    expect(await engine.run(run, new AbortController().signal)).toBe("failed");
+    expect(batches).toContainEqual(
+      expect.objectContaining({
+        entries: expect.arrayContaining([
+          expect.objectContaining({ kind: "step", id: 1, status: "failed", message: "Document unavailable" }),
+          expect.objectContaining({ kind: "step", id: 2, status: "pending" }),
+          expect.objectContaining({ kind: "log", level: "info", text: "Reading" }),
+        ]),
+      }),
+    );
+  } finally {
+    await engine.close();
+  }
+}, 10_000);

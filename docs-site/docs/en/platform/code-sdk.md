@@ -75,6 +75,16 @@ Use `await response.text()` for UTF-8 or `await response.json()` for JSON;
 `bodyBase64` preserves binary bytes. Invalid JSON rejects `json()`.
 Schedules require a unique stable `name`; keep it when reordering registrations.
 
+## Report run progress
+
+Use `logger` from `@k2b/cloud/code` for run-local messages and steps.
+`logger.step("Read document", { icon: "file-text" })` returns a handle with
+`start()`, `succeed(message?)`, `fail(reason)` and `skip(reason)`. Declare steps
+at the beginning of the handler; they appear pending until started.
+`logger.info`, `warn` and `error` add ordinary log entries. Output is visible
+only to authorized Code editors. See [Report steps with logger](/en/docs/platform/code-runs#report-steps-with-logger)
+for the example, lifecycle, text limits and secret handling.
+
 ## HTTP form bodies
 
 `http.fetch` accepts a string `body`. For a URL-encoded form, use the

@@ -1,4 +1,4 @@
-import { CODE_OUTPUT_INTERVAL_MS, type CodeOutputBatch, CodeOutputBatchSchema } from "@k2b/cloud/code";
+import { CODE_OUTPUT_INTERVAL_MS, type CodeOutputBatch, CodeOutputBatchSchema, codeOutputEntryLines } from "@k2b/cloud/code";
 
 import type { RunnerLeaseProof } from "@k2b/cloud/code/runner";
 import { LIVE_LIMITS } from "@k2b/cloud/events/limits";
@@ -29,7 +29,7 @@ export class RunnerOutput {
         this.#droppedLines,
         sum(
           batch.droppedLines,
-          batch.entries.reduce((total, line) => sum(total, line.text.split(/\r\n|\n|\r/).length), 0),
+          batch.entries.reduce((total, line) => sum(total, codeOutputEntryLines(line)), 0),
         ),
       );
       this.#droppedBytes = sum(this.#droppedBytes, sum(batch.droppedBytes, Buffer.byteLength(JSON.stringify(batch.entries))));
@@ -55,7 +55,7 @@ export class RunnerOutput {
         entries.length
       ) {
         const removed = entries.shift()!;
-        outgoing.droppedLines = sum(outgoing.droppedLines, removed.text.split(/\r\n|\n|\r/).length);
+        outgoing.droppedLines = sum(outgoing.droppedLines, codeOutputEntryLines(removed));
         outgoing.droppedBytes = sum(outgoing.droppedBytes, Buffer.byteLength(JSON.stringify(removed)));
       }
       if (Buffer.byteLength(JSON.stringify(outgoing)) > this.budget) throw new Error("runner_output_too_large");

@@ -6,27 +6,99 @@ import { LIVE_LIMITS } from "../events/live-limits";
 export const CODE_OUTPUT_INTERVAL_MS = AI_LIVE_SNAPSHOT_INTERVAL_MS;
 export const CODE_OUTPUT_OPERATION = "runtime.output";
 const count = z.number().int().nonnegative().safe();
+// One local definition keeps repeated timestamp patterns within the existing
+// capability-manifest budget without changing the accepted date-time format.
+const outputAt = z.iso.datetime().meta({ id: "CodeOutputAt" });
 const logMetadata = {
   kind: z.literal("log"),
   level: z.enum(["log", "info", "debug", "warn", "error"]),
-  at: z.iso.datetime(),
+  at: outputAt,
 };
+/** Step text fields share one existing live-frame budget, including the largest wire metadata.
+ * Dividing the remaining bytes among the fields ensures a complete update can fit a frame.
+ * The serialized complete step derives the lifetime handle count; no independent policy knob.
+ */
+export const CODE_OUTPUT_STEP_TEXT_FIELDS = ["label", "icon", "description", "message"] as const;
+const stepMetadata = {
+  kind: z.literal("step"),
+  at: outputAt,
+  status: z.enum(["pending", "running", "succeeded", "failed", "skipped"]),
+  startedAt: outputAt.optional(),
+  endedAt: outputAt.optional(),
+};
+const stepEnvelope = {
+  kind: "step",
+  id: Number.MAX_SAFE_INTEGER,
+  at: "2030-01-02T00:00:00.000Z",
+  label: "",
+  icon: "",
+  description: "",
+  status: "succeeded",
+  startedAt: "2030-01-02T00:00:00.000Z",
+  endedAt: "2030-01-02T00:00:00.000Z",
+  message: "",
+};
+const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+export const CODE_OUTPUT_STEP_LIMITS = Object.freeze({
+  count: Math.floor(LIVE_LIMITS.frameBytes / bytes(stepEnvelope)),
+  textBytes: Math.floor(
+    (LIVE_LIMITS.frameBytes -
+      bytes({
+        seq: Number.MAX_SAFE_INTEGER,
+        entries: [stepEnvelope],
+        droppedLines: Number.MAX_SAFE_INTEGER,
+        droppedBytes: Number.MAX_SAFE_INTEGER,
+      })) /
+      CODE_OUTPUT_STEP_TEXT_FIELDS.length,
+  ),
+});
+const stepText = z.string().refine((value) => bytes(value) <= CODE_OUTPUT_STEP_LIMITS.textBytes);
+export const CodeOutputLogInputSchema = z.object({ ...logMetadata, text: z.string() }).strict();
+export const CodeOutputStepInputSchema = z
+  .object({
+    ...stepMetadata,
+    id: count.positive().max(CODE_OUTPUT_STEP_LIMITS.count),
+    label: stepText,
+    icon: stepText.optional(),
+    description: stepText.optional(),
+    message: stepText.optional(),
+  })
+  .strict();
 export const CodeOutputBatchSchema = z
   .object({
     seq: count.positive(),
-    entries: z.array(z.object({ ...logMetadata, text: z.string() }).strict()),
+    entries: z.array(z.discriminatedUnion("kind", [CodeOutputLogInputSchema, CodeOutputStepInputSchema])),
     droppedLines: count,
     droppedBytes: count,
   })
   .strict()
-  .refine((batch) => new TextEncoder().encode(JSON.stringify(batch)).length <= LIVE_LIMITS.frameBytes);
+  .refine((batch) => bytes(batch) <= LIVE_LIMITS.frameBytes);
 export type CodeOutputBatch = z.infer<typeof CodeOutputBatchSchema>;
-export const CodeOutputPartSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: z.string() }).strict(),
-  z.object({ type: z.literal("secret"), name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/) }).strict(),
-]);
+export const CodeOutputPartSchema = z
+  .discriminatedUnion("type", [
+    z.object({ type: z.literal("text"), text: z.string() }).strict(),
+    z.object({ type: z.literal("secret"), name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/) }).strict(),
+  ])
+  // Reuse one local JSON Schema definition for log and step text fields, rather
+  // than inlining their identical unions into the bounded capability manifest.
+  .meta({ id: "CodeOutputPart" });
+export type CodeOutputText = z.infer<typeof CodeOutputPartSchema>[];
+export const CodeOutputStepEntrySchema = z
+  .object({
+    ...stepMetadata,
+    id: z.string().min(1),
+    label: z.array(CodeOutputPartSchema),
+    icon: z
+      .string()
+      .regex(/^[a-z][a-z0-9-]*$/)
+      .optional(),
+    description: z.array(CodeOutputPartSchema).optional(),
+    message: z.array(CodeOutputPartSchema).optional(),
+  })
+  .strict();
 export const CodeOutputKnownEntrySchema = z.discriminatedUnion("kind", [
   z.object({ ...logMetadata, id: z.string().min(1), text: z.array(CodeOutputPartSchema) }).strict(),
+  CodeOutputStepEntrySchema,
 ]);
 export type CodeOutputKnownEntry = z.infer<typeof CodeOutputKnownEntrySchema>;
 const knownKinds = new Set<string>(CodeOutputKnownEntrySchema.options.map((entry) => entry.shape.kind.value));
@@ -41,6 +113,12 @@ export type CodeOutputEntry = z.infer<typeof CodeOutputEntrySchema>;
 export function isCodeOutputLogEntry(entry: CodeOutputEntry): entry is Extract<CodeOutputKnownEntry, { kind: "log" }> {
   return entry.kind === "log";
 }
+export function isCodeOutputStepEntry(entry: CodeOutputEntry): entry is Extract<CodeOutputKnownEntry, { kind: "step" }> {
+  return entry.kind === "step";
+}
+/** An entry counts once regardless of how many fields a step carries. */
+export const codeOutputEntryLines = (entry: CodeOutputBatch["entries"][number]) =>
+  entry.kind === "log" ? entry.text.split(/\r\n|\n|\r/).length : 1;
 export const CodeOutputWindowSchema = z
   .object({
     generation: count,
@@ -68,7 +146,6 @@ export const CodeOutputEventSchema = CodeOutputWindowSchema.omit({ entries: true
   })
   .strict();
 export type CodeOutputEvent = z.infer<typeof CodeOutputEventSchema>;
-const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
 const sum = (a: number, b: number) => Math.min(Number.MAX_SAFE_INTEGER, a + b);
 /** Same tail window on Core, replay and browser, including opaque future kinds. Counters are fixed-size metadata. */
 export function appendCodeOutput(
@@ -77,9 +154,18 @@ export function appendCodeOutput(
   budget: number,
   dropped: { lines: number; bytes: number } = { lines: 0, bytes: 0 },
 ): CodeOutputWindow {
+  const merged = [...window.entries];
+  const positions = new Map(merged.flatMap((entry, index) => (isCodeOutputStepEntry(entry) ? [[entry.id, index] as const] : [])));
+  for (const entry of entries) {
+    const position = isCodeOutputStepEntry(entry) ? positions.get(entry.id) : undefined;
+    if (position === undefined) {
+      if (isCodeOutputStepEntry(entry)) positions.set(entry.id, merged.length);
+      merged.push(entry);
+    } else merged[position] = entry;
+  }
   const next = {
     ...window,
-    entries: [...window.entries, ...entries],
+    entries: merged,
     droppedLines: sum(window.droppedLines, dropped.lines),
     droppedBytes: sum(window.droppedBytes, dropped.bytes),
   };
@@ -118,8 +204,8 @@ export function cleanCodeOutput(text: string): string {
     .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "");
 }
 /** Core supplies already-redacted text. Markers become data, never HTML or an unescaped secret value. */
-export function codeOutputParts(text: string): CodeOutputKnownEntry["text"] {
-  const parts: CodeOutputKnownEntry["text"] = [];
+export function codeOutputParts(text: string): CodeOutputText {
+  const parts: CodeOutputText = [];
   let offset = 0;
   for (const match of text.matchAll(/\[secret:([A-Za-z_][A-Za-z0-9_]{0,63})\]/g)) {
     if (match.index > offset) parts.push({ type: "text", text: text.slice(offset, match.index) });

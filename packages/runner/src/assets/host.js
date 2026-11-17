@@ -53,11 +53,14 @@ export default {
               try {
                 const bundle = await import('./bundle.js');
                 if (typeof bundle[name] !== 'function') throw new Error('missing_entrypoint');
-                return await bundle[name](input, this.env.cloud);
+                return await bundle[name](input, Object.freeze(Object.create(null, {
+                  call: {value: (operation, input) => this.env.cloud.call(operation, input)},
+                  logger: {value: output?.logger},
+                })));
               } catch (error) {
                 // Only sandbox-originated text goes to the separate, bounded output channel.
                 // The host's terminal HTTP response remains payload-free, even for exceptions.
-                output?.console.error(error);
+                output?.error(error);
                 throw error;
               } finally { await output?.finish(); }
             }

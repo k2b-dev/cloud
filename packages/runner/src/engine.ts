@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   CODE_OUTPUT_INTERVAL_MS,
   CODE_OUTPUT_OPERATION,
+  CODE_OUTPUT_STEP_LIMITS,
   CODE_REQUEST_LIMITS,
   type CodeRouteResponse,
   CodeRouteResponseSchema,
@@ -322,16 +323,16 @@ const config :Workerd.Config = (
           entrypoint: lease.entrypoint,
           input: lease.input,
           modules: loaded.modules,
-          outputLimits: ["chat", "test"].includes(lease.trustTier)
-            ? null
-            : {
-                // Reserve the exact signed Core envelope; the raw batch and its lease proof together fit one live frame.
-                bytes:
-                  LIVE_LIMITS.frameBytes -
-                  Buffer.byteLength(JSON.stringify({ runId: lease.runId, generation: lease.generation, token: lease.token, batch: null })),
-                intervalMs: CODE_OUTPUT_INTERVAL_MS,
-                operation: CODE_OUTPUT_OPERATION,
-              },
+          outputLimits: {
+            enabled: !["chat", "test"].includes(lease.trustTier),
+            step: CODE_OUTPUT_STEP_LIMITS,
+            // Reserve the exact signed Core envelope; the raw batch and its lease proof together fit one live frame.
+            bytes:
+              LIVE_LIMITS.frameBytes -
+              Buffer.byteLength(JSON.stringify({ runId: lease.runId, generation: lease.generation, token: lease.token, batch: null })),
+            intervalMs: CODE_OUTPUT_INTERVAL_MS,
+            operation: CODE_OUTPUT_OPERATION,
+          },
         }),
         signal,
         timeout: false,
