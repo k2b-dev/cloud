@@ -857,6 +857,8 @@ under the Code row lock. A changed revision returns `chat_busy` (409) before
 queuing; retry with the same idempotency key to use the current binding.
 Already queued messages keep their target.
 The binding is a default destination; explicit chat handles remain available.
+Saved Code calls Send directly with fixed instructions; it cannot pass
+`chat.send` to `ai.generate` or `ai.decide` as a model-controlled tool.
 
 Only the personal owner may change the binding; a shared Code editor cannot.
 Read its revision and state through

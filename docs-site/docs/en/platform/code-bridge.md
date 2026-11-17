@@ -19,8 +19,7 @@ The provider still resolves the subject's current resource access.
 
 The personal SDK's `chat` is an ordinary `core.ai.chat` handle with the fixed
 ID `CODE_BOUND_CHAT_ID` (`"bound-chat"`), exported by `@k2b/cloud/code`.
-Calls and AI tool bindings carry this target through the normal bridge without
-additional fields. The actual destination never enters the bundle or runner lease.
+Calls carry this target through the normal bridge without additional fields. The actual destination never enters the bundle or runner lease.
 
 Core resolves that ID inside Send's review and execution phases, requiring a
 current personal Code run and its owner. No binding returns `chat_unbound`;

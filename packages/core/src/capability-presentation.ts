@@ -147,10 +147,9 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             model: "Modellklasse oder erlaubte Variante; Standard ist balanced.",
             files: "FileRefs dieses Laufs; Cloud liest sie als aufrufendes Konto.",
             ...codeAiFileInput,
-            tools: "Generierte SDK-Funktionen mit festem Ziel oder aktuellem Chat-Bezug.",
+            tools: "Generierte SDK-Funktionen mit fest gebundenem Ziel.",
             "tools[].capability": "Operations-ID der übergebenen SDK-Funktion; Cloud prüft sie gegen die freigegebene Code-Version.",
-            "tools[].target":
-              "Ressourcenziel der SDK-Funktion; bound-chat verwendet den aktuellen Chat-Bezug, null steht für eine anwendungsweite Operation.",
+            "tools[].target": "Fest gebundenes Ressourcenziel der SDK-Funktion oder null bei einer anwendungsweiten Operation.",
             "tools[].target.type": "Vollständiger Ressourcentyp des fest gebundenen Ziels.",
             "tools[].target.id": "Ressourcen-ID des fest gebundenen Ziels.",
             fileTools: "view_image und read_file für bekannte FileRefs anbieten; Standard ist true.",
