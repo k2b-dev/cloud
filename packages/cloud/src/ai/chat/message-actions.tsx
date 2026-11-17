@@ -50,8 +50,8 @@ type RetrySteerHandler = (block: Extract<AiTurnBlock, { kind: "steer_message" }>
 export type AiChatActions = {
   /** The host supplies the authorized card jump for a durable decision fact. */
   renderCodeDecision?: (entry: AiStoredMessage) => JSX.Element;
-  /** Host-localized authoring budget notice. Consent uses the normal onContinueTurn send path. */
-  renderCodeAuthoringStop?: (state: AiCodeAuthoringStop, continuable: () => boolean) => JSX.Element;
+  /** Host-localized authoring budget notice. Superseded receipts can release their action space; consent uses onContinueTurn. */
+  renderCodeAuthoringStop?: (state: AiCodeAuthoringStop, continuable: () => boolean, superseded: () => boolean) => JSX.Element;
   /**
    * Host-owned visualizations, persisted independently of the execution session. Called once per `code_present`
    * call, from its first event: `result()` is undefined while the call runs and the saved result afterwards, so
