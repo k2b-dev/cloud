@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../../../ui/test/browser";
 import type { MailRecipientHarnessOptions } from "./MailRecipientInput.browser-harness";
 
 // Whether the suggestion list opens at its final size without moving the field is a layout question that only a real
@@ -138,6 +138,9 @@ const load = async (options: MailRecipientHarnessOptions & { context?: BrowserCo
   await page.evaluate((harnessOptions: MailRecipientHarnessOptions) => window.mountMailRecipients(harnessOptions), {
     locale: options.locale,
     contacts: options.contacts,
+    recipients: options.recipients,
+    disabled: options.disabled,
+    readOnly: options.readOnly,
   });
   return Object.assign(page, { errors });
 };
@@ -149,6 +152,150 @@ const layoutBox = (page: Page, selector: string) =>
       const rect = element.getBoundingClientRect();
       return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
     });
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1440, 390]) {
+    test(`${theme} ${width}: recipients are plain text; removal changes only ink and keeps keyboard access`, async () => {
+      const page = await load({
+        locale: "de",
+        contacts: false,
+        context: { viewport: { width, height: 800 } },
+        recipients: ["sarah.engele@example.test", "tom@example.test"],
+      });
+      try {
+        await page.evaluate((theme) => {
+          document.documentElement.className = theme;
+        }, theme);
+        const field = page.getByRole("combobox", { name: "Empfänger" });
+        const remove = page.getByRole("button", { name: "sarah.engele@example.test entfernen", exact: true });
+        await settled(page);
+        const shell = page.locator(".mail-recipient-pill-shell").first();
+        expect(
+          await shell.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { background: style.backgroundColor, border: style.borderTopWidth };
+          }),
+        ).toEqual({ background: "rgba(0, 0, 0, 0)", border: "0px" });
+        expect(await field.evaluate((element) => getComputedStyle(element, "::placeholder").fontSize)).toBe(
+          await page
+            .locator(".mail-recipient-pill")
+            .first()
+            .evaluate((element) => getComputedStyle(element).fontSize),
+        );
+        const boxes = async () =>
+          Promise.all([
+            layoutBox(page, ".mail-recipient-control"),
+            layoutBox(page, ".mail-recipient-pill-shell"),
+            layoutBox(page, ".mail-recipient-remove"),
+            layoutBox(page, '[role="combobox"]'),
+          ]);
+        const before = await boxes();
+        const idleColor = await remove.evaluate((element) => getComputedStyle(element).color);
+        await capture(page, `recipients-${theme}-${width}`);
+        await hoverInPlace(remove);
+        await page.getByRole("tooltip").waitFor();
+        await settled(page);
+        const dangerColor = await remove.evaluate((element) => {
+          const probe = document.createElement("span");
+          probe.style.color = "var(--k2b-danger-text)";
+          element.append(probe);
+          const color = getComputedStyle(probe).color;
+          probe.remove();
+          return color;
+        });
+        expect(await remove.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        expect(await remove.evaluate((element) => getComputedStyle(element).color)).toBe(dangerColor);
+        expect(dangerColor).not.toBe(idleColor);
+        expect(await boxes()).toEqual(before);
+        if (width === 1440) await capture(page, `recipients-hover-${theme}-${width}`);
+        await page.mouse.move(0, 0);
+        await page.getByRole("tooltip").waitFor({ state: "hidden" });
+        await page.locator(".mail-recipient-pill").first().focus();
+        await page.keyboard.press("ArrowLeft");
+        await settled(page);
+        expect(
+          await page
+            .locator(".mail-recipient-pill")
+            .first()
+            .evaluate((element) => element.matches(":focus-visible") && getComputedStyle(element).boxShadow !== "none"),
+        ).toBe(true);
+        if (width === 1440) await capture(page, `recipients-address-focus-${theme}-${width}`);
+        await page.keyboard.press("Tab");
+        expect(await remove.evaluate((element) => element === document.activeElement && element.matches(":focus-visible"))).toBe(true);
+        await page.getByRole("tooltip").waitFor();
+        await settled(page);
+        expect(await remove.evaluate((element) => getComputedStyle(element).color)).toBe(dangerColor);
+        expect(await remove.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        expect(await remove.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
+        expect(await boxes()).toEqual(before);
+        if (width === 1440) await capture(page, `recipients-focus-${theme}-${width}`);
+        // End reaches the input even when addresses overflow the phone's field.
+        await page.keyboard.press("Shift+Tab");
+        await page.keyboard.press("End");
+        await settled(page);
+        expect(
+          await field.evaluate((element) => {
+            const input = element.getBoundingClientRect();
+            const control = element.closest(".mail-recipient-control")!.getBoundingClientRect();
+            return {
+              focused: element === document.activeElement,
+              visible: input.left >= control.left && input.right <= control.right,
+              left: input.left,
+              right: input.right,
+              controlLeft: control.left,
+              controlRight: control.right,
+            };
+          }),
+        ).toMatchObject({ focused: true, visible: true });
+        if (width === 390) await capture(page, `recipients-input-${theme}-${width}`);
+        await remove.click();
+        expect(await page.locator(".mail-recipient-pill").allTextContents()).toEqual(["tom@example.test"]);
+        await page.locator(".mail-recipient-pill").focus();
+        await page.keyboard.press("Tab");
+        await page.keyboard.press("Enter");
+        expect(await page.locator(".mail-recipient-pill").count()).toBe(0);
+        expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
+        await field.fill("invalid@address");
+        await field.press("Enter");
+        await field.press("Escape");
+        expect(await field.getAttribute("aria-invalid")).toBe("true");
+        const errorId = await field.getAttribute("aria-describedby");
+        expect(errorId).toBeTruthy();
+        expect(await page.locator(`[id="${errorId}"]`).textContent()).toBeTruthy();
+        expect(await field.getAttribute("title")).toBe(await page.locator(`[id="${errorId}"]`).textContent());
+        await settled(page);
+        expect(await field.evaluate((element) => getComputedStyle(element).color)).toBe(dangerColor);
+        expect(await field.inputValue()).toBe("invalid@address");
+        if (width === 390) await capture(page, `recipients-invalid-${theme}-${width}`);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 15_000);
+  }
+
+  for (const state of ["disabled", "readOnly"] as const) {
+    test(`${theme}: ${state} recipients keep their quiet remove colour on hover`, async () => {
+      const page = await load({ locale: "de", contacts: false, recipients: ["sarah.engele@example.test"], [state]: true });
+      try {
+        await page.evaluate((theme) => {
+          document.documentElement.className = theme;
+        }, theme);
+        const remove = page.getByRole("button", { name: "sarah.engele@example.test entfernen", exact: true });
+        expect(await remove.isDisabled()).toBe(true);
+        await settled(page);
+        const before = await remove.evaluate((element) => getComputedStyle(element).color);
+        await hoverInPlace(remove);
+        await settled(page);
+        expect(await remove.evaluate((element) => getComputedStyle(element).color)).toBe(before);
+        expect(await remove.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+}
 
 for (const [label, context] of [
   ["desktop", desktop],
