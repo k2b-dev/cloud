@@ -16,8 +16,8 @@ app.get("/items/:id", async c => c.json(await work_shop.workshop("one").item.cre
 app.post("/items", c => c.redirect("/"));`);
   expect(result.diagnostics).toEqual([]);
   expect(result.entrypoints.map((e) => e.route)).toEqual([
-    { method: "GET", path: "/items/:id", public: true },
-    { method: "POST", path: "/items", public: false },
+    { method: "GET", path: "/items/:id", page: false, public: true },
+    { method: "POST", path: "/items", page: false, public: false },
   ]);
   expect(result.permissions[0]?.entrypoints).toEqual(["route:GET:/items/:id"]);
 });
@@ -29,9 +29,9 @@ app.get("/", c => c.text("x"));`;
   const result = analyze(source);
   expect(result.diagnostics).toEqual([]);
   expect(result.entrypoints.map((e) => e.route)).toEqual([
-    { method: "GET", path: "/survey", public: true, layout: "plain" },
-    { method: "GET", path: "/alone", public: false, layout: "plain" },
-    { method: "GET", path: "/", public: false },
+    { method: "GET", path: "/survey", page: false, public: true, layout: "plain" },
+    { method: "GET", path: "/alone", page: false, public: false, layout: "plain" },
+    { method: "GET", path: "/", page: false, public: false },
   ]);
   const runtime = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
   runtime.app.get("/survey", () => new Response(), { public: true, layout: "plain" });
@@ -156,7 +156,7 @@ test("personal Code registers private and public routes like resource Code", () 
       files: { "code.ts": `import { app } from "@sdk"; app.get("/", c => c.text("x")${options});` },
     });
     expect(result.diagnostics).toEqual([]);
-    expect(result.entrypoints.map((entry) => entry.route)).toEqual([{ method: "GET", path: "/", public: options !== "" }]);
+    expect(result.entrypoints.map((entry) => entry.route)).toEqual([{ method: "GET", path: "/", page: false, public: options !== "" }]);
   }
 });
 

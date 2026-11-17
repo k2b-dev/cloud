@@ -1,5 +1,5 @@
 import { DotStrip, type DotStripTone } from "@k2b/ui";
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import type { CodeActivityReadModel } from "../../contracts/code-read-model";
 import type { CodePageData, CodePageReady, CodePageRun } from "./data";
 import { iconClass, type PageText, runStatus, Status, withQuery } from "./page-kit";
@@ -11,7 +11,13 @@ export const CODE_STRIP_RUNS = 30;
 export const CODE_RECENT_ROWS = 6;
 
 /** One run as the live channel reports it: when it started and how it stands now. */
-export type CodeLiveRun = Pick<CodePageRun, "id" | "state" | "createdAt"> & { title?: string };
+export type CodeLiveRun = Pick<CodePageRun, "id" | "state" | "createdAt"> & {
+  title?: string;
+  entrypoint?: string;
+  startedAt?: string | null;
+  /** Outstanding receipt started on this page; bounded by the same visible run window. */
+  startedHere?: boolean;
+};
 /** One confirmed effect, in words, as the activity read model lists it. */
 export type CodeLiveEffect = CodeActivityReadModel["recent"][number];
 /**
@@ -52,7 +58,7 @@ const tone = (state: CodePageRun["state"]): DotStripTone =>
   state === "succeeded" ? "success" : state === "failed" || state === "cancelled" ? "danger" : state === "skipped" ? "muted" : "running";
 
 /** The legend of the strip: each form with its word, in the strip's own shapes. */
-function Legend(props: { text: PageText }) {
+function Legend(props: { text: PageText; running: boolean }) {
   const t = props.text.t;
   const item = (state: DotStripTone, label: string) => (
     <span class="cloud-code__legend-item">
@@ -65,12 +71,22 @@ function Legend(props: { text: PageText }) {
       {item("success", t().legendSucceeded)}
       {item("danger", t().legendFailed)}
       {item("muted", t().legendSkipped)}
+      <span class="cloud-code__legend-item" style={{ visibility: props.running ? "visible" : "hidden" }} aria-hidden={!props.running}>
+        {item("running", t().runCurrentlyRunning)}
+      </span>
     </span>
   );
 }
 
 /** The last runs as upright bars, oldest left, each one a link to its run. */
-export function RunStrip(props: { data: CodePageData; live: CodeLive; text: PageText; caption: JSX.Element; showAll?: boolean }) {
+export function RunStrip(props: {
+  data: CodePageData;
+  live: CodeLive;
+  text: PageText;
+  caption: JSX.Element;
+  showAll?: boolean;
+  activeRun?: CodeLiveRun | null;
+}) {
   const t = props.text.t;
   const shown = () => props.live.runs().slice(0, CODE_STRIP_RUNS).reverse();
   const failed = () => shown().filter((run) => run.state === "failed" || run.state === "cancelled").length;
@@ -79,8 +95,8 @@ export function RunStrip(props: { data: CodePageData; live: CodeLive; text: Page
       <div class="cloud-code__runs-head">
         <span class="cloud-code__meta">{props.caption}</span>
         <Show when={props.showAll}>
-          <a class="cloud-code__meta-link" href={withQuery(props.data.href, { tab: "runs" })}>
-            {t().allRuns}
+          <a class="cloud-code__meta-link" href={withQuery(props.data.href, { tab: "runs", run: props.activeRun?.id })}>
+            {props.activeRun ? t().viewRun : t().allRuns}
           </a>
         </Show>
       </div>
@@ -94,7 +110,7 @@ export function RunStrip(props: { data: CodePageData; live: CodeLive; text: Page
         dotLabels={shown().map((run) => t().slotLabel({ when: props.text.moment(run.createdAt), status: runStatus(run.state, t()).label }))}
         label={t().stripLabel({ count: shown().length, failed: failed() })}
       />
-      <Legend text={props.text} />
+      <Legend text={props.text} running={!!props.activeRun} />
     </div>
   );
 }
@@ -128,6 +144,23 @@ export function CodeLiveStrip(props: {
   const paused = () => props.state.code.state === "paused";
   const last = () =>
     props.live.runs().find((run) => run.state === "succeeded" || run.state === "failed" || run.state === "cancelled") ?? null;
+  const active = () =>
+    props.live.runs().find((run) => run.state === "running") ?? props.live.runs().find((run) => run.state === "queued") ?? null;
+  // Read one snapshot: nested JSX conditions become separate memos and may otherwise see a removed active run.
+  const lastLabel = () => {
+    const run = active();
+    return run ? (run.state === "queued" ? t().runStarting : t().runCurrentlyRunning) : t().lastLabel;
+  };
+  const [now, setNow] = createSignal(Date.parse(props.data.dates.now));
+  onMount(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    onCleanup(() => clearInterval(timer));
+  });
+  const since = () => {
+    const run = active();
+    const seconds = Math.max(0, Math.floor((now() - Date.parse(run?.startedAt ?? run?.createdAt ?? props.data.dates.now)) / 1000));
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  };
   const lastWords = () => {
     const run = last();
     if (!run) return null;
@@ -148,12 +181,29 @@ export function CodeLiveStrip(props: {
         </span>
       </div>
       <div class="cloud-code__lage-cell">
-        <span class="cloud-code__meta">{t().lastLabel}</span>
-        <Show when={last()} keyed fallback={<span class="cloud-code__lage-last">{t().lastNone}</span>}>
+        <span class="cloud-code__meta" role="status">
+          {lastLabel()}
+        </span>
+        <Show
+          when={active()}
+          keyed
+          fallback={
+            <Show when={last()} keyed fallback={<span class="cloud-code__lage-last">{t().lastNone}</span>}>
+              {(run) => (
+                <span class="cloud-code__lage-last" data-fresh={props.live.fresh().run === run.id ? "" : undefined}>
+                  <Status {...runStatus(run.state, t())} label={props.text.moment(run.createdAt)} />
+                  <Show when={lastWords()}>{(title) => <span class="cloud-code__lage-what">{title()}</span>}</Show>
+                </span>
+              )}
+            </Show>
+          }
+        >
           {(run) => (
-            <span class="cloud-code__lage-last" data-fresh={props.live.fresh().run === run.id ? "" : undefined}>
-              <Status {...runStatus(run.state, t())} label={props.text.moment(run.createdAt)} />
-              <Show when={lastWords()}>{(title) => <span class="cloud-code__lage-what">{title()}</span>}</Show>
+            <span class="cloud-code__lage-last">
+              <Status tone="muted" icon="ti ti-loader-2 cloud-code__spin cloud-code__run-active" label={t().runSince({ when: since() })} />
+              <Show when={props.state.permission === "editor"}>
+                <span class="cloud-code__lage-what">{run.state === "running" ? t().runWorking : ""}</span>
+              </Show>
             </span>
           )}
         </Show>
@@ -163,6 +213,7 @@ export function CodeLiveStrip(props: {
         live={props.live}
         text={props.text}
         showAll
+        activeRun={active()}
         caption={
           paused()
             ? t().stripPausedCaption({ count: Math.min(props.live.runs().length, CODE_STRIP_RUNS) })

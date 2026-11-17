@@ -88,7 +88,7 @@ export const ManifestSchema = z.object({
   entrypoints: z.array(
     z.object({
       kind: z.enum(["schedule", "manual", "event", "route"]),
-      route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).optional(),
+      route: z.object({ method: z.string(), path: z.string(), public: z.boolean(), page: z.boolean().optional() }).optional(),
       event: z.object({ type: z.string(), version: z.number(), place: z.object({ type: z.string(), id: z.string() }) }).optional(),
       entrypoint: z.string(),
       title: z.string().optional(),
@@ -290,7 +290,7 @@ export type CodePageAutomation = {
   /** Reviewed human title; absent on older versions. */
   title?: string;
   kind: "schedule" | "manual" | "event" | "route";
-  route?: { method: string; path: string; public: boolean };
+  route?: { method: string; path: string; public: boolean; page?: boolean };
   event?: CodePageEvent;
   cron: string | null;
   at?: string;

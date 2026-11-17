@@ -521,6 +521,35 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       for (const child of node.children)
         if (ts.isJsxText(child) && child.text.trim()) report(child, "code_page_child", t.page_child3({ tag: tag }));
   }
+  /** Display metadata only: follow local calls, never execute code or count an unused nested function. */
+  function returnsPage(handler: ts.Expression, seen = new Set<ts.Node>()): boolean {
+    const fn = handlerFunction(checker, handler);
+    if (!fn || seen.has(fn)) return false;
+    seen.add(fn);
+    let found = false;
+    const walk = (node: ts.Node) => {
+      if (found || (node !== fn && ts.isFunctionLike(node))) return;
+      if (ts.isCallExpression(node)) {
+        const declaration = checker.getResolvedSignature(node)?.declaration;
+        if (
+          declaration?.getSourceFile().fileName === sdkFile &&
+          (("name" in declaration && declaration.name?.getText() === "page") ||
+            (ts.isPropertySignature(declaration.parent) && declaration.parent.name.getText() === "page"))
+        ) {
+          found = true;
+          return;
+        }
+        if (returnsPage(node.expression, seen)) {
+          found = true;
+          return;
+        }
+      }
+      ts.forEachChild(node, walk);
+    };
+    walk(fn);
+    return found;
+  }
+
   function visit(node: ts.Node) {
     if (ts.isPropertyAccessExpression(node)) {
       const type = checker.getNonNullableType(checker.getTypeAtLocation(node.expression));
@@ -790,7 +819,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               result.entrypoints.push({
                 kind: "route",
                 entrypoint: name,
-                route: route.data,
+                route: { ...route.data, page: !!routeHandler && returnsPage(routeHandler) },
                 cron: null,
                 file: sf.fileName.slice(root.length),
                 line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,

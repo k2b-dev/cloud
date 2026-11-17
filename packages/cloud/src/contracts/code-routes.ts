@@ -15,6 +15,7 @@ export const CodeRouteSchema = z
       })
       .describe("Code-relative path with optional named segments."),
     public: z.boolean().describe("Whether the route accepts anonymous visitors without a user."),
+    page: z.boolean().optional().describe("The checker found a reachable ctx.page call in this handler. Absent on older versions."),
     layout: z.literal("plain").optional().describe("Pages of this route render without the Cloud layout; omitted, they render inside it."),
   })
   .strict();
@@ -51,4 +52,24 @@ export function codeOwnPath(codeId: string, path: string): string {
   }
   if (pathname.startsWith("/code/") && pathname !== base && !pathname.startsWith(`${base}/`)) throw new Error("code_foreign_path");
   return pathname === base || pathname.startsWith(`${base}/`) ? path : base + path;
+}
+
+/** Displayable page evidence; admission and the handler still decide whether the request succeeds. */
+export function isCodePageRoute(route: { method: string; path: string; public: boolean; page?: boolean } | undefined): boolean {
+  return (
+    !!route && !route.public && route.page !== false && (route.method === "GET" || route.method === "ALL") && !route.path.includes(":")
+  );
+}
+
+/** Current manifest entries as openable pages, home first. Shared by the Code head and version handoffs. */
+export function codePageLinks<T extends { kind: string; route?: { method: string; path: string; public: boolean; page?: boolean } }>(
+  codeId: string,
+  entries: readonly T[],
+) {
+  const pages = entries.filter((entry) => entry.kind === "route" && isCodePageRoute(entry.route));
+  const home = pages.find((entry) => entry.route!.path === "/") ?? pages[0];
+  return (home ? [home, ...pages.filter((entry) => entry !== home)] : []).map((entry) => ({
+    entry,
+    href: codeOwnPath(codeId, entry.route!.path),
+  }));
 }

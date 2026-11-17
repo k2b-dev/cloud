@@ -5,7 +5,7 @@ section: Operations
 order: 920
 description: Size and diagnose Code route requests in the shared runner pool.
 tags: [code, runner, limits]
-updated: 2026-11-11
+updated: 2026-11-17
 ---
 
 # Operate Code requests
@@ -266,3 +266,11 @@ failure, that is its only start attempt: the next due sweep marks it finally fai
 visible `dispatch_failed`. Lock contention and transaction retries leave the entry unchanged
 and do not count as unknown failures. Final refusals retain their original reason through later expiry and
 archiving, and automation refusals discard input, context and attachments.
+
+## Route page metadata
+
+Newly checked Code versions record `route.page` as display evidence for the
+Code page's Open action. Existing versions remain valid without this optional
+field and need no migration or recheck. Keep checker and Core on the same
+release so newly submitted manifests preserve the field. This metadata does
+not change route admission or permissions.

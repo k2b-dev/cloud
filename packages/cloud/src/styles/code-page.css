@@ -41,6 +41,13 @@
   font-weight: 600;
   line-height: 24px;
 }
+.cloud-code__name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cloud-code__state {
   display: inline-flex;
   align-items: center;
@@ -84,6 +91,7 @@
   color: var(--k2b-text-secondary);
   font-size: 14px;
   line-height: 20px;
+  min-height: 40px;
 }
 .cloud-code__ai-mark {
   display: inline-flex;
@@ -680,6 +688,7 @@ a.cloud-code__row-main:focus-visible {
 
 /* Loading: placeholders at the heights of the lines they stand for (Bild 33). */
 .cloud-code__skeleton {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -687,6 +696,22 @@ a.cloud-code__row-main:focus-visible {
 .cloud-code__skel-title {
   width: 12rem;
   height: 24px;
+}
+.cloud-code__skel-heading {
+  position: relative;
+}
+.cloud-code__skel-heading > :not(.k2b-skeleton) {
+  visibility: hidden;
+}
+.cloud-code__skel-heading > .k2b-skeleton {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+}
+.cloud-code__skel-actions {
+  width: 22rem;
+  max-width: 100%;
+  height: 32px;
 }
 .cloud-code__skel-meta {
   width: 21rem;
@@ -902,6 +927,7 @@ a.cloud-code__row-main:focus-visible {
 
 @container cloud-code (width < 860px) {
   .cloud-code__grid {
+    align-items: stretch;
     display: flex;
     flex-direction: column;
   }
@@ -928,9 +954,6 @@ a.cloud-code__row-main:focus-visible {
   .cloud-code__head-actions {
     width: 100%;
     margin-left: 0;
-  }
-  .cloud-code__head-actions > .k2b-button:not([data-icon-only]) {
-    flex: 1;
   }
   .cloud-code__lage {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -999,7 +1022,8 @@ a.cloud-code__row-main:focus-visible {
 /* Loading keeps the content's geometry: two lede lines, the counts' height, rows of the content's height. */
 .cloud-code__skel-lede-block {
   display: grid;
-  gap: 0.5rem;
+  gap: 0;
+  height: 40px;
 }
 .cloud-code__skel-counts {
   display: grid;
@@ -1012,4 +1036,146 @@ a.cloud-code__row-main:focus-visible {
 .cloud-code__lede--missing {
   color: var(--k2b-text-subtle);
   font-size: 13px;
+}
+
+/* The v7 launch stays in place while the command and the latest run change state. */
+.cloud-code__state {
+  display: inline-grid;
+}
+.cloud-code__state > span {
+  display: inline-flex;
+  grid-area: 1 / 1;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cloud-code__state-reserve {
+  visibility: hidden;
+}
+.cloud-code__launch {
+  min-width: 10rem;
+}
+.cloud-code__change-short,
+.cloud-code__paused-reason {
+  display: none;
+}
+.cloud-code__change[data-variant="secondary"] .k2b-button__label > i {
+  color: var(--k2b-ai-accent);
+}
+.cloud-code__run-active {
+  color: var(--k2b-ai-accent);
+}
+.cloud-code__lage-cell:nth-child(2) {
+  min-height: 42px;
+}
+.cloud-code__pages .cloud-code__row-trail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+.cloud-code__skel-sub {
+  width: 64%;
+  height: 18px;
+}
+.cloud-code__skel-status {
+  width: 7rem;
+  height: 18px;
+}
+.cloud-code__skel-run-now {
+  width: 8.5rem;
+  height: 28px;
+}
+.cloud-code__skeleton .cloud-code__tile > i {
+  visibility: hidden;
+}
+.cloud-code__lage--skeleton .cloud-code__lage-cell {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* Two explanatory lines keep the owner/page wording from moving the following content. */
+.cloud-code__may .cloud-code__foot {
+  min-height: 34px;
+}
+.cloud-code__skeleton .cloud-code__foot .k2b-skeleton {
+  height: 34px;
+}
+@container cloud-code (width < 760px) {
+  .cloud-code__head-actions {
+    min-width: 0;
+    flex-wrap: nowrap;
+  }
+  .cloud-code__head-actions > .cloud-code__launch {
+    min-width: 0;
+    flex: 1;
+  }
+  .cloud-code__launch > .k2b-split-button__primary,
+  .cloud-code__launch > .k2b-split-button__primary-menu {
+    flex: 1;
+  }
+  .cloud-code__launch.k2b-dropdown:not(.k2b-split-button) > .k2b-button {
+    width: 100%;
+  }
+  .cloud-code__head-actions .k2b-button,
+  .cloud-code .cloud-code__run-now.k2b-button[data-size="sm"],
+  .cloud-code__pages .cloud-code__row-trail .k2b-button {
+    min-height: 44px;
+  }
+  .cloud-code__skel-actions {
+    width: 100%;
+    height: 44px;
+  }
+  .cloud-code__head-actions .k2b-icon-button {
+    min-width: 44px;
+    width: 44px;
+    flex: 0 0 auto;
+  }
+  .cloud-code__head-actions > .cloud-code__change {
+    flex: 0 0 auto;
+  }
+  .cloud-code__head-actions > .cloud-code__change--alone {
+    flex: 1;
+  }
+  .cloud-code__change-full {
+    display: none;
+  }
+  .cloud-code__change-short {
+    display: inline;
+  }
+  .cloud-code__paused-reason {
+    display: block;
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--k2b-text-subtle);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .cloud-code__lage-cell:nth-child(2) {
+    min-height: 76px;
+  }
+  /* A failed run adds its count to the caption: reserve its second line before it arrives. */
+  .cloud-code__runs-head {
+    min-height: 32px;
+  }
+  .cloud-code__lage--skeleton .cloud-code__runs > .cloud-code__skel-label:first-child {
+    height: 32px;
+  }
+  .cloud-code__pages .cloud-code__row-trail {
+    grid-column: 2;
+  }
+  .cloud-code__when .cloud-code__row-trail {
+    min-height: 39px;
+  }
+  .cloud-code__lede {
+    min-height: 60px;
+  }
+  .cloud-code__skel-lede-block {
+    height: 60px;
+  }
+  .cloud-code__skel-last {
+    height: calc(24px + 2 * 1.125rem);
+  }
+  .cloud-code__skel-strip + .cloud-code__skel-label {
+    height: 36px;
+  }
+  .cloud-code__skel-run-now {
+    height: 44px;
+  }
 }

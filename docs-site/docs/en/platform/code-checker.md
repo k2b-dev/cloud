@@ -5,7 +5,7 @@ section: Platform services
 order: 681
 description: Check Code types, review called operations and targets, and build an immutable runner version.
 tags: [code, checker, permissions, runner]
-updated: 2026-11-09
+updated: 2026-11-17
 ---
 
 # Code checker
@@ -137,6 +137,13 @@ contract, shared with the version service, contains:
   a database call. `code_run` reports `code_db_temporary` because it has no lasting
   Code to own a database;
 - `hashes`: lowercase SHA-256 digests for `source`, `sdk`, and `bundle`.
+
+Route metadata includes optional `page`: the checker found a reachable SDK
+`ctx.page` call in the handler or a called local function. Unused nested
+functions do not count. This is display evidence, not an authorization or a
+promise that every response is HTML. Older manifests omit it; the Code page
+keeps their existing GET/ALL opening behavior. Newly checked data routes carry
+`page: false` and offer only their address.
 
 The source hash covers `JSON.stringify({ entry, files })`, with `files` holding
 `[path, source]` pairs sorted by path. The SDK hash covers the `GeneratedCodeSdk`
