@@ -315,6 +315,8 @@ describe("Mailbox Code page in a browser", () => {
         expect(await dialog.getByText("Aktuell").count()).toBe(1);
         expect(await dialog.getByRole("button", { name: "Diesen Chat nehmen" }).isDisabled()).toBe(true);
         await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).check();
+        await settled(page);
+        await shoot(page, `chat-chooser-${width}`);
         const box = await dialog.boundingBox();
         expect(box !== null && box.x >= 0 && box.x + box.width <= width).toBe(true);
         await dialog.getByRole("button", { name: "Diesen Chat nehmen" }).click();

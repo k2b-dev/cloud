@@ -515,8 +515,7 @@ export function CodeOverview(props: {
           <CodeChatMissing
             codeId={props.state.code.id}
             binding={binding()}
-            // The running version writes to its chat: Core marks that row in "What it may do".
-            usesChat={(props.state.words?.current?.mayDo.items ?? []).some((row) => row.target?.ref.type === "core.ai.chat")}
+            state={props.state}
             text={props.text}
           />
         )}

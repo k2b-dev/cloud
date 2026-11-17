@@ -1,5 +1,5 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
-import { Button, ChoiceList, InlineGuidance, prompts, TextInput, toast } from "@k2b/ui";
+import { Button, ChoiceList, createDelayedLoading, InlineGuidance, prompts, Skeleton, TextInput, toast } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
@@ -35,6 +35,8 @@ function ChatChooser(props: { codeId: string; binding: CodeChatBinding; text: Pa
   const [chosen, setChosen] = createSignal<string | null>(current());
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  // Placeholders only when the first list takes a moment; a later search keeps the previous list until it answers.
+  const loading = createDelayedLoading(() => chats() === null);
   let request = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
@@ -109,8 +111,20 @@ function ChatChooser(props: { codeId: string; binding: CodeChatBinding; text: Pa
             </InlineGuidance>
           }
         >
-          <Show when={chats() === null || options().length > 0} fallback={<p class="cloud-code__quiet-line">{t().chatDialogEmpty}</p>}>
-            <ChoiceList aria-label={t().chatDialogTitle} options={options()} value={chosen()} onValueChange={(value) => setChosen(value)} />
+          <Show
+            when={chats() !== null}
+            fallback={
+              <Show when={loading()}>
+                <div class="cloud-code__chat-chooser-skel">
+                  <Skeleton class="cloud-code__chat-chooser-skel-row" />
+                  <Skeleton class="cloud-code__chat-chooser-skel-row" />
+                </div>
+              </Show>
+            }
+          >
+            <Show when={options().length > 0} fallback={<p class="cloud-code__quiet-line">{t().chatDialogEmpty}</p>}>
+              <ChoiceList aria-label={t().chatDialogTitle} options={options()} value={chosen()} onValueChange={(value) => setChosen(value)} />
+            </Show>
           </Show>
         </Show>
       </div>

@@ -792,11 +792,10 @@ a.cloud-code__row-main:focus-visible {
   white-space: nowrap;
 }
 
-/* "Choose another chat" sits under the chat row's quiet line, aligned with its text. */
+/* "Choose another chat" sits under the chat row's quiet line, aligned with its text (a link button has no inline padding). */
 .cloud-code__row-act {
   display: flex;
   margin-top: 0.25rem;
-  margin-inline-start: -0.5rem;
 }
 /* The chat chooser: the hint first, then the search and a list that scrolls within the dialog. */
 .cloud-code__chat-chooser {
@@ -815,6 +814,15 @@ a.cloud-code__row-main:focus-visible {
   min-height: 12rem;
   max-height: min(22rem, 50dvh);
   overflow-y: auto;
+}
+/* While the first list loads: two rows the size of a chat option, in the list's grid. */
+.cloud-code__chat-chooser-skel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  gap: 0.5rem;
+}
+.cloud-code__chat-chooser-skel-row {
+  height: 3.75rem;
 }
 .cloud-code__chat-chooser-error {
   margin: 0;

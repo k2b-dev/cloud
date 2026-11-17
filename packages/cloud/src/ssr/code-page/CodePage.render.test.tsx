@@ -1342,6 +1342,9 @@ describe("the chat of personal Code", () => {
     expect(page).toContain("Chat wiederherstellen");
     expect(page).toContain("In einen Chat schreiben, Gustav antwortet");
     expect(page.indexOf("Der Chat „Wochenbericht“ ist archiviert.")).toBeLessThan(page.indexOf("Was sie darf"));
+    // It writes nothing until the person acts, so its state needs them, like a failed run (v5 a-code/chat-fehlt).
+    expect(page).toContain("Eingeschaltet, braucht dich");
+    expect(text("personal")).not.toContain("Eingeschaltet, braucht dich");
   });
 
   test("someone who does not own it learns who can choose a chat, without controls or the chat's name", () => {

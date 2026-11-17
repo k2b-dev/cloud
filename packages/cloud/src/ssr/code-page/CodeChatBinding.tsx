@@ -1,7 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, NoticeCard, toast } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
-import type { CodeChatBinding } from "./data";
+import type { CodeChatBinding, CodePageReady } from "./data";
 import type { PageText } from "./page-kit";
 
 /** The chooser loads only when the owner opens it; the page's first download stays as it was. */
@@ -13,7 +13,7 @@ export function CodeChatChooseOther(props: { codeId: string; binding: CodeChatBi
   return (
     <Show when={props.binding.canChange}>
       <span class="cloud-code__row-act">
-        <Button variant="text" size="sm" onClick={() => void choose(props.codeId, props.binding, props.text)}>
+        <Button type="button" variant="link" size="sm" onClick={() => void choose(props.codeId, props.binding, props.text)}>
           {props.binding.chat?.state === "available" ? props.text.t().chatChooseOther : props.text.t().chatChoose}
         </Button>
       </span>
@@ -22,19 +22,27 @@ export function CodeChatChooseOther(props: { codeId: string; binding: CodeChatBi
 }
 
 /**
+ * The chat this personal Code is missing, or null: never bound while the running version writes to its chat
+ * (`chat_unbound`; Core marks that row in "What it may do"), or its chat was archived or deleted (`chat_unavailable`).
+ * Until the owner acts, the automation writes nothing, so the page says so and its state needs the person.
+ */
+export const missingCodeChat = (state: CodePageReady) => {
+  const binding = state.chatBinding;
+  if (!binding) return null;
+  if (binding.chat?.state === "unavailable") return binding.chat;
+  const usesChat = (state.words?.current?.mayDo.items ?? []).some((row) => row.target?.ref.type === "core.ai.chat");
+  return binding.chat === null && usesChat ? ({ state: "unbound" } as const) : null;
+};
+
+/**
  * The automation writes to a chat it does not have: never bound (`chat_unbound`), or its chat is archived or deleted
  * (`chat_unavailable`). It writes nothing until a chat is chosen. The owner chooses one or restores the archived chat;
- * anyone else learns who can. `usesChat`: the running version writes to its chat at all.
+ * anyone else learns who can.
  */
-export function CodeChatMissing(props: { codeId: string; binding: CodeChatBinding; usesChat: boolean; text: PageText }) {
+export function CodeChatMissing(props: { codeId: string; binding: CodeChatBinding; state: CodePageReady; text: PageText }) {
   const t = props.text.t;
   const [restoring, setRestoring] = createSignal(false);
-  const missing = () =>
-    props.binding.chat?.state === "unavailable"
-      ? props.binding.chat
-      : props.binding.chat === null && props.usesChat
-        ? ({ state: "unbound" } as const)
-        : null;
+  const missing = () => missingCodeChat(props.state);
   const restore = async (id: string) => {
     if (restoring()) return;
     setRestoring(true);
