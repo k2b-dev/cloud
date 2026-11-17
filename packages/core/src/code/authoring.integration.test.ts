@@ -545,7 +545,8 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
         const request = await createCodeCheckRequest(input.codeId, input.files, input.entry, context);
         expect(request.aiOperations).toEqual([qualified]);
         const result = await codeAuthoringServices.check(input, context);
-        expect(result.manifest?.policyRows).toEqual(["ai", "read"]);
+        // Inference is classified only as AI; it is not also a read.
+        expect(result.manifest?.policyRows).toEqual(["ai"]);
       } finally {
         display.mockRestore();
         capabilities.mockResolvedValue({ ok: true, data: { protocolVersion: 2, apps: [], page: { hasMore: false } } });

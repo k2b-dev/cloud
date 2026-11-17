@@ -64,6 +64,169 @@ suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("text from a source without a signed-in session restricts the turn: steer and tool answers", async () => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+    const restricted = async (conversationId: string, turnId: string) => {
+      const config = await aiConversations.getTurnRunConfig({ conversationId, turnId });
+      return config?.kind === "chat" ? config.sourceRestricted === true : null;
+    };
+    const turn = async () => {
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      conversationIds.push(chat.id);
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "test-model",
+        userMessage: userMessage("Start"),
+        runConfig,
+      });
+      return { conversationId: chat.id, turnId: turn.id };
+    };
+    const tool = async (target: { conversationId: string; turnId: string }, callId: string) =>
+      aiConversations.savePendingTurnAction({
+        ...target,
+        callId,
+        kind: "client_tool",
+        status: "pending",
+        name: "browser-state",
+        args: {},
+        approvalScope: "browser-state",
+        allowAlways: false,
+        frontendMode: "client",
+        resolvedEvent: null,
+      });
+    try {
+      // A signed-in session keeps the turn unrestricted on both paths.
+      const session = await turn();
+      await aiConversations.enqueueTurnSteer({ ...session, clientRequestId: "s1", text: "From the browser", signedInSession: true });
+      await tool(session, "call-session");
+      await aiConversations.resolvePendingTurnAction({
+        ...session,
+        callId: "call-session",
+        event: { type: "tool_result", callId: "call-session", result: { value: 1 } },
+        signedInSession: true,
+      });
+      expect(await restricted(session.conversationId, session.turnId)).toBe(false);
+      // Steering from cld marks the turn; it is still accepted.
+      const steered = await turn();
+      const steer = await aiConversations.enqueueTurnSteer({
+        ...steered,
+        clientRequestId: "s2",
+        text: "From the terminal",
+        signedInSession: false,
+      });
+      expect(steer.ok).toBe(true);
+      expect(await restricted(steered.conversationId, steered.turnId)).toBe(true);
+      // A tool result from cld marks the turn; an approval carries no text and does not.
+      const answered = await turn();
+      await tool(answered, "call-cli");
+      await aiConversations.savePendingTurnAction({
+        ...answered,
+        callId: "call-approve",
+        kind: "approval",
+        status: "pending",
+        name: "danger",
+        args: {},
+        approvalScope: "danger",
+        allowAlways: false,
+        resolvedEvent: null,
+      });
+      await aiConversations.resolvePendingTurnAction({
+        ...answered,
+        callId: "call-approve",
+        event: { type: "approval_response", callId: "call-approve", approved: true },
+        signedInSession: false,
+      });
+      expect(await restricted(answered.conversationId, answered.turnId)).toBe(false);
+      await aiConversations.resolvePendingTurnAction({
+        ...answered,
+        callId: "call-cli",
+        event: { type: "tool_result", callId: "call-cli", result: { value: 2 } },
+        signedInSession: false,
+      });
+      expect(await restricted(answered.conversationId, answered.turnId)).toBe(true);
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
+  test("a tool answer waits for a stop that holds its turn, and both settle without a deadlock", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "test-model",
+        userMessage: userMessage("Answer the tool"),
+        runConfig,
+      });
+      const callId = "call-overlap";
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId,
+        kind: "client_tool",
+        status: "pending",
+        name: "browser-state",
+        args: {},
+        approvalScope: "browser-state",
+        allowAlways: false,
+        frontendMode: "client",
+        resolvedEvent: null,
+      });
+      type Outcome = { ok: true; value: unknown } | { ok: false; error: unknown };
+      let answer: Promise<Outcome> | undefined;
+      try {
+        // The stop's order, as completeTurn takes it: the turn, then its actions, then its status.
+        await sql.begin(async (stop) => {
+          // A deadlock or a lost barrier fails within the test instead of hanging it.
+          await stop`SET LOCAL lock_timeout = '3s'`;
+          const [stopSession] = await stop<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          if (!stopSession) throw new Error("The stop has no session");
+          const { pid } = stopSession;
+          await stop`SELECT id FROM ai.turns WHERE id=${turn.id}::uuid FOR UPDATE`;
+          // A tool result without a signed-in session also marks the turn, so the answer needs the turn row.
+          // Settled at once: a failed answer is a result to check, never an unhandled rejection.
+          answer = aiConversations
+            .resolvePendingTurnAction({
+              conversationId: chat.id,
+              turnId: turn.id,
+              callId,
+              event: { type: "tool_result", callId, result: { value: 1 } },
+              signedInSession: false,
+            })
+            .then(
+              (value): Outcome => ({ ok: true, value }),
+              (error: unknown): Outcome => ({ ok: false, error }),
+            );
+          for (let waited = 0; ; waited++) {
+            const [blocked] = await sql<{ count: number }[]>`
+              SELECT count(*)::int AS count FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`;
+            if (blocked?.count) break;
+            if (waited > 200) throw new Error("The tool answer never waited for the stop");
+            await Bun.sleep(10);
+          }
+          // Holding the action here as well would deadlock: the answer must wait without holding it.
+          await stop`UPDATE ai.pending_actions SET status='aborted', resolved_at=now()
+            WHERE turn_id=${turn.id}::uuid AND status='pending'`;
+          await stop`UPDATE ai.turns SET status='aborted', completed_at=now() WHERE id=${turn.id}::uuid`;
+        });
+      } finally {
+        // After commit or rollback the answer can finish; it settles before the fixture is removed.
+        await answer;
+      }
+      // The answer finds a finished turn and takes nothing.
+      expect(await answer).toEqual({ ok: true, value: null });
+      const [row] = await sql<{ status: string; restricted: boolean }[]>`
+        SELECT status, COALESCE((run_config->>'sourceRestricted')::boolean,false) AS restricted FROM ai.turns WHERE id=${turn.id}::uuid`;
+      expect(row).toEqual({ status: "aborted", restricted: false });
+      const [action] = await sql<{ status: string }[]>`SELECT status FROM ai.pending_actions WHERE turn_id=${turn.id}::uuid`;
+      expect(action?.status).toBe("aborted");
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
+  });
+
   test("authoring stop receipts survive reload but are omitted from forks without the draft", async () => {
     const userId = await insertUser();
     const source = await aiConversations.createConversation({ ownerUserId: userId });
@@ -253,6 +416,7 @@ suite("AI conversation store integration", () => {
       expect(messages.find((message) => message.role === "tool_result" && message.callId === "other")).toEqual(other);
       // Loading changes only model context: the original error and the missing result stay as stored.
       const stored = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turnId });
+      expect(await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turnId, limit: 2 })).toEqual(stored.slice(-2));
       expect(stored.find(({ message }) => message.role === "tool_result" && message.callId === "send")?.message).toEqual(original);
       expect(stored.some(({ message }) => message.role === "tool_result" && message.callId === "cut-off")).toBe(false);
     } finally {
@@ -527,66 +691,66 @@ suite("AI conversation store integration", () => {
     }
   });
 
-  test.each([
-    { scheduledTask: { taskId: "task", occurrenceId: "run" } },
-    { codeDelivery: { codeId: "c_report", runId: "run", effectKey: "report" } },
-  ])("an interactive turn defers new background results without losing or compacting them: %j", async (meta) => {
-    const userId = await insertUser();
-    const chat = await aiConversations.createConversation({ ownerUserId: userId });
-    try {
-      const { turn } = await aiConversations.submitChatTurn({
-        conversationId: chat.id,
-        modelId: "test-model",
-        runConfig,
-        userMessage: userMessage("Hello"),
-      });
-      await aiConversations.claimTurn({
-        conversationId: chat.id,
-        turnId: turn.id,
-        leaseOwner: "foreground",
-        leaseMs: 30_000,
-        from: "queue",
-        maxAttempts: 50,
-        runBudgetMs: 60_000,
-      });
-      const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground" });
-      await sql`INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, meta)
+  test.each([{ scheduledTask: { taskId: "task", occurrenceId: "run" } }])(
+    "an interactive turn defers new background results without losing or compacting them: %j",
+    async (meta) => {
+      const userId = await insertUser();
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      try {
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "test-model",
+          runConfig,
+          userMessage: userMessage("Hello"),
+        });
+        await aiConversations.claimTurn({
+          conversationId: chat.id,
+          turnId: turn.id,
+          leaseOwner: "foreground",
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 50,
+          runBudgetMs: 60_000,
+        });
+        const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground" });
+        await sql`INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, meta)
         VALUES (${createAiShortId()}, ${chat.id}, 2, 'message', 'assistant', ${JSON.stringify(assistantMessage("Background result"))}::text::jsonb,
           ${JSON.stringify(meta)}::text::jsonb)`;
-      await sql`UPDATE ai.conversations SET background_received_at = now() WHERE id = ${chat.id}`;
-      expect((await session.load()).map((entry) => entry.message)).toEqual([userMessage("Hello")]);
-      // Nessi's next local sequence is already occupied by the delivered result.
-      await session.append(assistantMessage("Foreground answer"), { seq: 2 });
-      expect((await session.load()).map((entry) => entry.seq)).toEqual([1, 3]);
-      expect((await aiConversations.listMessages({ conversationId: chat.id })).map((message) => message.seq)).toEqual([1, 2, 3]);
-      await aiConversations.compactMessages({
-        conversationId: chat.id,
-        turnId: turn.id,
-        checkpointSeq: 3,
-        summary: assistantMessage("Summary"),
-      });
-      const context = await aiConversations.listContextMessages({ conversationId: chat.id });
-      expect(context.map((message) => message.seq)).toEqual([2, 3]);
-      expect((await session.load()).map((entry) => entry.seq)).toEqual([3]);
-      expect((await aiConversations.listConversations({ ownerUserId: userId, status: "unread" })).map((item) => item.id)).toContain(
-        chat.id,
-      );
-      await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground", status: "completed" });
-      const next = await aiConversations.submitChatTurn({
-        conversationId: chat.id,
-        modelId: "test-model",
-        runConfig,
-        userMessage: userMessage("Next"),
-      });
-      expect(
-        (await aiConversations.createSessionStore({ conversationId: chat.id, turnId: next.turn.id }).load()).some((entry) =>
-          JSON.stringify(entry.message).includes("Background result"),
-        ),
-      ).toBe(true);
-    } finally {
-      await cleanupFixture({ userId, conversationIds: [chat.id] });
-    }
-  });
+        await sql`UPDATE ai.conversations SET background_received_at = now() WHERE id = ${chat.id}`;
+        expect((await session.load()).map((entry) => entry.message)).toEqual([userMessage("Hello")]);
+        // Nessi's next local sequence is already occupied by the delivered result.
+        await session.append(assistantMessage("Foreground answer"), { seq: 2 });
+        expect((await session.load()).map((entry) => entry.seq)).toEqual([1, 3]);
+        expect((await aiConversations.listMessages({ conversationId: chat.id })).map((message) => message.seq)).toEqual([1, 2, 3]);
+        await aiConversations.compactMessages({
+          conversationId: chat.id,
+          turnId: turn.id,
+          checkpointSeq: 3,
+          summary: assistantMessage("Summary"),
+        });
+        const context = await aiConversations.listContextMessages({ conversationId: chat.id });
+        expect(context.map((message) => message.seq)).toEqual([2, 3]);
+        expect((await session.load()).map((entry) => entry.seq)).toEqual([3]);
+        expect((await aiConversations.listConversations({ ownerUserId: userId, status: "unread" })).map((item) => item.id)).toContain(
+          chat.id,
+        );
+        await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground", status: "completed" });
+        const next = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "test-model",
+          runConfig,
+          userMessage: userMessage("Next"),
+        });
+        expect(
+          (await aiConversations.createSessionStore({ conversationId: chat.id, turnId: next.turn.id }).load()).some((entry) =>
+            JSON.stringify(entry.message).includes("Background result"),
+          ),
+        ).toBe(true);
+      } finally {
+        await cleanupFixture({ userId, conversationIds: [chat.id] });
+      }
+    },
+  );
 
   test("fork preserves the versions referenced by inline draft files", async () => {
     const userId = await insertUser();
@@ -680,7 +844,13 @@ suite("AI conversation store integration", () => {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: source.id,
         modelId: "test-model",
-        runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" } },
+        runConfig: {
+          kind: "chat",
+          input: "Send",
+          toolSource: { kind: "none" },
+          writerOrigin: { kind: "automation", id: "c_report" },
+          turnTrigger: { kind: "chat", id: "Source" },
+        },
         userMessage: userMessage("Send"),
       });
       const session = aiConversations.createSessionStore({ conversationId: source.id, turnId: turn.id });
@@ -703,6 +873,8 @@ suite("AI conversation store integration", () => {
       await aiConversations.copyMessages({ sourceConversationId: source.id, targetConversationId: target.id, throughSeq: seq });
       for (const conversationId of [fork.id, target.id]) {
         const messages = await aiConversations.listMessages({ conversationId });
+        expect(messages[0]?.meta?.writerOrigin).toEqual({ kind: "automation", id: "c_report" });
+        expect(messages[0]?.meta?.turnTrigger).toEqual({ kind: "chat", id: "Source" });
         const block = buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send");
         expect(block).toMatchObject({ review, check });
         const context = await aiConversations.createSessionStore({ conversationId }).load();
@@ -1438,6 +1610,7 @@ suite("AI conversation store integration", () => {
         expect(
           (
             await aiConversations.resolvePendingTurnAction({
+              signedInSession: true,
               ...scope,
               callId,
               event: { type: "approval_response", callId, approved: true },
@@ -1547,6 +1720,7 @@ suite("AI conversation store integration", () => {
       expect(
         (
           await aiConversations.enqueueTurnSteer({
+            signedInSession: true,
             conversationId: conversation.id,
             turnId: turn.id,
             clientRequestId: "waiting-steer",
@@ -1568,6 +1742,7 @@ suite("AI conversation store integration", () => {
       expect(early).toBeNull();
 
       const resolved = await aiConversations.resolvePendingTurnAction({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         callId: "call-1",
@@ -1636,6 +1811,7 @@ suite("AI conversation store integration", () => {
       ).toBeNull();
 
       await aiConversations.resolvePendingTurnAction({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         callId: "call-2",
@@ -1707,6 +1883,7 @@ suite("AI conversation store integration", () => {
         resolvedEvent: null,
       });
       await aiConversations.resolvePendingTurnAction({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         callId: "inline-list",
@@ -1747,6 +1924,7 @@ suite("AI conversation store integration", () => {
           }),
         ).toBe(true);
         await aiConversations.resolvePendingTurnAction({
+          signedInSession: true,
           conversationId: conversation.id,
           turnId: turn.id,
           callId: "code-open",
@@ -1801,18 +1979,21 @@ suite("AI conversation store integration", () => {
       });
 
       const first = await aiConversations.enqueueTurnSteer({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         clientRequestId: "request-1",
         text: "First steer",
       });
       const duplicate = await aiConversations.enqueueTurnSteer({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         clientRequestId: "request-1",
         text: "First steer",
       });
       const second = await aiConversations.enqueueTurnSteer({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         clientRequestId: "request-2",
@@ -1891,6 +2072,7 @@ suite("AI conversation store integration", () => {
         userMessage: userMessage("abort me"),
       });
       await aiConversations.enqueueTurnSteer({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         clientRequestId: "abort-steer",
@@ -2076,6 +2258,7 @@ suite("AI conversation store integration", () => {
       await approval(stopped, "secret-1", "client_tool");
       for (const callId of ["run-1-approval-1", "send-1", "run-5-approval-0"])
         await aiConversations.resolvePendingTurnAction({
+          signedInSession: true,
           conversationId: stopped.conversationId,
           turnId: stopped.turnId,
           callId,
@@ -2307,6 +2490,7 @@ suite("AI conversation store integration", () => {
         waitingBudgetMs: 60_000,
       });
       await aiConversations.resolvePendingTurnAction({
+        signedInSession: true,
         conversationId: resumeConv.id,
         turnId: resumeTurn.id,
         callId: "resume-call",

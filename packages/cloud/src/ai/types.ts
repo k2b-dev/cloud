@@ -359,8 +359,10 @@ export type AiStoredMessage = {
       sourceTitle: string;
       sourceHref?: string;
     };
-    /** A committed personal Code result; deferred from any already-running model turn. */
-    codeDelivery?: { codeId: string; runId: string; effectKey: string };
+    /** Server-authored writer attribution; grants no authority. */
+    writerOrigin?: import("./chat-origin").AiChatOrigin;
+    /** Immutable initiator retained when messages are copied. */
+    turnTrigger?: import("./chat-origin").AiChatTurnTrigger;
     scheduledTask?: {
       reason?: { code: string; at: string; action?: string };
       /** Historical marker; the original stored text remains the display source. */
@@ -704,6 +706,14 @@ type RetiredRoutineContext = {
 };
 
 export type AiChatTurnRunConfig = {
+  /** Writer attribution, independent of the turn initiator and execution authority. */
+  writerOrigin?: import("./chat-origin").AiChatOrigin;
+  /** Immutable server-authored initiator. Absence never means a person initiated the turn. */
+  turnTrigger?: import("./chat-origin").AiChatTurnTrigger;
+  /** Source credential limits cannot be widened through another chat. */
+  sourceRestricted?: true;
+  /** Account-scoped send receipt on the existing queue, independent of personal authorship. */
+  send?: { id: string; accountId: string; keyHash: string; requestHash: string };
   /** Trusted Core review entrypoint; the executor offers only the bounded Code tool set. */
   codeReview?: { codeId: string; versionId: string };
   /** Trusted host attribution; never grants tool authority. */
@@ -1025,7 +1035,12 @@ export type AiConversationService = {
     summary: Message;
     modelId?: string | null;
   }): Promise<void>;
-  listTurnMessages(input: { conversationId: string; loopId: string; includeCompacted?: boolean }): Promise<AiStoredMessage[]>;
+  listTurnMessages(input: {
+    conversationId: string;
+    loopId: string;
+    includeCompacted?: boolean;
+    limit?: number;
+  }): Promise<AiStoredMessage[]>;
   setMessageFeedback(input: {
     conversationId: string;
     messageShortId: string;
@@ -1053,6 +1068,8 @@ export type AiConversationService = {
       resources?: AiConversationResourceObservation[];
       /** Retry source whose immutable turn-file bytes are copied into the new turn. */
       retrySourceTurnId?: string;
+      /** The person changed the retried text: the writer becomes the person. */
+      retryEdited?: true;
     },
     db?: SQL,
   ): Promise<{ turn: AiTurn; message: AiStoredMessage }>;
@@ -1132,6 +1149,8 @@ export type AiConversationService = {
     turnId: string;
     callId: string;
     event: InboundEvent;
+    /** Whether the answer comes from a person's signed-in session; otherwise a tool result restricts the turn. */
+    signedInSession: boolean;
   }): Promise<AiPendingTurnActionRecord | null>;
   markPendingTurnActionConsumedInline(input: { conversationId: string; turnId: string; callId: string }): Promise<void>;
   clearPendingTurnActions(input: { conversationId: string; turnId: string }): Promise<void>;
@@ -1140,6 +1159,8 @@ export type AiConversationService = {
     turnId: string;
     clientRequestId: string;
     text: string;
+    /** Whether the text comes from a person's signed-in session; otherwise it restricts the turn. */
+    signedInSession: boolean;
   }): Promise<AiTurnSteerEnqueueResult>;
   listTurnSteers(input: { conversationId: string; turnId: string }): Promise<AiTurnSteer[]>;
   /** Atomically make pending steers visible to the model and return them in order. */

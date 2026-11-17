@@ -25,7 +25,12 @@ import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import { AiClientToolResultSchema } from "./http";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
-import { drainQueuedMessages } from "./message-queue";
+import { drainQueuedMessages, type QueuedCodeStart } from "./message-queue";
+
+export type { QueuedCodeStart } from "./message-queue";
+export { AiMessageQueueConflict, enqueueChatMessage } from "./message-queue";
+export { AI_QUEUE_RETRYABLE_ERRORS, isAiQueueRetryableError } from "./queue-waits";
+
 import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
@@ -91,7 +96,7 @@ const enqueueAiTurn = (job: AiTurnJob): Promise<unknown> => aiTurnQueue().send({
 
 /** Wake the durable queue promptly; the periodic sweep retries a failed wake-up. */
 export const wakeAiMessageQueue = (conversationId: string): void => {
-  void drainQueuedMessages(enqueueAiTurn, conversationId).catch(() =>
+  void drainQueuedMessages(enqueueAiTurn, conversationId, running?.queuedCodeStart).catch(() =>
     log.warn("AI message queue wake-up failed", { code: "queue_wakeup_failed", conversationId }),
   );
 };
@@ -104,6 +109,11 @@ export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enq
 // ---------------------------------------------------------------------------
 
 export type SubmitAiChatTurnInput = {
+  writerOrigin?: AiChatTurnRunConfig["writerOrigin"];
+  turnTrigger?: AiChatTurnRunConfig["turnTrigger"];
+  sourceRestricted?: true;
+  send?: AiChatTurnRunConfig["send"];
+  codeOrigin?: AiChatTurnRunConfig["codeOrigin"];
   /** Only interactive Assistant HTTP handlers set this server-owned marker. */
   assistantChat?: true;
   /** Only a handler that saw a signed-in browser session sets this server-owned marker; see `AiChatTurnRunConfig`. */
@@ -136,6 +146,8 @@ export type SubmitAiChatTurnInput = {
   expectedFiles?: ReadonlyArray<{ path: string; version: number }>;
   fileSnapshot?: AiConversationFileSnapshot;
   retrySourceTurnId?: string;
+  /** The person changed the retried text: the new message is the person's own. */
+  retryEdited?: true;
 };
 
 export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
@@ -192,6 +204,11 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     resolved.profile.label + (resolved.profile.id !== resolved.profile.modelId ? ` · ${resolved.profile.variantLabel}` : "");
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
+    writerOrigin: input.writerOrigin,
+    turnTrigger: input.turnTrigger,
+    sourceRestricted: input.sourceRestricted,
+    send: input.send,
+    codeOrigin: input.codeOrigin,
     selectedSkillIds: [
       ...new Set(
         (userMessage.role === "user" ? userMessage.content : []).flatMap((part) => {
@@ -234,6 +251,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     expectedProjectId: input.expectedProjectId,
     resources: input.resources,
     retrySourceTurnId: input.retrySourceTurnId,
+    ...(input.retryEdited ? { retryEdited: true as const } : {}),
   };
 };
 
@@ -265,6 +283,8 @@ export const deliverAiInterChatMessage = async (input: {
   const { resolved } = await validateAiTurnRequest({ input: text, modelPolicy: input.modelPolicy });
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
+    writerOrigin: { kind: "chat", id: input.message.sourceChatId, turnId: input.message.sourceTurnShortId },
+    turnTrigger: { kind: "chat", id: input.message.sourceChatId },
     input: text,
     chatId: input.chatId,
     actor: input.actor,
@@ -452,6 +472,7 @@ export const submitAiTurnAction = async (input: {
 
     const resolved = await aiConversations.resolvePendingTurnAction({
       ...input,
+      signedInSession: input.signedInSession === true,
       event: { type: "approval_response", callId: input.callId, approved: input.action.approved },
     });
     if (!resolved) {
@@ -464,6 +485,7 @@ export const submitAiTurnAction = async (input: {
     if (pending.kind !== "client_tool") return { ok: false, status: 400, message: "Approval requests require an approval response." };
     const resolved = await aiConversations.resolvePendingTurnAction({
       ...input,
+      signedInSession: input.signedInSession === true,
       event: { type: "tool_result", callId: input.callId, result: input.action.result },
     });
     if (!resolved) {
@@ -591,7 +613,7 @@ const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: stri
 
 export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>): Promise<void> => {
   await aiQuotas.prune().catch(() => log.warn("Quota retention failed", { code: "quota_retention_failed" }));
-  await drainQueuedMessages(enqueueAiTurn);
+  await drainQueuedMessages(enqueueAiTurn, undefined, running?.queuedCodeStart);
   const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS });
   await Promise.all([
     ...sweep.requeued.map((job) =>
@@ -618,6 +640,7 @@ export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEv
 type AiRuntimeState = {
   listeners: Set<(event: AiTurnFinalizedEvent) => Promise<void>>;
   approvalListeners: Set<ApprovalRequestedListener>;
+  queuedCodeStart?: QueuedCodeStart;
   stop: () => void;
 };
 
@@ -629,6 +652,8 @@ export const startAiRuntime = (
     /** Host-owned tools for default Assistant turns. Register on the first runtime start. */
     tools?: readonly AiRuntimeTool[];
     concurrency?: number;
+    /** Host-owned checks for queued Code-started messages; without them such messages wait. */
+    queuedCodeStart?: QueuedCodeStart;
     onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
     onApprovalRequested?: ApprovalRequestedListener;
   } = {},
@@ -700,6 +725,7 @@ export const startAiRuntime = (
   const state: AiRuntimeState = {
     listeners,
     approvalListeners,
+    queuedCodeStart: input.queuedCodeStart,
     stop: () => {
       if (running !== state) return;
       controller.abort();

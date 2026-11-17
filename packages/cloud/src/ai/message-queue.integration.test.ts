@@ -115,8 +115,17 @@ integration(
       expect(await updateQueuedMessage(chat.id, first, "retry")).toBe(false);
       await sql`UPDATE ai.files SET bytes=${new TextEncoder().encode("original")},size=8,version=${file.version} WHERE conversation_id=${chat.id}::uuid AND path=${file.path}`;
       const third = await enqueue("Cancel me");
-      expect(await editQueuedMessage(chat.id, third, "Edited in queue")).toBe(true);
+      expect(await editQueuedMessage(chat.id, third, "Edited in queue", { signedInSession: true })).toBe(true);
       expect((await listQueuedMessages(chat.id))[0]?.content).toEqual([{ type: "text", text: "Edited in queue" }]);
+      const restricted = async (id: string) =>
+        (
+          await sql<{ restricted: boolean }[]>`SELECT COALESCE((submission#>>'{runConfig,sourceRestricted}')::boolean,false) AS restricted
+          FROM ai.queued_messages WHERE id=${id}::uuid`
+        )[0]?.restricted;
+      // A session's edit keeps the message unrestricted; an edit from cld is accepted and restricts it.
+      expect(await restricted(third)).toBe(false);
+      expect(await editQueuedMessage(chat.id, third, "Edited from the terminal", { signedInSession: false })).toBe(true);
+      expect(await restricted(third)).toBe(true);
       expect(await updateQueuedMessage(chat.id, third, "cancel")).toBe(true);
       expect(await listQueuedMessages(chat.id)).toEqual([]);
       await sql`UPDATE ai.turns SET status='completed',completed_at=now() WHERE id=${jobs[1]!.turnId}::uuid`;
@@ -136,3 +145,45 @@ integration(
   },
   30_000,
 );
+
+integration("cancellation retains the send account and trigger without assigning personal authorship", async () => {
+  await migrateAiMessageQueue();
+  const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile)
+    VALUES (${crypto.randomUUID()},'local','user') RETURNING id`;
+  const chat = await aiConversations.createConversation({ ownerUserId: user!.id });
+  const id = crypto.randomUUID();
+  const turnTrigger = { kind: "automation" as const, id: "c_report" };
+  const send = { id, accountId: user!.id, keyHash: "a".repeat(64), requestHash: "b".repeat(64) };
+  try {
+    await enqueueChatMessage(
+      id,
+      {
+        conversationId: chat.id,
+        modelId: "fixture",
+        expectedProjectId: null,
+        userMessage: { role: "user", content: [{ type: "text", text: "Automation message" }] },
+        runConfig: {
+          kind: "chat",
+          input: "Automation message",
+          writerOrigin: { kind: "automation", id: "c_report", runId: "run" },
+          turnTrigger,
+          send,
+          toolSource: { kind: "none" },
+        },
+      },
+      [{ type: "text", text: "Automation message" }],
+    );
+    expect(await updateQueuedMessage(chat.id, id, "cancel")).toBeTrue();
+    const [entry] = await sql<{ author_user_id: string | null; origin: unknown; submission: unknown; content: unknown }[]>`
+      SELECT author_user_id,origin,submission,content FROM ai.queued_messages WHERE id=${id}::uuid`;
+    expect(entry).toEqual({
+      author_user_id: null,
+      origin: { kind: "automation", id: "c_report", runId: "run" },
+      submission: { runConfig: { send, turnTrigger } },
+      content: [],
+    });
+  } finally {
+    await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+    await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
+  }
+});

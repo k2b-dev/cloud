@@ -7,6 +7,7 @@ import { startAppCatalogMaintenance } from "@k2b/cloud/services/app-catalogs";
 import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
+import { queuedCodeSendStart } from "./ai-chat-send";
 import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activation-maintenance";
 import { createCodeAuthoringChatTools } from "./code/chat-tools";
 import { codeDatabaseRetentionRuntime } from "./code/database-retention-runtime";
@@ -53,7 +54,6 @@ import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flo
 import { initializeIdentityAuthority, startAppWorkloadBroker, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "@k2b/cloud/services/outgoing-mail/runtime";
 import { startWorkflowEventRetention } from "@k2b/cloud/workflows/store";
-import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";
 import { appApprovalRuntime } from "./app-approval-runtime";
 import { rememberApps } from "./known-apps";
@@ -240,6 +240,7 @@ export const startCoreServices = async (
     await retireChatTaskSchedules();
     stopCloudAiRuntime = startAiRuntime({
       tools: createCodeAuthoringChatTools(),
+      queuedCodeStart: queuedCodeSendStart,
       onApprovalRequested: async ({ approvalId }) => {
         const [notice] = await Promise.allSettled([
           aiNotifications.notifyApprovalWaiting(approvalId),
@@ -257,13 +258,11 @@ export const startCoreServices = async (
       onTurnFinalized: async ({ turnId, status, kind }) => {
         await Promise.allSettled([
           ...(status === "completed" && kind === "chat" ? [aiNotifications.notifyTurnCompleted(turnId)] : []),
-          deliverPendingAiMessages(),
           finishCodeReviewRevision(turnId, status),
         ]);
       },
     });
     await aiMaintenanceJobs.start();
-    await deliverPendingAiMessages();
     await startOutgoingMailRuntime();
     await outgoingMailBounceRuntime.start();
     await startNotificationRuntime();

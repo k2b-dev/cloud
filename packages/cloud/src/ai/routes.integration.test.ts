@@ -362,9 +362,15 @@ suite("global AI conversation boundaries", () => {
         modelId: "test-model",
         userMessage: submission.userMessage,
         truncateFromSeq: submission.truncateFromSeq,
+        retrySourceTurnId: submission.retrySourceTurnId,
         runConfig: {
           kind: "chat",
           input: submission.input,
+          writerOrigin: submission.writerOrigin,
+          turnTrigger: submission.turnTrigger,
+          send: submission.send,
+          codeOrigin: submission.codeOrigin,
+          sourceRestricted: submission.sourceRestricted,
           toolSource: submission.toolSource ?? { kind: "none" },
           clientToolIds: submission.clientToolIds,
           client: submission.client,
@@ -372,6 +378,17 @@ suite("global AI conversation boundaries", () => {
         },
       }),
     );
+    // A person's retry keeps writer, initiator, receipt and restriction, but runs on the person's allowance.
+    const retained = {
+      writerOrigin: { kind: "person" as const, id: userId },
+      turnTrigger: { kind: "automation" as const, id: "c_report" },
+      send: { id: "11111111-1111-4111-8111-111111111112", accountId: userId, keyHash: "a".repeat(64), requestHash: "b".repeat(64) },
+      sourceRestricted: true as const,
+    };
+    const provenance = {
+      ...retained,
+      codeOrigin: { codeId: "c_report", runId: "run", title: "Report", requestId: "request", label: "Started by Code Report" },
+    };
     const selectedSkills = [{ name: "invoice", directory: "/original/.agents/skills/invoice", instructions: "Original selection." }];
     const client = { kind: "cli" as const, cwd: "/current", os: "Linux", shell: "bash", localTools: "ask" as const };
     const localContext = {
@@ -386,6 +403,7 @@ suite("global AI conversation boundaries", () => {
         runConfig: {
           kind: "chat",
           input: "Retry me",
+          ...provenance,
           toolSource: { kind: "default" },
           clientToolIds: ["local_bash", ...AI_LOCAL_TOOL_NAMES],
           client: { ...client, cwd: "/original" },
@@ -400,11 +418,15 @@ suite("global AI conversation boundaries", () => {
       });
       expect(response.status).toBe(201);
       expect(submit).toHaveBeenCalledTimes(1);
+      expect(submit.mock.calls[0]?.[0]).toMatchObject(retained);
+      expect(submit.mock.calls[0]?.[0].codeOrigin).toBeUndefined();
       const active = await aiConversations.getActiveTurn({ conversationId: chat.id });
       expect(active).not.toBeNull();
       if (!active) throw new Error("Missing retry turn");
       const config = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: active.turn.id });
       if (!config || config.kind !== "chat") throw new Error("Missing retry run config");
+      expect(config).toMatchObject(retained);
+      expect(config.codeOrigin).toBeUndefined();
       expect(config.clientToolIds).toEqual(local ? ["local_read", "code_secret"] : []);
       expect(config.client).toEqual(local ? client : undefined);
       expect(config.localContext).toEqual(local ? { ...localContext, selectedSkills } : undefined);

@@ -39,8 +39,8 @@ The default 200 bridge-message budget includes logs, progress, RPCs and terminal
 messages; keep diagnostics compact. At most 32 host messages may be pending.
 
 Scheduled chat routines are retired. Rebuild timed work as reviewed personal
-Code using `app.schedule` with `timeZone`, then `core.ai.chat.run` for an AI turn
-or `core.ai.chat.deliver` for a prepared result. Old routine grants do not transfer.
+Code using `app.schedule` with `timeZone`, then `core.ai.chat.send` for a Gustav turn. Put prepared results in `context`
+and fixed instructions in `text`; Gustav answers briefly. Old routine grants do not transfer.
 Studio RSQL `database` grants are unavailable; use application capabilities.
 No replacement database is created. Studio HTML checks, actions, presentations
 and standalone apps have been retired.

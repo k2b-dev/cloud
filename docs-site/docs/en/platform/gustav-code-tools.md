@@ -124,9 +124,9 @@ replacement through the same authoring tools, with fictional tests. An export
 is evidence: its grants, enabled flags and resource IDs grant no access.
 
 Mail arrival rules use the mailbox event and Mail capabilities. Routines use a
-personal schedule with an explicit time zone. Use `core.ai.chat.run` for a
-Gustav turn in the selected Assistant chat, or `core.ai.chat.deliver` to deliver
-a prepared result there. See [Routines became Code](/en/docs/operations/routines-to-code)
+personal schedule with an explicit time zone. Use `core.ai.chat.send` for a
+Gustav turn in the selected Assistant chat. For a prepared result, put it in
+`context` and ask for a brief confirmation in `text`. See [Routines became Code](/en/docs/operations/routines-to-code)
 for the supported mapping and unresolved inputs. Gustav checks the live SDK
 before promising equivalent behavior.
 

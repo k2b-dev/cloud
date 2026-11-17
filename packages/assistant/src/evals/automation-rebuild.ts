@@ -38,23 +38,23 @@ export const AUTOMATION_REBUILD_CASES = [
     mockExamples: AUTOMATION_REBUILD_MOCKS.slice(1),
     expectedInvocation: {
       call: {
-        capability: "core.ai.chat.run",
+        capability: "core.ai.chat.send",
         target: { type: "core.ai.chat", id: agentRoutine.items[0]!.targetChat.id },
         refs: {},
-        input: { prompt: agentRoutine.items[0]!.prompt },
+        input: { text: agentRoutine.items[0]!.prompt },
       },
       metadata: { idempotencyKey: "routine-agent:monday-review" },
     } satisfies CodeSdkInvocation,
     request:
-      "Explain this exported open-ended routine and draft equivalent personal Code owned by the routine's owner. Preserve the exact prompt, recurring Europe/Berlin wall-clock schedule and original Gustav chat. Schedule core.ai.chat.run, with tools, within the owner's budget and approvals. Discover its actual SDK contract; if unavailable, explain the dependency and keep an inactive draft. Use only fictional resources and mocks for tests. Keep the replacement inactive.",
+      "Explain this exported open-ended routine and draft equivalent personal Code owned by the routine's owner. Preserve the exact prompt, recurring Europe/Berlin wall-clock schedule and original Gustav chat. Schedule core.ai.chat.send, with tools, within the owner's budget and approvals. Discover its actual SDK contract; if unavailable, explain the dependency and keep an inactive draft. Use only fictional resources and mocks for tests. Keep the replacement inactive.",
     review: [
       "Explains paused source state, prompt, owner, original Gustav chat, cron 0 9 * * 1 in Europe/Berlin, Mail query grants and fixed-input restrictions, and the mandate's historical status.",
-      "Uses personal Code owned by the routine owner and app.schedule with cron and timeZone, with a stable name as in the Skill's schedules/chat.run pattern. Matches the capability, target and prompt in expectedInvocation; its key value is illustrative. core.ai.chat.run targets core.ai.chat ExMndy, input is {prompt} with the exact exported instructions, optional context is source data only, and the required idempotency key is invocation metadata (supplied alongside prompt in the generated SDK). No chatId or grants in domain input.",
+      "Uses personal Code owned by the routine owner and app.schedule with cron and timeZone, with a stable name as in the Skill's schedules/chat.send pattern. Matches the capability, target and prompt in expectedInvocation; its key value is illustrative. core.ai.chat.send targets core.ai.chat ExMndy, input is {text} with the exact exported instructions, optional context is source data only, and the required idempotency key is invocation metadata (supplied alongside text in the generated SDK). No chatId or grants in domain input.",
       "Retains the tool-using Gustav turn and its chat context; does not substitute core.ai.generate, delivery-only work, a new chat, general Chat, or a precompiled sequence of tool choices.",
       "Explains that the old mandate allowed three Mail queries and no actions: conversation.list and message.list were fixed to ExRevw, while message.read had no mailbox restriction. The new turn uses the owner's current tools across their accessible resources and can request changes under chat approvals; it is not confined to that query list or mailbox. Requires the person to review this difference before activation; imports no authority.",
-      "Uses fictional core.ai.chat.run replies to test exact prompt/chat, owner mismatch, budget refusal, chat_busy and approval waiting. Explains {id,chatId,status,reason,origin}; queued/running is admission, not completion. Reads a later snapshot through core.ai.chat.run.read on the same chat with {id} and unwraps its Query data, without polling for human approval. Keeps Action replies direct and Query mock data unwrapped, with optional page beside ok. If the handler retries, tests same-key recovery and changed-input conflict within one entrypoint invocation. Uses separate fixtures for independent Code runs: fixture runs share fake receipts and do not prove cross-run deduplication. Never adds duplicate starts just to pass a test. Checks DST boundaries without a fixed UTC-offset approximation or live agent calls.",
+      "Uses fictional core.ai.chat.send replies to test exact prompt/chat, owner mismatch, budget refusal, queue-full refusal and approval waiting. Explains {id,chatId,status,reason,origin}; queued/running is admission, not completion. Reads a later snapshot through core.ai.chat.read with {id: chatId, message: sent.id} and unwraps its Query data, without polling for human approval. Keeps Action replies direct and Query mock data unwrapped, with optional page beside ok. If the handler retries, tests same-key recovery and changed-input conflict within one entrypoint invocation. Uses separate fixtures for independent Code runs: fixture runs share fake receipts and do not prove cross-run deduplication. Never adds duplicate starts just to pass a test. Checks DST boundaries without a fixed UTC-offset approximation or live agent calls.",
       "Explains normal owner Assistant allowance and actual-usage accounting in existing Code and Code-owner daily USD limits; starting a turn does not debit the full Code attempt allowance.",
-      "If local cron timezone support or core.ai.chat.run is missing, names the precise dependency and retains an inactive draft. This is a blocked evaluation, never a successful-submission pass.",
+      "If local cron timezone support or core.ai.chat.send is missing, names the precise dependency and retains an inactive draft. This is a blocked evaluation, never a successful-submission pass.",
     ],
   },
 ] as const;
