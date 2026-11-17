@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { browserName, launchBrowser, settled as settle } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // An open dialog follows its content's height: the frame folds from the height the eye sees to the new one, its top
 // edge stays, and new content fades in. Heights over time need a real engine.
@@ -117,7 +117,7 @@ const load = async (
   );
   await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-  await settle(page);
+  await settled(page);
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   return page;
 };
@@ -291,15 +291,15 @@ describe(`${browserName} the frame follows its content`, () => {
       const top = await page.locator("dialog").evaluate((dialog) => dialog.getBoundingClientRect().top);
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-      await settle(page);
+      await settled(page);
       expect(await page.locator("dialog").evaluate((dialog) => dialog.getBoundingClientRect().top)).toBeCloseTo(top, 0);
       await page.evaluate(() => window.visualViewport?.dispatchEvent(new Event("resize")));
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-      await settle(page);
+      await settled(page);
       expect(await page.locator("dialog").evaluate((dialog) => dialog.getBoundingClientRect().top)).toBeCloseTo(top, 0);
       await page.setViewportSize({ width: 1280, height: 400 });
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-      await settle(page);
+      await settled(page);
       const box = await page.locator("dialog").boundingBox();
       expect(box!.y).toBeLessThan(top);
       expect(box!.y + box!.height).toBeLessThanOrEqual(400);
@@ -314,7 +314,7 @@ describe(`${browserName} the frame follows its content`, () => {
         () =>
           new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))),
       );
-      await settle(page);
+      await settled(page);
       const visible = await page.locator("dialog").boundingBox();
       expect(visible!.y).toBeGreaterThanOrEqual(70);
       expect(visible!.y + visible!.height).toBeLessThanOrEqual(370);
@@ -328,13 +328,13 @@ describe(`${browserName} the frame follows its content`, () => {
     try {
       await watch(page, "add");
       await page.getByRole("textbox", { name: "Name" }).focus();
-      await settle(page);
+      await settled(page);
       const shrink = await watch(page, "remove");
       expect(shrink.frameMotion).toBe(0);
       expect(shrink.samples.at(-1)!.height).toBe(shrink.before.height);
       await page.getByRole("button", { name: "Save", exact: true }).focus();
       await page.waitForFunction((height) => document.querySelector("dialog")!.offsetHeight < height - 50, shrink.before.height);
-      await settle(page);
+      await settled(page);
     } finally {
       await page.context().close();
     }
@@ -350,10 +350,10 @@ describe(`${browserName} the frame follows its content`, () => {
       await page.evaluate(() => (window as unknown as HeightWindow).openPicker());
       await page.getByRole("combobox", { name: "Many targets" }).click();
       await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
-      await settle(page);
+      await settled(page);
       const search = page.getByRole("searchbox", { name: "Search", exact: true });
       await search.focus();
-      await settle(page);
+      await settled(page);
       const result = await search.evaluate(async (input) => {
         const dialog = document.querySelector("dialog")!;
         const before = input.getBoundingClientRect().top;
@@ -467,7 +467,7 @@ describe(`${browserName} the frame follows its content`, () => {
       const top = await page.locator("dialog").evaluate((dialog) => dialog.getBoundingClientRect().top);
       for (const modal of [false, true]) {
         await page.evaluate((modal) => (window as unknown as HeightWindow).setModal(modal), modal);
-        await settle(page);
+        await settled(page);
         expect(await page.locator("dialog").evaluate((dialog) => dialog.getBoundingClientRect().top)).toBeCloseTo(top, 0);
       }
     } finally {
@@ -485,7 +485,7 @@ describe(`${browserName} the frame follows its content`, () => {
         await page.addScriptTag({ content: script });
         await page.evaluate((detents) => (window as unknown as HeightWindow).openSheet(true, detents), detents);
         await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
-        await settle(page);
+        await settled(page);
         await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
         await watch(page, "add");
         expect(await page.locator("dialog").evaluate((dialog) => dialog.style.top)).not.toBe("");
@@ -496,7 +496,7 @@ describe(`${browserName} the frame follows its content`, () => {
               requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
             ),
         );
-        await settle(page);
+        await settled(page);
         const geometry = await page.locator("dialog").evaluate((dialog) => ({
           top: dialog.style.top,
           bottom: dialog.getBoundingClientRect().bottom - new DOMMatrixReadOnly(getComputedStyle(dialog).transform).m42,
@@ -512,7 +512,7 @@ describe(`${browserName} the frame follows its content`, () => {
               requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
             ),
         );
-        await settle(page);
+        await settled(page);
         const back = await page.locator("dialog").evaluate((dialog) => {
           const rect = dialog.getBoundingClientRect();
           return { top: dialog.style.top, center: rect.top + rect.height / 2 };
@@ -605,7 +605,7 @@ describe(`${browserName} the frame follows its content`, () => {
         () =>
           new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))),
       );
-      await settle(page);
+      await settled(page);
       const heights = await page.evaluate(() => {
         const dialog = document.querySelector("dialog")!;
         const held = dialog.offsetHeight;
@@ -656,7 +656,7 @@ describe(`${browserName} the frame follows its content`, () => {
       await page.addScriptTag({ content: script });
       await page.evaluate(() => (window as unknown as HeightWindow).openForm());
       await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
-      await settle(page);
+      await settled(page);
       const folds = await page.evaluate(async () => {
         const motion = window as unknown as HeightWindow & { holdSizeReports: () => void; releaseSizeReports: () => void };
         motion.holdSizeReports();
@@ -850,12 +850,12 @@ describe(`${browserName} the frame follows its content`, () => {
     try {
       await watch(page, "add");
       await page.evaluate(() => (window as unknown as HeightWindow).placeAt(90, 120));
-      await settle(page);
+      await settled(page);
       const placed = await page.evaluate(() => document.querySelector("dialog")!.getBoundingClientRect().toJSON() as DOMRect);
       await page.setViewportSize({ width: 1200, height: 760 });
       // The frame takes a resize in the next frame.
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      await settle(page);
+      await settled(page);
       const after = await page.evaluate(() => document.querySelector("dialog")!.getBoundingClientRect().toJSON() as DOMRect);
       expect({ top: after.top, left: after.left }).toEqual({ top: placed.top, left: placed.left });
     } finally {
@@ -932,7 +932,7 @@ describe(`${browserName} the frame follows its content`, () => {
       await page.addScriptTag({ content: script });
       await page.evaluate(() => (window as unknown as HeightWindow).openForm(false, true));
       await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
-      await settle(page);
+      await settled(page);
       await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       const grow = await watch(page, "add", 30);
       expect(grow.frameMotion).toBeGreaterThan(0);
@@ -989,7 +989,7 @@ describe(`${browserName} the frame follows its content`, () => {
       expect(result.busy.top).toBeCloseTo(result.before.top, 0);
       expect(result.loaded.top).toBeCloseTo(result.before.top, 0);
       // Once loading has settled, ordinary edits fold again.
-      await settle(page);
+      await settled(page);
       expect((await watch(page, "add")).frameMotion).toBeGreaterThan(0);
     } finally {
       await page.context().close();
@@ -1017,7 +1017,7 @@ describe(`${browserName} the frame follows its content`, () => {
         (window as unknown as HeightWindow).addNotice();
         content.removeAttribute("aria-busy");
       });
-      await settle(page);
+      await settled(page);
       expect(await page.evaluate(() => Reflect.get(window, "frameErrors"))).toEqual([]);
       expect(await page.locator("dialog").getAttribute("data-k2b-frame-motion")).toBeNull();
     } finally {
