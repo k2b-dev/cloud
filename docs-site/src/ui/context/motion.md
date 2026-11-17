@@ -58,10 +58,18 @@ stays in view throughout. Between folds it holds its height. Non-control loading
 regions marked `aria-busy="true"`, the change that clears busy, and changes
 before the entrance has finished and the first rest take their new height
 without a fold; centred frames stay centred before first rest. Loading buttons do
-not suppress a notice fold. A focused text field prevents shrinking until focus
-leaves the level's text fields. Content already animating its height finishes
-before the frame measures its final height. A viewport resize keeps the top
-edge and only clamps into the visible area.
+not suppress a notice fold. After first rest, a focused text input (including search, email, URL, phone,
+password and number), textarea or editable text region prevents animated
+shrinking until focus leaves those fields. Checkboxes and switches do not.
+Loading and pre-rest changes still take their natural height. Focusing a text
+field during a shrink stops it at its visible height. A pressed pointer defers
+the focusout fold until release or cancellation and the next frame, so footer
+clicks land before the footer moves. Natural changes during a fold retarget it
+from the visible size. Running child height or grid-row animations finish
+before the frame folds to their final size; paused children do not block it.
+A viewport resize keeps the top edge and only clamps into the visible area;
+during a fold it retargets the motion. Viewport and anchor corrections take
+precedence over child animations. Pinch-zoom viewport changes are ignored.
 
 Choose the duration by what changes. Use the standard curve for ordinary
 entry motion. A large surface that grows, shrinks, or moves uses the morph

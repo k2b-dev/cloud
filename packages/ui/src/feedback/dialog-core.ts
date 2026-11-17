@@ -757,6 +757,7 @@ export const createDialogCore = () => {
                   },
                   setPosition: (position) => {
                     if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) return;
+                    if (entry.position?.x === position?.x && entry.position?.y === position?.y) return;
                     if (state.stack[state.stack.length - 1] === entry) {
                       state.motion?.position();
                       dialog.style.inset = "";

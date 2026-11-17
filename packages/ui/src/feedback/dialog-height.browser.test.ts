@@ -12,7 +12,7 @@ const entry = resolve(import.meta.dir, "dialog-height.fixture.ts");
 const fixture = `
 import { createComponent, createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { BottomSheet, bottomSheetOptions, bottomSheetAdaptiveOptions, Button, dialogCore, PanelDialog, RichSelect, panelDialogFixedOptions, panelDialogOptions } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { BottomSheet, bottomSheetOptions, bottomSheetAdaptiveOptions, Button, Chat, dialogCore, PanelDialog, RichSelect, panelDialogFixedOptions, panelDialogOptions } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 window.holdMotion = () => {
   const animate = Element.prototype.animate;
   Element.prototype.animate = function (...args) { const animation = animate.apply(this, args); animation.pause(); return animation; };
@@ -51,7 +51,7 @@ window.openForm = (fixed = false, top = false, previewMode) => void dialogCore.o
     return body;
   } }),
   createComponent(PanelDialog.Footer, { get children() {
-    return createComponent(Button, { get loading() { return saving(); }, children: "Save" });
+    return createComponent(Button, { get loading() { return saving(); }, children: "Save", onClick: () => { window.saved = (window.saved || 0) + 1; } });
   } }),
 ]; } });
 }, fixed ? panelDialogFixedOptions : { ...panelDialogOptions, initialFocus: "none", panelClassName: panelDialogOptions.panelClassName + (top ? " top-anchored" : "") });
@@ -66,6 +66,15 @@ window.addNotice = (lines = 3) => {
   notice.style.overflow = "hidden";
   document.querySelector("dialog > :last-child [data-content]").append(notice);
 };
+window.mountTasks = () => {
+  const [open, setOpen] = createSignal(false);
+  window.toggleTasks = () => setOpen(!open());
+  return render(() => createComponent(Chat.Tasks, {
+    items: [{ id: "one", content: "First task", status: "pending" }, { id: "two", content: "Second task", status: "pending" }],
+    get open() { return open(); }, onOpenChange: setOpen, label: "Plan", progressLabel: "0 of 2",
+    statusLabels: { pending: "Pending", in_progress: "Running", completed: "Done", cancelled: "Stopped" },
+  }), document.querySelector("[data-content]"));
+};
 window.removeNotices = () => { for (const notice of document.querySelectorAll("[data-notice]")) notice.remove(); };
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
@@ -74,6 +83,9 @@ const script = await build.outputs[0]!.text();
 
 type HeightWindow = Window & {
   holdMotion: () => void;
+  mountTasks: () => void;
+  toggleTasks: () => void;
+  saved?: number;
   openPicker: () => void;
   openForm: (fixed?: boolean, top?: boolean, previewMode?: "flow" | "overlay") => void;
   openSheet: (adaptive?: boolean, detents?: boolean) => void;
@@ -442,7 +454,7 @@ describe(`${browserName} the frame follows its content`, () => {
         const child = document.createElement("div");
         child.style.height = "100px";
         const animation = child.animate([{ height: "0px" }, { height: "100px" }], { duration: 280 });
-        animation.pause();
+        animation.playbackRate = 0;
         animation.currentTime = 140;
         content.append(child);
         const frames = () =>
@@ -536,6 +548,7 @@ describe(`${browserName} the frame follows its content`, () => {
             animation.pause();
             return animation;
           };
+          if (reset) (window as unknown as HeightWindow).placeAt(90, 120);
           (window as unknown as HeightWindow).addNotice();
           await new Promise<void>((resolve) =>
             requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
@@ -724,60 +737,53 @@ describe(`${browserName} the frame follows its content`, () => {
     }
   });
 
-  test("a change during the motion continues from where the frame is", async () => {
+  test("a natural change retargets before the first fold ends, from the visible height", async () => {
     const page = await load();
     try {
-      // settled: the frame's heights while the folds run are the subject.
-      const twice = await page.evaluate(
-        () =>
-          new Promise<{ before: number; mid: number; heights: number[] }>((resolve) => {
-            const motion = window as unknown as HeightWindow;
-            const dialog = document.querySelector("dialog")!;
-            const before = dialog.getBoundingClientRect().height;
-            let mid = 0;
-            // Wait for the scheduled fold, then seek to its midpoint: the second notice arrives halfway through it,
-            // independently of observer delivery and however late the next frame comes.
-            const halfway = () => {
-              const fold = dialog
-                .getAnimations()
-                .find(
-                  (animation) =>
-                    animation.timeline === document.timeline &&
-                    animation.effect instanceof KeyframeEffect &&
-                    animation.effect.getKeyframes().some((keyframe) => "height" in keyframe),
-                );
-              if (!fold) {
-                requestAnimationFrame(halfway);
-                return;
-              }
-              fold.pause();
-              fold.currentTime = Number(fold.effect?.getComputedTiming().endTime) / 2;
-              mid = dialog.getBoundingClientRect().height;
-              motion.addNotice();
-              fold.play();
-              const heights: number[] = [];
-              let still = 0;
-              const sample = () => {
-                heights.push(dialog.getBoundingClientRect().height);
-                const moving = dialog
-                  .getAnimations()
-                  .some((animation) => animation.timeline === document.timeline && animation.playState === "running");
-                still = moving ? 0 : still + 1;
-                if (still < 2) requestAnimationFrame(sample);
-                else resolve({ before, mid, heights });
-              };
-              requestAnimationFrame(sample);
-            };
-            motion.addNotice();
-            requestAnimationFrame(halfway);
-          }),
-      );
-      // The first fold was halfway when the second notice came; the frame went on from there, never jumping.
-      expect(twice.mid).toBeGreaterThan(twice.before + 1);
-      expect(twice.mid).toBeLessThan(twice.before + 59);
-      for (const [index, height] of twice.heights.entries())
-        expect(height).toBeGreaterThanOrEqual((twice.heights[index - 1] ?? twice.mid) - 0.5);
-      expect(twice.heights.at(-1)! - twice.before).toBeCloseTo(120, 0);
+      // settled: both folds are held from creation; their retargeted start is the subject.
+      const result = await page.evaluate(async () => {
+        const dialog = document.querySelector("dialog")!;
+        const motion = window as unknown as HeightWindow;
+        const folds: Animation[] = [];
+        const animate = dialog.animate.bind(dialog);
+        dialog.animate = (...args) => {
+          const animation = animate(...args);
+          animation.pause();
+          folds.push(animation);
+          return animation;
+        };
+        const frames = async () => {
+          for (let i = 0; i < 5; i++) await new Promise(requestAnimationFrame);
+        };
+        const before = dialog.offsetHeight;
+        motion.addNotice();
+        await frames();
+        const first = folds[0]!;
+        first.currentTime = Number(first.effect!.getComputedTiming().endTime) / 2;
+        const mid = dialog.offsetHeight;
+        let finished = false;
+        void first.finished.then(
+          () => {
+            finished = true;
+          },
+          () => {},
+        );
+        motion.addNotice();
+        await frames();
+        const second = folds[1];
+        return {
+          count: folds.length,
+          finished,
+          mid,
+          start: dialog.offsetHeight,
+          before,
+          target: second && Number.parseFloat(String((second.effect as KeyframeEffect).getKeyframes().at(-1)!.height)),
+        };
+      });
+      expect(result.count).toBe(2);
+      expect(result.finished).toBe(false);
+      expect(result.start).toBeCloseTo(result.mid, 0);
+      expect(result.target! - result.before).toBeCloseTo(120, 0);
     } finally {
       await page.context().close();
     }
@@ -1043,6 +1049,462 @@ describe(`${browserName} the frame follows its content`, () => {
       expect(grow.frameMotion).toBe(0);
       expect(grow.samples[0]!.height - grow.before.height).toBeCloseTo(60, 0);
       expect(Math.abs(grow.samples[0]!.top - grow.before.top)).toBeLessThan(1);
+    } finally {
+      await page.context().close();
+    }
+  });
+  for (const type of ["checkbox", "radio", "range", "button"])
+    test(`focused input[type=${type}] does not hold the frame height`, async () => {
+      const page = await load();
+      try {
+        await watch(page, "add");
+        await page.evaluate((type) => {
+          const input = document.createElement("input");
+          input.type = type;
+          document.querySelector("[data-content]")!.append(input);
+          input.focus();
+        }, type);
+        await settled(page);
+        const result = await watch(page, "remove");
+        expect(result.frameMotion).toBeGreaterThan(0);
+        expect(result.samples.at(-1)!.height).toBeCloseTo(result.before.height - 60, 0);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+  test("a pressed footer button stays under the pointer until its click has landed", async () => {
+    const page = await load();
+    try {
+      await watch(page, "add");
+      await page.getByRole("textbox", { name: "Name" }).focus();
+      await watch(page, "remove");
+      await settled(page);
+      const save = page.getByRole("button", { name: "Save", exact: true });
+      const before = (await save.boundingBox())!;
+      await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+      await page.mouse.down();
+      // settled: motion must stay deferred across frames while the actual mouse is pressed.
+      await page.evaluate(async () => {
+        for (let i = 0; i < 5; i++) await new Promise(requestAnimationFrame);
+      });
+      // settled: the pressed button must stay put while focusout would otherwise shrink the frame.
+      expect((await save.boundingBox())!.y).toBeCloseTo(before.y, 0);
+      await page.mouse.up();
+      expect(await page.evaluate(() => (window as unknown as HeightWindow).saved)).toBe(1);
+      await settled(page);
+      expect((await save.boundingBox())!.y).toBeCloseTo(before.y - 60, 0);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("removing the only natural body root shrinks the held frame", async () => {
+    const page = await load();
+    try {
+      await watch(page, "add", 8);
+      await settled(page);
+      const before = await page.locator("dialog").evaluate((dialog) => dialog.offsetHeight);
+      await page.locator("[data-content]").evaluate((content) => content.remove());
+      await settled(page);
+      expect(await page.locator("dialog").evaluate((dialog) => dialog.offsetHeight)).toBeLessThan(before - 150);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  for (const kind of ["input", "textarea", "contenteditable"])
+    test(`focusing ${kind} stops a running shrink at its visible height`, async () => {
+      const page = await load();
+      try {
+        await watch(page, "add", 8);
+        // settled: the shrink clock is held before focus is transferred into it.
+        const result = await page.evaluate(async (kind) => {
+          const motion = window as unknown as HeightWindow;
+          const dialog = document.querySelector("dialog")!;
+          const animate = dialog.animate.bind(dialog);
+          let fold: Animation | undefined;
+          dialog.animate = (...args) => {
+            fold = animate(...args);
+            fold.pause();
+            return fold;
+          };
+          motion.removeNotices();
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          fold!.currentTime = Number(fold!.effect!.getComputedTiming().endTime) / 2;
+          const before = dialog.offsetHeight;
+          const shrinking = fold!;
+          const field =
+            kind === "input" ? dialog.querySelector("input")! : document.createElement(kind === "textarea" ? "textarea" : "div");
+          if (kind === "contenteditable") field.contentEditable = "true";
+          if (!field.isConnected) dialog.querySelector("[data-content]")!.append(field);
+          field.focus();
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          return { before, after: dialog.offsetHeight, state: shrinking.playState };
+        }, kind);
+        expect(result.state).toBe("idle");
+        expect(result.after).toBeCloseTo(result.before, 0);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+  test("focused loading content takes its natural smaller height without a fold", async () => {
+    const page = await load();
+    try {
+      await watch(page, "add", 8);
+      const result = await page.evaluate(async () => {
+        const motion = window as unknown as HeightWindow;
+        document.querySelector<HTMLInputElement>("[data-content] input")!.focus();
+        const dialog = document.querySelector("dialog")!;
+        const before = dialog.offsetHeight;
+        document.querySelector("[data-content]")!.setAttribute("aria-busy", "true");
+        motion.removeNotices();
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        return { before, after: dialog.offsetHeight, folding: dialog.hasAttribute("data-k2b-frame-motion") };
+      });
+      expect(result.folding).toBe(false);
+      expect(result.before - result.after).toBeCloseTo(160, 0);
+      await settled(page);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("pinch zoom geometry is ignored, including the next content measurement", async () => {
+    const page = await load();
+    try {
+      const before = await page.locator("dialog").boundingBox();
+      await page.evaluate(() => {
+        const viewport = window.visualViewport!;
+        Object.defineProperties(viewport, {
+          scale: { configurable: true, value: 2 },
+          height: { configurable: true, value: 200 },
+          offsetTop: { configurable: true, value: 80 },
+        });
+        viewport.dispatchEvent(new Event("resize"));
+      });
+      await settled(page);
+      expect((await page.locator("dialog").boundingBox())!.y).toBeCloseTo(before!.y, 0);
+      const growth = await watch(page, "add");
+      for (const sample of growth.samples) expect(sample.top).toBeCloseTo(before!.y, 0);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("resize during a held fold retargets from visible geometry", async () => {
+    const page = await load();
+    try {
+      // settled: the visible first frame of the replacement fold is the subject.
+      const result = await page.evaluate(async () => {
+        const dialog = document.querySelector("dialog")!;
+        const folds: Animation[] = [];
+        const animate = dialog.animate.bind(dialog);
+        dialog.animate = (...args) => {
+          const animation = animate(...args);
+          animation.pause();
+          folds.push(animation);
+          return animation;
+        };
+        (window as unknown as HeightWindow).addNotice(10);
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        const first = folds[0]!;
+        first.currentTime = Number(first.effect!.getComputedTiming().endTime) / 2;
+        const before = dialog.getBoundingClientRect().toJSON() as DOMRect;
+        window.dispatchEvent(new Event("resize"));
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        return { before, after: dialog.getBoundingClientRect().toJSON() as DOMRect, count: folds.length, state: first.playState };
+      });
+      expect(result.count).toBe(2);
+      expect(result.state).toBe("idle");
+      expect(result.after.height).toBeCloseTo(result.before.height, 0);
+      expect(result.after.top).toBeCloseTo(result.before.top, 0);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("paused child height motion cannot block following or viewport correction", async () => {
+    const page = await load();
+    try {
+      // settled: a paused child and a held frame expose whether the waiting barrier incorrectly blocks progress.
+      const result = await page.evaluate(async () => {
+        const dialog = document.querySelector("dialog")!;
+        const child = document.createElement("div");
+        child.style.height = "120px";
+        document.querySelector("[data-content]")!.append(child);
+        const animation = child.animate([{ height: "0px" }, { height: "120px" }], { duration: 280 });
+        animation.pause();
+        animation.currentTime = 140;
+        (window as unknown as HeightWindow).holdMotion();
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        const follows = dialog.hasAttribute("data-k2b-frame-motion");
+        const viewport = window.visualViewport!;
+        Object.defineProperties(viewport, { height: { configurable: true, value: 370 }, offsetTop: { configurable: true, value: 0 } });
+        // Running child motion must not block corrections either.
+        animation.playbackRate = 0;
+        animation.play();
+        viewport.dispatchEvent(new Event("resize"));
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        const fold = dialog.getAnimations().find((item) => item.effect instanceof KeyframeEffect && item.effect.target === dialog)!;
+        fold.finish();
+        await new Promise(requestAnimationFrame);
+        return { follows, bottom: dialog.getBoundingClientRect().bottom };
+      });
+      expect(result.follows).toBe(true);
+      expect(result.bottom).toBeLessThanOrEqual(370.5);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("real ChatTasks grid motion finishes before one final frame fold", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => (window as unknown as HeightWindow).mountTasks());
+      await settled(page);
+      // settled: freeze the running CSS transition's timeline at its middle, without pausing its play state.
+      const result = await page.evaluate(async () => {
+        const dialog = document.querySelector("dialog")!;
+        let folds = 0;
+        const animate = dialog.animate.bind(dialog);
+        dialog.animate = (...args) => {
+          folds++;
+          const animation = animate(...args);
+          animation.pause();
+          return animation;
+        };
+        const child = document.querySelector(".k2b-chat-tasks__fold")!;
+        getComputedStyle(child).gridTemplateRows;
+        (window as unknown as HeightWindow).toggleTasks();
+        const animation = child.getAnimations()[0]!;
+        animation.playbackRate = 0;
+        animation.currentTime = 140;
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        const during = folds;
+        animation.finish();
+        await animation.finished;
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        return { during, folds };
+      });
+      expect(result).toEqual({ during: 0, folds: 1 });
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("arrival batches expire and drop detached, nested and overlay content", async () => {
+    const page = await load();
+    try {
+      const result = await page.evaluate(async () => {
+        const sets: Set<unknown>[] = [];
+        const add = Set.prototype.add;
+        Set.prototype.add = function (value: unknown) {
+          if (value instanceof HTMLElement && value.hasAttribute("data-arrival-token") && !sets.includes(this)) sets.push(this);
+          return add.call(this, value);
+        };
+        try {
+          const content = document.querySelector<HTMLElement>("[data-content]")!;
+          const token = () => {
+            const node = document.createElement("span");
+            node.dataset.arrivalToken = "";
+            return node;
+          };
+          const old = token();
+          content.append(old);
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          const expired = sets.every((set) => !set.has(old));
+          for (let i = 0; i < 5; i++) {
+            const wrapper = document.createElement("div");
+            content.append(wrapper);
+            wrapper.append(token());
+            await Promise.resolve();
+            wrapper.remove();
+            await Promise.resolve();
+          }
+          const detached = sets.some((set) => [...set].some((node) => node instanceof HTMLElement && !node.isConnected));
+          const overlay = document.createElement("div");
+          overlay.style.position = "absolute";
+          const hidden = document.createElement("div");
+          hidden.setAttribute("aria-hidden", "true");
+          content.append(overlay, hidden);
+          overlay.append(token());
+          hidden.append(token());
+          await Promise.resolve();
+          const overlays = sets.some((set) =>
+            [...set].some((node) => node instanceof Node && (overlay.contains(node) || hidden.contains(node))),
+          );
+          (window as unknown as HeightWindow).holdMotion();
+          (window as unknown as HeightWindow).addNotice();
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          return { expired, detached, overlays, oldFades: old.getAnimations().length };
+        } finally {
+          Set.prototype.add = add;
+        }
+      });
+      expect(result).toEqual({ expired: true, detached: false, overlays: false, oldFades: 0 });
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("natural flex rows are observation leaves and removals are handled once per batch", async () => {
+    const page = await (await browser.newContext(desktop)).newPage();
+    try {
+      await page.setContent(`<html><head><style>${css}</style></head><body class="k2b-ui"></body></html>`);
+      await page.evaluate(() => {
+        const observed: Element[] = [];
+        Object.assign(window, { observed });
+        const observe = ResizeObserver.prototype.observe;
+        ResizeObserver.prototype.observe = function (node, ...args) {
+          observed.push(node);
+          return observe.call(this, node, ...args);
+        };
+      });
+      await page.addScriptTag({ content: script });
+      await page.evaluate(() => {
+        (window as unknown as HeightWindow).openForm();
+        const content = document.querySelector<HTMLElement>("[data-content]")!;
+        content.style.display = "flex";
+        content.style.flexDirection = "column";
+        content.style.flex = "1 1 auto";
+        for (let i = 0; i < 50; i++) {
+          const row = document.createElement("div");
+          row.dataset.naturalRow = "";
+          row.style.display = "grid";
+          row.innerHTML = "<span>Row</span>";
+          content.append(row);
+        }
+      });
+      await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
+      await settled(page);
+      const rows = await page.evaluate(() => {
+        const observed = Reflect.get(window, "observed") as Element[];
+        return {
+          roots: observed.filter((node) => node.matches("[data-natural-row]")).length,
+          descendants: observed.filter((node) => node.matches("[data-natural-row] *")).length,
+        };
+      });
+      const removalScans = await page.evaluate(async () => {
+        let scans = 0;
+        for (const row of document.querySelectorAll("[data-natural-row]")) {
+          const contains = row.contains.bind(row);
+          row.contains = (node) => {
+            scans++;
+            return contains(node);
+          };
+          row.remove();
+        }
+        await Promise.resolve();
+        return scans;
+      });
+      expect({ rows, removalScans }).toEqual({ rows: { roots: 50, descendants: 0 }, removalScans: 0 });
+      await settled(page);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  for (const positioned of [false, true])
+    test(`unchanged setPosition leaves the running fold alone (positioned ${positioned})`, async () => {
+      const page = await load();
+      try {
+        // settled: the held fold must survive an identical value from a position observer.
+        const result = await page.evaluate(async (positioned) => {
+          const motion = window as unknown as HeightWindow;
+          if (positioned) motion.placeAt(90, 120);
+          motion.holdMotion();
+          motion.addNotice();
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          const dialog = document.querySelector("dialog")!;
+          const fold = dialog.getAnimations()[0]!;
+          motion.placeAt(positioned ? 90 : null, 120);
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          return { state: fold.playState, folding: dialog.hasAttribute("data-k2b-frame-motion") };
+        }, positioned);
+        expect(result).toEqual({ state: "paused", folding: true });
+      } finally {
+        await page.context().close();
+      }
+    });
+
+  test("a focused field before first rest still takes the smaller natural height", async () => {
+    const page = await (await browser.newContext(desktop)).newPage();
+    try {
+      await page.setContent(`<html><head><style>${css}</style></head><body class="k2b-ui"></body></html>`);
+      await page.addScriptTag({ content: script });
+      // settled: keep the entrance held until both natural-height changes have been delivered.
+      await page.evaluate(() => {
+        (window as unknown as HeightWindow).openForm();
+        for (const animation of document.querySelector("dialog")!.getAnimations()) animation.pause();
+      });
+      await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
+      const result = await page.evaluate(async () => {
+        const motion = window as unknown as HeightWindow;
+        const dialog = document.querySelector("dialog")!;
+        document.querySelector<HTMLInputElement>("[data-content] input")!.focus();
+        motion.addNotice(8);
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        const before = dialog.offsetHeight;
+        motion.removeNotices();
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        return { before, after: dialog.offsetHeight, folding: dialog.hasAttribute("data-k2b-frame-motion") };
+      });
+      expect(result.folding).toBe(false);
+      expect(result.before - result.after).toBeCloseTo(160, 0);
+    } finally {
+      await page.context().close();
+    }
+  });
+  test("pointer cancellation releases the deferred focusout fold", async () => {
+    const page = await load();
+    try {
+      await watch(page, "add");
+      await page.getByRole("textbox", { name: "Name" }).focus();
+      await watch(page, "remove");
+      // settled: a synthetic held pointer must block the focusout fold until cancellation.
+      const result = await page.evaluate(async () => {
+        const dialog = document.querySelector("dialog")!;
+        const save = dialog.querySelector<HTMLButtonElement>(".k2b-panel-dialog__footer button")!;
+        const before = dialog.offsetHeight;
+        save.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 7, bubbles: true }));
+        save.focus();
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        const held = dialog.offsetHeight;
+        (window as unknown as HeightWindow).holdMotion();
+        window.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 7 }));
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        return { before, held, folding: dialog.hasAttribute("data-k2b-frame-motion") };
+      });
+      expect(result.held).toBe(result.before);
+      expect(result.folding).toBe(true);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("an anchor change is not blocked by a running child's size motion", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => (window as unknown as HeightWindow).openSheet(true));
+      await settled(page);
+      await watch(page, "add");
+      await page.evaluate(() => {
+        const child = document.querySelector<HTMLElement>("[data-content]")!;
+        const animation = child.animate([{ height: "50px" }, { height: "100px" }], { duration: 280 });
+        animation.playbackRate = 0;
+        animation.currentTime = 140;
+      });
+      await page.setViewportSize({ width: 390, height: 844 });
+      // settled: the running child clock is frozen; the anchor correction must proceed independently.
+      const result = await page.evaluate(async () => {
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        const dialog = document.querySelector("dialog")!;
+        return { top: dialog.style.top, bottom: dialog.getBoundingClientRect().bottom };
+      });
+      expect(result.top).toBe("");
+      expect(result.bottom).toBeCloseTo(844, 0);
     } finally {
       await page.context().close();
     }
