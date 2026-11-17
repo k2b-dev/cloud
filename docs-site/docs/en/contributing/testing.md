@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-11-16
+updated: 2026-11-17
 ---
 
 # Testing
@@ -1247,6 +1247,12 @@ index breaking load ties. Integration keeps the Grids exclusion;
 Grids certification runs in its own path-filtered job. Every integration shard
 gets fresh service containers, and `gate` requires the whole matrix to succeed.
 
+The path-filtered `ui` job builds and typechecks `@k2b/ui` and its standalone
+fixture. UI tests run in the existing unfiltered `unit` shards, including the
+package's test parts, behavior suite, standalone fixture render test, and
+packed-consumer check. The `ui` job does not repeat them. `gate` requires both
+`unit` and, when `changes.outputs.ui` is true, `ui`.
+
 The unit, WebKit, integration, and Grids jobs run on the runner that the
 repository variable `CI_HEAVY_RUNNER` names, and on `ubuntu-24.04` when it is
 unset. Maintainers set it to a larger GitHub-hosted runner when standard runner
@@ -1289,7 +1295,11 @@ leaving actual times far apart.
 The runner tests check that every unit, WebKit, and integration suite is
 assigned exactly once and each predicted shard fits its target. WebKit must
 fit 55% of its 20-minute execution budget. They also cover deterministic
-assignment and distributing unmeasured new files. These
+assignment and distributing unmeasured new files. A UI coverage guard derives
+its expected files from `listTestFiles(packages/ui)` and expands the actual
+`unit` matrix's package parts and behavior commands. Every UI test file must
+run exactly once; adding a file outside the selected paths fails the guard.
+The packed-consumer check must also run once. These
 checks validate the measured plan rather than a future runner's speed.
 Importer tests cover failed jobs, unexecuted suites, and replacing old weights
 when the selected runs are faster. Actual times still depend on the runner: a whole
