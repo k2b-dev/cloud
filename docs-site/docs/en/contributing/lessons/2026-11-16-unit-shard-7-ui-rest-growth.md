@@ -1,0 +1,6 @@
+### A unit shard reached its budget because one split suite grew by half
+
+- **What happened:** CI unit shard 7 of 10 took 19.2 minutes on two runs and was stopped at its 20-minute budget during `@k2b/ui behavior` on a third ([#3536](https://github.com/k2b-dev/cloud/issues/3536)). The runners were not slow.
+- **Root cause:** `@k2b/ui rest` grew from its weight of 554 seconds to up to 886 seconds, and Mail to up to 907 seconds. The weights still predicted 14.1 minutes for every shard, so the planner kept `@k2b/ui rest` together with other suites in shard 7. Mail alone now exceeded the 15-minute target, so no shard count could fit it. Shards 3 to 7 and 10 had already shown the target warning on pull request and merge queue runs.
+- **Error class:** A CI shard grows toward its job limit.
+- **Guard:** `@k2b/ui` and Mail each gain one more `test:part:*` suite, the unit weights come from six recent runs, and CI has twelve unit shards: the slowest predicted shard needs 13.8 minutes, the others 12.9. The runner test now checks the parts of every split package, Mail included, and still fails when a predicted shard exceeds 15 minutes. The existing warning above the 15-minute target (75% of the budget) stays the early signal; act on it with a weight refresh, and split a suite that alone comes near the target.

@@ -52,12 +52,10 @@ import {
   type SidebarPreferencesSchema,
   type ThreadListSchema,
 } from "../service/contracts";
-import { renderSystemMessage } from "../system-messages";
+import { messagePlainText, renderSystemMessage } from "../system-messages";
 
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
-
 import ChatDeviceNotice from "./ChatDeviceNotice";
-
 import ChatList from "./ChatList";
 import ChatSystemChats, { createSystemChatList } from "./ChatSystemChats";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
@@ -74,8 +72,9 @@ import {
 } from "./chat-dialog-openers";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { messageTime, sameDay } from "./chat-format";
+import type { DraftQuote } from "./chat-quote-selection";
 import { createChatSearch } from "./chat-search-state";
-import { createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
+import { type ChatSend, createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import { chatTitle } from "./chat-title";
 import type { DeviceNotice } from "./device-notice";
@@ -261,6 +260,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     panel: props.panel,
   });
   const [resourceChat, setResourceChat] = createSignal(props.resourceChat ?? null);
+  // The panel is about to follow the host page's place from its start; it shows that discussion loading meanwhile.
+  const [followPending, setFollowPending] = createSignal(false);
   /** The panel shows the resource's discussion: its container's chat, an item's thread, or the ready start. */
   const atResource = () => {
     const target = resourceChat();
@@ -692,6 +693,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       onSelect: () => void jumpTo(chatId, reply.id),
     };
   };
+  // A quoted passage jumps to its message and tints the passage there.
+  const quotesOf = (chatId: string, message: Message) =>
+    message.quotes?.map((quote) =>
+      "deleted" in quote
+        ? { author: "", text: t().quoteGone }
+        : {
+            author: quote.author.id === props.viewerId ? t().you : quote.author.name,
+            text: quote.text,
+            onSelect: () => void jumpTo(chatId, quote.id, quote.text),
+          },
+    );
   // In "All threads", a chip under each message names its thread and opens it.
   const originOf = (chatId: string, view: ThreadView) => {
     const name = threadName(view);
@@ -902,6 +914,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         known.seq === item.seq &&
         known.origin?.label === item.origin?.label &&
         known.quote?.text === item.quote?.text &&
+        known.quotes?.map((quote) => quote.text).join() === item.quotes?.map((quote) => quote.text).join() &&
         known.attachments?.map((attachment) => attachment.id).join() === item.attachments?.map((attachment) => attachment.id).join()
         ? known
         : item;
@@ -916,6 +929,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         refs: message.refs,
         attachments: message.attachments,
         quote: quoteOf(current.id, message),
+        quotes: quotesOf(current.id, message),
         origin: mixed && message.kind === "text" ? originOf(current.id, messageThread(message)) : undefined,
         via: message.via,
         key: sendKeys.get(message.id) ?? message.id,
@@ -982,13 +996,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             attachments: send.attachments,
             origin: mixed ? originOf(current.id, send.thread) : undefined,
             quote: send.replyTo ? { author: send.replyTo.author, text: send.replyTo.text } : undefined,
+            quotes: send.quotes.length ? send.quotes.map((quote) => ({ author: quote.author, text: quote.text })) : undefined,
             authorId: props.viewerId,
             authorName: t().you,
             body: send.body,
             at: send.message?.createdAt ?? send.createdAt,
             own: true,
             status,
-            ...(status === "failed" ? { retry: () => outbox?.retry(send.clientId), discard: () => outbox?.forget(send.clientId) } : {}),
+            // A send whose quotes were refused cannot succeed again: it offers only Discard.
+            ...(status === "failed"
+              ? { retry: send.refused ? undefined : () => outbox?.retry(send.clientId), discard: () => outbox?.forget(send.clientId) }
+              : {}),
           }),
         );
       }
@@ -999,7 +1017,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const waiting = () => {
     const current = openChat();
     sendsVersion();
-    return current ? outbox?.sends(current.id).find((send) => send.status !== "sent")?.status === "failed" : false;
+    return current ? outbox?.sends(current.id).find((send) => send.status !== "sent" && !send.refused)?.status === "failed" : false;
   };
   const focusKey = () => {
     const id = route().messageId;
@@ -1458,12 +1476,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // Each part of a chat keeps its own draft and its own reply.
   const applyRoute = (next: Route) => {
     const previous = draftId(route());
-    if (previous) replies.set(previous, reply());
+    if (previous) {
+      replies.set(previous, reply());
+      quoteDrafts.set(previous, quotes());
+    }
     setRoute(next);
     setPanel(next.panel);
     const key = draftId(next);
     setDraft(key ? readDraft(key) : "");
     setReply(key ? (replies.get(key) ?? null) : null);
+    setQuotes(key ? (quoteDrafts.get(key) ?? []) : []);
     setNow(new Date());
     sortRows();
     if (props.embedded) {
@@ -1628,9 +1650,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     else navigate(href, options);
   };
   /** A quote's original: in the loaded history it is highlighted in place, otherwise the chat opens around it. */
-  const jumpTo = async (id: string, message: string) => {
+  // The quoted passage of a message the chat opens around, tinted once the history holds it.
+  const [jumpPassage, setJumpPassage] = createSignal<{ message: string; text: string }>();
+  const jumpTo = async (id: string, message: string, passage?: string) => {
     const key = sendKeys.get(message) ?? message;
-    if (openChat()?.id === id && feed?.scrollToKey(key, { highlight: true })) return;
+    if (openChat()?.id === id && feed?.scrollToKey(key, { highlight: true, highlightText: passage })) return;
+    setJumpPassage(passage ? { message, text: passage } : undefined);
     // A quote lies in the reply's own thread, so the open view holds it once the history around it is loaded.
     await openView(id, openChat()?.view ?? "all", undefined, message);
   };
@@ -1980,6 +2005,52 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // A message goes to the open thread; in "All threads" to General. A reply goes to its original's thread.
   const [reply, setReply] = createSignal<ChatFeedItem | null>(null);
   const replies = new Map<string, ChatFeedItem | null>();
+  // Quoted passages of the draft; they lie in one thread with its reply, which the message goes to.
+  const [quotes, setQuotes] = createSignal<readonly DraftQuote[]>([]);
+  const quoteDrafts = new Map<string, readonly DraftQuote[]>();
+  // The pill that offers a quote has loaded this module already.
+  const quote = (item: ChatFeedItem, text: string) =>
+    void importOnDemand(() => import("./chat-quote-selection")).then((module) => {
+      const next = module?.addQuote(quotes(), reply(), item, text, t().quotesReplaced);
+      if (!next) return;
+      if (!next.keepReply) setReply(null);
+      setQuotes(next.quotes);
+    });
+  // A quote whose message was deleted leaves the draft.
+  createEffect(() => {
+    const gone = new Set(openChat()?.messages.flatMap((message) => (message.deletedAt ? [message.id] : [])) ?? []);
+    if (quotes().some((entry) => gone.has(entry.id))) setQuotes((list) => list.filter((entry) => !gone.has(entry.id)));
+  });
+  /** The draft each send with quotes came from, so a refused one goes back where it was written. */
+  const sendDrafts = new Map<string, string>();
+  /**
+   * A send whose quotes the server refused stays as "Not sent" with only Discard, so nothing is lost and nothing retries
+   * in vain. While its draft is open and empty, it goes back into the field instead: its text and the quotes whose
+   * message is still there with their words.
+   */
+  const giveBack = (send: ChatSend) => {
+    const id = sendDrafts.get(send.clientId);
+    sendDrafts.delete(send.clientId);
+    toast(t().quotedSendRejected, { iconClass: "ti ti-quote" });
+    if (id === undefined || id !== draftId(route()) || draft().trim() || quotes().length) return;
+    const loaded = openChat()?.id === send.conversationId ? openChat()!.messages : [];
+    const words = (text: string) => text.replace(/\s+/gu, "");
+    const valid = send.quotes.flatMap((quote) => {
+      const original = loaded.find((message) => message.id === quote.id);
+      if (original && (original.deletedAt || !words(messagePlainText(original.body ?? "")).includes(words(quote.text)))) return [];
+      return [{ key: crypto.randomUUID(), ...quote, thread: send.thread }];
+    });
+    changeDraft(send.body);
+    setQuotes(valid);
+    outbox?.forget(send.clientId);
+  };
+  const answer = (item: ChatFeedItem) => {
+    if (quotes()[0] && quotes()[0]!.thread !== (item.thread ?? "general")) {
+      toast(t().quotesReplaced, { iconClass: "ti ti-info-circle" });
+      setQuotes([]);
+    }
+    setReply(item);
+  };
   // A message that only shares Cloud elements has no text.
   const uploads = createAttachmentUpload();
   const forYouApi = createForYouApi();
@@ -2009,15 +2080,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     try {
       if (current.hasNewer) await store?.loadLatest();
       const answered = reply();
-      const thread = answered ? (answered.thread ?? "general") : current.view === "all" ? "general" : current.view;
-      outbox.send(current.id, body, {
+      const quoted = quotes();
+      const thread = answered ? (answered.thread ?? "general") : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view));
+      const sent = outbox.send(current.id, body, {
         thread,
         refs,
         attachments,
         mentions,
         replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
+        quotes: quoted.map(({ id, author, text }) => ({ id, author, text })),
       });
+      if (id !== null && quoted.length) sendDrafts.set(sent.clientId, id);
       setReply(null);
+      setQuotes([]);
       feed?.scrollToEnd();
       return true;
     } finally {
@@ -2110,7 +2185,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     onCleanup(live.subscribe(sync));
     sync();
 
-    const box = createChatSends({ post: createChatSendsApi() });
+    const box = createChatSends({ post: createChatSendsApi(), onRejected: giveBack });
     outbox = box;
     onCleanup(onPanelBeforeLeave(() => !box.unsent() && unsavedDrafts.size === 0 && !dialogCore.isOpen() && pendingSends === 0));
     setComposerReady(true);
@@ -2208,6 +2283,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           resourceChat,
           setResourceChat,
           atResource,
+          setFollowPending,
           atStart: () => {
             const current = route();
             return (
@@ -2601,7 +2677,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     }
                   : undefined
               }
-              onReply={notice() ? undefined : (item) => setReply(item)}
+              onReply={notice() ? undefined : answer}
+              quotes={quotes().map((entry) => ({
+                id: entry.key,
+                author: entry.author,
+                text: entry.text,
+                onRemove: () => setQuotes((list) => list.filter((other) => other !== entry)),
+                onSelect: () => void jumpTo(current().id, entry.id, entry.text),
+              }))}
+              onQuote={notice() ? undefined : quote}
               replyHint={replyHint}
               unreadHint={unreadHint}
               listHref={listHref()}
@@ -2622,6 +2706,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
               onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
               focusKey={focusKey()}
+              focusText={jumpPassage()?.message === route().messageId ? jumpPassage()?.text : undefined}
               canWrite={
                 composerReady() &&
                 !busy() &&
@@ -3151,6 +3236,22 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       onStart={startResourceChat}
                     />
                   )}
+                </Match>
+                <Match when={followPending()}>
+                  {/* A place shared after the panel loaded (such as after "Allow"): its discussion loading, in the
+                      frame it opens in, instead of the list the panel is about to leave. Leaving ends the wait, and
+                      following then finds that the reader moved. */}
+                  <ResourceChatStart
+                    loading
+                    title=""
+                    canWrite={false}
+                    listHref={listHref(basePath)}
+                    onBack={(navigation) => {
+                      setFollowPending(false);
+                      return backToList(navigation);
+                    }}
+                    onStart={startResourceChat}
+                  />
                 </Match>
                 <Match when={true}>
                   <nav class="chat-list-page" aria-label={t().chats}>

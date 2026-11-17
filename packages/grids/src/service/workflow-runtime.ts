@@ -715,6 +715,7 @@ const workflowRuntimeLifecycle = createRuntimeLifecycle({
     scheduleWorker = await workflowScheduler().process();
     startRuntimeEventReader(eventCursor);
     await worker.start();
+    // runtime-timer: inside its runtime lifecycle, and the callback runs through a task tracker; quiesce gates both.
     reconcileTimer = setInterval(() => {
       workflowRuntimeTasks.run(async () => {
         await reconcileWorkflowRuntime().catch((error) => log.warn("Workflow runtime reconcile failed", { error: errorMessage(error) }));

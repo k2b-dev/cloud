@@ -85,6 +85,9 @@ export const isCloudCredentialCookie = (name: string): boolean =>
   name === PWA_COOKIES.pairing ||
   name === "cloud_browser" ||
   name === "__Host-cloud_browser" ||
+  // The maintenance bypass passes the wall on the Cloud host only; the gateway strips it from every request anyway.
+  name === "cloud_maintenance_bypass" ||
+  name === "__Host-cloud_maintenance_bypass" ||
   name.startsWith("__Secure-cloud-app-pwa-") ||
   // Access proofs that built-in apps set on the Cloud host.
   name === "mail_attachment_grant" ||

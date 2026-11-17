@@ -229,34 +229,33 @@ for (const [width, narrowTimeline] of [
   [1440, false],
   [1440, true],
 ] as const) {
-  test(`labels wrap only on a narrow surface (${width}px window, narrow timeline: ${narrowTimeline})`, async () => {
+  test(`a label keeps one line and fades out at its end (${width}px window, narrow timeline: ${narrowTimeline})`, async () => {
     const page = await browser.newPage({ viewport: { width, height: 800 } });
     try {
       const row = activity({ label: longLabel, icon: "ti ti-check" });
       // A plain timeline element isolates the CSS container contract from scrolling and message layout.
       await content(page, narrowTimeline ? `<div class="k2b-chat-timeline" style="width:22rem">${row}</div>` : row, false);
-      const metrics = await page.locator(".k2b-chat-activity__copy strong").evaluate((label) => {
-        const style = getComputedStyle(label);
+      const metrics = await page.locator(".k2b-chat-activity__copy").evaluate((copy) => {
+        const label = copy.querySelector("strong")!;
+        const style = getComputedStyle(copy);
         return {
-          scroll: label.scrollWidth,
-          client: label.clientWidth,
+          scroll: copy.scrollWidth,
+          client: copy.clientWidth,
           height: label.getBoundingClientRect().height,
-          lineHeight: Number.parseFloat(style.lineHeight),
+          lineHeight: Number.parseFloat(getComputedStyle(label).lineHeight),
           overflow: style.overflow,
           ellipsis: style.textOverflow,
+          mask: style.maskImage,
           pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
       });
       expect(metrics.pageOverflow).toBe(0);
-      if (width === 390 || narrowTimeline) {
-        expect(metrics.scroll).toBe(metrics.client);
-        expect(metrics.height).toBeGreaterThan(metrics.lineHeight);
-      } else {
-        expect(metrics.height).toBe(metrics.lineHeight);
-        expect(metrics.scroll).toBeGreaterThan(metrics.client);
-        expect(metrics.overflow).toBe("hidden");
-        expect(metrics.ellipsis).toBe("ellipsis");
-      }
+      // One line at every width: the full sentence lives in the step's details, never in a second line.
+      expect(metrics.height).toBe(metrics.lineHeight);
+      expect(metrics.scroll).toBeGreaterThan(metrics.client);
+      expect(metrics.overflow).toBe("hidden");
+      expect(metrics.ellipsis).not.toBe("ellipsis");
+      expect(metrics.mask).not.toBe("none");
     } finally {
       await page.close();
     }

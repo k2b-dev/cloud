@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import ts from "@typescript/typescript6";
-import { isTestFile, listFiles, sourceFilePattern } from "./files";
+import { isTestFile, listFiles, parseSource, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
 // Generic Mail services may use the explicit command-legacy-effects bridge while
@@ -70,8 +70,7 @@ export const checkSource = (file: string, source: string, workspaceRoot: string)
         : resolve(workspaceRoot, specifier);
     return target === engine || target.startsWith(`${engine}/`);
   };
-  const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const findings: Finding[] = [];
+  const { sourceFile: ast, findings } = parseSource(file, source);
   const visit = (node: ts.Node): void => {
     if (ts.isStringLiteralLike(node) && workflowImport(node.text)) {
       const parent = node.parent;

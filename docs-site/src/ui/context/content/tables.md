@@ -95,7 +95,10 @@ For a complete set of rows that a reader searches in the browser:
   and returns the matching rows in order.
 - `DataTableTools` is the search field and the group choice. Place it in the
   head of the frame that holds the table, never inside the table. Below a frame
-  width of 560 px it takes its own line under the title.
+  width of 560 px it takes its own line under the title. `label` names the
+  table in the search field's name ("Search Campaigns"); when the name is data
+  you do not control, pass a generic word and point `describedBy` at the
+  table's heading.
 
 Pass `groupBy` with a column id: each group becomes its own `<tbody>` under a
 row-group header (`scope="rowgroup"`) with the group's shown value and its

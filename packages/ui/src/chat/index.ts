@@ -24,12 +24,14 @@ export type {
   ChatCommandSection,
   ChatComposerPeople,
   ChatComposerProps,
+  ChatComposerQuote,
   ChatComposerReply,
   ChatComposerSuggestion,
   ChatFileSelection,
   ChatPasteHandler,
   ChatPersonSuggestion,
 } from "./ChatComposer";
+export { ChatComposerQuotes } from "./ChatComposerQuotes";
 export type {
   ChatDecisionProps,
   ChatMarkProps,
@@ -43,7 +45,13 @@ export type {
   ChatPreviewShowAllProps,
   ChatPreviewTitleProps,
 } from "./ChatDecision";
-export type { ChatActivityProps, ChatActivityToggleProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
+export type {
+  ChatActivityMetaTone,
+  ChatActivityProps,
+  ChatActivityToggleProps,
+  ChatContextUsageProps,
+  ChatMessageProps,
+} from "./ChatPrimitives";
 export { formatChatTokens } from "./ChatPrimitives";
 export type { ChatRootProps } from "./ChatRoot";
 export type { ChatActivityItem, ChatMessageItem, ChatTimelineItem, ChatTimelineProps } from "./ChatTimeline";

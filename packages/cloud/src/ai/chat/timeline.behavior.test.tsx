@@ -1,4 +1,4 @@
-import { expect, jest, setSystemTime, test } from "bun:test";
+import { beforeAll, expect, jest, setSystemTime, test } from "bun:test";
 import { createMemo, createSignal } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
@@ -7,6 +7,18 @@ import { emptyProjection, mergeActiveTurn, reduceProjection, visibleMessages } f
 import { type AiStreamEvent, type AiTurnBlock, type AiWireEvent, steerAppliedBlockId, steerMessageBlockId } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { aiTurnErrorText } from "./turn-error";
+
+// The opened work loads its code on demand in the browser. Load it once before the tests, with time for a cold
+// transpile, so a toggle shows its rows at once.
+beforeAll(async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  try {
+    await (await import("#chat-work-list")).preloadAiWorkSteps();
+  } finally {
+    dom.cleanup();
+  }
+}, 30_000);
 
 /** The text a reader sees: without the screen-reader announcement and the resting word that only reduced motion shows. */
 const visibleText = (node: Element | null | undefined) => {
@@ -36,10 +48,8 @@ const visibleText = (node: Element | null | undefined) => {
     dom.root,
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
-  // Text between steps is a note at its step; opened, every text shows exactly once.
+  // Text between steps is a step of its own whose card holds the text; every text shows exactly once.
   const openNotes = async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    for (const toggle of dom.root.querySelectorAll<HTMLButtonElement>('.ai-turn-note__toggle[aria-expanded="false"]')) toggle.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
   };
   try {
@@ -526,7 +536,7 @@ const renderTimeline = async (
     dom.root,
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
-  const clock = () => dom.root.querySelector(".ai-turn-work .ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  const clock = () => dom.root.querySelector(".ai-turn-work .k2b-chat-activity__duration")?.textContent?.trim();
   try {
     emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     jest.advanceTimersByTime(5_000);
@@ -565,7 +575,7 @@ const renderTimeline = async (
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
   const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
-  const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  const clock = () => workLine()?.querySelector(".k2b-chat-activity__duration")?.textContent?.trim();
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {
     emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
@@ -604,6 +614,62 @@ const renderTimeline = async (
   }
 });
 
+(isServer ? test.skip : test)("thinking that runs on across blocks changes its word after 3 s of the whole phase", async () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-16T09:00:00.000Z"));
+  const dom = createDomTestHarness();
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider actions={{}}>
+        {(() => {
+          const items = createAiChatTimeline({ messages: createMemo(() => visibleMessages(state)), activeTurn: () => state.activeTurn });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const word = () => dom.root.querySelector(".ai-turn-work .k2b-chat-activity__word")?.textContent?.trim();
+  const label = () => visibleText(dom.root.querySelector(".ai-turn-work .k2b-chat-activity__copy strong"));
+  const load = { id: "tool-load", kind: "tool" as const, callId: "load", name: "load_tools", args: {} };
+  try {
+    // The line says "Thinking" all along: before the first block, in a thinking block, after a finished call, and in
+    // the next thinking block. Each change of block arrives within a second, as in the Preview (finding 90).
+    let seq = 1;
+    emit({ ...base, seq: seq++, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
+    const steps: (() => void)[] = [
+      () => emit({ ...base, seq: seq++, type: "block_delta", blockId: "think-1", blockKind: "thinking", delta: "Which tools" }),
+      () => emit({ ...base, seq: seq++, type: "block_set", block: { ...load, status: "completed", result: {} } }),
+      () => emit({ ...base, seq: seq++, type: "block_delta", blockId: "think-2", blockKind: "thinking", delta: "Now the notes" }),
+      () => emit({ ...base, seq: seq++, type: "block_delta", blockId: "think-3", blockKind: "thinking", delta: "And the tasks" }),
+    ];
+    // The words load when the phase begins; their module is in the cache once this import settles.
+    await import("./thinking-words");
+    for (let flush = 0; flush < 5; flush++) await Promise.resolve();
+    for (const step of steps) {
+      jest.advanceTimersByTime(700);
+      step();
+      expect(label()).toBe("Thinking");
+    }
+    // 3.4 s into the phase: past its first 3 s, the word has changed, once the old one faded out.
+    jest.advanceTimersByTime(600);
+    expect(word()).toBeDefined();
+    expect(word()).not.toBe("Thinking");
+    // Screen readers heard once that Gustav thinks, by name.
+    expect(document.querySelector("[data-k2b-live]")?.textContent).toContain("Gustav is thinking");
+  } finally {
+    dispose();
+    dom.cleanup();
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});
+
 (isServer ? test.skip : test)("a step that starts right after a model retry times only itself", async () => {
   jest.useFakeTimers();
   const dom = createDomTestHarness();
@@ -625,7 +691,7 @@ const renderTimeline = async (
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
   const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
-  const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  const clock = () => workLine()?.querySelector(".k2b-chat-activity__duration")?.textContent?.trim();
   const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/a.csv" } };
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {

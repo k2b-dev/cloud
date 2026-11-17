@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "@typescript/typescript6";
 import { packageIds } from "../workspace";
-import { isTestFile, listFiles } from "./files";
+import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const forbiddenSharedStylesheets = new Set(["theme-modern.css", "utilities-detail.css"]);
@@ -46,7 +46,8 @@ const checkDetailPanelMigration = (packagesRoot: string, packageNames: string[],
   for (const name of packageNames) {
     for (const file of listFiles(join(packagesRoot, name, "src"), /\.tsx$/)) {
       if (isTestFile(file)) continue;
-      const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const { sourceFile: source, findings: unparsed } = parseSource(file, readFileSync(file, "utf8"));
+      for (const { message } of unparsed) report(file, message);
       const visit = (node: ts.Node) => {
         if (
           ts.isJsxAttribute(node) &&
