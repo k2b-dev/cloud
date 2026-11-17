@@ -4499,7 +4499,7 @@ describe("draft FileRef attachment capability", () => {
       // The real uploader can still be awaiting its initial database read here.
       await Promise.resolve();
       expect(params.signal?.aborted).toBe(true);
-      return fail(err.conflict("Transfer cancelled"));
+      return fail(err.conflict("Transfer was cancelled"));
     });
     const prepared = await action.run(input, caller);
     if (!prepared.ok || !prepared.data.stream) throw new Error("expected stream");

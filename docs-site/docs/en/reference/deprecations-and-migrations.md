@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-08
+updated: 2026-11-16
 ---
 
 # Deprecations and migrations
@@ -93,6 +93,22 @@ images. Automatic replies (out-of-office, office-hours and reference
 acknowledgements) have no replacement. Ask Gustav to rebuild supported rules as
 mailbox Code, then review, preview and activate it explicitly. See the
 [Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
+
+## Conflict errors take the whole sentence
+
+`err.conflict(message)` from `@k2b/cloud/server` (and `@k2b/stdlib` 0.33.0,
+which it passes through) now uses its argument as the whole message and adds
+nothing. Before, it added ` already exists`, which turned sentences such as
+`Task changed; read it and retry` into `Task changed; read it and retry already
+exists`.
+
+Applications that passed only a subject write the sentence out with the same
+meaning: `err.conflict("API key")` becomes `err.conflict("API key already
+exists")`, and a revision conflict reads, for example, `Template changed;
+reload it and retry`. Calls that already pass a sentence need no change. For
+operators nothing changes beyond the wording of some 409 messages. Built-in
+applications are updated; check third-party applications when they move to
+this Cloud version.
 
 ## Saved signed bar rows render again
 

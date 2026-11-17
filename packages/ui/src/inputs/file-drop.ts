@@ -210,6 +210,8 @@ const createEngine = (doc: Document): FileDropEngine => {
   const eligible = (entry: FileDropTargetEntry, modal: Element | null) => {
     const element = regionElement(entry);
     if (!element || entry.options.disabled) return false;
+    // Inert content takes no input, such as a dialog that already closed and only fades out.
+    if (element.closest("[inert]") || entry.host?.()?.closest("[inert]")) return false;
     return (!modal || modal.contains(element)) && displayed(entry.host?.(), element);
   };
   const rendered = (element: Element) => element === doc.documentElement || element.getClientRects().length > 0;

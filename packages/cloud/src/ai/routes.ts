@@ -1018,8 +1018,7 @@ export const aiRoutes = (() => {
           });
           return restored ? respond(c, ok(await publicConversationFor(restored, resourceContext(c)))) : notFound(c);
         } catch (error) {
-          if (error instanceof AiConversationRestoreConflict)
-            return respond(c, fail({ ...err.conflict("Place chat"), message: error.message }));
+          if (error instanceof AiConversationRestoreConflict) return respond(c, fail(err.conflict(error.message)));
           throw error;
         }
       })
@@ -1850,7 +1849,7 @@ export const aiRoutes = (() => {
         if (aiProjectFilePathFromMount(to) !== null) return respond(c, fail(err.badInput("The /project namespace is reserved.")));
         const renamed = await aiFileStore.rename({ conversationId: conversation.id, from, to });
         if (renamed === "not_found") return notFound(c);
-        if (renamed === "conflict") return respond(c, fail(err.conflict(`File "${to}"`)));
+        if (renamed === "conflict") return respond(c, fail(err.conflict(`File "${to}" already exists`)));
         return respond(c, ok({ renamed: true }));
       })
   );

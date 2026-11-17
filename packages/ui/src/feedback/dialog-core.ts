@@ -143,6 +143,19 @@ const applyAccessibleName = (dialog: HTMLDialogElement, entry: DialogStackEntry)
   dialog.setAttribute("aria-labelledby", heading.id);
 };
 
+/**
+ * The exit fade loads when the first dialog opens, so islands that open dialogs do not carry it in their first bundle.
+ * A dialog that closes before it arrived leaves at once; state, focus and result never wait for it.
+ */
+let exitMotion: typeof import("../internal/exit-motion") | undefined;
+const loadExitMotion = () =>
+  import("../internal/exit-motion").then(
+    (module) => {
+      exitMotion = module;
+    },
+    () => {},
+  );
+
 const schedule = (callback: () => void): void => {
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(callback);
   else queueMicrotask(callback);
@@ -190,6 +203,9 @@ export const createDialogCore = () => {
   /** Settles when the synthetic Back that removes closed dialogs' entries has arrived. */
   let returning: Promise<void> | undefined;
   let resolveReturning: (() => void) | undefined;
+  /** Ends the fade-out of the frame whose last level closed: its content stays until the frame has left. */
+  let leaving: (() => void) | undefined;
+  const endLeaving = () => leaving?.();
 
   /** Outside island disposal, closed entries leave with one Back to the newest live dialog or holder, or to the page. */
   const syncHistory = () => {
@@ -294,6 +310,8 @@ export const createDialogCore = () => {
     }
     disposals++;
     while (state.stack.length > 0) popTop(undefined);
+    // New page content: a frame still fading out leaves at once, as if the document were replaced.
+    endLeaving();
   };
 
   /** `@k2b/ssr/nav` stops a traversal to another server page before later listeners and reports it here. */
@@ -324,7 +342,8 @@ export const createDialogCore = () => {
   // created before islands mount and add their navigation listeners, so it listens from the start.
   if (typeof window !== "undefined") listen();
 
-  const pushHistory = (entry: HistoryEntry, url?: string) => {
+  /** Returns whether the dialog's own address already was the page's address: a reload or a shared link brought it. */
+  const pushHistory = (entry: HistoryEntry, url?: string): boolean => {
     listen();
     const previous = historyRecord();
     // A reload or Forward never brings back a dialog or its sensitive transient state.
@@ -334,7 +353,8 @@ export const createDialogCore = () => {
     issued.add(entry.historyId);
     historyIds.push(entry.historyId);
     // Only a dialog that names itself in the URL resumes the entry a reload left behind; the page entry stays below.
-    const resume = stale && url !== undefined && new URL(url, location.href).href === location.href;
+    const here = url !== undefined && new URL(url, location.href).href === location.href;
+    const resume = stale && here;
     if (resume) history.replaceState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "");
     else {
       if (stale) history.replaceState(previous, "");
@@ -342,6 +362,7 @@ export const createDialogCore = () => {
     }
     if (url !== undefined) ownUrls.set(entry.historyId, location.href);
     seen = historySnapshot();
+    return here;
   };
 
   /** Internal non-dialog participation in the same history stack. Releasing never calls onBack. */
@@ -374,6 +395,8 @@ export const createDialogCore = () => {
   };
 
   const ensureDialogElement = () => {
+    // A frame that is still fading out ends now; the new dialog gets a frame of its own.
+    endLeaving();
     // Reuse the shared element whenever it is still in the document. Resolving
     // the portal root first would create a second <dialog> when focus has moved
     // into another `.k2b-ui` scope, orphaning the levels already on the stack.
@@ -392,6 +415,7 @@ export const createDialogCore = () => {
     // Each stack level carries its own palette, independently of the first opener.
     getK2bPortalRoot(undefined, document.body).appendChild(element);
     state.element = element;
+    if (!exitMotion) void loadExitMotion();
     return element;
   };
 
@@ -500,12 +524,15 @@ export const createDialogCore = () => {
     const top = state.stack.pop();
     if (!top) return;
     releaseHistory(top);
-    top.dispose?.();
-    top.container.remove();
+    const discard = () => {
+      top.dispose?.();
+      top.container.remove();
+    };
 
     const dialog = state.element;
     const previous = state.stack[state.stack.length - 1];
     if (previous && dialog) {
+      discard();
       previous.container.style.display = "";
       applyPresentation(previous);
       applyAccessibleName(dialog, previous);
@@ -522,18 +549,33 @@ export const createDialogCore = () => {
       dialog.removeAttribute("aria-label");
       dialog.removeAttribute("aria-labelledby");
       dialog.removeAttribute("aria-describedby");
+      // State and focus change now; the frame only fades out. It leaves the top layer and the page is usable at once.
+      // From this moment it no longer acts as open: inert (no input, focus, drop or submit) and out of the
+      // accessibility tree, so neither a person nor a query by role or name finds it; only its picture fades.
+      dialog.inert = true;
+      dialog.setAttribute("aria-hidden", "true");
       if (dialog.open && typeof dialog.close === "function") dialog.close();
       else dialog.removeAttribute("open");
-      dialog.remove();
       state.element = undefined;
       stopConnectionObserver();
       unlockPageScroll();
+      let left = false;
+      let finish: (() => void) | undefined;
+      const remove = () => {
+        left = true;
+        if (finish && leaving === finish) leaving = undefined;
+        discard();
+        dialog.remove();
+      };
+      if (exitMotion) finish = exitMotion.afterExitTransitions(dialog, remove);
+      else remove();
+      if (!left) leaving = finish;
       // After the Escape that closed it: WebKit lights the ring of whatever
       // that key press leaves focused.
       schedule(() => {
         if (top.opener?.isConnected && focusUnclaimed(dialog)) returnFocus(top.opener, top.openerRing);
       });
-    }
+    } else discard();
 
     top.resolve?.(result);
   };
@@ -636,7 +678,9 @@ export const createDialogCore = () => {
         popTop(result);
       };
 
-      if (options.history) pushHistory(entry, options.historyUrl);
+      // A dialog that a reload or a shared link brings up with the page is there from the first frame, without an
+      // entrance: its own address is already the page's address when it opens.
+      const resumed = options.history ? pushHistory(entry, options.historyUrl) : false;
       state.stack.push(entry);
       try {
         applyPresentation(entry);
@@ -678,6 +722,11 @@ export const createDialogCore = () => {
           // opened, with a ring of the browser's choosing. Opening from a
           // blurred document leaves the return to popTop and its opener ring.
           if (activeElement instanceof HTMLElement) activeElement.blur();
+          if (resumed) {
+            dialog.dataset.noEnter = "";
+            // Two frames: the first frame's style still has to see the attribute.
+            schedule(() => schedule(() => delete dialog.dataset.noEnter));
+          }
           if (typeof dialog.showModal === "function") {
             if (entry.modal) dialog.showModal();
             else dialog.show();
