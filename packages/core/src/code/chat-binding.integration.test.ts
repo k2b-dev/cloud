@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { CODE_BOUND_CHAT_ID } from "@k2b/cloud/code";
-import { type CapabilityExecutionContext, UserSchema } from "@k2b/cloud/contracts";
+import { type CapabilityExecutionContext, type CodeCheckedVersionManifest, UserSchema } from "@k2b/cloud/contracts";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import type { CodeContext } from "./access";
@@ -339,9 +339,9 @@ databaseSuite()("personal Code chat binding", () => {
         manifest: {
           ...codeReadModelFixtureManifest,
           entrypoints: kind === "page" ? [] : codeReadModelFixtureManifest.entrypoints,
-          permissions: kind === "page" ? [] : [{ operation: "chat.message.post", file: "code.ts", line: 1 }],
+          permissions: kind === "page" ? [] : [{ operation: "chat.message.post", target: null, file: "code.ts", line: 1 }],
           policyRows: [],
-        },
+        } satisfies CodeCheckedVersionManifest,
         baseVersionId: null,
       },
       context(),
