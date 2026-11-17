@@ -2,8 +2,8 @@ import { afterAll, beforeAll, expect, mock, setSystemTime, spyOn, test } from "b
 import { sql } from "@k2b/cloud";
 import { aiConversations } from "@k2b/cloud/ai";
 import { AUTOMATION_TURN_BUDGET } from "@k2b/cloud/ai/runtime";
-import { accounts } from "@k2b/cloud/services";
 import * as logging from "@k2b/cloud/services";
+import { accounts } from "@k2b/cloud/services";
 import { aiModelFixture, beginAiCall, finishAiCall } from "../../../../scripts/fixtures/code-platform";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -242,10 +242,20 @@ suiteFor(
     const broken = await turn();
     const healthy = await turn();
     await sql.begin((db) =>
-      reserveCodeChatTurnBudget({ turnId: broken.turnId, codeId, ownerUserId: owner, profile }, db, { ...limits, code: 2, owner: 2 }, new Date()),
+      reserveCodeChatTurnBudget(
+        { turnId: broken.turnId, codeId, ownerUserId: owner, profile },
+        db,
+        { ...limits, code: 2, owner: 2 },
+        new Date(),
+      ),
     );
     await sql.begin((db) =>
-      reserveCodeChatTurnBudget({ turnId: healthy.turnId, codeId, ownerUserId: owner, profile }, db, { ...limits, code: 2, owner: 2 }, new Date()),
+      reserveCodeChatTurnBudget(
+        { turnId: healthy.turnId, codeId, ownerUserId: owner, profile },
+        db,
+        { ...limits, code: 2, owner: 2 },
+        new Date(),
+      ),
     );
     const badCall = await call(broken.turnId, codeId, "chat", null);
     await sql`UPDATE ai.inference_calls SET pricing='{"inputPerMillion":"invalid"}' WHERE id=${badCall}::uuid`;
@@ -256,7 +266,9 @@ suiteFor(
     try {
       await sweepCodeChatTurnBudgets();
       expect(warn).toHaveBeenCalledWith("Code chat budget settlement failed", expect.objectContaining({ turnId: broken.turnId }));
-    } finally { log.mockRestore(); }
+    } finally {
+      log.mockRestore();
+    }
     expect(await sql`SELECT 1 FROM code.chat_turn_budgets WHERE turn_id=${broken.turnId}::uuid AND settled_at IS NULL`).toHaveLength(1);
     expect(await sql`SELECT 1 FROM code.chat_turn_budgets WHERE turn_id=${healthy.turnId}::uuid AND settled_at IS NOT NULL`).toHaveLength(
       1,
