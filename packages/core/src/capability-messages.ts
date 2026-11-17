@@ -6,6 +6,11 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      codeChatBindingAction: "Choose {chat} as the chat for {code}",
+      codeChatBindingRunning: "Choosing {chat} as the chat for {code}",
+      codeChatBindingDone: "Chose {chat} as the chat for {code}",
+      codeChatBindingConfirm: "Choose chat",
+
       codeCatchupSnapshot: ({ count, version }: { count: number; version: string }) =>
         `${count} existing messages · pinned version ${version}`,
       codeSecretDeleteReview: ({ name }: { name: string }) => `Delete the value of Code secret ${name} for every version.`,
@@ -184,6 +189,11 @@ const messages = i18n.define({
       chatMessageQueued: ({ title }: { title: string }) => `Queued a message for “${title}”.`,
     },
     de: {
+      codeChatBindingAction: "{chat} als Chat für {code} wählen",
+      codeChatBindingRunning: "{chat} wird als Chat für {code} gewählt",
+      codeChatBindingDone: "{chat} als Chat für {code} gewählt",
+      codeChatBindingConfirm: "Chat wählen",
+
       codeCatchupSnapshot: ({ count, version }) => `${count} vorhandene Nachrichten · gebundene Version ${version}`,
       codeSecretDeleteReview: ({ name }) => `Wert des Code-Secrets ${name} für alle Versionen löschen.`,
       codeSecretDeleteRunning: "Code-Secret-Wert wird gelöscht.",

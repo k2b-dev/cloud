@@ -19,6 +19,7 @@ export function codeReadModelFixture(locale: "de" | "en") {
     event: () => (locale === "de" ? "eine Aufgabe fällig wird" : "a task becomes due"),
   };
   return presentCodeVersion({
+    personal: false,
     versionId: "00000000-0000-4000-8000-000000000001",
     number: 5,
     submittedAt: "2026-11-14T09:00:00.000Z",

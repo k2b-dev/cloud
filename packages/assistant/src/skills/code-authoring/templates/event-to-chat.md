@@ -6,7 +6,7 @@ Owner: the Code of a mailbox. Copy it into `code.ts`, replace the fictional IDs 
 
 <!-- check: resource mail.mailbox -->
 ```ts
-import { app, chat, mail } from "@sdk";
+import { app, _chat, mail } from "@sdk";
 
 // Fictional configuration: the team conversation and the domains worth a note.
 const TEAM_CONVERSATION = "Cnv001";
@@ -22,7 +22,7 @@ app.on("mail.message.received", async event => {
   if (!DOMAINS.includes(domain)) return;
   // Subjects and names are untrusted text: post only the domain and the subject as a short code span.
   const subject = message.subject.replace(/[\r\n`]/g, " ").slice(0, 120);
-  await chat.message.post({
+  await _chat.message.post({
     conversation: TEAM_CONVERSATION,
     body: `New mail from ${domain}: \`${subject}\``,
     idempotencyKey: `mail-note:${message.id}`,

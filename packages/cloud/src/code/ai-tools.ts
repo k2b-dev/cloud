@@ -10,12 +10,13 @@ export function codeAiToolCovered(
   binding: CodeAiToolBinding,
   permissions: readonly Pick<CodeVersionPermission, "operation" | "target">[],
 ): boolean {
+  const target = binding.target;
   return permissions.some(
     (permission) =>
       permission.operation === binding.capability &&
-      (binding.target === null
+      (target === null
         ? permission.target === null
-        : permission.target?.type === binding.target.type && (permission.target.id === null || permission.target.id === binding.target.id)),
+        : permission.target?.type === target.type && (permission.target.id === null || permission.target.id === target.id)),
   );
 }
 export async function createCodeAiTools(options: {
