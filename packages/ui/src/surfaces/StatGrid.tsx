@@ -1,4 +1,4 @@
-import { createContext, type JSX, Show, useContext } from "solid-js";
+import { type Accessor, createContext, type JSX, Show, useContext } from "solid-js";
 
 export type StatGridSize = "lg" | "md" | "sm";
 export type StatGridSurface = "white" | "muted";
@@ -27,10 +27,10 @@ export type StatGridProps = {
 
 const StatGridSizeContext = createContext<StatGridSize>("md");
 // A plain grid has no surface, so the surface context carries "plain" to its cells; a cell outside a grid stays a tile.
-const StatGridSurfaceContext = createContext<StatGridSurface | "plain">("white");
+const StatGridSurfaceContext = createContext<Accessor<StatGridSurface | "plain">>(() => "white");
 
 export const useStatGridSize = (): StatGridSize => useContext(StatGridSizeContext);
-export const useStatGridSurface = (): StatGridSurface | "plain" => useContext(StatGridSurfaceContext);
+export const useStatGridSurface = (): Accessor<StatGridSurface | "plain"> => useContext(StatGridSurfaceContext);
 
 const columnValue = (columns?: StatGridColumns): StatGridColumns => {
   if (columns && Number.isInteger(columns) && columns >= 1 && columns <= 6) return columns;
@@ -67,7 +67,7 @@ export function StatGrid(props: StatGridProps): JSX.Element {
         </header>
       </Show>
       <StatGridSizeContext.Provider value={props.size ?? "md"}>
-        <StatGridSurfaceContext.Provider value={plain() ? "plain" : surface()}>
+        <StatGridSurfaceContext.Provider value={() => (plain() ? "plain" : surface())}>
           <div class="k2b-stat-grid__body">{props.children}</div>
         </StatGridSurfaceContext.Provider>
       </StatGridSizeContext.Provider>

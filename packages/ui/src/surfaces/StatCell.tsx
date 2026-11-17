@@ -81,7 +81,8 @@ export type StatCellProps = {
 function Body(props: StatCellProps): JSX.Element {
   const gridSize = useStatGridSize();
   // A plain figure keeps its change off the figure's line: the third line holds it with the comparison.
-  const plain = useStatGridSurface() === "plain";
+  const surface = useStatGridSurface();
+  const plain = () => surface() === "plain";
   const badge = (delta: StatCellDelta) => <DeltaBadge delta={delta} compare={props.compare} />;
   const size = () => props.size ?? gridSize;
   const accent = () => props.accent;
@@ -136,7 +137,7 @@ function Body(props: StatCellProps): JSX.Element {
                   {props.value}
                 </Show>
               </span>
-              <Show when={!plain && !empty() && props.delta}>{(delta) => badge(delta())}</Show>
+              <Show when={!plain() && !empty() && props.delta}>{(delta) => badge(delta())}</Show>
             </>
           }
         >
@@ -159,7 +160,7 @@ function Body(props: StatCellProps): JSX.Element {
               when={props.stale}
               fallback={
                 <>
-                  <Show when={plain && !empty() && props.delta}>{(delta) => badge(delta())}</Show>
+                  <Show when={plain() && !empty() && props.delta}>{(delta) => badge(delta())}</Show>
                   <Show when={props.compare}>
                     {(compare) => (
                       <span class="k2b-stat-cell__sub">
@@ -242,9 +243,9 @@ export function StatCell(props: StatCellProps): JSX.Element {
   const size = () => props.size ?? gridSize;
   // A plain figure has no surface; its tone colours the figure instead of only the icon chip.
   const surface = useStatGridSurface();
-  const plain = surface === "plain";
-  const variant = plain ? surface : undefined;
-  const tone = () => (plain ? props.tone : undefined);
+  const plain = () => surface() === "plain";
+  const variant = () => (plain() ? "plain" : undefined);
+  const tone = () => (plain() ? props.tone : undefined);
   return (
     <Show
       // A tile that offers a retry is no link: the button must not sit inside it.
@@ -253,8 +254,8 @@ export function StatCell(props: StatCellProps): JSX.Element {
         <div
           class="k2b-stat-cell"
           data-size={size()}
-          data-surface={plain ? undefined : surface}
-          data-variant={variant}
+          data-surface={plain() ? undefined : surface()}
+          data-variant={variant()}
           data-tone={tone()}
           data-wrap={props.wrap || undefined}
           data-delta-placement={props.deltaPlacement}
@@ -269,8 +270,8 @@ export function StatCell(props: StatCellProps): JSX.Element {
         href={props.href}
         class="k2b-stat-cell k2b-stat-cell--link"
         data-size={size()}
-        data-surface={plain ? undefined : surface}
-        data-variant={variant}
+        data-surface={plain() ? undefined : surface()}
+        data-variant={variant()}
         data-tone={tone()}
         data-wrap={props.wrap || undefined}
         data-delta-placement={props.deltaPlacement}
