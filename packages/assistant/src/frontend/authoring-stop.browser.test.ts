@@ -121,6 +121,7 @@ const finish = (page: Page, ok: boolean) =>
 const shot = async (page: Page, name: string, width: number) => {
   if (!shots) return;
   mkdirSync(shots, { recursive: true });
+  console.info(`PF1 geometry ${JSON.stringify({ name, width, ...(await boxes(page)) })}`);
   await page.screenshot({ path: resolve(shots, `pause-${name}-light-${width}.png`) });
 };
 
