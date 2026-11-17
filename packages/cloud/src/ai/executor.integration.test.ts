@@ -520,7 +520,7 @@ suite("AI executor integration", () => {
           signal: new AbortController().signal,
         });
         expect(writes).toBe(phase.startsWith("before") ? 0 : 1);
-        expect(await aiFileStore.stat({ conversationId: conversation.id, path: "second.txt" })).toBeNull();
+        expect(await aiFileStore.stat({ conversationId: conversation.id, path: "/second.txt" })).toBeNull();
         expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("aborted");
         const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
         const outcomes = messages.filter(({ message }) => message.role === "tool_result" && message.callId === "first-effect");
@@ -626,7 +626,10 @@ suite("AI executor integration", () => {
       await executor.run({ conversationId: conversation.id, turnId: turn.id, claim: claim!, signal: new AbortController().signal });
       expect(writes).toBe(2);
       expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
-      expect(await aiFileStore.stat({ conversationId: conversation.id, path: "second.txt" })).not.toBeNull();
+      expect(await aiFileStore.stat({ conversationId: conversation.id, path: "/second.txt" })).toMatchObject({
+        path: "/second.txt",
+        size: 6,
+      });
     } finally {
       writing.mockRestore();
       completionQueue = [];
