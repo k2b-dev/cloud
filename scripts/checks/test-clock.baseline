@@ -39,7 +39,6 @@ packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-sui
 packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts | 4
 packages/spaces/src/frontend/[id]/_components/list/item-list.browser-suite.ts | 2
 packages/spaces/src/frontend/[id]/_components/sidebar/item-templates.browser-suite.ts | 2
-packages/spaces/src/frontend/[id]/_components/workspace/space-head.browser-suite.ts | 1
 packages/spaces/test/item-form-templates.behavior.test.tsx | 7
 packages/spaces/test/live.behavior.test.tsx | 1
 packages/spaces/test/templates-settings.behavior.test.tsx | 1

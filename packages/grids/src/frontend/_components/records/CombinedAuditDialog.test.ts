@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { combinedAuditDateStart, combinedAuditDayAfter } from "./CombinedAuditDialog";
+import "../ssr-test-plugin";
+
+const { combinedAuditDateStart, combinedAuditDayAfter } = await import("./CombinedAuditDialog");
 
 describe("Combined audit date filters", () => {
   test("uses the configured timezone and keeps DST day boundaries exact", () => {

@@ -1,5 +1,5 @@
 import { afterEach, expect, mock, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { PanelState } from "./panel-context-bridge";
@@ -14,7 +14,8 @@ else {
   test("the checkbox requests consent through events and follows current controller state", async () => {
     const dom = createDomTestHarness();
     const initial: PanelState = { provider: "fixture", appName: "Inventory", consent: true, allowed: true, saving: false, open: true };
-    const dispose = render(() => createComponent(PanelMenu, { initial, locale: "en" }), dom.root);
+    const [state, setState] = createSignal(initial);
+    const dispose = render(() => createComponent(PanelMenu, { state, locale: "en" }), dom.root);
     const request = mock((_event: CustomEvent) => {});
     window.addEventListener("cloud.panel.consent", request);
     cleanup = () => {
@@ -30,16 +31,17 @@ else {
     choice.click();
     expect(request.mock.calls[0]?.[0].detail).toEqual({ provider: "fixture", allowed: false });
     // The row follows the saved answer, not the value it had when the menu first rendered.
-    window.dispatchEvent(new CustomEvent("cloud.panel.state", { detail: { ...initial, allowed: false } }));
+    setState({ ...initial, allowed: false });
     expect(document.querySelector('[role="menuitemcheckbox"]')!.getAttribute("aria-checked")).toBe("false");
-    window.dispatchEvent(new CustomEvent("cloud.panel.state", { detail: { ...initial, provider: "core", consent: false } }));
+    setState({ ...initial, provider: "core", consent: false });
     expect(dom.root.querySelector<HTMLButtonElement>('[aria-label="Panel menu"]')!.disabled).toBe(true);
   });
 
-  test("the checkbox waits for the lazy controller, so an early change cannot get lost", async () => {
+  test("the same checkbox follows saving before and after opening", async () => {
     const dom = createDomTestHarness();
     const initial: PanelState = { provider: "fixture", appName: "Inventory", consent: true, allowed: true, saving: true, open: true };
-    const dispose = render(() => createComponent(PanelMenu, { initial, locale: "en" }), dom.root);
+    const [state, setState] = createSignal(initial);
+    const dispose = render(() => createComponent(PanelMenu, { state, locale: "en" }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -48,15 +50,25 @@ else {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const choice = () => document.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!;
     expect(choice().getAttribute("aria-disabled") === "true" || choice().disabled).toBe(true);
-    window.dispatchEvent(new CustomEvent("cloud.panel.state", { detail: { ...initial, saving: false } }));
+    setState({ ...initial, saving: false });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(choice().getAttribute("aria-disabled") === "true" || choice().disabled).toBe(false);
+    const row = choice();
+    setState({ ...initial, allowed: false });
+    expect(row.isConnected).toBe(true);
+    expect(choice()).toBe(row);
+    expect(row.disabled).toBe(true);
+    expect(row.getAttribute("aria-checked")).toBe("false");
+    setState({ ...initial, saving: false });
+    expect(choice()).toBe(row);
+    expect(row.disabled).toBe(false);
   });
 
   test("closing the slot collapses an expanded menu, so reopening never finds it hanging open", async () => {
     const dom = createDomTestHarness();
     const initial: PanelState = { provider: "fixture", appName: "Inventory", consent: true, allowed: true, saving: false, open: true };
-    const dispose = render(() => createComponent(PanelMenu, { initial, locale: "en" }), dom.root);
+    const [state, setState] = createSignal(initial);
+    const dispose = render(() => createComponent(PanelMenu, { state, locale: "en" }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -65,7 +77,7 @@ else {
     trigger.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    window.dispatchEvent(new CustomEvent("cloud.panel.state", { detail: { ...initial, open: false } }));
+    setState({ ...initial, open: false });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
 }

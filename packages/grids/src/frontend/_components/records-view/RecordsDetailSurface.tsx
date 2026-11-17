@@ -38,6 +38,8 @@ type Props = {
   fieldsByTable: Record<string, Field[]>;
   viewColumns: ColumnSpec[] | undefined;
   dateConfig?: DateContext;
+  /** Server time for the same history on the server and the first browser render. */
+  now?: string;
   onCloseRecord: () => void;
   onRetryRecord: () => void;
   onRecordUpdated: (record: GridRecord) => void;
@@ -90,6 +92,7 @@ export default function RecordsDetailSurface(props: Props) {
               auditPolicy={props.auditPolicy}
               record={props.record}
               detail={props.detail}
+              now={props.now}
               documentTemplates={props.documentTemplates}
               mode={props.mode}
               canWrite={props.canWrite}

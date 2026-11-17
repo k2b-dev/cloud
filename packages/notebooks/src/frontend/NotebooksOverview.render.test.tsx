@@ -14,6 +14,19 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: NotebooksOverview } = await import("./NotebooksOverview.island.tsx");
 const { LocaleProvider } = await import("@k2b/ui");
 
+// The rendered text as a parser reads it: text nodes only, without tags or hydration comments.
+const textOf = (html: string) => {
+  let plain = "";
+  new HTMLRewriter()
+    .onDocument({
+      text(chunk) {
+        plain += chunk.text;
+      },
+    })
+    .transform(html);
+  return plain;
+};
+
 const renderOverview = (initialActivityError: string | null = null, locale = "en") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
@@ -61,6 +74,7 @@ const renderOverview = (initialActivityError: string | null = null, locale = "en
           initialActivityError,
           initialPinnedNotebookIds: ["Book01"],
           dateConfig: { locale, timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+          now: "2026-08-20T12:00:00.000Z",
         });
       },
     }),
@@ -90,9 +104,11 @@ describe("Notebooks overview", () => {
     expect(html).toContain("Launch plan");
     expect(html).toContain("Sofie");
     expect(html).toContain("Edited “Launch plan” in Product");
-    expect(html).toMatch(/class="k2b-paper notebooks-overview-activity-paper /);
-    expect(html).toContain("notebooks-overview-activity-list");
-    expect(html).toContain("ti ti-pencil notebooks-overview-activity-icon app-accent-text");
+    // Activity is the shared timeline: the sentence links to the note, the person stands in the meta line.
+    expect(html).toContain('class="k2b-activity"');
+    expect(html).toContain('<i class="ti ti-pencil"');
+    expect(html).toMatch(/<a class="k2b-activity__text-link" href="\/app\/notebooks\/[^"]+">/);
+    expect(textOf(html)).toContain("12:00 · 2 hr. ago · Sofie");
     expect(html).toContain('datetime="2026-08-20T10:00:00.000Z"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
     expect(html).toMatch(/<aside[^>]*id="k2b-workspace-detail-notebooks-overview-activity"(?![^>]*hidden)/);
@@ -100,10 +116,11 @@ describe("Notebooks overview", () => {
 
   test("distinguishes an activity failure from an empty history", () => {
     const html = renderOverview("Activity service unavailable");
-    expect(html).toContain("Could not load activity");
-    expect(html).toContain("Activity service unavailable");
-    expect(html).toContain("Retry");
-    expect(html).not.toContain("No activity yet");
+    expect(textOf(html)).toContain("Could not load activity: Activity service unavailable");
+    expect(html).toContain("Reload");
+    expect(html).not.toContain("Notebook and note changes will appear here.");
+    // The entries that are there stay below the error.
+    expect(html.indexOf("Activity service unavailable")).toBeLessThan(html.indexOf('class="k2b-activity"'));
   });
 
   test("renders German copy for a regional request locale during SSR", () => {
