@@ -2105,17 +2105,17 @@
 }
 /* #3297: above the conversation, the placeholder and the loaded box share one reserved height, so a late draft,
    signature, or suggestion never moves the messages below. Text and signature fade out at that height (the signature
-   first); the box grows to its content once the person clicks, focuses, or drags a file into it. Under the
+   first); interaction reveals overflowing content while retaining the reserved minimum height. Under the
    conversation nothing sits below the box, so it keeps its natural height there. */
 .k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame {
   --mail-reply-box-reserved: 19rem;
 }
-.k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-reply-box-pending {
+.k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-reply-box-pending,
+.k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-inline-draft.mail-reply-box {
   min-height: var(--mail-reply-box-reserved);
 }
 .k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame:not([data-reply-box-expanded]) > .mail-inline-draft.mail-reply-box {
   height: var(--mail-reply-box-reserved);
-  min-height: var(--mail-reply-box-reserved);
   overflow: hidden;
 }
 .k2b-ui
@@ -2123,7 +2123,6 @@
   > .mail-reply-box-frame:not([data-reply-box-expanded])
   > .mail-inline-draft.mail-reply-box
   > :is(.mail-inline-draft-text, .mail-inline-draft-signature) {
-  min-height: 0;
   flex-shrink: 1;
   overflow: hidden;
 }
@@ -2139,6 +2138,7 @@
   > .mail-reply-box-frame:not([data-reply-box-expanded])
   > .mail-inline-draft.mail-reply-box
   > .mail-inline-draft-signature {
+  min-height: 0;
   flex-shrink: 1000;
 }
 
@@ -2297,11 +2297,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A failed send or note save turns the bar light red in place: the reason, and the retry where the action was. */
+/* A failed send or note save turns the bar light red in place, with the same bottom inset as the normal bar. */
 .k2b-ui .mail-reply-box-foot[data-tone="danger"] {
   gap: 0.5rem;
   margin-inline: -0.875rem;
-  margin-block-end: -0.5rem;
   padding: 0.375rem 0.875rem;
   border-end-start-radius: 0.875rem;
   border-end-end-radius: 0.875rem;
