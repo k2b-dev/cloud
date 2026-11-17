@@ -3,6 +3,20 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
+test("the desktop app launcher stays blue when opened over an AI page", async () => {
+  const dom = createDomTestHarness();
+  const { dialogCore } = await import("@k2b/ui");
+  const { openLaunchpadSurface } = await import("./launchpad-surface");
+  try {
+    dom.document.body.dataset.k2bPrimary = "ai";
+    openLaunchpadSurface({ apps: [], legalLinks: [] });
+    expect(dom.document.querySelector("dialog[open]")?.getAttribute("data-k2b-primary")).toBe("blue");
+  } finally {
+    dialogCore.close();
+    dom.cleanup();
+  }
+});
+
 test("the public launcher opens once during loading and can open again afterwards", async () => {
   const dom = createDomTestHarness();
   const reload = await import("../browser/reload");

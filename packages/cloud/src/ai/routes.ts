@@ -650,6 +650,8 @@ export const aiRoutes = (() => {
             requestId: body.requestId,
             ownerUserId: ctx.ownerUserId,
             title: body.title,
+            // An untitled chat, such as one from `cld assistant chats create`, is named in the caller's language.
+            defaultTitle: aiChatMessages(getLocale(c)).newChat,
             projectId: project?.id,
             draft: draft.data.content,
             preloadTools: preloadTools.map((name) => name!),
@@ -1845,7 +1847,7 @@ export const aiRoutes = (() => {
         if (aiProjectFilePathFromMount(to) !== null) return respond(c, fail(err.badInput("The /project namespace is reserved.")));
         const renamed = await aiFileStore.rename({ conversationId: conversation.id, from, to });
         if (renamed === "not_found") return notFound(c);
-        if (renamed === "conflict") return respond(c, fail(err.conflict(`File "${to}"`)));
+        if (renamed === "conflict") return respond(c, fail(err.conflict(`File "${to}" already exists`)));
         return respond(c, ok({ renamed: true }));
       })
   );

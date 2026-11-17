@@ -95,6 +95,8 @@ export default function DocumentTemplateWorkspace(props: Props) {
   const browserKeyString = (key = currentBrowserKey()) => serializeDocumentBrowserKey(key);
   let loadedBrowserKey = browserKeyString();
   const browserMut = mutations.create<PublicDocumentBrowseResponse, ReturnType<typeof currentBrowserKey>>({
+    // The newest folder, view or search replaces a read in flight.
+    concurrency: "replace",
     mutation: (key, { abortSignal }) => fetchBrowserPage({ ...key, search: key.search.trim(), signal: abortSignal, locale: locale() }),
     onSuccess: (page) => {
       const next = replaceDocumentBrowserPage(page);
@@ -196,6 +198,8 @@ export default function DocumentTemplateWorkspace(props: Props) {
     });
 
   const downloadMut = mutations.create<void, PublicDocument, { documentId: string }>({
+    // Another row's download starts while one runs; the running download still finishes.
+    concurrency: "replace",
     onBefore: (document) => {
       setBusy(document.id);
       return { documentId: document.id };

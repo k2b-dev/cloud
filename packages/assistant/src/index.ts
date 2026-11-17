@@ -1,3 +1,4 @@
+import { startRuntimeInterval } from "@k2b/cloud/services";
 import { websocket } from "hono/bun";
 import { agentHost } from "./artifacts/agent-host";
 import { artifactDatabase, rsqlAllowlist } from "./artifacts/database";
@@ -12,14 +13,7 @@ import { apiRoutes, router } from "./router";
 
 let hostTimer: ReturnType<typeof setInterval> | undefined;
 let hostSweep: Promise<unknown> | undefined;
-let databaseTimer: ReturnType<typeof setInterval> | undefined;
-let databaseCleanup: Promise<unknown> | undefined;
-const sweep = () =>
-  (databaseCleanup ??= Promise.all([artifactDatabase.cleanup(), httpService.cleanup(), appChecks.cleanup()])
-    .catch(() => console.warn("Assistant storage cleanup deferred"))
-    .finally(() => {
-      databaseCleanup = undefined;
-    }));
+let storageCleanup: ReturnType<typeof startRuntimeInterval> | undefined;
 
 const result = await app.start({
   fetch: router.fetch,
@@ -30,6 +24,7 @@ const result = await app.start({
     setup: migrateArtifacts,
     start: async () => {
       await rsqlAllowlist();
+      // runtime-timer: closes idle and expired code hosts; releasing them is how in-flight work ends, so quiesce keeps it.
       hostTimer = setInterval(() => {
         hostSweep ??= agentHost
           .sweep()
@@ -39,16 +34,20 @@ const result = await app.start({
           });
       }, 1000);
       hostTimer.unref();
-      await sweep();
-      databaseTimer = setInterval(() => void sweep(), 30000);
-      databaseTimer.unref();
+      storageCleanup = startRuntimeInterval({
+        run: async () => {
+          await Promise.all([artifactDatabase.cleanup(), httpService.cleanup(), appChecks.cleanup()]);
+        },
+        intervalMs: 30_000,
+        onError: () => console.warn("Assistant storage cleanup deferred"),
+      });
     },
     stop: async () => {
       clearInterval(hostTimer);
       await hostSweep;
       await Promise.all([agentHost.close(), closeMachineHosts()]);
-      clearInterval(databaseTimer);
-      await databaseCleanup;
+      await storageCleanup?.stop();
+      storageCleanup = undefined;
     },
   },
 });

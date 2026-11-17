@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
@@ -12,6 +12,13 @@ const open = (details: HTMLDetailsElement) => {
 // Solid delegates clicks to the document that was current when the views loaded, so all tests share one document.
 let dom: ReturnType<typeof createDomTestHarness> | undefined;
 afterAll(() => dom?.cleanup());
+// The opened work loads its code on demand in the browser. Load it once before the tests, with time for a cold
+// transpile, so a toggle shows its rows at once.
+beforeAll(async () => {
+  if (isServer) return;
+  dom ??= createDomTestHarness();
+  await (await import("#chat-work-list")).preloadAiWorkSteps();
+}, 30_000);
 
 const mount = async (blocks: () => AiTurnBlock[], options: { locale?: string; opened?: string[] } = {}) => {
   dom ??= createDomTestHarness();

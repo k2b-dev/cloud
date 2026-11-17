@@ -78,7 +78,7 @@ const portableSections = [
         "Dropdown picker whose rows explain each choice, with an optional preview of the consequences.",
       ),
       page("choice-chips", "ChoiceChips", "ti ti-circle-dot", "A labeled row of quick single choices that scrolls instead of wrapping."),
-      page("choice-list", "ChoiceList", "ti ti-list", "A labeled single choice of a few rows that each explain their consequence."),
+      page("choice-list", "ChoiceList", "ti ti-list", "Visible radio choices as cards with explanations or compact framed rows."),
       page(
         "choice-tiles",
         "ChoiceTiles",
@@ -98,6 +98,7 @@ const portableSections = [
       page("tag-editor", "Tag editing", "ti ti-tag", "Reusable tag presentation, entity management, and assignment composition."),
       page("date-picker", "Date pickers", "ti ti-calendar", "Date, date-time, and date-range selection with explicit timezone handling."),
       page("period-picker", "PeriodPicker", "ti ti-calendar-stats", "One control for the period a view shows: presets and a custom range."),
+      page("time-input", "TimeInput", "ti ti-clock", "A clock time alone as HH:mm, typed short, with a minute step and bounds."),
       page("color", "ColorInput", "ti ti-palette", "Native color selection with controlled value and optional transparency."),
       page("pin", "PinInput", "ti ti-password", "Grouped one-time-code entry with paste and arrow-key navigation."),
       page(
@@ -391,6 +392,12 @@ const portableSections = [
         "LoadMore",
         "ti ti-arrow-bar-to-down",
         "The edge of a list that loads more by itself, with a button, the busy state, and Try again in one steady row.",
+      ),
+      page(
+        "activity-list",
+        "ActivityList",
+        "ti ti-history",
+        "What happened to an object as a timeline with day dividers, bundles, a card with All N, and a filter by kind.",
       ),
       page(
         "message-rows",

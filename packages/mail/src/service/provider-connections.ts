@@ -259,7 +259,7 @@ export const createProviderConnection = async (params: {
     if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") {
       return fail(err.conflict("Provider state changed during connection verification; retry the operation"));
     }
-    if (isUniqueViolation(error)) return fail(err.conflict("Provider connection"));
+    if (isUniqueViolation(error)) return fail(err.conflict("Provider connection already exists"));
     logDatabaseFailure(log.error, "store", "provider connection", error);
     return fail(err.internal("Failed to store provider connection"));
   }
@@ -576,7 +576,7 @@ export const replaceProviderConnection = async (params: {
     if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") {
       return fail(err.conflict("Provider state changed during credential verification; retry the operation"));
     }
-    if (isUniqueViolation(error)) return fail(err.conflict("Provider connection"));
+    if (isUniqueViolation(error)) return fail(err.conflict("Provider connection already exists"));
     logDatabaseFailure(log.error, "replace", "provider connection", error);
     return fail(err.internal("Failed to replace provider connection"));
   }

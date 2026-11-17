@@ -1,5 +1,5 @@
 import { i18n } from "@k2b/stdlib";
-import { isNotebookActivityAction } from "../lib/activity-actions";
+import { isNotebookActivityAction, type NotebookActivityAction } from "../lib/activity-actions";
 
 type OverviewTarget = { target: string; notebook: string };
 type MessageOptions = OverviewTarget & { self: boolean; overview: boolean };
@@ -84,3 +84,50 @@ export const describeOverviewActivity = (action: string, options: OverviewTarget
   const { t } = activityMessages.resolve([options.locale]);
   return t[isNotebookActivityAction(action) ? action : "unknown"]({ ...options, self: false, overview: true });
 };
+
+/** A note's own timeline names what happened without the person; the person stands in the meta line. */
+export const noteActivitySentences = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      "notebook.created": "Notebook created",
+      "note.created": "Note created",
+      "note.edited": "Edited",
+      "note.restored": "Version restored",
+      "annotation.create": "Passage commented on",
+      "comment.created": "Commented",
+      "comment.updated": "Comment changed",
+      "comment.deleted": "Comment deleted",
+      unknown: "Note changed",
+    },
+    de: {
+      "notebook.created": "Notizbuch erstellt",
+      "note.created": "Notiz erstellt",
+      "note.edited": "Bearbeitet",
+      "note.restored": "Version wiederhergestellt",
+      "annotation.create": "Textstelle kommentiert",
+      "comment.created": "Kommentiert",
+      "comment.updated": "Kommentar geändert",
+      "comment.deleted": "Kommentar gelöscht",
+      unknown: "Notiz geändert",
+    },
+  },
+});
+
+export const describeNoteActivityEntry = (action: string, locale: string): string =>
+  noteActivitySentences.resolve([locale]).t[isNotebookActivityAction(action) ? action : "unknown"];
+
+const activityIcons = {
+  "notebook.created": "ti ti-notebook",
+  "note.created": "ti ti-plus",
+  "note.edited": "ti ti-pencil",
+  "note.restored": "ti ti-history",
+  "annotation.create": "ti ti-message-plus",
+  "comment.created": "ti ti-message-plus",
+  "comment.updated": "ti ti-message-pencil",
+  "comment.deleted": "ti ti-message-x",
+} satisfies Record<NotebookActivityAction, string>;
+
+/** One fixed icon per kind of activity. */
+export const notebookActivityIcon = (action: string): string =>
+  isNotebookActivityAction(action) ? activityIcons[action] : "ti ti-activity";

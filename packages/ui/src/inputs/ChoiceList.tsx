@@ -25,21 +25,23 @@ export type ChoiceListOption<T extends string = string> = {
 
 export type ChoiceListProps<T extends string = string> = Omit<ValueFieldProps<T | null>, "onValueChange" | "onValueCommit"> & {
   options: readonly ChoiceListOption<T>[];
+  /** Cards by default; `list` joins compact rows in one frame, with details below the frame. */
+  variant?: "cards" | "list";
   /** The chosen value is being saved: a spinner beside its label, and the group is busy. Choosing again is still possible. */
   busy?: boolean;
   /** Busy spinner's name for screen readers, such as "Saving". */
   busyLabel?: string;
-  /** Follow-up controls for the chosen option, shown under it and indented to its text, such as a duration. */
+  /** Follow-up controls for the chosen option: under its card row, or below the whole frame in `list`. */
   details?: JSX.Element;
   onValueChange?: (value: T) => void;
   onValueCommit?: (value: T) => void;
 };
 
 /**
- * A labeled single choice shown as cards, each with a radio, a label and one sentence on what it
- * means, for a few choices whose consequences need words. Choosing changes only paint, so no card moves; `details`
- * opens under the chosen card's row. Use `ChoiceChips` for quick picks without explanation, `RichSelect` for longer lists
- * in a dropdown, and `ChoiceTiles` when a preview decides.
+ * A labeled single choice shown as cards or compact framed rows, each with a radio and a label.
+ * Cards explain consequences below the label; `list` puts short additions beside it. `details`
+ * opens under the chosen card's row, or below the whole list frame. Use `ChoiceChips` for quick picks
+ * without explanation, `RichSelect` for longer lists in a dropdown, and `ChoiceTiles` when a preview decides.
  */
 export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>): JSX.Element {
   const meta = createFieldMeta(props.id);
@@ -80,6 +82,7 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
     >
       <div
         class="k2b-choice-list"
+        data-variant={props.variant ?? "cards"}
         ref={group}
         role="radiogroup"
         aria-label={props.label ? undefined : props["aria-label"]}
@@ -127,7 +130,7 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
                     {optionDescription(option, "k2b-choice-list__description", descriptionId)}
                   </span>
                 </button>
-                <Show when={checked() && props.details}>
+                <Show when={props.variant !== "list" && checked() && props.details}>
                   <div class="k2b-choice-list__details">{props.details}</div>
                 </Show>
               </>
@@ -135,6 +138,9 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
           }}
         </Index>
       </div>
+      <Show when={props.variant === "list" && props.options.some((option) => option.value === value()) && props.details}>
+        <div class="k2b-choice-list__details">{props.details}</div>
+      </Show>
     </Field>
   );
 }

@@ -353,8 +353,7 @@ export const createAdminIdentityRoutes = (
           const account = await service.serviceAccounts.get({ id });
           if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
           const updated = await service.avatars.update({ id, change: c.req.valid("json") });
-          if (!updated.ok)
-            return fail(updated.status === 409 ? { ...err.conflict("Picture"), message: updated.error } : err.badInput(updated.error));
+          if (!updated.ok) return fail(updated.status === 409 ? err.conflict(updated.error) : err.badInput(updated.error));
           await service.audit.record({
             action: "service_account.avatar.update",
             outcome: "allowed",

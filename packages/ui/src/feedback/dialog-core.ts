@@ -4,12 +4,16 @@ import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { applyUiScope, readUiScope } from "../internal/portal-scope";
 import { RenderErrorBoundary } from "../internal/render-error";
+import { keepScroll, restoreScroll } from "../internal/scroll-places";
 import { resolveUiMessages } from "../intl/messages";
+import type { FrameMotion } from "./dialog-frame-motion";
 import { isPointInsideToast } from "./toast-hit";
 
 export type DialogClose<T> = (result?: T) => void;
 
 export type OpenDialogOptions = {
+  /** Override the opener's primary palette for a dialog with its own purpose, such as a global session warning. */
+  primary?: "blue" | "ai";
   /** Close only this dialog when its owning operation is cancelled. */
   signal?: AbortSignal;
   panelClassName?: string;
@@ -82,6 +86,8 @@ type DialogStackEntry = {
 
 type DialogState = {
   element?: HTMLDialogElement;
+  /** The size and content motion of the open frame while levels replace each other. */
+  motion?: FrameMotion;
   modal?: boolean;
   stack: DialogStackEntry[];
   scrollLocked?: boolean;
@@ -143,6 +149,25 @@ const applyAccessibleName = (dialog: HTMLDialogElement, entry: DialogStackEntry)
   dialog.setAttribute("aria-labelledby", heading.id);
 };
 
+/**
+ * The exit fade and the level change (morph, announcement) load in one module when the first dialog opens, so islands
+ * that open dialogs do not carry them in their first bundle. Nothing waits for it: a dialog that closes before it
+ * arrived leaves at once, a level that replaces another changes at once (with its scroll places kept) and says its name
+ * as soon as the module is there.
+ */
+let frameMotion: typeof import("./dialog-frame-motion") | undefined;
+let frameMotionLoading: Promise<void> | undefined;
+const loadFrameMotion = (): Promise<void> =>
+  (frameMotionLoading ??= import("./dialog-frame-motion").then(
+    (module) => {
+      frameMotion = module;
+    },
+    () => {
+      // A failed chunk request may succeed on the next open.
+      frameMotionLoading = undefined;
+    },
+  ));
+
 const schedule = (callback: () => void): void => {
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(callback);
   else queueMicrotask(callback);
@@ -190,6 +215,9 @@ export const createDialogCore = () => {
   /** Settles when the synthetic Back that removes closed dialogs' entries has arrived. */
   let returning: Promise<void> | undefined;
   let resolveReturning: (() => void) | undefined;
+  /** Ends the fade-out of the frame whose last level closed: its content stays until the frame has left. */
+  let leaving: (() => void) | undefined;
+  const endLeaving = () => leaving?.();
 
   /** Outside island disposal, closed entries leave with one Back to the newest live dialog or holder, or to the page. */
   const syncHistory = () => {
@@ -294,6 +322,8 @@ export const createDialogCore = () => {
     }
     disposals++;
     while (state.stack.length > 0) popTop(undefined);
+    // New page content: a frame still fading out leaves at once, as if the document were replaced.
+    endLeaving();
   };
 
   /** `@k2b/ssr/nav` stops a traversal to another server page before later listeners and reports it here. */
@@ -324,7 +354,8 @@ export const createDialogCore = () => {
   // created before islands mount and add their navigation listeners, so it listens from the start.
   if (typeof window !== "undefined") listen();
 
-  const pushHistory = (entry: HistoryEntry, url?: string) => {
+  /** Returns whether the dialog's own address already was the page's address: a reload or a shared link brought it. */
+  const pushHistory = (entry: HistoryEntry, url?: string): boolean => {
     listen();
     const previous = historyRecord();
     // A reload or Forward never brings back a dialog or its sensitive transient state.
@@ -334,7 +365,8 @@ export const createDialogCore = () => {
     issued.add(entry.historyId);
     historyIds.push(entry.historyId);
     // Only a dialog that names itself in the URL resumes the entry a reload left behind; the page entry stays below.
-    const resume = stale && url !== undefined && new URL(url, location.href).href === location.href;
+    const here = url !== undefined && new URL(url, location.href).href === location.href;
+    const resume = stale && here;
     if (resume) history.replaceState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "");
     else {
       if (stale) history.replaceState(previous, "");
@@ -342,6 +374,7 @@ export const createDialogCore = () => {
     }
     if (url !== undefined) ownUrls.set(entry.historyId, location.href);
     seen = historySnapshot();
+    return here;
   };
 
   /** Internal non-dialog participation in the same history stack. Releasing never calls onBack. */
@@ -374,6 +407,8 @@ export const createDialogCore = () => {
   };
 
   const ensureDialogElement = () => {
+    // A frame that is still fading out ends now; the new dialog gets a frame of its own.
+    endLeaving();
     // Reuse the shared element whenever it is still in the document. Resolving
     // the portal root first would create a second <dialog> when focus has moved
     // into another `.k2b-ui` scope, orphaning the levels already on the stack.
@@ -392,6 +427,7 @@ export const createDialogCore = () => {
     // Each stack level carries its own palette, independently of the first opener.
     getK2bPortalRoot(undefined, document.body).appendChild(element);
     state.element = element;
+    void loadFrameMotion();
     return element;
   };
 
@@ -496,20 +532,47 @@ export const createDialogCore = () => {
     }
   };
 
-  const popTop = (result?: unknown) => {
+  /** A level that replaces another says its name; before the module has loaded, as soon as it has, if it still shows. */
+  const announceLevel = (entry: DialogStackEntry) => {
+    if (state.motion) state.motion.announce(entry.role);
+    else {
+      const element = state.element;
+      void loadFrameMotion().then(() => {
+        if (!element || state.element !== element || state.stack.at(-1) !== entry || !frameMotion) return;
+        state.motion ??= frameMotion.createFrameMotion(element);
+        state.motion.announce(entry.role);
+      });
+    }
+  };
+
+  /** Closes the shown level. `below` are the levels under it that close with it (lowest last): they leave with the frame. */
+  const popTop = (result?: unknown, below: DialogStackEntry[] = []) => {
     const top = state.stack.pop();
     if (!top) return;
     releaseHistory(top);
-    top.dispose?.();
-    top.container.remove();
+    const discard = () => {
+      for (const entry of [top, ...below]) {
+        entry.dispose?.();
+        entry.container.remove();
+      }
+    };
 
     const dialog = state.element;
     const previous = state.stack[state.stack.length - 1];
     if (previous && dialog) {
+      // The same morph as forward, backwards: the closed level fades out over the one below, which shows as it was.
+      const motion = state.motion;
+      // Back: the closed level moves before the shown one, which stays the dialog's last child.
+      keepScroll(top.container, dialog);
+      motion?.begin(top.container, true);
       previous.container.style.display = "";
+      restoreScroll(previous.container);
       applyPresentation(previous);
       applyAccessibleName(dialog, previous);
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
+      if (motion) motion.arrive(previous.container, discard);
+      else discard();
+      announceLevel(previous);
       schedule(() => {
         if (!focusUnclaimed(dialog)) return;
         if (top.opener?.isConnected) returnFocus(top.opener, top.openerRing);
@@ -522,18 +585,39 @@ export const createDialogCore = () => {
       dialog.removeAttribute("aria-label");
       dialog.removeAttribute("aria-labelledby");
       dialog.removeAttribute("aria-describedby");
+      // State and focus change now; the frame only fades out. It leaves the top layer and the page is usable at once.
+      // From this moment it no longer acts as open: inert (no input, focus, drop or submit) and out of the
+      // accessibility tree, so neither a person nor a query by role or name finds it; only its picture fades.
+      // A level change still under way stops where the eye sees it; its closed levels are disposed after the fade.
+      const endings = state.motion?.freeze();
+      state.motion = undefined;
+      dialog.inert = true;
+      dialog.setAttribute("aria-hidden", "true");
       if (dialog.open && typeof dialog.close === "function") dialog.close();
       else dialog.removeAttribute("open");
-      dialog.remove();
       state.element = undefined;
       stopConnectionObserver();
       unlockPageScroll();
+      let left = false;
+      let finish: (() => void) | undefined;
+      const remove = () => {
+        left = true;
+        if (finish && leaving === finish) leaving = undefined;
+        endings?.();
+        discard();
+        dialog.remove();
+      };
+      if (frameMotion) finish = frameMotion.afterExitTransitions(dialog, remove);
+      else remove();
+      if (!left) leaving = finish;
       // After the Escape that closed it: WebKit lights the ring of whatever
       // that key press leaves focused.
+      // Focus returns to where the whole dialog was opened from, not into a level that closed with it.
+      const first = below.at(-1) ?? top;
       schedule(() => {
-        if (top.opener?.isConnected && focusUnclaimed(dialog)) returnFocus(top.opener, top.openerRing);
+        if (first.opener?.isConnected && focusUnclaimed(dialog)) returnFocus(first.opener, first.openerRing);
       });
-    }
+    } else discard();
 
     top.resolve?.(result);
   };
@@ -542,6 +626,8 @@ export const createDialogCore = () => {
     if (state.stack.length === 0 || state.element?.isConnected) return;
     const entries = state.stack.splice(0);
     const dialog = state.element;
+    state.motion?.stop();
+    state.motion = undefined;
     state.element = undefined;
     stopConnectionObserver();
     dialog?.remove();
@@ -563,7 +649,8 @@ export const createDialogCore = () => {
 
   const open = <T>(view: DialogRender<T>, options: OpenDialogOptions = {}): Promise<T | undefined> => {
     if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
-    return openAfter(view, options, disposals, readUiScope());
+    const scope = readUiScope();
+    return openAfter(view, options, disposals, { ...scope, primary: options.primary ?? scope.primary });
   };
 
   const openAfter = <T>(
@@ -581,9 +668,15 @@ export const createDialogCore = () => {
     // A dialog that waited for history while islands were disposed would open over content it was never meant for.
     if (disposals !== requested) return Promise.resolve(undefined);
     const dialog = ensureDialogElement();
+    if (!state.motion && frameMotion) state.motion = frameMotion.createFrameMotion(dialog);
     listen();
     const previousTop = state.stack[state.stack.length - 1];
-    if (previousTop) previousTop.container.style.display = "none";
+    // The shown level fades out while the new one replaces it in the same frame; it is hidden once it has faded.
+    if (previousTop) {
+      // Its scroll places survive being hidden below the new level, and a move when it shows again.
+      keepScroll(previousTop.container, dialog);
+      state.motion?.begin(previousTop.container);
+    }
     const activeElement = document.activeElement;
 
     const panelClassName = options.panelClassName ?? DEFAULT_PANEL_CLASS;
@@ -636,7 +729,9 @@ export const createDialogCore = () => {
         popTop(result);
       };
 
-      if (options.history) pushHistory(entry, options.historyUrl);
+      // A dialog that a reload or a shared link brings up with the page is there from the first frame, without an
+      // entrance: its own address is already the page's address when it opens.
+      const resumed = options.history ? pushHistory(entry, options.historyUrl) : false;
       state.stack.push(entry);
       try {
         applyPresentation(entry);
@@ -672,12 +767,25 @@ export const createDialogCore = () => {
         applyPresentation(entry);
         applyAccessibleName(dialog, entry);
         applyCancelBehavior(dialog, () => void requestDismiss(entry), cancelBehavior);
+        if (previousTop) {
+          const hide = () => {
+            previousTop.container.style.display = "none";
+          };
+          if (state.motion) state.motion.arrive(container, hide);
+          else hide();
+          announceLevel(entry);
+        }
 
         if (state.stack.length === 1) {
           // The native dialog returns focus to the element focused when it
           // opened, with a ring of the browser's choosing. Opening from a
           // blurred document leaves the return to popTop and its opener ring.
           if (activeElement instanceof HTMLElement) activeElement.blur();
+          if (resumed) {
+            dialog.dataset.noEnter = "";
+            // Two frames: the first frame's style still has to see the attribute.
+            schedule(() => schedule(() => delete dialog.dataset.noEnter));
+          }
           if (typeof dialog.showModal === "function") {
             if (entry.modal) dialog.showModal();
             else dialog.show();
@@ -703,10 +811,13 @@ export const createDialogCore = () => {
   };
 
   const close: DialogCore["close"] = (result) => {
-    let first = true;
-    while (state.stack.length > 0) {
-      popTop(first ? result : undefined);
-      first = false;
+    // Only the shown level closes visibly, without a morph; the levels below leave with the frame, since one that
+    // still fades out from a level change is part of the picture that fades.
+    const below = state.stack.splice(0, Math.max(0, state.stack.length - 1)).reverse();
+    popTop(result, below);
+    for (const entry of below) {
+      releaseHistory(entry);
+      entry.resolve?.(undefined);
     }
   };
 

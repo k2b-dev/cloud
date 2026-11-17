@@ -283,6 +283,7 @@ render(
             noteAuthors={authors}
             initialCommentsPage={{ items: [...comments].reverse(), page: 1, perPage: 30, total: comments.length, hasNext: false }}
             dateConfig={{ locale: "de", timeZone: "Europe/Berlin", ...{ base: "2026-10-16T19:30:00.000Z" } }}
+            now="2026-10-16T19:30:00.000Z"
           />
         </AppWorkspace.Content>
       </AppWorkspace>

@@ -77,7 +77,10 @@ export default function ContactFavoriteButton(props: Props) {
     const sourceKey = contactFavoriteKey(props.bookId, props.contactId);
     if (!lifecycle.begin(sourceKey)) return;
     setSaving(true);
-    void saveMutation.mutate({ bookId: props.bookId, contactId: props.contactId, favorite: !favorite() });
+    void saveMutation.mutate({ bookId: props.bookId, contactId: props.contactId, favorite: !favorite() }).finally(() => {
+      // Release local state even for a dropped call or a rejected lifecycle hook.
+      if (lifecycle.settle(sourceKey)) setSaving(false);
+    });
   };
 
   return (

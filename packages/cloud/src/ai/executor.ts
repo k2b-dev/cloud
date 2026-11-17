@@ -46,6 +46,7 @@ import { isMalformedToolCallId } from "./malformed-tool-calls";
 import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
+import { readQueuedTurnInterruption, reconcileQueuedInterruptions } from "./message-queue";
 import { aiModelAccess } from "./model-access";
 import { createAiNextMessageRuntime, isVisibleAiNextMessageOp } from "./next-message";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
@@ -102,7 +103,7 @@ import {
   rememberProviderErrors,
 } from "./turn-failure";
 import { type AiTurnGuidance, loadAiTurnGuidance } from "./turn-guidance";
-import { AiTurnInterruption } from "./turn-interruption";
+import { AiTurnInterruption, interruptedToolResult, isQueueInterruptedResult } from "./turn-interruption";
 import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type {
@@ -617,10 +618,16 @@ const createEventMapper = (
         return [
           setTool(event.callId, {
             name: event.name,
-            status: rejectedCallIds.has(event.callId) ? "rejected" : event.isError ? "failed" : "completed",
+            status: isQueueInterruptedResult(event.result)
+              ? "running"
+              : rejectedCallIds.has(event.callId)
+                ? "rejected"
+                : event.isError
+                  ? "failed"
+                  : "completed",
             at: new Date().toISOString(),
             result: event.result,
-            isError: Boolean(event.isError),
+            isError: !isQueueInterruptedResult(event.result) && Boolean(event.isError),
             clearApproval: true,
           }),
         ];
@@ -725,6 +732,48 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
 type AttemptOutcome =
   | { kind: "finished"; status: "completed" | "failed" | "aborted"; failure: AiTurnFailureInfo | null; timing?: LoopAggregate["timing"] }
   | { kind: "suspended" };
+
+const guardToolStart = (
+  tool: Extract<Tool, { kind: "server" }>,
+  input: { conversationId: string; turnId: string; toolName: string; signal: AbortSignal; interruption: AiTurnInterruption },
+): Extract<Tool, { kind: "server" }> => {
+  const { conversationId, turnId } = input;
+  return {
+    ...tool,
+    execute: async (args, context) => {
+      const signal = AbortSignal.any([input.signal, context.signal]);
+      const callId = context.callId ?? tool.def.name;
+      await input.interruption.waitForDecision(signal);
+      signal.throwIfAborted();
+      input.interruption.assertCanStart();
+      let started = await aiToolAudit.noteToolStarted({
+        conversationId,
+        turnId,
+        callId,
+        toolName: input.toolName,
+      });
+      signal.throwIfAborted();
+      while (!started) {
+        input.interruption.request();
+        await input.interruption.waitForDecision(signal);
+        signal.throwIfAborted();
+        input.interruption.assertCanStart();
+        started = await aiToolAudit.noteToolStarted({
+          conversationId,
+          turnId,
+          callId,
+          toolName: input.toolName,
+        });
+        signal.throwIfAborted();
+      }
+      // The audit may return before local withdrawal catches up with the database.
+      await input.interruption.waitForDecision(signal);
+      signal.throwIfAborted();
+      input.interruption.begin(callId);
+      return tool.execute(args, context);
+    },
+  };
+};
 
 export class AiTurnExecutor {
   constructor(private readonly config: ExecutorConfig) {}
@@ -1639,12 +1688,15 @@ export class AiTurnExecutor {
       store,
       steering: createChatSteering({
         appliedSteers,
-        takePendingSteers: () =>
-          aiConversations.takePendingTurnSteers({
+        takePendingSteers: async () => {
+          await interruption.waitForDecision(abortController.signal);
+          abortController.signal.throwIfAborted();
+          return aiConversations.takePendingTurnSteers({
             conversationId,
             turnId,
             leaseOwner: this.config.leaseOwner,
-          }),
+          });
+        },
         noteSteering: nextMessage.redirect(turnPolicy.noteSteering),
       }),
       tools: async () => {
@@ -1654,22 +1706,13 @@ export class AiTurnExecutor {
             (tool): Tool =>
               tool.kind !== "server"
                 ? tool
-                : {
-                    ...tool,
-                    execute: async (args, context) => {
-                      const callId = context.callId ?? tool.def.name;
-                      interruption.begin(callId);
-                      const started = await aiToolAudit.noteToolStarted({
-                        conversationId,
-                        turnId,
-                        callId,
-                        toolName: prepared.canonicalNames.get(tool.def.name) ?? tool.def.name,
-                      });
-                      if (!started) interruption.request();
-                      interruption.assertCanStart();
-                      return tool.execute(args, context);
-                    },
-                  },
+                : guardToolStart(tool, {
+                    conversationId,
+                    turnId,
+                    toolName: prepared.canonicalNames.get(tool.def.name) ?? tool.def.name,
+                    signal: abortController.signal,
+                    interruption,
+                  }),
           );
         } catch (error) {
           remember(aiTurnReasonFromThrown(error));
@@ -1759,11 +1802,14 @@ export class AiTurnExecutor {
 
     // A provider/tool may notice the lost lease before the next heartbeat tick.
     // Resolve the durable cause too, so deadline expiry never looks like a user stop.
-    const finalTurn = outcome.status !== "completed" ? await aiConversations.getTurn({ conversationId, turnId }) : null;
+    const finalTurn =
+      outcome.status !== "completed" || interruption.draining ? await aiConversations.getTurn({ conversationId, turnId }) : null;
     const timeout =
       abortController.signal.reason instanceof AiRunTimeout
         ? abortController.signal.reason
-        : finalTurn?.deadline && Date.parse(finalTurn.deadline) <= Date.now() && !finalTurn.cancelRequestedAt
+        : finalTurn?.deadline &&
+            Date.parse(finalTurn.deadline) <= Date.now() &&
+            (!finalTurn.cancelRequestedAt || finalTurn.cancellationReason === "queue_interrupt")
           ? new AiRunTimeout(finalTurn.runBudgetMs ?? null)
           : null;
     if (timeout) {
@@ -1854,14 +1900,13 @@ export class AiTurnExecutor {
         await pipeline.timing.event(event);
         if (event.type === "tool_action_request") {
           if (input.interruption.draining) {
-            loop.push(
-              event.kind === "client_tool"
-                ? { type: "tool_result", callId: event.callId, result: { error: "Turn interrupted before this step ran." } }
-                : { type: "approval_response", callId: event.callId, approved: false },
-            );
-            continue;
+            await input.interruption.waitForDecision(abortController.signal);
+            if (input.interruption.draining) {
+              await this.skipInterruptedAction({ ...input, event });
+              continue;
+            }
           }
-          if (event.kind === "client_tool") input.interruption.begin(event.callId);
+          if (event.kind === "client_tool") input.interruption.begin(event.callId.replace(/-client-[0-9]+$/, ""));
           const suspended = await this.handleActionRequest({
             event,
             interruption: input.interruption,
@@ -1980,9 +2025,39 @@ export class AiTurnExecutor {
       if (abortController.signal.aborted) return { kind: "finished", status: "aborted", failure: null };
       return { kind: "finished", status: "failed", failure: aiTurnFailureFromThrown(error, "AI turn failed") };
     } finally {
+      // Keep the lease heartbeat until a pending request is confirmed or withdrawn.
+      await input.interruption.waitForDecision(abortController.signal);
       stopHeartbeat();
       await pipeline.flush().catch(() => undefined);
     }
+  }
+
+  private async skipInterruptedAction(input: {
+    event: Extract<OutboundEvent, { type: "tool_action_request" }>;
+    conversationId: string;
+    turnId: string;
+    pipeline: StreamPipeline;
+    interruption: AiTurnInterruption;
+  }): Promise<void> {
+    const message = interruptedToolResult(input.event);
+    const store = aiConversations.createSessionStore({
+      conversationId: input.conversationId,
+      turnId: input.turnId,
+      leaseOwner: this.config.leaseOwner,
+      onMessage: (saved) => input.pipeline.emitMessage(saved),
+    });
+    await store.append(message);
+    await input.pipeline.apply({
+      ...input.event,
+      type: "tool_execution_end",
+      callId: message.callId,
+      name: input.event.name,
+      result: message.result,
+      isError: false,
+    });
+    // A custom approval is waiting inside its parent body. It has no response:
+    // release that waiter by stopping the loop, after other effects have journaled.
+    input.interruption.settled(message.callId);
   }
 
   /** Returns true when the turn was suspended for the action; false when resolved inline. */
@@ -2158,13 +2233,16 @@ export class AiTurnExecutor {
     if (!saved) {
       // The durable Send now barrier refused this step; stop starting further ones as well.
       input.interruption.request();
-      if (approvalId) await approvals.cancel([approvalId]);
-      loop.push(
-        event.kind === "client_tool"
-          ? { type: "tool_result", callId: event.callId, result: { error: "Turn interrupted before this step ran." } }
-          : { type: "approval_response", callId: event.callId, approved: false },
-      );
-      return false;
+      await input.interruption.waitForDecision(input.signal);
+      if (input.interruption.draining) {
+        if (approvalId) await approvals.cancel([approvalId]);
+        await this.skipInterruptedAction(input);
+        return false;
+      }
+      if (input.signal.aborted) return false;
+      // The request was withdrawn while the durable barrier was closed. Retry this
+      // same action through the ordinary approval path, never invent a decision.
+      return this.handleActionRequest(input);
     }
 
     if (event.kind === "client_tool") {
@@ -2242,33 +2320,69 @@ export class AiTurnExecutor {
     interruption?: AiTurnInterruption,
   ): () => void {
     let stopped = false;
+    let ticking = false;
     let failures = 0;
     const tick = async () => {
-      if (stopped) return;
-      let ok = false;
+      if (stopped || ticking) return;
+      ticking = true;
+      let succeeded = true;
       try {
-        ok = await aiConversations.heartbeatTurn({
+        let ok = await aiConversations.heartbeatTurn({
           conversationId,
           turnId,
           leaseOwner: this.config.leaseOwner,
           leaseMs: AI_TURN_LEASE_MS,
           drainingInterruption: interruption?.draining,
         });
-        failures = 0;
-      } catch {
-        failures += 1;
-        if (failures < 3) return;
-      }
-      if (!ok && !stopped) {
-        const turn = await aiConversations.getTurn({ conversationId, turnId }).catch(() => null);
-        if (turn?.cancellationReason === "queue_interrupt" && interruption) {
-          interruption.request();
+        if (stopped || (ok && !interruption?.draining)) return;
+        const turn = await aiConversations.getTurn({ conversationId, turnId });
+        if (stopped) return;
+        const timedOut =
+          turn?.deadline &&
+          Date.parse(turn.deadline) <= Date.now() &&
+          (!turn.cancelRequestedAt || turn.cancellationReason === "queue_interrupt");
+        if (timedOut) {
+          abortController.abort(new AiRunTimeout(turn.runBudgetMs ?? null));
           return;
         }
-        const timedOut = turn?.deadline && Date.parse(turn.deadline) <= Date.now() && !turn.cancelRequestedAt;
-        abortController.abort(timedOut ? new AiRunTimeout(turn.runBudgetMs ?? null) : undefined);
+        if (turn?.cancellationReason === "queue_interrupt" && interruption) {
+          // A failed renewal can also mean a lost lease. Prove ownership and the
+          // original deadline before granting the queue its drain exception.
+          if (!ok)
+            ok = await aiConversations.heartbeatTurn({
+              conversationId,
+              turnId,
+              leaseOwner: this.config.leaseOwner,
+              leaseMs: AI_TURN_LEASE_MS,
+              drainingInterruption: true,
+            });
+          if (!ok) {
+            abortController.abort();
+            return;
+          }
+          interruption.request();
+          let state = await readQueuedTurnInterruption(conversationId, turnId);
+          if (state === "unconfirmed") {
+            await reconcileQueuedInterruptions(conversationId);
+            state = await readQueuedTurnInterruption(conversationId, turnId);
+          }
+          if (stopped) return;
+          if (state === "withdrawn") interruption.withdraw();
+          else if (state === "confirmed") interruption.confirm();
+          return;
+        }
+        if (ok && turn?.status === "running" && !turn.cancelRequestedAt) interruption?.withdraw();
+        else abortController.abort();
+      } catch {
+        succeeded = false;
+        failures += 1;
+        if (failures >= 3 && !stopped) abortController.abort();
+      } finally {
+        if (succeeded) failures = 0;
+        ticking = false;
       }
     };
+    // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
     const timer = setInterval(() => void tick(), this.config.heartbeatMs);
     if (typeof timer === "object" && "unref" in timer) timer.unref();
     void tick();
@@ -2608,6 +2722,7 @@ class StreamPipeline {
     if (!this.snapshotDirty) return;
     const wait = AI_LIVE_SNAPSHOT_INTERVAL_MS - (Date.now() - this.lastSnapshotAt);
     if (wait > 0) {
+      // runtime-timer: saves the live state of a turn in flight; it ends with the turn.
       this.snapshotTimer ??= setTimeout(() => {
         this.snapshotTimer = undefined;
         void this.maybeSnapshot();
@@ -2665,6 +2780,7 @@ class StreamPipeline {
 }
 
 export const __aiExecutorTest = {
+  guardToolStart,
   createChatSteering,
   indexConversationToolSource,
   StreamPipeline,

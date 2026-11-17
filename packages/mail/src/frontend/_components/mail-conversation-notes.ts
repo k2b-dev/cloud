@@ -165,10 +165,10 @@ export function createMailConversationNotes(props: {
     loadingEarlier,
     earlierError,
     loadEarlier,
-    save: (note: ConversationComment, body: string) => {
+    save: async (note: ConversationComment, body: string) => {
       const conversationId = props.conversationId();
-      if (!conversationId) return Promise.resolve();
-      return editNote.mutate({ mailboxId: props.mailboxId(), conversationId, note, body });
+      if (!conversationId) return;
+      await editNote.mutate({ mailboxId: props.mailboxId(), conversationId, note, body });
     },
     saving: () => editNote.loading(),
     remove: (note: ConversationComment) => void removeNote.mutate(note),

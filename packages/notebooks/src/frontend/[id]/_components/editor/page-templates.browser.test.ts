@@ -372,14 +372,21 @@ describe("Notebook page templates", () => {
       const field = dialog.getByRole("textbox", { name: "Template name" });
       await field.waitFor();
       expect(await field.inputValue()).toBe("New Document");
-      const height = (await dialog.boundingBox())!.height;
+      const dialogHeight = () =>
+        dialog.evaluate((element) => ({
+          layout: getComputedStyle(element).height,
+          devicePixels: Math.round(element.getBoundingClientRect().height * window.devicePixelRatio),
+        }));
+      const height = await dialogHeight();
       await shoot(page, "04-save-as-template", 1440);
       await field.fill("weekly check-in");
       await dialog.getByRole("button", { name: "Save as template" }).click();
       await dialog.getByRole("button", { name: "Replace" }).waitFor();
       expect(await field.inputValue()).toBe("weekly check-in");
-      // The question takes the hint's place, so the buttons stay where they were.
-      expect((await dialog.boundingBox())!.height).toBe(height);
+      // The shared grid cell keeps identical line boxes, borders and gaps in both states.
+      // WebKit's entrance translate can report 254px as 254.00003051757812px: compare painted
+      // device pixels while keeping the CSS layout height exact, so real layout shifts still fail.
+      expect(await dialogHeight()).toEqual(height);
       await shoot(page, "05-save-as-template-replace", 1440);
       await dialog.getByRole("button", { name: "Cancel" }).click();
       await dialog.waitFor({ state: "detached" });

@@ -4,7 +4,7 @@ import { onCleanup } from "solid-js";
 /** The toast rail shows at most three toasts and closes older ones as new ones arrive. */
 const LIVE_TOASTS = 3;
 
-export type RetryToast = (message: string, retryLabel: string, retry: () => void | Promise<void>, options?: RetryToastOptions) => void;
+export type RetryToast = (message: string, retryLabel: string, retry: () => unknown, options?: RetryToastOptions) => void;
 export type RetryToastOptions = {
   /** Keeps the toast until it is closed; use it when Retry carries input that would otherwise be lost. */
   untilClosed?: boolean;

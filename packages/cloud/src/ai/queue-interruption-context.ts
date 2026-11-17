@@ -1,5 +1,6 @@
 import { isUnknownActionOutcome } from "./action-review";
 import type { AiStoredMessageOrigin } from "./queue-contracts";
+import { isQueueInterruptedResult } from "./turn-interruption";
 import type { AiStoredMessage } from "./types";
 
 export type InterruptedStep = { callId: string; name: string; started: boolean };
@@ -20,14 +21,20 @@ export const aiQueueInterruptionContext = (input: {
     callId: step.callId,
     name: step.name,
     state: outcomes.has(step.callId)
-      ? isUnknownActionOutcome(outcomes.get(step.callId)?.result)
-        ? "outcome_unknown"
-        : "completed"
+      ? isQueueInterruptedResult(outcomes.get(step.callId)?.result)
+        ? outcomes.get(step.callId)?.reason === "not_run"
+          ? "not_executed"
+          : "outcome_unknown"
+        : isUnknownActionOutcome(outcomes.get(step.callId)?.result)
+          ? "outcome_unknown"
+          : "completed"
       : step.started
         ? "outcome_unknown"
         : "not_executed",
   }));
-  const lastCompleted = completed.findLast((message) => !isUnknownActionOutcome(message.result));
+  const lastCompleted = completed.findLast(
+    (message) => !isUnknownActionOutcome(message.result) && !isQueueInterruptedResult(message.result),
+  );
   return [
     "The preceding turn was interrupted because a queued message was sent now. The interrupted turn and its completed results remain in conversation history.",
     "Handle the following message first. Then decide whether to continue, change or abandon the interrupted work, and explain that decision in one sentence.",

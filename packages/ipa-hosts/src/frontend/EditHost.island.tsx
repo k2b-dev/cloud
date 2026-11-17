@@ -139,8 +139,7 @@ const HostActions = (props: HostActionsProps) => {
           saving={editMutation.loading()}
           onCancel={close}
           onSave={async (data) => {
-            await editMutation.mutate(data);
-            close();
+            if ((await editMutation.mutate(data)) === "success") close();
           }}
         />
       ),

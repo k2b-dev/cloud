@@ -1392,7 +1392,7 @@ export const aiConversations: AiConversationService = {
   },
   createConversation: async (input) => {
     const normalized = {
-      title: input.title?.trim() || "New chat",
+      title: input.title?.trim() || input.defaultTitle?.trim() || "New chat",
       description: input.description?.trim() ?? "",
       projectId: input.projectId ?? null,
       draft: input.draft ?? [],
@@ -1439,7 +1439,8 @@ export const aiConversations: AiConversationService = {
       return rowToConversation(rows[0]);
     };
     if (!input.requestId) return insert(sql);
-    const hash = capabilityRequestHash(normalized);
+    // The replay identity is what the caller asked for; a default title follows the request's locale and may differ.
+    const hash = capabilityRequestHash({ ...normalized, title: input.title?.trim() || "New chat" });
     return sql.begin(async (tx) => {
       const reserved = await tx<{ request_id: string }[]>`
         INSERT INTO ai.conversation_creations (owner_user_id, request_id, input_hash)
@@ -3406,7 +3407,7 @@ export const aiConversations: AiConversationService = {
 
       // A late interrupt may race the model's final answer. The same row lock
       // decides the outcome, so the interrupted turn never looks completed.
-      if (turnRows[0].cancellation_reason === "queue_interrupt") {
+      if (turnRows[0].cancellation_reason === "queue_interrupt" && input.turnError?.code !== "time_limit") {
         const [pending] = await tx`SELECT 1 FROM ai.pending_actions WHERE turn_id=${input.turnId}::uuid
           AND kind='client_tool' AND status='pending' LIMIT 1`;
         if (pending) return "waiting_for_client" as const;
@@ -3519,7 +3520,9 @@ export const aiConversations: AiConversationService = {
             AND status = 'pending'
         `;
       }
-      return turnRows[0].cancellation_reason === "queue_interrupt" ? ("interrupted" as const) : ("completed" as const);
+      return turnRows[0].cancellation_reason === "queue_interrupt" && input.turnError?.code !== "time_limit"
+        ? ("interrupted" as const)
+        : ("completed" as const);
     });
   },
 
@@ -4000,7 +4003,7 @@ export const aiConversations: AiConversationService = {
           AND conversation_id = ${input.conversationId}
           AND status = 'running'
           AND lease_owner = ${input.leaseOwner}
-          AND cancel_requested_at IS NULL
+          AND (cancel_requested_at IS NULL OR cancellation_reason = 'queue_interrupt')
           AND lease_expires_at > now()
         ${lock ? tx`FOR UPDATE` : tx``}
       `;
@@ -4010,6 +4013,7 @@ export const aiConversations: AiConversationService = {
         WHERE conversation_id = ${input.conversationId}
           AND turn_id = ${input.turnId}
           AND status = 'pending'
+          AND NOT EXISTS (SELECT 1 FROM ai.turns WHERE id = ${input.turnId} AND cancellation_reason = 'queue_interrupt')
         ORDER BY seq ASC
         ${lock ? tx`FOR UPDATE` : tx``}
       `;

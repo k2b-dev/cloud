@@ -124,9 +124,10 @@ test("Project access is edited in the access dialog: changes save on Save and th
   };
   const button = (label: string) =>
     Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((element) => element.textContent?.trim() === label);
-  // The settings and the access dialog share one dialog element; the access panel is the visible top layer.
+  // The settings and the access dialog share one dialog element; the access panel is the visible top layer. The
+  // dialog's live region, which says the shown level's name, is no level.
   const accessPanel = () =>
-    Array.from(dom.document.querySelectorAll<HTMLElement>("dialog > *")).find(
+    Array.from(dom.document.querySelectorAll<HTMLElement>("dialog > :not([data-k2b-dialog-live])")).find(
       (item) => item.style.display !== "none" && item.textContent?.includes("Access to Sales"),
     );
   try {

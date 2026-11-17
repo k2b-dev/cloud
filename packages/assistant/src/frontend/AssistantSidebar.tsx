@@ -23,10 +23,10 @@ import { assistantApi } from "../api/client";
 import { artifactMessages } from "../artifacts/messages";
 import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
 import { assistantCommandMessages } from "../commands";
-import { openAssistantActivities } from "./AssistantActivitiesDialog";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { openAssistantPrefsModal } from "./AssistantPrefsModals";
+import { openActivities } from "./activities-dialog";
 import type { AssistantArchiveBlocker } from "./archive-blocker";
 import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
@@ -660,7 +660,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         return;
       }
       if (action === "activities") {
-        await openAssistantActivities(props.live);
+        await openActivities(props.live, locale());
         return;
       }
       if (action === "preferences") {
@@ -792,7 +792,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             <AppWorkspace.SidebarItem
               icon="ti ti-inbox"
               title={text("Background activity")}
-              onClick={() => void openAssistantActivities(props.live)}
+              onClick={() => void openActivities(props.live, locale())}
             >
               {text("Background activity")}
             </AppWorkspace.SidebarItem>
@@ -810,7 +810,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             <AppWorkspace.SidebarItem
               icon="ti ti-inbox"
               title={text("Background activity")}
-              onClick={() => void openAssistantActivities(props.live)}
+              onClick={() => void openActivities(props.live, locale())}
             >
               {text("Background activity")}
             </AppWorkspace.SidebarItem>

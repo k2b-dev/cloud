@@ -12,6 +12,8 @@ Use one vocabulary for every time and curve. The tokens are available on
 | `--k2b-motion-morph` | `280ms` | One large surface changes size or place, such as a pill that grows into an editor. |
 | `--k2b-motion-celebrate` | `600ms` | Completion moments only, such as the check that `celebrate` draws in a success toast, `prompts.success`, or a success `PanelDialog`. |
 | `--k2b-fresh-fade` | `1600ms` | Color only: a highlight fades out. |
+| `--k2b-shift-in` | `8px` | How far a surface travels as it arrives, such as a dialog rising into place. |
+| `--k2b-shift-out` | `4px` | How far a surface travels as it leaves. |
 | `--k2b-ease-out` | `cubic-bezier(0.23, 1, 0.32, 1)` | Standard curve. |
 | `--k2b-ease-morph` | `cubic-bezier(0.2, 0, 0, 1)` | With `--k2b-motion-morph` only: a soft start and a long, calm landing. |
 | `--k2b-ease-spring` | `cubic-bezier(0.34, 1.56, 0.64, 1)` | Small marks only: check, switch knob, badge. |
@@ -42,9 +44,13 @@ loops.
 | `--k2b-motion-enter-row` with `--k2b-ease-rise` | `420ms` | A new row slides in from above. |
 | `--k2b-motion-think` | `2200ms` | One shimmer pass over a working sentence, looping, linear. |
 
-These moments move only transform, opacity, and colour. The one exception is
-a folding list such as `Chat.Tasks`: its own height opens upwards from a
-header that stays put, and nothing beside it moves.
+These moments move only transform, opacity, and colour. There are two named
+exceptions, and nothing beside them moves: a folding list such as
+`Chat.Tasks`, whose own height opens upwards from a header that stays put, and
+the frame of a dialog, which stands alone above the page. When one dialog
+replaces another, the dialog core morphs the frame's width and height with
+`--k2b-motion-morph` and `--k2b-ease-morph` while the contents stand at their
+own sizes and the frame clips them.
 
 Choose the duration by what changes. Use the standard curve for ordinary
 entry motion. A large surface that grows, shrinks, or moves uses the morph
@@ -57,7 +63,9 @@ JavaScript that drives a morph with `element.animate()` reads the duration
 from the token, so reduced motion makes it instant as well:
 
 ```ts
-const duration = Number.parseFloat(getComputedStyle(element).getPropertyValue("--k2b-motion-morph")) || 0;
+// The shipped stylesheet is minified, so `280ms` may arrive as `.28s`: read the unit.
+const value = getComputedStyle(element).getPropertyValue("--k2b-motion-morph").trim();
+const duration = (Number.parseFloat(value) || 0) * (value.endsWith("ms") ? 1 : value.endsWith("s") ? 1000 : 1);
 ```
 Existing component times and curves move to these tokens in later migrations.
 
@@ -68,13 +76,25 @@ run without animation and must show the same result.
 
 Popovers and menus get only an entry animation. Closing stays synchronous.
 
+Dialogs are the one surface that also leaves visibly, after state and focus
+already apply. A dialog rises by `--k2b-shift-in` and fades in over
+`--k2b-motion-base`; when it closes, its result resolves, focus returns to the
+opener, and the page is usable at once, while the frame sinks by
+`--k2b-shift-out` and fades out over `--k2b-motion-fast`; from that moment it is
+inert, out of the accessibility tree, and takes no clicks. Large surfaces, such
+as a workspace dialog, only fade; the `Lightbox` fades in and leaves at once,
+because its owner removes it. A dialog that a reload or a shared link brings up
+with the page has no entrance. Engines without CSS `overlay` close at once.
+A dialog's content is disposed after its exit, so its cleanup runs after the
+caller has its result.
+
 ## Keep an interaction within its motion budget
 
 Use CSS and small tree-shakable helpers. Do not add a motion library.
 
 - Read layout at most once per interaction. For FLIP, measure first, then
   animate only the transform.
-- Animate only transform, opacity, color, and shadow. Never animate width,
+- Animate only transform (including `translate`), opacity, color, and shadow. Never animate width,
   height, padding, or position.
 - Do not animate on first paint or component mount.
 - Virtualized lists animate only items that arrived live.

@@ -7,6 +7,7 @@ test("interrupt before an effect blocks its body", () => {
     stopped = true;
   });
   barrier.request();
+  barrier.confirm();
   expect(stopped).toBe(true);
   expect(() => barrier.begin("effect")).toThrow("interrupted");
 });
@@ -19,6 +20,7 @@ test("interrupt during effects waits for their durable outcomes and starts no fu
   barrier.begin("one");
   barrier.begin("two");
   barrier.request();
+  barrier.confirm();
   expect(stopped).toBe(false);
   expect(() => barrier.begin("three")).toThrow("interrupted");
   barrier.settled("one");
@@ -36,6 +38,7 @@ test("interrupt after an effect stops before the next step", () => {
   barrier.settled("one");
   expect(stopped).toBe(false);
   barrier.request();
+  barrier.confirm();
   expect(stopped).toBe(true);
   expect(() => barrier.begin("two")).toThrow("interrupted");
 });
@@ -70,4 +73,35 @@ test("expired, missing, late or unknown client outcomes leave the message not se
       actions: [{ ...resolved, late: true, resolvedEvent: { ...resolved.resolvedEvent, result: { code: "OK" } } }],
     }),
   ).toBe("unconfirmed");
+});
+
+test("delivery alone cannot irreversibly abort an idle worker before receipt confirmation (#3515)", () => {
+  let stopped = false;
+  const barrier = new AiTurnInterruption(() => {
+    stopped = true;
+  });
+  barrier.request();
+  expect(barrier.draining).toBe(true);
+  expect(stopped).toBe(false);
+});
+
+test("withdrawal releases held work without interrupting an effect that already settled", async () => {
+  let stopped = false;
+  const barrier = new AiTurnInterruption(() => {
+    stopped = true;
+  });
+  barrier.begin("effect");
+  barrier.request();
+  barrier.settled("effect");
+  let released = false;
+  const held = barrier.waitForDecision(new AbortController().signal).then(() => {
+    released = true;
+  });
+  await Promise.resolve();
+  expect(released).toBe(false);
+  expect(stopped).toBe(false);
+  barrier.withdraw();
+  await held;
+  expect(stopped).toBe(false);
+  expect(() => barrier.begin("next")).not.toThrow();
 });

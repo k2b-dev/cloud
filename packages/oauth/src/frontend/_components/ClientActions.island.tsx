@@ -101,8 +101,7 @@ const ClientActions = (props: ClientActionsProps) => {
           close={requestClose}
           loading={updateMutation.loading}
           onSubmit={async (data) => {
-            await updateMutation.mutate(data);
-            if (!updateMutation.error()) close();
+            if ((await updateMutation.mutate(data)) === "success") close();
           }}
         />
       );

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "@typescript/typescript6";
-import { isTestFile, listFiles } from "./files";
+import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /** Shared buttons that would render an icon without its label as accessible name and tooltip. */
@@ -44,7 +44,8 @@ export const rule: Rule = {
 
     for (const file of sourceRoots.flatMap((root) => listFiles(root, /\.tsx$/)).sort()) {
       if (isTestFile(file)) continue;
-      const sourceFile = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const { sourceFile, findings: unparsed } = parseSource(file, readFileSync(file, "utf8"));
+      findings.push(...unparsed);
 
       const visit = (node: ts.Node): void => {
         if (ts.isJsxElement(node) && node.children.length > 0 && node.children.every(isIcon) && !node.children.every(ts.isJsxText)) {

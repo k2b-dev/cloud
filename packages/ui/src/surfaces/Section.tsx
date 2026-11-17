@@ -151,6 +151,8 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
 
   // Resolve once and only while ready: reading `children` twice would build the body twice.
   const resolved = children(() => (state() === "ready" ? local.children : undefined));
+  // A JSX action must also be built once: checking the slot and then reading it again creates different hydration keys.
+  const resolvedActions = children(() => local.actions);
   const hasBody = () => local.collapsible || state() !== "ready" || Boolean(resolved.toArray().length) || Boolean(local.footer);
 
   /** Icon, then the title with its count, state, and restricted marker in one row, then the description. */
@@ -212,8 +214,8 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
                 {local.title}
               </Heading>,
             )}
-            <Show when={local.actions}>
-              <div class="k2b-section__actions">{local.actions}</div>
+            <Show when={resolvedActions()}>
+              <div class="k2b-section__actions">{resolvedActions()}</div>
             </Show>
           </header>
         }

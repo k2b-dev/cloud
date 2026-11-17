@@ -454,8 +454,7 @@ export default function MailComposeSettings(props: {
       variant: "danger",
     });
     if (!confirmed) return false;
-    await archiveTemplateMutation.mutate(template);
-    return archiveTemplateMutation.data() === true && archiveTemplateMutation.error() === null;
+    return (await archiveTemplateMutation.mutate(template)) === "success" && archiveTemplateMutation.data() === true;
   };
 
   const setDefaultMutation = mutations.create<void, { identity: SenderIdentity; scope: "private" | "mailbox"; templateId: string }>({

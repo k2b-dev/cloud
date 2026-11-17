@@ -51,6 +51,7 @@ const renderPanel = (overrides: Partial<Props> = {}) =>
           noteAuthors: { createdBy: creator, lastEditedBy: jana },
           initialCommentsPage: { items: [], page: 1, perPage: 30, total: 0, hasNext: false },
           dateConfig,
+          now: base,
           ...overrides,
         });
       },
@@ -230,19 +231,17 @@ describe("Notebook note detail panel", () => {
       },
     );
   });
-  test("activity has no count and ends with the creator rather than a raw key", () => {
+  test("activity has no count and no raw key", () => {
     inspect({}, (document) => {
       const activity = document.querySelector(".notebook-activity");
       expect(activity?.querySelector(".k2b-count-chip")).toBeNull();
-      const rows = activity?.querySelectorAll(".k2b-detail-panel__action-title");
-      expect(text(rows?.[rows.length - 1] ?? null)).toBe("Paul Wagner hat die Notiz erstellt");
       expect(text(activity)).not.toMatch(/note[. ]created/);
     });
   });
-  test("activity initially reserves four skeleton rows and the creation row", () => {
+  test("activity initially shows the timeline's quiet loading rows", () => {
     inspect({}, (document) => {
-      expect(document.querySelectorAll(".notebook-activity-skeleton")).toHaveLength(4);
-      expect(document.querySelectorAll(".notebook-activity .notebook-activity-row")).toHaveLength(1);
+      expect(document.querySelector('.notebook-activity [role="status"]')).not.toBeNull();
+      expect(document.querySelectorAll(".notebook-activity .k2b-activity__placeholder")).toHaveLength(3);
     });
   });
 });

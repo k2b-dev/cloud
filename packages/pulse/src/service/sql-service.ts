@@ -217,6 +217,7 @@ const executeBaseSql = async (
             controller.abort();
           })
           .finally(() => {
+            // runtime-timer: cancellation watch of one SQL run that a request started.
             if (!stopped) timer = setTimeout(observe, 200);
           });
       };
