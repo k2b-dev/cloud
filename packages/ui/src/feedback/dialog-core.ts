@@ -1,6 +1,5 @@
 import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
-import { afterExitTransitions } from "../internal/exit-motion";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { applyUiScope, readUiScope } from "../internal/portal-scope";
@@ -143,6 +142,19 @@ const applyAccessibleName = (dialog: HTMLDialogElement, entry: DialogStackEntry)
   heading.id ||= `k2b-dialog-title-${++nextDialogTitleId}`;
   dialog.setAttribute("aria-labelledby", heading.id);
 };
+
+/**
+ * The exit fade loads when the first dialog opens, so islands that open dialogs do not carry it in their first bundle.
+ * A dialog that closes before it arrived leaves at once; state, focus and result never wait for it.
+ */
+let exitMotion: typeof import("../internal/exit-motion") | undefined;
+const loadExitMotion = () =>
+  import("../internal/exit-motion").then(
+    (module) => {
+      exitMotion = module;
+    },
+    () => {},
+  );
 
 const schedule = (callback: () => void): void => {
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(callback);
@@ -330,7 +342,7 @@ export const createDialogCore = () => {
   // created before islands mount and add their navigation listeners, so it listens from the start.
   if (typeof window !== "undefined") listen();
 
-  /** Returns whether the entry resumed the one a reload left behind. */
+  /** Returns whether the dialog's own address already was the page's address: a reload or a shared link brought it. */
   const pushHistory = (entry: HistoryEntry, url?: string): boolean => {
     listen();
     const previous = historyRecord();
@@ -341,7 +353,8 @@ export const createDialogCore = () => {
     issued.add(entry.historyId);
     historyIds.push(entry.historyId);
     // Only a dialog that names itself in the URL resumes the entry a reload left behind; the page entry stays below.
-    const resume = stale && url !== undefined && new URL(url, location.href).href === location.href;
+    const here = url !== undefined && new URL(url, location.href).href === location.href;
+    const resume = stale && here;
     if (resume) history.replaceState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "");
     else {
       if (stale) history.replaceState(previous, "");
@@ -349,7 +362,7 @@ export const createDialogCore = () => {
     }
     if (url !== undefined) ownUrls.set(entry.historyId, location.href);
     seen = historySnapshot();
-    return resume;
+    return here;
   };
 
   /** Internal non-dialog participation in the same history stack. Releasing never calls onBack. */
@@ -402,6 +415,7 @@ export const createDialogCore = () => {
     // Each stack level carries its own palette, independently of the first opener.
     getK2bPortalRoot(undefined, document.body).appendChild(element);
     state.element = element;
+    if (!exitMotion) void loadExitMotion();
     return element;
   };
 
@@ -547,12 +561,14 @@ export const createDialogCore = () => {
       unlockPageScroll();
       let left = false;
       let finish: (() => void) | undefined;
-      finish = afterExitTransitions(dialog, () => {
+      const remove = () => {
         left = true;
         if (finish && leaving === finish) leaving = undefined;
         discard();
         dialog.remove();
-      });
+      };
+      if (exitMotion) finish = exitMotion.afterExitTransitions(dialog, remove);
+      else remove();
       if (!left) leaving = finish;
       // After the Escape that closed it: WebKit lights the ring of whatever
       // that key press leaves focused.
@@ -664,7 +680,6 @@ export const createDialogCore = () => {
 
       // A dialog that a reload or a shared link brings up with the page is there from the first frame, without an
       // entrance: its own address is already the page's address when it opens.
-      const atOwnAddress = options.historyUrl !== undefined && new URL(options.historyUrl, location.href).href === location.href;
       const resumed = options.history ? pushHistory(entry, options.historyUrl) : false;
       state.stack.push(entry);
       try {
@@ -707,7 +722,7 @@ export const createDialogCore = () => {
           // opened, with a ring of the browser's choosing. Opening from a
           // blurred document leaves the return to popTop and its opener ring.
           if (activeElement instanceof HTMLElement) activeElement.blur();
-          if (resumed || atOwnAddress) {
+          if (resumed) {
             dialog.dataset.noEnter = "";
             // Two frames: the first frame's style still has to see the attribute.
             schedule(() => schedule(() => delete dialog.dataset.noEnter));

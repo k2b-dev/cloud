@@ -230,6 +230,12 @@ describe(`${browserName} dialog entrance and exit`, () => {
     try {
       // Without `overlay` there is no exit to turn into; the closing test covers that engine.
       if (!(await exitFades(page))) return;
+      // The exit fade loads with the first dialog; this test turns around in the first moments of a later one.
+      await page.evaluate(() => {
+        (window as unknown as MotionWindow).openDialog();
+        (window as unknown as MotionWindow).closeDialog();
+      });
+      await page.waitForFunction(() => document.querySelector("dialog") === null);
       // settled: turning around in the middle of the entrance is the subject.
       const turn = await page.evaluate(
         () =>
