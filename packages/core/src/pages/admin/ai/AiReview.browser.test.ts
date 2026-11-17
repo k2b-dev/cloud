@@ -69,31 +69,71 @@ test("provider conflicts render, merge and discard without reading a cleared acc
   expect(requests[1]).toEqual(expect.objectContaining({ revision: 4, label: "My connection", baseUrl: provider.baseUrl }));
 }, 30_000);
 
-test("model merges preserve the complete draft and remotely changed activation; discard is safe", async () => {
-  const model = catalog.models[0]!;
-  const theirs = {
-    ...model,
-    revision: 4,
-    enabled: false,
-    icon: { kind: "emoji", emoji: "🌿" },
-    variants: catalog.variants.filter((entry) => entry.modelId === model.id),
-    access: { revision: 2, entries: [] },
-  };
-  const requests: unknown[] = [];
-  await page.route(`**/api/admin/core/ai/models/${model.id}`, async (route) => {
-    requests.push(route.request().postDataJSON());
-    await json(route, conflict(theirs), 409);
-  });
-  await goto(`sec=providers&p=cortecs&m=${model.id}`);
-  await page.getByRole("textbox", { name: /^Display name/ }).fill("My model");
-  await save();
-  await page.getByRole("button", { name: "Merge and save" }).click();
-  await page.getByRole("button", { name: "Discard my changes" }).waitFor();
-  expect(requests[1]).toEqual(expect.objectContaining({ label: "My model", enabled: false, icon: theirs.icon, revision: 4 }));
-  expect(requests[1]).not.toHaveProperty("access");
-  await page.getByRole("button", { name: "Discard my changes" }).click();
-  expect(await page.getByRole("textbox", { name: /^Display name/ }).inputValue()).toBe(model.label);
-}, 30_000);
+test.each([false, true])(
+  "model merges forward hidden cache prices for server normalization (lower input=%s)",
+  async (lowerInput) => {
+    const model = catalog.models[0]!;
+    const theirs = {
+      ...model,
+      revision: 4,
+      enabled: false,
+      pricing: { inputPerMillion: 0.15, outputPerMillion: 0.6, cacheReadPerMillion: 0.015 },
+      icon: { kind: "emoji", emoji: "🌿" },
+      variants: catalog.variants.filter((entry) => entry.modelId === model.id),
+      access: { revision: 2, entries: [] },
+    };
+    const requests: unknown[] = [];
+    await page.route(`**/api/admin/core/ai/models/${model.id}`, async (route) => {
+      requests.push(route.request().postDataJSON());
+      await json(route, conflict(theirs), 409);
+    });
+    await goto(`sec=providers&p=cortecs&m=${model.id}`);
+    await page.getByRole("textbox", { name: /^Display name/ }).fill("My model");
+    if (lowerInput) await page.getByRole("spinbutton", { name: "Input", exact: true }).fill("0.01");
+    await save();
+    await page.getByRole("button", { name: "Merge and save" }).click();
+    await page.getByRole("button", { name: "Discard my changes" }).waitFor();
+    expect(requests[1]).toEqual(expect.objectContaining({ label: "My model", enabled: false, icon: theirs.icon, revision: 4 }));
+    expect(requests[1]).not.toHaveProperty("access");
+    expect(requests[1]).toEqual(
+      expect.objectContaining({
+        pricing: { ...theirs.pricing, inputPerMillion: lowerInput ? 0.01 : theirs.pricing.inputPerMillion },
+      }),
+    );
+    await page.getByRole("button", { name: "Discard my changes" }).click();
+    expect(await page.getByRole("textbox", { name: /^Display name/ }).inputValue()).toBe(model.label);
+  },
+  30_000,
+);
+
+test.each(["model", "variant"] as const)(
+  "price errors stay in the server validation path (%s)",
+  async (kind) => {
+    const requests: unknown[] = [];
+    const model = catalog.models[0]!;
+    const variant = catalog.variants[2]!;
+    const path = kind === "model" ? `models/${model.id}` : `variants/${variant.id}`;
+    await page.route(`**/api/admin/core/ai/${path}`, async (route) => {
+      requests.push(route.request().postDataJSON());
+      await json(route, { message: "Invalid reference price." }, 400);
+    });
+    await goto(`sec=providers&p=cortecs&m=${model.id}`);
+    if (kind === "variant") {
+      await page.locator('[data-ai-variant="schnell"]').click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("switch", { name: "Own prices", exact: true }).click();
+      await dialog.getByRole("spinbutton", { name: "Input", exact: true }).fill("1000001");
+      await dialog.getByRole("spinbutton", { name: "Output", exact: true }).fill("3");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    } else {
+      await page.getByRole("spinbutton", { name: "Input", exact: true }).fill("1000001");
+      await save();
+    }
+    await page.getByText("Invalid reference price.", { exact: true }).waitFor();
+    expect(requests).toEqual([expect.objectContaining({ pricing: expect.objectContaining({ inputPerMillion: 1000001 }) })]);
+  },
+  30_000,
+);
 
 test("budget conflicts merge independent fields and decide overlapping fields using the shown default", async () => {
   const theirs = {
@@ -216,35 +256,48 @@ test("empty model listing accepts a manual id and exposes a globally unique edit
   expect(requests).toEqual([[expect.objectContaining({ id: "custom-model", providerModel: "vendor/gpt-oss-120b" })]]);
 }, 30_000);
 
-test("variant merge and discard keep override switches and use captured snapshots", async () => {
-  const variant = catalog.variants[2]!;
-  const requests: unknown[] = [];
-  await page.route(`**/api/admin/core/ai/variants/${variant.id}`, async (route) => {
-    requests.push(route.request().postDataJSON());
-    await json(route, conflict({ ...variant, revision: 4, hint: "Remote hint" }), 409);
-  });
-  await goto("sec=providers&p=cortecs&m=gpt-oss-120b");
-  await page.locator('[data-ai-variant="schnell"]').click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("switch", { name: "Own prices", exact: true }).click();
-  await dialog.getByRole("spinbutton", { name: "Input" }).fill("2");
-  await dialog.getByRole("spinbutton", { name: "Output" }).fill("3");
-  await dialog.getByRole("switch", { name: "Own output limit", exact: true }).click();
-  await dialog.getByRole("spinbutton", { name: "Max output", exact: true }).fill("4000");
-  await dialog.getByRole("button", { name: "Save", exact: true }).click();
-  await dialog.getByRole("button", { name: "Merge and save" }).click();
-  await dialog.getByRole("button", { name: "Discard my changes" }).waitFor();
-  expect(requests[1]).toEqual(
-    expect.objectContaining({
-      revision: 4,
-      pricing: { inputPerMillion: 2, outputPerMillion: 3 },
-      maxOutputTokens: 4000,
-      hint: "Remote hint",
-    }),
-  );
-  await dialog.getByRole("button", { name: "Discard my changes" }).click();
-  expect(await dialog.getByRole("switch", { name: "Own prices", exact: true }).isChecked()).toBe(false);
-}, 30_000);
+test.each([false, true])(
+  "variant merge forwards price overrides for server normalization (lower input=%s)",
+  async (lowerInput) => {
+    const variant = catalog.variants[2]!;
+    const requests: unknown[] = [];
+    await page.route(`**/api/admin/core/ai/variants/${variant.id}`, async (route) => {
+      requests.push(route.request().postDataJSON());
+      await json(
+        route,
+        conflict({
+          ...variant,
+          revision: 4,
+          hint: "Remote hint",
+          pricing: { inputPerMillion: 2, outputPerMillion: 3, cacheReadPerMillion: 0.2 },
+        }),
+        409,
+      );
+    });
+    await goto("sec=providers&p=cortecs&m=gpt-oss-120b");
+    await page.locator('[data-ai-variant="schnell"]').click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("switch", { name: "Own prices", exact: true }).click();
+    await dialog.getByRole("spinbutton", { name: "Input" }).fill(lowerInput ? "0.1" : "2");
+    await dialog.getByRole("spinbutton", { name: "Output" }).fill("3");
+    await dialog.getByRole("switch", { name: "Own output limit", exact: true }).click();
+    await dialog.getByRole("spinbutton", { name: "Max output", exact: true }).fill("4000");
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await dialog.getByRole("button", { name: "Merge and save" }).click();
+    await dialog.getByRole("button", { name: "Discard my changes" }).waitFor();
+    expect(requests[1]).toEqual(
+      expect.objectContaining({
+        revision: 4,
+        pricing: { inputPerMillion: lowerInput ? 0.1 : 2, outputPerMillion: 3, cacheReadPerMillion: 0.2 },
+        maxOutputTokens: 4000,
+        hint: "Remote hint",
+      }),
+    );
+    await dialog.getByRole("button", { name: "Discard my changes" }).click();
+    expect(await dialog.getByRole("switch", { name: "Own prices", exact: true }).isChecked()).toBe(true);
+  },
+  30_000,
+);
 
 test("detail failures, missing models and no selection have distinct recovery states", async () => {
   await goto("sec=providers&p=cortecs&m=gpt-oss-120b&state=detailfail");

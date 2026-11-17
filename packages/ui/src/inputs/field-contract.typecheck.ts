@@ -23,6 +23,7 @@ import type {
   TagsInputProps,
   TemplateEditorProps,
   TextInputProps,
+  TimeInputProps,
   ValueFieldProps,
 } from "./index";
 
@@ -32,6 +33,7 @@ type Extends<Actual, Contract> = Actual extends Contract ? true : false;
 type ValueFieldContractCoverage = [
   Expect<Extends<TextInputProps, ValueFieldProps<string>>>,
   Expect<Extends<NumberInputProps, ValueFieldProps<number | null>>>,
+  Expect<Extends<TimeInputProps, ValueFieldProps<string | null>>>,
   Expect<Extends<CheckboxProps, ValueFieldProps<boolean>>>,
   Expect<Extends<CheckboxCardProps, ValueFieldProps<boolean>>>,
   Expect<Extends<SwitchProps, ValueFieldProps<boolean>>>,

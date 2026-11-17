@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-11-15
+updated: 2026-11-17
 ---
 
 # Chat runtime and streaming
@@ -1060,12 +1060,45 @@ reason `step_limit` instead of continuing without them. Each hint logs the warni
 and each switch to the final answer logs `AI turn answers without further
 tools`, both under `ai:executor` with the conversation and turn IDs.
 
+### Automatic turn safety budget
+
+Only turns with an explicit non-person trigger (such as an automation or another
+chat) have the automatic input, call and output allowance. Missing triggers,
+including legacy turns, keep person limits. Agents and service accounts, also
+with a delegated user, are treated like people unless an explicit non-person
+trigger says otherwise. Code review revisions retain `CODE_AUTHORING_TURN_BUDGET`;
+they acquire neither an automatic inference allocation nor its per-call output
+ceiling or 32k compaction threshold.
+`AUTOMATION_TURN_BUDGET` allows 192,000 cumulative input tokens, 12 model
+attempts and 12,000 output tokens, with at most 4,096 output tokens per call,
+regardless of the model's price. The values come from a measurement of twenty
+briefings and thirty number posts on 16 November 2026: the largest briefing
+read 178,000 input tokens in nine calls. Chat calls, transient provider
+retries and automatic compaction share the allowance. Worker recovery reads
+the whole turn's usage once; a recovered call without usage reserves 64,000
+input tokens and the per-call output ceiling. Admission uses the same
+conservative request estimate as the authoring guard and keeps higher reported
+usage. These are safety estimates, not an exact provider invoice ceiling.
+Steering by a person does not reset the trigger or refill the allowance.
+
+At the limit Cloud persists a localized stop notice without another model
+call. Existing results remain visible. Continuing requires the person's
+explicit follow-up through the normal send path; reload and reconnect do not
+restart the work. A number post reads the whole chat history, so automatic
+turns compact a history above 32,000 estimated tokens even when the model has
+a larger context window. Turns a person starts keep the model's normal
+compaction threshold. Archived messages stay visible, but cannot be retried in
+place.
+
 ### Code authoring safety budget
 
-When Gustav invokes a lasting Code authoring tool or selects the authoring
-Skill, one turn can make at most 16 model attempts and admit at most 512,000 cumulative input tokens, including
-instructions, conversation, and tool schemas. Provider retries and automatic
-compaction share this allowance. Previously loaded tools alone do not activate
+For a turn started by a person or a Code-review revision, invoking a lasting Code
+authoring tool or selecting the authoring Skill allows at most 90 model attempts, followed by at most
+one tool-free closing attempt after all existing drafts are submitted. Priced
+models on Assistant chat turns with an effective finite cost limit have no additional cumulative
+input-token limit. All other models admit at most 5,760,000 cumulative input tokens,
+including instructions, conversation and tool schemas. Provider retries and
+automatic compaction share the turn's attempt and, when applicable, token allowance. Previously loaded tools alone do not activate
 the allowance in a later turn. Admission reserves the input estimate; reported input replaces it when higher. These
 estimates use the same four-characters-per-token convention as AI accounting,
 so they are a safety budget rather than an exact provider invoice ceiling.
@@ -1078,7 +1111,18 @@ does not reset that error count. Successful fixtures that deliberately test
 an error do not count as failures. A response containing several checks cannot
 run more identical failing checks than this allowance.
 
-At a bound, Gustav completes the current tool, skips remaining authoring tools
+When all drafts in the turn have been submitted, reaching an authoring
+bound permits exactly one closing model call without tools. Gustav describes the
+submitted work and any requested work not yet started. Cost admission still applies;
+without an effective finite cost allowance, the closing request must fit the remaining
+token allowance. Only a successful closing answer removes the pause notice. A later
+edit, another unfinished draft, or insufficient closing allowance still requires a pause.
+A tool call, provider failure or rejected cost admission during that closing attempt
+persists the pause receipt and completes the turn. Cancellation keeps its normal abort behavior.
+Automatic turns retain their own input, output and call allocation; a closing
+answer never extends that allocation.
+
+At a bound with unfinished work, Gustav completes the current tool, skips remaining authoring tools
 in that response when the repair allowance is spent, and ends with a short
 persisted receipt in the chat. Assistant renders it in English or German as one
 notice: the reason (the same problem repeated, the attempt limit or the input
@@ -1107,12 +1151,20 @@ daily AI allowances apply to AI invoked **by saved Code**. They do not fund
 Gustav's interactive authoring, and an unpriced model supplies no conversion
 from those monetary allowances to authoring tokens.
 
-The authoring allocation is four 128,000-token reference windows (512,000 input
-tokens). A half-window (64,000) estimates a recovered call without usage and
-reserves room before compaction, whose source is already bounded to 60,000
-characters. The allocation allows 16 attempts at a quarter-window planning size
-(32,000). The two repair retries follow the existing malformed-response repair allowance. These fixed
-operational limits also cover free and unpriced models.
+The attempt allocation uses the default 30-minute turn and the provider's
+60-second first-byte timeout as reference windows: one call and the existing
+two malformed-response repair attempts per window give `30 × 3 = 90` attempts.
+This is an operational capacity allocation; streaming calls can take longer or
+shorter than a minute, and the configured turn deadline still applies. Models
+without an effective cost limit receive 90 half-reference-window inputs: `90 × 64,000 =
+5,760,000` tokens. A half-window also estimates a recovered call without usage
+and reserves room before compaction, whose source is bounded to 60,000 characters.
+The repeated-error allowance remains an initial attempt plus two retries.
+The token allowance is lifted only when `aiQuotas.assertAllowed` confirms a finite
+cost limit without bypass for the executed model and subject. Disabled cost limits,
+unlimited grants, bypasses, free models and missing prices retain the 5,760,000-token
+allowance. A missing turn trigger follows the person allocation, including service
+accounts and agents acting for a delegated user; review revisions do too.
 
 After a successful check of a Code's draft, later requests replace its earlier
 SDK dumps with a short reload note. The complete results stay in conversation
@@ -1228,14 +1280,60 @@ enqueue with `enqueueExistingAiTurn` only after committing. Core uses this seam
 for queue promotion. `runConfig.writerOrigin` attributes the writer; names and
 links are resolved when displaying it. It grants no authority. The separate
 `runConfig.turnTrigger` records the immutable initiator (`person`, `automation`
-or `chat`, plus stable ID). The trusted host sets both fields, and
-`submitChatTurn` copies them from the original turn on retry. Queue promotion,
-resume and `code_run` retain the trigger. The chain rule reads only
-`turnTrigger`; neither writer attribution nor the current actor supplies a
-missing trigger. Missing triggers are never treated as person-initiated turns.
+or `chat`, plus stable ID). The trusted host sets both fields. Queue promotion,
+resume and `code_run` retain the trigger. Retry and edit start a new turn from
+the current actor: a user actor gets a person trigger; other actors omit it and
+keep person budget limits. A plain retry keeps the writer, while editing makes
+the message the person's own. The send receipt stays, but Code budget attribution
+is cleared. For send authority, the chain rule reads only the recorded
+`turnTrigger`; a missing trigger never grants person-initiated send authority.
 `sourceRestricted` retains a limited entry point; app sessions and source chats with `allowedTools` cannot use
 `send` to widen authority. `runConfig.send` identifies the accepted queue entry
 and its account-scoped idempotency key, independently of the queue's personal
 author field.
 The optional host-owned `runConfig.codeOrigin` is copied to the user message
 and turn record for attribution; it grants no tool authority.
+
+## Host admission and terminal bookkeeping
+
+The first `startAiRuntime` call from `@k2b/cloud/ai/runtime` can register
+`beforeChatTurn: AiChatTurnAdmission` and `onSweep`. The admission callback runs
+after current model resolution and access validation, before any model request.
+It receives `turnId`, `conversationId`, `leaseOwner`, the persisted `runConfig`
+and the executed `profile`. The host must fence its transaction against the
+current running turn lease. A Code-attributed turn without this callback fails
+closed. Core uses it for policy and whole-turn daily cost reservations.
+
+`onTurnFinalized` runs after durable completion. `onSweep` independently recovers
+host bookkeeping when a terminal callback was missed, even if the platform sweep
+fails. Callbacks must be idempotent across worker retries and process restarts.
+`AiTurnFailure` carries a stable public turn-error code and a private diagnostic
+message. The exported `AUTOMATION_TURN_BUDGET` defines the shared 192,000-input,
+12-call and 12,000-output allocation, including retries and compaction; it grants
+no authority.
+
+The host installs `runConfig.inferenceBudget` in the same fenced transaction as
+its durable cost reservation. Provider admission rereads this snapshot under
+the existing accounting lock. It binds model identity, prices, context/output
+ceilings, total input and call allocation. All inference attributed to that turn
+shares it, including structured/vision tool attempts; output is clamped to the
+reserved ceiling and unreserved models fail before dispatch. Core preserves the
+framework's source-turn attribution on nested generation/decision capabilities.
+Callers must retain that attribution when starting related inference. The
+ordinary unbounded-person accounting path keeps its existing statement count;
+a bounded turn adds one aggregate per provider attempt, never per stream event.
+
+Code-attributed turns pin nested inference to the admitted model and output
+ceiling. A tool that needs another profile, or System One's uncapped output,
+is refused before inference rather than spending outside the reservation.
+Answering a choice starts a new person-triggered turn; its Query uses that new
+turn's invocation lease. Background memory learning skips turns with a bounded
+inference allocation, so it cannot reopen their ended reservation. Normal personal calls without a source
+turn keep the optional nested-invocation lease behavior.
+
+Host admission failures use general `host_budget_*` or `host_rejected` codes.
+The host supplies the final localized `AiTurnFailure.userMessage`; Cloud stores
+it as `AiTurnError.message` and renders it without interpreting host domains.
+A failed call without response bytes uses zero or its recorded estimate; other
+unknown usage stays fail-closed. Provider diagnostics remain log-only. Third-party hosts can supply their own
+explanations through the same contract.

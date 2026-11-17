@@ -28,7 +28,9 @@ const callLifecycle = {
 export function inferenceProvider(
   provider: Provider,
   profile: AiModelProfile,
-  context: AiCallContext & { onUsage?: (usage: { input: number; output: number; estimated?: boolean } | undefined) => void },
+  context: AiCallContext & {
+    onUsage?: (usage: { input: number; output: number; cacheRead?: number; estimated?: boolean } | undefined) => void;
+  },
   lifecycle = callLifecycle,
 ): Provider {
   // createAiProvider normalizes adapter diagnostics before trusted dispatch guards wrap it.
@@ -57,7 +59,16 @@ export function inferenceProvider(
       for (;;) {
         request.signal?.throwIfAborted();
         try {
-          return await lifecycle.begin(profile, ctx, inputTokens, aiOutputBudget(profile, inputTokens, request), provider.contextWindow);
+          return await lifecycle.begin(
+            profile,
+            ctx,
+            inputTokens,
+            aiOutputBudget(profile, inputTokens, request),
+            provider.contextWindow,
+            request.messages.some(
+              (message) => message.role === "user" && message.content.some((part) => typeof part !== "string" && part.type === "file"),
+            ),
+          );
         } catch (error) {
           if (!(error instanceof AiBackgroundAdmissionError) || !error.retryable || Date.now() >= deadline) throw error;
           await delay(1_000, undefined, { signal: request.signal });
@@ -92,7 +103,7 @@ export function inferenceProvider(
     stream: async function* (request) {
       const call = await begin(request, context);
       const id = call.id;
-      let usage: { input: number; output: number; estimated?: boolean } | undefined;
+      let usage: { input: number; output: number; cacheRead?: number; estimated?: boolean } | undefined;
       let completed = false;
       let failed = false;
       let error: string | undefined;
@@ -155,10 +166,16 @@ export function inferenceProvider(
               failed = true;
               error ??= `The provider finished with ${event.finishReason}.`;
             }
-            const { input, output } = event.usage;
+            const { input, output, cacheRead } = event.usage;
             // Some adapters synthesize all-zero usage when the endpoint reports none.
             if (Number.isSafeInteger(input) && Number.isSafeInteger(output) && input >= 0 && output >= 0 && input + output > 0)
-              usage = { input, output };
+              usage = {
+                input,
+                output,
+                ...(cacheRead !== undefined && Number.isSafeInteger(cacheRead) && cacheRead >= 0 && cacheRead <= input
+                  ? { cacheRead }
+                  : {}),
+              };
           }
           yield event;
         }

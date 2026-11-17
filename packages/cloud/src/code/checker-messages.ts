@@ -17,6 +17,8 @@ export const codeCheckerMessages = i18n.define({
       check_failed: ({ code }: { code: string }) => `Check failed (${code}).`,
       unresolved_call: "Use SDK handles and namespaces directly or as const bindings without type annotations.",
       unresolved_ref: ({ field }: { field: string }) => `Additional target ${field} cannot be identified.`,
+      chat_text_fixed:
+        "chat.send needs an inline input with fixed text (a string literal or const string). Put changing source data in context.",
       http_allow_literal: 'Declare origins as a literal list with http.allow(["https://api.example.com"]).',
       http_origin_invalid: "Use exact HTTPS origins without wildcards, credentials or paths.",
       http_origin_invalid2: "http.fetch requires an exact HTTPS origin without wildcards or credentials.",
@@ -78,6 +80,8 @@ export const codeCheckerMessages = i18n.define({
       check_failed: ({ code }) => `Prüfung fehlgeschlagen (${code}).`,
       unresolved_call: "Verwende SDK-Handles und Namensräume direkt oder als const ohne Typangabe.",
       unresolved_ref: ({ field }) => `Zusätzliches Ziel ${field} ist nicht erkennbar.`,
+      chat_text_fixed:
+        "chat.send benötigt eine direkte Eingabe mit festem text (Textliteral oder const-Text). Veränderliche Quelldaten gehören in context.",
       http_allow_literal: 'Deklariere Ursprünge mit http.allow(["https://api.example.com"]) als wörtliche Liste.',
       http_origin_invalid: "Erlaubt sind genaue HTTPS-Ursprünge ohne Platzhalter, Zugangsdaten oder Pfad.",
       http_origin_invalid2: "http.fetch benötigt einen genauen HTTPS-Ursprung ohne Platzhalter oder Zugangsdaten.",

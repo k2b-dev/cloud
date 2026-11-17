@@ -310,32 +310,33 @@ describe("BottomSheet motion on a phone", () => {
     30_000,
   );
 
-  test("a menu sheet over a sheet with detents keeps its own height, and the sheet below returns to half height", async () => {
-    const page = await open({ ...phone, reducedMotion: "reduce" });
-    try {
-      await page.evaluate(() => (window as unknown as SheetWindow).openSheet());
-      await settled(page);
-      await page.evaluate(() => (window as unknown as SheetWindow).openChild());
-      await settled(page);
-      const child = await page.evaluate(() => {
-        const frame = document.querySelector<HTMLElement>("dialog[open]")!;
-        return {
-          detents: frame.hasAttribute("data-sheet-detents"),
-          visible: Math.round(innerHeight - frame.getBoundingClientRect().top),
-          height: frame.offsetHeight,
-        };
-      });
-      expect(child.detents).toBe(false);
-      expect(child.visible).toBe(child.height);
-      expect(child.height).toBeLessThan(300);
-      await page.locator("[data-child]").click();
-      await page.waitForFunction(() => !document.querySelector("[data-child]"));
-      await settled(page);
-      expect(await place(page)).toMatchObject({ visible: 422, detent: "half", footerBottom: 844 });
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
+  for (const reducedMotion of ["reduce", "no-preference"] as const)
+    test(`a menu sheet over a sheet with detents keeps its own height, and the sheet below returns to half height (${reducedMotion} motion)`, async () => {
+      const page = await open({ ...phone, reducedMotion });
+      try {
+        await page.evaluate(() => (window as unknown as SheetWindow).openSheet());
+        await settled(page);
+        await page.evaluate(() => (window as unknown as SheetWindow).openChild());
+        await settled(page);
+        const child = await page.evaluate(() => {
+          const frame = document.querySelector<HTMLElement>("dialog[open]")!;
+          return {
+            detents: frame.hasAttribute("data-sheet-detents"),
+            visible: Math.round(innerHeight - frame.getBoundingClientRect().top),
+            height: frame.offsetHeight,
+          };
+        });
+        expect(child.detents).toBe(false);
+        expect(child.visible).toBe(child.height);
+        expect(child.height).toBeLessThan(300);
+        await page.locator("[data-child]").click();
+        await page.waitForFunction(() => !document.querySelector("[data-child]"));
+        await settled(page);
+        expect(await place(page)).toMatchObject({ visible: 422, detent: "half", footerBottom: 844 });
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
 
   test("a quick pull that rests before the release returns instead of closing", async () => {
     const page = await open({ ...phone, hasTouch: false, isMobile: false });

@@ -69,10 +69,12 @@ for (const locale of ["de", "en"]) {
         text: row.querySelector(".k2b-chat-task__content")?.textContent,
       }));
       expect(dom.root.querySelector(".k2b-notice-card__title")?.textContent).toBe(
-        locale === "de" ? "Gustav hat angehalten" : "Gustav stopped",
+        locale === "de" ? "Gustav macht eine Pause" : "Gustav is taking a break",
       );
       expect(dom.root.querySelector(".k2b-notice-card__description")?.textContent).toBe(
-        locale === "de" ? "Dasselbe Problem blieb nach mehreren Versuchen." : "The same problem remained after several attempts.",
+        locale === "de"
+          ? "Derselbe Fehler kam mehrmals. Er wartet jetzt auf dich."
+          : "The same error came up several times. He is waiting for you now.",
       );
       expect(rows).toEqual(
         locale === "de"
@@ -89,7 +91,9 @@ for (const locale of ["de", "en"]) {
       );
       // The work stopped: no ring turns.
       expect(dom.root.querySelector('.k2b-chat-task[data-status="in_progress"]')).toBeNull();
-      expect(dom.root.textContent).toContain(locale === "de" ? "Der Entwurf ist gespeichert." : "The draft is saved.");
+      expect(dom.root.textContent).toContain(
+        locale === "de" ? "Der Entwurf ist gesichert, aber noch keine Version." : "The draft is safe, but there is no version yet.",
+      );
       expect(button().getAttribute("data-variant")).toBe("secondary");
       expect(dom.root.textContent).not.toMatch(/code_test_invalid_fixture|private-id|\.tsx?/);
       setBusy(true);
@@ -132,42 +136,42 @@ for (const [name, state, reason, done, open, saved] of [
   [
     "a stop before a confirmed draft says what remains and never claims a saved result",
     { reason: "input_tokens", completedSteps: 0, drafts: 0, unchecked: 0, untested: 0, unsubmitted: 0 },
-    "More attempts would have cost too much.",
+    "He has already tried a lot in this step and is waiting for you now.",
     null,
     ["Prepare and check the draft"],
-    "No saved draft was confirmed in this pass.",
+    "There is no draft yet.",
   ],
   [
     "an attempt limit with several drafts counts what each step still needs",
     { reason: "model_calls", completedSteps: 7, drafts: 2, unchecked: 1, untested: 2, unsubmitted: 2 },
-    "Gustav used all attempts for this pass.",
+    "He has already tried a lot in this step and is waiting for you now.",
     null,
     ["Check 1 draft", "Test 2 drafts with examples", "Save 2 versions"],
-    "The drafts are saved.",
+    "The drafts are safe, but there are no versions yet.",
   ],
   [
     "a submitted version claims no check or test the receipt cannot prove and leaves only the review open",
     { reason: "input_tokens", completedSteps: 1, drafts: 1, unchecked: 0, untested: 0, unsubmitted: 0 },
-    "More attempts would have cost too much.",
+    "He has already tried a lot in this step and is waiting for you now.",
     null,
     ["Review the saved result"],
-    "The version is saved.",
+    "The version is submitted.",
   ],
   [
     "mixed submitted and open drafts claim nothing for the submitted one",
     { reason: "repeated_error", completedSteps: 4, drafts: 2, unchecked: 0, untested: 0, unsubmitted: 1 },
-    "The same problem remained after several attempts.",
+    "The same error came up several times. He is waiting for you now.",
     null,
     ["Save 1 version"],
-    "The drafts are saved.",
+    "1 draft is safe, but has no version yet. 1 version is submitted.",
   ],
   [
     "a checked and tested draft lists both as done and only the version as open",
     { reason: "model_calls", completedSteps: 3, drafts: 1, unchecked: 0, untested: 0, unsubmitted: 1 },
-    "Gustav used all attempts for this pass.",
+    "He has already tried a lot in this step and is waiting for you now.",
     ["Draft checked", "Tested with examples"],
     ["Save a version"],
-    "The draft is saved.",
+    "The draft is safe, but there is no version yet.",
   ],
 ] as const) {
   domTest(name, async () => {

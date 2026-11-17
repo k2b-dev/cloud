@@ -118,6 +118,56 @@ suite("AI conversation stream repair", () => {
     await connection.drain();
   });
 
+  test("thinking and Code stay private in live, retained, held-back and reconnect events", async () => {
+    const chat = await createChat();
+    const { turn, save, event } = await startTurn(chat);
+    const thinking = "INTERNAL_INSTRUCTION code_Open42 22222222-2222-4222-8222-222222222222";
+    const source = "export default () => 'sync59-private-source'";
+    const blocks: AiTurnBlock[] = [
+      { id: "thought", kind: "thinking", text: thinking },
+      { id: "tool-run", kind: "tool", callId: "run", name: "code_run", args: { code: source }, status: "running" },
+    ];
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, modelId: "fixture" });
+    await store.append({
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking, signature: "sync59-signature", redacted: "sync59-redacted" },
+        { type: "tool_call", id: "run", name: "code_run", args: { code: source } },
+      ],
+    });
+    await save(blocks, 1);
+    const expectPublic = (value: unknown) => {
+      for (const forbidden of [thinking, source, "sync59-signature", "sync59-redacted"])
+        expect(JSON.stringify(value)).not.toContain(forbidden);
+    };
+    const stream = follow(chat);
+    const initial = expectState(await stream.next());
+    expectPublic(initial);
+    expect(initial.activeTurn?.blocks).toMatchObject([{ kind: "thinking", text: "" }, { args: {} }]);
+    await publishAiWireEvent(event(2, { type: "block_delta", blockId: "thought", blockKind: "thinking", delta: thinking }));
+    expect(await stream.next()).toMatchObject({ type: "block_delta", delta: "" });
+    // Bypass today's publisher to represent retained events from a worker before either public filter.
+    const retained = async (data: AiWireEvent) => {
+      await aiStreamTopic().publish({ tenantId: chat.id, orderingKey: turn.id, data });
+    };
+    await retained(event(3, { type: "turn_started", blocks, modelId: "fixture", providerModel: "fixture" }));
+    expectPublic(await stream.next());
+    const message = (await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id }))[1]!;
+    await retained(event(4, { type: "message_saved", message }));
+    expectPublic(await stream.next());
+    // A sequence hole holds the event back until the stored snapshot covers it.
+    await save(blocks, 6);
+    await retained(event(6, { type: "block_set", block: blocks[0]! }));
+    expectPublic(expectState(await stream.next()));
+    expectPublic(expectState(await follow(chat).next()));
+    await retained(event(7, { type: "turn_finished", status: "completed", error: null, messages: [message] }));
+    const finished = await stream.next();
+    expect(finished.type).toBe("turn_finished");
+    expectPublic(finished);
+    const canonical = JSON.stringify(await store.load());
+    for (const original of [thinking, source, "sync59-signature", "sync59-redacted"]) expect(canonical).toContain(original);
+  });
+
   test("Code source stays out of the initial snapshot, live step and resumed baseline", async () => {
     const chat = await createChat();
     const { save, event } = await startTurn(chat);

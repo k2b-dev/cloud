@@ -287,6 +287,6 @@ check before repeating it.
 
 For diagnosis, filter Core logs by `ai:executor` and
 `AI authoring turn reached its safety budget`. The event includes conversation
-and turn IDs and one reason: `model_calls`, `input_tokens`, or
-`repeated_error`. Inspect provider attempts in the AI usage report. No live
+and turn IDs and one reason: `model_calls`, `input_tokens`, `output_tokens`
+(automatic turns only), or `repeated_error`. Inspect provider attempts in the AI usage report. No live
 configuration change or model price is needed for this guard.

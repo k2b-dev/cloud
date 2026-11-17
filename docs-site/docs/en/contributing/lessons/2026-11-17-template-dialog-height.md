@@ -1,0 +1,6 @@
+### Translated WebKit boxes reported a false dialog height change
+
+- **What happened:** The Notebooks save-as-template browser test failed in WebKit because a 254 px dialog measured 254.00003051757812 px before a name conflict and 254 px afterwards.
+- **Root cause:** The hint and replace question already share a grid cell with identical geometry: a 40 px row, 20 px line height, no borders or padding, and the same gaps. The dialog retains its computed 254 px height. WebKit rounds the transformed rectangle during the entrance translation, producing a different floating-point height without a layout change. Real WebKit reproduced both 254.00003051757812 px and 253.99996948242188 px. The conflict wording change in #3576 does not affect these catalog texts or their markup; the i18n source is unchanged between stdlib 0.32.0 and 0.33.0.
+- **Error class:** Exact floating-point comparison of transformed browser rectangles mistakes rendering precision for a layout change.
+- **Guard:** The conflict scenario in `packages/notebooks/src/frontend/[id]/_components/editor/page-templates.browser.test.ts` requires the CSS layout height to remain exactly equal and compares the rendered height in device pixels. Real layout changes still fail, including fractional CSS height changes.

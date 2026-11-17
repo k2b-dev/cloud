@@ -5,7 +5,7 @@ section: Operations
 order: 1253
 description: Configure Code execution budgets and inspect durable policy pause work.
 tags: [operations, code, policy, settings]
-updated: 2026-11-09
+updated: 2026-11-17
 ---
 
 # Code policy operations
@@ -27,6 +27,54 @@ Mailbox-owned Code requires Mail's canonical `mailbox.read` response to include
 before enabling this workflow. The shared Code page and attention indicator read
 the standard Core capability response envelope. No database migration or new
 setting is needed.
+
+## Bounded personal-chat inference
+
+Deploy Core and the platform chat worker together. Startup adds
+`code.chat_turn_budgets` and the `ai_chat_you` policy row. Include the reservation
+table in the Code backup: it survives deletion of the corresponding chat or
+Code. The worker requires Core's `beforeChatTurn` admission callback for
+Code-attributed chat turns; a missing callback refuses execution.
+
+When adding `ai_chat_you` to an existing installation, startup copies the global
+`ai` requirement and its `admin`/`never` group overrides. Existing rules remain
+unchanged on restart. The all-turn inference index is built with `CONCURRENTLY`
+after the quota schema transaction on a reserved connection, so ordinary pool
+queries and inference writes remain available. Startup replaces invalid indexes
+left by interrupted builds and leaves active builds alone. A failed build logs
+a warning and is retried at the next migration; it does not abort startup.
+
+The worker reserves a whole priced turn before its first model request, using
+the actual model profile. It locks owner and Code daily counters in that order,
+the same as synchronous generation. Suspended and resumed turns keep their
+reservation. Ordinary rounds, background compaction and attributed tool inference all
+settle against it; the daily ledger excludes covered turns to avoid double
+charging. The terminal callback releases unused funds, and the runtime sweep
+recovers a missed callback. A failed call without response bytes uses zero or
+its recorded estimate instead of retaining a whole unknown-usage reservation.
+Successful calls without measured usage remain fail-closed: estimated or missing
+usage retains the reservation. With USD 0.68 reserved, two such turns cannot fit
+the USD 1 day; the two-briefing example requires measured provider usage. Unpriced and zero-priced models require the ordinary
+`ai` policy; a priced profile without a known context window cannot start.
+Admission also checks the maximum before queuing a new send. With the unchanged
+USD 1 defaults, a 128k-context model priced at USD 2.50/10 per million and capped
+at 4,096 output tokens per call reserves USD 0.68: 192,000 input tokens plus
+32,000 tokens of input estimation margin, and 12,000 output tokens across the
+turn. After a typical briefing costs USD 0.28, another turn can reserve its
+maximum that day. A maximum above either daily limit returns
+`code_ai_turn_exceeds_daily_budget`, independently of the person's chat quota.
+Choose a less expensive profile or configure daily budgets that fit its maximum.
+
+An existing synchronous generate/decide call may reserve the owner's remaining
+day allowance. A chat that starts while it is reserved fails visibly and
+terminally; it is not silently retried after release. Sequence generation before
+sending when both belong to the same run. The next scheduled run may send again.
+
+Settled reservations follow the existing thirty-day Code ledger retention;
+open reservations and active turns are retained. The migration also adds an
+unfiltered inference turn index, so tool accounting never scans the full ledger
+under its shared admission lock.
+See [Code policy](/en/docs/platform/code-policy#ai-in-a-personal-chat).
 
 ## Set execution budgets
 

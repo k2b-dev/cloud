@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test";
 import type { AiTurnBlock } from "../protocol";
 import { workStepLine, workStepParts, workSummary } from "./work-summary";
 
+test("a thinking step counts without needing its model text", () => {
+  const blocks: AiTurnBlock[] = [{ id: "thought", kind: "thinking", text: "" }];
+  expect(workStepParts(blocks, 0, "de").count).toBe("1 Schritt");
+  expect(workStepParts(blocks, 0, "en").count).toBe("1 step");
+});
+
 type Tool = Extract<AiTurnBlock, { kind: "tool" }>;
 const tool = (name: string, result: unknown = {}, args: unknown = { codeId: "automation-a" }, extra: Partial<Tool> = {}): Tool => ({
   id: name,

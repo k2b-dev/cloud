@@ -239,7 +239,7 @@ export type AiWorkIssue = { text: string; tone: "danger" | "warning" | "neutral"
  */
 export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: string): { count: string; issues: AiWorkIssue[] } => {
   const t = aiChatMessages(locale);
-  const thoughts = blocks.filter((block) => block.kind === "thinking" && block.text.trim()).length;
+  const thoughts = blocks.filter((block) => block.kind === "thinking").length;
   const calls = tools(blocks);
   // A check that settled an unclear outcome counts as what it found: done went through, not done failed.
   const failures = calls.map((tool) => {

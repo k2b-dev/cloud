@@ -6,8 +6,16 @@ export const AiModelPricingSchema = z
   .object({
     inputPerMillion: AiPriceSchema,
     outputPerMillion: AiPriceSchema,
+    /** Price of input tokens read from the provider cache; omission uses the ordinary input price. */
+    cacheReadPerMillion: AiPriceSchema.optional(),
   })
-  .strict();
+  .strict()
+  .transform(({ cacheReadPerMillion, ...price }) => ({
+    ...price,
+    // Cache prices are hidden in the ordinary price editor. Lowering the input
+    // price must remain saveable and use that lower ordinary rate as fallback.
+    ...(cacheReadPerMillion !== undefined && cacheReadPerMillion <= price.inputPerMillion ? { cacheReadPerMillion } : {}),
+  }));
 export type AiModelPricing = z.infer<typeof AiModelPricingSchema>;
 
 /** Explicit free prices are measured as zero and need no spending guard. */
@@ -15,12 +23,14 @@ export const hasBillableAiPricing = (pricing: AiModelPricing | undefined | null)
   !!pricing && (pricing.inputPerMillion > 0 || pricing.outputPerMillion > 0);
 
 /** Integer picounits: six decimal places in prices, divided by a million tokens. */
-export function aiCostUnits(pricing: AiModelPricing, input: number, output: number): bigint {
-  if (![input, output].every((value) => Number.isSafeInteger(value) && value >= 0))
+export function aiCostUnits(pricing: AiModelPricing, input: number, output: number, cacheRead = 0): bigint {
+  if (![input, output, cacheRead].every((value) => Number.isSafeInteger(value) && value >= 0))
     throw new Error("AI token counts must be nonnegative safe integers.");
+  if (cacheRead > input) throw new Error("Cached AI input cannot exceed total input.");
   const prices = AiModelPricingSchema.parse(pricing);
   return (
-    BigInt(Math.round(prices.inputPerMillion * 1_000_000)) * BigInt(input) +
+    BigInt(Math.round(prices.inputPerMillion * 1_000_000)) * BigInt(input - cacheRead) +
+    BigInt(Math.round((prices.cacheReadPerMillion ?? prices.inputPerMillion) * 1_000_000)) * BigInt(cacheRead) +
     BigInt(Math.round(prices.outputPerMillion * 1_000_000)) * BigInt(output)
   );
 }

@@ -717,6 +717,11 @@ export const expireCodeRuns = async (options: { now: Date; limit: number; db?: C
   const cutoff = new Date(options.now.getTime() - 30 * 86_400_000);
   const result =
     await db`DELETE FROM code.runs WHERE id IN (SELECT id FROM code.runs WHERE ended_at <= ${cutoff} ORDER BY ended_at,id LIMIT ${options.limit} FOR UPDATE SKIP LOCKED)`;
+  // Match the existing thirty-day ledger retention. Keep open or live-turn
+  // reservations, including long approval waits, until terminal settlement.
+  await db`DELETE FROM code.chat_turn_budgets WHERE turn_id IN (
+    SELECT b.turn_id FROM code.chat_turn_budgets b WHERE b.settled_at < ${cutoff} AND b.day < ${cutoff.toISOString()}::timestamptz::date
+    ORDER BY b.settled_at,b.turn_id LIMIT ${options.limit} FOR UPDATE SKIP LOCKED)`;
   await db`DELETE FROM code.ai_daily_budget WHERE (day,scope_kind,scope_key) IN
     (SELECT day,scope_kind,scope_key FROM code.ai_daily_budget WHERE day < ${cutoff.toISOString()}::timestamptz::date
       ORDER BY day,scope_kind,scope_key LIMIT ${options.limit} FOR UPDATE SKIP LOCKED)`;

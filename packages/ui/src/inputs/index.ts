@@ -164,3 +164,5 @@ export {
 } from "./TemplateEditor";
 export type { TextInputProps } from "./TextInput";
 export { TextInput } from "./TextInput";
+export type { TimeInputProps } from "./TimeInput";
+export { TimeInput } from "./TimeInput";
