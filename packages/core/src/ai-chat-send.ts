@@ -38,6 +38,7 @@ const messages = i18n.define({
       ai_no_model: "No model is available for this chat. Check the AI model settings before trying again.",
       model_policy_mismatch: "The Code owner may not use this model. Choose a model their account may use.",
       busy: "A Code message of this person is already waiting or running in a chat. Try again after it finishes.",
+      binding_changed: "The automation's chat changed. Try again to use its current chat.",
       run_gone: "The Code run that sent this message has ended.",
     },
     de: {
@@ -48,6 +49,7 @@ const messages = i18n.define({
       ai_no_model: "Für diesen Chat ist kein Modell verfügbar. Prüfe die KI-Modelleinstellungen vor einem weiteren Versuch.",
       model_policy_mismatch: "Der Code-Eigentümer darf dieses Modell nicht verwenden. Wähle ein für sein Konto freigegebenes Modell.",
       busy: "Eine Code-Nachricht dieser Person wartet oder läuft schon in einem Chat. Versuche es erneut, wenn sie fertig ist.",
+      binding_changed: "Der Chat der Automation wurde geändert. Versuche es erneut, um ihren aktuellen Chat zu verwenden.",
       run_gone: "Der Code-Lauf, der diese Nachricht gesendet hat, ist beendet.",
     },
   },
@@ -251,7 +253,7 @@ export const aiChatSendAction = {
             WHERE id=${code.id} FOR SHARE NOWAIT`;
           const binding = destination.data.binding;
           if (binding && (binding.codeId !== code.id || locked?.chat_binding_revision !== binding.revision))
-            return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
+            return fail({ code: "chat_busy", message: t.binding_changed, status: 409 as const });
           await db`SELECT id FROM code.runs WHERE id=${code.runId}::uuid FOR UPDATE`;
           const current = await chatWriteAuthority(context, db);
           if (!current.ok) return current;

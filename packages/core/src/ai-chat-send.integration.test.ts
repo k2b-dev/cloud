@@ -1477,7 +1477,12 @@ suiteFor(
     } finally {
       await sending;
     }
-    expect(outcome).toMatchObject({ result: { ok: false, error: { code: "chat_busy", status: 409 } } });
+    expect(outcome).toMatchObject({
+      result: {
+        ok: false,
+        error: { code: "chat_busy", status: 409, message: "The automation's chat changed. Try again to use its current chat." },
+      },
+    });
     expect(await sql`SELECT id FROM ai.chat_send_receipts`).toHaveLength(0);
     expect(await sql`SELECT id FROM ai.queued_messages`).toHaveLength(0);
     const retry = await invoke(CODE_BOUND_CHAT_ID, context);
