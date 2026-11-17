@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
 import { createSync, type Sync } from "@k2b/sync";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { sql } from "../runtime/clients";
@@ -8,7 +9,14 @@ import { latestTopicCursor } from "../services/topic-cursor";
 import { migrateCloudAi } from "./migrate";
 import type { AiStreamEvent, AiTurnBlock, AiWireEvent } from "./protocol";
 import { aiConversations } from "./store";
-import { type AiLiveTopicEvent, aiStreamTopic, publishAiWireEvent, streamAiConversationEvents } from "./stream";
+import {
+  type AiLiveTopicEvent,
+  aiStreamTopic,
+  publishAiTurnInterrupt,
+  publishAiWireEvent,
+  streamAiConversationEvents,
+  subscribeAiTurnInterrupts,
+} from "./stream";
 import type { AiConversation } from "./types";
 
 const suite = suiteFor("database", "nats");
@@ -116,6 +124,30 @@ suite("AI conversation stream repair", () => {
         await connection.request(`$JS.API.STREAM.DELETE.${name}`, new Uint8Array(), { timeout: 5_000 });
     unbindProcessSync();
     await connection.drain();
+  });
+
+  test("ordinary live deltas and worker interruption delivery execute zero SQL statements (DATA-13)", async () => {
+    const chat = await createChat();
+    const { turn, event } = await startTurn(chat);
+    const stream = follow(chat);
+    expectState(await stream.next());
+    const delivered = Promise.withResolvers<void>();
+    const stop = await subscribeAiTurnInterrupts({ conversationId: chat.id, turnId: turn.id, onInterrupt: delivered.resolve });
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(async () => {
+        await publishAiTurnInterrupt({ conversationId: chat.id, turnId: turn.id, requestId: crypto.randomUUID() });
+        await delivered.promise;
+        for (let seq = 1; seq <= 3; seq++) {
+          await publishAiWireEvent(event(seq, { type: "block_delta", blockId: "text", blockKind: "text", delta: "x" }));
+          expect(await stream.next()).toMatchObject({ type: "block_delta", seq });
+        }
+      });
+      expect(statements).toEqual([]);
+    } finally {
+      await stop();
+      await meter.close();
+    }
   });
 
   test("a lost live event: the stream sends the saved state once it holds the next event, then continues without a hole", async () => {

@@ -51,7 +51,6 @@ export const deliverPendingAiMessages = async (targetConversationId?: string): P
         actor: { kind: "user", user },
         modelPolicy: personalAiModelPolicy,
         project: project ?? undefined,
-        sourceHref: `/app/assistant?conversation=${encodeURIComponent(message.sourceChatId)}`,
         toolSource: { kind: "default", appTools: true },
         toolApprovalContext: { actorUserId: user.id },
       });

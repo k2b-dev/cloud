@@ -29,6 +29,7 @@ import {
 import { AiRunTimeout } from "./run-timeout";
 import { withAiShortId, withAiShortIdForDb } from "./short-id";
 import { parseAiTodoPlan } from "./todo-contracts";
+import { queuedClientInterruptionState } from "./turn-interruption";
 import { activeTurnWaits } from "./turn-timing";
 import type {
   AiConversation,
@@ -67,21 +68,6 @@ const CONVERSATION_BM25_INDEX = "ai.conversations_search_bm25_idx";
 const MESSAGE_BM25_INDEX = "ai.messages_search_bm25_idx";
 const SEARCH_CAPABILITY_ERROR_CODES = new Set(["0A000", "42704", "42883", "55000"]);
 const log = logger("ai:conversation-search");
-
-export const resolveAiTurnShortIds = async (input: {
-  conversationId: string;
-  turnIds: readonly string[];
-}): Promise<Map<string, string>> => {
-  const turnIds = [...new Set(input.turnIds.filter(Boolean))];
-  if (turnIds.length === 0) return new Map();
-  const rows = await sql<{ id: string; short_id: string }[]>`
-    SELECT id::text AS id, short_id
-    FROM ai.turns
-    WHERE conversation_id = ${input.conversationId}::uuid
-      AND id::text = ANY(${toPgTextArray(turnIds)}::text[])
-  `;
-  return new Map(rows.map((row) => [row.id, row.short_id]));
-};
 
 /**
  * Marker texts of the owner's latest sent messages, newest first. The candidates carry no message bodies; only the
@@ -233,6 +219,7 @@ type TurnRow = {
   deadline?: Date | string | null;
   run_budget_ms?: number | null;
   cancel_requested_at?: Date | string | null;
+  cancellation_reason?: string | null;
   id: string;
   short_id: string;
   conversation_id: string;
@@ -726,6 +713,7 @@ const rowToTurn = (row: TurnRow): AiTurn => ({
   deadline: row.deadline ? iso(row.deadline) : null,
   runBudgetMs: row.run_budget_ms ?? null,
   cancelRequestedAt: row.cancel_requested_at ? iso(row.cancel_requested_at) : null,
+  cancellationReason: row.cancellation_reason ?? null,
   id: row.id,
   shortId: row.short_id,
   conversationId: row.conversation_id,
@@ -920,6 +908,10 @@ const recordTurnEnd = async (
 ): Promise<void> => {
   const replaces = input.reason === "error" ? "aborted" : null;
   for (const table of ["ai.messages", "ai.task_messages"]) {
+    if (input.reason === "aborted")
+      await db`UPDATE ${db(table)} SET meta=COALESCE(meta,'{}'::jsonb) || '{"queueInterrupted":true}'::jsonb
+      WHERE id=(SELECT id FROM ${db(table)} WHERE conversation_id=${input.conversationId}::uuid AND loop_id=${input.turnId}::text ORDER BY seq DESC LIMIT 1)
+      AND EXISTS (SELECT 1 FROM ai.turns WHERE id=${input.turnId}::uuid AND cancellation_reason='queue_interrupt')`;
     if (input.turnError) {
       await db`
         UPDATE ${db(table)}
@@ -2158,24 +2150,25 @@ export const aiConversations: AiConversationService = {
       `;
       if (active) return { delivered: false as const, reason: "busy" as const };
 
+      const writerOrigin = { kind: "chat" as const, id: message.source_chat_id, turnId: message.source_turn_short_id };
       const turnRows = await withAiShortIdForDb(
         tx,
         "idx_ai_turns_conversation_short_id",
         (attempt, shortId) => attempt<TurnRow[]>`
           INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelId}, 'queued', (${JSON.stringify(input.runConfig)}::text)::jsonb)
+          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelId}, 'queued', (${JSON.stringify({ ...input.runConfig, writerOrigin })}::text)::jsonb)
           RETURNING *
         `,
       );
       await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${message.target_conversation_id}::uuid`;
       const turn = rowToTurn(turnRows[0]!);
       const targetMeta: NonNullable<AiStoredMessage["meta"]> = {
+        writerOrigin,
         agentMessage: {
           id: message.short_id,
           sourceChatId: message.source_chat_id,
           sourceTurnId: message.source_turn_short_id,
           sourceTitle: message.source_title,
-          sourceHref: input.sourceHref,
         },
       };
       const messageRows = await withAiShortIdForDb(
@@ -3006,7 +2999,7 @@ export const aiConversations: AiConversationService = {
       if (input.queuedMessageId) {
         const [head] = await tx<
           { id: string; status: string }[]
-        >`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY position LIMIT 1`;
+        >`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY send_requested_at NULLS LAST, position LIMIT 1`;
         const [busy] =
           await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
         if (!head || head.id !== input.queuedMessageId || head.status !== "pending" || busy)
@@ -3095,6 +3088,7 @@ export const aiConversations: AiConversationService = {
           message: input.userMessage,
           loopId: turn.id,
           meta: {
+            ...(input.runConfig.writerOrigin ? { writerOrigin: input.runConfig.writerOrigin } : {}),
             ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
             modelRequest: input.runConfig.model,
             modelResolved: input.runConfig.modelResolved,
@@ -3136,7 +3130,7 @@ export const aiConversations: AiConversationService = {
         `;
       }
       if (input.queuedMessageId) {
-        await tx`UPDATE ai.queued_messages SET status = 'submitted', submission = '{}'::jsonb, content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
+        await tx`UPDATE ai.queued_messages SET status = 'submitted', submitted_turn_id=${turn.id}::uuid, submission = '{}'::jsonb, content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
         await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${input.queuedMessageId}::uuid`;
       }
       return { turn, message: rowToMessage(messageRow) };
@@ -3309,7 +3303,7 @@ export const aiConversations: AiConversationService = {
         AND conversation_id = ${input.conversationId}
         AND lease_owner = ${input.leaseOwner}
         AND status = 'running'
-        AND cancel_requested_at IS NULL
+        AND (cancel_requested_at IS NULL OR (${Boolean(input.drainingInterruption)} AND cancellation_reason = 'queue_interrupt'))
         AND (deadline IS NULL OR deadline > now())
       RETURNING id
     `;
@@ -3357,6 +3351,8 @@ export const aiConversations: AiConversationService = {
       SET cancel_requested_at = COALESCE(cancel_requested_at, now()),
           cancellation_reason = CASE WHEN ${reason} = 'routine_deleted' THEN ${reason}
             WHEN ${reason} = 'routine_paused' AND cancellation_reason IS DISTINCT FROM 'routine_deleted' THEN ${reason}
+            -- A person's Stop ends the turn now instead of waiting on Send now's drain.
+            WHEN ${reason} = 'user' AND cancellation_reason = 'queue_interrupt' THEN ${reason}
             ELSE COALESCE(cancellation_reason, ${reason}) END
       WHERE id = ${input.turnId}
         AND conversation_id = ${input.conversationId}
@@ -3371,8 +3367,9 @@ export const aiConversations: AiConversationService = {
 
   completeTurn: async (input) => {
     return sql.begin(async (tx) => {
-      const turnRows = await tx<{ id: string }[]>`
-        SELECT id
+      await tx`SELECT id FROM ai.conversations WHERE id=${input.conversationId}::uuid FOR NO KEY UPDATE`;
+      const turnRows = await tx<{ id: string; cancellation_reason: string | null }[]>`
+        SELECT id,cancellation_reason
         FROM ai.turns
         WHERE id = ${input.turnId}
           AND conversation_id = ${input.conversationId}
@@ -3387,6 +3384,65 @@ export const aiConversations: AiConversationService = {
         FOR UPDATE
       `;
       if (!turnRows[0]) return "lost" as const;
+
+      // A late interrupt may race the model's final answer. The same row lock
+      // decides the outcome, so the interrupted turn never looks completed.
+      if (turnRows[0].cancellation_reason === "queue_interrupt" && input.turnError?.code !== "time_limit") {
+        const [pending] = await tx`SELECT 1 FROM ai.pending_actions WHERE turn_id=${input.turnId}::uuid
+          AND kind='client_tool' AND status='pending' LIMIT 1`;
+        if (pending) return "waiting_for_client" as const;
+        const [interruption] = await tx<{ expired: boolean; call_ids: string[] }[]>`
+          SELECT interruption_deadline < now() AS expired, interruption_client_calls AS call_ids FROM ai.queued_messages
+          WHERE interrupted_turn_id=${input.turnId}::uuid AND status='pending' AND send_requested_at IS NOT NULL
+            AND interruption_deadline IS NOT NULL`;
+        if (interruption) {
+          const actions = await tx<(PendingActionRow & { late: boolean })[]>`SELECT p.*,p.resolved_at > q.interruption_deadline AS late
+            FROM ai.pending_actions p JOIN ai.queued_messages q ON q.interrupted_turn_id=p.turn_id
+            WHERE q.interrupted_turn_id=${input.turnId}::uuid AND q.status='pending' AND q.send_requested_at IS NOT NULL
+              AND p.call_id=ANY(q.interruption_client_calls)`;
+          const state = queuedClientInterruptionState({
+            expectedCount: interruption.call_ids.length,
+            expired: interruption.expired,
+            actions: actions.map((action) => ({ ...rowToPendingActionRecord(action), late: action.late })),
+          });
+          // The queue reconciler records the visible failure and withdraws the request.
+          if (state !== "confirmed") return "waiting_for_client" as const;
+        }
+        // A suspended client step has no live Nessi loop to journal its receipt.
+        // Serialize with queue promotion and skip any result the live loop already saved.
+        const receipts = await tx<PendingActionRow[]>`SELECT * FROM ai.pending_actions WHERE turn_id=${input.turnId}::uuid
+          AND kind='client_tool' AND status='resolved' ORDER BY resolved_at,call_id`;
+        for (const receipt of receipts) {
+          const action = rowToPendingActionRecord(receipt);
+          if (action.resolvedEvent?.type !== "tool_result") continue;
+          const parent = action.callId.replace(/-client-[0-9]+$/, "");
+          const [existing] = await tx`SELECT id FROM ai.messages WHERE loop_id=${input.turnId}::text AND role='tool_result'
+            AND message->>'callId'=${parent} LIMIT 1`;
+          if (existing) continue;
+          const [tool] = await tx<{ tool_name: string }[]>`SELECT tool_name FROM ai.tool_calls
+            WHERE turn_id=${input.turnId}::uuid AND call_id=${parent}`;
+          await insertMessageLocked(
+            {
+              conversationId: input.conversationId,
+              loopId: input.turnId,
+              message: {
+                role: "tool_result",
+                callId: parent,
+                name: tool?.tool_name ?? action.name,
+                result:
+                  parent === action.callId
+                    ? action.resolvedEvent.result
+                    : {
+                        error: "Turn interrupted after the client step finished.",
+                        clientResult: { callId: action.callId, name: action.name, result: action.resolvedEvent.result },
+                      },
+              },
+            },
+            tx,
+          );
+        }
+        input = { ...input, status: "aborted", error: null, turnError: null };
+      }
 
       if (input.status === "completed") {
         const pending = await tx<{ id: string }[]>`
@@ -3444,7 +3500,9 @@ export const aiConversations: AiConversationService = {
             AND status = 'pending'
         `;
       }
-      return "completed" as const;
+      return turnRows[0].cancellation_reason === "queue_interrupt" && input.turnError?.code !== "time_limit"
+        ? ("interrupted" as const)
+        : ("completed" as const);
     });
   },
 
@@ -3557,7 +3615,10 @@ export const aiConversations: AiConversationService = {
         SELECT id FROM ai.turns
         WHERE status IN ('queued', 'running', 'waiting_for_action')
           AND (
-            (cancel_requested_at IS NOT NULL AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now()))
+            (cancel_requested_at IS NOT NULL AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now())
+              -- Send now's reconciler alone may end its turn: it requires a durable outcome first.
+              AND NOT (cancellation_reason = 'queue_interrupt' AND EXISTS (SELECT 1 FROM ai.queued_messages q
+                WHERE q.interrupted_turn_id=ai.turns.id AND q.status='pending' AND q.send_requested_at IS NOT NULL)))
             OR (status = 'waiting_for_action' AND deadline IS NOT NULL AND deadline < now())
           )
         LIMIT ${limit}
@@ -3674,8 +3735,12 @@ export const aiConversations: AiConversationService = {
     return result;
   },
 
-  savePendingTurnAction: async (input) => {
-    await sql`
+  savePendingTurnAction: async (input) =>
+    sql.begin(async (tx) => {
+      const [turn] = await tx<{ cancellation_reason: string | null }[]>`SELECT cancellation_reason FROM ai.turns
+      WHERE id=${input.turnId}::uuid FOR NO KEY UPDATE`;
+      if (turn?.cancellation_reason === "queue_interrupt") return false;
+      await tx`
       INSERT INTO ai.pending_actions (
         approval_id,
         turn_id,
@@ -3728,7 +3793,8 @@ export const aiConversations: AiConversationService = {
         remember_tool_name = EXCLUDED.remember_tool_name,
         frontend_mode = EXCLUDED.frontend_mode
     `;
-  },
+      return true;
+    }),
 
   listPendingTurnActions: async (input) => {
     const rows = await sql<PendingActionRow[]>`
@@ -3910,31 +3976,34 @@ export const aiConversations: AiConversationService = {
 
   takePendingTurnSteers: async (input) =>
     sql.begin(async (tx) => {
-      const owner = await tx<{ id: string }[]>`
+      const ownerSql = (lock: boolean) => tx<{ id: string }[]>`
         SELECT id
         FROM ai.turns
         WHERE id = ${input.turnId}
           AND conversation_id = ${input.conversationId}
           AND status = 'running'
           AND lease_owner = ${input.leaseOwner}
-          AND cancel_requested_at IS NULL
+          AND (cancel_requested_at IS NULL OR cancellation_reason = 'queue_interrupt')
           AND lease_expires_at > now()
-        FOR UPDATE
+        ${lock ? tx`FOR UPDATE` : tx``}
       `;
-      if (!owner[0]) throw new Error("AI turn lost its lease while taking steering.");
-
-      const pending = await tx<TurnSteerRow[]>`
+      const pendingSql = (lock: boolean) => tx<TurnSteerRow[]>`
         SELECT *
         FROM ai.turn_steers
         WHERE conversation_id = ${input.conversationId}
           AND turn_id = ${input.turnId}
           AND status = 'pending'
+          AND NOT EXISTS (SELECT 1 FROM ai.turns WHERE id = ${input.turnId} AND cancellation_reason = 'queue_interrupt')
         ORDER BY seq ASC
-        FOR UPDATE
+        ${lock ? tx`FOR UPDATE` : tx``}
       `;
-      if (pending.length === 0) return [];
+      if (!(await ownerSql(false))[0]) throw new Error("AI turn lost its lease while taking steering.");
+      if ((await pendingSql(false)).length === 0) return [];
 
+      // Conversation before turn, like Send now and turn completion, so the two never deadlock.
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+      if (!(await ownerSql(true))[0]) throw new Error("AI turn lost its lease while taking steering.");
+      const pending = await pendingSql(true);
       const consumed: AiTurnSteer[] = [];
       for (const steer of pending) {
         const message = await insertMessageLocked(
