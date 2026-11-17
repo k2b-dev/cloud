@@ -21,3 +21,15 @@ describe("AI reference prices", () => {
     expect(() => aiCostUnits({ inputPerMillion: 1, outputPerMillion: 1 }, -1, 0)).toThrow();
   });
 });
+
+test("cache reads use their configured price exactly once, with a conservative uncached fallback", () => {
+  const pricing = { inputPerMillion: 2, outputPerMillion: 10, cacheReadPerMillion: 0.2 };
+  expect(aiCostDecimal(aiCostUnits(pricing, 1_000_000, 100_000, 900_000))).toBe("1.380000000000");
+  expect(aiCostDecimal(aiCostUnits(pricing, 1_000_000, 100_000))).toBe("3.000000000000");
+  expect(aiCostUnits({ inputPerMillion: 2, outputPerMillion: 10 }, 100, 10, 90)).toBe(
+    aiCostUnits({ inputPerMillion: 2, outputPerMillion: 10 }, 100, 10),
+  );
+  expect(() => aiCostUnits(pricing, 10, 0, 11)).toThrow();
+  expect(() => aiCostUnits(pricing, 10, 0, -1)).toThrow();
+  expect(AiModelPricingSchema.safeParse({ ...pricing, cacheReadPerMillion: 3 }).success).toBe(false);
+});

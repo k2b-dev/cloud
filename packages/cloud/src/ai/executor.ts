@@ -11,6 +11,7 @@ import { approvalAssurance, approvalScopeFromToolName, approvals } from "../serv
 import { createHelpReader } from "../services/help";
 import { logger, trace } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
+import { hasBillableAiPricing } from "../shared/ai-costs";
 import type { AiModelRequest } from "../shared/ai-models";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { normalizeLocale } from "../shared/locale";
@@ -1639,6 +1640,9 @@ export class AiTurnExecutor {
           : [],
       ),
       selected: loadedSkills.some((skill) => skill.name === "code-authoring"),
+      // Automatic chat turns keep their separate allocation (#3623). Review
+      // revisions author Code under the authoring allocation, like person turns.
+      billable: hasBillableAiPricing(resolved.profile.pricing) && (config.turnTrigger?.kind === "person" || Boolean(config.codeReview)),
       onStop: (reason) => log.info("AI authoring turn reached its safety budget", { conversationId, turnId, reason }),
     });
     const turnPolicy = applyAiTurnPolicy({

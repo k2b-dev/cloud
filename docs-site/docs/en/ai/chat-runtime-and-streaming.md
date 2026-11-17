@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-11-15
+updated: 2026-11-17
 ---
 
 # Chat runtime and streaming
@@ -1063,9 +1063,11 @@ tools`, both under `ai:executor` with the conversation and turn IDs.
 ### Code authoring safety budget
 
 When Gustav invokes a lasting Code authoring tool or selects the authoring
-Skill, one turn can make at most 16 model attempts and admit at most 512,000 cumulative input tokens, including
-instructions, conversation, and tool schemas. Provider retries and automatic
-compaction share this allowance. Previously loaded tools alone do not activate
+Skill, one turn can make at most 90 model attempts. Priced models use the
+configured Assistant cost allowances, with no additional cumulative input-token
+limit. Free and unpriced models admit at most 5,760,000 cumulative input tokens,
+including instructions, conversation and tool schemas. Provider retries and
+automatic compaction share the turn's attempt and, when applicable, token allowance. Previously loaded tools alone do not activate
 the allowance in a later turn. Admission reserves the input estimate; reported input replaces it when higher. These
 estimates use the same four-characters-per-token convention as AI accounting,
 so they are a safety budget rather than an exact provider invoice ceiling.
@@ -1078,7 +1080,11 @@ does not reset that error count. Successful fixtures that deliberately test
 an error do not count as failures. A response containing several checks cannot
 run more identical failing checks than this allowance.
 
-At a bound, Gustav completes the current tool, skips remaining authoring tools
+When all drafts in the turn have been submitted, reaching an authoring bound
+ends the turn normally without a pause notice or another provider call. A later
+edit or another unfinished draft still requires a pause.
+
+At a bound with unfinished work, Gustav completes the current tool, skips remaining authoring tools
 in that response when the repair allowance is spent, and ends with a short
 persisted receipt in the chat. Assistant renders it in English or German as one
 notice: the reason (the same problem repeated, the attempt limit or the input
@@ -1107,12 +1113,17 @@ daily AI allowances apply to AI invoked **by saved Code**. They do not fund
 Gustav's interactive authoring, and an unpriced model supplies no conversion
 from those monetary allowances to authoring tokens.
 
-The authoring allocation is four 128,000-token reference windows (512,000 input
-tokens). A half-window (64,000) estimates a recovered call without usage and
-reserves room before compaction, whose source is already bounded to 60,000
-characters. The allocation allows 16 attempts at a quarter-window planning size
-(32,000). The two repair retries follow the existing malformed-response repair allowance. These fixed
-operational limits also cover free and unpriced models.
+The attempt allocation uses the default 30-minute turn and the provider's
+60-second first-byte timeout as reference windows: one call and the existing
+two malformed-response repair attempts per window give `30 × 3 = 90` attempts.
+This is an operational capacity allocation; streaming calls can take longer or
+shorter than a minute, and the configured turn deadline still applies. Free and
+unpriced models receive 90 half-reference-window inputs: `90 × 64,000 =
+5,760,000` tokens. A half-window also estimates a recovered call without usage
+and reserves room before compaction, whose source is bounded to 60,000 characters.
+The repeated-error allowance remains an initial attempt plus two retries.
+Disabling Assistant cost allowances is an operator choice; it leaves the
+attempt, repeated-error and time guards in place for priced authoring.
 
 After a successful check of a Code's draft, later requests replace its earlier
 SDK dumps with a short reload note. The complete results stay in conversation

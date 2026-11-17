@@ -75,6 +75,7 @@ test("model merges preserve the complete draft and remotely changed activation; 
     ...model,
     revision: 4,
     enabled: false,
+    pricing: { inputPerMillion: 0.15, outputPerMillion: 0.6, cacheReadPerMillion: 0.015 },
     icon: { kind: "emoji", emoji: "🌿" },
     variants: catalog.variants.filter((entry) => entry.modelId === model.id),
     access: { revision: 2, entries: [] },
@@ -91,6 +92,7 @@ test("model merges preserve the complete draft and remotely changed activation; 
   await page.getByRole("button", { name: "Discard my changes" }).waitFor();
   expect(requests[1]).toEqual(expect.objectContaining({ label: "My model", enabled: false, icon: theirs.icon, revision: 4 }));
   expect(requests[1]).not.toHaveProperty("access");
+  expect(requests[1]).toEqual(expect.objectContaining({ pricing: theirs.pricing }));
   await page.getByRole("button", { name: "Discard my changes" }).click();
   expect(await page.getByRole("textbox", { name: /^Display name/ }).inputValue()).toBe(model.label);
 }, 30_000);
@@ -221,7 +223,16 @@ test("variant merge and discard keep override switches and use captured snapshot
   const requests: unknown[] = [];
   await page.route(`**/api/admin/core/ai/variants/${variant.id}`, async (route) => {
     requests.push(route.request().postDataJSON());
-    await json(route, conflict({ ...variant, revision: 4, hint: "Remote hint" }), 409);
+    await json(
+      route,
+      conflict({
+        ...variant,
+        revision: 4,
+        hint: "Remote hint",
+        pricing: { inputPerMillion: 2, outputPerMillion: 3, cacheReadPerMillion: 0.2 },
+      }),
+      409,
+    );
   });
   await goto("sec=providers&p=cortecs&m=gpt-oss-120b");
   await page.locator('[data-ai-variant="schnell"]').click();
@@ -237,13 +248,13 @@ test("variant merge and discard keep override switches and use captured snapshot
   expect(requests[1]).toEqual(
     expect.objectContaining({
       revision: 4,
-      pricing: { inputPerMillion: 2, outputPerMillion: 3 },
+      pricing: { inputPerMillion: 2, outputPerMillion: 3, cacheReadPerMillion: 0.2 },
       maxOutputTokens: 4000,
       hint: "Remote hint",
     }),
   );
   await dialog.getByRole("button", { name: "Discard my changes" }).click();
-  expect(await dialog.getByRole("switch", { name: "Own prices", exact: true }).isChecked()).toBe(false);
+  expect(await dialog.getByRole("switch", { name: "Own prices", exact: true }).isChecked()).toBe(true);
 }, 30_000);
 
 test("detail failures, missing models and no selection have distinct recovery states", async () => {

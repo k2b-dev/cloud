@@ -5,7 +5,7 @@ section: AI
 order: 1020
 description: Configure models and providers without exposing credentials to application clients.
 tags: [ai, models, providers]
-updated: 2026-11-10
+updated: 2026-11-17
 ---
 
 # Models and providers
@@ -184,8 +184,16 @@ cld admin ai variants update local-chat:deep --input-file variant-patch.json --y
 A model patch can set shared prices or parameters:
 
 ```json
-{ "pricing": { "inputPerMillion": 0.5, "outputPerMillion": 2 }, "extraBody": { "custom": true } }
+{ "pricing": { "inputPerMillion": 0.5, "outputPerMillion": 2, "cacheReadPerMillion": 0.05 }, "extraBody": { "custom": true } }
 ```
+
+Set the optional `cacheReadPerMillion` through the CLI or model API to charge
+provider-reported cache reads at their discounted price. It must not exceed
+`inputPerMillion`. Input usage already includes those cached tokens; Cloud
+charges them once, at the cache-read price. If the price or measured cache count
+is absent, the ordinary input price applies. Admission reserves an uncached
+request because a future cache hit is unknown; settlement releases that reserve
+and books the measured cost. Existing calls retain their price snapshots.
 
 A variant patch can set the thinking level and override parameters or prices:
 

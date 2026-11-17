@@ -468,3 +468,11 @@ test("dispatch admission rejection clears reservations without estimated usage",
   expect(f.booked.every((booking) => booking.status === "failed")).toBe(true);
   expect(f.calls).toBe(0);
 });
+
+test("measured cache reads survive provider accounting snapshots; malformed cache counts never undercharge", async () => {
+  for (const cacheRead of [6, 0, 9, -1, 1.5, NaN]) {
+    const f = fixture([{ type: "usage", usage: { input: 8, output: 2, total: 10, cacheRead } }]);
+    await drain(f.wrap());
+    expect(f.booked[0]?.usage).toEqual({ input: 8, output: 2, ...([6, 0].includes(cacheRead) ? { cacheRead } : {}) });
+  }
+});

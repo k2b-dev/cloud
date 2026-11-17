@@ -3,19 +3,21 @@ import type { AiTurnPolicyToolCall } from "./turn-policy";
 import type { AiCodeAuthoringStop } from "./types";
 
 /**
- * Authoring has no F7 attempt allowance: F7 covers AI invoked BY saved Code.
- * Coordinator-confirmed operational allocation (#3323): four 128k request
- * windows = 512k input per interactive turn. A representative request gets a
- * quarter-window (32k), hence 512k / 32k = 16 provider attempts, including
- * retries and compaction. Reserve half a window (64k) for unknown usage and
- * compaction admission. These are operational allocations, not model limits.
- * This independent safety budget also covers free/unpriced models; ordinary
- * Assistant cost admission still applies to every actual provider attempt.
+ * Authoring is paid through ordinary Assistant cost admission, not saved Code's
+ * F7 budget. Priced models therefore have no additional cumulative token cap.
+ *
+ * Loop backstop: the default 30-minute turn (runtime.ts) contains 30 provider
+ * first-byte timeout windows (PROVIDER_TIMEOUTS.firstByteMs = 60s). Allocate
+ * one normal call plus the existing two malformed-call repair attempts per
+ * window: 30 * 3 = 90 attempts, including retries and compaction. This is a
+ * capacity allocation, not an assumption that every call takes one minute.
+ * Free/unpriced models get that many half-reference-window inputs (64k, the
+ * existing unknown-usage/compaction reserve): 90 * 64k = 5.76M tokens.
  */
 export const CODE_AUTHORING_TURN_BUDGET = {
-  inputTokens: 4 * 128_000,
+  inputTokens: 30 * (1 + 2) * (128_000 / 2),
   unknownInputTokens: 128_000 / 2,
-  modelCalls: (4 * 128_000) / (128_000 / 4),
+  modelCalls: 30 * (1 + 2),
   // Initial failure plus the same two repair attempts allowed for malformed model calls.
   identicalErrorRetries: 2,
 } as const;
@@ -116,6 +118,8 @@ export function createCodeAuthoringTurnBudget(input: {
   priorCalls: { calls: number; inputTokens: number };
   finishedToolCalls: readonly AiTurnPolicyToolCall[];
   selected: boolean;
+  /** The executed model has a positive reference price; cost admission owns spending. */
+  billable?: boolean;
   onStop?: (reason: "model_calls" | "input_tokens" | "repeated_error") => void;
 }) {
   let active = input.selected;
@@ -189,12 +193,14 @@ export function createCodeAuthoringTurnBudget(input: {
       ? "repeated_error"
       : calls >= CODE_AUTHORING_TURN_BUDGET.modelCalls
         ? "model_calls"
-        : inputTokens + estimate > CODE_AUTHORING_TURN_BUDGET.inputTokens
+        : !input.billable && inputTokens + estimate > CODE_AUTHORING_TURN_BUDGET.inputTokens
           ? "input_tokens"
           : null;
   return {
     noteToolCall,
-    stopped: () => stopped,
+    // A submitted draft has already been handed over. Only unfinished authoring
+    // belongs in the pause card, even if the final prose would exceed a limit.
+    stopped: () => (stopped && (stopped.drafts === 0 || stopped.unsubmitted > 0) ? stopped : null),
     // Compaction's source is bounded to 60k characters; a half-window reserves
     // room for that source, its instructions, and the next chat admission.
     // Never let a locally generated stop become a persisted conversation summary.

@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineTool, type Message, memoryStore, nessi, type Provider, type ProviderRequest, type StoreEntry, toolToSpec } from "@k2b/nessi";
@@ -29,6 +29,9 @@ import { prepareAiTools } from "./tools";
 import type { AiTurnPolicyToolCall } from "./turn-policy";
 import { applyAiTurnPolicy } from "./turn-policy";
 import * as turnTiming from "./turn-timing";
+
+beforeEach(() => setSystemTime(new Date("2026-11-17T09:00:00.000Z")));
+afterEach(() => setSystemTime());
 
 const codeId = "c_0123456789ab";
 const check = (name: string, result: unknown, args: unknown = { codeId }): AiTurnPolicyToolCall => ({
@@ -174,20 +177,23 @@ test("model attempts and turn input each stop dispatch, including retries, missi
   };
   const guard = budget();
   for (let i = 0; i < CODE_AUTHORING_TURN_BUDGET.modelCalls + 1; i++) await consume(guard.wrap(missing));
-  expect(requests).toHaveLength(16);
+  expect(requests).toHaveLength(CODE_AUTHORING_TURN_BUDGET.modelCalls);
   requests.length = 0;
-  const resumed = budget({ priorCalls: { calls: 16, inputTokens: 500 } });
+  const resumed = budget({ priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 500 } });
   expect(await consume(resumed.wrap(base))).toContainEqual(expect.objectContaining({ type: "block_end" }));
-  const spent = budget({ priorCalls: { calls: 2, inputTokens: 512_000 } });
+  const spent = budget({ priorCalls: { calls: 2, inputTokens: CODE_AUTHORING_TURN_BUDGET.inputTokens } });
   await consume(spent.wrap(base));
   expect(await consume(spent.wrap(base, "compaction"))).toEqual([]);
-  await consume(budget().wrap(base), { messages: [], systemPrompt: "a".repeat(512_000 * 4) });
+  await consume(budget().wrap(base), { messages: [], systemPrompt: "a".repeat(CODE_AUTHORING_TURN_BUDGET.inputTokens * 4) });
   expect(requests).toHaveLength(0);
   const reported = budget();
   const largeUsage: Provider = {
     ...base,
     async *stream() {
-      yield { type: "usage", usage: { input: 512_000, output: 1, total: 512_001 } };
+      yield {
+        type: "usage",
+        usage: { input: CODE_AUTHORING_TURN_BUDGET.inputTokens, output: 1, total: CODE_AUTHORING_TURN_BUDGET.inputTokens + 1 },
+      };
     },
   };
   await consume(reported.wrap(largeUsage));
@@ -433,7 +439,7 @@ test.each([1_000, 1_000_000])(
       { seq: 1, kind: "message", message: { role: "user", content: [{ type: "text", text: "Earlier request ".repeat(70_000) }] } },
       { seq: 2, kind: "message", message: { role: "assistant", content: [{ type: "text", text: "Earlier answer ".repeat(70_000) }] } },
     ];
-    const guard = budget({ priorCalls: { calls: 14, inputTokens: 100_000 } });
+    const guard = budget({ priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls - 2, inputTokens: 100_000 } });
     let summaries = 0;
     let chats = 0;
     const base: Provider = {
@@ -499,7 +505,7 @@ test.each([1_000, 1_000_000])(
 
 test("provider retries use the final available attempt and stop before another dispatch", async () => {
   let attempts = 0;
-  const guard = budget({ priorCalls: { calls: 15, inputTokens: 0 } });
+  const guard = budget({ priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls - 1, inputTokens: 0 } });
   const failing: Provider = {
     ...provider([]),
     async *stream() {
@@ -554,7 +560,7 @@ test("identical failed tool validation text is bounded without merging different
 });
 
 test("stop receipts invalidate earlier checks after edits and final validation supersedes provisional success", async () => {
-  const guard = budget({ priorCalls: { calls: 16, inputTokens: 100 } });
+  const guard = budget({ priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 100 } });
   guard.noteToolCall({ ...check("code_write", { version: 1, draft: { codeId } }), callId: "write" });
   guard.noteToolCall({ ...check("code_check", { result: { ok: true } }), callId: "check" });
   guard.noteToolCall({ ...check("code_test", { ok: true }), callId: "test" });
@@ -566,7 +572,7 @@ test("stop receipts invalidate earlier checks after edits and final validation s
 });
 
 test("continuation receipts confirm an existing draft without a new read or write", async () => {
-  const guard = budget({ priorCalls: { calls: 16, inputTokens: 100 } });
+  const guard = budget({ priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 100 } });
   guard.noteToolCall(check("code_check", { version: 1, result: { ok: true } }));
   guard.noteToolCall(check("code_test", { version: 1, ok: false, error: "code_test_invalid_fixture" }, { codeId, tests: {} }));
   await consume(guard.wrap(provider([])));
@@ -574,7 +580,7 @@ test("continuation receipts confirm an existing draft without a new read or writ
 });
 
 test("failed or skipped writes preserve confirmed draft checks", async () => {
-  const guard = budget({ priorCalls: { calls: 16, inputTokens: 100 } });
+  const guard = budget({ priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 100 } });
   guard.noteToolCall(check("code_check", { version: 1, result: { ok: true } }));
   guard.noteToolCall(check("code_test", { version: 1, ok: true }));
   for (const code of ["BAD_INPUT", "code_authoring_turn_limit"]) guard.noteToolCall(check("code_write", { version: 1, error: { code } }));
@@ -582,11 +588,11 @@ test("failed or skipped writes preserve confirmed draft checks", async () => {
   expect(guard.stopped()).toEqual({ reason: "model_calls", completedSteps: 2, drafts: 1, unchecked: 0, untested: 0, unsubmitted: 1 });
 });
 
-test("a continuation that submits an existing draft reports no unfinished validation", async () => {
-  const guard = budget({ priorCalls: { calls: 16, inputTokens: 100 } });
+test("a continuation that submits an existing draft ends normally without a pause card", async () => {
+  const guard = budget({ priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 100 } });
   guard.noteToolCall(check("code_submit", { version: 1, submission: { version: { id: "saved" } } }));
   await consume(guard.wrap(provider([])));
-  expect(guard.stopped()).toEqual({ reason: "model_calls", completedSteps: 1, drafts: 1, unchecked: 0, untested: 0, unsubmitted: 0 });
+  expect(guard.stopped()).toBeNull();
 });
 
 test("the authoring loop persists a structured stop after two identical repair retries", async () => {
@@ -596,4 +602,128 @@ test("the authoring loop persists a structured stop after two identical repair r
   expect(state).toEqual({ reason: "repeated_error", completedSteps: 2, drafts: 1, unchecked: 0, untested: 1, unsubmitted: 1 });
   expect(messages.at(-1)?.meta?.codeAuthoringStop).toEqual(state!);
   expect(messages.at(-1)?.message).toMatchObject({ role: "assistant", content: [] });
+});
+
+test.each([true, false])(
+  "a normal build with tests, repair and submission runs beyond the former limits (billable=%s)",
+  async (billable) => {
+    const guard = budget({ billable });
+    const requests: ProviderRequest[] = [];
+    let executed = 0;
+    const names = ["code_init", "code_write", "code_check", "code_test", "code_write", "code_check", "code_test", "code_submit"];
+    // Three independent drafts exercise a sustained build, including one repair each.
+    const base: Provider = {
+      ...provider(requests),
+      async *stream(request) {
+        requests.push(request);
+        const step = requests.length - 1;
+        if (step === 24) {
+          yield { type: "block_end", blockId: "done", index: 0, block: { type: "text", text: "All three versions are submitted." } };
+        } else {
+          const id = `build-${step}`;
+          const name = names[step % names.length]!;
+          yield { type: "block_start", blockId: id, index: 0, kind: "tool_call", callId: id, name };
+          yield {
+            type: "block_end",
+            blockId: id,
+            index: 0,
+            block: { type: "tool_call", id, name, args: { codeId: `c_build_${Math.floor(step / names.length)}` } },
+          };
+        }
+        const input = billable ? 600_000 : 40_000;
+        yield { type: "usage", usage: { input, output: 100, total: input + 100 } };
+      },
+    };
+    const tools = [...new Set(names)].map((name) =>
+      defineTool({
+        name,
+        description: name,
+        inputSchema: z.object({ codeId: z.string() }),
+      }).server(async ({ codeId: draftId }) => {
+        const step = executed++ % names.length;
+        if (name === "code_init" || name === "code_write") return { version: 1, draft: { codeId: draftId } };
+        if (name === "code_check") return { version: 1, result: { ok: true } };
+        if (name === "code_test") return step === 3 ? { version: 1, ok: false, error: "assertion_failed" } : { version: 1, ok: true };
+        return { version: 1, submission: { version: { id: `saved-${draftId}` } } };
+      }),
+    );
+    const store = memoryStore();
+    const loop = nessi({
+      systemPrompt: "Build, test and submit each draft.",
+      provider: guard.wrap(base),
+      tools: guard.tools(tools),
+      store,
+      input: "Build and test the three automations.",
+      maxTurns: 30,
+    });
+    try {
+      for await (const _event of loop) {
+      }
+      expect(requests).toHaveLength(25);
+      expect(executed).toBe(24);
+      expect(guard.stopped()).toBeNull();
+      expect((await store.load()).at(-1)?.message).toMatchObject({
+        role: "assistant",
+        content: [{ type: "text", text: "All three versions are submitted." }],
+      });
+    } finally {
+      loop.abort();
+    }
+  },
+);
+
+test("priced authoring delegates spending to cost admission even past the free token allowance", async () => {
+  const requests: ProviderRequest[] = [];
+  const guard = budget({ billable: true, priorCalls: { calls: 0, inputTokens: CODE_AUTHORING_TURN_BUDGET.inputTokens * 2 } });
+  await consume(guard.wrap(provider(requests)));
+  expect(requests).toHaveLength(1);
+  expect(guard.stopped()).toBeNull();
+});
+
+test.each(["model_calls", "input_tokens", "repeated_error"] as const)(
+  "completed submissions never produce a pause at %s",
+  async (reason) => {
+    const guard = budget({
+      priorCalls: {
+        calls: reason === "model_calls" ? CODE_AUTHORING_TURN_BUDGET.modelCalls : 0,
+        inputTokens: reason === "input_tokens" ? CODE_AUTHORING_TURN_BUDGET.inputTokens : 0,
+      },
+    });
+    if (reason === "repeated_error")
+      for (let i = 0; i <= CODE_AUTHORING_TURN_BUDGET.identicalErrorRetries; i++)
+        guard.noteToolCall(check("code_test", { ok: false, error: "assertion_failed" }));
+    guard.noteToolCall(check("code_submit", { submission: { version: { id: "saved" } } }));
+    const requests: ProviderRequest[] = [];
+    const messages: Message[] = [];
+    const loop = nessi({
+      systemPrompt: "Finish the submitted work.",
+      provider: guard.wrap(provider(requests)),
+      input: "Finish",
+      store: {
+        load: async () => [],
+        append: async (message) => {
+          messages.push(message);
+        },
+      },
+    });
+    try {
+      for await (const _event of loop) {
+      }
+      expect(requests).toHaveLength(0);
+      expect(guard.stopped()).toBeNull();
+      expect(messages.at(-1)).toMatchObject({ role: "assistant", content: [] });
+    } finally {
+      loop.abort();
+    }
+  },
+);
+
+test("a later edit or a second unfinished draft still needs a pause after a successful submission", async () => {
+  for (const nextCodeId of [codeId, "c_second_draft"]) {
+    const guard = budget({ priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 0 } });
+    guard.noteToolCall(check("code_submit", { submission: { version: { id: "saved" } } }));
+    guard.noteToolCall(check("code_write", { draft: { codeId: nextCodeId } }, { codeId: nextCodeId }));
+    await consume(guard.wrap(provider([])));
+    expect(guard.stopped()).toMatchObject({ reason: "model_calls", unsubmitted: 1 });
+  }
 });

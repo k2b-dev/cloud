@@ -108,7 +108,7 @@ function VariantDialog(props: {
       hint: value.hint.trim(),
       pricing:
         value.ownPrice && value.inputPerMillion !== null && value.outputPerMillion !== null
-          ? { inputPerMillion: value.inputPerMillion, outputPerMillion: value.outputPerMillion }
+          ? { ...base()?.pricing, inputPerMillion: value.inputPerMillion, outputPerMillion: value.outputPerMillion }
           : null,
       maxOutputTokens: value.ownOut ? value.maxOutputTokens : null,
       showInPicker: value.showInPicker,
