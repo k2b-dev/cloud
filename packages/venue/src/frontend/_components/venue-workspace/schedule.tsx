@@ -10,6 +10,7 @@ import {
   SegmentedControl,
   Select,
   TextInput,
+  TimeInput,
   Tooltip,
   useLocale,
 } from "@k2b/ui";
@@ -25,7 +26,6 @@ import type {
   UpcomingSlot,
 } from "../../../contracts";
 import { type VenueMessages, venueMessages } from "../../../messages";
-import { completeClockTime, isClockTime, isEndTime, TimeInput } from "./time-input";
 import { dateKey, timeZoneDateConfig } from "./utils";
 
 /** The staffing target as people read it: `2`, or `1–3` when more people may join than the shift needs. */
@@ -152,6 +152,10 @@ export function DialogFrame(props: {
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
+          // A field that refused its text, such as a time that is no time, keeps its last value and says why. Saving
+          // now would store that old value while the field shows something else, so the field gets the focus instead.
+          const refused = [...event.currentTarget.querySelectorAll("input")].find((input) => input.validity.customError);
+          if (refused) return refused.focus();
           if (!props.pending) props.onSubmit();
         }}
       >
@@ -229,16 +233,31 @@ const weekdayOptions = (locale: string) =>
 
 type TimeErrors = { startTime?: string; endTime?: string };
 
-/** Field errors for a start and end time on the same day; the end must come after the start and may be 24:00. */
+/**
+ * Field errors for a start and end time on the same day; the end must come after the start. The time fields commit
+ * only clock times `HH:mm`, and the end may be 24:00 for until midnight.
+ */
 const timeRangeErrors = (startTime: string, endTime: string, t: VenueMessages): TimeErrors => {
   const errors: TimeErrors = {};
-  if (!startTime.trim()) errors.startTime = t.timeRequired;
-  else if (!isClockTime(startTime.trim())) errors.startTime = t.timeInvalid;
-  if (!endTime.trim()) errors.endTime = t.timeRequired;
-  else if (!isEndTime(endTime.trim())) errors.endTime = t.timeInvalid;
-  else if (!errors.startTime && endTime.trim() <= startTime.trim()) errors.endTime = t.endAfterStart;
+  if (!startTime) errors.startTime = t.timeRequired;
+  if (!endTime) errors.endTime = t.timeRequired;
+  else if (!errors.startTime && endTime <= startTime) errors.endTime = t.endAfterStart;
   return errors;
 };
+
+/** A start or end time of a venue range: required, and only the end may be 24:00. */
+function RangeTime(props: { label: string; value: string; onValueChange: (value: string) => void; end?: boolean; error?: string }) {
+  return (
+    <TimeInput
+      label={props.label}
+      value={() => props.value || null}
+      onValueChange={(value) => props.onValueChange(value ?? "")}
+      max={props.end ? "24:00" : undefined}
+      error={() => props.error}
+      required
+    />
+  );
+}
 
 const hasErrors = (errors: Record<string, string | undefined>) => Object.values(errors).some(Boolean);
 
@@ -255,9 +274,6 @@ export function OpeningRuleDialog(props: SubmittingDialogProps<OpeningRuleInput>
   const errors = () => (attempted() ? timeRangeErrors(startTime(), endTime(), t()) : {});
 
   const submit = () => {
-    // Enter can submit before the time field completes its input on blur.
-    setStartTime(completeClockTime(startTime()));
-    setEndTime(completeClockTime(endTime()));
     setAttempted(true);
     if (hasErrors(errors())) return;
     void dialog.save({
@@ -280,8 +296,8 @@ export function OpeningRuleDialog(props: SubmittingDialogProps<OpeningRuleInput>
     >
       <Select label={t().weekday} value={weekday} onValueChange={(value) => setWeekday(value ?? "1")} options={weekdayOptions(locale())} />
       <div class="grid gap-3 sm:grid-cols-2">
-        <TimeInput label={t().startTime} value={startTime()} onValueChange={setStartTime} placeholder="09:00" error={errors().startTime} />
-        <TimeInput label={t().endTime} value={endTime()} onValueChange={setEndTime} placeholder="17:00" error={errors().endTime} />
+        <RangeTime label={t().startTime} value={startTime()} onValueChange={setStartTime} error={errors().startTime} />
+        <RangeTime label={t().endTime} value={endTime()} onValueChange={setEndTime} error={errors().endTime} end />
       </div>
       <TextInput label={t().note} description={t().publicNoteDescription} value={note} onValueChange={setNote} placeholder={t().optional} />
     </DialogFrame>
@@ -320,9 +336,6 @@ export function ExceptionDialog(
   };
 
   const submit = () => {
-    // Enter can submit before the time field completes its input on blur.
-    setStartTime(completeClockTime(startTime()));
-    setEndTime(completeClockTime(endTime()));
     setAttempted(true);
     const day = date();
     if (hasErrors(errors()) || !day) return;
@@ -364,14 +377,8 @@ export function ExceptionDialog(
       />
       <Show when={kind() === "open"}>
         <div class="grid gap-3 sm:grid-cols-2">
-          <TimeInput
-            label={t().startTime}
-            value={startTime()}
-            onValueChange={setStartTime}
-            placeholder="18:00"
-            error={errors().startTime}
-          />
-          <TimeInput label={t().endTime} value={endTime()} onValueChange={setEndTime} placeholder="22:00" error={errors().endTime} />
+          <RangeTime label={t().startTime} value={startTime()} onValueChange={setStartTime} error={errors().startTime} />
+          <RangeTime label={t().endTime} value={endTime()} onValueChange={setEndTime} error={errors().endTime} end />
         </div>
       </Show>
       <TextInput
@@ -507,9 +514,6 @@ export function ShiftTemplateDialog(
   const count = () => (repeat() === "weekly" ? weekdays().length : 1);
 
   const submit = () => {
-    // Enter can submit before the time field completes its input on blur.
-    setStartTime(completeClockTime(startTime()));
-    setEndTime(completeClockTime(endTime()));
     setAttempted(true);
     const { inputs } = result();
     if (inputs.length > 0) void dialog.save(inputs);
@@ -600,8 +604,8 @@ export function ShiftTemplateDialog(
         </Show>
       </Show>
       <div class="grid gap-3 sm:grid-cols-2">
-        <TimeInput label={t().startTime} value={startTime()} onValueChange={setStartTime} placeholder="09:00" error={errors().startTime} />
-        <TimeInput label={t().endTime} value={endTime()} onValueChange={setEndTime} placeholder="13:00" error={errors().endTime} />
+        <RangeTime label={t().startTime} value={startTime()} onValueChange={setStartTime} error={errors().startTime} />
+        <RangeTime label={t().endTime} value={endTime()} onValueChange={setEndTime} error={errors().endTime} end />
       </div>
       <div class="grid gap-3 sm:grid-cols-2">
         <TextInput

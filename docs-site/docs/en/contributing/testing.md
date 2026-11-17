@@ -1091,6 +1091,12 @@ artifact service suite disposable PostgreSQL and rsql containers and runs
 every other Assistant integration file, such as the Code Mode PDF test against
 Gotenberg, against the `CLOUD_TEST_*` targets.
 
+A package whose script also accepts one of its files can add a
+`test:integration:list` script that prints the files without starting
+infrastructure. The root runner then runs each listed file as a suite of its
+own, `bun run test:integration <file>`, so CI shards balance the package by
+measured file times instead of carrying it as one block.
+
 Mail's entry point reuses the root runner's infrastructure-gate discovery,
 including gated files without an `.integration` suffix. It also retains the
 explicitly opted-in large-mailbox performance and IMAP connector suites. All
@@ -1098,7 +1104,9 @@ selected files run with `--isolate`, so the Mail preload gives each file its own
 database clone and Sync runtime;
 unit and browser files run through the normal test jobs instead. Inspect the
 selection without starting infrastructure with
-`bun run --cwd packages/mail test:integration --list`.
+`bun run --cwd packages/mail test:integration:list`; run one file with
+`bun run --cwd packages/mail test:integration src/service/sent-projection.integration.test.ts`.
+The root runner runs Mail this way, one file per suite.
 
 ### Sync namespaces on the test broker
 
@@ -1227,8 +1235,8 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in nine shards, WebKit tests in nineteen, and integration tests in
-five. Each mode uses its own measured seconds per suite in
+Unit tests run in twelve shards, WebKit tests in nineteen, and integration tests
+in six. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
 measurements; Chromium runs inside the unit suites. Equal weights use the suite
@@ -1267,7 +1275,10 @@ Leave measured room below the target for new files. A recommendation that only
 just fits can fail the runner guard as soon as another browser file is added.
 If one suite alone exceeds that target, split the suite: `test:part:<name>`
 scripts in the package become the suites `<package> <name>` in place of its `test`
-script, and together they must run the same files. Commit the
+script, and together they must run the same files. An integration suite that
+a package runs through its own script splits with `test:integration:list`,
+which turns each listed file into a suite of its own; the runner test fails
+when a single integration suite is weighted above 10 minutes. Commit the
 refreshed weights and adjust the matrix together; keep the 20-minute execution
 budget unchanged. Refresh after browser suites grow or timings drift, even
 when the jobs still pass. An outdated table can balance predicted times while
