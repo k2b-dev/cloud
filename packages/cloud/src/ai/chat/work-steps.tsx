@@ -268,7 +268,7 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
 
 /**
  * Gustav's own step in words, such as "Thought it over": the icon in the third grey, one line, and the whole text
- * behind its ⓘ, where a long text scrolls. Used for reasoning and for what Gustav wrote between two steps.
+ * behind its ⓘ, where a long text scrolls. Used for what Gustav wrote between two steps.
  */
 export function AiNoteStep(props: { label: string; busy: boolean; icon?: string; children?: JSX.Element }): JSX.Element {
   const locale = useLocale();
@@ -291,16 +291,16 @@ export function AiNoteStep(props: { label: string; busy: boolean; icon?: string;
   );
 }
 
-/** Thinking is a step: "Thought it over", and its reasoning in the card. */
+/** Thinking is a step, with only its available duration in the card. Model text is never a reader summary. */
 export function AiThoughtStep(props: { block: Extract<AiTurnBlock, { kind: "thinking" }>; busy: boolean }): JSX.Element {
   const locale = useLocale();
+  const work = useContext(AiWorkContext);
   const t = () => aiChatMessages(locale());
-  const text = () => props.block.text.trim();
+  const duration = () => (props.busy ? work.liveDuration() : undefined);
+  const label = () => (props.busy ? t().stepThinking : t().stepThought);
   return (
-    <Show when={text()} fallback={<AiNoteStep label={t().stepThinking} busy={props.busy} />}>
-      <AiNoteStep label={props.busy ? t().stepThinking : t().stepThought} busy={props.busy}>
-        <p class="ai-turn-steps__thought">{text()}</p>
-      </AiNoteStep>
-    </Show>
+    <AiNoteStep label={label()} busy={props.busy}>
+      {duration() ? <p>{duration()}</p> : undefined}
+    </AiNoteStep>
   );
 }

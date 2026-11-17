@@ -1173,8 +1173,15 @@ suite("AI chat tasks", () => {
           })
         )?.id,
       ).toBe(occurrence.id);
+      const thinking = "INTERNAL_INSTRUCTION code_Open42 22222222-2222-4222-8222-222222222222 code_run({code: 'return 42'})";
       await sql`INSERT INTO ai.task_messages(short_id,conversation_id,seq,kind,role,message,loop_id)
-        VALUES (${createAiShortId()},${conversation.id}::uuid,2,'message','assistant',${JSON.stringify({ role: "assistant", content: [{ type: "text", text: "Your summary is ready." }] })}::text::jsonb,${delivered.turnId})`;
+        VALUES (${createAiShortId()},${conversation.id}::uuid,2,'message','assistant',${JSON.stringify({
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking, signature: "signed-thinking" },
+            { type: "text", text: "Your summary is ready." },
+          ],
+        })}::text::jsonb,${delivered.turnId})`;
       await sql`UPDATE ai.conversations SET done = true, last_viewed_at = now() - interval '1 day', last_used_at = now() - interval '1 day' WHERE id = ${conversation.id}::uuid`;
       await sql`UPDATE ai.turns SET status='completed',completed_at=now() WHERE id=${delivered.turnId}::uuid`;
       await expect(authorizeCodeExecution(conversation.id, delivered.turnId, user!.id)).rejects.toThrow("no longer authorized");
@@ -1200,9 +1207,18 @@ suite("AI chat tasks", () => {
       const activities = (await aiChatTasks.listActivities({ userId: user!.id })).items;
       expect(activities[0]?.occurrence.resultText).toBe("Your summary is ready.");
       expect(activities[0]?.unread).toBe(true);
-      expect(
-        await aiChatTasks.getOccurrenceDetail({ userId: user!.id, taskId: task.shortId, occurrenceId: occurrence.shortId }),
-      ).not.toBeNull();
+      const detail = await aiChatTasks.getOccurrenceDetail({ userId: user!.id, taskId: task.shortId, occurrenceId: occurrence.shortId });
+      expect(detail).not.toBeNull();
+      expect(JSON.stringify(detail?.messages)).toContain("Your summary is ready.");
+      for (const forbidden of [
+        "INTERNAL_INSTRUCTION",
+        "code_Open42",
+        "22222222-2222-4222-8222-222222222222",
+        "code_run",
+        "return 42",
+        "signed-thinking",
+      ])
+        expect(JSON.stringify(detail?.messages)).not.toContain(forbidden);
       expect(
         await aiChatTasks.getOccurrenceDetail({ userId: crypto.randomUUID(), taskId: task.shortId, occurrenceId: occurrence.shortId }),
       ).toBeNull();
