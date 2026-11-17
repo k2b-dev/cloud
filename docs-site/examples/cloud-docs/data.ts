@@ -180,7 +180,9 @@ export const createInventoryItem = async (input: { name: string; quantity: numbe
 
     return row ? ok(mapInventoryItem(row)) : fail(err.internal("Inventory item was not created"));
   } catch (error) {
-    return isUniqueViolation(error) ? fail(err.conflict("Inventory item name")) : fail(err.internal("Inventory item was not created"));
+    return isUniqueViolation(error)
+      ? fail(err.conflict("Inventory item name already exists"))
+      : fail(err.internal("Inventory item was not created"));
   }
 };
 

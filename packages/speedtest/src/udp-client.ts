@@ -92,6 +92,7 @@ export async function runUdpTest(server: string, options: { port?: number; signa
         connection.send(packet, port, address, (error) => {
           if (error) fail(error);
         });
+        // runtime-timer: probe sender of one speed test that a request started.
         if (sent.size < 20) sender = setTimeout(sendProbe, 25);
       };
       const receive = (reply: Buffer, remote: { address: string; port: number }) => {

@@ -25,6 +25,24 @@ Use `leading` when an activity needs a host-owned visual such as a favicon. Use
 the optional `accent` only for source or application identity; `success`, `warning`, and
 `danger` tones continue to own semantic state colors. Keep the rich activity
 body in the host so `Chat` remains independent from tool protocols.
+Every activity row has one grid: a 16 px icon without a surface, the text at
+13 px, then on the right `meta`, `duration`, and the chevron or ⓘ, both at
+12 px. Duration and the last column keep their width when empty, so in a list
+of activities meta, duration, and chevron end on the same edge in every row. A
+row is 32 px high, 44 px on a phone, and its hover area reaches 6 px past its
+icon and text. Put a status word or count in `meta` ("2 steps", "Failed"),
+with `metaTone` for an outcome that needs attention; a part of the meta, such
+as "1 failed" in "6 steps · 1 failed", can carry its own `data-tone`. Pass the
+step's `duration` already formatted and `durationTitle` spelled out; a `busy`
+row's duration is hidden from screen readers, so a ticking clock stays silent. A single
+step with details puts an ⓘ in `end`, the last column: a
+`HoverCard.Trigger` with `triggerClass="k2b-chat-activity__info"`, end-aligned
+and 24 rem wide, and the row itself never opens. A card with `actions` is a
+dialog that opens only with a press or Enter. The host owns that card, so an
+island that shows activities without details carries no hover card code. A row
+with a body keeps its chevron and ignores `end`. An open row's tone, shimmer,
+and turned chevron belong to its own row only; the rows in its body keep
+theirs.
 Activity labels use the normal font weight, and their description has the same
 size; hierarchy comes from color and indent. Use `ariaLabel` only for the
 whole-row summary form when its visible text abbreviates, for example "Worked
@@ -35,13 +53,14 @@ semantic tone or `accent`, the busy icon uses `--k2b-ai-accent`, also with
 reduced motion. Spinning icons stay solid so they remain visible. Reduced-motion
 clients keep the text static. Streaming messages retain the minimal three-dot
 indicator. Applications should not add another generating label.
-Activity bodies are inset beneath their row by default. Set `bodyInset={false}`
-when the body is a peer list that should align with the activity row itself.
-On a chat timeline narrower than 48 rem or on a phone, labels wrap when the
-row has no description. Rows with descriptions keep one line and truncate the
-muted metadata first. Wide surfaces keep one line with an ellipsis. Set `wrap`
-when the whole label and description must remain visible at every width; the
-icon stays on the first line.
+Activity bodies start on the text edge of their row by default, so sub-steps
+form a real level below it. Set `bodyInset={false}` when the body is a peer
+list that should align with the activity row itself.
+Labels keep one line at every width and fade out at their end; the
+description fades first, and a string label is its own `title`. Put the whole
+sentence in the step's details. Set `wrap` when the whole label and
+description must remain visible in the row itself; the icon stays on the first
+line.
 
 Put one `Chat.Activity.Toggle` in the `label` when only a few words, such as
 "3 of 4 tasks", should open the body. The toggle is a button with its chevron
@@ -646,9 +665,12 @@ type ChatMessageProps = {
   onActionError?: (error: unknown) => void; class?: string;
 };
 
+type ChatActivityMetaTone = "danger" | "warning" | "ai";
+
 type ChatActivityProps = {
   label: JSX.Element; ariaLabel?: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
-  tone?: ChatActivityTone; busy?: boolean; wrap?: boolean; trailing?: JSX.Element; open?: boolean;
+  tone?: ChatActivityTone; busy?: boolean; wrap?: boolean; meta?: JSX.Element; metaTone?: ChatActivityMetaTone;
+  duration?: string; durationTitle?: string; end?: JSX.Element; trailing?: JSX.Element; open?: boolean;
   onOpenChange?: (open: boolean) => void; defaultOpen?: boolean; bodyInset?: boolean;
   anchorId?: string | number; children?: JSX.Element; renderBody?: () => JSX.Element; class?: string;
 };
@@ -726,8 +748,7 @@ Feedback actions can set `pressedTone="success"` or `pressedTone="danger"` to
 mark their selected state with the semantic icon color and no persistent
 background. `pressed` continues to expose the toggle state to assistive technology.
 
-Activity labels without descriptions wrap on narrow chat surfaces and phones.
-Rows with descriptions and wide surfaces keep one line with an ellipsis. Use
+Activity labels keep one line and fade out at their end at every width. Use
 `renderBody` for expensive
 diagnostic details: it is mounted only while the activity is open.
 Use a bounded, keyboard-focusable scrolling region for long input/output payloads.

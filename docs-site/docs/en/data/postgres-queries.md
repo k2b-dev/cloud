@@ -5,7 +5,7 @@ section: Data
 order: 410
 description: Query application-owned Postgres data with the shared database connection.
 tags: [data, postgres, sql, queries]
-updated: 2026-10-07
+updated: 2026-11-16
 ---
 
 # Postgres queries
@@ -101,7 +101,7 @@ try {
   // insert
 } catch (error) {
   if (isUniqueViolation(error)) {
-    return fail(err.conflict("Inventory item name"));
+    return fail(err.conflict("Inventory item name already exists"));
   }
   throw error;
 }

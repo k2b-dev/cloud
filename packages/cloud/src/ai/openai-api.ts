@@ -393,6 +393,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
               }
             };
             const send = (value: unknown) => write(`data: ${JSON.stringify(value)}\n\n`);
+            // runtime-timer: keepalive of one streaming response (request side).
             const keepalive = setInterval(() => {
               if (pendingWrites === 0) void write(": keepalive\n\n").catch(() => undefined);
             }, dependencies.keepaliveMs ?? 5_000);

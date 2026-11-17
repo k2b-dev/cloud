@@ -150,6 +150,7 @@ export const watchAppBadges = (endpoints: readonly string[]): (() => void) => {
     if (document.visibilityState === "hidden") return;
     clearTimeout(timer);
     last = Date.now();
+    // runtime-timer: badge refresh of the open page in the browser.
     timer = setTimeout(refresh, APP_BADGE_INTERVAL_MS);
     for (const endpoint of unique) read(endpoint);
   };

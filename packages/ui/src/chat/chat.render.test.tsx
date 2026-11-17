@@ -1032,3 +1032,48 @@ test("activity toggle SSR is stable, named, and controls only its body", () => {
   expect(plain).toContain("3 of 4 tasks");
   expect(plain).not.toContain("<button");
 });
+
+test("activity rows put meta, duration, and an ⓘ in their own columns; a row with a body keeps its chevron", () => {
+  const { HoverCard } = publicUi;
+  const step = renderToString(() =>
+    createComponent(Chat.Activity, {
+      label: "Read the file “Sales.csv”",
+      icon: "ti ti-file",
+      meta: "Failed",
+      metaTone: "danger",
+      duration: "2 s",
+      durationTitle: "2 seconds",
+      get end() {
+        return createComponent(HoverCard.Trigger, {
+          triggerClass: "k2b-chat-activity__info",
+          "aria-label": "Details: Read the file “Sales.csv”",
+          content: "37 rows",
+          children: "i",
+        });
+      },
+    }),
+  );
+  expect(step).toMatch(/class="k2b-chat-activity__meta k2b-truncate-fade" data-tone="danger"[^>]*>Failed</);
+  expect(step).toMatch(/class="k2b-chat-activity__duration" title="2 seconds"[^>]*>2 s</);
+  expect(step).toContain('aria-label="Details: Read the file “Sales.csv”"');
+  expect(step).toContain("k2b-chat-activity__info");
+  // A single step is no disclosure: only its ⓘ is a button, and the full sentence is the label's title.
+  expect(step).not.toMatch(/<(details|summary)\b/);
+  expect(step).not.toContain("k2b-chat-activity__chevron");
+  expect(step).toContain('title="Read the file “Sales.csv”"');
+  const group = renderToString(() =>
+    createComponent(Chat.Activity, {
+      label: "Loaded tools",
+      meta: "2 steps",
+      end: "ignored",
+      children: "Steps",
+    }),
+  );
+  expect(group).toContain("k2b-chat-activity__chevron");
+  // A row with a body keeps its chevron in the last column; `end` stays out.
+  expect(group).not.toContain("ignored");
+  // A row without meta or duration renders no empty cells; the grid keeps their columns.
+  const plain = renderToString(() => createComponent(Chat.Activity, { label: "Thought it over" }));
+  expect(plain).not.toContain("k2b-chat-activity__meta");
+  expect(plain).not.toContain("k2b-chat-activity__duration");
+});

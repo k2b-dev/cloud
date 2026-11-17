@@ -44,10 +44,17 @@ const load = async () => {
   return { page, errors };
 };
 const button = (page: Page) => page.locator(".chat-conversation__composer").getByRole("button", { name: "Insert emoji", exact: true });
+/**
+ * The popover's `toggle` events arrive in a task after the change, and a browser merges a queued one with the next
+ * change. The tests therefore wait for each recorded state before they read the list or change it again.
+ */
+const toggled = (page: Page, state: "open" | "closed") =>
+  page.waitForFunction((state) => (window as unknown as { toggles: string[] }).toggles.at(-1) === state, state);
 const opened = async (page: Page) => {
   const search = page.getByRole("combobox", { name: "Search emoji" });
   await search.waitFor();
   await page.waitForFunction(() => document.activeElement?.closest(".k2b-emoji-picker-popover") != null);
+  await toggled(page, "open");
   await settled(page);
   return page.evaluate(() => {
     const picker = document.querySelector(".k2b-emoji-picker-popover")!.getBoundingClientRect();
@@ -95,6 +102,7 @@ test("the keyboard opens the picker the first time and Escape returns the focus 
     expect(first.end).toBeLessThan(1);
     await page.keyboard.press("Escape");
     await page.waitForFunction((element) => document.activeElement === element, await button(page).elementHandle());
+    await toggled(page, "closed");
     // The second opening, with the code loaded, lands in the same place.
     await page.keyboard.press("Enter");
     const second = await opened(page);
