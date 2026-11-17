@@ -62,6 +62,7 @@ export function createArtifactSession(
   const arm = () => {
     clearTimeout(watchdog);
     if (state.status !== "starting" || state.work?.status === "running" || state.pendingRequests || approvals || waits) return;
+    // runtime-timer: watchdog of one script already in flight; never a periodic background worker.
     watchdog = setTimeout(() => {
       emit({ status: "error", error: timeLimitMessage(15000) });
       void run.stop();

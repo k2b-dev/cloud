@@ -45,9 +45,11 @@ export const startAppCatalogMaintenance = (tables?: readonly AppCatalogTable[]):
       await refresh(true);
     } catch (error) {
       log.error("App catalog cleanup failed; retrying", { error: String(error) });
+      // runtime-timer: retries a registry-driven catalog cleanup; registry reactions keep running while quiet.
       if (!controller.signal.aborted) timer = setTimeout(() => void retry(), 60_000);
     }
   };
+  // runtime-timer: registry watcher; registry reactions keep running while quiet.
   const task = superviseRuntimeTask({
     name: "App catalog maintenance",
     signal: controller.signal,

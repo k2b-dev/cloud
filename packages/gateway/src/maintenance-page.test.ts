@@ -1,6 +1,7 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
+import { MAINTENANCE_POLL_STEPS, maintenancePollDelay } from "@k2b/cloud/contracts/maintenance";
 import { LAUF_CSS, LAUF_SCRIPT } from "@k2b/cloud/maintenance-game";
-import { type MaintenancePageModel, POLL_STEPS, pollDelay, renderMaintenancePage } from "./maintenance-page";
+import { type MaintenancePageModel, renderMaintenancePage } from "./maintenance-page";
 
 const NOW = Date.parse("2026-11-16T13:58:00+01:00");
 const at = (hm: string) => Date.parse(`2026-11-16T${hm}:00+01:00`);
@@ -173,20 +174,20 @@ test("the first paint equals the client's template for the same state", () => {
 });
 
 test("the poll schedule slows down over time and spreads by 20 %", () => {
-  expect(POLL_STEPS.cloud).toEqual([
+  expect(MAINTENANCE_POLL_STEPS.cloud).toEqual([
     [0, 5_000],
     [120_000, 15_000],
     [600_000, 30_000],
   ]);
-  expect(pollDelay("cloud", 0, 0.5)).toBe(5_000);
-  expect(pollDelay("cloud", 119_999, 0.5)).toBe(5_000);
-  expect(pollDelay("cloud", 120_000, 0.5)).toBe(15_000);
-  expect(pollDelay("cloud", 600_000, 0.5)).toBe(30_000);
-  expect(pollDelay("app", 0, 0.5)).toBe(2_000);
-  expect(pollDelay("app", 30_000, 0.5)).toBe(5_000);
-  expect(pollDelay("app", 120_000, 0.5)).toBe(15_000);
-  expect(pollDelay("cloud", 0, 0)).toBe(4_000);
-  expect(pollDelay("cloud", 0, 0.999_999)).toBeCloseTo(6_000, 0);
+  expect(maintenancePollDelay("cloud", 0, 0.5)).toBe(5_000);
+  expect(maintenancePollDelay("cloud", 119_999, 0.5)).toBe(5_000);
+  expect(maintenancePollDelay("cloud", 120_000, 0.5)).toBe(15_000);
+  expect(maintenancePollDelay("cloud", 600_000, 0.5)).toBe(30_000);
+  expect(maintenancePollDelay("app", 0, 0.5)).toBe(2_000);
+  expect(maintenancePollDelay("app", 30_000, 0.5)).toBe(5_000);
+  expect(maintenancePollDelay("app", 120_000, 0.5)).toBe(15_000);
+  expect(maintenancePollDelay("cloud", 0, 0)).toBe(4_000);
+  expect(maintenancePollDelay("cloud", 0, 0.999_999)).toBeCloseTo(6_000, 0);
 });
 
 test("the game stays small: its script and style under 14 KB gzip", () => {

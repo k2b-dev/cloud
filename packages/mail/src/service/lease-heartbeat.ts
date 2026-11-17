@@ -55,6 +55,7 @@ export const withLeaseHeartbeat = async <T>(params: {
     await queueHeartbeat();
     if (aborted) throw abortReason;
   };
+  // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
   const timer = setInterval(() => {
     void queueHeartbeat();
   }, params.intervalMs);

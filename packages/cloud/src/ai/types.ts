@@ -797,6 +797,8 @@ export type AiConversationService = {
     requestId?: string;
     ownerUserId: string;
     title?: string;
+    /** The title without `title`, such as the default in the request locale; a replay may differ in it. */
+    defaultTitle?: string;
     description?: string;
     projectId?: string;
     draft?: AiDraftContentPart[];

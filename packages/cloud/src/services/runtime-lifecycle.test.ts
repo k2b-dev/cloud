@@ -1,11 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   createRuntimeLifecycle,
   createRuntimeTaskTracker,
+  startRuntimeInterval,
   stopRuntimeJobs,
   stopRuntimeResources,
   superviseRuntimeTask,
 } from "./runtime-lifecycle";
+import { createQuiesceController, QuiesceTimeoutError } from "./runtime-quiesce";
 
 describe("runtime lifecycle", () => {
   test("restarts failed and unexpectedly completed tasks", async () => {
@@ -463,5 +465,304 @@ describe("runtime lifecycle", () => {
       expect(error).toBeInstanceOf(AggregateError);
       expect((error as AggregateError).errors).toEqual([first, second]);
     }
+  });
+});
+
+describe("maintenance quiesce", () => {
+  test("a tracker accepts nothing while quiet, drains its tasks, and accepts again on resume", async () => {
+    const controller = createQuiesceController();
+    const tracker = createRuntimeTaskTracker({ controller });
+    tracker.open();
+    const running = Promise.withResolvers<void>();
+    const task = tracker.run(() => running.promise);
+    expect(task).not.toBeNull();
+    const quiet = controller.quiesce();
+    expect(tracker.run(async () => {})).toBeNull();
+    expect(controller.inFlight()).toBe(1);
+    running.resolve();
+    expect(await quiet).toEqual([]);
+    expect(controller.inFlight()).toBe(0);
+    await controller.resume();
+    expect(tracker.run(async () => {})).not.toBeNull();
+  });
+
+  test("a closed tracker leaves the controller", async () => {
+    const controller = createQuiesceController();
+    const tracker = createRuntimeTaskTracker({ controller });
+    tracker.open();
+    tracker.close();
+    expect(tracker.run(async () => {})).toBeNull();
+    expect(controller.inFlight()).toBe(0);
+  });
+
+  test("a started lifecycle stops on quiesce and starts again on resume", async () => {
+    const controller = createQuiesceController();
+    const events: string[] = [];
+    const lifecycle = createRuntimeLifecycle(
+      { start: async () => void events.push("start"), stop: async () => void events.push("stop") },
+      { controller },
+    );
+    await lifecycle.start();
+    await controller.quiesce();
+    await controller.quiesce();
+    await controller.resume();
+    await controller.resume();
+    expect(events).toEqual(["start", "stop", "start"]);
+  });
+
+  test("start while quiet waits for resume, and stop while quiet keeps it stopped", async () => {
+    const controller = createQuiesceController();
+    const events: string[] = [];
+    const lifecycle = createRuntimeLifecycle(
+      { start: async () => void events.push("start"), stop: async () => void events.push("stop") },
+      { controller },
+    );
+    await controller.quiesce();
+    await lifecycle.start();
+    expect(events).toEqual([]);
+    await controller.resume();
+    expect(events).toEqual(["start"]);
+
+    await controller.quiesce();
+    await lifecycle.stop();
+    await controller.resume();
+    expect(events).toEqual(["start", "stop"]);
+  });
+
+  test("a lifecycle whose stop timed out during quiesce starts on resume without stopping again", async () => {
+    const controller = createQuiesceController();
+    const events: string[] = [];
+    let failStop = false;
+    const lifecycle = createRuntimeLifecycle(
+      {
+        start: async () => void events.push("start"),
+        stop: async () => {
+          events.push("stop");
+          if (failStop) throw new QuiesceTimeoutError("Runtime tasks did not drain within 30000ms");
+        },
+      },
+      { controller },
+    );
+    await lifecycle.start();
+    failStop = true;
+    expect((await controller.quiesce()).map((error) => (error as Error).message)).toEqual(["Runtime tasks did not drain within 30000ms"]);
+    // A second stop would time out the same way and fail the resume.
+    expect(await controller.resume()).toEqual([]);
+    expect(events).toEqual(["start", "stop", "start"]);
+  });
+
+  test("a lifecycle whose stop failed for another reason during quiesce stops again before it starts on resume", async () => {
+    const controller = createQuiesceController();
+    const events: string[] = [];
+    let failStop = false;
+    const lifecycle = createRuntimeLifecycle(
+      {
+        start: async () => void events.push("start"),
+        stop: async () => {
+          events.push("stop");
+          if (failStop) {
+            failStop = false;
+            throw new Error("connection close failed");
+          }
+        },
+      },
+      { controller },
+    );
+    await lifecycle.start();
+    failStop = true;
+    expect((await controller.quiesce()).map((error) => (error as Error).message)).toEqual(["connection close failed"]);
+    expect(await controller.resume()).toEqual([]);
+    expect(events).toEqual(["start", "stop", "stop", "start"]);
+    await lifecycle.stop();
+  });
+
+  test("a lifecycle that cannot start again is reported by resume after its retries", async () => {
+    const controller = createQuiesceController({ retryMs: 1 });
+    let starts = 0;
+    const lifecycle = createRuntimeLifecycle(
+      {
+        start: async () => {
+          starts += 1;
+          if (starts > 1) throw new Error("database unavailable");
+        },
+        stop: async () => {},
+      },
+      { controller },
+    );
+    await lifecycle.start();
+    await controller.quiesce();
+    expect((await controller.resume()).map((error) => (error as Error).message)).toEqual(["database unavailable"]);
+    expect(starts).toBe(1 + 5);
+  });
+
+  test("a runtime interval skips ticks while quiet and runs missed ticks once on resume", async () => {
+    const controller = createQuiesceController();
+    let runs = 0;
+    // An hour: the timer never fires during the test; transitions drive every run.
+    const interval = startRuntimeInterval({
+      run: async () => {
+        runs += 1;
+      },
+      intervalMs: 3_600_000,
+      runNow: false,
+      onError: () => {},
+      controller,
+    });
+    await controller.quiesce();
+    expect(runs).toBe(0);
+    await controller.resume();
+    expect(runs).toBe(0);
+
+    const missed = startRuntimeInterval({
+      run: async () => {
+        runs += 1;
+      },
+      intervalMs: 3_600_000,
+      onError: () => {},
+      controller,
+    });
+    await Promise.resolve();
+    await missed.stop();
+    expect(runs).toBe(1);
+
+    await controller.quiesce();
+    const quiet = startRuntimeInterval({
+      run: async () => {
+        runs += 1;
+      },
+      intervalMs: 3_600_000,
+      onError: () => {},
+      controller,
+    });
+    expect(runs).toBe(1);
+    await controller.resume();
+    await quiet.stop();
+    expect(runs).toBe(2);
+    await interval.stop();
+  });
+
+  test("a runtime interval catches up once after resume, also when its pass outlived the drain", async () => {
+    const controller = createQuiesceController({ timeoutMs: 5 });
+    let tickNow: () => void = () => {};
+    // The interval's own timer never fires; the test ticks by hand.
+    const timers = spyOn(globalThis, "setInterval").mockImplementation(((handler: () => void) => {
+      tickNow = handler;
+      return 0;
+    }) as unknown as typeof setInterval);
+    try {
+      let runs = 0;
+      const first = Promise.withResolvers<void>();
+      const interval = startRuntimeInterval({
+        run: async () => {
+          runs += 1;
+          if (runs === 1) await first.promise;
+        },
+        intervalMs: 60_000,
+        onError: () => {},
+        controller,
+      });
+      // The first pass ignores the drain and keeps running.
+      expect((await controller.quiesce()).length).toBe(1);
+      tickNow();
+      await controller.resume();
+      expect(runs).toBe(1);
+      first.resolve();
+      while (runs < 2) await Bun.sleep(1);
+      await Bun.sleep(5);
+      expect(runs).toBe(2);
+      await interval.stop();
+    } finally {
+      timers.mockRestore();
+    }
+  });
+
+  test("a runtime interval started while quiet without runNow does not run at once on resume", async () => {
+    const controller = createQuiesceController();
+    let runs = 0;
+    await controller.quiesce();
+    const interval = startRuntimeInterval({
+      run: async () => {
+        runs += 1;
+      },
+      intervalMs: 3_600_000,
+      runNow: false,
+      onError: () => {},
+      controller,
+    });
+    await controller.resume();
+    await interval.stop();
+    expect(runs).toBe(0);
+  });
+
+  test("a runtime interval whose error report throws leaves no unhandled rejection", async () => {
+    const controller = createQuiesceController();
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", record);
+    try {
+      const reported = Promise.withResolvers<void>();
+      const interval = startRuntimeInterval({
+        run: async () => {
+          throw new Error("scan failed");
+        },
+        intervalMs: 3_600_000,
+        onError: () => {
+          reported.resolve();
+          throw new Error("logger failed");
+        },
+        controller,
+      });
+      await reported.promise;
+      await interval.stop();
+      // Unhandled rejections surface after the microtask queue drains.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+  });
+
+  test("a runtime interval reports a failed pass", async () => {
+    const controller = createQuiesceController();
+    const reported = Promise.withResolvers<string>();
+    const interval = startRuntimeInterval({
+      run: async () => {
+        throw new Error("scan failed");
+      },
+      intervalMs: 3_600_000,
+      onError: (error) => reported.resolve(error instanceof Error ? error.message : String(error)),
+      controller,
+    });
+    expect(await reported.promise).toBe("scan failed");
+    await interval.stop();
+  });
+
+  test("a runtime interval reports a pass that fails while it stops, but not the abort that stop() causes", async () => {
+    const controller = createQuiesceController();
+    const reported: string[] = [];
+    const onError = (error: unknown) => reported.push(error instanceof Error ? error.message : String(error));
+
+    // A pass that ignores the signal and fails during stop is a real failure, as with a plain timer.
+    const failing = Promise.withResolvers<void>();
+    const failed = startRuntimeInterval({ run: () => failing.promise, intervalMs: 3_600_000, onError, controller });
+    await Promise.resolve();
+    const stopping = failed.stop();
+    failing.reject(new Error("recovery failed"));
+    await stopping;
+
+    // A pass that ends with the abort of stop() is expected.
+    const aborted = startRuntimeInterval({
+      run: (signal) =>
+        new Promise<void>((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+      intervalMs: 3_600_000,
+      onError,
+      controller,
+    });
+    await Promise.resolve();
+    await aborted.stop();
+
+    expect(reported).toEqual(["recovery failed"]);
   });
 });

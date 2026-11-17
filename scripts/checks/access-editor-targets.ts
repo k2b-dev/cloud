@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import ts from "@typescript/typescript6";
-import { isTestFile, listFiles } from "./files";
+import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /** Resource editors supply identity, never their own account-search transport. */
@@ -12,8 +12,7 @@ export const checkSource = (file: string, source: string): Finding[] => {
   // #2630: only this app-entry editor intentionally has no Code-handle lookup or resource reader.
   const appEntryEditor = "packages/cloud/src/access/AppAccessEditor.tsx";
   if (file === appEntryEditor || file === resolve(import.meta.dir, "../..", appEntryEditor)) return [];
-  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const findings: Finding[] = [];
+  const { sourceFile: tree, findings } = parseSource(file, source);
   const report = (node: ts.Node) =>
     findings.push({
       file,

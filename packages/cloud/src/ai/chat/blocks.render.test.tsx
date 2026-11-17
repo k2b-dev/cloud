@@ -733,7 +733,7 @@ describe("capability tool presentation", () => {
     // and its steps and time stand right in their own column (Feinschliff 4).
     expect(storedHtml).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Worked</);
     expect(storedHtml).toMatch(/ai-turn-work__count[^>]*>(?:<!--[^>]*-->)*3 steps/);
-    expect(storedHtml).toMatch(/ai-turn-work__meta[^>]*>(?:<!--[^>]*-->)*3 min/);
+    expect(storedHtml).toMatch(/k2b-chat-activity__duration[^>]*>(?:<!--[^>]*-->)*3 min/);
     expect(storedHtml).toContain('aria-label="Worked 3 minutes, 3 steps"');
     expect(hasOpenDetails(storedHtml)).toBe(false);
     for (const html of [storedHtml, liveHtml]) {
@@ -776,9 +776,9 @@ describe("capability tool presentation", () => {
 
     const folded = renderSegment(blocks, { workedMs: 2_000 });
     expect(hasOpenDetails(folded)).toBe(false);
-    expect(folded).not.toContain('data-tone="danger"');
-    // Only the meta word on the right takes the danger colour (Feinschliff 2); the row stays quiet.
-    expect(folded).toMatch(/data-issue="danger"[^>]*>(?:<!--[^>]*-->)*1 failed/);
+    // The work line names the failure in its meta, in red; no row turns into a warning.
+    expect(folded).toContain('<span data-tone="danger">1 failed</span>');
+    expect(folded).not.toContain('class="k2b-chat-activity ai-work-step" data-tone="danger"');
     expect(folded).not.toContain("Mailbox is required");
     expect(folded).toContain("I could not finish that.");
 
@@ -786,11 +786,11 @@ describe("capability tool presentation", () => {
     disclosureState.set("work:ai-turn:turn-1:0", true);
     disclosureState.set("failed-tool", true);
     const expanded = renderSegment(blocks, { disclosureState });
-    // Opened, the failed step says in words that it did not work and that the turn went on; the app's code and message
+    // Opened, the failed step says "Failed" in its meta and offers its details behind its ⓘ; the app's code and message
     // stay in the data.
     expect(expanded).toContain("Unknown tool");
-    expect(expanded).toContain("This did not work. Went on without this result.");
-    expect(expanded).not.toContain('data-tone="danger"');
+    expect(expanded).toMatch(/class="k2b-chat-activity__meta k2b-truncate-fade" data-tone="danger"[^>]*>Failed</);
+    expect(expanded).toContain('aria-label="Details: Unknown tool"');
     expect(expanded).not.toContain("Mailbox is required");
     expect(expanded).not.toContain("VALIDATION_FAILED");
   });
@@ -2090,7 +2090,7 @@ describe("turn places in the reader's language", () => {
     ];
     const english = renderPlaces(blocks, { phase: "failed", workedMs: 240_000 });
     expect(english).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Interrupted</);
-    expect(english).toMatch(/ai-turn-work__meta[^>]*>(?:<!--[^>]*-->)*4 min/);
+    expect(english).toMatch(/k2b-chat-activity__duration[^>]*>(?:<!--[^>]*-->)*4 min/);
     expect(english).toContain('aria-label="Worked 4 minutes, interrupted, 1 step"');
     expect(english).not.toContain("Now I build the dashboard.");
     expect(renderPlaces(blocks, { phase: "failed", workedMs: 240_000, locale: "de" })).toMatch(
@@ -2235,7 +2235,7 @@ describe("Code check steps", () => {
     ];
     const english = renderExpanded(blocks, { open: ["group:check-failed"] });
     expect(english).toContain("3 findings");
-    expect(english).toContain("<strong>Checks</strong><small>successful</small>");
+    expect(english).toContain('<strong title="Checks">Checks</strong><small>successful</small>');
     expect(english).toContain("ti-alert-triangle");
     expect(english).toContain("ti-circle-check");
     expect(english).not.toContain('data-tone="danger"');
@@ -2305,10 +2305,10 @@ describe("Code check steps", () => {
       status: "completed",
       result: { version: 1, submission: { version: { id: "v-3", number: 3 } } },
     };
-    const german = renderExpanded([...blocks, submit, viewed("/checks/abc/desktop.png")], {
-      locale: "de",
-      open: ["group:tool-code_init"],
-    });
+    // Inspect every label independently: a long work list renders only its newest six rows until opened further.
+    const german = [...blocks, submit, viewed("/checks/abc/desktop.png")]
+      .map((block) => renderExpanded([block], { locale: "de" }))
+      .join("");
     for (const label of [
       "Legt die Automation an",
       "Schlägt nach, was Apps anbieten",

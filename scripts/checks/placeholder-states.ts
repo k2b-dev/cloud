@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "@typescript/typescript6";
-import { isTestFile, listFiles } from "./files";
+import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const STATUS_GLYPH = /^ti-(?:loader(?:-[\w-]+)?|alert-[\w-]+|[\w-]+-alert|exclamation-[\w-]+)$/;
@@ -30,7 +30,8 @@ export const rule: Rule = {
       if (isTestFile(file)) continue;
       const source = readFileSync(file, "utf8");
       if (!source.includes("Placeholder")) continue;
-      const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const { sourceFile, findings: unparsed } = parseSource(file, source);
+      findings.push(...unparsed);
 
       const visit = (node: ts.Node): void => {
         if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText() === "Placeholder") {

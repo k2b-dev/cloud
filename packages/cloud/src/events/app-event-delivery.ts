@@ -85,6 +85,7 @@ export const startAppEventDelivery = async (appId: string): Promise<(() => Promi
   outbox.start();
   dispatchers.set(appId, () => void outbox.notify());
   const log = logger("events:app");
+  // runtime-timer: logs stale outbox rows only; publishing goes through the outbox tracker, which quiesce gates.
   const staleCheck = setInterval(() => {
     sql<
       { count: number }[]
