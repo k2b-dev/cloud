@@ -13,6 +13,7 @@ import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { codeAdmissionLock } from "./admission";
 import { requireCodeRunFence } from "./bridge";
 import { checkCodeEventBeforeRun } from "./event-access";
+import { openCodeOutput, persistCodeOutput, renewCodeOutput } from "./output";
 import { checkCodeOwnerBeforeRun } from "./owner-check";
 import {
   CODE_RUN_HEARTBEAT_MS,
@@ -223,6 +224,7 @@ async function admitScheduleTick(tick: ScheduledTick): Promise<CodeStartResult |
 }
 
 type ClaimedRun = {
+  payload_bytes: number;
   id: string;
   code_id: string;
   version_id: string;
@@ -376,6 +378,10 @@ export async function codeRunnerLease(
     },
     { deadlineAt },
   );
+  await openCodeOutput(
+    { runId: run.id, codeId: run.code_id, generation: run.generation, deadlineAt, leaseExpiresAt: renewed.lease_expires_at.getTime() },
+    run.payload_bytes,
+  );
   return {
     ...(run.trigger === "path" ? { kind: "request" as const } : {}),
     runId: run.id,
@@ -399,7 +405,7 @@ export async function codeRunnerLease(
 }
 /** Heartbeats fence under the same row lock as the bridge and never refill a wall-clock budget. */
 export async function heartbeatCodeRun(claims: CodeRunTokenClaims): Promise<{ leaseExpiresAt: number }> {
-  return sql.begin(async (db) => {
+  const renewed = await sql.begin(async (db) => {
     await requireCodeRunFence(claims, db);
     const [row] = await db<{ lease_expires_at: Date }[]>`UPDATE code.runs
       SET lease_expires_at=LEAST(deadline_at,to_timestamp(${claims.exp}),clock_timestamp()+${CODE_RUN_LEASE_MS}*interval '1 millisecond')
@@ -409,6 +415,8 @@ export async function heartbeatCodeRun(claims: CodeRunTokenClaims): Promise<{ le
       WHERE instance_id=(SELECT runner_instance_id FROM code.runs WHERE id=${claims.runId}::uuid)`;
     return { leaseExpiresAt: row.lease_expires_at.getTime() };
   });
+  await renewCodeOutput(claims, renewed.leaseExpiresAt);
+  return renewed;
 }
 async function settleRun(runId: string, outcome: RunnerOutcome, limits: CodeRunLimits, db: SQL) {
   // An in-flight or uncertain Action is an effect boundary too. Never retry it automatically.
@@ -419,6 +427,7 @@ async function settleRun(runId: string, outcome: RunnerOutcome, limits: CodeRunL
       AND trigger<>'path' AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS exhausted
     FROM code.runs r WHERE id=${runId}::uuid`;
   const retry = result?.retry ?? false;
+  if (!retry) await persistCodeOutput(runId, db);
   await db`UPDATE code.calls SET state='uncertain',ended_at=clock_timestamp(),result='{"ok":false,"error":{"code":"code_result_unknown"}}'::json
     WHERE run_id=${runId}::uuid AND state='running'`;
   await db`UPDATE code.runs SET state=${retry ? "queued" : outcome === "succeeded" ? "succeeded" : "failed"},
@@ -462,10 +471,13 @@ export async function reconcileCodeRuns(): Promise<void> {
       WHERE state='running' AND (lease_expires_at<=clock_timestamp() OR deadline_at<=clock_timestamp())
       ORDER BY lease_expires_at,id LIMIT 100 FOR UPDATE SKIP LOCKED`;
     for (const run of expired) await settleRun(run.id, run.timed_out ? "wall_clock_limit" : "lease_lost", limits, db);
-    await db`UPDATE code.runs r SET state='failed',outcome=CASE WHEN r.deadline_at<=clock_timestamp() THEN 'wall_clock_limit' ELSE 'code_not_active' END,ended_at=clock_timestamp()
+    const stopped = await db<
+      { id: string }[]
+    >`UPDATE code.runs r SET state='failed',outcome=CASE WHEN r.deadline_at<=clock_timestamp() THEN 'wall_clock_limit' ELSE 'code_not_active' END,ended_at=clock_timestamp()
       WHERE r.id IN(SELECT q.id FROM code.runs q JOIN code.codes c ON c.id=q.code_id WHERE q.state='queued'
         AND ((c.state<>'active' AND NOT(q.trigger='event' AND q.generation=0)) OR q.version_id IS DISTINCT FROM c.active_version_id OR q.deadline_at<=clock_timestamp())
-        ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q SKIP LOCKED)`;
+        ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q SKIP LOCKED) RETURNING r.id`;
+    for (const run of stopped) await persistCodeOutput(run.id, db);
     // Periodic outbox repair covers queue retention, delivery exhaustion and a ticket consumed while all Codes were busy.
     await db`INSERT INTO code.run_outbox(run_id) SELECT id FROM code.runs WHERE state='queued'
       AND (wake_at IS NULL OR wake_at<clock_timestamp()-interval '30 seconds') ORDER BY wake_at NULLS FIRST,id LIMIT 100

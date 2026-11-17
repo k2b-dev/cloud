@@ -27,7 +27,10 @@ export const CodeRunTokenClaimsSchema = z
     bundleHash: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
-/** C4/C13 wire contract: immutable attempt binding. The token grants nothing without runner app proof and live admission. */
+/** Immutable attempt binding. Execution requires runner app proof and live admission.
+ * The separate output-only route accepts this supervisor-held token plus the
+ * shared live lease fence, without a SQL-backed app check per output batch.
+ */
 export type CodeRunTokenClaims = z.infer<typeof CodeRunTokenClaimsSchema>;
 export type CodeRunTokenInput = Pick<
   CodeRunTokenClaims,

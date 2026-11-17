@@ -780,7 +780,7 @@ export const aiCapabilities = defineCapabilities({
     "code.run.read": {
       title: "Read a Code run",
       description:
-        "Read one attempt and ordered calls, one call per page. Editors read large JSON through content chunks; readers receive contents:null.",
+        "Read one attempt and ordered calls, one call per page. Editors read large JSON through content chunks and sanitized consoleOutput on cursor zero; readers receive contents:null.",
       ...codeQueryContracts.runRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),

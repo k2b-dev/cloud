@@ -27,7 +27,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePage } = await import("./CodePage");
-const { catalogCache, describeTarget, loadCodePage, permissionRef, visiblePersonIds } = await import("./load");
+const { catalogCache, describeOperations, describeTarget, loadCodePage, permissionRef, visiblePersonIds } = await import("./load");
 const capabilityServer = await import("../../capabilities/server");
 const { loadCodeAttention } = await import("./attention");
 const { codePageNeedsAttention } = await import("./CodePage");
@@ -366,6 +366,29 @@ test("English copy", () => {
 });
 
 describe("Code page helpers", () => {
+  test("SSR supplies localized running and done words for allowed operations before a live call arrives", async () => {
+    const catalog = async () => ({
+      ok: true as const,
+      data: {
+        appId: "library",
+        appName: "Library",
+        appIcon: "ti ti-books",
+        appDescription: "Books",
+        manifest: currentLibrary.manifest,
+      },
+    });
+    const entry = currentLibrary.manifest.queries[0]!;
+    const operation = `library.${entry.localId}`;
+    const labels = await describeOperations([operation, operation, "library.missing"], catalog, "de");
+    expect(Object.keys(labels)).toEqual([operation]);
+    expect(labels[operation]).toMatchObject({
+      title: entry.title,
+      app: "Library",
+      running: `${entry.title} …`,
+      done: `${entry.title} · erledigt`,
+    });
+    expect((await describeOperations([operation], catalog, "en"))[operation]?.done).toBe(`${entry.title} · done`);
+  });
   test("a target is described from its type in the registry: type title, icon and a link only for a pattern with just :id", async () => {
     const library = {
       appId: "library",

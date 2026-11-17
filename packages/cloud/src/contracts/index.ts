@@ -1,3 +1,4 @@
+export { type CodeOutputWindow, CodeOutputWindowSchema } from "../code/output";
 export * from "./account-categories";
 export * from "./announcements";
 export * from "./app";

@@ -1,13 +1,14 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import * as registry from "@k2b/cloud";
-import { connections, sql } from "@k2b/cloud";
+import { bindProcessSync, connections, sql, unbindProcessSync } from "@k2b/cloud";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import { CodeHttpRequestSchema, type CodeSecretVersionBinding, type User } from "@k2b/cloud/contracts";
 import { createAppEventTestHarness, installLiveOutbox } from "@k2b/cloud/events/testing";
 import { mandates, requestPublicHttps as publicHttps, purposeSecretCipher, type requestPublicHttps } from "@k2b/cloud/services";
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { resolvePublicNetworkAddresses } from "@k2b/cloud/services/network-security";
-import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { createSync, type Sync } from "@k2b/sync";
+import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
@@ -70,8 +71,14 @@ const context = (id = authorId): CodeContext => ({
 });
 const destination = { origin: "https://api.example:8443", pathPrefix: "/v1", headers: ["authorization"] };
 
-databaseSuite()("C11 version-bound write-only secrets", () => {
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("C11 version-bound write-only secrets", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
+  let connection: Awaited<ReturnType<typeof connectTestNats>>;
+  let sync: Sync;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let ownOrigins: ReturnType<typeof spyOn<typeof origins, "readCodeOwnOrigins">>;
@@ -81,6 +88,10 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
   beforeAll(async () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("code_secrets_c11");
+    connection = await connectTestNats();
+    sync = createSync({ connection, namespace: testSyncNamespace("code-secrets"), application: "core", defaults: { replicas: 1 } });
+    bindProcessSync(sync, connection);
+    await sync.ready();
     await migrateAuth();
     await installLiveOutbox(sql);
     await migrateRailPreferences();
@@ -119,6 +130,9 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     settings?.mockRestore();
     ownOrigins?.mockRestore();
     app?.mockRestore();
+    unbindProcessSync();
+    await sync?.drain();
+    await connection?.drain();
     await database?.drop();
     setSystemTime();
   });

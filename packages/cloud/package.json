@@ -139,6 +139,7 @@
     "./contracts/notifications": "./src/contracts/notification-types.ts",
     "./contracts/*": "./src/contracts/*",
     "./maintenance-game": "./src/maintenance-game/index.ts",
+    "./events/limits": "./src/events/live-limits.ts",
     "./events/testing": "./src/events/testing.ts",
     "./events": "./src/events/index.ts",
     "./workflows": "./src/workflows/index.ts",

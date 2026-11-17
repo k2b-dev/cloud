@@ -17,23 +17,49 @@ import {
   RunnerJobProofSchema,
   RunnerLeaseLostError,
   RunnerLeaseProofSchema,
+  RunnerOutputRequestSchema,
 } from "@k2b/cloud/code/runner";
 import { CAPABILITY_MAX_REQUEST_BYTES } from "@k2b/cloud/contracts";
+import { LIVE_LIMITS } from "@k2b/cloud/events";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, ratelimit, setRequestTimeout } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import { callChatJob } from "./chat-runner";
 import { dispatchCodeDatabase } from "./database";
 import { readCodeOwnOrigins } from "./origins";
+import { receiveCodeOutput } from "./output";
 import { completeCodeJob, heartbeatCodeJob, readCodeJobInput } from "./runner-jobs";
 import { completeCodeRun, heartbeatCodeRun } from "./scheduling";
 import { fetchCodeRuns, readCodeRunnerConfig } from "./scheduling-runtime";
 import { dispatchCodeSecretHttp } from "./secret-http";
 
-/** Private, signed runner-only routes. Every Core replica uses the same durable lease fence and signing key ring. */
+/** Private runner-only routes. Every Core replica uses the same lease fence and signing key ring. */
 export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependencies, "appProof" | "token"> = {}) {
   const router = new Hono();
+  // The output-only channel authenticates the Core-issued lease token, held by
+  // the supervisor and never passed to the sandbox. Its shared lease cache is
+  // opened after durable admission and refreshed only by app-authenticated
+  // heartbeats. Execution and enrollment still require the fresh app proof.
+  // Reusing that SQL-backed app check here would add SQL for every output batch.
+  router.post(RUNNER_PATHS.output, bodyLimit({ maxSize: LIVE_LIMITS.frameBytes }), async (c) => {
+    c.header("Cache-Control", "no-store");
+    try {
+      const parsed = RunnerOutputRequestSchema.safeParse(await c.req.json());
+      if (!parsed.success) return c.json({ code: "code_invalid_output" }, 400);
+      const { token, runId, generation, batch } = parsed.data;
+      const claims = await verifyCodeRunToken(token, options.token);
+      if (!claims) return c.json({ code: "code_invalid_token" }, 403);
+      if (claims.runId !== runId || claims.generation !== generation) return c.json({ code: "runner_lease_lost" }, 409);
+      await receiveCodeOutput(claims, batch);
+      return c.body(null, 204);
+    } catch (error) {
+      if (error instanceof RunnerLeaseLostError) return c.json({ code: "runner_lease_lost" }, 409);
+      if (error instanceof SyntaxError) return c.json({ code: "code_invalid_output" }, 400);
+      return c.json({ code: "code_output_unavailable" }, 503);
+    }
+  });
   for (const path of [
     RUNNER_PATHS.config,
     RUNNER_PATHS.fetch,

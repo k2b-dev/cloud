@@ -5,6 +5,7 @@ import { logger } from "../services/logging";
 import { latestTopicCursor } from "../services/topic-cursor";
 import { projectAiChoices, viewChoice } from "./choices";
 import type { AiConversationWatch } from "./conversation-watchers";
+import { AI_LIVE_SNAPSHOT_INTERVAL_MS } from "./live-interval";
 import {
   type AiStreamEvent,
   type AiTurnSnapshot,
@@ -36,7 +37,7 @@ const AI_STREAM_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
  * Interval at which a turn worker saves its live state (ai.turns.live_blocks).
  * The saved state lags the live stream by at most one interval.
  */
-export const AI_LIVE_SNAPSHOT_INTERVAL_MS = 1_000;
+export { AI_LIVE_SNAPSHOT_INTERVAL_MS } from "./live-interval";
 
 /**
  * Reads of the saved live state a stream makes while it waits for an event it

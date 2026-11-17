@@ -3,6 +3,7 @@ import "./test-kit.engine.test";
 import "./jobs.engine.test";
 import "./chat-job.engine.test";
 import { test as bunTest, expect } from "bun:test";
+import { CODE_OUTPUT_OPERATION } from "@k2b/cloud/code";
 import { WorkerdEngine } from "../src/engine";
 import { config, lease, source } from "./fixtures";
 
@@ -155,7 +156,9 @@ test("parallel sandbox calls above the budget fail without building an HTTP work
       await Promise.all([cloud.call('first', null), cloud.call('second', null)]);
     }`,
       config,
-      async () => {
+      async (operation) => {
+        // The new console lane is independent of the deliberately held capability.
+        if (operation === CODE_OUTPUT_OPERATION) return null;
         calls++;
         return held.promise;
       },
@@ -300,6 +303,39 @@ test("stable Core refusal codes survive the sandbox bridge without exception det
     );
     expect(await engine.run(run, signal)).toBe("succeeded");
     expect(reported).toEqual([{ code: "code_access_removed", status: 403 }]);
+  } finally {
+    await engine.close();
+  }
+}, 10_000);
+
+test("shared workerd keeps console output and uncaught stacks bound to their own run, with no text in the terminal report", async () => {
+  const { CODE_OUTPUT_OPERATION, CodeOutputBatchSchema } = await import("@k2b/cloud/code");
+  const engine = new WorkerdEngine();
+  const signal = new AbortController().signal;
+  const left = lease({ runId: "console-left" });
+  const right = lease({ runId: "console-right" });
+  const received = new Map<string, string[]>();
+  try {
+    for (const run of [left, right]) {
+      await engine.load(
+        run,
+        `console.log('top level ${run.runId}'); export async function main() { console.error('line ${run.runId}'); ${run === right ? "throw new Error('sandbox stack right');" : "return null;"} }`,
+        config,
+        async (operation, input) => {
+          expect(operation).toBe(CODE_OUTPUT_OPERATION);
+          const batch = CodeOutputBatchSchema.parse(input);
+          received.set(run.runId, [...(received.get(run.runId) ?? []), ...batch.lines.map((line) => line.text)]);
+          return null;
+        },
+        signal,
+      );
+    }
+    expect(await Promise.all([engine.run(left, signal), engine.run(right, signal)])).toEqual(["succeeded", "failed"]);
+    expect(received.get(left.runId)).toEqual(["top level console-left", "line console-left"]);
+    expect(received.get(right.runId)?.some((line) => line.includes("Error: sandbox stack right"))).toBe(true);
+    expect(received.get(right.runId)?.some((line) => line.includes("bundle.js"))).toBe(true);
+    expect(received.get(left.runId)?.join("\n")).not.toContain("right");
+    expect(received.get(right.runId)?.join("\n")).not.toContain("left");
   } finally {
     await engine.close();
   }

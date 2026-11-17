@@ -168,3 +168,26 @@ test("delegated API keys keep legacy empty scopes; OAuth credentials do not gain
   expect(await codeLiveReaders(code, [account])).toEqual(new Set([account.id]));
   expect(await codeLiveReaders(code, [oauth])).toEqual(new Set());
 });
+
+test("the private details channel admits editors only, including owner administrators; read shares and Cloud admin alone see no details", async () => {
+  const own = viewer(owner);
+  const read = viewer(other);
+  const write = viewer("33333333-3333-4333-8333-333333333333");
+  const admin = viewer("44444444-4444-4444-8444-444444444444", true);
+  const grant = spyOn(server, "getEffectivePermissions").mockResolvedValue(["read", "write", "none"]);
+  spies.push(grant);
+  expect(await codeLiveReaders(code, [own, read, write, admin], undefined, true)).toEqual(new Set([own.id, write.id]));
+  grant.mockResolvedValue(["none", "read", "write", "none"]);
+  const resource: Code = { ...code, owner: { kind: "resource", ref: { type: "example.place", id: "one" } } };
+  expect(
+    await codeLiveReaders(
+      resource,
+      [own, read, write, admin],
+      async (_owner, context) => ({
+        title: "Owner",
+        admin: context.authority.accessSubject.type === "user" && context.authority.accessSubject.userId === owner,
+      }),
+      true,
+    ),
+  ).toEqual(new Set([own.id, write.id]));
+});

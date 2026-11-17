@@ -1,4 +1,4 @@
-import type { CodeRouteResponse } from "@k2b/cloud/code";
+import { CODE_OUTPUT_OPERATION, CodeOutputBatchSchema, type CodeRouteResponse } from "@k2b/cloud/code";
 import type { RunnerBridge, RunnerCallResponse, RunnerConfig, RunnerLease, RunnerLeaseProof, RunnerOutcome } from "@k2b/cloud/code/runner";
 import {
   RunnerCallError,
@@ -242,6 +242,11 @@ export class Runner {
         async (operation, input) => {
           let result: RunnerCallResponse;
           try {
+            if (operation === CODE_OUTPUT_OPERATION) {
+              if (!this.bridge.output) throw new Error("runner_output_unavailable");
+              await this.bridge.output({ ...proof(lease), batch: CodeOutputBatchSchema.parse(input) }, controller.signal);
+              return null;
+            }
             result = await this.bridge.call({ ...proof(lease), operation, input }, controller.signal);
           } catch (error) {
             if (error instanceof RunnerLeaseLostError && !controller.signal.aborted) {

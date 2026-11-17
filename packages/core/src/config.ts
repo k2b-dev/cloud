@@ -25,6 +25,7 @@ export const app = defineApp({
       "/_internal/code/runner/bundle",
       "/_internal/code/runner/heartbeat",
       "/_internal/code/runner/complete",
+      "/_internal/code/runner/output",
       "/_internal/code/runner/job-input",
       "/_internal/code/runner/job-call",
       "/auth/continue",

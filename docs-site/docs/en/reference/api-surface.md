@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-16
+updated: 2026-11-17
 ---
 
 # API surface
@@ -33,6 +33,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
 | `@k2b/cloud/app-proof` | Advanced, server-only | Sign each private Core transmission with `signAppProof`; [runner bridge contract](/en/docs/operations/code-runner#integrate-the-bridge) |
+| `@k2b/cloud/events/limits` | Stable, browser-safe | Shared `LIVE_LIMITS` transport budgets; [Live updates](/en/docs/automation/live-updates#publish-a-committed-observation-without-sql) |
 | `@k2b/cloud/code/run-token` | Preview, platform-owned | Core-signed attempt tokens; [Code bridge](/en/docs/platform/code-bridge) |
 | `@k2b/cloud/code/chat-run-wake` | Preview, platform-owned, server-only | NATS wakeups for the private chat mailbox and replies; [Code bridge](/en/docs/platform/code-bridge#one-off-chat-authority) |
 | `@k2b/cloud/code/chat-run` | Preview, platform-owned | Assistant chat-job payloads and tagged value codec; [Code bridge](/en/docs/platform/code-bridge#one-off-chat-authority) |
@@ -812,3 +813,15 @@ The chat runtime also exports `appendAiBackgroundMessages` and
 `@k2b/cloud/ai` describe the shared waiting snapshot.
 `listAccessRecipientUserIds` from `@k2b/cloud/server` supplies bounded
 [background manager candidates](/en/docs/platform/resource-types-and-discussions#resolve-managers-for-background-notices).
+
+
+For editor-only [Code live details](/en/docs/platform/code-runs#follow-calls-and-console-output),
+`@k2b/cloud/code` exports `CodeCallEventSchema`, `codeDetailsKey`, the
+`CodeOutput*` schemas/types (`CodeOutputWindowSchema` and its type are also
+available from browser-safe `@k2b/cloud/contracts`), `emptyCodeOutput`, `appendCodeOutput` and
+`applyCodeOutputEvent`. `@k2b/cloud/ssr/code-live` exports
+`followCodeDetails` and `CodeDetailEvent`. Core supplies sanitized parts;
+browser consumers render only text and named secret markers.
+`@k2b/cloud/events` exports `LIVE_LIMITS` and `defineLive` includes
+`publishTransient` for committed observations; see
+[Live updates](/en/docs/automation/live-updates#publish-a-committed-observation-without-sql).

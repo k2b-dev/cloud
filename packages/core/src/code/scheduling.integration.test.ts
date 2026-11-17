@@ -246,6 +246,7 @@ suiteFor(
     connection = await connectTestNats();
   });
   beforeEach(async () => {
+    cloud.unbindProcessSync();
     await sql`DELETE FROM code.codes`;
     await sql`DELETE FROM code.runner_instances`;
     await sql`DELETE FROM code.jobs`;
@@ -255,8 +256,10 @@ suiteFor(
     syncs.push(sync);
     queue = sync.queue<CodeRunWakeup>({ id: "runs", dedupeWindowMs: 60_000, retention: { maxAgeMs: 60_000, maxBytes: 1_048_576 } });
     await sync.ready();
+    cloud.bindProcessSync(sync, connection);
   });
   afterAll(async () => {
+    cloud.unbindProcessSync();
     settings?.mockRestore();
     for (const sync of syncs) await sync.drain({ timeoutMs: 1000 });
     await connection?.drain();

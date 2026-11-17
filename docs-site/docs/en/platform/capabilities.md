@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-11-05
+updated: 2026-11-17
 ---
 
 # App capabilities
@@ -2824,3 +2824,13 @@ provider-dependent images are described in
 A Type can declare an `assistant` provider Query, allowed place Actions, and
 Skills for the person’s chat at that resource. See
 [Assistant at a place](/en/docs/ai/assistant-places) for the contract and limits.
+
+
+## Code run contents
+
+Code run contents, including sanitized console output, follow Code editor
+permission on every capability surface. `core.code.run.read` returns
+`contents: null` to readers; a Cloud administrator who cannot edit that Code
+is also a reader. API, CLI and agents use this same service. See
+[Follow calls and console output](/en/docs/platform/code-runs#follow-calls-and-console-output)
+for the window, loss counters and replay contract.

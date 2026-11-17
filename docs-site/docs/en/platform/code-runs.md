@@ -5,7 +5,7 @@ section: Platform services
 order: 965
 description: Start Code, understand retry and schedule outcomes, and read the recorded calls.
 tags: [code, runs, schedules, runner]
-updated: 2026-11-07
+updated: 2026-11-17
 ---
 
 # Code runs
@@ -267,3 +267,61 @@ An unavailable owner reader leaves its claim to expire. Automatic retry retains
 the original deadline and consumes the next attempt in the configured budget.
 This uses `checkCodeOwnerBeforeRun(code)`; its optional signal cancels the owner
 transport request.
+
+## Follow calls and console output
+
+The `code` channel on `/api/ai/live` carries only run state. Readers receive
+no call hints or console output. The separate `codeDetails` channel accepts
+`{ codeId }` and authorizes Code editors, including administrators of the
+owning resource. Being a Cloud administrator alone does not grant access to
+these contents. Revocation and credential scopes apply to both channels.
+
+After committing a call receipt, Core publishes a `code.call` hint with
+`runId`, `ordinal`, `operation` and `state`. Completion publishes another
+hint after committing the result. Hints contain no inputs, results, names or
+links. They cost no SQL; reload the authorized run snapshot after reconnect
+or completion. The page's SSR `operationLabels` supplies `running` and `done`
+strings from the operation catalog before subscribing. Values that require
+actual results are resolved when the run ends.
+
+A Code invocation gets its own `console.log`, `info`, `debug`, `warn` and
+`error`. Uncaught sandbox errors include their text and stack in this output.
+Core removes terminal escapes, controls and direction marks, and replaces
+recognized echoes of secrets used by the attempt with `{ type: "secret",
+name }` parts. Other parts are `{ type: "text", text }`. Render text parts
+with text nodes, and secret parts by name; never use HTML or a terminal
+interpreter. The replacement spellings match HTTP response redaction,
+including supported encodings; arbitrary transformations by remote services
+cannot be recognized.
+
+`core.code.run.read` returns `contents.consoleOutput` on the first call page
+(`cursor: 0`), or `null` on later pages. Readers still get `contents: null`.
+The same permission-aware service serves API, CLI and agent calls. SSR exposes
+the window as `CodePageRunDetail.consoleOutput`.
+
+The window contains `generation`, `seq`, `lines`, `droppedLines` and
+`droppedBytes`. It keeps whole recent lines within the run's pinned
+`core.code.payload_bytes` budget (32 KiB by default), measured as UTF-8 JSON
+of the structured lines. Fixed metadata is outside that budget. Oversized
+lines, earlier lines displaced from the window, and excess batches contribute
+to the loss counters. `droppedLines` is the number needed for an “N earlier
+lines missing” notice. These counters describe dropped output, not execution
+failure.
+
+Each raw bundle, including the runner's proof envelope, fits
+`LIVE_LIMITS.frameBytes`. The runner joins flushes and waits at least the AI
+stream's existing snapshot interval between bundles; Core discards excess
+bundles and counts their lines and bytes. Sanitized NATS deltas obey the same
+frame limit. `followCodeDetails` from `@k2b/cloud/ssr/code-live` requests a
+covering snapshot on admission, reconnect or a sequence gap. Apply deltas
+with `applyCodeOutputEvent` from `@k2b/cloud/code`; replace the window on a
+snapshot. Render only this bounded window, so the live, replayed and stored
+tails agree.
+
+Late arrivals replay the run's dedicated NATS topic. A shared cache repairs
+publication gaps or topic retention with a covering snapshot. Terminal
+settlement freezes output admission and stores the window once in the run
+row; output batches issue zero SQL. The row and its output expire together
+after 30 days. A new attempt starts a new output generation; output is not an
+execution journal. Loss of the shared cache can lose the active window.
+A forcibly terminated isolate can lose its last unflushed bundle.
