@@ -307,6 +307,7 @@ describe("the v10 pause card", () => {
                   .waitFor();
                 await same();
                 expect(await page.getByRole("button", { name: locale === "de" ? "Weiterarbeiten" : "Continue" }).count()).toBe(0);
+                if (capture) await shot(page, "retired", width);
                 expect(errors).toEqual([]);
               } finally {
                 await close();
@@ -314,22 +315,6 @@ describe("the v10 pause card", () => {
             }
         }, 90_000);
       }
-    }
-  }
-
-  for (const theme of ["light", "dark"] as const) {
-    for (const width of [1440, 390]) {
-      test(`a historical receipt has no action and remains neutral (${theme}, ${width})`, async () => {
-        const { page, errors, close } = await open("de", width, theme, "input_tokens", "draft", "retired");
-        try {
-          expect(await page.locator(".assistant-authoring-stop").getByRole("button").count()).toBe(0);
-          expect(await quiet(page).innerText()).toBe("Arbeitspensum der Runde erreicht · Entwurf gespeichert, noch keine Version");
-          if (theme === "light") await shot(page, "retired", width);
-          expect(errors).toEqual([]);
-        } finally {
-          await close();
-        }
-      });
     }
   }
 });
