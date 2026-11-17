@@ -1,45 +1,32 @@
 import type { AiCodeAuthoringStop } from "@k2b/cloud/ai";
 import { useAiChatActions } from "@k2b/cloud/ai/ui";
-import { Button, Chat, type ChatTask, NoticeCard, useLocale } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { Button, NoticeCard, useLocale } from "@k2b/ui";
+import { createSignal, For, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 
-type Messages = ReturnType<typeof assistantMessages.resolve>["t"];
-
-/**
- * What the receipt confirms and what remains, in the order the work runs: check, test, save a version. The receipt
- * counts a submitted draft as neither unchecked nor untested, so checks and tests count as done only while no draft of
- * the turn is submitted. That the draft or version is saved is said once, by the quiet line below the lists.
- */
-function authoringProgress(state: AiCodeAuthoringStop, t: Messages) {
-  const drafts = state.drafts;
-  const done: string[] = [];
-  const open: string[] = [];
-  if (drafts === 0) return { done, open: [t.authoringStopPrepare] };
-  const noneSubmitted = state.unsubmitted === drafts;
-  if (state.unchecked > 0) open.push(t.authoringStopCheck({ count: state.unchecked, drafts }));
-  else if (noneSubmitted) done.push(t.authoringStopChecked({ drafts }));
-  if (state.untested > 0) open.push(t.authoringStopTest({ count: state.untested, drafts }));
-  else if (noneSubmitted) done.push(t.authoringStopTested({ drafts }));
-  if (state.unsubmitted > 0) open.push(t.authoringStopSave({ count: state.unsubmitted, drafts }));
-  return { done, open: open.length ? open : [t.authoringStopReview] };
-}
-
-/**
- * A terminal receipt, never model-authored progress. The card renders once from the persisted receipt; sending and a
- * failed send only change the button and the last quiet line, which keeps its height. The normal send path preserves
- * the person's composer draft.
- */
-export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringStop; continuable: () => boolean }) {
+/** A Cloud receipt, with one sentence and one quiet line. Continuing uses the normal send path. */
+export default function AssistantAuthoringStop(props: {
+  state: AiCodeAuthoringStop;
+  continuable: () => boolean;
+  superseded: () => boolean;
+}) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const actions = useAiChatActions();
   const [sending, setSending] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
   const [sent, setSent] = createSignal(false);
-  const disabled = () => !props.continuable() || !actions.onContinueTurn || actions.actionDisabled?.() || sending() || sent();
-  const progress = () => authoringProgress(props.state, t());
-  const reason = () => (props.state.reason === "repeated_error" ? t().authoringStopRepeated : t().authoringStopTried);
+  let continueButton: HTMLButtonElement | undefined;
+  const available = () => !props.superseded() && props.continuable() && Boolean(actions.onContinueTurn) && !sent();
+  const busy = () => Boolean(actions.actionDisabled?.());
+  const disabled = () => !available() || busy() || sending();
+  const title = () => (props.state.reason === "repeated_error" ? t().authoringStopRepeatedTitle : t().authoringStopTitle);
+  const reason = () =>
+    props.state.reason === "repeated_error"
+      ? t().authoringStopRepeated
+      : props.state.reason === "model_calls"
+        ? t().authoringStopSteps
+        : t().authoringStopTried;
   const saved = () =>
     props.state.drafts === 0
       ? t().authoringStopNoDraft
@@ -51,8 +38,21 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
         : props.state.unsubmitted > 0
           ? t().authoringStopSaved({ drafts: props.state.drafts })
           : t().authoringStopSubmitted({ drafts: props.state.drafts });
+  const receipt = () => `${reason()} · ${saved()}`;
+  const showFailure = () => failed() && available() && !busy() && !sending();
+  const quiet = () =>
+    sending()
+      ? t().authoringContinueSending
+      : !available()
+        ? receipt()
+        : busy()
+          ? t().authoringContinueBlocked
+          : failed()
+            ? t().authoringContinueFailed
+            : receipt();
   const continueWork = async () => {
     if (disabled()) return;
+    const heldFocus = continueButton?.ownerDocument.activeElement === continueButton;
     setSending(true);
     setFailed(false);
     try {
@@ -62,46 +62,54 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
       setFailed(true);
     } finally {
       setSending(false);
+      // Native disabling can move focus to the body. Restore only our lost focus, never another control’s.
+      if (heldFocus && failed() && available() && continueButton?.ownerDocument.activeElement === continueButton?.ownerDocument.body) {
+        continueButton?.focus();
+      }
     }
   };
-  // One still list of the steps (Chat.TaskList): what is done carries its check, what remains stays open. No ring
-  // turns: the work stopped, nothing runs.
-  const tasks = (): ChatTask[] => [
-    ...progress().done.map((content, index) => ({ id: `done-${index}`, content, status: "completed" as const })),
-    ...progress().open.map((content, index) => ({ id: `open-${index}`, content, status: "pending" as const })),
-  ];
-  const statusLabels = () => ({
-    pending: t().authoringStopOpenLabel,
-    in_progress: t().authoringStopOpenLabel,
-    completed: t().authoringStopDoneLabel,
-    cancelled: t().authoringStopOpenLabel,
-  });
+  // Reserve the action while this is the latest receipt; an overtaken receipt becomes compact.
   return (
     <NoticeCard
-      tone="warning"
+      tone="neutral"
+      icon="ti ti-player-pause"
+      layout="card"
       class="ai-turn__notice assistant-authoring-stop"
-      title={t().authoringStopTitle}
-      detail={reason()}
+      title={title()}
       actions={
-        <Button variant="secondary" size="md" disabled={disabled()} loading={sending()} onClick={() => void continueWork()}>
-          {t().authoringContinue}
-        </Button>
+        <Show when={!props.superseded() && Boolean(actions.onContinueTurn)}>
+          <Button
+            ref={(element) => {
+              continueButton = element;
+            }}
+            variant="secondary"
+            size="md"
+            class={!available() ? "assistant-authoring-stop__retired" : undefined}
+            aria-hidden={!available() || undefined}
+            tabIndex={available() ? undefined : -1}
+            disabled={disabled()}
+            loading={sending()}
+            onClick={() => void continueWork()}
+          >
+            {t().authoringContinue}
+          </Button>
+        </Show>
       }
     >
-      {/* Only the receipt's text is a live region; the button and the recovery line announce themselves. */}
-      <div role="status" aria-live="polite">
-        <Chat.TaskList items={tasks()} statusLabels={statusLabels()} aria-label={t().authoringStopTitle} />
-      </div>
-      {/* The recovery line shares the saved line's space, so neither the card nor the button moves. */}
       <p class="assistant-authoring-stop__meta">
-        <span data-hidden={failed() ? "" : undefined} aria-hidden={failed()}>
-          {saved()}
+        {/* All feedback shares one cell. Long translations stay readable, without clipping. */}
+        <For each={[receipt(), t().authoringContinueSending, t().authoringContinueFailed, t().authoringContinueBlocked]}>
+          {(text) => (
+            <span aria-hidden="true" class="assistant-authoring-stop__measure">
+              {text}
+            </span>
+          )}
+        </For>
+        <span role="status" aria-atomic="true">
+          {showFailure() ? "" : quiet()}
         </span>
-        <span data-hidden="" aria-hidden="true">
-          {t().authoringContinueFailed}
-        </span>
-        <span class="assistant-authoring-stop__alert" role="alert">
-          <Show when={failed()}>{t().authoringContinueFailed}</Show>
+        <span role="alert" aria-atomic="true">
+          {showFailure() ? t().authoringContinueFailed : ""}
         </span>
       </p>
     </NoticeCard>

@@ -1,33 +1,28 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Browser, Page } from "playwright";
+import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { authoringStopNow, authoringStopReasons, authoringStopSaves } from "./authoring-stop.test-fixture";
 
-// Gustav's authoring stop as people see it: one notice with title, reason, "Done" and "Still open" in the task list's
-// icons, a quiet saved line and a real 36 px button. Nothing sends by itself and nothing moves: not when the card
-// appears, not while it sends, not after a failed send, and not after the new turn starts below it.
-// Set AUTHORING_STOP_SCREENSHOTS=<dir> to keep the light review screenshots.
-
+// Real Assistant CSS, typeface, icons, timeline and continuation. Fictional data, one browser at a time.
 const ui = resolve(import.meta.dir, "../../../ui");
 const cloud = resolve(import.meta.dir, "../../../cloud");
-const entry = resolve(import.meta.dir, "authoring-stop.browser-harness.tsx");
 const shots = process.env.AUTHORING_STOP_SCREENSHOTS?.trim();
-/** Gustav's app colors as the Cloud shell scopes them (see AssistantGustav.browser.test.ts). */
 const appColors =
-  "--app-accent:#8e1b6f;--app-ink-light:#8e1b6f;--app-ink-dark:#bf7dad;--app-selected-light:#f7eff5;--app-selected-dark:#231627;" +
-  "--app-selected-nav-light:#f4e8f1;--app-selected-nav-dark:#261629";
-
+  "--app-accent:#8e1b6f;--app-ink-light:#8e1b6f;--app-ink-dark:#bf7dad;--app-selected-light:#f7eff5;--app-selected-dark:#231627;--app-selected-nav-light:#f4e8f1;--app-selected-nav-dark:#261629";
 let browser: Browser;
+const contexts = new Map<string, BrowserContext>();
 let assets: ReturnType<typeof Bun.serve>;
 beforeAll(async () => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
-    entrypoints: [entry],
+    entrypoints: [resolve(import.meta.dir, "authoring-stop.browser-harness.tsx")],
     target: "browser",
     format: "esm",
+    minify: true,
     conditions: ["browser"],
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
     plugins: [
@@ -47,35 +42,36 @@ beforeAll(async () => {
       },
     ],
   });
-  if (!build.success) throw new AggregateError(build.logs, "Could not bundle the authoring stop harness.");
+  if (!build.success) throw new AggregateError(build.logs, "Could not bundle the pause harness.");
   const script = await build.outputs[0]!.text();
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", cloud))).default;
-  const outputs = await Promise.all(
-    [resolve(import.meta.dir, "../styles/app.css"), resolve(import.meta.dir, "../../../../styles.css")].map(async (path) => {
-      const output = await Bun.build({ entrypoints: [path], plugins: [tailwind] });
-      if (!output.success) throw new AggregateError(output.logs, `Could not compile ${path}.`);
-      return output.outputs[0]!.text();
-    }),
-  );
-  // Icons and the typeface come from @k2b/ui's build, so the card measures as it does in Cloud.
+  const outputs: string[] = [];
+  for (const path of [resolve(import.meta.dir, "../styles/app.css"), resolve(import.meta.dir, "../../../../styles.css")]) {
+    const output = await Bun.build({ entrypoints: [path], plugins: [tailwind] });
+    if (!output.success) throw new AggregateError(output.logs, `Could not compile ${path}.`);
+    outputs.push(await output.outputs[0]!.text());
+  }
   const fonts = ["plex.css", "tabler.css"]
     .map((file) => readFileSync(resolve(ui, "dist", file), "utf8").replace(/url\((["']?)(?:\.\/)?(?!data:|https?:)/g, "url($1/ui/"))
     .join("\n");
   const css = [fonts, "@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  const preloads = [...fonts.matchAll(/url\(["']?([^"')]+\.woff2)/g)]
+    .map((match) => match[1]!)
+    .filter((path) => /\/(?:ibm-plex-sans-latin-(?:400|600)-normal-|tabler-icons-)/.test(path))
+    .map((path) => `<link rel="preload" href="${path}" as="font" type="font/woff2" crossorigin>`)
+    .join("");
+  const cache = { "cache-control": "public, max-age=3600" };
   assets = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
-      if (url.pathname === "/harness.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
-      if (url.pathname === "/harness.css") return new Response(css, { headers: { "content-type": "text/css" } });
-      if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", url.pathname.slice(4))));
+      if (url.pathname === "/harness.js") return new Response(script, { headers: { "content-type": "text/javascript", ...cache } });
+      if (url.pathname === "/harness.css") return new Response(css, { headers: { "content-type": "text/css", ...cache } });
+      if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", url.pathname.slice(4))), { headers: cache });
       if (url.pathname === "/")
         return new Response(
-          `<!doctype html><html lang="${url.searchParams.get("lang")}" class="${url.searchParams.get("theme")}"><head><meta charset="utf-8">` +
-            `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head>` +
-            `<body class="k2b-ui" style="margin:0"><div class="app-accent-scope" style="${appColors}">` +
-            `<script type="module" src="/harness.js"></script></div></body></html>`,
+          `<!doctype html><html lang="${url.searchParams.get("lang")}" class="${url.searchParams.get("theme")}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${preloads}<link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div class="app-accent-scope" data-k2b-primary="ai" style="${appColors}"><script type="module" src="/harness.js"></script></div></body></html>`,
           { headers: { "content-type": "text/html" } },
         );
       return new Response("Not found", { status: 404 });
@@ -92,220 +88,298 @@ type Box = { x: number; y: number; width: number; height: number };
 const near = (actual: Box, expected: Box) => {
   for (const key of ["x", "y", "width", "height"] as const) expect(Math.abs(actual[key] - expected[key])).toBeLessThan(0.5);
 };
-
-const open = async (locale: "de" | "en", width: number, theme: "light" | "dark" = "light") => {
-  const context = await browser.newContext({
-    viewport: { width, height: width < 600 ? 844 : 900 },
-    isMobile: width < 600,
-    hasTouch: width < 600,
-    reducedMotion: "reduce",
-    locale,
-  });
+const open = async (
+  locale: "de" | "en",
+  width: number,
+  theme: "light" | "dark",
+  reason = "input_tokens",
+  save = "draft",
+  mode = "ready",
+) => {
+  // Reuse each locale/device's HTTP cache; every page still starts with a fresh DOM and timeline.
+  const key = `${locale}/${width}`;
+  let context = contexts.get(key);
+  // Bun may terminate a timed-out test's browser; let the shared launcher replace it next time.
+  if (context && !context.browser()?.isConnected()) {
+    contexts.delete(key);
+    context = undefined;
+  }
+  if (!context) {
+    context = await browser.newContext({
+      viewport: { width, height: width < 600 ? 780 : 900 },
+      isMobile: width < 600,
+      hasTouch: width < 600,
+      reducedMotion: "reduce",
+      locale,
+    });
+    contexts.set(key, context);
+  }
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
+  // Pin Date only; timers and animation frames must keep running normally.
+  await page.addInitScript((at) => {
+    const RealDate = Date;
+    globalThis.Date = new Proxy(RealDate, {
+      construct: (target, args, newTarget) => Reflect.construct(target, args.length ? args : [at], newTarget),
+      apply: () => new RealDate(at).toString(),
+      get: (target, property) => (property === "now" ? () => at : Reflect.get(target, property)),
+    });
+  }, Date.parse(authoringStopNow));
   const errors = pageErrors(page);
-  await page.goto(`${assets.url.origin}/?lang=${locale}&theme=${theme}`, { timeout: 30_000 });
-  await page.waitForFunction(() => "firstRect" in window);
-  await settled(page);
-  return { page, errors, close: () => context.close() };
+  try {
+    await page.goto(`${assets.url.origin}/?${new URLSearchParams({ lang: locale, theme, reason, save, mode })}`, { timeout: 30_000 });
+    await page.waitForFunction(() => "firstRect" in window);
+    await settled(page);
+    return { page, errors, close: () => page.close() };
+  } catch (error) {
+    await page.close();
+    throw new AggregateError([error, ...errors], `Could not open ${locale}/${width}/${theme}/${reason}/${save}/${mode}.`);
+  }
 };
-
 const boxes = (page: Page) =>
   page.evaluate(() => {
     const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON() as Box;
-    return { card: box(".assistant-authoring-stop"), button: box(".assistant-authoring-stop .k2b-button") };
+    return {
+      card: box(".assistant-authoring-stop"),
+      quiet: box(".assistant-authoring-stop__meta"),
+      button: document.querySelector(".assistant-authoring-stop button") ? box(".assistant-authoring-stop button") : null,
+    };
   });
+const quiet = (page: Page) => page.locator(".assistant-authoring-stop__meta > [role]:not(:empty)");
+const count = (page: Page) => page.evaluate(() => (window as unknown as { continued: string[] }).continued.length);
+const busy = (page: Page, value: boolean) =>
+  page.evaluate((next) => (window as unknown as { setBusy: (busy: boolean) => void }).setBusy(next), value);
+const finish = (page: Page, ok: boolean) =>
+  page.evaluate((next) => (window as unknown as { settleSend: (ok: boolean) => void }).settleSend(next), ok);
+const shot = async (page: Page, name: string, width: number, theme: "light" | "dark" = "light") => {
+  if (!shots) return;
+  mkdirSync(shots, { recursive: true });
+  if (theme === "light") console.info(`PF1 geometry ${JSON.stringify({ name, width, ...(await boxes(page)) })}`);
+  await page.screenshot({ path: resolve(shots, `pause-${name}-${theme}-${width}.png`) });
+};
 
-const continued = (page: Page) => page.evaluate(() => (window as unknown as { continued: string[] }).continued.length);
-
-describe("Gustav's authoring stop", () => {
+describe("the v10 pause card", () => {
   for (const locale of ["de", "en"] as const) {
-    test(`reads as one notice with one task list and a real button in ${locale}`, async () => {
-      for (const width of [1440, 390]) {
-        const { page, errors, close } = await open(locale, width);
-        try {
-          const de = locale === "de";
-          const card = page.locator(".assistant-authoring-stop");
-          expect(await card.locator(".k2b-notice-card__title").textContent()).toBe(
-            de ? "Gustav macht eine Pause" : "Gustav is taking a break",
-          );
-          expect(await card.locator(".k2b-notice-card__description").textContent()).toBe(
-            de
-              ? "Derselbe Fehler kam mehrmals. Er wartet jetzt auf dich."
-              : "The same error came up several times. He is waiting for you now.",
-          );
-          // One still task list (Chat.TaskList): done steps checked, open ones open, nothing turning.
-          const list = page.getByRole("list", { name: de ? "Gustav macht eine Pause" : "Gustav is taking a break" });
-          const rows = await list
-            .locator(".k2b-chat-task")
-            .evaluateAll((nodes) =>
-              nodes.map((node) => [node.getAttribute("data-status"), node.querySelector(".k2b-chat-task__content")?.textContent]),
-            );
-          expect(rows).toEqual(
-            de
-              ? [
-                  ["completed", "Entwurf geprüft"],
-                  ["pending", "Mit Beispielen testen"],
-                  ["pending", "Version speichern"],
-                ]
-              : [
-                  ["completed", "Draft checked"],
-                  ["pending", "Test with examples"],
-                  ["pending", "Save a version"],
-                ],
-          );
-          expect(await list.locator('.k2b-chat-task[data-status="in_progress"]').count()).toBe(0);
-          expect(await card.locator(".assistant-authoring-stop__meta").innerText()).toBe(
-            de ? "Der Entwurf ist gesichert, aber noch keine Version." : "The draft is safe, but there is no version yet.",
-          );
-          const button = page.getByRole("button", { name: de ? "Weiterarbeiten" : "Continue" });
-          expect(await button.getAttribute("data-variant")).toBe("secondary");
-          expect((await button.boundingBox())!.height).toBeCloseTo(36, 0);
-          // No code, file names or error codes.
-          expect(await card.innerText()).not.toMatch(/code_|\.tsx?\b|[a-z]+_[a-z]+/);
-
-          const layout = await page.evaluate(() => {
-            const card = document.querySelector(".assistant-authoring-stop")!;
-            const button = card.querySelector(".k2b-button")!;
-            const styles = new Set<string>();
-            const sizes = new Set<number>();
-            for (const node of card.querySelectorAll<HTMLElement>("p, .k2b-chat-task__content, .k2b-button, .k2b-button *")) {
-              if (!node.textContent?.trim() || [...node.children].some((child) => child.textContent?.trim())) continue;
-              const style = getComputedStyle(node);
-              sizes.add(Number.parseFloat(style.fontSize));
-              if (!button.contains(node)) styles.add(`${style.fontSize}/${style.fontWeight}/${style.color}`);
+    for (const reason of authoringStopReasons) {
+      for (const save of authoringStopSaves) {
+        test(`${locale}: ${reason} / ${save}, light and dark, desktop and phone`, async () => {
+          for (const theme of ["light", "dark"] as const)
+            for (const width of [1440, 390]) {
+              const { page, errors, close } = await open(locale, width, theme, reason, save);
+              try {
+                const card = page.locator(".assistant-authoring-stop");
+                expect(await card.getAttribute("data-tone")).toBe("neutral");
+                expect(await card.locator("button").getAttribute("data-variant")).toBe("secondary");
+                expect(await card.locator(".k2b-chat-task-list").count()).toBe(0);
+                expect(await card.locator("i").count()).toBe(1);
+                expect(await card.locator(".k2b-notice-card__title").innerText()).toBe(
+                  locale === "de"
+                    ? `Gustav macht eine Pause.${reason === "repeated_error" ? " Ein Hinweis von dir hilft weiter." : ""}`
+                    : `Gustav is taking a break.${reason === "repeated_error" ? " A hint from you will help." : ""}`,
+                );
+                expect(await quiet(page).innerText()).toContain(
+                  locale === "de"
+                    ? { none: "Noch kein Entwurf", draft: "Entwurf gespeichert, noch keine Version", version: "Version gespeichert" }[save]
+                    : { none: "No draft yet", draft: "Draft saved, no version yet", version: "Version saved" }[save],
+                );
+                const geometry = await boxes(page);
+                const first = await page.evaluate(() => (window as unknown as { firstRect: Box }).firstRect);
+                near(geometry.card, first);
+                const layout = await page.evaluate(() => {
+                  const card = document.querySelector<HTMLElement>(".assistant-authoring-stop")!;
+                  const title = card.querySelector(".k2b-notice-card__title")!;
+                  const quiet = card.querySelector(".assistant-authoring-stop__meta")!;
+                  const button = card.querySelector("button")!;
+                  const styles = [title, quiet].map((node) => {
+                    const s = getComputedStyle(node);
+                    return { size: parseFloat(s.fontSize), weight: s.fontWeight, color: s.color };
+                  });
+                  const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+                  const luminance = (color: string) => {
+                    canvas.fillStyle = color;
+                    canvas.fillRect(0, 0, 1, 1);
+                    const [r, g, b] = [...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)].map((value) => {
+                      const channel = value / 255;
+                      return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+                    });
+                    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+                  };
+                  const surface = luminance(getComputedStyle(card).backgroundColor);
+                  const contrast = styles.map((style) => {
+                    const text = luminance(style.color);
+                    return (Math.max(surface, text) + 0.05) / (Math.min(surface, text) + 0.05);
+                  });
+                  return {
+                    styles,
+                    contrast,
+                    overflow: card.scrollWidth - card.clientWidth,
+                    pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                    button: button.getBoundingClientRect().toJSON(),
+                    card: card.getBoundingClientRect().toJSON(),
+                    textBottom: quiet.getBoundingClientRect().bottom,
+                    reducedMotion: getComputedStyle(button).transitionDuration,
+                    buttonFill: getComputedStyle(button).backgroundColor,
+                    expectedFill: (() => {
+                      const probe = document.createElement("span");
+                      probe.style.background = "var(--k2b-surface)";
+                      card.append(probe);
+                      const color = getComputedStyle(probe).backgroundColor;
+                      probe.remove();
+                      return color;
+                    })(),
+                  };
+                });
+                expect(layout.styles.map((style) => style.size)).toEqual([14, 13]);
+                expect(layout.styles.every((style) => style.weight === "400")).toBe(true);
+                for (const contrast of layout.contrast) expect(contrast).toBeGreaterThanOrEqual(4.5);
+                expect(layout.buttonFill).toBe(layout.expectedFill);
+                expect(layout.overflow).toBe(0);
+                expect(layout.pageOverflow).toBe(0);
+                for (const duration of layout.reducedMotion.split(",")) expect(parseFloat(duration)).toBeLessThanOrEqual(0.001);
+                if (width === 390) {
+                  expect(layout.button.y).toBeGreaterThanOrEqual(layout.textBottom);
+                  expect(layout.button.width).toBeCloseTo(layout.card.width - 28, 0);
+                  expect(layout.button.height).toBeGreaterThanOrEqual(40);
+                } else {
+                  expect(layout.button.height).toBeCloseTo(30, 0);
+                }
+                expect(await card.innerText()).not.toMatch(/code_|\.tsx?\b|[a-z]+_[a-z]+|Version 2/);
+                expect(await count(page)).toBe(0);
+                if (locale === "de") await shot(page, `${reason}-${save}`, width, theme);
+                expect(errors).toEqual([]);
+              } finally {
+                await close();
+              }
             }
-            const title = card.querySelector(".k2b-notice-card__title")!;
-            const range = document.createRange();
-            range.selectNodeContents(title);
-            const icons = [...card.querySelectorAll(".k2b-chat-task__mark")].map((icon) => icon.getBoundingClientRect());
-            return {
-              styles: [...styles],
-              sizes: [...sizes],
-              textEdge: range.getBoundingClientRect().left,
-              iconLefts: icons.map((icon) => icon.left),
-              iconCenters: icons.map((icon) => icon.left + icon.width / 2),
-              overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-              cardOverflow: card.scrollWidth - card.clientWidth,
-            };
+        }, 90_000);
+      }
+    }
+  }
+
+  for (const locale of ["de", "en"] as const) {
+    for (const reason of authoringStopReasons) {
+      for (const save of authoringStopSaves) {
+        test(`${locale}: ${reason} / ${save} keeps its geometry through blocking, sending, failure and retry`, async () => {
+          for (const theme of ["light", "dark"] as const)
+            for (const width of [1440, 390]) {
+              const { page, errors, close } = await open(locale, width, theme, reason, save, "settling");
+              try {
+                const initial = await boxes(page);
+                const same = async () => {
+                  await settled(page);
+                  const next = await boxes(page);
+                  near(next.card, initial.card);
+                  near(next.quiet, initial.quiet);
+                  if (!next.button || !initial.button) throw new Error("The newest receipt must keep its action space.");
+                  near(next.button, initial.button);
+                };
+                expect(await page.locator(".assistant-authoring-stop").getByRole("button").count()).toBe(0);
+                await page.evaluate(() => (window as unknown as { setContinuable: (value: boolean) => void }).setContinuable(true));
+                await same();
+                const button = page.getByRole("button", { name: locale === "de" ? "Weiterarbeiten" : "Continue" });
+                await busy(page, true);
+                await same();
+                expect(await button.isDisabled()).toBe(true);
+                expect(await quiet(page).innerText()).toBe(
+                  locale === "de" ? "Geht, sobald Gustav fertig ist." : "Available when Gustav is finished.",
+                );
+                const capture = locale === "de" && reason === "input_tokens" && save === "draft";
+                if (capture) await shot(page, "blocked", width, theme);
+                await busy(page, false);
+                await settled(page);
+                await button.focus();
+                await page.keyboard.press("Shift");
+                await page.keyboard.press("Enter");
+                // settled: the send intentionally stays pending until finish(page, …).
+                await same();
+                expect(await button.isDisabled()).toBe(true);
+                expect(await count(page)).toBe(1);
+                expect(await button.locator(".k2b-button__label").evaluate((label) => getComputedStyle(label).opacity)).toBe("0");
+                const spinner = await button.evaluate((element) => {
+                  const button = element.getBoundingClientRect();
+                  const indicator = element.querySelector(".k2b-button__busy i")!.getBoundingClientRect();
+                  return {
+                    x: indicator.x + indicator.width / 2 - button.x - button.width / 2,
+                    y: indicator.y + indicator.height / 2 - button.y - button.height / 2,
+                  };
+                });
+                expect(Math.abs(spinner.x)).toBeLessThan(0.5);
+                expect(Math.abs(spinner.y)).toBeLessThan(0.5);
+                expect(await quiet(page).innerText()).toBe(locale === "de" ? "Gustav macht weiter …" : "Gustav is continuing …");
+                if (capture) await shot(page, "sending", width, theme);
+                await finish(page, false);
+                await page
+                  .getByRole("alert")
+                  .filter({ hasText: locale === "de" ? "Das ging nicht." : "Could not continue." })
+                  .waitFor();
+                await same();
+                expect(await button.isEnabled()).toBe(true);
+                expect(await button.evaluate((element) => element.ownerDocument.activeElement === element)).toBe(true);
+                if (capture) await shot(page, "failed", width, theme);
+                if (capture) expect(await page.getByRole("status").innerText()).toBe("");
+                await page.keyboard.press("Shift");
+                await same();
+                expect(await button.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+                if (capture && shots) await page.screenshot({ path: resolve(shots, `review-focus-${theme}-${width}.png`) });
+                await page.keyboard.press("Enter");
+                expect(await count(page)).toBe(2);
+                await finish(page, true);
+                await page
+                  .getByText(locale === "de" ? "Setze die offene Arbeit fort." : "Continue the remaining work.", { exact: false })
+                  .waitFor();
+                await settled(page);
+                const historical = await boxes(page);
+                expect(historical.button).toBeNull();
+                expect(await page.locator(".assistant-authoring-stop .k2b-notice-card__actions").count()).toBe(0);
+                if (width === 390) expect(historical.card.height).toBeLessThan(initial.card.height);
+                else expect(historical.card.height).toBeLessThanOrEqual(initial.card.height);
+                expect(await page.getByRole("alert").innerText()).toBe("");
+                if (capture) await shot(page, "retired", width, theme);
+                // The durable history starts compact after reload, without a reserved action flashing first.
+                if (reason === "input_tokens" && save === "draft") {
+                  const url = new URL(page.url());
+                  url.searchParams.set("mode", "retired");
+                  await page.goto(url.toString());
+                  await page.waitForFunction(() => "firstRect" in window);
+                  await settled(page);
+                  const reloaded = await boxes(page);
+                  near(reloaded.card, historical.card);
+                  near(reloaded.card, await page.evaluate(() => (window as unknown as { firstRect: Box }).firstRect));
+                  expect(reloaded.button).toBeNull();
+                }
+                expect(errors).toEqual([]);
+              } finally {
+                await close();
+              }
+            }
+        }, 90_000);
+      }
+    }
+  }
+  test("a failed send leaves focus on another control when the person has moved on", async () => {
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390]) {
+        const { page, errors, close } = await open("de", width, theme);
+        try {
+          const button = page.getByRole("button", { name: "Weiterarbeiten" });
+          await button.focus();
+          await page.keyboard.press("Enter");
+          await page.evaluate(() => {
+            const input = document.createElement("input");
+            input.setAttribute("aria-label", "Other input");
+            document.body.append(input);
+            input.focus();
           });
-          // Title and entries, plus one quiet level: at most three text styles, sizes only from 12/13/14/18.
-          expect(layout.styles.length).toBeLessThanOrEqual(3);
-          for (const size of layout.sizes) expect([12, 13, 14, 18]).toContain(size);
-          // Every icon on one axis, on the text edge of title and reason.
-          for (const center of layout.iconCenters) expect(Math.abs(center - layout.iconCenters[0]!)).toBeLessThan(0.5);
-          expect(Math.abs(layout.iconLefts[0]! - layout.textEdge)).toBeLessThan(1);
-          expect(layout.overflow).toBe(0);
-          expect(layout.cardOverflow).toBe(0);
-          if (shots) {
-            mkdirSync(shots, { recursive: true });
-            await page.screenshot({ path: resolve(shots, `budget-stop-${locale}-light-${width}.png`) });
-          }
-          expect(await continued(page)).toBe(0);
+          await finish(page, false);
+          await page.getByRole("alert").filter({ hasText: "Das ging nicht." }).waitFor();
+          expect(
+            await page.getByRole("textbox", { name: "Other input" }).evaluate((input) => input.ownerDocument.activeElement === input),
+          ).toBe(true);
+          expect(await button.isEnabled()).toBe(true);
           expect(errors).toEqual([]);
         } finally {
           await close();
         }
       }
-    }, 90_000);
-  }
-
-  test("keeps its place when it appears, while it sends, after a failed send and after the new turn starts", async () => {
-    for (const width of [1440, 390]) {
-      const { page, errors, close } = await open("de", width);
-      try {
-        const first = await page.evaluate(() => (window as unknown as { firstRect: Box }).firstRect);
-        const initial = await boxes(page);
-        near(initial.card, first);
-        expect(await continued(page)).toBe(0);
-
-        const button = page.getByRole("button", { name: "Weiterarbeiten" });
-        await button.click();
-        expect(await continued(page)).toBe(1);
-        // settled: the pending send is the subject; it stays pending until the test settles it.
-        const sending = await boxes(page);
-        near(sending.card, initial.card);
-        near(sending.button, initial.button);
-
-        await page.evaluate(() => (window as unknown as { settleSend: (ok: boolean) => void }).settleSend(false));
-        expect(await page.getByRole("alert").innerText()).toBe("Das ging nicht. Versuch es noch einmal.");
-        await settled(page);
-        const failed = await boxes(page);
-        near(failed.card, initial.card);
-        near(failed.button, initial.button);
-        expect(await button.isEnabled()).toBe(true);
-        // The recovery line reads on the warning surface: at least 4.5:1, measured from the painted colors.
-        const contrast = await page.evaluate(() => {
-          const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
-          const rgb = (color: string) => {
-            canvas.clearRect(0, 0, 1, 1);
-            canvas.fillStyle = color;
-            canvas.fillRect(0, 0, 1, 1);
-            return [...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)];
-          };
-          const luminance = (color: string) => {
-            const [r, g, b] = rgb(color).map((value) => {
-              const channel = value / 255;
-              return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-            });
-            return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-          };
-          // The card's tint over the page behind it, as painted.
-          const card = getComputedStyle(document.querySelector(".assistant-authoring-stop")!).backgroundColor;
-          for (const layer of [
-            "#fff",
-            getComputedStyle(document.documentElement).backgroundColor,
-            getComputedStyle(document.body).backgroundColor,
-          ]) {
-            canvas.fillStyle = layer;
-            canvas.fillRect(0, 0, 1, 1);
-          }
-          canvas.fillStyle = card;
-          canvas.fillRect(0, 0, 1, 1);
-          const surface = `rgb(${[...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)].join(",")})`;
-          const [light, dark] = [luminance(getComputedStyle(document.querySelector('[role="alert"]')!).color), luminance(surface)].sort(
-            (a, b) => b - a,
-          );
-          return (light! + 0.05) / (dark! + 0.05);
-        });
-        expect(contrast).toBeGreaterThanOrEqual(4.5);
-        if (shots) {
-          mkdirSync(shots, { recursive: true });
-          await page.screenshot({ path: resolve(shots, `budget-stop-failed-de-light-${width}.png`) });
-        }
-
-        // The keyboard path: focus and Enter send once; the new request lands below the card.
-        await button.focus();
-        await page.keyboard.press("Enter");
-        expect(await continued(page)).toBe(2);
-        await page.evaluate(() => (window as unknown as { settleSend: (ok: boolean) => void }).settleSend(true));
-        await page.getByText("Setze die offene Arbeit fort.", { exact: false }).waitFor();
-        await settled(page);
-        const after = await boxes(page);
-        near(after.card, initial.card);
-        near(after.button, initial.button);
-        expect(await button.isDisabled()).toBe(true);
-        expect(await page.getByRole("alert").innerText()).toBe("");
-        expect(errors).toEqual([]);
-      } finally {
-        await close();
-      }
-    }
   }, 90_000);
-
-  test("keeps tone and contrast in dark mode", async () => {
-    const { page, errors, close } = await open("en", 1440, "dark");
-    try {
-      const colors = await page.evaluate(() => {
-        const color = (selector: string) => getComputedStyle(document.querySelector(selector)!).color;
-        return { title: color(".k2b-notice-card__title"), item: color(".k2b-chat-task__content") };
-      });
-      // Light ink on the dark surface, never the light theme's near-black.
-      for (const value of Object.values(colors)) expect(value).not.toMatch(/^rgb\((?:[0-6]?\d|9), /);
-      if (shots) await page.screenshot({ path: resolve(shots, "budget-stop-en-dark-1440.png") });
-      expect(errors).toEqual([]);
-    } finally {
-      await close();
-    }
-  }, 60_000);
 });
