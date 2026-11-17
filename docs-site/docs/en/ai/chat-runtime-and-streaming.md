@@ -36,13 +36,23 @@ the next queued message to start; a dispatch failure keeps the failed entry at t
 head until the user retries or removes it. Approval waits keep the current turn
 active and do not advance the queue.
 
-A person's **Stop** holds the queue: afterwards nothing starts by itself, and
-every entry, including those of automations, stays queued. Send now starts only
-its own entry. A new message of the person, sent or queued, resumes the queue in
-its order; a message of an automation or another chat does not. While the queue
-is held, messages from other chats wait as they do for a busy chat. The hold is
-kept on the chat on the server, so the API, the CLI and the web chat behave
-alike.
+A person's **Stop** holds the foreground queue, even if the response just
+finished. Every entry, including those of automations, stays queued. Send now
+starts only its own entry; a later Stop withdraws that request and leaves the
+entry waiting. A new message from the person resumes the queue in its order;
+a message from an automation or another chat does not. Stopping a routine's
+background turn does not hold the foreground queue. Routines continue on their
+schedule after a Stop.
+
+A direct submission cannot overtake waiting entries: it returns HTTP 409 with
+`code: "queue_waiting"` and leaves the draft intact. The web chat and PWA then
+queue the person's message at the end, which lifts the hold. Other API clients
+can submit the saved draft with a new `queueId` to do the same. The CLI explains
+how to send the saved draft in Assistant or use Send now on a waiting entry.
+Without waiting entries, the person's direct submission lifts the hold; a
+service account or automation cannot start directly while it is held. Messages
+from other chats wait as they do for a busy chat. The server owns the hold;
+archiving clears it, so restoring the chat does not restore an old Stop.
 
 With **Automations as Code**, automation messages will use a separate queue:
 up to **32 entries per chat**, with at most **one waiting entry per source**

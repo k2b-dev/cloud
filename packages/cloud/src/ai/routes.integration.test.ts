@@ -313,6 +313,62 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
+  test("a direct submission rejected by the queue returns the stable queue_waiting code", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" };
+    const draft = await aiConversations.saveDraft({
+      conversationId: chat.id,
+      ownerUserId: userId,
+      expectedRevision: chat.draft.revision,
+      content: [{ type: "text", text: "Continue" }],
+    });
+    if (!draft.ok) throw new Error("Fixture draft was not saved");
+    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockRejectedValue(new Error("Queued messages must be sent first."));
+    try {
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/turns`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ draftRevision: draft.draft.revision }),
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "queue_waiting" });
+      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.draft.content).toEqual(draft.draft.content);
+    } finally {
+      submit.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  test.each(["running", "waiting_for_action"] as const)(
+    "archiving reports the same conflict after racing a promotion (%s)",
+    async (status) => {
+      const userId = await insertUser();
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      const headers = { Authorization: `Bearer ${await createTestSession(userId)}` };
+      const archive = spyOn(aiConversations, "archiveConversation").mockImplementation(async () => {
+        await sql`INSERT INTO ai.turns(short_id,conversation_id,status)
+        VALUES(${`archive-race-${crypto.randomUUID()}`},${chat.id}::uuid,${status})`;
+        return false;
+      });
+      try {
+        const response = await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers });
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({
+          message:
+            status === "waiting_for_action"
+              ? "This chat waits for a decision. Answer or stop it, then archive the chat."
+              : "Stop the current response before archiving this chat.",
+        });
+      } finally {
+        archive.mockRestore();
+        await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    },
+  );
+
   test("archive and restore routes pause and resume the chat's routines", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });

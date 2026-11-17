@@ -143,3 +143,16 @@ test("print submission sends no local client or context and notifies after accep
   expect(submitted).toBeTrue();
   expect(requests.find((request) => request.path.endsWith("/turns"))?.body).toEqual({ draftRevision: 1, clientToolIds: [] });
 });
+
+test("queue_waiting explains how to resume without resubmitting or clearing the saved draft", async () => {
+  const { ctx, requests } = setup();
+  const fetch = ctx.fetch;
+  ctx.fetch = async (path, init) =>
+    path.endsWith("/turns")
+      ? Response.json({ code: "queue_waiting", message: "Queued messages must be sent first." }, { status: 409 })
+      : fetch(path, init);
+  await expect(
+    submitAssistantTurn({ ctx, conversationId: "chat", path: "/conversations/chat/turns", body: { message: "Continue" }, watch: false }),
+  ).rejects.toThrow("send the draft to join the queue, or choose Send now");
+  expect(requests.filter(({ path }) => path.endsWith("/draft"))).toHaveLength(1);
+});

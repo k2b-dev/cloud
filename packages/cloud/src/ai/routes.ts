@@ -925,24 +925,27 @@ export const aiRoutes = (() => {
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
         const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
-        if (active) {
-          // Say what holds the chat: a turn that waits for a decision needs an answer, not a stop of a running response.
+        const archived =
+          !active &&
+          (await aiConversations.archiveConversation({
+            conversationId: conversation.id,
+            ownerUserId: ctx.ownerUserId,
+          }));
+        if (!archived) {
+          const blocker = active ?? (await aiConversations.getActiveTurn({ conversationId: conversation.id }));
+          if (!blocker) return notFound(c);
+          // The transaction may have met a turn promoted after the first read. Give the same conflict in that race.
           return respond(
             c,
             fail(
               err.conflict(
-                active.turn.status === "waiting_for_action"
+                blocker.turn.status === "waiting_for_action"
                   ? "This chat waits for a decision. Answer or stop it, then archive the chat."
                   : "Stop the current response before archiving this chat.",
               ),
             ),
           );
         }
-        const archived = await aiConversations.archiveConversation({
-          conversationId: conversation.id,
-          ownerUserId: ctx.ownerUserId,
-        });
-        if (!archived) return notFound(c);
         // The chat is archived either way; admission pauses a routine this step missed before its next run.
         await aiChatTasks.pauseForArchivedChat({ conversationId: conversation.id, userId: ctx.ownerUserId }).catch((error) =>
           logger("ai:chat-tasks").warn("Could not pause the routines of an archived chat", {
@@ -1159,11 +1162,9 @@ export const aiRoutes = (() => {
             201,
           );
         } catch (error) {
-          if (
-            error instanceof AiMessageQueueConflict ||
-            (error instanceof Error && error.message === "Queued messages must be sent first.")
-          )
-            return respond(c, fail(err.conflict(error.message)));
+          if (error instanceof Error && error.message === "Queued messages must be sent first.")
+            return respond(c, fail({ ...err.conflict(error.message), code: "queue_waiting" }));
+          if (error instanceof AiMessageQueueConflict) return respond(c, fail(err.conflict(error.message)));
           return toAiErrorResponse(c, error);
         }
       })

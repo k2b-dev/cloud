@@ -3,6 +3,7 @@ import { inLockOrder } from "../../../../scripts/fixtures/lock-order";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { sql } from "../runtime/clients";
+import { serviceAccounts } from "../services/service-accounts";
 import {
   drainQueuedMessages,
   enqueueChatMessage,
@@ -10,6 +11,7 @@ import {
   migrateAiMessageQueue,
   requestQueuedMessageSendNow,
 } from "./message-queue";
+import { userResourceContext } from "./projects.test-fixture";
 import type { AiStoredMessageOrigin } from "./queue-contracts";
 import { aiConversations } from "./store";
 import type { AiConversationService } from "./types";
@@ -64,6 +66,7 @@ const fixture = async () => {
     chat,
     userId: user!.id,
     turnId: turn!.id,
+    input,
     person,
     automation,
     add,
@@ -81,12 +84,12 @@ const fixture = async () => {
   };
 };
 
-integration("after a person's Stop no turn starts by itself, also 8 s later, and every entry stays queued", async () => {
+integration("a held queue stays waiting even when its stored Stop timestamp is eight seconds old", async () => {
   const f = await fixture();
   try {
     await f.stop();
     await f.drain();
-    // The hold does not lapse with time: 8 s after the Stop (the preview's gap, #108) the queue still waits.
+    // This ages only the stored timestamp; it does not simulate eight seconds of runtime timers.
     await sql`UPDATE ai.conversations SET queue_held_at = queue_held_at - interval '8 seconds' WHERE id=${f.chat.id}::uuid`;
     await f.drain();
     expect(f.jobs).toEqual([]);
@@ -224,6 +227,8 @@ integration("Stop and completion acquire the chat before the turn, without a loc
       ],
     );
     expect(results).toEqual(["completed", { found: false }]);
+    await f.drain();
+    expect(f.jobs).toEqual([]);
   } finally {
     await f.close();
   }
@@ -272,8 +277,115 @@ integration("archiving a chat with queued entries lets them lapse (#108)", async
     const retained = await sql`SELECT id FROM ai.queued_messages WHERE conversation_id=${f.chat.id}::uuid
       AND (submission <> '{}'::jsonb OR content <> '[]'::jsonb)`;
     expect(retained).toEqual([]);
+    await expect(aiConversations.submitChatTurn(f.input("Too late", { kind: "person", id: f.userId }))).rejects.toThrow(
+      "Conversation not found.",
+    );
+    // A stale Stop request arriving after archive must not put the old hold back before restore.
+    expect(await aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: f.turnId, reason: "user" })).toEqual({
+      found: false,
+    });
+    expect(await aiConversations.restoreConversation({ conversationId: f.chat.id, ownerUserId: f.userId })).toMatchObject({
+      id: f.chat.id,
+    });
+    const resumed = await aiConversations.submitChatTurn(f.input("After restore", { kind: "automation", id: "routine" }));
+    expect(resumed.turn.status).toBe("queued");
     await f.drain();
     expect(f.jobs).toEqual([]);
+  } finally {
+    await f.close();
+  }
+});
+
+integration("direct submissions identify the person before admission: a service account cannot bypass or lift the hold", async () => {
+  const f = await fixture();
+  const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)
+    VALUES (${`hold-${crypto.randomUUID()}`},'standalone') RETURNING id`;
+  try {
+    const serviceAccount = await serviceAccounts.get({ id: account!.id });
+    if (!serviceAccount) throw new Error("Missing service account fixture");
+    await f.stop();
+    // Emptying the queue must not let the next automated direct submission ignore the durable hold.
+    await sql`DELETE FROM ai.queued_messages WHERE conversation_id=${f.chat.id}::uuid`;
+    const input = f.input("Direct message", { kind: "person", id: f.userId });
+    delete input.runConfig.writerOrigin;
+    input.runConfig.actor = { kind: "service_account", serviceAccount, delegatedUser: null, scopes: ["write"] };
+    await expect(aiConversations.submitChatTurn(input)).rejects.toThrow("Queued messages must be sent first.");
+    expect(await f.started()).toBe(0);
+    // Explicit platform automation provenance cannot resume it either.
+    await expect(aiConversations.submitChatTurn(f.input("Automation", { kind: "automation", id: account!.id }))).rejects.toThrow(
+      "Queued messages must be sent first.",
+    );
+    input.runConfig.actor = userResourceContext({ type: "user", userId: f.userId }).actor;
+    const person = await aiConversations.submitChatTurn(input);
+    await f.finish(person.turn.id);
+    // The person's direct message cleared the hold, so a subsequent service-account turn is admitted.
+    input.runConfig.actor = { kind: "service_account", serviceAccount, delegatedUser: null, scopes: ["write"] };
+    expect((await aiConversations.submitChatTurn(input)).turn.status).toBe("queued");
+  } finally {
+    await f.close();
+    await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+  }
+});
+
+integration("a later Stop withdraws an in-flight Send now and leaves its entry waiting", async () => {
+  const f = await fixture();
+  try {
+    const requested = await requestQueuedMessageSendNow(f.chat.id, f.automation);
+    expect(requested?.interrupt?.turnId).toBe(f.turnId);
+    expect((await listQueuedMessages(f.chat.id)).find(({ id }) => id === f.automation)?.state).toBe("sending");
+    await f.stop();
+    const [entry] = await sql<{ send_requested_at: Date | null; interrupted_turn_id: string | null }[]>`
+      SELECT send_requested_at,interrupted_turn_id FROM ai.queued_messages WHERE id=${f.automation}::uuid`;
+    expect(entry).toEqual({ send_requested_at: null, interrupted_turn_id: null });
+    await f.drain();
+    expect(f.jobs).toEqual([]);
+    expect((await listQueuedMessages(f.chat.id)).map(({ id, state }) => ({ id, state }))).toEqual([
+      { id: f.person, state: "pending" },
+      { id: f.automation, state: "pending" },
+    ]);
+  } finally {
+    await f.close();
+  }
+});
+
+integration("a late Stop holds a completed foreground turn's queue, but stopping a background routine does not", async () => {
+  const f = await fixture();
+  try {
+    await f.finish(f.turnId);
+    expect(await aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: f.turnId, reason: "user" })).toEqual({
+      found: false,
+    });
+    await f.drain();
+    expect(f.jobs).toEqual([]);
+    await f.add("Resume before background Stop");
+    const [background] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id,conversation_id,status,run_config)
+      VALUES(${testShortId()},${f.chat.id}::uuid,'running','{"kind":"chat","background":{}}'::jsonb) RETURNING id`;
+    expect((await aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: background!.id, reason: "user" })).found).toBe(
+      true,
+    );
+    await f.drain();
+    expect(f.jobs).toHaveLength(1);
+  } finally {
+    await f.close();
+  }
+});
+
+integration("the global sweep skips held chats and resumes them only after a person writes", async () => {
+  const f = await fixture();
+  try {
+    await f.stop();
+    const jobs: Array<{ conversationId: string; turnId: string }> = [];
+    const sweep = () =>
+      drainQueuedMessages(async (job) => {
+        jobs.push(job);
+      });
+    await sweep();
+    expect(jobs.filter(({ conversationId }) => conversationId === f.chat.id)).toEqual([]);
+    expect(await f.started()).toBe(0);
+    await f.add("Continue from sweep");
+    await sweep();
+    expect(jobs.filter(({ conversationId }) => conversationId === f.chat.id)).toHaveLength(1);
+    expect((await listQueuedMessages(f.chat.id)).map(({ id }) => id)).not.toContain(f.person);
   } finally {
     await f.close();
   }

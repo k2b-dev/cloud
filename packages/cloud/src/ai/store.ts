@@ -2321,7 +2321,7 @@ export const aiConversations: AiConversationService = {
       const rows = await tx<{ id: string }[]>`
       WITH archived AS (
         UPDATE ai.conversations
-        SET archived_at = now(), pinned_at = NULL
+        SET archived_at = now(), pinned_at = NULL, queue_held_at = NULL
         WHERE id = ${input.conversationId}
           AND (${input.ownerUserId ?? null}::uuid IS NULL OR created_by_user_id = ${input.ownerUserId ?? null})
           AND archived_at IS NULL
@@ -3017,7 +3017,7 @@ export const aiConversations: AiConversationService = {
           queue_held_at: Date | string | null;
         }[]
       >`
-        SELECT draft_revision, project_id, queue_held_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
+        SELECT draft_revision, project_id, queue_held_at FROM ai.conversations WHERE id = ${input.conversationId} AND archived_at IS NULL FOR UPDATE
       `;
       if (!conversation) throw new Error("Conversation not found.");
       if (input.queuedMessageId) {
@@ -3037,7 +3037,10 @@ export const aiConversations: AiConversationService = {
         )
           throw new Error("Queued message is no longer ready.");
       }
+      const writer = input.runConfig.writerOrigin?.kind ?? (input.runConfig.actor?.kind === "service_account" ? "automation" : "person");
+      const person = writer === "person";
       if (!input.queuedMessageId) {
+        if (conversation.queue_held_at && !person) throw new Error("Queued messages must be sent first.");
         const [queued] =
           await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
         if (queued) throw new Error("Queued messages must be sent first.");
@@ -3079,8 +3082,6 @@ export const aiConversations: AiConversationService = {
       );
       // Queue acceptance already recorded the user's interaction time. A person's own message resumes a queue that their
       // Stop held; a message written for an automation or another chat leaves the hold.
-      const writer = input.runConfig.writerOrigin?.kind ?? (input.runConfig.actor?.kind === "service_account" ? "automation" : "person");
-      const person = writer === "person";
       if (!input.queuedMessageId)
         await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now(),
           queue_held_at = CASE WHEN ${person} THEN NULL ELSE queue_held_at END WHERE id = ${input.conversationId}::uuid`;
@@ -3382,11 +3383,12 @@ export const aiConversations: AiConversationService = {
 
   requestTurnAbort: async (input, options) => {
     const reason = input.reason ?? "user";
-    // A person's Stop also holds the chat's queue in the same statement: nothing starts by itself afterwards.
+    // A person's Stop holds the foreground queue even if the target just ended. It withdraws an earlier Send now.
+    // Stopping a routine's background turn does not change foreground admission or future scheduled runs.
     const rows = await (options?.db ?? sql)<TurnRow[]>`
       WITH locked_chat AS MATERIALIZED (
         -- Match completion/promotion lock order. Other cancellation reasons do not change the chat hold.
-        SELECT id FROM ai.conversations WHERE id = ${input.conversationId} AND ${reason} = 'user' FOR NO KEY UPDATE
+        SELECT id FROM ai.conversations WHERE id = ${input.conversationId} AND archived_at IS NULL AND ${reason} = 'user' FOR NO KEY UPDATE
       ), stopped AS (
       UPDATE ai.turns
       SET cancel_requested_at = COALESCE(cancel_requested_at, now()),
@@ -3402,7 +3404,16 @@ export const aiConversations: AiConversationService = {
       RETURNING status, lease_owner, lease_expires_at, id, conversation_id, attempt, model_profile_id, created_at, completed_at, error
       ), held AS (
         UPDATE ai.conversations SET queue_held_at = now()
-        WHERE id = ${input.conversationId} AND ${reason} = 'user' AND EXISTS (SELECT 1 FROM stopped)
+        WHERE id = (SELECT id FROM locked_chat) AND EXISTS (
+          SELECT 1 FROM ai.turns WHERE id = ${input.turnId} AND conversation_id = ${input.conversationId}
+          AND NOT COALESCE(run_config ? 'background', false)
+        )
+        RETURNING id
+      ), withdrawn AS (
+        -- Stop is the later intent: this entry waits again, without being removed or failed.
+        UPDATE ai.queued_messages SET send_requested_at = NULL, interrupted_turn_id = NULL,
+          interruption_deadline = NULL, interruption_client_calls = NULL, interruption_steps = NULL
+        WHERE conversation_id IN (SELECT id FROM held) AND status IN ('pending','failed') AND send_requested_at IS NOT NULL
       )
       SELECT * FROM stopped
     `;
