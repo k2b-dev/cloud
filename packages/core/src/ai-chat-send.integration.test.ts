@@ -1100,24 +1100,36 @@ suiteFor(
     };
     await fill(chat.id, 1);
     await fill(second.id, 6);
+    // Beside them: a message of today whose Code and run are fine walks every branch and stays, and a
+    // malformed run id retires its message without failing the statement.
+    const [current, malformed] = [crypto.randomUUID(), crypto.randomUUID()];
+    await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status)
+      SELECT ${current}::uuid,${second.id}::uuid,q.submission #- '{runConfig,send,keyHash}',q.content,'pending'
+      FROM ai.queued_messages q WHERE q.id=${template}::uuid`;
+    await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status)
+      SELECT ${malformed}::uuid,${second.id}::uuid,jsonb_set(q.submission #- '{runConfig,send,keyHash}','{runConfig,codeOrigin,runId}','"run-7"'),q.content,'pending'
+      FROM ai.queued_messages q WHERE q.id=${template}::uuid`;
     await sql`DELETE FROM ai.queued_messages WHERE id=${template}::uuid`;
     const meter = await meterSql();
     try {
       const one = await meter.during(() => drainQueuedMessages(async () => {}, chat.id, queuedCodeSendStart));
       const six = await meter.during(() => drainQueuedMessages(async () => {}, second.id, queuedCodeSendStart));
       console.log("SQL BUDGET queue drain with expired Code messages", one.length, six.length, six);
-      // The retirement itself and the head query; nothing per entry.
+      // In a held chat, nothing is promoted: the retirement itself and the head query, nothing per entry.
       expect(one).toHaveLength(2);
       expect(six).toHaveLength(2);
       expect(six[0]).toStartWith("WITH expired AS");
     } finally {
       await meter.close();
     }
-    const left = await sql<{ status: string; error: string | null; send: boolean }[]>`
-      SELECT status,error,submission->'runConfig' ? 'send' AS send FROM ai.queued_messages
-      WHERE conversation_id IN (${chat.id}::uuid,${second.id}::uuid) AND content='[]'::jsonb AND error IS DISTINCT FROM 'dispatch_failed'`;
-    expect(left).toHaveLength(7);
-    expect(left.every((entry) => entry.status === "cancelled" && entry.error === "code_budget_day_ended" && entry.send)).toBeTrue();
+    const left = await sql<{ id: string; status: string; error: string | null; send: boolean }[]>`
+      SELECT id,status,error,submission->'runConfig' ? 'send' AS send FROM ai.queued_messages
+      WHERE conversation_id IN (${chat.id}::uuid,${second.id}::uuid) AND error IS DISTINCT FROM 'dispatch_failed'`;
+    const expired = left.filter((entry) => entry.id !== current && entry.id !== malformed);
+    expect(expired).toHaveLength(7);
+    expect(expired.every((entry) => entry.status === "cancelled" && entry.error === "code_budget_day_ended" && entry.send)).toBeTrue();
+    expect(left.find((entry) => entry.id === current)).toMatchObject({ status: "pending", error: null });
+    expect(left.find((entry) => entry.id === malformed)).toMatchObject({ status: "cancelled", error: "code_run_gone" });
   });
   test("a queued turn is built from the entry as it is under the chat lock", async () => {
     await setup();

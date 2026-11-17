@@ -123,11 +123,14 @@ export const admitQueuedCodeSend: QueuedCodeStart["admit"] = async (submission, 
  * queue can retire every Code message that can never start without checking them one by one. */
 const expiredCodeSendReason: QueuedCodeStart["expiredReason"] = async () => {
   const timeZone = (await coreSettings.get<string>("app.timezone")) || "UTC";
+  // The first branch proves the run id a UUID before the last one casts it, so a malformed id retires
+  // its message instead of failing the drain, and the run lookup uses the primary key.
   const expression = sql`(CASE
-      WHEN q.submission#>>'{runConfig,codeOrigin,runId}' IS NULL OR q.submission#>>'{runConfig,send,accountId}' IS NULL THEN 'code_run_gone'
+      WHEN q.submission#>>'{runConfig,send,accountId}' IS NULL
+        OR NOT COALESCE(q.submission#>>'{runConfig,codeOrigin,runId}' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', false) THEN 'code_run_gone'
       WHEN NOT EXISTS (SELECT 1 FROM code.codes c WHERE c.id = q.submission#>>'{runConfig,codeOrigin,codeId}' AND c.state = 'active') THEN 'code_inactive'
       WHEN (q.created_at AT TIME ZONE ${timeZone})::date < (clock_timestamp() AT TIME ZONE ${timeZone})::date THEN 'code_budget_day_ended'
-      WHEN NOT EXISTS (SELECT 1 FROM code.runs r WHERE r.id::text = q.submission#>>'{runConfig,codeOrigin,runId}') THEN 'code_run_gone'
+      WHEN NOT EXISTS (SELECT 1 FROM code.runs r WHERE r.id = (q.submission#>>'{runConfig,codeOrigin,runId}')::uuid) THEN 'code_run_gone'
     END)`;
   return { expression };
 };
