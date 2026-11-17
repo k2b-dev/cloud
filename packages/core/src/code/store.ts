@@ -3,6 +3,7 @@ import { sql } from "@k2b/cloud";
 import { aiLive } from "@k2b/cloud/ai/live";
 import { CodeAutomationTitleSchema, type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "@k2b/cloud/contracts";
 import { buildAccessPrincipalCondition, createAccess, type Principal } from "@k2b/cloud/server";
+import { audit } from "@k2b/cloud/services";
 import type { SQL, TransactionSQL } from "bun";
 import type { z } from "zod";
 import {
@@ -243,7 +244,10 @@ export const codeAuthor = (context: CodeContext) => {
 };
 
 /** Create one owner identity and its credentialless account in one transaction. This grants no target permissions. */
-export const createCode = async (input: { owner: CodeOwner; title: string }, context: CodeContext): Promise<Code> => {
+export const createCode = async (
+  input: { owner: CodeOwner; title: string; chatConversationId?: string },
+  context: CodeContext,
+): Promise<Code> => {
   const user = codeAuthor(context);
   const owner = CodeOwnerSchema.parse(input.owner);
   let ownerTitle: string | null = null;
@@ -268,12 +272,27 @@ export const createCode = async (input: { owner: CodeOwner; title: string }, con
         accountId = account.id;
         accountHandle = account.handle;
       }
+      // Only chat-tools supplies this trusted origin after resolving its conversation authority.
+      // No FK: AI is optional and a chat disappearing during init remains a readable missing binding.
+      const chatId = owner.kind === "person" ? (input.chatConversationId ?? null) : null;
       const id = `c_${randomBytes(6).toString("hex")}`;
       const [row] = await tx<
         CodeRow[]
-      >`INSERT INTO code.codes(id,owner_kind,owner_user_id,owner_type,owner_id,owner_app_id,title,service_account_id,created_by)
-        VALUES(${id},${owner.kind},${owner.kind === "person" ? owner.userId : null}::uuid,${owner.kind === "resource" ? owner.ref.type : null},${owner.kind === "resource" ? owner.ref.id : null},${owner.kind === "app" ? owner.appId : null},${title},${accountId}::uuid,${user.id}::uuid) RETURNING *`;
+      >`INSERT INTO code.codes(id,owner_kind,owner_user_id,owner_type,owner_id,owner_app_id,title,service_account_id,created_by,chat_conversation_id,chat_binding_revision)
+        VALUES(${id},${owner.kind},${owner.kind === "person" ? owner.userId : null}::uuid,${owner.kind === "resource" ? owner.ref.type : null},${owner.kind === "resource" ? owner.ref.id : null},${owner.kind === "app" ? owner.appId : null},${title},${accountId}::uuid,${user.id}::uuid,${chatId}::uuid,${chatId ? 1 : 0}) RETURNING *`;
       if (!row) throw new Error("Code insert returned no row");
+      if (chatId)
+        await audit.record(
+          {
+            action: "core.code.chat_binding.changed",
+            outcome: "allowed",
+            actor: { userId: user.id },
+            target: { type: "code", id },
+            requestId: context.requestId,
+            metadata: { before: null, after: chatId, revision: 1 },
+          },
+          tx,
+        );
       return mapCode({ ...row, service_account_handle: accountHandle });
     });
   } catch (error) {

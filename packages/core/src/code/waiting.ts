@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import type { AiOpenQuestion, AiOpenQuestions } from "@k2b/cloud/ai";
 import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
 import { CodeDataError } from "./access";
+import { codeChatMissingCondition, codeChatSchemaAvailable } from "./chat-binding";
 import { requireCodeEventAccess } from "./event-access";
 import { type CodeManagerCandidate, currentChatManagers } from "./manager-recipients";
 import { CodeSubmissionOriginSchema, codeVersionChatAnchor } from "./review-contracts";
@@ -99,6 +100,7 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
   const items: AiOpenQuestion[] = [];
   let count = 0,
     after = "";
+  const missingChat = codeChatMissingCondition(await codeChatSchemaAvailable());
   const principal = buildAccessPrincipalCondition({
     subject: { type: "user", userId: input.ownerUserId },
     columns: {
@@ -115,14 +117,14 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
         title: string;
         created_at: Date;
         failure_code: string | null;
-        reason: "secret" | "mandate" | "access";
+        reason: "secret" | "mandate" | "access" | "chat_missing";
       })[]
     >`WITH candidates AS (
       SELECT c.*, COALESCE(c.active_version_id,a.version_id) AS version_id,a.state AS activation_state,a.failure,
         a.updated_at AS activation_at,a.mandate_id
       FROM code.codes c LEFT JOIN LATERAL (SELECT * FROM code.activations WHERE code_id=c.id ORDER BY created_at DESC,id DESC LIMIT 1) a ON true
       WHERE c.state<>'deleting' AND c.id>${after}
-        AND (c.active_version_id IS NOT NULL OR a.state='failed')
+        AND (c.active_version_id IS NOT NULL OR a.state='failed' OR ${missingChat})
         AND (c.owner_user_id=${input.ownerUserId}::uuid OR c.created_by=${input.ownerUserId}::uuid OR a.activating_person=${input.ownerUserId}::uuid
           OR EXISTS(SELECT 1 FROM code.versions own_version JOIN code.version_submissions own_submission ON own_submission.version_id=own_version.id
             WHERE own_version.code_id=c.id AND own_version.created_by=${input.ownerUserId}::uuid)
@@ -133,22 +135,26 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
       SELECT c.id AS code_id,c.version_id,${input.ownerUserId}::uuid AS user_id,c.owner_kind,c.owner_user_id,c.owner_app_id,c.owner_type,c.owner_id,c.title,
         COALESCE(c.activation_at,c.created_at) AS created_at,c.failure->>'code' AS failure_code,
         CASE
+          WHEN ${missingChat} AND c.owner_user_id=${input.ownerUserId}::uuid THEN 'chat_missing'
           WHEN EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(v.manifest->'secrets','[]'::jsonb)) b
             WHERE NOT EXISTS(SELECT 1 FROM code.secrets s WHERE s.code_id=c.id AND s.name=b->>'name'
               AND s.binding_revision=(b->>'binding_revision')::uuid AND s.encrypted IS NOT NULL)) THEN 'secret'
           WHEN c.active_version_id IS NOT NULL AND (m.id IS NULL OR m.state<>'active' OR m.confirmed_at IS NULL OR m.expires_at<=now()) THEN 'mandate'
           WHEN c.activation_state='failed' AND c.failure->>'code' IN ('FORBIDDEN','authority_changed','authority_revoked','not_owner_manager') THEN 'access'
         END AS reason
-      FROM candidates c JOIN code.versions v ON v.id=c.version_id LEFT JOIN LATERAL
+      FROM candidates c LEFT JOIN code.versions v ON v.id=c.version_id LEFT JOIN LATERAL
         (SELECT id,state,expires_at,confirmed_at FROM auth.mandates WHERE owner_app_id IN ('core','runner') AND workload_type='code.version'
           AND workload_id=c.active_version_id::text ORDER BY created_at DESC,id DESC LIMIT 1) m ON true
     ) SELECT * FROM problems WHERE reason IS NOT NULL ORDER BY code_id LIMIT 50`;
     if (!rows.length) break;
     // An unavailable owner cannot break unrelated Assistant surfaces. Direct grants remain usable;
     // a failed remote owner check contributes no actionable item in this snapshot.
-    const allowed = await currentChatManagers(rows, signal);
+    const allowed = await currentChatManagers(
+      rows.filter((row) => row.reason !== "chat_missing"),
+      signal,
+    );
     for (const row of rows) {
-      if (!allowed.has(row.version_id)) continue;
+      if (row.reason === "chat_missing" ? row.owner_user_id !== input.ownerUserId : !allowed.has(row.version_id)) continue;
       // A past refusal is only a candidate. A repaired event-place grant removes the item immediately.
       if (row.reason === "access" && row.failure_code === "FORBIDDEN") {
         const code = await findCode(row.code_id);
@@ -165,8 +171,8 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
       }
       const de = input.locale.startsWith("de");
       const short = de
-        ? `${row.title} ${row.reason === "secret" ? "braucht ein Secret" : row.reason === "mandate" ? "braucht deine Bestätigung" : "braucht Zugriff"}`
-        : `${row.title} ${row.reason === "secret" ? "needs a secret" : row.reason === "mandate" ? "needs your confirmation" : "needs access"}`;
+        ? `${row.title} ${row.reason === "chat_missing" ? "braucht einen Chat" : row.reason === "secret" ? "braucht ein Secret" : row.reason === "mandate" ? "braucht deine Bestätigung" : "braucht Zugriff"}`
+        : `${row.title} ${row.reason === "chat_missing" ? "needs a chat" : row.reason === "secret" ? "needs a secret" : row.reason === "mandate" ? "needs your confirmation" : "needs access"}`;
       count++;
       items.push({
         id: `code-attention:${row.code_id}`,

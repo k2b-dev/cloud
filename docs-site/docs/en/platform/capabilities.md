@@ -1585,7 +1585,9 @@ where `id` is the message UUID and `origin` has `kind` (`person`, `automation`,
 carry `runId`. Names are resolved for display, not stored as authority.
 States are `queued`, `running`, `waiting`, `done`, `failed` and `cancelled`.
 Read a later snapshot through app-wide `ai.chat.read({ id: chatId, message: id })`:
-its result contains `{ chat, messages, message }`. Do not poll for a human.
+its result contains `{ chat, view, messages, message }`. The canonical chat
+reader's `view` contains the title and permission, authorized as the viewer;
+other people's chats return `NOT_FOUND`. Do not poll for a human.
 
 Repeating a key across Code runs recovers the accepted message, even when model
 or quota admission would now refuse a new one. The dispatcher can replay an

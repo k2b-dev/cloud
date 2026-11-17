@@ -615,6 +615,8 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
     authorAvatarHash: row.author_avatar,
     readModel: manifest
       ? presentCodeVersion({
+          // Administration names no person's chat: the bound chat stays private to its owner.
+          personal: owner.kind === "person",
           versionId,
           number: row.number,
           submittedAt: iso(row.created_at),

@@ -178,7 +178,7 @@ export function createCodeAuthoringChatTools() {
       "init",
       codeAuthoringContracts.init,
       remember(codeAuthoringServices.init),
-      "Create lasting personal Code or Code for an owner you administer. Returns code.json metadata and initial code.ts. Initializes this chat's server-held draft. Nothing runs.",
+      "Create lasting personal Code or Code for an owner you administer. Returns code.json metadata and initial code.ts. Binds personal Code to this chat and initializes its server-held draft. Nothing runs.",
     ),
     tool(
       "pull",

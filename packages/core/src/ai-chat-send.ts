@@ -21,8 +21,9 @@ import { err, fail, i18n, ok } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { aiChatSendData, chatSendSnapshot } from "./ai-chat-send-result";
-import { chatWriteAuthority, codeChatDestination, ownedActiveChat, sendsToItself } from "./ai-code-chat";
+import { chatWriteAuthority, ownedActiveChat, sendsToItself } from "./ai-code-chat";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
+import { resolveCodeChatDestination } from "./code/chat-binding";
 import { assertCodeChatTurnFits, CodeChatBudgetError } from "./code/chat-turn-budget";
 import { codeSettings } from "./code/settings";
 
@@ -43,6 +44,7 @@ const messages = i18n.define({
       ai_no_model: "No model is available for this chat. Check the AI model settings before trying again.",
       model_policy_mismatch: "The Code owner may not use this model. Choose a model their account may use.",
       busy: "A Code message of this person is already waiting or running in a chat. Try again after it finishes.",
+      binding_changed: "The automation's chat changed. Try again to use its current chat.",
       run_gone: "The Code run that sent this message has ended.",
     },
     de: {
@@ -55,6 +57,7 @@ const messages = i18n.define({
       ai_no_model: "Für diesen Chat ist kein Modell verfügbar. Prüfe die KI-Modelleinstellungen vor einem weiteren Versuch.",
       model_policy_mismatch: "Der Code-Eigentümer darf dieses Modell nicht verwenden. Wähle ein für sein Konto freigegebenes Modell.",
       busy: "Eine Code-Nachricht dieser Person wartet oder läuft schon in einem Chat. Versuche es erneut, wenn sie fertig ist.",
+      binding_changed: "Der Chat der Automation wurde geändert. Versuche es erneut, um ihren aktuellen Chat zu verwenden.",
       run_gone: "Der Code-Lauf, der diese Nachricht gesendet hat, ist beendet.",
     },
   },
@@ -112,7 +115,9 @@ export const aiChatSendAction = {
     const source = await chatWriteAuthority(context, sql);
     if (!source.ok) return source;
     if (!context.user) return fail(err.forbidden("Chat writes require their owner"));
-    const chat = await ownedActiveChat(context.user.id, codeChatDestination(context), sql);
+    const destination = await resolveCodeChatDestination(context, sql);
+    if (!destination.ok) return destination;
+    const chat = await ownedActiveChat(context.user.id, destination.data.chatId, sql);
     if (!chat) return fail(err.notFound("Chat"));
     if (sendsToItself(source.data.origin, chat.short_id)) return fail(err.badInput("Choose another chat"));
     const de = context.locale.split("-")[0] === "de";
@@ -180,7 +185,9 @@ export const aiChatSendAction = {
     const previous = await existing();
     if (previous) return previous;
     const id = crypto.randomUUID();
-    const chat = await ownedActiveChat(owner, codeChatDestination(context), sql);
+    const destination = await resolveCodeChatDestination(context, sql);
+    if (!destination.ok) return destination;
+    const chat = await ownedActiveChat(owner, destination.data.chatId, sql);
     if (!chat) return fail(err.notFound("Chat"));
     if (sendsToItself(source.data.origin, chat.short_id)) return fail(err.badInput("Choose another chat"));
     const hash = approvalArgsDigest({ chatId: chat.short_id, ...parsed.data });
@@ -260,7 +267,11 @@ export const aiChatSendAction = {
           if (await openOwnerCodeChatWork(owner, db)) return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
         }
         if (code && limits) {
-          await db`SELECT id FROM code.codes WHERE id=${code.id} FOR SHARE NOWAIT`;
+          const [locked] = await db<{ chat_binding_revision: number }[]>`SELECT chat_binding_revision FROM code.codes
+            WHERE id=${code.id} FOR SHARE NOWAIT`;
+          const binding = destination.data.binding;
+          if (binding && (binding.codeId !== code.id || locked?.chat_binding_revision !== binding.revision))
+            return fail({ code: "chat_busy", message: t.binding_changed, status: 409 as const });
           await db`SELECT id FROM code.runs WHERE id=${code.runId}::uuid FOR UPDATE`;
           const current = await chatWriteAuthority(context, db);
           if (!current.ok) return current;

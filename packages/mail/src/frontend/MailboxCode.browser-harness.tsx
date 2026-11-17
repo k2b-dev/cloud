@@ -11,7 +11,13 @@ type State = Parameters<typeof codePageFixture>[0];
 declare global {
   interface Window {
     /** `catchUp` renders the "Process existing mail" step instead of the Code page. */
-    mountMailboxCode: (options: { state: State; locale: "de" | "en"; phone?: boolean; catchUp?: MailCodeCatchUpFixtureState }) => void;
+    mountMailboxCode: (options: {
+      state: State;
+      locale: "de" | "en";
+      phone?: boolean;
+      catchUp?: MailCodeCatchUpFixtureState;
+      usesBoundChat?: boolean;
+    }) => void;
   }
 }
 
@@ -55,11 +61,16 @@ const mailbox = (locale: "de" | "en"): MailboxCodePageData => ({
   receivingAddress: "info@moebel-beispiel.de",
 });
 
-window.mountMailboxCode = ({ state, locale, phone, catchUp }) => {
+window.mountMailboxCode = ({ state, locale, phone, catchUp, usesBoundChat }) => {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing harness root");
   document.documentElement.lang = locale;
   const code = codePageFixture(state, locale);
+  if (usesBoundChat === false && code.state.kind === "ready" && code.state.words?.current) {
+    const words = code.state.words.current;
+    words.mayDo = { ...words.mayDo, items: words.mayDo.items.filter((row) => row.target?.ref.type !== "core.ai.chat") };
+    words.notices = { ...words.notices, items: words.notices.items.filter((notice) => notice.code !== "chat_missing") };
+  }
   render(
     () => (
       <LocaleProvider locale={locale}>
