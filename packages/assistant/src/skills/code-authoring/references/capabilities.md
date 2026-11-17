@@ -344,7 +344,7 @@ Queries: `core.ai.chat.read`, `core.ai.chat.resources`, `core.ai.chat.search`, `
 
 | Action ID | SDK path | Title | Target | Key | Unattended |
 | --- | --- | --- | --- | --- | --- |
-| `core.ai.chat.send` | `core.ai.chat(id).send` | Write to a chat | core.ai.chat | required | admin approval |
+| `core.ai.chat.send` | `core.ai.chat(id).send` | Write to a chat | core.ai.chat | required | automatic with priced model and reserved turn budget |
 | `core.ai.skill.access.change` | `core.ai.skill(id).access.change` | Change Skill access | core.ai.skill | required | never |
 | `core.ai.skill.create` | `core.ai.skill.create` | Create an Assistant Skill | — | required | never |
 | `core.ai.skill.delete` | `core.ai.skill(id).delete` | Delete an Assistant Skill | core.ai.skill | required | never |

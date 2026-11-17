@@ -6,6 +6,8 @@ import {
   CodePolicyDefinitionSchema,
   CodePolicyManifestSchema,
   type CodePolicyValue,
+  codeChatModelPolicyRow,
+  codeOperationPolicyRow,
   codePolicyContracts,
   codePolicyPreset,
   codePolicyRow,
@@ -199,7 +201,11 @@ test("F9 B classifies each actual call; an all-admin table also covers reads", (
   const defaults = codePolicyPreset("admin");
   for (const rule of defaults.rules)
     expect(rule.value).toBe(
-      rule.row.startsWith("ask_") ? "never" : ["read", "silent_you", "silent_draft"].includes(rule.row) ? "automatic" : "admin",
+      rule.row.startsWith("ask_")
+        ? "never"
+        : ["read", "silent_you", "silent_draft", "ai_chat_you"].includes(rule.row)
+          ? "automatic"
+          : "admin",
     );
   expect(codePolicyRow("action")).toBe("ask_app_asks");
   const allAdmin = { ...defaults, preset: "custom" as const, rules: defaults.rules.map((rule) => ({ ...rule, value: "admin" as const })) };
@@ -270,4 +276,21 @@ test("AI inference classification includes only generate, decide and send", () =
     "other.ai.generate",
   ])
     expect(isCodeAiOperation(capability)).toBe(false);
+});
+
+test("bounded chat inference has an explicit policy row; read and create retain their effects", () => {
+  expect(codeOperationPolicyRow("core.ai.chat.send", "action", { silent: "you" })).toBe("ai_chat_you");
+  expect(codeOperationPolicyRow("core.ai.generate", "query")).toBe("ai");
+  expect(codeOperationPolicyRow("core.ai.decide", "query")).toBe("ai");
+  expect(codeOperationPolicyRow("core.ai.chat.read", "query")).toBe("read");
+  expect(codeOperationPolicyRow("core.ai.chat.create", "action", { silent: "you" })).toBe("silent_you");
+  for (const preset of ["admin", "open"] as const)
+    expect(codePolicyPreset(preset).rules.find((rule) => rule.row === "ai_chat_you")?.value).toBe("automatic");
+  expect(codePolicyPreset("off").rules.find((rule) => rule.row === "ai_chat_you")?.value).toBe("never");
+});
+
+test("the executed model must have a positive price for the personal-chat row", () => {
+  expect(codeChatModelPolicyRow({})).toBe("ai");
+  expect(codeChatModelPolicyRow({ pricing: { inputPerMillion: 0, outputPerMillion: 0 } })).toBe("ai");
+  expect(codeChatModelPolicyRow({ pricing: { inputPerMillion: 0, outputPerMillion: 1 } })).toBe("ai_chat_you");
 });

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { type CodeContext, CodeDataError } from "./access";
 import { loadCodeSdkCatalog } from "./authoring-check";
 import { CodeIdSchema } from "./contracts";
-import { codePolicyRow, isCodeAiOperation } from "./policy-contracts";
+import { codeOperationPolicyRow } from "./policy-contracts";
 
 /**
  * Apps per declarations call. The combined SDK is far larger than one tool result; the index plus the declarations of
@@ -89,10 +89,7 @@ export function codeChatSdkView(
               return {
                 path: `${app.exportName}${factory}.${operation.methodPath.join(".")}`,
                 kind: operation.kind,
-                policy: codePolicyRow(
-                  isCodeAiOperation(operation.capability) ? "ai" : operation.kind,
-                  capabilityActionPolicy(manifest, operation.localId),
-                ),
+                policy: codeOperationPolicyRow(operation.capability, operation.kind, capabilityActionPolicy(manifest, operation.localId)),
                 description: oneLine(description),
               };
             }),
