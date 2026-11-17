@@ -70,6 +70,8 @@ type Props = {
   fieldsByTable?: Record<string, Field[]>;
   viewColumns?: ColumnSpec[];
   dateConfig?: DateContext;
+  /** Server time for the same history on the server and the first browser render. */
+  now?: string;
   /** Close the panel (delegates URL writeback to RecordsView). */
   onClose: () => void;
   /** Emitted after a successful edit. RecordsView refetches the data
@@ -846,7 +848,12 @@ export default function RecordDetailPanel(props: Props) {
                   <Show when={mode() === "live" && !props.detail()?.combinedOrigin}>
                     <RecordVersions tableId={props.tableId} recordId={rec.id} />
                   </Show>
-                  <RecordHistorySection entries={props.detail()?.auditEntries ?? []} fields={props.fields} dateConfig={props.dateConfig} />
+                  <RecordHistorySection
+                    entries={props.detail()?.auditEntries ?? []}
+                    fields={props.fields}
+                    dateConfig={props.dateConfig}
+                    now={props.now}
+                  />
                   {documents.snapshots}
                 </>
               }

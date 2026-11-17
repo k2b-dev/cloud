@@ -71,6 +71,7 @@ export const routeClientState = (state: PublicOkWorkspaceState): PublicOkWorkspa
 
 export default function GridsWorkspace(props: { userId?: string; state: PublicOkWorkspaceState }) {
   const route = props.state.route;
+  const now = new Date().toISOString();
   const activeKeys = (() => {
     switch (route.kind) {
       case "records":
@@ -106,7 +107,7 @@ export default function GridsWorkspace(props: { userId?: string; state: PublicOk
         <AppWorkspace mobileSurface="flush" class={workspaceRootClass(props.state.adminModeRequested)}>
           <GridsSidebar userId={props.userId} state={props.state} />
           <AppWorkspace.Content>
-            <GridsRoute state={routeClientState(props.state)} userId={props.userId} />
+            <GridsRoute state={routeClientState(props.state)} userId={props.userId} now={now} />
           </AppWorkspace.Content>
         </AppWorkspace>
       </div>
