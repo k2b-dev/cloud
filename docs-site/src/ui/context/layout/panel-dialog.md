@@ -235,6 +235,8 @@ while that handler is pending. `cancelBehavior: "ignore"` still disables native
 dismissal entirely.
 
 `dialogCore` owns the backdrop, focus handling, and Escape behavior. Do not create a second dialog frame around `PanelDialog`.
+Updating text inside an open dialog keeps the same frame and backdrop; it does
+not replay their entrance motion.
 
 ## API reference
 

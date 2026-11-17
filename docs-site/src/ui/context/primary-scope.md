@@ -36,6 +36,12 @@ Keep the trigger inside the scope; programmatic opens use the currently focused
 UI area. Notifications share one rail, with each toast retaining its source’s
 scope, so blue and plum notifications can appear together.
 
+A dialog with a purpose outside the AI task, such as a session warning, uses
+`dialogCore.open(render, { primary: "blue" })`. Its actions, selection, and
+focus then use the normal blue palette, including inside an AI document.
+`primary: "ai"` explicitly chooses the AI palette; leaving `primary` out keeps
+the opener's scope. Each stacked level restores its own palette when it returns.
+
 The scope remaps the action, hover, selected, focus, link, row selection,
 and workspace selection roles. It also updates text selection and inset focus
 fills. Informational notices, default tags and choice pills, running status
