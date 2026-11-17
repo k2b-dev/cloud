@@ -2951,6 +2951,8 @@ export const aiConversations: AiConversationService = {
     // One statement. Of a quoted answer only its non-empty text parts are read, and only when the whole answer, its
     // parts and the blank line between its messages, stays within the bound: the length is summed before any text
     // leaves the database, and a longer answer returns one row that says so, without text.
+    // The work per quoted turn needs no bound of its own: it reads a turn of the person's own chat that the chat view
+    // loads in full each time it opens, at most ten quotes per send, each turn once.
     const rows = await sql<
       {
         part: "quoted" | "answer" | "over";
@@ -2969,16 +2971,27 @@ export const aiConversations: AiConversationService = {
         FROM ai.messages
         WHERE conversation_id = ${input.conversationId} AND kind = 'message' AND short_id = ANY(${ids}::text[])
       ),
-      parts AS (
-        SELECT COALESCE(m.loop_id::text, m.short_id) AS answer_key, m.seq, c.ord, c.part->>'text' AS text
+      -- The quoted answers' messages: those of a quoted turn through the (conversation_id, loop_id, seq) index, and a
+      -- quoted answer outside any turn by its own id. Nothing outside the chat or these turns is read.
+      answer_messages AS (
+        SELECT m.loop_id::text AS answer_key, m.seq, m.message
         FROM ai.messages m
+        WHERE m.conversation_id = ${input.conversationId} AND m.loop_id IS NOT NULL
+          AND m.loop_id IN (SELECT loop_id FROM quoted WHERE role = 'assistant' AND loop_id IS NOT NULL)
+          AND m.kind = 'message' AND m.role = 'assistant'
+        UNION ALL
+        SELECT m.short_id, m.seq, m.message
+        FROM ai.messages m
+        WHERE m.conversation_id = ${input.conversationId} AND m.short_id = ANY(${ids}::text[])
+          AND m.loop_id IS NULL AND m.kind = 'message' AND m.role = 'assistant'
+      ),
+      parts AS (
+        SELECT a.answer_key, a.seq, c.ord, c.part->>'text' AS text
+        FROM answer_messages a
         CROSS JOIN LATERAL jsonb_array_elements(
-          CASE WHEN jsonb_typeof(m.message->'content') = 'array' THEN m.message->'content' ELSE '[]'::jsonb END
+          CASE WHEN jsonb_typeof(a.message->'content') = 'array' THEN a.message->'content' ELSE '[]'::jsonb END
         ) WITH ORDINALITY AS c(part, ord)
-        WHERE m.conversation_id = ${input.conversationId} AND m.kind = 'message' AND m.role = 'assistant'
-          AND ((m.loop_id IS NULL AND m.short_id = ANY(${ids}::text[]))
-            OR m.loop_id IN (SELECT loop_id FROM quoted WHERE role = 'assistant' AND loop_id IS NOT NULL))
-          AND c.part->>'type' = 'text' AND c.part->>'text' <> ''
+        WHERE c.part->>'type' = 'text' AND c.part->>'text' <> ''
       ),
       answers AS (
         SELECT answer_key, SUM(length(text)) + 2 * (COUNT(DISTINCT seq) - 1) AS length

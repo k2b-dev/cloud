@@ -155,6 +155,18 @@ suite("AI conversation store integration", () => {
         else await expect(quoted).rejects.toEqual(expect.objectContaining({ reason: "too_long" }));
       }
 
+      // A quoted turn's messages are read through the (conversation_id, loop_id, seq) index, as the query's turn branch
+      // filters: own chat, that turn, assistant messages. The shape below mirrors `listQuoteSources`.
+      const plan = await sql.begin(async (tx) => {
+        await tx`SET LOCAL enable_seqscan = off`;
+        const [row] = await tx`EXPLAIN (FORMAT JSON)
+          SELECT m.seq, m.message FROM ai.messages m
+          WHERE m.conversation_id = ${chat.id} AND m.loop_id IS NOT NULL AND m.loop_id IN (${sent.turn.id})
+            AND m.kind = 'message' AND m.role = 'assistant'`;
+        return JSON.stringify(row);
+      });
+      expect(plan).toContain("idx_ai_messages_conversation_loop_seq");
+
       // The model reads the checked quote word for word; the same wording without `meta.quotes`, and the old marker, are broken.
       const entries = await aiConversations.createSessionStore({ conversationId: chat.id }).load();
       const user = entries.find((entry) => entry.message.role === "user")!.message;
