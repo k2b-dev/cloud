@@ -44,9 +44,13 @@ loops.
 | `--k2b-motion-enter-row` with `--k2b-ease-rise` | `420ms` | A new row slides in from above. |
 | `--k2b-motion-think` | `2200ms` | One shimmer pass over a working sentence, looping, linear. |
 
-These moments move only transform, opacity, and colour. The one exception is
-a folding list such as `Chat.Tasks`: its own height opens upwards from a
-header that stays put, and nothing beside it moves.
+These moments move only transform, opacity, and colour. There are two named
+exceptions, and nothing beside them moves: a folding list such as
+`Chat.Tasks`, whose own height opens upwards from a header that stays put, and
+the frame of a dialog, which stands alone above the page. When one dialog
+replaces another, the dialog core morphs the frame's width and height with
+`--k2b-motion-morph` and `--k2b-ease-morph` while the contents stand at their
+own sizes and the frame clips them.
 
 Choose the duration by what changes. Use the standard curve for ordinary
 entry motion. A large surface that grows, shrinks, or moves uses the morph
@@ -59,7 +63,9 @@ JavaScript that drives a morph with `element.animate()` reads the duration
 from the token, so reduced motion makes it instant as well:
 
 ```ts
-const duration = Number.parseFloat(getComputedStyle(element).getPropertyValue("--k2b-motion-morph")) || 0;
+// The shipped stylesheet is minified, so `280ms` may arrive as `.28s`: read the unit.
+const value = getComputedStyle(element).getPropertyValue("--k2b-motion-morph").trim();
+const duration = (Number.parseFloat(value) || 0) * (value.endsWith("ms") ? 1 : value.endsWith("s") ? 1000 : 1);
 ```
 Existing component times and curves move to these tokens in later migrations.
 

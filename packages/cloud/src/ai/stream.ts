@@ -14,7 +14,14 @@ import {
   steerAppliedBlockId,
   steerMessageBlockId,
 } from "./protocol";
-import { messagesNeedChoiceContext, projectPublicAiStoredMessages, publicAiStoredMessages, viewHasChoice } from "./public-projection";
+import {
+  messagesNeedChoiceContext,
+  projectPublicAiStoredMessages,
+  publicAiStoredMessages,
+  publicAiTurnBlock,
+  publicAiWireEvent,
+  viewHasChoice,
+} from "./public-projection";
 import { publicAiToolBlock, publicAiToolEvent } from "./public-tool-input";
 import { capabilityResultView } from "./result-view";
 import { aiConversations } from "./store";
@@ -101,7 +108,7 @@ const publishLiveTopicEvent = async (event: AiLiveTopicEvent): Promise<void> => 
  */
 export const publishAiWireEvent = async (event: AiWireEvent): Promise<void> => {
   try {
-    await publishLiveTopicEvent(event);
+    await publishLiveTopicEvent(publicAiToolEvent(publicAiWireEvent(event)));
   } catch (error) {
     if (!(error instanceof PayloadTooLargeError)) throw error;
     const { v, conversationId, turnId, attempt, seq } = event;
@@ -140,6 +147,7 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
   seq: active.liveSeq,
   blocks: active.liveBlocks
     .map(publicAiToolBlock)
+    .map(publicAiTurnBlock)
     .map((block) =>
       block.kind === "tool" && block.status === "completed" && !block.isError
         ? { ...block, view: capabilityResultView(block.result) ?? undefined }
@@ -417,7 +425,7 @@ export async function* streamAiConversationEvents(input: {
       if (message) yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId, message };
       continue;
     }
-    yield publicAiToolEvent({ ...event, conversationId: input.conversation.shortId, turnId: publicTurnId });
+    yield publicAiToolEvent({ ...publicAiWireEvent(event), conversationId: input.conversation.shortId, turnId: publicTurnId });
   }
 }
 

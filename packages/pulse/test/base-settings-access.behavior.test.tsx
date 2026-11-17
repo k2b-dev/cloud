@@ -131,9 +131,10 @@ describe("Pulse base settings: access", () => {
     });
     const button = (text: string) =>
       Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((item) => item.textContent?.trim() === text);
-    // The settings and the access dialog share one dialog element; the access panel is the visible top layer.
+    // The settings and the access dialog share one dialog element; the access panel is the visible top layer. The
+    // dialog's live region, which says the shown level's name, is no level.
     const panel = () =>
-      Array.from(dom.document.querySelectorAll<HTMLElement>("dialog > *")).find(
+      Array.from(dom.document.querySelectorAll<HTMLElement>("dialog > :not([data-k2b-dialog-live])")).find(
         (item) => item.style.display !== "none" && item.textContent?.includes("Access to Shop metrics"),
       );
     const row = (name: string) => Array.from(panel()!.querySelectorAll("li")).find((item) => item.textContent?.includes(name))!;

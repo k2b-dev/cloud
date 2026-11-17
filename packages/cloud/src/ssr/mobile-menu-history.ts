@@ -42,7 +42,12 @@ export function openMobileMenu(view: (beforeSelect: () => Promise<boolean>) => D
             await cleaned;
             return !abort.signal.aborted;
           })(close, context),
-        { ...bottomSheetOptions, panelClassName: `${bottomSheetOptions.panelClassName} cloud-mobile-menu`, signal: abort.signal },
+        {
+          ...bottomSheetOptions,
+          primary: "blue",
+          panelClassName: `${bottomSheetOptions.panelClassName} cloud-mobile-menu`,
+          signal: abort.signal,
+        },
       );
     } finally {
       window.removeEventListener("popstate", pop);

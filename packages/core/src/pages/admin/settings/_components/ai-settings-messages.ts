@@ -79,10 +79,10 @@ export const aiSettingsMessages = i18n.define({
       addProviderFirst: "Add a provider first",
       globalInstructions: "Global instructions",
       globalInstructionsDescription:
-        "Liquid template appended after the platform prompt in every Cloud AI conversation. Type {{ for variable completions.",
+        "Liquid template appended after the platform prompt in every Cloud AI conversation. Type {{ for variable completions. Instructions reach the model and can appear in its answers. Do not put secrets or confidential policy here.",
       localClientInstructions: "Instructions for local clients",
       localClientInstructionsDescription:
-        "Added to turns from cld and editors after the organization instructions. Leave empty to use the built-in text; your text replaces it completely.",
+        "Added to turns from cld and editors after the organization instructions. Leave empty to use the built-in text; your text replaces it completely. Instructions reach the model and can appear in its answers. Do not put secrets or confidential policy here.",
       showLocalClientInstructions: "Show built-in text",
       localClientBuiltInDescription: "Copy it as a starting point; facts such as the workspace folder are added above it for every turn.",
       showPlatformPrompt: "Show the built-in platform prompt",
@@ -358,10 +358,10 @@ export const aiSettingsMessages = i18n.define({
       addProviderFirst: "Zuerst einen Anbieter hinzufügen",
       globalInstructions: "Globale Anweisungen",
       globalInstructionsDescription:
-        "Liquid-Vorlage, die in jedem Cloud-KI-Chat an den Plattform-Prompt angehängt wird. Tippe {{ für Variablenvorschläge.",
+        "Liquid-Vorlage, die in jedem Cloud-KI-Chat an den Plattform-Prompt angehängt wird. Tippe {{ für Variablenvorschläge. Anweisungen gelangen zum Modell und können in seinen Antworten erscheinen. Trage hier keine Geheimnisse oder vertraulichen Richtlinien ein.",
       localClientInstructions: "Anweisungen für lokale Clients",
       localClientInstructionsDescription:
-        "Wird an Anfragen aus cld und Editoren nach den Organisationsanweisungen angehängt. Leer lassen, um den mitgelieferten Text zu nutzen; dein Text ersetzt ihn vollständig.",
+        "Wird an Anfragen aus cld und Editoren nach den Organisationsanweisungen angehängt. Leer lassen, um den mitgelieferten Text zu nutzen; dein Text ersetzt ihn vollständig. Anweisungen gelangen zum Modell und können in seinen Antworten erscheinen. Trage hier keine Geheimnisse oder vertraulichen Richtlinien ein.",
       showLocalClientInstructions: "Mitgelieferten Text anzeigen",
       localClientBuiltInDescription: "Kopiere ihn als Ausgangspunkt; Angaben wie der Arbeitsordner kommen bei jeder Anfrage davor.",
       showPlatformPrompt: "Integrierten Plattform-Prompt anzeigen",
