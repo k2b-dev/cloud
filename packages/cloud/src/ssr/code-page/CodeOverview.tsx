@@ -511,14 +511,7 @@ export function CodeOverview(props: {
         <NoticeCard tone="warning" title={t().reconfirmTitle} detail={t().reconfirmDescription} />
       </Show>
       <Show when={props.state.chatBinding}>
-        {(binding) => (
-          <CodeChatMissing
-            codeId={props.state.code.id}
-            binding={binding()}
-            state={props.state}
-            text={props.text}
-          />
-        )}
+        {(binding) => <CodeChatMissing codeId={props.state.code.id} binding={binding()} state={props.state} text={props.text} />}
       </Show>
       <Show when={props.state.versionsFailed}>
         <NoticeCard

@@ -123,7 +123,12 @@ function ChatChooser(props: { codeId: string; binding: CodeChatBinding; text: Pa
             }
           >
             <Show when={options().length > 0} fallback={<p class="cloud-code__quiet-line">{t().chatDialogEmpty}</p>}>
-              <ChoiceList aria-label={t().chatDialogTitle} options={options()} value={chosen()} onValueChange={(value) => setChosen(value)} />
+              <ChoiceList
+                aria-label={t().chatDialogTitle}
+                options={options()}
+                value={chosen()}
+                onValueChange={(value) => setChosen(value)}
+              />
             </Show>
           </Show>
         </Show>

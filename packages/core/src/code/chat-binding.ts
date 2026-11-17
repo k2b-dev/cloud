@@ -85,10 +85,7 @@ export async function codeChatMissing(codeId: string, db: SQL = sql): Promise<bo
   return row?.missing === true;
 }
 type BindingChat = { short_id: string; title: string; project_id: string | null; archived_at: Date | null };
-async function readBindingChat(
-  row: Pick<BindingRow, "chat_conversation_id" | "owner_user_id">,
-  db: SQL,
-): Promise<BindingChat | null> {
+async function readBindingChat(row: Pick<BindingRow, "chat_conversation_id" | "owner_user_id">, db: SQL): Promise<BindingChat | null> {
   if (!row.chat_conversation_id || !(await codeChatSchemaAvailable(db))) return null;
   const [chat] = await db<BindingChat[]>`SELECT short_id,title,project_id,archived_at FROM ai.conversations
     WHERE id=${row.chat_conversation_id}::uuid AND created_by_user_id=${row.owner_user_id}::uuid`;

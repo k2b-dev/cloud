@@ -112,7 +112,7 @@ databaseSuite()("personal Code chat binding", () => {
       return setting.default;
     });
     for (const id of [owner, editor]) await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${id}::uuid,${id},'local','user')`;
-    }, 30_000);
+  }, 30_000);
   afterAll(async () => {
     settings?.mockRestore();
     await database?.drop();
