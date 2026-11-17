@@ -340,6 +340,8 @@ export type ExecutorConfig = {
     leaseOwner: string;
     runConfig: AiChatTurnRunConfig;
     profile: AiModelProfile;
+    /** Execution cancellation, shared with model and tool work. */
+    signal: AbortSignal;
   }) => Promise<{ systemPrompt?: string } | void>;
   /** Runs after the durable turn state and final wire event are flushed. */
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
@@ -1008,6 +1010,7 @@ export class AiTurnExecutor {
         leaseOwner: this.config.leaseOwner,
         runConfig: config,
         profile: validated.resolved.profile,
+        signal: abortController.signal,
       });
       if (admission?.systemPrompt) material.systemPrompt = [material.systemPrompt, admission.systemPrompt].filter(Boolean).join("\n\n");
       if (!config.codeOrigin && isAutomaticAiChatTurn(config))

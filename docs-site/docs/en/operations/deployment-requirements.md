@@ -41,6 +41,11 @@ Upgrade Core before Assistant to enable page cards after Code activation.
 Core supplies the authorized page snapshot through its activation preview and
 adds current page links to each Gustav turn. An older Core omits the optional
 preview field, so Assistant shows the activation event without a page card.
+The host turn hook now receives the execution signal. Optional page reads use
+one 10-second budget and at most 20 Code candidates; their full instruction
+fits the existing 32 KiB Assistant place-context envelope. A failed page read
+logs under `core:code-chat-pages` and keeps the admitted turn running without
+this additional context. Owner-provider failures log under `core:code-managers`.
 See [page links after activation](/en/docs/platform/code-activation#page-links-after-activation).
 
 ## Check SDK names when upgrading applications

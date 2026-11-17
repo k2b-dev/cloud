@@ -5,6 +5,7 @@ export const codeDecisionMessages = i18n.define({
   messages: {
     en: {
       open: "Open",
+      home: "Home page",
       more: "More pages:",
       loading: "Loading the page link",
       failed: "The page link could not be loaded.",
@@ -12,6 +13,7 @@ export const codeDecisionMessages = i18n.define({
     },
     de: {
       open: "Öffnen",
+      home: "Startseite",
       more: "Weitere Seiten:",
       loading: "Seitenlink wird geladen",
       failed: "Der Seitenlink konnte nicht geladen werden.",

@@ -3,11 +3,16 @@ import { sql } from "@k2b/cloud";
 import { AiQuotaError, type AiRuntimeTool, aiConversations, migrateCloudAi } from "@k2b/cloud/ai";
 import * as runtime from "@k2b/cloud/ai/runtime";
 import * as resources from "@k2b/cloud/capabilities/server";
+import * as services from "@k2b/cloud/services";
 import { accounts } from "@k2b/cloud/services";
 import { approvals } from "@k2b/cloud/services/approvals";
 import { PgOutboxDeferred } from "@k2b/cloud/services/outbox";
+import type { Provider } from "@k2b/nessi";
+import { z } from "zod";
+import { AiTurnExecutor, aiModelFixture, aiSettingsFixture, DEFAULT_COMPACTION_PROMPT } from "../../../../scripts/fixtures/code-platform";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { beforeCoreChatTurn } from "../ai-chat-turn";
 import { migrate as appApproval } from "../migrate/core/app-approval";
 import { migrate as appEvents } from "../migrate/core/app-events";
 import { migrate as audit } from "../migrate/core/audit";
@@ -21,10 +26,11 @@ import { migrate as events } from "../migrate/core/events";
 import { migrate as pwa } from "../migrate/core/pwa";
 import { migrate as settings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
-import { loadCodeChatPages } from "./chat-pages";
+import { CODE_CHAT_PAGE_CANDIDATES, CODE_CHAT_PAGE_READ_MS, loadCodeChatPages } from "./chat-pages";
 import { chatPageManifest } from "./chat-pages.test-fixture";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 import * as eventAccess from "./event-access";
+import * as managers from "./manager-recipients";
 import { cancelCodeReviewRevision, deliverCodeReviewChatFacts, type ReviewChatEffect, startCodeReviewRevision } from "./review-chat";
 import { enqueueCodeReviewChat } from "./review-chat-state";
 import { codeReviewFollowUp } from "./review-contracts";
@@ -100,32 +106,217 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
       sql<ReviewChatEffect[]>`SELECT * FROM code.review_chat_outbox WHERE version_id=${versionId}::uuid AND kind='decision'`;
     return { codeId, versionId, chat, effects };
   }
-  test("turn page snapshot stays constant when history grows and removes revoked management access", async () => {
+  async function executePageTurn(history: number, failure?: "read" | "timeout" | "abort") {
     const f = await fixture("approved", false, false, true, undefined, true, true);
-    const managers = spyOn(resources, "listResourceManagers").mockResolvedValue([]);
     await sql`UPDATE code.codes SET state='active',active_version_id=${f.versionId}::uuid WHERE id=${f.codeId}`;
-    const input = { conversationId: f.chat.id, userId: owner, signal: signal() };
-    expect((await loadCodeChatPages(input))[0]?.links.pages[0]?.href).toBe(`/code/${f.codeId}/`);
+    for (let index = 0; index < history; index++) {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: f.chat.id,
+        modelId: "page-fixture",
+        runConfig: { kind: "chat", input: "Earlier request" },
+        userMessage: { role: "user", content: [{ type: "text", text: "Earlier request" }] },
+      });
+      await aiConversations.createSessionStore({ conversationId: f.chat.id, turnId: turn.id }).append({
+        role: "assistant",
+        content: [{ type: "text", text: "Earlier answer with relevant context. ".repeat(500) }],
+        stopReason: "stop",
+      });
+      await aiConversations.completeTurn({ conversationId: f.chat.id, turnId: turn.id, status: "completed" });
+    }
+    const user = await accounts.users.get({ id: owner });
+    if (!user) throw new Error("Missing owner fixture");
+    const actor = { kind: "user" as const, user };
+    const profile = aiModelFixture({
+      id: "page-fixture",
+      modelId: "page-fixture",
+      provider: "openai-compatible",
+      contextWindow: 4000,
+      maxOutputTokens: 100,
+    });
+    await sql`INSERT INTO ai.model_access_resources(model_id) VALUES(${profile.modelId}) ON CONFLICT DO NOTHING`;
+    await sql`WITH a AS (INSERT INTO auth.access(user_id,permission) VALUES(${owner}::uuid,'read') RETURNING id)
+      INSERT INTO ai.model_access(model_id,access_id) SELECT ${profile.modelId},id FROM a`;
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: f.chat.id,
+      modelId: profile.id,
+      runConfig: {
+        kind: "chat",
+        input: "Continue",
+        actor,
+        toolSource: { kind: "none" },
+        systemPrompt: "Use current page links.",
+        codeReview: { codeId: f.codeId, versionId: f.versionId },
+      },
+      userMessage: { role: "user", content: [{ type: "text", text: "Continue" }] },
+    });
+    let rounds = 0,
+      compactions = 0;
+    const prompts: string[] = [];
+    const provider: Provider = {
+      name: "page-fixture",
+      family: "openai-compatible",
+      model: "page-fixture",
+      contextWindow: 4000,
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+      async *stream(request) {
+        const compacting = request.systemPrompt?.includes(DEFAULT_COMPACTION_PROMPT.split("\n")[0]!);
+        if (compacting) {
+          compactions++;
+          yield { type: "block_end", blockId: "summary", index: 0, block: { type: "text", text: "Continue the app task." } };
+        } else {
+          prompts.push(request.systemPrompt ?? "");
+          rounds++;
+          yield {
+            type: "block_end",
+            blockId: `answer-${rounds}`,
+            index: 0,
+            block:
+              rounds < 3
+                ? { type: "tool_call", id: `read-${rounds}`, name: "code_read", args: {} }
+                : { type: "text", text: "The app is ready." },
+          };
+        }
+        yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: !compacting && rounds < 3 ? "tool_use" : "stop" };
+      },
+    };
+    const leaseOwner = `page-turn-${history}-${failure ?? "ok"}`;
+    const claim = await aiConversations.claimTurn({
+      conversationId: f.chat.id,
+      turnId: turn.id,
+      leaseOwner,
+      leaseMs: 30000,
+      from: "queue",
+      maxAttempts: 5,
+      runBudgetMs: 60000,
+    });
+    if (!claim) throw new Error("Missing turn claim");
+    const controller = new AbortController(),
+      deadline = new AbortController();
+    const originalTimeout = AbortSignal.timeout;
+    const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
+      ms === CODE_CHAT_PAGE_READ_MS ? deadline.signal : originalTimeout(ms),
+    );
+    const current = failure
+      ? spyOn(managers, "currentChatManagers").mockImplementation(async () => {
+          if (failure === "read") throw new Error("Fixture account read failed");
+          if (failure === "timeout") deadline.abort(new DOMException("Read budget exceeded", "TimeoutError"));
+          else controller.abort(new DOMException("Turn stopped", "AbortError"));
+          return new Promise<Set<string>>(() => {});
+        })
+      : null;
+    const warnings: unknown[][] = [];
+    const log = spyOn(services, "logger").mockImplementation(() => ({
+      debug: () => {},
+      info: () => {},
+      error: () => {},
+      warn: (...args) => {
+        warnings.push(args);
+      },
+    }));
     const meter = await meterSql();
     try {
-      const first = await meter.during(() => loadCodeChatPages({ ...input, signal: signal() }));
-      for (let index = 0; index < 12; index++)
-        await sql.begin(async (tx) => {
-          await tx`SELECT id FROM ai.conversations WHERE id=${f.chat.id}::uuid FOR UPDATE`;
-          await runtime.appendAiBackgroundMessage(tx, { conversationId: f.chat.id, text: "More history" });
-        });
-      const many = await meter.during(() => loadCodeChatPages({ ...input, signal: signal() }));
-      expect(many).toEqual(first);
-      // One Code/version snapshot, two current-account reads and two batched management reads.
-      expect(many).toHaveLength(5);
-      expect(many.filter((statement) => statement.includes("AS code_id"))).toHaveLength(1);
-      expect(many.some((statement) => statement.includes("ai.messages"))).toBe(false);
-      await sql`UPDATE auth.access SET permission='read' WHERE id IN (SELECT access_id FROM code.shares WHERE code_id=${f.codeId})`;
-      expect(await loadCodeChatPages({ ...input, signal: signal() })).toEqual([]);
+      const statements = await meter.during(() =>
+        new AiTurnExecutor({
+          leaseOwner,
+          heartbeatMs: 5000,
+          enqueueContinuation: async () => {},
+          beforeChatTurn: beforeCoreChatTurn,
+          validateTurn: async () => ({
+            settings: aiSettingsFixture({ profiles: [profile] }),
+            resolved: { model: { id: profile.id }, profile, provider },
+          }),
+          tools: [
+            {
+              location: "server",
+              def: {
+                name: "code_read",
+                description: "Fixture read",
+                inputSchema: z.object({}),
+                outputSchema: z.object({ text: z.string() }),
+                approval: "never",
+              },
+              run: async () => ({ text: "Current app data" }),
+            },
+          ],
+        }).run({ conversationId: f.chat.id, turnId: turn.id, claim, signal: controller.signal }),
+      );
+      const final = await aiConversations.getTurn({ conversationId: f.chat.id, turnId: turn.id });
+      expect(final?.status).toBe(failure === "abort" ? "aborted" : "completed");
+      expect(statements.filter((statement) => statement.includes("AS code_id"))).toHaveLength(1);
+      if (failure) {
+        expect(warnings).toContainEqual([
+          "Code chat page context unavailable",
+          expect.objectContaining({ reason: failure === "read" ? "read_failed" : failure === "timeout" ? "read_timeout" : "turn_aborted" }),
+        ]);
+        expect(prompts.every((prompt) => !prompt.includes(`/code/${f.codeId}/`))).toBe(true);
+      } else {
+        expect(rounds).toBe(3);
+        expect(compactions).toBeGreaterThan(0);
+        expect(prompts.every((prompt) => prompt.includes(`/code/${f.codeId}/`))).toBe(true);
+        expect((await aiConversations.listMessages({ conversationId: f.chat.id })).some((message) => message.kind === "summary")).toBe(
+          true,
+        );
+      }
+      expect(JSON.stringify(await aiConversations.listMessages({ conversationId: f.chat.id }))).not.toContain('"omittedPages"');
+      return statements.filter((statement) => statement.includes("AS code_id"));
     } finally {
       await meter.close();
-      managers.mockRestore();
+      current?.mockRestore();
+      timeout.mockRestore();
+      log.mockRestore();
     }
+  }
+
+  test("executor page SQL stays once per turn across longer history, model rounds and compaction", async () => {
+    const one = await executePageTurn(2);
+    const many = await executePageTurn(12);
+    expect(many).toEqual(one);
+  });
+  test("optional page reads fail softly on the real turn path and respect deadline and turn cancellation", async () => {
+    for (const failure of ["read", "timeout", "abort"] as const) await executePageTurn(0, failure);
+  });
+  test("page context omits revoked management even when the linked Code remains active", async () => {
+    const f = await fixture("approved", false, false, true, undefined, true, true);
+    const provider = spyOn(resources, "listResourceManagers").mockResolvedValue([]);
+    try {
+      await sql`UPDATE code.codes SET state='active',active_version_id=${f.versionId}::uuid WHERE id=${f.codeId}`;
+      const input = { conversationId: f.chat.id, userId: owner, signal: signal() };
+      expect((await loadCodeChatPages(input))[0]?.links.pages[0]?.href).toBe(`/code/${f.codeId}/`);
+      await sql`UPDATE auth.access SET permission='read' WHERE id IN (SELECT access_id FROM code.shares WHERE code_id=${f.codeId})`;
+      expect(await loadCodeChatPages({ ...input, signal: signal() })).toEqual([]);
+      const warnings: unknown[][] = [];
+      const log = spyOn(services, "logger").mockImplementation(() => ({
+        debug: () => {},
+        info: () => {},
+        error: () => {},
+        warn: (...args) => {
+          warnings.push(args);
+        },
+      }));
+      try {
+        provider.mockRejectedValue(new Error("Fixture provider unavailable"));
+        expect(await loadCodeChatPages({ ...input, signal: signal() })).toEqual([]);
+        expect(warnings).toContainEqual([
+          "Code manager provider unavailable",
+          expect.objectContaining({ codeId: f.codeId, reason: "provider_unavailable" }),
+        ]);
+      } finally {
+        log.mockRestore();
+      }
+    } finally {
+      provider.mockRestore();
+    }
+  });
+
+  test("turn setup reads at most one existing Code discovery page of candidates", async () => {
+    const first = await fixture("approved", false, false, false, undefined, false, true);
+    await sql`UPDATE code.codes SET state='active',active_version_id=${first.versionId}::uuid WHERE id=${first.codeId}`;
+    for (let index = 0; index < CODE_CHAT_PAGE_CANDIDATES; index++) {
+      const f = await fixture("approved", false, false, false, undefined, false, true);
+      await sql`UPDATE code.codes SET state='active',active_version_id=${f.versionId}::uuid,chat_conversation_id=${first.chat.id}::uuid WHERE id=${f.codeId}`;
+    }
+    const result = await loadCodeChatPages({ conversationId: first.chat.id, userId: owner, signal: signal() });
+    expect(result).toHaveLength(CODE_CHAT_PAGE_CANDIDATES);
   });
 
   test("the intent rolls back with its decision; CLI never creates a chat intent", async () => {

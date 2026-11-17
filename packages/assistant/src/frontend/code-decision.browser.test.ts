@@ -63,7 +63,11 @@ beforeAll(async () => {
       const fixture = {
         locale: url.searchParams.get("locale") ?? "de",
         ...(mode.startsWith("dynamic")
-          ? { pageCount: mode === "dynamic-multiple" ? 3 : 1 }
+          ? {
+              pageCount: mode.includes("multiple") ? 3 : mode === "dynamic-none" ? 0 : 1,
+              deferred: true,
+              replaced: mode === "dynamic-replaced",
+            }
           : { pages: mode === "none" ? null : handoff(mode === "multiple") }),
       };
       return new Response(
@@ -78,7 +82,7 @@ afterAll(async () => {
   await browser?.close();
   server?.stop(true);
 });
-async function open(mode: string, width = 390, theme = "light", locale = "de"): Promise<Page> {
+async function pinnedPage(width = 390): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height: width === 390 ? 780 : 900 }, reducedMotion: "reduce" });
   // Pin Date only; timers and animation frames keep running normally.
   await page.addInitScript((at) => {
@@ -89,13 +93,18 @@ async function open(mode: string, width = 390, theme = "light", locale = "de"): 
       get: (target, property) => (property === "now" ? () => at : Reflect.get(target, property)),
     });
   }, Date.parse("2026-11-17T10:00:00Z"));
+  return page;
+}
+async function open(mode: string, width = 390, theme = "light", locale = "de"): Promise<Page> {
+  const page = await pinnedPage(width);
   await page.goto(`${server.url}?mode=${mode}&theme=${theme}&locale=${locale}`);
   await page.locator(".assistant-code-decision__text").waitFor();
   await settled(page);
   return page;
 }
 
-test("one and several pages match v10 with two text styles, one icon and no horizontal overflow", async () => {
+test("one and several pages keep the shared card typography, one icon and no horizontal overflow", async () => {
+  const sentences = new Map<string, number>();
   for (const width of [1440, 390])
     for (const theme of ["light", "dark"])
       for (const mode of ["one", "multiple", "none"]) {
@@ -103,12 +112,19 @@ test("one and several pages match v10 with two text styles, one icon and no hori
         try {
           const card = page.locator(".assistant-code-decision__pages .k2b-link-card");
           expect(await card.count()).toBe(mode === "none" ? 0 : 1);
+          const sentence = (await page.locator(".assistant-code-decision__text").boundingBox())!.y;
+          const key = `${theme}-${width}`;
+          const previous = sentences.get(key);
+          if (previous !== undefined) expect(sentence).toEqual(previous);
+          else sentences.set(key, sentence);
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
           expect(await page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(theme === "dark");
           expect(await page.locator(".assistant-code-decision").innerText()).not.toContain("c_delivery");
           if (mode !== "none") {
             expect(await card.locator("i").count()).toBe(1);
             expect(await card.innerText()).toContain("Öffnen");
+            expect(await card.innerText()).toContain("Startseite");
+            expect(await card.locator(".k2b-link-card__title").evaluate((node) => getComputedStyle(node).whiteSpace)).toBe("nowrap");
             const typography = await card.evaluate((node) =>
               ["title", "description", "meta"].map((part) => {
                 const style = getComputedStyle(node.querySelector(`.k2b-link-card__${part}`)!);
@@ -116,19 +132,30 @@ test("one and several pages match v10 with two text styles, one icon and no hori
               }),
             );
             expect(typography).toEqual([
-              { size: "14px", weight: "500" },
-              { size: "13px", weight: "400" },
-              { size: "14px", weight: "500" },
+              { size: "14px", weight: "600" },
+              { size: "12px", weight: "400" },
+              { size: "12px", weight: "600" },
             ]);
             const before = await card.boundingBox();
             await page.keyboard.press("Tab");
             expect(await card.evaluate((node) => node === document.activeElement)).toBe(true);
+            if (shots && mode === "multiple") {
+              await page.screenshot({ path: resolve(shots, `gl-focus-card-${theme}-${width}.png`) });
+              await page.keyboard.press("Tab");
+              expect(
+                await page
+                  .locator(".assistant-code-decision__more a")
+                  .first()
+                  .evaluate((node) => node === document.activeElement),
+              ).toBe(true);
+              await page.screenshot({ path: resolve(shots, `gl-focus-links-${theme}-${width}.png`) });
+            }
             await hoverInPlace(card);
             await settled(page);
             expect(await card.boundingBox()).toEqual(before);
             expect(await card.getAttribute("href")).toBe(home.href);
-            await card.evaluate((node) => {
-              if (node instanceof HTMLElement) node.blur();
+            await page.locator(":focus").evaluateAll((nodes) => {
+              for (const node of nodes) if (node instanceof HTMLElement) node.blur();
             });
             await page.mouse.move(0, 0);
             await settled(page);
@@ -146,7 +173,7 @@ test("one and several pages match v10 with two text styles, one icon and no hori
 
 test("current rights gate a live event; failed reads offer retry and Open navigates to the supplied href", async () => {
   for (const status of [403, 404, 500, 200]) {
-    const page = await browser.newPage({ viewport: { width: 390, height: 780 } });
+    const page = await pinnedPage();
     let attempts = 0;
     await page.route("**/api/code/activation/preview", (route) => {
       attempts++;
@@ -183,6 +210,7 @@ test("English and reduced motion preserve the same complete link", async () => {
   const page = await open("multiple", 390, "light", "en");
   try {
     expect(await page.locator(".k2b-link-card").innerText()).toContain("Open");
+    expect(await page.locator(".k2b-link-card").innerText()).toContain("Home page");
     expect(await page.locator(".assistant-code-decision__more").innerText()).toContain("More pages:");
     expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
   } finally {
@@ -190,27 +218,93 @@ test("English and reduced motion preserve the same complete link", async () => {
   }
 });
 
-test("the event reserves its page handoff while current access is read", async () => {
-  for (const multiple of [false, true]) {
-    const page = await browser.newPage({ viewport: { width: 390, height: 780 } });
+test("placeholder, failure and ready handoff preserve the sentence row and the full page height", async () => {
+  for (const width of [1440, 390])
+    for (const theme of ["light", "dark"])
+      for (const multiple of [false, true]) {
+        const page = await pinnedPage(width);
+        const gate = Promise.withResolvers<void>();
+        let attempts = 0;
+        await page.route("**/api/code/activation/preview", async (route) => {
+          attempts++;
+          if (attempts === 1) await gate.promise;
+          await route.fulfill({
+            status: attempts === 1 ? 500 : 200,
+            contentType: "application/json",
+            body: JSON.stringify({ data: handoff(multiple) }),
+          });
+        });
+        try {
+          await page.goto(`${server.url}?mode=${multiple ? "dynamic-multiple" : "dynamic"}&theme=${theme}`);
+          const pending = page.locator(".assistant-code-decision__pages-pending");
+          await pending.waitFor();
+          await settled(page);
+          const before = await page.locator("main").boundingBox();
+          const sentenceRow = await page.locator(".assistant-code-decision__placeholder-sentence").boundingBox();
+          expect(await page.locator(".assistant-code-decision__text").count()).toBe(0);
+          if (shots && !multiple) await page.screenshot({ path: resolve(shots, `gl-loading-${theme}-${width}.png`) });
+          gate.resolve();
+          const retry = pending.getByRole("button", { name: "Erneut versuchen" });
+          await retry.waitFor();
+          await settled(page);
+          const sentence = page.locator(".assistant-code-decision__text");
+          const failedSentence = await sentence.boundingBox();
+          expect(failedSentence?.y).toBeGreaterThanOrEqual(sentenceRow!.y);
+          expect(failedSentence!.y + failedSentence!.height).toBeLessThanOrEqual(sentenceRow!.y + sentenceRow!.height);
+          expect(await page.locator("main").boundingBox()).toEqual(before);
+          if (width === 390) {
+            const button = await retry.boundingBox(),
+              text = await pending.locator("span").first().boundingBox(),
+              block = await pending.boundingBox();
+            expect(button!.y).toBeGreaterThanOrEqual(text!.y + text!.height);
+            expect(button!.width).toBe(block!.width);
+          }
+          if (shots && !multiple) await page.screenshot({ path: resolve(shots, `gl-failed-${theme}-${width}.png`) });
+          await retry.click();
+          await page.locator(".k2b-link-card").waitFor();
+          await settled(page);
+          expect(await page.locator("main").boundingBox()).toEqual(before);
+          expect(await sentence.boundingBox()).toEqual(failedSentence);
+          expect(attempts).toBe(2);
+        } finally {
+          gate.resolve();
+          await page.close();
+        }
+      }
+}, 60_000);
+
+test("a successful initial read shows the finished line once; replaced activations never read or show pages", async () => {
+  for (const mode of ["dynamic", "dynamic-multiple", "dynamic-replaced", "dynamic-none"]) {
+    const page = await pinnedPage();
     const gate = Promise.withResolvers<void>();
+    let reads = 0;
     await page.route("**/api/code/activation/preview", async (route) => {
+      reads++;
       await gate.promise;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ data: { title: "Lieferungen", pages: handoff(multiple).pages } }),
+        body: JSON.stringify({ data: handoff(mode === "dynamic-multiple") }),
       });
     });
     try {
-      await page.goto(`${server.url}?mode=${multiple ? "dynamic-multiple" : "dynamic"}`);
-      await page.locator(".assistant-code-decision__pages-pending").waitFor();
-      await settled(page);
-      const before = await page.locator("main").boundingBox();
-      gate.resolve();
-      await page.locator(".k2b-link-card").waitFor();
-      await settled(page);
-      expect(await page.locator("main").boundingBox()).toEqual(before);
+      await page.goto(`${server.url}?mode=${mode}`);
+      if (mode === "dynamic-replaced" || mode === "dynamic-none") {
+        await page.locator(".assistant-code-decision__text").waitFor();
+        expect(reads).toBe(0);
+        expect(await page.locator(".assistant-code-decision__pages").count()).toBe(0);
+      } else {
+        await page.locator(".assistant-code-decision__pages-pending").waitFor();
+        await settled(page);
+        const before = await page.locator("main").boundingBox();
+        expect(await page.locator(".assistant-code-decision__text").count()).toBe(0);
+        gate.resolve();
+        await page.locator(".k2b-link-card").waitFor();
+        await settled(page);
+        expect(await page.locator("main").boundingBox()).toEqual(before);
+        expect(await page.locator(".assistant-code-decision__text").count()).toBe(1);
+      }
+      expect(pageErrors(page)).toEqual([]);
     } finally {
       gate.resolve();
       await page.close();

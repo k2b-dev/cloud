@@ -48,6 +48,7 @@ test("Cloud appends one quiet link card with name, readable path and Open to its
   const html = render(handoff());
   expect(html).toContain("Du hast Version 3 eingeschaltet");
   expect(html).toContain("Lieferscheine");
+  expect(html).toContain("Startseite");
   expect(html).toContain("Öffnen");
   expect(html).toContain('href="/code/c_opaque123/"');
   const text = html.replace(/<[^>]*>/g, "");
@@ -71,6 +72,13 @@ test("unnamed home uses the app name; other unnamed pages use their readable pat
   expect(html).toContain("Lieferungen");
   expect(html).toContain("/archive");
   expect(html).toContain("More pages:");
+  expect(html).toContain("Home page");
   expect(html).toContain("Open");
   expect(html.replace(/<[^>]*>/g, "")).not.toContain("c_opaque123");
+});
+
+test("a home without a root route shows its readable path", () => {
+  const html = render(handoff([page("/month", "Monat")]));
+  expect(html).toContain("/month");
+  expect(html).not.toContain("Startseite");
 });

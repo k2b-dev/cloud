@@ -1,8 +1,11 @@
 import { formatCodeMoment } from "@k2b/cloud/code/schedule";
 import { Button, LinkCard, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { codeDecisionMessages } from "./code-decision-messages";
 import { type CodeDecisionPages, loadCodeDecisionPages } from "./code-decision-pages";
+
+export { loadCodeDecisionPages } from "./code-decision-pages";
+
 import { codeVersionCardMessages } from "./code-version-card-messages";
 
 /** A decision on a version, as Cloud writes it at the end of the chat in which the version was made. */
@@ -66,13 +69,15 @@ export default function AssistantCodeDecisionLine(props: {
   /** Gustav revises by himself after these changes: the line has no action; the start line below says that he does. */
   automatic?: boolean;
   /** An already authorized snapshot, also used by server-rendered fixtures. */
-  pages?: CodeDecisionPages | null;
+  pages?: CodeDecisionPages | null | "failed";
+  /** A newer activation of this Code owns the current page handoff. */
+  superseded?: boolean;
 }): JSX.Element {
   const locale = useLocale();
   const t = createMemo(() => codeVersionCardMessages.resolve([locale()]).t);
   const pageText = createMemo(() => codeDecisionMessages.resolve([locale()]).t);
-  const [pages, setPages] = createSignal(props.pages);
-  const [pageState, setPageState] = createSignal<"loading" | "failed" | "ready">(props.pages === undefined ? "loading" : "ready");
+  const [pages, setPages] = createSignal(props.pages === "failed" ? null : props.pages);
+  const [pageState, setPageState] = createSignal<"loading" | "failed" | "ready">(props.pages === "failed" ? "failed" : "ready");
   let disposed = false;
   const pageRead = new AbortController();
   onCleanup(() => {
@@ -90,9 +95,6 @@ export default function AssistantCodeDecisionLine(props: {
     setPages(result);
     setPageState("ready");
   };
-  onMount(() => {
-    if (props.pages === undefined && props.decision.outcome === "activated" && props.decision.pageCount !== 0) void readPages();
-  });
   const [missing, setMissing] = createSignal(false);
   let line: HTMLDivElement | undefined;
   // The same moment as on the card above and on the Code page.
@@ -161,7 +163,7 @@ export default function AssistantCodeDecisionLine(props: {
           </Button>
         )}
       </Show>
-      <Show when={props.decision.outcome === "activated" && props.decision.pageCount !== 0}>
+      <Show when={props.decision.outcome === "activated" && !props.superseded && props.decision.pageCount !== 0}>
         <Show
           when={pages()?.pages.pages.length ? pages() : null}
           fallback={
@@ -171,7 +173,7 @@ export default function AssistantCodeDecisionLine(props: {
                 data-multiple={(props.decision.pageCount ?? 1) > 1 || undefined}
                 role="status"
               >
-                {pageState() === "loading" ? pageText().loading : pageText().failed}
+                <span>{pageState() === "loading" ? pageText().loading : pageText().failed}</span>
                 <Show when={pageState() === "failed"}>
                   <Button size="sm" variant="secondary" onClick={() => void readPages()}>
                     {pageText().retry}
@@ -186,7 +188,12 @@ export default function AssistantCodeDecisionLine(props: {
             const title = (page: CodeDecisionPages["pages"]["pages"][number]) => page.title ?? (page.isRoot ? handoff().title : page.path);
             return (
               <div class="assistant-code-decision__pages">
-                <LinkCard href={home().href} title={title(home())} description={home().path} meta={pageText().open} />
+                <LinkCard
+                  href={home().href}
+                  title={title(home())}
+                  description={home().isRoot ? pageText().home : home().path}
+                  meta={pageText().open}
+                />
                 <Show when={handoff().pages.pages.length > 1}>
                   <p class="assistant-code-decision__more">
                     {pageText().more}{" "}

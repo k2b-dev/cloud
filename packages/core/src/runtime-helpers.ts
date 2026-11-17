@@ -7,10 +7,10 @@ import { startAppCatalogMaintenance } from "@k2b/cloud/services/app-catalogs";
 import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
-import { admitCodeChatTurn, settleCodeChatTurn, sweepCodeChatTurnBudgets } from "./ai-chat-budget";
+import { settleCodeChatTurn, sweepCodeChatTurnBudgets } from "./ai-chat-budget";
 import { validateQueuedChatStart } from "./ai-chat-queue";
+import { beforeCoreChatTurn } from "./ai-chat-turn";
 import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activation-maintenance";
-import { loadCodeChatPagesPrompt } from "./code/chat-pages";
 import { createCodeAuthoringChatTools } from "./code/chat-tools";
 import { codeDatabaseRetentionRuntime } from "./code/database-retention-runtime";
 import { codeDeletionOutbox, codeOwnerDeletedOutbox } from "./code/lifecycle";
@@ -243,10 +243,7 @@ export const startCoreServices = async (
     stopCloudAiRuntime = startAiRuntime({
       tools: createCodeAuthoringChatTools(),
       validateQueuedChatStart,
-      beforeChatTurn: async (input) => {
-        await admitCodeChatTurn(input);
-        return { systemPrompt: await loadCodeChatPagesPrompt(input) };
-      },
+      beforeChatTurn: beforeCoreChatTurn,
       onSweep: sweepCodeChatTurnBudgets,
       onApprovalRequested: async ({ approvalId }) => {
         const [notice] = await Promise.allSettled([

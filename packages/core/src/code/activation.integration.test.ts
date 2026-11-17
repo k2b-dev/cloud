@@ -123,14 +123,22 @@ databaseSuite()("durable Code activation", () => {
       revoked ? null : row.activating_person === adminId ? administrator : context(row.activating_person ?? ownerId),
   };
   const run = (id: string) => processCodeActivation(id, deps);
-  async function newCode(): Promise<Code> {
+  async function newCode(kind: "resource" | "app" | "person" = "resource"): Promise<Code> {
     const id = `c_c9${String(++ordinal).padStart(4, "0")}`,
       ownerRef = `owner-${ordinal}`;
-    const [account] = await sql<
-      { id: string }[]
-    >`INSERT INTO auth.service_accounts(name,kind) VALUES(${`code:example.item:${ownerRef}`},'code') RETURNING id`;
-    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,title,service_account_id,created_by)
-      VALUES(${id},'resource','example.item',${ownerRef},'Weekly report',${account!.id}::uuid,${ownerId}::uuid)`;
+    if (kind === "person") {
+      await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by)
+        VALUES(${id},'person',${ownerId}::uuid,'Weekly report',${ownerId}::uuid)`;
+    } else {
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)
+        VALUES(${kind === "app" ? "code:app:example" : `code:example.item:${ownerRef}`},'code') RETURNING id`;
+      if (kind === "app")
+        await sql`INSERT INTO code.codes(id,owner_kind,owner_app_id,title,service_account_id,created_by)
+        VALUES(${id},'app','example','Weekly report',${account!.id}::uuid,${ownerId}::uuid)`;
+      else
+        await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,title,service_account_id,created_by)
+        VALUES(${id},'resource','example.item',${ownerRef},'Weekly report',${account!.id}::uuid,${ownerId}::uuid)`;
+    }
     const [share] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${ownerId}::uuid,'write') RETURNING id`;
     await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${id},${share!.id}::uuid)`;
     return (await findCode(id))!;
@@ -197,6 +205,34 @@ databaseSuite()("durable Code activation", () => {
     await sql`UPDATE code.codes SET state='active' WHERE id=${code.id}`;
     await sql`UPDATE auth.access SET permission='read' WHERE id IN (SELECT access_id FROM code.shares WHERE code_id=${code.id})`;
     await expect(previewCodeActivation(input, owner, { ...deps, readOwner: async () => null })).rejects.toThrow("Code not found");
+  });
+
+  test("page previews require current member/editor rights independently of activation eligibility", async () => {
+    for (const kind of ["resource", "app"] as const) {
+      const code = await newCode(kind);
+      const submitted = await version(code, [], null, "item.change", undefined, true);
+      await sql`UPDATE code.codes SET state='active',active_version_id=${submitted.version.id}::uuid WHERE id=${code.id}`;
+      const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, administrator, {
+        ...deps,
+        readOwner: async () => null,
+      });
+      expect(preview.allowed).toEqual({ allowed: true });
+      expect(preview.pages).toBeNull();
+    }
+    for (const kind of ["resource", "person"] as const) {
+      const code = await newCode(kind);
+      const submitted = await version(code, [], null, "item.change", undefined, true);
+      await sql`UPDATE code.codes SET state='active',active_version_id=${submitted.version.id}::uuid WHERE id=${code.id}`;
+      const guest = context();
+      if (guest.authority.actor.kind !== "user") throw new Error("Expected user fixture");
+      guest.authority.actor.user.profile = "guest";
+      await sql`UPDATE auth.users SET profile='guest' WHERE id=${ownerId}::uuid`;
+      try {
+        expect((await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, guest, deps)).pages).toBeNull();
+      } finally {
+        await sql`UPDATE auth.users SET profile='user' WHERE id=${ownerId}::uuid`;
+      }
+    }
   });
 
   test("SQL budget of an open approval card's initial preview and invalidation reload", async () => {
