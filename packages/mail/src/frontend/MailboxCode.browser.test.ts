@@ -335,7 +335,7 @@ describe("Mailbox Code page in a browser", () => {
         expect(await dialog.getByText("Aktuell").count()).toBe(1);
         expect(await dialog.getByRole("button", { name: "Diesen Chat nehmen" }).isDisabled()).toBe(true);
         await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).check();
-        await settled(page);
+        await dialog.getByRole("button", { name: "Diesen Chat nehmen", disabled: false }).waitFor();
         await shoot(page, `chat-chooser-${width}`);
         const box = await dialog.boundingBox();
         expect(box !== null && box.x >= 0 && box.x + box.width <= width).toBe(true);
@@ -377,7 +377,7 @@ describe("Mailbox Code page in a browser", () => {
       // Someone changed the chat meanwhile: the dialog stays, says so, and works on with Core's current revision.
       await save.click();
       await dialog.getByText("Der Chat wurde inzwischen geändert.").waitFor();
-      await settled(page);
+      await dialog.getByRole("button", { name: "Diesen Chat nehmen", disabled: false }).waitFor();
       await shoot(page, "chat-chooser-conflict-1440");
       expect(chatBindingReads).toBe(1);
       expect(await dialog.isVisible()).toBe(true);
