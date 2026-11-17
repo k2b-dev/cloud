@@ -1,6 +1,8 @@
 import { formatCodeMoment } from "@k2b/cloud/code/schedule";
-import { Button, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, type JSX, Show } from "solid-js";
+import { Button, LinkCard, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { codeDecisionMessages } from "./code-decision-messages";
+import { type CodeDecisionPages, loadCodeDecisionPages } from "./code-decision-pages";
 import { codeVersionCardMessages } from "./code-version-card-messages";
 
 /** A decision on a version, as Cloud writes it at the end of the chat in which the version was made. */
@@ -13,6 +15,7 @@ export type AssistantCodeDecision = {
   /** The `data-chat-anchor` of the version card further up. */
   anchor: string;
   nextRunAt?: string | null;
+  pageCount?: number;
 };
 
 const TONES = {
@@ -62,9 +65,34 @@ export default function AssistantCodeDecisionLine(props: {
   settled?: boolean;
   /** Gustav revises by himself after these changes: the line has no action; the start line below says that he does. */
   automatic?: boolean;
+  /** An already authorized snapshot, also used by server-rendered fixtures. */
+  pages?: CodeDecisionPages | null;
 }): JSX.Element {
   const locale = useLocale();
   const t = createMemo(() => codeVersionCardMessages.resolve([locale()]).t);
+  const pageText = createMemo(() => codeDecisionMessages.resolve([locale()]).t);
+  const [pages, setPages] = createSignal(props.pages);
+  const [pageState, setPageState] = createSignal<"loading" | "failed" | "ready">(props.pages === undefined ? "loading" : "ready");
+  let disposed = false;
+  const pageRead = new AbortController();
+  onCleanup(() => {
+    disposed = true;
+    pageRead.abort();
+  });
+  const readPages = async () => {
+    setPageState("loading");
+    const result = await loadCodeDecisionPages(props.decision.codeId, props.decision.versionId, pageRead.signal);
+    if (disposed) return;
+    if (result === "failed") {
+      setPageState("failed");
+      return;
+    }
+    setPages(result);
+    setPageState("ready");
+  };
+  onMount(() => {
+    if (props.pages === undefined && props.decision.outcome === "activated" && props.decision.pageCount !== 0) void readPages();
+  });
   const [missing, setMissing] = createSignal(false);
   let line: HTMLDivElement | undefined;
   // The same moment as on the card above and on the Code page.
@@ -132,6 +160,50 @@ export default function AssistantCodeDecisionLine(props: {
             {label()}
           </Button>
         )}
+      </Show>
+      <Show when={props.decision.outcome === "activated" && props.decision.pageCount !== 0}>
+        <Show
+          when={pages()}
+          fallback={
+            <Show when={pageState() !== "ready"}>
+              <div
+                class="assistant-code-decision__pages assistant-code-decision__pages-pending"
+                data-multiple={(props.decision.pageCount ?? 1) > 1 || undefined}
+                role="status"
+              >
+                {pageState() === "loading" ? pageText().loading : pageText().failed}
+                <Show when={pageState() === "failed"}>
+                  <Button size="sm" variant="secondary" onClick={() => void readPages()}>
+                    {pageText().retry}
+                  </Button>
+                </Show>
+              </div>
+            </Show>
+          }
+        >
+          {(handoff) => {
+            const home = () => handoff().pages.pages[0]!;
+            const title = (page: CodeDecisionPages["pages"]["pages"][number]) => page.title ?? (page.isRoot ? handoff().title : page.path);
+            return (
+              <div class="assistant-code-decision__pages">
+                <LinkCard href={home().href} title={title(home())} description={home().path} meta={pageText().open} />
+                <Show when={handoff().pages.pages.length > 1}>
+                  <p class="assistant-code-decision__more">
+                    {pageText().more}{" "}
+                    <For each={handoff().pages.pages.slice(1)}>
+                      {(page, index) => (
+                        <>
+                          {index() > 0 ? " · " : ""}
+                          <a href={page.href}>{title(page)}</a>
+                        </>
+                      )}
+                    </For>
+                  </p>
+                </Show>
+              </div>
+            );
+          }}
+        </Show>
       </Show>
       <Show when={missing()}>
         <p class="assistant-code-decision__missing" role="status">

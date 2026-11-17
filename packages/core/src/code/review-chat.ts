@@ -8,6 +8,7 @@ import { createPgOutbox, type OutboxRow, PgOutboxDeferred } from "@k2b/cloud/ser
 import { type CodeContext, CodeDataError, codePermission, codePerson, readCodeOwner } from "./access";
 import { schedulerNextRun } from "./automations";
 import { currentChatManagers } from "./manager-recipients";
+import { describeCodePages } from "./page-links";
 import { CodeSubmissionOriginSchema, codeVersionChatAnchor } from "./review-contracts";
 import { findCode } from "./store";
 
@@ -177,7 +178,17 @@ export async function deliverCodeReviewChatFacts(effects: readonly ReviewChatEff
               outcome: activation ? ("activated" as const) : row.outcome,
               person: { id: row.person_id, name: row.person_name },
               at: row.at.toISOString(),
-              ...(activation ? { nextRunAt: nextRuns.get(row.version_id) ?? null } : {}),
+              ...(activation
+                ? {
+                    nextRunAt: nextRuns.get(row.version_id) ?? null,
+                    pageCount: (() => {
+                      const manifest = CodeCheckedVersionManifestSchema.safeParse(row.manifest);
+                      return row.active_version_id === row.version_id && manifest.success
+                        ? describeCodePages(row.code_id, { id: row.version_id, manifest: manifest.data }).pages.length
+                        : 0;
+                    })(),
+                  }
+                : {}),
               anchor: codeVersionChatAnchor(row.version_id, origin),
             },
           },

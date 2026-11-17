@@ -20,6 +20,7 @@ import { describeCodeAutomations } from "./automation-view";
 import type { Code } from "./contracts";
 import { requireCodeEventAccess } from "./event-access";
 import { syncCodeEventSubscriptions } from "./event-subscriptions";
+import { describeCodePages } from "./page-links";
 import { enqueueCodeReviewChat } from "./review-chat-state";
 import { findCode } from "./store";
 import { CodeVersionEvidenceSchema } from "./version-evidence";
@@ -192,6 +193,10 @@ export async function previewCodeActivation(
           database: manifest.data.database === true,
         }
       : {}),
+    pages:
+      manifest.success && code.state === "active" && code.activeVersionId === input.versionId
+        ? describeCodePages(code.id, { id: input.versionId, manifest: manifest.data })
+        : null,
     title: code.title,
     ownerKind: code.owner.kind,
     ...(code.owner.kind === "app" ? { appName: await previewAppName(code.owner.appId, catalog) } : {}),

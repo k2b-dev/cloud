@@ -1311,6 +1311,10 @@ It receives `turnId`, `conversationId`, `leaseOwner`, the persisted `runConfig`
 and the executed `profile`. The host must fence its transaction against the
 current running turn lease. A Code-attributed turn without this callback fails
 closed. Core uses it for policy and whole-turn daily cost reservations.
+The callback may return `{ systemPrompt }`: host-owned instructions appended
+to this attempt’s prompt before its first model request. They are rebuilt on
+resumption and do not enter stored history. Core uses this for the current,
+authorized page links of Code associated with the chat.
 
 `onTurnFinalized` runs after durable completion. `onSweep` independently recovers
 host bookkeeping when a terminal callback was missed, even if the platform sweep

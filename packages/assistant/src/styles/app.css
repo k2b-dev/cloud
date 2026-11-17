@@ -1345,3 +1345,51 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .k2b-ui .assistant-chat-layout .k2b-chat-timeline__content { width: min(100%, 50.75rem); }
 .k2b-ui .assistant-chat-composer > div { max-width: 47.75rem; }
 .k2b-ui .assistant-chat-layout .ai-turn__text .assistant-markdown-block { max-width: 44rem; }
+
+/* Cloud's page handoff follows the activation fact, with one shared link surface and quiet additional links. */
+.assistant-code-decision__pages {
+  grid-column: 2 / -1;
+  min-width: 0;
+  width: 100%;
+  max-width: 26.25rem;
+  margin-top: 0.5rem;
+}
+.assistant-code-decision__pages .k2b-link-card {
+  min-height: 4rem;
+  padding: 0.5625rem 0.8125rem;
+  gap: 0.75rem;
+}
+.assistant-code-decision__pages .k2b-link-card__title,
+.assistant-code-decision__pages .k2b-link-card__meta {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.assistant-code-decision__pages .k2b-link-card__description,
+.assistant-code-decision__more,
+.assistant-code-decision__pages-pending {
+  font-size: 0.8125rem;
+  color: var(--k2b-text-secondary);
+}
+.assistant-code-decision__pages .k2b-link-card__description {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.assistant-code-decision__more {
+  margin: 0.5rem 0 0;
+}
+.assistant-code-decision__more a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.assistant-code-decision__pages-pending {
+  min-height: 4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.assistant-code-decision__pages-pending[data-multiple] {
+  min-height: calc(4rem + 0.5rem + 1.5em);
+}

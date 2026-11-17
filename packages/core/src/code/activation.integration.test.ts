@@ -25,6 +25,7 @@ import { type CodeContext, CodeOwnerUnavailableError } from "./access";
 import { activateCodeVersion, cancelCodeActivation, previewCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 import { cleanupCodeActivation, codeActivationCleanupOutbox } from "./activation-maintenance";
 import * as authoringChecks from "./authoring-check";
+import { chatPageManifest } from "./chat-pages.test-fixture";
 import type { Code } from "./contracts";
 import * as explanations from "./read-model/explanation";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -140,6 +141,7 @@ databaseSuite()("durable Code activation", () => {
     baseVersionId: string | null = null,
     op = "item.change",
     eventPlace?: { type: string; id: string },
+    pages = false,
   ) {
     const sourceFiles = { "code.ts": `export const version = '${++ordinal}';` },
       bundle = `bundle:${ordinal}`;
@@ -147,18 +149,20 @@ databaseSuite()("durable Code activation", () => {
       version: 1,
       entry: "code.ts",
       hashes: { source: codeSourceHash(sourceFiles, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
-      entrypoints: eventPlace
-        ? [
-            {
-              kind: "event",
-              entrypoint: "event:example.changed@1:place:0",
-              event: { type: "example.changed", version: 1, place: eventPlace },
-              cron: null,
-              file: "code.ts",
-              line: 1,
-            },
-          ]
-        : [{ kind: "manual", entrypoint: "run", title: "Lieferungen eintragen", cron: null, file: "code.ts", line: 1 }],
+      entrypoints: pages
+        ? chatPageManifest.entrypoints
+        : eventPlace
+          ? [
+              {
+                kind: "event",
+                entrypoint: "event:example.changed@1:place:0",
+                event: { type: "example.changed", version: 1, place: eventPlace },
+                cron: null,
+                file: "code.ts",
+                line: 1,
+              },
+            ]
+          : [{ kind: "manual", entrypoint: "run", title: "Lieferungen eintragen", cron: null, file: "code.ts", line: 1 }],
       policyRows: ["silent_draft"],
       ai: false,
       // The checker could place the call at A in the run entrypoint, not the one at B.
@@ -176,6 +180,25 @@ databaseSuite()("durable Code activation", () => {
     return activateCodeVersion({ codeId: code.id, versionId, activationId: crypto.randomUUID() }, ctx);
   }
   const status = (code: Code, id: string) => readCodeActivation({ codeId: code.id, activationId: id }, owner);
+  test("page handoff preview follows current activity and editor rights through the canonical page selection", async () => {
+    const code = await newCode();
+    const submitted = await version(code, [], null, "item.change", undefined, true);
+    const input = { codeId: code.id, versionId: submitted.version.id };
+    expect((await previewCodeActivation(input, owner, deps)).pages).toBeNull();
+    await sql`UPDATE code.codes SET state='active',active_version_id=${input.versionId}::uuid WHERE id=${code.id}`;
+    const links = (await previewCodeActivation(input, owner, deps)).pages;
+    expect(links?.pages.map(({ title, path }) => ({ title, path }))).toEqual([
+      { title: "Lieferscheine", path: "/" },
+      { title: "Archiv", path: "/archive" },
+    ]);
+    expect(links?.homeUrl).toBe(`/code/${code.id}/`);
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${code.id}`;
+    expect((await previewCodeActivation(input, owner, deps)).pages).toBeNull();
+    await sql`UPDATE code.codes SET state='active' WHERE id=${code.id}`;
+    await sql`UPDATE auth.access SET permission='read' WHERE id IN (SELECT access_id FROM code.shares WHERE code_id=${code.id})`;
+    await expect(previewCodeActivation(input, owner, { ...deps, readOwner: async () => null })).rejects.toThrow("Code not found");
+  });
+
   test("SQL budget of an open approval card's initial preview and invalidation reload", async () => {
     const code = await newCode();
     const [rule] = await sql<{ value: string }[]>`SELECT value FROM code.policy_rules WHERE row='silent_draft' AND group_id IS NULL`;

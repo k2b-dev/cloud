@@ -21,6 +21,8 @@ import { migrate as events } from "../migrate/core/events";
 import { migrate as pwa } from "../migrate/core/pwa";
 import { migrate as settings } from "../migrate/core/settings";
 import { type CodeContext, CodeDataError } from "./access";
+import { loadCodeChatPages } from "./chat-pages";
+import { chatPageManifest } from "./chat-pages.test-fixture";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 import * as eventAccess from "./event-access";
 import { cancelCodeReviewRevision, deliverCodeReviewChatFacts, type ReviewChatEffect, startCodeReviewRevision } from "./review-chat";
@@ -67,6 +69,7 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
     shared = false,
     approvalId?: string,
     resource = false,
+    withPages = false,
   ) {
     const codeId = `c_async${String(++ordinal).padStart(3, "0")}`;
     const chat = await aiConversations.createConversation({ ownerUserId: owner, title: "Fictional review chat" });
@@ -82,7 +85,7 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
       await sql`WITH a AS (INSERT INTO auth.access(user_id,permission) VALUES(${owner}::uuid,'write') RETURNING id)
       INSERT INTO code.shares(code_id,access_id) SELECT ${codeId},id FROM a`;
     await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
-      VALUES(${versionId}::uuid,${codeId},5,'{"code.ts":"fixture"}','fixture',${"a".repeat(64)},${"b".repeat(64)},'{"entrypoints":[],"secrets":[]}',7,7,${owner}::uuid)`;
+      VALUES(${versionId}::uuid,${codeId},5,'{"code.ts":"fixture"}','fixture',${"a".repeat(64)},${"b".repeat(64)},${JSON.stringify(withPages ? chatPageManifest : { entrypoints: [], secrets: [] })}::text::jsonb,7,7,${owner}::uuid)`;
     const origin = cli
       ? { kind: "cli" }
       : { kind: "ai_chat", conversationId: chat.id, automaticAfterReview: automatic, cardAnchor: "tool-submit" };
@@ -97,6 +100,34 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
       sql<ReviewChatEffect[]>`SELECT * FROM code.review_chat_outbox WHERE version_id=${versionId}::uuid AND kind='decision'`;
     return { codeId, versionId, chat, effects };
   }
+  test("turn page snapshot stays constant when history grows and removes revoked management access", async () => {
+    const f = await fixture("approved", false, false, true, undefined, true, true);
+    const managers = spyOn(resources, "listResourceManagers").mockResolvedValue([]);
+    await sql`UPDATE code.codes SET state='active',active_version_id=${f.versionId}::uuid WHERE id=${f.codeId}`;
+    const input = { conversationId: f.chat.id, userId: owner, signal: signal() };
+    expect((await loadCodeChatPages(input))[0]?.links.pages[0]?.href).toBe(`/code/${f.codeId}/`);
+    const meter = await meterSql();
+    try {
+      const first = await meter.during(() => loadCodeChatPages({ ...input, signal: signal() }));
+      for (let index = 0; index < 12; index++)
+        await sql.begin(async (tx) => {
+          await tx`SELECT id FROM ai.conversations WHERE id=${f.chat.id}::uuid FOR UPDATE`;
+          await runtime.appendAiBackgroundMessage(tx, { conversationId: f.chat.id, text: "More history" });
+        });
+      const many = await meter.during(() => loadCodeChatPages({ ...input, signal: signal() }));
+      expect(many).toEqual(first);
+      // One Code/version snapshot, two current-account reads and two batched management reads.
+      expect(many).toHaveLength(5);
+      expect(many.filter((statement) => statement.includes("AS code_id"))).toHaveLength(1);
+      expect(many.some((statement) => statement.includes("ai.messages"))).toBe(false);
+      await sql`UPDATE auth.access SET permission='read' WHERE id IN (SELECT access_id FROM code.shares WHERE code_id=${f.codeId})`;
+      expect(await loadCodeChatPages({ ...input, signal: signal() })).toEqual([]);
+    } finally {
+      await meter.close();
+      managers.mockRestore();
+    }
+  });
+
   test("the intent rolls back with its decision; CLI never creates a chat intent", async () => {
     const f = await fixture();
     const before = await sql`SELECT * FROM code.review_chat_outbox WHERE version_id=${f.versionId}::uuid`;
@@ -138,6 +169,24 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
     expect(chat?.background_received_at).not.toBeNull();
     expect(await sql`SELECT id FROM events.outbox WHERE payload::text LIKE '%conversation-detail%'`).not.toHaveLength(0);
   });
+  test("activation facts reserve canonical page cards without persisting page names or URLs", async () => {
+    for (const withPages of [true, false]) {
+      const f = await fixture("approved", false, false, false, undefined, false, withPages);
+      await deliverCodeReviewChatFacts(await f.effects());
+      await sql`UPDATE code.codes SET state='active',active_version_id=${f.versionId}::uuid WHERE id=${f.codeId}`;
+      await sql`INSERT INTO code.activations(id,code_id,version_id,activating_person,locale,cloud_admin,state)
+        VALUES(gen_random_uuid(),${f.codeId},${f.versionId}::uuid,${owner}::uuid,'de',false,'active')`;
+      await sql.begin((tx) => enqueueCodeReviewChat(f.versionId, "activation", tx));
+      await deliverCodeReviewChatFacts(await sql<ReviewChatEffect[]>`SELECT * FROM code.review_chat_outbox
+        WHERE version_id=${f.versionId}::uuid AND kind='activation'`);
+      const messages = await aiConversations.listMessages({ conversationId: f.chat.id });
+      const fact = messages.at(-1)?.meta?.codeDecision;
+      expect(fact).toMatchObject({ outcome: "activated", pageCount: withPages ? 2 : 0 });
+      expect(JSON.stringify(fact)).not.toContain("Lieferscheine");
+      expect(JSON.stringify(fact)).not.toContain(`/code/${f.codeId}/`);
+    }
+  });
+
   test("activation is a separate historical row; a suppressed decision never leaves its activation waiting forever", async () => {
     const f = await fixture();
     await deliverCodeReviewChatFacts(await f.effects());

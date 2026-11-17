@@ -369,6 +369,8 @@ export type AiStoredMessage = {
       /** Decision/action time, independent of delivery after a busy turn. */
       at?: string;
       nextRunAt?: string | null;
+      /** Page presence reserves the handoff; names and links require a fresh authorized preview. */
+      pageCount?: number;
     };
     modelRequest?: AiModelRequest;
     modelResolved?: AiResolvedModelRef;

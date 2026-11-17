@@ -5,7 +5,7 @@ section: Platform services
 order: 963
 description: Switch an approved Code version on with its current account rights and a durable version entry.
 tags: [code, identity, permissions]
-updated: 2026-11-08
+updated: 2026-11-17
 ---
 
 # Activate a Code version
@@ -155,6 +155,28 @@ Once it has no open runs, Core revokes that old entry. Ordinary target shares
 belong to the service account, persist across version switches and pauses, and
 change only through normal sharing. Re-activation, retries and background
 cleanup never restore a share a target manager removed.
+
+## Page links after activation
+
+In the chat where a version was submitted, Cloud attaches a page link card to
+its “You switched on version N” event. This uses no AI turn or allowance.
+The card opens the home page and shows its name and readable, Code-relative
+path; additional pages appear as text links. The actual destination stays in
+the link, so opaque Code identifiers do not appear as the displayed address.
+
+Core selects pages through `describeCodePages`, the same projection used by the
+Code page. The activation preview's optional `pages` field contains this
+`CodePageLinks` snapshot only for the currently running version of active Code.
+The preview checks current management access; readers and people who lost that
+access receive no card. Versions without a page, paused Code and replaced
+versions have no page card. A failed preview offers **Try again**.
+
+Each Gustav turn receives a fresh, authorized snapshot of the active pages of
+Code associated with that chat, including titles, readable paths and exact
+hrefs. Gustav is instructed to include the supplied page link in each answer
+about that app or page. The snapshot is independent of history pagination and
+compaction and is read once during turn setup, with no SQL per message or model
+round. Page metadata remains data and grants no permissions.
 
 ## Integration contracts
 
