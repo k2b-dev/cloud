@@ -116,7 +116,15 @@ const open = async (
   }
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
-  await page.clock.setFixedTime(new Date(authoringStopNow));
+  // Pin Date only; timers and animation frames must keep running normally.
+  await page.addInitScript((at) => {
+    const RealDate = Date;
+    globalThis.Date = new Proxy(RealDate, {
+      construct: (target, args, newTarget) => Reflect.construct(target, args.length ? args : [at], newTarget),
+      apply: () => new RealDate(at).toString(),
+      get: (target, property) => (property === "now" ? () => at : Reflect.get(target, property)),
+    });
+  }, Date.parse(authoringStopNow));
   const errors = pageErrors(page);
   try {
     await page.goto(`${assets.url.origin}/?${new URLSearchParams({ lang: locale, theme, reason, save, mode })}`, { timeout: 30_000 });

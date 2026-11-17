@@ -70,7 +70,7 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
           <Button
             variant="primary"
             size="md"
-            classList={{ "assistant-authoring-stop__retired": !available() }}
+            class={!available() ? "assistant-authoring-stop__retired" : undefined}
             aria-hidden={!available() || undefined}
             tabIndex={available() ? undefined : -1}
             disabled={disabled()}
