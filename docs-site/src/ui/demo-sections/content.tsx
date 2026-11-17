@@ -97,6 +97,7 @@ import { DemoCard } from "../DemoCard";
 import { BarChartStatesDemo, ChartDemo, ChartFrameStatesDemo, CountryMapDemo, ReferenceLineStylesDemo } from "./charts";
 import { tableExamples } from "./charts/examples/table";
 import { FileGridDemo } from "./file-grid";
+import { RunLogDemos } from "./run-log";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
 import { DemoGrid, type DemoSection } from "./types";
@@ -2872,6 +2873,7 @@ const demos: DemoSection = {
       <LogsDemo />
     </DemoGrid>
   ),
+  "run-log": () => <RunLogDemos />,
   timeline: () => (
     <DemoGrid columns="one">
       <TimelineDemo id="timeline" />

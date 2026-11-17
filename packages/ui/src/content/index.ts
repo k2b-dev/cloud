@@ -206,6 +206,7 @@ export { ProgressPath, type ProgressPathProps, type ProgressPathStep } from "./P
 export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
 export { ReactionBar, type ReactionBarItem, type ReactionBarProps } from "./ReactionBar";
+export { RunLog, type RunLogProps, type RunLogState, type RunLogAction, type RunEntry, type RunStepEntry, type RunLogEntry, type RunLevel } from "./RunLog";
 export type {
   ReferenceChipObjectProps,
   ReferenceChipPersonProps,

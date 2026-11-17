@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, createUniqueId, Index, on, onCleanup, onMount, Show } from "solid-js";
+import { StepRowContent } from "../internal/step-row";
 
 export type ChatTask = { id: string; content: string; status: "pending" | "in_progress" | "completed" | "cancelled" };
 export type ChatTasksProps = {
@@ -37,16 +38,19 @@ const createFreshChecks = (items: () => readonly ChatTask[]) => {
 function TaskRow(props: { item: ChatTask; statusLabel: string; fresh: boolean }) {
   return (
     <li class="k2b-chat-task" data-status={props.item.status}>
-      <span class="k2b-chat-task__mark" aria-hidden="true">
+      <StepRowContent
+        classes={{ leading: "k2b-chat-task__mark", label: "k2b-chat-task__content" }}
+        leading={<>
         <Show when={props.item.status === "completed"}>
           <i class="ti ti-check" data-fresh={props.fresh ? "" : undefined} />
         </Show>
         <Show when={props.item.status === "cancelled"}>
           <i class="ti ti-x" />
         </Show>
-      </span>
-      <span class="k2b-chat-task__content">{props.item.content}</span>
-      <span class="k2b-sr-only">{props.statusLabel}</span>
+        </>}
+        label={props.item.content}
+        statusLabel={props.statusLabel}
+      />
     </li>
   );
 }

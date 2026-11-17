@@ -381,6 +381,7 @@ const portableSections = [
       page("pagination", "Pagination", "ti ti-arrow-right", "Server-friendly href pagination with compact page windows."),
       page("code", "Code", "ti ti-code", "Selectable source with language-aware highlighting and copy."),
       page("logs", "Logs", "ti ti-list-details", "Semantic timestamped log entries with structured metadata."),
+      page("run-log", "RunLog", "ti ti-list-check", "A run's steps and output in one card, with a compact disclosure and stable height."),
       page(
         "virtual-feed",
         "VirtualFeed",
