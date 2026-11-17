@@ -9,10 +9,10 @@ import {
   personalAiModelPolicy,
 } from "@k2b/cloud/ai";
 import {
-  type AdmitQueuedCodeStart,
   AiMessageQueueConflict,
   enqueueChatMessage,
   prepareAiChatTurn,
+  type QueuedCodeStart,
   wakeAiMessageQueue,
 } from "@k2b/cloud/ai/runtime";
 import { CAPABILITY_CLAIM_RETENTION_HOURS } from "@k2b/cloud/capabilities/store";
@@ -96,7 +96,7 @@ const openOwnerCodeChatWork = async (owner: string, db: SQL, startingMessageId?:
 /** A queued Code send starts only while its run exists, its Code is enabled, its owner has no older
  * open Code message or turn, and the Code and owner daily AI limits have room. A message that waited,
  * for any reason, does not outlive the budget day it was accepted on. */
-export const admitQueuedCodeSend: AdmitQueuedCodeStart = async (submission, messageId) => {
+export const admitQueuedCodeSend: QueuedCodeStart["admit"] = async (submission, messageId) => {
   const origin = submission.runConfig.codeOrigin;
   const owner = submission.runConfig.send?.accountId;
   if (!origin?.runId || !owner) return "code_run_gone";
@@ -118,6 +118,23 @@ export const admitQueuedCodeSend: AdmitQueuedCodeStart = async (submission, mess
     return checkCodeChatRunBudget(origin.runId, db, limits);
   });
 };
+
+/** The same final refusals as admitQueuedCodeSend, as one expression over the queued row `q`, so the
+ * queue can retire every Code message that can never start without checking them one by one. */
+const expiredCodeSendReason: QueuedCodeStart["expiredReason"] = async () => {
+  const timeZone = (await coreSettings.get<string>("app.timezone")) || "UTC";
+  return sql`(SELECT CASE
+      WHEN q.submission#>>'{runConfig,codeOrigin,runId}' IS NULL OR q.submission#>>'{runConfig,send,accountId}' IS NULL THEN 'code_run_gone'
+      WHEN c.state IS DISTINCT FROM 'active' THEN 'code_inactive'
+      WHEN (q.created_at AT TIME ZONE ${timeZone})::date < (clock_timestamp() AT TIME ZONE ${timeZone})::date THEN 'code_budget_day_ended'
+      WHEN r.id IS NULL THEN 'code_run_gone'
+    END
+    FROM (SELECT 1) AS one
+    LEFT JOIN code.codes c ON c.id = q.submission#>>'{runConfig,codeOrigin,codeId}'
+    LEFT JOIN code.runs r ON r.id::text = q.submission#>>'{runConfig,codeOrigin,runId}')`;
+};
+
+export const queuedCodeSendStart: QueuedCodeStart = { admit: admitQueuedCodeSend, expiredReason: expiredCodeSendReason };
 
 export const aiChatSendAction = {
   target: "ai.chat",

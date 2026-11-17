@@ -180,40 +180,57 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
   });
 
 /** Existing turn creation owns execution and recovery; the DB lock owns FIFO and deduplication. */
-/** Host-owned check right before a Code-started entry becomes a turn. A refusal listed in
- * AI_QUEUE_RETRYABLE_ERRORS keeps the entry waiting; any other refusal cancels it. */
-export type AdmitQueuedCodeStart = (submission: Submission, messageId: string) => Promise<string | null>;
+/** Host-owned checks for Code-started entries. */
+export type QueuedCodeStart = {
+  /** Right before an entry becomes a turn. A refusal listed in AI_QUEUE_RETRYABLE_ERRORS keeps the
+   * entry waiting; any other refusal cancels it. */
+  admit: (submission: Submission, messageId: string) => Promise<string | null>;
+  /** A scalar SQL expression over the queued row `q`: the reason this Code-started entry can never
+   * start, or NULL while it still may. The queue retires every such entry in one bounded statement. */
+  expiredReason: () => Promise<SQL.Query<unknown>>;
+};
+
+/** What a retired entry keeps: only its send receipt and initiator. */
+const retiredSubmission = (db: SQL) =>
+  db`CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END`;
 
 /** Remove a queued entry for good, keeping only its send receipt and initiator. */
 const retireQueuedMessage = async (id: string, error: string) => {
   await sql.begin(async (tx) => {
     const changed = await tx`UPDATE ai.queued_messages SET status='cancelled', error=${error},
-        submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END,
-        content='[]'::jsonb
+        submission = ${retiredSubmission(tx)}, content='[]'::jsonb
       WHERE id=${id}::uuid AND status IN ('pending','failed') RETURNING id`;
     if (changed.length) await tx`DELETE FROM ai.queued_message_files WHERE message_id=${id}::uuid`;
   });
 };
 
+/** Expired or invalid Code messages leave the queue even while something ahead of them blocks the chat;
+ * otherwise one stuck chat would keep its owner's other Codes busy. One statement, bounded by the queue
+ * limit; rows another dispatcher holds are left to it. */
+const retireExpiredCodeStarts = async (codeStart: QueuedCodeStart, conversationId: string | undefined) => {
+  const reason = await codeStart.expiredReason();
+  await sql`WITH expired AS (
+      SELECT q.id, x.reason FROM ai.queued_messages q CROSS JOIN LATERAL (SELECT ${reason} AS reason) x
+      WHERE q.status IN ('pending','failed') AND q.submission->'runConfig' ? 'codeOrigin' AND x.reason IS NOT NULL
+        AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id = ${conversationId ?? null}::uuid)
+      ORDER BY q.position LIMIT ${AI_MESSAGE_QUEUE_LIMIT} FOR UPDATE OF q SKIP LOCKED
+    ), retired AS (
+      UPDATE ai.queued_messages SET status='cancelled', error=expired.reason, submission=${retiredSubmission(sql)}, content='[]'::jsonb
+      FROM expired WHERE ai.queued_messages.id = expired.id RETURNING ai.queued_messages.id
+    )
+    DELETE FROM ai.queued_message_files f USING retired WHERE f.message_id = retired.id`;
+};
+
 export const drainQueuedMessages = async (
   enqueue: (job: { conversationId: string; turnId: string }) => Promise<unknown>,
   conversationId?: string,
-  admitCodeStart?: AdmitQueuedCodeStart,
+  codeStart?: QueuedCodeStart,
 ) => {
   const waits = sql([...AI_QUEUE_RETRYABLE_ERRORS]);
-  if (admitCodeStart) {
-    // Expired or invalid Code messages leave the queue even while something ahead of them blocks the chat;
-    // otherwise one stuck chat would keep its owner's other Codes busy. Only final refusals act here.
-    const blocked = await sql<{ id: string; submission: Submission }[]>`
-      SELECT q.id, q.submission FROM ai.queued_messages q
-      WHERE q.status IN ('pending','failed') AND q.submission->'runConfig' ? 'codeOrigin'
-        AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id = ${conversationId ?? null}::uuid)
-      ORDER BY q.position LIMIT ${AI_MESSAGE_QUEUE_LIMIT}`;
-    for (const entry of blocked) {
-      const refused = await admitCodeStart(entry.submission, entry.id).catch(() => null);
-      if (refused && !isAiQueueRetryableError(refused)) await retireQueuedMessage(entry.id, refused);
-    }
-  }
+  if (codeStart)
+    await retireExpiredCodeStarts(codeStart, conversationId).catch(() =>
+      log.warn("Expired Code messages could not be retired", { code: "queue_expiry_failed", conversationId }),
+    );
   // A Code message waiting for its allowance never holds back the person's later messages.
   const rows = await sql<{ id: string; conversation_id: string; submission: Submission }[]>`
     SELECT q.id, q.conversation_id, q.submission FROM ai.queued_messages q
@@ -228,9 +245,9 @@ export const drainQueuedMessages = async (
     try {
       if (row.submission.runConfig.codeOrigin) {
         // Code without a host check stays queued for the next sweep instead of starting unchecked.
-        if (!admitCodeStart) continue;
+        if (!codeStart) continue;
         // A failing host check is not a refusal: the message keeps waiting for the next sweep.
-        const refused = await admitCodeStart(row.submission, row.id).catch(() => undefined);
+        const refused = await codeStart.admit(row.submission, row.id).catch(() => undefined);
         if (refused === undefined) continue;
         if (refused && isAiQueueRetryableError(refused)) {
           await sql`UPDATE ai.queued_messages SET status='failed', error=${refused}, quota_checked_at=clock_timestamp() WHERE id=${row.id}::uuid AND status IN ('pending','failed')`;
