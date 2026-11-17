@@ -227,7 +227,11 @@ export default function AiModelDetail(props: {
         value.priced &&
         value.inputPerMillion !== null &&
         value.outputPerMillion !== null
-          ? { inputPerMillion: value.inputPerMillion, outputPerMillion: value.outputPerMillion }
+          ? {
+              ...base().pricing,
+              inputPerMillion: value.inputPerMillion,
+              outputPerMillion: value.outputPerMillion,
+            }
           : null,
       enabled: value.enabled,
     };

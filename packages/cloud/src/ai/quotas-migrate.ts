@@ -84,6 +84,7 @@ export async function migrateAiQuotas() {
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS audio_ms INTEGER`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS credential_id UUID`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS estimated BOOLEAN NOT NULL DEFAULT false`;
+    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS cache_read BIGINT CHECK(cache_read IS NULL OR (cache_read>=0 AND cache_read<=input))`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS error TEXT`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS cancelled BOOLEAN NOT NULL DEFAULT false`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS request_started_at TIMESTAMPTZ`;
