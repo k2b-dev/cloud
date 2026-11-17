@@ -315,8 +315,10 @@ export type AiQuoteSourceRow =
       quotes?: import("./quote-markers").AiMessageQuote[];
       automation: boolean;
     }
-  /** Text of a quoted answer, in order; `key` is its turn, or the message itself outside a turn. */
-  | { part: "answer"; key: string; text: string };
+  /** One text part of a quoted answer, in order; `key` is its turn, or the message itself outside a turn. */
+  | { part: "answer"; key: string; seq: number; text: string }
+  /** A quoted answer longer than `AI_MESSAGE_SEARCH_TEXT_MAX_CHARS`, whose text is not read. */
+  | { part: "over"; key: string };
 
 export type AiStoredMessage = {
   /** Personal composer hint, projected only for the person who triggered the latest completed answer. */
@@ -1046,7 +1048,7 @@ export type AiConversationService = {
   }): Promise<void>;
   /**
    * What quotes need of the messages they name: a quoted user message whole (bounded like any message), a quoted
-   * answer as the search text of its turn's messages up to `AI_MESSAGE_SEARCH_TEXT_MAX_CHARS`, in order.
+   * answer as the text parts of its turn's messages when the answer stays within `AI_MESSAGE_SEARCH_TEXT_MAX_CHARS`.
    */
   listQuoteSources(input: { conversationId: string; messageIds: readonly string[] }): Promise<AiQuoteSourceRow[]>;
   listTurnMessages(input: { conversationId: string; loopId: string; includeCompacted?: boolean }): Promise<AiStoredMessage[]>;

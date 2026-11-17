@@ -7,7 +7,7 @@ import { CODE_RUNTIME_TOOL_NAMES } from "../browser-code-contracts";
 import { normalizeAiUploadMediaType } from "../file-media-type";
 import { aiProjectFilePathFromMount, aiSkillFilePathFromMount } from "../file-mount";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "../limits";
-import { type AiMessageQuote, aiQuoteModelTexts } from "../quote-markers";
+import { type AiMessageQuote, aiNeutralizeQuoteMarkers, aiQuoteModelTexts } from "../quote-markers";
 import { type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
 import { assistantVisibleTextFromMessage } from "../timeline";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
@@ -202,6 +202,14 @@ export const userVisibleTextFromMessage = (message: Message, quotes?: readonly A
     .join("")
     .trim();
 };
+
+/**
+ * The person's own words of a stored user message as a model reads them in a transcript (titles, search summaries,
+ * memory learning): checked quotes and attached items left out, any other quote marker broken. Quoted words are never
+ * the person's own evidence.
+ */
+export const aiUserWordsForModel = (entry: Pick<AiStoredMessage, "message" | "meta">): string =>
+  entry.message.role === "user" ? aiNeutralizeQuoteMarkers(userVisibleTextFromMessage(entry.message, entry.meta?.quotes)) : "";
 
 /** VFS attachments referenced by this user message (rendered as chips). */
 export const vfsAttachmentsFromMessage = (message: Message): (AiAttachmentRef & { name: string; icon: string })[] => {

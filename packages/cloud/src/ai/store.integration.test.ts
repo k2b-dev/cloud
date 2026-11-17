@@ -106,27 +106,54 @@ suite("AI conversation store integration", () => {
       ]);
       const last = await answer(sent.turn.id, [{ type: "text", text: "ist im Angebot enthalten." }]);
       const sources = await aiConversations.listQuoteSources({ conversationId: chat.id, messageIds: [last] });
-      // Only text leaves the database, in order; a tool call's arguments do not.
+      // Only non-empty text parts leave the database, in order; a tool call's arguments and an empty part do not.
+      const seqOf = (shortId: string) =>
+        sql<{ seq: number }[]>`SELECT seq FROM ai.messages WHERE short_id = ${shortId}`.then((rows) => rows[0]!.seq);
+      const firstSeq = (await seqOf(last)) - 1;
       expect(sources).toEqual([
+        { part: "answer", key: sent.turn.id, seq: firstSeq, text: "Der **Strom" },
+        { part: "answer", key: sent.turn.id, seq: firstSeq, text: "anschluss** mit 3 kW" },
         { part: "quoted", shortId: last, role: "assistant", loopId: sent.turn.id, message: null, automation: false },
-        { part: "answer", key: sent.turn.id, text: "Der **Stromanschluss** mit 3 kW" },
-        { part: "answer", key: sent.turn.id, text: "ist im Angebot enthalten." },
+        { part: "answer", key: sent.turn.id, seq: firstSeq + 1, text: "ist im Angebot enthalten." },
       ]);
       expect(
         await resolveAiQuotes(chat.id, [{ messageId: last, text: "Stromanschluss mit 3 kW ist im Angebot" }], aiConversations),
       ).toEqual([{ messageId: last, from: "assistant", text: "Stromanschluss mit 3 kW ist im Angebot" }]);
 
-      // A turn longer than the bound: its rows stop after the one that reaches it, and the quote is refused with the cause.
-      const [long] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id, conversation_id, status, completed_at)
-        VALUES (${createAiShortId()}, ${chat.id}::uuid, 'completed', now()) RETURNING id`;
-      const third = AI_MESSAGE_SEARCH_TEXT_MAX_CHARS * 0.6;
-      const longIds = [];
-      for (const letter of ["a", "b", "c", "d"]) longIds.push(await answer(long!.id, [{ type: "text", text: letter.repeat(third) }]));
-      const bounded = await aiConversations.listQuoteSources({ conversationId: chat.id, messageIds: [longIds.at(-1)!] });
-      expect(bounded.filter((row) => row.part === "answer").map((row) => (row.part === "answer" ? row.text[0] : ""))).toEqual(["a", "b"]);
-      await expect(resolveAiQuotes(chat.id, [{ messageId: longIds.at(-1)!, text: "aaa" }], aiConversations)).rejects.toThrow(
-        `An answer longer than ${AI_MESSAGE_SEARCH_TEXT_MAX_CHARS} characters cannot be quoted.`,
-      );
+      // The bound: an answer of up to 50000 characters, the blank line between its messages included, is read; a longer
+      // one returns a single row without text, and its quote is refused with that cause.
+      const turnOf = async (lengths: number[]) => {
+        const [turn] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id, conversation_id, status, completed_at)
+          VALUES (${createAiShortId()}, ${chat.id}::uuid, 'completed', now()) RETURNING id`;
+        let shortId = "";
+        for (const length of lengths)
+          shortId = await answer(turn!.id, [
+            { type: "text", text: "a".repeat(length) },
+            { type: "text", text: "" },
+          ]);
+        return { turn: turn!.id, shortId };
+      };
+      const max = AI_MESSAGE_SEARCH_TEXT_MAX_CHARS;
+      const cases = [
+        { lengths: [max - 1], read: true },
+        { lengths: [max], read: true },
+        { lengths: [max + 1], read: false },
+        // Two messages with one character to spare, but the blank line between them makes the answer one too long.
+        { lengths: [max / 2, max / 2 - 1], read: false },
+      ];
+      for (const { lengths, read } of cases) {
+        const { turn, shortId } = await turnOf(lengths);
+        const rows = await aiConversations.listQuoteSources({ conversationId: chat.id, messageIds: [shortId] });
+        const texts = rows.flatMap((row) => (row.part === "answer" ? [row.text.length] : []));
+        expect({ lengths, texts, over: rows.some((row) => row.part === "over" && row.key === turn) }).toEqual({
+          lengths,
+          texts: read ? lengths : [],
+          over: !read,
+        });
+        const quoted = resolveAiQuotes(chat.id, [{ messageId: shortId, text: "aaa" }], aiConversations);
+        if (read) expect(await quoted).toEqual([{ messageId: shortId, from: "assistant", text: "aaa" }]);
+        else await expect(quoted).rejects.toEqual(expect.objectContaining({ reason: "too_long" }));
+      }
 
       // The model reads the checked quote word for word; the same wording without `meta.quotes`, and the old marker, are broken.
       const entries = await aiConversations.createSessionStore({ conversationId: chat.id }).load();

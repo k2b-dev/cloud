@@ -2948,15 +2948,16 @@ export const aiConversations: AiConversationService = {
   listQuoteSources: async (input) => {
     if (input.messageIds.length === 0) return [];
     const ids = toPgTextArray([...input.messageIds]);
-    // One statement: the quoted messages, and the text of each quoted answer's turn up to the bound. Only an answer's
-    // text parts leave the database, and a turn's rows stop after the one that reaches the bound, so the reader can
-    // tell an answer is longer than it may check.
+    // One statement. Of a quoted answer only its non-empty text parts are read, and only when the whole answer, its
+    // parts and the blank line between its messages, stays within the bound: the length is summed before any text
+    // leaves the database, and a longer answer returns one row that says so, without text.
     const rows = await sql<
       {
-        part: "quoted" | "answer";
+        part: "quoted" | "answer" | "over";
         short_id: string | null;
         role: string;
         loop_id: string | null;
+        seq: number;
         message: Message | null;
         quotes: AiMessageQuote[] | null;
         automation: boolean;
@@ -2968,46 +2969,51 @@ export const aiConversations: AiConversationService = {
         FROM ai.messages
         WHERE conversation_id = ${input.conversationId} AND kind = 'message' AND short_id = ANY(${ids}::text[])
       ),
-      answer AS (
-        SELECT COALESCE(m.loop_id::text, m.short_id) AS answer_key, m.seq, left(t.text, ${AI_MESSAGE_SEARCH_TEXT_MAX_CHARS}) AS text,
-          SUM(length(t.text)) OVER (PARTITION BY COALESCE(m.loop_id::text, m.short_id) ORDER BY m.seq) - length(t.text) AS before
+      parts AS (
+        SELECT COALESCE(m.loop_id::text, m.short_id) AS answer_key, m.seq, c.ord, c.part->>'text' AS text
         FROM ai.messages m
-        CROSS JOIN LATERAL (
-          SELECT COALESCE(string_agg(c.part->>'text', '' ORDER BY c.ord), '') AS text
-          FROM jsonb_array_elements(CASE WHEN jsonb_typeof(m.message->'content') = 'array' THEN m.message->'content' ELSE '[]'::jsonb END)
-            WITH ORDINALITY AS c(part, ord)
-          WHERE c.part->>'type' = 'text'
-        ) t
+        CROSS JOIN LATERAL jsonb_array_elements(
+          CASE WHEN jsonb_typeof(m.message->'content') = 'array' THEN m.message->'content' ELSE '[]'::jsonb END
+        ) WITH ORDINALITY AS c(part, ord)
         WHERE m.conversation_id = ${input.conversationId} AND m.kind = 'message' AND m.role = 'assistant'
           AND ((m.loop_id IS NULL AND m.short_id = ANY(${ids}::text[]))
             OR m.loop_id IN (SELECT loop_id FROM quoted WHERE role = 'assistant' AND loop_id IS NOT NULL))
+          AND c.part->>'type' = 'text' AND c.part->>'text' <> ''
+      ),
+      answers AS (
+        SELECT answer_key, SUM(length(text)) + 2 * (COUNT(DISTINCT seq) - 1) AS length
+        FROM parts
+        GROUP BY answer_key
       )
-      SELECT 'quoted' AS part, short_id, role, loop_id, seq,
+      SELECT 'quoted' AS part, short_id, role, loop_id, seq, 0::bigint AS ord,
         CASE WHEN role = 'user' THEN message END AS message,
         CASE WHEN role = 'user' THEN meta->'quotes' END AS quotes,
         COALESCE(role = 'user' AND meta->'codeOrigin' IS NOT NULL, false) AS automation,
         NULL AS text
       FROM quoted
       UNION ALL
-      SELECT 'answer', answer_key, 'assistant', NULL, seq, NULL, NULL, false, text
-      FROM answer
-      WHERE before < ${AI_MESSAGE_SEARCH_TEXT_MAX_CHARS}
-      ORDER BY seq ASC
+      SELECT 'answer', p.answer_key, 'assistant', NULL, p.seq, p.ord, NULL, NULL, false, p.text
+      FROM parts p JOIN answers a USING (answer_key)
+      WHERE a.length <= ${AI_MESSAGE_SEARCH_TEXT_MAX_CHARS}
+      UNION ALL
+      SELECT 'over', answer_key, 'assistant', NULL, 0, 0, NULL, NULL, false, NULL
+      FROM answers
+      WHERE length > ${AI_MESSAGE_SEARCH_TEXT_MAX_CHARS}
+      ORDER BY seq ASC, ord ASC
     `;
-    return rows.map(
-      (row): AiQuoteSourceRow =>
-        row.part === "answer"
-          ? { part: "answer", key: row.short_id ?? "", text: row.text ?? "" }
-          : {
-              part: "quoted",
-              shortId: row.short_id ?? "",
-              role: row.role,
-              loopId: row.loop_id,
-              message: row.message,
-              quotes: row.quotes ?? undefined,
-              automation: row.automation,
-            },
-    );
+    return rows.map((row): AiQuoteSourceRow => {
+      if (row.part === "answer") return { part: "answer", key: row.short_id ?? "", seq: row.seq, text: row.text ?? "" };
+      if (row.part === "over") return { part: "over", key: row.short_id ?? "" };
+      return {
+        part: "quoted",
+        shortId: row.short_id ?? "",
+        role: row.role,
+        loopId: row.loop_id,
+        message: row.message,
+        quotes: row.quotes ?? undefined,
+        automation: row.automation,
+      };
+    });
   },
   listTurnMessages: async (input) => {
     const rows = await sql<MessageRow[]>`

@@ -417,6 +417,11 @@ const messages = /* @__PURE__ */ i18n.define({
       compactedHint: "From here on, the model sees this summary instead of the messages above.",
       compactedEmpty: "No visible content",
       malformedImage: "This image could not be read. Export it again or choose another file.",
+      quoteMissing: "A quoted message is not in this chat any more. Remove the quote and send again.",
+      quoteNotQuotable: "Only answers and messages can be quoted. Remove the quote and send again.",
+      quoteMismatch: "A quote does not match its message any more. Remove the quote and quote it again.",
+      quoteTooLong: ({ max }: { max: string }) =>
+        `An answer longer than ${max} characters cannot be quoted. Remove the quote and send again.`,
     },
     de: {
       backgroundRun: "Hintergrundlauf",
@@ -836,6 +841,10 @@ const messages = /* @__PURE__ */ i18n.define({
       compactedHint: "Ab hier sieht das Modell diese Zusammenfassung statt der Nachrichten darüber.",
       compactedEmpty: "Kein sichtbarer Inhalt",
       malformedImage: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
+      quoteMissing: "Eine zitierte Nachricht ist nicht mehr in diesem Chat. Entferne das Zitat und sende erneut.",
+      quoteNotQuotable: "Nur Antworten und Nachrichten lassen sich zitieren. Entferne das Zitat und sende erneut.",
+      quoteMismatch: "Ein Zitat passt nicht mehr zu seiner Nachricht. Entferne das Zitat und zitiere neu.",
+      quoteTooLong: ({ max }) => `Eine Antwort mit mehr als ${max} Zeichen lässt sich nicht zitieren. Entferne das Zitat und sende erneut.`,
     },
   },
 });

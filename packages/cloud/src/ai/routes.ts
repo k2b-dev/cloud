@@ -70,6 +70,7 @@ import {
   toAiActionFailureResponse,
   toAiErrorResponse,
 } from "./http";
+import { AI_MESSAGE_SEARCH_TEXT_MAX_CHARS } from "./limits";
 import { aiLive, subscribeAiConversationAccess } from "./live";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema } from "./local-tool-contracts";
 import { aiMaintenanceJobs } from "./maintenance";
@@ -96,7 +97,7 @@ import { aiProjects } from "./projects";
 import type { AiResourceContext } from "./projects-authorization";
 import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
 import { type AiMessageQuote, aiQuoteModelText } from "./quote-markers";
-import { AiQuoteError, resolveAiQuotes } from "./quote-sources";
+import { AiQuoteError, type AiQuoteErrorReason, resolveAiQuotes } from "./quote-sources";
 import { AiRecentResourceSchema, listAiRecentResources } from "./recent-resources";
 import { RECENT_SENT_REF_LIMIT } from "./recent-sent-refs";
 import { type AiChatRequestContext, resolveAiChatRequestContext as resolveContext } from "./request-context";
@@ -343,6 +344,14 @@ const prepareLaunchDraft = async (
 
 export const __aiRoutesTest = { prepareConversationForMessageRetry, prepareLaunchDraft };
 
+/** The person's message for a quote the server refused, in the request's language; the stable code travels beside it. */
+const aiQuoteErrorText = (reason: AiQuoteErrorReason, locale: string): string => {
+  const t = aiChatMessages(locale);
+  if (reason === "missing") return t.quoteMissing;
+  if (reason === "not_quotable") return t.quoteNotQuotable;
+  if (reason === "mismatch") return t.quoteMismatch;
+  return t.quoteTooLong({ max: new Intl.NumberFormat(locale).format(AI_MESSAGE_SEARCH_TEXT_MAX_CHARS) });
+};
 export const aiRoutes = (() => {
   const loadConversation = async (c: Context<AuthContext>, ctx: AiChatRequestContext, archived = false): Promise<AiConversation | null> => {
     const conversationId = c.req.param("conversationId");
@@ -1119,7 +1128,8 @@ export const aiRoutes = (() => {
         try {
           quotes = await resolveAiQuotes(conversation.id, aiDraftQuotes(conversation.draft.content), aiConversations);
         } catch (error) {
-          if (error instanceof AiQuoteError) return respond(c, fail(err.badInput(error.message)));
+          if (error instanceof AiQuoteError)
+            return respond(c, { ok: false, error: aiQuoteErrorText(error.reason, getLocale(c)), status: 400, code: error.message });
           throw error;
         }
         const turnContent = aiDraftTurnContent(conversation.draft.content, quotes);

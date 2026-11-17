@@ -358,7 +358,7 @@ suite("global AI conversation boundaries", () => {
         },
       });
     });
-    const send = async (quote: { messageId: string; text: string; from?: string }) => {
+    const send = async (quote: { messageId: string; text: string; from?: string }, locale = "en") => {
       const current = await aiConversations.getConversation({ conversationId: chat.id });
       const saved = await aiRoutes.request(`/conversations/${chat.shortId}/draft`, {
         method: "PUT",
@@ -375,18 +375,25 @@ suite("global AI conversation boundaries", () => {
       const { revision } = (await saved.json()) as { revision: number };
       return aiRoutes.request(`/conversations/${chat.shortId}/turns`, {
         method: "POST",
-        headers,
+        headers: { ...headers, "Accept-Language": locale },
         body: JSON.stringify({ draftRevision: revision, model: { id: "fixture-model" } }),
       });
     };
     try {
       // A sentence Gustav never said, and a message of another chat, are refused with a reason; nothing is sent.
+      // Each refusal carries a stable code and the person's message in the request's language.
       const invented = await send({ messageId: answerId, text: "Strom ist kostenlos" });
       expect(invented.status).toBe(400);
-      expect(((await invented.json()) as { message: string }).message).toContain("does not match its message");
+      expect(await invented.json()).toMatchObject({
+        code: "quote_mismatch",
+        message: expect.stringContaining("does not match its message"),
+      });
+      const german = await send({ messageId: answerId, text: "Strom ist kostenlos" }, "de");
+      expect(german.status).toBe(400);
+      expect(await german.json()).toMatchObject({ code: "quote_mismatch", message: expect.stringContaining("passt nicht mehr") });
       const foreign = await send({ messageId: elsewhereId, text: "Stromanschluss" });
       expect(foreign.status).toBe(400);
-      expect(((await foreign.json()) as { message: string }).message).toContain("not in this chat");
+      expect(await foreign.json()).toMatchObject({ code: "quote_missing", message: expect.stringContaining("not in this chat") });
       expect(submissions).toHaveLength(0);
 
       // The client claims the person wrote it; Cloud says it is Gustav's answer and stores the checked quote.
@@ -406,65 +413,74 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
-  test("a retry keeps the message's checked quotes and the bound of 20000 characters with them, counting words only", async () => {
-    const userId = await insertUser();
-    const chat = await aiConversations.createConversation({ ownerUserId: userId });
-    const model = spyOn(assistantModels, "selectAssistantAiModel").mockResolvedValue({ id: "test-model" });
-    const submissions: Parameters<typeof aiRuntime.submitAiChatTurn>[0][] = [];
-    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (submission) => {
-      submissions.push(submission);
-      return aiConversations.submitChatTurn({
-        conversationId: submission.conversationId,
-        modelId: "test-model",
-        userMessage: submission.userMessage,
-        truncateFromSeq: submission.truncateFromSeq,
-        runConfig: { kind: "chat", input: submission.input, toolSource: { kind: "none" }, quotes: submission.quotes },
-      });
-    });
-    const quotes = Array.from({ length: 10 }, (_, index) => ({
-      messageId: `Ans${index}`,
-      from: "assistant" as const,
-      text: `${index}`.repeat(1_999),
-    }));
-    try {
-      const first = await aiConversations.submitChatTurn({
-        conversationId: chat.id,
-        modelId: "test-model",
-        userMessage: {
-          role: "user",
-          content: [{ type: "text", text: "Kurz" }, ...quotes.map((quote) => ({ type: "text" as const, text: aiQuoteModelText(quote) }))],
-        },
-        runConfig: { kind: "chat", input: "Kurz", toolSource: { kind: "none" }, quotes },
-      });
-      await sql`UPDATE ai.turns SET status='completed' WHERE id=${first.turn.id}::uuid`;
-      const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" };
-      const retry = (content: { type: "text"; text: string }[]) =>
-        aiRoutes.request(`/conversations/${chat.shortId}/messages/${first.message.shortId}/retry`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ content }),
+  test.each([false, true])(
+    "a retry keeps the message's checked quotes and the bound of 20000 characters with them, counting words only: edited=%p",
+    async (edited) => {
+      const userId = await insertUser();
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      const model = spyOn(assistantModels, "selectAssistantAiModel").mockResolvedValue({ id: "test-model" });
+      const submissions: Parameters<typeof aiRuntime.submitAiChatTurn>[0][] = [];
+      const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (submission) => {
+        submissions.push(submission);
+        return aiConversations.submitChatTurn({
+          conversationId: submission.conversationId,
+          modelId: "test-model",
+          userMessage: submission.userMessage,
+          truncateFromSeq: submission.truncateFromSeq,
+          runConfig: { kind: "chat", input: submission.input, toolSource: { kind: "none" }, quotes: submission.quotes },
         });
-      // Ten long quotes leave room for six characters: a longer edit is refused with the reason.
-      const tooLong = await retry([{ type: "text", text: "Etwas mehr Text" }]);
-      expect(tooLong.status).toBe(400);
-      expect(((await tooLong.json()) as { message: string }).message).toContain("20000");
-      expect(submissions).toHaveLength(0);
-      // An attached Cloud item the edit dialog keeps is no words of the person: the same message sends as it did, and
-      // the quotes come from the message, never from the edited content.
-      const item = aiResourceMarker({ ref: { type: "grids.table", id: "t1" }, title: "Tabelle Messe" });
-      const kept = await retry([
-        { type: "text", text: "Kurz" },
-        { type: "text", text: item },
-      ]);
-      expect(kept.status).toBe(201);
-      expect(submissions[0]?.quotes).toEqual(quotes);
-    } finally {
-      model.mockRestore();
-      submit.mockRestore();
-      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
-    }
-  });
+      });
+      const quotes = Array.from({ length: 10 }, (_, index) => ({
+        messageId: `Ans${index}`,
+        from: "assistant" as const,
+        text: `${index}`.repeat(1_999),
+      }));
+      try {
+        const first = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "test-model",
+          userMessage: {
+            role: "user",
+            content: [{ type: "text", text: "Kurz" }, ...quotes.map((quote) => ({ type: "text" as const, text: aiQuoteModelText(quote) }))],
+          },
+          runConfig: { kind: "chat", input: "Kurz", toolSource: { kind: "none" }, quotes },
+        });
+        await sql`UPDATE ai.turns SET status='completed' WHERE id=${first.turn.id}::uuid`;
+        const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" };
+        const retry = (content?: { type: "text"; text: string }[]) =>
+          aiRoutes.request(`/conversations/${chat.shortId}/messages/${first.message.shortId}/retry`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(content ? { content } : {}),
+          });
+        if (edited) {
+          // Ten long quotes leave room for six characters: a longer edit is refused with the reason.
+          const tooLong = await retry([{ type: "text", text: "Etwas mehr Text" }]);
+          expect(tooLong.status).toBe(400);
+          expect(((await tooLong.json()) as { message: string }).message).toContain("20000");
+          expect(submissions).toHaveLength(0);
+        }
+        // Unedited, the message goes again as it was. Edited, an attached Cloud item the edit dialog keeps is no words of
+        // the person, so the same message sends as it did. Either way the quotes come from the message.
+        const item = aiResourceMarker({ ref: { type: "grids.table", id: "t1" }, title: "Tabelle Messe" });
+        const kept = await retry(
+          edited
+            ? [
+                { type: "text", text: "Kurz" },
+                { type: "text", text: item },
+              ]
+            : undefined,
+        );
+        expect(kept.status).toBe(201);
+        expect(submissions[0]?.quotes).toEqual(quotes);
+      } finally {
+        model.mockRestore();
+        submit.mockRestore();
+        await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    },
+  );
 
   test.each([false, true])("message retry uses the retrying client's local context: local=%p", async (local) => {
     const userId = await insertUser();
