@@ -180,6 +180,14 @@ describe("stepping through periods", () => {
     expect(stepPeriod(free, { days: 10 }, 1)).toEqual({ start: "2026-11-07", end: "2026-11-16" });
   });
 
+  test("free ranges on month boundaries still move by their own day count", () => {
+    const twoMonths = { start: "2026-01-01", end: "2026-02-28" };
+    expect(periodStep(twoMonths)).toEqual({ days: 59 });
+    expect(stepPeriod(twoMonths, periodStep(twoMonths)!, 1)).toEqual({ start: "2026-03-01", end: "2026-04-28" });
+    expect(periodStep({ start: "2026-11-01", end: "2027-01-31" })).toEqual({ days: 92 });
+    expect(periodStep({ start: "2026-07-01", end: "2027-06-30" })).toEqual({ days: 365 });
+  });
+
   test("an open period has no neighbour", () => {
     expect(periodStep({ start: null, end: "2026-11-07" })).toBeUndefined();
     expect(periodStep({ start: "2026-11-07", end: null })).toBeUndefined();

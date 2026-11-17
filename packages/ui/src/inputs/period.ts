@@ -132,8 +132,8 @@ export const periodInstants = (range: PeriodRange, timeZone: string): { from: st
 };
 
 /**
- * How a period steps to its neighbour: whole months for a period from the first day of a month to the last day of a
- * month (a month, a quarter, a year), else its own number of days (a day, a week, any other range).
+ * How a period steps to its neighbour: calendar months, quarters and years keep their unit; every other range
+ * keeps its own number of days, even when its edges happen to be month boundaries.
  */
 export type PeriodStep = { months: number } | { days: number };
 
@@ -146,8 +146,11 @@ const daysBetween = (from: string, to: string): number => Math.round((keyDate(to
 /** The step of a period; `undefined` for an open edge, which has no neighbour. */
 export const periodStep = (range: PeriodRange): PeriodStep | undefined => {
   if (!range.start || !range.end) return undefined;
-  if (range.start.endsWith("-01") && addPeriodDays(range.end, 1).endsWith("-01"))
-    return { months: monthIndex(range.end) - monthIndex(range.start) + 1 };
+  if (range.start.endsWith("-01") && addPeriodDays(range.end, 1).endsWith("-01")) {
+    const months = monthIndex(range.end) - monthIndex(range.start) + 1;
+    const first = parts(range.start).month;
+    if (months === 1 || (months === 3 && first % 3 === 0) || (months === 12 && first === 0)) return { months };
+  }
   return { days: periodDayCount({ start: range.start, end: range.end }) };
 };
 

@@ -97,7 +97,9 @@ keeps its place, so the row never moves while stepping.
 - A calendar week, month, quarter or year steps to its neighbour; months keep
   their own length, so October 1–31 steps to November 1–30.
 - Any other range, including a single day, moves by its own length:
-  October 28 – November 6 steps to November 7–16.
+  October 28 – November 6 steps to November 7–16. Month boundaries alone
+  do not make a calendar unit: January 1 – February 28, 2026 keeps its 59
+  days and steps to March 1 – April 28.
 - **All time** and other open periods do not step; both arrows are disabled.
 - A step that lands on the days of a preset in the list stores that preset,
   for example **Last week** one step before **This week**, so the value stays
