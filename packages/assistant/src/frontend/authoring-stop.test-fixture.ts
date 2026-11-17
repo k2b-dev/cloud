@@ -1,5 +1,6 @@
 import type { AiCodeAuthoringStop, AiStoredMessage } from "@k2b/cloud/ai";
 
+export const authoringStopNow = "2026-11-14T12:05:00.000Z";
 export const authoringStopReasons = ["input_tokens", "model_calls", "repeated_error"] as const;
 export const authoringStopSaves = ["none", "draft", "version"] as const;
 export type AuthoringStopSave = (typeof authoringStopSaves)[number];

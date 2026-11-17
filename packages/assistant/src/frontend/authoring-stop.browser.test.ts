@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
-import { authoringStopReasons, authoringStopSaves } from "./authoring-stop.test-fixture";
+import { authoringStopNow, authoringStopReasons, authoringStopSaves } from "./authoring-stop.test-fixture";
 
 // Real Assistant CSS, typeface, icons, timeline and continuation. Fictional data, one browser at a time.
 const ui = resolve(import.meta.dir, "../../../ui");
@@ -116,6 +116,7 @@ const open = async (
   }
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
+  await page.clock.setFixedTime(new Date(authoringStopNow));
   const errors = pageErrors(page);
   try {
     await page.goto(`${assets.url.origin}/?${new URLSearchParams({ lang: locale, theme, reason, save, mode })}`, { timeout: 30_000 });

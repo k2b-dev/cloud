@@ -1,13 +1,15 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { AiChatActionsProvider, createAiChatTimeline } from "@k2b/cloud/ai/ui";
 import { Chat, LocaleProvider } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import AssistantAuthoringStop from "./AssistantAuthoringStop";
-import { authoringStopState, createStoppedAuthoringFixture } from "./authoring-stop.test-fixture";
+import { authoringStopNow, authoringStopState, createStoppedAuthoringFixture } from "./authoring-stop.test-fixture";
 
 const domTest = isServer ? test.skip : test;
+beforeEach(() => setSystemTime(new Date(authoringStopNow)));
+afterEach(() => setSystemTime());
 
 domTest("a receipt arriving before the turn settles acquires its action when continuation becomes available", () => {
   const dom = createDomTestHarness();
