@@ -186,15 +186,19 @@ in the same conversation, named by that message's public id. `text` holds at
 most 2,000 characters, and quotes count towards the draft's 20,000 characters.
 `from` is optional and only a hint for the composer. When the turn is submitted,
 Cloud checks that the message is in the conversation and that `text` stands in
-its visible text, compared without whitespace. An answer's visible text is its
-rendered Markdown. Cloud then sets `from` from that message: `assistant` for an
-answer, `user` for the person's own message, `automation` for a message an
-automation sent. A quote that fails returns HTTP 400 with the reason, and
+its visible text, compared without whitespace. An answer's visible text is the
+rendered Markdown of all text in its turn. Cloud checks at most 50,000 characters
+of an answer, as much as it keeps of one message for search; a quote of a longer
+answer returns HTTP 400. Cloud then sets `from` from that message: `assistant`
+for an answer, `user` for the person's own message, `automation` for a message
+an automation sent. A quote that fails returns HTTP 400 with the reason, and
 nothing is sent. The user message keeps the checked quotes in `meta.quotes`, the
 only source a client reads them from. The model reads each quote as a text part
-Cloud writes; text a client sends never counts as a quote, because Cloud breaks
-quote markers in typed text. Editing a queued message and retrying a message keep
-the checked quotes and apply the same bounds.
+Cloud writes. Text never counts as a quote: Cloud breaks quote markers in sent,
+edited, and steered text, and again in every user message it gives the model,
+unless `meta.quotes` holds that quote. Editing a queued message and retrying a
+message keep the checked quotes and apply the same bounds; the bounds count the
+person's words and the quoted passages, not attached items.
 
 If a turn response is lost, retain the confirmed draft revision and the exact
 submit options. `GET /api/ai/conversations/:id/submission/:draftRevision` returns
