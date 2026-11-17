@@ -8,15 +8,15 @@ import type { CloudRuntime } from "../packages/cloud/src/contracts";
 import type { AuthContext } from "../packages/cloud/src/server";
 import { session } from "../packages/cloud/src/services";
 import { adminFixtureIdentity } from "../packages/pulse/src/store/admin-identity.test-fixture";
-import { createConfig } from "../packages/ssr/src/index.ts";
+import { registerSsrTestPlugin } from "../packages/ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "pulse-admin-navigation-"));
-const snapshot = createConfig({
+const snapshot = registerSsrTestPlugin({
   dev: true,
   rootDir: root,
   template: ({ body }) => `<!doctype html><html><head></head><body>${body}</body></html>`,
 });
-Bun.plugin(snapshot.plugin());
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const config = await import("../packages/pulse/src/config");
 const baseAdmin = await import("../packages/pulse/src/service/base-admin");

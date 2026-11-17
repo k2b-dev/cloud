@@ -4,15 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_LINUX_IDENTITY_CONFIGURATION } from "@k2b/cloud/contracts";
 import type { PosixCandidate } from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { linuxMessages } from "./linux-messages";
 
 const root = mkdtempSync(join(tmpdir(), "core-linux-render-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: LinuxIdentityPanel } = await import("./LinuxIdentityPanel.island.tsx");
 const local: PosixCandidate = {

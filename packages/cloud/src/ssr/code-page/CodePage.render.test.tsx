@@ -2,12 +2,12 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { type Context, Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { codeSurfaceFindings } from "../../../../../scripts/checks/code-no-source";
 import { renderedText, withoutComments } from "../../../../../scripts/fixtures/rendered-markup";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { currentLibrary } from "../../../test/future-capability-manifest";
 import * as capabilityProvider from "../../capabilities/server";
 import { capabilityResultSchema } from "../../contracts/capabilities";
@@ -23,8 +23,8 @@ import { nameRecentResults } from "./recent-names";
 import { describeCodeSchedule } from "./schedule";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-code-page-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePage } = await import("./CodePage");
 const { catalogCache, describeTarget, loadCodePage, permissionRef, visiblePersonIds } = await import("./load");

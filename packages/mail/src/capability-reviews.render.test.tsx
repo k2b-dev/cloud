@@ -5,14 +5,14 @@ import { resolve } from "node:path";
 import type { AiTurnBlock } from "@k2b/cloud/ai";
 import { actionCardText, approvalCard } from "@k2b/cloud/ai/question-text";
 import type { CapabilityActionCallReview } from "@k2b/cloud/contracts";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../ui/test/ssr-test-plugin";
 import { buildSendReview, draftPreview, mailActionReviews, reviewObject, type SendReviewSource } from "./capability-reviews";
 
 const root = mkdtempSync(resolve(tmpdir(), "mail-review-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { AiTurnBlockView, AiChatActionsProvider } = await import("@k2b/cloud/ai/ui");
 const { LocaleProvider } = await import("@k2b/ui");

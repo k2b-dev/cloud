@@ -5,15 +5,15 @@ import { join } from "node:path";
 import { validateCodePage } from "@k2b/cloud/code";
 import { type CodeCheckedVersionManifest, UserSchema } from "@k2b/cloud/contracts";
 import * as server from "@k2b/cloud/server";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { stubConnections } from "../../../../scripts/fixtures/platform";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { CodePageLabel } from "./page-provenance-contracts";
 
 const root = mkdtempSync(join(tmpdir(), "core-code-page-render-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 const { default: Page } = await import("./PageTree.island");
 const { createCodeHostingRoutes } = await import("./hosting");
 const { codePageFixture } = await import("./page.test-fixture");

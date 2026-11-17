@@ -9,16 +9,16 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
 import { announcements } from "@k2b/cloud/services/announcements";
 import { session } from "@k2b/cloud/services/session";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as sidebar from "../sidebar";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-pwa-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 // The count route's rate limit needs Valkey; this test reads the route's answer only.
 const limiter = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());

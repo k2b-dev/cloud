@@ -2,16 +2,16 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 // The frame's head must read the same before and after the first client render. A trailing conditional anchor in the
 // status line once changed WebKit's rendered text there (a subtitle lost the paragraph's blank line).
 const root = mkdtempSync(resolve(tmpdir(), "k2b-dashboard-frame-parity-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { DashboardFrame } = await import("./DashboardFrame");
 const ui = resolve(import.meta.dir, "../..");

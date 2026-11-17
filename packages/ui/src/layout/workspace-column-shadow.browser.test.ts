@@ -2,16 +2,16 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { clientFixture, type FixtureOptions, workspaceCss, workspaceFrames } from "../../test/workspace-host-fixture";
 
 // Every column boundary of a workspace carries the same quiet shadow and no
 // line, whatever DOM nesting the columns use: sidebar, panes, levels, Detail.
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-workspace-column-shadow-"));
-const { plugin } = createConfig({ dev: true, rootDir: directory });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: directory });
+
 process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const script = await clientFixture();
 const css = workspaceCss();

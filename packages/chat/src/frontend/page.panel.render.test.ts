@@ -9,10 +9,10 @@ import { type AuthContext, fail, ok } from "@k2b/cloud/server";
 import { announcements } from "@k2b/cloud/services/announcements";
 import { session } from "@k2b/cloud/services/session";
 import * as help from "@k2b/cloud/ssr/help";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { conversations as conversationService } from "../service/conversations";
 import { personal } from "../service/personal";
 import * as snapshot from "../service/snapshot";
@@ -20,8 +20,8 @@ import { systemChats } from "../service/system-chats";
 import { chatView, conversations } from "./pwa-fixtures.test-fixture";
 
 const root = mkdtempSync(join(tmpdir(), "chat-panel-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: pages } = await import("./index");
 const { app } = await import("../config");

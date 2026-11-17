@@ -3,14 +3,14 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AiCodeAuthoringStop } from "@k2b/cloud/ai";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-authoring-stop-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
+registerSsrTestPlugin({ dev: true, rootDir: root });
 // This compiler is process-wide: preserve island wrappers for the neighboring page tests.
-Bun.plugin(plugin());
+
 const { LocaleProvider } = await import("@k2b/ui");
 const { default: AssistantAuthoringStop } = await import("./AssistantAuthoringStop");
 

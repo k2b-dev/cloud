@@ -2,12 +2,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider, type MapViewHandle } from "@k2b/ui";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 declare global {
   interface Window {
@@ -16,8 +16,8 @@ declare global {
 }
 
 const directory = mkdtempSync(resolve(tmpdir(), "cloud-map-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: directory });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: directory });
+
 const { CloudMap } = await import("./CloudMap");
 const markers = [{ id: "museum", mark: 1, label: "Museum am Fluss", point: { lat: 48.4, lon: 10 } }];
 const snapshot = (configured: boolean) => ({

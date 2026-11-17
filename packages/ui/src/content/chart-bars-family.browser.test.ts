@@ -1,16 +1,16 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../test/browser";
 import { barFamilyFixtures } from "../../test/chart-bars-family-fixtures";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { renderBarChartSvg } from "../charts/core/bar-render";
 import { renderHbarSvg } from "../charts/core/hbar";
 import { selectedChartSvg } from "./chart-svg";
 
-const { plugin } = createConfig({ dev: true, rootDir: import.meta.dir });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: import.meta.dir });
+
 const { chartRenderHeight, renderChartSvg } = await import("./Chart");
 
 let browser: Browser, bundle: string, css: string;

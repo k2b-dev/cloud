@@ -6,14 +6,14 @@ import * as cloud from "@k2b/cloud";
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import { auth } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
 
 const root = mkdtempSync(join(tmpdir(), "core-login-page-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
 

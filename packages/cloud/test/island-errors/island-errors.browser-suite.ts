@@ -2,12 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // This directory is a small Cloud app: `src/` holds its islands. The server render
 // must give each island the ID that the app's own build gives it, so both use it
@@ -16,8 +16,7 @@ import { browserName, launchBrowser } from "../../../ui/test/browser";
 // Chromium and WebKit, never build over or delete each other's bundles.
 const appRoot = import.meta.dir;
 const outdir = mkdtempSync(join(tmpdir(), "cloud-island-errors-"));
-const { plugin } = createConfig({ rootDir: appRoot, componentRoots: [] });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ rootDir: appRoot, componentRoots: [] });
 
 const { defineApp } = await import("../../src/_internal/define-app");
 const { default: ProbePage } = await import("./src/ProbePage");

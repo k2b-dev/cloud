@@ -2,18 +2,18 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { storageEntries } from "./storage-settings.test-fixture";
 
 const root = mkdtempSync(join(tmpdir(), "core-storage-settings-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CoreSettingsForm } = await import("./CoreSettingsForm.island.tsx");
 const { buildFontAssets } = await import("../../../../../scripts/font-assets");

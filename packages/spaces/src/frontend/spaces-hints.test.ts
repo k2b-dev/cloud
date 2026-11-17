@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const person = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -28,8 +28,8 @@ const person = {
 } satisfies User;
 
 const root = mkdtempSync(join(tmpdir(), "spaces-hints-test-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { firstOpenSpacesHint, spaceHintCandidates } = await import("./spaces-hints");
 
