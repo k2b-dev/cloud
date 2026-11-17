@@ -476,6 +476,14 @@ test("dispatch admission rejection clears reservations without estimated usage",
   expect(f.calls).toBe(0);
 });
 
+test("measured cache reads survive provider accounting snapshots; malformed cache counts never undercharge", async () => {
+  for (const cacheRead of [6, 0, 9, -1, 1.5, NaN]) {
+    const f = fixture([{ type: "usage", usage: { input: 8, output: 2, total: 10, cacheRead } }]);
+    await drain(f.wrap());
+    expect(f.booked[0]?.usage).toEqual({ input: 8, output: 2, ...([6, 0].includes(cacheRead) ? { cacheRead } : {}) });
+  }
+});
+
 test("non-text parts reach shared admission as unmeasured input without changing provider input", async () => {
   const f = fixture([event]);
   const begin = spyOn(f.lifecycle, "begin");

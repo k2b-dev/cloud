@@ -346,7 +346,7 @@ suite("AI conversation store integration", () => {
     }
   });
 
-  test("authoring stop receipts survive reload but are omitted from forks without the draft", async () => {
+  test.each([false, true])("authoring pauses survive reload only for unfinished drafts (submitted=%s)", async (submitted) => {
     const userId = await insertUser();
     const source = await aiConversations.createConversation({ ownerUserId: userId });
     const conversationIds = [source.id];
@@ -354,7 +354,16 @@ suite("AI conversation store integration", () => {
       const guard = createCodeAuthoringTurnBudget({
         priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 1 },
         selected: true,
-        finishedToolCalls: [],
+        finishedToolCalls: submitted
+          ? [
+              {
+                name: "code_submit",
+                status: "completed",
+                args: { codeId: "c_completed" },
+                result: { version: 1, submission: { version: { id: "saved" } } },
+              },
+            ]
+          : [],
       });
       const store = aiConversations.createSessionStore({ conversationId: source.id, codeAuthoringStop: guard.stopped });
       const loop = nessi({
@@ -366,8 +375,10 @@ suite("AI conversation store integration", () => {
           model: "stub",
           family: "openai-compatible",
           capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: false },
-          async *stream() {
-            throw new Error("An exhausted turn must not dispatch");
+          async *stream(request) {
+            expect(submitted).toBe(true);
+            expect(request.tools).toEqual([]);
+            yield { type: "block_end", blockId: "done", index: 0, block: { type: "text", text: "The version is submitted." } };
           },
         }),
       });
@@ -380,8 +391,14 @@ suite("AI conversation store integration", () => {
       }
       const messages = await aiConversations.listMessages({ conversationId: source.id });
       const last = messages.at(-1)!;
-      expect(last.message).toMatchObject({ role: "assistant", content: [] });
-      expect(last.meta?.codeAuthoringStop).toEqual(guard.stopped()!);
+      expect(last.message).toMatchObject({
+        role: "assistant",
+        content: submitted ? [{ type: "text", text: "The version is submitted." }] : [],
+      });
+      if (submitted) {
+        expect(guard.stopped()).toBeNull();
+        expect(last.meta?.codeAuthoringStop).toBeUndefined();
+      } else expect(last.meta?.codeAuthoringStop).toEqual(guard.stopped()!);
       const fork = await aiConversations.forkConversation({ sourceConversationId: source.id, ownerUserId: userId, throughSeq: last.seq });
       conversationIds.push(fork.id);
       expect((await aiConversations.listMessages({ conversationId: fork.id })).at(-1)?.meta?.codeAuthoringStop).toBeUndefined();
