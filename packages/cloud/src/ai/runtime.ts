@@ -42,6 +42,7 @@ export { AI_QUEUE_RETRYABLE_ERRORS, isAiQueueRetryableError } from "./queue-wait
 import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
+import type { AiMessageQuote } from "./quote-markers";
 import { parseAiResourceMarker } from "./resource-markers";
 import { assertInteractiveChatTurn, isRetiredRoutineConfig } from "./retired-routines";
 import { isAiVisionModelConfigured, readAiSettingsState } from "./settings";
@@ -149,6 +150,8 @@ export type SubmitAiChatTurnInput = {
   expectedDraftRevision?: number;
   expectedProjectId?: string | null;
   resources?: AiConversationResourceObservation[];
+  /** Quotes the server checked against their messages; the user message keeps them as `meta.quotes`. */
+  quotes?: AiMessageQuote[];
   expectedFiles?: ReadonlyArray<{ path: string; version: number }>;
   fileSnapshot?: AiConversationFileSnapshot;
   retrySourceTurnId?: string;
@@ -245,6 +248,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     localContext: input.localContext,
     toolSource: input.toolSource ?? { kind: "none" },
     toolApprovalContext: input.toolApprovalContext,
+    ...(input.quotes?.length ? { quotes: input.quotes } : {}),
   };
 
   return {

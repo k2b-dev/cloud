@@ -676,7 +676,7 @@ const createVenueInTx = async (tx: SqlClient, input: VenueInput, user: UserLike)
 
 /** Every venue needs its own slug; the database enforces it with this constraint. */
 const VENUE_SLUG_CONSTRAINT = "venues_slug_key";
-const venueSlugTaken = () => fail(err.conflict("Venue slug"));
+const venueSlugTaken = () => fail(err.conflict("Venue slug already exists"));
 
 const createVenue = async (input: VenueInput, user: UserLike): Promise<Result<Venue>> => {
   try {
@@ -886,7 +886,8 @@ const grantAccess = async (
     if (!hasPermission(await grantedPermission(venueId, subject, tx), "admin"))
       return fail(err.forbidden("You do not have access to this venue"));
     const existing = await readAccessEntries(venueId, tx);
-    if (existing.some((entry) => JSON.stringify(entry.principal) === JSON.stringify(principal))) return fail(err.conflict("Access entry"));
+    if (existing.some((entry) => JSON.stringify(entry.principal) === JSON.stringify(principal)))
+      return fail(err.conflict("Access entry already exists"));
     const result = await createAccess({ principal, permission }, tx);
     if (!result.ok) return result;
     await tx`INSERT INTO venue.venue_access (venue_id, access_id) VALUES (${venueId}::uuid, ${result.data.id}::uuid)`;
@@ -1039,7 +1040,7 @@ const updateOverride = async (venueId: string, id: string, input: DateOverrideIn
     if (isUniqueViolation(error)) return null;
     throw error;
   });
-  if (!rows) return fail(err.conflict("Opening-hour exception for this date"));
+  if (!rows) return fail(err.conflict("Opening-hour exception for this date already exists"));
   const row = rows[0];
   return row ? ok(mapOverride(row)) : fail(err.notFound("Date override"));
 };

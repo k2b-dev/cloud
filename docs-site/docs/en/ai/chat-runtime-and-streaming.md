@@ -217,8 +217,8 @@ archived conversation is unavailable; the request never creates a replacement.
 Project access is checked again on replay. Use a new UUID only for a new,
 deliberate creation. Without `requestId`, each request creates a conversation.
 
-The structured composer draft contains text, exact stored-file versions, and
-zero or more Cloud resource refs. Save it with `PUT
+The structured composer draft contains text, exact stored-file versions,
+zero or more Cloud resource refs, and up to ten quotes. Save it with `PUT
 /api/ai/conversations/:id/draft` and an `expectedRevision`. Identical autosaves
 are idempotent; stale writes return a conflict. In the browser controller, a
 failed `saveDraft`, `send`, or `queueMessage` answers `null` or `false`.
@@ -239,6 +239,31 @@ when the request sends none, and the original selected local Skills when a
 local client retries. Background and mandate runs do not
 receive local client context. The transaction consumes and clears exactly that revision, so
 text and attachments cannot drift between save and send.
+
+A quote is `{ type: "quote", messageId, text }`: a passage of an earlier message
+in the same conversation, named by that message's public id. `text` holds at
+most 2,000 characters, and quotes count towards the draft's 20,000 characters.
+`from` is optional and only a hint for the composer. When the turn is submitted,
+Cloud checks that the message is in the conversation and that `text` stands in
+its visible text, compared without whitespace. An answer's visible text is the
+rendered Markdown of all text in its turn. Cloud checks answers of up to 50,000
+characters, counting a blank line between the turn's messages; that is as much as
+it keeps of one message for search. Cloud then sets `from` from that message:
+`assistant` for an answer, `user` for the person's own message, `automation` for
+a message an automation sent. A quote that fails returns HTTP 400, nothing is
+sent, and the response carries a stable `code` with a message in the request's
+language: `quote_missing` (the message is not in the conversation),
+`quote_not_quotable` (not an answer or a user message), `quote_mismatch` (the
+passage is not in the message), or `quote_too_long` (the answer is longer than
+50,000 characters). The user message keeps the checked quotes in `meta.quotes`, the
+only source a client reads them from. The model reads each quote as a text part
+Cloud writes. Text never counts as a quote: Cloud breaks quote markers in sent,
+edited, and steered text, and again in every user message it gives a model,
+unless `meta.quotes` holds that quote. Background models that read a chat, such as
+titles, search summaries, and memory learning, read only the person's own words,
+without quotes. Editing a queued message and retrying a
+message keep the checked quotes and apply the same bounds; the bounds count the
+person's words and the quoted passages, not attached items.
 
 If a turn response is lost, retain the confirmed draft revision and the exact
 submit options. `GET /api/ai/conversations/:id/submission/:draftRevision` returns
