@@ -405,7 +405,7 @@ const createMandateInDb = async (
     ON CONFLICT DO NOTHING
     RETURNING *
   `;
-  return row ? ok(mapMandate(row)) : fail(err.conflict("Mandate workload"));
+  return row ? ok(mapMandate(row)) : fail(err.conflict("Mandate workload already exists"));
 };
 
 type CreateMandateInput = Omit<Parameters<typeof createMandateInDb>[0], "confirmation">;
