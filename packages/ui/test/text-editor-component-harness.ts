@@ -92,6 +92,7 @@ render(
                 : source,
           mode: scenario === "source" ? "source" : scenario === "plain" ? "plain" : "formatted",
           loading: scenario === "loading",
+          toolbar: new URLSearchParams(location.search).get("toolbar") === "host" ? false : undefined,
           readOnly: scenario === "readonly",
           placeholder: "Nachricht schreiben …",
           maxLength: scenario === "error" ? source.length : 2097152,

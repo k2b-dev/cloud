@@ -553,6 +553,7 @@ and restores unsaved changes kept in this browser.
 Replies and forwards are written in the conversation, not on a separate page.
 The reply box stands open at the place the browser chose (see the reader above);
 **Reply**, **Reply all**, **Forward**, a quote, and the **R** key all write into it.
+Focusing an empty reply keeps its starting height; longer replies grow with their content.
 Opening the conversation prepares a seed (`draft-seeds`); the first typed
 character creates the shared draft (`materialize`).
 A conversation has one reply draft. Reply, Reply all and Forward use the same

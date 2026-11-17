@@ -4101,6 +4101,67 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
+      for (const theme of reviewThemes)
+        for (const width of [1440, 390])
+          for (const position of ["top", "bottom"] as const)
+            test(`reply focus keeps its height ${position} ${theme} ${width}`, async () => {
+              const page = await open(`${boxPath}?conversation=Conv01&identity=1&theme=${theme}`, width, 900, "reduce", async (next) => {
+                await replyAt(position)(next);
+                await draftApi(next);
+              });
+              try {
+                await readyDraft(page);
+                await draftBox(page).locator(".mail-inline-draft-signature").waitFor();
+                const editor = draftBox(page).locator(".cm-content");
+                await editor.scrollIntoViewIfNeeded();
+                await settled(page);
+                const measure = () =>
+                  draftBox(page).evaluate((element) => {
+                    const box = element.getBoundingClientRect();
+                    const send = element.querySelector("[data-mail-reply-send]")!.getBoundingClientRect();
+                    const quote = element.querySelector(".mail-inline-draft-quote")!.getBoundingClientRect();
+                    const signature = element.querySelector(".mail-inline-draft-signature")!.getBoundingClientRect();
+                    return { height: box.height, sendTop: send.top, quoteTop: quote.top, signatureTop: signature.top };
+                  });
+                const before = await measure();
+                const screenshot = async (state: string) => {
+                  if (!screenshots) return;
+                  mkdirSync(screenshots, { recursive: true });
+                  await page.screenshot({ path: join(screenshots, `reply-height-${position}-${theme}-${width}-${state}.png`) });
+                };
+                await screenshot("unfocused");
+                await editor.click();
+                await settled(page);
+                const after = await measure();
+                await screenshot("focused");
+                const sameGeometry = (actual: typeof before, expected: typeof before) => {
+                  for (const key of ["height", "sendTop", "quoteTop", "signatureTop"] as const)
+                    expect(Math.abs(actual[key] - expected[key]), `${key}: ${expected[key]} → ${actual[key]}`).toBeLessThanOrEqual(0.5);
+                };
+                sameGeometry(after, before);
+                // A keyboard focus return keeps the same geometry as well.
+                await page.keyboard.press("Shift+Tab");
+                await page.keyboard.press("Tab");
+                expect(await editor.evaluate((element) => element === document.activeElement)).toBe(true);
+                await settled(page);
+                sameGeometry(await measure(), after);
+                // The starting height is a floor, not a ceiling on the person's reply.
+                await page.keyboard.insertText(Array.from({ length: 24 }, (_, line) => `Example reply line ${line + 1}`).join("\n"));
+                await eventually(async () => (await measure()).height > before.height, true, "content grows the reply box");
+                await settled(page);
+                expect(await draftBox(page).evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
+                expect(await page.locator("[data-reply-box-clipped]").count()).toBe(0);
+                const send = draftBox(page).locator("[data-mail-reply-send]");
+                await send.scrollIntoViewIfNeeded();
+                await settled(page);
+                const sendBox = (await send.boundingBox())!;
+                expect(sendBox.y).toBeGreaterThanOrEqual(0);
+                expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(900);
+              } finally {
+                await close(page);
+              }
+            });
+
       // #3297: on a slow runner the first measurement met the placeholder, and the ready box grew 63 px taller. With
       // the box on top that moved the messages. A late draft answer makes every runner meet the placeholder.
       test("a late draft answer: the box keeps the placeholder's height, so the messages below never move", async () => {
