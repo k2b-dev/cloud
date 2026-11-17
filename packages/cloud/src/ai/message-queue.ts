@@ -18,7 +18,7 @@ import { aiResourceMarker } from "./resource-markers";
 import { aiConversations } from "./store";
 import { finishAiTurnAbort } from "./turn-abort";
 import { AI_ACTION_BUDGET_MS } from "./turn-action-budget";
-import { queuedClientInterruptionState } from "./turn-interruption";
+import { isQueueInterruptedResult, queuedClientInterruptionState } from "./turn-interruption";
 import type { AiConversationService, AiDraftContentPart } from "./types";
 
 const log = logger("ai:message-queue");
@@ -332,9 +332,13 @@ export const reconcileQueuedInterruptions = async (conversationId?: string): Pro
         const outcomes = new Map(
           results.flatMap(({ message }) => (message.role === "tool_result" ? [[message.callId, message.result] as const] : [])),
         );
-        state = (entry.steps ?? []).some(
-          (step) => step.started && (!outcomes.has(step.callId) || isUnknownActionOutcome(outcomes.get(step.callId))),
-        )
+        state = (entry.steps ?? []).some((step) => {
+          const result = outcomes.get(step.callId);
+          return (
+            step.started &&
+            (!outcomes.has(step.callId) || isUnknownActionOutcome(result) || (isQueueInterruptedResult(result) && result.started))
+          );
+        })
           ? "unconfirmed"
           : "confirmed";
       }
@@ -353,6 +357,30 @@ export const reconcileQueuedInterruptions = async (conversationId?: string): Pro
         { found: true, ownerless: true, status: "waiting_for_action" },
       );
   }
+};
+
+/** Lifecycle check before a live worker commits to stopping; control-message delivery is only a hint. */
+export const readQueuedTurnInterruption = async (conversationId: string, turnId: string) => {
+  const [entry] = await sql<
+    {
+      client_wait: boolean;
+      expected_count: number;
+      expired: boolean;
+      actions: Parameters<typeof queuedClientInterruptionState>[0]["actions"];
+    }[]
+  >`SELECT q.interruption_deadline IS NOT NULL AS client_wait,
+    COALESCE(cardinality(q.interruption_client_calls),0) AS expected_count,
+    q.interruption_deadline < now() AS expired,
+    (SELECT COALESCE(jsonb_agg(jsonb_build_object('status',p.status,'resolvedEvent',p.resolved_event,
+      'late',p.resolved_at > q.interruption_deadline)), '[]'::jsonb)
+      FROM ai.pending_actions p WHERE p.turn_id=t.id AND p.call_id=ANY(q.interruption_client_calls)) AS actions
+    FROM ai.queued_messages q JOIN ai.turns t ON t.id=q.interrupted_turn_id
+    WHERE q.conversation_id=${conversationId}::uuid AND t.id=${turnId}::uuid
+      AND t.status IN ('queued','running','waiting_for_action')
+      AND t.cancellation_reason='queue_interrupt' AND q.status='pending' AND q.send_requested_at IS NOT NULL`;
+  if (!entry) return "withdrawn" as const;
+  if (!entry.client_wait) return "confirmed" as const;
+  return queuedClientInterruptionState({ expectedCount: entry.expected_count, expired: entry.expired, actions: entry.actions });
 };
 
 /** Existing turn creation owns execution and recovery; the DB lock owns FIFO and deduplication. */

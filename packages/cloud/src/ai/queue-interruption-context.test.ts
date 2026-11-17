@@ -57,3 +57,28 @@ test("an empty interrupted turn has neither a fabricated last step nor a fabrica
   expect(context).toContain('"lastCompletedStep":null');
   expect(context).toContain('"todoPlan":null');
 });
+
+test("queue-interrupted approvals never become completed results in the following turn", () => {
+  const context = aiQueueInterruptionContext({
+    turnId: "old",
+    steps: [
+      { callId: "skipped", name: "send", started: false },
+      { callId: "partial", name: "run", started: true },
+    ],
+    messages: [
+      result("skipped", { code: "QUEUE_INTERRUPTED", started: false }),
+      result("partial", { code: "QUEUE_INTERRUPTED", started: true }),
+    ].map((entry) => ({
+      ...entry,
+      message:
+        entry.message.role === "tool_result"
+          ? { ...entry.message, reason: entry.id === "skipped" ? ("not_run" as const) : ("not_returned" as const) }
+          : entry.message,
+    })),
+    todoPlan: null,
+    origin: { kind: "person", id: "person" },
+  });
+  expect(context).toContain('"lastCompletedStep":null');
+  expect(context).toContain('"callId":"skipped","name":"send","state":"not_executed"');
+  expect(context).toContain('"callId":"partial","name":"run","state":"outcome_unknown"');
+});

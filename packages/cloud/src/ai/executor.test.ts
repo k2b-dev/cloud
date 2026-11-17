@@ -1600,3 +1600,185 @@ test("the pipeline keeps the review and check after an approval and execution en
     publish.mockRestore();
   }
 });
+
+describe("Send now contract regressions", () => {
+  test.each(["approval", "custom_approval"] as const)("a skipped %s is not answered with a person's refusal (#3514)", async (kind) => {
+    const executor = new AiTurnExecutor({ leaseOwner: "worker", heartbeatMs: 1000, enqueueContinuation: async () => {} });
+    executor["startHeartbeat"] = () => () => {};
+    const controller = new AbortController();
+    const interruption = new AiTurnInterruption(() => controller.abort());
+    interruption.begin("other-effect");
+    interruption.request();
+    interruption.confirm();
+    const store = memoryStore();
+    const session = spyOn(aiConversations, "createSessionStore").mockReturnValue(store);
+    const pushed: unknown[] = [];
+    const loop: NessiLoop = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          ...turn,
+          type: "tool_action_request",
+          kind,
+          callId: kind === "approval" ? "call" : "call-approval-0",
+          name: "send",
+          args: {},
+        };
+      },
+      push: (event) => {
+        pushed.push(event);
+      },
+      steer: () => {},
+      abort: () => {},
+    };
+    const pipeline = new __aiExecutorTest.StreamPipeline({
+      conversationId: "chat",
+      turnId: "turn",
+      attempt: 1,
+      startSeq: 0,
+      leaseOwner: "worker",
+      seedBlocks: [],
+      allowRememberedApprovals: false,
+    });
+    pipeline.timing.event = async () => {};
+    pipeline.apply = async () => {};
+    pipeline.flush = async () => {};
+    try {
+      await executor["driveChatLoop"]({
+        loop,
+        pipeline,
+        initialRoundFailed: false,
+        conversationId: "chat",
+        turnId: "turn",
+        abortController: controller,
+        interruption,
+        prepared: prepareAiTools({ tools: [] }),
+        allowRememberedApprovals: false,
+        rememberableCapabilityApprovals: new Map(),
+        capabilityActionReviews: new Map(),
+        approvalTargets: new Map(),
+        linkedApprovals: new Map(),
+        appliedSteers: [],
+        noteToolRound: () => {},
+        noteToolCall: () => {},
+        failureReason: { current: null },
+      });
+      expect(pushed).toEqual([]);
+      const messages = await store.load();
+      expect(messages).toHaveLength(1);
+      expect(messages[0]?.message).toMatchObject({
+        role: "tool_result",
+        callId: "call",
+        reason: kind === "approval" ? "not_run" : "not_returned",
+        result: { code: "QUEUE_INTERRUPTED" },
+      });
+      expect(JSON.stringify(messages)).not.toContain("denied");
+      const blocks = buildBlocksFromMessages([
+        { seq: 1, message: { role: "assistant", content: [{ type: "tool_call", id: "call", name: "send", args: {} }] } },
+        ...messages.map((entry) => ({ ...entry, seq: 2 })),
+      ]);
+      expect(blocks[0]).toMatchObject({ kind: "tool", status: "running", isError: false });
+    } finally {
+      session.mockRestore();
+    }
+  });
+
+  test("a successful heartbeat withdraws an already delivered interrupt before the running effect settles (#3515)", async () => {
+    const executor = new AiTurnExecutor({ leaseOwner: "worker", heartbeatMs: 60_000, enqueueContinuation: async () => {} });
+    const controller = new AbortController();
+    const interruption = new AiTurnInterruption(() => controller.abort());
+    interruption.begin("effect");
+    interruption.request();
+    const heartbeat = spyOn(aiConversations, "heartbeatTurn").mockResolvedValue(true);
+    const get = spyOn(aiConversations, "getTurn").mockResolvedValue({
+      id: "turn",
+      shortId: "turn",
+      conversationId: "chat",
+      status: "running",
+      attempt: 1,
+      modelId: null,
+      createdAt: "2026-11-17T00:00:00Z",
+      completedAt: null,
+      error: null,
+      cancellationReason: null,
+      cancelRequestedAt: null,
+    });
+    const stop = executor["startHeartbeat"]("chat", "turn", controller, interruption);
+    try {
+      await Bun.sleep(0);
+      interruption.settled("effect");
+      expect(controller.signal.aborted).toBe(false);
+      expect(interruption.draining).toBe(false);
+      expect(() => interruption.begin("next-effect")).not.toThrow();
+    } finally {
+      stop();
+      heartbeat.mockRestore();
+      get.mockRestore();
+    }
+  });
+
+  test("a queue interrupt cannot keep a worker alive after losing its lease (#3515)", async () => {
+    const executor = new AiTurnExecutor({ leaseOwner: "worker", heartbeatMs: 60_000, enqueueContinuation: async () => {} });
+    const controller = new AbortController();
+    const interruption = new AiTurnInterruption(() => controller.abort());
+    interruption.begin("effect");
+    const heartbeat = spyOn(aiConversations, "heartbeatTurn").mockResolvedValue(false);
+    const get = spyOn(aiConversations, "getTurn").mockResolvedValue({
+      id: "turn",
+      shortId: "turn",
+      conversationId: "chat",
+      status: "running",
+      attempt: 1,
+      modelId: null,
+      createdAt: "2026-11-17T00:00:00Z",
+      completedAt: null,
+      error: null,
+      cancellationReason: "queue_interrupt",
+      cancelRequestedAt: "2026-11-17T11:59:59Z",
+    });
+    const stop = executor["startHeartbeat"]("chat", "turn", controller, interruption);
+    try {
+      await Bun.sleep(0);
+      expect(heartbeat).toHaveBeenCalledTimes(2);
+      expect(controller.signal.aborted).toBe(true);
+    } finally {
+      stop();
+      heartbeat.mockRestore();
+      get.mockRestore();
+    }
+  });
+
+  test("a queue interrupt cannot override an expired turn deadline (#3515)", async () => {
+    const now = spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-17T12:00:00Z"));
+    const executor = new AiTurnExecutor({ leaseOwner: "worker", heartbeatMs: 60_000, enqueueContinuation: async () => {} });
+    const controller = new AbortController();
+    const interruption = new AiTurnInterruption(() => controller.abort());
+    interruption.begin("effect");
+    const heartbeat = spyOn(aiConversations, "heartbeatTurn").mockResolvedValue(false);
+    const get = spyOn(aiConversations, "getTurn").mockResolvedValue({
+      id: "turn",
+      shortId: "turn",
+      conversationId: "chat",
+      status: "running",
+      attempt: 1,
+      modelId: null,
+      createdAt: "2026-11-17T00:00:00Z",
+      completedAt: null,
+      error: null,
+      cancellationReason: "queue_interrupt",
+      cancelRequestedAt: "2026-11-17T11:59:59Z",
+      deadline: "2026-11-17T11:59:59Z",
+      runBudgetMs: 60_000,
+    });
+    const stop = executor["startHeartbeat"]("chat", "turn", controller, interruption);
+    try {
+      await Bun.sleep(0);
+      expect(controller.signal.aborted).toBe(true);
+      expect(controller.signal.reason?.turnError()).toEqual({ code: "time_limit", limitMinutes: 1 });
+    } finally {
+      stop();
+      heartbeat.mockRestore();
+      get.mockRestore();
+      now.mockRestore();
+    }
+  });
+});

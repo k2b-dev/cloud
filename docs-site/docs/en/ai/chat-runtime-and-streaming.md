@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-11-16
+updated: 2026-11-17
 ---
 
 # Chat runtime and streaming
@@ -67,6 +67,12 @@ result; the runtime starts no later tool. The interrupted turn stays in history
 with `meta.queueInterrupted: true` and an `aborted` status. The chat displays
 “Stopped” without a resume action. Other queue entries retain their order.
 
+A step skipped by this interruption records `QUEUE_INTERRUPTED`, with `not_run`
+for a tool that never started and `not_returned` for a tool interrupted at a
+nested approval or client wait. It is not recorded as a person's refusal. The
+chat shows the step as stopped; the next turn treats earlier effects of a
+partially executed tool as uncertain and checks them before retrying.
+
 The response is `{ id, state, turnId }`, where `state` is `sending`, `submitted`,
 or `failed`. A `failed` receipt also carries `error`: the cause, such as
 `interruption_unconfirmed` or `cancelled`, or `null` when Send now was never
@@ -79,7 +85,11 @@ A pending client tool uses its existing result deadline. The entry stays
 `sending` until the client result is saved. If the deadline expires or the
 result reports an uncertain outcome, the entry becomes `failed` (“Not sent”);
 Cloud releases the interruption request and leaves the original turn to its
-normal result and timeout handling. It does not terminate the client effect.
+normal result and timeout handling. A live worker also releases its received
+interrupt when the request is withdrawn. Delivery alone never authorizes an
+irreversible stop: the worker confirms timely, known receipts before stopping,
+and the original run deadline and lease ownership still apply. It does not
+terminate the client effect.
 The same “Not sent” state applies if a lost server worker has no durable
 outcome for a started effect. The runtime never treats a lost lease alone as
 confirmation of a successful interruption. All queue mutations remain locked

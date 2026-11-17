@@ -36,7 +36,13 @@ import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
 import { isMalformedToolCallId } from "./malformed-tool-calls";
 import { aiMemories } from "./memories";
-import { drainQueuedMessages, enqueueChatMessage, requestQueuedMessageSendNow } from "./message-queue";
+import {
+  drainQueuedMessages,
+  enqueueChatMessage,
+  queuedMessageReceipt,
+  reconcileQueuedInterruptions,
+  requestQueuedMessageSendNow,
+} from "./message-queue";
 import { migrateCloudAi } from "./migrate";
 import { aiModelAccess } from "./model-access";
 import { visionPdfFixture } from "./pdf-render.fixture";
@@ -536,6 +542,99 @@ suite("AI executor integration", () => {
       }
     },
   );
+
+  test("a live worker continues after an already delivered Send now is withdrawn (#3515)", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["write_file"] });
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: conversation.id,
+      modelId: MODEL_ID,
+      runConfig: {
+        kind: "chat",
+        input: "Write two files",
+        actor: { kind: "user", user: actorUser(userId) },
+        toolSource: { kind: "default" },
+      },
+      userMessage: userMessage("Write two files"),
+    });
+    const queuedId = crypto.randomUUID();
+    await enqueueChatMessage(
+      queuedId,
+      {
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Urgent", writerOrigin: { kind: "person", id: userId }, toolSource: { kind: "none" } },
+        userMessage: userMessage("Urgent"),
+      },
+      [{ type: "text", text: "Urgent" }],
+    );
+    const originalWrite = aiFileStore.write;
+    let writes = 0;
+    const writing = spyOn(aiFileStore, "write").mockImplementation(async (input) => {
+      writes++;
+      if (writes === 1) {
+        await aiConversations.savePendingTurnAction({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          callId: "client-effect",
+          name: "local_bash",
+          args: {},
+          kind: "client_tool",
+          status: "pending",
+          approvalScope: "local",
+          allowAlways: false,
+          frontendMode: "client",
+          resolvedEvent: null,
+        });
+        expect((await requestQueuedMessageSendNow(conversation.id, queuedId))?.interrupt?.waitingForClient).toBe(true);
+        if (!interruptWorker) throw new Error("Missing worker control listener");
+        interruptWorker();
+        // Deliver the uncertain receipt while the original worker still owns a running effect.
+        await aiConversations.resolvePendingTurnAction({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          callId: "client-effect",
+          event: { type: "tool_result", callId: "client-effect", result: { code: "ACTION_OUTCOME_UNKNOWN" } },
+        });
+        await reconcileQueuedInterruptions(conversation.id);
+        expect(await queuedMessageReceipt(conversation.id, queuedId)).toMatchObject({ state: "failed", error: "interruption_unconfirmed" });
+      }
+      return originalWrite(input);
+    });
+    try {
+      completionQueue = [
+        toolCallCompletion("first-effect", "write_file", { path: "/first.txt", content: "First" }),
+        toolCallCompletion("second-effect", "write_file", { path: "/second.txt", content: "Second" }),
+        textCompletion("Done"),
+      ];
+      const leaseOwner = "withdrawn-interrupt-worker";
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      const executor = new AiTurnExecutor({
+        leaseOwner,
+        heartbeatMs: 25,
+        enqueueContinuation: async () => {},
+        validateTurn: fakeValidateToolTurn,
+      });
+      await executor.run({ conversationId: conversation.id, turnId: turn.id, claim: claim!, signal: new AbortController().signal });
+      expect(writes).toBe(2);
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+      expect(await aiFileStore.stat({ conversationId: conversation.id, path: "second.txt" })).not.toBeNull();
+    } finally {
+      writing.mockRestore();
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
 
   const resumeModes = ["unchanged", "changed", "revoked", "used", "rejected_empty", "approved_empty", "failed_empty"] as const;
   test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {

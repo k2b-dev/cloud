@@ -2046,3 +2046,61 @@ test("a link in the visible lines keeps a clamped text closed, and one in the hi
     await context.close();
   }
 }, 30_000);
+
+for (const language of ["de", "en"] as const)
+  for (const width of [390, 1280])
+    test(`a queue-skipped approval stays stopped after history reload (${language}, ${width}px)`, async () => {
+      const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: "reduce" });
+      try {
+        const page = await context.newPage();
+        page.setDefaultTimeout(5_000);
+        await page.addInitScript(pinPageDate, testNow);
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${language}&theme=${language === "de" ? "dark" : "light"}`);
+        const messages = [
+          storedMessage(1, "turn", { role: "user", content: [{ type: "text", text: "Send the offer" }] }),
+          storedMessage(
+            2,
+            "turn",
+            {
+              role: "assistant",
+              content: [{ type: "tool_call", id: "send", name: "mail__action__send", args: {} }],
+            },
+            {
+              loopDoneReason: "aborted",
+              meta: {
+                queueInterrupted: true,
+                toolPresentations: {
+                  send: {
+                    kind: "capability",
+                    appId: "mail",
+                    appName: "Mail",
+                    appIcon: "ti ti-mail",
+                    title: language === "de" ? "E-Mail senden" : "Send email",
+                    capabilityKind: "action",
+                  },
+                },
+              },
+            },
+          ),
+          storedMessage(3, "turn", {
+            role: "tool_result",
+            callId: "send",
+            name: "mail__action__send",
+            isError: true,
+            reason: "not_run",
+            result: { code: "QUEUE_INTERRUPTED", started: false, message: "Turn interrupted before this step ran." },
+          }),
+        ];
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 2, type: "turn_finished", status: "aborted", error: null, messages });
+        await settled(page, ".ai-turn");
+        const outcome = await page.locator(".ai-turn__action .k2b-chat-outcome").innerText();
+        expect(outcome).toContain(language === "de" ? "Die Antwort wurde angehalten." : "The response was stopped.");
+        expect(outcome).not.toMatch(/abgelehnt|declined|denied|failed|fehlgeschlagen/i);
+        expect(await page.locator(".k2b-chat-decision__answer").count()).toBe(0);
+        expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([]);
+        expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+      } finally {
+        await context.close();
+      }
+    }, 30_000);

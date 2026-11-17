@@ -10,6 +10,7 @@ import {
   listQueuedMessages,
   migrateAiMessageQueue,
   queuedMessageReceipt,
+  readQueuedTurnInterruption,
   reconcileQueuedInterruptions,
   requestQueuedMessageSendNow,
   updateQueuedMessage,
@@ -241,6 +242,7 @@ for (const outcome of ["finished", "expired", "unknown"] as const) {
       });
       const id = await f.add("Urgent");
       expect((await requestQueuedMessageSendNow(f.chat.id, id))?.interrupt?.waitingForClient).toBe(true);
+      expect(await readQueuedTurnInterruption(f.chat.id, turn.id)).toBe("waiting");
       const [deadline] = await sql<{ unchanged: boolean }[]>`SELECT q.interruption_deadline <= t.deadline AS unchanged
         FROM ai.queued_messages q JOIN ai.turns t ON t.id=q.interrupted_turn_id WHERE q.id=${id}::uuid`;
       expect(deadline?.unchanged).toBe(true);
@@ -268,8 +270,10 @@ for (const outcome of ["finished", "expired", "unknown"] as const) {
         expect(await aiConversations.completeTurn({ conversationId: f.chat.id, turnId: turn.id, status: "aborted" })).toBe(
           "waiting_for_client",
         );
+      expect(await readQueuedTurnInterruption(f.chat.id, turn.id)).toBe(outcome === "finished" ? "confirmed" : "unconfirmed");
       await reconcileQueuedInterruptions(f.chat.id);
       await reconcileQueuedInterruptions(f.chat.id);
+      expect(await readQueuedTurnInterruption(f.chat.id, turn.id)).toBe("withdrawn");
       if (outcome === "finished") {
         expect((await aiConversations.getTurn({ conversationId: f.chat.id, turnId: turn.id }))?.status).toBe("aborted");
         const receipts = (await aiConversations.listMessages({ conversationId: f.chat.id })).filter(
@@ -293,7 +297,7 @@ for (const outcome of ["finished", "expired", "unknown"] as const) {
   });
 }
 
-for (const receipt of ["missing", "journaled"] as const) {
+for (const receipt of ["missing", "journaled", "interrupted"] as const) {
   integration(`an ownerless server effect is ${receipt}: require a durable outcome before confirming interruption`, async () => {
     const f = await fixture();
     try {
@@ -308,10 +312,19 @@ for (const receipt of ["missing", "journaled"] as const) {
           name: "write_file",
           result: { written: true },
         });
+      if (receipt === "interrupted")
+        await aiConversations.createSessionStore({ conversationId: f.chat.id, turnId: turn.id }).append({
+          role: "tool_result",
+          callId: "server-effect",
+          name: "write_file",
+          isError: true,
+          reason: "not_returned",
+          result: { code: "QUEUE_INTERRUPTED", started: true },
+        });
       const id = await f.add("Urgent");
       await requestQueuedMessageSendNow(f.chat.id, id);
       await reconcileQueuedInterruptions(f.chat.id);
-      if (receipt === "missing") {
+      if (receipt !== "journaled") {
         expect(await queuedMessageReceipt(f.chat.id, id)).toMatchObject({ state: "failed" });
         expect(await aiConversations.getTurn({ conversationId: f.chat.id, turnId: turn.id })).toMatchObject({
           status: "running",
@@ -432,6 +445,44 @@ integration("the turn sweep leaves an interrupted server effect without a durabl
     });
     await reconcileQueuedInterruptions(f.chat.id);
     expect(await queuedMessageReceipt(f.chat.id, id)).toMatchObject({ state: "failed", error: "interruption_unconfirmed" });
+  } finally {
+    await f.close();
+  }
+});
+
+integration("a queue interrupt never changes a time-limit failure to a successful interruption (#3515)", async () => {
+  const f = await fixture();
+  try {
+    const { turn } = await aiConversations.submitChatTurn(f.input("Running"));
+    await aiConversations.claimTurn({
+      conversationId: f.chat.id,
+      turnId: turn.id,
+      leaseOwner: "deadline-worker",
+      leaseMs: 30_000,
+      from: "queue",
+      maxAttempts: 5,
+      runBudgetMs: 60_000,
+    });
+    const id = await f.add("Urgent");
+    await requestQueuedMessageSendNow(f.chat.id, id);
+    expect(
+      await aiConversations.completeTurn({
+        conversationId: f.chat.id,
+        turnId: turn.id,
+        leaseOwner: "deadline-worker",
+        status: "failed",
+        error: "Run time limit reached",
+        turnError: { code: "time_limit", limitMinutes: 1 },
+      }),
+    ).toBe("completed");
+    expect(await aiConversations.getTurn({ conversationId: f.chat.id, turnId: turn.id })).toMatchObject({
+      status: "failed",
+      error: "Run time limit reached",
+    });
+    expect((await aiConversations.listTurnMessages({ conversationId: f.chat.id, loopId: turn.id })).at(-1)?.meta?.turnError).toEqual({
+      code: "time_limit",
+      limitMinutes: 1,
+    });
   } finally {
     await f.close();
   }
