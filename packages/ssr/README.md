@@ -18,12 +18,38 @@ server writes as Seroval JSON data. Props are never evaluated, so pages work
 under a Content Security Policy without `'unsafe-eval'`. Two consequences of
 re-rendering follow:
 
-- state that exists only in the server HTML inside an island, such as a typed
-  input value or a scroll position, is replaced on mount. Focus is kept: an
-  element focused before the island mounted passes its focus to the element
-  at the same place in the new markup, which hears the focus like any other;
+- state that exists only in the server HTML inside an island, such as a scroll
+  position, is replaced on mount. Focus and typed text are kept: an element
+  focused before the island mounted passes its focus to the element at the
+  same place in the new markup, which hears the focus like any other, and
+  typed text moves to the same field (see below);
 - server and client must render the same markup from the same props, or the
   page shifts when the island mounts.
+
+Text a person typed into a text field (`<textarea>`, or `<input>` of type
+text, search, email, url, or tel) before the island mounted moves to the same
+field of the new markup. The field is found by tag, type, `name`,
+`aria-label`, and its place among fields with the same four; when the new
+markup has a different number of such fields, or the field is disabled or
+read-only, the text is dropped and never given to another field. Fields that
+exist only in the browser's markup, or that the island renders later, for
+example behind `lazy` or `Suspense`, drop their text too.
+
+Only fields that received a trusted `input` event count. `html()` writes an
+inline listener at the start of `<body>` that records them; a custom template
+must keep `body` before any island markup, or text typed above the listener
+is not recorded. Values the browser restored by itself stay out; autofill
+that fires a trusted `input` event counts as typed.
+
+An `<input>` takes the typed value. A `<textarea>` does too, unless the
+island put other text into it itself, such as a restored draft: then the
+draft stays and what the person added to the server's text follows on a new
+line. An emptied field stays empty. The field hears one bubbling `input`
+event with `inputType: "insertReplacementText"`, and a `change` event: at
+once when it was not the focused field, on leaving it otherwise. The focused
+field keeps its focus and selection. While an input method composition runs
+inside an island (a character still being built), the island mounts after
+`compositionend`. Password, file, and other fields never move.
 
 ## Island lifetime
 

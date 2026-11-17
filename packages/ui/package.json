@@ -36,6 +36,12 @@
       "browser": "./dist/browser/charts.js",
       "default": "./dist/ssr/charts.js"
     },
+    "./hover-card": {
+      "types": "./dist/types/hover-card.d.ts",
+      "browser": "./dist/browser/hover-card.js",
+      "import": "./dist/ssr/hover-card.js",
+      "default": "./dist/ssr/hover-card.js"
+    },
     "./country-map": {
       "types": "./dist/types/country-map.d.ts",
       "browser": "./dist/browser/country-map.js",
