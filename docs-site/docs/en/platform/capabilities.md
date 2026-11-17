@@ -1601,7 +1601,11 @@ is final with its reason (for example `code_inactive`, `code_run_gone` or a
 daily limit), frees its place and does not block the next entry or the person.
 A person's Codes have at most one waiting or running message across all chats;
 another send returns `chat_busy` until it finishes. At start, only older Code
-messages of the person count. A turn never sends into its own chat. A send whose invocation source cannot be checked right
+messages of the person count. A Code message never outlives the budget day it
+was accepted on. Expired or invalid Code entries are withdrawn independently of
+FIFO, even behind a blocked person message; retry does not revive them. Archiving
+a chat prevents its pending entries from starting, including after restoration.
+A turn never sends into its own chat. A send whose invocation source cannot be checked right
 now returns `409 source_unavailable`; repeat the same call later. A key holds
 for 24 hours per person, like every Action key; after that, the same key queues
 a new message. When the person retries a sent message, the retry runs on the

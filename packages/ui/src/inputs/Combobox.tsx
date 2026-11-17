@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, on, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { optionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
 import { StatusBadge } from "../surfaces/StatusBadge";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabledChoiceIndex } from "./choice";
@@ -11,6 +12,11 @@ export type ComboboxOption = {
   id: string;
   label: string;
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * It shows only with a `description`, which stays the text that search and screen readers use.
+   */
+  descriptionVisual?: () => JSX.Element;
   icon?: string;
   /** Names what kind of result this is, at the end of the row. */
   badge?: string;
@@ -259,7 +265,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
                     <Show when={option().icon}>{(icon) => <i class={iconClass(icon())} aria-hidden="true" />}</Show>
                     <span>
                       <strong>{option().label}</strong>
-                      <Show when={option().description}>{(description) => <small>{description()}</small>}</Show>
+                      {optionDescription(option)}
                     </span>
                     <Show when={option().badge}>
                       {(badge) => <StatusBadge class="k2b-choice-option__badge" tone="neutral" icon={null} label={badge()} />}

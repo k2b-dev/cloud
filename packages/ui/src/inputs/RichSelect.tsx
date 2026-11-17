@@ -15,6 +15,7 @@ import {
 import { Button } from "../actions/Button";
 import { dialogCore } from "../feedback/dialog-core";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { optionDescription } from "../internal/option-description";
 import { LocaleProvider, useLocale } from "../intl/locale";
 import { withBottomSheet } from "../layout/bottom-sheet-load";
 import { createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
@@ -30,6 +31,11 @@ export type RichSelectItem = {
   label: string;
   /** At most one short line that says what the choice changes. */
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * It shows only with a `description`, which stays the text that search and screen readers use.
+   */
+  descriptionVisual?: () => JSX.Element;
   /** Icon class shown before the name. */
   icon?: string;
   /** Color dot shown before the name, such as a space color. Replaces `icon`. */
@@ -132,13 +138,12 @@ function RichSelectRowText(props: { item: RichSelectItem; labelId: string; lineI
       <span id={props.labelId} class="k2b-rich-select__label">
         {props.item.label}
       </span>
-      <Show when={props.item.disabledReason ?? props.item.description}>
-        {(line) => (
-          <span id={props.lineId} class="k2b-rich-select__line" data-reason={props.item.disabledReason ? "true" : undefined}>
-            {line()}
-          </span>
-        )}
-      </Show>
+      {/* The reason of an unavailable row takes the place of its description and visual. */}
+      {optionDescription(
+        () => (props.item.disabledReason ? { description: props.item.disabledReason } : props.item),
+        "k2b-rich-select__line",
+        props.lineId,
+      )}
     </span>
   );
 }

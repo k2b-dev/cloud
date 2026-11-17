@@ -234,6 +234,18 @@ that reused one key in every run, such as `daily-briefing`, now replays the
 first message for 24 hours instead of starting a new one. Include the
 occurrence in the key, for example the scheduled time.
 
+Automation sends now have 32 waiting places per chat, separate from the person's
+20 composer places, with one place per source Code or source chat. A refusal at
+start is final for that message and releases its place; re-enabling Code does
+not restart it. Code messages also expire when their accepted budget day ends,
+even behind a blocked queue head. Use the read Query to inspect the reason and
+a new occurrence key for a later scheduled attempt.
+
+The migration creates durable send receipts and backfills accepted messages
+that still carry their send metadata. A replay keeps the original destination
+after a chat-binding change or queue removal. Deploy Core and the platform
+library together so queue promotion uses Core's current admission policy.
+
 Back up the
 database before upgrading. The migration
 removes `code.chat_deliveries`, its recovery path, `code.chat_runs` and old

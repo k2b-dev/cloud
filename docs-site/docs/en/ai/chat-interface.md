@@ -302,19 +302,37 @@ order:
    reconnects, the line reads "Reconnecting" without its shimmer, and its clock
    stands. While an approval or answer is pending it says what the turn waits
    for and since when. Once the turn ends, the line leads with ✦ alone and no
-   app icons. The step count, what did not go through ("1 failed" in red, "1
-   without access" in the warning colour) and the work time stand right of the
-   sentence in their own columns, never in it. Without a confirmed outcome the
-   sentence reads "Worked", or "Stopped" after a stop. A failed turn reads
-   "Worked" too and says why in a notice at its end; a failed turn from an
-   earlier release, which recorded no reason, reads "Interrupted". Expanding it shows work at the
-   same left edge as the line: intermediate texts as quiet paragraphs, each
-   limited to three lines with a chevron for the rest like a quiet status, and
-   the steps between them directly, each with its input and output on demand in
-   place. Housekeeping, loading tools, skills, and knowledge and reading a
+   app icons. Without a confirmed outcome the sentence reads "Worked", or
+   "Stopped" after a stop. A failed turn reads "Worked" too and says why in a
+   notice at its end; a failed turn from an earlier release, which recorded no
+   reason, reads "Interrupted". The line and every row of the expanded work
+   share one `Chat.Activity` grid: icon, one line of text, meta, duration, and
+   the chevron or ⓘ. The line spans the message column, so its right columns
+   end on the right edge of the person's messages. Finished, its meta names the
+   steps and what did not go through, such as "6 steps · 1 failed", with a
+   failure in red and "unclear" or "without access" in the warning colour; on
+   phones the plain count gives way beside such a status. The work time stands
+   in the duration column, never in the sentence.
+   Expanding it shows one row per step at the line's edge, each icon in its
+   app's colour without a surface: a text Gustav wrote between steps and its
+   reasoning as "Thought it over", every other step as its sentence. A step's
+   outcome is one word in meta: Failed, No access, Rejected, Stopped,
+   Cancelled, Waiting for you, or Outcome unclear; a step that went through
+   says nothing there. Its details, such as the result, the reason and its
+   consequence, or the whole text of a note, stand in a card behind its ⓘ; the
+   row itself never opens. A step whose outcome Cloud could not see offers
+   **Check status** in its card, which runs the review's check once per press,
+   like **Check again**. A step that waits for the person leads to its
+   approval or question from its card, **Go to the approval** or **Go to the
+   question**, through `onShowQuestion`, which the Assistant connects to the
+   landing of "Waiting for you". The running step's duration counts on the work clock;
+   finished steps show none, since blocks carry no start time. A long list
+   opens on its newest six rows after one row "Show n earlier steps", which
+   opens the earlier ones in place; while the list is open it only grows, and
+   the next opening shows the newest six again. Housekeeping, loading tools, skills, and knowledge and reading a
    loaded skill's files, folds into one row such as
    "Loaded tools and guidance · 4 steps" at step level, with the reasoning
-   between those steps; it opens in place without a second indent. A run of
+   between those steps; it opens in place, its steps on its text edge. A run of
    housekeeping that would hold all but one of the work's steps shows its
    steps directly, so the line never opens to a summary of itself. Consecutive
    calls that differ only in paging, their `offset`, `length`, `limit`,
@@ -324,8 +342,8 @@ order:
    steps remain outside it. Calls with any other differing argument, such as
    another storage, address book, filter, or written content, stay separate
    rows; so does a failed or rejected call, and text between the calls ends
-   the run. A folded row shows its count at its end, like the line's step
-   count, so a narrow screen shortens the target but never the count. Its
+   the run. A folded row shows its count in meta, so a narrow screen shortens the
+   target but never the count. Its
    steps keep their place, open state, and focus while they finish and when
    the turn becomes history. A row a reader sees while the line is open
    never folds away under them, also when reasoning after it or a call's
@@ -335,16 +353,13 @@ order:
    also while its clock ticks, and stays open while new steps stream in. Opening
    or closing it never scrolls the conversation; afterwards the conversation
    follows new steps only while its end is still in view.
-   Every step stays there, including results and actions, so input and output
+   Every step stays there, including results and actions, so their details
    remain reachable. A step that acts on something reads as its sentence: what
    it will do while it runs, what it did once done, such as "Wrote report.md",
-   and what did not happen after a rejection. A failed step stays folded and
-   says in words that it did not work and whether the turn went on without it;
-   a failed Code step also shows the error icon in the danger tone in its usual
-   icon place. A rejected approval says "rejected". A Code
-   check (`code_check`) reads "Checking the Code" while it runs, and its row
-   names the outcome in words with its own icon: "passed", "3 findings", or
-   "not passed". When the host provides `fileUrl`, an expanded
+   and what did not happen after a rejection. A Code check (`code_check`)
+   reads "Checking the Code" while it runs, and its row names the outcome in
+   words with its own icon: "passed", "3 findings", or "not passed". When the
+   host provides `fileUrl`, an expanded
    `view_image` step of a chat image shows that image below its input and
    output, as a small thumbnail with a fixed box that loads lazily through the
    chat's file route, so it shows only what the reader may open and nothing

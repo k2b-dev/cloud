@@ -742,6 +742,8 @@ export const aiRoutes = (() => {
             requestId: body.requestId,
             ownerUserId: ctx.ownerUserId,
             title: body.title,
+            // An untitled chat, such as one from `cld assistant chats create`, is named in the caller's language.
+            defaultTitle: aiChatMessages(getLocale(c)).newChat,
             projectId: project?.id,
             draft: draft.data.content,
             preloadTools: preloadTools.map((name) => name!),

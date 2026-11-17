@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { aiProjects, isAiSettingsError, personalAiModelPolicy, selectAssistantAiModel } from "@k2b/cloud/ai";
 import { AiQueuedChatStartError, type ValidateQueuedChatStart } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings } from "@k2b/cloud/services";
@@ -18,7 +19,6 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
     !trigger ||
     trigger.kind !== origin.kind ||
     trigger.id !== origin.id ||
-    config.sourceRestricted ||
     config.mandate ||
     config.actor?.kind !== "user" ||
     config.actor.user.id !== owner ||
@@ -54,7 +54,13 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
       throw new AiQueuedChatStartError("chat_chain_forbidden");
   }
   if (origin.kind === "automation") {
-    if (!origin.runId) throw new AiQueuedChatStartError("source_restricted");
+    if (!origin.runId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(origin.runId))
+      throw new AiQueuedChatStartError("code_run_gone");
+    const timeZone = (await coreSettings.get<string>("app.timezone", db)) || "UTC";
+    const [entry] = await db<{ stale: boolean }[]>`SELECT
+      (created_at AT TIME ZONE ${timeZone})::date < (clock_timestamp() AT TIME ZONE ${timeZone})::date AS stale
+      FROM ai.queued_messages WHERE id=${messageId}::uuid`;
+    if (entry?.stale) throw new AiQueuedChatStartError("code_budget_day_ended");
     const [run] = await db`SELECT 1 FROM code.runs WHERE id=${origin.runId}::uuid AND code_id=${origin.id}`;
     if (!run) throw new AiQueuedChatStartError("code_run_gone");
     const [code] = await db`SELECT c.id FROM code.codes c JOIN code.runs r ON r.code_id=c.id
@@ -81,4 +87,19 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
   }
   // Refresh account identity before execution: a queued snapshot cannot retain revoked roles.
   return { ...input, runConfig: { ...config, actor: { kind: "user", user } } };
+};
+
+/** Final Code refusals are retired independently of FIFO, in one bounded queue statement. */
+validateQueuedChatStart.expiredReason = async () => {
+  const timeZone = (await coreSettings.get<string>("app.timezone")) || "UTC";
+  // The first branch proves the run id a UUID before the last one casts it, so a malformed id retires
+  // its message instead of failing the drain, and the run lookup uses the primary key.
+  const expression = sql`(CASE
+      WHEN q.submission#>>'{runConfig,send,accountId}' IS NULL
+        OR NOT COALESCE(q.submission#>>'{runConfig,codeOrigin,runId}' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', false) THEN 'code_run_gone'
+      WHEN NOT EXISTS (SELECT 1 FROM code.codes c WHERE c.id = q.submission#>>'{runConfig,codeOrigin,codeId}' AND c.state = 'active') THEN 'code_inactive'
+      WHEN (q.created_at AT TIME ZONE ${timeZone})::date < (clock_timestamp() AT TIME ZONE ${timeZone})::date THEN 'code_budget_day_ended'
+      WHEN NOT EXISTS (SELECT 1 FROM code.runs r WHERE r.id = (q.submission#>>'{runConfig,codeOrigin,runId}')::uuid) THEN 'code_run_gone'
+    END)`;
+  return { expression };
 };

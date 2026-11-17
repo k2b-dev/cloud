@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "@typescript/typescript6";
-import { isTestFile, listFiles } from "./files";
+import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const refreshes = (node: ts.Node): boolean => {
@@ -19,8 +19,7 @@ const refreshes = (node: ts.Node): boolean => {
 export const checkSource = (file: string, source: string): Finding[] => {
   // App-local wrappers such as Assistant's StudioPermissions are not followed.
   if (isTestFile(file) || (!source.includes("<PermissionEditor") && !source.includes("<ScopedPermissionEditor"))) return [];
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const findings: Finding[] = [];
+  const { sourceFile, findings } = parseSource(file, source);
   const visit = (node: ts.Node, unstable: boolean): void => {
     const element = ts.isJsxElement(node) ? node.openingElement : ts.isJsxSelfClosingElement(node) ? node : undefined;
     const tag = element?.tagName.getText(sourceFile);

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import {
+  AI_MESSAGE_QUEUE_LIMIT,
   AiMessageQueueConflict,
   AUTOMATION_QUEUE_LIMIT,
   AUTOMATION_QUEUE_SOURCE_LIMIT,
@@ -10,6 +11,7 @@ import {
   enqueueAutomationChatMessage,
   enqueueChatMessage,
   listQueuedMessages,
+  migrateAiMessageQueue,
   type QueuedChatSubmission,
 } from "./message-queue";
 import { aiConversations } from "./store";
@@ -65,8 +67,28 @@ suiteFor(
     expect(current?.draft).toMatchObject({ revision: 7, content: [{ type: "text", text: "My unfinished draft" }] });
     const personId = crypto.randomUUID();
     await enqueueChatMessage(personId, { ...submission(chat.id, "Person"), expectedDraftRevision: 7 }, [{ type: "text", text: "Person" }]);
-    expect((await listQueuedMessages(chat.id)).map((row) => row.id)).toHaveLength(33);
+    expect(AI_MESSAGE_QUEUE_LIMIT).toBe(20);
+    for (let n = 1; n < AI_MESSAGE_QUEUE_LIMIT; n++) await enqueueChatMessage(crypto.randomUUID(), submission(chat.id, `Person ${n}`), []);
+    await expect(enqueueChatMessage(crypto.randomUUID(), submission(chat.id, "Person overflow"), [])).rejects.toBeInstanceOf(
+      AiMessageQueueConflict,
+    );
+    expect((await listQueuedMessages(chat.id)).map((row) => row.id)).toHaveLength(AUTOMATION_QUEUE_LIMIT + AI_MESSAGE_QUEUE_LIMIT);
     expect((await aiConversations.getConversation({ conversationId: chat.id }))?.draft.content).toEqual([]);
+  });
+
+  test("receipt backfill keeps the original acceptance time and its key window", async () => {
+    const chat = await aiConversations.createConversation({ ownerUserId: owner });
+    const id = crypto.randomUUID();
+    const input = submission(chat.id, "Existing send", "backfill-source");
+    input.runConfig.send = { id, accountId: owner, keyHash: "backfill-key", requestHash: "backfill-input" };
+    await sql.begin((db) => enqueueAutomationChatMessage(id, input, [], db));
+    await sql`UPDATE ai.queued_messages SET created_at=clock_timestamp()-interval '25 hours' WHERE id=${id}::uuid`;
+    await migrateAiMessageQueue();
+    const [receipt] = await sql<{ original: boolean; expired: boolean }[]>`SELECT
+      r.created_at=q.created_at AS original,
+      r.created_at <= clock_timestamp()-interval '24 hours' AS expired
+      FROM ai.chat_send_receipts r JOIN ai.queued_messages q ON q.id=r.queued_message_id WHERE r.id=${id}::uuid`;
+    expect(receipt).toEqual({ original: true, expired: true });
   });
 
   test("a stale revision cannot promote; a stale caller payload cannot replace a later edit", async () => {
@@ -74,12 +96,15 @@ suiteFor(
     const input = submission(chat.id, "Original");
     const id = crypto.randomUUID();
     await enqueueChatMessage(id, input, [{ type: "text", text: "Original" }]);
-    expect(await editQueuedMessage(chat.id, id, "Latest edit", { signedInSession: true })).toBeTrue();
+    expect(await editQueuedMessage(chat.id, id, "Latest edit", { signedInSession: false })).toBeTrue();
     await expect(aiConversations.submitChatTurn({ ...input, queuedMessageId: id, queuedMessageRevision: "0" })).rejects.toThrow(
       "Queued message is no longer ready.",
     );
     const result = await aiConversations.submitChatTurn({ ...input, queuedMessageId: id });
     expect(result.message.message).toMatchObject({ content: [{ type: "text", text: "Latest edit" }] });
+    expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: result.turn.id })).toMatchObject({
+      sourceRestricted: true,
+    });
   });
 
   test("concurrent drain starts the current revision exactly once", async () => {

@@ -92,7 +92,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id UUID,child_group_id UUID)`;
     await sql`CREATE TABLE ai.turns(id UUID PRIMARY KEY,status TEXT,attempt INTEGER,lease_expires_at TIMESTAMPTZ,conversation_id UUID,run_config JSONB)`;
     await sql`CREATE TABLE ai.conversations(id UUID PRIMARY KEY,created_by_user_id UUID,launched_by_app_id TEXT,archived_at TIMESTAMPTZ)`;
-    await sql`CREATE TABLE ai.queued_messages(id UUID PRIMARY KEY,conversation_id UUID,submission JSONB,status TEXT,error TEXT,quota_checked_at TIMESTAMPTZ,position BIGSERIAL)`;
+    await sql`CREATE TABLE ai.queued_messages(id UUID PRIMARY KEY,conversation_id UUID,submission JSONB,status TEXT,error TEXT,quota_checked_at TIMESTAMPTZ,position BIGSERIAL,automation_source TEXT,revision BIGINT NOT NULL DEFAULT 0)`;
     await sql`INSERT INTO auth.users VALUES(${user}::uuid,'one','One'),(${other}::uuid,'two','Two')`;
     await sql`INSERT INTO auth.service_accounts(id,name,kind) VALUES(${service}::uuid,'Service','agent'),(${codeService}::uuid,'Build service','code')`;
     await sql`INSERT INTO auth.groups VALUES(${group}::uuid,'Parent','local'),(${child}::uuid,'Child','local')`;

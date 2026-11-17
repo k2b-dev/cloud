@@ -125,6 +125,7 @@ const startAppSkillsWatcher = async (): Promise<void> => {
   if (appSkillsTask) return;
   await refreshAppSkills();
   appSkillsAbort = new AbortController();
+  // runtime-timer: registry watcher for help skills that requests read.
   appSkillsTask = superviseRuntimeTask({
     name: "App skills watcher",
     signal: appSkillsAbort.signal,

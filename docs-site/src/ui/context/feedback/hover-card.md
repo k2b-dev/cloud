@@ -37,6 +37,13 @@ controls, such as a slider or a form.
 import { HoverCard, type HoverCardProps, type HoverCardTriggerProps, ProgressPath, DescriptionList } from "@k2b/ui";
 ```
 
+Code that loads on demand, such as an opened list in a chat, imports it from
+its own entry instead, so the island's first JavaScript does not keep it:
+
+```tsx
+import { HoverCard } from "@k2b/ui/hover-card";
+```
+
 ## Two forms
 
 - **`HoverCard`** wraps a control that already has its own action, such as a

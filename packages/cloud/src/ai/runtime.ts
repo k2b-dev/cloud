@@ -8,7 +8,7 @@ import { lazySync } from "../_internal/process-sync";
 import type { RequestActor } from "../server";
 import { type ApprovalDecisionChannel, approvals } from "../services/approvals";
 import { logger } from "../services/logging";
-import { superviseRuntimeTask } from "../services/runtime-lifecycle";
+import { startRuntimeInterval, superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { coreSettings } from "../services/settings/api";
 import type { AiModelRequest } from "../shared/ai-models";
 import {
@@ -564,6 +564,7 @@ const processMessage = async (
 ): Promise<void> => {
   const leaseOwner = `${AI_WORKER_ID}:${message.messageId}:${crypto.randomUUID()}`;
   let heartbeatFailed = false;
+  // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
   const touch = setInterval(() => {
     void message
       .heartbeat()
@@ -694,6 +695,7 @@ export const startAiRuntime = (
     if (errors.length) throw new AggregateError(errors, `${errors.length} AI approval requested listener(s) failed`);
   };
 
+  // runtime-timer: supervises the Sync worker, which follows quiesce and retries its resume without a limit.
   void superviseRuntimeTask({
     name: "AI turn worker",
     signal: controller.signal,
@@ -718,12 +720,13 @@ export const startAiRuntime = (
       }),
   });
 
-  const runSweep = () =>
-    void sweepAiRuntime(dispatchTurnFinalized).catch((error) =>
-      log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
-    );
-  const sweepTimer = setInterval(runSweep, AI_SWEEP_INTERVAL_MS);
-  if (typeof sweepTimer === "object" && "unref" in sweepTimer) sweepTimer.unref();
+  const sweep = startRuntimeInterval({
+    run: async () => {
+      await sweepAiRuntime(dispatchTurnFinalized);
+    },
+    intervalMs: AI_SWEEP_INTERVAL_MS,
+    onError: (error) => log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
+  });
 
   const stopDictations = startAiDictationRuntime();
   const state: AiRuntimeState = {
@@ -734,7 +737,7 @@ export const startAiRuntime = (
       if (running !== state) return;
       controller.abort();
       stopDictations();
-      clearInterval(sweepTimer);
+      void sweep.stop();
       listeners.clear();
       approvalListeners.clear();
       running = null;
@@ -742,7 +745,6 @@ export const startAiRuntime = (
     },
   };
   running = state;
-  runSweep();
   log.info("AI runtime started", { workerId: AI_WORKER_ID, concurrency });
   return releaseAiRuntime(listener, approvalListener);
 };

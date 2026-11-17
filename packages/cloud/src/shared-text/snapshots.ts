@@ -134,6 +134,7 @@ const createSnapshots = <Input>(
   const persist = async (request: SharedTextSnapshotRequest, signal: AbortSignal, heartbeat: () => Promise<void>) => {
     const { docId } = request;
     let heartbeatError: unknown;
+    // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
     const timer = setInterval(() => {
       void heartbeat().catch((error) => {
         heartbeatError = error;

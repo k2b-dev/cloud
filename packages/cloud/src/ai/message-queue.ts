@@ -2,6 +2,7 @@ import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
 
 import { logger } from "../services/logging";
+import { coreSettings } from "../services/settings/api";
 import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
 import { editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
@@ -15,7 +16,8 @@ import { aiConversations } from "./store";
 import type { AiConversationService, AiDraftContentPart, AiSettingsState } from "./types";
 
 const log = logger("ai:message-queue");
-export const AI_MESSAGE_QUEUE_LIMIT = 32;
+/** Composer capacity agreed for the queue; automation places are counted separately below. */
+export const AI_MESSAGE_QUEUE_LIMIT = 20;
 /** Separate from composer capacity: bound automation bursts without spending a person's slots. */
 export const AUTOMATION_QUEUE_LIMIT = 32;
 /** A scheduled source may leave one pending message; its next run must observe chat_busy. */
@@ -24,12 +26,15 @@ export class AiMessageQueueConflict extends Error {}
 
 export type QueuedChatSubmission = Parameters<AiConversationService["submitChatTurn"]>[0];
 type Submission = QueuedChatSubmission;
-export type ValidateQueuedChatStart = (
+export type ValidateQueuedChatStart = ((
   input: Submission,
   db: SQL,
   state: AiSettingsState | undefined,
   messageId: string,
-) => Promise<Submission>;
+) => Promise<Submission>) & {
+  /** One scalar SQL expression over queued row q; wrapped because queries are thenable. */
+  expiredReason?: () => Promise<{ expression: SQL.Query<unknown> }>;
+};
 export class AiQueuedChatStartError extends Error {
   constructor(readonly code: string) {
     super(code);
@@ -75,10 +80,10 @@ export const migrateAiMessageQueue = async () => {
   )`.simple();
   // A key holds per person for the dispatcher's claim retention; the per-key lock keeps it single within that window.
   await sql`CREATE INDEX IF NOT EXISTS ai_chat_send_receipts_key ON ai.chat_send_receipts(account_id,operation,key_hash,created_at DESC)`.simple();
-  await sql`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)
+  await sql`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id,created_at)
     SELECT q.id,(q.submission#>>'{runConfig,send,accountId}')::uuid,'ai.chat.send',
       q.submission#>>'{runConfig,send,keyHash}',q.submission#>>'{runConfig,send,requestHash}',q.conversation_id,c.short_id,
-      q.origin,q.submission#>'{runConfig,turnTrigger}',q.id
+      q.origin,q.submission#>'{runConfig,turnTrigger}',q.id,q.created_at
     FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
       JOIN auth.users owner ON owner.id=(q.submission#>>'{runConfig,send,accountId}')::uuid
     WHERE q.submission#>>'{runConfig,send,keyHash}' IS NOT NULL
@@ -178,13 +183,16 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
 };
 
 /** Cancellation and retry share the conversation lock with promotion. */
-export const updateQueuedMessage = async (conversationId: string, id: string, action: "cancel" | "retry") =>
-  sql.begin(async (tx) => {
+export const updateQueuedMessage = async (conversationId: string, id: string, action: "cancel" | "retry") => {
+  const timeZone = action === "retry" ? (await coreSettings.get<string>("app.timezone")) || "UTC" : "UTC";
+  return sql.begin(async (tx) => {
     await tx`SELECT id FROM ai.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
     const changed =
       await tx`UPDATE ai.queued_messages SET status = ${action === "cancel" ? "cancelled" : "pending"}, error = NULL, revision=revision+1
     WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL))
-      AND (${action}='cancel' OR automation_source IS NULL) RETURNING id`;
+      AND (${action}='cancel' OR automation_source IS NULL)
+      AND (${action}='cancel' OR NOT (submission->'runConfig' ? 'codeOrigin')
+        OR (created_at AT TIME ZONE ${timeZone})::date >= (clock_timestamp() AT TIME ZONE ${timeZone})::date) RETURNING id`;
     if (action === "cancel" && changed.length) {
       await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${id}::uuid`;
       await tx`UPDATE ai.queued_messages SET submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END,
@@ -192,6 +200,7 @@ export const updateQueuedMessage = async (conversationId: string, id: string, ac
     }
     return Boolean(changed.length);
   });
+};
 
 /** Edit only queued text; immutable attachments and the independent composer draft stay intact. */
 /** Text from a source without a signed-in session restricts the queued turn; editing stays possible. */
@@ -232,12 +241,44 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
     return true;
   });
 
+/** What a retired entry keeps: only its send receipt and initiator. */
+const retiredSubmission = (db: SQL) =>
+  db`CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END`;
+
+/** Expired or invalid Code messages leave the queue even while something ahead of them blocks the chat;
+ * otherwise one stuck chat would keep its owner's other Codes busy. One statement, bounded by the queue
+ * limit; rows another dispatcher holds are left to it. */
+const retireExpiredCodeStarts = async (
+  expiredReason: NonNullable<ValidateQueuedChatStart["expiredReason"]>,
+  conversationId: string | undefined,
+) => {
+  const { expression: reason } = await expiredReason();
+  await sql`WITH expired AS (
+      SELECT q.id, ${reason} AS reason FROM ai.queued_messages q
+      WHERE q.status IN ('pending','failed') AND q.submission->'runConfig' ? 'codeOrigin' AND ${reason} IS NOT NULL
+        AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id = ${conversationId ?? null}::uuid)
+      ORDER BY q.position LIMIT ${AUTOMATION_QUEUE_LIMIT} FOR UPDATE OF q SKIP LOCKED
+    ), retired AS (
+      UPDATE ai.queued_messages SET status='cancelled', error=expired.reason, submission=${retiredSubmission(sql)}, content='[]'::jsonb
+      FROM expired WHERE ai.queued_messages.id = expired.id RETURNING ai.queued_messages.id
+    )
+    DELETE FROM ai.queued_message_files f USING retired WHERE f.message_id = retired.id`;
+};
+
 /** Read the current payload and revision only after taking the same lock as edits/cancellation. */
 export const drainQueuedMessages = async (
   enqueue: (job: { conversationId: string; turnId: string }) => Promise<unknown>,
   conversationId?: string,
   validateStart?: ValidateQueuedChatStart,
 ) => {
+  if (validateStart?.expiredReason)
+    await retireExpiredCodeStarts(validateStart.expiredReason, conversationId).catch((error) =>
+      log.warn("Expired Code messages could not be retired", {
+        code: "queue_expiry_failed",
+        conversationId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
   const chats = await sql<{ conversation_id: string }[]>`
     SELECT q.conversation_id FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
     WHERE (q.status='pending' OR (q.status='failed' AND q.automation_source IS NULL AND q.error IN ${sql([...AI_QUEUE_RETRYABLE_ERRORS])}))

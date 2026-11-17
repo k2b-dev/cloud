@@ -48,6 +48,7 @@ export const createWorkflowWorker = (options: {
       workers.add(wake);
       localWorkflowWorkers.set(options.appId, workers);
       pool.start();
+      // runtime-timer: wake reader inside its runtime lifecycle; quiesce stops that lifecycle.
       reader = superviseRuntimeTask({
         name: "Workflow wake reader",
         signal: controller.signal,
@@ -58,6 +59,7 @@ export const createWorkflowWorker = (options: {
         },
       });
       // Repair missed hints, due deadlines and expired leases; execution wakes immediately.
+      // runtime-timer: runs only while its runtime lifecycle is started; quiesce stops that lifecycle.
       timer = setInterval(wake, 30_000);
       wake();
     },

@@ -120,6 +120,7 @@ const fill = (key: string, load: () => Promise<MailboxConversationCounts>): Prom
     // Waiters share the same 30-second budget in this process and on other replicas.
     // Database statements have a matching timeout; no fabricated zero counts are returned.
     let renewing = false;
+    // runtime-timer: lease of one cache load for a request in flight.
     const renewal = setInterval(() => {
       if (renewing) return;
       renewing = true;

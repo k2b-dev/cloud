@@ -6,6 +6,7 @@ import { notifyPgOutbox, pgOutboxKey, subscribeWorkWake } from "../_internal/wor
 import { sql } from "../runtime/clients";
 import { connections } from "../runtime/connections";
 import { createPgOutbox, PgOutboxDeferred } from "./outbox";
+import { processQuiesce } from "./runtime-quiesce";
 
 // The contract an application relies on with a table of its own, shaped as in "Migrations and transactions".
 const schema = `outbox_contract_${crypto.randomUUID().replaceAll("-", "_")}`;
@@ -407,5 +408,48 @@ suiteFor("database")("Postgres outbox on an application table", () => {
     });
     await expect(broken.reconcile()).rejects.toThrow();
     await expect(broken.notify()).resolves.toBeUndefined();
+  });
+
+  test("maintenance quiesce waits for the pass in flight, publishes nothing while quiet, and resume publishes once", async () => {
+    const blocked = gate();
+    const entered = gate();
+    const resumed = gate();
+    const published: number[] = [];
+    const outbox = reports(async (row) => {
+      if (row.delta === 20) {
+        entered.open();
+        await blocked.opened;
+      }
+      published.push(row.delta);
+      if (row.delta === 21) resumed.open();
+    });
+    try {
+      outbox.start();
+      await report(sql, itemB, 20);
+      const inFlight = outbox.notify();
+      // Quiesce once the pass holds row 20; a quiesce before the pass reads its batch would rightly publish nothing.
+      await entered.opened;
+      const quiescing = processQuiesce.quiesce();
+      // The pass that holds row 20 counts as work in flight until it ends.
+      expect(processQuiesce.inFlight()).toBe(1);
+      blocked.open();
+      await inFlight;
+      expect(await quiescing).toEqual([]);
+      expect(processQuiesce.inFlight()).toBe(0);
+      expect(published).toEqual([20]);
+
+      await report(sql, itemB, 21);
+      await outbox.notify();
+      expect(published).toEqual([20]);
+      expect((await pending()).map((row) => row.delta)).toEqual([21]);
+
+      await processQuiesce.resume();
+      await resumed.opened;
+      expect(published).toEqual([20, 21]);
+    } finally {
+      await processQuiesce.resume();
+      await outbox.stop();
+    }
+    expect(await pending()).toEqual([]);
   });
 });

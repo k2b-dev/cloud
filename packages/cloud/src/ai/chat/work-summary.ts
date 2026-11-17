@@ -1,3 +1,4 @@
+import { isUnknownActionOutcome } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { codeStepWords } from "./code-step-words";
 import { isRecord } from "./message-utils";
@@ -26,11 +27,15 @@ const failureCode = (tool: ToolBlock): string | null => {
   return typeof code === "string" ? code.toUpperCase() : null;
 };
 
-/** Why a failed call did not go through, as a kind the chat words itself; codes and messages never reach the person. */
-export type AiStepFailure = "denied" | "not_found" | "timeout" | "other";
+/**
+ * Why a failed call did not go through, as a kind the chat words itself; codes and messages never reach the person.
+ * `unknown`: Cloud could not see whether it happened.
+ */
+export type AiStepFailure = "denied" | "not_found" | "timeout" | "unknown" | "other";
 
 export const stepFailure = (tool: ToolBlock): AiStepFailure | null => {
   if (!isFailedTool(tool)) return null;
+  if (isUnknownActionOutcome(tool.result)) return "unknown";
   const code = failureCode(tool) ?? "";
   if (/^(?:FORBIDDEN|UNAUTHORIZED|ACCESS_DENIED|PERMISSION_DENIED)$/.test(code)) return "denied";
   if (/^(?:NOT_FOUND|GONE)$/.test(code)) return "not_found";
@@ -225,23 +230,31 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
   return sentence ? sentence.charAt(0).toLocaleUpperCase(locale) + sentence.slice(1) : "";
 };
 
-/**
- * The step line after the sentence: how many steps, and what did not go through. Thinking counts as a step, like in the
- * opened list. `issues` stays visible where the count gives way to the sentence.
- */
 /** What did not go through, with the tone its meta word takes (Feinschliff 2): failed in red, no access as a warning. */
 export type AiWorkIssue = { text: string; tone: "danger" | "warning" | "neutral" };
 
+/**
+ * The work line's meta: how many steps, and what did not go through. Thinking counts as a step, like in the opened
+ * list. On a phone `issues` stays where the count gives way to the sentence.
+ */
 export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: string): { count: string; issues: AiWorkIssue[] } => {
   const t = aiChatMessages(locale);
   const thoughts = blocks.filter((block) => block.kind === "thinking" && block.text.trim()).length;
   const calls = tools(blocks);
-  const denied = calls.filter(isAccessDenied).length;
-  const failed = calls.filter(isFailedTool).length - denied;
+  // A check that settled an unclear outcome counts as what it found: done went through, not done failed.
+  const failures = calls.map((tool) => {
+    const kind = stepFailure(tool);
+    if (kind !== "unknown") return kind;
+    return tool.check?.state === "done" ? null : tool.check?.state === "not_done" ? "other" : kind;
+  });
+  const denied = failures.filter((kind) => kind === "denied").length;
+  const unclear = failures.filter((kind) => kind === "unknown").length;
+  const failed = failures.filter((kind) => kind !== null).length - denied - unclear;
   const rejected = calls.filter((tool) => tool.status === "rejected").length;
   return {
     count: t.steps({ count: steps + thoughts }),
     issues: [
+      unclear ? { text: t.workUnclear({ count: unclear }), tone: "warning" as const } : null,
       denied ? { text: t.workNoAccess({ count: denied }), tone: "warning" as const } : null,
       failed ? { text: t.workFailed({ count: failed }), tone: "danger" as const } : null,
       rejected ? { text: t.workRejected({ count: rejected }), tone: "neutral" as const } : null,

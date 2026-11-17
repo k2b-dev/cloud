@@ -2,7 +2,7 @@ import { lazySync, sql } from "@k2b/cloud";
 import type { signCodeRunToken } from "@k2b/cloud/code/run-token";
 import { RunnerConfigSchema, type RunnerFetchRequest, type RunnerFetchResponse } from "@k2b/cloud/code/runner";
 import { CAPABILITY_MAX_REQUEST_BYTES, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
-import { coreSettings, logger } from "@k2b/cloud/services";
+import { coreSettings, logger, startRuntimeInterval } from "@k2b/cloud/services";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { Queue, Scheduler, Worker } from "@k2b/sync";
 import { claimCodeWork } from "./dispatch";
@@ -221,7 +221,6 @@ export async function startCodeScheduling(): Promise<() => Promise<void>> {
   const stopEventConsumer = startCodeEventConsumer();
   let worker: Worker | undefined;
   let stopCatchup: (() => Promise<void>) | undefined;
-  let pending: Promise<void> | undefined;
   const reconcileSchedules = createCodeScheduleReconciler(codeRunScheduler());
   const recover = async () => {
     await reconcileCodeRuns();
@@ -244,24 +243,17 @@ export async function startCodeScheduling(): Promise<() => Promise<void>> {
     await codeJobOutbox.stop();
     throw error;
   }
-  const startRecovery = () => {
-    if (pending) return;
-    pending = recover()
-      .catch((error) => {
-        logger("core:code-scheduling").error("code_scheduling_recovery_failed", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      })
-      .finally(() => {
-        pending = undefined;
+  const recovery = startRuntimeInterval({
+    intervalMs: 5_000,
+    run: recover,
+    onError: (error) => {
+      logger("core:code-scheduling").error("code_scheduling_recovery_failed", {
+        error: error instanceof Error ? error.message : String(error),
       });
-  };
-  startRecovery();
-  const timer = setInterval(startRecovery, 5_000);
-  timer.unref?.();
+    },
+  });
   return async () => {
-    clearInterval(timer);
-    await pending;
+    await recovery.stop();
     stopEventConsumer();
     await stopCatchup?.();
     worker?.stop();
