@@ -160,14 +160,14 @@ for (const theme of ["light", "dark"] as const) {
         locale: "de",
         contacts: false,
         context: { viewport: { width, height: 800 } },
-        recipients: ["sarah.engele@example.test", "tom@example.test"],
+        recipients: ["ada.lovelace@example.test", "adam.orders@example.test"],
       });
       try {
         await page.evaluate((theme) => {
           document.documentElement.className = theme;
         }, theme);
         const field = page.getByRole("combobox", { name: "Empfänger" });
-        const remove = page.getByRole("button", { name: "sarah.engele@example.test entfernen", exact: true });
+        const remove = page.getByRole("button", { name: "ada.lovelace@example.test entfernen", exact: true });
         await settled(page);
         const shell = page.locator(".mail-recipient-pill-shell").first();
         expect(
@@ -249,7 +249,7 @@ for (const theme of ["light", "dark"] as const) {
         ).toMatchObject({ focused: true, visible: true });
         if (width === 390) await capture(page, `recipients-input-${theme}-${width}`);
         await remove.click();
-        expect(await page.locator(".mail-recipient-pill").allTextContents()).toEqual(["tom@example.test"]);
+        expect(await page.locator(".mail-recipient-pill").allTextContents()).toEqual(["adam.orders@example.test"]);
         await page.locator(".mail-recipient-pill").focus();
         await page.keyboard.press("Tab");
         await page.keyboard.press("Enter");
@@ -276,12 +276,12 @@ for (const theme of ["light", "dark"] as const) {
 
   for (const state of ["disabled", "readOnly"] as const) {
     test(`${theme}: ${state} recipients keep their quiet remove colour on hover`, async () => {
-      const page = await load({ locale: "de", contacts: false, recipients: ["sarah.engele@example.test"], [state]: true });
+      const page = await load({ locale: "de", contacts: false, recipients: ["ada.lovelace@example.test"], [state]: true });
       try {
         await page.evaluate((theme) => {
           document.documentElement.className = theme;
         }, theme);
-        const remove = page.getByRole("button", { name: "sarah.engele@example.test entfernen", exact: true });
+        const remove = page.getByRole("button", { name: "ada.lovelace@example.test entfernen", exact: true });
         expect(await remove.isDisabled()).toBe(true);
         await settled(page);
         const before = await remove.evaluate((element) => getComputedStyle(element).color);
