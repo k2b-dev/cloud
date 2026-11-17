@@ -15,7 +15,12 @@ export const CodeRouteSchema = z
       })
       .describe("Code-relative path with optional named segments."),
     public: z.boolean().describe("Whether the route accepts anonymous visitors without a user."),
-    page: z.boolean().optional().describe("The checker found a reachable ctx.page call in this handler. Absent on older versions."),
+    page: z
+      .boolean()
+      .optional()
+      .describe(
+        "The checker found a reachable ctx.page call, or proved this handler returns data. Absent when unknown or on older versions.",
+      ),
     layout: z.literal("plain").optional().describe("Pages of this route render without the Cloud layout; omitted, they render inside it."),
   })
   .strict();
@@ -59,7 +64,9 @@ export const CodePageLinksSchema = z
   .object({
     versionId: z.string(),
     homeUrl: z.string().nullable(),
-    pages: z.array(z.object({ entrypoint: z.string(), title: z.string(), href: z.string() }).strict()),
+    pages: z.array(
+      z.object({ entrypoint: z.string(), title: z.string().nullable(), path: z.string(), isRoot: z.boolean(), href: z.string() }).strict(),
+    ),
   })
   .strict();
 export type CodePageLinks = z.infer<typeof CodePageLinksSchema>;

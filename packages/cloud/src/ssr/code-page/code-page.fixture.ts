@@ -696,7 +696,15 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
           pages: {
             versionId: versions().v4.id,
             homeUrl: "/code/c_3mfa/rueckruf",
-            pages: [{ entrypoint: "route:rueckruf", title: L("Rückruf bestätigen", "Confirm callback"), href: "/code/c_3mfa/rueckruf" }],
+            pages: [
+              {
+                entrypoint: "route:rueckruf",
+                title: L("Rückruf bestätigen", "Confirm callback"),
+                path: "/rueckruf",
+                isRoot: false,
+                href: "/code/c_3mfa/rueckruf",
+              },
+            ],
           },
           internet: { active: ["https://api.buchhaltung-beispiel.de", "https://bank.example", "https://status.example"], waiting: [] },
           secretOrigins: { "https://api.buchhaltung-beispiel.de": ["BUCHHALTUNG_TOKEN"] },
@@ -705,7 +713,13 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
           automations: [
             ...automations(runs()),
             {
-              pageLink: { entrypoint: "route:rueckruf", title: L("Rückruf bestätigen", "Confirm callback"), href: "/code/c_3mfa/rueckruf" },
+              pageLink: {
+                entrypoint: "route:rueckruf",
+                title: L("Rückruf bestätigen", "Confirm callback"),
+                path: "/rueckruf",
+                isRoot: false,
+                href: "/code/c_3mfa/rueckruf",
+              },
               entrypoint: "route:rueckruf",
               title: L("Rückruf bestätigen", "Confirm callback"),
               kind: "route",

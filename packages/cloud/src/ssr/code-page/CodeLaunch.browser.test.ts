@@ -401,7 +401,7 @@ for (const width of [1440, 390]) {
       await page.close();
     }
   });
-  test(`${width}: a queued start explains that the current run finishes first`, async () => {
+  test(`${width}: a start with another running run makes no unconfirmed waiting claim`, async () => {
     const page = await open("schedule", width);
     await page.route("**/api/capabilities/v1/actions/**", (route) =>
       route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: { runId: HEAD_RUN_ID, duplicate: false } }) }),
@@ -417,7 +417,8 @@ for (const width of [1440, 390]) {
       );
       const before = await boxes(page);
       await page.getByRole("button", { name: "Jetzt ausführen", exact: true }).first().click();
-      await page.getByText("Lauf startet, sobald der laufende Lauf fertig ist.", { exact: true }).waitFor();
+      await page.getByText("Lauf startet.", { exact: true }).waitFor();
+      expect(await page.getByText("Lauf startet, sobald der laufende Lauf fertig ist.", { exact: true }).count()).toBe(0);
       expect(await boxes(page)).toEqual(before);
       await shot(page, "waiting-for-run", width);
     } finally {

@@ -63,8 +63,14 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
     title: de ? "Vergangene Wochen" : "Previous weeks",
     route: { ...home.route!, path: "/archive" },
   };
-  home.pageLink = { entrypoint: home.entrypoint, title: de ? "Startseite" : "Home page", href: `/code/${state.code.id}/` };
-  page.pageLink = { entrypoint: page.entrypoint, title: page.title!, href: `/code/${state.code.id}/archive` };
+  home.pageLink = { entrypoint: home.entrypoint, title: null, path: "/", isRoot: true, href: `/code/${state.code.id}/` };
+  page.pageLink = {
+    entrypoint: page.entrypoint,
+    title: page.title!,
+    path: "/archive",
+    isRoot: false,
+    href: `/code/${state.code.id}/archive`,
+  };
   const event: CodePageAutomation = {
     ...schedule,
     entrypoint: "event:received",

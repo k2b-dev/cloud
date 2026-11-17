@@ -4,7 +4,6 @@ export const codeReadModelMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      homePage: "Home page",
       approval_read: "This change reads content and requires an admin's approval under the current policy.",
       approval_silent_you: "This change acts on your own content and requires an admin's approval under the current policy.",
       approval_silent_draft: "This change prepares a draft and requires an admin's approval under the current policy.",
@@ -85,7 +84,6 @@ export const codeReadModelMessages = i18n.define({
       warningConsequence: "Review the warning before switching on this version.",
     },
     de: {
-      homePage: "Startseite",
       approval_read: "Diese Änderung liest Inhalte und braucht dafür nach der aktuellen Richtlinie die Freigabe eines Admins.",
       approval_silent_you:
         "Diese Änderung wirkt auf deine eigenen Inhalte und braucht dafür nach der aktuellen Richtlinie die Freigabe eines Admins.",

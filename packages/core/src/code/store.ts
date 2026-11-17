@@ -437,7 +437,7 @@ export const readCodeVersion = async (
   if (input.content && text === undefined) throw new CodeDataError("NOT_FOUND", "Version content not found.");
   const content = text === undefined ? null : codeTextChunk(text, input.offset, input.length);
   const manifest = input.content?.kind === "manifest" ? CodeCheckedVersionManifestSchema.safeParse(row.manifest) : null;
-  const pages = manifest?.success ? describeCodePages(code.id, { id: row.id, manifest: manifest.data }, context.locale ?? "en") : null;
+  const pages = manifest?.success ? describeCodePages(code.id, { id: row.id, manifest: manifest.data }) : null;
   return { version: mapVersion(row), content, pages };
 };
 

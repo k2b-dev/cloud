@@ -725,7 +725,7 @@ describe("Code page loader", () => {
     const pages = {
       versionId: V4,
       homeUrl: "/code/c_3mfa/",
-      pages: [{ entrypoint: "home", title: "Vom Server benannt", href: "/code/c_3mfa/" }],
+      pages: [{ entrypoint: "home", title: "Vom Server benannt", path: "/", isRoot: true, href: "/code/c_3mfa/" }],
     };
     const { data } = await load("reader", "", failedRun, policyCall, checkedManifest, undefined, ["user"], { pages });
     if (data.state.kind !== "ready") throw new Error("Expected ready page");

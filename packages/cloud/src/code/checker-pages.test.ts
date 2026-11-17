@@ -23,3 +23,26 @@ export default app;`,
   expect(result.diagnostics).toEqual([]);
   expect(result.entrypoints.map((entry) => entry.route?.page)).toEqual([true, false, true, false, true]);
 });
+
+test("page evidence follows passed callbacks; unresolved calls stay unknown rather than claiming data", () => {
+  const result = analyzeCode({
+    sdk: generateCodeSdk([], { mode: "personal" }),
+    entry: "code.tsx",
+    aiOperations: [],
+    files: {
+      "code.tsx": `import { app, Page, Text, jsx } from "@sdk";
+type Context = Parameters<Parameters<typeof app.get>[1]>[0];
+const view = (c: Context) => c.page(<Page title="Home"><Text>Hello</Text></Page>);
+const forward = <T,>(callback: () => T) => callback();
+let dynamic = view;
+app.get("/promise", c => Promise.resolve().then(() => view(c)));
+app.get("/forward", c => forward(() => view(c)));
+app.get("/unknown", c => dynamic(c));
+app.get("/data", c => c.json({ ok: true }));
+export default app;`,
+    },
+  });
+  expect(result.diagnostics).toEqual([]);
+  expect(result.entrypoints.map((entry) => entry.route?.page)).toEqual([true, true, undefined, false]);
+  expect(result.entrypoints[2]!.route).not.toHaveProperty("page");
+});

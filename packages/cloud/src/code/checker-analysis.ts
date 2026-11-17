@@ -577,12 +577,15 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       for (const child of node.children)
         if (ts.isJsxText(child) && child.text.trim()) report(child, "code_page_child", t.page_child3({ tag: tag }));
   }
+  const pageEvidence = new Map<ts.Node, boolean | undefined>();
   /** Display metadata only: follow local calls, never execute code or count an unused nested function. */
-  function returnsPage(handler: ts.Expression, seen = new Set<ts.Node>()): boolean {
+  function returnsPage(handler: ts.Expression, seen = new Set<ts.Node>()): boolean | undefined {
     const fn = handlerFunction(checker, handler);
-    if (!fn || seen.has(fn)) return false;
+    if (!fn || seen.has(fn)) return undefined;
+    if (pageEvidence.has(fn)) return pageEvidence.get(fn);
     seen.add(fn);
     let found = false;
+    let unknown = false;
     const walk = (node: ts.Node) => {
       if (found || (node !== fn && ts.isFunctionLike(node))) return;
       if (ts.isCallExpression(node)) {
@@ -595,15 +598,26 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           found = true;
           return;
         }
-        if (returnsPage(node.expression, seen)) {
+        // A callback passed to a call can supply its response (Promise.then, local forwarding helpers).
+        // Unused function declarations are still skipped by the ordinary walk.
+        const calls = [
+          ...(declaration?.getSourceFile().fileName === sdkFile ? [] : [returnsPage(node.expression, new Set(seen))]),
+          ...node.arguments
+            .filter((argument) => checker.getTypeAtLocation(argument).getCallSignatures().length > 0)
+            .map((argument) => returnsPage(argument, new Set(seen))),
+        ];
+        if (calls.some((value) => value === true)) {
           found = true;
           return;
         }
+        if (calls.some((value) => value === undefined)) unknown = true;
       }
       ts.forEachChild(node, walk);
     };
     walk(fn);
-    return found;
+    const evidence = found ? true : unknown ? undefined : false;
+    pageEvidence.set(fn, evidence);
+    return evidence;
   }
 
   function visit(node: ts.Node) {
@@ -874,10 +888,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                     .map((item) => item.handler),
                 });
               const sf = node.getSourceFile();
+              const page = routeHandler ? returnsPage(routeHandler) : undefined;
               result.entrypoints.push({
                 kind: "route",
                 entrypoint: name,
-                route: { ...route.data, page: !!routeHandler && returnsPage(routeHandler) },
+                route: { ...route.data, ...(page === undefined ? {} : { page }) },
                 cron: null,
                 file: sf.fileName.slice(root.length),
                 line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,

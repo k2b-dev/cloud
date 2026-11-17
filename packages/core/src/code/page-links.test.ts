@@ -35,33 +35,47 @@ test("only private literal GET/ALL pages open; legacy manifests retain their lin
       route("/items/:name", { page: true }),
       { kind: "manual", entrypoint: "manual", file: "code.ts", line: 1, cron: null },
     ]),
-    "de-AT",
   );
   expect(CodePageLinksSchema.parse(result)).toEqual(result);
   expect(result).toEqual({
     versionId: "version-7",
     homeUrl: "/code/c_demo/",
     pages: [
-      { entrypoint: "route:GET:/", title: "Startseite", href: "/code/c_demo/" },
-      { entrypoint: "route:GET:/archive", title: "Archiv", href: "/code/c_demo/archive" },
-      { entrypoint: "route:ALL:/all", title: "/all", href: "/code/c_demo/all" },
-      { entrypoint: "route:GET:/legacy", title: "/legacy", href: "/code/c_demo/legacy" },
+      { entrypoint: "route:GET:/", title: null, path: "/", isRoot: true, href: "/code/c_demo/" },
+      { entrypoint: "route:GET:/archive", title: "Archiv", path: "/archive", isRoot: false, href: "/code/c_demo/archive" },
+      { entrypoint: "route:ALL:/all", title: null, path: "/all", isRoot: false, href: "/code/c_demo/all" },
+      { entrypoint: "route:GET:/legacy", title: null, path: "/legacy", isRoot: false, href: "/code/c_demo/legacy" },
     ],
   });
 });
 test("home falls back to declaration order; empty versions have no home", () => {
-  expect(describeCodePages("c_other", version([route("/second"), route("/first")]), "en").homeUrl).toBe("/code/c_other/second");
-  expect(describeCodePages("c_demo", version([route("/", { page: false })]), "de")).toEqual({
+  const fallback = describeCodePages("c_other", version([route("/second"), route("/first")]));
+  expect(fallback.homeUrl).toBe("/code/c_other/second");
+  expect(describeCodePages("c_demo", version([route("/", { page: false })]))).toEqual({
     versionId: "version-7",
     homeUrl: null,
     pages: [],
   });
 });
-test("titles use the request locale without affecting another request or a reviewed title", () => {
+test("the projection preserves declared titles and neutral paths, without presentation or locale", () => {
   const v = version([route("/")]);
-  expect(describeCodePages("c_demo", v, "de").pages[0]!.title).toBe("Startseite");
-  expect(describeCodePages("c_demo", v, "en-GB").pages[0]!.title).toBe("Home page");
-  expect(describeCodePages("c_demo", v, "de").pages[0]!.title).toBe("Startseite");
-  expect(describeCodePages("c_demo", version([route("/", { title: "Übersicht" })]), "en").pages[0]!.title).toBe("Übersicht");
+  expect(describeCodePages("c_demo", v).pages[0]).toMatchObject({ title: null, path: "/", isRoot: true });
+  const named = describeCodePages("c_demo", version([route("/", { title: "Übersicht" })]));
+  expect(named.pages[0]!.title).toBe("Übersicht");
   expect(v.manifest.entrypoints[0]!.title).toBeUndefined();
+});
+
+test("only the entry hosting would select for GET can open, including ALL, parameters and trailing slashes", () => {
+  for (const entries of [
+    [route("/", { method: "ALL", public: true }), route("/", { page: true })],
+    [route("/:name", { public: true }), route("/archive", { page: true })],
+    [route("/:name", { page: false }), route("/archive", { page: true })],
+    [route("/archive/", { page: false }), route("/archive", { page: true })],
+  ])
+    expect(describeCodePages("c_demo", version(entries)).pages).toEqual([]);
+  const entries = [route("/archive", { page: true }), route("/:name", { public: true }), route("/", { page: true })];
+  const visible = describeCodePages("c_demo", version(entries));
+  expect(visible.pages.map((page) => page.path)).toEqual(["/", "/archive"]);
+  const withPost = describeCodePages("c_demo", version([route("/", { method: "POST", public: true }), route("/", { page: true })]));
+  expect(withPost.pages).toHaveLength(1);
 });

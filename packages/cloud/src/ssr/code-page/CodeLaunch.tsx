@@ -2,7 +2,7 @@ import { documentNavigate } from "@k2b/ssr/nav";
 import { Button, ButtonLink, Dropdown, type DropdownAction, type DropdownItem, SplitButton } from "@k2b/ui";
 import { Show } from "solid-js";
 import type { CodePageReady } from "./data";
-import { launchPages, runnable, timing } from "./launch";
+import { launchPages, pageTitle, runnable, timing } from "./launch";
 import { type PageText, sentence } from "./page-kit";
 import type { CodeRunAction } from "./run-action";
 
@@ -30,7 +30,7 @@ export function CodeLaunch(props: { state: CodePageReady; text: PageText; run: C
             items: pages()
               .slice(1)
               .map((page) => ({
-                label: page.title,
+                label: pageTitle(page, props.text),
                 icon: "ti ti-browser",
                 href: page.href,
               })),

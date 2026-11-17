@@ -395,7 +395,7 @@ function Pages(props: { state: CodePageReady; text: PageText }) {
               <Row
                 icon={automation.route!.public ? "ti ti-bolt" : "ti ti-browser"}
                 tile="page"
-                title={routeTitle(automation)}
+                title={routeTitle(automation, props.text)}
                 after={
                   <Show when={automation.route!.public}>
                     <Tag size="sm" icon="ti ti-world" class="cloud-code__public-tag">

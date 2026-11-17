@@ -1,13 +1,13 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, Dropdown, type DropdownItem, Placeholder, prompts, Skeleton, toast, ViewTabs } from "@k2b/ui";
-import { createSignal, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { batch, createSignal, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { openPanel } from "../../browser/panel";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { CodeActivityReadModelSchema } from "../../contracts/code-read-model";
 import { openActivationDialog } from "./CodeActivation";
 import { CodeLaunch } from "./CodeLaunch";
-import { type CodeLive, type CodeLiveFeed, createCodeLive } from "./CodeLiveStrip";
+import { CODE_STRIP_RUNS, type CodeLive, type CodeLiveFeed, createCodeLive } from "./CodeLiveStrip";
 import { CodeLede, CodeOverview, lastFinishedRun } from "./CodeOverview";
 import { copyHandle } from "./CodeRefusalNotice";
 import { CodeRuns, Failed } from "./CodeRuns";
@@ -15,7 +15,7 @@ import { CodeSecretsTab } from "./CodeSecrets";
 import { CodeSourceTab } from "./CodeSourceTab";
 import { CodeVersions } from "./CodeVersions";
 import { followCodeRuns } from "./code-live";
-import type { CodePageData, CodePageInvoke, CodePageReady } from "./data";
+import { type CodePageData, type CodePageInvoke, type CodePageReady, coreQuery, RunListSchema } from "./data";
 import { launchPages, runnable } from "./launch";
 import type { CodePageMessages } from "./messages";
 import { Island, type PageText, personal, Row, type Tone, usePageText, withQuery } from "./page-kit";
@@ -192,7 +192,7 @@ const bigState = (
 const EFFECT_REFRESH_GAP_MS = 30_000;
 /** The browser reads with the person's own session, the same rights the server used for the first names. */
 const browserInvoke: CodePageInvoke = (invocation, schema) => invokeCapabilityWithDataSchema(invocation, schema);
-const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (() => void) => {
+const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive, text: PageText): (() => void) => {
   const feed = live.feed;
   const timeZone = data.dates.timeZone ?? "UTC";
   const refreshEffects = async () => {
@@ -225,10 +225,59 @@ const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (
       Math.max(0, last + EFFECT_REFRESH_GAP_MS - Date.now()),
     );
   };
+  // Only unknown identities need a metadata snapshot, not every state change. Bound deduplication by the
+  // visible run window, and coalesce bursts into one authorized list read per refresh window (DATA-13).
+  const snapshotAbort = new AbortController();
+  const attempted = new Set<string>();
+  let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
+  let snapshotBusy = false;
+  let snapshotAt = 0;
+  const assignRuns = () => {
+    if (snapshotTimer || snapshotBusy || snapshotAbort.signal.aborted) return;
+    const visible = live.runs();
+    for (const id of attempted) if (!visible.some((run) => run.id === id)) attempted.delete(id);
+    if (!visible.some((run) => !run.entrypoint && !attempted.has(run.id))) return;
+    snapshotTimer = setTimeout(
+      async () => {
+        snapshotTimer = undefined;
+        const unknown = live.runs().filter((run) => !run.entrypoint && !attempted.has(run.id));
+        if (!unknown.length) return;
+        for (const run of unknown) attempted.add(run.id);
+        snapshotBusy = true;
+        snapshotAt = Date.now();
+        const result = await invokeCapabilityWithDataSchema(
+          { ...coreQuery("code.run.list", { codeId: state.code.id, limit: CODE_STRIP_RUNS }), signal: snapshotAbort.signal },
+          RunListSchema,
+        ).catch(() => null);
+        if (snapshotAbort.signal.aborted) return;
+        let missing = false;
+        batch(() => {
+          for (const run of unknown) {
+            const current = live.runs().find((item) => item.id === run.id);
+            if (!current || current.entrypoint) continue;
+            const metadata = result?.ok && result.data.data.items.find((item) => item.id === run.id);
+            if (metadata) {
+              // State hints received while reading are newer than the snapshot. Enrich identity only.
+              feed.run({ ...current, entrypoint: metadata.entrypoint, startedAt: current.startedAt ?? metadata.startedAt });
+            } else missing = true;
+          }
+        });
+        if (missing)
+          toast.error(text.t().runSnapshotFailed, {
+            duration: 0,
+            action: { label: text.t().tryAgain, onClick: () => refreshCurrentPath() },
+          });
+        snapshotBusy = false;
+        assignRuns();
+      },
+      Math.max(0, snapshotAt + EFFECT_REFRESH_GAP_MS - Date.now()),
+    );
+  };
   const stop = followCodeRuns(
     state.code.id,
     (event) => {
       feed.run({ id: event.runId, state: event.state, createdAt: event.at, ...(event.state === "running" ? { startedAt: event.at } : {}) });
+      assignRuns();
       if (event.state === "succeeded" || event.state === "failed") effects();
     },
     // A gap in the live stream: the page loads its state again instead of guessing.
@@ -237,6 +286,8 @@ const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (
   );
   return () => {
     if (timer) clearTimeout(timer);
+    if (snapshotTimer) clearTimeout(snapshotTimer);
+    snapshotAbort.abort();
     stop();
   };
 };
@@ -255,7 +306,7 @@ function ReadyPage(props: {
   const live = createCodeLive(pageState());
   const run = createRunAction({ data: props.data, state: pageState, live, text: props.text, reconcile: setCurrentCode });
   onMount(() => {
-    const stop = props.onLive ? props.onLive(live.feed) : followLive(props.data, pageState(), live);
+    const stop = props.onLive ? props.onLive(live.feed) : followLive(props.data, pageState(), live, props.text);
     if (stop) onCleanup(stop);
   });
   const [busy, setBusy] = createSignal<"pause" | "resume" | null>(null);

@@ -274,3 +274,10 @@ Code page's Open action. Existing versions remain valid without this optional
 field and need no migration or recheck. Keep checker and Core on the same
 release so newly submitted manifests preserve the field. This metadata does
 not change route admission or permissions.
+
+Code page-link projections preserve declared titles and neutral route metadata
+(`path`, `isRoot`); callers provide localized fallback titles. Link selection
+uses the same first matching GET route as hosting, including earlier public
+or parameter routes. Unknown checker page evidence retains the private
+literal GET/ALL fallback. Live run identity reads use the existing authorized
+metadata list in coalesced snapshots; live events remain payload-free.

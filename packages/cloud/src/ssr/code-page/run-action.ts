@@ -31,11 +31,10 @@ export function createRunAction(options: {
   let attempted: Intent | undefined;
   const runHref = (id: string) => withQuery(options.data.href, { tab: "runs", run: id });
   type Intent = { entrypoint: string; idempotencyKey: string };
-  const command = mutation.create<{ runId: string; intent: Intent; waiting: boolean }, Intent>({
+  const command = mutation.create<{ runId: string; intent: Intent }, Intent>({
     mutation: async (intent, { abortSignal }) => {
       attempted = intent;
       setEntrypoint(intent.entrypoint);
-      const waiting = options.live.runs().some((run) => run.state === "running");
       const result = await invokeCapabilityWithDataSchema(
         {
           appId: "core",
@@ -59,9 +58,9 @@ export function createRunAction(options: {
         }
         throw new StartFailure(result.error.code, result.error.status);
       }
-      return { runId: result.data.data.runId, intent, waiting };
+      return { runId: result.data.data.runId, intent };
     },
-    onSuccess: ({ runId, intent, waiting }) => {
+    onSuccess: ({ runId, intent }) => {
       const existing = options.live.runs().find((run) => run.id === runId);
       options.live.feed.run({
         id: runId,
@@ -70,7 +69,7 @@ export function createRunAction(options: {
         entrypoint: intent.entrypoint,
         startedHere: true,
       });
-      toast.success(waiting ? t().runWaiting : t().runStarted, { action: { label: t().viewRun, href: runHref(runId) } });
+      toast.success(t().runStarted, { action: { label: t().viewRun, href: runHref(runId) } });
     },
     onError: (error) => {
       const intent = attempted;

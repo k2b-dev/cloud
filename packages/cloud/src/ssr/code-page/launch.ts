@@ -1,4 +1,4 @@
-import { codeOwnPath } from "../../contracts/code-routes";
+import { type CodePageLinks, codeOwnPath } from "../../contracts/code-routes";
 import type { CodePageAutomation, CodePageReady } from "./data";
 import type { PageText } from "./page-kit";
 import { describeCodeTiming } from "./schedule";
@@ -12,7 +12,11 @@ export const runnable = (state: CodePageReady) =>
     ? (state.automations ?? []).filter((item) => !item.isNew && (item.kind === "schedule" || item.kind === "manual"))
     : [];
 
-export const routeTitle = (automation: CodePageAutomation) => automation.pageLink?.title ?? automation.title ?? automation.route!.path;
+export const pageTitle = (page: CodePageLinks["pages"][number], text: Pick<PageText, "t">) =>
+  page.title ?? (page.isRoot ? text.t().homePage : page.path);
+
+export const routeTitle = (automation: CodePageAutomation, text: Pick<PageText, "t">) =>
+  automation.pageLink ? pageTitle(automation.pageLink, text) : (automation.title ?? automation.route!.path);
 
 export const routeHref = (codeId: string, automation: CodePageAutomation) => codeOwnPath(codeId, automation.route!.path);
 

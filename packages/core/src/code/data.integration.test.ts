@@ -817,9 +817,9 @@ databaseSuite()("Core Code data and Query authorization", () => {
     expect(german.pages).toEqual({
       versionId: first.id,
       homeUrl: `/code/${own.id}/`,
-      pages: [{ entrypoint: "home", title: "Startseite", href: `/code/${own.id}/` }],
+      pages: [{ entrypoint: "home", title: null, path: "/", isRoot: true, href: `/code/${own.id}/` }],
     });
-    expect((await readCodeVersion(input, ctx(ids.owner))).pages?.pages[0]?.title).toBe("Home page");
+    expect((await readCodeVersion(input, ctx(ids.owner))).pages).toEqual(german.pages);
     expect((await readCodeVersion({ ...input, versionId: second.id }, ctx(ids.owner))).pages).toEqual({
       versionId: second.id,
       homeUrl: null,

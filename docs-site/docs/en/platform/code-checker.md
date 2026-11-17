@@ -139,11 +139,14 @@ contract, shared with the version service, contains:
 - `hashes`: lowercase SHA-256 digests for `source`, `sdk`, and `bundle`.
 
 Route metadata includes optional `page`: the checker found a reachable SDK
-`ctx.page` call in the handler or a called local function. Unused nested
-functions do not count. This is display evidence, not an authorization or a
-promise that every response is HTML. Older manifests omit it; the Code page
-keeps their existing GET/ALL opening behavior. Newly checked data routes carry
-`page: false` and offer only their address.
+`ctx.page` call in the handler, a called local function, or a passed callback
+(including Promise continuations and forwarding helpers). Unused nested
+functions do not count. When the analysis cannot resolve a call, it leaves
+`page` absent rather than claiming the route returns data. This is display
+evidence, not an authorization or a promise that every response is HTML. Older manifests omit it; the Code page
+keeps their existing GET/ALL opening behavior for older or unknown evidence.
+Only routes proven to return data carry `page: false` and offer only their
+address.
 The runtime registration comparison checks method, path, public access and
 layout; it excludes the checker-only `page` flag. Both page and data handlers
 must still execute through the checked bundle.

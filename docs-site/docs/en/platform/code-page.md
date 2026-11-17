@@ -107,10 +107,13 @@ checker metadata allows a page. The root route `/` is the home page and reads
 **Home page** when it has no title; otherwise the first eligible route in
 manifest order is the home page. Data routes and routes that only accept
 input offer Copy address. Core's server-only `describeCodePages(codeId,
-{ id: versionId, manifest }, locale)` in `packages/core/src/code/page-links.ts`
+{ id: versionId, manifest })` in `packages/core/src/code/page-links.ts`
 is the single selection for the Code page and version handoffs. It returns
-`{ versionId, homeUrl, pages: [{ entrypoint, title, href }] }`; `homeUrl` is null
-when no route qualifies. Titles use the request locale. Authorize the Code and
+`{ versionId, homeUrl, pages: [{ entrypoint, title, path, isRoot, href }] }`;
+`homeUrl` is null when no route qualifies. Only the first matching GET entry
+for an address can qualify: an earlier ALL or parameter route can hide a later
+page. `title` is the declared title or null; each caller localizes a missing
+root title using its request locale, and otherwise displays the path. Authorize the Code and
 version read before calling it: the function projects a checked manifest and
 grants no access. `core.code.version.read` includes this projection as `pages`
 when reading manifest content (null otherwise). The Code page uses that result
@@ -124,7 +127,13 @@ with the head. Only editors may start schedule and manual automations;
 event handlers and routes are excluded. Starting keeps the current page and
 shows **Run is starting.** with **View run**. The situation replaces **Last**
 with **Starting** or **Running now**, including elapsed time from the browser
-clock. View run opens that run in the Runs tab.
+clock. View run opens that run in the Runs tab. The toast stays neutral when
+another run is active: a browser snapshot cannot confirm that this start waits.
+Payload-free live hints keep known runs current. Unknown run IDs join one
+authorized metadata-list snapshot, at most once per visible ID and at most
+once per 30-second window; inputs, outputs and calls are never requested.
+A failed or incomplete assignment offers a page refresh. Newer live states
+received during the snapshot are preserved.
 
 A failed start offers **Try again** with the original idempotency key, so an
 uncertain response cannot create a duplicate run. A pause rejection refreshes
