@@ -5,9 +5,9 @@ import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { sql } from "@k2b/cloud";
 import { coreSettings } from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "./access";
 import {
@@ -23,8 +23,8 @@ import { createMailbox } from "./mailboxes";
 import { storeReadableBlob } from "./message-blobs";
 
 const ssrRoot = mkdtempSync(resolve(tmpdir(), "mail-attachment-link-ssr-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: ssrRoot });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: ssrRoot });
+
 process.once("exit", () => rmSync(ssrRoot, { recursive: true, force: true }));
 
 const { publicAttachmentRoutes } = await import("../frontend/public-attachments");

@@ -11,11 +11,11 @@ import {
   type User,
   validateGeoBudget,
 } from "@k2b/cloud/contracts";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import type { PlacesAndMapsInitial } from "./PlacesAndMaps.island";
 
 const lea = { id: "11111111-1111-4111-8111-111111111111", name: "Lea Schulz" };
@@ -96,7 +96,7 @@ export type PlacesAndMapsScenario = keyof typeof PLACES_AND_MAPS_SCENARIOS;
 export async function placesAndMapsBrowserFixture() {
   const root = mkdtempSync(join(tmpdir(), "core-places-maps-host-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-  Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
   const { AdminLayout } = await import("@k2b/cloud/ssr");
   const { default: PlacesAndMaps } = await import("./PlacesAndMaps.island.tsx");
   const { placesAndMapsMessages } = await import("./messages");

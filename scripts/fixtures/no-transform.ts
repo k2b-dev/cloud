@@ -7,7 +7,7 @@ import * as runtime from "../../packages/cloud/src/_internal/runtime-watcher";
 import { redis } from "../../packages/cloud/src/runtime/clients";
 import * as snapshot from "../../packages/cloud/src/services/settings/snapshot";
 import * as settings from "../../packages/cloud/src/services/settings/store";
-import { createConfig } from "../../packages/ssr/src";
+import { registerSsrTestPlugin } from "../../packages/ui/test/ssr-test-plugin";
 import { useUnitClients } from "./unit-clients";
 
 /**
@@ -33,8 +33,8 @@ export const stubRouterInfrastructure = () => [
 export const prepareNoTransformRouterTest = () => {
   useUnitClients();
   const root = mkdtempSync(join(tmpdir(), "compression-router-"));
-  const { plugin } = createConfig({ dev: true, rootDir: root });
-  Bun.plugin(plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
+
   // The plugin stays registered for later files in the same test process, so its root must outlive this file.
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   let spies: ReturnType<typeof stubRouterInfrastructure> = [];

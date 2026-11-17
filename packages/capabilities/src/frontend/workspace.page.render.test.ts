@@ -5,13 +5,13 @@ import { join } from "node:path";
 import type { CloudRuntime } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as catalog from "../catalog";
 
 const root = mkdtempSync(join(tmpdir(), "capabilities-page-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./workspace.page");
 const appSummary = { id: "mail", name: "Mail", icon: "ti ti-mail", description: "Mail capabilities" };

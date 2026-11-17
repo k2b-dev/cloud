@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { CapabilityCatalogClientResult, CapabilityClientResult } from "@k2b/cloud/capabilities";
-import { createConfig } from "@k2b/ssr";
 import type { FileSource } from "@k2b/ui";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(resolve(tmpdir(), "assistant-context-content-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 const { assistantContextFileSource, assistantMarkdownBody, isAssistantContextImage, resolveAssistantCloudResource } = await import(

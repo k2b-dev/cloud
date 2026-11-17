@@ -2,17 +2,17 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { legacyReviewView } from "../../capabilities/legacy-review-view";
 import type { ApprovalPage } from "../../contracts/approvals";
 import { CapabilityActionCallReviewSchema, CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
 import type { AiStoredActionReview } from "../action-review";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-action-question-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { renderToString } = await import("solid-js/web");
 const { ApprovalCard } = await import("../../approvals/ApprovalCard");

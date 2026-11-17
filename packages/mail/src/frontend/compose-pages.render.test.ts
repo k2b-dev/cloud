@@ -8,9 +8,9 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
-import { createConfig } from "@k2b/ssr";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { type ComposeTemplate, composeSafetyConfigSchema, type Mailbox, type MailDraft } from "../contracts";
 import * as access from "../service/access";
 import * as integrations from "../service/app-integrations";
@@ -22,8 +22,8 @@ import * as publicResources from "../service/public-resources";
 import * as senderIdentities from "../service/sender-identities";
 
 const root = mkdtempSync(join(tmpdir(), "mail-compose-page-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: seedPage } = await import("./[mailboxId]/compose/local/[seedId]/page");
 const { default: draftPage } = await import("./[mailboxId]/compose/[draftId]/page");

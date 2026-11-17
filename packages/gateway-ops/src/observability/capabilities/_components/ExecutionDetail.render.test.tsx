@@ -3,13 +3,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { CapabilityExecution } from "@k2b/cloud/capabilities/store";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(resolve(tmpdir(), "capability-detail-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Detail } = await import("./ExecutionDetail");
 

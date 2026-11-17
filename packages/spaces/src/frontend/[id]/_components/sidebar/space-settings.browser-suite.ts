@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { ServerWebSocket } from "bun";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
@@ -12,18 +11,19 @@ import { z } from "zod";
 import type { AccessEntry } from "@/contracts";
 import { SpaceSettingsContextSchema } from "@/settings-context";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 
 // Keep the island plugin in the child process, with a scratch root that resolves this package's dependencies.
 const packageCache = resolve(import.meta.dir, "../../../../../node_modules/.cache");
 mkdirSync(packageCache, { recursive: true });
 const root = mkdtempSync(join(packageCache, "spaces-settings-browser-"));
-const { plugin } = createConfig({
+registerSsrTestPlugin({
   dev: false,
   verbose: false,
   rootDir: root,
   componentRoots: [import.meta.dir, resolve(import.meta.dir, "../workspace")],
 });
-Bun.plugin(plugin());
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: SpaceSettingsFixture } = await import("./space-settings.browser-fixture");
 

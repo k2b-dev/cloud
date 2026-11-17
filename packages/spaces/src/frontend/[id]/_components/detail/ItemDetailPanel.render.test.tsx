@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bu
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceComment, SpaceItem, SpaceItemReaction } from "@/contracts";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-detail-render-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: ItemDetailPanel } = await import("./ItemDetailPanel");

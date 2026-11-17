@@ -6,9 +6,9 @@ import type { CloudRuntime } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
 import * as layoutHelp from "@k2b/cloud/ssr/help";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { spacesService } from "../../service";
 import * as mailIntegration from "../../service/mail-integration";
 import * as overview from "../../service/overview";
@@ -18,8 +18,8 @@ import * as workspaceState from "./_components/workspace/workspace-state";
 import type { SpacesWorkspaceState } from "./_components/workspace/workspace-types";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-page-panel-context-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
 const user = {

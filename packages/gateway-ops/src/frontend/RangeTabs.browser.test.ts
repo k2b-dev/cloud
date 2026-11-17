@@ -3,16 +3,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { appColorStyle } from "@k2b/cloud/ssr/app-color";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { buildFontAssets } from "../../../core/scripts/font-assets";
 import { launchBrowser, settled } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "gateway-range-tabs-browser-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: RangeTabs } = await import("./RangeTabs");
 const origin = "https://cloud.example.test";

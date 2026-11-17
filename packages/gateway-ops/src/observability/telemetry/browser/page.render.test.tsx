@@ -5,11 +5,11 @@ import { join } from "node:path";
 import * as cloud from "@k2b/cloud";
 import type { AuthContext } from "@k2b/cloud/server";
 import { coreSettings, logging, type WebVitalsOverview } from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "browser-vitals-render-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { browserTelemetryPage } = await import("./page");
 const empty: WebVitalsOverview = { summary: [], series: [], routes: [], totalRoutes: 0, page: 1, perPage: 50 };

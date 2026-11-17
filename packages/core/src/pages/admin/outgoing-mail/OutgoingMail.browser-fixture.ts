@@ -3,11 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import type { OutgoingMailState } from "./OutgoingMail.island";
 
 const initial: OutgoingMailState = {
@@ -74,7 +74,7 @@ const user: User = {
 export async function outgoingMailBrowserFixture() {
   const root = mkdtempSync(join(tmpdir(), "core-mail-real-host-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-  Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
   const { AdminLayout } = await import("@k2b/cloud/ssr");
   const { default: OutgoingMail } = await import("./OutgoingMail.island.tsx");
   const { outgoingMailMessages } = await import("./messages");

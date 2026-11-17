@@ -2,19 +2,19 @@ import { afterAll, beforeAll, setDefaultTimeout, spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { createComponent } from "solid-js";
 import type { launchBrowser } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // The shell's geometry at every width — which chrome exists, where the app
 // area ends, which edges draw lines — is decided by real layout, so a real
 // engine loads the server-rendered Layout with the global stylesheet and the
 // shared workspace controller, as Cloud serves them.
 const root = mkdtempSync(resolve(tmpdir(), "cloud-compact-shell-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Hono } = await import("hono");

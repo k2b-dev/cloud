@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../test/ssr-test-plugin";
 
 const pluginRoot = mkdtempSync(resolve(tmpdir(), "k2b-ui-fixture-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: pluginRoot });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: pluginRoot });
+
 process.once("exit", () => rmSync(pluginRoot, { recursive: true, force: true }));
 
 const { default: StandaloneUi } = await import("./src/StandaloneUi");

@@ -5,17 +5,17 @@ import { join } from "node:path";
 import type { AiRuntimeTool } from "@k2b/cloud/ai";
 import { checkCode, generateCodeSdk } from "@k2b/cloud/code";
 import type { RequestActor } from "@k2b/cloud/server";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { codeAuthoringFailure } from "../api/code-authoring";
 import { CodeDataError } from "./access";
 import { CodeAuthoringErrorSchema, codeAuthoringContracts } from "./authoring-contracts";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 
 const root = mkdtempSync(join(tmpdir(), "core-code-chat-steps-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const [{ LocaleProvider }, { AiTurnBlockView }] = await Promise.all([import("@k2b/ui"), import("@k2b/cloud/ai/ui")]);
 

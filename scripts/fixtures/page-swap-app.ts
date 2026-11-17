@@ -23,8 +23,8 @@ import type { User } from "../../packages/cloud/src/contracts/shared";
 import type { AuthContext } from "../../packages/cloud/src/server/middleware/auth";
 import type { RuntimeContext } from "../../packages/cloud/src/ssr/runtime";
 import { buildIslands } from "../../packages/ssr/src/build";
-import { createConfig } from "../../packages/ssr/src/index";
 import { launchBrowser } from "../../packages/ui/test/browser";
+import { registerSsrTestPlugin } from "../../packages/ui/test/ssr-test-plugin";
 
 const cloudRoot = resolve(import.meta.dir, "../../packages/cloud");
 // Resolved from the Cloud package, which depends on these; the repository root does not.
@@ -34,8 +34,7 @@ export type Page = Awaited<ReturnType<Browser["newPage"]>>;
 
 /** Transforms island wrappers of pages imported afterwards, with the ids the harness build uses. */
 export const installSsrTransform = (appRoot: string): void => {
-  const { plugin } = createConfig({ dev: true, rootDir: appRoot, componentRoots: [] });
-  Bun.plugin(plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: appRoot, componentRoots: [] });
 };
 
 export type PageSwapEnvironment = { Variables: AuthContext["Variables"] & { runtime: RuntimeContext } };

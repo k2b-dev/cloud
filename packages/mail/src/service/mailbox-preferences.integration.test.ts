@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { sql } from "@k2b/cloud";
 import type { AuthContext } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { MAX_MAILBOX_PREFERENCES } from "../contracts";
 import { loadMailSidebarData } from "../frontend/mail-sidebar-data";
 import type { MailRequestContext } from "./auth";
@@ -24,7 +24,7 @@ const suite = suiteFor("database", "nats");
 
 // Mail's landing page renders Solid JSX on the server.
 const root = mkdtempSync(join(tmpdir(), "mail-preferences-ssr-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 type Person = { id: string; uid: string };

@@ -5,10 +5,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
-import { createConfig } from "@k2b/ssr";
 import { type Context, Hono } from "hono";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import type { HealthApp, HealthWebhook } from "../../frontend/health-webhook-queries";
 
 /** States the captures and tests switch with `?state=`. */
@@ -114,7 +114,7 @@ const uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css
 export async function observabilityAreaBrowserFixture(options: { port?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "gateway-ops-area-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-  Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
   const { LogsView } = await import("../logs/view");
   const { AlertsView } = await import("../alerts/view");
   const { HealthCheckView } = await import("../health-check/view");

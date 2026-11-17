@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
-import { createConfig } from "@k2b/ssr";
 import { type Context, Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { checkFixtureSessionOrigin } from "../../../../../../scripts/fixtures/session-origin";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 
 /** States the captures and tests switch with `?state=`. */
@@ -116,7 +116,7 @@ const uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css
 export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "core-base-area-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-  Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
   const { BaseFormView } = await import("./view");
   const { cliSections, generalSections, pdfSections } = await import("./sections");
   const { SigninFormView } = await import("../signin/view");

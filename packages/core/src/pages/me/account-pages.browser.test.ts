@@ -13,20 +13,20 @@ import { screenPreferences } from "@k2b/cloud/services/screen-preferences";
 import * as sharedWorkstation from "@k2b/cloud/services/session/shared-workstation";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
 import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { launchBrowser } from "../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 // Whether the account pages draw one frame or nested ones, and whether switching tabs moves
 // anything, is decided by the cascade of Tailwind, Cloud and @k2b/ui styles, which only a
 // real engine resolves.
 const root = mkdtempSync(join(tmpdir(), "core-account-pages-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 const cloudSsr = await import("@k2b/cloud/ssr");
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
