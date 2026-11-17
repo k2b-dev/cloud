@@ -47,6 +47,7 @@ export type {
   StatGridProps,
   StatGridSize,
   StatGridSurface,
+  StatGridVariant,
 } from "./StatGrid";
 export { StatGrid } from "./StatGrid";
 export type { StatusBadgeProps, StatusTone } from "./StatusBadge";

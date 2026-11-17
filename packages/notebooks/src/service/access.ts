@@ -295,7 +295,7 @@ export const addNotebookAccess = async (notebookId: string, accessId: string): P
   } catch (e: unknown) {
     const error = e as { code?: string };
     if (error.code === "23505") {
-      return fail(err.conflict("Access entry"));
+      return fail(err.conflict("Access entry already exists"));
     }
     if (error.code === "23503") {
       return fail(err.notFound("Notebook or access entry"));

@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser } from "../../../../ui/test/browser";
 import type { AiWireEvent } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { truncatedAnswer } from "./stop-notice.test-fixture";
@@ -443,15 +443,17 @@ for (const view of [
         expect(await page.getByRole("button", { name: de ? "Weiterarbeiten" : "Continue", exact: true }).isVisible()).toBe(true);
         // The line says what the turn did, how many steps, and how long it worked. A turn whose only read failed did
         // nothing to name, so it says how long it worked and that a step failed.
-        if (failureCode === "tool_failed")
-          expect(await page.locator(".ai-turn-work .ai-turn-work__text").textContent()).toContain(
-            de ? "4 Min. gearbeitet · 2 Schritte, 1 fehlgeschlagen" : "Worked 4 min · 2 steps, 1 failed",
-          );
-        else {
-          expect(await page.locator(".ai-turn-work .ai-turn-work__text").textContent()).toContain(
-            de ? "Dateien gelesen · 2 Schritte" : "Read files · 2 steps",
-          );
-          expect(await page.locator(".ai-turn-work .ai-turn-work__meta").innerText()).toBe(de ? "4 Min." : "4 min");
+        const sentence = await page.locator(".ai-turn-work .ai-turn-work__sentence").textContent();
+        const steps = (await page.locator(".ai-turn-work .ai-turn-work__steps").innerText()).replace(/\s+/g, " ").trim();
+        if (failureCode === "tool_failed") {
+          expect(sentence).toContain(de ? "4 Min. gearbeitet" : "Worked 4 min");
+          // On a phone the plain count gives way beside a status.
+          const failed = de ? "1 fehlgeschlagen" : "1 failed";
+          expect(steps).toBe(view.width < 768 ? failed : `${de ? "2 Schritte" : "2 steps"} · ${failed}`);
+        } else {
+          expect(sentence).toContain(de ? "Dateien gelesen" : "Read files");
+          expect(steps).toBe(de ? "2 Schritte" : "2 steps");
+          expect(await page.locator(".ai-turn-work .k2b-chat-activity__duration").first().innerText()).toBe(de ? "4 Min." : "4 min");
         }
         if (failedStep) expect(await page.locator(".k2b-chat-timeline__content").innerText()).not.toContain("Now I build the report.");
         else expect(await page.locator(".ai-turn__text").innerText()).toContain("Now I build the report.");
@@ -695,7 +697,7 @@ for (const view of [
         // A press on the ticking clock that spans a tick still opens the line.
         // The clock re-renders every second, so its box is read in one go inside the page.
         const meta = await page.evaluate(() => {
-          const box = document.querySelector(".ai-turn-work .ai-turn-work__meta")!.getBoundingClientRect();
+          const box = document.querySelector(".ai-turn-work .k2b-chat-activity__duration")!.getBoundingClientRect();
           return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
         });
         await page.mouse.move(meta.x, meta.y);
@@ -1012,16 +1014,8 @@ for (const view of [
       expect(await viewportBox(page, receipt)).toEqual(before.receipt);
       expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
 
-      // It looks like the intermediate texts in the expanded work, but keeps the answer's line height, so a status and the
-      // text that replaces it line up instead of jumping by a few pixels at every switch.
-      await page.locator(".ai-turn-work > summary").click();
-      await page.locator(".ai-turn-steps__text").first().waitFor();
-      // The text stays at its step as a note that opens in place.
-      await page.locator(".ai-turn-note__toggle").first().click();
-      const stepStyle = await style(".ai-turn-steps__text");
-      expect([stepStyle.color, stepStyle.fontSize]).toEqual([statusStyle.color, statusStyle.fontSize]);
-      // 12 px at line height 1.55; WebKit reports it as 18.599998px.
-      expect(Number.parseFloat(stepStyle.lineHeight)).toBeCloseTo(18.6, 2);
+      // It keeps the answer's line height, so a status and the text that replaces it line up instead of jumping by a few
+      // pixels at every switch.
       expect(statusStyle.lineHeight).toBe(answerStyle.lineHeight);
     } finally {
       await context.close();
@@ -1496,8 +1490,8 @@ for (const view of [
         // The counts of the folded rows are never cut, also where a phone cuts the target short.
         const counts = await page.evaluate(() =>
           Array.from(document.querySelectorAll(".ai-turn-work .ai-turn-steps > details > summary")).flatMap((summary) => {
-            const count = summary.querySelector(".k2b-chat-activity__trailing");
-            const target = summary.querySelector(".k2b-chat-activity__copy small");
+            const count = summary.querySelector(".k2b-chat-activity__meta");
+            const target = summary.querySelector(".k2b-chat-activity__copy");
             if (!count) return [];
             const row = summary.getBoundingClientRect();
             const box = count.getBoundingClientRect();
@@ -1526,9 +1520,12 @@ for (const view of [
         // The row grows downwards only: its own top, left, and width and every row above it stay.
         const top = (rows: typeof live.rows) => rows.slice(0, 3).map(({ box }) => box.slice(0, 3));
         expect(top(opened.rows)).toEqual(top(live.rows));
-        const parts = opened.rows.filter(({ text }) => text.includes(path)).slice(1);
+        // Rows name the file, never its path; the reads start on the group's text edge, a level below it.
+        const file = path.slice(path.lastIndexOf("/") + 1);
+        expect(opened.rows.some(({ text }) => text.includes(path))).toBe(false);
+        const parts = opened.rows.filter(({ text }) => text.includes(file)).slice(1);
         expect(parts).toHaveLength(3);
-        expect(parts.map(({ left }) => left)).toEqual([live.line, live.line, live.line]);
+        expect(parts.map(({ left }) => left)).toEqual([live.line + 24, live.line + 24, live.line + 24]);
         expect(opened.overflowX).toBeLessThanOrEqual(0);
         await page.screenshot({ path: `/tmp/ai-work-repeat-open-${view.name}-${theme}.png` });
         await repeatSummary.click();
@@ -1817,7 +1814,7 @@ test("the final answer shows whole, and a long quiet text that becomes it unfold
   }
 }, 30_000);
 
-test("each text in the expanded work shows three lines with its own chevron, and the work line stays put", async () => {
+test("each text in the expanded work is a step of its own whose card holds the whole text, and the work line stays put", async () => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
   try {
     const page = await context.newPage();
@@ -1831,37 +1828,84 @@ test("each text in the expanded work shows three lines with its own chevron, and
     await emit(page, { ...base, seq: 5, type: "block_set", block: tool(2, "completed") });
     await emit(page, { ...base, seq: 6, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Both files are read." });
     await emit(page, { ...base, seq: 7, type: "block_set", block: tool(3, "running") });
-    await page.locator(".ai-turn-work > summary").click();
-    const text = page.locator(".ai-turn-steps__text").first();
-    await text.waitFor();
-    // Each text is a note at its step: a quiet line that opens the text in place, which then shows three lines.
-    const note = text.locator(".ai-turn-note__toggle");
-    expect(await note.getAttribute("aria-expanded")).toBe("false");
-    expect(await note.innerText()).toBe("Note on this step");
-    await note.click();
-    expect(await note.getAttribute("aria-expanded")).toBe("true");
-    await settled(page, ".ai-turn-steps");
-    const closed = await clampState(page, ".ai-turn-steps__text");
-    expect(closed.height).toBeCloseTo(3 * closed.lineHeight, 0);
-    expect([closed.expanded, closed.controls]).toEqual(["false", true]);
+    await settled(page, ".ai-turn-work");
     const summary = await viewportBox(page, ".ai-turn-work > summary");
-    await page.screenshot({ path: "/tmp/chat-steps-shots/after-work-open-1280.png" });
-
-    await text.locator(".ai-turn-clamp__toggle").click();
-    await settled(page, ".k2b-chat-timeline__content");
-    const open = await clampState(page, ".ai-turn-steps__text");
-    expect(open.height).toBe(open.full);
-    expect(open.toggle).toEqual(closed.toggle);
+    await page.locator(".ai-turn-work > summary").click();
+    await page.locator(".ai-turn-steps").waitFor();
+    // The text is no paragraph and no "Note on this step" line any more: one row, "Thought it over", like every step.
+    expect(await page.locator(".ai-turn-steps .ai-turn-note__toggle").count()).toBe(0);
+    const note = page.locator(".ai-turn-steps > .k2b-chat-activity", { hasText: "Thought it over" }).first();
+    expect((await note.locator(".k2b-chat-activity__row").boundingBox())!.height).toBe(32);
+    const rows = () =>
+      page.locator(".ai-turn-work .k2b-chat-activity__row").evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const rect = node.getBoundingClientRect();
+          return [rect.top, rect.left, rect.width, rect.height];
+        }),
+      );
+    const before = await rows();
+    // A resting pointer opens the card of a step without actions.
+    await hoverInPlace(note.getByRole("button", { name: "Details: Thought it over" }));
+    const card = page.locator(".k2b-hover-card:popover-open");
+    await card.waitFor();
+    // The whole text, also its last sentence; the card's body scrolls a long one.
+    expect(await card.innerText()).toContain(longStatus.trim().split("\n").at(-1)!.trim().slice(-40));
+    expect(await rows()).toEqual(before);
     expect(await viewportBox(page, ".ai-turn-work > summary")).toEqual(summary);
-    // The quiet status that fits in three lines has no chevron.
-    expect(await page.locator(".ai-turn__text .ai-turn-clamp__toggle").count()).toBe(0);
+    await page.keyboard.press("Escape");
+    await card.waitFor({ state: "hidden" });
+    await settled(page, ".ai-turn-work");
+    expect(await rows()).toEqual(before);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
 
-    // The opened note stays open when the work line closes and opens again, as the reader left it.
+test("a long list opens on its newest six steps, and while it is open a new step adds a row and removes none", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.addInitScript(pinPageDate, testNow);
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+    await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+    const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Import the delivery notes" }] });
+    await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
+    let seq = 3;
+    for (let index = 1; index <= 8; index++) await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(index, "completed") });
+    await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(9, "running") });
     await page.locator(".ai-turn-work > summary").click();
-    await page.locator(".ai-turn-steps").waitFor({ state: "detached" });
+    await page.locator(".ai-turn-steps").waitFor();
+    const earlier = page.locator(".ai-turn-steps__earlier > summary");
+    const shown = () =>
+      page.locator(".ai-turn-work > .k2b-chat-activity__body > .ai-turn-steps > .k2b-chat-activity:not(.ai-turn-steps__earlier)");
+    expect(await earlier.innerText()).toBe("Show 3 earlier steps");
+    expect(await shown().count()).toBe(6);
+    const rows = () =>
+      shown().evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const rect = node.getBoundingClientRect();
+          return [node.textContent, Math.round(rect.top), Math.round(rect.height)];
+        }),
+      );
+    const before = await rows();
+    // A new step while the list is open: one more row at the end, none drops out, the earlier row stays as it was.
+    await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(9, "completed") });
+    await emit(page, { ...base, seq: seq++, type: "block_set", block: tool(10, "running") });
+    await page.waitForFunction(() => document.querySelectorAll(".ai-turn-work .ai-turn-steps > .k2b-chat-activity").length === 8);
+    const after = await rows();
+    expect(after).toHaveLength(7);
+    expect(after.slice(0, 6).map(([, top, height]) => [top, height])).toEqual(before.map(([, top, height]) => [top, height]));
+    expect(await earlier.innerText()).toBe("Show 3 earlier steps");
+    // The earlier steps open in place.
+    await earlier.click();
+    await page.waitForFunction(() => document.querySelectorAll(".ai-turn-steps__earlier .k2b-chat-activity").length === 3);
+    // The next opening shows the newest six again.
     await page.locator(".ai-turn-work > summary").click();
-    await text.waitFor();
-    expect(await text.locator(".ai-turn-note__toggle").getAttribute("aria-expanded")).toBe("true");
+    await page.waitForFunction(() => document.querySelector(".ai-turn-steps") === null);
+    await page.locator(".ai-turn-work > summary").click();
+    await page.locator(".ai-turn-steps").first().waitFor();
+    expect(await earlier.innerText()).toBe("Show 4 earlier steps");
+    expect(await shown().count()).toBe(6);
   } finally {
     await context.close();
   }

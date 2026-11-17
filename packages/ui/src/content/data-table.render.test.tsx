@@ -100,3 +100,12 @@ test("numbers read in the reader's language, right-aligned", () => {
   expect(de).not.toContain("-0");
   expect(numbers("en")).toContain("48,210");
 });
+
+test("the search field points at the element that describes it, and only when one is given", async () => {
+  const { DataTableTools } = await import("./DataTableTools");
+  const search = (describedBy?: string) =>
+    renderToString(() => createComponent(DataTableTools, { label: "table", describedBy, query: "", onQueryChange: () => {} }));
+  // A generic label names the field; the table's own heading describes it.
+  expect(search("heading-stock")).toContain('aria-describedby="heading-stock"');
+  expect(search()).not.toContain("aria-describedby");
+});

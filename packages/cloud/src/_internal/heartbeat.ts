@@ -323,6 +323,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
 
   const schedule = (delayMs: number) => {
     if (!running || timer) return;
+    // runtime-timer: registry heartbeat; an instance stays registered and reachable while quiet.
     timer = setTimeout(() => {
       timer = null;
       if (!running) return;

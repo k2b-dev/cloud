@@ -1,6 +1,7 @@
 import { fromJSON } from "seroval";
 import { type Component, getOwner, type Owner } from "solid-js";
 import { createComponent, ErrorBoundary, render } from "solid-js/web";
+import { captureTypedFields, composingIn, focusTypedField, restoreTypedFields } from "./typed-fields";
 
 /** Props received by a configured island error fallback component. */
 export type IslandErrorProps = {
@@ -62,12 +63,19 @@ const mountElement = <Props extends object>(
 ): void => {
   const { mounted } = registry();
   if (mounted.has(element)) return;
+  // An unfinished input method character in the server markup finishes first; rendering now would cancel it.
+  if (composingIn(element)) {
+    document.addEventListener("compositionend", () => mountElement(element, Component, Fallback), { once: true });
+    return;
+  }
   const start = (): void => {
     try {
       // The browser renders the island again over its server markup. Focus taken before that (a keyboard user, or a
-      // test that is faster than the island's script) moves to the same element of the new markup instead of the body.
+      // test that is faster than the island's script) moves to the same element of the new markup instead of the body,
+      // and text typed into a server field moves to the same field (typed-fields.ts).
       const all = element.getElementsByTagName("*");
       const focused = [...all].indexOf(document.activeElement!);
+      const typed = captureTypedFields(element);
       element.innerHTML = "";
       const dispose = render(() => {
         const owner = getOwner();
@@ -97,9 +105,12 @@ const mountElement = <Props extends object>(
         });
       }, element);
       mounted.set(element, dispose);
-      // The same markup puts the same element at that place, so focusing it scrolls nothing; -1 finds none.
+      // Taken before any event: the live collection moves when a handler changes the markup.
       const node = all[focused];
-      if (node instanceof HTMLElement) node.focus();
+      const typedFocus = restoreTypedFields(element, typed);
+      // The same markup puts the same element at that place, so focusing it scrolls nothing; -1 finds none.
+      if (typedFocus) focusTypedField(typedFocus);
+      else if (node instanceof HTMLElement) node.focus();
     } catch (error) {
       report(element, error, start);
       element.replaceChildren(defaultFallback(start));
