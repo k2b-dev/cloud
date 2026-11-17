@@ -20,7 +20,8 @@ import { RunLog, type RunEntry, type RunLogProps } from "@k2b/ui";
 ## Data and state
 
 `state` is `idle`, `starting`, `running`, `succeeded`, or `failed`.
-Idle and starting render only the head. A lost connection is application
+Idle and starting render only the head when no step plan is known and output
+is closed. A supplied plan reserves the body in every run state. A lost connection is application
 metadata, such as `meta="Connection lost, reconnecting …"`; keep the last
 known run and entries visible.
 
@@ -32,28 +33,35 @@ known run and entries visible.
   `running`, `succeeded`, `failed`, `skipped`). Optional `icon` is a complete
   Tabler class. `description` appears behind ⓘ. `message` is the result or
   reason, kept on one line with its full text in a tooltip. `startedAt` and
-  `endedAt` supply its duration.
+  `endedAt` supply its duration, using the shared millisecond/second/minute
+  formatter. Each step with `startedAt` also contributes one quiet `▸` marker
+  to the output, ordered by time among the log lines.
 
 Later records for the same step id update its original row. Unknown kinds
 are ignored. A pending step after a successful run displays as skipped; after
-a failed run it stays pending. Output timestamps use UTC for ISO timestamps;
-an already formatted time string is displayed unchanged. No clock runs in
-the component. Supply `duration` in milliseconds to update the run's clock.
+a failed run it stays pending. Output timestamps use the inherited locale and
+the runtime's local timezone through `Intl.DateTimeFormat`; an already
+formatted time string is displayed unchanged. SSR hosts use the same timezone
+as their browser rendering, or supply already formatted timestamps. No clock
+runs in the component. Supply `duration` in milliseconds to update the run's clock.
 
 ## Layout and disclosures
 
-Create all steps at the beginning of a run. From `running` onwards, a fixed
-step count reserves the same height through success, failure, changing
+Create all steps at the beginning of a run. A fixed step count reserves the
+same height from idle through starting, execution, success, failure, changing
 reasons, clocks, metadata, and output counts. A step added later adds a row.
 For more than five steps, a fixed five-row window and an earlier-steps
-button keep the height constant. The button moves through earlier steps and
-then back to the current window.
+button keep the height constant. The default window contains the running step,
+or the failed step when none is running. The button moves through earlier
+steps and then back to that current window. When the current step is at the
+beginning, it first offers the remaining steps.
 
 `size="compact"` shows only the head and current step. Activating it unfolds
 the same card downwards; its head then shows the run state. `size="full"`
 is the default. `output="closed"` is the default; `open` starts with output
 expanded and `hidden` omits it. A changed `output` prop updates its disclosure.
-The open output band is 180 px high and scrolls. New lines follow the end until
+The open output band is 180 px high and scrolls, including while it is empty.
+Its count includes the step markers. New lines follow the end until
 the reader scrolls up or requests older output. Only disclosure changes
 animate height; reduced motion makes them instant.
 
@@ -74,11 +82,14 @@ behaviour. Disabled reasons appear as tooltips or menu descriptions.
 The head and running marks inherit the primary tokens. Put the card under
 `data-k2b-primary="ai"` for plum; other hosts keep their application accent.
 Success and failure retain their semantic colours. Output levels use the same
-`data-level` semantic tokens as `LogEntriesTable`.
+`data-level` semantic tokens as `LogEntriesTable`. Info lines are neutral;
+step markers, warnings and errors have their own tone. Warnings and errors
+also carry labelled icons.
 
 ## Accessibility
 
-The run's head is a `role="status"`. Output uses `role="log"` and
+Only the run state is in `role="status"`; duration and the current step stay
+outside this live region. Output uses `role="log"` and
 `aria-live="off"` so streamed lines never overwhelm announcements.
 Steps have spoken states as well as marks and colour. Disclosures expose
 `aria-expanded` and `aria-controls`; collapsed regions are inert and hidden

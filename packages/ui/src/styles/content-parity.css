@@ -28,7 +28,7 @@
 .k2b-ui .k2b-run-log[data-state="idle"] .k2b-run-log__head { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-run-log[data-state="succeeded"] .k2b-run-log__head { background: var(--k2b-success-surface); }
 .k2b-ui .k2b-run-log[data-state="failed"] .k2b-run-log__head { background: var(--k2b-danger-surface); }
-.k2b-ui .k2b-run-log:is([data-state="idle"], [data-state="starting"]) .k2b-run-log__head,
+.k2b-ui .k2b-run-log[data-body="false"] .k2b-run-log__head,
 .k2b-ui .k2b-run-log[data-expanded="false"] .k2b-run-log__head { border-radius: calc(var(--k2b-radius-surface) - 1px); }
 .k2b-ui .k2b-run-log__head-icon { grid-column: 1; grid-row: 1 / span 2; align-self: start; color: var(--k2b-action); font-size: 1.0625rem; }
 .k2b-ui .k2b-run-log[data-state="idle"] .k2b-run-log__head-icon { color: var(--k2b-text-muted); }
@@ -66,7 +66,7 @@
 .k2b-ui .k2b-run-log__pip { width: 0.375rem; height: 0.375rem; border-radius: 50%; background: currentColor; }
 .k2b-ui .k2b-run-log__label { grid-column: 2; grid-row: 1; display: flex; align-items: center; min-width: 0; gap: 0.25rem; }
 .k2b-ui .k2b-run-log__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.k2b-ui .k2b-run-log__info { flex: none; display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border: 0; border-radius: var(--k2b-radius-control); background: transparent; color: var(--k2b-text-subtle); cursor: help; }
+.k2b-ui .k2b-run-log__info { position: relative; flex: none; display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border: 0; border-radius: var(--k2b-radius-control); background: transparent; color: var(--k2b-text-subtle); cursor: help; }
 .k2b-ui .k2b-run-log__info:hover { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-run-log__reason { grid-column: 3; grid-row: 1; min-width: 0; }
 .k2b-ui .k2b-run-log__reason-button { display: block; min-width: 0; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: help; }
@@ -79,12 +79,12 @@
 .k2b-ui .k2b-run-log__output-toggle:disabled { cursor: default; }
 .k2b-ui .k2b-run-log__output-toggle > i { justify-self: center; color: var(--k2b-text-subtle); transition: transform var(--k2b-motion-fast) var(--k2b-ease-out); }
 .k2b-ui .k2b-run-log__output-toggle[aria-expanded="true"] > i { transform: rotate(90deg); }
-.k2b-ui .k2b-run-log__counts { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-run-log__counts { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-run-log__output { height: 11.25rem; overflow: auto; scrollbar-gutter: stable; padding: 0.5rem 0 0.625rem; background: var(--k2b-surface-muted); color: var(--k2b-text-secondary); font-family: var(--k2b-font-mono); font-size: var(--k2b-type-12); line-height: 1.65; }
 .k2b-ui .k2b-run-log__line { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: 0.625rem; padding-inline: 0.875rem; }
 .k2b-ui .k2b-run-log__line time { color: var(--k2b-text-muted); }
 .k2b-ui .k2b-run-log__line > span { white-space: pre-wrap; overflow-wrap: anywhere; }
-.k2b-ui .k2b-run-log__line[data-level="info"] > span { color: var(--k2b-info-text); }
+.k2b-ui .k2b-run-log__line[data-level="step"] > span { color: var(--k2b-info-text); }
 .k2b-ui .k2b-run-log__line[data-level="warn"] > span { color: var(--k2b-warning-text); }
 .k2b-ui .k2b-run-log__line[data-level="error"] { background: var(--k2b-danger-surface); }
 .k2b-ui .k2b-run-log__line[data-level="error"] > span { color: var(--k2b-danger-text); }
@@ -111,11 +111,9 @@
   .k2b-ui .k2b-run-log__step,
   .k2b-ui .k2b-run-log__output-toggle,
   .k2b-ui .k2b-run-log__earlier > button { height: 2.75rem; }
-  .k2b-ui .k2b-run-log__info { width: 2.75rem; height: 2.75rem; }
-  .k2b-ui .k2b-run-log__step:has(.k2b-run-log__reason-button) { grid-template-columns: 1.375rem minmax(0, 1.4fr) minmax(2.75rem, 1fr) auto; }
+  .k2b-ui .k2b-run-log__info::after { content: ""; position: absolute; inset: min(0px, calc((100% - 2.75rem) / 2)); }
   .k2b-ui .k2b-run-log__reason-button { min-height: 2.75rem; min-width: 2.75rem; }
   .k2b-ui .k2b-run-log__older { min-height: 2.75rem; }
-  .k2b-ui .k2b-run-log__counts { max-width: 10rem; }
 }
 
 .k2b-ui .k2b-lightbox button:focus-visible,

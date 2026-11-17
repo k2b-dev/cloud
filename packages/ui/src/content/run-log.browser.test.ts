@@ -49,11 +49,12 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width: number, options: { dark?: boolean; reduced?: boolean; touch?: boolean } = {}) => {
+const open = async (width: number, options: { dark?: boolean; reduced?: boolean; touch?: boolean; timeZone?: string } = {}) => {
   const page = await browser.newPage({
     viewport: { width, height: width === 390 ? 780 : 900 },
     reducedMotion: options.reduced ? "reduce" : "no-preference",
     hasTouch: options.touch,
+    timezoneId: options.timeZone ?? "UTC",
   });
   await page.route(`${assets}**`, (route) =>
     route.fulfill({
@@ -112,12 +113,12 @@ for (const width of [1440, 390])
       const page = await open(width);
       try {
         const idle = await box(page);
-        await set(page, { ...base, state: "starting" });
+        await set(page, { state: "starting", entries: [] });
         expect(await box(page)).toEqual(idle);
-        await set(page, base);
+        await set(page, { ...base, state: "idle" });
         const initial = await box(page);
         const below = await box(page, "#below");
-        for (const state of ["running", "succeeded", "failed"] as const) {
+        for (const state of ["idle", "starting", "running", "succeeded", "failed"] as const) {
           await set(page, {
             ...base,
             state,
@@ -143,6 +144,30 @@ for (const width of [1440, 390])
         }
         expect(await page.locator("#test-root .k2b-run-log__step").count()).toBe(3);
         expect(await page.locator("#test-root .k2b-run-log").evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test("an open empty output reserves its height before the first line arrives", async () => {
+      const page = await open(width);
+      try {
+        await set(page, { ...base, output: "open", entries: steps });
+        await still(page);
+        await settled(page);
+        const empty = await box(page);
+        const below = await box(page, "#below");
+        expect(await page.locator("#test-root .k2b-run-log__output-toggle").getAttribute("aria-expanded")).toBe("true");
+        expect((await box(page, "#test-root [role=log]")).height).toBe(180);
+        await set(page, { ...base, output: "open" });
+        expect(await box(page)).toEqual(empty);
+        expect(await box(page, "#below")).toEqual(below);
+        await set(page, { ...base, output: "closed", entries: steps });
+        await still(page);
+        const closed = await box(page);
+        await set(page, { ...base, output: "closed" });
+        expect(await box(page)).toEqual(closed);
+        expect(empty.height).toBe(closed.height + 180);
       } finally {
         await page.close();
       }
@@ -241,10 +266,24 @@ test("phone actions collapse into the shared menu, one action stays, and touch t
     await settled(page);
     await set(page, { ...base, actions: [{ icon: "ti ti-refresh", label: "Wiederholen", href: "#retry" }] });
     expect(await page.locator("#test-root").getByRole("link", { name: "Wiederholen" }).isVisible()).toBe(true);
-    const heights = await page
+    const targets = await page
       .locator("#test-root button:visible, #test-root a:visible")
-      .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
-    expect(heights.every((height) => height >= 44)).toBe(true);
+      .evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const bounds = node.getBoundingClientRect();
+          const pseudo = getComputedStyle(node, "::after");
+          return {
+            height: bounds.height + Math.max(0, -Number.parseFloat(pseudo.top) || 0) + Math.max(0, -Number.parseFloat(pseudo.bottom) || 0),
+          };
+        }),
+      );
+    expect(targets.every((target) => target.height >= 44)).toBe(true);
+    const info = page.locator("#test-root .k2b-run-log__info");
+    const bounds = await info.boundingBox();
+    expect(bounds!.width).toBe(24);
+    await page.mouse.click(bounds!.x + bounds!.width / 2, bounds!.y - 8);
+    await settled(page);
+    expect(await page.getByRole("tooltip").filter({ hasText: "Liest Text und Positionen aus dem PDF." }).isVisible()).toBe(true);
   } finally {
     await page.close();
   }
@@ -285,7 +324,7 @@ test("many steps and loaded output keep their fixed windows", async () => {
   try {
     await set(page, {
       ...base,
-      entries: Array.from({ length: 13 }, (_, i) => ({ ...steps[0]!, id: String(i), label: `Schritt ${i + 1}` })),
+      entries: Array.from({ length: 13 }, (_, i) => ({ ...steps[0]!, id: String(i), label: `Schritt ${i + 1}`, status: "pending" })),
     });
     const before = await box(page);
     await page.getByRole("button", { name: "8 frühere Schritte anzeigen" }).click();
@@ -307,6 +346,126 @@ test("many steps and loaded output keep their fixed windows", async () => {
       entries: [...steps, ...Array.from({ length: 80 }, (_, i) => ({ ...logs[0], id: String(i), text: `Zeile ${i}` }))],
     });
     expect(await box(page)).toEqual(opened);
+  } finally {
+    await page.close();
+  }
+});
+
+test("the step window follows the active step and returns to it after browsing", async () => {
+  const page = await open(390);
+  const plan = (active: number, status: "running" | "failed" = "running"): RunStepEntry[] =>
+    Array.from({ length: 13 }, (_, i) => ({
+      ...steps[0]!,
+      id: String(i),
+      label: `Schritt ${i + 1}`,
+      status: i === active ? status : "pending",
+    }));
+  try {
+    await set(page, { ...base, entries: plan(0) });
+    const before = await box(page);
+    const names = page.locator("#test-root .k2b-run-log__name");
+    expect(await names.first().textContent()).toBe("Schritt 1");
+    await page.getByRole("button", { name: "8 weitere Schritte anzeigen" }).click();
+    expect(await names.last().textContent()).toBe("Schritt 13");
+    await page.getByRole("button", { name: "8 frühere Schritte anzeigen" }).click();
+    await page.getByRole("button", { name: "3 frühere Schritte anzeigen" }).click();
+    await page.getByRole("button", { name: "Aktuelle Schritte anzeigen" }).click();
+    expect(await names.first().textContent()).toBe("Schritt 1");
+    await set(page, { ...base, entries: plan(12) });
+    expect(await names.last().textContent()).toBe("Schritt 13");
+    await set(page, { ...base, state: "failed", entries: plan(0, "failed") });
+    expect(await names.first().textContent()).toBe("Schritt 1");
+    expect(await box(page)).toEqual(before);
+  } finally {
+    await page.close();
+  }
+});
+
+test("output uses local time in a non-UTC browser timezone", async () => {
+  const page = await open(390, { timeZone: "Asia/Kolkata" });
+  try {
+    await set(page, { ...base, output: "open" });
+    expect(await page.locator("#test-root .k2b-run-log__line time").textContent()).toBe("22:12:07");
+  } finally {
+    await page.close();
+  }
+});
+
+test("only run state is live, and severity has labelled icons in light and dark", async () => {
+  const page = await open(390);
+  try {
+    const props: BrowserRunLogProps = {
+      ...base,
+      output: "open",
+      entries: [
+        ...steps,
+        ...logs,
+        { ...logs[0], id: "warn", level: "warn", text: "Menge unleserlich" },
+        { ...logs[0], id: "error", level: "error", text: "Kundennummer fehlt" },
+        { ...steps[0]!, startedAt: AT },
+      ],
+    };
+    await set(page, props);
+    const status = page.locator("#test-root [role=status]");
+    expect(await status.textContent()).toBe("Läuft");
+    await set(page, { ...props, duration: 7000 });
+    expect(await status.textContent()).toBe("Läuft");
+    expect(await page.locator("#test-root .k2b-run-log__main").textContent()).toBe("Läuft seit 0:07");
+    expect(await page.getByRole("img", { name: "Warnung", exact: true }).count()).toBe(1);
+    expect(await page.getByRole("img", { name: "Fehler", exact: true }).count()).toBe(1);
+    expect(await page.locator('#test-root [data-level="info"] [role=img]').count()).toBe(0);
+    for (const dark of [false, true]) {
+      await page.evaluate((dark) => document.body.classList.toggle("k2b-dark", dark), dark);
+      const tones = await page.locator("#test-root .k2b-run-log__output").evaluate((node) => ({
+        neutral: getComputedStyle(node).color,
+        info: getComputedStyle(node.querySelector('[data-level="info"] > span')!).color,
+        step: getComputedStyle(node.querySelector('[data-level="step"] > span')!).color,
+      }));
+      expect(tones.info).toBe(tones.neutral);
+      expect(tones.step).not.toBe(tones.info);
+    }
+  } finally {
+    await page.close();
+  }
+});
+
+test("on phones the name keeps its width before the reason, and the full count remains visible", async () => {
+  const page = await open(390, { touch: true });
+  try {
+    await set(page, {
+      ...base,
+      state: "failed",
+      entries: [
+        {
+          ...steps[0]!,
+          label: "Einlieferer suchen",
+          status: "failed",
+          description: "Sucht im Adressbuch",
+          message: "Kundennummer fehlt. Bitte den Beleg prüfen und noch einmal ausführen.",
+        },
+        ...logs,
+        { ...logs[0], id: "warn", level: "warn", text: "Warnung" },
+        { ...logs[0], id: "error", level: "error", text: "Fehler" },
+      ],
+      olderCount: 312,
+    });
+    const dimensions = await page.locator("#test-root").evaluate((node) => {
+      const name = node.querySelector(".k2b-run-log__name")!;
+      const reason = node.querySelector(".k2b-run-log__reason-button > span")!;
+      const count = node.querySelector(".k2b-run-log__counts")!;
+      return {
+        nameFits: name.clientWidth === name.scrollWidth,
+        reasonCut: reason.clientWidth < reason.scrollWidth,
+        countFits: count.clientWidth === count.scrollWidth,
+        countRight: count.getBoundingClientRect().right,
+        cardRight: node.querySelector(".k2b-run-log")!.getBoundingClientRect().right,
+      };
+    });
+    expect(dimensions.nameFits).toBe(true);
+    expect(dimensions.reasonCut).toBe(true);
+    expect(dimensions.countFits).toBe(true);
+    expect(dimensions.countRight).toBeLessThan(dimensions.cardRight);
+    expect(await page.locator("#test-root .k2b-run-log__counts").textContent()).toBe("315 Zeilen · 1 Warnung · 1 Fehler");
   } finally {
     await page.close();
   }
@@ -346,7 +505,7 @@ test("the catalog host loads history and reports action requests without changin
     const height = await card.evaluate((node) => node.getBoundingClientRect().height);
     await page.getByRole("button", { name: "312 ältere Zeilen anzeigen", exact: true }).click();
     await settled(page);
-    expect(await page.locator("#runlog-many .k2b-run-log__line").count()).toBe(315);
+    expect(await page.locator('#runlog-many .k2b-run-log__line:not([data-level="step"])').count()).toBe(315);
     expect(await page.getByText("Ältere Ausgabe geladen", { exact: true }).isVisible()).toBe(true);
     expect(await card.evaluate((node) => node.getBoundingClientRect().height)).toBe(height);
     await page.addStyleTag({ content: "#runlog-many{display:none}#runlog-succeeded{display:block}" });
@@ -385,7 +544,7 @@ test("step names and output use the four-level type scale, and descriptions shar
 });
 
 for (const width of [1440, 390])
-  test(`capture every light catalog state at ${width}px when requested`, async () => {
+  test(`capture catalog states in light and dark at ${width}px when requested`, async () => {
     const out = process.env.RUNLOG_SCREENSHOT_DIR;
     if (!out) return;
     mkdirSync(out, { recursive: true });
@@ -395,7 +554,9 @@ for (const width of [1440, 390])
         content: "#test-root{display:none}#catalog-root{display:block}.ui-demo-card{display:none}.ui-demo-card[data-shot]{display:block}",
       });
       const cards = await page.locator("#catalog-root .ui-demo-card").evaluateAll((nodes) => nodes.map((node) => node.id));
+      const selected = process.env.RUNLOG_SCREENSHOT_IDS?.split(",");
       for (const id of cards) {
+        if (selected && !selected.includes(id)) continue;
         await page.evaluate((id) => {
           for (const node of document.querySelectorAll("[data-shot]")) node.removeAttribute("data-shot");
           document.getElementById(id)!.setAttribute("data-shot", "");
@@ -414,12 +575,10 @@ for (const width of [1440, 390])
           await page.screenshot({ path: resolve(out, `runlog-actions-menu-light-${width}.png`) });
           await page.keyboard.press("Escape");
         }
-        if (id === "runlog-failed-output-open") {
-          await page.evaluate(() => document.body.classList.add("k2b-dark"));
-          await settled(page);
-          await page.screenshot({ path: resolve(out, `${id}-dark-${width}.png`) });
-          await page.evaluate(() => document.body.classList.remove("k2b-dark"));
-        }
+        await page.evaluate(() => document.body.classList.add("k2b-dark"));
+        await settled(page);
+        await page.screenshot({ path: resolve(out, `${id}-dark-${width}.png`) });
+        await page.evaluate(() => document.body.classList.remove("k2b-dark"));
       }
     } finally {
       await page.close();

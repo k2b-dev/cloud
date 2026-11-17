@@ -30,7 +30,7 @@ export function StepRowContent(props: {
         </span>
       </Show>
       {props.end}
-      <Show when={props.statusLabel}>
+      <Show when={props.statusLabel !== undefined}>
         <span class="k2b-sr-only">{props.statusLabel}</span>
       </Show>
     </>

@@ -1,9 +1,11 @@
+import { text } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, createUniqueId, type JSX, Show } from "solid-js";
 import { Button, ButtonLink } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { HoverCard } from "../feedback/HoverCard";
 import { KeyedFor } from "../internal/keyed-for";
 import { StepRowContent } from "../internal/step-row";
+import { useLocale } from "../intl/locale";
 import { useRunLogMessages } from "./run-log-messages";
 
 export type RunLogState = "idle" | "starting" | "running" | "succeeded" | "failed";
@@ -55,14 +57,14 @@ const clock = (ms: number) => {
   const seconds = Math.floor(Math.max(0, Number.isFinite(ms) ? ms : 0) / 1000);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 };
-const stepDuration = (step: RunStepEntry) => {
+const stepDuration = (step: RunStepEntry, locale: string) => {
   if (!step.startedAt || !step.endedAt) return undefined;
   const duration = Date.parse(step.endedAt) - Date.parse(step.startedAt);
-  return Number.isFinite(duration) && duration >= 0 ? `${Math.floor(duration / 1000)} s` : undefined;
+  return Number.isFinite(duration) && duration >= 0 ? text.pprintDurationMs(duration, { locale }) : undefined;
 };
-const atTime = (at: string) => {
+const atTime = (at: string, formatter: Intl.DateTimeFormat) => {
   const date = new Date(at);
-  return Number.isFinite(date.getTime()) ? date.toISOString().slice(11, 19) : at;
+  return Number.isFinite(date.getTime()) ? formatter.format(date) : at;
 };
 const headIcons: Record<RunLogState, string> = {
   idle: "ti ti-circle-dashed",
@@ -87,6 +89,7 @@ function StepMark(props: { status: RunStepEntry["status"]; icon?: string }) {
 
 function RunStep(props: { step: RunStepEntry; state: RunLogState }) {
   const t = useRunLogMessages();
+  const locale = useLocale();
   const status = () => (props.state === "succeeded" && props.step.status === "pending" ? "skipped" : props.step.status);
   const statusLabel = () =>
     ({ pending: t().pending, running: t().active, succeeded: t().completed, failed: t().stepFailed, skipped: t().skipped })[status()];
@@ -128,7 +131,7 @@ function RunStep(props: { step: RunStepEntry; state: RunLogState }) {
             )}
           </Show>
         }
-        duration={status() === "skipped" ? t().skipped : stepDuration(props.step)}
+        duration={status() === "skipped" ? t().skipped : stepDuration(props.step, locale())}
         statusLabel={statusLabel()}
       />
     </li>
@@ -202,23 +205,45 @@ function RunActions(props: { actions: readonly RunLogAction[] }) {
 /** A run's steps and output. Presentation and disclosures only; the host owns execution, time, connection, and history. */
 export function RunLog(props: RunLogProps): JSX.Element {
   const t = useRunLogMessages();
+  const locale = useLocale();
+  const time = createMemo(() => new Intl.DateTimeFormat(locale(), { timeStyle: "medium" }));
   const bodyId = createUniqueId();
   const outputId = createUniqueId();
   const [expanded, setExpanded] = createSignal(false);
   const [outputOpen, setOutputOpen] = createSignal(props.output === "open");
   createEffect(() => setOutputOpen(props.output === "open"));
-  const [earlierPages, setEarlierPages] = createSignal(0);
+  const [windowStart, setWindowStart] = createSignal<number>();
   const steps = createMemo(() => {
     const rows = new Map<string, RunStepEntry>();
     for (const entry of props.entries) if (isStep(entry)) rows.set(entry.id, entry);
     return [...rows.values()];
   });
   const logs = createMemo(() => props.entries.filter(isLog));
-  const hasBody = () => props.state !== "idle" && props.state !== "starting";
+  const outputLines = createMemo(() => {
+    const lines: { id: string; at: string; level: RunLevel | "step"; text: string }[] = [];
+    for (const step of steps()) {
+      if (step.startedAt) lines.push({ id: `step:${step.id}`, at: step.startedAt, level: "step", text: step.label });
+    }
+    for (const line of logs()) lines.push({ ...line, id: `log:${line.id}` });
+    return lines.sort((a, b) => {
+      const delta = Date.parse(a.at) - Date.parse(b.at);
+      return Number.isFinite(delta) ? delta : 0;
+    });
+  });
+  // A known plan reserves its rows before execution; an empty open output reserves its band too.
+  const hasBody = () => steps().length > 0 || outputOpen() || (props.state !== "idle" && props.state !== "starting");
   const compact = () => props.size === "compact";
   const visible = () => !compact() || expanded();
-  const start = () => Math.max(0, steps().length - VISIBLE_STEPS * (earlierPages() + 1));
-  const current = () => steps().find((step) => step.status === "running" || step.status === "failed");
+  const current = () => steps().find((step) => step.status === "running") ?? steps().find((step) => step.status === "failed");
+  const lastStart = () => Math.max(0, steps().length - VISIBLE_STEPS);
+  const currentStart = () => (current() ? Math.min(steps().indexOf(current()!), lastStart()) : lastStart());
+  const start = () => Math.min(windowStart() ?? currentStart(), lastStart());
+  const browseSteps = () => {
+    if (start() > 0) setWindowStart(Math.max(0, start() - VISIBLE_STEPS));
+    else setWindowStart(windowStart() === undefined ? lastStart() : undefined);
+  };
+  const stateLabel = () =>
+    ({ idle: t().idle, starting: t().starting, running: t().running, succeeded: t().succeeded, failed: t().failed })[props.state];
   const main = () => {
     if (props.state === "running") return props.duration === undefined ? t().running : t().since({ duration: clock(props.duration) });
     if (props.state === "succeeded")
@@ -251,7 +276,7 @@ export function RunLog(props: RunLogProps): JSX.Element {
       return [t().stepFailed, props.duration === undefined ? "" : clock(props.duration)].filter(Boolean).join(" · ");
     return props.meta;
   };
-  const count = () => logs().length + (props.olderCount ?? 0);
+  const count = () => outputLines().length + (props.olderCount ?? 0);
   const counts = () => {
     if (!count()) return t().noLines;
     const warnings = logs().filter((line) => line.level === "warn").length;
@@ -267,7 +292,7 @@ export function RunLog(props: RunLogProps): JSX.Element {
   let output: HTMLDivElement | undefined;
   let followOutput = true;
   createEffect(() => {
-    logs();
+    outputLines();
     if (props.state === "idle" || props.state === "starting") followOutput = true;
     // Reading away from the end pauses following. New batches never scroll the page.
     if (output && followOutput) output.scrollTop = output.scrollHeight;
@@ -278,6 +303,7 @@ export function RunLog(props: RunLogProps): JSX.Element {
       data-state={props.state}
       data-size={props.size ?? "full"}
       data-expanded={visible() ? "true" : "false"}
+      data-body={hasBody() ? "true" : "false"}
       aria-label={props.label ?? t().run}
     >
       <header class="k2b-run-log__head">
@@ -286,7 +312,10 @@ export function RunLog(props: RunLogProps): JSX.Element {
             <StepMark status={props.state === "idle" ? "pending" : props.state === "starting" ? "running" : props.state} />
           </Show>
         </span>
-        <span class="k2b-run-log__main" role="status" title={compact() && !expanded() ? compactMain() : main()}>
+        <span class="k2b-sr-only" role="status">
+          {stateLabel()}
+        </span>
+        <span class="k2b-run-log__main" title={compact() && !expanded() ? compactMain() : main()}>
           {compact() && !expanded() ? compactMain() : main()}
         </span>
         <span class="k2b-run-log__meta">{compact() && !expanded() ? compactMeta() : props.meta}</span>
@@ -312,9 +341,15 @@ export function RunLog(props: RunLogProps): JSX.Element {
               <ol class="k2b-run-log__steps">
                 <Show when={steps().length > VISIBLE_STEPS}>
                   <li class="k2b-run-log__earlier">
-                    <button type="button" onClick={() => setEarlierPages(start() ? earlierPages() + 1 : 0)}>
-                      <i class="ti ti-dots" aria-hidden="true" />
-                      <span>{start() ? t().earlier({ count: start() }) : t().current}</span>
+                    <button type="button" onClick={browseSteps}>
+                      <StepMark status="succeeded" />
+                      <span>
+                        {start()
+                          ? t().earlier({ count: start() })
+                          : windowStart() === undefined
+                            ? t().later({ count: lastStart() })
+                            : t().current}
+                      </span>
                     </button>
                   </li>
                 </Show>
@@ -327,8 +362,7 @@ export function RunLog(props: RunLogProps): JSX.Element {
               <button
                 type="button"
                 class="k2b-run-log__output-toggle"
-                disabled={!count()}
-                aria-expanded={count() > 0 && outputOpen()}
+                aria-expanded={outputOpen()}
                 aria-controls={outputId}
                 onClick={() => setOutputOpen(!outputOpen())}
               >
@@ -339,9 +373,9 @@ export function RunLog(props: RunLogProps): JSX.Element {
               <div
                 class="k2b-run-log__fold"
                 id={outputId}
-                data-open={count() > 0 && outputOpen() ? "true" : "false"}
-                inert={!count() || !outputOpen()}
-                aria-hidden={!count() || !outputOpen()}
+                data-open={outputOpen() ? "true" : "false"}
+                inert={!outputOpen()}
+                aria-hidden={!outputOpen()}
               >
                 <div class="k2b-run-log__clip">
                   <div
@@ -369,11 +403,23 @@ export function RunLog(props: RunLogProps): JSX.Element {
                         {t().older({ count: props.olderCount! })}
                       </button>
                     </Show>
-                    <KeyedFor each={logs()} by={(line) => line.id}>
+                    <KeyedFor each={outputLines()} by={(line) => line.id}>
                       {(line) => (
                         <div class="k2b-run-log__line" data-level={line().level}>
-                          <time dateTime={line().at}>{atTime(line().at)}</time>
-                          <span>{line().text}</span>
+                          <time dateTime={line().at}>{atTime(line().at, time())}</time>
+                          <span>
+                            <Show when={line().level === "step"}>
+                              <span aria-hidden="true">▸ </span>
+                            </Show>
+                            <Show when={line().level === "warn" || line().level === "error"}>
+                              <i
+                                class={line().level === "warn" ? "ti ti-alert-triangle" : "ti ti-x"}
+                                role="img"
+                                aria-label={line().level === "warn" ? t().warningLevel : t().errorLevel}
+                              />{" "}
+                            </Show>
+                            {line().text}
+                          </span>
                         </div>
                       )}
                     </KeyedFor>

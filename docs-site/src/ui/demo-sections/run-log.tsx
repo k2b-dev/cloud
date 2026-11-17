@@ -20,13 +20,16 @@ const step = (i: number, status: RunStepEntry["status"], message?: string): RunS
   ...plan[i]!,
   status,
   message,
-  startedAt: status === "pending" ? undefined : AT,
-  endedAt: status === "succeeded" || status === "failed" ? "2026-11-17T16:42:10Z" : undefined,
+  startedAt: status === "pending" ? undefined : [AT, "2026-11-17T16:42:10Z", "2026-11-17T16:42:13Z"][i],
+  endedAt:
+    status === "succeeded" || status === "failed"
+      ? ["2026-11-17T16:42:10Z", "2026-11-17T16:42:13Z", "2026-11-17T16:42:16Z"][i]
+      : undefined,
 });
 const logs = [
   { kind: "log", id: "log-1", at: AT, level: "info", text: "PDF mit 2 Seiten erhalten" },
-  { kind: "log", id: "log-2", at: AT, level: "info", text: "14 Positionen gelesen" },
-  { kind: "log", id: "log-3", at: AT, level: "warn", text: "Position 9: Menge unleserlich, nehme 1" },
+  { kind: "log", id: "log-2", at: "2026-11-17T16:42:09Z", level: "info", text: "14 Positionen gelesen" },
+  { kind: "log", id: "log-3", at: "2026-11-17T16:42:11Z", level: "warn", text: "Position 9: Menge unleserlich, nehme 1" },
 ] as const;
 const repeat: RunLogAction = { icon: "ti ti-refresh", label: "Wiederholen", onClick: () => {} };
 const actions: RunLogAction[] = [repeat, { icon: "ti ti-pencil", label: "Ändern", primary: true, href: "#runlog-live" }];
@@ -51,7 +54,7 @@ const failed: RunLogProps = {
     step(1, "failed", "Kein Einlieferer mit Kundennummer K-20418 im Adressbuch. Prüfe die Kundennummer und wiederhole den Lauf."),
     step(2, "pending"),
     ...logs,
-    { kind: "log", id: "log-4", at: AT, level: "error", text: "Kein Einlieferer mit K-20418 im Adressbuch" },
+    { kind: "log", id: "log-4", at: "2026-11-17T16:42:13Z", level: "error", text: "Kein Einlieferer mit K-20418 im Adressbuch" },
   ],
   actions,
 };
@@ -70,6 +73,18 @@ export const runLogExamples: readonly { id: string; title: string; props: RunLog
     primary: "ai",
   },
   { id: "starting", title: "Startet", props: { state: "starting", entries: [], meta: "heute, 16:42" }, primary: "ai" },
+  {
+    id: "idle-plan",
+    title: "Vor dem Lauf · Plan reserviert",
+    props: { state: "idle", entries: plan.map((_, i) => step(i, "pending")) },
+    primary: "ai",
+  },
+  {
+    id: "starting-plan",
+    title: "Startet · Plan reserviert",
+    props: { state: "starting", entries: plan.map((_, i) => step(i, "pending")) },
+    primary: "ai",
+  },
   { id: "running", title: "Läuft", props: running, primary: "ai" },
   {
     id: "late-step",
@@ -109,6 +124,12 @@ export const runLogExamples: readonly { id: string; title: string; props: RunLog
     primary: "ai",
   },
   { id: "output-open", title: "Ausgabe offen", props: { ...running, output: "open" }, primary: "ai" },
+  {
+    id: "empty-output-open",
+    title: "Ausgabe offen · noch leer",
+    props: { ...running, output: "open", entries: plan.map((_, i) => step(i, "pending")) },
+    primary: "ai",
+  },
   { id: "failed-output-open", title: "Fehlerausgabe offen", props: { ...failed, output: "open" }, primary: "ai" },
   {
     id: "many",
@@ -129,6 +150,35 @@ export const runLogExamples: readonly { id: string; title: string; props: RunLog
           }),
         ),
         ...logs,
+      ],
+    },
+    primary: "ai",
+  },
+  {
+    id: "many-first",
+    title: "Viele Schritte · erster Schritt läuft",
+    props: {
+      ...running,
+      entries: Array.from({ length: 13 }, (_, i): RunStepEntry => ({
+        kind: "step",
+        id: `first-${i}`,
+        at: AT,
+        label: `Lager ${i + 1} abgleichen`,
+        status: i === 0 ? "running" : "pending",
+      })),
+    },
+    primary: "ai",
+  },
+  {
+    id: "step-durations",
+    title: "Schrittdauer · Millisekunden bis Minuten",
+    props: {
+      ...succeeded,
+      actions: [],
+      entries: [
+        { ...step(0, "succeeded"), startedAt: AT, endedAt: "2026-11-17T16:42:07.400Z" },
+        { ...step(1, "succeeded"), startedAt: AT, endedAt: "2026-11-17T16:42:08.250Z" },
+        { ...step(2, "succeeded"), startedAt: AT, endedAt: "2026-11-17T16:43:37Z" },
       ],
     },
     primary: "ai",
