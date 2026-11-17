@@ -237,7 +237,8 @@ test.each(["en", "de"])("review shows the exact target, complete text and data i
   expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBeTrue();
 });
 
-test.each(["en", "de"])("review and run hide unavailable chat lookups with NOT_FOUND in %s", async (locale) => {
+// Run first reads the durable receipt, so its resolution is covered by ai-chat-send and chat-binding integration tests.
+test.each(["en", "de"])("review hides unavailable chat lookups with NOT_FOUND in %s", async (locale) => {
   const source = spyOn(chatAuthority, "chatWriteAuthority").mockResolvedValue({
     ok: true,
     data: { origin: { kind: "person", id: user.id }, turnTrigger: { kind: "person", id: user.id }, code: null },
@@ -250,21 +251,19 @@ test.each(["en", "de"])("review and run hide unavailable chat lookups with NOT_F
       data: { chatId: "Resolved433", binding: targetId === CODE_BOUND_CHAT_ID ? { codeId: "c_fixture", revision: 2 } : null },
     });
     const ctx = { ...context, locale, idempotencyKey: "unavailable", target: { type: "core.ai.chat", id: targetId } };
-    for (const phase of ["review", "run"] as const) {
-      lookup.mockClear();
-      expect(await aiChatSendAction[phase]({ text: "Review the facts" }, ctx)).toMatchObject({
-        ok: false,
-        error: { code: "NOT_FOUND", status: 404 },
-      });
-      expect(lookup).toHaveBeenCalledTimes(1);
-      expect(lookup).toHaveBeenCalledWith(user.id, "Resolved433", sql);
-    }
+    lookup.mockClear();
+    expect(await aiChatSendAction.review({ text: "Review the facts" }, ctx)).toMatchObject({
+      ok: false,
+      error: { code: "NOT_FOUND", status: 404 },
+    });
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(lookup).toHaveBeenCalledWith(user.id, "Resolved433", sql);
   }
-  expect(source).toHaveBeenCalledTimes(4);
-  expect(resolve).toHaveBeenCalledTimes(4);
+  expect(source).toHaveBeenCalledTimes(2);
+  expect(resolve).toHaveBeenCalledTimes(2);
 });
 
-test.each(["chat_unbound", "chat_unavailable"])("review and run preserve the bound resolver's %s before chat lookup", async (code) => {
+test.each(["chat_unbound", "chat_unavailable"])("review preserves the bound resolver's %s before chat lookup", async (code) => {
   spyOn(chatAuthority, "chatWriteAuthority").mockResolvedValue({
     ok: true,
     data: { origin: { kind: "person", id: user.id }, turnTrigger: { kind: "person", id: user.id }, code: null },
@@ -272,14 +271,12 @@ test.each(["chat_unbound", "chat_unavailable"])("review and run preserve the bou
   const error = { code, status: 409 as const, message: "Bound chat resolver message" };
   const resolve = spyOn(chatBinding, "resolveCodeChatDestination").mockResolvedValue({ ok: false, error });
   const lookup = spyOn(chatAuthority, "ownedActiveChat");
-  for (const phase of ["review", "run"] as const) {
-    expect(
-      await aiChatSendAction[phase](
-        { text: "Review the facts" },
-        { ...context, idempotencyKey: "unavailable", target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID } },
-      ),
-    ).toEqual({ ok: false, error });
-  }
-  expect(resolve).toHaveBeenCalledTimes(2);
+  expect(
+    await aiChatSendAction.review(
+      { text: "Review the facts" },
+      { ...context, idempotencyKey: "unavailable", target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID } },
+    ),
+  ).toEqual({ ok: false, error });
+  expect(resolve).toHaveBeenCalledTimes(1);
   expect(lookup).not.toHaveBeenCalled();
 });
