@@ -477,6 +477,27 @@ describe("Core AI capabilities", () => {
     }
   });
 
+  test("agent chat reads never return a Code run's module input", async () => {
+    const source = "export default async () => cloud.spaces.task.create({ title: 'Delivery' })";
+    spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
+    spyOn(aiConversations, "listMessagesPage").mockResolvedValue({
+      messages: [
+        storedMessage(2, {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Created the delivery task in Spaces." },
+            { type: "tool_call", id: "run", name: "code_run", args: { code: source } },
+          ],
+        }),
+      ],
+      hasMore: false,
+    });
+    const result = await aiCapabilities.queries["ai.chat.read"].run({ id: chat.shortId, limit: 20 }, context);
+    expect(result.ok).toBe(true);
+    expect(JSON.stringify(result)).toContain("Created the delivery task in Spaces.");
+    expect(JSON.stringify(result)).not.toContain(source);
+  });
+
   test("searches visible messages in one explicitly owned chat", async () => {
     spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
     const search = spyOn(aiConversations, "searchConversationMessages").mockResolvedValue({

@@ -174,6 +174,8 @@ test("switching tabs keeps head and tabs in place, writes ?tab= and survives a r
   const before = await boxes(fixed);
   await tab("Code").click();
   await page.locator(".k2b-code-diff").first().waitFor();
+  // Source remains available in the administrator's dedicated approval review.
+  expect(await page.locator(".k2b-code-diff").first().innerText()).toContain("@sdk");
   expect(new URL(page.url()).searchParams.get("tab")).toBe("code");
   expect(await boxes(fixed)).toEqual(before);
   await tab("Diff").click();

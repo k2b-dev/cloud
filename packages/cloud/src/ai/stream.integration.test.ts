@@ -118,6 +118,22 @@ suite("AI conversation stream repair", () => {
     await connection.drain();
   });
 
+  test("Code source stays out of the initial snapshot, live step and resumed baseline", async () => {
+    const chat = await createChat();
+    const { save, event } = await startTurn(chat);
+    const source = "export default async () => cloud.spaces.task.create({ title: 'Delivery' })";
+    const block: AiTurnBlock = { id: "tool-run", kind: "tool", callId: "run", name: "code_run", args: { code: source }, status: "running" };
+    await save([block], 1);
+    const stream = follow(chat);
+    const initial = expectState(await stream.next());
+    expect(initial.activeTurn?.blocks[0]).toMatchObject({ args: {} });
+    expect(JSON.stringify(initial)).not.toContain(source);
+    await publishAiWireEvent(event(2, { type: "block_set", block }));
+    expect(JSON.stringify(await stream.next())).not.toContain(source);
+    await publishAiWireEvent(event(3, { type: "turn_started", blocks: [block], modelId: "fixture", providerModel: "fixture" }));
+    expect(JSON.stringify(await stream.next())).not.toContain(source);
+  });
+
   test("a lost live event: the stream sends the saved state once it holds the next event, then continues without a hole", async () => {
     const chat = await createChat();
     const { turn, event, save } = await startTurn(chat);

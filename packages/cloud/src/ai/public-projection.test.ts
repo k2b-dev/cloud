@@ -29,6 +29,18 @@ const stored = (id: string, role: Extract<Message["role"], "user" | "assistant">
 });
 
 describe("public AI message projection", () => {
+  test("Code run input stays with execution, never with public history or agent reads", () => {
+    const source = "export default async () => cloud.spaces.task.create({ title: 'Delivery' })";
+    const raw: AiStoredMessage = {
+      ...stored("code-call", "assistant", "internal-turn"),
+      message: { role: "assistant", content: [{ type: "tool_call", id: "run", name: "code_run", args: { code: source, inputPaths: [] } }] },
+    };
+    const messages = projectPublicAiStoredMessages([raw], "chat", new Map([["internal-turn", "turn"]]));
+    expect(JSON.stringify(messages)).not.toContain(source);
+    expect(buildBlocksFromMessages(messages)[0]).toMatchObject({ name: "code_run", args: { inputPaths: [] } });
+    expect(raw.message).toMatchObject({ content: [{ args: { code: source } }] });
+  });
+
   test("uses the public Turn id for message loops and hides active assistant rounds", () => {
     const messages = projectPublicAiStoredMessages(
       [stored("user-1", "user", "internal-turn"), stored("assistant-1", "assistant", "internal-turn")],

@@ -1333,6 +1333,15 @@ suite("AI executor integration", () => {
   test.each([false, true])("a linked chat code approval retains its stored question and content (full=%s)", async (fullContent) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const app = spyOn(registry, "getCapability").mockResolvedValue({
+      appId: "demo",
+      appName: "Spaces",
+      appIcon: "ti ti-layout-kanban",
+      appDescription: "Team tasks",
+      endpoint: "http://demo.invalid/capabilities",
+      manifest: compileReviewFixture().manifest,
+      appPresentation: { baseLocale: "en", translations: { de: { name: "Teamräume" } } },
+    });
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
@@ -1398,6 +1407,7 @@ suite("AI executor integration", () => {
       };
       const ask = (callId: string, approvalId: string) =>
         createExecutor("linked-approval-test")["handleActionRequest"]({
+          locale: "de",
           signal: new AbortController().signal,
           event: {
             type: "tool_action_request",
@@ -1425,6 +1435,17 @@ suite("AI executor integration", () => {
         });
       const linked = await codeApproval("code", fullContent ? fullReview : undefined);
       await ask("run-approval-0", linked);
+      expect(pipeline.blocks.find((block) => block.kind === "tool")).toMatchObject({
+        name: "code_run",
+        presentation: { appId: "demo", appName: "Teamräume", appIcon: "ti ti-layout-kanban" },
+      });
+      const displayed = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id });
+      expect(buildBlocksFromMessages(displayed)).toContainEqual(
+        expect.objectContaining({
+          name: "code_run",
+          presentation: expect.objectContaining({ appId: "demo", appName: "Teamräume" }),
+        }),
+      );
       expect(
         await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "run-approval-0" }),
       ).toMatchObject({
@@ -1467,6 +1488,7 @@ suite("AI executor integration", () => {
         expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId })).toBeNull();
       }
     } finally {
+      app.mockRestore();
       await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
       await sql`DELETE FROM approvals.requests WHERE approver_user_id=${userId}::uuid`;
       await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;

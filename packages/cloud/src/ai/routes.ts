@@ -91,6 +91,7 @@ import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import type { AiResourceContext } from "./projects-authorization";
 import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
+import { publicAiToolInput } from "./public-tool-input";
 import { AiRecentResourceSchema, listAiRecentResources } from "./recent-resources";
 import { RECENT_SENT_REF_LIMIT } from "./recent-sent-refs";
 import { type AiChatRequestContext, resolveAiChatRequestContext as resolveContext } from "./request-context";
@@ -306,7 +307,7 @@ const publicPendingAction = (
   action: Awaited<ReturnType<typeof listPendingAiTurnActions>>[number],
   conversationId: string,
   turnId: string,
-) => ({ ...action, conversationId, turnId });
+) => ({ ...action, args: publicAiToolInput(action.name, action.args), conversationId, turnId });
 
 const prepareConversationForMessageRetry = async (conversationId: string): Promise<"ready" | "busy"> => {
   const active = await aiConversations.getActiveTurn({ conversationId });

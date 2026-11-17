@@ -3,6 +3,7 @@ import type { AppRegistryEntry } from "../contracts/registry";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { projectAiChoices } from "./choices";
 import { projectAiNextMessages } from "./next-message-store";
+import { publicAiToolInput } from "./public-tool-input";
 import { capabilityResultView } from "./result-view";
 import { aiConversations, resolveAiTurnShortIds } from "./store";
 import type { AiConversation, AiStoredMessage } from "./types";
@@ -40,6 +41,15 @@ export const projectPublicAiStoredMessages = (
     const view = message.message.role === "tool_result" && !message.message.isError ? capabilityResultView(message.message.result) : null;
     return {
       ...message,
+      message:
+        message.message.role === "assistant"
+          ? {
+              ...message.message,
+              content: message.message.content.map((block) =>
+                block.type === "tool_call" ? { ...block, args: publicAiToolInput(block.name, block.args) } : block,
+              ),
+            }
+          : message.message,
       meta:
         message.meta || view
           ? {
