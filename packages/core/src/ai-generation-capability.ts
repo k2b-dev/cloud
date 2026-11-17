@@ -18,6 +18,7 @@ import type { CapabilityErrorStatus, CapabilityExecutionContext } from "@k2b/clo
 import { defineTool, estimateTokens } from "@k2b/nessi";
 import { i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { aiCapabilityTurnAttribution } from "./ai-capability-attribution";
 import { codeAiModelBudget, prepareCodeAiLoop } from "./code/ai-loop";
 
 // Reuse the text, field-count and byte budgets of the shared application AI contract.
@@ -245,6 +246,7 @@ export const aiGenerationQuery = {
       }
     };
     try {
+      const attribution = await aiCapabilityTurnAttribution(context);
       assertAiTaskRequestSize(input);
       const output = aiGenerationOutputSchema(input.output);
       const hasRef = (value: unknown): boolean =>
@@ -281,6 +283,7 @@ export const aiGenerationQuery = {
                 await selectAssistantAiModel(context.accessSubject, { id: vision.model.id }),
               );
               const result = await runAiStructured({
+                attribution,
                 task: input.task,
                 appId: "core",
                 usageSubject: context.accessSubject,
@@ -316,6 +319,7 @@ export const aiGenerationQuery = {
         );
       }
       const result = await runAiStructured({
+        attribution,
         task: input.task,
         appId: "core",
         usageSubject: context.accessSubject,

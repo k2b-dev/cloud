@@ -80,4 +80,48 @@ suite("Code authoring usage recovery", () => {
     expect(dispatched).toBe(true);
     expect(events).toEqual([]);
   });
+  test("automatic recovery includes failed attempts and compaction without SQL on the provider path", async () => {
+    const automaticTurnId = "00000000-0000-4000-8000-000000003324";
+    await sql`INSERT INTO ai.inference_calls(id,model_profile_id,turn_id,input,kind,task,provider_model,lease_expires_at,status)
+      SELECT ('00000000-0000-4000-8001-' || lpad(n::text,12,'0'))::uuid,'fixture',${automaticTurnId}::uuid,1000,
+        CASE WHEN n=16 THEN 'background' ELSE 'chat' END,
+        CASE WHEN n=16 THEN 'chat-compaction' ELSE 'chat' END,'fixture','2026-11-14T12:02:00Z','failed'
+      FROM generate_series(1,16) n`;
+    const usage = await readAiTurnCallUsage(automaticTurnId);
+    expect(usage).toEqual({ calls: 16, inputTokens: 16000, unknownCalls: 0 });
+    const guard = createCodeAuthoringTurnBudget({ priorCalls: usage, selected: false, nonPerson: true, finishedToolCalls: [] });
+    const provider = guard.wrap({
+      name: "fixture",
+      family: "openai-compatible",
+      model: "fixture",
+      capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: false },
+      async *stream() {
+        throw new Error("No seventeenth attempt");
+      },
+    });
+    const meter = await meterSql();
+    try {
+      expect(
+        await meter.during(async () => {
+          for await (const _ of provider.stream({ messages: [] })) {
+            /* drain */
+          }
+        }),
+      ).toEqual([]);
+    } finally {
+      await meter.close();
+    }
+    expect(guard.automationStopped()).toEqual({ reason: "model_calls" });
+  });
+  test("priced Code recovery floors estimated attempts at the authoritative model window", async () => {
+    const id = "00000000-0000-4000-8000-000000003326";
+    await sql`INSERT INTO ai.inference_calls(id,model_profile_id,turn_id,input,output,estimated,kind,task,provider_model,lease_expires_at,status)
+      VALUES('00000000-0000-4000-8000-000000003327','fixture',${id}::uuid,10,1,true,'chat','chat','fixture','2026-11-14T12:02:00Z','ok')`;
+    expect(await readAiTurnCallUsage(id, 128000)).toEqual({ calls: 1, inputTokens: 128000, unknownCalls: 0 });
+    expect(await readAiTurnCallUsage(id)).toEqual({ calls: 1, inputTokens: 10, unknownCalls: 0 });
+    await sql`UPDATE ai.inference_calls SET status='failed',first_byte_ms=NULL WHERE turn_id=${id}::uuid`;
+    expect(await readAiTurnCallUsage(id, 128000)).toEqual({ calls: 1, inputTokens: 10, unknownCalls: 0 });
+    await sql`UPDATE ai.inference_calls SET input=NULL WHERE turn_id=${id}::uuid`;
+    expect(await readAiTurnCallUsage(id, 128000)).toEqual({ calls: 1, inputTokens: 0, unknownCalls: 0 });
+  });
 });

@@ -293,9 +293,11 @@ export type AiConversationProjectUpdateResult =
 
 export type AiCodeOrigin = { codeId: string; title: string; runId: string; requestId: string; label: string };
 
+export type AiAutomationTurnStop = { reason: "model_calls" | "input_tokens" | "output_tokens" };
+
 /** Receipt-based snapshot at an authoring stop; deliberately contains no source or paths. */
 export type AiCodeAuthoringStop = {
-  reason: "model_calls" | "input_tokens" | "repeated_error";
+  reason: "model_calls" | "input_tokens" | "output_tokens" | "repeated_error";
   completedSteps: number;
   drafts: number;
   unchecked: number;
@@ -350,6 +352,7 @@ export type AiStoredMessage = {
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
     codeAuthoringStop?: AiCodeAuthoringStop;
+    automationTurnStop?: AiAutomationTurnStop;
     codeOrigin?: AiCodeOrigin;
     /** Passages this user message quotes, checked by the server against their messages; the only source of quotes. */
     quotes?: import("./quote-markers").AiMessageQuote[];
@@ -427,13 +430,19 @@ export type AiConversationTimelineEntry = {
 
 /**
  * Why a turn failed, as a stable code. `limitMinutes` comes with `time_limit` when the turn had a run time limit.
- * Codes are never translated; clients word them in the reader's language.
+ * Codes are never translated; clients word platform reasons, while hosts supply their own localized message.
  */
 export type AiTurnErrorCode =
   | "model_unavailable"
   | "provider_stopped"
   | "tool_failed"
   | "quota_exhausted"
+  | "automation_turn_limit"
+  | "host_budget_limit"
+  | "host_budget_unknown"
+  | "host_budget_changed"
+  | "host_budget_settled"
+  | "host_rejected"
   | "context_full"
   | "time_limit"
   | "step_limit"
@@ -443,7 +452,12 @@ export type AiTurnErrorCode =
   | "not_allowed"
   | "failed";
 
-export type AiTurnError = { code: AiTurnErrorCode; limitMinutes?: number };
+export type AiTurnError = {
+  code: AiTurnErrorCode;
+  limitMinutes?: number;
+  /** Final localized explanation authored by the host for host_* failures, never provider diagnostics. */
+  message?: string;
+};
 
 export type AiTurnStatus = "queued" | "running" | "waiting_for_action" | "completed" | "failed" | "aborted";
 
@@ -735,6 +749,19 @@ export type AiChatTurnRunConfig = {
   sourceRestricted?: true;
   /** Account-scoped send receipt on the existing queue, independent of personal authorship. */
   send?: { id: string; accountId: string; keyHash: string; requestHash: string };
+  /** Server-owned provider admission, installed with the host's cost reservation.
+   * All attributed model attempts share it, including tool/vision requests. */
+  inferenceBudget?: {
+    modelProfileId?: string;
+    pricing?: import("../shared/ai-costs").AiModelPricing;
+    contextWindow?: number;
+    maxOutputTokens?: number;
+    /** All calls of the turn together; unknown output counts as the per-call ceiling. */
+    outputTokens?: number;
+    inputTokens: number;
+    modelCalls: number;
+    unknownInputTokens: number;
+  };
   /** Trusted Core review entrypoint; the executor offers only the bounded Code tool set. */
   codeReview?: { codeId: string; versionId: string };
   /** Trusted host attribution; never grants tool authority. */
@@ -1204,6 +1231,7 @@ export type AiConversationService = {
     leaseOwner?: string | null;
     /** Read only for the terminal assistant append, persisted with the message. */
     codeAuthoringStop?: () => AiCodeAuthoringStop | null;
+    automationTurnStop?: () => AiAutomationTurnStop | null;
     /** Ephemeral provider input for this turn; user-message persistence remains reference-only. */
     turnInput?: Input;
     /** Mutable snapshot map read only when an assistant tool-call message is persisted. */

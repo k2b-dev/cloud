@@ -640,6 +640,7 @@ const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_obj
   'codeDecision', ${todoMetaJson()}->'codeDecision',
   'codeReviewStart', ${todoMetaJson()}->'codeReviewStart',
   'writerOrigin', ${todoMetaJson()}->'writerOrigin',
+  'automationTurnStop', ${todoMetaJson()}->'automationTurnStop',
   'turnTrigger', ${todoMetaJson()}->'turnTrigger'
 )), '{}'::jsonb)`;
 
@@ -3296,9 +3297,10 @@ export const aiConversations: AiConversationService = {
                 : config?.kind !== "compact"
                   ? config?.writerOrigin
                   : undefined,
-            // The initiator and send receipt stay for the chain rule and status. A person's retry runs on
-            // their own allowance, so the Code's budget attribution does not carry over.
-            turnTrigger: config?.kind !== "compact" ? config?.turnTrigger : undefined,
+            // The current actor starts this retry on their own allowance. Retain the receipt
+            // for status, but neither the original trigger nor Code budget attribution.
+            turnTrigger:
+              input.runConfig.actor?.kind === "user" ? { kind: "person" as const, id: input.runConfig.actor.user.id } : undefined,
             send: config?.kind !== "compact" ? config?.send : undefined,
             codeOrigin: undefined,
             ...(config?.kind !== "compact" && config?.sourceRestricted ? { sourceRestricted: true as const } : {}),
@@ -4402,7 +4404,12 @@ export const aiConversations: AiConversationService = {
       if (message.role === "user") return;
       const stop = message.role === "assistant" && opts?.kind !== "summary" ? input.codeAuthoringStop?.() : null;
       const toolMeta = toolMessageMeta(message, input.toolPresentations, input.rejectedToolCallIds, input.approvedToolCallIds);
-      const meta = stop ? { ...toolMeta, codeAuthoringStop: stop } : toolMeta;
+      const automationStop = message.role === "assistant" && opts?.kind !== "summary" ? input.automationTurnStop?.() : null;
+      const meta = stop
+        ? { ...toolMeta, codeAuthoringStop: stop }
+        : automationStop
+          ? { ...toolMeta, automationTurnStop: automationStop }
+          : toolMeta;
 
       if (input.turnId && input.leaseOwner) {
         const appended = await appendTurnOwnedMessage({

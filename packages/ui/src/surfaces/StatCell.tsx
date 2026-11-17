@@ -47,9 +47,13 @@ export type StatCellProps = {
   valueTone?: "danger" | "success";
   /** An icon in a chip before the label, in `tone`. `"in"` and `"out"` are the money colours of `FlowAmount`. */
   icon?: string;
-  /** The chip colour of `icon`. Defaults to zinc. */
+  /**
+   * The chip colour of `icon`. Defaults to zinc. In a `plain` grid, `amber` (a warning) and `red` (a problem) also
+   * colour the figure and its third line; say what is wrong there with `accent` (icon and word).
+   */
   tone?: StatCellTone | "in" | "out";
   accent?: StatCellAccent;
+  /** The change against `compare`; beside the figure, and always on the third line in a `plain` grid. */
   delta?: StatCellDelta;
   /** Keep the figure and change on separate rows, including while loading. Defaults to beside the figure. */
   deltaPlacement?: "below";
@@ -78,10 +82,13 @@ export type StatCellProps = {
 
 function Body(props: StatCellProps): JSX.Element {
   const gridSize = useStatGridSize();
+  // A plain figure keeps its change off the figure's line: the third line holds it with the comparison.
   const surface = useStatGridSurface();
-  // A flat figure has no tile to hold: while it loads, its support line waits only where something will stand there.
+  const plain = () => surface() === "plain";
+  // Flat chat figures reserve a support placeholder only when that line has content.
   const supportWaits = () =>
-    surface !== "flat" || Boolean(props.compare || props.sub || props.accent || props.stale || (props.trend && props.trend.length > 1));
+    surface() !== "flat" || Boolean(props.compare || props.sub || props.accent || props.stale || (props.trend && props.trend.length > 1));
+  const badge = (delta: StatCellDelta) => <DeltaBadge delta={delta} compare={props.compare} />;
   const size = () => props.size ?? gridSize;
   const accent = () => props.accent;
   const locale = useLocale();
@@ -136,7 +143,7 @@ function Body(props: StatCellProps): JSX.Element {
                   {props.value}
                 </Show>
               </span>
-              <Show when={!empty() && props.delta}>{(delta) => <DeltaBadge delta={delta()} compare={props.compare} />}</Show>
+              <Show when={!plain() && !empty() && props.delta}>{(delta) => badge(delta())}</Show>
             </>
           }
         >
@@ -159,6 +166,7 @@ function Body(props: StatCellProps): JSX.Element {
               when={props.stale}
               fallback={
                 <>
+                  <Show when={plain() && !empty() && props.delta}>{(delta) => badge(delta())}</Show>
                   <Show when={props.compare}>
                     {(compare) => (
                       <span class="k2b-stat-cell__sub">
@@ -233,14 +241,19 @@ function Body(props: StatCellProps): JSX.Element {
 
 /**
  * One key figure as a framed tile: icon and label, the figure with its change, and a support line with the comparison
- * and the trend. Each state (loading, error, stale, empty) keeps the tile's place and size.
+ * and the trend. In a `plain` grid the same three rows stand without a frame. Each state (loading, error, stale, empty)
+ * keeps the tile's place and size.
  */
 export function StatCell(props: StatCellProps): JSX.Element {
   const gridSize = useStatGridSize();
   const size = () => props.size ?? gridSize;
+  // A plain figure has no surface; its tone colours the figure instead of only the icon chip.
   const surface = useStatGridSurface();
-  // A figure without change, comparison or trend waits for nothing beside it; flat rows then reserve no room for one.
-  const plain = () => !props.delta && !props.compare && !(props.trend?.length ?? 0);
+  const plain = () => surface() === "plain";
+  // Compact flat figures keep their support line directly below the value.
+  const compact = () => !props.delta && !props.compare && !(props.trend?.length ?? 0);
+  const variant = () => (plain() ? "plain" : undefined);
+  const tone = () => (plain() ? props.tone : undefined);
   return (
     <Show
       // A tile that offers a retry is no link: the button must not sit inside it.
@@ -249,9 +262,11 @@ export function StatCell(props: StatCellProps): JSX.Element {
         <div
           class="k2b-stat-cell"
           data-size={size()}
-          data-surface={surface}
+          data-surface={plain() ? undefined : surface()}
+          data-variant={variant()}
+          data-tone={tone()}
           data-wrap={props.wrap || undefined}
-          data-plain={plain() || undefined}
+          data-plain={compact() || undefined}
           data-delta-placement={props.deltaPlacement}
           data-status={props.status}
           aria-busy={props.status === "loading" || undefined}
@@ -264,9 +279,11 @@ export function StatCell(props: StatCellProps): JSX.Element {
         href={props.href}
         class="k2b-stat-cell k2b-stat-cell--link"
         data-size={size()}
-        data-surface={surface}
+        data-surface={plain() ? undefined : surface()}
+        data-variant={variant()}
+        data-tone={tone()}
         data-wrap={props.wrap || undefined}
-        data-plain={plain() || undefined}
+        data-plain={compact() || undefined}
         data-delta-placement={props.deltaPlacement}
       >
         <i class="ti ti-external-link k2b-stat-cell__link-icon" aria-hidden="true" />

@@ -1,4 +1,17 @@
 export type { ChartDateFormat, ChartDatum, ChartDatumRole, ChartFormat, ChartNumberFormat } from "../charts/core";
+export {
+  type ActivityAction,
+  ActivityCard,
+  type ActivityCardProps,
+  type ActivityDensity,
+  type ActivityDialogInput,
+  type ActivityEntry,
+  type ActivityKind,
+  ActivityList,
+  type ActivityListProps,
+  type ActivityTone,
+  openActivityDialog,
+} from "./ActivityList";
 export { BalanceSummary, type BalanceSummaryProps } from "./BalanceSummary";
 export type {
   CalendarAttendee,

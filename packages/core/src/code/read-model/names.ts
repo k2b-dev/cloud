@@ -7,7 +7,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import type { CodeContext } from "../access";
-import { type CodePolicyRow, codePolicyRow, isCodeAiOperation } from "../policy-contracts";
+import { type CodePolicyRow, codeOperationPolicyRow } from "../policy-contracts";
 import { codeReadModelMessages } from "./messages";
 import type { ReadModelNames, ReadModelTarget } from "./present";
 
@@ -105,9 +105,11 @@ export async function readModelNames(
     for (const operation of [...data.manifest.queries, ...data.manifest.actions])
       operations.set(`${appId}.${operation.localId}`, {
         title: operation.title,
-        policyRow: isCodeAiOperation(`${appId}.${operation.localId}`)
-          ? "ai"
-          : codePolicyRow("idempotency" in operation ? "action" : "query", capabilityActionPolicy(data.manifest, operation.localId)),
+        policyRow: codeOperationPolicyRow(
+          `${appId}.${operation.localId}`,
+          "idempotency" in operation ? "action" : "query",
+          capabilityActionPolicy(data.manifest, operation.localId),
+        ),
         app: data.appName,
         ...(data.appIcon ? { icon: data.appIcon } : {}),
       });

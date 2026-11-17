@@ -302,3 +302,15 @@ for (const kind of ["invalid-arguments", "unknown-tool"] as const)
     expect(JSON.stringify(issues.map(aiIssueDiagnostic))).not.toContain(marker);
     expect(issues.map(aiIssueDiagnostic)).toContainEqual({ code: "tool_execution_error", message: "AI tool execution failed." });
   });
+
+test("hosts supply their own localized explanation without leaking diagnostics", () => {
+  const failure = new AiTurnFailure("host_rejected", "private host diagnostic", "This workspace needs an allowance.");
+  const reason = aiTurnReasonFromThrown(failure);
+  expect(reason).toEqual({ error: { code: "host_rejected", message: "This workspace needs an allowance." } });
+  expect(aiTurnErrorCanContinue(reason.error)).toBeFalse();
+  expect(aiTurnErrorText(reason.error, "en")).toBe("This workspace needs an allowance.");
+  expect(aiTurnErrorText({ code: "host_budget_limit", message: "Le budget de cet espace est épuisé." }, "fr")).toBe(
+    "Le budget de cet espace est épuisé.",
+  );
+  expect(aiTurnErrorText({ code: "host_budget_unknown" }, "en")).not.toContain("Code");
+});

@@ -1,3 +1,4 @@
+import type { AiModelProfile } from "@k2b/cloud/ai";
 import {
   CAPABILITY_ASK_REASONS,
   type CapabilityActionPolicy,
@@ -5,6 +6,7 @@ import {
   type CodePolicyRow,
   CodePolicyRowSchema,
 } from "@k2b/cloud/contracts";
+import { hasBillableAiPricing } from "@k2b/cloud/shared";
 
 export {
   CODE_POLICY_ROWS,
@@ -84,7 +86,7 @@ export function codePolicyPreset(preset: Exclude<CodePolicyPreset, "custom">): C
       value:
         row.startsWith("ask_") || preset === "off"
           ? "never"
-          : preset === "open" || ["read", "silent_you", "silent_draft"].includes(row)
+          : preset === "open" || ["read", "silent_you", "silent_draft", "ai_chat_you"].includes(row)
             ? "automatic"
             : "admin",
     })),
@@ -93,6 +95,20 @@ export function codePolicyPreset(preset: Exclude<CodePolicyPreset, "custom">): C
 /** Inference classification shared by the checker, runtime bridge and Gustav's SDK index. */
 export const isCodeAiOperation = (capability: string): boolean =>
   ["core.ai.generate", "core.ai.decide", "core.ai.chat.send"].includes(capability);
+
+/** Send is a candidate for bounded personal-chat inference. The worker rechecks
+ * the executed model: missing/zero prices still require the ordinary AI row. */
+export function codeOperationPolicyRow(
+  capability: string,
+  kind: "query" | "action" | "ai" | "internet",
+  policy?: CapabilityActionPolicy,
+): CodePolicyRow {
+  return capability === "core.ai.chat.send" ? "ai_chat_you" : codePolicyRow(isCodeAiOperation(capability) ? "ai" : kind, policy);
+}
+
+/** Only the actual profile can qualify a turn for the automatic chat row. */
+export const codeChatModelPolicyRow = (profile: Pick<AiModelProfile, "pricing">): CodePolicyRow =>
+  hasBillableAiPricing(profile.pricing) ? "ai_chat_you" : "ai";
 
 /** Conservative classification: an Action without declared policy requires the app_asks row. */
 export function codePolicyRow(kind: "query" | "action" | "ai" | "internet", policy?: CapabilityActionPolicy): CodePolicyRow {

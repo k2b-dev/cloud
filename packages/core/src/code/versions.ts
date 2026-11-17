@@ -31,7 +31,7 @@ import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersi
 import { requireCodeEventAccess } from "./event-access";
 import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscriptions";
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
-import { codePolicyRow } from "./policy-contracts";
+import { type CodePolicyRow, codeOperationPolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
 import { storeCodeVersionExplanation } from "./read-model/explanation";
 import { readModelNames } from "./read-model/names";
@@ -213,7 +213,11 @@ async function validateOperationRows(
         operation?.stream?.direction === "write" && !(properties && typeof properties === "object" && Object.hasOwn(properties, "file"));
       if (!operation || unsupportedStream || (action?.code === false && ownerKind !== "person"))
         throw new CodeVersionError("code_manifest_invalid", "Manifest operation is unavailable to Code.");
-      const row = codePolicyRow(query ? "query" : "action", capabilityActionPolicy(catalog.data.manifest, localId));
+      const row = codeOperationPolicyRow(
+        permission.operation,
+        query ? "query" : "action",
+        capabilityActionPolicy(catalog.data.manifest, localId),
+      );
       if (row === "ask_sends") throw new CodeVersionError("code_sends_not_yet", "Unattended sending is available in Phase 3.");
       if (!manifest.policyRows.includes(row))
         throw new CodeVersionError("code_manifest_invalid", "Manifest classifications do not cover the current operation policy.");
@@ -796,7 +800,12 @@ export async function recordCodeVersionBaseline(codeId: string, versionId: strin
 /** Trusted C9/C4 seam. Caller holds policy then Code locks (or one consistent read snapshot).
  * Revalidates immutable evidence, current policy/groups and device/epoch revocation; never creates grants.
  */
-export async function requireCodeVersionApproval(code: Code, versionId: string, db: SQL): Promise<{ policyRevision: number }> {
+export async function requireCodeVersionApproval(
+  code: Code,
+  versionId: string,
+  db: SQL,
+  actualRows: readonly CodePolicyRow[] = [],
+): Promise<{ policyRevision: number }> {
   const version = await versionSnapshot(code.id, versionId, db);
   const manifest = manifestFor(version);
   if (manifest.policyRows.includes("ask_sends"))
@@ -810,7 +819,9 @@ export async function requireCodeVersionApproval(code: Code, versionId: string, 
   if (submission.withdrawn) throw new CodeVersionError("code_approval_revoked", "This version was withdrawn.");
   const policy = await readCodePolicySnapshot(db);
   const membership = await readCodePolicyGroups(code.owner.kind === "person" ? code.owner.userId : version.created_by, db);
-  const rows = manifest.policyRows.map((row) => effective(row, code.owner, policy.definition, membership));
+  const rows = [...new Set([...manifest.policyRows, ...actualRows])].map((row) =>
+    effective(row, code.owner, policy.definition, membership),
+  );
   if (rows.some((row) => row.value === "never"))
     throw new CodeVersionError("code_policy_never", "The current Code policy forbids this version.");
   const [decision] = await db<{ approved: boolean; binding: CodeVersionBinding; valid: boolean }[]>`
@@ -828,6 +839,11 @@ export async function requireCodeVersionApproval(code: Code, versionId: string, 
     throw new CodeVersionError("code_hash_mismatch", "Approval evidence does not match this version.");
   if (rows.some((row) => row.value === "admin") && !decision?.approved)
     throw new CodeVersionError("code_approval_required", "Cloud-admin version approval is required.");
+  for (const row of actualRows) {
+    if (effective(row, code.owner, policy.definition, membership).value !== "admin") continue;
+    const covered = await db`SELECT 1 FROM code.policy_coverage WHERE version_id=${versionId}::uuid AND row=${row}`;
+    if (!covered.length) throw new CodeVersionError("code_approval_required", "The executed model needs AI approval for this version.");
+  }
   return { policyRevision: policy.revision };
 }
 /** Shared approval readiness for the version card and authoring handover. Never changes access. */

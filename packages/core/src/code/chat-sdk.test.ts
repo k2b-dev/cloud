@@ -129,7 +129,8 @@ test("the SDK index classifies inference queries as AI and keeps non-inference q
     expect(position).toBeGreaterThanOrEqual(0);
     return core.methods[position]?.policy;
   };
-  for (const capability of ["ai.generate", "ai.decide", "ai.chat.send"]) expect(policy(capability)).toBe("ai");
+  for (const capability of ["ai.generate", "ai.decide"]) expect(policy(capability)).toBe("ai");
+  expect(policy("ai.chat.send")).toBe("ai_chat_you");
   for (const capability of ["ai.chat.read", "code.list"]) expect(policy(capability)).toBe("read");
   for (const capability of ["ai.chat.search", "ai.chats.search", "ai.chat.resources"]) expect(policy(capability)).toBe("read");
 });

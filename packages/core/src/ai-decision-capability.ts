@@ -18,6 +18,7 @@ import type { CapabilityErrorStatus, CapabilityExecutionContext } from "@k2b/clo
 import { estimateTokens } from "@k2b/nessi";
 import { i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { aiCapabilityTurnAttribution } from "./ai-capability-attribution";
 import { codeAiModelBudget, prepareCodeAiLoop } from "./code/ai-loop";
 
 const text = z
@@ -203,8 +204,11 @@ export const aiDecisionQuery = {
           }
         : undefined;
     try {
+      const attribution = await aiCapabilityTurnAttribution(context);
       if (!input.files?.length)
-        return ok({ data: await runAiDecision({ ...input, usageSubject: context.accessSubject, appId: "core", signal: context.signal }) });
+        return ok({
+          data: await runAiDecision({ ...input, attribution, usageSubject: context.accessSubject, appId: "core", signal: context.signal }),
+        });
       const loop = await prepareCodeAiLoop({ input: input.state, files: input.files }, context, "core.ai.decide");
       const budget = codeAiModelBudget(loop.run.reserved, loop.check);
       const selected = await resolveAiDecisionModel({ model: input.model, usageSubject: context.accessSubject, signal: loop.signal });
@@ -223,6 +227,7 @@ export const aiDecisionQuery = {
             await selectAssistantAiModel(context.accessSubject, { id: vision.model.id }),
           );
           const result = await runAiStructured({
+            attribution,
             task: input.task,
             appId: "core",
             usageSubject: context.accessSubject,
@@ -246,6 +251,7 @@ export const aiDecisionQuery = {
       await loop.check();
       budget.reserve(selected.profile, selected.profile.contextWindow!, selected.profile.contextWindow!);
       const result = await runAiDecision({
+        attribution,
         ...input,
         state: { untrusted_state: input.state, untrusted_files: content },
         images,

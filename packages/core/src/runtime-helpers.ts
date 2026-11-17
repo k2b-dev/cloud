@@ -7,6 +7,7 @@ import { startAppCatalogMaintenance } from "@k2b/cloud/services/app-catalogs";
 import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
+import { admitCodeChatTurn, settleCodeChatTurn, sweepCodeChatTurnBudgets } from "./ai-chat-budget";
 import { validateQueuedChatStart } from "./ai-chat-queue";
 import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activation-maintenance";
 import { createCodeAuthoringChatTools } from "./code/chat-tools";
@@ -241,6 +242,8 @@ export const startCoreServices = async (
     stopCloudAiRuntime = startAiRuntime({
       tools: createCodeAuthoringChatTools(),
       validateQueuedChatStart,
+      beforeChatTurn: admitCodeChatTurn,
+      onSweep: sweepCodeChatTurnBudgets,
       onApprovalRequested: async ({ approvalId }) => {
         const [notice] = await Promise.allSettled([
           aiNotifications.notifyApprovalWaiting(approvalId),
@@ -256,10 +259,21 @@ export const startCoreServices = async (
         if (notice.status === "rejected") throw notice.reason;
       },
       onTurnFinalized: async ({ turnId, status, kind }) => {
-        await Promise.allSettled([
-          ...(status === "completed" && kind === "chat" ? [aiNotifications.notifyTurnCompleted(turnId)] : []),
-          finishCodeReviewRevision(turnId, status),
-        ]);
+        const tasks = [
+          ...(status === "completed" && kind === "chat"
+            ? [{ name: "completion notification", run: () => aiNotifications.notifyTurnCompleted(turnId) }]
+            : []),
+          { name: "Code review finalization", run: () => finishCodeReviewRevision(turnId, status) },
+          { name: "Code chat budget settlement", run: () => settleCodeChatTurn(turnId) },
+        ];
+        const results = await Promise.allSettled(tasks.map((task) => task.run()));
+        for (const [index, result] of results.entries())
+          if (result.status === "rejected")
+            logger("core:ai").warn("Turn finalization callback failed", {
+              turnId,
+              task: tasks[index]!.name,
+              error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            });
       },
     });
     await aiMaintenanceJobs.start();
