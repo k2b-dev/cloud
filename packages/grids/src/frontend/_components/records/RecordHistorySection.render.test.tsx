@@ -13,7 +13,8 @@ beforeAll(() => setSystemTime(new Date(NOW)));
 afterAll(() => setSystemTime());
 
 const status = { id: "Fld001", name: "Status" } as PublicField;
-const entry = (overrides: Partial<PublicRecordHistoryEntry>): PublicRecordHistoryEntry => ({
+type RecordEntry = Exclude<PublicRecordHistoryEntry, { source: unknown }>;
+const entry = (overrides: Partial<RecordEntry>): RecordEntry => ({
   id: "00000000-0000-4000-8000-000000000001",
   baseId: "Base01",
   tableId: "Tbl001",
