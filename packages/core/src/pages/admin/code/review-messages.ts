@@ -19,6 +19,7 @@ const ROW_REASON_EN: Record<CodePolicyRow, string> = {
   ask_sensitive: "It works with sensitive data.",
   ask_app_asks: "It does something the app asks about.",
   ai: "It asks Gustav.",
+  ai_chat_you: "It writes to its person’s chat from a reserved daily budget.",
   internet: "It calls addresses on the internet.",
   public_routes: "It shows pages without sign-in.",
 };
@@ -36,6 +37,7 @@ const ROW_REASON_DE: Record<CodePolicyRow, string> = {
   ask_sensitive: "Sie arbeitet mit sensiblen Daten.",
   ask_app_asks: "Sie tut etwas, bei dem die App nachfragt.",
   ai: "Sie fragt Gustav.",
+  ai_chat_you: "Sie schreibt aus einem reservierten Tagesbudget in den Chat ihrer Person.",
   internet: "Sie ruft Adressen im Internet auf.",
   public_routes: "Sie zeigt Seiten ohne Anmeldung.",
 };

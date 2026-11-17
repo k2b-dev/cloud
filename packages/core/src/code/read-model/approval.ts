@@ -11,6 +11,7 @@ export function approvalReason(row: CodePolicyRow, locale: string) {
       return t.approval_silent_draft;
     case "silent_shared":
       return t.approval_silent_shared;
+    case "ai_chat_you":
     case "ai":
       return t.approval_ai;
     case "internet":

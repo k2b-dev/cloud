@@ -59,7 +59,16 @@ export function inferenceProvider(
       for (;;) {
         request.signal?.throwIfAborted();
         try {
-          return await lifecycle.begin(profile, ctx, inputTokens, aiOutputBudget(profile, inputTokens, request), provider.contextWindow);
+          return await lifecycle.begin(
+            profile,
+            ctx,
+            inputTokens,
+            aiOutputBudget(profile, inputTokens, request),
+            provider.contextWindow,
+            request.messages.some(
+              (message) => message.role === "user" && message.content.some((part) => typeof part !== "string" && part.type === "file"),
+            ),
+          );
         } catch (error) {
           if (!(error instanceof AiBackgroundAdmissionError) || !error.retryable || Date.now() >= deadline) throw error;
           await delay(1_000, undefined, { signal: request.signal });

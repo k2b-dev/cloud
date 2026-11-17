@@ -316,6 +316,31 @@ test("statuses read as words, the ring stops while paused, and reduced motion la
   }
 });
 
+test("a paused plan's progress ring turns grey: nothing in it reads as running work", async () => {
+  const page = await open(1440);
+  try {
+    // The colours the ring may take, as the browser resolves them.
+    const colour = (token: string) =>
+      page.evaluate((token) => {
+        const probe = document.createElement("span");
+        probe.style.color = `var(${token})`;
+        document.querySelector(".k2b-chat-tasks")!.append(probe);
+        const value = getComputedStyle(probe).color;
+        probe.remove();
+        return value;
+      }, token);
+    const ring = () => page.locator(".k2b-chat-tasks__ring").evaluate((node) => getComputedStyle(node).backgroundImage);
+    const accent = await colour("--k2b-ai-accent");
+    expect(await ring()).toContain(accent);
+    await page.evaluate(() => window.__setPaused(true));
+    await settled(page);
+    expect(await ring()).not.toContain(accent);
+    expect(await ring()).toContain(await colour("--k2b-text-muted"));
+  } finally {
+    await page.close();
+  }
+});
+
 test("dark: the tray keeps its plum tint and the highlight its surface", async () => {
   const page = await open(1440, { dark: true });
   try {

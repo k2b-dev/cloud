@@ -30,7 +30,7 @@ import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiTo
 import * as capabilityExecution from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { aiTurnErrorText } from "./chat/turn-error";
-import { CODE_AUTHORING_TURN_BUDGET } from "./code-authoring-turn";
+import { AUTOMATION_TURN_BUDGET, CODE_AUTHORING_TURN_BUDGET } from "./code-authoring-turn";
 import { DEFAULT_COMPACTION_PROMPT } from "./compaction";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
@@ -851,7 +851,7 @@ suite("AI executor integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
-  test("an automatic Code review keeps only its host Code tools despite injected requests", async () => {
+  test("a Code review keeps authoring limits and only its host Code tools despite injected requests", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     const requests: unknown[] = [];
@@ -877,9 +877,12 @@ suite("AI executor integration", () => {
       foreignCalls++;
       return { ok: true };
     });
+    setSystemTime(new Date("2030-01-01T12:00:00.000Z"));
     try {
       completionQueue = [
-        toolCallCompletion("read-review", "code_review", {}),
+        ...Array.from({ length: AUTOMATION_TURN_BUDGET.modelCalls + 1 }, (_, index) =>
+          toolCallCompletion(`read-review-${index}`, "code_review", {}),
+        ),
         toolCallCompletion("injected-send", "mail_send", {}),
         textCompletion("Stopped: foreign tools unavailable"),
       ];
@@ -894,10 +897,12 @@ suite("AI executor integration", () => {
           input: "Cloud: revise this Code once",
           actor: { kind: "user", user: actorUser(userId) },
           toolSource: { kind: "none" },
+          turnTrigger: { kind: "automation", id: "review" },
           codeReview: { codeId: "c_review", versionId: "11111111-1111-4111-8111-111111111111" },
         },
         userMessage: userMessage("Cloud: revise this Code once"),
       });
+      await sql`UPDATE ai.turns SET deadline=${new Date(Date.now() + 60_000)} WHERE id=${turn.id}::uuid`;
       const claim = await aiConversations.claimTurn({
         conversationId: conversation.id,
         turnId: turn.id,
@@ -907,13 +912,30 @@ suite("AI executor integration", () => {
         maxAttempts: 5,
         runBudgetMs: 60000,
       });
-      await createExecutor("review-scope-exec", undefined, fakeValidateBoundedToolTurn, undefined, [review, mail]).run({
+      await createExecutor(
+        "review-scope-exec",
+        undefined,
+        async (...args) => {
+          const validated = await fakeValidateBoundedToolTurn(...args);
+          validated.resolved.profile.maxOutputTokens = 8192;
+          validated.resolved.profile.maxToolRounds = CODE_AUTHORING_TURN_BUDGET.modelCalls;
+          return validated;
+        },
+        undefined,
+        [review, mail],
+      ).run({
         conversationId: conversation.id,
         turnId: turn.id,
         claim: claim!,
         signal: new AbortController().signal,
       });
-      expect(reviewCalls).toBe(1);
+      const stored = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: turn.id });
+      expect(stored?.kind === "chat" ? stored.inferenceBudget : undefined).toBeUndefined();
+      expect(requests[0]).toMatchObject({ max_completion_tokens: 8192 });
+      // The installed allocation lives on ai.turns.run_config. Its absence plus
+      // more than 12 dispatched calls proves both durable and local exemptions.
+      expect(reviewCalls).toBe(AUTOMATION_TURN_BUDGET.modelCalls + 1);
+      expect(requests.length).toBeGreaterThan(AUTOMATION_TURN_BUDGET.modelCalls);
       expect(foreignCalls).toBe(0);
       expect(requests.length).toBeGreaterThan(0);
       let sawReview = false;
@@ -931,8 +953,65 @@ suite("AI executor integration", () => {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      setSystemTime();
     }
   });
+  test.each(["legacy", "delegated"] as const)("a %s turn without a recorded trigger keeps person limits", async (kind) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const [account] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.service_accounts(name,kind) VALUES(${`trigger-${kind}`} ,'agent') RETURNING id`;
+    if (!account) throw new Error("Missing service account");
+    const serviceAccount = await serviceAccounts.get({ id: account.id });
+    if (!serviceAccount) throw new Error("Missing service account");
+    const actor: RequestActor =
+      kind === "legacy"
+        ? { kind: "user", user: actorUser(userId) }
+        : { kind: "service_account", serviceAccount, delegatedUser: actorUser(userId), scopes: ["read"] };
+    const provider: Provider = {
+      name: "trigger-fixture",
+      family: "openai-compatible",
+      model: "fixture",
+      capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: true },
+      async *stream(request) {
+        expect(request.maxOutputTokens).toBe(8192);
+        yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
+        yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "Done" } };
+        yield { type: "usage", usage: { input: 10, output: 1, total: 11 }, finishReason: "stop" };
+      },
+    };
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        userMessage: userMessage("Continue legacy work"),
+        runConfig: { kind: "chat", input: "Continue legacy work", actor, toolSource: { kind: "none" } },
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "trigger-test",
+        leaseMs: 30000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60000,
+      });
+      await createExecutor("trigger-test", undefined, async (...args) => {
+        const validated = await fakeValidateWithProvider(provider)(...args);
+        validated.resolved.profile.maxOutputTokens = 8192;
+        return validated;
+      }).run({ conversationId: conversation.id, turnId: turn.id, claim: claim!, signal: new AbortController().signal });
+      const stored = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: turn.id });
+      expect(stored?.kind === "chat" ? stored.inferenceBudget : undefined).toBeUndefined();
+      expect((await aiConversations.getLatestTurn({ conversationId: conversation.id }))?.status).toBe("completed");
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("a stored scope excludes runtime-added tools even with a supplied chatId and persisted preload", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId, allowedTools: [], preloadTools: ["write_file"] });

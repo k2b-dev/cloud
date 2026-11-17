@@ -50,7 +50,14 @@ function fixture(events: ProviderEvent[]) {
     },
   };
   const lifecycle = {
-    begin: async (_profile: AiModelProfile, context: AiCallContext) => {
+    begin: async (
+      _profile: AiModelProfile,
+      context: AiCallContext,
+      _inputTokens?: number,
+      _requestedOutput?: number,
+      _outputBound?: number,
+      _unmeasuredInput?: boolean,
+    ) => {
       contexts.push(context);
       return { id: crypto.randomUUID(), maxOutputTokens: 100 };
     },
@@ -475,4 +482,15 @@ test("measured cache reads survive provider accounting snapshots; malformed cach
     await drain(f.wrap());
     expect(f.booked[0]?.usage).toEqual({ input: 8, output: 2, ...([6, 0].includes(cacheRead) ? { cacheRead } : {}) });
   }
+});
+
+test("non-text parts reach shared admission as unmeasured input without changing provider input", async () => {
+  const f = fixture([event]);
+  const begin = spyOn(f.lifecycle, "begin");
+  const input = { messages: [{ role: "user" as const, content: [{ type: "file" as const, data: "encoded", mediaType: "image/png" }] }] };
+  for await (const _ of f.wrap().stream(input)) {
+    /* drain */
+  }
+  expect(begin.mock.calls[0]?.at(5)).toBe(true);
+  begin.mockRestore();
 });

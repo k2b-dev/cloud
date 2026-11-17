@@ -34,6 +34,7 @@ import codeAuthoringSchedules from "./skills/code-authoring/references/schedules
 import codeAuthoringTesting from "./skills/code-authoring/references/testing.md" with { type: "text" };
 import codeAuthoringTroubleshooting from "./skills/code-authoring/references/troubleshooting.md" with { type: "text" };
 import codeAuthoring from "./skills/code-authoring/SKILL.md" with { type: "text" };
+import codeAuthoringTemplateBriefing from "./skills/code-authoring/templates/briefing.md" with { type: "text" };
 import codeAuthoringTemplateDashboardPage from "./skills/code-authoring/templates/dashboard-page.md" with { type: "text" };
 import codeAuthoringTemplateDatabase from "./skills/code-authoring/templates/database.md" with { type: "text" };
 import codeAuthoringTemplateEventToChat from "./skills/code-authoring/templates/event-to-chat.md" with { type: "text" };
@@ -63,6 +64,7 @@ export const SKILLS = [
       "references/schedules.md": codeAuthoringSchedules,
       "references/testing.md": codeAuthoringTesting,
       "references/troubleshooting.md": codeAuthoringTroubleshooting,
+      "references/template-briefing.md": codeAuthoringTemplateBriefing,
       "references/template-database.md": codeAuthoringTemplateDatabase,
       "references/template-dashboard-page.md": codeAuthoringTemplateDashboardPage,
       "references/template-event-to-chat.md": codeAuthoringTemplateEventToChat,

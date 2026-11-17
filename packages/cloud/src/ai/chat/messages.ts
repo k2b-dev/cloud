@@ -59,11 +59,13 @@ const messages = /* @__PURE__ */ i18n.define({
       keptSoFar: "What is here so far stays.",
       stoppedByYou: "You stopped.",
       stoppedTextStays: "You stopped. The text so far stays.",
-      turnErrorReason: ({ code, limitMinutes }: AiTurnError) => {
+      turnErrorReason: ({ code, limitMinutes, message }: AiTurnError) => {
         if (code === "model_unavailable") return "The model service did not answer.";
         if (code === "provider_stopped") return "The model provider ended this answer early.";
         if (code === "tool_failed") return "A step failed, and the model stopped without an answer.";
         if (code === "quota_exhausted") return "Your AI usage limit for this period is reached. You can continue once it resets.";
+        if (code === "automation_turn_limit") return "This turn reached its safety limit. The results so far are kept.";
+        if (code.startsWith("host_")) return message ?? "This turn could not start.";
         if (code === "context_full") return "This chat is too long for the model. Start a new chat to continue; this one stays as it is.";
         if (code === "time_limit")
           return limitMinutes ? `The run time limit of ${limitMinutes} minutes was reached.` : "The run time limit was reached.";
@@ -496,12 +498,15 @@ const messages = /* @__PURE__ */ i18n.define({
       keptSoFar: "Was bis hier steht, bleibt erhalten.",
       stoppedByYou: "Du hast gestoppt.",
       stoppedTextStays: "Du hast gestoppt. Der Text bis hier bleibt.",
-      turnErrorReason: ({ code, limitMinutes }) => {
+      turnErrorReason: ({ code, limitMinutes, message }) => {
         if (code === "model_unavailable") return "Der KI-Dienst hat nicht geantwortet.";
         if (code === "provider_stopped") return "Der KI-Anbieter hat diese Antwort vorzeitig beendet.";
         if (code === "tool_failed") return "Ein Schritt ist fehlgeschlagen, und das Modell hat danach nicht geantwortet.";
         if (code === "quota_exhausted")
           return "Dein KI-Kontingent für diesen Zeitraum ist aufgebraucht. Du kannst weiterarbeiten, sobald es sich erneuert.";
+        if (code === "automation_turn_limit")
+          return "Dieser Zug hat seine Sicherheitsgrenze erreicht. Die bisherigen Ergebnisse bleiben erhalten.";
+        if (code.startsWith("host_")) return message ?? "Dieser Zug konnte nicht starten.";
         if (code === "context_full")
           return "Dieser Chat ist zu lang für das Modell. Starte einen neuen Chat, um weiterzuarbeiten; dieser bleibt erhalten.";
         if (code === "time_limit")

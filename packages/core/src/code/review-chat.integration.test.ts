@@ -317,6 +317,7 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
       expect(prepare).toHaveBeenCalledTimes(1);
       expect(enqueue).toHaveBeenCalledTimes(1);
       expect(prepare.mock.calls[0]?.[0].actor).toMatchObject({ kind: "user", user: { id: owner } });
+      expect(prepare.mock.calls[0]?.[0].turnTrigger).toBeUndefined();
       expect(prepare.mock.calls[0]?.[0].systemPrompt).toContain(`Work only on Code ${f.codeId}`);
       expect(prepare.mock.calls[0]?.[0].systemPrompt).not.toContain("send mail");
       expect(prepare.mock.calls[0]?.[0].input).not.toContain("send mail");

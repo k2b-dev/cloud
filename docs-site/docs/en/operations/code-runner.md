@@ -575,6 +575,8 @@ remaining token allowance. The answer identifies completed and unstarted work;
 only a successful closing answer suppresses the pause notice. A failed closing
 attempt, including rejected cost admission, persists the pause receipt and ends
 the turn normally; cancellation still aborts it.
+Automatic turns retain their own input, output and call allocation; a closing
+answer never extends that allocation.
 
 Chat mailbox and reply waits use NATS notifications on the existing Cloud
 connection. If a notification is lost, the 2-second fallback reads durable

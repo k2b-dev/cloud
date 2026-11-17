@@ -231,7 +231,9 @@ describe("Venue setup behavior", () => {
       expect(dom.root.textContent).toContain("The end must be after the start.");
       expect(saved).toEqual([]);
 
+      // A click leaves the field first, which commits the typed time.
       type(end!, "18:00");
+      end!.dispatchEvent(new Event("blur"));
       await flush();
       buttonNamed(dom.root, "Add 5 shifts").click();
       await flush();
@@ -338,7 +340,9 @@ describe("Venue setup behavior", () => {
       type(end!, "24");
       end!.dispatchEvent(new Event("blur"));
       await flush();
-      expect([start!.value, end!.value]).toEqual(["24:00", "24:00"]);
+      // The end takes 24:00; the start refuses it, keeps the text with the reason and blocks the save.
+      expect([start!.value, end!.value]).toEqual(["24", "24:00"]);
+      expect(start!.closest(".k2b-field")?.querySelector(".k2b-field__error")?.textContent).toBe("23:59 at the latest.");
       buttonNamed(dom.root, "Save").click();
       await flush();
       expect(start!.getAttribute("aria-invalid")).toBe("true");

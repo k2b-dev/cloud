@@ -20,7 +20,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { acceptanceChecker } from "../../../../core/src/code/acceptance.test-fixture";
-import { codePolicyPreset, codePolicyRow, isCodeAiOperation } from "../../../../core/src/code/policy-contracts";
+import { codeOperationPolicyRow, codePolicyPreset, isCodeAiOperation } from "../../../../core/src/code/policy-contracts";
 
 // The skill's examples, templates and fixtures are its contract with Gustav and application authors.
 // Each one is checked against an SDK generated from the real manifests of the apps it documents,
@@ -77,8 +77,7 @@ const unattended = (capability: string): "automatic" | "admin" | "never" | "omit
   if (!op) return "missing";
   const policy = capabilityActionPolicy(manifests.find((candidate) => candidate.appId === op.appId)!, op.localId);
   if (op.kind === "action" && (!policy || !("silent" in policy) || policy.routines === false)) return "never";
-  const ai = isCodeAiOperation(capability);
-  return adminPreset.get(codePolicyRow(ai ? "ai" : op.kind, policy)) ?? "never";
+  return adminPreset.get(codeOperationPolicyRow(capability, op.kind, policy)) ?? "never";
 };
 
 type Example = { where: string; mode: string; fails: string | null; entry: string; source: string; result?: CodeCheckResult };
@@ -372,7 +371,13 @@ test("every capability and event the skill names exists in the generated SDK", (
 
 test("the capability tables state when each Action runs and list every Action of the documented apps", () => {
   const doc = docs.find((candidate) => candidate.name === "references/capabilities.md")!.text;
-  const words: Record<string, string> = { automatic: "automatic", "admin approval": "admin", never: "never", "not in the SDK": "omitted" };
+  const words: Record<string, string> = {
+    automatic: "automatic",
+    "admin approval": "admin",
+    "automatic with priced model and reserved turn budget": "automatic",
+    never: "never",
+    "not in the SDK": "omitted",
+  };
   const listed = new Map<string, string>();
   for (const match of doc.matchAll(/^\| `([a-z0-9.-]+)` \|.*\| ([a-zA-Z ]+) \|$/gm)) listed.set(match[1]!, match[2]!.trim());
   const wrong: string[] = [];

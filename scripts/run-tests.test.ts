@@ -10,6 +10,7 @@ import {
   planShards,
   runTestCommand,
   selectSuites,
+  shardTargetMinutes,
   shardTimeNotice,
   suiteWeight,
   type TestSuite,
@@ -71,7 +72,10 @@ describe("root test orchestration", () => {
     expect(suites.length).toBeGreaterThan(0);
     for (const suite of suites) {
       if (suite.command[1] === "run") {
-        expect(suite.command).toEqual(["bun", "run", "test:integration"]);
+        expect(suite.command.slice(0, 3)).toEqual(["bun", "run", "test:integration"]);
+        // A package that lists its files runs each one as a suite named after it.
+        if (suite.command.length === 4) expect(suite.name).toEndWith(` ${suite.command[3]}`);
+        else expect(suite.command).toHaveLength(3);
         continue;
       }
       expect(suite.command.slice(0, 6)).toEqual(["bun", "test", "--preload", preload, "--timeout", "30000"]);
@@ -449,6 +453,12 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
         };
         expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, observed), 0)).toBeLessThanOrEqual(targetMinutes * 60);
       }
+    }
+    if (mode === "integration") {
+      // A suite above two thirds of the target leaves a shard no room to balance: Mail as one suite
+      // was weighted 13.6 min, took up to 19 min and stopped its shard at the budget (#2055).
+      const heavy = all.filter((suite) => suiteWeight(suite.name, weights) > ((shardTargetMinutes() * 2) / 3) * 60);
+      expect(heavy.map((suite) => suite.name)).toEqual([]);
     }
     expect(workflow.jobs.gate.needs).toContain(mode);
   });
