@@ -1,5 +1,5 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
-import { Button, Skeleton, useLocale } from "@k2b/ui";
+import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { type ComponentProps, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { codeVersionCardMessages } from "./code-version-card-messages";
@@ -32,30 +32,31 @@ export function AssistantCodeVersionCard(props: CardProps): JSX.Element {
     <Show
       when={card()}
       fallback={
-        <div class="assistant-code-version__placeholder" role="status" aria-busy={failed() ? undefined : "true"} aria-label={t().loading}>
-          <Show
-            when={failed()}
-            fallback={
-              <div class="assistant-code-version__loading">
-                <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--label" />
-                <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--sentence" />
-                <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--reason" />
-                <div class="assistant-code-version__skeleton-details">
-                  <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--label" />
-                  <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--row" />
-                  <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--row" />
-                  <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--short" />
+        <div class="assistant-code-version-host">
+          <NoticeCard
+            class="assistant-code-version"
+            tone="neutral"
+            icon="ti ti-shield-check"
+            layout="card"
+            data-k2b-primary="ai"
+            data-chat-anchor={`code-version-${props.versionId}`}
+            tabIndex={-1}
+            aria-busy={failed() ? undefined : "true"}
+            title={<span role={failed() ? "alert" : "status"}>{failed() ? t().lineNotLoaded : t().loading}</span>}
+            actions={
+              failed() ? (
+                <div class="assistant-code-version__actions">
+                  <div class="assistant-code-version__action">
+                    <Button size="md" variant="secondary" data-code-version-primary onClick={() => void load()}>
+                      {t().retry}
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              ) : undefined
             }
           >
-            <p class="assistant-code-version__placeholder-failed">
-              {t().lineNotLoaded}{" "}
-              <Button size="sm" variant="secondary" onClick={() => void load()}>
-                {t().retry}
-              </Button>
-            </p>
-          </Show>
+            <p class="assistant-code-version__quiet">{""}</p>
+          </NoticeCard>
         </div>
       }
     >

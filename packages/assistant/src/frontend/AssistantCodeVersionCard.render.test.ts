@@ -1,0 +1,97 @@
+import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createComponent } from "solid-js";
+import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
+import { approvalFixture, approvalModel, approvalNow, approvalStates, approvalVersionId } from "./code-version-card.test-fixture";
+import { type CodeVersionCardModel, describeCodeVersionCard } from "./code-version-card-state";
+
+registerSsrTestPlugin({ dev: true, rootDir: mkdtempSync(join(tmpdir(), "assistant-approval-render-")) });
+const [{ CodeVersionCardView }, { LocaleProvider }] = await Promise.all([import("./code-version-card-view"), import("@k2b/ui")]);
+beforeAll(() => setSystemTime(new Date(approvalNow)));
+afterAll(() => setSystemTime());
+const render = (model: CodeVersionCardModel, locale: string) =>
+  renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(CodeVersionCardView, { model, anchorId: "approval", onAction: () => {} });
+      },
+    }),
+  );
+const live = (html: string, role: string) =>
+  (html.match(new RegExp(`<span role="${role}"[^>]*>([\\s\\S]*?)</span>`))?.[1] ?? "").replace(/<!--[\s\S]*?-->/g, "");
+
+for (const locale of ["de", "en"])
+  for (const state of approvalStates) {
+    test(`${locale}: ${state} has one sentence, quiet line and at most two actions on one plum surface`, () => {
+      const model = approvalModel(state, locale);
+      const html = render(model, locale);
+      expect(live(html, model.alert ? "alert" : "status")).toBe(model.main);
+      expect(live(html, model.alert ? "status" : "alert")).toBe("");
+      expect(html).toContain("assistant-code-version__quiet");
+      expect(html.match(/ti-shield-check/g)).toHaveLength(1);
+      expect(html).not.toContain("k2b-chat-decision");
+      expect(html.match(/data-code-version-primary/g)).toHaveLength(1);
+      expect(html).not.toMatch(/home\.ts|months\.ts|settings\.ts/);
+      expect(model.kind).toBe(state);
+      if (state !== "on") expect(model.primary?.id).not.toBe("open");
+    });
+  }
+
+test("the published server home is the primary page even when it is not first", () => {
+  const value = approvalFixture("on");
+  value.pages!.pages.reverse();
+  const model = describeCodeVersionCard({
+    value,
+    version: 1,
+    versionId: approvalVersionId,
+    locale: "de",
+    timeZone: "UTC",
+    activation: { kind: "idle" },
+    nextRun: null,
+    canAsk: true,
+  });
+  expect(model.primary?.href).toBe("/code/c_info01/home");
+  expect(model.secondary?.id).toBe("runs");
+});
+
+test("missing, empty and mismatched page projections never invent Open", () => {
+  for (const pages of [
+    null,
+    { versionId: approvalVersionId, homeUrl: null, pages: [] },
+    { ...approvalFixture("on").pages!, versionId: "other" },
+  ]) {
+    const model = describeCodeVersionCard({
+      value: { ...approvalFixture("on"), pages },
+      version: 1,
+      versionId: approvalVersionId,
+      locale: "en",
+      timeZone: "UTC",
+      activation: { kind: "idle" },
+      nextRun: null,
+      canAsk: true,
+    });
+    expect(model.primary?.id).toBe("runs");
+    expect(model.secondary).toBeUndefined();
+  }
+});
+
+test("loading, denial, unreadable state and failure keep the same surface and offer only truthful recovery", () => {
+  for (const value of [null, "failed", "denied"] as const) {
+    const model = describeCodeVersionCard({
+      value,
+      version: 1,
+      versionId: approvalVersionId,
+      locale: "de",
+      timeZone: "UTC",
+      activation: { kind: "idle" },
+      nextRun: null,
+      canAsk: true,
+    });
+    expect(render(model, "de")).toContain("k2b-notice-card");
+    expect(model.primary?.id).not.toBe("activate");
+  }
+});

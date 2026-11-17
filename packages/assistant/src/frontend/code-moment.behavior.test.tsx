@@ -86,6 +86,8 @@ else
     const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
       const route = String(url);
       if (route.endsWith("/api/code/activation/preview")) return new Response(JSON.stringify({ data: preview }));
+      if (route.endsWith("/code.read"))
+        return new Response(JSON.stringify({ data: { code: { state: "active", activeVersionId: preview.versionId } } }));
       return new Response("{}", { status: 503 });
     }) as unknown as typeof fetch);
     restore.push(() => fetchSpy.mockRestore());
@@ -129,6 +131,7 @@ else
     await tick();
 
     expect(text(decision)).toContain(`· ${MOMENT}`);
-    expect(text(version)).toContain(`Version 5 ist seit ${MOMENT} eingeschaltet.`);
+    expect(text(version)).toContain("Version 5 ist eingeschaltet.");
+    expect(text(version)).toContain(`seit ${MOMENT}`);
     expect(text(page)).toContain(MOMENT);
   });

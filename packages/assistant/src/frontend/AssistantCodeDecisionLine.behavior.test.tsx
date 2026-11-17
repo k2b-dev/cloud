@@ -31,7 +31,7 @@ const mount = (value: AssistantCodeDecision, options: { card?: boolean; onReveal
   if (options.card !== false) {
     card.setAttribute("data-chat-anchor", value.anchor);
     card.innerHTML =
-      '<p class="k2b-chat-decision__sentence" tabindex="-1">Version 5?</p><button class="k2b-chat-decision__answer" data-variant="ai">Version 5 einschalten</button>';
+      '<p tabindex="-1">Version 5 ist freigegeben.</p><button data-variant="secondary">Alles ansehen</button><button data-code-version-primary data-variant="ai">Einschalten</button>';
     dom.root.append(card);
   }
   const host = document.createElement("div");
@@ -79,7 +79,8 @@ test("the action jumps to the card and puts the focus on its main answer; the li
   const { line, card } = mount(decision("approved"));
   expect(document.activeElement).not.toBe(card.querySelector("button"));
   action(line)!.click();
-  expect(document.activeElement).toBe(card.querySelector<HTMLElement>(".k2b-chat-decision__answer"));
+  expect(document.activeElement).toBe(card.querySelector<HTMLElement>("[data-code-version-primary]"));
+  expect(document.activeElement).not.toBe(card.querySelector("button[data-variant=secondary]"));
 });
 
 test("a card without an answer takes the focus on its question", () => {

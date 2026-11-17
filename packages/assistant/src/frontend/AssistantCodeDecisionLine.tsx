@@ -32,7 +32,7 @@ export const jumpToCodeVersionCard = (anchor: string, root: ParentNode = documen
   const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
   card.scrollIntoView?.({ block: "center", behavior: reduced ? "auto" : "smooth" });
   const main =
-    card.querySelector<HTMLElement>('.k2b-chat-decision__answer[data-variant="ai"]:not(:disabled)') ??
+    card.querySelector<HTMLElement>("[data-code-version-primary]:not(:disabled)") ??
     card.querySelector<HTMLElement>(".k2b-chat-decision__sentence") ??
     card;
   if (main === card && !card.hasAttribute("tabindex")) card.tabIndex = -1;
