@@ -204,6 +204,8 @@ const PendingSchema = z.object({
   at: CodeOutputBatchSchema.shape.entries.element.shape.at,
   text: z.string(),
   name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/),
+  hidden: z.number().int().nonnegative().safe().optional(),
+  covered: z.number().int().positive().safe().optional(),
 });
 const sum = (a: number, b: number) => Math.min(Number.MAX_SAFE_INTEGER, a + b);
 async function uncountedDrops(runId: string, state: State) {
@@ -397,19 +399,21 @@ export async function closeCodeOutput(runId: string, generation?: number): Promi
   let window = withDrops(state, counts);
   if (state.pending) {
     const pending = PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))));
-    window = appendCodeOutput(
-      { ...window, seq: window.seq + 1 },
-      [
-        {
-          kind: pending.kind,
-          level: pending.level,
-          at: pending.at,
-          id: `${state.generation}:${window.seq + 1}:0`,
-          text: [{ type: "secret", name: pending.name }],
-        },
-      ],
-      state.budget,
-    );
+    if ((pending.hidden ?? 0) < pending.text.length || pending.covered) {
+      window = appendCodeOutput(
+        { ...window, seq: window.seq + 1 },
+        [
+          {
+            kind: pending.kind,
+            level: pending.level,
+            at: pending.at,
+            id: `${state.generation}:${window.seq + 1}:0`,
+            text: [{ type: "secret", name: pending.name }],
+          },
+        ],
+        state.budget,
+      );
+    }
   }
   const next: State = { ...state, pending: null, redactionSkip: 0, window, countedDropLines: counts.lines, countedDropBytes: counts.bytes };
   await redis.send("EVAL", [

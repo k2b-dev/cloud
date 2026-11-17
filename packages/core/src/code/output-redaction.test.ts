@@ -173,12 +173,95 @@ test("harden pending failure suffixes after a completed match", () => {
     ]),
   );
   const first = redactOutput([line("abcdefgh")], redactor);
-  expect(first.entries.flatMap((entry) => entry.text)).toEqual([
+  expect(first.entries.flatMap((entry) => entry.text)).toEqual([]);
+  expect(first.pending?.text).toBe("bcdefgh");
+  expect(first.pending!.text.length).toBeLessThan(redactor.longest);
+  const second = redactOutput([line("i")], redactor, first.pending);
+  expect(second.entries.flatMap((entry) => entry.text)).toEqual([]);
+  expect(second.pending?.text).toBe("ghi");
+  expect(redactOutput([line("jk!")], redactor, second.pending).entries.flatMap((entry) => entry.text)).toEqual([
     { type: "secret", name: "FIRST" },
-    { type: "text", text: "def" },
+    { type: "text", text: "!" },
   ]);
-  expect(first.pending?.text).toBe("gh");
-  expect(redactOutput([line("ijk")], redactor, first.pending).entries.flatMap((entry) => entry.text)).toEqual([
-    { type: "secret", name: "THIRD" },
+});
+
+for (const spelling of replacements.keys()) {
+  for (const boundary of ["line", "batch"] as const) {
+    test(`harden suppressed end candidates at ${boundary} boundaries for ${Buffer.from(spelling).toString("hex")}`, () => {
+      const redactor = compileOutputRedaction(replacements);
+      const middle = Math.floor(spelling.length / 2);
+      const lost = redactOutput([], redactor, null, false, { lost: true, skip: 0 });
+      const muted = line(".".repeat(redactor.longest) + spelling.slice(0, middle));
+      const continuation = line(spelling.slice(middle) + "!");
+      const first = redactOutput([muted], redactor, lost.pending, false, { lost: false, skip: lost.skip });
+      expect(first.entries).toEqual([]);
+      expect(first.skip).toBe(0);
+      expect(first.dropped.lines).toBe(1);
+      expect(first.dropped.bytes).toBe(Buffer.byteLength(JSON.stringify(muted)));
+      expect(first.pending?.text).toBe(spelling.slice(0, middle));
+      const result = boundary === "batch"
+        ? redactOutput([continuation], redactor, JSON.parse(JSON.stringify(first.pending)), false, { lost: false, skip: first.skip })
+        : redactOutput([muted, continuation], redactor, lost.pending, false, { lost: false, skip: lost.skip });
+      expect(result.entries.flatMap((entry) => entry.text)).toEqual([
+        { type: "secret", name: "TOKEN" },
+        { type: "text", text: "!" },
+      ]);
+      expect(result.pending).toBeNull();
+    });
+  }
+}
+
+test("harden suppressed candidates through mismatch, finalization and repeated gaps", () => {
+  const redactor = compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]]));
+  const muted = redactOutput([line("ab")], redactor, null, false, { lost: false, skip: 1 });
+  expect(muted.pending?.hidden).toBe(2);
+  expect(redactOutput([line("x!")], redactor, muted.pending).entries.flatMap((entry) => entry.text)).toEqual([
+    { type: "text", text: "x!" },
+  ]);
+  expect(redactOutput([], redactor, muted.pending, true).entries).toEqual([]);
+  expect(redactOutput([], redactor, muted.pending, false, { lost: true, skip: 0 }).entries).toEqual([]);
+  const lost = redactOutput([line(".".repeat(redactor.longest) + "ab")], redactor, null, false, { lost: true, skip: 0 });
+  const next = redactOutput([line("cd")], redactor, lost.pending, false, { lost: false, skip: lost.skip });
+  expect(next.pending?.text).toBe("abcd");
+  expect(next.pending?.hidden).toBe(4);
+  const last = redactOutput([line("efgh!")], redactor, next.pending, false, { lost: false, skip: next.skip });
+  expect(last.entries).toEqual([]);
+  expect(last.skip).toBe(0);
+  expect(redactOutput([line("ordinary!")], redactor, last.pending).entries.flatMap((entry) => entry.text)).toEqual([
+    { type: "text", text: "ordinary!" },
+  ]);
+});
+
+for (const fragments of [["abc", "defghi!"], ["ab", "c", "def", "ghi!"], ["abc", "x!"], ["abc", ""]]) {
+  test(`harden overlapping deferred areas across ${JSON.stringify(fragments)}`, () => {
+    const redactor = compileOutputRedaction(new Map([["abc", "[secret:FIRST]"], ["bcdefghi", "[secret:SECOND]"]]));
+    let pending: OutputRedactionPending = null;
+    const parts = [];
+    for (const text of fragments) {
+      const result = redactOutput([line(text)], redactor, pending);
+      parts.push(...result.entries.flatMap((entry) => entry.text));
+      pending = result.pending;
+      if (pending) expect(pending.text.length).toBeLessThan(redactor.longest);
+    }
+    parts.push(...redactOutput([], redactor, pending, true).entries.flatMap((entry) => entry.text));
+    expect(parts).toEqual([
+      { type: "secret", name: "FIRST" },
+      ...(fragments.at(-1) === "x!" ? [{ type: "text", text: "x!" }] : fragments.at(-1) ? [{ type: "text", text: "!" }] : []),
+    ]);
+  });
+}
+
+test("harden bounded deferred areas through repetitive overlapping input", () => {
+  const redactor = compileOutputRedaction(new Map([["aaa", "[secret:TOKEN]"]]));
+  let pending: OutputRedactionPending = null;
+  for (let index = 0; index < 4; index++) {
+    const result = redactOutput([line("a".repeat(1024))], redactor, pending);
+    expect(result.entries.flatMap((entry) => entry.text)).toEqual([]);
+    expect(result.pending!.text.length).toBeLessThan(redactor.longest);
+    pending = result.pending;
+  }
+  expect(redactOutput([line("!")], redactor, pending).entries.flatMap((entry) => entry.text)).toEqual([
+    { type: "secret", name: "TOKEN" },
+    { type: "text", text: "!" },
   ]);
 });
