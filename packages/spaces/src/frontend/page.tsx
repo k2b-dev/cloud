@@ -68,6 +68,7 @@ export default ssr<AuthContext>(async (c) => {
         }}
         initialActivityError={activityResult.error}
         dateConfig={getDateConfig(c)}
+        now={new Date().toISOString()}
       />
     </Layout>
   );
