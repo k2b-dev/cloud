@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation, AiOpenQuestions, AiStoredMessage } from "@k2b/cloud/ai";
+import { aiQuoteMarker } from "@k2b/cloud/ai/browser";
 import type { Browser, Page, Route } from "playwright";
-import { aiQuoteMarker } from "../../../cloud/src/ai/quote-markers";
 import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 

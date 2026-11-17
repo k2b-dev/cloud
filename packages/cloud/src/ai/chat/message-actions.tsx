@@ -1,5 +1,4 @@
 import type { Message, Usage } from "@k2b/nessi";
-import type { AiQuoteMarker } from "../quote-markers";
 import {
   Button,
   type ChatAction,
@@ -16,6 +15,7 @@ import type { ApprovalDraftResult } from "../../contracts/approvals";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
+import type { AiQuoteMarker } from "../quote-markers";
 import type { AiCodeAuthoringStop, AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
 import {
   type AiForkMessageInput,

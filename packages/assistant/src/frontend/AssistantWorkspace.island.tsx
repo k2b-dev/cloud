@@ -11,7 +11,6 @@ import type {
   AiStoredMessage,
 } from "@k2b/cloud/ai";
 import { aiQuotesWith, createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
-import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
@@ -43,7 +42,7 @@ import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand
 import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
 import { askPanelConsent, closePanel, getContext, onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
-import { reloadOnce } from "@k2b/cloud/browser/reload";
+import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { pastedCloudLink, type ResolvedCloudResourceUrl, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
@@ -2962,9 +2961,7 @@ export default function AssistantWorkspace(props: Props) {
           }
         />
         <Show when={quoting() && timelineContent()}>
-          {(root) => (
-            <QuoteSelection root={root()} label={t().quoteSelection} onQuote={addQuote} />
-          )}
+          {(root) => <QuoteSelection root={root()} label={t().quoteSelection} onQuote={addQuote} />}
         </Show>
       </>
     );

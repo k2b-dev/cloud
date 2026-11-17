@@ -7,7 +7,7 @@ export {
   CodeToolFailure,
   parseCodeToolInput,
 } from "./browser-code-contracts";
-export { type AiQuoteMarker, aiQuotesWith } from "./quote-markers";
+export { type AiQuoteMarker, aiQuoteMarker, aiQuotesWith } from "./quote-markers";
 export { type AiTaskRequest, type AiTaskRequestInput, AiTaskRequestSchema } from "./task-contracts";
 export { type AiTodoPlan, parseAiTodoPlan } from "./todo-contracts";
 
