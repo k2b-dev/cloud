@@ -26,6 +26,7 @@ import {
   finishAiCall,
   invokeCompiledCapability,
   listQueuedMessages,
+  updateQueuedMessage,
 } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 import { admitQueuedCodeSend, aiChatSendAction } from "./ai-chat-send";
@@ -1059,6 +1060,48 @@ suiteFor(
     if (!next.ok) return;
     expect(dataSchema.parse(next.data.data).id).not.toBe(old);
     expect(await read(old)).toMatchObject({ ok: true, data: { data: { message: { id: old, status: "cancelled" } } } });
+  });
+  test("an expired Code message leaves the queue even behind a blocked person message, and a retry cannot revive it", async () => {
+    await setup();
+    // A person's message ahead of it failed for good and holds the chat's order.
+    const blocker = crypto.randomUUID();
+    await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status,error)
+      VALUES(${blocker}::uuid,${chat.id}::uuid,'{"runConfig":{"kind":"chat"}}','[]','failed','dispatch_failed')`;
+    const sent = await invoke();
+    if (!sent.ok) throw new Error(sent.error.message);
+    const id = dataSchema.parse(sent.data.data).id;
+    // Still pending, never refused, but accepted on an earlier budget day.
+    await sql`UPDATE ai.queued_messages SET created_at=clock_timestamp()-interval '2 days' WHERE id=${id}::uuid`;
+    expect(await updateQueuedMessage(chat.id, id, "retry")).toBeFalse();
+    await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
+    expect(await read(id)).toMatchObject({
+      ok: true,
+      data: { data: { message: { status: "cancelled", reason: "code_budget_day_ended" } } },
+    });
+    // The person's other Codes are free again.
+    const other = await aiConversations.createConversation({ ownerUserId: owner });
+    expect((await invoke(other.shortId, ctx("after-expiry"))).ok).toBeTrue();
+    await sql`DELETE FROM ai.queued_messages WHERE id=${blocker}::uuid`;
+  });
+  test("a queued turn is built from the entry as it is under the chat lock", async () => {
+    await setup();
+    const sent = await invoke();
+    if (!sent.ok) throw new Error(sent.error.message);
+    const id = dataSchema.parse(sent.data.data).id;
+    // The change lands after the dispatcher listed the entry and before it takes the lock.
+    await drainQueuedMessages(
+      async () => {},
+      chat.id,
+      async (submission, messageId) => {
+        await sql`UPDATE ai.queued_messages SET submission=jsonb_set(submission,'{runConfig,sourceRestricted}','true'::jsonb) WHERE id=${messageId}::uuid`;
+        return admitQueuedCodeSend(submission, messageId);
+      },
+    );
+    const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
+    expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: turn!.id })).toMatchObject({
+      send: { id },
+      sourceRestricted: true,
+    });
   });
   test("a chat turn cannot send into its own chat, and an unreadable lease asks to retry", async () => {
     await setup();

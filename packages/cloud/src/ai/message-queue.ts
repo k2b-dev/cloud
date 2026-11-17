@@ -2,6 +2,7 @@ import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
 
 import { logger } from "../services/logging";
+import { coreSettings } from "../services/settings/api";
 import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
 import { editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
@@ -120,11 +121,16 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
 };
 
 /** Cancellation and retry share the conversation lock with promotion. */
-export const updateQueuedMessage = async (conversationId: string, id: string, action: "cancel" | "retry") =>
-  sql.begin(async (tx) => {
+export const updateQueuedMessage = async (conversationId: string, id: string, action: "cancel" | "retry") => {
+  const timeZone = action === "retry" ? (await coreSettings.get<string>("app.timezone")) || "UTC" : "UTC";
+  return sql.begin(async (tx) => {
     await tx`SELECT id FROM ai.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
+    // A retry never revives a Code message past the budget day it was accepted on.
     const changed = await tx`UPDATE ai.queued_messages SET status = ${action === "cancel" ? "cancelled" : "pending"}, error = NULL
-    WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND status IN ('pending','failed') RETURNING id`;
+    WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND status IN ('pending','failed')
+      AND (${action} = 'cancel' OR NOT (submission->'runConfig' ? 'codeOrigin')
+        OR (created_at AT TIME ZONE ${timeZone})::date >= (clock_timestamp() AT TIME ZONE ${timeZone})::date)
+    RETURNING id`;
     if (action === "cancel" && changed.length) {
       await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${id}::uuid`;
       await tx`UPDATE ai.queued_messages SET submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END,
@@ -132,6 +138,7 @@ export const updateQueuedMessage = async (conversationId: string, id: string, ac
     }
     return Boolean(changed.length);
   });
+};
 
 /** Edit only queued text; immutable attachments and the independent composer draft stay intact. */
 /** Text from a source without a signed-in session restricts the queued turn; editing stays possible. */
@@ -194,6 +201,19 @@ export const drainQueuedMessages = async (
   admitCodeStart?: AdmitQueuedCodeStart,
 ) => {
   const waits = sql([...AI_QUEUE_RETRYABLE_ERRORS]);
+  if (admitCodeStart) {
+    // Expired or invalid Code messages leave the queue even while something ahead of them blocks the chat;
+    // otherwise one stuck chat would keep its owner's other Codes busy. Only final refusals act here.
+    const blocked = await sql<{ id: string; submission: Submission }[]>`
+      SELECT q.id, q.submission FROM ai.queued_messages q
+      WHERE q.status IN ('pending','failed') AND q.submission->'runConfig' ? 'codeOrigin'
+        AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id = ${conversationId ?? null}::uuid)
+      ORDER BY q.position LIMIT ${AI_MESSAGE_QUEUE_LIMIT}`;
+    for (const entry of blocked) {
+      const refused = await admitCodeStart(entry.submission, entry.id).catch(() => null);
+      if (refused && !isAiQueueRetryableError(refused)) await retireQueuedMessage(entry.id, refused);
+    }
+  }
   // A Code message waiting for its allowance never holds back the person's later messages.
   const rows = await sql<{ id: string; conversation_id: string; submission: Submission }[]>`
     SELECT q.id, q.conversation_id, q.submission FROM ai.queued_messages q
@@ -226,8 +246,12 @@ export const drainQueuedMessages = async (
       // Back to pending and the turn itself commit together under the chat lock, or not at all.
       const result = await sql.begin(async (tx) => {
         await tx`SELECT id FROM ai.conversations WHERE id=${row.conversation_id}::uuid FOR UPDATE`;
+        // Build the turn from the entry as it is now: an edit, including its restriction, may have landed meanwhile.
+        const [current] = await tx<{ submission: Submission }[]>`SELECT submission FROM ai.queued_messages
+          WHERE id=${row.id}::uuid AND (status='pending' OR (status='failed' AND error IN ${tx([...AI_QUEUE_RETRYABLE_ERRORS])})) FOR UPDATE`;
+        if (!current) throw new Error("Queued message is no longer ready.");
         await tx`UPDATE ai.queued_messages SET status='pending', error=NULL WHERE id=${row.id}::uuid AND status='failed' AND error IN ${tx([...AI_QUEUE_RETRYABLE_ERRORS])}`;
-        return aiConversations.submitChatTurn({ ...row.submission, queuedMessageId: row.id }, tx);
+        return aiConversations.submitChatTurn({ ...current.submission, queuedMessageId: row.id }, tx);
       });
       await enqueue({ conversationId: row.conversation_id, turnId: result.turn.id });
     } catch (error) {

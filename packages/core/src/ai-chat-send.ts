@@ -109,8 +109,9 @@ export const admitQueuedCodeSend: AdmitQueuedCodeStart = async (submission, mess
     await lockOwnerCodeChats(owner, db);
     const [code] = await db<{ state: string }[]>`SELECT state FROM code.codes WHERE id=${origin.codeId}`;
     if (!code || code.state !== "active") return "code_inactive";
-    const [entry] = await db<{ stale: boolean }[]>`SELECT status='failed'
-      AND (created_at AT TIME ZONE ${limits.timeZone})::date < (clock_timestamp() AT TIME ZONE ${limits.timeZone})::date AS stale
+    // Waiting or pending: a Code message never starts after the budget day it was accepted on.
+    const [entry] = await db<{ stale: boolean }[]>`SELECT
+      (created_at AT TIME ZONE ${limits.timeZone})::date < (clock_timestamp() AT TIME ZONE ${limits.timeZone})::date AS stale
       FROM ai.queued_messages WHERE id=${messageId}::uuid`;
     if (entry?.stale) return "code_budget_day_ended";
     if (await openOwnerCodeChatWork(owner, db, messageId)) return "code_busy";
