@@ -15,7 +15,8 @@ import type { ApprovalDraftResult } from "../../contracts/approvals";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
-import type { AiQuoteMarker } from "../quote-markers";
+import { markdown } from "../../shared";
+import { type AiQuoteDraft, aiQuoteVisibleTextOfHtml } from "../quote-markers";
 import type { AiCodeAuthoringStop, AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
 import {
   type AiForkMessageInput,
@@ -83,7 +84,7 @@ export type AiChatActions = {
   onRetryMessage?: RetryMessageHandler;
   onRetrySteer?: RetrySteerHandler;
   /** Quotes a message as a whole: where no text can be selected, on touch screens and from the keyboard. */
-  onQuote?: (quote: AiQuoteMarker) => void;
+  onQuote?: (quote: AiQuoteDraft) => void;
   /**
    * Continue after a failed turn. Send `message`, a visible request in the reader's language to pick up where the
    * turn stopped, through the host's normal send path. Without it, a failed turn shows its reason only.
@@ -436,7 +437,15 @@ export function createAssistantMessageActions(props: {
       label: t.actionQuote,
       icon: "ti ti-quote",
       overflow: true,
-      onSelect: () => actions.onQuote!({ from: "assistant", text: props.copyText }),
+      // The answer as the reader sees it, not its Markdown source: the same words a selection would quote.
+      onSelect: () =>
+        actions.onQuote!({
+          messageId: props.entry.shortId,
+          from: "assistant",
+          text: aiQuoteVisibleTextOfHtml(markdown.renderSync(props.copyText, { locale: locale() }))
+            .replace(/\s+/gu, " ")
+            .trim(),
+        }),
     });
   if (actions.onForkMessage)
     result.push({

@@ -1,6 +1,6 @@
 import type { Input } from "@k2b/nessi";
 import { parseAiAttachmentMarkers } from "./attachments";
-import { parseAiQuoteMarker } from "./quote-markers";
+import { type AiMessageQuote, aiQuoteModelTexts } from "./quote-markers";
 import { parseAiResourceMarker } from "./resource-markers";
 import { assistantVisibleTextFromMessage } from "./timeline";
 import type { AiConversation, AiConversationResourceOccurrence, AiConversationService, AiStoredMessage } from "./types";
@@ -353,17 +353,18 @@ export const isCapabilityQuestion = (text: string): boolean =>
   text.trim().length <= MAX_CAPABILITY_QUESTION_CHARS && CAPABILITY_QUESTION.test(text);
 
 /** The user's words in a turn input; attached files and Cloud items are left out and only reported. */
-export const turnInputText = (input: Input): { text: string; attachments: boolean } => {
+export const turnInputText = (input: Input, quotes?: readonly AiMessageQuote[]): { text: string; attachments: boolean } => {
   let attachments = false;
   const texts: string[] = [];
+  // A quoted passage is no word of the person's own; the message's checked quotes say which parts are quotes.
+  const quoted = aiQuoteModelTexts(quotes);
   for (const part of typeof input === "string" ? [input] : input) {
     const text = typeof part === "string" ? part : part.type === "text" ? part.text : null;
     if (text === null || parseAiResourceMarker(text)) {
       attachments = true;
       continue;
     }
-    // A quoted passage is no word of the person's own.
-    if (parseAiQuoteMarker(text)) continue;
+    if (quoted.has(text)) continue;
     const parsed = parseAiAttachmentMarkers(text);
     if (parsed.attachments.length) attachments = true;
     if (parsed.text) texts.push(parsed.text);
@@ -382,7 +383,7 @@ export const chatExchanges = (messages: readonly AiStoredMessage[], currentTurnI
     const exchange = byTurn.get(entry.loopId) ?? { user: "", reply: "" };
     byTurn.set(entry.loopId, exchange);
     if (entry.message.role === "user") {
-      const input = turnInputText(entry.message.content);
+      const input = turnInputText(entry.message.content, entry.meta?.quotes);
       exchange.user = [exchange.user, input.text].filter(Boolean).join("\n");
       if (input.attachments) exchange.attachments = true;
     }
@@ -476,6 +477,8 @@ export const loadAiTurnGuidance = async (
     ownerUserId: string;
     /** The turn input as sent, including attachment markers and attached Cloud items. */
     input: Input;
+    /** The checked quotes of the turn's user message, whose text parts are no words of the person's own. */
+    quotes?: readonly AiMessageQuote[];
     instructions?: readonly (string | undefined)[];
     skillOffers: boolean;
     memoryOffers: boolean;
@@ -484,7 +487,7 @@ export const loadAiTurnGuidance = async (
   },
   store: AiTurnGuidanceStore,
 ): Promise<AiTurnGuidance> => {
-  const current = turnInputText(input.input);
+  const current = turnInputText(input.input, input.quotes);
   const message = current.text;
   const hasAttachments = Boolean(input.hasAttachments) || current.attachments;
   // With an attachment, "What can you do?" asks about that file, not about the user's work.

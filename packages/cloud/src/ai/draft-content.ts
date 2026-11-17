@@ -1,4 +1,4 @@
-import { aiQuoteMarker } from "./quote-markers";
+import { type AiMessageQuote, aiQuoteModelText } from "./quote-markers";
 import { aiResourceMarker } from "./resource-markers";
 import type { AiDraftContentPart } from "./types";
 
@@ -50,10 +50,26 @@ export function editAiDraftText(content: readonly AiDraftContentPart[], text: st
   return result;
 }
 
-/** The text a draft part sends to the model, for the parts that travel as text: a quote, a project file, a Cloud item. */
-export const aiDraftPartTurnText = (part: Exclude<AiDraftContentPart, { type: "text" | "file" }>): string =>
-  part.type === "quote"
-    ? aiQuoteMarker({ from: part.from, text: part.text })
-    : part.type === "project-file"
-      ? `Project file: ${part.path}`
-      : aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href });
+/** The text a draft part sends to the model, for the parts that travel as text: a project file or a Cloud item. */
+export const aiDraftPartTurnText = (part: Extract<AiDraftContentPart, { type: "resource" | "project-file" }>): string =>
+  part.type === "project-file"
+    ? `Project file: ${part.path}`
+    : aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href });
+
+/**
+ * A draft's content as the parts a turn sends: text as typed, files as attachments, Cloud items and project files as
+ * text, and each quote as the text Cloud writes for the checked quote at the same place, so the model reads it there.
+ */
+export const aiDraftTurnContent = (content: readonly AiDraftContentPart[], quotes: readonly AiMessageQuote[]) => {
+  let quote = 0;
+  return content.map((part) => {
+    if (part.type === "text") return { type: "text" as const, text: part.text };
+    if (part.type === "file") return { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size };
+    if (part.type === "quote") return { type: "text" as const, text: aiQuoteModelText(quotes[quote++]!) };
+    return { type: "text" as const, text: aiDraftPartTurnText(part) };
+  });
+};
+
+/** The quotes of a draft, in their order. */
+export const aiDraftQuotes = (content: readonly AiDraftContentPart[]) =>
+  content.flatMap((part) => (part.type === "quote" ? [{ messageId: part.messageId, text: part.text }] : []));

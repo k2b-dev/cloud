@@ -142,8 +142,8 @@ export type AiDraftContentPart =
   | { type: "resource"; ref: CloudResourceRef; title?: string; icon?: string; href?: string; inline?: boolean }
   | { type: "file"; path: string; mediaType: string; size: number; version: number; inline?: boolean }
   | { type: "project-file"; path: string; inline?: boolean }
-  /** A passage quoted from this conversation: Gustav's answer or the person's own earlier message. */
-  | { type: "quote"; from: "assistant" | "user"; text: string };
+  /** A passage quoted from a message of this conversation; the server checks it and sets `from` when the turn is sent. */
+  | { type: "quote"; messageId: string; from?: import("./quote-markers").AiQuoteSource; text: string };
 
 export type AiConversationDraft = {
   content: AiDraftContentPart[];
@@ -334,6 +334,8 @@ export type AiStoredMessage = {
     submittedDraftRevision?: number;
     codeAuthoringStop?: AiCodeAuthoringStop;
     codeOrigin?: AiCodeOrigin;
+    /** Passages this user message quotes, checked by the server against their messages; the only source of quotes. */
+    quotes?: import("./quote-markers").AiMessageQuote[];
     /** Cloud's visible start of its one scoped automatic revision. */
     codeReviewStart?: { codeId: string; versionId: string };
     /** A Cloud-authored fact, never an instruction or an assistant answer. */
@@ -710,6 +712,8 @@ export type AiChatTurnRunConfig = {
   codeReview?: { codeId: string; versionId: string };
   /** Trusted host attribution; never grants tool authority. */
   codeOrigin?: AiCodeOrigin;
+  /** Quotes the server checked for this turn's user message; stored as its `meta.quotes`. */
+  quotes?: import("./quote-markers").AiMessageQuote[];
   background?: RetiredRoutineContext;
   selectedSkillIds?: string[];
   /** Server-owned marker: model grants apply only to interactive Assistant chat. */
@@ -1025,6 +1029,8 @@ export type AiConversationService = {
     summary: Message;
     modelId?: string | null;
   }): Promise<void>;
+  /** The messages quotes name by public id, with every assistant message of a quoted answer's turn. */
+  listQuoteSources(input: { conversationId: string; messageIds: readonly string[] }): Promise<AiStoredMessage[]>;
   listTurnMessages(input: { conversationId: string; loopId: string; includeCompacted?: boolean }): Promise<AiStoredMessage[]>;
   setMessageFeedback(input: {
     conversationId: string;

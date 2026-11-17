@@ -11,7 +11,7 @@ import { aiChatMessages } from "../chat/messages";
 import { reconcileProjectedAiChoices } from "../choice-state";
 import { aiDraftPartTurnText } from "../draft-content";
 import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
-import type { AiQuoteMarker } from "../quote-markers";
+import type { AiMessageQuote, AiQuoteDraft } from "../quote-markers";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
   AiClientToolId,
@@ -52,7 +52,7 @@ type ComposerDraftInput = {
   content?: AiUserContentPart[];
   files?: File[];
   resources?: AiResourceMarker[];
-  quotes?: AiQuoteMarker[];
+  quotes?: AiQuoteDraft[];
   storedFiles?: Array<{ path: string; mediaType: string; size: number; version: number }>;
 };
 
@@ -969,7 +969,6 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         ...(input.content ?? []),
         ...(!input.content?.length && input.message ? [{ type: "text" as const, text: input.message }] : []),
         ...(input.resources ?? []).map((ref) => ({ type: "text" as const, text: aiResourceMarker(ref) })),
-        ...(input.quotes ?? []).map((quote) => ({ type: "text" as const, text: aiDraftPartTurnText({ type: "quote", ...quote }) })),
         ...(input.storedFiles ?? []).map((file) => ({ type: "text" as const, text: aiAttachmentMarker(file) })),
         ...(input.files ?? []).map((file) => ({
           type: "text" as const,
@@ -993,7 +992,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         loopAggregate: null,
         loopDoneReason: null,
         compactedAt: null,
-        meta: null,
+        // Until the server checks them, the message shows its quotes as the composer held them.
+        meta: input.quotes?.length ? { quotes: pendingQuotes(input.quotes) } : null,
         createdAt: new Date().toISOString(),
       };
       setPendingSends((current) => ({ ...current, [conversationId]: optimistic }));
@@ -1013,13 +1013,22 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
           ...current,
           [conversationId]: {
             ...optimistic,
-            meta: { submittedDraftRevision: savedDraft.revision },
+            meta: {
+              submittedDraftRevision: savedDraft.revision,
+              ...(optimistic.meta?.quotes ? { quotes: optimistic.meta.quotes } : {}),
+            },
             message: {
               role: "user",
-              content: savedDraft.content.map((part) => ({
-                type: "text",
-                text: part.type === "text" ? part.text : part.type === "file" ? aiAttachmentMarker(part) : aiDraftPartTurnText(part),
-              })),
+              content: savedDraft.content.flatMap((part) =>
+                part.type === "quote"
+                  ? []
+                  : [
+                      {
+                        type: "text" as const,
+                        text: part.type === "text" ? part.text : part.type === "file" ? aiAttachmentMarker(part) : aiDraftPartTurnText(part),
+                      },
+                    ],
+              ),
             },
           },
         }));
@@ -1703,6 +1712,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 };
 
 export type AiChatController = ReturnType<typeof createAiChatController>;
+
+/** The composer's quotes as a sent message shows them until the server's checked quotes replace them. */
+const pendingQuotes = (quotes: readonly AiQuoteDraft[]): AiMessageQuote[] =>
+  quotes.map((quote) => ({ messageId: quote.messageId, from: quote.from ?? "assistant", text: quote.text }));
 
 const isComposerDraftSendable = (input: ComposerDraftInput): boolean =>
   Boolean(

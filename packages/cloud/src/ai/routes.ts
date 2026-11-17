@@ -49,7 +49,10 @@ import { watchAiConversation } from "./conversation-watchers";
 import { createCloudAiLocalBashTool, createCloudAiLocalTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { enqueueAiDictation } from "./dictation-runtime";
 import { AiDictationConflict, AiDictationListSchema, AiDictationStartSchema, aiDictations } from "./dictations";
-import { aiDraftPartTurnText } from "./draft-content";
+import { userVisibleTextFromMessage } from "./chat/message-utils";
+import { aiDraftQuotes, aiDraftTurnContent } from "./draft-content";
+import { type AiMessageQuote, aiQuoteModelText } from "./quote-markers";
+import { AiQuoteError, resolveAiQuotes } from "./quote-sources";
 import { normalizeAiUploadMediaType } from "./file-media-type";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, decodeAiFileContent, guessAiMediaType, normalizeAiFilePath } from "./files-store";
@@ -63,6 +66,7 @@ import {
   AiSaveConversationDraftInputSchema,
   AiSteerInputSchema,
   AiSubmitConversationDraftInputSchema,
+  aiDraftContentProblem,
   aiInputToUserMessage,
   aiTurnInputToContent,
   toAiActionFailureResponse,
@@ -77,6 +81,7 @@ import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import {
   AiMessageQueueConflict,
+  AiQueuedMessageTooLarge,
   editQueuedMessage,
   enqueueChatMessage,
   listQueuedMessages,
@@ -1046,9 +1051,14 @@ export const aiRoutes = (() => {
           if (ctx instanceof Response) return ctx;
           const conversation = await loadConversation(c, ctx);
           if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
-          return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text))
-            ? respond(c, ok({ ok: true }))
-            : notFound(c);
+          try {
+            return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text))
+              ? respond(c, ok({ ok: true }))
+              : notFound(c);
+          } catch (error) {
+            if (error instanceof AiQueuedMessageTooLarge) return respond(c, fail(err.badInput(error.message)));
+            throw error;
+          }
         },
       )
       .delete("/conversations/:conversationId/queue/:messageId", async (c) => {
@@ -1104,13 +1114,15 @@ export const aiRoutes = (() => {
         }
         if (conversation.draft.content.length === 0) return respond(c, fail(err.badInput("The conversation draft is empty.")));
         const resourceParts = conversation.draft.content.filter((part) => part.type === "resource");
-        const turnContent = conversation.draft.content.map((part) => {
-          if (part.type === "text") return { type: "text" as const, text: part.text };
-          if (part.type === "file") {
-            return { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size };
-          }
-          return { type: "text" as const, text: aiDraftPartTurnText(part) };
-        });
+        // Each quote must stand in a message of this chat; whose words they are comes from that message.
+        let quotes: AiMessageQuote[];
+        try {
+          quotes = await resolveAiQuotes(conversation.id, aiDraftQuotes(conversation.draft.content), aiConversations);
+        } catch (error) {
+          if (error instanceof AiQuoteError) return respond(c, fail(err.badInput(error.message)));
+          throw error;
+        }
+        const turnContent = aiDraftTurnContent(conversation.draft.content, quotes);
         const { input, message } = aiInputToUserMessage(aiTurnInputToContent({ content: turnContent }));
         const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, resourceContext(c)) : null;
         if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
@@ -1136,6 +1148,7 @@ export const aiRoutes = (() => {
             toolApprovalContext: ctx.toolApprovalContext,
             expectedDraftRevision: body.draftRevision,
             expectedProjectId: conversation.projectId,
+            ...(quotes.length ? { quotes } : {}),
             resources: resourceParts.map((part) => ({ ref: part.ref, title: part.title, icon: part.icon, href: part.href })),
             expectedFiles: conversation.draft.content.flatMap((part) =>
               part.type === "file" ? [{ path: part.path, version: part.version }] : [],
@@ -1207,7 +1220,23 @@ export const aiRoutes = (() => {
         }
 
         const body = c.req.valid("json");
-        const content = body.content?.length ? aiTurnInputToContent({ content: body.content }) : target.message.content;
+        // The quotes of the message stay as the server checked them; edited text from the client never carries any.
+        const quotes = target.meta?.quotes ?? [];
+        const edited = body.content?.length ? aiTurnInputToContent({ content: body.content }) : null;
+        const content = edited
+          ? [
+              ...(typeof edited === "string" ? [{ type: "text" as const, text: edited }] : edited),
+              ...quotes.map((quote) => ({ type: "text" as const, text: aiQuoteModelText(quote) })),
+            ]
+          : target.message.content;
+        const typed = body.content?.length
+          ? body.content.map((part) => (typeof part === "string" ? part : part.type === "text" ? part.text : "")).join("")
+          : userVisibleTextFromMessage(target.message, quotes);
+        const problem = aiDraftContentProblem([
+          { type: "text", text: typed },
+          ...quotes.map((quote) => ({ type: "quote" as const, messageId: quote.messageId, text: quote.text })),
+        ]);
+        if (problem) return respond(c, fail(err.badInput(problem)));
         const { input, message } = aiInputToUserMessage(content as never);
         const instruction = retryInstruction(body.mode);
         const systemPrompt = instruction ?? undefined;
@@ -1245,6 +1274,7 @@ export const aiRoutes = (() => {
             toolSource: { kind: "default", appTools: true },
             toolApprovalContext: ctx.toolApprovalContext,
             truncateFromSeq: target.seq,
+            ...(quotes.length ? { quotes } : {}),
             fileSnapshot: originalRunConfig?.kind !== "compact" ? originalRunConfig?.files : undefined,
             retrySourceTurnId: target.loopId ?? undefined,
             // Local context and tools belong to the retrying client, not the original workspace.

@@ -61,6 +61,8 @@ export type AiTurnDuration = { workedMs: number; waitingMs: number | null };
 export type AiTurnSegment = {
   /** Timeline item id: the same for the live turn and its history. */
   id: string;
+  /** Public id of the stored message that holds this segment's answer; a quote of the answer names it. */
+  quoteSource?: string;
   turnId: string;
   phase: AiTurnPhase;
   layout: AiTurnLayout;
@@ -915,6 +917,8 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean; ke
  */
 function AiTurnText(props: {
   blocks: Accessor<Extract<AiTurnBlock, { kind: "text" }>[]>;
+  /** The stored message a quote of this answer names; none for a turn the server has not stored yet. */
+  quoteSource: Accessor<string | undefined>;
   live: Accessor<boolean>;
   /** The turn has work steps, so its live text is a status rather than the answer itself. */
   folding: Accessor<boolean>;
@@ -996,6 +1000,7 @@ function AiTurnText(props: {
       classList={{ "ai-turn__text--status": quiet() }}
       // The finished answer, which the person may quote; a status, a note between steps, or a broken-off text is none.
       data-answer={props.completed() && !quiet() ? "" : undefined}
+      data-quote-source={props.completed() && !quiet() ? props.quoteSource() : undefined}
       aria-live={status() ? "off" : undefined}
       style={minHeight() ? { "min-height": `${minHeight()}px` } : undefined}
     >
@@ -1106,6 +1111,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
               quiet={() => layout().textIsStatus}
               earlier={() => props.segment().earlier}
               completed={() => props.segment().phase === "completed"}
+              quoteSource={() => props.segment().quoteSource}
             />
           </Show>
           <Show when={!live() && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>

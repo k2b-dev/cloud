@@ -1,6 +1,6 @@
 import type { ChatAttachment, ChatMention, ChatModelOption, ChatSubmitInput } from "@k2b/ui";
 import { AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "../limits";
-import type { AiQuoteMarker } from "../quote-markers";
+import type { AiQuoteDraft } from "../quote-markers";
 import type { AiResourceMarker } from "../resource-markers";
 import type { AiDraftContentPart, AiUserContentPart } from "../types";
 import {
@@ -30,7 +30,7 @@ export type AiComposerSendInput = {
   files?: File[];
   resources?: AiResourceMarker[];
   /** Passages quoted from the conversation, above the field. */
-  quotes?: AiQuoteMarker[];
+  quotes?: AiQuoteDraft[];
   storedFiles?: Array<{ path: string; mediaType: string; size: number; version: number }>;
 };
 
@@ -225,19 +225,19 @@ export function aiComposerDraft(content: readonly AiDraftContentPart[]): {
   text: string;
   mentions: ChatMention[];
   attachments: AiComposerAttachment[];
-  quotes: AiQuoteMarker[];
+  quotes: AiQuoteDraft[];
 } {
   let text = "";
   const mentions: ChatMention[] = [];
   const attachments: AiComposerAttachment[] = [];
-  const quotes: AiQuoteMarker[] = [];
+  const quotes: AiQuoteDraft[] = [];
   for (const part of content) {
     if (part.type === "text") {
       text += part.text;
       continue;
     }
     if (part.type === "quote") {
-      quotes.push({ from: part.from, text: part.text });
+      quotes.push({ messageId: part.messageId, ...(part.from ? { from: part.from } : {}), text: part.text });
       continue;
     }
     const attachment: AiComposerAttachment =

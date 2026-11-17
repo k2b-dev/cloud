@@ -2943,6 +2943,30 @@ export const aiConversations: AiConversationService = {
     return projectAiMaps(rows.map(rowToMessage).map(aiCodeDecisionContext));
   },
 
+  listQuoteSources: async (input) => {
+    if (input.messageIds.length === 0) return [];
+    // The quoted messages, and every assistant message of a quoted answer's turn: an answer's text can span several.
+    const rows = await sql<MessageRow[]>`
+      SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
+        usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
+        feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at, meta
+      FROM ai.messages
+      WHERE conversation_id = ${input.conversationId}
+        AND kind = 'message'
+        AND (
+          short_id = ANY(${toPgTextArray(input.messageIds)}::text[])
+          OR (role = 'assistant' AND loop_id IN (
+            SELECT loop_id FROM ai.messages
+            WHERE conversation_id = ${input.conversationId}
+              AND short_id = ANY(${toPgTextArray(input.messageIds)}::text[])
+              AND role = 'assistant'
+              AND loop_id IS NOT NULL
+          ))
+        )
+      ORDER BY seq ASC
+    `;
+    return rows.map(rowToMessage);
+  },
   listTurnMessages: async (input) => {
     const rows = await sql<MessageRow[]>`
       SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
@@ -3292,6 +3316,7 @@ export const aiConversations: AiConversationService = {
           meta: {
             ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
             ...(input.runConfig.codeOrigin ? { codeOrigin: input.runConfig.codeOrigin } : {}),
+            ...(input.runConfig.quotes?.length ? { quotes: input.runConfig.quotes } : {}),
             ...(choice ? { choice: choice.provenance } : {}),
             ...(input.runConfig.codeReview ? { codeReviewStart: input.runConfig.codeReview } : {}),
             modelRequest: input.runConfig.model,

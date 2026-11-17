@@ -6,7 +6,7 @@ import type {
   AiOpenQuestion,
   AiOpenQuestions,
   AiProject,
-  AiQuoteMarker,
+  AiQuoteDraft,
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
@@ -265,8 +265,8 @@ type ProjectViewState = {
 
 /** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
 const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) => ({ default: module.ChatWorkspace })));
-// "Quote" loads with the first selection in the chat; a draft's quote rows load with its first quote.
-// A chunk an update replaced reloads the page instead of breaking the chat.
+// "Quote" at a selection loads with the first selection in the chat; a chunk an update replaced reloads the page
+// instead of breaking the chat. A draft's quote rows render from the first frame, so a saved draft never shifts.
 const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
 
 /** The usage of a chat that has sent nothing yet. */
@@ -649,15 +649,15 @@ export default function AssistantWorkspace(props: Props) {
   const [composerMentions, setComposerMentions] = createSignal<Record<string, readonly ChatMention[]>>({});
   const mentionsFor = (key: string) => composerMentions()[key] ?? [];
   // Passages the draft quotes, saved with it like its attachments.
-  const [composerQuotes, setComposerQuotes] = createSignal<Record<string, readonly AiQuoteMarker[]>>({});
+  const [composerQuotes, setComposerQuotes] = createSignal<Record<string, readonly AiQuoteDraft[]>>({});
   const quotesFor = (key: string) => composerQuotes()[key] ?? [];
-  const setQuotesFor = (key: string, quotes: readonly AiQuoteMarker[]) => {
+  const setQuotesFor = (key: string, quotes: readonly AiQuoteDraft[]) => {
     editComposerSession(session(key));
     touchSession();
     setComposerQuotes((all) => ({ ...all, [key]: quotes }));
   };
   /** A passage joins the chat's draft: a cut one or a full draft says so, and the answer is written in the field. */
-  const addQuote = (quote: AiQuoteMarker) => {
+  const addQuote = (quote: AiQuoteDraft) => {
     const key = composerSessionKey();
     const next = aiQuotesWith(quotesFor(key), quote);
     if (next.full) return void toast(t().quotesFull, { iconClass: "ti ti-info-circle" });
@@ -1611,13 +1611,18 @@ export default function AssistantWorkspace(props: Props) {
       ? (queuedMessages.data() ?? []).map((message) => ({
           ...message,
           editableText: aiComposerDraft(message.content).text,
+          // The person's own words and attachments; a quote is no word of theirs and stays out of the line.
           text: message.content
-            .map((part) =>
-              part.type === "text" || part.type === "quote"
-                ? part.text
-                : part.type === "file" || part.type === "project-file"
-                  ? part.path
-                  : (part.title ?? part.ref.id),
+            .flatMap((part) =>
+              part.type === "quote"
+                ? []
+                : [
+                    part.type === "text"
+                      ? part.text
+                      : part.type === "file" || part.type === "project-file"
+                        ? part.path
+                        : (part.title ?? part.ref.id),
+                  ],
             )
             .join(" · "),
         }))
@@ -2536,7 +2541,7 @@ export default function AssistantWorkspace(props: Props) {
                 <ChatComposerQuotes
                   quotes={quotesFor(sessionKey()).map((quote, index) => ({
                     id: `${index}:${quote.text}`,
-                    author: quote.from === "assistant" ? "Gustav" : t().quotedFromYou,
+                    author: quote.from === "user" ? t().quotedFromYou : "Gustav",
                     text: quote.text,
                     onRemove: () =>
                       setQuotesFor(

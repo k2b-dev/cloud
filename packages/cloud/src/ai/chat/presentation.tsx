@@ -283,12 +283,19 @@ const storedItems = (
               )}
             </For>
           </div>
-        ) : text || item.entry.meta?.codeOrigin ? (
+        ) : text || item.entry.meta?.codeOrigin || item.entry.meta?.quotes?.length ? (
           <>
             <Show when={item.entry.meta?.codeOrigin}>{(origin) => <p class="text-xs text-dimmed">{origin().label}</p>}</Show>
             <AiUserMessageQuotes entry={item.entry} />
-            {/* Only the person's own words are a passage to quote; a message an automation wrote is none. */}
-            {text ? <p class={`${item.entry.meta?.codeOrigin ? "" : "ai-user-text "}whitespace-pre-wrap`}>{text}</p> : undefined}
+            {/* The person's own words are a passage to quote; a message an automation wrote is none. */}
+            {text ? (
+              <p
+                class={`${item.entry.meta?.codeOrigin ? "" : "ai-user-text "}whitespace-pre-wrap`}
+                data-quote-source={item.entry.meta?.codeOrigin ? undefined : item.entry.shortId}
+              >
+                {text}
+              </p>
+            ) : undefined}
           </>
         ) : undefined,
         attachments: aiUserMessageAttachments(item.entry, actions),
@@ -421,6 +428,7 @@ const storedItems = (
             turnId,
             phase: segmentPhase,
             layout,
+            ...(lastMessage ? { quoteSource: lastMessage.shortId } : {}),
             earlier: !last,
             duration: last ? () => ({ workedMs: item.workedMs, waitingMs: null }) : () => null,
             scheduledTask: task,

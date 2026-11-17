@@ -7,7 +7,7 @@ import { CODE_RUNTIME_TOOL_NAMES } from "../browser-code-contracts";
 import { normalizeAiUploadMediaType } from "../file-media-type";
 import { aiProjectFilePathFromMount, aiSkillFilePathFromMount } from "../file-mount";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "../limits";
-import { type AiQuoteMarker, parseAiQuoteMarker } from "../quote-markers";
+import { type AiMessageQuote, aiQuoteModelTexts } from "../quote-markers";
 import { type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
 import { assistantVisibleTextFromMessage } from "../timeline";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
@@ -188,13 +188,15 @@ export const textFromMessage = (message: Message): string => {
     .trim();
 };
 
-export const userVisibleTextFromMessage = (message: Message): string => {
+/** The person's own words in a user message; its checked quotes (`meta.quotes`) and attached items are left out. */
+export const userVisibleTextFromMessage = (message: Message, quotes?: readonly AiMessageQuote[]): string => {
   if (message.role !== "user") return textFromMessage(message);
+  const quoted = aiQuoteModelTexts(quotes);
   return message.content
     .map((part) => {
       const text = typeof part === "string" ? part : part.type === "text" ? part.text : "";
-      if (text.startsWith(ATTACHMENT_CONTEXT_PREFIX)) return "";
-      if (parseAiResourceMarker(text) || parseAiQuoteMarker(text)) return "";
+      if (text.startsWith(ATTACHMENT_CONTEXT_PREFIX) || quoted.has(text)) return "";
+      if (parseAiResourceMarker(text)) return "";
       return parseAiAttachmentMarkers(text).text;
     })
     .join("")
@@ -222,19 +224,10 @@ export const resourcesFromMessage = (message: Message): AiResourceMarker[] => {
   });
 };
 
-/** The passages this user message quotes, in their order, shown above its text. */
-export const quotesFromMessage = (message: Message): AiQuoteMarker[] => {
-  if (message.role !== "user") return [];
-  return message.content.flatMap((part) => {
-    const quote = parseAiQuoteMarker(typeof part === "string" ? part : part.type === "text" ? part.text : "");
-    return quote ? [quote] : [];
-  });
-};
-
 export const isAttachmentContextPart = (part: AiUserContentPart): boolean => {
   const text = typeof part === "string" ? part : part.type === "text" ? part.text : "";
   if (text.startsWith(ATTACHMENT_CONTEXT_PREFIX)) return true;
-  if (parseAiResourceMarker(text) || parseAiQuoteMarker(text)) return true;
+  if (parseAiResourceMarker(text)) return true;
   return parseAiAttachmentMarkers(text).attachments.length > 0 && !parseAiAttachmentMarkers(text).text;
 };
 

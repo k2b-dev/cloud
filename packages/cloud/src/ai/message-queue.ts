@@ -2,10 +2,11 @@ import { sql } from "../runtime/clients";
 
 import { logger } from "../services/logging";
 import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
-import { aiDraftPartTurnText, editAiDraftText } from "./draft-content";
+import { aiDraftTurnContent, editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
 import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT } from "./files-store";
-import { aiInputToUserMessage, aiTurnInputToContent } from "./http";
+import { aiDraftContentProblem, aiInputToUserMessage, aiTurnInputToContent } from "./http";
+import { aiNeutralizeQuoteMarkers } from "./quote-markers";
 import { AiQuotaError, aiQuotas } from "./quotas";
 import { aiConversations } from "./store";
 import type { AiConversationService, AiDraftContentPart } from "./types";
@@ -101,6 +102,9 @@ export const updateQueuedMessage = async (conversationId: string, id: string, ac
     return Boolean(changed.length);
   });
 
+/** An edit that would break the bounds of one message; the person hears why and the queued message stays as it was. */
+export class AiQueuedMessageTooLarge extends Error {}
+
 /** Edit only queued text; immutable attachments and the independent composer draft stay intact. */
 export const editQueuedMessage = async (conversationId: string, id: string, text: string) =>
   sql.begin(async (tx) => {
@@ -108,14 +112,12 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
     const [row] = await tx<{ submission: Submission; content: AiDraftContentPart[] }[]>`SELECT submission, content FROM ai.queued_messages
     WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND status IN ('pending','failed') FOR UPDATE`;
     if (!row) return false;
-    const content = editAiDraftText(row.content, text);
-    const parts = content.map((part) =>
-      part.type === "text"
-        ? part
-        : part.type === "file"
-          ? { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size }
-          : { type: "text" as const, text: aiDraftPartTurnText(part) },
-    );
+    // Typed text never passes for a quote; the edited message keeps the bounds of any message, quotes included.
+    const content = editAiDraftText(row.content, aiNeutralizeQuoteMarkers(text));
+    const problem = aiDraftContentProblem(content);
+    if (problem) throw new AiQueuedMessageTooLarge(problem);
+    // The quotes stay as the server checked them when the message was queued.
+    const parts = aiDraftTurnContent(content, row.submission.runConfig.quotes ?? []);
     const { message } = aiInputToUserMessage(aiTurnInputToContent({ content: parts }));
     const userMessage = canonicalizeAiConversationAttachments(message, row.submission.runConfig.files);
     if (userMessage.role !== "user") throw new Error("Queued message must be a user message.");

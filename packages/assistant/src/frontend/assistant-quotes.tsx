@@ -1,4 +1,4 @@
-import type { AiQuoteMarker } from "@k2b/cloud/ai/browser";
+import type { AiQuoteDraft } from "@k2b/cloud/ai/browser";
 import { SelectionAction } from "@k2b/ui";
 import type { JSX } from "solid-js";
 
@@ -9,7 +9,7 @@ import type { JSX } from "solid-js";
 export default function AssistantQuoteSelection(props: {
   root: HTMLElement;
   label: string;
-  onQuote: (quote: AiQuoteMarker) => void;
+  onQuote: (quote: AiQuoteDraft) => void;
 }): JSX.Element {
   return (
     <SelectionAction
@@ -19,12 +19,19 @@ export default function AssistantQuoteSelection(props: {
       within={(node) => {
         const element = node instanceof Element ? node : node.parentElement;
         return (
-          element?.closest<HTMLElement>(".ai-turn__text[data-answer]") ??
-          element?.closest<HTMLElement>('.k2b-chat-message[data-role="user"][data-status="complete"] .ai-user-text') ??
+          element?.closest<HTMLElement>(".ai-turn__text[data-answer][data-quote-source]") ??
+          element?.closest<HTMLElement>('.k2b-chat-message[data-role="user"][data-status="complete"] .ai-user-text[data-quote-source]') ??
           null
         );
       }}
-      onAction={({ text, element }) => props.onQuote({ from: element.matches(".ai-turn__text") ? "assistant" : "user", text })}
+      // The quoted message names the passage's source; the server checks it and says whose words they are.
+      onAction={({ text, element }) =>
+        props.onQuote({
+          messageId: element.dataset.quoteSource!,
+          from: element.matches(".ai-turn__text") ? "assistant" : "user",
+          text,
+        })
+      }
     />
   );
 }
