@@ -50,7 +50,9 @@ exceptions, and nothing beside them moves: a folding list such as
 the frame of a dialog, which stands alone above the page. When one dialog
 replaces another, the dialog core morphs the frame's width and height with
 `--k2b-motion-morph` and `--k2b-ease-morph` while the contents stand at their
-own sizes and the frame clips them.
+own sizes and the frame clips them. When an open dialog's content changes
+height, the frame folds to the new height with `--k2b-motion-fold` and
+`--k2b-ease-glide`, its top edge staying put.
 
 Choose the duration by what changes. Use the standard curve for ordinary
 entry motion. A large surface that grows, shrinks, or moves uses the morph

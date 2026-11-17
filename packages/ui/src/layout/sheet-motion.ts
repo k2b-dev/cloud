@@ -69,8 +69,8 @@ const scrollerIn = (target: Element | null, panel: HTMLElement): HTMLElement | n
 };
 
 /**
- * Moves a bottom sheet with transform and opacity only. Its layout height is fixed when it opens (the content's height,
- * or the full height with detents) and never animates; the sheet slides by `--k2b-sheet-y`, the footer stays on the
+ * Moves a bottom sheet with transform and opacity only. Its layout height is the content's height, which the dialog
+ * core folds when the content changes, or the full height with detents, which never animates; the sheet slides by `--k2b-sheet-y`, the footer stays on the
  * screen's edge between half and full height by `--k2b-sheet-footer-y`, and the backdrop dims by `--k2b-sheet-dim`.
  * A glide is a Web Animation that ends on exactly those values, so it lands on its detent without a settle. A drag on
  * the handle or the header follows the pointer; a finger anywhere follows too, except where a list still scrolls.
@@ -451,7 +451,7 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
   };
   view?.addEventListener("resize", relayout);
   cleanups.push(() => view?.removeEventListener("resize", relayout));
-  // The dialog core changed the frame's size to the shown level's: the rests follow.
+  // The dialog core changed the frame's size (a morph to the shown level, a fold to new content): the rests follow.
   frame.addEventListener("k2b-frame-resize", relayout);
   cleanups.push(() => frame.removeEventListener("k2b-frame-resize", relayout));
   dialogQuery?.addEventListener?.("change", relayout);

@@ -66,9 +66,12 @@ height. It is also usable on desktop; the host decides when to open it.
 
 ## Motion
 
-A sheet moves only by transform and opacity. Its layout height is fixed when
-it opens, the content's height or, with detents, the full height, and it never
-animates. It slides up from below the edge and lands directly on its rest,
+A sheet moves only by transform and opacity. Its layout height is the
+content's height or, with detents, the full height. A sheet without detents
+follows its content when that changes while it is open: the dialog core
+grows or shrinks it from the bottom edge in `--k2b-motion-fold`, as every
+dialog frame does, and the sheet takes its new rest. With detents the height
+never animates. It slides up from below the edge and lands directly on its rest,
 without overshoot or settle: 280 ms with `--k2b-ease-out`, 220 ms to close,
 instant with reduced motion. The frame clips with `overflow: clip`, never
 `hidden`, because a hidden box still scrolls and focus scrolling it would

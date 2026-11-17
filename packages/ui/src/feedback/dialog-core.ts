@@ -427,7 +427,15 @@ export const createDialogCore = () => {
     // Each stack level carries its own palette, independently of the first opener.
     getK2bPortalRoot(undefined, document.body).appendChild(element);
     state.element = element;
-    void loadFrameMotion();
+    // The frame follows its content's height as soon as the module is there; a dialog that opened before follows then.
+    if (frameMotion) state.motion = frameMotion.createFrameMotion(element);
+    else
+      void loadFrameMotion().then(() => {
+        const top = state.stack[state.stack.length - 1];
+        if (state.element !== element || state.motion || !frameMotion) return;
+        state.motion = frameMotion.createFrameMotion(element);
+        if (top) state.motion.follow(top.container);
+      });
     return element;
   };
 
@@ -791,6 +799,8 @@ export const createDialogCore = () => {
             else dialog.show();
           } else dialog.setAttribute("open", "");
           observeConnection();
+          // From now on the frame follows its content's height; the first open itself does not animate.
+          state.motion?.follow(container);
         }
         options.signal?.addEventListener("abort", abort, { once: true });
         if (options.signal?.aborted) abort();
