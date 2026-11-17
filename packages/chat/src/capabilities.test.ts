@@ -97,6 +97,24 @@ test("bounds pages, Unicode content and previews, rejects provenance and occurre
   expect(discussionPreview("🦋".repeat(301))).toEqual({ preview: "🦋".repeat(300), previewTruncated: true });
   expect(discussionPreview("a".repeat(300)).previewTruncated).toBe(false);
   expect(discussionPreview(null)).toEqual({ preview: "", previewTruncated: false });
+  const quote = { message: "AbCdEf1234", text: "the report" };
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: Array(10).fill(quote) }).success).toBe(true);
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: Array(11).fill(quote) }).success).toBe(false);
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: [{ ...quote, text: "" }] }).success).toBe(false);
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: [{ ...quote, author: "Lea" }] }).success).toBe(false);
+});
+
+test("a review shows each stored passage with its author above the text, also for maximum-size quotes", () => {
+  const quotes = [
+    { text: "disapprove of this plan", author: "Lea Muster" },
+    { text: "🦋".repeat(9_999), author: "Ben Schulz" },
+  ];
+  for (const operation of ["post", "edit", "delete"] as const) {
+    const review = discussionReview(operation, item, "Review", "Agreed.", "en", operation === "post" ? undefined : 0, quotes);
+    expect(CapabilityActionReviewDataSchema.parse(review)).toEqual(review);
+    expect(review.content?.body).toBe(`> disapprove of this plan — Lea Muster\n> ${"🦋".repeat(9_999)} — Ben Schulz\n\nAgreed.`);
+  }
+  expect(discussionReview("post", item, "Review", "Agreed.").content?.body).toBe("Agreed.");
 });
 
 test("fresh standard item and container readers supply only the exact authorized resources", async () => {

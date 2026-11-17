@@ -19,6 +19,10 @@
     "#chat-charts": {
       "browser": "./src/ai/chat/chart-lazy.tsx",
       "default": "./src/ai/chat/chart-eager.tsx"
+    },
+    "#chat-work-list": {
+      "browser": "./src/ai/chat/work-list-lazy.tsx",
+      "default": "./src/ai/chat/work-list-eager.tsx"
     }
   },
   "files": [
@@ -116,6 +120,7 @@
     "./contracts/geo-snapshot": "./src/contracts/geo-snapshot.ts",
     "./contracts/notifications": "./src/contracts/notification-types.ts",
     "./contracts/*": "./src/contracts/*",
+    "./maintenance-game": "./src/maintenance-game/index.ts",
     "./events/testing": "./src/events/testing.ts",
     "./events": "./src/events/index.ts",
     "./workflows": "./src/workflows/index.ts",
@@ -149,7 +154,7 @@
     "@k2b/nessi": "1.2.0",
     "@k2b/ssr": "0.21.3",
     "@k2b/ui": "0.59.0",
-    "@k2b/stdlib": "0.32.0",
+    "@k2b/stdlib": "0.33.0",
     "@k2b/sync": "7.1.1",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",

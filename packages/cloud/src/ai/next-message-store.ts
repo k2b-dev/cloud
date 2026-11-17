@@ -1,4 +1,5 @@
 import { sql } from "../runtime/clients";
+import { aiNextMessageText } from "./next-message-text";
 import type { AiStoredMessage } from "./types";
 
 /** Separate answer metadata: model history, exports, indexing and notifications never load these columns. */
@@ -50,7 +51,9 @@ export const projectAiNextMessages = async (
   const suggestions = new Map(rows.map((row) => [row.short_id, row.suggested_next_message]));
   return messages.map(({ suggestedNextMessage: _, ...message }) => {
     const suggestion = suggestions.get(message.shortId);
-    return suggestion ? { ...message, suggestedNextMessage: suggestion } : message;
+    // A suggestion stored before its rules held, such as "null", never reaches the composer.
+    const text = aiNextMessageText(suggestion?.text);
+    return suggestion && text ? { ...message, suggestedNextMessage: { ...suggestion, text } } : message;
   });
 };
 

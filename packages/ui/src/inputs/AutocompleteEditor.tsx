@@ -372,7 +372,8 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
       event.currentTarget.value = localValue();
       return;
     }
-    if (event.inputType.startsWith("insert") && completionBehavior.tryExpand(event.currentTarget, props.completions)) {
+    // A synthetic `input` event, such as a framework handing over text, may carry no input type.
+    if (event.inputType?.startsWith("insert") && completionBehavior.tryExpand(event.currentTarget, props.completions)) {
       return;
     }
     setLocalValue(event.currentTarget.value);

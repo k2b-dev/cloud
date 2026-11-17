@@ -1,4 +1,4 @@
-import type { MaintenanceStatus } from "../contracts/maintenance";
+import type { MaintenanceBypassLink, MaintenanceStatus } from "../contracts/maintenance";
 import { cloudCliLanguage } from "./locale";
 
 /**
@@ -65,8 +65,49 @@ const de = (locale: string | undefined) => cloudCliLanguage(locale) === "de";
 
 export const maintenanceOnSentence = (status: MaintenanceStatus, { locale, now }: Words = {}): string => {
   const until = status.until ? formatMaintenanceTime(status.until, locale, now) : null;
-  if (de(locale)) return until ? `Wartungsmodus aktiviert. Geplant bis ${until} Uhr.` : "Wartungsmodus aktiviert.";
-  return until ? `Maintenance mode on. Planned until ${until}.` : "Maintenance mode on.";
+  if (de(locale)) {
+    const on = until ? `Wartungsmodus aktiviert. Geplant bis ${until} Uhr.` : "Wartungsmodus aktiviert.";
+    return status.quiesce ? `${on} Ruhe: Hintergrundarbeit hält an.` : on;
+  }
+  const on = until ? `Maintenance mode on. Planned until ${until}.` : "Maintenance mode on.";
+  return status.quiesce ? `${on} Quiet: background work is stopping.` : on;
+};
+
+/** After `on --no-quiesce`: maintenance stays, background work runs again. */
+export const maintenanceResumeSentence = ({ locale }: Words = {}): string =>
+  de(locale) ? "Ruhe aus: Hintergrundarbeit läuft wieder." : "Quiet off: background work runs again.";
+
+/** At most this many busy apps are named; the rest are counted. */
+const QUIET_NAMED_APPS = 3;
+
+/**
+ * „Ruhe: 8 von 9 Apps ruhig, Mail: 2 Aufgaben laufen noch“ / "Quiet: 8 of 9 apps quiet, Mail: 2 tasks still running".
+ * The count adds jobs, tracked tasks and runtimes still stopping, so it says tasks. Instances that have not
+ * reported for this stage „Ruhe“ are named beside running work.
+ */
+export const maintenanceQuietLine = (quiet: NonNullable<MaintenanceStatus["quiet"]>, { locale }: Words = {}): string => {
+  const german = de(locale);
+  const parts = [german ? `Ruhe: ${quiet.quiet} von ${quiet.total} Apps ruhig` : `Quiet: ${quiet.quiet} of ${quiet.total} apps quiet`];
+  for (const app of quiet.busy.slice(0, QUIET_NAMED_APPS)) {
+    const { inFlight: tasks, unreported } = app;
+    const states: string[] = [];
+    if (tasks > 0)
+      states.push(
+        german
+          ? `${tasks} ${tasks === 1 ? "Aufgabe läuft" : "Aufgaben laufen"} noch`
+          : `${tasks} ${tasks === 1 ? "task" : "tasks"} still running`,
+      );
+    if (unreported > 0)
+      states.push(
+        german
+          ? `${unreported} ${unreported === 1 ? "Instanz" : "Instanzen"} ohne Rückmeldung`
+          : `${unreported} ${unreported === 1 ? "instance has" : "instances have"} not reported`,
+      );
+    parts.push(`${app.name}: ${states.join(german ? " und " : " and ")}`);
+  }
+  const more = quiet.busy.length - QUIET_NAMED_APPS;
+  if (more > 0) parts.push(german ? `${more} weitere` : `${more} more`);
+  return parts.join(", ");
 };
 
 export const maintenanceUntilSentence = (status: MaintenanceStatus, { locale, now }: Words = {}): string => {
@@ -76,6 +117,23 @@ export const maintenanceUntilSentence = (status: MaintenanceStatus, { locale, no
 
 export const maintenanceOffSentence = ({ locale }: Words = {}): string =>
   de(locale) ? "Wartungsmodus beendet. Offene Seiten laden jetzt neu." : "Maintenance mode off. Open pages reload now.";
+
+/**
+ * The sentence with the link's latest expiry (Core caps it, a longer maintenance needs a new link), then the link
+ * alone on its own line, so it can be copied or piped as it is.
+ */
+export const maintenanceBypassLines = (link: MaintenanceBypassLink, { locale, now }: Words = {}): string[] => {
+  const expires = formatMaintenanceTime(link.expiresAt, locale, now);
+  return [
+    de(locale)
+      ? `Link für dich, gilt bis zum Ende dieser Wartung, längstens bis ${expires} Uhr:`
+      : `Your link, valid until this maintenance ends, at the latest until ${expires}:`,
+    link.url,
+  ];
+};
+
+export const maintenanceBypassOffSentence = ({ locale }: Words = {}): string =>
+  de(locale) ? "Kein Link nötig: Der Wartungsmodus ist aus." : "No link needed: maintenance mode is off.";
 
 export const maintenanceStatusLines = (status: MaintenanceStatus, { locale, now }: Words = {}): string[] => {
   const german = de(locale);
@@ -91,6 +149,7 @@ export const maintenanceStatusLines = (status: MaintenanceStatus, { locale, now 
   const { ready, total, starting } = status.apps;
   const waiting = starting.length ? ` (${starting.join(", ")} ${german ? "starten" : "starting"})` : "";
   lines.push(german ? `Apps bereit: ${ready} von ${total}${waiting}` : `Apps ready: ${ready} of ${total}${waiting}`);
+  if (status.quiesce && status.quiet) lines.push(maintenanceQuietLine(status.quiet, { locale }));
   return lines;
 };
 

@@ -262,7 +262,9 @@ work from model text or trigger language-dependent automatic retries.
 ### Conversation titles
 
 A title given at creation, such as the localized "New chat" of the web chat,
-stays a default title. The first message's text replaces it, and enrichment may
+stays a default title. A chat created without a title gets the same default in
+the request locale, so `cld assistant chats create` names a chat "Neuer Chat"
+for a German caller. The first message's text replaces it, and enrichment may
 rename it. Renaming through `PATCH /api/ai/conversations/:id` marks the title as
 the user's (`titleSource: "user"`). Neither the first message nor enrichment
 replaces that title, for web and API clients alike. Renaming to the current title
@@ -271,7 +273,8 @@ changes nothing.
 The CLI is one consumer of this rule. `--title` on `cld assistant -p` and
 `cld assistant chats create` creates the chat and then renames it through this
 endpoint. The CLI trims the title and checks the 1 to 120 character limit before
-creating anything. The exact title `New chat` keeps automatic naming.
+creating anything. A `--title` equal to the default title the chat got keeps
+automatic naming.
 
 ## Chat route groups
 
@@ -350,6 +353,11 @@ separators. `turn_finished` carries the complete text, also when the turn ended
 during a reconnect. Tool progress and approval matching use canonical capability
 IDs such as `spaces.task.create`. Persisted provider tool names stay unchanged;
 hashed names that cannot be decoded retain their stored name.
+
+A turn stores each capability step's app name as it was then. History, the
+stream state, and finished turns name the app as the catalog does now, by its
+app ID and in the reader's language; an app the registry does not know keeps
+its stored name.
 
 Assistant renders capability table presentation metadata in both web chat and
 text-mode CLI output. The CLI shows up to 100 returned rows, shortens long cells,

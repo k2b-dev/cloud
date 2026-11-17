@@ -43,8 +43,9 @@ const measure = async (wrap: boolean, width: number) => {
       const style = getComputedStyle(label);
       // `normal` has no number; a line is then about 1.2 times the font size.
       const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2;
+      const copy = activity.querySelector<HTMLElement>(".k2b-chat-activity__copy")!;
       return {
-        hidden: label.scrollWidth - label.clientWidth,
+        hidden: copy.scrollWidth - copy.clientWidth,
         lines: Math.round(text.height / lineHeight),
         // The icon sits on the first line, not in the middle of the sentence.
         iconOnFirstLine: icon.top < text.top + lineHeight,

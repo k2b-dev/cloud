@@ -172,7 +172,7 @@ const accentServer = new Hono<{ Variables: { runtime: RuntimeContext } }>()
           routes: ["/accent", "/admin/accent"],
           ...(accent === undefined ? {} : { appearance: { accent, primary: c.req.query("primary") === "ai" ? "ai" : undefined } }),
         },
-        { id: "core", name: "Core", icon: "ti ti-cloud", description: "Help host", routes: ["/help"], appearance: { accent: "#2563eb" } },
+        { id: "core", name: "Cloud", icon: "ti ti-cloud", description: "Help host", routes: ["/help"], appearance: { accent: "#2563eb" } },
       ],
     });
     await next();
@@ -348,6 +348,16 @@ describe("Cloud layouts SSR", () => {
     } finally {
       for (const spy of spies) spy.mockRestore();
     }
+  });
+
+  test("a page let past the maintenance wall tells the shell that only this person sees the Cloud", async () => {
+    const props = (html: string) => [...html.matchAll(/data-props="([^"]*)"/g)].map((match) => match[1]).join(" ");
+    const bypassed = await (await server.request("/layout", { headers: { "X-Cloud-Maintenance-Bypass": "1" } })).text();
+    expect(props(bypassed)).toContain("bypass");
+    // Not an administrator: nothing offers to end the maintenance.
+    expect(props(bypassed)).not.toContain("canEnd");
+    const ordinary = await (await server.request("/layout")).text();
+    expect(props(ordinary)).not.toContain("bypass");
   });
 
   test("keeps anonymous login and preferences visible without rendering the application rail", async () => {

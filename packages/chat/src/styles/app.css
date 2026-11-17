@@ -1173,3 +1173,9 @@
 .chat-resource-start__feed {
   display: flex;
 }
+
+/* The title's place while the panel finds the discussion: one line at the height of the title it becomes. */
+.k2b-ui .chat-resource-loading__title {
+  width: min(14rem, 60%);
+  height: 1.25rem;
+}

@@ -58,7 +58,6 @@ import {
   dialogCore,
   LocaleProvider,
   NoticeCard,
-  openSpotlightSearch,
   Placeholder,
   prompts,
   reconcileChatMentions,
@@ -81,7 +80,6 @@ import type { ChatWorkspaceSnapshot } from "../chat-workspace";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
-import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
 import AssistantApprovalsView from "./AssistantApprovalsView";
 import {
   AssistantChatContextContent,
@@ -95,12 +93,12 @@ import type { ChatSidebarJump } from "./AssistantChatSidebar";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
-import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
+import { openTaskRun } from "./activities-dialog";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
@@ -154,12 +152,13 @@ import {
   sendBesideComposer,
 } from "./composer-session";
 import { isPlainChat } from "./conversation-view";
+import { lazyAction } from "./lazy-action";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
 import { quotaText } from "./quota-messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
-import { finishedPlanShown, type TaskHostChoice, taskHostOpen } from "./task-host";
+import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
 
@@ -172,6 +171,10 @@ type Status = AiPeopleModels & {
   liveDictationAvailable?: boolean;
   error: AiSettingsError | null;
 };
+
+/** Rarely used parts that load when someone opens them. */
+const projectPicker = lazyAction(() => import("./empty-chat-project-picker"));
+const createProjectForm = lazyAction(() => import("./AssistantProjectsDialog"));
 
 type InitialDetail = {
   conversation: AiConversation;
@@ -224,6 +227,9 @@ type ProjectViewState = {
 
 /** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
 const ArtifactWorkspace = lazy(() => import("../artifacts/Workspace").then((module) => ({ default: module.ArtifactWorkspace })));
+
+/** The usage of a chat that has sent nothing yet. */
+const NOTHING_USED = { input: 0, output: 0, total: 0 };
 
 export default function AssistantWorkspace(props: Props) {
   const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";
@@ -1134,7 +1140,7 @@ export default function AssistantWorkspace(props: Props) {
   });
   let questionJump = 0;
   /** Jumps to a question from "Waiting for you"; one in another chat opens that chat as a new history entry. */
-  const jumpToQuestion = async (question: AiOpenQuestion) => {
+  const jumpToQuestion = async (question: Pick<AiOpenQuestion, "conversationId" | "anchor">) => {
     const jump = ++questionJump;
     // The question replaces any message the chat was opened at, also after a reload.
     const reveal = ++revealRequest;
@@ -1655,42 +1661,17 @@ export default function AssistantWorkspace(props: Props) {
   });
 
   const chooseEmptyChatProject = async () => {
-    const selected = await openSpotlightSearch<{ projectId: string | null }>({
-      title: t().chooseProjectTitle,
-      icon: "ti ti-folder-open",
-      placeholder: t().searchProjects,
-      minQueryLength: 0,
-      noResultsText: t().noMatchingProjects,
-      resolve: ({ query }) => {
-        const normalized = query.trim().toLocaleLowerCase();
-        return [
-          {
-            value: { projectId: null },
-            label: t().noProject,
-            desc: t().separateChat,
-            icon: "ti ti-message-circle",
-          },
-          ...projects()
-            .filter((project) => !normalized || `${project.name} ${project.description}`.toLocaleLowerCase().includes(normalized))
-            .map((project) => ({
-              value: { projectId: project.id },
-              label: project.name,
-              desc: project.description || t().sharedProjectContext,
-              icon: project.icon || "ti ti-folder",
-            })),
-        ];
-      },
-    });
-    if (!selected?.value || selected.value.projectId === emptyProjectId()) return;
+    const selected = await projectPicker(locale(), (module) => module.pickEmptyChatProject(t(), projects));
+    if (selected === undefined || selected.projectId === emptyProjectId()) return;
 
     setChoosingProject(true);
     try {
       const conversation = activeConversation();
       if (!conversation) {
-        if (selected.value.projectId) await createConversation(true, selected.value.projectId);
+        if (selected.projectId) await createConversation(true, selected.projectId);
         return;
       }
-      const updated = await assistantApi.updateConversationProject(conversation.id, selected.value.projectId);
+      const updated = await assistantApi.updateConversationProject(conversation.id, selected.projectId);
       setEmptyProjectId(updated.projectId);
       await Promise.all([
         chat.refreshActiveConversation(),
@@ -2331,7 +2312,7 @@ export default function AssistantWorkspace(props: Props) {
             <>
               <Show when={!projectComposer() && (hasOpenTodos() || completedPlanShown())}>
                 <Chat.Tasks
-                  items={todoItems()}
+                  items={shownTasks(todoItems(), chat.activeTurn()?.status)}
                   open={todoOpen()}
                   onOpenChange={setTodoOpen}
                   label={todoLabel()}
@@ -2610,7 +2591,7 @@ export default function AssistantWorkspace(props: Props) {
               : []
           }
           contextPopupAction={
-            // An empty chat has nothing to summarize; the usage control appears with the first message.
+            // An empty chat has nothing to summarize; the action to do so appears with the first message.
             !projectComposer() && activeConversation() && chat.messages().length > 0
               ? {
                   id: "compact-context",
@@ -2629,7 +2610,8 @@ export default function AssistantWorkspace(props: Props) {
             projectComposer()
               ? undefined
               : {
-                  usage: usageSnapshot()?.request ?? null,
+                  // Nothing sent yet, such as on the start page: the ring stands empty in its place (v12 §9).
+                  usage: usageSnapshot()?.request ?? (emptyChat() ? NOTHING_USED : null),
                   loopUsage: usageSnapshot()?.loop ?? null,
                   contextWindow: usageModel()?.contextWindow,
                   modelLabel: usageModel()?.label,
@@ -2837,7 +2819,8 @@ export default function AssistantWorkspace(props: Props) {
           creatingConversation={() => newConversation.loading() || composerPicking() > 0}
           onNewConversation={() => void createAndFocusConversation()}
           onCreateProject={async () => {
-            const project = await openAssistantCreateProjectDialog();
+            // Loaded when someone creates a project: the form stays out of the workspace bundle.
+            const project = await createProjectForm(locale(), (module) => module.openAssistantCreateProjectDialog());
             if (project) navigateTo(assistantProjectHref(basePath, project.id));
           }}
           onOpenProject={openProject}
@@ -2914,6 +2897,10 @@ export default function AssistantWorkspace(props: Props) {
                                     ),
                                     actionDisabled: () => chat.runStatus() === "stopping",
                                     onCheckAction: (request) => chat.checkAction(request),
+                                    onShowQuestion: (anchor) => {
+                                      const conversationId = chat.activeConversationId();
+                                      if (conversationId) void jumpToQuestion({ conversationId, anchor });
+                                    },
                                     onApproval: async (request, input) => {
                                       if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
                                     },
@@ -2957,7 +2944,7 @@ export default function AssistantWorkspace(props: Props) {
                                       });
                                     },
                                     onOpenScheduledTaskRun: (taskId, occurrenceId) =>
-                                      void openAssistantTaskRun(taskId, occurrenceId, liveHub),
+                                      void openTaskRun(taskId, occurrenceId, liveHub, locale()),
                                     onOpenFile: (path) => void openFiles(path),
                                     onOpenWebLink: (href, title) => {
                                       const open = openWebPage();

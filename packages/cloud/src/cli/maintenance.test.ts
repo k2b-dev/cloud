@@ -6,9 +6,13 @@ import type { CloudCliFlags } from "./index";
 import {
   formatMaintenanceTime,
   MAINTENANCE_EXIT_CODE,
+  maintenanceBypassLines,
+  maintenanceBypassOffSentence,
   maintenanceOffSentence,
   maintenanceOnSentence,
   maintenanceProblemSentence,
+  maintenanceQuietLine,
+  maintenanceResumeSentence,
   maintenanceStatusLines,
   maintenanceUntilSentence,
   markMaintenanceWord,
@@ -128,4 +132,100 @@ test("cld admin maintenance calls Core's maintenance API and prints the sentence
     "Wartungsmodus beendet. Offene Seiten laden jetzt neu.",
   ]);
   await expect(invoke(["maintenance", "until", "00:00"])).rejects.toThrow();
+
+  calls.length = 0;
+  await invoke(["maintenance", "on"], { quiesce: true });
+  await invoke(["maintenance", "on"], { "no-quiesce": true });
+  expect(calls.map((call) => call.body)).toEqual([{ quiesce: true }, { quiesce: false }]);
+  expect(printed.at(-1)).toBe("Ruhe aus: Hintergrundarbeit läuft wieder.");
+  await expect(invoke(["maintenance", "on"], { quiesce: true, "no-quiesce": true })).rejects.toThrow("either --quiesce or --no-quiesce");
+  expect(calls).toHaveLength(2);
+});
+
+test("stage Ruhe adds one sentence to on and one line to status", () => {
+  const quiet = { quiet: 8, total: 9, busy: [{ id: "mail", name: "Mail", inFlight: 2, unreported: 0 }] };
+  expect(maintenanceOnSentence({ ...active, quiesce: true }, { locale: "de", now })).toBe(
+    "Wartungsmodus aktiviert. Geplant bis 14:30 Uhr. Ruhe: Hintergrundarbeit hält an.",
+  );
+  const { until: _until, ...noEnd } = active;
+  expect(maintenanceOnSentence({ ...noEnd, quiesce: true }, { locale: "en", now })).toBe(
+    "Maintenance mode on. Quiet: background work is stopping.",
+  );
+  expect(maintenanceStatusLines({ ...active, quiesce: true, quiet }, { locale: "de", now }).at(-1)).toBe(
+    "Ruhe: 8 von 9 Apps ruhig, Mail: 2 Aufgaben laufen noch",
+  );
+  expect(maintenanceStatusLines({ ...active, quiesce: false, quiet }, { locale: "de", now })).toHaveLength(3);
+  expect(maintenanceQuietLine(quiet, { locale: "en" })).toBe("Quiet: 8 of 9 apps quiet, Mail: 2 tasks still running");
+  expect(maintenanceQuietLine({ quiet: 9, total: 9, busy: [] }, { locale: "de" })).toBe("Ruhe: 9 von 9 Apps ruhig");
+  expect(maintenanceResumeSentence({ locale: "en" })).toBe("Quiet off: background work runs again.");
+});
+
+test("the quiet line names at most three busy apps, with running tasks and instances that have not reported", () => {
+  const busy = [
+    { id: "files", name: "Dateien", inFlight: 1, unreported: 0 },
+    { id: "mail", name: "Mail", inFlight: 2, unreported: 1 },
+    { id: "pulse", name: "Pulse", inFlight: 3, unreported: 0 },
+    { id: "spaces", name: "Spaces", inFlight: 1, unreported: 0 },
+    { id: "venue", name: "Venue", inFlight: 1, unreported: 0 },
+  ];
+  expect(maintenanceQuietLine({ quiet: 4, total: 9, busy }, { locale: "de" })).toBe(
+    "Ruhe: 4 von 9 Apps ruhig, Dateien: 1 Aufgabe läuft noch, Mail: 2 Aufgaben laufen noch und 1 Instanz ohne Rückmeldung, Pulse: 3 Aufgaben laufen noch, 2 weitere",
+  );
+  expect(maintenanceQuietLine({ quiet: 4, total: 9, busy }, { locale: "en" })).toBe(
+    "Quiet: 4 of 9 apps quiet, Dateien: 1 task still running, Mail: 2 tasks still running and 1 instance has not reported, Pulse: 3 tasks still running, 2 more",
+  );
+  const silent = { quiet: 8, total: 9, busy: [{ id: "mail", name: "Mail", inFlight: 0, unreported: 2 }] };
+  expect(maintenanceQuietLine(silent, { locale: "de" })).toBe("Ruhe: 8 von 9 Apps ruhig, Mail: 2 Instanzen ohne Rückmeldung");
+  expect(maintenanceQuietLine(silent, { locale: "en" })).toBe("Quiet: 8 of 9 apps quiet, Mail: 2 instances have not reported");
+});
+
+test("cld admin maintenance bypass prints the sentence and the link on its own line, or one sentence when off", async () => {
+  const link = { url: "https://cloud.musterverein.test/?cloud-maintenance-bypass=abc.def", expiresAt: at(2, 2, 17) };
+  // The link ends with the maintenance, but never later than Core's cap; the sentence names that time.
+  expect(maintenanceBypassLines(link, { locale: "de-DE", now })).toEqual([
+    "Link für dich, gilt bis zum Ende dieser Wartung, längstens bis 17.11., 02:02 Uhr:",
+    link.url,
+  ]);
+  expect(maintenanceBypassLines({ ...link, expiresAt: at(23, 30) }, { locale: "en", now })).toEqual([
+    "Your link, valid until this maintenance ends, at the latest until 23:30:",
+    link.url,
+  ]);
+  expect(maintenanceBypassOffSentence({ locale: "de" })).toBe("Kein Link nötig: Der Wartungsmodus ist aus.");
+  expect(maintenanceBypassOffSentence({ locale: "en" })).toBe("No link needed: maintenance mode is off.");
+
+  const module = defineCliCommands({ name: "admin", summary: "Maintenance", commands: maintenanceCommands });
+  const calls: Array<{ path: string; method: string }> = [];
+  const printed: string[] = [];
+  const invoke = (answer: Response) =>
+    module.run({
+      args: ["maintenance", "bypass"],
+      flags: {},
+      options: { profile: "test", server: "http://test", token: "test", output: "text", locale: "de" },
+      getDefault: async () => undefined,
+      setDefault: async () => {},
+      createApiClient: () => {
+        throw new Error("unused");
+      },
+      fetch: async (path, init) => {
+        calls.push({ path, method: init?.method ?? "GET" });
+        return answer;
+      },
+      readJson: async (response) => response.json(),
+      print: (line = "") => {
+        printed.push(line);
+      },
+      write: async () => {},
+      error: () => {},
+      json: () => {},
+      jsonLine: () => {},
+      table: () => {},
+    });
+  await invoke(Response.json(link));
+  expect(calls).toEqual([{ path: "/api/admin/maintenance/bypass", method: "POST" }]);
+  expect(printed).toEqual(maintenanceBypassLines(link, { locale: "de" }));
+  expect(printed[1]).toBe(link.url);
+  expect(printed[0] ?? "").toStartWith("Link für dich, gilt bis zum Ende dieser Wartung, längstens bis ");
+  await expect(invoke(Response.json({ error: "Maintenance mode is not active" }, { status: 409 }))).rejects.toThrow(
+    "Kein Link nötig: Der Wartungsmodus ist aus.",
+  );
 });

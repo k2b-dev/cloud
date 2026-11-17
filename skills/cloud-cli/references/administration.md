@@ -12,13 +12,19 @@ permissions still apply. No separate diagnostics grant is required.
 
 ## Maintenance mode
 
-`cld admin maintenance on [--message <text>] [--until <HH:MM|ISO>]`, `until <time>`,
-`off` and `status` switch the whole Cloud into maintenance and back. Ask the
+`cld admin maintenance on [--message <text>] [--until <HH:MM|ISO>] [--quiesce|--no-quiesce]`,
+`until <time>`, `off` and `status` switch the whole Cloud into maintenance and
+back. `--quiesce` (stage „Ruhe“) also stops background work in every app;
+poll `status --json` until `quiet.quiet` equals `quiet.total` before a migration
+or backup that needs a still Cloud. `--no-quiesce` or `off` resumes it. Ask the
 person before switching it on: everyone else then sees only the maintenance
 page. While it is on, every other command exits with code `75` and one
 sentence such as „Wartungsmodus aktiv, geplant bis 14:30 Uhr.“ Treat that code
 as "wait and retry", not as a failure. Code `75` with "restarting or
 unavailable" means one app is starting; retry after a few seconds.
+`cld admin maintenance bypass` prints a personal link for the administrator
+who runs it: their browser then sees the Cloud during the maintenance. Give
+the link only to that person, never paste it into chats, issues or logs.
 
 ## Agent API keys
 

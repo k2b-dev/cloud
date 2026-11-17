@@ -219,7 +219,15 @@
 .k2b-ui .k2b-link-card[data-layout="stacked"] .k2b-link-card__icon { width: 1.75rem; height: 1.75rem; }
 .k2b-ui .k2b-link-card[data-layout="stacked"] .k2b-link-card__glyph { font-size: 1rem; }
 .k2b-ui .k2b-link-card[data-layout="stacked"] .k2b-link-card__media { width: 1.75rem; }
+/* A stacked card names one thing in full: its title and description wrap instead of ending in "…", so a schedule's
+   end time and a title's last words stay visible. Cards of a row still end level. */
 .k2b-ui .k2b-link-card[data-layout="stacked"] .k2b-link-card__title { line-height: 1.25rem; }
+.k2b-ui .k2b-link-card[data-layout="stacked"] :is(.k2b-link-card__title, .k2b-link-card__description) {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
 .k2b-ui .k2b-link-card[data-layout="stacked"] .k2b-link-card__description {
   font-size: 0.8125rem;
   line-height: 1.125rem;

@@ -53,6 +53,7 @@ const lifecycle = createRuntimeLifecycle({
     });
     retentionWorker = await scheduler().process({ concurrency: 1 });
     await recover();
+    // runtime-timer: the callback runs through a task tracker, which quiesce gates.
     timer = setInterval(() => void recover(), MAIL_RECOVERY_MS);
     timer.unref();
   },

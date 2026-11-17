@@ -1,4 +1,13 @@
 import type { Worker } from "@k2b/sync";
+import {
+  isQuiesceTimeout,
+  processQuiesce,
+  type QuiesceController,
+  type QuiesceParticipant,
+  QuiesceTimeoutError,
+  runSupervised,
+  withDeadline,
+} from "./runtime-quiesce";
 
 export type RuntimeTaskTracker = ReturnType<typeof createRuntimeTaskTracker>;
 
@@ -32,7 +41,11 @@ const waitForRetry = (delayMs: number, signal: AbortSignal): Promise<void> =>
     if (signal.aborted) finish();
   });
 
-/** Restart a long-lived task after unexpected failure or completion. */
+/**
+ * Restart a long-lived task after unexpected failure or completion. A Sync
+ * worker that `run` creates is supervised the same way across maintenance
+ * quiesce: its resume retries without a limit instead of failing.
+ */
 export const superviseRuntimeTask = async (options: RuntimeTaskSupervisorOptions): Promise<void> => {
   const minRetryMs = options.minRetryMs ?? 250;
   const maxRetryMs = options.maxRetryMs ?? 5_000;
@@ -49,7 +62,7 @@ export const superviseRuntimeTask = async (options: RuntimeTaskSupervisorOptions
     const startedAt = Date.now();
     let error: unknown;
     try {
-      await options.run(options.signal);
+      await runSupervised(() => options.run(options.signal));
       if (options.signal.aborted) return;
       error = new Error(`${options.name ?? "Runtime task"} stopped unexpectedly`);
     } catch (caught) {
@@ -69,28 +82,134 @@ export const superviseRuntimeTask = async (options: RuntimeTaskSupervisorOptions
   }
 };
 
-/** Track process work outside Sync handlers, such as recovery scans and publishers. */
-export const createRuntimeTaskTracker = () => {
+/**
+ * Track process work outside Sync handlers, such as recovery scans and publishers.
+ * While the process is quiesced (maintenance stage „Ruhe“) `run()` accepts
+ * nothing and returns `null`, as when closed, and accepted tasks drain.
+ */
+export const createRuntimeTaskTracker = ({ controller = processQuiesce }: { controller?: QuiesceController } = {}) => {
   const tasks = new Set<Promise<unknown>>();
   let accepting = false;
+  let unregister: (() => void) | undefined;
+
+  const drain = async (): Promise<void> => {
+    while (tasks.size > 0) await Promise.allSettled([...tasks]);
+  };
+
+  const participant: QuiesceParticipant = {
+    layer: "work",
+    quiesce: (timeoutMs) => withDeadline(drain(), timeoutMs, `Runtime tasks did not drain within ${timeoutMs}ms`),
+    resume: async () => {},
+    inFlight: () => tasks.size,
+  };
 
   return {
     open: (): void => {
       accepting = true;
+      unregister ??= controller.register(participant);
     },
+    /** Accepts nothing more. Tasks still running stay counted by maintenance quiesce until they end. */
     close: (): void => {
       accepting = false;
+      unregister?.();
+      unregister = undefined;
     },
     run: <T>(operation: () => Promise<T>): Promise<T> | null => {
-      if (!accepting) return null;
+      if (!accepting || controller.quiesced) return null;
       const task = Promise.resolve().then(operation);
       tasks.add(task);
       const remove = () => tasks.delete(task);
       task.then(remove, remove);
       return task;
     },
-    drain: async (): Promise<void> => {
-      while (tasks.size > 0) await Promise.allSettled([...tasks]);
+    drain,
+  };
+};
+
+const isAbort = (error: unknown, signal: AbortSignal): boolean =>
+  error === signal.reason || (error instanceof Error && error.name === "AbortError");
+
+/**
+ * Run `run` now and every `intervalMs`, one run at a time. While the process
+ * is quiesced, ticks are skipped and the run in flight drains; on resume the
+ * missed ticks run once, like a scheduler with misfire "latest". `stop()`
+ * ends the timer, aborts `signal`, and waits for the run in flight. A failed
+ * run goes to `onError`, unless it failed with the abort of `stop()`.
+ */
+export const startRuntimeInterval = ({
+  run,
+  intervalMs,
+  onError,
+  runNow = true,
+  controller = processQuiesce,
+}: {
+  run(signal: AbortSignal): Promise<void>;
+  intervalMs: number;
+  onError(error: unknown): void;
+  /** Run once at start; default true. */
+  runNow?: boolean;
+  controller?: QuiesceController;
+}): { stop(): Promise<void> } => {
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) throw new RangeError("Runtime interval must be positive and finite");
+  const tasks = createRuntimeTaskTracker({ controller });
+  const abort = new AbortController();
+  let active: Promise<void> | null = null;
+  let missed = false;
+  tasks.open();
+
+  const tick = () => {
+    if (abort.signal.aborted) return;
+    if (controller.quiesced) {
+      missed = true;
+      return;
+    }
+    if (active) return;
+    // This pass covers what was missed: a regular tick between resume and the listener must not run a second pass.
+    missed = false;
+    active = tasks.run(async () => {
+      try {
+        await run(abort.signal);
+      } catch (error) {
+        // Only the abort that stop() caused is expected; any other failure is reported, also during stop.
+        if (!abort.signal.aborted || !isAbort(error, abort.signal)) {
+          try {
+            onError(error);
+          } catch {
+            // A failing report never becomes an unhandled rejection of the timer.
+          }
+        }
+      }
+    });
+    void active?.finally(() => {
+      active = null;
+      // A catch-up that resume asked for while this pass still ran.
+      if (missed && !controller.quiesced) catchUp();
+    });
+  };
+
+  const catchUp = () => {
+    // The pass still running (one that outlived its drain) ends first; it then catches up.
+    if (active) return;
+    missed = false;
+    tick();
+  };
+
+  // runtime-timer: the platform interval itself; skips ticks while quiesced.
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer === "object" && "unref" in timer) timer.unref();
+  const offChange = controller.onChange((quiesced) => {
+    if (!quiesced && missed) catchUp();
+  });
+  // Without runNow, the first run is the first tick, also when the interval starts while quiet.
+  if (runNow) tick();
+
+  return {
+    stop: async () => {
+      clearInterval(timer);
+      offChange();
+      tasks.close();
+      abort.abort();
+      await tasks.drain();
     },
   };
 };
@@ -115,7 +234,7 @@ export const stopRuntimeJobs = async (
   const tracked = Promise.race([
     tracker.drain(),
     new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`Runtime tasks did not drain within ${timeoutMs}ms`)), timeoutMs);
+      timer = setTimeout(() => reject(new QuiesceTimeoutError(`Runtime tasks did not drain within ${timeoutMs}ms`)), timeoutMs);
     }),
   ]);
   try {
@@ -134,9 +253,21 @@ type RuntimeLifecycleHooks = {
   stop(): Promise<void>;
 };
 
-export const createRuntimeLifecycle = (hooks: RuntimeLifecycleHooks) => {
+/**
+ * Start and stop one runtime, serialized. While the process is quiesced
+ * (maintenance stage „Ruhe“) a started runtime is stopped and started again
+ * on resume; `start()` while quiesced only marks it to start on resume.
+ */
+export const createRuntimeLifecycle = (
+  hooks: RuntimeLifecycleHooks,
+  { controller = processQuiesce }: { controller?: QuiesceController } = {},
+) => {
   let state: "stopped" | "started" | "cleanup-required" = "stopped";
+  // Wanted running, but held stopped by quiesce.
+  let held = false;
+  let stopping = 0;
   let transition = Promise.resolve();
+  let unregister: (() => void) | undefined;
 
   const serialize = (operation: () => Promise<void>): Promise<void> => {
     const result = transition.then(operation, operation);
@@ -144,35 +275,78 @@ export const createRuntimeLifecycle = (hooks: RuntimeLifecycleHooks) => {
     return result;
   };
 
+  const runStop = async () => {
+    state = "cleanup-required";
+    stopping += 1;
+    try {
+      await hooks.stop();
+      state = "stopped";
+    } finally {
+      stopping -= 1;
+    }
+  };
+
+  const runStart = async () => {
+    if (state === "started") return;
+    if (state === "cleanup-required") await runStop();
+
+    state = "cleanup-required";
+    try {
+      await hooks.start();
+      state = "started";
+    } catch (startError) {
+      try {
+        await runStop();
+      } catch (stopError) {
+        throw new AggregateError([startError, stopError], "Runtime startup and cleanup failed");
+      }
+      throw startError;
+    }
+  };
+
+  const participant: QuiesceParticipant = {
+    layer: "runtime",
+    quiesce: () =>
+      serialize(async () => {
+        if (state !== "started") return;
+        held = true;
+        try {
+          await runStop();
+        } catch (error) {
+          // A stop that only timed out ran; what it left running stays counted by its tracker or
+          // workers, and resume starts again without a second stop that would time out the same way.
+          // Any other failure leaves cleanup required: resume stops again before it starts.
+          if (isQuiesceTimeout(error)) state = "stopped";
+          throw error;
+        }
+      }),
+    resume: () =>
+      serialize(async () => {
+        if (!held || controller.quiesced) return;
+        // Held until the start succeeds, so a retry of resume starts it again.
+        await runStart();
+        held = false;
+      }),
+    inFlight: () => stopping,
+  };
+
   return {
     start: (): Promise<void> =>
       serialize(async () => {
-        if (state === "started") return;
-        if (state === "cleanup-required") {
-          await hooks.stop();
-          state = "stopped";
+        unregister ??= controller.register(participant);
+        if (controller.quiesced) {
+          held = true;
+          return;
         }
-
-        state = "cleanup-required";
-        try {
-          await hooks.start();
-          state = "started";
-        } catch (startError) {
-          try {
-            await hooks.stop();
-            state = "stopped";
-          } catch (stopError) {
-            throw new AggregateError([startError, stopError], "Runtime startup and cleanup failed");
-          }
-          throw startError;
-        }
+        await runStart();
       }),
     stop: (): Promise<void> =>
       serialize(async () => {
+        held = false;
+        unregister?.();
+        unregister = undefined;
         if (state === "stopped") return;
-        state = "cleanup-required";
-        await hooks.stop();
-        state = "stopped";
+        await runStop();
       }),
   };
 };

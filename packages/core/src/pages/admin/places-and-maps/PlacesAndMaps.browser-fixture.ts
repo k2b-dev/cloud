@@ -234,7 +234,7 @@ export async function placesAndMapsBrowserFixture() {
     const scenario = Object.entries(PLACES_AND_MAPS_SCENARIOS).find(([name]) => name === c.req.query("state"));
     state = (scenario?.[1] ?? PLACES_AND_MAPS_SCENARIOS.eingerichtet)();
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     const title = placesAndMapsMessages.resolve([locale]).t.title;

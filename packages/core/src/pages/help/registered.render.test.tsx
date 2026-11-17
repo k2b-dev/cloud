@@ -49,7 +49,7 @@ const apps: CloudRuntime["apps"] = [
     appearance: { accent: id === "spaces" ? "#16a34a" : "#d97706" },
     help: { manifestHash: id, pageBase: `/app/${id}/help`, baseLocale: "en" },
   })),
-  { id: "core", name: "Core", icon: "ti ti-cloud", description: "Core", routes: ["/help"], nav: { href: "/help", section: "primary" } },
+  { id: "core", name: "Cloud", icon: "ti ti-cloud", description: "Core", routes: ["/help"], nav: { href: "/help", section: "primary" } },
 ];
 const server = new Hono<{ Variables: AuthContext["Variables"] & { runtime: CloudRuntime } }>()
   .use(async (c, next) => {

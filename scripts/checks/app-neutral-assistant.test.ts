@@ -5,7 +5,7 @@ import { dirname, join, relative } from "node:path";
 import { appIdBranches, rule } from "./app-neutral-assistant";
 
 test("reports comparisons, switches, lookups, and patterns on app ids, names, and tool names", () => {
-  const lines = (source: string) => appIdBranches("chat.tsx", source).map((branch) => branch.line);
+  const lines = (source: string) => appIdBranches("chat.tsx", source).branches.map((branch) => branch.line);
   expect(
     lines(
       [
