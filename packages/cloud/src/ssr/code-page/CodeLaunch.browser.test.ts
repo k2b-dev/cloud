@@ -244,6 +244,7 @@ for (const theme of ["light", "dark"])
           expect(await page.locator(".cloud-code").textContent()).not.toContain("Läuft als du");
         }
         if (state === "pages" || state === "both") {
+          await settled(page);
           const list = page.locator(".cloud-code__pages .cloud-code__row");
           expect((await list.first().locator(".cloud-code__row-title").textContent())?.trim()).toBe("Startseite");
           if (width === 1440)

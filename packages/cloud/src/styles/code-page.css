@@ -1073,9 +1073,9 @@ a.cloud-code__row-main:focus-visible {
   flex-wrap: nowrap;
   gap: 0.625rem;
 }
-.cloud-code__public-tag {
-  --k2b-choice-color: var(--k2b-text-secondary);
-  --k2b-choice-background: var(--k2b-hover);
+.cloud-code .cloud-code__public-tag {
+  color: color-mix(in srgb, var(--k2b-text-secondary) 65%, var(--k2b-text));
+  background: var(--k2b-hover);
 }
 .cloud-code__skel-sub {
   width: 64%;
