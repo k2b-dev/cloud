@@ -225,74 +225,77 @@ describe("the v10 pause card", () => {
     for (const reason of authoringStopReasons) {
       for (const save of authoringStopSaves) {
         test(`${locale}: ${reason} / ${save} keeps its geometry through blocking, sending, failure and retry`, async () => {
-          for (const width of [1440, 390]) {
-            const { page, errors, close } = await open(locale, width, "light", reason, save);
-            try {
-              const initial = await boxes(page);
-              const same = async () => {
+          for (const theme of ["light", "dark"] as const)
+            for (const width of [1440, 390]) {
+              const { page, errors, close } = await open(locale, width, theme, reason, save);
+              try {
+                const initial = await boxes(page);
+                const same = async () => {
+                  await settled(page);
+                  const next = await boxes(page);
+                  near(next.card, initial.card);
+                  near(next.quiet, initial.quiet);
+                  near(next.button, initial.button);
+                };
+                const button = page.getByRole("button", { name: locale === "de" ? "Weiterarbeiten" : "Continue" });
+                await busy(page, true);
+                await same();
+                expect(await button.isDisabled()).toBe(true);
+                expect(await quiet(page).innerText()).toBe(
+                  locale === "de" ? "Geht, sobald Gustav fertig ist." : "Available when Gustav is finished.",
+                );
+                const capture = locale === "de" && theme === "light" && reason === "input_tokens" && save === "draft";
+                if (capture) await shot(page, "blocked", width);
+                await busy(page, false);
                 await settled(page);
-                const next = await boxes(page);
-                near(next.card, initial.card);
-                near(next.quiet, initial.quiet);
-                near(next.button, initial.button);
-              };
-              const button = page.getByRole("button", { name: locale === "de" ? "Weiterarbeiten" : "Continue" });
-              await busy(page, true);
-              await same();
-              expect(await button.isDisabled()).toBe(true);
-              expect(await quiet(page).innerText()).toBe(
-                locale === "de" ? "Geht, sobald Gustav fertig ist." : "Available when Gustav is finished.",
-              );
-              const capture = locale === "de" && reason === "input_tokens" && save === "draft";
-              if (capture) await shot(page, "blocked", width);
-              await busy(page, false);
-              await settled(page);
-              await button.click();
-              // settled: the send intentionally stays pending until finish(page, …).
-              await same();
-              expect(await button.isDisabled()).toBe(true);
-              expect(await count(page)).toBe(1);
-              expect(await button.locator(".k2b-button__label").evaluate((label) => getComputedStyle(label).opacity)).toBe("1");
-              expect(await quiet(page).innerText()).toBe(locale === "de" ? "Gustav macht weiter …" : "Gustav is continuing …");
-              if (capture) await shot(page, "sending", width);
-              await finish(page, false);
-              await page.getByRole("alert").waitFor();
-              await same();
-              expect(await button.isEnabled()).toBe(true);
-              if (capture) await shot(page, "failed", width);
-              await button.focus();
-              await page.keyboard.press("Shift");
-              await same();
-              expect(await button.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
-              await page.keyboard.press("Enter");
-              expect(await count(page)).toBe(2);
-              await finish(page, true);
-              await page
-                .getByText(locale === "de" ? "Setze die offene Arbeit fort." : "Continue the remaining work.", { exact: false })
-                .waitFor();
-              await same();
-              expect(await page.getByRole("button", { name: locale === "de" ? "Weiterarbeiten" : "Continue" }).count()).toBe(0);
-              expect(errors).toEqual([]);
-            } finally {
-              await close();
+                await button.click();
+                // settled: the send intentionally stays pending until finish(page, …).
+                await same();
+                expect(await button.isDisabled()).toBe(true);
+                expect(await count(page)).toBe(1);
+                expect(await button.locator(".k2b-button__label").evaluate((label) => getComputedStyle(label).opacity)).toBe("1");
+                expect(await quiet(page).innerText()).toBe(locale === "de" ? "Gustav macht weiter …" : "Gustav is continuing …");
+                if (capture) await shot(page, "sending", width);
+                await finish(page, false);
+                await page.getByRole("alert").waitFor();
+                await same();
+                expect(await button.isEnabled()).toBe(true);
+                if (capture) await shot(page, "failed", width);
+                await button.focus();
+                await page.keyboard.press("Shift");
+                await same();
+                expect(await button.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+                await page.keyboard.press("Enter");
+                expect(await count(page)).toBe(2);
+                await finish(page, true);
+                await page
+                  .getByText(locale === "de" ? "Setze die offene Arbeit fort." : "Continue the remaining work.", { exact: false })
+                  .waitFor();
+                await same();
+                expect(await page.getByRole("button", { name: locale === "de" ? "Weiterarbeiten" : "Continue" }).count()).toBe(0);
+                expect(errors).toEqual([]);
+              } finally {
+                await close();
+              }
             }
-          }
         }, 90_000);
       }
     }
   }
 
-  test("a historical receipt has no action and remains neutral", async () => {
-    for (const width of [1440, 390]) {
-      const { page, errors, close } = await open("de", width, "light", "input_tokens", "draft", "retired");
-      try {
-        expect(await page.locator(".assistant-authoring-stop button").count()).toBe(0);
-        expect(await quiet(page).innerText()).toBe("Arbeitspensum der Runde erreicht · Entwurf gespeichert, noch keine Version");
-        await shot(page, "retired", width);
-        expect(errors).toEqual([]);
-      } finally {
-        await close();
+  for (const theme of ["light", "dark"] as const) {
+    test(`a historical receipt has no action and remains neutral (${theme})`, async () => {
+      for (const width of [1440, 390]) {
+        const { page, errors, close } = await open("de", width, theme, "input_tokens", "draft", "retired");
+        try {
+          expect(await page.locator(".assistant-authoring-stop button").count()).toBe(0);
+          expect(await quiet(page).innerText()).toBe("Arbeitspensum der Runde erreicht · Entwurf gespeichert, noch keine Version");
+          if (theme === "light") await shot(page, "retired", width);
+          expect(errors).toEqual([]);
+        } finally {
+          await close();
+        }
       }
-    }
-  });
+    });
+  }
 });
