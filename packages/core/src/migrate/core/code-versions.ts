@@ -79,9 +79,7 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`CREATE INDEX IF NOT EXISTS review_chat_busy ON code.review_chat_outbox(kind,version_id,sequence) WHERE claimed_until IS NOT NULL OR attempts>0`.simple();
     await tx`CREATE OR REPLACE FUNCTION code.review_chat_live() RETURNS TRIGGER AS $$
     BEGIN
-      IF to_regprocedure('ai.enqueue_live_for_user(uuid,uuid,text,text,text[])') IS NOT NULL THEN
-        PERFORM ai.enqueue_live_for_user(gen_random_uuid(),NEW.user_id,NULL,NULL,ARRAY['code-versions','conversation-detail']::text[]);
-      END IF;
+      PERFORM code.enqueue_card_live(NEW.user_id,NEW.code_id,ARRAY['code-versions','conversation-detail']::text[]);
       RETURN NEW;
     END $$ LANGUAGE plpgsql`.simple();
     await tx`CREATE OR REPLACE TRIGGER review_chat_live AFTER INSERT OR UPDATE ON code.review_chat_work

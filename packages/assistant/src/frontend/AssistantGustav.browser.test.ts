@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation } from "@k2b/cloud/ai";
+import { CodeVersionCardSnapshotSchema } from "@k2b/cloud/contracts/code-version-cards";
 import { codePageFixture } from "@k2b/cloud/ssr/code-page/code-page.fixture";
 import type { Browser, Page, Route } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
@@ -532,6 +533,60 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       const [, appId, capabilityId] = capability;
       const input = route.request().postDataJSON().input as { owner?: { kind: string }; codeId?: string };
       codeCalls.push(`${appId}.${capabilityId}`);
+      if (scenario.cardPreview && capabilityId === "code.version.cards") {
+        const p = scenario.cardPreview;
+        const r = { ...cardReview, ...scenario.cardReview };
+        return route.fulfill({
+          json: {
+            data: {
+              items: [
+                {
+                  codeId: p.codeId,
+                  versionId: p.versionId,
+                  state: "available",
+                  snapshot: CodeVersionCardSnapshotSchema.parse({
+                    preview: {
+                      codeId: p.codeId,
+                      versionId: p.versionId,
+                      number: p.number,
+                      title: p.title,
+                      ownerKind: p.ownerKind,
+                      page: p.page ?? null,
+                      running: p.running,
+                      latest: p.latest,
+                      activated: p.activated,
+                      allowed: p.allowed,
+                      readiness: p.readiness,
+                    },
+                    review: {
+                      status: r.status,
+                      origin: r.origin,
+                      decidedBy: r.decidedBy,
+                      message: r.message,
+                      commentCount: r.commentCount,
+                      revision:
+                        "revision" in r && typeof r.revision === "object" && r.revision !== null
+                          ? { submittedNumber: null, ...r.revision }
+                          : null,
+                    },
+                    facts: [],
+                    code: { state: "active", activeVersionId: "v4", pausedAt: null, pausedBy: null },
+                    pages: { versionId: p.versionId, homeUrl: null, pages: [] },
+                    latest: p.latest > p.number ? { id: "77777777-7777-4777-8777-777777777777", number: p.latest } : null,
+                    permission: "editor",
+                    canManage: true,
+                    canActivate: true,
+                  }),
+                },
+              ],
+            },
+          },
+        });
+      }
+      if (scenario.cardPreview && capabilityId === "code.read")
+        return route.fulfill({ json: { data: { code: { state: "active", activeVersionId: "v4" } } } });
+      if (scenario.cardPreview && capabilityId === "code.version.read")
+        return route.fulfill({ json: { data: { pages: { versionId: cardVersionId, homeUrl: null, pages: [] } } } });
       if (appId === "mail")
         return route.fulfill({
           json: { data: { view: { title: "info@moebel-beispiel.de" } }, links: [{ rel: "open", href: "/app/mail/m/info" }] },
@@ -837,8 +892,8 @@ describe("Gustav", () => {
         name: "bereit",
         scenario: { cardPreview: cardPreview() },
         word: "Bereit, noch aus",
-        sentence: "Version 5 von Code von info@ einschalten?",
-        main: "Version 5 einschalten",
+        sentence: "Version 5 ist bereit zum Einschalten.",
+        main: "Einschalten",
       },
       {
         name: "ohne-beispiele",
@@ -847,14 +902,14 @@ describe("Gustav", () => {
           cardWords: { examples: { state: "none", passed: 0, total: 0, summary: "", explanation: "", items: [] } },
         },
         word: "Bereit, noch aus",
-        sentence: "Version 5 von Code von info@ einschalten?",
-        main: "Trotzdem einschalten",
+        sentence: "Version 5 ist bereit zum Einschalten.",
+        main: "Einschalten",
       },
       {
         name: "wartet-auf-admin",
         scenario: { cardPreview: cardPreview({ readiness: { state: "approval_pending" } }), cardReview: { status: "pending" } },
         word: "Wartet auf Admin",
-        sentence: "Version 5 von Code von info@ wartet auf die Freigabe eines Admins.",
+        sentence: "Version 5 wartet auf einen Admin. Du bekommst Bescheid.",
         main: null,
       },
       {
@@ -864,7 +919,7 @@ describe("Gustav", () => {
           cardReview: changes,
         },
         word: "Änderungen angefordert",
-        sentence: "Version 5 von Code von info@ braucht noch Änderungen.",
+        sentence: "Jana Probe wünscht Änderungen an Version 5.",
         main: "Gustav überarbeiten lassen",
       },
       {
@@ -874,7 +929,7 @@ describe("Gustav", () => {
           cardReview: { ...changes, revision: { state: "queued", reason: null } },
         },
         word: "Änderungen angefordert",
-        sentence: "Version 5 von Code von info@ braucht noch Änderungen.",
+        sentence: "Gustav überarbeitet Version 5, einmal von selbst.",
         main: null,
       },
       {
@@ -884,7 +939,7 @@ describe("Gustav", () => {
           cardReview: { ...changes, revision: { state: "running", reason: null } },
         },
         word: "Änderungen angefordert",
-        sentence: "Version 5 von Code von info@ braucht noch Änderungen.",
+        sentence: "Gustav überarbeitet Version 5, einmal von selbst.",
         main: null,
       },
       {
@@ -894,7 +949,7 @@ describe("Gustav", () => {
           cardReview: { ...changes, status: "rejected", message: "Keine gemeinsamen Ordner." },
         },
         word: "Abgelehnt",
-        sentence: "Version 5 von Code von info@ wurde abgelehnt.",
+        sentence: "Jana Probe hat Version 5 abgelehnt.",
         main: null,
       },
     ];
@@ -902,13 +957,12 @@ describe("Gustav", () => {
       for (const view of [desktop, panel, phone]) {
         const h = await open(view, state.scenario, { path: "/app/assistant/panel" });
         try {
-          const card = h.page.locator(".assistant-code-version .k2b-chat-decision");
-          await card.locator(".k2b-chat-decision__sentence").waitFor();
-          expect(await card.locator(".k2b-chat-decision__sentence").innerText()).toBe(state.sentence);
+          const card = h.page.locator(".assistant-code-version");
+          await card.locator("[role=status]").waitFor();
+          expect(await card.locator("[role=status]").innerText()).toBe(state.sentence);
           expect(await card.getAttribute("data-k2b-primary")).toBe("ai");
           const word = card.locator(".k2b-chat-decision__status");
-          if (state.word) expect((await word.innerText()).trim()).toBe(state.word);
-          else expect(await word.count()).toBe(0);
+          expect(await word.count()).toBe(0);
           if (state.main) expect(await card.getByRole("button", { name: state.main, exact: true }).count()).toBe(1);
           if (state.name === "aenderungen" && view === desktop) {
             await card.getByRole("button", { name: "Gustav überarbeiten lassen", exact: true }).click();
@@ -920,7 +974,7 @@ describe("Gustav", () => {
           const shown = await card.innerText();
           for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /\bcode_[a-z_]+/, /sp_2lg8/, /\b[0-9a-f]{8,}\b/])
             expect(shown).not.toMatch(pattern);
-          // The card has no frame and no shadow; the details lie on white inside the plum ground.
+          // The card has no frame and no shadow; details stay on the Code page.
           await settled(h.page);
           const look = await card.evaluate((element) => {
             const style = getComputedStyle(element);
@@ -973,12 +1027,10 @@ describe("Gustav", () => {
         expect(await line.innerText()).toContain("Jana Probe hat Version 5 freigegeben");
         await shot(h.page, `f-ereigniszeile-vorher-${view.name}-light`);
         await line.getByRole("button", { name: "Zur Karte" }).click();
-        const main = h.page
-          .locator(".assistant-code-version .k2b-chat-decision")
-          .getByRole("button", { name: "Version 5 einschalten", exact: true });
-        await h.page.waitForFunction(() => document.activeElement?.textContent?.includes("Version 5 einschalten"));
+        const main = h.page.locator(".assistant-code-version").getByRole("button", { name: "Einschalten", exact: true });
+        await h.page.waitForFunction(() => document.activeElement?.textContent?.includes("Einschalten"));
         expect(await main.evaluate((element) => element === document.activeElement)).toBe(true);
-        const box = await h.page.locator(".assistant-code-version .k2b-chat-decision").boundingBox();
+        const box = await h.page.locator(".assistant-code-version").boundingBox();
         expect(box && box.y >= 0 && box.y < view.height).toBe(true);
         expect(h.errors).toEqual([]);
         await shot(h.page, `f-ereigniszeile-nachher-${view.name}-light`);
@@ -1033,8 +1085,8 @@ describe("Gustav", () => {
           { path: "/app/assistant/panel" },
         );
         try {
-          const card = h.page.locator(".assistant-code-version .k2b-chat-decision");
-          await card.locator(".k2b-chat-decision__sentence").waitFor();
+          const card = h.page.locator(".assistant-code-version");
+          await card.locator("[role=status]").waitFor();
           heights.push(Math.round((await card.boundingBox())!.height));
         } finally {
           await h.close();
@@ -1058,19 +1110,19 @@ describe("Gustav", () => {
         { path: "/app/assistant/panel" },
       );
       try {
-        const card = h.page.locator(".assistant-code-version .k2b-chat-decision");
-        const switchOn = card.getByRole("button", { name: "Version 5 einschalten", exact: true });
+        const card = h.page.locator(".assistant-code-version");
+        const switchOn = card.getByRole("button", { name: "Einschalten", exact: true });
         await switchOn.waitFor();
         const top = async () => Math.round((await card.boundingBox())!.y);
         const before = await top();
         await switchOn.focus();
         await h.page.keyboard.press("Enter");
         await card.getByText("Version 5 wird eingeschaltet …").waitFor();
-        expect((await card.locator(".k2b-chat-decision__status").innerText()).trim()).toBe("Schaltet ein");
+        expect(await card.locator("[data-code-version-primary]").getAttribute("aria-busy")).toBe("true");
         expect(await top()).toBe(before);
         await shot(h.page, `f-karte-schaltet-ein-${view.name}-light`);
         answer();
-        await card.getByText("Cloud hat das Einschalten abgelehnt. Version 4 bleibt eingeschaltet.").waitFor();
+        await card.getByRole("alert").filter({ hasText: "Einschalten hat nicht geklappt." }).waitFor();
         expect(await top()).toBe(before);
         expect(await card.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
         expect(h.errors).toEqual([]);
@@ -1097,8 +1149,8 @@ describe("Gustav", () => {
       };
       const h = await open(view, scenario, { path: "/app/assistant/panel" });
       try {
-        const card = h.page.locator(".assistant-code-version .k2b-chat-decision");
-        await card.getByText("Die Admins wissen Bescheid. Du bekommst eine Mitteilung, sobald einer entschieden hat.").waitFor();
+        const card = h.page.locator(".assistant-code-version");
+        await card.getByText("Version 5 wartet auf einen Admin. Du bekommst Bescheid.").waitFor();
         expect(await card.innerText()).not.toContain("Jana");
         const before = (await card.boundingBox())!;
         scenario.cardPreview = cardPreview();
@@ -1107,11 +1159,11 @@ describe("Gustav", () => {
           (event) => (window as unknown as { harnessLive: { apply(events: unknown[]): Promise<void> } }).harnessLive.apply([event]),
           decided,
         );
-        await card.getByRole("button", { name: "Version 5 einschalten", exact: true }).waitFor();
-        expect(await card.innerText()).toContain("Jana Probe hat sie heute um");
+        await card.getByRole("button", { name: "Einschalten", exact: true }).waitFor();
+        expect(await card.innerText()).toContain("Jana Probe hat Version 5 freigegeben.");
         const after = (await card.boundingBox())!;
         expect(Math.round(after.y)).toBe(Math.round(before.y));
-        expect(h.activationCalls.filter((call) => call === "/api/code/activation/preview")).toHaveLength(2);
+        expect(h.codeCalls.filter((call) => call === "core.code.version.cards")).toHaveLength(2);
         expect(h.errors).toEqual([]);
         await shot(h.page, `f-karte-freigegeben-${view.name}-light`);
       } finally {

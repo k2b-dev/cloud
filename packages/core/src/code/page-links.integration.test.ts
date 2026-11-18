@@ -22,6 +22,7 @@ import { loadCodeChatPages, projectCodeChatPages } from "./chat-pages";
 import { chatPageManifest } from "./chat-pages.test-fixture";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { readCodeVersion } from "./store";
+import { readCodeVersionCards } from "./version-cards";
 
 registerSsrTestPlugin({ dev: true, rootDir: mkdtempSync(join(tmpdir(), "cloud-gl-render-")) });
 const [{ loadCodePage }, { default: CodePage }, { LocaleProvider }] = await Promise.all([
@@ -174,6 +175,28 @@ suiteFor(
           expect(result.ok).toBe(true);
           return result.ok ? (result.data.data.pages?.pages ?? []) : [];
         },
+        cards: async () => {
+          for (const knownPages of [[], [f.versionId]]) {
+            const result = await readCodeVersionCards(
+              { versions: [{ codeId: f.codeId, versionId: f.versionId }], knownPages },
+              { authority: authority(guest) },
+            );
+            expect(result.items).toMatchObject([{ state: "available", snapshot: { pages: { pages: [], homeUrl: null } } }]);
+          }
+          return [];
+        },
+        cardsCapability: async () => {
+          for (const knownPages of [[], [f.versionId]]) {
+            const result = await aiCapabilities.queries["code.version.cards"].run(
+              { versions: [{ codeId: f.codeId, versionId: f.versionId }], knownPages },
+              execution(guest, true),
+            );
+            expect(result.ok).toBe(true);
+            if (!result.ok) throw new Error("Version-card query failed");
+            expect(result.data.data.items).toMatchObject([{ state: "available", snapshot: { pages: { pages: [], homeUrl: null } } }]);
+          }
+          return [];
+        },
         ssr: async () => {
           const page = await ssr(f, guest);
           expect(page.html).not.toContain(`href="/code/${f.codeId}/`);
@@ -216,6 +239,14 @@ suiteFor(
   test("the same full paths retain a member owner's pages", async () => {
     const f = await fixture(member, "owner");
     expect((await readCodeVersion(input(f), { authority: authority(member, true) })).pages?.pages).toHaveLength(2);
+    for (const delegated of [false, true]) {
+      const cards = await readCodeVersionCards(
+        { versions: [{ codeId: f.codeId, versionId: f.versionId }] },
+        { authority: authority(member, delegated) },
+      );
+      expect(cards.items[0]?.state).toBe("available");
+      if (cards.items[0]?.state === "available") expect(cards.items[0].snapshot.pages?.pages).toHaveLength(2);
+    }
     const page = await ssr(f, member);
     expect(page.pages?.pages).toHaveLength(2);
     expect(page.html).toContain(`href="/code/${f.codeId}/`);

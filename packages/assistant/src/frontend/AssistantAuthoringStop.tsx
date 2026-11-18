@@ -1,7 +1,7 @@
 import type { AiCodeAuthoringStop } from "@k2b/cloud/ai";
 import { useAiChatActions } from "@k2b/cloud/ai/ui";
 import { Button, NoticeCard, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 
 /** A Cloud receipt, with one sentence and one quiet line. Continuing uses the normal send path. */
@@ -10,6 +10,13 @@ export default function AssistantAuthoringStop(props: {
   continuable: () => boolean;
   superseded: () => boolean;
 }) {
+  let host: HTMLDivElement | undefined;
+  const [phone, setPhone] = createSignal(false);
+  onMount(() => {
+    const observer = new ResizeObserver(([entry]) => setPhone((entry?.contentRect.width ?? 0) <= 560));
+    if (host) observer.observe(host);
+    onCleanup(() => observer.disconnect());
+  });
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const actions = useAiChatActions();
@@ -70,48 +77,43 @@ export default function AssistantAuthoringStop(props: {
   };
   // Reserve the action while this is the latest receipt; an overtaken receipt becomes compact.
   return (
-    <NoticeCard
-      tone="neutral"
-      icon="ti ti-player-pause"
-      layout="card"
-      class="ai-turn__notice assistant-authoring-stop"
-      title={title()}
-      actions={
-        <Show when={!props.superseded() && Boolean(actions.onContinueTurn)}>
-          <Button
-            ref={(element) => {
-              continueButton = element;
-            }}
-            variant="secondary"
-            size="md"
-            class={!available() ? "assistant-authoring-stop__retired" : undefined}
-            aria-hidden={!available() || undefined}
-            tabIndex={available() ? undefined : -1}
-            disabled={disabled()}
-            loading={sending()}
-            onClick={() => void continueWork()}
-          >
-            {t().authoringContinue}
-          </Button>
-        </Show>
-      }
-    >
-      <p class="assistant-authoring-stop__meta">
-        {/* All feedback shares one cell. Long translations stay readable, without clipping. */}
-        <For each={[receipt(), t().authoringContinueSending, t().authoringContinueFailed, t().authoringContinueBlocked]}>
-          {(text) => (
-            <span aria-hidden="true" class="assistant-authoring-stop__measure">
-              {text}
-            </span>
-          )}
-        </For>
-        <span role="status" aria-atomic="true">
-          {showFailure() ? "" : quiet()}
-        </span>
-        <span role="alert" aria-atomic="true">
-          {showFailure() ? t().authoringContinueFailed : ""}
-        </span>
-      </p>
-    </NoticeCard>
+    <div class="assistant-authoring-stop-host" ref={host}>
+      <NoticeCard
+        tone="neutral"
+        icon="ti ti-player-pause"
+        layout="card"
+        class="ai-turn__notice assistant-authoring-stop"
+        data-current={!props.superseded() ? "" : undefined}
+        title={<span title={title()}>{title()}</span>}
+        actions={
+          <Show when={!props.superseded() && Boolean(actions.onContinueTurn)}>
+            <Button
+              ref={(element) => {
+                continueButton = element;
+              }}
+              variant="secondary"
+              size={phone() ? "md" : "sm"}
+              class={!available() ? "assistant-authoring-stop__retired" : undefined}
+              aria-hidden={!available() || undefined}
+              tabIndex={available() ? undefined : -1}
+              disabled={disabled()}
+              loading={sending()}
+              onClick={() => void continueWork()}
+            >
+              {t().authoringContinue}
+            </Button>
+          </Show>
+        }
+      >
+        <p class="assistant-authoring-stop__meta" title={quiet()}>
+          <span role="status" aria-atomic="true">
+            {showFailure() ? "" : quiet()}
+          </span>
+          <span role="alert" aria-atomic="true">
+            {showFailure() ? t().authoringContinueFailed : ""}
+          </span>
+        </p>
+      </NoticeCard>
+    </div>
   );
 }

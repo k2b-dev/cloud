@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # App capabilities
@@ -1696,15 +1696,20 @@ Cloud validates the declaration at startup:
   `idempotency: "required"`;
 - every provider-owned Type used by `refs` or Universal Search is declared;
 - an app may declare at most 200 Types, 200 Queries, and 200 Actions;
-- the deterministic live manifest may not exceed 384 KiB.
+- the deterministic live manifest may not exceed 400 KiB.
 
 Every invocation transport caps the complete JSON request and result at 256
 KiB. The paginated discovery catalog has a separate 2 MiB page limit because
-one valid manifest may itself approach 384 KiB. Provider endpoints validate and
+one valid manifest may itself approach 400 KiB. Provider endpoints validate and
 serialize invocation results within the 256 KiB bound before returning them.
 Keep individual field limits comfortably below that envelope; large files,
 exports, and document bodies belong in app-owned upload or download APIs
 referenced by a capability.
+
+The capability registry separately caps each complete record at 512 KiB. The
+400 KiB manifest limit reserves 112 KiB for its app ID, presentation catalog
+and JSON envelope. That reserve does not exempt large translation catalogs
+from the complete-record limit.
 
 Each operation publishes input and data JSON Schema plus a stable schema hash.
 JSON Schema `pattern` and `patternProperties` use Unicode regular-expression
@@ -2226,7 +2231,9 @@ attempts, and one application hop. This covers one resource-reader check.
 The child cannot call another capability or return a stream, and it cannot
 call the parent application. Actions are not supported as nested calls.
 Do not retry a nested call automatically; another attempt needs a new parent
-invocation.
+invocation. A consumed or unavailable exchange lease returns HTTP 503
+`APP_UNAVAILABLE`; it must not be interpreted as a denial of resource access.
+An invalid token, changed authority or forbidden operation still fails closed.
 
 The child shares cancellation and the parent's remaining deadline. Its token
 expires no later than the parent token or source credential. Core removes

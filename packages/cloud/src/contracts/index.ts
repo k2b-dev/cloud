@@ -18,6 +18,7 @@ export * from "./code-read-model";
 export { type CodePageLinks, CodePageLinksSchema, type CodeRoute, CodeRouteSchema, codeOwnPath, matchCodeRoute } from "./code-routes";
 export * from "./code-secrets";
 export * from "./code-version";
+export type { CodeVersionCardSnapshot, CodeVersionCards } from "./code-version-cards";
 export * from "./commands";
 export * from "./contact-directory";
 export * from "./discussions";

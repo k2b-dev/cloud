@@ -1,4 +1,5 @@
 import { CodeCheckedVersionManifestSchema, CodeSecretVersionBindingSchema, CodeVersionPermissionSchema } from "@k2b/cloud/contracts";
+import { CODE_VERSION_CARD_BATCH_LIMIT } from "@k2b/cloud/contracts/code-version-cards";
 
 export {
   type CodeCheckedVersionManifest,
@@ -125,7 +126,13 @@ export const codeVersionContracts = {
       .object({
         codeId: CodeIdSchema,
         before: z.number().int().positive().optional().describe("Version number from nextBefore, exclusive."),
-        limit: z.number().int().min(1).max(50).default(20).describe("Maximum receipts in this byte-bounded page, up to 50."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(CODE_VERSION_CARD_BATCH_LIMIT)
+          .default(20)
+          .describe("Maximum receipts in this byte-bounded page, up to 50."),
       })
       .strict(),
     data: z.object({ items: z.array(submission), nextBefore: z.number().int().positive().nullable() }).strict(),

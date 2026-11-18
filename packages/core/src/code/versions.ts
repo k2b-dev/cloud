@@ -31,8 +31,8 @@ import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersi
 import { requireCodeEventAccess } from "./event-access";
 import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscriptions";
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
-import { type CodePolicyRow, codeOperationPolicyRow } from "./policy-contracts";
-import { effective } from "./policy-effective";
+import { type CodePolicy, type CodePolicyRow, codeOperationPolicyRow } from "./policy-contracts";
+import { type CodePolicyGroups, effective } from "./policy-effective";
 import { storeCodeVersionExplanation } from "./read-model/explanation";
 import { readModelNames } from "./read-model/names";
 import { assertCodeReviewTurn, enqueueCodeReviewChat } from "./review-chat-state";
@@ -797,6 +797,48 @@ export async function recordCodeVersionBaseline(codeId: string, versionId: strin
   await tx`INSERT INTO code.version_baselines(code_id,version_id) VALUES(${codeId},${versionId}::uuid)
     ON CONFLICT(code_id) DO UPDATE SET version_id=excluded.version_id`;
 }
+/** The immutable approval projection shared by execution validation and compact version-card reads. */
+export type CodeVersionApprovalEvidence = {
+  version: Pick<Snapshot, "source_hash" | "bundle_hash" | "manifest">;
+  manifest: z.infer<typeof CodeCheckedVersionManifestSchema>;
+  submitted: boolean;
+  withdrawn: boolean;
+  decision: { approved: boolean; binding: CodeVersionBinding; valid: boolean } | null;
+};
+/** Read-only approval classification. Execution separately verifies source and bundle bytes before using this. */
+export function assertCodeVersionApprovalEvidence(
+  code: Code,
+  evidence: CodeVersionApprovalEvidence,
+  policy: CodePolicy,
+  membership: CodePolicyGroups,
+  actualRows: readonly CodePolicyRow[] = [],
+): void {
+  const { version, manifest, decision } = evidence;
+  if (manifest.hashes.source !== version.source_hash || manifest.hashes.bundle !== version.bundle_hash)
+    throw new CodeVersionError("code_hash_mismatch", "Source or bundle hash does not match the immutable version.");
+  if (manifest.policyRows.includes("ask_sends"))
+    throw new CodeVersionError("code_sends_not_yet", "Unattended sending is available in Phase 3.");
+  if (manifest.policyRows.some((row) => row.startsWith("ask_")))
+    throw new CodeVersionError("code_unattended_forbidden", "In diesem Release läuft das nicht unbeaufsichtigt.");
+  if (!evidence.submitted) throw new CodeVersionError("code_approval_required", "The version must be submitted first.");
+  if (evidence.withdrawn) throw new CodeVersionError("code_approval_revoked", "This version was withdrawn.");
+  const rows = [...new Set([...manifest.policyRows, ...actualRows])].map((row) =>
+    effective(row, code.owner, policy.definition, membership),
+  );
+  if (rows.some((row) => row.value === "never"))
+    throw new CodeVersionError("code_policy_never", "The current Code policy forbids this version.");
+  if (decision && (!decision.approved || !decision.valid))
+    throw new CodeVersionError("code_approval_revoked", "This version approval is rejected or revoked.");
+  if (
+    decision &&
+    (decision.binding.sourceHash !== version.source_hash ||
+      decision.binding.bundleHash !== version.bundle_hash ||
+      decision.binding.manifestHash !== approvalArgsDigest(version.manifest))
+  )
+    throw new CodeVersionError("code_hash_mismatch", "Approval evidence does not match this version.");
+  if (rows.some((row) => row.value === "admin") && !decision?.approved)
+    throw new CodeVersionError("code_approval_required", "Cloud-admin version approval is required.");
+}
 /** Trusted C9/C4 seam. Caller holds policy then Code locks (or one consistent read snapshot).
  * Revalidates immutable evidence, current policy/groups and device/epoch revocation; never creates grants.
  */
@@ -819,32 +861,39 @@ export async function requireCodeVersionApproval(
   if (submission.withdrawn) throw new CodeVersionError("code_approval_revoked", "This version was withdrawn.");
   const policy = await readCodePolicySnapshot(db);
   const membership = await readCodePolicyGroups(code.owner.kind === "person" ? code.owner.userId : version.created_by, db);
-  const rows = [...new Set([...manifest.policyRows, ...actualRows])].map((row) =>
-    effective(row, code.owner, policy.definition, membership),
-  );
-  if (rows.some((row) => row.value === "never"))
-    throw new CodeVersionError("code_policy_never", "The current Code policy forbids this version.");
   const [decision] = await db<{ approved: boolean; binding: CodeVersionBinding; valid: boolean }[]>`
     SELECT d.approved,d.binding,(u.auth_epoch=d.auth_epoch AND (d.decided_device_id IS NULL OR EXISTS
       (SELECT 1 FROM auth.app_devices device WHERE device.id=d.decided_device_id AND device.user_id=d.decided_by AND device.revoked_at IS NULL))) AS valid
     FROM code.version_decisions d LEFT JOIN auth.users u ON u.id=d.decided_by WHERE d.version_id=${versionId}::uuid`;
-  if (decision && (!decision.approved || !decision.valid))
-    throw new CodeVersionError("code_approval_revoked", "This version approval is rejected or revoked.");
-  if (
-    decision &&
-    (decision.binding.sourceHash !== version.source_hash ||
-      decision.binding.bundleHash !== version.bundle_hash ||
-      decision.binding.manifestHash !== approvalArgsDigest(version.manifest))
-  )
-    throw new CodeVersionError("code_hash_mismatch", "Approval evidence does not match this version.");
-  if (rows.some((row) => row.value === "admin") && !decision?.approved)
-    throw new CodeVersionError("code_approval_required", "Cloud-admin version approval is required.");
+  assertCodeVersionApprovalEvidence(
+    code,
+    { version, manifest, submitted: true, withdrawn: false, decision: decision ?? null },
+    policy,
+    membership,
+    actualRows,
+  );
   for (const row of actualRows) {
     if (effective(row, code.owner, policy.definition, membership).value !== "admin") continue;
     const covered = await db`SELECT 1 FROM code.policy_coverage WHERE version_id=${versionId}::uuid AND row=${row}`;
     if (!covered.length) throw new CodeVersionError("code_approval_required", "The executed model needs AI approval for this version.");
   }
   return { policyRevision: policy.revision };
+}
+/** Reuse the already loaded approval ID; only admins need the canonical self-approval hint. */
+export async function pendingCodeVersionReadiness(
+  approvalId: string | null,
+  db: SQL,
+  context: CodeContext,
+): Promise<CodeActivationPreview["readiness"]> {
+  const person = codePerson(context, true);
+  if (!person.roles.includes("admin")) return { state: "approval_pending" };
+  const request = approvalId ? await approvals.get(approvalId, db, true) : null;
+  const selfApproval = Boolean(
+    request?.status === "pending" &&
+      request.expiresAt.getTime() > Date.now() &&
+      (await codeVersionSoleAdminNotice(request, person.id, context.authority, context.locale, db)),
+  );
+  return { state: "approval_pending", selfApproval };
 }
 /** Shared approval readiness for the version card and authoring handover. Never changes access. */
 export async function codeVersionReadiness(
@@ -864,13 +913,7 @@ export async function codeVersionReadiness(
     const [submission] = await db<
       { approval_id: string | null }[]
     >`SELECT approval_id FROM code.version_submissions WHERE version_id=${versionId}::uuid`;
-    const request = submission?.approval_id ? await approvals.get(submission.approval_id, db, true) : null;
-    const selfApproval = Boolean(
-      request?.status === "pending" &&
-        request.expiresAt.getTime() > Date.now() &&
-        (await codeVersionSoleAdminNotice(request, person.id, context.authority, context.locale, db)),
-    );
-    return { state: "approval_pending", selfApproval };
+    return pendingCodeVersionReadiness(submission?.approval_id ?? null, db, context);
   }
 }
 async function requireExecutionEditor(code: Code, context: CodeContext, tx: SQL) {

@@ -5,10 +5,12 @@ section: Platform services
 order: 972
 description: Read authorized version facts, example results and confirmed automation activity in the request language.
 tags: [code, versions, runs]
-updated: 2026-11-15
+updated: 2026-11-18
 ---
 
 # Code in words
+
+Compact multi-version surfaces use `core.code.version.cards` for one authorized batch, including operating state and openable pages; see [Code activation](/en/docs/platform/code-activation). Its localized facts use the same presentation service as this page.
 
 Use `core.code.version.words`, `core.code.run.words` and
 `core.code.activity.words` to present Code without reconstructing sentences from

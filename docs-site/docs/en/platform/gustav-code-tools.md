@@ -51,25 +51,29 @@ choose it.
 
 ## The version card
 
-After `code_submit`, the chat shows one card for the newest version, below
-Gustav's answer. It shows the version, execution subject and approval state:
+After `code_submit`, the chat shows a version card below Gustav's answer.
+One sentence states its approval or operating state. A quiet line gives a
+short summary, the reviewer's message, or the current operation's progress.
+The card keeps the same form after approval, activation, pause, or replacement.
+**See everything** opens that version on the Code page, with its access,
+triggers, examples and comments.
 
-- **What this version calls** lists each target with its operations by title
-  and app, such as "Import file · Files", as the Code page does, and marks what
-  is new against the running version. The operation ID stays in the tooltip. Calls whose target the Code picks while it runs share one row.
 - **Switch on** starts the same durable activation as the Code page. Core checks
   current owner authority and any required version approval before switching.
-  The card becomes one line after activation and keeps that state after reload.
-  Below that line it links the Code's own page, its next run and its runs where
-  they exist.
+  A lost response offers **Check status** before another attempt.
+- Once switched on, **Open** leads to the server-selected home page. If the
+  version has several openable pages, the arrow offers the others, in a menu
+  or a phone sheet. Versions without a page offer **See runs** alone. A paused
+  version leads back to the Code page to continue.
 - A version waiting for Cloud-admin approval or refused by policy says so.
   A phone or non-interactive credential sees why it cannot switch on.
-- A version replaced by a newer one becomes one line. Lost access to the Code
+- A version replaced by a newer one links to that version. Lost access to the Code
   and failed requests remain visible, with recovery through **Retry** or
   **Check status**.
 
-The card asks only Core's activation preview and, once switched on, the
-automation list for the next run. It does not inspect target rights or
+The card reads Core's public version, review and operating-state projections.
+Openable pages come from the version's server-projected page links, and the
+automation list supplies the next run. It does not inspect target rights or
 managers, and activation creates no shares. Target managers use normal
 sharing with the service account's handle. A host enables the card through
 `renderCodeVersion` in `AiChatActions`; without it, `code_submit` stays an

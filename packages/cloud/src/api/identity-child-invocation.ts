@@ -84,7 +84,13 @@ export function createIdentityChildInvocationRoutes(
         if (`app:${input.data.targetApp}` === parent.aud) return denied();
         c.req.raw.signal.throwIfAborted();
         const lease = await deadline.wait(() => leases.take(parent.jti));
-        if (!lease || `app:${lease.appId}` !== parent.aud) return denied();
+        // Missing/consumed exchange state says nothing about the target resource's permissions.
+        if (!lease)
+          return Response.json(
+            { code: "APP_UNAVAILABLE", message: "No child Query is available for this invocation; start a new parent invocation" },
+            { status: 503, headers: { "cache-control": "no-store" } },
+          );
+        if (`app:${lease.appId}` !== parent.aud) return denied();
         deadline.clear();
         deadline = createCapabilityDeadline(Math.max(0, Math.min(lease.deadline, parent.exp * 1000) - Date.now()), c.req.raw.signal);
         const authority = await deadline.wait(() => (dependencies.resolve ?? resolveInvocationAuthority)(parent));

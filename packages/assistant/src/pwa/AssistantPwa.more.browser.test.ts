@@ -348,16 +348,13 @@ describe("Code in the Cloud app", () => {
   test("a submitted Code version shows the one approval card with what changes, and a question is answered on the phone", async () => {
     const page = await open("screen=chat-x&chat=pflege&code=1");
     try {
-      const card = page.locator(".assistant-code-version .k2b-chat-decision");
-      await card.locator(".k2b-chat-decision__sentence").waitFor();
-      expect(await card.locator(".k2b-chat-decision__sentence").innerText()).toBe("Version 3 von Rechnungen ablegen einschalten?");
+      const card = page.locator(".assistant-code-version");
+      await card.locator('[role="status"]', { hasText: "Version 3 ist bereit zum Einschalten." }).waitFor();
       const text = await card.innerText();
-      expect(text).toContain("Details von Code · gegenüber Version 2");
-      expect(text).toContain("Darf neu Dateien importieren im Ordner Rechnungen");
-      expect(text).toContain("Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.");
-      // A phone cannot switch on; the card says where it works instead of hiding the version.
+      expect(text).not.toContain("Details von Code");
+      // A phone cannot switch on; the quiet line explains the credential restriction.
       expect(text).toContain("Am Telefon lässt sich nicht einschalten. Das geht am Computer.");
-      expect(await card.getByRole("button", { name: "Version 3 einschalten" }).isDisabled()).toBe(true);
+      expect(await card.getByRole("button", { name: "Einschalten", exact: true }).isDisabled()).toBe(true);
       expect(text).not.toMatch(/fo_rechnungen|code\.ts|Unterschied/);
       // Nothing on the card is wider than the phone.
       expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
@@ -375,18 +372,16 @@ describe("Code in the Cloud app", () => {
 
   test("on the phone the card loads, waits for an admin, says a rejection with its reason, and retries an outage", async () => {
     const fits = (page: Page) => page.locator(".assistant-code-version").evaluate((element) => element.scrollWidth <= element.clientWidth);
-    const word = (page: Page) => page.locator(".assistant-code-version .k2b-chat-decision__status").innerText();
-    // Loading: the card holds its place with the word "Lädt" until Core answers.
-    const loading = await open("screen=chat-x&chat=pflege&code=pending&hold=activation/preview");
+    const word = (page: Page) => page.locator(".assistant-code-version [role=status]").innerText();
+    // Loading keeps the same card until the authorized batch answers.
+    const loading = await open("screen=chat-x&chat=pflege&code=pending&hold=code.version.cards");
     try {
-      await loading.locator(".assistant-code-version .k2b-chat-decision__status", { hasText: "Lädt" }).waitFor();
+      await loading.locator(".assistant-code-version [role=status]", { hasText: "Diese Version wird geladen" }).waitFor();
       await shot(loading, "f-pwa-karte-laedt-390");
       await loading.evaluate(() => (window as unknown as { harness: { release(): void } }).harness.release());
-      await loading.getByText("Die Admins wissen Bescheid. Du bekommst eine Mitteilung, sobald einer entschieden hat.").waitFor();
-      expect((await word(loading)).trim()).toBe("Wartet auf Admin");
-      expect(await loading.locator(".assistant-code-version").innerText()).toContain(
-        "Bis dahin bleibt Version 2 eingeschaltet. Du musst nichts tun.",
-      );
+      await loading.getByText("Version 3 wartet auf einen Admin. Du bekommst Bescheid.").waitFor();
+      expect((await word(loading)).trim()).toBe("Version 3 wartet auf einen Admin. Du bekommst Bescheid.");
+      expect(await loading.locator(".assistant-code-version .k2b-chat-decision__details").count()).toBe(0);
       expect(
         await loading
           .locator(".assistant-code-version")
@@ -400,10 +395,13 @@ describe("Code in the Cloud app", () => {
     }
     const rejected = await open("screen=chat-x&chat=pflege&code=rejected");
     try {
-      await rejected.getByText("Rechnungen bitte weiter von Hand ablegen.").waitFor();
-      expect((await word(rejected)).trim()).toBe("Abgelehnt");
+      await rejected.getByText("Rechnungen bitte weiter von Hand ablegen.", { exact: false }).waitFor();
+      expect((await word(rejected)).trim()).toBe("Jana Probe hat Version 3 abgelehnt.");
       const text = await rejected.locator(".assistant-code-version").innerText();
-      expect(text).toContain("Jana Probe hat sie nicht freigegeben. Version 2 bleibt eingeschaltet.");
+      // v10's quiet line joins facts without sentence-ending punctuation.
+      expect(await rejected.locator(".assistant-code-version__quiet").innerText()).toBe(
+        "„Rechnungen bitte weiter von Hand ablegen.“ · Version 2 bleibt eingeschaltet",
+      );
       expect(text).not.toContain("rejected or revoked");
       expect(await fits(rejected)).toBe(true);
       await shot(rejected, "f-pwa-karte-abgelehnt-390");
@@ -411,14 +409,14 @@ describe("Code in the Cloud app", () => {
       await rejected.context().close();
     }
     // An outage says so with "Erneut versuchen", which reads the card again once Core answers.
-    const down = await open("screen=chat-x&chat=pflege&code=pending&fail=activation/preview");
+    const down = await open("screen=chat-x&chat=pflege&code=pending&fail=code.version.cards");
     try {
-      await down.getByText("Diese Version konnte nicht geladen werden. Cloud hat dabei nichts geändert.").waitFor();
-      expect((await word(down)).trim()).toBe("Nicht geladen");
+      await down.getByRole("alert").filter({ hasText: "Diese Version konnte nicht geladen werden." }).waitFor();
+      expect(await down.locator(".assistant-code-version__quiet").innerText()).toBe("Cloud hat nichts geändert");
       await shot(down, "f-pwa-karte-fehler-390");
       await down.evaluate(() => (window as unknown as { harness: Harness }).harness.fail.clear());
       await down.locator(".assistant-code-version").getByRole("button", { name: "Erneut versuchen" }).click();
-      await down.getByText("Die Admins wissen Bescheid.", { exact: false }).waitFor();
+      await down.getByText("Version 3 wartet auf einen Admin. Du bekommst Bescheid.").waitFor();
     } finally {
       await down.context().close();
     }

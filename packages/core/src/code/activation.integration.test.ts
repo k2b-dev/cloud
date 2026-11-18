@@ -2,14 +2,22 @@ import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } f
 import { sql, startProcessSync } from "@k2b/cloud";
 import { migrateCloudAi } from "@k2b/cloud/ai";
 import * as provider from "@k2b/cloud/capabilities/server";
+import { migrateCloudCapabilities } from "@k2b/cloud/capabilities/store";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import type { CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
+import {
+  CAPABILITY_MAX_RESULT_BYTES,
+  type CodeCheckedVersionManifest,
+  CodeCheckedVersionManifestSchema,
+  type User,
+} from "@k2b/cloud/contracts";
+import { codeVersionCardsContract } from "@k2b/cloud/contracts/code-version-cards";
 import { coreSettings } from "@k2b/cloud/services";
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { codeVersionCardTransport } from "../../test/code-version-cards.transport.test-fixture";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
@@ -30,6 +38,7 @@ import type { Code } from "./contracts";
 import * as explanations from "./read-model/explanation";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode, insertCodeRun, readCode } from "./store";
+import { readCodeVersionCards } from "./version-cards";
 import { submitCodeVersion } from "./versions";
 
 const fixed = new Date("2026-10-31T12:00:00.000Z");
@@ -183,12 +192,230 @@ suiteFor("database", "nats")("durable Code activation", () => {
         ...(id === "A" ? { entrypoints: ["run"] } : {}),
       })),
     };
-    return submitCodeVersion({ codeId: code.id, sourceFiles, bundle, manifest, baseVersionId }, owner);
+    return submitCodeVersion(
+      { codeId: code.id, sourceFiles, bundle, manifest: CodeCheckedVersionManifestSchema.parse(manifest), baseVersionId },
+      owner,
+    );
   }
   async function start(code: Code, versionId: string, ctx = owner) {
     return activateCodeVersion({ codeId: code.id, versionId, activationId: crypto.randomUUID() }, ctx);
   }
   const status = (code: Code, id: string) => readCodeActivation({ codeId: code.id, activationId: id }, owner);
+  test("a batch of N displayed versions and a targeted invalidation have a fixed SQL budget, without detail refreshes", async () => {
+    const code = await newCode();
+    const saved: Array<{ codeId: string; versionId: string }> = [];
+    let base: string | null = null;
+    for (let n = 0; n < 6; n++) {
+      const receipt = await version(code, [], base);
+      base = receipt.version.id;
+      saved.push({ codeId: code.id, versionId: base });
+    }
+    await sql`UPDATE code.codes SET active_version_id=${base}::uuid,state='active' WHERE id=${code.id}`;
+    const meter = await meterSql();
+    try {
+      for (const versions of [saved.slice(0, 1), saved, saved]) {
+        const statements = await meter.during(async () => {
+          const result = await readCodeVersionCards(
+            { versions, knownPages: versions === saved ? saved.map((v) => v.versionId) : [] },
+            owner,
+          );
+          expect(result.items).toHaveLength(versions.length);
+          expect(result.items.every((item) => item.state === "available")).toBe(true);
+        });
+        // One Code read, its shares + effective permission, one version projection. No SQL per historical card.
+        expect(statements).toHaveLength(4);
+        expect(statements.some((statement) => /UPDATE|code\.calls|code\.runs|rsql/i.test(statement))).toBe(false);
+      }
+    } finally {
+      await meter.close();
+    }
+  });
+  test("the public transport continues two different owners and reuses the same owner's answer within an invocation", async () => {
+    // A resource owns exactly one Code. Multiple versions of each Code reuse its owner answer.
+    const codes = [await newCode(), await newCode()];
+    const versions: Array<{ codeId: string; versionId: string }> = [];
+    for (const code of codes) {
+      const saved = await version(code, []);
+      versions.push({ codeId: code.id, versionId: saved.version.id });
+    }
+    for (const [index, code] of codes.entries()) {
+      const newer = await version(code, [], versions[index]!.versionId);
+      versions.push({ codeId: code.id, versionId: newer.version.id });
+    }
+    await sql`DELETE FROM code.shares WHERE code_id=ANY(${sql.array(
+      codes.map((code) => code.id),
+      "text",
+    )}::text[])`;
+    const unavailable = context();
+    if (unavailable.authority.actor.kind !== "user") throw new Error("Expected person fixture");
+    unavailable.authority.credentialKind = "invocation";
+    unavailable.authority.actor.delegation = {
+      kind: "invocation",
+      callingAppId: "assistant",
+      credentialKind: "session",
+      invocationId: nextOwnerId,
+    };
+    const missingExchange = await readCodeVersionCards({ versions }, unavailable);
+    expect(missingExchange.items).toHaveLength(4);
+    expect(missingExchange.items.every((item) => item.state === "failed")).toBe(true);
+    expect(missingExchange.remaining).toEqual([]);
+    unavailable.authority.actor.delegation.parentInvocationId = adminId;
+    unavailable.query = async () => {
+      throw new Error("A child must never attempt a second hop");
+    };
+    expect((await readCodeVersionCards({ versions }, unavailable)).items.every((item) => item.state === "failed")).toBe(true);
+    const transport = await codeVersionCardTransport(owner.authority);
+    try {
+      const first = await transport.invoke(
+        { appId: "core", capabilityId: "code.version.cards", kind: "query", input: { versions } },
+        codeVersionCardsContract.data,
+      );
+      expect(first.ok).toBe(true);
+      if (!first.ok) throw new Error(JSON.stringify(first.error));
+      expect(first.data.data.items.length).toBeGreaterThan(0);
+      expect(first.data.data.remaining.length).toBeGreaterThan(0);
+      expect(first.data.data.items.length + first.data.data.remaining.length).toBe(4);
+      const second = await transport.invoke(
+        { appId: "core", capabilityId: "code.version.cards", kind: "query", input: { versions: first.data.data.remaining } },
+        codeVersionCardsContract.data,
+      );
+      expect(second.ok).toBe(true);
+      if (!second.ok) throw new Error(JSON.stringify(second.error));
+      expect([...first.data.data.items, ...second.data.data.items]).toHaveLength(4);
+      expect(
+        [...first.data.data.items, ...second.data.data.items].every(
+          (item) => item.state === "available" && item.snapshot.permission === "editor",
+        ),
+      ).toBe(true);
+      expect(second.data.data.remaining).toEqual([]);
+      expect(transport.childOwners).toHaveLength(2);
+      expect(new Set(transport.childOwners).size).toBe(2);
+      expect(transport.taken.size).toBe(2);
+    } finally {
+      transport.dispose();
+    }
+  });
+
+  test("the real public transport fits page-heavy batches below 256 KiB and continues only remaining refs", async () => {
+    const code = await newCode();
+    const manifest: CodeCheckedVersionManifest = CodeCheckedVersionManifestSchema.parse({
+      version: 1,
+      entry: "code.ts",
+      ai: false,
+      policyRows: [],
+      permissions: [],
+      hashes: { source: "a".repeat(64), bundle: "b".repeat(64), sdk: "c".repeat(64) },
+      entrypoints: Array.from({ length: 100 }, (_, n) => ({
+        kind: "route",
+        entrypoint: `page-${n}`,
+        title: `Seite ${n} ${"Übersicht ".repeat(14)}`,
+        cron: null,
+        file: "code.ts",
+        line: n + 1,
+        route: { method: "GET", path: `/page-${n}`, public: false, page: true },
+      })),
+    });
+    const versions: Array<{ codeId: string; versionId: string }> = [];
+    for (let number = 1; number <= 50; number++) {
+      const [saved] = await sql<
+        { id: string }[]
+      >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by,created_at)
+        VALUES(${code.id},${number},'{}','',${manifest.hashes.source},${manifest.hashes.bundle},${JSON.stringify(manifest)}::text::jsonb,0,0,${ownerId}::uuid,${fixed.toISOString()}::timestamptz) RETURNING id`;
+      versions.push({ codeId: code.id, versionId: saved!.id });
+    }
+    const transport = await codeVersionCardTransport(owner.authority);
+    try {
+      let remaining = versions;
+      const received = new Set<string>();
+      for (let calls = 0; remaining.length && calls < versions.length; calls++) {
+        const result = await transport.invoke(
+          { appId: "core", capabilityId: "code.version.cards", kind: "query", input: { versions: remaining } },
+          codeVersionCardsContract.data,
+        );
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error(JSON.stringify(result.error));
+        expect(result.data.data.remaining.length).toBeLessThan(remaining.length);
+        for (const item of result.data.data.items) {
+          expect(item.state).toBe("available");
+          if (item.state === "available") expect(item.snapshot.pages?.pages).toHaveLength(100);
+          expect(received.has(item.versionId)).toBe(false);
+          received.add(item.versionId);
+        }
+        remaining = result.data.data.remaining;
+      }
+      expect(received.size).toBe(50);
+      expect(remaining).toEqual([]);
+      expect(transport.responses.length).toBeGreaterThan(1);
+      expect(transport.responses[0]!.data.remaining.length).toBeGreaterThan(0);
+      expect(transport.responses.every((response) => response.bytes <= CAPABILITY_MAX_RESULT_BYTES)).toBe(true);
+      expect(transport.publicResponseBytes.every((bytes) => bytes <= CAPABILITY_MAX_RESULT_BYTES)).toBe(true);
+    } finally {
+      transport.dispose();
+    }
+  });
+
+  test("version-card rights matrix: owner, reader, admin view, shared chat and revoked rights", async () => {
+    // Grant revocation is independent of an unavailable foreign owner reader.
+    const code = await newCode("person");
+    const saved = await version(code, [], null, "item.change", undefined, true);
+    const versions = [{ codeId: code.id, versionId: saved.version.id }];
+    const [grant] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(user_id,permission) VALUES(${nextOwnerId}::uuid,'read') RETURNING id`;
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.id},${grant!.id}::uuid)`;
+    const read = (ctx: CodeContext) => readCodeVersionCards({ versions }, ctx).then((result) => result.items[0]!);
+    expect(await read(owner)).toMatchObject({ state: "available", snapshot: { permission: "editor", canManage: true } });
+    expect(await read(context(nextOwnerId))).toMatchObject({
+      state: "available",
+      snapshot: {
+        permission: "reader",
+        canManage: false,
+        review: { message: null, origin: { kind: "cli" } },
+        pages: { pages: [{ isRoot: true }, { isRoot: false }] },
+      },
+    });
+    expect(await read(administrator)).toMatchObject({ state: "available", snapshot: { permission: "reader", canManage: false } });
+    await sql`DELETE FROM code.shares WHERE access_id=${grant!.id}::uuid`;
+    // Seeing a reference in a shared conversation is no Code grant, and neither is a previous successful read.
+    expect(await read(context(nextOwnerId))).toEqual({ ...versions[0]!, state: "denied" });
+    const guest = context(ownerId);
+    if (guest.authority.actor.kind === "user") guest.authority.actor.user = { ...guest.authority.actor.user, profile: "guest" };
+    expect(await readCodeVersionCards({ versions, knownPages: [saved.version.id] }, guest)).toMatchObject({
+      items: [{ state: "available", snapshot: { pages: { pages: [], homeUrl: null } } }],
+    });
+  });
+  test("version-card pages require membership for direct and delegated reads, including owners and existing grants", async () => {
+    const personalId = `c_c9p${String(++ordinal).padStart(4, "0")}`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by)
+      VALUES(${personalId},'person',${ownerId}::uuid,'Personal',${ownerId}::uuid)`;
+    for (const code of [await newCode(), (await findCode(personalId))!]) {
+      const saved = await version(code, [], null, "item.change", undefined, true);
+      await sql`UPDATE code.codes SET active_version_id=${saved.version.id}::uuid,state='active' WHERE id=${code.id}`;
+      const versions = [{ codeId: code.id, versionId: saved.version.id }];
+      expect(await readCodeVersionCards({ versions }, owner)).toMatchObject({
+        items: [{ state: "available", snapshot: { pages: { pages: [{ isRoot: true }, { isRoot: false }] } } }],
+      });
+      for (const delegated of [false, true]) {
+        const guest = context(ownerId);
+        if (guest.authority.actor.kind !== "user") throw new Error("Expected person fixture");
+        guest.authority.actor.user = { ...guest.authority.actor.user, profile: "guest", roles: ["guest"] };
+        if (delegated) {
+          guest.authority.credentialKind = "invocation";
+          guest.authority.actor.delegation = {
+            kind: "invocation",
+            callingAppId: "assistant",
+            credentialKind: "session",
+            invocationId: nextOwnerId,
+          };
+        }
+        for (const knownPages of [[], [saved.version.id]]) {
+          expect(await readCodeVersionCards({ versions, knownPages }, guest)).toMatchObject({
+            items: [{ state: "available", snapshot: { pages: { pages: [], homeUrl: null } } }],
+          });
+        }
+      }
+    }
+  });
   test("page handoff preview follows current activity and editor rights through the canonical page selection", async () => {
     const code = await newCode();
     const submitted = await version(code, [], null, "item.change", undefined, true);
@@ -314,6 +541,7 @@ suiteFor("database", "nats")("durable Code activation", () => {
   });
   beforeAll(async () => {
     await migrateCloudAi();
+    await migrateCloudCapabilities();
   });
   beforeEach(() => {
     ownerAdministrator = ownerId;
@@ -328,6 +556,91 @@ suiteFor("database", "nats")("durable Code activation", () => {
     readersSpy?.mockRestore();
     setSystemTime();
     await runtime?.stop();
+  });
+
+  test("every version-card trigger queues the author and Code without adding client statements to its write", async () => {
+    const attachments = await sql<{ table_name: string; trigger_name: string }[]>`
+      SELECT t.tgrelid::regclass::text AS table_name,t.tgname AS trigger_name
+      FROM pg_trigger t WHERE t.tgfoid='code.version_card_live()'::regprocedure ORDER BY 1,2`;
+    expect(attachments).toEqual([
+      { table_name: "code.activations", trigger_name: "activation_insert_live" },
+      { table_name: "code.activations", trigger_name: "activation_live" },
+      { table_name: "code.version_decisions", trigger_name: "decision_live" },
+      { table_name: "code.version_withdrawals", trigger_name: "withdrawal_live" },
+    ]);
+    const code = await newCode();
+    const submitted = await version(code, []);
+    const versionId = submitted.version.id;
+    const activationId = crypto.randomUUID();
+    const [submission] = await sql<
+      { binding: unknown }[]
+    >`SELECT binding FROM code.version_submissions WHERE version_id=${versionId}::uuid`;
+    const bound = JSON.stringify(submission!.binding);
+    const cases = [
+      {
+        name: "decision",
+        write:
+          () => sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch,outcome)
+          VALUES(${versionId}::uuid,${bound}::text::jsonb,true,true,${ownerId}::uuid,'web',0,'approved')`,
+        reset: () => sql`DELETE FROM code.version_decisions WHERE version_id=${versionId}::uuid`,
+        disable: () => sql`ALTER TABLE code.version_decisions DISABLE TRIGGER decision_live`,
+        enable: () => sql`ALTER TABLE code.version_decisions ENABLE TRIGGER decision_live`,
+      },
+      {
+        name: "withdrawal",
+        write: () => sql`INSERT INTO code.version_withdrawals(version_id,withdrawn_by) VALUES(${versionId}::uuid,${ownerId}::uuid)`,
+        reset: () => sql`DELETE FROM code.version_withdrawals WHERE version_id=${versionId}::uuid`,
+        disable: () => sql`ALTER TABLE code.version_withdrawals DISABLE TRIGGER withdrawal_live`,
+        enable: () => sql`ALTER TABLE code.version_withdrawals ENABLE TRIGGER withdrawal_live`,
+      },
+      {
+        name: "activation insert",
+        write: () => sql`INSERT INTO code.activations(id,code_id,version_id,activating_person,locale,cloud_admin,state)
+          VALUES(${activationId}::uuid,${code.id},${versionId}::uuid,${ownerId}::uuid,'de',false,'active')`,
+        reset: () => sql`DELETE FROM code.activations WHERE id=${activationId}::uuid`,
+        disable: () => sql`ALTER TABLE code.activations DISABLE TRIGGER activation_insert_live`,
+        enable: () => sql`ALTER TABLE code.activations ENABLE TRIGGER activation_insert_live`,
+      },
+      {
+        name: "activation update",
+        write: () => sql`UPDATE code.activations SET state='active' WHERE id=${activationId}::uuid`,
+        reset: () => sql`UPDATE code.activations SET state='pending' WHERE id=${activationId}::uuid`,
+        disable: () => sql`ALTER TABLE code.activations DISABLE TRIGGER activation_live`,
+        enable: () => sql`ALTER TABLE code.activations ENABLE TRIGGER activation_live`,
+      },
+    ];
+    const meter = await meterSql();
+    try {
+      for (const entry of cases) {
+        if (entry.name === "activation update") await entry.reset();
+        await entry.disable();
+        let baseline: string[];
+        try {
+          baseline = await meter.during(async () => {
+            await entry.write();
+          });
+          await entry.reset();
+        } finally {
+          await entry.enable();
+        }
+        const before = await sql`SELECT seq FROM events.outbox WHERE app_id='core' AND kind='live'
+          AND payload->'d'->>'codeId'=${code.id}`;
+        const enabled = await meter.during(async () => {
+          await entry.write();
+        });
+        expect({ path: entry.name, baseline: baseline.length, enabled: enabled.length }).toEqual({
+          path: entry.name,
+          baseline: 1,
+          enabled: 1,
+        });
+        const after = await sql<{ ordering_key: string; data: unknown }[]>`SELECT ordering_key,payload->'d' AS data
+          FROM events.outbox WHERE app_id='core' AND kind='live' AND payload->'d'->>'codeId'=${code.id} ORDER BY seq`;
+        expect(after).toHaveLength(before.length + 1);
+        expect(after.at(-1)).toMatchObject({ ordering_key: `u:${ownerId}`, data: { codeId: code.id, domains: ["code-versions"] } });
+      }
+    } finally {
+      await meter.close();
+    }
   });
 
   test("activation invalidates the author's card at commit without waiting for chat delivery", async () => {
