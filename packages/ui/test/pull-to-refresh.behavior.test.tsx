@@ -300,7 +300,8 @@ else {
       view.wheel(view.row, -400);
       expect(view.calls).toHaveLength(1);
 
-      jest.advanceTimersByTime(2600);
+      // 400 ms have passed; the mark shows for 2600 ms in all.
+      jest.advanceTimersByTime(2200);
       expect(view.state()).toBe("idle");
       expect(status().querySelector(".k2b-sr-only")?.textContent).toBe("");
       // The hint slides out with the indicator instead of vanishing first.
