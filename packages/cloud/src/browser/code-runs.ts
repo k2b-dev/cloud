@@ -1,14 +1,20 @@
 import { invokeCapabilityWithDataSchema } from "../capabilities/client";
 import { applyCodeOutputEvent, type CodeOutputWindow } from "../code/output";
-import { CodeRunEntriesInputSchema, CodeRunEntriesSchema, CodeRunLiveEventSchema, type CodeRunEntries } from "../code/run-ledger";
+import { type CodeRunEntries, CodeRunEntriesInputSchema, CodeRunEntriesSchema, CodeRunLiveEventSchema } from "../code/run-ledger";
 import { liveConnection } from "./live";
 
 /** Browser query for the permission-aware Core run-output service also used by SSR. */
 export function readCodeRunEntries(scope: { codeId: string; runId: string }, signal?: AbortSignal) {
-  return invokeCapabilityWithDataSchema({
-    appId: "core", capabilityId: "code.run.entries", kind: "query",
-    input: CodeRunEntriesInputSchema.parse(scope), ...(signal ? { signal } : {}),
-  }, CodeRunEntriesSchema);
+  return invokeCapabilityWithDataSchema(
+    {
+      appId: "core",
+      capabilityId: "code.run.entries",
+      kind: "query",
+      input: CodeRunEntriesInputSchema.parse(scope),
+      ...(signal ? { signal } : {}),
+    },
+    CodeRunEntriesSchema,
+  );
 }
 
 /** One run on the existing Core socket. Admission checks management rights;
@@ -35,11 +41,16 @@ export function followCodeRun(
   const refresh = () => {
     if (closed) return Promise.resolve();
     admitted = true;
-    refreshing ??= options.snapshot(abort.signal).then((snapshot) => {
-      if (closed) return;
-      current = snapshot;
-      options.apply(current);
-    }).finally(() => { refreshing = undefined; });
+    refreshing ??= options
+      .snapshot(abort.signal)
+      .then((snapshot) => {
+        if (closed) return;
+        current = snapshot;
+        options.apply(current);
+      })
+      .finally(() => {
+        refreshing = undefined;
+      });
     return refreshing;
   };
   const fail = (reason: "revoked" | "unavailable") => {
@@ -67,7 +78,10 @@ export function followCodeRun(
         const output: CodeOutputWindow | null = current.output;
         if (!output) continue;
         if (data.generation < output.generation || (data.generation === output.generation && data.seq <= output.seq)) continue;
-        if (data.generation !== output.generation || data.seq !== output.seq + 1) { await refresh(); continue; }
+        if (data.generation !== output.generation || data.seq !== output.seq + 1) {
+          await refresh();
+          continue;
+        }
         current = { ...current, output: applyCodeOutputEvent(output, data) };
         options.apply(current);
       }
@@ -82,5 +96,9 @@ export function followCodeRun(
     unavailable: () => fail("unavailable"),
   });
   dispose = () => subscription.close();
-  return () => { closed = true; abort.abort(); subscription.close(); };
+  return () => {
+    closed = true;
+    abort.abort();
+    subscription.close();
+  };
 }

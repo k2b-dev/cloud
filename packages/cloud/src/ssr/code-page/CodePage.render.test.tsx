@@ -6,8 +6,8 @@ import { type Context, Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { codeSurfaceFindings } from "../../../../../scripts/checks/code-no-source";
-import { withoutRunLogLifecycle } from "../../../../../scripts/fixtures/run-log-lifecycle";
 import { renderedText, withoutComments } from "../../../../../scripts/fixtures/rendered-markup";
+import { withoutRunLogLifecycle } from "../../../../../scripts/fixtures/run-log-lifecycle";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { currentLibrary } from "../../../test/future-capability-manifest";
 import * as capabilityProvider from "../../capabilities/server";
@@ -20,9 +20,9 @@ import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { CODE_PAGE_FIXTURE_STATES, type CodePageFixtureState, codePageFixture } from "./code-page.fixture";
 import { type CodePageData, type CodePageInvoke, VersionReadSchema } from "./data";
 import { headActionFixture } from "./head-action.fixture";
-import { runLedgerFixture } from "./run-ledger.fixture";
 import { codePageMessages } from "./messages";
 import { nameRecentResults } from "./recent-names";
+import { runLedgerFixture } from "./run-ledger.fixture";
 import { describeCodeSchedule } from "./schedule";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-code-page-render-"));
@@ -225,9 +225,18 @@ describe("Code page: overview (Bild 19 to 21)", () => {
 describe("Code page: runs (Bild 22)", () => {
   test("v13 SSR combines state, planned steps and open output; readers receive no entry text", () => {
     const data = runLedgerFixture();
-    const markup = () => renderMarkup(() => createComponent(LocaleProvider, { locale: "de", get children() { return createComponent(CodePage, { data }); } }));
+    const markup = () =>
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      );
     const initial = visibleText(markup());
-    for (const text of ["Lieferschein #4711", "Beleg lesen", "Positionen übernehmen", "Beleg ablegen", "14 Positionen erkannt", "Ausgabe"]) expect(initial).toContain(text);
+    for (const text of ["Lieferschein #4711", "Beleg lesen", "Positionen übernehmen", "Beleg ablegen", "14 Positionen erkannt", "Ausgabe"])
+      expect(initial).toContain(text);
     expect(markup()).toMatch(/class="k2b-run-log__output-toggle"[^>]*aria-expanded="true"/);
     expect(initial).not.toContain("Was passiert ist");
     expect(initial).not.toContain("Verbindung wird hergestellt");
@@ -241,7 +250,15 @@ describe("Code page: runs (Bild 22)", () => {
     const data = runLedgerFixture();
     if (data.state.kind !== "ready" || !data.state.run) throw new Error("Missing fixture");
     const detail = data.state.run;
-    const markup = () => renderMarkup(() => createComponent(LocaleProvider, { locale: "de", get children() { return createComponent(CodePage, { data }); } }));
+    const markup = () =>
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      );
     Object.assign(detail.run, { state: "failed", outcome: "wall_clock_limit", endedAt: data.dates.now });
     expect(visibleText(markup())).toContain("Laufzeitlimit erreicht");
     expect(visibleText(markup())).not.toContain("wall_clock_limit");
@@ -255,7 +272,16 @@ describe("Code page: runs (Bild 22)", () => {
     data.state.run.consoleOutput = { generation: 1, seq: 0, entries: [], droppedLines: 0, droppedBytes: 0 };
     data.state.run.run.outcome = "lease_lost";
     data.state.words!.runs[data.state.run.run.id]!.reason = null;
-    const page = visibleText(renderMarkup(() => createComponent(LocaleProvider, { locale: "de", get children() { return createComponent(CodePage, { data }); } })));
+    const page = visibleText(
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      ),
+    );
     expect(page).toContain("Unterhaltungen lesen · 2 bestätigt");
     expect(page).toContain("1 Aufruf abgelehnt");
     expect(page).toContain("Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe");
@@ -266,7 +292,17 @@ describe("Code page: runs (Bild 22)", () => {
     data.state.run.run.outcome = "wall_clock_limit";
     data.state.words!.runs[data.state.run.run.id]!.reason = null;
     data.state.run.consoleOutput!.droppedLines = 2;
-    const render = () => visibleText(renderMarkup(() => createComponent(LocaleProvider, { locale: "de", get children() { return createComponent(CodePage, { data }); } })));
+    const render = () =>
+      visibleText(
+        renderMarkup(() =>
+          createComponent(LocaleProvider, {
+            locale: "de",
+            get children() {
+              return createComponent(CodePage, { data });
+            },
+          }),
+        ),
+      );
     expect(render()).toContain("Laufzeitlimit erreicht · 2 Ausgabeeinträge konnten nicht aufbewahrt werden.");
     data.state.permission = "reader";
     expect(render()).toContain("Laufzeitlimit erreicht · Nur wer diesen Code verwaltet, sieht seine Ausgabe.");
@@ -406,14 +442,18 @@ for (const locale of ["de", "en"]) {
   describe(`${locale}: no state shows source, identifiers or an unqualified status word`, () => {
     test.each(CODE_PAGE_FIXTURE_STATES.filter((name) => name !== "code"))("%s", (state) => {
       const visible = renderedText(
-        withoutRunLogLifecycle(new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale))),
+        withoutRunLogLifecycle(
+          new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale)),
+        ),
         "\n",
       );
       expect(codeSurfaceFindings(`${locale}/${state}`, visible)).toEqual([]);
       // v13 names the run state in RunLog's head ("Fertig nach …" / "Done in …").
       // Other surfaces must continue to name the concrete result.
       const outsideRunLog = renderedText(
-        withoutRunLogLifecycle(new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale))),
+        withoutRunLogLifecycle(
+          new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale)),
+        ),
         "\n",
       );
       for (const word of ["Passt", "Fertig", "Done", "OK"]) expect(outsideRunLog.split(/\s+/)).not.toContain(word);
@@ -422,9 +462,11 @@ for (const locale of ["de", "en"]) {
 }
 
 test("only fixed lifecycle words are exempt; RunLog metadata and output stay checked", () => {
-  const markup = '<section class="k2b-run-log"><header class="k2b-run-log__head"><span class="k2b-run-log__main">Fertig nach 0:12</span><span class="k2b-sr-only" role="status">Fertig</span><span class="k2b-run-log__meta">Done</span></header><p>source.ts</p></section>';
+  const markup =
+    '<section class="k2b-run-log"><header class="k2b-run-log__head"><span class="k2b-run-log__main">Fertig nach 0:12</span><span class="k2b-sr-only" role="status">Fertig</span><span class="k2b-run-log__meta">Done</span></header><p>source.ts</p></section>';
   const remaining = renderedText(withoutRunLogLifecycle(markup));
-  expect(remaining).toContain("Done"); expect(remaining).toContain("source.ts");
+  expect(remaining).toContain("Done");
+  expect(remaining).toContain("source.ts");
   expect(remaining).not.toContain("Fertig");
   expect(() => withoutRunLogLifecycle(markup.replace("Fertig nach 0:12", "source.ts"))).toThrow("Unexpected RunLog lifecycle text");
 });

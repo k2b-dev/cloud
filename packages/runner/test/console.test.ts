@@ -173,7 +173,14 @@ test("logger steps start pending, keep a run-local ID and settle once; pending s
 test("three planned 4 KiB steps coalesce lifecycle-only revisions across logs without loss", async () => {
   setSystemTime(fixed);
   const batches: CodeOutputBatch[] = [];
-  const output = createCodeConsole({ call: async (_operation: string, batch: CodeOutputBatch) => { batches.push(batch); } }, limits);
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
   const steps = [1, 2, 3].map((id) => output.logger.step(`${id}${"x".repeat(4095)}`));
   output.logger.info("Between planning and starting");
   for (const step of steps) step.start();
@@ -182,14 +189,28 @@ test("three planned 4 KiB steps coalesce lifecycle-only revisions across logs wi
   await output.finish();
   expect(batches).toHaveLength(1);
   expect(batches[0]!.droppedLines).toBe(0);
-  expect(batches[0]!.entries.filter((entry) => entry.kind === "step").map((entry) => entry.status)).toEqual(["succeeded", "succeeded", "succeeded"]);
-  expect(batches[0]!.entries.filter((entry) => entry.kind === "log").map((entry) => entry.text)).toEqual(["Between planning and starting", "Between starting and completing"]);
+  expect(batches[0]!.entries.filter((entry) => entry.kind === "step").map((entry) => entry.status)).toEqual([
+    "succeeded",
+    "succeeded",
+    "succeeded",
+  ]);
+  expect(batches[0]!.entries.filter((entry) => entry.kind === "log").map((entry) => entry.text)).toEqual([
+    "Between planning and starting",
+    "Between starting and completing",
+  ]);
 });
 
 test("completion text keeps its position across intervening entries", async () => {
   setSystemTime(fixed);
   const batches: CodeOutputBatch[] = [];
-  const output = createCodeConsole({ call: async (_operation: string, batch: CodeOutputBatch) => { batches.push(batch); } }, limits);
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
   const step = output.logger.step("Read");
   output.logger.info("Before start");
   step.start();
@@ -197,7 +218,13 @@ test("completion text keeps its position across intervening entries", async () =
   step.succeed("Result");
   output.logger.info("After result");
   await output.finish();
-  expect(batches[0]!.entries.map((entry) => entry.kind === "log" ? entry.text : entry.message ?? entry.status)).toEqual(["running", "Before start", "Before result", "Result", "After result"]);
+  expect(batches[0]!.entries.map((entry) => (entry.kind === "log" ? entry.text : (entry.message ?? entry.status)))).toEqual([
+    "running",
+    "Before start",
+    "Before result",
+    "Result",
+    "After result",
+  ]);
 });
 
 test("unhandled errors fail running steps only and retain pending steps; success leaves pending for RunLog", async () => {

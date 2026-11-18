@@ -29,7 +29,8 @@ export function createCodeConsole(cloud, limits) {
     // Lifecycle-only revisions carry no new text. Replace their handle across
     // intervening entries; text-bearing completion revisions keep stream order.
     const position = entry.kind === "step" ? entries.findLastIndex((old) => old.kind === "step" && old.id === entry.id) : -1;
-    if (position < 0 || (entry.message && entries.slice(position + 1).some((old) => old.kind !== "step" || old.id !== entry.id))) entries.push(entry);
+    if (position < 0 || (entry.message && entries.slice(position + 1).some((old) => old.kind !== "step" || old.id !== entry.id)))
+      entries.push(entry);
     else entries[position] = entry;
     while (entries.length && bytes(batch()) > limits.bytes) {
       const log = entries.findIndex((old) => old.kind !== "step");

@@ -554,19 +554,29 @@ const runOutput = (run: { id: string; state: string; generation: number; console
       : Promise.resolve(emptyCodeOutput());
 
 /** Same Code read authority as runRead and CLI; no call/input payload is loaded. */
-export const readCodeRunEntries = async (
-  input: { codeId: string; runId: string }, context: CodeContext,
-): Promise<CodeRunEntries> => {
+export const readCodeRunEntries = async (input: { codeId: string; runId: string }, context: CodeContext): Promise<CodeRunEntries> => {
   const { permission } = await readCode(input.codeId, context);
-  const [run] = await sql<{
-    id: string; state: CodeRunEntries["state"]; outcome: string | null; generation: number; console_output: CodeOutputWindow | null;
-    started_at: Date | null; ended_at: Date | null;
-  }[]>`SELECT id,state,outcome,generation,started_at,ended_at,
+  const [run] = await sql<
+    {
+      id: string;
+      state: CodeRunEntries["state"];
+      outcome: string | null;
+      generation: number;
+      console_output: CodeOutputWindow | null;
+      started_at: Date | null;
+      ended_at: Date | null;
+    }[]
+  >`SELECT id,state,outcome,generation,started_at,ended_at,
     CASE WHEN ${permission === "editor"} THEN console_output ELSE NULL END AS console_output
     FROM code.runs WHERE code_id=${input.codeId} AND id=${input.runId}::uuid`;
   if (!run) throw new CodeDataError("NOT_FOUND", "Code run not found.");
-  return { state: run.state, outcome: run.outcome, startedAt: run.started_at?.toISOString() ?? null, endedAt: run.ended_at?.toISOString() ?? null,
-    output: permission === "editor" ? await runOutput(run) : null };
+  return {
+    state: run.state,
+    outcome: run.outcome,
+    startedAt: run.started_at?.toISOString() ?? null,
+    endedAt: run.ended_at?.toISOString() ?? null,
+    output: permission === "editor" ? await runOutput(run) : null,
+  };
 };
 
 /** Readers receive contents:null. Editors page one bounded call at a time in invocation order. */
@@ -611,10 +621,7 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
       firstRefusedCall: firstRefusedCall ?? null,
       input: inputChunked ? null : payload.input,
       output: outputChunked ? null : payload.output,
-      consoleOutput:
-        (input.cursor ?? 0) === 0
-          ? await runOutput({ ...payload, id: input.runId, state: row.state })
-          : null,
+      consoleOutput: (input.cursor ?? 0) === 0 ? await runOutput({ ...payload, id: input.runId, state: row.state }) : null,
       inputChunked,
       outputChunked,
       content: selected === undefined ? null : codeTextChunk(selected, input.offset ?? 0, input.length ?? 16_384),

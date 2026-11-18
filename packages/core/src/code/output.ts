@@ -12,10 +12,10 @@ import {
   CodeOutputStepEntrySchema,
   type CodeOutputWindow,
   CodeOutputWindowSchema,
-  codeRunKey,
-  codeOutputStepBytes,
   codeOutputEntryLines,
+  codeOutputStepBytes,
   codeOutputStepsBudget,
+  codeRunKey,
   emptyCodeOutput,
 } from "@k2b/cloud/code";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
@@ -52,35 +52,45 @@ const dropsKey = (runId: string, generation: number) => `${key(runId)}:drops:${g
 const leaseKey = (runId: string, generation: number) => `${key(runId)}:lease:${generation}`;
 const secretPurpose = "cloud.code.output-redactions.v1";
 const secretContext = (claims: Pick<CodeRunTokenClaims, "runId" | "generation">) => JSON.stringify([claims.runId, claims.generation]);
-const StateSchema = z.object({
-  codeId: z.string(),
-  tokenDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  generation: z.number(),
-  deadlineAt: z.number(),
-  budget: z.number(),
-  lastAt: z.number(),
-  inputSeq: z.number(),
-  pending: z.string().nullable(),
-  redactionRevision: z.number(),
-  redactionSkip: z.number().int().nonnegative().safe().default(0),
-  countedDropLines: z.number(),
-  countedDropBytes: z.number(),
-  window: CodeOutputWindowSchema,
-  steps: z.record(z.string(), CodeOutputStepEntrySchema).default({}),
-  stepReservations: z
-    .record(z.string(), z.object({ bytes: z.number().nonnegative().safe(), rejected: z.boolean().optional() }))
-    .default({}),
-}).transform((state) => {
-  // An in-flight run may cross a deploy that introduced reservations. Retain
-  // its accepted fields and reserve their terminal envelope before new steps.
-  const text = (parts: (typeof state.steps)[string]["label"]) => parts.map((part) => part.type === "text" ? part.text : part.name).join("");
-  for (const [id, step] of Object.entries(state.steps))
-    state.stepReservations[id] ??= { bytes: Math.max(
-      codeOutputStepBytes({ label: text(step.label), icon: step.icon, description: step.description ? text(step.description) : undefined, message: step.message ? text(step.message) : undefined }),
-      stepReserve(step) + Buffer.byteLength(JSON.stringify(id)) + 2,
-    ) };
-  return state;
-});
+const StateSchema = z
+  .object({
+    codeId: z.string(),
+    tokenDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    generation: z.number(),
+    deadlineAt: z.number(),
+    budget: z.number(),
+    lastAt: z.number(),
+    inputSeq: z.number(),
+    pending: z.string().nullable(),
+    redactionRevision: z.number(),
+    redactionSkip: z.number().int().nonnegative().safe().default(0),
+    countedDropLines: z.number(),
+    countedDropBytes: z.number(),
+    window: CodeOutputWindowSchema,
+    steps: z.record(z.string(), CodeOutputStepEntrySchema).default({}),
+    stepReservations: z
+      .record(z.string(), z.object({ bytes: z.number().nonnegative().safe(), rejected: z.boolean().optional() }))
+      .default({}),
+  })
+  .transform((state) => {
+    // An in-flight run may cross a deploy that introduced reservations. Retain
+    // its accepted fields and reserve their terminal envelope before new steps.
+    const text = (parts: (typeof state.steps)[string]["label"]) =>
+      parts.map((part) => (part.type === "text" ? part.text : part.name)).join("");
+    for (const [id, step] of Object.entries(state.steps))
+      state.stepReservations[id] ??= {
+        bytes: Math.max(
+          codeOutputStepBytes({
+            label: text(step.label),
+            icon: step.icon,
+            description: step.description ? text(step.description) : undefined,
+            message: step.message ? text(step.message) : undefined,
+          }),
+          stepReserve(step) + Buffer.byteLength(JSON.stringify(id)) + 2,
+        ),
+      };
+    return state;
+  });
 type State = z.infer<typeof StateSchema>;
 const tokenDigest = (token: string) => new Bun.CryptoHasher("sha256").update(token).digest("hex");
 const ttlAt = (deadlineAt: number) => deadlineAt + CODE_OUTPUT_TOPIC_CONFIG.retention.maxAgeMs;

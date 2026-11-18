@@ -205,12 +205,18 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
           <p class="cloud-code__meta">{meta()}</p>
         </div>
       </header>
-      <CodeRunLog codeId={props.state.code.id} detail={{ ...props.detail, run: run() }} now={props.data.dates.now}
-        manager={props.state.permission === "editor"} confirmed={words()?.untilThen} reason={budget() ?? words()?.reason}
+      <CodeRunLog
+        codeId={props.state.code.id}
+        detail={{ ...props.detail, run: run() }}
+        now={props.data.dates.now}
+        manager={props.state.permission === "editor"}
+        confirmed={words()?.untilThen}
+        reason={budget() ?? words()?.reason}
         actions={[
           ...(refusalHref() ? [{ icon: "ti ti-lock", label: t().checkAccess, href: refusalHref()! }] : []),
           ...(canRerun() ? [{ icon: "ti ti-refresh", label: t().rerunDots, disabled: rerunning(), onClick: () => void rerun() }] : []),
-        ]} />
+        ]}
+      />
       <Show when={run().rerunOf}>
         {(original) => (
           <Quiet icon="ti ti-repeat">

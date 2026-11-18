@@ -4,8 +4,8 @@ import { registerSsrTestPlugin } from "../../packages/ui/test/ssr-test-plugin";
 
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { withoutRunLogLifecycle } from "./run-log-lifecycle";
 import { renderedText } from "./rendered-markup";
+import { withoutRunLogLifecycle } from "./run-log-lifecycle";
 
 setSystemTime(new Date("2026-11-14T12:00:00.000Z"));
 registerSsrTestPlugin({ dev: true, rootDir: import.meta.dir });

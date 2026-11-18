@@ -14,7 +14,7 @@ import {
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import { RUNNER_PATHS, RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import { LIVE_LIMITS } from "@k2b/cloud/events";
-import { createLiveEngine, liveTopicConfig, type LiveEnvelope } from "@k2b/cloud/events/testing";
+import { createLiveEngine, type LiveEnvelope, liveTopicConfig } from "@k2b/cloud/events/testing";
 import { accounts } from "@k2b/cloud/services";
 import { createSync, type Sync } from "@k2b/sync";
 import { generateKeyPair } from "jose";
@@ -28,6 +28,7 @@ import { migrate as migrateCodeLive } from "../migrate/core/code-live";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateEvents } from "../migrate/core/events";
 import { migrate as migrateSettings } from "../migrate/core/settings";
+import * as access from "./access";
 import { codeLiveChannels, publishCodeCallHint } from "./live";
 import {
   closeCodeOutput,
@@ -39,7 +40,6 @@ import {
   renewCodeOutput,
   replayCodeOutput,
 } from "./output";
-import * as access from "./access";
 import * as redaction from "./output-redaction";
 import { createCodeRunnerRoutes } from "./runner-routes";
 import { secretEchoReplacements } from "./secret-echo";
@@ -258,8 +258,16 @@ suiteFor(
         expect(capability.data.data.contents === null).toBe(id === reader);
         const ledger = await aiCapabilities.queries["code.run.entries"].run(
           { codeId, runId },
-          { ...context, actor: authority.actor, accessSubject: authority.accessSubject, user,
-            requestId: "fixture", locale: "en", origin, signal: new AbortController().signal },
+          {
+            ...context,
+            actor: authority.actor,
+            accessSubject: authority.accessSubject,
+            user,
+            requestId: "fixture",
+            locale: "en",
+            origin,
+            signal: new AbortController().signal,
+          },
         );
         if (!ledger.ok) throw new Error("Run entries capability failed");
         expect(ledger.data.data).toEqual(entries);
@@ -267,7 +275,9 @@ suiteFor(
       const who = { id: `user:${id}`, actor: authority.actor, accessSubject: authority.accessSubject, scopes: [] };
       expect((await codeLiveChannels.codeDetails.authorize(`code.details:${codeId}`, [who])).has(who.id)).toBe(id === owner);
       expect((await codeLiveChannels.codeRun.authorize(codeRunKey(codeId, runId), [who])).has(who.id)).toBe(id === owner);
-      expect(await codeLiveChannels.codeRun.authorize(codeRunKey(codeId, "99999999-9999-4999-8999-999999999999"), [who])).toEqual(new Set());
+      expect(await codeLiveChannels.codeRun.authorize(codeRunKey(codeId, "99999999-9999-4999-8999-999999999999"), [who])).toEqual(
+        new Set(),
+      );
     }
   });
   test("foreign and guest readers get NOT_FOUND, including a deleted Code", async () => {
@@ -276,7 +286,14 @@ suiteFor(
     const guest = await accounts.users.get({ id: guestId });
     if (!guest) throw new Error("Missing guest");
     for (const user of [guest, { ...guest, profile: "user" as const, roles: ["user"] }]) {
-      const context = { authority: { actor: { kind: "user" as const, user }, accessSubject: { type: "user" as const, userId: user.id }, credentialKind: "session" as const, scopes: [] } };
+      const context = {
+        authority: {
+          actor: { kind: "user" as const, user },
+          accessSubject: { type: "user" as const, userId: user.id },
+          credentialKind: "session" as const,
+          scopes: [],
+        },
+      };
       await expect(readCodeRunEntries({ codeId, runId }, context)).rejects.toMatchObject({ code: "NOT_FOUND" });
       await expect(readCodeRunEntries({ codeId: "c_deleted", runId }, context)).rejects.toMatchObject({ code: "NOT_FOUND" });
     }
@@ -289,35 +306,64 @@ suiteFor(
       VALUES('code:example.item:output-place','code',${owner}::uuid) RETURNING id`;
     await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title)
       VALUES(${resourceCodeId},'resource','example.item','output-place',${account!.id}::uuid,'Resource output')`;
-    const [version] = await sql<{ id: string }[]>`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,source_bytes,bundle_bytes,created_by)
+    const [version] = await sql<
+      { id: string }[]
+    >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,source_bytes,bundle_bytes,created_by)
       VALUES(${resourceCodeId},1,'{}'::jsonb,'fixture',${"a".repeat(64)},${"b".repeat(64)},2,7,${owner}::uuid) RETURNING id`;
     const output = emptyCodeOutput(1);
     await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,payload_bytes,calls_limit,state,console_output)
       VALUES(${resourceRunId}::uuid,${resourceCodeId},${version!.id}::uuid,'manual','run',32768,200,'running',${JSON.stringify(output)}::jsonb)`;
     const user = await accounts.users.get({ id: owner });
     if (!user) throw new Error("Missing resource manager");
-    const authority = { actor: { kind: "user" as const, user }, accessSubject: { type: "user" as const, userId: user.id }, credentialKind: "session" as const, scopes: [] };
+    const authority = {
+      actor: { kind: "user" as const, user },
+      accessSubject: { type: "user" as const, userId: user.id },
+      credentialKind: "session" as const,
+      scopes: [],
+    };
     let manager = true;
     const ownerReader = spyOn(access, "readCodeOwner").mockImplementation(async () => ({ title: "Output place", admin: manager }));
     const topic = sync.topic<LiveEnvelope>(liveTopicConfig("core"));
     await sync.ready();
     const engine = createLiveEngine({ appId: "core", topic: () => topic, channels: codeLiveChannels });
     const frames: { t: string; code?: string }[] = [];
-    const until = async (ready: () => boolean) => { for (let n = 0; n < 100 && !ready(); n++) await Bun.sleep(5); expect(ready()).toBe(true); };
+    const until = async (ready: () => boolean) => {
+      for (let n = 0; n < 100 && !ready(); n++) await Bun.sleep(5);
+      expect(ready()).toBe(true);
+    };
     try {
       expect((await readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).output).toEqual(output);
       const viewer = { id: `user:${owner}`, actor: authority.actor, accessSubject: authority.accessSubject, scopes: [] };
-      const socket = engine.open({ send: (frame) => frames.push(JSON.parse(frame)), close: () => {}, getBufferedAmount: () => 0 }, viewer, async () => viewer);
-      socket.message(JSON.stringify({ t: "sub", id: "resource", channel: "codeRun", scope: { codeId: resourceCodeId, runId: resourceRunId }, after: await topic.head() }));
+      const socket = engine.open(
+        { send: (frame) => frames.push(JSON.parse(frame)), close: () => {}, getBufferedAmount: () => 0 },
+        viewer,
+        async () => viewer,
+      );
+      socket.message(
+        JSON.stringify({
+          t: "sub",
+          id: "resource",
+          channel: "codeRun",
+          scope: { codeId: resourceCodeId, runId: resourceRunId },
+          after: await topic.head(),
+        }),
+      );
       await until(() => frames.some((frame) => frame.t === "ready"));
       manager = false;
       await topic.publish({ data: { v: 1, k: resourceCodeId, a: true }, orderingKey: resourceCodeId });
       await until(() => frames.some((frame) => frame.t === "revoked"));
       expect(frames.at(-1)).toMatchObject({ t: "revoked", code: "access_denied" });
-      await expect(readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
       await sql`DELETE FROM code.codes WHERE id=${resourceCodeId}`;
-      await expect(readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).rejects.toMatchObject({ code: "NOT_FOUND" });
-    } finally { engine.stop(); ownerReader.mockRestore(); }
+      await expect(readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+    } finally {
+      engine.stop();
+      ownerReader.mockRestore();
+    }
   });
   test("stale generations cannot publish into a newer attempt and earlier output is reset", async () => {
     const newerToken = `${token}.next-attempt`;
@@ -376,31 +422,54 @@ suiteFor(
     const other = await attempt();
     const user = await accounts.users.get({ id: owner });
     if (!user) throw new Error("Missing output owner");
-    const viewer = { id: `user:${owner}`, actor: { kind: "user" as const, user }, accessSubject: { type: "user" as const, userId: owner }, scopes: [] };
+    const viewer = {
+      id: `user:${owner}`,
+      actor: { kind: "user" as const, user },
+      accessSubject: { type: "user" as const, userId: owner },
+      scopes: [],
+    };
     const topic = sync.topic<LiveEnvelope>(liveTopicConfig("core"));
     await sync.ready();
     const engine = createLiveEngine({ appId: "core", topic: () => topic, channels: codeLiveChannels });
     const frames: { t: string; data?: unknown }[] = [];
     const meter = await meterSql();
-    const until = async (ready: () => boolean) => { for (let n = 0; n < 100 && !ready(); n++) await Bun.sleep(5); expect(ready()).toBe(true); };
+    const until = async (ready: () => boolean) => {
+      for (let n = 0; n < 100 && !ready(); n++) await Bun.sleep(5);
+      expect(ready()).toBe(true);
+    };
     try {
       const admission = await meter.during(async () => {
-        const socket = engine.open({ send: (frame) => frames.push(JSON.parse(frame)), close: () => {}, getBufferedAmount: () => 0 }, viewer, async () => viewer);
-        socket.message(JSON.stringify({ t: "sub", id: "run", channel: "codeRun", scope: { codeId, runId: proof.runId }, after: await topic.head() }));
+        const socket = engine.open(
+          { send: (frame) => frames.push(JSON.parse(frame)), close: () => {}, getBufferedAmount: () => 0 },
+          viewer,
+          async () => viewer,
+        );
+        socket.message(
+          JSON.stringify({ t: "sub", id: "run", channel: "codeRun", scope: { codeId, runId: proof.runId }, after: await topic.head() }),
+        );
         await until(() => frames.some((frame) => frame.t === "ready"));
       });
       expect(admission).toHaveLength(2);
-      expect(await meter.during(async () => {
-        await receiveCodeOutput(other, batch(1, "Other run"));
-        await receiveCodeOutput(proof, batch(1, "Selected run"));
-        await until(() => frames.some((frame) => frame.t === "event"));
-        await connection.flush();
-      })).toEqual([]);
-      expect(frames.filter((frame) => frame.t === "event").map((frame) => frame.data)).toEqual([expect.objectContaining({ type: "code.output", runId: proof.runId })]);
+      expect(
+        await meter.during(async () => {
+          await receiveCodeOutput(other, batch(1, "Other run"));
+          await receiveCodeOutput(proof, batch(1, "Selected run"));
+          await until(() => frames.some((frame) => frame.t === "event"));
+          await connection.flush();
+        }),
+      ).toEqual([]);
+      expect(frames.filter((frame) => frame.t === "event").map((frame) => frame.data)).toEqual([
+        expect.objectContaining({ type: "code.output", runId: proof.runId }),
+      ]);
       expect(codeLiveChannels.codeRun.accessKey(codeRunKey(codeId, proof.runId))).toBe(codeId);
-      const [saved] = await sql<{ payload: LiveEnvelope }[]>`SELECT payload FROM events.outbox WHERE ordering_key=${codeRunKey(codeId, proof.runId)} ORDER BY seq DESC LIMIT 1`;
+      const [saved] = await sql<
+        { payload: LiveEnvelope }[]
+      >`SELECT payload FROM events.outbox WHERE ordering_key=${codeRunKey(codeId, proof.runId)} ORDER BY seq DESC LIMIT 1`;
       expect(saved?.payload.d).toMatchObject({ type: "code.run", runId: proof.runId, state: "running" });
-    } finally { engine.stop(); await meter.close(); }
+    } finally {
+      engine.stop();
+      await meter.close();
+    }
   });
   test("a running step restores missing reservations after a deploy before accepting more metadata", async () => {
     setSystemTime(fixed);
@@ -414,10 +483,28 @@ suiteFor(
     delete state.stepReservations;
     await redis.set(cacheKey, JSON.stringify(state));
     setSystemTime(fixed + 1000);
-    await receiveCodeOutput(proof, { seq: 2, entries: [{ ...step, status: "succeeded", endedAt: new Date().toISOString(), message: "x".repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes - 2) }], droppedLines: 0, droppedBytes: 0 });
+    await receiveCodeOutput(proof, {
+      seq: 2,
+      entries: [
+        {
+          ...step,
+          status: "succeeded",
+          endedAt: new Date().toISOString(),
+          message: "x".repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes - 2),
+        },
+      ],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
     const saved = JSON.parse((await redis.get(cacheKey))!);
     expect(saved.stepReservations["1:step:1"]).toEqual(fresh);
-    expect((await replayCodeOutput(proof.runId)).entries).toEqual([expect.objectContaining({ status: "succeeded", label: [{ type: "text", text: "Read" }], message: [{ type: "text", text: "x".repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes - 2) }] })]);
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual([
+      expect.objectContaining({
+        status: "succeeded",
+        label: [{ type: "text", text: "Read" }],
+        message: [{ type: "text", text: "x".repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes - 2) }],
+      }),
+    ]);
     expect((await replayCodeOutput(proof.runId)).droppedLines).toBe(0);
   });
   test("all short handles survive the shipped collector, supervisor and Core with a remembered secret", async () => {

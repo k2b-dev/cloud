@@ -396,7 +396,8 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "code.run.entries": {
           title: "Code-Laufeinträge lesen",
-          description: "Liest Zustand, Schritte und die begrenzte bereinigte Ausgabe eines Laufs. Nur Verwaltende sehen die Ausgabe; Leser erhalten output:null.",
+          description:
+            "Liest Zustand, Schritte und die begrenzte bereinigte Ausgabe eines Laufs. Nur Verwaltende sehen die Ausgabe; Leser erhalten output:null.",
           input: { codeId: "Code-ID.", runId: "UUID eines Laufs dieses Codes." },
         },
         ...geoCapabilityPresentation,

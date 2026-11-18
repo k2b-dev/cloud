@@ -813,7 +813,8 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.run.entries": {
       title: "Read Code run entries",
-      description: "Read the bounded sanitized output tail and lifecycle of one run. Only Code managers receive output; readers receive output:null.",
+      description:
+        "Read the bounded sanitized output tail and lifecycle of one run. Only Code managers receive output; readers receive output:null.",
       ...codeQueryContracts.runEntries,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeRunEntries(input, ctx)),
