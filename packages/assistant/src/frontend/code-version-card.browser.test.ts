@@ -168,7 +168,9 @@ describe("v10 approval card in Chromium", () => {
           ]) {
             await setState(h.page, state);
             const measured = await boxes(h.page);
-            expect({ state, card: measured.card, next: measured.next }).toEqual({ state, card: first.card, next: first.next });
+            const noActions = width === 390 && ["loading", "denied"].includes(state);
+            if (noActions) expect(measured.card.height).toBeLessThan(first.card.height);
+            else expect({ state, card: measured.card, next: measured.next }).toEqual({ state, card: first.card, next: first.next });
             expect(measured.quiet.y - measured.main.y - measured.main.height).toBeLessThanOrEqual(4);
             expect(measured.quiet.y - measured.main.y - measured.main.height).toBeGreaterThanOrEqual(0);
             if (width === 1440) expect(measured.card.height).toBe(64);
@@ -193,6 +195,19 @@ describe("v10 approval card in Chromium", () => {
                 expect(await actions.first().locator(".k2b-button").getAttribute("data-variant")).toBe("secondary");
               }
               expect(a.y).toBeGreaterThanOrEqual(measured.quiet.y + measured.quiet.height);
+              expect(a.y - measured.quiet.y - measured.quiet.height).toBeLessThanOrEqual(4);
+              const quietStyle = await card.locator(".assistant-code-version__quiet").evaluate((element) => {
+                const style = getComputedStyle(element);
+                return {
+                  whiteSpace: style.whiteSpace,
+                  clamp: style.webkitLineClamp,
+                  lineHeight: Number.parseFloat(style.lineHeight),
+                  height: element.getBoundingClientRect().height,
+                };
+              });
+              expect(quietStyle.whiteSpace).toBe("normal");
+              expect(quietStyle.clamp).toBe("2");
+              expect(quietStyle.height).toBeLessThanOrEqual(quietStyle.lineHeight * 2);
               for (const control of await actions.locator(".k2b-button").all()) {
                 const bounds = (await control.boundingBox())!;
                 expect(bounds.y + bounds.height).toBeLessThanOrEqual(measured.card.y + measured.card.height);
@@ -385,6 +400,28 @@ describe("v10 approval card in Chromium", () => {
         expect(before!.height).toBe(approval.height);
         expect(before!.x).toBe(approval.x);
         expect(before!.width).toBe(approval.width);
+        const edges = await h.page.evaluate(() =>
+          [".assistant-authoring-stop", ".assistant-code-version"].map((selector) => {
+            const card = document.querySelector(selector)!;
+            const content = card.querySelector(".k2b-notice-card__content")!;
+            const icon = card.querySelector(".k2b-notice-card__icon")!;
+            return {
+              contentX: content.getBoundingClientRect().x,
+              iconX: icon.getBoundingClientRect().x,
+              iconFont: getComputedStyle(icon).fontSize,
+              iconWidth: icon.getBoundingClientRect().width,
+              columns: getComputedStyle(card).gridTemplateColumns,
+              gap: getComputedStyle(card).columnGap,
+              padding: getComputedStyle(card).paddingInlineStart,
+            };
+          }),
+        );
+        expect(edges[0]).toEqual(edges[1]);
+        if (width === 390) {
+          for (const selector of [".assistant-authoring-stop__meta", ".assistant-code-version__quiet"]) {
+            expect(await h.page.locator(selector).evaluate((element) => getComputedStyle(element).webkitLineClamp)).toBe("2");
+          }
+        }
         expect(await pause.getByRole("button", { name: "Weiterarbeiten", exact: true }).getAttribute("data-size")).toBe(
           width === 390 ? "md" : "sm",
         );

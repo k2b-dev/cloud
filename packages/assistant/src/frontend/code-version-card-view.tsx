@@ -88,6 +88,7 @@ export function CodeVersionCardView(props: {
         data-k2b-primary="ai"
         data-chat-anchor={props.anchorId}
         data-state={props.model.kind}
+        data-has-actions={props.model.primary || props.model.secondary ? "" : undefined}
         aria-busy={props.model.busy || undefined}
         tabIndex={-1}
         title={
@@ -100,7 +101,7 @@ export function CodeVersionCardView(props: {
             </span>
           </span>
         }
-        actions={actions()}
+        actions={props.model.primary || props.model.secondary ? actions() : undefined}
       >
         <p class="assistant-code-version__quiet" title={props.model.quiet}>
           <span>{props.model.quietAlert ? "" : props.model.quiet}</span>

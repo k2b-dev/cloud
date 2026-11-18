@@ -250,7 +250,7 @@ export function describeCodeVersionCard(input: {
             : review?.status === "approved"
               ? c.approved({ version, name })
               : c.ready({ version }),
-      quiet: act.kind === "checking" ? c.unknownQuiet : (blocked ?? summary),
+      quiet: blocked ?? summary,
       busy: progress,
       primary: { ...action("activate", c.activate, true), busy: progress, disabled: Boolean(blocked) },
       secondary: details,

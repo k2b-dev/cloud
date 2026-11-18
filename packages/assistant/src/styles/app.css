@@ -1212,16 +1212,17 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .k2b-ui .assistant-place-starter > .k2b-button__label { width: 100%; }
 .assistant-place-row-sub { display: block; overflow: hidden; color: var(--k2b-text-secondary); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Pause and approval share the same two text rows and public control sizes. */
-.k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] {
+/* Pause and approval share the same icon/text edge, independent of the library stylesheet order. */
+.k2b-ui :is(.assistant-code-version, .assistant-authoring-stop).k2b-notice-card[data-card-icon] {
   grid-template-columns: 1.125rem minmax(0, 1fr);
   column-gap: .625rem;
   padding: .6875rem .875rem;
   border: 0;
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface-muted);
 }
-.k2b-ui .assistant-authoring-stop[data-card-icon] > .k2b-notice-card__icon { color: var(--k2b-text-muted); font-size: 1.0625rem; }
+.k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] { background: var(--k2b-surface-muted); }
+.k2b-ui :is(.assistant-code-version, .assistant-authoring-stop)[data-card-icon] > .k2b-notice-card__icon { font-size: 1.0625rem; }
+.k2b-ui .assistant-authoring-stop[data-card-icon] > .k2b-notice-card__icon { color: var(--k2b-text-muted); }
 .k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] > .k2b-notice-card__content {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1254,23 +1255,35 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 }
 @container (max-width: 35rem) {
   .k2b-ui .assistant-code-version[data-card-icon],
-  .k2b-ui .assistant-authoring-stop[data-card-icon][data-current] { block-size: 9.5rem; }
-  .k2b-ui .assistant-authoring-stop[data-card-icon]:not([data-current]) { block-size: auto; }
+  /* Two sentence lines, two quiet lines and a wrapped public button fit even inside chat insets.
+     Remaining space belongs below the actions, never between text and controls. */
+  .k2b-ui .assistant-authoring-stop[data-card-icon][data-current] { block-size: 10.5rem; }
+  .k2b-ui .assistant-authoring-stop[data-card-icon]:not([data-current]),
+  .k2b-ui .assistant-code-version[data-card-icon]:not([data-has-actions]) { block-size: auto; }
+  .assistant-code-version__quiet,
+  .k2b-ui .assistant-authoring-stop__meta {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+  }
   .k2b-ui .assistant-code-version[data-card-icon] > .k2b-notice-card__icon,
   .k2b-ui .assistant-authoring-stop[data-card-icon] > .k2b-notice-card__icon { align-self: start; }
   .k2b-ui .assistant-code-version[data-tone][data-card-icon] > .k2b-notice-card__content,
   .k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] > .k2b-notice-card__content {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto 1fr 3.5rem;
+    grid-template-rows: auto auto auto 1fr;
     align-content: start;
     row-gap: .125rem;
   }
-  .k2b-ui .assistant-authoring-stop[data-card-icon]:not([data-current]) > .k2b-notice-card__content { grid-template-rows: auto auto; }
+  .k2b-ui .assistant-authoring-stop[data-card-icon]:not([data-current]) > .k2b-notice-card__content,
+  .k2b-ui .assistant-code-version[data-card-icon]:not([data-has-actions]) > .k2b-notice-card__content { grid-template-rows: auto auto; }
   .k2b-ui .assistant-code-version .k2b-notice-card__actions,
   .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__actions {
     grid-column: 1;
-    grid-row: 4;
-    align-self: stretch;
+    grid-row: 3;
+    align-self: start;
     margin-inline-start: -1.75rem;
     display: grid;
     justify-content: stretch;

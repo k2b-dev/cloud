@@ -82,7 +82,7 @@ test("missing pages offer retry, while a real empty list offers runs and never i
       expect(live(quiet, "alert")).toBe("");
     } else {
       expect(model.quietAlert).toBe(true);
-      expect(live(quiet, "alert")).toBe("Page links could not be loaded");
+      expect(live(quiet, "alert")).toBe("The other pages could not be loaded");
       expect(html).toContain("Try again");
     }
   }
@@ -118,4 +118,23 @@ test("the real deferred card server-renders authorized operating state and pages
   expect(html).toContain("Öffnen");
   expect(html).toContain("Weitere Seiten");
   expect(html).not.toContain("Diese Version wird geladen");
+});
+
+test("checking shows the same facts as switching; only an unknown outcome asks the person to check", () => {
+  const value = approvalFixture("ready");
+  const model = (kind: "checking" | "progress" | "unknown") =>
+    describeCodeVersionCard({
+      value,
+      version: 1,
+      versionId: approvalVersionId,
+      locale: "de",
+      timeZone: "UTC",
+      activation: { kind },
+      nextRun: null,
+      canAsk: true,
+    });
+  expect(model("checking").quiet).toBe(model("progress").quiet);
+  expect(model("checking").quiet).toContain("liest Mails");
+  expect(model("checking").quiet).not.toContain("Prüf den Stand");
+  expect(model("unknown").quiet).toContain("Prüf den Stand");
 });
