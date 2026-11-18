@@ -2829,6 +2829,14 @@ export default function AssistantWorkspace(props: Props) {
           archiveBlocker={(conversation) =>
             assistantArchiveBlocker(conversation, conversation.id === chat.activeConversationId() ? chat.activeTurn() : null)
           }
+          queuedMessageCount={(conversation) =>
+            conversation.id === chat.activeConversationId() &&
+            !queuedMessages.loading() &&
+            !queuedMessages.stale() &&
+            !queuedMessages.error()
+              ? queuedMessages.data()?.length
+              : undefined
+          }
           onConversationUpdated={updateConversation}
           onConversationArchived={archiveConversation}
           pendingApprovals={props.approvals.page.count}

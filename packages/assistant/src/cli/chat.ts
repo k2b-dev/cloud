@@ -184,8 +184,13 @@ export const assistantChatCommands = [
           );
           return;
         }
-        const result = await readApi<unknown>(ctx, conversationPath(args.chat, `/${route}`), { method });
-        printValue(ctx, result, `${action}: ${args.chat}`);
+        const result = await readApi<{ ok: boolean; discardedQueuedMessages?: number }>(ctx, conversationPath(args.chat, `/${route}`), {
+          method,
+        });
+        const count = action === "archive" ? result.discardedQueuedMessages : undefined;
+        const discarded =
+          count && count > 0 ? `\n${count === 1 ? "1 waiting message was discarded." : `${count} waiting messages were discarded.`}` : "";
+        printValue(ctx, result, `${action}: ${args.chat}${discarded}`);
       },
     }),
   ),

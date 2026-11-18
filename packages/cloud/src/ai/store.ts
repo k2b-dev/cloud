@@ -2318,7 +2318,7 @@ export const aiConversations: AiConversationService = {
       if (!chat) return false;
       // Archiving considers pending learning work once, just like learning being
       // off at completion. Restoring cannot backfill these turns or receipts.
-      const rows = await tx<{ id: string }[]>`
+      const rows = await tx<{ id: string; discardedQueuedMessages: number }[]>`
       WITH archived AS (
         UPDATE ai.conversations
         SET archived_at = now(), pinned_at = NULL, queue_held_at = NULL
@@ -2355,9 +2355,9 @@ export const aiConversations: AiConversationService = {
         WHERE conversation_id IN (SELECT id FROM archived)
           AND reviewed_at IS NULL
       )
-      SELECT id FROM archived
+      SELECT id, (SELECT count(*)::int FROM expired_queue) AS "discardedQueuedMessages" FROM archived
     `;
-      return Boolean(rows[0]);
+      return rows[0] ? { discardedQueuedMessages: rows[0].discardedQueuedMessages } : false;
     }),
 
   restoreConversation: async (input) => {

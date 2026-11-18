@@ -369,6 +369,36 @@ suite("global AI conversation boundaries", () => {
     },
   );
 
+  test.each([0, 1, 2])("archive returns the number of pending and failed entries it discarded (%s)", async (count) => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}` };
+    try {
+      for (let i = 0; i < count; i++) {
+        await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status)
+          VALUES(${crypto.randomUUID()}::uuid,${chat.id}::uuid,'{}'::jsonb,'[]'::jsonb,${i === 0 ? "pending" : "failed"})`;
+      }
+      // Prior cancellations and submissions do not count as discarded in this operation.
+      for (const status of ["cancelled", "submitted"]) {
+        await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status)
+          VALUES(${crypto.randomUUID()}::uuid,${chat.id}::uuid,'{}'::jsonb,'[]'::jsonb,${status})`;
+      }
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true, discardedQueuedMessages: count });
+      expect(
+        (await sql`SELECT id FROM ai.queued_messages WHERE conversation_id=${chat.id}::uuid AND status IN ('pending','failed')`).length,
+      ).toBe(0);
+      expect(await aiConversations.restoreConversation({ conversationId: chat.id, ownerUserId: userId })).not.toBeNull();
+      const again = await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers });
+      expect(again.status).toBe(200);
+      expect(await again.json()).toEqual({ ok: true, discardedQueuedMessages: 0 });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("archive and restore routes pause and resume the chat's routines", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
@@ -1092,7 +1122,9 @@ suiteFor(
       expect((await readFirstEvent(reader)).type).toBe("state");
 
       // The credential stays valid; only the conversation check can end this stream.
-      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: userId })).toBe(true);
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: userId })).toEqual({
+        discardedQueuedMessages: 0,
+      });
       wakeAppAccessChanged();
 
       expect((await readUntilClosed(reader, 10_000)).closed).toBe(true);

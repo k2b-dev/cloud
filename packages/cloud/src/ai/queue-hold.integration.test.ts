@@ -264,7 +264,9 @@ integration("archiving a chat with queued entries lets them lapse (#108)", async
     const bytes = new TextEncoder().encode("Fictional attachment");
     await sql`INSERT INTO ai.queued_message_files(message_id,path,bytes,media_type,size,origin,updated_at,version)
       VALUES(${f.person}::uuid,'note.txt',${bytes},'text/plain',${bytes.length},'upload',now(),1)`;
-    expect(await aiConversations.archiveConversation({ conversationId: f.chat.id, ownerUserId: f.userId })).toBe(true);
+    expect(await aiConversations.archiveConversation({ conversationId: f.chat.id, ownerUserId: f.userId })).toEqual({
+      discardedQueuedMessages: 2,
+    });
     expect(await listQueuedMessages(f.chat.id)).toEqual([]);
     const lapsed = await sql<{ status: string; error: string | null }[]>`
       SELECT status, error FROM ai.queued_messages WHERE conversation_id=${f.chat.id}::uuid ORDER BY position`;

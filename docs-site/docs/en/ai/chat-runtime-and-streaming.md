@@ -80,6 +80,18 @@ lets its entries lapse (`cancelled` with error `chat_archived`). A turn that
 runs or waits for a decision still keeps a chat from being archived; the
 conflict says which of the two it is.
 
+The archive dialog warns that waiting messages will be discarded. It names the
+count when the client already knows it; otherwise it uses a general warning.
+A known empty queue adds no warning. Restoring the chat does not recover these
+messages or their queued attachments.
+
+`POST /api/ai/conversations/:id/archive` keeps its success response shape and
+adds the number of pending and failed entries discarded by this operation:
+`{ "ok": true, "discardedQueuedMessages": 2 }`. The count is zero when none were
+discarded. Already submitted or cancelled entries do not count. The Assistant
+CLI (`cld assistant chats archive <chat-id> --yes`) prints the count as a sentence
+when it is above zero; JSON and JSONL include the same response field.
+
 ### Send a queued message now
 
 `POST /conversations/:id/queue/:messageId/send-now` prioritizes that entry and

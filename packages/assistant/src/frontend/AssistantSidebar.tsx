@@ -70,6 +70,7 @@ type AssistantSidebarProps = {
   onOpenConversation?: (conversationId: string) => Promise<boolean>;
   /** What keeps a chat from being archived; the editor says it instead of offering a request that fails. */
   archiveBlocker?: (conversation: AiConversation) => AssistantArchiveBlocker;
+  queuedMessageCount?: (conversation: AiConversation) => number | undefined;
   onConversationUpdated?: (conversation: AiConversation) => void;
   onConversationArchived?: (conversation: AiConversation) => void;
   /** Open approvals the page rendered with; the Approvals row shows while this or the live count is above zero. */
@@ -447,6 +448,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     const blocker = props.archiveBlocker?.(conversation) ?? null;
     const result = await openAssistantConversationEditor(conversation, {
       archiveDisabled: blocker !== null,
+      queuedMessageCount: () => props.queuedMessageCount?.(conversation),
       archiveDisabledReason: blocker === "waiting" ? t().decideBeforeArchive : blocker === "running" ? t().stopBeforeArchive : undefined,
     });
     if (!result) return;

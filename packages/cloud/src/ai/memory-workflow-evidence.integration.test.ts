@@ -122,7 +122,9 @@ databaseSuite()("AI workflow evidence (integration)", () => {
     const userId = await insertUser(crypto.randomUUID());
     try {
       const turn = await insertCompletedTurn(userId);
-      expect(await aiConversations.archiveConversation({ conversationId: turn.conversationId, ownerUserId: userId })).toBe(true);
+      expect(await aiConversations.archiveConversation({ conversationId: turn.conversationId, ownerUserId: userId })).toEqual({
+        discardedQueuedMessages: 0,
+      });
       const receipt = {
         userId,
         ...turn,
