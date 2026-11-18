@@ -39,7 +39,7 @@ After you send it, the new message becomes a conversation.
 
 In the box and in a window:
 
-- **Signature:** the chosen signature follows the text as a fixed block, exactly as Mail adds it when it sends. Switch it with the signature button in the draft's tools.
+- **Signature:** the chosen signature follows the text as a fixed block, exactly as Mail adds it when it sends: with the mailbox design and logo, or as text in a **Plain text only** draft. Switch it with the signature button in the draft's tools.
 - **Quote:** a reply offers **Attach quote** for the message it answers. The quote is collapsed in the draft and goes out after the signature, with the date in your language and time zone.
 - **Preview:** shows the mail exactly as it arrives, with the mailbox's design. The editor itself keeps a calm Cloud style.
 - **Old links:** links to the compose page of a reply open the conversation with the draft in the box. Links to a new message and old links to its own window open Mail with the draft's window.

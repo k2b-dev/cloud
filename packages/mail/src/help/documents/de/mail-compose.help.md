@@ -38,7 +38,7 @@ Nach dem Senden wird aus der neuen Nachricht eine Unterhaltung.
 
 In der Box und im Fenster:
 
-- **Signatur:** Die gewählte Signatur folgt dem Text als fester Block, genau so, wie Mail sie beim Senden einfügt. Wechsle sie mit der Signatur-Schaltfläche in den Werkzeugen des Entwurfs.
+- **Signatur:** Die gewählte Signatur folgt dem Text als fester Block, genau so, wie Mail sie beim Senden einfügt: mit dem E-Mail-Design und Logo des Postfachs, oder als Text in einem Entwurf mit **Nur Text**. Wechsle sie mit der Signatur-Schaltfläche in den Werkzeugen des Entwurfs.
 - **Zitat:** Eine Antwort bietet **Zitat anhängen** für die Nachricht an, auf die sie antwortet. Das Zitat ist im Entwurf eingeklappt und geht nach der Signatur mit, mit Datum in deiner Sprache und Zeitzone.
 - **Vorschau:** zeigt die Mail genau so, wie sie ankommt, mit dem Design des Postfachs. Der Editor selbst bleibt im ruhigen Cloud-Stil.
 - **Alte Links:** Links auf die Seite des Editors für eine Antwort öffnen die Unterhaltung mit dem Entwurf in der Box. Links auf eine neue Nachricht und alte Links auf ein eigenes Fenster öffnen Mail mit dem Fenster des Entwurfs.

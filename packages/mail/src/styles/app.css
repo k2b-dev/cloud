@@ -1302,6 +1302,17 @@
   color: var(--k2b-text-muted);
   white-space: pre-wrap;
 }
+/* The sent signature brings its own design and spacing in the reader's message document. */
+.k2b-ui .mail-inline-draft-signature[data-signature-sent-html] {
+  padding-block-start: 0;
+  white-space: normal;
+}
+.k2b-ui .mail-inline-draft-signature-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  overflow: hidden;
+}
 .k2b-ui .mail-inline-draft-signature-note {
   font-size: 0.75rem;
 }

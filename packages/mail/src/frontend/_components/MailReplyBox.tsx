@@ -188,7 +188,8 @@ export default function MailReplyBox(props: {
       if (!scheduled) scheduled = requestAnimationFrame(mark);
     };
     const observer = new MutationObserver(schedule);
-    observer.observe(root, { childList: true, subtree: true, characterData: true });
+    // The signature frame grows by its style once its document reports a height.
+    observer.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style"] });
     root.addEventListener("load", schedule, true);
     schedule();
     onCleanup(() => {

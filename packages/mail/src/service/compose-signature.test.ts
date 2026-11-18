@@ -64,3 +64,50 @@ test("reports existing signature and complexity failure codes", () => {
     error: { composeRender: { reason: "tooComplex" } },
   });
 });
+
+// The composer shows `mailHtml`: the send renderer with an empty text and no quote. Its signature must be the one the
+// recipient gets, whatever text and quote the message has around it.
+test("the sent signature alone matches the signature block of a sent message", () => {
+  const sender: ComposeRenderContext = {
+    actor: { display_name: "Erika Beispiel", email: "erika@beispiel.test" },
+    mailbox: { name: "Beispiel Handel GmbH", description: "" },
+    sender: { display_name: "Beispiel Handel", email: "info@beispiel.test", reply_to: "" },
+    message: { subject: "", to: [], cc: [] },
+  };
+  const signature = [
+    "{{ mailbox.logo }}",
+    "<strong>{{ actor.display_name }}</strong>",
+    "Musterweg 1 · 12345 Beispielstadt · [+49 30 000000](tel:+4930000000) · [beispiel.test](https://beispiel.test)",
+    "---",
+    "Beispiel Handel GmbH · Amtsgericht Beispielstadt",
+  ].join("\n\n");
+  const shared = {
+    signature,
+    context: sender,
+    format: "markdown" as const,
+    customCss: ".mail-signature strong { text-transform: uppercase; } .mail-signature hr ~ p { color: #71717a; font-size: 11px; }",
+    renderLiquid: true,
+    logo: { src: "data:image/png;base64,iVBORw0KGgo=", altText: "Beispiel Logo", displayWidth: 120, pixelWidth: 240, pixelHeight: 60, byteLength: 8 },
+  };
+  const alone = renderComposeContent({ ...shared, body: "" });
+  const sent = renderComposeContent({
+    ...shared,
+    body: "Hallo zusammen,\n\nanbei das Angebot.",
+    quoteSource: { locale: "de", timeZone: "Europe/Berlin" },
+    sourceQuote: "> Frühere Nachricht",
+  });
+  if (!alone.ok || !alone.data.html) throw new Error("The signature did not render alone");
+  if (!sent.ok || !sent.data.html) throw new Error("The message did not render");
+  const wrapper = alone.data.html.slice(0, alone.data.html.indexOf(">") + 1);
+  const start = alone.data.html.indexOf('<div class="mail-signature"');
+  expect(start).toBe(wrapper.length);
+  expect(alone.data.html.endsWith("</div>")).toBe(true);
+  const block = alone.data.html.slice(start, -"</div>".length);
+  expect(sent.data.html.startsWith(wrapper)).toBe(true);
+  expect(sent.data.html).toContain(block);
+  expect(block).toContain('src="data:image/png;base64,iVBORw0KGgo="');
+  expect(block).toMatch(/<strong style="[^"]*text-transform: uppercase/);
+  expect(block).toMatch(/<hr[^>]*>\s*<p style="[^"]*color: #71717a[^"]*font-size: 11px[^"]*">Beispiel Handel GmbH/);
+  expect(block).toContain('href="tel:+4930000000"');
+  expect(block).toContain("<hr");
+});
