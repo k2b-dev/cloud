@@ -330,7 +330,7 @@ suiteFor(
     const current = await aiConversations
       .createSessionStore({ conversationId: own.id, turnId: turn.id, leaseOwner: "context-test" })
       .load();
-    expect(current.filter((entry) => entry.meta?.wakeupEvent)).toEqual([]);
+    expect(JSON.stringify(current)).not.toContain("wakeupEvent");
     expect(JSON.stringify(current)).not.toContain("Alarm set");
     expect(JSON.stringify(current)).not.toContain("Alarm changed");
     await sql`UPDATE ai.turns SET status='completed' WHERE id=${turn.id}::uuid`;
@@ -343,7 +343,7 @@ suiteFor(
     const following = await aiConversations
       .createSessionStore({ conversationId: own.id, turnId: next.turn.id, leaseOwner: "next-context" })
       .load();
-    expect(following.filter((entry) => entry.meta?.wakeupEvent)).toEqual([]);
+    expect(JSON.stringify(following)).not.toContain("wakeupEvent");
     const context = await aiConversations.listContextMessages({ conversationId: own.id });
     expect(context.filter((entry) => entry.meta?.wakeupEvent)).toEqual([]);
     for (const entries of [following, context]) {
@@ -389,7 +389,7 @@ suiteFor(
     spyOn(runtime, "prepareAiChatTurn").mockRejectedValue(new AiMessageQueueConflict("Queue full"));
     await tick();
     await tick(new Date(+due + AI_WAKEUP_SCHEDULE.intervalMs));
-    expect(await sql`SELECT status,missed_reason FROM ai.wakeups WHERE id=${oneOff.id}::uuid`).toEqual([
+    expect(await sql<{ status: string; missed_reason: string | null }[]>`SELECT status,missed_reason FROM ai.wakeups WHERE id=${oneOff.id}::uuid`).toEqual([
       { status: "missed", missed_reason: "queue_full" },
     ]);
     expect(
@@ -510,7 +510,7 @@ suiteFor(
     );
     const expiredAt = new Date(+due + AI_WAKEUP_MISSED_DAYS * 86_400_000);
     await tick(expiredAt);
-    expect(await sql`SELECT status FROM ai.wakeups WHERE id=${alarm.id}::uuid`).toEqual([{ status: "expired" }]);
+    expect(await sql<{ status: string }[]>`SELECT status FROM ai.wakeups WHERE id=${alarm.id}::uuid`).toEqual([{ status: "expired" }]);
     expect((await aiWakeups.list(own.shortId, subject, "en")).items).toEqual([]);
     for (let i = 0; i < AI_WAKEUP_CHAT_LIMIT; i++)
       await aiWakeups.create(own.shortId, { ...note, at: new Date(+expiredAt + 60_000).toISOString() }, subject, "en", expiredAt);
