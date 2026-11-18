@@ -16,6 +16,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { renderToString } = await import("solid-js/web");
 const { ApprovalCard } = await import("../../approvals/ApprovalCard");
+const { ActionDetails } = await import("./action-details");
 const { default: Approvals } = await import("../../approvals/Approvals");
 const { toolActionCard } = await import("./action-card");
 const { actionMessages } = await import("./action-messages");
@@ -48,6 +49,7 @@ dom.cleanup();
 const parser = new dom.window.DOMParser();
 const parse = (html: string) => parser.parseFromString(html, "text/html").body;
 const render = (patch: Partial<Props> = {}) => parse(renderToString(() => createComponent(ApprovalCard, { ...defaults(), ...patch })));
+const renderDetails = (value: Props["card"]) => parse(renderToString(() => createComponent(ActionDetails, { card: value })));
 const words = (node: { outerHTML: string }) => {
   const copy = parse(node.outerHTML);
   for (const element of copy.querySelectorAll("span, div, p, button, li")) element.after(" ");
@@ -67,23 +69,23 @@ describe("ApprovalCard at the public rendering seam", () => {
       }
   });
 
-  test("head, source, platform reason and app details are visible together", () => {
+  test("one summary shows source, sentence and reason; complete details wait behind See everything", () => {
     const body = render();
-    const head = body.querySelector(".k2b-chat-decision__head")!;
-    expect(words(head)).toContain("Freigabe · Mail");
-    expect(head.querySelector(".ti-shield-check")).not.toBeNull();
-    expect(head.querySelector(".ti-mail")).not.toBeNull();
-    expect(words(body)).toContain("Details von Mail");
+    const frame = body.querySelector(".cloud-approval-frame")!;
+    expect(frame.getAttribute("aria-label")).toBe("Freigabe · Mail");
+    expect(frame.querySelectorAll(".ti-shield-check")).toHaveLength(1);
+    expect(frame.querySelector(".ti-mail")).toBeNull();
+    expect(words(body)).toContain("Alles ansehen");
     expect(words(body)).toContain("Ich frage, weil das Cloud verlässt.");
-    for (const value of ["An", "Von", "Lea Berg", "Wartungsfenster Dienstag", "Betreff", "Text"]) expect(words(body)).toContain(value);
-    expect(body.querySelector('input[value="Wartungsfenster Dienstag"]')?.hasAttribute("readonly")).toBe(true);
+    expect(body.querySelector(".cloud-action-details")).toBeNull();
+    const details = renderDetails(card());
+    for (const value of ["An", "Von", "Lea Berg", "Betreff", "Text"]) expect(words(details)).toContain(value);
+    expect(details.querySelector('input[value="Wartungsfenster Dienstag"]')?.hasAttribute("readonly")).toBe(true);
   });
 
   test("consequences stay a list with their change markers", () => {
     const source = actionFixtures("de").share!.block;
-    const body = render({
-      card: toolActionCard(source, { locale: "de", timeZone: "UTC", outcome: legacyOutcomeWords(source, "de", "UTC") }),
-    });
+    const body = renderDetails(toolActionCard(source, { locale: "de", timeZone: "UTC", outcome: legacyOutcomeWords(source, "de", "UTC") }));
     const changes = body.querySelector('.cloud-action-details__changes[aria-label="Was sich ändert"]')!;
     expect(changes.querySelectorAll("li")).toHaveLength(3);
     expect(changes.querySelector('li[data-mark="added"]')?.textContent).toContain("Tom kann alles darin ansehen");
@@ -97,20 +99,20 @@ describe("ApprovalCard at the public rendering seam", () => {
       ["routine", ["Neue Aufgaben zusammenfassen", "Liest neue Aufgaben, keine Termine."]],
     ] as const) {
       const source = actionFixtures("de")[key]!.block;
-      const body = render({
-        card: toolActionCard(source, { locale: "de", timeZone: "UTC", outcome: legacyOutcomeWords(source, "de", "UTC") }),
-      });
+      const body = renderDetails(
+        toolActionCard(source, { locale: "de", timeZone: "UTC", outcome: legacyOutcomeWords(source, "de", "UTC") }),
+      );
       for (const value of values) expect(words(body)).toContain(value);
       if (key === "fields") expect(body.querySelector("s")?.textContent).toBe("DE02 1203 0000 0000 2020 51");
     }
   });
 
-  test("remember is a checkbox only when offered; otherwise asks every time", () => {
+  test("remember stays behind the complete details action; otherwise asks every time", () => {
     expect(render().querySelector('input[type="checkbox"]')).toBeNull();
     expect(words(render())).toContain("Fragt jedes Mal");
     const remembered = render({ remember: { onSelect: () => {} } });
-    expect(remembered.querySelector('input[type="checkbox"]')).not.toBeNull();
-    expect(words(remembered)).toContain("In diesem Chat nicht mehr fragen");
+    expect(remembered.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(words(remembered)).toContain("Alles ansehen");
     expect(words(remembered)).not.toContain("Fragt jedes Mal");
   });
 
@@ -152,10 +154,11 @@ describe("ApprovalCard at the public rendering seam", () => {
     const linked = { ...card(legacy), view: [], links: [] };
     expect(linked.readMore).toBe("/app/mail/drafts/d1?revision=7");
     const body = render({ card: linked });
-    expect(body.querySelector(".k2b-chat-decision__details")).not.toBeNull();
-    expect(body.querySelector('.k2b-chat-decision__details a[href="/app/mail/drafts/d1?revision=7"]')).not.toBeNull();
+    expect(words(body)).toContain("Alles ansehen");
+    const details = renderDetails(linked);
+    expect(details.querySelector('a[href="/app/mail/drafts/d1?revision=7"]')).not.toBeNull();
     // Without that link, an old review has nothing to show and no details island.
-    expect(render({ card: { ...linked, readMore: undefined } }).querySelector(".k2b-chat-decision__details")).toBeNull();
+    expect(renderDetails({ ...linked, readMore: undefined }).querySelector("a")).toBeNull();
   });
 
   for (const [state, tone, label] of [
@@ -171,7 +174,10 @@ describe("ApprovalCard at the public rendering seam", () => {
         state,
         outcome: { lines: { result: { tone, text: [{ kind: "text", text: "Ergebnis." }] } }, current: "result" },
       });
-      expect(words(body.querySelector(".k2b-chat-decision__head")!)).toContain(`Freigabe · Mail ${label}`);
+      expect(body.querySelector(".cloud-approval-frame")?.getAttribute("aria-label")).toBe("Freigabe · Mail");
+      expect(body.querySelectorAll(".ti-shield-check")).toHaveLength(1);
+      expect(body.querySelector("[role=status]")?.textContent).toBe(tone === "error" ? "" : "Ergebnis.");
+      expect(body.querySelector("[role=alert]")?.textContent).toBe(tone === "error" ? "Ergebnis." : "");
       expect(words(body)).toContain("Ergebnis.");
       expect(body.querySelector(".k2b-chat-decision__details")).toBeNull();
       expect(body.querySelector(".k2b-chat-decision__answers")).toBeNull();
@@ -179,21 +185,22 @@ describe("ApprovalCard at the public rendering seam", () => {
 
   test("an editable draft starts in edit mode with a safe next step", () => {
     const body = render({ onEditDraft: async () => true });
-    expect(body.querySelector('.k2b-chat-decision[data-mode="edit"]')).not.toBeNull();
-    expect(words(body)).toContain("Entwurf · Mail");
+    expect(body.querySelector('.cloud-approval-frame[data-mode="edit"]')).not.toBeNull();
+    expect(body.querySelector(".cloud-approval-frame")?.getAttribute("aria-label")).toBe("Freigabe · Mail");
     expect(words(body)).toContain("Nichts geht raus, bevor du freigibst.");
-    expect(words(body)).toContain("Verwerfen");
+    expect(words(body)).not.toContain("Verwerfen");
+    expect(words(body)).toContain("Alles ansehen");
     expect(words(body)).toContain("An Lea Berg senden …");
-    expect(body.querySelector(".cloud-blocks__field input")?.outerHTML).not.toContain("readonly");
+    expect(body.querySelector(".cloud-blocks__field input")).toBeNull();
   });
 
   test("no editing without a callback or for a converted draft", () => {
-    expect(render().querySelector('.k2b-chat-decision[data-mode="approve"]')).not.toBeNull();
+    expect(render().querySelector('.cloud-approval-frame[data-mode="approve"]')).not.toBeNull();
     const parsed = CapabilityActionReviewPresentationSchema.parse(legacyReviewView(storedLegacyReviews("de").message));
     if (!("sentence" in parsed)) throw new Error("Expected converted view review");
     expect(parsed.draft?.editable).toBe(false);
     const body = render({ card: card(parsed), onEditDraft: async () => true });
-    expect(body.querySelector('.k2b-chat-decision[data-mode="approve"]')).not.toBeNull();
+    expect(body.querySelector('.cloud-approval-frame[data-mode="approve"]')).not.toBeNull();
     expect(words(body)).not.toContain("Verwerfen");
   });
 
@@ -203,8 +210,9 @@ describe("ApprovalCard at the public rendering seam", () => {
       card: toolActionCard(source, { locale: "de", timeZone: "UTC", outcome: legacyOutcomeWords(source, "de", "UTC") }),
     });
     expect(words(body)).toContain("Lies vor der Freigabe den vollständigen Vorschlag.");
-    expect(words(body)).toContain("Der vollständige Vorschlag wird geladen");
-    expect(body.querySelector('.k2b-chat-decision__answer[data-variant="ai"]')?.hasAttribute("disabled")).toBe(true);
+    expect(body.querySelector(".cloud-action-details")).toBeNull();
+    expect(words(body)).toContain("Alles ansehen");
+    expect(body.querySelector("[data-approval-primary]")?.hasAttribute("disabled")).toBe(true);
   });
 
   const keyValues = {
@@ -221,7 +229,7 @@ describe("ApprovalCard at the public rendering seam", () => {
       const parsed = CapabilityActionReviewPresentationSchema.parse(legacyReviewView(stored));
       if (!("sentence" in parsed)) throw new Error("Expected converted view review");
       expect(parsed.draft?.editable).toBe(false);
-      const body = render({ card: card(parsed) });
+      const body = renderDetails(card(parsed));
       for (const value of keyValues[kind as keyof typeof keyValues]) expect(words(body) + body.innerHTML).toContain(value);
     });
 
@@ -252,7 +260,7 @@ describe("ApprovalCard at the public rendering seam", () => {
     const panel = parse(`<aside data-k2b-layer="flat">${renderToString(() => createComponent(ApprovalCard, same))}</aside>`);
     const page = parse(renderToString(() => createComponent(Approvals, { app: "mail", initial })));
     const signature = (host: ReturnType<typeof parse>) => {
-      const root = host.querySelector(".k2b-chat-decision")!;
+      const root = host.querySelector(".cloud-approval-frame")!;
       return [root, ...root.querySelectorAll("*")].map((node) => ({
         tag: node.tagName,
         classes: [...node.classList].sort(),

@@ -60,7 +60,7 @@ describe("The Assistant part on a phone", () => {
 
       await page.click("a[href='/pwa/assistant/c/retro']");
       await page.waitForURL(/\/pwa\/assistant\/c\/retro$/);
-      await page.locator(".k2b-chat-decision").waitFor();
+      await page.locator(".cloud-approval-frame").waitFor();
       expect(await tabBarShown(page)).toBe(false);
       const chatComposer = await box(page, ".assistant-pwa-chat__composer");
       // Without the tab bar the field reaches down to the level's bottom padding.
@@ -98,7 +98,7 @@ describe("The Assistant part on a phone", () => {
     expect(new Set(places.map(Math.round)).size).toBe(1);
   }, 30_000);
 
-  test("offline the field keeps its text and says why it cannot send; both answers of a question wait", async () => {
+  test("offline the field keeps its text and says why it cannot send; both decisions wait while the proposal stays available", async () => {
     const page = await open("screen=chat-approval-offline&chat=retro");
     try {
       await field(page).fill("Mach daraus die Karte für A6.");
@@ -107,10 +107,12 @@ describe("The Assistant part on a phone", () => {
       expect(await field(page).inputValue()).toBe("Mach daraus die Karte für A6.");
       expect(
         await page
-          .locator(".k2b-chat-decision__answer")
+          .locator(".cloud-approval-frame .k2b-notice-card__actions button")
           .evaluateAll((buttons) => buttons.map((button) => (button as HTMLButtonElement).disabled)),
-      ).toEqual([true, true]);
-      expect(await page.locator(".k2b-chat-decision__reason").textContent()).toContain("Offline. Antworten geht wieder mit Netz.");
+      ).toEqual([false, true]);
+      await page.getByRole("button", { name: "Alles ansehen", exact: true }).click();
+      expect(await page.getByRole("dialog").getByRole("button", { name: "Behalten", exact: true }).isDisabled()).toBe(true);
+      expect(await page.locator(".k2b-notice-card__description").textContent()).toContain("Offline. Antworten geht wieder mit Netz.");
     } finally {
       await page.context().close();
     }

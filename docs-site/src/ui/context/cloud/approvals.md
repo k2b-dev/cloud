@@ -24,9 +24,14 @@ component loads in the browser and shows a loading state first.
 ## Import
 
 ```ts
-import { ApprovalFrame, Approvals, ApprovalsNavStatus, approvalNavCount } from "@k2b/cloud/approvals/ui";
+import { ApprovalFrame } from "@k2b/cloud/approvals/frame";
+import Approvals from "@k2b/cloud/approvals/list";
+import ApprovalsNavStatus, { approvalNavCount } from "@k2b/cloud/approvals/navigation";
 import { loadPendingApprovals } from "@k2b/cloud/server";
 ```
+
+The combined `@k2b/cloud/approvals/ui` entry remains available. Prefer the
+focused entries above to keep list and proposal code out of a summary-only view.
 
 ## Props
 
@@ -58,6 +63,8 @@ with its own data. The frame knows no Capability:
   full text differs from the rendered content.
 - `details` supplies `{ label, context?, content, note? }`. Pass `content` as a
   function to mount the complete proposal only when the person opens it.
+  Optional `load` prepares its module before the dialog opens; a rejected load
+  leaves a visible error on the card and **See everything** retries it.
   `notes` and `meta` remain available in that detail view.
 - `confirm` is the main control. Set `filled: false` for a neutral action or
   supply `href` for navigation. A domain-specific control such as a split

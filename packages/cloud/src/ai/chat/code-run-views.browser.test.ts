@@ -216,7 +216,7 @@ const report = (page: Page) =>
     return {
       parts: Array.from(
         content.querySelectorAll(
-          ".k2b-stat-grid, .k2b-stat-cell, .k2b-data-table, .k2b-chart-explorer, .k2b-chart, .k2b-dashboard-frame, .cloud-blocks, .k2b-chat-decision",
+          ".k2b-stat-grid, .k2b-stat-cell, .k2b-data-table, .k2b-chart-explorer, .k2b-chart, .k2b-dashboard-frame, .cloud-blocks, .cloud-approval-frame",
         ),
       ).map((node) => [...node.classList].filter((name) => /^(k2b|cloud)-[a-z-]+$/.test(name)).join(" ")),
       tiles: Array.from(content.querySelectorAll(".k2b-stat-cell")).map(words),
@@ -252,7 +252,7 @@ for (const view of [
       expect(live.tiles.length).toBe(4);
       expect(live.charts.map((entry) => entry.title)).toEqual(["Umsatz je Monat", "Aufträge je Kanal"]);
       // Capability view blocks and approval cards never take over a code run's report.
-      expect(live.parts.some((part) => part.includes("cloud-blocks") || part.includes("k2b-chat-decision"))).toBe(false);
+      expect(live.parts.some((part) => part.includes("cloud-blocks") || part.includes("cloud-approval-frame"))).toBe(false);
       expect(live).toMatchSnapshot();
 
       // After the turn ends and the chat reloads from stored messages, the same report stands in the same places.
@@ -353,10 +353,10 @@ for (const width of [1440, 390])
             approval: { allowAlways: false, review: { message: "Die Lieferaufgabe in Spaces anlegen.", details: [] } },
           },
         });
-        const card = page.locator(".ai-turn__action .k2b-chat-decision");
+        const card = page.locator(".ai-turn__action .cloud-approval-frame");
         await card.waitFor();
-        expect(await card.locator(".k2b-chat-decision__reason").innerText()).toContain("Spaces");
-        expect(await card.locator(".k2b-chat-decision__reason").innerText()).not.toContain("Cloud");
+        expect(await card.locator(".k2b-notice-card__description").innerText()).toContain("Spaces");
+        expect(await card.locator(".k2b-notice-card__description").innerText()).not.toContain("Cloud");
         expect(await card.innerText()).not.toContain("export default");
         await page.screenshot({ path: `/tmp/gustav-lane-v-3607/code-approval-${theme}-${width}.png` });
       } finally {

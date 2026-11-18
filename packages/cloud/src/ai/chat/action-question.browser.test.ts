@@ -93,11 +93,11 @@ const open = async (width: number, query = "", reducedMotion: "reduce" | "no-pre
     });
   });
   await page.goto(`${origin}/?${query}`);
-  await page.locator(".k2b-chat-decision").first().waitFor();
+  await page.locator(".cloud-approval-frame").first().waitFor();
   await settled(page);
   return { page, errors, close: () => context.close() };
 };
-const decision = (page: Page) => page.locator('[data-host="chat"] .k2b-chat-decision');
+const decision = (page: Page) => page.locator('[data-host="chat"] .cloud-approval-frame');
 
 describe("ApprovalCard draft and host parity", () => {
   for (const motion of ["reduce", "no-preference"] as const)
@@ -106,7 +106,7 @@ describe("ApprovalCard draft and host parity", () => {
       try {
         const card = decision(page);
         const before = (await card.boundingBox())!;
-        const sentenceHeight = () => card.locator(".k2b-chat-decision__sentence").evaluate((node) => node.getBoundingClientRect().height);
+        const sentenceHeight = () => card.locator(".k2b-notice-card__title").evaluate((node) => node.getBoundingClientRect().height);
         const sentenceBefore = await sentenceHeight();
         expect(before.width).toBe(764);
         const geometry = () =>
@@ -120,26 +120,16 @@ describe("ApprovalCard draft and host parity", () => {
             );
           });
         const stable = await geometry();
-        const transition = await card.evaluate((node) => ({
-          property: getComputedStyle(node).transitionProperty,
-          duration: getComputedStyle(node).transitionDuration,
-        }));
-        if (motion === "reduce") expect(transition.duration).toBe("0s");
-        else {
-          expect(transition.property.split(", ").sort()).toEqual(["background-color", "border-color", "box-shadow"]);
-          expect(transition.duration.split(", ").every((value) => value === "0.2s")).toBe(true);
-        }
         await card.getByRole("button", { name: "An Lea Berg senden …", exact: true }).click();
+        await page.getByRole("dialog").getByRole("button", { name: "An Lea Berg senden …", exact: true }).click();
         await page.waitForFunction(
-          () => document.querySelector('[data-host="chat"] .k2b-chat-decision')?.getAttribute("data-mode") === "approve",
+          () => document.querySelector('[data-host="chat"] .cloud-approval-frame')?.getAttribute("data-mode") === "approve",
         );
         await settled(page);
         const after = (await card.boundingBox())!;
-        // The question may be worded longer than the draft's intent and then grows downwards only; every other part,
-        // the fields and the answer row above all, keeps its size.
-        const grown = (await sentenceHeight()) - sentenceBefore;
+        expect(await sentenceHeight()).toBe(sentenceBefore);
         for (const key of ["x", "y", "width"] as const) expect(Math.abs(after[key] - before[key])).toBeLessThanOrEqual(1);
-        expect(Math.abs(after.height - before.height - grown)).toBeLessThanOrEqual(1);
+        expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
         expect(await geometry()).toEqual(stable);
         expect(errors).toEqual([]);
       } finally {
@@ -151,12 +141,17 @@ describe("ApprovalCard draft and host parity", () => {
     const { page, close } = await open(1100, "draft=1");
     try {
       const card = decision(page);
-      const subject = card.getByLabel("Betreff", { exact: true });
-      const body = card.getByLabel("Text", { exact: true });
+      await card.getByRole("button", { name: "An Lea Berg senden …", exact: true }).click();
+      let dialog = page.getByRole("dialog");
+      let subject = dialog.getByLabel("Betreff", { exact: true });
+      let body = dialog.getByLabel("Text", { exact: true });
       await subject.fill("Geänderter Betreff");
       await body.fill("Geänderter Text");
-      await card.getByRole("button", { name: "An Lea Berg senden …", exact: true }).click();
-      await page.waitForFunction(() => document.querySelector(".k2b-chat-decision")?.getAttribute("data-mode") === "approve");
+      await dialog.getByRole("button", { name: "An Lea Berg senden …", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector(".cloud-approval-frame")?.getAttribute("data-mode") === "approve");
+      dialog = page.getByRole("dialog");
+      subject = dialog.getByLabel("Betreff", { exact: true });
+      body = dialog.getByLabel("Text", { exact: true });
       for (const field of [subject, body]) {
         expect(await field.getAttribute("readonly")).not.toBeNull();
         const value = await field.inputValue();
@@ -164,7 +159,9 @@ describe("ApprovalCard draft and host parity", () => {
         await field.pressSequentially("should not change");
         expect(await field.inputValue()).toBe(value);
       }
-      await card.getByRole("button", { name: "Ändern", exact: true }).click();
+      await dialog.getByRole("button", { name: "Ändern", exact: true }).click();
+
+      subject = page.getByRole("dialog").getByLabel("Betreff", { exact: true });
       expect(await subject.getAttribute("readonly")).toBeNull();
       await subject.fill("Wieder bearbeitbar");
       expect(await subject.inputValue()).toBe("Wieder bearbeitbar");
@@ -177,10 +174,10 @@ describe("ApprovalCard draft and host parity", () => {
     test(`same approval has the same computed surface in chat, flat blue panel and page (${theme})`, async () => {
       const { page, errors, close } = await open(1100, "", "reduce", theme);
       try {
-        const styles = await page.locator(".k2b-chat-decision").evaluateAll((nodes) =>
+        const styles = await page.locator(".cloud-approval-frame").evaluateAll((nodes) =>
           nodes.map((node) => {
             const css = getComputedStyle(node);
-            const approve = node.querySelector('.k2b-chat-decision__answer[data-variant="ai"]')!;
+            const approve = node.querySelector("[data-approval-primary]")!;
             return {
               background: css.backgroundColor,
               radius: css.borderRadius,
@@ -200,21 +197,25 @@ describe("ApprovalCard draft and host parity", () => {
       }
     });
 
-  test("390 px: answers fill the row above the facts in every host", async () => {
+  test("390 px: two equal controls fill the row below the text in every host", async () => {
     const { page, close } = await open(390);
     try {
-      const layouts = await page.locator(".k2b-chat-decision").evaluateAll((nodes) =>
+      const layouts = await page.locator(".cloud-approval-frame").evaluateAll((nodes) =>
         nodes.map((node) => {
-          const answers = node.querySelector(".k2b-chat-decision__answers")!.getBoundingClientRect();
-          const buttons = node.querySelector(".k2b-chat-decision__buttons")!.getBoundingClientRect();
-          const facts = node.querySelector(".k2b-chat-decision__meta")!.getBoundingClientRect();
-          return { row: answers.width, width: buttons.width, bottom: buttons.bottom, factsTop: facts.top };
+          const content = node.querySelector(".k2b-notice-card__content")!.getBoundingClientRect();
+          const actions = node.querySelector(".k2b-notice-card__actions")!.getBoundingClientRect();
+          const controls = [...node.querySelectorAll<HTMLElement>(".k2b-notice-card__action-slot")].map((control) =>
+            control.getBoundingClientRect(),
+          );
+          return { actions: actions.width, widths: controls.map((control) => control.width), top: actions.top, textBottom: content.bottom };
         }),
       );
       expect(layouts).toHaveLength(3);
       for (const layout of layouts) {
-        expect(Math.abs(layout.width - layout.row)).toBeLessThanOrEqual(1);
-        expect(layout.factsTop).toBeGreaterThanOrEqual(layout.bottom);
+        expect(layout.widths).toHaveLength(2);
+        expect(Math.abs(layout.widths[0]! - layout.widths[1]!)).toBeLessThanOrEqual(1);
+        expect(layout.top).toBeGreaterThanOrEqual(layout.textBottom);
+        expect(layout.widths[0]! * 2).toBeGreaterThan(layout.actions - 12);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
     } finally {

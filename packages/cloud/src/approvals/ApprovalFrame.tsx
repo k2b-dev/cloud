@@ -34,7 +34,13 @@ export type ApprovalFrameProps = {
   sentence?: ActionText | string;
   reason: ChatDecisionReason;
   quietTitle?: string;
-  details?: { label: string; context?: string; content: JSX.Element | (() => JSX.Element); note?: { text: string; icon?: string } };
+  details?: {
+    label: string;
+    context?: string;
+    content: JSX.Element | (() => JSX.Element);
+    note?: { text: string; icon?: string };
+    load?: () => Promise<void>;
+  };
   notes?: readonly ChatDecisionReason[];
   meta?: readonly ChatDecisionFact[];
   confirm?: ApprovalFrameAction;
@@ -131,7 +137,7 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
     const controller = new AbortController();
     detailsAbort = controller;
     try {
-      const { openApprovalDetails } = await import("./approval-details");
+      const [{ openApprovalDetails }] = await Promise.all([import("./approval-details"), props.details?.load?.()]);
       if (!controller.signal.aborted)
         await openApprovalDetails({ props, invoke, remembered, setRemembered, pending, failed: answerFailure, signal: controller.signal });
     } catch (error) {

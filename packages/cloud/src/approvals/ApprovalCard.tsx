@@ -2,7 +2,7 @@ import type { ChatDecisionState } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { type ActionCard, type ActionText, actionPlainText } from "../ai/chat/action-card";
 import { actionMessages } from "../ai/chat/action-messages";
-import { ActionDetails, type ActionLine } from "../ai/chat/action-question";
+import type { ActionLine } from "../ai/chat/action-question";
 import type { Block } from "../blocks/schema";
 import { ApprovalFrame, type ApprovalFrameStatus } from "./ApprovalFrame";
 
@@ -36,6 +36,8 @@ export type ApprovalCardProps = {
   waiting?: string;
   anchorId?: string | number;
 };
+
+let ActionDetails: typeof import("../ai/chat/action-details")["ActionDetails"];
 
 const confirmIcon = (card: ActionCard): string | undefined => (card.reason.code === "sends" ? "ti ti-send" : undefined);
 
@@ -180,6 +182,9 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
         (props.card.consequences ?? []).length > 0
           ? {
               label: t().detailsFrom({ app: props.card.app.name }),
+              load: async () => {
+                ActionDetails = (await import("../ai/chat/action-details")).ActionDetails;
+              },
               content: () => (
                 <>
                   {!open() ? currentLine()?.actions : undefined}

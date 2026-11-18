@@ -1,4 +1,4 @@
-import { ApprovalFrame } from "@k2b/cloud/approvals/ui";
+import { ApprovalFrame } from "@k2b/cloud/approvals/frame";
 import { documentNavigate } from "@k2b/ssr/nav";
 import { Button, ButtonLink, type ButtonVariant, SplitButton, useLocale } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";

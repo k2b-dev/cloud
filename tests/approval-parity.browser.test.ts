@@ -2,10 +2,10 @@ import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { type FixtureReviewVariant, fixtureApprovalDetail } from "../../../core/src/pages/admin/code/CodeArea.fixture-data";
-import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { type FixtureReviewVariant, fixtureApprovalDetail } from "../packages/core/src/pages/admin/code/CodeArea.fixture-data";
+import { launchBrowser, pageErrors, settled } from "../packages/ui/test/browser";
 
-const root = resolve(import.meta.dir, "../../../..");
+const root = resolve(import.meta.dir, "..");
 const shots = process.env.CAPBLOCKS_SHOTS;
 let browser: Browser;
 let assets: ReturnType<typeof Bun.serve>;
@@ -26,6 +26,8 @@ beforeAll(async () => {
       {
         name: "approval-parity-dom",
         setup(builder) {
+          // The cross-app harness has no application package scope; resolve the public browser distribution explicitly.
+          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "dist/browser/index.js") }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -41,7 +43,7 @@ beforeAll(async () => {
   });
   if (!build.success) throw new AggregateError(build.logs, "Approval parity harness failed");
   const script = await build.outputs[0]!.text();
-  const tailwind = (await import("bun-plugin-tailwind")).default;
+  const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(root, "packages/cloud")))).default;
   const styles: string[] = [];
   for (const path of ["styles.css", "packages/assistant/src/styles/app.css", "packages/core/src/styles/app.css"]) {
     const output = await Bun.build({ entrypoints: [resolve(root, path)], plugins: [tailwind] });

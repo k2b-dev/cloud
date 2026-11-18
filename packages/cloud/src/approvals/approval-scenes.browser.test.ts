@@ -733,6 +733,7 @@ describe("Approval scenes", () => {
             const dialog = page.getByRole("dialog");
             await dialog.locator(".cloud-blocks__field").first().waitFor();
             await shot(page, `draft-${++draftNumber}-details-${theme}-${width}`);
+            await settled(page);
             labels.push(
               ...(await dialog.locator(".cloud-blocks__field").evaluateAll((fields) =>
                 fields.map((field) => {

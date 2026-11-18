@@ -5,7 +5,7 @@
  * of every approval; a Code version or an admin review fills it with its own sentence, details, and answers.
  */
 
-export { ActionDetails as ApprovalDetails } from "../ai/chat/action-question";
+export { ActionDetails as ApprovalDetails } from "../ai/chat/action-details";
 export type { ApprovalDraftResult } from "../contracts/approvals";
 export {
   ApprovalFrame,

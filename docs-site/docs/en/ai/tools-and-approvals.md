@@ -742,21 +742,21 @@ panel, the **Approvals** list, Code pages, other apps through the `Approvals`
 component from `@k2b/cloud/approvals/ui`, and on phones. Only its width follows
 the place.
 
-- Cloud draws the head "Approval · App" with the app's icon, the state at the
-  end of the head, the sentence with its chips, the reason, the expiry, and the
-  answers. The app supplies only its sentence templates and the details as
-  [`review.view`](/en/docs/platform/capability-views#approvals), shown under
-  "Details from App" on the surface colour.
-- The card has a tinted ground in the AI colour (`--k2b-ai-surface`) in every
-  place, with no rules and no shadow, and sets its own AI primary scope. The
-  approve answer is the only filled button.
-- The states are one component: waiting, running, done, declined, expired,
-  failed, and unclear. After an answer the card keeps its ground and head, shows
-  the state as a word with its icon, and collapses to one outcome line with at
-  most one button.
-- Where remembering for this chat is allowed, the answer row shows the checkbox
-  **Don't ask again in this chat** (`remember: "chat"`); otherwise it says
-  **Asks every time**. A chat choice ends when the chat is deleted.
+- Cloud draws one shield, a sentence that says the state once, one quiet line
+  for the app, reason and expiry, and at most two controls. The app supplies
+  sentence templates and the proposal as
+  [`review.view`](/en/docs/platform/capability-views#approvals). Full proposals,
+  drafts and further decisions open through **See everything**.
+- The card uses the quiet AI surface, without a nested box, rule or shadow.
+  Code versions and administrator reviews use the same `ApprovalFrame`.
+  Only the main action is filled when it commits or opens the result.
+- Waiting, running, done, declined, expired, failed and unclear share one
+  frame. Its height stays fixed through transitions. On phones, equal-width
+  controls sit below the text; actionless terminal receipts may be compact.
+- Where remembering for this chat is allowed, **See everything** offers the
+  checkbox **Don't ask again in this chat** (`remember: "chat"`); otherwise
+  the quiet line says **Asks every time**. A chat choice ends when the chat
+  is deleted.
 - A place passes data and answers, never a class, a style, or a variant. The
   `approval-card-calls` rule fails on look props, on `Chat.Decision` outside
   `ApprovalCard`, and on other stylesheets that style the card.

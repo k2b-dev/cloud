@@ -866,7 +866,7 @@ for (const view of [
   { name: "phone", width: 390, height: 844, touch: true },
 ] as const)
   for (const theme of ["light", "dark"] as const)
-    test(`a pending question collapses to its outcome line in place, also when the turn ends (${view.name}, ${theme})`, async () => {
+    test(`a pending question keeps its compact frame through the outcome and turn end (${view.name}, ${theme})`, async () => {
       const context = await browser.newContext({
         viewport: { width: view.width, height: view.height },
         isMobile: view.touch,
@@ -926,27 +926,27 @@ for (const view of [
             },
           },
         });
-        const card = ".ai-turn__action .k2b-chat-decision";
+        const card = ".ai-turn__action .cloud-approval-frame";
         await settled(page, ".ai-turn");
         const cardBox = (await viewportBox(page, card))!;
         const workBox = await viewportBox(page, ".ai-turn-work");
         const textBox = await viewportBox(page, ".ai-turn__text");
         // The approval frame: the old message is the question, Cloud says why, on the AI ground with 12 px corners.
-        expect(await page.locator(`${card} .k2b-chat-decision__sentence`).innerText()).toBe("Send the offer to Jana Berger.");
-        expect(await page.locator(`${card} .k2b-chat-decision__reason`).innerText()).toBe(
+        expect(await page.locator(`${card} .k2b-notice-card__title`).innerText()).toBe("Send the offer to Jana Berger.");
+        expect(await page.locator(`${card} .k2b-notice-card__description`).innerText()).toContain(
           de ? "Ich frage, weil Mail hier jedes Mal fragt." : "I'm asking because Mail always asks for this.",
         );
         expect(await page.$eval(card, (node) => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
         expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopLeftRadius)).toBe("12px");
-        // No visible edge: the frame keeps a transparent one so a draft can raise it without moving.
-        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopColor)).toBe("rgba(0, 0, 0, 0)");
+        // The shared row has no border in either mode.
+        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopWidth)).toBe("0px");
         // The filled answer stands last; the other answer before it.
-        const approve = page.locator(`${card} .k2b-chat-decision__answer[data-variant="ai"]`);
-        const decline = page.locator(`${card} .k2b-chat-decision__answer[data-variant="secondary"]`);
+        const approve = page.locator(`${card} [data-approval-primary]`);
+        const decline = page.locator(`${card} .k2b-notice-card__actions button:not([data-approval-primary])`);
         const approveBox = (await approve.boundingBox())!;
         const declineBox = (await decline.boundingBox())!;
         expect(await approve.innerText()).toBe(de ? "E-Mail senden" : "Send email");
-        expect(approveBox.height).toBe(32);
+        expect(await approve.getAttribute("data-size")).toBe(view.touch ? "md" : "sm");
         if (view.touch) {
           // On a phone the answer's hit area reaches 44 px around its 32 px box.
           const hit = await approve.evaluate((node) => parseFloat(getComputedStyle(node, "::after").height));
@@ -955,32 +955,28 @@ for (const view of [
         expect(declineBox.y).toBe(approveBox.y);
         if (view.touch) {
           // Phones let the two answers share the row.
-          const answers = (await page.locator(`${card} .k2b-chat-decision__answers`).boundingBox())!;
+          const answers = (await page.locator(`${card} .k2b-notice-card__actions`).boundingBox())!;
           expect(approveBox.width + declineBox.width).toBeGreaterThan(answers.width - 12);
         }
         expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
 
-        // Approving turns the frame at once into its outcome line where the question stood, with focus on it; the frame and
-        // everything above it stay where they were.
-        const sentenceBox = (await viewportBox(page, `${card} .k2b-chat-decision__sentence`))!;
+        // Approving changes the sentence in the same frame, moves focus to the result and preserves everything above it.
+        const sentenceBox = (await viewportBox(page, `${card} .k2b-notice-card__title`))!;
         await approve.click();
         await settled(page, ".ai-turn");
         expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
           { callId: "send", approved: true },
         ]);
         expect(await page.locator(`${card}[data-state="open"]`).count()).toBe(0);
-        const receipt = ".ai-turn__action .k2b-chat-outcome";
-        const current = `${receipt} .k2b-chat-outcome__text[data-current="true"]`;
+        const receipt = card;
+        const current = `${receipt} .k2b-notice-card__title [role=status]`;
         const receiptBox = (await viewportBox(page, receipt))!;
         expect((await viewportBox(page, card))![1]).toBe(cardBox[1]);
-        // The line takes the question's place under the head: never above the head, never lower than the question stood.
-        const [, headTop = 0, , headHeight = 0] = (await viewportBox(page, `${card} .k2b-chat-decision__head`))!;
-        expect(receiptBox[1]).toBeGreaterThanOrEqual(headTop + headHeight);
-        expect(receiptBox[1]).toBeLessThanOrEqual(sentenceBox[1]!);
-        expect(receiptBox[3]).toBeLessThanOrEqual(48);
+        expect(receiptBox).toEqual(cardBox);
+        expect((await viewportBox(page, `${card} .k2b-notice-card__title`))![1]).toBe(sentenceBox[1]);
         expect(await viewportBox(page, ".ai-turn-work")).toEqual(workBox);
         expect(await viewportBox(page, ".ai-turn__text")).toEqual(textBox);
-        expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
+        expect(await page.evaluate(() => document.activeElement?.classList.contains("cloud-approval-frame"))).toBe(true);
         expect(await page.locator(current).innerText()).toBe(de ? "Wird ausgeführt: E-Mail senden" : "Running: Send email");
 
         // The turn reports the decision and the outcome: only the line's words change, by 0 px.
@@ -995,7 +991,8 @@ for (const view of [
           type: "block_set",
           block: { ...send, status: "completed", approved: true, result: { summary: sent }, at },
         });
-        expect(await page.locator(current).innerText()).toBe(`${sent}12:23`);
+        expect(await page.locator(current).innerText()).toBe(sent);
+        expect(await page.locator(`${card} .k2b-notice-card__description`).innerText()).toContain("12:23");
         expect(await viewportBox(page, receipt)).toEqual(receiptBox);
         await emit(page, {
           ...base,
@@ -1049,7 +1046,8 @@ for (const view of [
           ],
         });
         await frames(page);
-        expect(await page.locator(current).innerText()).toBe(`${sent}12:23`);
+        expect(await page.locator(current).innerText()).toBe(sent);
+        expect(await page.locator(`${card} .k2b-notice-card__description`).innerText()).toContain("12:23");
         expect(await viewportBox(page, ".ai-turn-work")).toEqual(settledBoxes.work);
         expect(await viewportBox(page, ".ai-turn__text")).toEqual(settledBoxes.text);
         expect(await viewportBox(page, receipt)).toEqual(settledBoxes.receipt);
@@ -1302,11 +1300,11 @@ for (const width of [390, 320])
           approval: { allowAlways: false, message: "Einstellungen: " + title },
         },
       });
-      const card = ".ai-turn__action .k2b-chat-decision";
+      const card = ".ai-turn__action .cloud-approval-frame";
       await settled(page, ".ai-turn");
       const boxes = await page.evaluate((query) => {
         const box = (selector: string) => document.querySelector(`${query} ${selector}`)!.getBoundingClientRect();
-        const answers = Array.from(document.querySelectorAll(`${query} .k2b-chat-decision__answer`)).map((node) =>
+        const answers = Array.from(document.querySelectorAll(`${query} .k2b-notice-card__actions button`)).map((node) =>
           node.getBoundingClientRect(),
         );
         return {
@@ -1323,7 +1321,7 @@ for (const width of [390, 320])
       expect(boxes.document).toBeLessThanOrEqual(0);
       expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
       // The sentence reads the title in full, and the answer names it.
-      expect(await page.locator(`${card} .k2b-chat-decision__sentence`).innerText()).toContain(title);
+      expect(await page.locator(`${card} .k2b-notice-card__title`).innerText()).toContain(title);
       expect(await page.getByRole("button", { name: title, exact: true }).count()).toBe(1);
     } finally {
       await context.close();
@@ -1481,13 +1479,15 @@ for (const view of [
           },
         },
       });
-      const card = ".ai-turn__action .k2b-chat-decision";
-      expect(await page.locator(card).innerText()).toContain(url);
+      const card = ".ai-turn__action .cloud-approval-frame";
       // The quiet third answer remembers this website for the chat; Always is no longer offered.
       expect(await page.locator(card).innerText()).not.toContain("Always approve");
-      // Remembering is a box to tick before the answer.
+      const approveLabel = await page.locator(`${card} [data-approval-primary]`).innerText();
+      // Remembering is a box in the complete proposal before the answer.
+      await page.locator(card).getByRole("button", { name: "See everything", exact: true }).click();
+      expect(await page.getByRole("dialog").innerText()).toContain(url);
       await page.getByRole("checkbox", { name: "Allow this website in this chat", exact: true }).click();
-      await page.locator(`${card} .k2b-chat-decision__answer[data-variant="ai"]`).click();
+      await page.getByRole("dialog").getByRole("button", { name: approveLabel, exact: true }).click();
       await frames(page);
       expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
         { callId: "run-approval-0", approved: true, remember: "chat" },

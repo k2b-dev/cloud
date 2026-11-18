@@ -1,5 +1,5 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
-import { ApprovalsNavStatus, approvalNavCount } from "@k2b/cloud/approvals/ui";
+import ApprovalsNavStatus, { approvalNavCount } from "@k2b/cloud/approvals/navigation";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { FeatCodeMark } from "@k2b/cloud/code/ui";

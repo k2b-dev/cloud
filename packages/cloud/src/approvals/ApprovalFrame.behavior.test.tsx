@@ -103,3 +103,45 @@ domTest("a deliberate focus move to the secondary control wins over an answer co
     dom.cleanup();
   }
 });
+
+domTest("a failed detail module stays visible on the card and See everything retries it", async () => {
+  const dom = createDomTestHarness();
+  const { ApprovalFrame } = await import("./ApprovalFrame");
+  let loads = 0;
+  const dispose = render(
+    () => (
+      <ApprovalFrame
+        locale="de"
+        state="open"
+        source={{ name: "Mail", icon: "ti ti-mail" }}
+        sentence="Nachricht senden?"
+        reason={{ text: "Mail fragt nach" }}
+        details={{
+          label: "Details von Mail",
+          load: async () => {
+            if (++loads === 1) throw new Error("chunk unavailable");
+          },
+          content: () => "Der vollständige Vorschlag",
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    const more = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Alles ansehen")!;
+    more.click();
+    await waitFor(
+      () =>
+        loads === 1 && [...dom.root.querySelectorAll("[role=alert]")].some((n) => n.textContent?.includes("konnte nicht geladen werden")),
+    );
+    expect(document.querySelector(".cloud-approval-details")).toBeNull();
+    expect(dom.root.textContent).toContain("Der vollständige Vorschlag konnte nicht geladen werden");
+    more.click();
+    await waitFor(() => Boolean(document.querySelector(".cloud-approval-details")));
+    expect(loads).toBe(2);
+    expect(document.querySelector(".cloud-approval-details")?.textContent).toContain("Der vollständige Vorschlag");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

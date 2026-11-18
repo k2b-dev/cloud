@@ -1,22 +1,22 @@
 import { LocaleProvider } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import { render } from "solid-js/web";
-import { approvalModel, approvalStates } from "../../../assistant/src/frontend/code-version-card.test-fixture";
-import { CodeVersionCardView } from "../../../assistant/src/frontend/code-version-card-view";
-import CodeApprovalReview from "../../../core/src/pages/admin/code/CodeApprovalReview.island";
-import type { FixtureReviewVariant } from "../../../core/src/pages/admin/code/CodeArea.fixture-data";
-import { toolActionCard } from "../ai/chat/action-card";
-import { actionFixtures } from "../ai/chat/action-question.fixtures";
-import { legacyOutcomeWords } from "../ai/chat/tool-action-words";
-import CodePage from "../ssr/code-page/CodePage";
-import { type CodePageFixtureState, codePageFixture } from "../ssr/code-page/code-page.fixture";
-import { ApprovalCard } from "./ApprovalCard";
+import { approvalModel, approvalStates } from "../packages/assistant/src/frontend/code-version-card.test-fixture";
+import { CodeVersionCardView } from "../packages/assistant/src/frontend/code-version-card-view";
+import { toolActionCard } from "../packages/cloud/src/ai/chat/action-card";
+import { actionFixtures } from "../packages/cloud/src/ai/chat/action-question.fixtures";
+import { legacyOutcomeWords } from "../packages/cloud/src/ai/chat/tool-action-words";
+import { ApprovalCard } from "../packages/cloud/src/approvals/ApprovalCard";
+import CodePage from "../packages/cloud/src/ssr/code-page/CodePage";
+import { type CodePageFixtureState, codePageFixture } from "../packages/cloud/src/ssr/code-page/code-page.fixture";
+import CodeApprovalReview from "../packages/core/src/pages/admin/code/CodeApprovalReview.island";
+import type { FixtureReviewVariant } from "../packages/core/src/pages/admin/code/CodeArea.fixture-data";
 
 declare global {
   interface Window {
     approvalAdminFixtures: Record<
       FixtureReviewVariant,
-      ReturnType<typeof import("../../../core/src/pages/admin/code/CodeArea.fixture-data").fixtureApprovalDetail>
+      ReturnType<typeof import("../packages/core/src/pages/admin/code/CodeArea.fixture-data").fixtureApprovalDetail>
     >;
   }
 }

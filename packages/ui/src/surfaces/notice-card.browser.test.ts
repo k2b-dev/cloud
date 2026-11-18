@@ -242,8 +242,10 @@ for (const width of [1440, 390])
         await primary.focus();
         expect(await primary.evaluate((element) => element === document.activeElement)).toBe(true);
         await primary.press("Enter");
+        await settled(page);
         expect(await measure()).toEqual(first);
         await page.evaluate(() => window.noticeRow("terminal"));
+        await settled(page);
         if (width === 390) expect((await measure()).card.height).toBeLessThan(first.card.height);
       } finally {
         await page.close();

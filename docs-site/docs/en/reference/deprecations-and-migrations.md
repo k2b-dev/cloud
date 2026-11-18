@@ -25,6 +25,10 @@ secondary decisions and draft editing are available in the details dialog.
 `status` supplies metadata, not a second visible state label.
 See [Cloud approvals](/en/ui/cloud/approvals) for the current props and flow.
 Stored approvals, authorization and decision endpoints are unchanged.
+Focused `@k2b/cloud/approvals/frame`, `/list` and `/navigation` entries keep
+proposal rendering out of summary-only views; the combined `/ui` entry remains.
+Optional `details.load` prepares deferred UI before the dialog opens, with a
+visible error and retry through **See everything** if loading fails.
 
 ## One chat-writing capability
 
