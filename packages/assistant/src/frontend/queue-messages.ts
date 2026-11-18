@@ -12,7 +12,7 @@ export const queueMessages = i18n.define({
       retrySendNow: "Send again",
       remove: "Remove",
       notSent: "Not sent",
-      order: "In order, once the current answer is done.",
+      order: "In order.",
       showAllShort: "Show all",
       showAll: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: "Show the queued message", other: `Show all ${count} queued messages` }),
@@ -30,7 +30,7 @@ export const queueMessages = i18n.define({
       retrySendNow: "Erneut senden",
       remove: "Entfernen",
       notSent: "Nicht gesendet",
-      order: "Der Reihe nach, sobald die laufende Antwort fertig ist.",
+      order: "Der Reihe nach.",
       showAllShort: "Alle zeigen",
       showAll: ({ count }) =>
         i18n.plural(count, "de", { one: "Vorgemerkte Nachricht zeigen", other: `Alle ${count} vorgemerkten Nachrichten zeigen` }),
