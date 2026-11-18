@@ -151,3 +151,23 @@ test("incoming steps use bounded run-local ordinals and known sanitized fields",
     expect(CodeOutputBatchSchema.safeParse(batch({ ...step, ...change })).success).toBe(false);
   }
 });
+
+test("retained steps keep creation order while more than a window of logs is displaced", () => {
+  const step = (id: number): Extract<CodeOutputKnownEntry, { kind: "step" }> => ({
+    kind: "step",
+    id: `1:step:${id}`,
+    at: line("").at,
+    status: "pending",
+    label: codeOutputParts(`Step ${id}`),
+  });
+  const first = step(1),
+    second = step(2);
+  let window = appendCodeOutput(emptyCodeOutput(1), [first, second], 32768);
+  for (let index = 0; index < 100; index++) window = appendCodeOutput(window, [line(`${index}: ${"x".repeat(1000)}`)], 32768);
+  expect(window.entries.filter(isCodeOutputStepEntry)).toEqual([first, second]);
+  expect(window.droppedLines).toBeGreaterThan(0);
+  const done = { ...first, status: "succeeded" as const, endedAt: first.at };
+  window = appendCodeOutput(window, [done], 32768);
+  expect(window.entries.filter(isCodeOutputStepEntry)).toEqual([done, second]);
+  expect(Buffer.byteLength(JSON.stringify(window.entries))).toBeLessThanOrEqual(32768);
+});

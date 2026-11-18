@@ -666,7 +666,11 @@ position. Readers retain unknown entry kinds and skip rendering them.
 Step labels, descriptions and messages receive the same cleaning and secret
 redaction as console text, including across fields and batches. The terminal
 report remains text-free. Pending steps are interpreted by RunLog from the
-run outcome; Core stores them unchanged.
+run outcome; Core stores them unchanged. At closure, remaining running steps
+succeed with a successful run, or fail with the stable message code
+`code_run_ended` for other outcomes. RunLog localizes that code. Transient
+`chat` and `test` invocations have the run-local console and logger but send
+no production output.
 Several runs may share a workerd process: process stderr is never a source
 for this feature.
 
@@ -693,7 +697,11 @@ structured console window, pinned when the run is admitted. Reducing this
 setting reduces retained console output and steps as well as accepted input sizes.
 Step count and field limits derive from `LIVE_LIMITS.frameBytes`, including
 serialized lifecycle metadata; handle metadata also fits one raw frame.
-Oversized step text or exhausted handle storage raises a visible Code error;
+Long step text is shortened. Exhausted handle storage returns an inert handle
+and increments `droppedLines`, without failing the run. Core retains initial
+step metadata once and ignores revisions after completion; logs yield first
+when the window fills. Canonical step metadata is bounded by the admitted
+payload budget and handle count, without per-step SQL;
 see [the logger contract](/en/docs/platform/code-runs#report-steps-with-logger).
 No additional setting, topic or per-step database write is introduced.
 The same admitted byte budget bounds encrypted, deduplicated HTTP redaction

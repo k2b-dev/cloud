@@ -1,5 +1,12 @@
 import { expect, spyOn, test } from "bun:test";
-import { compileOutputRedaction, type OutputRedactionPending, OutputRedactionPendingSchema, redactOutput } from "./output-redaction";
+import {
+  bindOutputPending,
+  compileOutputRedaction,
+  type OutputRedactionPending,
+  OutputRedactionPendingSchema,
+  type OutputSteps,
+  redactOutput,
+} from "./output-redaction";
 import { secretEchoReplacements } from "./secret-echo";
 
 const line = (text: string) => ({ kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log" as const, text });
@@ -270,7 +277,7 @@ for (const fragments of [
 }
 
 test("harden bounded deferred areas through repetitive overlapping input", () => {
-  const redactor = compileOutputRedaction(new Map([["aaa", "[secret:TOKEN]"]]));
+  const redactor = compileOutputRedaction(new Map([["aaaaaaaa", "[secret:TOKEN]"]]));
   let pending: OutputRedactionPending = null;
   for (let index = 0; index < 4; index++) {
     const result = redactOutput([line("a".repeat(1024))], redactor, pending);
@@ -369,6 +376,7 @@ for (const spelling of replacements.keys()) {
       id: 1,
       at: line("").at,
       status: "running" as const,
+      startedAt: line("").at,
       label: "Read",
       description: spelling.slice(0, middle),
     };
@@ -384,7 +392,19 @@ for (const spelling of replacements.keys()) {
     expect(updated[0]).toMatchObject({ kind: "step", id: "1:step:1", description: [{ type: "secret", name: "TOKEN" }] });
     expect(JSON.stringify([...visible, ...updated])).not.toContain(value);
     const terminal = redactOutput(
-      codeOutputFragments([{ ...step, description: "", label: spelling.slice(0, middle), message: spelling.slice(middle) }], 1),
+      codeOutputFragments(
+        [
+          {
+            ...step,
+            status: "failed",
+            endedAt: line("").at,
+            description: "",
+            label: spelling.slice(0, middle),
+            message: spelling.slice(middle),
+          },
+        ],
+        1,
+      ),
       redactor,
       null,
       true,
@@ -402,6 +422,7 @@ test("step fields are cleaned, final pending text updates the same ID, and icons
     id: 1,
     at: line("").at,
     status: "failed" as const,
+    endedAt: line("").at,
     label: "\x1b[31mRead\u202e",
     icon: "file-text",
     description: "\x00plain",
@@ -415,6 +436,7 @@ test("step fields are cleaned, final pending text updates the same ID, and icons
       id: "2:step:1",
       at: raw.at,
       status: "failed",
+      endedAt: raw.at,
       label: [{ type: "text", text: "Read" }],
       icon: "file-text",
       description: [{ type: "text", text: "plain" }],
@@ -433,7 +455,10 @@ test("a pending step field keeps the continuous matcher across counted loss", as
   const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
   const redactor = compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]]));
   const first = redactOutput(
-    codeOutputFragments([{ kind: "step", id: 1, at: line("").at, status: "running", label: "Read", message: "abcd" }], 1),
+    codeOutputFragments(
+      [{ kind: "step", id: 1, at: line("").at, status: "failed", endedAt: line("").at, label: "Read", message: "abcd" }],
+      1,
+    ),
     redactor,
   );
   assembleCodeOutput(first.entries);
@@ -449,33 +474,62 @@ test("deferred step text settles its latest lifecycle revision", async () => {
   const { appendCodeOutput, emptyCodeOutput } = await import("@k2b/cloud/code");
   const { LIVE_LIMITS } = await import("@k2b/cloud/events/limits");
   const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
-  const redactor = compileOutputRedaction(new Map([["aaaaaaaa", "[secret:TOKEN]"]]));
+  const redactor = compileOutputRedaction(new Map([["aaa", "[secret:TOKEN]"]]));
   let pending: OutputRedactionPending = null;
   let window = emptyCodeOutput(1);
   const at = line("").at;
+  const steps: OutputSteps = {};
   for (const status of ["pending", "running", "succeeded"] as const) {
-    const result = redactOutput(codeOutputFragments([{ kind: "step", id: 1, at, label: "a", status }], 1), redactor, pending);
+    const fragments = codeOutputFragments(
+      [
+        {
+          kind: "step",
+          id: 1,
+          at,
+          label: "a",
+          status,
+          ...(status === "pending" ? {} : { startedAt: at }),
+          ...(status === "succeeded" ? { endedAt: at } : {}),
+        },
+      ],
+      1,
+      steps,
+    );
+    const result = redactOutput(fragments, redactor, bindOutputPending(pending, steps));
     window = appendCodeOutput(
       window,
       assembleCodeOutput(result.entries).map((entry) => ({ ...entry, id: "1:step:1" })),
       LIVE_LIMITS.frameBytes,
     );
-    pending = OutputRedactionPendingSchema.parse(JSON.parse(JSON.stringify(result.pending)));
+    pending = result.pending ? OutputRedactionPendingSchema.parse(JSON.parse(JSON.stringify(result.pending))) : null;
   }
-  const final = assembleCodeOutput(redactOutput([], redactor, pending, true).entries);
+  // A delimiter resolves the single original "a" without synthesizing copies.
+  const final = assembleCodeOutput(redactOutput([line("!")], redactor, bindOutputPending(pending, steps)).entries);
   window = appendCodeOutput(
     window,
     final.map((entry) => ({ ...entry, id: "1:step:1" })),
     LIVE_LIMITS.frameBytes,
   );
-  expect(window.entries).toEqual([{ kind: "step", id: "1:step:1", at, status: "succeeded", label: [{ type: "secret", name: "TOKEN" }] }]);
+  expect(window.entries[0]).toMatchObject({ kind: "step", id: "1:step:1", at, status: "succeeded", label: [{ type: "text", text: "a" }] });
+  expect(JSON.stringify(window)).not.toContain('"type":"secret"');
 });
 
 test("suppressed fields count as one lost step revision", async () => {
   const { codeOutputFragments } = await import("./output-redaction");
   const result = redactOutput(
     codeOutputFragments(
-      [{ kind: "step", id: 1, at: line("").at, label: "Read", description: "Document", message: "Reason", status: "running" }],
+      [
+        {
+          kind: "step",
+          id: 1,
+          at: line("").at,
+          label: "Read",
+          description: "Document",
+          message: "Reason",
+          status: "running",
+          startedAt: line("").at,
+        },
+      ],
       1,
     ),
     compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]])),
@@ -484,4 +538,72 @@ test("suppressed fields count as one lost step revision", async () => {
     { lost: true, skip: 0 },
   );
   expect(result.dropped.lines).toBe(1);
+});
+
+test("step metadata is admitted once across revisions and terminal entries are immutable", async () => {
+  const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
+  const steps: OutputSteps = {};
+  const redactor = compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]]));
+  const at = line("").at;
+  const base = { kind: "step" as const, id: 1, at, label: "gh", status: "pending" as const };
+  const first = redactOutput(codeOutputFragments([line("abcdef"), base], 1, steps), redactor);
+  const visible = assembleCodeOutput(first.entries);
+  const revision = codeOutputFragments([{ ...base, label: "CHANGED", status: "running", startedAt: at }], 1, steps);
+  expect(revision.map((fragment) => fragment.text)).toEqual([""]);
+  assembleCodeOutput(redactOutput(revision, redactor, bindOutputPending(first.pending, steps)).entries);
+  expect(JSON.stringify(steps)).not.toContain("gh");
+  expect(JSON.stringify(visible)).toContain('"type":"secret"');
+  assembleCodeOutput(
+    redactOutput(codeOutputFragments([{ ...base, status: "succeeded", startedAt: at, endedAt: at, message: "Done" }], 1, steps), redactor)
+      .entries,
+  );
+  const saved = JSON.stringify(steps);
+  expect(codeOutputFragments([{ ...base, label: "Rewritten", status: "failed", endedAt: at, message: "Changed" }], 1, steps)).toEqual([]);
+  expect(JSON.stringify(steps)).toBe(saved);
+});
+
+test("loss during completion preserves previously accepted metadata and monotone lifecycle", async () => {
+  const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
+  const steps: OutputSteps = {};
+  const redactor = compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]]));
+  const at = line("").at;
+  const base = { kind: "step" as const, id: 1, at, label: "Read", status: "pending" as const };
+  assembleCodeOutput(redactOutput(codeOutputFragments([base, { ...base, status: "running", startedAt: at }], 1, steps), redactor).entries);
+  const complete = codeOutputFragments([{ ...base, status: "succeeded", startedAt: at, endedAt: at, message: "Done" }], 1, steps);
+  assembleCodeOutput(redactOutput(complete, redactor, null, false, { lost: true, skip: 0 }).entries);
+  expect(steps["1:step:1"]).toMatchObject({ status: "succeeded", label: [{ type: "text", text: "Read" }], message: [] });
+  const other: OutputSteps = {};
+  codeOutputFragments([base], 1, other);
+  expect(codeOutputFragments([{ ...base, status: "running", startedAt: "2029-01-01T00:00:00.000Z" }], 1, other)).toEqual([]);
+  expect(codeOutputFragments([{ ...base, status: "failed", endedAt: at }], 1, other)).toHaveLength(1);
+  expect(other["1:step:1"]).not.toHaveProperty("startedAt");
+});
+
+test("canonical step metadata stays within its shared budget without displacing earlier text", async () => {
+  const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
+  const steps: OutputSteps = {};
+  const dropped = { lines: 0, bytes: 0 };
+  const budget = 1024;
+  const base = { kind: "step" as const, id: 1, at: line("").at, label: "Read", status: "pending" as const };
+  const redactor = compileOutputRedaction(new Map());
+  assembleCodeOutput(redactOutput(codeOutputFragments([base], 1, steps, budget), redactor).entries, { steps, budget, dropped });
+  const next = { ...base, id: 2, label: "x".repeat(1000), description: "y".repeat(1000) };
+  assembleCodeOutput(redactOutput(codeOutputFragments([next], 1, steps, budget), redactor).entries, { steps, budget, dropped });
+  expect(Buffer.byteLength(JSON.stringify(steps))).toBeLessThanOrEqual(budget);
+  expect(steps["1:step:1"]?.label).toEqual([{ type: "text", text: "Read" }]);
+  expect(dropped.lines).toBeGreaterThan(0);
+  expect(dropped.bytes).toBeGreaterThan(0);
+});
+
+test("step lifecycle timestamp spellings use the same bounded precision as the host", async () => {
+  const { codeOutputFragments } = await import("./output-redaction");
+  const steps: OutputSteps = {};
+  const at = line("").at;
+  const base = { kind: "step" as const, id: 1, at, label: "Read", status: "pending" as const };
+  codeOutputFragments([base], 1, steps);
+  const extended = `2030-01-02T00:00:00.${"0".repeat(1000)}Z`;
+  codeOutputFragments([{ ...base, status: "running", startedAt: extended }], 1, steps);
+  expect(steps["1:step:1"]).toMatchObject({ status: "running", startedAt: at });
+  codeOutputFragments([{ ...base, status: "succeeded", startedAt: extended, endedAt: extended }], 1, steps);
+  expect(steps["1:step:1"]).toMatchObject({ status: "succeeded", startedAt: at, endedAt: at });
 });

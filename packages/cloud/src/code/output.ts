@@ -90,7 +90,8 @@ export const CodeOutputStepEntrySchema = z
     label: z.array(CodeOutputPartSchema),
     icon: z
       .string()
-      .regex(/^[a-z][a-z0-9-]*$/)
+      .max(64)
+      .regex(/^[a-z0-9-]+$/)
       .optional(),
     description: z.array(CodeOutputPartSchema).optional(),
     message: z.array(CodeOutputPartSchema).optional(),
@@ -171,15 +172,20 @@ export function appendCodeOutput(
   };
   const sizes = next.entries.map(bytes);
   let size = bytes([]) + sizes.reduce((total, size) => total + size, 0) + Math.max(0, sizes.length - 1);
-  let removed = 0;
-  while (removed < sizes.length && size > budget) {
-    const entryBytes = sizes[removed]!;
-    size -= entryBytes + (removed + 1 < sizes.length ? 1 : 0);
-    next.droppedLines = sum(next.droppedLines, 1);
-    next.droppedBytes = sum(next.droppedBytes, entryBytes);
-    removed++;
+  const removed = new Set<number>();
+  // Preserve step creation order: logs and opaque entries yield first. Core and
+  // the runner bound retained step metadata with the existing output budget.
+  for (const steps of [false, true]) {
+    for (let index = 0; index < sizes.length && size > budget; index++) {
+      if (isCodeOutputStepEntry(next.entries[index]!) !== steps) continue;
+      const entryBytes = sizes[index]!;
+      size -= entryBytes + (sizes.length - removed.size > 1 ? 1 : 0);
+      next.droppedLines = sum(next.droppedLines, 1);
+      next.droppedBytes = sum(next.droppedBytes, entryBytes);
+      removed.add(index);
+    }
   }
-  next.entries = next.entries.slice(removed);
+  next.entries = next.entries.filter((_, index) => !removed.has(index));
   return next;
 }
 /** Replayed and out-of-order events never duplicate output or regress a newer attempt. */

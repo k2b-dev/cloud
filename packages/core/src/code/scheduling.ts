@@ -453,8 +453,8 @@ async function settleRun(runId: string, outcome: RunnerOutcome, limits: CodeRunL
       AND trigger<>'path' AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS exhausted
     FROM code.runs r WHERE id=${runId}::uuid`;
   const retry = result?.retry ?? false;
-  await closeCodeOutput(runId, result?.generation);
-  if (!retry) await persistCodeOutput(runId, db, result?.generation);
+  await closeCodeOutput(runId, result?.generation, outcome);
+  if (!retry) await persistCodeOutput(runId, db, result?.generation, outcome);
   await db`UPDATE code.calls SET state='uncertain',ended_at=clock_timestamp(),result='{"ok":false,"error":{"code":"code_result_unknown"}}'::json
     WHERE run_id=${runId}::uuid AND state='running'`;
   await db`UPDATE code.runs SET state=${retry ? "queued" : outcome === "succeeded" ? "succeeded" : "failed"},

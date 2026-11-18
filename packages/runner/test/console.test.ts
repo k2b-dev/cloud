@@ -156,8 +156,8 @@ test("logger steps start pending, keep a run-local ID and settle once; pending s
   const entries = batches.flatMap((batch) => batch.entries);
   expect(entries.filter((entry) => entry.kind === "log").map((entry) => entry.level)).toEqual(["info", "warn", "error"]);
   const steps = entries.filter((entry) => entry.kind === "step");
-  expect(steps.map((entry) => entry.status)).toEqual(["pending", "pending", "running", "succeeded", "skipped"]);
-  expect(steps.map((entry) => entry.id)).toEqual([1, 2, 1, 1, 2]);
+  expect(steps.map((entry) => entry.status)).toEqual(["succeeded", "skipped"]);
+  expect(steps.map((entry) => entry.id)).toEqual([1, 2]);
   expect(steps.at(-2)).toMatchObject({
     at: new Date(fixed).toISOString(),
     startedAt: new Date(fixed).toISOString(),
@@ -188,14 +188,12 @@ test("unhandled errors fail running steps only and retain pending steps; success
       .filter((entry) => entry.kind === "step")
       .map((entry) => [entry.id, entry.status, entry.message]),
   ).toEqual([
-    [1, "pending", undefined],
-    [2, "pending", undefined],
-    [1, "running", undefined],
     [1, "failed", "Document unavailable"],
+    [2, "pending", undefined],
   ]);
 });
 
-test("step text and handle storage stay within budgets; invalid or excess steps refuse visibly", async () => {
+test("200 steps and oversized metadata stay soft-limited with visible loss", async () => {
   setSystemTime(fixed);
   const batches: CodeOutputBatch[] = [];
   const output = createCodeConsole(
@@ -206,22 +204,43 @@ test("step text and handle storage stay within budgets; invalid or excess steps 
     },
     limits,
   );
-  expect(() => output.logger.step("x".repeat(CODE_OUTPUT_STEP_LIMITS.textBytes))).toThrow("code_output_text_limit");
   expect(() => output.logger.step(12)).toThrow("code_output_invalid_text");
-  let accepted = 0;
-  for (let index = 0; index <= CODE_OUTPUT_STEP_LIMITS.count; index++) {
-    try {
-      output.logger.step("Read");
-      accepted++;
-    } catch (error) {
-      expect(error).toMatchObject({ code: "code_output_step_limit" });
-      break;
+  expect(() => {
+    const large = output.logger.step("x".repeat(limits.bytes), { description: "y".repeat(limits.bytes) });
+    large.start();
+    large.succeed("z".repeat(limits.bytes));
+    for (let index = 0; index < 200; index++) {
+      const step = output.logger.step("Read");
+      step.start();
+      step.succeed("Done");
     }
-  }
-  expect(accepted).toBeGreaterThan(0);
-  expect(accepted).toBeLessThanOrEqual(CODE_OUTPUT_STEP_LIMITS.count);
+  }).not.toThrow();
   await output.finish();
+  expect(batches.some((batch) => batch.droppedLines > 0)).toBe(true);
   expect(batches.every((batch) => Buffer.byteLength(JSON.stringify(batch)) <= limits.bytes)).toBe(true);
+});
+
+test("pending steps fail without a start; icons accept only unprefixed bounded names", async () => {
+  setSystemTime(fixed);
+  const batches: CodeOutputBatch[] = [];
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
+  output.logger.step("Read", { icon: "file-text" }).fail("Unavailable");
+  for (const icon of ["i-tabler:file", "Bad", "file text", "a".repeat(65)]) {
+    const step = output.logger.step("Next", { icon });
+    step.skip("Unneeded");
+  }
+  await output.finish();
+  const steps = batches.flatMap((batch) => batch.entries).filter((entry) => entry.kind === "step");
+  expect(steps[0]).toMatchObject({ status: "failed", message: "Unavailable", icon: "file-text" });
+  expect(steps[0]).not.toHaveProperty("startedAt");
+  expect(steps.filter((entry) => entry.icon && entry.icon !== "file-text").map((entry) => entry.icon)).toEqual([]);
 });
 
 test("successful completion keeps unstarted steps pending for the display to interpret", async () => {
@@ -265,7 +284,7 @@ test("automatic failure fits reserved lifecycle metadata even when handle storag
   expect(batches.flatMap((batch) => batch.entries).some((entry) => entry.kind === "step" && entry.status === "failed")).toBe(true);
 });
 
-test("disabled production output still supplies logger handles without bridge traffic", async () => {
+test.each(["chat", "test"])("%s output supplies console and logger without production bridge traffic", async (_tier) => {
   setSystemTime(fixed);
   const calls: unknown[] = [];
   const output = createCodeConsole(
@@ -278,8 +297,36 @@ test("disabled production output still supplies logger handles without bridge tr
   );
   const step = output.logger.step("Read");
   step.start();
+  output.console.log("Console output");
+  output.console.error("Console error");
   output.logger.info("Information");
   output.error(new Error("Document unavailable"));
   await output.finish();
   expect(calls).toEqual([]);
+});
+
+test("buffered step rows retain creation order while logs exceed a frame", async () => {
+  setSystemTime(fixed);
+  const batches: CodeOutputBatch[] = [];
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
+  const first = output.logger.step("First"),
+    second = output.logger.step("Second");
+  first.start();
+  second.start();
+  for (let index = 0; index < 40; index++) output.console.log("x".repeat(1000));
+  first.succeed("Done");
+  second.skip("Unneeded");
+  await output.finish();
+  expect(batches[0]!.entries.filter((entry) => entry.kind === "step").map((entry) => [entry.id, entry.status])).toEqual([
+    [1, "succeeded"],
+    [2, "skipped"],
+  ]);
+  expect(batches[0]!.droppedLines).toBeGreaterThan(0);
 });

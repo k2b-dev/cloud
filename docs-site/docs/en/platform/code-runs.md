@@ -350,7 +350,9 @@ map console `log`/`debug` to the display level `info`. Never pass raw HTML.
 Step labels, descriptions and messages use the same text parts, cleaning and
 continuous secret redaction as logs, including across fields and bundles.
 Deferred text retains the originating field. Icons are optional identifiers;
-unusable or redacted icons are omitted.
+names use at most 64 lowercase letters, digits or hyphens, without an
+icon-library prefix. Unusable or redacted icons are omitted; RunLog adds its
+own prefix.
 
 ### Report steps with logger
 
@@ -379,34 +381,45 @@ export default app;
 `logger.step({ label, icon?, description? })` immediately create a `pending`
 entry and return a `CodeLogStep` handle. Call `start()` to make it `running`,
 then `succeed(message?)`, `fail(reason)` or `skip(reason)`. You can also skip a
-pending step. Starting twice, completing an unstarted step with `succeed` or
-`fail`, and all calls after the first terminal result have no effect.
+pending step, or fail it without starting it; neither sets `startedAt`.
+Starting twice, completing an unstarted step with `succeed`, and all calls
+after the first terminal result have no effect.
 Each handle keeps one row; there is no separate step definition or string key.
 `CodeLogger`, `CodeLogStep` and `CodeLogStepOptions` are public SDK types.
 
 `logger.info(text)`, `logger.warn(text)` and `logger.error(text)` produce
 ordinary `kind: "log"` entries with that level. Existing console methods keep
-their behavior. These methods report output; calling `fail` or `error` does
+their behavior. For transient `chat` and `test` invocations, the run-local
+console and logger are available but do not send production output.
+These methods report output; calling `fail` or `error` does
 not itself fail the run or throw an exception.
 
 An uncaught Code exception fails every running step and sets its `message`
 to the exception message, within the output limits. Its text and stack also
 appear as error logs. Pending steps stay `pending` in storage: after a
 successful run, RunLog displays them as skipped; after a failed run it displays
-them as pending. The display owns this distinction. A forced termination may
+them as pending. The display owns this distinction. At attempt closure, Core
+completes any remaining running step as `succeeded` when the run succeeds, or `failed` for
+failure, cancellation or expiry. That automatic failure uses the stable message
+code `code_run_ended`; the display translates it. A forced termination may
 lose the last unflushed update, just like console output.
 
 Steps and logs share the existing output window and loss counters.
 `CODE_OUTPUT_STEP_LIMITS` derives a lifetime step count from the
 serialized complete step and `LIVE_LIMITS.frameBytes`. Its per-field encoded
-JSON byte limit divides the remaining frame among label, icon, description
-and message. Run-local handle metadata also fits one raw output frame,
-including reserved lifecycle timestamps. Invalid text throws
-`code_output_invalid_text`; an oversized field throws `code_output_text_limit`;
-excess handles or metadata throw `code_output_step_limit`. Shorten the text or
-use fewer steps. Automatic exception messages are shortened to available
-space so running steps can still settle. Output batches remain subject to the
-same frame, cadence and window limits, so a busy run can lose step updates.
+JSON byte limit divides the remaining raw bundle among label, icon, description
+and message, after reserving the lease envelope. Run-local handle metadata
+also fits one raw output frame, including reserved lifecycle timestamps.
+Long fields are shortened. When handle storage is exhausted, `step` returns
+an inert handle and counts one lost entry; the run continues. Completion
+messages are shortened to the remaining handle budget. Only invalid argument
+types throw (`code_output_invalid_text` or `code_output_invalid_step`).
+Core accepts each step's label, icon and description once, and its message
+only at the first completion. Revisions advance status and monotone timestamps;
+accepted text and completed steps cannot be rewritten. Step metadata shares
+the pinned output budget. Logs yield before steps when the window fills, so
+retained steps keep their creation order. Output batches remain subject to
+the same frame and cadence limits, so a busy run can lose updates.
 Only authorized Code editors see steps, including through API, CLI and agents.
 
 The window contains `generation`, `seq`, `entries`, `droppedLines` and

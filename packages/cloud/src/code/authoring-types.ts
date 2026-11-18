@@ -191,8 +191,6 @@ export type KnownCodeErrorCode =
   | "code_owner_source_invalid"
   | "code_output_invalid_step"
   | "code_output_invalid_text"
-  | "code_output_step_limit"
-  | "code_output_text_limit"
   | "code_page_blocks"
   | "code_page_chart"
   | "code_page_child"

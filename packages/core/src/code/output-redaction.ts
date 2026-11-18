@@ -1,4 +1,5 @@
 import {
+  CODE_OUTPUT_STEP_LIMITS,
   CODE_OUTPUT_STEP_TEXT_FIELDS,
   type CodeOutputBatch,
   type CodeOutputKnownEntry,
@@ -302,37 +303,116 @@ export function redactOutput(
  * snapshots travel in fragment metadata. An unresolved field suffix stays in the encrypted
  * pending envelope and completes the same step ID in a later delta or at final settlement.
  */
-export function codeOutputFragments(input: CodeOutputBatch["entries"], generation: number): Fragment[] {
+export type OutputSteps = Record<string, z.infer<typeof CodeOutputStepEntrySchema>>;
+const terminalStep = (status: string) => ["succeeded", "failed", "skipped"].includes(status);
+/** Accepted metadata is canonical, bounded by the admitted handle count and output
+ * budget. Revisions advance lifecycle only; repeated text never re-enters the matcher.
+ */
+const stepReserve = (entry: z.infer<typeof CodeOutputStepEntrySchema>) =>
+  Buffer.byteLength(
+    JSON.stringify({
+      ...entry,
+      status: "succeeded",
+      startedAt: entry.at,
+      endedAt: entry.at,
+      // A running handle can always close with the stable termination reason.
+      message: entry.message?.length ? entry.message : [{ type: "text", text: "code_run_ended" }],
+    }),
+  );
+const stepsBytes = (steps: OutputSteps) =>
+  Object.values(steps).reduce((size, entry) => size + stepReserve(entry) + Buffer.byteLength(JSON.stringify(entry.id)) + 2, 2);
+export function codeOutputFragments(
+  input: CodeOutputBatch["entries"],
+  generation: number,
+  steps: OutputSteps = {},
+  budget = Infinity,
+  dropped = { lines: 0, bytes: 0 },
+): Fragment[] {
   return input.flatMap((entry): Fragment[] => {
     if (entry.kind === "log") return [entry];
-    const safe: z.infer<typeof CodeOutputStepEntrySchema> = {
-      kind: "step",
-      id: `${generation}:step:${entry.id}`,
-      at: entry.at,
-      status: entry.status,
-      label: [],
-      ...(entry.description === undefined ? {} : { description: [] }),
-      ...(entry.message === undefined ? {} : { message: [] }),
-      ...(entry.startedAt === undefined ? {} : { startedAt: entry.startedAt }),
-      ...(entry.endedAt === undefined ? {} : { endedAt: entry.endedAt }),
+    // Capture timestamps have millisecond precision in the host. Normalize the
+    // transport spelling before budgeting lifecycle metadata (ISO permits longer fractions).
+    const timestamp = (value: string) => {
+      const at = Date.parse(value);
+      return Number.isFinite(at) ? new Date(at).toISOString() : null;
     };
-    return CODE_OUTPUT_STEP_TEXT_FIELDS.flatMap((field) =>
-      entry[field] === undefined
-        ? []
-        : [
-            {
-              kind: "log",
-              level: "info",
-              at: entry.at,
-              text: entry[field],
-              step: { entry: safe, field },
-            },
-          ],
+    const at = timestamp(entry.at);
+    const startedAt = entry.startedAt === undefined ? undefined : timestamp(entry.startedAt);
+    const endedAt = entry.endedAt === undefined ? undefined : timestamp(entry.endedAt);
+    if (!at || startedAt === null || endedAt === null) return [];
+    entry = { ...entry, at, startedAt, endedAt };
+    const id = `${generation}:step:${entry.id}`;
+    let safe = steps[id];
+    const first = safe === undefined;
+    if (safe) {
+      if (terminalStep(safe.status) || entry.at !== safe.at) return [];
+      const allowed = safe.status === "pending" ? ["running", "failed", "skipped"].includes(entry.status) : terminalStep(entry.status);
+      if (!allowed) return [];
+      // Capture time is author-provided, but lifecycle must never move backwards.
+      const priorAt = safe.startedAt ?? safe.at;
+      if (entry.status === "running") {
+        if (!entry.startedAt || entry.startedAt < priorAt || entry.endedAt !== undefined) return [];
+        safe.startedAt = entry.startedAt;
+      } else {
+        if (!entry.endedAt || entry.endedAt < priorAt) return [];
+        if (entry.startedAt !== safe.startedAt) return [];
+        safe.endedAt = entry.endedAt;
+      }
+      safe.status = entry.status;
+    } else {
+      if (Object.keys(steps).length >= CODE_OUTPUT_STEP_LIMITS.count) {
+        dropped.lines++;
+        dropped.bytes += Buffer.byteLength(JSON.stringify(entry));
+        return [];
+      }
+      // Missing earlier deltas can make the first admitted revision running or
+      // terminal. It still has to carry a complete, monotone lifecycle snapshot.
+      if (entry.status === "pending" && (entry.startedAt || entry.endedAt)) return [];
+      if (entry.status === "running" && (!entry.startedAt || entry.endedAt)) return [];
+      if (terminalStep(entry.status) && (!entry.endedAt || (entry.status === "succeeded" && !entry.startedAt))) return [];
+      if (entry.startedAt && entry.startedAt < entry.at) return [];
+      if (entry.endedAt && entry.endedAt < (entry.startedAt ?? entry.at)) return [];
+      safe = {
+        kind: "step",
+        id,
+        at: entry.at,
+        status: entry.status,
+        label: [],
+        ...(entry.description === undefined ? {} : { description: [] }),
+        ...(entry.startedAt === undefined ? {} : { startedAt: entry.startedAt }),
+        ...(entry.endedAt === undefined ? {} : { endedAt: entry.endedAt }),
+      };
+      if (stepsBytes(steps) + stepReserve(safe) + Buffer.byteLength(JSON.stringify(id)) + 2 > budget) {
+        dropped.lines++;
+        dropped.bytes += Buffer.byteLength(JSON.stringify(entry));
+        return [];
+      }
+      steps[id] = safe;
+    }
+    const snapshot = safe;
+    const fields = CODE_OUTPUT_STEP_TEXT_FIELDS.filter((field) =>
+      field === "message" ? terminalStep(entry.status) && entry.message !== undefined : first && entry[field] !== undefined,
     );
+    if (!fields.length) return [{ kind: "log", level: "info", at: safe.at, text: "", step: { entry: safe, field: "label" } }];
+    return fields.map((field) => ({
+      kind: "log",
+      level: "info",
+      at: entry.at,
+      text: entry[field] ?? "",
+      step: { entry: snapshot, field },
+    }));
   });
+}
+/** JSON storage removes aliases. Rebind the deferred field to the canonical latest
+ * lifecycle before scanning/finalizing; its already-redacted text is never replaced.
+ */
+export function bindOutputPending(pending: OutputRedactionPending, steps: OutputSteps) {
+  if (pending?.step && steps[pending.step.entry.id]) pending.step.entry = steps[pending.step.entry.id]!;
+  return pending;
 }
 export function assembleCodeOutput(
   fragments: readonly RedactedOutputEntry[],
+  bounded?: { steps: OutputSteps; budget: number; dropped: { lines: number; bytes: number } },
 ): Array<Omit<Extract<CodeOutputKnownEntry, { kind: "log" }>, "id"> | Extract<CodeOutputKnownEntry, { kind: "step" }>> {
   const entries: ReturnType<typeof assembleCodeOutput> = [];
   const snapshots = new Set<object>();
@@ -344,12 +424,32 @@ export function assembleCodeOutput(
     if (step.field === "icon") {
       // Icons are identifiers, never display text or secret placeholders.
       const value = (step.entry.icon ?? "") + fragment.text.map((part) => (part.type === "text" ? part.text : "")).join("");
-      if (fragment.text.every((part) => part.type === "text") && /^[a-z][a-z0-9-]*$/.test(value)) step.entry.icon = value;
+      if (fragment.text.every((part) => part.type === "text") && value.length <= 64 && /^[a-z0-9-]+$/.test(value)) step.entry.icon = value;
       else delete step.entry.icon;
     } else {
       const parts = step.entry[step.field] ?? [];
       parts.push(...fragment.text);
       step.entry[step.field] = parts;
+    }
+    let excess = bounded ? stepsBytes(bounded.steps) - bounded.budget : 0;
+    if (bounded && excess > 0) {
+      // New text parts use only the remaining admitted metadata budget. Never
+      // evict already accepted fields or split a structural secret marker.
+      if (step.field === "icon") delete step.entry.icon;
+      else {
+        const parts = step.entry[step.field] ?? [];
+        // Account each removed part once; repeated full-map serialization here
+        // would make trimming expanded named parts quadratic in their count.
+        while (parts.length && excess > 0) {
+          const part = parts.pop()!;
+          const bytes = Buffer.byteLength(JSON.stringify(part));
+          excess -= bytes + (parts.length ? 1 : 0);
+          if (step.field === "message" && !parts.length)
+            excess += Buffer.byteLength(JSON.stringify([{ type: "text", text: "code_run_ended" }])) - Buffer.byteLength("[]");
+          bounded.dropped.bytes += bytes;
+        }
+      }
+      bounded.dropped.lines++;
     }
     // The same safe snapshot may have several fields/fragments. Preserve its first
     // stream position; the shared window reducer upserts separate revisions by ID.

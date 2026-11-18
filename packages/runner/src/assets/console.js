@@ -18,8 +18,15 @@ export function createCodeConsole(cloud, limits) {
   const enqueue = (entry) => {
     if (limits.enabled === false) return;
     if (bytes({ ...batch(), entries: [entry] }) > limits.bytes) return drop(entry);
-    entries.push(entry);
-    while (entries.length && bytes(batch()) > limits.bytes) drop(entries.shift());
+    // A buffered revision updates its existing row. Preserve planned steps
+    // before discarding logs, just like the shared retained-window reducer.
+    const position = entry.kind === "step" ? entries.findIndex((old) => old.kind === "step" && old.id === entry.id) : -1;
+    if (position < 0) entries.push(entry);
+    else entries[position] = entry;
+    while (entries.length && bytes(batch()) > limits.bytes) {
+      const log = entries.findIndex((old) => old.kind !== "step");
+      drop(entries.splice(Math.max(0, log), 1)[0]);
+    }
   };
   const append = (level, args) => {
     let text;
@@ -78,8 +85,7 @@ export function createCodeConsole(cloud, limits) {
   };
   const checkText = (value) => {
     if (typeof value !== "string") refuse("code_output_invalid_text");
-    if (bytes(value) > limits.step.textBytes) refuse("code_output_text_limit");
-    return value;
+    return clipped(value);
   };
   const clipped = (value, budget = limits.step.textBytes) => {
     let end = value.length;
@@ -99,11 +105,13 @@ export function createCodeConsole(cloud, limits) {
   const update = (entry) => {
     const previous = steps.get(entry.id);
     const nextBytes = stepBytes - (previous ? stepCost(previous) : 0) + stepCost(entry);
-    if (nextBytes > limits.bytes) refuse("code_output_step_limit");
+    if (nextBytes > limits.bytes) return false;
     stepBytes = nextBytes;
     steps.set(entry.id, entry);
     enqueue(entry);
+    return true;
   };
+  const noop = Object.freeze({ start() {}, succeed() {}, fail() {}, skip() {} });
   const logger = Object.freeze({
     ...Object.fromEntries(
       ["info", "warn", "error"].map((level) => [
@@ -120,7 +128,6 @@ export function createCodeConsole(cloud, limits) {
         label = options.label;
       }
       if (!options || typeof options !== "object" || Array.isArray(options)) refuse("code_output_invalid_step");
-      if (steps.size >= limits.step.count) refuse("code_output_step_limit");
       const id = steps.size + 1;
       const entry = {
         kind: "step",
@@ -131,16 +138,22 @@ export function createCodeConsole(cloud, limits) {
         ...(options.icon === undefined ? {} : { icon: checkText(options.icon) }),
         ...(options.description === undefined ? {} : { description: checkText(options.description) }),
       };
-      update(entry);
+      if (entry.icon !== undefined && (entry.icon.length > 64 || !/^[a-z0-9-]+$/.test(entry.icon))) delete entry.icon;
+      if (steps.size >= limits.step.count || !update(entry)) {
+        drop(entry);
+        return noop;
+      }
       const settle = (status, message) => {
         const current = steps.get(id);
-        if (terminal(current.status) || (current.status === "pending" && status !== "skipped")) return;
+        if (terminal(current.status) || (current.status === "pending" && status === "succeeded")) return;
         if ((status === "failed" || status === "skipped") && message === undefined) refuse("code_output_invalid_text");
+        const base = { ...current, status, endedAt: new Date().toISOString() };
+        // Keep the original handle metadata; completion text uses its remaining
+        // share of the same raw frame instead of throwing into author code.
+        const available = limits.bytes - stepBytes + stepCost(current) - stepCost({ ...base, message: "" });
         update({
-          ...current,
-          status,
-          endedAt: new Date().toISOString(),
-          ...(message === undefined ? {} : { message: checkText(message) }),
+          ...base,
+          ...(message === undefined ? {} : { message: clipped(checkText(message), Math.max(bytes(""), available + bytes(""))) }),
         });
       };
       return Object.freeze({

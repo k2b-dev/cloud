@@ -54,7 +54,9 @@ export class RunnerOutput {
         (!CodeOutputBatchSchema.safeParse(outgoing).success || Buffer.byteLength(JSON.stringify(outgoing)) > this.budget) &&
         entries.length
       ) {
-        const removed = entries.shift()!;
+        const log = entries.findIndex((entry) => entry.kind !== "step");
+        const [removed] = entries.splice(Math.max(0, log), 1);
+        if (!removed) break;
         outgoing.droppedLines = sum(outgoing.droppedLines, codeOutputEntryLines(removed));
         outgoing.droppedBytes = sum(outgoing.droppedBytes, Buffer.byteLength(JSON.stringify(removed)));
       }

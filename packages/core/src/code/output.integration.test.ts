@@ -351,6 +351,69 @@ suiteFor(
       await meter.close();
     }
   });
+  test("step revisions preserve accepted text in live, covering snapshot and replay", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    await rememberCodeOutputSecrets({ ...claims, runId: proof.runId }, [{ name: "TOKEN", value: "abcdefgh", sent: "Bearer abcdefgh" }]);
+    const at = new Date(fixed).toISOString();
+    const step = { kind: "step" as const, id: 1, at, label: "gh", status: "pending" as const };
+    await receiveCodeOutput(proof, { ...batch(1, "abcdef"), entries: [...batch(1, "abcdef").entries, step] });
+    setSystemTime(fixed + 1000);
+    await receiveCodeOutput(proof, { seq: 2, entries: [{ ...step, status: "running", startedAt: at }], droppedLines: 0, droppedBytes: 0 });
+    const snapshot = await replayCodeOutput(proof.runId);
+    expect(JSON.stringify(snapshot)).toContain('"type":"secret"');
+    expect(JSON.stringify(snapshot)).not.toContain('"text":"gh"');
+    const raw = await redis.get(`core:code-output:v1:${proof.runId}`);
+    expect(JSON.parse(raw!).window).toEqual(snapshot);
+    let liveWindow = emptyCodeOutput();
+    for await (const event of codeOutputTopic().replay({ tenantId: proof.runId })) {
+      expect(JSON.stringify(event.data)).not.toContain('"text":"gh"');
+      liveWindow = applyCodeOutputEvent(liveWindow, event.data);
+    }
+    expect(liveWindow).toEqual(snapshot);
+    setSystemTime(fixed + 2000);
+    await receiveCodeOutput(proof, {
+      seq: 3,
+      entries: [{ ...step, status: "succeeded", startedAt: at, endedAt: at, message: "Done" }],
+      droppedLines: 1,
+      droppedBytes: 1,
+    });
+    expect((await replayCodeOutput(proof.runId)).entries.find((entry) => entry.kind === "step")).toMatchObject({
+      status: "succeeded",
+      label: [],
+    });
+    const settled = await replayCodeOutput(proof.runId);
+    setSystemTime(fixed + 3000);
+    await receiveCodeOutput(proof, {
+      seq: 4,
+      entries: [{ ...step, label: "Changed", status: "failed", endedAt: at, message: "Changed" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual(settled.entries);
+  });
+  for (const outcome of ["succeeded", "failed", "cancelled", "wall_clock_limit"]) {
+    test(`closing ${outcome} settles running steps and retains pending plans`, async () => {
+      setSystemTime(fixed);
+      const proof = await attempt();
+      const at = new Date(fixed).toISOString();
+      const base = { kind: "step" as const, id: 1, at, label: "Read", status: "pending" as const };
+      await receiveCodeOutput(proof, {
+        seq: 1,
+        entries: [base, { ...base, status: "running", startedAt: at }, { ...base, id: 2, label: "Save" }],
+        droppedLines: 0,
+        droppedBytes: 0,
+      });
+      const window = await closeCodeOutput(proof.runId, 1, outcome);
+      expect(window.entries[0]).toMatchObject({ status: outcome === "succeeded" ? "succeeded" : "failed", endedAt: at });
+      expect(window.entries[1]).toMatchObject({ status: "pending" });
+      if (outcome !== "succeeded") expect(window.entries[0]).toMatchObject({ message: [{ type: "text", text: "code_run_ended" }] });
+      expect(await closeCodeOutput(proof.runId, 1, outcome)).toEqual(window);
+      await persistCodeOutput(proof.runId, sql, 1, outcome);
+      const [row] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${proof.runId}::uuid`;
+      expect(row!.console_output).toEqual(window);
+    });
+  }
   test("final settlement completes a pending step field in the same persisted row", async () => {
     setSystemTime(fixed);
     const proof = await attempt();
@@ -361,6 +424,7 @@ suiteFor(
       at: new Date(fixed).toISOString(),
       label: "Read",
       status: "failed" as const,
+      endedAt: new Date(fixed).toISOString(),
       message: "abcd",
     };
     await receiveCodeOutput(proof, { seq: 1, entries: [step], droppedLines: 0, droppedBytes: 0 });

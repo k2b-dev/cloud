@@ -4,6 +4,7 @@ import {
   CODE_OUTPUT_INTERVAL_MS,
   CODE_OUTPUT_OPERATION,
   CODE_OUTPUT_STEP_LIMITS,
+  CODE_OUTPUT_STEP_TEXT_FIELDS,
   CODE_REQUEST_LIMITS,
   type CodeRouteResponse,
   CodeRouteResponseSchema,
@@ -314,6 +315,10 @@ const config :Workerd.Config = (
     group.runs.add(lease.runId);
     try {
       signal.throwIfAborted();
+      // The proof envelope shares the live frame; field budgets apply to the raw remainder.
+      const outputBytes =
+        LIVE_LIMITS.frameBytes -
+        Buffer.byteLength(JSON.stringify({ runId: lease.runId, generation: lease.generation, token: lease.token, batch: null }));
       const response = await fetch("http://workerd/run", {
         unix: group.socket,
         method: "POST",
@@ -325,11 +330,15 @@ const config :Workerd.Config = (
           modules: loaded.modules,
           outputLimits: {
             enabled: !["chat", "test"].includes(lease.trustTier),
-            step: CODE_OUTPUT_STEP_LIMITS,
+            step: {
+              ...CODE_OUTPUT_STEP_LIMITS,
+              textBytes: Math.max(
+                0,
+                CODE_OUTPUT_STEP_LIMITS.textBytes - Math.ceil((LIVE_LIMITS.frameBytes - outputBytes) / CODE_OUTPUT_STEP_TEXT_FIELDS.length),
+              ),
+            },
             // Reserve the exact signed Core envelope; the raw batch and its lease proof together fit one live frame.
-            bytes:
-              LIVE_LIMITS.frameBytes -
-              Buffer.byteLength(JSON.stringify({ runId: lease.runId, generation: lease.generation, token: lease.token, batch: null })),
+            bytes: outputBytes,
             intervalMs: CODE_OUTPUT_INTERVAL_MS,
             operation: CODE_OUTPUT_OPERATION,
           },
