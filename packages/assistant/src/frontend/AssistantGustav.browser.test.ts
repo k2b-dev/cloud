@@ -532,6 +532,53 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       const [, appId, capabilityId] = capability;
       const input = route.request().postDataJSON().input as { owner?: { kind: string }; codeId?: string };
       codeCalls.push(`${appId}.${capabilityId}`);
+      if (scenario.cardPreview && capabilityId === "code.version.cards") {
+        const p = scenario.cardPreview;
+        const r = { ...cardReview, ...scenario.cardReview };
+        return route.fulfill({
+          json: {
+            data: {
+              items: [
+                {
+                  codeId: p.codeId,
+                  versionId: p.versionId,
+                  state: "available",
+                  snapshot: {
+                    preview: {
+                      codeId: p.codeId,
+                      versionId: p.versionId,
+                      number: p.number,
+                      title: p.title,
+                      ownerKind: p.ownerKind,
+                      page: p.page ?? null,
+                      running: p.running,
+                      latest: p.latest,
+                      activated: p.activated,
+                      allowed: p.allowed,
+                      readiness: p.readiness,
+                    },
+                    review: {
+                      status: r.status,
+                      origin: r.origin,
+                      decidedBy: r.decidedBy,
+                      message: r.message,
+                      commentCount: r.commentCount,
+                      revision: "revision" in r ? r.revision : null,
+                    },
+                    facts: [],
+                    code: { state: "active", activeVersionId: "v4", pausedAt: null, pausedBy: null },
+                    pages: { versionId: p.versionId, homeUrl: null, pages: [] },
+                    latest: p.latest > p.number ? { id: "77777777-7777-4777-8777-777777777777", number: p.latest } : null,
+                    permission: "editor",
+                    canManage: true,
+                    canActivate: true,
+                  },
+                },
+              ],
+            },
+          },
+        });
+      }
       if (scenario.cardPreview && capabilityId === "code.read")
         return route.fulfill({ json: { data: { code: { state: "active", activeVersionId: "v4" } } } });
       if (scenario.cardPreview && capabilityId === "code.version.read")
@@ -1112,7 +1159,7 @@ describe("Gustav", () => {
         expect(await card.innerText()).toContain("Jana Probe hat Version 5 freigegeben.");
         const after = (await card.boundingBox())!;
         expect(Math.round(after.y)).toBe(Math.round(before.y));
-        expect(h.activationCalls.filter((call) => call === "/api/code/activation/preview")).toHaveLength(2);
+        expect(h.codeCalls.filter((call) => call === "core.code.version.cards")).toHaveLength(2);
         expect(h.errors).toEqual([]);
         await shot(h.page, `f-karte-freigegeben-${view.name}-light`);
       } finally {

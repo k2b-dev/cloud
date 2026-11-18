@@ -58,7 +58,7 @@ test("the published server home is the primary page even when it is not first", 
   expect(model.secondary?.id).toBe("runs");
 });
 
-test("missing, empty and mismatched page projections never invent Open", () => {
+test("missing pages offer retry, while a real empty list offers runs and never invents Open", () => {
   for (const pages of [
     null,
     { versionId: approvalVersionId, homeUrl: null, pages: [] },
@@ -74,8 +74,17 @@ test("missing, empty and mismatched page projections never invent Open", () => {
       nextRun: null,
       canAsk: true,
     });
-    expect(model.primary?.id).toBe("runs");
-    expect(model.secondary).toBeUndefined();
+    expect(model.primary?.id).toBe(pages && pages.versionId === approvalVersionId ? "runs" : "load");
+    const html = render(model, "en");
+    const quiet = html.match(/<p class="assistant-code-version__quiet"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    if (pages && pages.versionId === approvalVersionId) {
+      expect(model.secondary).toBeUndefined();
+      expect(live(quiet, "alert")).toBe("");
+    } else {
+      expect(model.quietAlert).toBe(true);
+      expect(live(quiet, "alert")).toBe("Page links could not be loaded");
+      expect(html).toContain("Try again");
+    }
   }
 });
 
@@ -100,7 +109,11 @@ test("the real deferred card server-renders authorized operating state and pages
   const { ApprovalSnapshotView } = await import("./code-version-card-ssr.test-fixture");
   const { approvalSnapshot } = await import("./code-version-card.test-fixture");
   const snapshot = approvalSnapshot("on");
-  const html = renderToString(() => createComponent(ApprovalSnapshotView, { initial: [{ codeId: snapshot.preview.codeId, versionId: snapshot.preview.versionId, state: "available", snapshot }] }));
+  const html = renderToString(() =>
+    createComponent(ApprovalSnapshotView, {
+      initial: [{ codeId: snapshot.preview.codeId, versionId: snapshot.preview.versionId, state: "available", snapshot }],
+    }),
+  );
   expect(live(html, "status")).toBe("Version 1 ist eingeschaltet.");
   expect(html).toContain("Öffnen");
   expect(html).toContain("Weitere Seiten");

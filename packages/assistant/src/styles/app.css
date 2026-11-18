@@ -1085,40 +1085,42 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
   font-size: 0.75rem;
 }
 
-/* One quiet v10 surface, including the initial read. Control appearance belongs to @k2b/ui. */
-.assistant-code-version-host { container-type: inline-size; }
+/* v10: one sentence over one quiet line. The card, rather than each text box, reserves state changes. */
+.assistant-code-version-host,
+.assistant-authoring-stop-host { container-type: inline-size; }
 .k2b-ui .assistant-code-version[data-card-icon] {
   --k2b-notice-surface: var(--k2b-ai-surface);
   --k2b-notice-ink: var(--k2b-ai-accent);
   grid-template-columns: 1.125rem minmax(0, 1fr);
-  column-gap: 0.625rem;
-  padding: 0.6875rem 0.875rem;
-  border-radius: 0.75rem;
+  column-gap: .625rem;
+  padding: .6875rem .875rem;
+  border: 0;
+  border-radius: .75rem;
 }
 .k2b-ui .assistant-code-version[data-tone][data-card-icon] > .k2b-notice-card__content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 18rem;
-  grid-template-rows: minmax(2.625rem, auto) 2.375rem;
-  column-gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-self: stretch;
+  gap: .125rem .75rem;
 }
-.k2b-ui .assistant-code-version .k2b-notice-card__head { grid-column: 1; align-items: start; }
+.k2b-ui .assistant-code-version .k2b-notice-card__head { grid-column: 1; min-width: 0; align-items: start; }
 .k2b-ui .assistant-code-version .k2b-notice-card__title {
-  font-size: 0.875rem;
+  font-size: .875rem;
   font-weight: 400;
   line-height: 1.3125rem;
   overflow-wrap: anywhere;
 }
-.k2b-ui .assistant-code-version .k2b-notice-card__body { grid-column: 1; margin: 0; }
+.k2b-ui .assistant-code-version[data-card-icon] .k2b-notice-card__body { grid-column: 1; min-width: 0; margin: 0; }
 .assistant-code-version__quiet {
   margin: 0;
   color: var(--k2b-text-subtle);
-  font-size: 0.8125rem;
+  font-size: .8125rem;
   line-height: 1.1875rem;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   overflow: hidden;
-  overflow-wrap: anywhere;
 }
 .k2b-ui .assistant-code-version .k2b-notice-card__actions {
   grid-column: 2;
@@ -1128,24 +1130,8 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
   padding: 0;
   justify-content: flex-end;
 }
-.assistant-code-version__actions { display: flex; align-items: center; gap: 0.75rem; }
+.assistant-code-version__actions { display: flex; align-items: center; gap: .75rem; }
 .assistant-code-version__action { display: grid; min-width: 0; }
-@container (max-width: 35rem) {
-  .k2b-ui .assistant-code-version[data-tone][data-card-icon] > .k2b-notice-card__content {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(2.625rem, auto) 2.375rem minmax(3.625rem, auto);
-    row-gap: 0.5rem;
-  }
-  .k2b-ui .assistant-code-version .k2b-notice-card__actions {
-    grid-column: 1;
-    grid-row: 3;
-    align-self: stretch;
-    margin-inline-start: -1.75rem;
-    display: grid;
-    justify-content: stretch;
-  }
-  .assistant-code-version__actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0.5rem; align-items: stretch; }
-}
 
 /* Waiting for you: each topic under its own heading with its count; approvals use the shared approval card, and
    Code that needs the person stands as rows in one island. */
@@ -1226,9 +1212,8 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .k2b-ui .assistant-place-starter > .k2b-button__label { width: 100%; }
 .assistant-place-row-sub { display: block; overflow: hidden; color: var(--k2b-text-secondary); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
 
-/* v10: one neutral receipt, one symbol, two text roles. Feedback shares the saved line's place. */
+/* Pause and approval share the same two text rows and public control sizes. */
 .k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] {
-  container-type: inline-size;
   grid-template-columns: 1.125rem minmax(0, 1fr);
   column-gap: .625rem;
   padding: .6875rem .875rem;
@@ -1237,23 +1222,60 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
   background: var(--k2b-surface-muted);
 }
 .k2b-ui .assistant-authoring-stop[data-card-icon] > .k2b-notice-card__icon { color: var(--k2b-text-muted); font-size: 1.0625rem; }
-.k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] > .k2b-notice-card__content { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .125rem .625rem; }
-.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__head { grid-column: 1; }
+.k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] > .k2b-notice-card__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-self: stretch;
+  gap: .125rem .75rem;
+}
+.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__head { grid-column: 1; min-width: 0; }
 .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__title { font-size: var(--k2b-type-14); font-weight: 400; line-height: 1.3125rem; }
-.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__body { grid-column: 1; margin: 0; }
-.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__actions { grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 0; padding: 0; }
-.k2b-ui .assistant-authoring-stop__meta { display: grid; margin: 0; color: var(--k2b-text-muted); font-size: var(--k2b-type-13); line-height: 1.21875rem; }
-.k2b-ui .assistant-authoring-stop__meta > span { grid-area: 1 / 1; }
-.k2b-ui .assistant-authoring-stop__measure,
+.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__body { grid-column: 1; min-width: 0; margin: 0; }
+.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__actions { grid-column: 2; grid-row: 1 / 3; align-self: center; margin: 0; padding: 0; }
+.k2b-ui .assistant-authoring-stop__meta {
+  display: grid;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: var(--k2b-type-13);
+  line-height: 1.1875rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.k2b-ui .assistant-authoring-stop__meta > span { grid-area: 1 / 1; overflow: hidden; text-overflow: ellipsis; }
 .k2b-ui .assistant-authoring-stop__retired { visibility: hidden; }
-/* The shared secondary button supplies neutral colours, loading and focus in every width. */
+.k2b-ui .assistant-code-version[data-card-icon],
+.k2b-ui .assistant-authoring-stop[data-card-icon] { block-size: 4rem; }
 @container (width > 35rem) {
-  .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button { min-height: 1.875rem; padding-block: 0; }
+  .k2b-ui .assistant-code-version .k2b-notice-card__title,
+  .k2b-ui .assistant-authoring-stop .k2b-notice-card__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 @container (max-width: 35rem) {
-  .k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] > .k2b-notice-card__content { grid-template-columns: minmax(0, 1fr); }
-  .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__actions { grid-column: 1; grid-row: 3; margin-block-start: .5rem; margin-inline-start: -1.75rem; }
-  .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__actions > * { flex: 1 1 0; min-width: 0; min-height: 2.5rem; }
+  .k2b-ui .assistant-code-version[data-card-icon],
+  .k2b-ui .assistant-authoring-stop[data-card-icon][data-current] { block-size: 9.5rem; }
+  .k2b-ui .assistant-authoring-stop[data-card-icon]:not([data-current]) { block-size: auto; }
+  .k2b-ui .assistant-code-version[data-card-icon] > .k2b-notice-card__icon,
+  .k2b-ui .assistant-authoring-stop[data-card-icon] > .k2b-notice-card__icon { align-self: start; }
+  .k2b-ui .assistant-code-version[data-tone][data-card-icon] > .k2b-notice-card__content,
+  .k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] > .k2b-notice-card__content {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr 3.5rem;
+    align-content: start;
+    row-gap: .125rem;
+  }
+  .k2b-ui .assistant-authoring-stop[data-card-icon]:not([data-current]) > .k2b-notice-card__content { grid-template-rows: auto auto; }
+  .k2b-ui .assistant-code-version .k2b-notice-card__actions,
+  .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__actions {
+    grid-column: 1;
+    grid-row: 4;
+    align-self: stretch;
+    margin-inline-start: -1.75rem;
+    display: grid;
+    justify-content: stretch;
+  }
+  .assistant-code-version__actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .5rem; align-items: stretch; }
 }
 
 /* Reading column (Gustav chat v12, Bauplan 4a): the conversation is at most 812 px wide and centred, so with its 24 px

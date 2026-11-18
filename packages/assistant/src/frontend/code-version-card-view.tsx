@@ -7,6 +7,7 @@ import type { CodeVersionCardAction, CodeVersionCardModel } from "./code-version
 /** The one v10 surface. Buttons keep their public appearance, loading, focus and menu contracts. */
 export function CodeVersionCardView(props: {
   model: CodeVersionCardModel;
+  ref?: (element: HTMLDivElement) => void;
   anchorId: string;
   onAction: (action: CodeVersionCardAction["id"]) => void;
 }) {
@@ -21,9 +22,11 @@ export function CodeVersionCardView(props: {
   const c = () => codeVersionCardCopy.resolve([locale()]).t;
   const control = (action: CodeVersionCardAction, primary: boolean): JSX.Element => {
     const common = {
-      size: "md" as const,
+      get size(): "sm" | "md" {
+        return phone() ? "md" : "sm";
+      },
       get variant(): ButtonVariant {
-        return primary ? (phone() || action.filled ? "ai" : "secondary") : phone() ? "secondary" : "link";
+        return primary ? (action.filled ? "ai" : "secondary") : phone() ? "secondary" : "link";
       },
       wrap: true,
       "data-code-version-primary": primary ? "" : undefined,
@@ -35,7 +38,7 @@ export function CodeVersionCardView(props: {
           onClick={() => action.href && documentNavigate(action.href)}
           items={[
             {
-              sectionLabel: c().morePages,
+              sectionLabel: phone() ? c().morePages : undefined,
               items: props.model
                 .pages!.filter((page) => page.href !== action.href)
                 .map((page, index) => ({
@@ -45,7 +48,6 @@ export function CodeVersionCardView(props: {
             },
           ]}
           menuLabel={c().morePages}
-          menuPosition="bottom-right"
           phone="sheet"
         >
           {action.label}
@@ -70,7 +72,13 @@ export function CodeVersionCardView(props: {
     </div>
   );
   return (
-    <div class="assistant-code-version-host" ref={host}>
+    <div
+      class="assistant-code-version-host"
+      ref={(element) => {
+        host = element;
+        props.ref?.(element);
+      }}
+    >
       <NoticeCard
         class="assistant-code-version"
         tone="neutral"
@@ -83,7 +91,7 @@ export function CodeVersionCardView(props: {
         aria-busy={props.model.busy || undefined}
         tabIndex={-1}
         title={
-          <span class="assistant-code-version__main">
+          <span class="assistant-code-version__main" title={props.model.main}>
             <span role="status" aria-atomic="true">
               {props.model.alert ? "" : props.model.main}
             </span>

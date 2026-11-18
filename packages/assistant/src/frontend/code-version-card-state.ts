@@ -1,11 +1,13 @@
 import { formatCodeMoment } from "@k2b/cloud/code/schedule";
 import type { CodePageLinks } from "@k2b/cloud/contracts/code-routes";
+import type { CodeVersionCardSnapshot } from "@k2b/cloud/contracts/code-version-cards";
 import type { CodeVersionPreview, CodeVersionReview } from "./code-activation";
 import { codeVersionPageHref } from "./code-activation";
 import { codeVersionCardCopy } from "./code-version-card-copy";
-import type { CodeVersionCardSnapshot } from "@k2b/cloud/contracts/code-version-cards";
-type CodeVersionCardCode = Pick<CodeVersionCardSnapshot["code"], "state" | "activeVersionId"> & Partial<Pick<CodeVersionCardSnapshot["code"], "pausedAt" | "pausedBy">>;
 import { codeVersionCardMessages } from "./code-version-card-messages";
+
+type CodeVersionCardCode = Pick<CodeVersionCardSnapshot["code"], "state" | "activeVersionId"> &
+  Partial<Pick<CodeVersionCardSnapshot["code"], "pausedAt" | "pausedBy">>;
 
 export type CodeVersionCardLoaded = {
   refreshFailed?: boolean;
@@ -60,7 +62,7 @@ export function describeCodeVersionCard(input: {
   const action = (id: CodeVersionCardAction["id"], label: string, filled = false): CodeVersionCardAction => ({ id, label, filled });
   if (value === null) return { kind: "loading", main: c.loading, quiet: c.loadingQuiet, busy: true };
   if (value === "failed")
-    return { kind: "load-failed", main: t.lineNotLoaded, quiet: c.unavailableQuiet, alert: true, primary: action("load", t.retry) };
+    return { kind: "load-failed", main: c.loadFailed, quiet: c.unchanged, alert: true, primary: action("load", t.retry, true) };
   if (value === "denied") return { kind: "denied", main: t.lineNoAccess, quiet: "" };
   const { preview, review, facts, code } = value;
   const base = codeVersionPageHref(preview);
@@ -120,18 +122,23 @@ export function describeCodeVersionCard(input: {
     } else {
       const pages = value.pages?.versionId === input.versionId ? value.pages : null;
       const open = pages?.homeUrl && pages.pages.some((item) => item.href === pages.homeUrl);
-      result = {
-        kind: open ? "on" : "on-without-page",
-        main: c.on({ version }),
-        quiet: join(
-          preview.title,
-          preview.activated ? c.since({ when: moment(preview.activated.at) }) : null,
-          value.pages === null ? c.pagesFailed : nextMoment(),
-        ),
-        primary: open ? { id: "open", label: c.open, href: pages.homeUrl!, filled: true } : runs,
-        secondary: open ? runs : undefined,
-        pages: open ? pages.pages : undefined,
-      };
+      result = !pages
+        ? {
+            kind: "pages-unavailable",
+            main: c.on({ version }),
+            quiet: c.pagesFailed,
+            quietAlert: true,
+            primary: action("load", t.retry, true),
+            secondary: runs,
+          }
+        : {
+            kind: open ? "on" : "on-without-page",
+            main: c.on({ version }),
+            quiet: join(preview.title, preview.activated ? c.since({ when: moment(preview.activated.at) }) : null, nextMoment()),
+            primary: open ? { id: "open", label: c.open, href: pages.homeUrl!, filled: true } : runs,
+            secondary: open ? runs : undefined,
+            pages: open ? pages.pages : undefined,
+          };
     }
   } else if (preview.latest > version || review?.status === "superseded") {
     const latest = value.latest?.number ?? preview.latest;
@@ -210,7 +217,7 @@ export function describeCodeVersionCard(input: {
   } else if (act.kind === "unknown" || act.kind === "unreadable") {
     result = {
       kind: "unknown",
-      main: c.unknown,
+      main: c.unknown({ version }),
       quiet: act.kind === "unreadable" ? t.lineCheckFailed : c.unknownQuiet,
       primary: action("check", t.checkStatus),
       secondary: details,
@@ -218,7 +225,7 @@ export function describeCodeVersionCard(input: {
   } else if (act.kind === "failed") {
     result = {
       kind: "activation-failed",
-      main: `${c.failed} ${unchanged}`,
+      main: c.failed,
       quiet: join(preview.title, c.unchanged),
       alert: true,
       primary: action("retry", t.retry, true),
@@ -250,13 +257,15 @@ export function describeCodeVersionCard(input: {
     };
   }
   if (value.canManage === false) {
-    const readable = (item: CodeVersionCardAction | undefined) => item && ["page", "runs", "open", "load"].includes(item.id) ? item : undefined;
+    const readable = (item: CodeVersionCardAction | undefined) =>
+      item && ["page", "runs", "open", "load"].includes(item.id) ? item : undefined;
     result = { ...result, primary: readable(result.primary) ?? details, secondary: readable(result.secondary) };
     if (result.secondary?.href === result.primary?.href) result.secondary = undefined;
   } else if (value.canActivate === false && (result.primary?.id === "activate" || result.primary?.id === "retry")) {
     result = { ...result, primary: details, secondary: undefined };
   }
-  if (value.refreshFailed) result = { ...result, quiet: c.pagesFailed, quietAlert: true, primary: action("load", t.retry, true), secondary: details };
+  if (value.refreshFailed)
+    result = { ...result, quiet: c.refreshFailed, quietAlert: true, primary: action("load", t.retry, true), secondary: details };
   if (input.actionError) result = { ...result, quiet: input.actionError, quietAlert: true };
   if (input.actionBusy)
     result = {

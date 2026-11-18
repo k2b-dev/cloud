@@ -2,6 +2,7 @@ import { afterEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent, type JSX } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { approvalSnapshot } from "./code-version-card.test-fixture";
 
 // One moment of a Code reads the same in the chat's event line, on the version card and on the Code page.
 const dom = isServer ? undefined : createDomTestHarness();
@@ -69,27 +70,17 @@ else
       }),
     );
 
-    // The version card of a version switched on at that moment; Core answers its preview, review and words.
-    const preview = {
-      codeId: "c_info01",
-      title: "Code von info@",
-      ownerKind: "resource",
-      versionId: "66666666-6666-4666-8666-666666666666",
-      number: 5,
-      running: 5,
-      latest: 5,
-      activated: { at: INSTANT, byYou: true, byName: null },
-      allowed: { allowed: true },
-      readiness: { state: "ready" },
-      place: null,
-    };
+    // The card uses the same authorized version snapshot on the server and browser.
+    const snapshot = approvalSnapshot("on");
+    snapshot.preview.number = snapshot.preview.running = snapshot.preview.latest = 5;
+    snapshot.preview.activated = { at: INSTANT, byYou: true, byName: null };
     const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
-      const route = String(url);
-      if (route.endsWith("/api/code/activation/preview")) return new Response(JSON.stringify({ data: preview }));
-      if (route.endsWith("/code.read"))
-        return new Response(JSON.stringify({ data: { code: { state: "active", activeVersionId: preview.versionId } } }));
+      if (String(url).endsWith("/code.version.cards"))
+        return Response.json({
+          data: { items: [{ codeId: snapshot.preview.codeId, versionId: snapshot.preview.versionId, state: "available", snapshot }] },
+        });
       return new Response("{}", { status: 503 });
-    }) as unknown as typeof fetch);
+    }) as typeof fetch);
     restore.push(() => fetchSpy.mockRestore());
     const hub = live!.createAssistantLiveHub();
     const version = mount(() =>

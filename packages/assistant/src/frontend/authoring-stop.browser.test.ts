@@ -236,10 +236,10 @@ describe("the v10 pause card", () => {
                 expect(layout.overflow).toBe(0);
                 expect(layout.pageOverflow).toBe(0);
                 for (const duration of layout.reducedMotion.split(",")) expect(parseFloat(duration)).toBeLessThanOrEqual(0.001);
+                expect(await card.locator("button").getAttribute("data-size")).toBe(width === 390 ? "md" : "sm");
                 if (width === 390) {
                   expect(layout.button.y).toBeGreaterThanOrEqual(layout.textBottom);
                   expect(layout.button.width).toBeCloseTo(layout.card.width - 28, 0);
-                  expect(layout.button.height).toBeGreaterThanOrEqual(40);
                 } else {
                   expect(layout.button.height).toBeCloseTo(30, 0);
                 }

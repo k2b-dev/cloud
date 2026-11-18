@@ -10,13 +10,9 @@ import {
   stopCodeReviewRevision,
   withdrawCodeVersion,
 } from "./code-activation";
-import { type CodeVersionCardStore, createCodeVersionCardStore } from "./code-version-card-store";
 import { codeVersionCardMessages } from "./code-version-card-messages";
-import {
-  type CodeVersionCardAction,
-  type CodeVersionCardActivation,
-  describeCodeVersionCard,
-} from "./code-version-card-state";
+import { type CodeVersionCardAction, type CodeVersionCardActivation, describeCodeVersionCard } from "./code-version-card-state";
+import { type CodeVersionCardStore, createCodeVersionCardStore } from "./code-version-card-store";
 import { CodeVersionCardView } from "./code-version-card-view";
 
 const POLLS = 90;
@@ -46,10 +42,61 @@ export default function AssistantCodeVersionCard(props: {
   const [number, setNumber] = createSignal(props.number);
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [actionBusy, setActionBusy] = createSignal(false);
+  let host: HTMLDivElement | undefined;
+  let restorePrimary: (() => void) | undefined;
+  let releaseFocus: (() => void) | undefined;
+  const holdPrimaryFocus = () => {
+    releaseFocus?.();
+    const doc = host?.ownerDocument;
+    if (
+      !doc ||
+      !(doc.activeElement instanceof HTMLElement) ||
+      !host?.contains(doc.activeElement) ||
+      !doc.activeElement.hasAttribute("data-code-version-primary")
+    )
+      return;
+    let moved = false;
+    const focus = (event: FocusEvent) => {
+      if (
+        event.target instanceof HTMLElement &&
+        event.target !== doc.body &&
+        !(host?.contains(event.target) && event.target.hasAttribute("data-code-version-primary"))
+      )
+        moved = true;
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Tab") moved = true;
+    };
+    const pointer = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest("[data-code-version-primary]") || !host?.contains(event.target))
+        moved = true;
+    };
+    const release = () => {
+      doc.removeEventListener("focusin", focus);
+      doc.removeEventListener("keydown", key);
+      doc.removeEventListener("pointerdown", pointer);
+      restorePrimary = undefined;
+      releaseFocus = undefined;
+    };
+    releaseFocus = release;
+    restorePrimary = () => {
+      const active = doc.activeElement;
+      release();
+      if (
+        !moved &&
+        (active === doc.body || (active instanceof Element && host?.contains(active) && active.hasAttribute("data-code-version-primary")))
+      )
+        host?.querySelector<HTMLElement>("[data-code-version-primary]:not(:disabled)")?.focus();
+    };
+    doc.addEventListener("focusin", focus);
+    doc.addEventListener("keydown", key);
+    doc.addEventListener("pointerdown", pointer);
+  };
   let disposed = false;
   let recheck: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
     disposed = true;
+    releaseFocus?.();
     clearTimeout(recheck);
   });
 
@@ -83,12 +130,14 @@ export default function AssistantCodeVersionCard(props: {
           finish();
           setActivation({ kind: "idle" });
         } else setActivation({ kind: "unknown" });
+        restorePrimary?.();
       });
       return true;
     }
     if (status.state === "failed" || status.state === "cancelled") {
       finish();
       setActivation({ kind: "failed" });
+      restorePrimary?.();
       return true;
     }
     setActivation({ kind: "progress" });
@@ -122,10 +171,7 @@ export default function AssistantCodeVersionCard(props: {
   };
   const start = async () => {
     if (activation().kind === "progress" || activation().kind === "checking" || actionBusy()) return;
-    const held =
-      document.activeElement instanceof HTMLElement && document.activeElement.hasAttribute("data-code-version-primary")
-        ? document.activeElement
-        : null;
+    holdPrimaryFocus();
     setActivation({ kind: "progress" });
     pending.write(activationId);
     const started = await startCodeVersionActivation(props.codeId, versionId(), activationId);
@@ -136,11 +182,7 @@ export default function AssistantCodeVersionCard(props: {
       finish();
       setActivation({ kind: "failed" });
     } else await check();
-    if (held && activation().kind === "failed" && document.activeElement === document.body) {
-      document
-        .querySelector<HTMLElement>(`[data-chat-anchor="${codeVersionCardAnchor(props.versionId)}"] [data-code-version-primary]`)
-        ?.focus();
-    }
+    if (activation().kind === "failed") restorePrimary?.();
   };
   const mutate = async (kind: "stop" | "askAgain" | "withdraw") => {
     if (actionBusy() || activation().kind === "progress" || activation().kind === "checking") return;
@@ -203,5 +245,14 @@ export default function AssistantCodeVersionCard(props: {
       actionBusy: actionBusy(),
     }),
   );
-  return <CodeVersionCardView model={model()} anchorId={codeVersionCardAnchor(props.versionId)} onAction={onAction} />;
+  return (
+    <CodeVersionCardView
+      ref={(element) => {
+        host = element;
+      }}
+      model={model()}
+      anchorId={codeVersionCardAnchor(props.versionId)}
+      onAction={onAction}
+    />
+  );
 }
