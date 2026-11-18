@@ -503,11 +503,19 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
                   return x !== 0 || y !== 0 || blur !== 0;
                 }),
                 ring: ringColor && ringColor !== "rgba(0, 0, 0, 0)" ? rgba(ringColor) : undefined,
+                outline: style.outlineStyle === "none" ? "none" : `${style.outlineStyle} ${style.outlineWidth}`,
                 background: rgba(style.backgroundColor),
               };
             });
 
-          type Expect = { border: number; ring: boolean; edge: (state: string) => string; fill: (state: string) => string };
+          // `ring`: focus shows the soft ring; `outline`: focus on a chosen control shows the shared ring with a gap.
+          type Expect = {
+            border: number;
+            ring: boolean;
+            outline?: boolean;
+            edge: (state: string) => string;
+            fill: (state: string) => string;
+          };
           const filter = (rest: string, fill: string, hover: string, hoverEdge = rest): Expect => ({
             border: 0,
             ring: true,
@@ -522,7 +530,7 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
           });
           // Group members (segment options, tabs, views) have no edge until selected; tabs and views not even then.
           const member = (hover: string) => filter(tokens.none, tokens.none, hover);
-          const selected = filter(tokens.selected, tokens.selectedFill, tokens.selectedHover);
+          const selected: Expect = { ...filter(tokens.selected, tokens.selectedFill, tokens.selectedHover), ring: false, outline: true };
           const fillOnly = filter(tokens.none, tokens.selectedFill, tokens.selectedHover);
           const controls: Record<string, [string, Expect, string?]> = {
             chip: [".k2b-filter-chip", filter(tokens.edge, tokens.surface, tokens.hover, tokens.edgeHover)],
@@ -567,6 +575,10 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
               expect(actual.border, `${label} border width`).toBe(expected.border);
               expect(actual.background, `${label} fill`).toBe(expected.fill(state));
               if (expected.ring) expect(actual.ring !== undefined, `${label} focus ring`).toBe(state === "focus");
+              if (expected.outline) {
+                expect(actual.ring, `${label} no soft ring`).toBeUndefined();
+                expect(actual.outline, `${label} focus outline`).toBe(state === "focus" ? "solid 2px" : "none");
+              }
               if (expected.border === 0) {
                 expect(actual.inset, `${label} edge width`).toBe(1);
                 expect(actual.insetColor, `${label} edge colour`).toBe(expected.edge(state));

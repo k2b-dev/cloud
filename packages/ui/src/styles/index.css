@@ -159,7 +159,7 @@
   --k2b-edge-hover: var(--k2b-neutral-400);
   --k2b-edge-disabled: var(--k2b-border);
   --k2b-edge-focus: var(--k2b-accent-700);
-  --k2b-edge-danger: var(--k2b-danger-500);
+  --k2b-edge-danger: var(--k2b-danger-600);
   /* The soft ring outside a focused or invalid control: a share of its edge
      colour, so focus rings blue and an error red in every primary scope. Each
      control rests with `--k2b-edge-ring: transparent` and draws
@@ -10404,6 +10404,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: not-allowed;
 }
 
+/* A chosen control already carries the strong edge in the focus blue, so the soft ring alone would not show focus
+   there. Focus on a chosen control takes the shared focus ring with a gap instead, as buttons do. */
+.k2b-ui .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"]):focus-visible,
+.k2b-ui .k2b-filter-chip[data-active="true"]:focus-visible,
+.k2b-ui .k2b-choice-list:not([data-variant="list"]) > .k2b-choice-list__option[aria-checked="true"]:focus-visible,
+.k2b-ui .k2b-dropdown__tiles > .k2b-dropdown__item[data-selected="true"]:focus-visible,
+.k2b-ui .k2b-checkbox-card[data-state="checked"]:has(> input:focus-visible) {
+  --k2b-edge-ring: transparent;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-width);
+}
+
 .k2b-ui .k2b-checkbox-card > input {
   position: absolute;
   width: 1px;
@@ -12844,7 +12856,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-direction: column;
   gap: 0.5rem;
   padding: 1.25rem 1rem;
-  border: 1px solid var(--k2b-border-strong);
+  /* A drop place: a thin dashed edge that says "drop here". */
+  border: var(--k2b-edge-width) dashed var(--k2b-edge-hover);
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);

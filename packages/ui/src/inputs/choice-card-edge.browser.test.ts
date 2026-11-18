@@ -8,8 +8,8 @@ import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 // chosen card draws a second line inside it (2 px in all), so the card and its
 // text never move. Rest is grey, hover darkens the edge a step and the fill,
 // focus turns the edge strong blue and adds a flat ring outside, a chosen card
-// takes a blue edge and a light blue fill, and focus on a chosen card is strong
-// blue with the ring. No depth shadow.
+// takes a blue edge and a light blue fill, and focus on a chosen card adds the
+// shared focus ring with a gap. No depth shadow.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const TEST_TIMEOUT = 30_000;
@@ -196,15 +196,13 @@ for (const theme of ["light", "dark"] as const)
             expect(chosenFocus.edgeWidth).toBe(2);
             expect(chosenFocus.fill).toBe(p.selectedFill!);
 
-            for (const state of [rest, hover, chosen, focus, chosenFocus]) {
-              expect(state.depth).toBe(0);
-              expect(state.outline).toBe("none");
-            }
-            for (const state of [rest, hover, chosen]) expect(state.outerShadows).toBe(0);
-            for (const state of [focus, chosenFocus]) {
-              expect(state.outerShadows).toBe(1);
-              expect(state.ring).toBe(3);
-            }
+            for (const state of [rest, hover, chosen, focus, chosenFocus]) expect(state.depth).toBe(0);
+            for (const state of [rest, hover, chosen, focus]) expect(state.outline).toBe("none");
+            for (const state of [rest, hover, chosen, chosenFocus]) expect(state.outerShadows).toBe(0);
+            expect(focus.outerShadows).toBe(1);
+            expect(focus.ring).toBe(3);
+            // A chosen card already has the strong edge: focus adds the shared ring with a gap.
+            expect(chosenFocus.outline).toBe("solid");
             // The card and its first text line stay on the same pixels in every state.
             expect(hover.card).toBe(rest.card);
             expect(hover.text).toBe(rest.text);

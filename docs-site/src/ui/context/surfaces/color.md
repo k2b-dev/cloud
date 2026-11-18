@@ -99,6 +99,12 @@ control casts a shadow.
 | Secondary and subtle `Button` | 1 px `--k2b-control-border-soft` (the field edge) | `--k2b-edge-hover` edge, `--k2b-edge-hover-bg` | | focus ring with a gap |
 | Interactive `Paper` | 1 px `--k2b-border-strong`, never darker | `--k2b-edge-hover-bg` | | focus ring |
 
+A chosen control (an active chip, the selected segment, a chosen card or
+tile) already carries the strong edge, so focus on it takes the shared focus
+ring with a gap instead of the soft ring.
+
+A drop place (`Dropzone`) has a thin dashed edge in `--k2b-edge-hover`.
+
 Check boxes and radio marks have a 1.5 px mid-grey edge
 (`--k2b-edge-mark-width`, `--k2b-edge-mark`) of at least 3:1, so an open box
 reads as a control.
@@ -208,7 +214,7 @@ and checked cards.
 Choice cards (`ChoiceList` and `CheckboxCard`) are cards on the field edge:
 a 1 px grey edge at rest, the `--k2b-edge-hover` edge and
 `--k2b-edge-hover-bg` on hover, and a strong blue `--k2b-edge-focus` edge with
-the focus ring on focus, also when chosen. A chosen or checked card draws a
+the focus ring on focus; a chosen card shows the shared focus ring with a gap. A chosen or checked card draws a
 second line inside its edge, 2 px in all (`--k2b-edge-selected-width`), in
 `--k2b-action` over `--k2b-edge-selected-fill` (`--k2b-edge-selected-hover-fill`
 on hover), in platform blue like the radio or checkbox inside it. An invalid
