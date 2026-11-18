@@ -2,7 +2,7 @@
 
 `toast` shows transient feedback in a responsive stack. The application supplies the message and decides whether the result is informational, successful, or failed. `announce` tells screen readers about an outcome without showing anything, through the same live regions.
 
-A toast is a small card: the tone's glyph in an icon tile, the message (with an optional title above it), and an optional action beside it. Each tone has its own glyph shape (`ti-info-circle`, `ti-check`, `ti-alert-triangle`, `ti-alert-circle`), so tones differ by more than colour. A [celebrated](#celebrate-a-finished-result) success draws a circled check instead. The first line of a toast is its title, semibold in the normal text colour: the title you pass, or a short message without one, which the toast places there itself. With a title, the message is the description: the smaller, muted line under it. A longer message without a title stays calm body text in the regular weight. A link in the message keeps the message's weight and differs by its action colour and underline, so a toast uses at most these two text styles. The line heights are the same in both forms. Like dialogs and the Files upload panel, a toast is a floating layer (layer 3): it has a hairline border and the soft `--k2b-shadow-toast`. Only the front toast of a folded stack casts it.
+A toast is a small card: the tone's glyph in an icon tile, the message (with an optional title above it), and an optional action beside it. Each tone has its own glyph shape (`ti-info-circle`, `ti-check`, `ti-alert-triangle`, `ti-alert-circle`), so tones differ by more than colour. A [celebrated](#celebrate-a-finished-result) success draws a circled check instead. The first line of a toast is its title, semibold in the normal text colour: the title you pass, or a short message without one, which the toast sets in the same type. With a title, the message is the description: the smaller, muted line under it. A longer message without a title stays calm body text in the regular weight. A link in the message keeps the message's weight and differs by its action colour and underline, so a toast uses at most these two text styles. The line heights are the same in both forms. Like dialogs and the Files upload panel, a toast is a floating layer (layer 3): it has a hairline border and the soft `--k2b-shadow-toast`. Only the front toast of a folded stack casts it.
 
 ## Use toast
 
@@ -84,7 +84,7 @@ The first argument is the message. A toast has a short title for the outcome and
 
 - **Title:** the outcome in one to three words, at most 32 characters ("Sent", "Draft saved", "Could not save"). It stays on one line beside the icon on a 390 px phone. Name the concrete outcome, not a generic "Success" or "Error": the icon and colour already say the tone.
 - **Description:** what happened or what comes next, one sentence of about 80 characters ("The message will be sent in 20 s.").
-- **No title** only when the whole message is that short ("Link copied"). The toast then places the message in the title's place and type itself. A longer message without a title stays calm body text, never a bold paragraph; give it a title.
+- **No title** only when the whole message is that short ("Link copied"). The toast then sets the message in the title's type itself. A longer message without a title stays calm body text, never a bold paragraph; give it a title.
 - **Icon:** comes from the tone (`variant`); pass `iconClass` only for a glyph that says more than the tone, such as `ti-send`, never a tone glyph.
 - **At most one action**, such as Undo or Try again. A second action is for decisions that need both answers in the toast.
 
@@ -96,8 +96,6 @@ toast.success("Signs out after 10 minutes without input and when the browser clo
 // A failure names what failed in the title and the reason in the description.
 toast.error("The server is not reachable.", { title: "Could not save", action: { label: "Try again", onClick: retry } });
 ```
-
-A touch or pen tap on an action within 500 ms of the toast appearing is ignored: a double tap meant for a control that stood in the same place, such as Send in a phone sheet's head, never undoes what it just did. Mouse, keyboard, and script activation are not delayed.
 
 The repository rule `toast-copy` checks these limits for literal and catalogue texts in Cloud; its baseline lists the toasts that do not follow the contract yet.
 

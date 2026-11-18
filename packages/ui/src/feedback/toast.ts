@@ -101,8 +101,6 @@ const TITLE_MAX_WORDS = 3;
 const TITLE_MAX_CHARACTERS = 32;
 const isShortLabel = (text: string): boolean =>
   text.trim().length <= TITLE_MAX_CHARACTERS && text.trim().split(/\s+/).filter(Boolean).length <= TITLE_MAX_WORDS;
-/** A touch or pen tap on an action is ignored this long after its toast appears: a second tap meant for what was there before never reaches it. */
-const ACTION_ARM_MS = 500;
 /** Toasts in the stack at every width; older ones leave by the eviction rule below. */
 const MAX_VISIBLE_TOASTS = 3;
 /** The same media query that moves the rail to the top edge in the stylesheet. */
@@ -780,8 +778,6 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   let dismissed = false;
   let dismissTimer: ReturnType<typeof setTimeout> | null = null;
   let currentVariant: ToastVariant = options?.variant ?? "default";
-  /** When the toast appeared, for the moment its actions wait before they accept a tap. */
-  const shownAt = performance.now();
   let currentProgress = options?.progress ?? null;
   let currentCelebrate = options?.celebrate ?? false;
   let currentAction = options?.action ?? null;
@@ -872,13 +868,13 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   linkElement.addEventListener("click", () => dismiss());
   descriptionElement.append(descriptionText);
   const renderText = () => {
-    // A short message without a title, such as "Link copied", is the outcome itself: it takes the title's place and
-    // type. Anything longer stays calm body text, so an old sentence never turns into a bold paragraph.
-    const promoted = !currentTitle && currentProgress === null && !currentLink && isShortLabel(currentDescription);
-    titleElement.textContent = currentTitle ?? (promoted ? currentDescription : "");
-    titleElement.hidden = !currentTitle && !promoted;
-    descriptionElement.hidden = promoted;
+    titleElement.textContent = currentTitle ?? "";
+    titleElement.hidden = !currentTitle;
     descriptionText.data = currentDescription;
+    // A short message without a title, such as "Link copied", is the outcome itself: it reads in the title's type.
+    // Anything longer stays calm body text, so an old sentence never turns into a bold paragraph.
+    if (!currentTitle && currentProgress === null && !currentLink && isShortLabel(currentDescription)) contentElement.dataset.short = "true";
+    else delete contentElement.dataset.short;
     const href = currentLink ? safeHref(currentLink.href) : null;
     if (currentLink && href !== null) {
       linkElement.href = href;
@@ -981,14 +977,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     element.className = "k2b-toast__action";
     element.dataset.variant = variant;
     element.textContent = action.label;
-    element.addEventListener("click", (event) => {
-      // A tap that lands while the toast arrives was meant for what stood there, such as Send in a phone sheet's head.
-      const tapped =
-        typeof PointerEvent !== "undefined" && event instanceof PointerEvent && event.pointerType !== "mouse" && event.pointerType !== "";
-      if (tapped && performance.now() - shownAt < ACTION_ARM_MS) {
-        event.preventDefault();
-        return;
-      }
+    element.addEventListener("click", () => {
       if ("onClick" in action) action.onClick();
       else dismiss();
     });
