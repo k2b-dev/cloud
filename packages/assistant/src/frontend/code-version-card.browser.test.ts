@@ -436,7 +436,7 @@ describe("v10 approval card in Chromium", () => {
         const edges = await h.page.evaluate(() =>
           [".assistant-authoring-stop", ".assistant-code-version-host .cloud-approval-frame"].map((selector) => {
             const card = document.querySelector(selector)!;
-            const content = card.querySelector(".k2b-notice-card__content")!;
+            const content = card.querySelector(".k2b-notice-card__title")!;
             const icon = card.querySelector(".k2b-notice-card__icon")!;
             return {
               contentX: content.getBoundingClientRect().x,

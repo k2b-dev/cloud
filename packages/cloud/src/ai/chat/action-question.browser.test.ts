@@ -202,10 +202,10 @@ describe("ApprovalCard draft and host parity", () => {
     try {
       const layouts = await page.locator(".cloud-approval-frame").evaluateAll((nodes) =>
         nodes.map((node) => {
-          const content = node.querySelector(".k2b-notice-card__content")!.getBoundingClientRect();
+          const content = node.querySelector(".k2b-notice-card__description")!.getBoundingClientRect();
           const actions = node.querySelector(".k2b-notice-card__actions")!.getBoundingClientRect();
-          const controls = [...node.querySelectorAll<HTMLElement>(".k2b-notice-card__action-slot")].map((control) =>
-            control.getBoundingClientRect(),
+          const controls = [...node.querySelectorAll<HTMLElement>(".k2b-notice-card__actions > :is(button, a, .k2b-split-button)")].map(
+            (control) => control.getBoundingClientRect(),
           );
           return { actions: actions.width, widths: controls.map((control) => control.width), top: actions.top, textBottom: content.bottom };
         }),

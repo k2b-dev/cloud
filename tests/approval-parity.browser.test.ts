@@ -130,7 +130,7 @@ for (const theme of ["light", "dark"])
               const geometry = await frame.evaluate((node) => {
                 const title = node.querySelector(".k2b-notice-card__title")!;
                 const detail = node.querySelector(".k2b-notice-card__description")!;
-                const actions = [...node.querySelectorAll<HTMLElement>(".k2b-notice-card__action-slot")];
+                const actions = [...node.querySelectorAll<HTMLElement>(".k2b-notice-card__actions > :is(button, a, .k2b-split-button)")];
                 return {
                   height: node.getBoundingClientRect().height,
                   reserve: node.hasAttribute("data-reserve"),

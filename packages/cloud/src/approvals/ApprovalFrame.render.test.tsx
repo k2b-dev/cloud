@@ -35,7 +35,7 @@ for (const locale of ["de", "en"])
       expect(html).toContain('data-tone="ai"');
       expect(html).toContain('data-reserve=""');
       expect(html.match(/ti-shield-check/g)).toHaveLength(1);
-      expect(html.match(/class="k2b-notice-card__action-slot"/g)).toHaveLength(2);
+      expect(html.match(/<button\b/g)).toHaveLength(2);
       expect(html.match(/Version 5 ist bereit zum Einschalten\./g)).toHaveLength(1);
       expect(html).toContain(locale === "de" ? "Alles ansehen" : "See everything");
       expect(html).not.toContain("The complete proposal");

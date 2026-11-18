@@ -90,7 +90,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     );
   });
 
-  test("NoticeRow server-renders its two summary lines, AI tone and reserved action slots", () => {
+  test("NoticeRow server-renders its two summary lines, AI tone and reserved actions", () => {
     const html = renderToString(() =>
       createComponent(NoticeRow, {
         tone: "ai",
@@ -104,9 +104,11 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(html).toContain('data-row=""');
     expect(html).toContain('data-tone="ai"');
     expect(html).toContain('data-reserve=""');
-    expect(html.match(/k2b-notice-card__action-slot/g)).toHaveLength(2);
+    expect(html.match(/<div class="k2b-notice-card__actions">([\s\S]*?)<\/div>/)?.[1]?.replace(/<!--.*?-->/g, "")).toBe(
+      "See everythingEnable",
+    );
     expect(html).toContain('<p class="k2b-notice-card__title">Ready to enable.</p>');
-    expect(html).toContain('title="Mailbox · reads mail"><span class="k2b-notice-card__detail-text">Mailbox · reads mail</span>');
+    expect(html).toContain('class="k2b-notice-card__detail-text" title="Mailbox · reads mail">Mailbox · reads mail</span>');
     expect(html).not.toContain("k2b-notice-card__body");
     const terminal = renderToString(() => createComponent(NoticeRow, { children: "Done.", reserve: false }));
     expect(terminal).not.toContain("data-reserve");

@@ -32,7 +32,7 @@ window.noticeRow = setState;
 render(() => createComponent(NoticeRow, {
   tone: "ai", icon: "ti ti-shield-check",
   get reserve() { return state() !== "terminal"; },
-  get children() { return state() === "failed" ? "This version could not be enabled." : state() === "loading" ? "This version is loading …" : "This version is ready to enable."; },
+  get children() { return state() === "long" ? "This newer version is ready to enable after you review the changes." : state() === "failed" ? "This version could not be enabled." : state() === "loading" ? "This version is loading …" : "This version is ready to enable."; },
   get detail() { return state() === "loading" ? "Checking the current status" : "Mailbox · reads mail · daily at 8:00 · keeps the current version until you enable this one"; },
   detailTitle: "Mailbox · reads mail · daily at 8:00 · keeps the current version until you enable this one",
   actions: ({ narrow }) => state() === "loading" || state() === "terminal" ? undefined : [
@@ -222,7 +222,7 @@ for (const width of [1440, 390])
           });
         const first = await measure();
         expect(first.card.height).toBe(width === 390 ? 156 : 64);
-        for (const state of ["failed", "loading", "ready", "single"]) {
+        for (const state of ["failed", "loading", "ready", "long", "single"]) {
           await page.evaluate((value) => window.noticeRow(value), state);
           await settled(page);
           expect(await measure()).toEqual(first);

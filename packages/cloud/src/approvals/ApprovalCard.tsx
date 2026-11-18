@@ -1,5 +1,5 @@
 import type { ChatDecisionState } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { type ActionCard, type ActionText, actionPlainText } from "../ai/chat/action-card";
 import { actionMessages } from "../ai/chat/action-messages";
 import type { ActionLine } from "../ai/chat/action-question";
@@ -74,7 +74,7 @@ const intent = (card: ActionCard): ActionText => [{ kind: "text", text: /[.!?…
 export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
   const t = () => actionMessages(props.card.locale);
   const timeLeft = useTimeLeft(() => props.expiresAt);
-  const editable = () => props.card.draft?.editable === true && props.onEditDraft !== undefined;
+  const editable = () => Boolean(props.card.draft?.editable && props.onEditDraft);
   // A draft the person may change starts in edit mode; "Change" returns to it, "Send …" moves on to approving.
   const [editing, setEditing] = createSignal(editable());
   const [values, setValues] = createSignal(draftValues(props.card.view));
@@ -87,29 +87,12 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
       { defer: true },
     ),
   );
-  const status = createMemo((): ApprovalFrameStatus | undefined => {
-    if (props.state === "open") return undefined;
-    const words = t();
-    if (props.state === "expired") return { label: words.statusExpired, tone: "expired" };
-    const tone = props.outcome.lines[props.outcome.current]?.tone ?? "running";
-    const label = {
-      running: words.statusRunning,
-      done: words.statusDone,
-      off: words.statusDeclined,
-      waiting: words.statusWaiting,
-      warning: words.statusUnknown,
-      error: words.statusFailed,
-    }[tone];
-    return { label, tone };
-  });
-  const meta = createMemo(() => {
-    const words = t();
-    const items: { text: string; icon: string }[] = [];
+  const meta = () => {
     const left = timeLeft();
-    if (left !== undefined)
-      items.push({ icon: "ti ti-clock", text: left < 60_000 ? words.expiresSoon : words.expiresIn({ milliseconds: left }) });
-    return items;
-  });
+    return left === undefined
+      ? []
+      : [{ icon: "ti ti-clock", text: left < 60_000 ? t().expiresSoon : t().expiresIn({ milliseconds: left }) }];
+  };
   // A complete proposal that is not inline must be read before it can be approved.
   const [loadedContent, setLoadedContent] = createSignal<string>();
   const unavailable = () =>
@@ -117,14 +100,7 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
     (props.card.contentRef && loadedContent() !== `${props.card.contentRef.href}:${props.card.contentRef.digest}`
       ? t().fullReviewRequired
       : undefined);
-  const reason = () =>
-    props.waiting
-      ? { text: props.waiting, icon: "ti ti-wifi-off", tone: "neutral" as const }
-      : editing()
-        ? { text: t().draftNote, icon: "ti ti-lock", tone: "neutral" as const }
-        : unavailable()
-          ? { text: unavailable()!, icon: "ti ti-player-pause", tone: "neutral" as const }
-          : { text: props.card.reason.text, icon: props.card.reason.icon, tone: props.card.reason.tone };
+  const reason = () => ({ text: props.waiting ?? (editing() ? t().draftNote : (unavailable() ?? props.card.reason.text)) });
   const currentLine = () => props.outcome.lines[props.outcome.current];
   const open = () => props.state === "open";
   const resultSentence = () => {
@@ -132,6 +108,13 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
     const text = actionPlainText(line?.text ?? props.card.forms.unknown);
     return line?.detail && !/[.!?…]["“”»«]?\s*$/.test(text) ? `${text}.` : text;
   };
+  const status = (): ApprovalFrameStatus | undefined =>
+    open()
+      ? undefined
+      : {
+          tone: props.state === "expired" ? "expired" : (currentLine()?.tone ?? "running"),
+          label: resultSentence(),
+        };
   const resultQuiet = () => {
     const line = currentLine();
     if (line?.detail) return line.detail;
@@ -158,12 +141,12 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
       state={props.state}
       mode={editing() ? "edit" : "approve"}
       anchorId={props.anchorId}
-      source={{ name: props.card.app.name, icon: props.card.app.icon, accent: props.card.app.accent }}
+      source={props.card.app}
       status={status()}
       sentence={open() ? (editing() ? intent(props.card) : props.card.question) : resultSentence()}
       reason={
         open()
-          ? { ...reason(), text: [reason().text, ...meta().map((fact) => fact.text)].join(" · ") }
+          ? { text: [reason().text, ...meta().map((fact) => fact.text)].join(" · ") }
           : {
               text: (
                 <>
