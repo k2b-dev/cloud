@@ -13,7 +13,7 @@ const build = await Bun.build({
       import { onCleanup } from "solid-js";
       import { dialogCore } from "@k2b/ui";
       import { attachSpotlightPosition } from "./spotlight-position";
-      window.openSearch = () => dialogCore.open((close, context) => {
+      window.openSearch = () => void dialogCore.open((close, context) => {
         const host = document.createElement("section");
         host.style.width = "400px";
         host.innerHTML = '<h2 data-search-grip="top">Search</h2><input aria-label="Search"><div data-results style="height:60px"></div>';
