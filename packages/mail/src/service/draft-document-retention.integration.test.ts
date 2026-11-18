@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { getProcessSync, sql } from "@k2b/cloud";
-import { captureTableAction } from "@k2b/cloud/shared-text";
-import type { Result } from "@k2b/stdlib";
-import { ResourceDriftError, RetentionGapError } from "@k2b/sync";
+import { captureTableAction, SharedTextBoundaryError } from "@k2b/cloud/shared-text";
+import { isServiceError, type Result } from "@k2b/stdlib";
+import { ConflictError, ResourceDriftError, RetentionGapError, StoreFullError } from "@k2b/sync";
 import { findTables } from "@k2b/ui/text-editor/model";
 import { DiscardPolicy, type JetStreamManager, jetstreamManager } from "@nats-io/jetstream";
 import * as Y from "yjs";
@@ -28,9 +28,11 @@ import {
   startDraftDocumentLogPolicy,
   stopDraftDocumentLogPolicy,
 } from "./draft-document-log-policy";
+import { mailDraftRoom } from "./draft-document-room";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, readDraftDocument } from "./draft-documents";
 import { applyDraftTableAction } from "./draft-table-actions";
 import { persistDraftDocument, restoreDraftRecoveryCopy, updateDraft } from "./drafts";
+import { localizeMailError } from "./error-messages";
 import { createMailbox } from "./mailboxes";
 import { loadSendContent } from "./send-content";
 
@@ -426,6 +428,77 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
       local.destroy();
       await manager.streams.update(stream, { max_bytes: 1024 ** 3 });
       await release();
+      await retire(target);
+    }
+  });
+
+  test.each([
+    [
+      "typed full log with broker cause",
+      Object.assign(new StoreFullError("Full draft log"), { cause: new Error("Broker capacity") }),
+      "DRAFT_DOCUMENT_STREAM_FULL",
+      409,
+    ],
+    [
+      "application rejection with cause",
+      Object.assign(new Error("Draft cannot be edited"), { code: "DRAFT_LEASE_BUSY", status: 409, cause: new Error("Underlying failure") }),
+      "DRAFT_LEASE_BUSY",
+      409,
+    ],
+    [
+      "wrapped application rejection",
+      new Error("Snapshot save failed", { cause: { code: "DRAFT_DOCUMENT_STREAM_FULL", status: 409, message: "Full draft log" } }),
+      "DRAFT_DOCUMENT_STREAM_FULL",
+      409,
+    ],
+    [
+      "wrapped changed content",
+      new Error("Snapshot save failed", {
+        cause: Object.assign(new Error("Review content again"), { code: "SEND_CONTENT_CHANGED", status: 409 }),
+      }),
+      "SEND_CONTENT_CHANGED",
+      409,
+    ],
+    ["frozen", new SharedTextBoundaryError("DOCUMENT_FROZEN"), "DOCUMENT_FROZEN", 409],
+    ["closed", new SharedTextBoundaryError("DOCUMENT_CLOSED"), "DOCUMENT_CLOSED", 409],
+    ["generation", new SharedTextBoundaryError("GENERATION_CHANGED"), "GENERATION_CHANGED", 409],
+    ["concurrent boundary", new ConflictError("Draft changed concurrently"), "CONFLICT", 409],
+    ["unknown dependency failure", new Error("Unexpected snapshot failure"), "DRAFT_DOCUMENT_UNAVAILABLE", 503],
+  ] as const)("send preparation preserves %s classification without changing the draft", async (_label, error, code, status) => {
+    const target = await draft();
+    const base = await read(target);
+    const review = value(await reviewDraftComposeSafety({ ...target, expectedRevision: base.revision }));
+    const freeze = spyOn(mailDraftRoom, "freeze").mockRejectedValueOnce(error);
+    try {
+      const rejected = await createActorCommand({
+        context,
+        mailboxId,
+        input: {
+          kind: "send",
+          draftId: target.draftId,
+          senderIdentityId: senderId,
+          expectedDraftRevision: review.revision,
+          expectedContentHash: review.contentHash,
+          undoSeconds: 60,
+          idempotencyKey: crypto.randomUUID(),
+          safetyApproval: {
+            revision: review.revision,
+            fingerprint: review.fingerprint,
+            warningIds: review.warnings.map((warning) => warning.id),
+          },
+        },
+      });
+      expect(rejected).toMatchObject({ ok: false, error: { code, status } });
+      if (rejected.ok) throw new Error("Rejected send created a command");
+      if (isServiceError(error)) expect(rejected.error).toBe(error);
+      if (code === "DOCUMENT_FROZEN") expect(localizeMailError(rejected.error, "de").message).toContain("spätestens einer Minute");
+      expect(await sql`SELECT 1 FROM mail.commands WHERE target->>'draftId' = ${target.draftId}`).toHaveLength(0);
+      expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id = ${target.draftId}::uuid`).toHaveLength(0);
+      const after = await read(target);
+      expect(after.revision).toBe(base.revision);
+      expect(after.durable).toEqual(base.durable);
+    } finally {
+      freeze.mockRestore();
       await retire(target);
     }
   });
