@@ -2,7 +2,7 @@ import { AccessSummary, openAccessDialog, type ResourceApiKey, ResourceApiKeys }
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
-import { mutation } from "@k2b/stdlib/solid";
+import { type MutationOutcome, mutation } from "@k2b/stdlib/solid";
 import {
   Button,
   CheckboxCard,
@@ -268,15 +268,15 @@ export function SettingsDialog(props: {
   };
   const settingsWriteBlocked = () =>
     writePending() || reconciling() || requestCount() > 0 || settingsQuery.refreshing() || Boolean(settingsQuery.error());
-  type SettingsMutation<V> = { mutate: (value: V) => Promise<void>; error: () => Error | null | undefined };
+  type SettingsMutation<V> = { mutate: (value: V) => Promise<MutationOutcome>; error: () => Error | null | undefined };
   /** Runs a confirmed row action; `row` names the row that shows progress. */
   const runReconciledMutation = async <V,>(control: SettingsMutation<V>, value: V, successMessage: string, row: string) => {
     if (settingsWriteBlocked()) return;
     setWritePending(true);
     setBusyRow(row);
     try {
-      await control.mutate(value);
-      if (disposed || control.error()) return;
+      const outcome = await control.mutate(value);
+      if (disposed || outcome !== "success") return;
       await finishSettingsChange(successMessage);
     } finally {
       setWritePending(false);
@@ -290,9 +290,11 @@ export function SettingsDialog(props: {
       if (settingsWriteBlocked()) return t().waitForSettings;
       setWritePending(true);
       try {
-        await control.mutate(value);
+        const outcome = await control.mutate(value);
         if (disposed) return null;
-        return control.error()?.message ?? null;
+        if (outcome === "success") return null;
+        // A dropped call did not save: keep the dialog open, as for any other blocked write.
+        return outcome === "error" ? (control.error()?.message ?? null) : t().waitForSettings;
       } finally {
         setWritePending(false);
       }
@@ -495,8 +497,8 @@ export function SettingsDialog(props: {
     if (settingsWriteBlocked() || nameError() || slugError()) return;
     setWritePending(true);
     try {
-      await save.mutate(venueInput());
-      if (disposed || save.error()) return;
+      const outcome = await save.mutate(venueInput());
+      if (disposed || outcome !== "success") return;
       setWorkspaceChanged(true);
       toast.success(t().venueSaved);
       props.close(true);

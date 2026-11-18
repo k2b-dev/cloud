@@ -632,7 +632,7 @@ test("chat tools expose flat coordinates and normalize both review and execution
       },
     },
   };
-  const audit = spyOn(aiToolAudit, "noteCapabilityDispatch").mockResolvedValue();
+  const audit = spyOn(aiToolAudit, "noteCapabilityDispatch").mockResolvedValue(true);
   await expect(executeAiCapability({ ...base, turnId: "turn-1", args: { destinationId: "destination", title: "Ada" } })).rejects.toThrow(
     '"item"',
   );
@@ -647,4 +647,38 @@ test("chat tools expose flat coordinates and normalize both review and execution
       input: { title: "Ada" },
     })),
   );
+});
+
+test("a durable interruption refuses capability dispatch before any upstream effect", async () => {
+  const current = user("11111111-1111-4111-8111-111111111111");
+  const start = spyOn(aiToolAudit, "noteCapabilityDispatch").mockResolvedValue(false);
+  let dispatched = false;
+  await expect(
+    executeAiCapability({
+      conversationId: "conversation-1",
+      turnId: "turn-1",
+      authority: {
+        actor: { kind: "user", user: current },
+        accessSubject: { type: "user", userId: current.id },
+        credentialKind: "session",
+        scopes: [],
+      },
+      entry: buildAiCapabilityCatalog([app()])[0]!,
+      args: { title: "Must not run" },
+      context: {
+        callId: "call-1",
+        signal: new AbortController().signal,
+        requestApproval: async () => true,
+        requestClientTool: async <T>() => undefined as T,
+      },
+      dependencies: {
+        dispatch: async () => {
+          dispatched = true;
+          return Response.json({ data: { id: "forbidden" } });
+        },
+      },
+    }),
+  ).rejects.toMatchObject({ code: "TURN_INTERRUPTED", dispatched: false });
+  expect(start).toHaveBeenCalledTimes(1);
+  expect(dispatched).toBe(false);
 });

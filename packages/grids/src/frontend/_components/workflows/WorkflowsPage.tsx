@@ -279,6 +279,8 @@ export default function WorkflowsPage(props: Props) {
   };
 
   const statsMut = mutations.create<void, void>({
+    // Filter changes and live updates replace a read in flight.
+    concurrency: "replace",
     mutation: async (_, { abortSignal }) => {
       const res = await workflowsPageApi["by-base"][":baseId"]["run-stats"].$get(
         { param: { baseId: props.baseId }, query: { window: statsWindow() } },
@@ -310,6 +312,8 @@ export default function WorkflowsPage(props: Props) {
   };
 
   const runsMut = mutations.create<WorkflowRunPage, void>({
+    // Filter changes and live updates replace a read in flight.
+    concurrency: "replace",
     mutation: async (_, { abortSignal }) => {
       return fetchRuns(null, abortSignal);
     },
@@ -352,6 +356,8 @@ export default function WorkflowsPage(props: Props) {
   };
 
   const emailDeliveriesMut = mutations.create<void, void>({
+    // Live updates replace a read in flight.
+    concurrency: "replace",
     mutation: async (_, { abortSignal }) => {
       const page = await fetchEmailDeliveries(null, abortSignal);
       setEmailDeliveries(page.items);

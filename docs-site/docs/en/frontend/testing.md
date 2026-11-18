@@ -36,7 +36,7 @@ For DOM behavior, cover:
 - initial serialized props;
 - keyboard and pointer interaction;
 - loading, success, error, abort, and retry;
-- newer mutations replacing stale results;
+- a second call while a mutation runs: dropped by default, replacing the older result with `concurrency: "replace"`;
 - dialog close and focus behavior;
 - cleanup of listeners, timers, and sockets.
 

@@ -627,6 +627,14 @@ const copy = i18n.define({
       newChatDraftKept: ({ title }: { title: string }) => `Your draft stays in the chat “${title}”.`,
       text: ({ value }: { value: string }) => value,
       archiveChat: ({ title }: { title: string }) => `Archive "${title}"?`,
+      archiveQueuedMessages: ({ count }: { count?: number }) =>
+        count === 0
+          ? ""
+          : count === undefined
+            ? "Waiting messages will be discarded."
+            : count === 1
+              ? "1 waiting message will be discarded."
+              : `${count} waiting messages will be discarded.`,
       deleteNamed: ({ name }: { name: string }) => `Delete "${name}"?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `Delete “${name}” from this chat? Earlier messages keep their text, but their links to this file stop working.`,
@@ -709,6 +717,14 @@ const copy = i18n.define({
       newChatDraftKept: ({ title }: { title: string }) => `Dein Entwurf bleibt im Chat „${title}“.`,
       text: ({ value }: { value: string }) => germanText[value] ?? value,
       archiveChat: ({ title }: { title: string }) => `„${title}“ archivieren?`,
+      archiveQueuedMessages: ({ count }: { count?: number }) =>
+        count === 0
+          ? ""
+          : count === undefined
+            ? "Wartende Nachrichten werden verworfen."
+            : count === 1
+              ? "1 wartende Nachricht wird verworfen."
+              : `${count} wartende Nachrichten werden verworfen.`,
       deleteNamed: ({ name }: { name: string }) => `„${name}“ löschen?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `„${name}“ aus diesem Chat löschen? Frühere Nachrichten bleiben erhalten, ihre Verweise auf diese Datei funktionieren aber nicht mehr.`,

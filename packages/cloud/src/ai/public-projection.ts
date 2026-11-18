@@ -3,11 +3,13 @@ import { getApp } from "../_internal/registry";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { projectAiChoices } from "./choices";
+import { type AiOriginViewer, loadAiMessageOrigins } from "./message-origin";
 import { projectAiNextMessages } from "./next-message-store";
 import type { AiTurnBlock, AiWireEvent } from "./protocol";
 import { publicAiToolInput, publicAiToolResult } from "./public-tool-input";
+import type { AiStoredMessageOrigin } from "./queue-contracts";
 import { capabilityResultView } from "./result-view";
-import { aiConversations, resolveAiTurnShortIds } from "./store";
+import { aiConversations } from "./store";
 import type { AiConversation, AiStoredMessage } from "./types";
 
 /** Provider thinking remains in canonical history, never in public step details. */
@@ -56,11 +58,14 @@ export const viewHasChoice = (view: unknown): boolean => {
  * Only messages with a choice, or a person's answer to one, need the choice history. Every other message, such as a
  * live delta or a page without choices, reads no SQL for it (DATA-13).
  */
-export const messagesNeedChoiceContext = (messages: readonly AiStoredMessage[]): boolean =>
+export const messagesNeedChoiceContext = (messages: readonly AiStoredMessage[], liveBlocks: readonly AiTurnBlock[] = []): boolean =>
   messages.some((message) =>
     message.message.role === "user"
       ? Boolean(message.meta?.choice)
       : message.message.role === "tool_result" && viewHasChoice(Reflect.get(Object(message.message.result), "view")),
+  ) ||
+  liveBlocks.some(
+    (block) => block.kind === "tool" && (viewHasChoice(block.view) || viewHasChoice(Reflect.get(Object(block.result), "view"))),
   );
 
 export const projectPublicAiStoredMessages = (
@@ -76,6 +81,7 @@ export const projectPublicAiStoredMessages = (
         : [],
     );
     const view = message.message.role === "tool_result" && !message.message.isError ? capabilityResultView(message.message.result) : null;
+    const { writerOrigin: _writerOrigin, ...meta } = message.meta ?? {};
     return {
       ...message,
       message:
@@ -92,7 +98,7 @@ export const projectPublicAiStoredMessages = (
       meta:
         message.meta || view
           ? {
-              ...message.meta,
+              ...meta,
               ...(message.meta?.toolInterimResults
                 ? {
                     toolInterimResults: Object.fromEntries(
@@ -169,25 +175,44 @@ export const withCurrentAppNames = async (
 
 export const publicAiStoredMessages = async (
   messages: readonly AiStoredMessage[],
-  conversation: Pick<AiConversation, "id" | "shortId">,
-  viewerUserId?: string | null,
-  locale?: string,
+  conversation: Pick<AiConversation, "id" | "shortId"> & Partial<Pick<AiConversation, "createdByUserId">>,
+  viewerUserId: string | null | undefined,
+  /** Who reads: names of origins, and of the apps of stored steps, follow this viewer and `locale`. */
+  originViewer: AiOriginViewer & { locale: string },
   loadedChoiceContext?: readonly AiStoredMessage[],
 ): Promise<AiStoredMessage[]> => {
-  const [choiceContext, turnShortIds, named] = await Promise.all([
+  const attributed = messages.flatMap((message) => {
+    const origin: AiStoredMessageOrigin | undefined =
+      message.meta?.writerOrigin ??
+      (message.meta?.agentMessage
+        ? { kind: "chat", id: message.meta.agentMessage.sourceChatId, turnId: message.meta.agentMessage.sourceTurnId }
+        : message.message.role === "user" && conversation.createdByUserId
+          ? { kind: "person", id: conversation.createdByUserId }
+          : undefined);
+    return origin ? [{ ...message, meta: { ...message.meta, writerOrigin: origin } }] : [];
+  });
+  const [choiceContext, { origins, turnShortIds }, named] = await Promise.all([
     loadedChoiceContext ??
       (messagesNeedChoiceContext(messages) ? aiConversations.listChoiceMessages({ conversationId: conversation.id }) : []),
-    resolveAiTurnShortIds({
-      conversationId: conversation.id,
-      turnIds: messages.flatMap((message) => [
-        ...(message.loopId ? [message.loopId] : []),
-        ...(message.meta?.choice ? [message.meta.choice.turnId] : []),
-      ]),
-    }),
-    withCurrentAppNames(messages, locale),
+    loadAiMessageOrigins(
+      attributed.map((message) => message.meta!.writerOrigin!),
+      { ...originViewer, userId: originViewer.userId ?? viewerUserId },
+      {
+        conversationId: conversation.id,
+        turnIds: messages.flatMap((message) => [
+          ...(message.loopId ? [message.loopId] : []),
+          ...(message.meta?.choice ? [message.meta.choice.turnId] : []),
+        ]),
+      },
+    ),
+    withCurrentAppNames(messages, originViewer.locale),
   ]);
+  const byId = new Map(attributed.map((message, index) => [message.id, origins[index]!]));
+  const projected = named.map((message) =>
+    byId.has(message.id) ? { ...message, meta: { ...message.meta, origin: byId.get(message.id)! } } : message,
+  );
   return projectAiNextMessages(
-    projectPublicAiStoredMessages(named, conversation.shortId, turnShortIds, choiceContext),
+    projectPublicAiStoredMessages(projected, conversation.shortId, turnShortIds, choiceContext),
     conversation.id,
     viewerUserId,
   );

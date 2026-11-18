@@ -45,7 +45,7 @@ const render = async <E extends AuthContext>(c: Context<E>, address: PwaAddress)
   const conversation = record ? { ...record, unreadCompletion: false } : null;
   const [detail, timeline] = conversation
     ? await Promise.all([
-        loadAiStreamState(conversation, c.get("actor").kind === "user" ? user.id : null, locale),
+        loadAiStreamState(conversation, c.get("actor").kind === "user" ? user.id : null, { locale, userId: user.id }),
         aiConversations.listConversationTimeline({ conversationId: conversation.id }),
       ])
     : [null, []];

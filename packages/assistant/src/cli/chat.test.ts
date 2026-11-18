@@ -244,3 +244,28 @@ test("actions list sanitizes legacy question lines at the terminal boundary", as
   expect(printed[0]).toBe("? Send this?");
   expect(printed).toContain("  To: Lea\\u001b[2J");
 });
+
+test.each([
+  [0, "archive: chat"],
+  [1, "archive: chat\n1 waiting message was discarded."],
+  [2, "archive: chat\n2 waiting messages were discarded."],
+] as const)("chats archive reports %s discarded queued messages in text output", async (count, expected) => {
+  const { ctx } = context(["chats", "archive", "chat"], { yes: true });
+  ctx.options.output = "text";
+  const printed: string[] = [];
+  ctx.print = (value = "") => {
+    printed.push(value);
+  };
+  ctx.fetch = async () => Response.json({ ok: true, discardedQueuedMessages: count });
+  await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantChatCommands] }).run(ctx);
+  expect(printed.join("\n")).toBe(expected);
+});
+
+test.each(["json", "jsonl"] as const)("chats archive preserves the response including its discard count in %s", async (output) => {
+  const { ctx, values } = context(["chats", "archive", "chat"], { yes: true });
+  ctx.options.output = output;
+  const result = { ok: true, discardedQueuedMessages: 2 };
+  ctx.fetch = async () => Response.json(result);
+  await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantChatCommands] }).run(ctx);
+  expect(values).toEqual([result]);
+});

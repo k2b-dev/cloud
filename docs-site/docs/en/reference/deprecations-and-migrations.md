@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-16
+updated: 2026-11-17
 ---
 
 # Deprecations and migrations
@@ -105,6 +105,17 @@ images. Automatic replies (out-of-office, office-hours and reference
 acknowledgements) have no replacement. Ask Gustav to rebuild supported rules as
 mailbox Code, then review, preview and activate it explicitly. See the
 [Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
+
+## A stopped chat keeps its queue waiting
+
+After a person stops a response, the chat no longer starts queued messages
+automatically. This includes messages from automations and other chats. Send now
+starts only the selected entry; a new message from the person resumes the normal
+queue. Archiving retires waiting entries and their attached files.
+
+Follow [Roll out chat queue holds](/en/docs/operations/build-and-deploy#roll-out-chat-queue-holds)
+when updating workers. Existing queue entries remain intact; a Stop made before
+this upgrade does not retroactively hold a chat.
 
 ## Conflict errors take the whole sentence
 

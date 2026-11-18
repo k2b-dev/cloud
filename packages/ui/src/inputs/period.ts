@@ -131,6 +131,64 @@ export const periodInstants = (range: PeriodRange, timeZone: string): { from: st
   return { from: range.start ? midnight(range.start) : null, to: range.end ? midnight(addPeriodDays(range.end, 1)) : null };
 };
 
+/**
+ * How a period steps to its neighbour: calendar months, quarters and years keep their unit; every other range
+ * keeps its own number of days, even when its edges happen to be month boundaries.
+ */
+export type PeriodStep = { months: number } | { days: number };
+
+/** What a period is, for its text and the way back to the current one. */
+export type PeriodKind = "day" | "week" | "month" | "quarter" | "year" | "range";
+
+const monthIndex = (key: string): number => parts(key).year * 12 + parts(key).month;
+const daysBetween = (from: string, to: string): number => Math.round((keyDate(to).getTime() - keyDate(from).getTime()) / 86_400_000);
+
+/** The step of a period; `undefined` for an open edge, which has no neighbour. */
+export const periodStep = (range: PeriodRange): PeriodStep | undefined => {
+  if (!range.start || !range.end) return undefined;
+  if (range.start.endsWith("-01") && addPeriodDays(range.end, 1).endsWith("-01")) {
+    const months = monthIndex(range.end) - monthIndex(range.start) + 1;
+    const first = parts(range.start).month;
+    if (months === 1 || (months === 3 && first % 3 === 0) || (months === 12 && first === 0)) return { months };
+  }
+  return { days: periodDayCount({ start: range.start, end: range.end }) };
+};
+
+/** The period `count` steps away: `-1` is the previous one, `1` the next. */
+export const stepPeriod = (range: { start: string; end: string }, step: PeriodStep, count: number): { start: string; end: string } => {
+  if ("months" in step) {
+    const { year, month } = parts(range.start);
+    const first = month + step.months * count;
+    return { start: day(year, first, 1), end: day(year, first + step.months, 0) };
+  }
+  return { start: addPeriodDays(range.start, step.days * count), end: addPeriodDays(range.end, step.days * count) };
+};
+
+/** The period of the same kind and rhythm that contains today: this week for a week, this month for a month. */
+export const currentPeriodOf = (range: { start: string; end: string }, step: PeriodStep, today: string): { start: string; end: string } =>
+  stepPeriod(
+    range,
+    step,
+    "months" in step
+      ? Math.floor((monthIndex(today) - monthIndex(range.start)) / step.months)
+      : Math.floor(daysBetween(range.start, today) / step.days),
+  );
+
+export const periodKind = (range: { start: string; end: string }, weekStartsOn: 0 | 1): PeriodKind => {
+  const step = periodStep(range);
+  if (!step) return "range";
+  if ("months" in step) {
+    const first = parts(range.start).month;
+    if (step.months === 1) return "month";
+    if (step.months === 3 && first % 3 === 0) return "quarter";
+    if (step.months === 12 && first === 0) return "year";
+    return "range";
+  }
+  if (step.days === 1) return "day";
+  if (step.days === 7 && keyDate(range.start).getUTCDay() === weekStartsOn) return "week";
+  return "range";
+};
+
 const utcFormat = (locale: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(locale, { ...options, timeZone: "UTC" });
 
 /**
@@ -156,6 +214,19 @@ export const formatPeriodDays = (range: PeriodRange, today: string, locale: stri
 export const formatPeriodRange = (range: { start: string; end: string }, locale: string): string => {
   const format = utcFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric" });
   return range.start === range.end ? format.format(keyDate(range.start)) : format.formatRange(keyDate(range.start), keyDate(range.end));
+};
+
+/**
+ * Explicit days that are one calendar week, month or year read as that: "9.–15. Nov. 2026", "Oktober 2026", "2025".
+ * `undefined` for any other range, which keeps its numeric days and count.
+ */
+export const formatPeriodUnit = (range: { start: string; end: string }, weekStartsOn: 0 | 1, locale: string): string | undefined => {
+  const kind = periodKind(range, weekStartsOn);
+  if (kind === "year") return range.start.slice(0, 4);
+  if (kind === "month") return utcFormat(locale, { month: "long", year: "numeric" }).format(keyDate(range.start));
+  if (kind === "week")
+    return utcFormat(locale, { day: "numeric", month: "short", year: "numeric" }).formatRange(keyDate(range.start), keyDate(range.end));
+  return undefined;
 };
 
 /** The widest explicit range within today's year, all of it (two-digit days, a three-digit count), so a trigger can reserve its width. */

@@ -98,10 +98,9 @@ export default function AdminOperations(props: { freeIpaEnabled: boolean }) {
       });
       if (!confirmed) return;
 
-      await runMutation.mutate(operation);
-      const error = runMutation.error();
-      if (error) throw error;
-      toast.success(operation.successText);
+      const outcome = await runMutation.mutate(operation);
+      if (outcome === "error") throw runMutation.error();
+      if (outcome === "success") toast.success(operation.successText);
     } catch (error) {
       await prompts.error(error instanceof Error ? error.message : String(error));
     } finally {

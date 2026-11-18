@@ -29,6 +29,7 @@ import { AI_MESSAGE_SEARCH_TEXT_MAX_CHARS } from "./limits";
 import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
+import { AiMessageQueueConflict } from "./queue-conflict";
 import { AI_QUEUED_START_TIMEOUT_MS, queuedMessageHoldsChat } from "./queue-waits";
 import { type AiMessageQuote, aiCheckedQuotesOnly } from "./quote-markers";
 import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
@@ -43,6 +44,7 @@ import {
 import { AiRunTimeout } from "./run-timeout";
 import { withAiShortId, withAiShortIdForDb } from "./short-id";
 import { parseAiTodoPlan } from "./todo-contracts";
+import { queuedClientInterruptionState } from "./turn-interruption";
 import { activeTurnWaits } from "./turn-timing";
 import type {
   AiConversation,
@@ -95,21 +97,6 @@ const CONVERSATION_BM25_INDEX = "ai.conversations_search_bm25_idx";
 const MESSAGE_BM25_INDEX = "ai.messages_search_bm25_idx";
 const SEARCH_CAPABILITY_ERROR_CODES = new Set(["0A000", "42704", "42883", "55000"]);
 const log = logger("ai:conversation-search");
-
-export const resolveAiTurnShortIds = async (input: {
-  conversationId: string;
-  turnIds: readonly string[];
-}): Promise<Map<string, string>> => {
-  const turnIds = [...new Set(input.turnIds.filter(Boolean))];
-  if (turnIds.length === 0) return new Map();
-  const rows = await sql<{ id: string; short_id: string }[]>`
-    SELECT id::text AS id, short_id
-    FROM ai.turns
-    WHERE conversation_id = ${input.conversationId}::uuid
-      AND id::text = ANY(${toPgTextArray(turnIds)}::text[])
-  `;
-  return new Map(rows.map((row) => [row.id, row.short_id]));
-};
 
 /**
  * Marker texts of the owner's latest sent messages, newest first. The candidates carry no message bodies; only the
@@ -263,6 +250,7 @@ type TurnRow = {
   deadline?: Date | string | null;
   run_budget_ms?: number | null;
   cancel_requested_at?: Date | string | null;
+  cancellation_reason?: string | null;
   id: string;
   short_id: string;
   conversation_id: string;
@@ -771,6 +759,7 @@ const rowToTurn = (row: TurnRow): AiTurn => {
     deadline: row.deadline ? iso(row.deadline) : null,
     runBudgetMs: row.run_budget_ms ?? null,
     cancelRequestedAt: row.cancel_requested_at ? iso(row.cancel_requested_at) : null,
+    cancellationReason: row.cancellation_reason ?? null,
     id: row.id,
     shortId: row.short_id,
     conversationId: row.conversation_id,
@@ -982,6 +971,10 @@ const recordTurnEnd = async (
 ): Promise<void> => {
   const replaces = input.reason === "error" ? "aborted" : null;
   for (const table of ["ai.messages"]) {
+    if (input.reason === "aborted")
+      await db`UPDATE ${db(table)} SET meta=COALESCE(meta,'{}'::jsonb) || '{"queueInterrupted":true}'::jsonb
+      WHERE id=(SELECT id FROM ${db(table)} WHERE conversation_id=${input.conversationId}::uuid AND loop_id=${input.turnId}::text ORDER BY seq DESC LIMIT 1)
+      AND EXISTS (SELECT 1 FROM ai.turns WHERE id=${input.turnId}::uuid AND cancellation_reason='queue_interrupt')`;
     if (input.turnError) {
       await db`
         UPDATE ${db(table)}
@@ -1195,7 +1188,7 @@ export const settleAiToolCheck = (input: {
 
 /** The stored check of one call, or null. */
 export const readAiToolCheck = async (input: { conversationId: string; turnId: string; callId: string }): Promise<AiActionCheck | null> => {
-  for (const table of ["ai.messages", "ai.task_messages"]) {
+  for (const table of ["ai.messages"]) {
     const [row] = await sql<{ check: AiActionCheck | null }[]>`
       SELECT meta->'toolChecks'->${input.callId}::text AS check FROM ${sql(table)}
       WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
@@ -1618,7 +1611,7 @@ export const aiConversations: AiConversationService = {
   archivePlaceConversation: async ({ ownerUserId, conversationId, ref }) => {
     const conversation = await aiConversations.getConversation({ conversationId, ownerUserId });
     if (conversation?.place?.ref.type !== ref.type || conversation.place.ref.id !== ref.id) return false;
-    return aiConversations.archiveConversation({ conversationId, ownerUserId });
+    return (await aiConversations.archiveConversation({ conversationId, ownerUserId })) !== false;
   },
 
   forkConversation: async (input) => {
@@ -2264,6 +2257,8 @@ export const aiConversations: AiConversationService = {
       ${interChatMessageSelect()}
       WHERE message.status = 'pending'
         AND (${input.targetConversationId ?? null}::uuid IS NULL OR message.target_conversation_id = ${input.targetConversationId ?? null}::uuid)
+        -- Held chats must not fill the bounded background batch and starve deliveries to other chats.
+        AND (${input.targetConversationId ?? null}::uuid IS NOT NULL OR target.queue_held_at IS NULL)
         AND (${input.targetConversationId ?? null}::uuid IS NOT NULL OR NOT EXISTS (
           SELECT 1
           FROM ai.turns active_turn
@@ -2314,8 +2309,8 @@ export const aiConversations: AiConversationService = {
       }
       if (message.status === "failed") return { delivered: false as const, reason: "failed" as const };
 
-      const [target] = await tx<{ archived_at: Date | string | null }[]>`
-        SELECT archived_at FROM ai.conversations WHERE id = ${message.target_conversation_id}::uuid FOR UPDATE
+      const [target] = await tx<{ archived_at: Date | string | null; queue_held_at: Date | string | null }[]>`
+        SELECT archived_at, queue_held_at FROM ai.conversations WHERE id = ${message.target_conversation_id}::uuid FOR UPDATE
       `;
       if (!target || target.archived_at) {
         await tx`UPDATE ai.inter_chat_messages SET status = 'failed', error = 'Target chat is unavailable' WHERE id = ${message.id}::uuid`;
@@ -2328,26 +2323,28 @@ export const aiConversations: AiConversationService = {
           AND status IN ('queued', 'running', 'waiting_for_action')
         LIMIT 1
       `;
-      if (active) return { delivered: false as const, reason: "busy" as const };
+      // After a person's Stop nothing starts by itself: the message waits like for a busy chat.
+      if (active || target.queue_held_at) return { delivered: false as const, reason: "busy" as const };
 
+      const writerOrigin = { kind: "chat" as const, id: message.source_chat_id, turnId: message.source_turn_short_id };
       const turnRows = await withAiShortIdForDb(
         tx,
         "idx_ai_turns_conversation_short_id",
         (attempt, shortId) => attempt<TurnRow[]>`
           INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelId}, 'queued', (${JSON.stringify(input.runConfig)}::text)::jsonb)
+          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelId}, 'queued', (${JSON.stringify({ ...input.runConfig, writerOrigin })}::text)::jsonb)
           RETURNING *
         `,
       );
       await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${message.target_conversation_id}::uuid`;
       const turn = rowToTurn(turnRows[0]!);
       const targetMeta: NonNullable<AiStoredMessage["meta"]> = {
+        writerOrigin,
         agentMessage: {
           id: message.short_id,
           sourceChatId: message.source_chat_id,
           sourceTurnId: message.source_turn_short_id,
           sourceTitle: message.source_title,
-          sourceHref: input.sourceHref,
         },
       };
       const messageRows = await withAiShortIdForDb(
@@ -2486,14 +2483,18 @@ export const aiConversations: AiConversationService = {
 
   archiveConversation: async (input) =>
     sql.begin(async (tx) => {
-      // Same lock as turn submission and "done": a queued message cannot start while the chat is archived.
-      await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId}::uuid FOR UPDATE`;
+      // Read the active turn in a fresh statement after acquiring the promotion lock. A single UPDATE could wait on
+      // an in-flight promotion and then keep its older NOT EXISTS snapshot, archiving a chat whose turn just started.
+      const [chat] = await tx`SELECT id FROM ai.conversations WHERE id=${input.conversationId}::uuid
+      AND (${input.ownerUserId ?? null}::uuid IS NULL OR created_by_user_id=${input.ownerUserId ?? null}::uuid)
+      AND archived_at IS NULL FOR UPDATE`;
+      if (!chat) return false;
       // Archiving considers pending learning work once, just like learning being
       // off at completion. Restoring cannot backfill these turns or receipts.
-      const rows = await tx<{ id: string }[]>`
+      const rows = await tx<{ id: string; discardedQueuedMessages: number }[]>`
       WITH archived AS (
         UPDATE ai.conversations
-        SET archived_at = now(), pinned_at = NULL
+        SET archived_at = now(), pinned_at = NULL, queue_held_at = NULL
         WHERE id = ${input.conversationId}
           AND (${input.ownerUserId ?? null}::uuid IS NULL OR created_by_user_id = ${input.ownerUserId ?? null})
           AND archived_at IS NULL
@@ -2503,8 +2504,16 @@ export const aiConversations: AiConversationService = {
             WHERE conversation_id = ai.conversations.id
               AND status IN ('queued', 'running', 'waiting_for_action')
           )
-          AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND ${queuedMessageHoldsChat(tx)})
         RETURNING id
+      ), expired_queue AS (
+        -- Archiving lets the chat's waiting messages lapse; a running or waiting turn still keeps the chat (#108).
+        -- Like a cancel, a lapsed entry keeps no content or files.
+        UPDATE ai.queued_messages SET status = 'cancelled', error = 'chat_archived', send_requested_at = NULL,
+          submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END, content = '[]'::jsonb
+        WHERE conversation_id IN (SELECT id FROM archived) AND (status = 'pending' OR (status = 'failed' AND automation_source IS NULL))
+        RETURNING id
+      ), expired_files AS (
+        DELETE FROM ai.queued_message_files WHERE message_id IN (SELECT id FROM expired_queue)
       ), considered_turns AS (
         UPDATE ai.turns
         SET memory_learned_at = completed_at,
@@ -2518,20 +2527,10 @@ export const aiConversations: AiConversationService = {
         SET reviewed_at = now()
         WHERE conversation_id IN (SELECT id FROM archived)
           AND reviewed_at IS NULL
-      ), withdrawn_code_messages AS (
-        -- A Code message still waiting for an allowance leaves with the chat; it never revives on restore.
-        UPDATE ai.queued_messages
-        SET status = 'cancelled', error = 'chat_archived', content = '[]'::jsonb,
-          submission = jsonb_build_object('runConfig', jsonb_build_object('send', submission#>'{runConfig,send}', 'turnTrigger', submission#>'{runConfig,turnTrigger}'))
-        WHERE conversation_id IN (SELECT id FROM archived)
-          AND status = 'pending' AND submission->'runConfig' ? 'codeOrigin'
-        RETURNING id
-      ), withdrawn_code_files AS (
-        DELETE FROM ai.queued_message_files WHERE message_id IN (SELECT id FROM withdrawn_code_messages)
       )
-      SELECT id FROM archived
+      SELECT id, (SELECT count(*)::int FROM expired_queue) AS "discardedQueuedMessages" FROM archived
     `;
-      return Boolean(rows[0]);
+      return rows[0] ? { discardedQueuedMessages: rows[0].discardedQueuedMessages } : false;
     }),
 
   restoreConversation: async (input) => {
@@ -3278,13 +3277,23 @@ export const aiConversations: AiConversationService = {
     assertInteractiveChatTurn(input.runConfig);
     const submit = async (tx: SQL) => {
       const [conversation] = await tx<
-        { draft_revision: number | string; project_id: string | null; created_by_user_id: string | null; archived_at: unknown }[]
+        {
+          draft_revision: number | string;
+          project_id: string | null;
+          created_by_user_id: string | null;
+          archived_at: unknown;
+          queue_held_at: Date | string | null;
+        }[]
       >`
-        SELECT draft_revision, project_id, created_by_user_id, archived_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
+        SELECT draft_revision, project_id, created_by_user_id, archived_at, queue_held_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
       `;
-      if (!conversation) throw new Error("Conversation not found.");
+      if (!conversation) throw new AiMessageQueueConflict("Conversation not found.");
       // The dispatcher's snapshot can predate archiving; an archived chat starts no queued turn.
-      if (input.queuedMessageId && conversation.archived_at) throw new Error("Conversation is archived.");
+      if (conversation.archived_at) {
+        if (input.choice) throw new AiChoiceConflict("choice_closed");
+        // A queued turn names the archive for the dispatcher; a person sees the chat as gone.
+        throw new AiMessageQueueConflict(input.queuedMessageId ? "Conversation is archived." : "Conversation not found.");
+      }
       if (input.retrySourceTurnId) {
         const [source] = await tx<{ run_config: AiTurnRunConfig | null }[]>`
           SELECT run_config FROM ai.turns WHERE id=${input.retrySourceTurnId}::uuid AND conversation_id=${input.conversationId}::uuid`;
@@ -3341,9 +3350,15 @@ export const aiConversations: AiConversationService = {
       }
       if (input.queuedMessageId) {
         const [head] = await tx<
-          { id: string; status: string; revision: string; submission: Parameters<AiConversationService["submitChatTurn"]>[0] }[]
-        >`SELECT id,status,revision::text,submission FROM ai.queued_messages WHERE conversation_id=${input.conversationId}::uuid
-          AND ${queuedMessageHoldsChat(tx)} ORDER BY position LIMIT 1 FOR UPDATE`;
+          {
+            id: string;
+            status: string;
+            revision: string;
+            send_requested_at: Date | string | null;
+            submission: Parameters<AiConversationService["submitChatTurn"]>[0];
+          }[]
+        >`SELECT id,status,revision::text,send_requested_at,submission FROM ai.queued_messages WHERE conversation_id=${input.conversationId}::uuid
+          AND ${queuedMessageHoldsChat(tx)} ORDER BY send_requested_at NULLS LAST, position LIMIT 1 FOR UPDATE`;
         const [busy] =
           await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
         if (
@@ -3351,18 +3366,23 @@ export const aiConversations: AiConversationService = {
           head.id !== input.queuedMessageId ||
           head.status !== "pending" ||
           busy ||
-          (input.queuedMessageRevision !== undefined && input.queuedMessageRevision !== head.revision)
+          (input.queuedMessageRevision !== undefined && input.queuedMessageRevision !== head.revision) ||
+          (conversation.queue_held_at && !head.send_requested_at)
         )
           throw new Error("Queued message is no longer ready.");
         // The persisted payload, including source authority, is authoritative; caller snapshots may be stale.
         input = { ...head.submission, queuedMessageId: head.id, queuedMessageRevision: head.revision };
         assertInteractiveChatTurn(input.runConfig);
       }
+      const writer = input.runConfig.writerOrigin?.kind ?? (input.runConfig.actor?.kind === "service_account" ? "automation" : "person");
+      const person = writer === "person";
       if (!input.queuedMessageId) {
+        if (conversation.queue_held_at && !person)
+          throw new AiMessageQueueConflict("A person stopped this chat; only their next message resumes it.", "queue_held");
         const [queued] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid
             AND ${queuedMessageHoldsChat(tx)}
             LIMIT 1`;
-        if (queued) throw new Error("Queued messages must be sent first.");
+        if (queued) throw new AiMessageQueueConflict("Queued messages must be sent first.", "queue_waiting");
       }
       if (input.expectedDraftRevision !== undefined && Number(conversation.draft_revision) !== input.expectedDraftRevision) {
         throw new Error("Conversation draft changed before the turn was submitted.");
@@ -3399,9 +3419,11 @@ export const aiConversations: AiConversationService = {
         RETURNING *
       `,
       );
-      // Queue acceptance already recorded the user's interaction time.
+      // Queue acceptance already recorded the user's interaction time. A person's own message resumes a queue that their
+      // Stop held; a message written for an automation or another chat leaves the hold.
       if (!input.queuedMessageId)
-        await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${input.conversationId}::uuid`;
+        await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now(),
+          queue_held_at = CASE WHEN ${person} THEN NULL ELSE queue_held_at END WHERE id = ${input.conversationId}::uuid`;
       const turn = rowToTurn(turnRows[0]!);
       const attachedFiles = input.runConfig.files?.attached ?? [];
       for (const file of attachedFiles) {
@@ -3442,6 +3464,7 @@ export const aiConversations: AiConversationService = {
           message: input.userMessage,
           loopId: turn.id,
           meta: {
+            ...(input.runConfig.writerOrigin ? { writerOrigin: input.runConfig.writerOrigin } : {}),
             ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
             ...(input.runConfig.codeOrigin ? { codeOrigin: input.runConfig.codeOrigin } : {}),
             ...(input.runConfig.writerOrigin ? { writerOrigin: input.runConfig.writerOrigin } : {}),
@@ -3516,7 +3539,7 @@ export const aiConversations: AiConversationService = {
         `;
       }
       if (input.queuedMessageId) {
-        await tx`UPDATE ai.queued_messages SET status = 'submitted',
+        await tx`UPDATE ai.queued_messages SET status = 'submitted', submitted_turn_id=${turn.id}::uuid,
           submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END,
           content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
         await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${input.queuedMessageId}::uuid`;
@@ -3584,11 +3607,7 @@ export const aiConversations: AiConversationService = {
       activeTurnWaits(rows[0].id),
       sql<{ tool_reviews: Record<string, AiStoredActionReview> | null; tool_checks: Record<string, AiActionCheck> | null }[]>`
         SELECT ${compactReviewMapSql(sql`meta->'toolReviews'`)} AS tool_reviews, meta->'toolChecks' AS tool_checks
-        FROM (
-          SELECT meta, seq, conversation_id, loop_id, role FROM ai.messages
-          UNION ALL
-          SELECT meta, seq, conversation_id, loop_id, role FROM ai.task_messages
-        ) messages
+        FROM ai.messages
         WHERE conversation_id = ${input.conversationId}
           AND loop_id = ${rows[0].id}
           AND role = 'assistant'
@@ -3694,7 +3713,7 @@ export const aiConversations: AiConversationService = {
         AND conversation_id = ${input.conversationId}
         AND lease_owner = ${input.leaseOwner}
         AND status = 'running'
-        AND cancel_requested_at IS NULL
+        AND (cancel_requested_at IS NULL OR (${Boolean(input.drainingInterruption)} AND cancellation_reason = 'queue_interrupt'))
         AND (deadline IS NULL OR deadline > now())
       RETURNING id
     `;
@@ -3737,16 +3756,40 @@ export const aiConversations: AiConversationService = {
 
   requestTurnAbort: async (input, options) => {
     const reason = input.reason ?? "user";
+    // A person's Stop holds the foreground queue even if the target just ended. It withdraws an earlier Send now.
+    // Stopping a routine's background turn does not change foreground admission or future scheduled runs.
     const rows = await (options?.db ?? sql)<TurnRow[]>`
+      WITH locked_chat AS MATERIALIZED (
+        -- Match completion/promotion lock order. Other cancellation reasons do not change the chat hold.
+        SELECT id FROM ai.conversations WHERE id = ${input.conversationId} AND archived_at IS NULL AND ${reason} = 'user' FOR NO KEY UPDATE
+      ), stopped AS (
       UPDATE ai.turns
       SET cancel_requested_at = COALESCE(cancel_requested_at, now()),
           cancellation_reason = CASE WHEN ${reason} = 'routine_deleted' THEN ${reason}
             WHEN ${reason} = 'routine_paused' AND cancellation_reason IS DISTINCT FROM 'routine_deleted' THEN ${reason}
+            -- Explicit cancellation ends the turn instead of waiting on Send now's drain.
+            WHEN ${reason} IN ('user', 'retry', 'service_account') AND cancellation_reason = 'queue_interrupt' THEN ${reason}
             ELSE COALESCE(cancellation_reason, ${reason}) END
       WHERE id = ${input.turnId}
         AND conversation_id = ${input.conversationId}
+        AND (${reason} <> 'user' OR conversation_id = (SELECT id FROM locked_chat))
         AND status IN ('queued', 'running', 'waiting_for_action')
       RETURNING status, lease_owner, lease_expires_at, id, conversation_id, attempt, model_profile_id, created_at, completed_at, error
+      ), held AS (
+        UPDATE ai.conversations SET queue_held_at = now()
+        WHERE id = (SELECT id FROM locked_chat) AND EXISTS (
+          SELECT 1 FROM ai.turns WHERE id = ${input.turnId} AND conversation_id = ${input.conversationId}
+          AND NOT COALESCE(run_config ? 'background', false)
+        )
+        RETURNING id
+      ), withdrawn AS (
+        -- Stop wins over this turn's Send now. A stale Stop must not withdraw a different turn's interrupt.
+        UPDATE ai.queued_messages SET send_requested_at = NULL, interrupted_turn_id = NULL,
+          interruption_deadline = NULL, interruption_client_calls = NULL, interruption_steps = NULL
+        WHERE conversation_id IN (SELECT id FROM held) AND status IN ('pending','failed') AND send_requested_at IS NOT NULL
+          AND (interrupted_turn_id IS NULL OR interrupted_turn_id = ${input.turnId}::uuid)
+      )
+      SELECT * FROM stopped
     `;
     if (!rows[0]) return { found: false };
     const row = rows[0];
@@ -3756,8 +3799,9 @@ export const aiConversations: AiConversationService = {
 
   completeTurn: async (input) => {
     return sql.begin(async (tx) => {
-      const turnRows = await tx<{ id: string }[]>`
-        SELECT id
+      await tx`SELECT id FROM ai.conversations WHERE id=${input.conversationId}::uuid FOR NO KEY UPDATE`;
+      const turnRows = await tx<{ id: string; cancellation_reason: string | null }[]>`
+        SELECT id,cancellation_reason
         FROM ai.turns
         WHERE id = ${input.turnId}
           AND conversation_id = ${input.conversationId}
@@ -3772,6 +3816,65 @@ export const aiConversations: AiConversationService = {
         FOR UPDATE
       `;
       if (!turnRows[0]) return "lost" as const;
+
+      // A late interrupt may race the model's final answer. The same row lock
+      // decides the outcome, so the interrupted turn never looks completed.
+      if (turnRows[0].cancellation_reason === "queue_interrupt" && input.turnError?.code !== "time_limit") {
+        const [pending] = await tx`SELECT 1 FROM ai.pending_actions WHERE turn_id=${input.turnId}::uuid
+          AND kind='client_tool' AND status='pending' LIMIT 1`;
+        if (pending) return "waiting_for_client" as const;
+        const [interruption] = await tx<{ expired: boolean; call_ids: string[] }[]>`
+          SELECT interruption_deadline < now() AS expired, interruption_client_calls AS call_ids FROM ai.queued_messages
+          WHERE interrupted_turn_id=${input.turnId}::uuid AND status='pending' AND send_requested_at IS NOT NULL
+            AND interruption_deadline IS NOT NULL`;
+        if (interruption) {
+          const actions = await tx<(PendingActionRow & { late: boolean })[]>`SELECT p.*,p.resolved_at > q.interruption_deadline AS late
+            FROM ai.pending_actions p JOIN ai.queued_messages q ON q.interrupted_turn_id=p.turn_id
+            WHERE q.interrupted_turn_id=${input.turnId}::uuid AND q.status='pending' AND q.send_requested_at IS NOT NULL
+              AND p.call_id=ANY(q.interruption_client_calls)`;
+          const state = queuedClientInterruptionState({
+            expectedCount: interruption.call_ids.length,
+            expired: interruption.expired,
+            actions: actions.map((action) => ({ ...rowToPendingActionRecord(action), late: action.late })),
+          });
+          // The queue reconciler records the visible failure and withdraws the request.
+          if (state !== "confirmed") return "waiting_for_client" as const;
+        }
+        // A suspended client step has no live Nessi loop to journal its receipt.
+        // Serialize with queue promotion and skip any result the live loop already saved.
+        const receipts = await tx<PendingActionRow[]>`SELECT * FROM ai.pending_actions WHERE turn_id=${input.turnId}::uuid
+          AND kind='client_tool' AND status='resolved' ORDER BY resolved_at,call_id`;
+        for (const receipt of receipts) {
+          const action = rowToPendingActionRecord(receipt);
+          if (action.resolvedEvent?.type !== "tool_result") continue;
+          const parent = action.callId.replace(/-client-[0-9]+$/, "");
+          const [existing] = await tx`SELECT id FROM ai.messages WHERE loop_id=${input.turnId}::text AND role='tool_result'
+            AND message->>'callId'=${parent} LIMIT 1`;
+          if (existing) continue;
+          const [tool] = await tx<{ tool_name: string }[]>`SELECT tool_name FROM ai.tool_calls
+            WHERE turn_id=${input.turnId}::uuid AND call_id=${parent}`;
+          await insertMessageLocked(
+            {
+              conversationId: input.conversationId,
+              loopId: input.turnId,
+              message: {
+                role: "tool_result",
+                callId: parent,
+                name: tool?.tool_name ?? action.name,
+                result:
+                  parent === action.callId
+                    ? action.resolvedEvent.result
+                    : {
+                        error: "Turn interrupted after the client step finished.",
+                        clientResult: { callId: action.callId, name: action.name, result: action.resolvedEvent.result },
+                      },
+              },
+            },
+            tx,
+          );
+        }
+        input = { ...input, status: "aborted", error: null, turnError: null };
+      }
 
       if (input.status === "completed") {
         const pending = await tx<{ id: string }[]>`
@@ -3829,7 +3932,9 @@ export const aiConversations: AiConversationService = {
             AND status = 'pending'
         `;
       }
-      return "completed" as const;
+      return turnRows[0].cancellation_reason === "queue_interrupt" && input.turnError?.code !== "time_limit"
+        ? ("interrupted" as const)
+        : ("completed" as const);
     });
   },
 
@@ -3942,7 +4047,10 @@ export const aiConversations: AiConversationService = {
         SELECT id FROM ai.turns
         WHERE status IN ('queued', 'running', 'waiting_for_action')
           AND (
-            (cancel_requested_at IS NOT NULL AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now()))
+            (cancel_requested_at IS NOT NULL AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now())
+              -- Send now's reconciler alone may end its turn: it requires a durable outcome first.
+              AND NOT (cancellation_reason = 'queue_interrupt' AND EXISTS (SELECT 1 FROM ai.queued_messages q
+                WHERE q.interrupted_turn_id=ai.turns.id AND q.status='pending' AND q.send_requested_at IS NOT NULL)))
             OR (status = 'waiting_for_action' AND deadline IS NOT NULL AND deadline < now())
           )
         LIMIT ${limit}
@@ -4059,8 +4167,12 @@ export const aiConversations: AiConversationService = {
     return result;
   },
 
-  savePendingTurnAction: async (input) => {
-    await sql`
+  savePendingTurnAction: async (input) =>
+    sql.begin(async (tx) => {
+      const [turn] = await tx<{ cancellation_reason: string | null }[]>`SELECT cancellation_reason FROM ai.turns
+      WHERE id=${input.turnId}::uuid FOR NO KEY UPDATE`;
+      if (turn?.cancellation_reason === "queue_interrupt") return false;
+      await tx`
       INSERT INTO ai.pending_actions (
         approval_id,
         turn_id,
@@ -4120,7 +4232,8 @@ export const aiConversations: AiConversationService = {
         remember_tool_name = EXCLUDED.remember_tool_name,
         frontend_mode = EXCLUDED.frontend_mode
     `;
-  },
+      return true;
+    }),
 
   listPendingTurnActions: async (input) => {
     const rows = await sql<PendingActionRow[]>`
@@ -4163,11 +4276,7 @@ export const aiConversations: AiConversationService = {
     // Only the review metadata, never the messages themselves, which can carry large tool results.
     const rows = await sql<{ tool_reviews: Record<string, AiStoredActionReview> | null }[]>`
       SELECT ${compactReviewMapSql(sql`meta->'toolReviews'`)} AS tool_reviews
-      FROM (
-        SELECT meta, seq, conversation_id, loop_id, role FROM ai.messages
-        UNION ALL
-        SELECT meta, seq, conversation_id, loop_id, role FROM ai.task_messages
-      ) messages
+      FROM ai.messages
       WHERE conversation_id = ${input.conversationId}
         AND loop_id = ${input.turnId}
         AND role = 'assistant'
@@ -4311,31 +4420,34 @@ export const aiConversations: AiConversationService = {
 
   takePendingTurnSteers: async (input) =>
     sql.begin(async (tx) => {
-      const owner = await tx<{ id: string }[]>`
+      const ownerSql = (lock: boolean) => tx<{ id: string }[]>`
         SELECT id
         FROM ai.turns
         WHERE id = ${input.turnId}
           AND conversation_id = ${input.conversationId}
           AND status = 'running'
           AND lease_owner = ${input.leaseOwner}
-          AND cancel_requested_at IS NULL
+          AND (cancel_requested_at IS NULL OR cancellation_reason = 'queue_interrupt')
           AND lease_expires_at > now()
-        FOR UPDATE
+        ${lock ? tx`FOR UPDATE` : tx``}
       `;
-      if (!owner[0]) throw new Error("AI turn lost its lease while taking steering.");
-
-      const pending = await tx<TurnSteerRow[]>`
+      const pendingSql = (lock: boolean) => tx<TurnSteerRow[]>`
         SELECT *
         FROM ai.turn_steers
         WHERE conversation_id = ${input.conversationId}
           AND turn_id = ${input.turnId}
           AND status = 'pending'
+          AND NOT EXISTS (SELECT 1 FROM ai.turns WHERE id = ${input.turnId} AND cancellation_reason = 'queue_interrupt')
         ORDER BY seq ASC
-        FOR UPDATE
+        ${lock ? tx`FOR UPDATE` : tx``}
       `;
-      if (pending.length === 0) return [];
+      if (!(await ownerSql(false))[0]) throw new Error("AI turn lost its lease while taking steering.");
+      if ((await pendingSql(false)).length === 0) return [];
 
+      // Conversation before turn, like Send now and turn completion, so the two never deadlock.
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+      if (!(await ownerSql(true))[0]) throw new Error("AI turn lost its lease while taking steering.");
+      const pending = await pendingSql(true);
       const consumed: AiTurnSteer[] = [];
       for (const steer of pending) {
         const message = await insertMessageLocked(

@@ -93,7 +93,9 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
     const archived = await aiConversations.createConversation({ ownerUserId: userId, title: "Archived" });
     const foreign = await aiConversations.createConversation({ ownerUserId: otherUserId, title: "Foreign" });
     try {
-      expect(await aiConversations.archiveConversation({ conversationId: archived.id, ownerUserId: userId })).toBe(true);
+      expect(await aiConversations.archiveConversation({ conversationId: archived.id, ownerUserId: userId })).toEqual({
+        discardedQueuedMessages: 0,
+      });
       const sourceTurn = await aiConversations.createCompactionTurn({
         conversationId: source.id,
         modelId: "test-model",
@@ -174,7 +176,6 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
         modelId: "test-model",
         runConfig: { kind: "chat", input: text, toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text }] },
-        sourceHref: `/app/assistant?conversation=${source.shortId}`,
       });
       expect(delivered.delivered).toBe(true);
       const messages = await aiConversations.listMessages({ conversationId: target.id });
@@ -182,12 +183,12 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
       expect(messages[0]).toMatchObject({
         loopId: delivered.delivered ? delivered.turn.id : null,
         meta: {
+          writerOrigin: { kind: "chat", id: source.shortId, turnId: sourceTurn.shortId },
           agentMessage: {
             id: created.message.shortId,
             sourceChatId: source.shortId,
             sourceTurnId: sourceTurn.shortId,
             sourceTitle: source.title,
-            sourceHref: `/app/assistant?conversation=${source.shortId}`,
           },
         },
       });

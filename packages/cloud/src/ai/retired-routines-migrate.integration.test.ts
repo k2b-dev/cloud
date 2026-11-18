@@ -84,7 +84,7 @@ databaseSuite()("scheduled routine retirement", () => {
     expect((await aiConversations.getTurn({ conversationId: chat.id, turnId }))?.status).toBe("aborted");
     const archived = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turnId });
     expect(archived.map((row) => row.message)).toEqual([archivedMessage]);
-    const visible = await publicAiStoredMessages(archived, chat);
+    const visible = await publicAiStoredMessages(archived, chat, undefined, { locale: "en" });
     expect(visible[0]?.message).toEqual({
       role: "assistant",
       content: [

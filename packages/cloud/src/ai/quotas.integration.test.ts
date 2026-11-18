@@ -10,7 +10,7 @@ import type { AiQuotaRule } from "../shared/ai-quotas";
 import { streamAnswer } from "./answer-stream.test-fixture";
 import { CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
 import { backgroundCostState, beginAiCall, finishAiCall, releaseBackgroundCostStop } from "./inference-calls";
-import { drainQueuedMessages } from "./message-queue";
+import { drainQueuedMessages, migrateAiQueuedMessagesTable } from "./message-queue";
 import { aiPeopleAtLimit } from "./quota-limits";
 import { inferenceProvider } from "./quota-provider";
 import { quotaAdminConfig, quotaReport } from "./quota-report";
@@ -93,8 +93,9 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`CREATE TABLE auth.user_groups_v2(user_id UUID,group_id UUID)`;
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id UUID,child_group_id UUID)`;
     await sql`CREATE TABLE ai.turns(id UUID PRIMARY KEY,status TEXT,attempt INTEGER,lease_expires_at TIMESTAMPTZ,conversation_id UUID,run_config JSONB)`;
-    await sql`CREATE TABLE ai.conversations(id UUID PRIMARY KEY,created_by_user_id UUID,launched_by_app_id TEXT,archived_at TIMESTAMPTZ)`;
-    await sql`CREATE TABLE ai.queued_messages(id UUID PRIMARY KEY,conversation_id UUID,submission JSONB,content JSONB NOT NULL DEFAULT '[]',status TEXT,error TEXT,quota_checked_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),position BIGSERIAL,automation_source TEXT,revision BIGINT NOT NULL DEFAULT 0)`;
+    await sql`CREATE TABLE ai.conversations(id UUID PRIMARY KEY,created_by_user_id UUID,short_id TEXT,launched_by_app_id TEXT,archived_at TIMESTAMPTZ)`;
+    // The queue owner's table migration, not a hand-kept copy (its live triggers need the full AI schema).
+    await migrateAiQueuedMessagesTable();
     await sql`INSERT INTO auth.users VALUES(${user}::uuid,'one','One'),(${other}::uuid,'two','Two')`;
     await sql`INSERT INTO auth.service_accounts(id,name,kind) VALUES(${service}::uuid,'Service','agent'),(${codeService}::uuid,'Build service','code')`;
     await sql`INSERT INTO auth.groups VALUES(${group}::uuid,'Parent','local'),(${child}::uuid,'Child','local')`;
@@ -430,7 +431,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
         modelId: "a",
         runConfig: { assistantChat: true, kind: "chat", actor: { kind: "user", user: { id: i === 32 ? other : user } } },
       };
-      await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,status) VALUES(${id}::uuid,${conversation}::uuid,(${JSON.stringify(submission)}::text)::jsonb,'pending')`;
+      await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status) VALUES(${id}::uuid,${conversation}::uuid,(${JSON.stringify(submission)}::text)::jsonb,'[]'::jsonb,'pending')`;
     }
     let dispatched = 0;
     const spy = spyOn(aiConversations, "submitChatTurn").mockImplementation(async () => {

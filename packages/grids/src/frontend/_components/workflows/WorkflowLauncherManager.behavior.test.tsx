@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import { type MutationOptions, mutation } from "@k2b/stdlib/solid";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import type { PublicWorkflow } from "../workspace/workspace-public-state-model";
@@ -198,3 +199,49 @@ domTest("the email template editor shows movable panes with a fixed boundary", a
     dom.cleanup();
   }
 });
+
+for (const outcome of ["dropped", "aborted", "superseded"] as const) {
+  domTest(`a ${outcome} launcher save keeps the entered configuration open`, async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(async () => Response.json({ items: [] }), { preconnect: originalFetch.preconnect });
+    const originalCreate = mutation.create;
+    let controllers = 0;
+    const create = spyOn(mutation, "create").mockImplementation(<T, V, C = unknown>(options: MutationOptions<T, V, C>) => {
+      const controller = originalCreate(options);
+      // The manager creates the list read, save, then delete controllers.
+      if (++controllers === 2) controller.mutate = async () => outcome;
+      return controller;
+    });
+    const { render } = await import("solid-js/web");
+    const { dialogCore } = await import("@k2b/ui");
+    const { WorkflowLauncherManager } = await import("./WorkflowLauncherManager");
+    const dispose = render(
+      () => <WorkflowLauncherManager workflow={workflow} tables={[]} onChanged={() => {}} onClose={() => {}} />,
+      dom.root,
+    );
+    const addButton = () =>
+      Array.from(dom.document.querySelectorAll("button"))
+        .filter((button) => button.textContent?.trim() === "Add run option")
+        .at(-1)!;
+    try {
+      await Bun.sleep(30);
+      addButton().click();
+      await Bun.sleep(30);
+      const name = dom.document.querySelector<HTMLInputElement>("input")!;
+      name.value = "Keep this launcher";
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+      addButton().click();
+      await Bun.sleep(30);
+      expect(name.isConnected).toBe(true);
+      expect(name.value).toBe("Keep this launcher");
+      expect(addButton().disabled).toBe(false);
+    } finally {
+      dialogCore.close();
+      dispose();
+      create.mockRestore();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+}

@@ -29,7 +29,7 @@ export const createContactDetailActions = (config: {
   let preparingAction = false;
   let disposed = false;
   const notices = new Set<ToastHandle>();
-  const reportFailure = (error: Error, retry: () => Promise<void>) => {
+  const reportFailure = (error: Error, retry: () => Promise<unknown>) => {
     if (disposed) return;
     const notice = toast.error(error.message, {
       duration: 0,

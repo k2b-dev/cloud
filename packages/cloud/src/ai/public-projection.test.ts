@@ -4,7 +4,7 @@ import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { visibleMessages } from "./client/projection";
 import { type AiWireEvent, buildBlocksFromMessages } from "./protocol";
-import { projectPublicAiStoredMessages, publicAiWireEvent, withCurrentAppNames } from "./public-projection";
+import { messagesNeedChoiceContext, projectPublicAiStoredMessages, publicAiWireEvent, withCurrentAppNames } from "./public-projection";
 import type { AiStoredMessage } from "./types";
 
 const stored = (id: string, role: Extract<Message["role"], "user" | "assistant">, loopId: string | null): AiStoredMessage => ({
@@ -287,4 +287,35 @@ test("public history omits lasting Code inputs, projects and source results with
     expect(JSON.stringify(buildBlocksFromMessages(projected))).not.toContain(source);
     expect(raw).toEqual(canonical);
   }
+});
+
+test("choice history stays lazy for text and thinking; stored and live choices share the same gate", () => {
+  const message = stored("ordinary", "assistant", "turn");
+  expect(messagesNeedChoiceContext([message], [{ id: "thought", kind: "thinking", text: "Private" }])).toBeFalse();
+  const choice = {
+    version: 1 as const,
+    blocks: [
+      {
+        kind: "Choice" as const,
+        id: "choice",
+        title: "Pick",
+        submit: "Choose",
+        mode: "one" as const,
+        options: { from: ["options"] },
+        option: { id: ["id"], title: ["title"] },
+        then: { query: "art.query.inspect", input: {}, field: "category" },
+      },
+    ],
+  };
+  expect(
+    messagesNeedChoiceContext(
+      [message],
+      [{ id: "tool", kind: "tool", callId: "call", name: "art__query__categories", status: "completed", result: { view: choice } }],
+    ),
+  ).toBeTrue();
+  expect(
+    messagesNeedChoiceContext([
+      { ...message, message: { role: "tool_result", callId: "call", name: "art__query__categories", result: { view: choice } } },
+    ]),
+  ).toBeTrue();
 });

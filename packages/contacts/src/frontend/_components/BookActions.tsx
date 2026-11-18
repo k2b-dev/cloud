@@ -33,6 +33,8 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
   let disposed = false;
 
   const previewMutation = mutations.create<ImportCandidate[], { bookId: string; content: string }>({
+    // Choosing another file replaces the preview in flight.
+    concurrency: "replace",
     mutation: async ({ bookId, content }, { abortSignal }) => {
       const res = await apiClient.books[":bookId"].import.preview.$post(
         {

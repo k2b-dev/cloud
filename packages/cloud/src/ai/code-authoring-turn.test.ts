@@ -26,6 +26,7 @@ import { aiConversations } from "./store";
 import * as structuredRuns from "./structured-runs";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { prepareAiTools } from "./tools";
+import { AiTurnInterruption } from "./turn-interruption";
 import type { AiTurnPolicyToolCall } from "./turn-policy";
 import { applyAiTurnPolicy } from "./turn-policy";
 import * as turnTiming from "./turn-timing";
@@ -129,7 +130,7 @@ test("the executor ends a model that keeps changing failing fixtures, after two 
   const timing = spyOn(turnTiming, "withDurableTurnTiming").mockImplementation(async (_turnId, aggregate) => aggregate);
   const aggregate = spyOn(aiConversations, "setLatestAssistantLoopAggregate").mockImplementation(async () => {});
   const started = spyOn((await import("./tool-audit")).aiToolAudit, "noteToolCall").mockResolvedValue(undefined);
-  const running = spyOn((await import("./tool-audit")).aiToolAudit, "noteToolStarted").mockResolvedValue(undefined);
+  const running = spyOn((await import("./tool-audit")).aiToolAudit, "noteToolStarted").mockResolvedValue(true);
   const completed = spyOn((await import("./tool-audit")).aiToolAudit, "noteToolCompleted").mockResolvedValue(undefined);
   try {
     const outcome = await executor["driveChatLoop"]({
@@ -141,6 +142,7 @@ test("the executor ends a model that keeps changing failing fixtures, after two 
       conversationId: "chat",
       turnId: "turn",
       abortController: new AbortController(),
+      interruption: new AiTurnInterruption(() => {}),
       prepared: prepareAiTools({ tools: [] }),
       allowRememberedApprovals: false,
       rememberableCapabilityApprovals: new Map(),

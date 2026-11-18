@@ -1,5 +1,6 @@
-import { beforeAll, expect, test } from "bun:test";
+import { beforeAll, expect, spyOn, test } from "bun:test";
 import { z } from "zod";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { compileCapabilities } from "../_internal/capabilities";
 import { migrateCloudCapabilities, recordCapabilityExecution } from "../capabilities/executions";
@@ -7,8 +8,12 @@ import { defineCapabilities } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { accounts } from "../services/accounts";
 import { buildAiCapabilityCatalog } from "./capabilities";
+import { createAiChoiceRoutes } from "./choice-routes";
 import { migrateCloudAi } from "./migrate";
+import { personalAiModelPolicy } from "./personal-agent";
 import { publicAiStoredMessages } from "./public-projection";
+import { aiQuoteModelText } from "./quote-markers";
+import { resolveAiQuotes } from "./quote-sources";
 import { aiConversations } from "./store";
 
 const suite = databaseSuite();
@@ -117,6 +122,40 @@ suite("choice admission transaction", () => {
     await migrateCloudAi();
     await migrateCloudCapabilities();
   });
+  test("archiving after loading a choice returns 409 without admitting another turn", async () => {
+    const f = await fixture();
+    try {
+      const routes = createAiChoiceRoutes({
+        resolveContext: async () => ({
+          actor: { kind: "user", user: f.user },
+          ownerUserId: f.user.id,
+          modelPolicy: personalAiModelPolicy,
+          toolApprovalContext: { actorUserId: f.user.id },
+          toolApprovalChangeContext: { actorUserId: f.user.id, actor: { kind: "user", user: f.user }, requestId: null },
+          signedInSession: true,
+        }),
+        submit: async () => {
+          expect(await aiConversations.archiveConversation({ conversationId: f.conversation.id, ownerUserId: f.user.id })).not.toBe(false);
+          await f.submit();
+          return new Response(null, { status: 201 });
+        },
+      });
+      const response = await routes.request(`/${f.conversation.shortId}/choices`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turnId: f.source.turn.shortId, toolCallId: "source-call", blockId: "category", ids: ["jug"] }),
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ code: "choice_closed", message: "choice_closed" });
+      const turns = await sql<{ id: string }[]>`SELECT id FROM ai.turns WHERE conversation_id=${f.conversation.id}::uuid`;
+      expect(turns.map((turn) => turn.id)).toEqual([f.source.turn.id]);
+      expect((await aiConversations.listMessages({ conversationId: f.conversation.id })).filter((message) => message.meta?.choice)).toEqual(
+        [],
+      );
+    } finally {
+      await f.cleanup();
+    }
+  });
   test("busy, wrong ids, and mode-one multiselection return conflicts without writing a choice", async () => {
     const f = await fixture();
     try {
@@ -155,6 +194,8 @@ suite("choice admission transaction", () => {
       const projected = await publicAiStoredMessages(
         await aiConversations.listMessages({ conversationId: f.conversation.id }),
         f.conversation,
+        undefined,
+        { locale: "de" },
       );
       expect(projected.find((message) => message.message.role === "tool_result")?.meta?.resultChoice).toMatchObject({
         state: "answered",
@@ -164,6 +205,69 @@ suite("choice admission transaction", () => {
       await sql`UPDATE ai.turns SET status = 'completed' WHERE id = ${won.value.turn.id}::uuid`;
       await expect(f.submit()).rejects.toThrow("choice_closed");
     } finally {
+      await f.cleanup();
+    }
+  });
+  test("writer projection keeps choice history lazy and uses public turn ids", async () => {
+    const f = await fixture();
+    const list = spyOn(aiConversations, "listChoiceMessages");
+    const meter = await meterSql();
+    try {
+      const answer = await f.submit();
+      await sql`UPDATE ai.turns SET status='completed' WHERE id=${answer.turn.id}::uuid`;
+      const initial = (await aiConversations.listTurnMessages({ conversationId: f.conversation.id, loopId: f.source.turn.id }))[0]!;
+      const quotes = await resolveAiQuotes(f.conversation.id, [{ messageId: initial.shortId, text: "Hi" }], aiConversations);
+      const quoted = await aiConversations.submitChatTurn({
+        conversationId: f.conversation.id,
+        modelId: "mock",
+        runConfig: {
+          kind: "chat",
+          input: "Quoted reply",
+          toolSource: { kind: "none" },
+          quotes,
+          writerOrigin: { kind: "person", id: f.user.id },
+        },
+        userMessage: {
+          role: "user",
+          content: [
+            { type: "text", text: "Quoted reply" },
+            { type: "text", text: aiQuoteModelText(quotes[0]!) },
+          ],
+        },
+      });
+      const all = await aiConversations.listMessages({ conversationId: f.conversation.id });
+      const plain = all.filter(
+        (message) => message.message.role === "user" && !message.meta?.choice && message.loopId === f.source.turn.id,
+      );
+      const without = await meter.during(async () => {
+        const projected = await publicAiStoredMessages(plain, f.conversation, undefined, { locale: "en" });
+        expect(projected.every((message) => message.loopId === f.source.turn.shortId)).toBeTrue();
+        expect(projected[0]?.meta?.origin).toMatchObject({ kind: "person", name: "Choice Person" });
+      });
+      expect(list).not.toHaveBeenCalled();
+      let projected: Awaited<ReturnType<typeof publicAiStoredMessages>> = [];
+      const withChoice = await meter.during(async () => {
+        projected = await publicAiStoredMessages(all, f.conversation, undefined, { locale: "en" });
+      });
+      expect(list).toHaveBeenCalledTimes(1);
+      // Choice history adds its single read; choice turn IDs ride the existing origin/turn lookup.
+      expect(withChoice.length - without.length).toBe(1);
+      expect(withChoice.filter((text) => text.includes("display_name AS name"))).toHaveLength(1);
+      expect(projected.find((message) => message.meta?.choice)?.meta?.choice?.turnId).toBe(f.source.turn.shortId);
+      expect(
+        projected
+          .filter((message) => message.loopId)
+          .every((message) => [f.source.turn.shortId, answer.turn.shortId, quoted.turn.shortId].includes(message.loopId!)),
+      ).toBeTrue();
+      expect(projected.find((message) => message.message.role === "tool_result")?.meta?.resultChoice).toMatchObject({
+        state: "answered",
+        chosen: ["jug"],
+      });
+      expect(projected.find((message) => message.id === quoted.message.shortId)?.meta?.quotes).toEqual(quotes);
+      expect(JSON.stringify(projected)).not.toContain('"writerOrigin"');
+    } finally {
+      list.mockRestore();
+      await meter.close();
       await f.cleanup();
     }
   });

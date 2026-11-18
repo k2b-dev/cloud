@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import {
+  defineTool,
   type Message,
   memoryStore,
   type NessiLoop,
@@ -7,6 +8,7 @@ import {
   type OutboundEvent,
   type Provider,
   type ProviderRequest,
+  type Tool,
   type ToolCallBlock,
   type ToolStreamIssue,
 } from "@k2b/nessi";
@@ -32,6 +34,8 @@ beforeEach(() => {
 });
 
 import { buildAiCapabilityCatalog } from "./capabilities";
+import { AUTOMATION_TURN_BUDGET, CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
+import { aiCodeReviewToolAllowed } from "./code-review-turn";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { isMalformedToolCallId } from "./malformed-tool-calls";
 import { type AiTurnBlock, applyWireEventToBlocks, buildBlocksFromMessages, messageBlockId, streamBlockId, toolBlockId } from "./protocol";
@@ -39,6 +43,7 @@ import { aiConversations } from "./store";
 import * as stream from "./stream";
 import { aiToolAudit } from "./tool-audit";
 import { prepareAiTools } from "./tools";
+import { AiTurnInterruption } from "./turn-interruption";
 import * as turnTiming from "./turn-timing";
 import type { AiPendingTurnActionRecord, AiStoredMessage, AiTurnSteer } from "./types";
 
@@ -218,6 +223,7 @@ describe("malformed tool calls in a chat turn", () => {
         conversationId: "chat",
         turnId: "turn",
         abortController: new AbortController(),
+        interruption: new AiTurnInterruption(() => {}),
         prepared: prepareAiTools({ tools: [] }),
         allowRememberedApprovals: false,
         rememberableCapabilityApprovals: new Map(),
@@ -1631,6 +1637,7 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
       conversationId: "chat",
       turnId: "turn",
       abortController: new AbortController(),
+      interruption: new AiTurnInterruption(() => {}),
       prepared: prepareAiTools({ tools: [] }),
       allowRememberedApprovals: false,
       rememberableCapabilityApprovals: new Map<string, string>(),
@@ -1683,7 +1690,7 @@ test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s cl
     resolvedEvent: { type: "tool_result", callId: "local-1", result: { status: "completed", path: "/work", entries: [], nextAfter: null } },
   };
   const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "List files" });
-  const save = spyOn(aiConversations, "savePendingTurnAction").mockResolvedValue(undefined);
+  const save = spyOn(aiConversations, "savePendingTurnAction").mockResolvedValue(true);
   const get = spyOn(aiConversations, "getPendingTurnAction").mockResolvedValue(mode === "fast" ? resolved : pending);
   const markInline = spyOn(aiConversations, "markPendingTurnActionConsumedInline").mockResolvedValue(undefined);
   const suspend = spyOn(aiConversations, "suspendTurn").mockResolvedValue(true);
@@ -1741,6 +1748,7 @@ test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s cl
         approvalTargets: new Map(),
         linkedApprovals: new Map(),
         signal: signal.signal,
+        interruption: new AiTurnInterruption(() => signal.abort()),
       }),
     ).toBe(mode !== "fast");
     expect(save).toHaveBeenCalledTimes(1);
@@ -1924,4 +1932,410 @@ test("chat approval snapshots use the loaded target contract and exclude model-o
     capabilityCallDigest(migratedAppWide),
   );
   expect(__aiExecutorTest.capabilityApprovalArgs(undefined, args)).toBe(args);
+});
+
+describe("Send now contract regressions", () => {
+  test.each(["approval", "custom_approval"] as const)("a skipped %s is not answered with a person's refusal (#3514)", async (kind) => {
+    const executor = new AiTurnExecutor({ leaseOwner: "worker", heartbeatMs: 1000, enqueueContinuation: async () => {} });
+    executor["startHeartbeat"] = () => () => {};
+    const controller = new AbortController();
+    const interruption = new AiTurnInterruption(() => controller.abort());
+    interruption.begin("other-effect");
+    interruption.request();
+    interruption.confirm();
+    const store = memoryStore();
+    const session = spyOn(aiConversations, "createSessionStore").mockReturnValue(store);
+    const pushed: unknown[] = [];
+    const loop: NessiLoop = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          ...turn,
+          type: "tool_action_request",
+          kind,
+          callId: kind === "approval" ? "call" : "call-approval-0",
+          name: "send",
+          args: {},
+        };
+      },
+      push: (event) => {
+        pushed.push(event);
+      },
+      steer: () => {},
+      abort: () => {},
+    };
+    const pipeline = new __aiExecutorTest.StreamPipeline({
+      conversationId: "chat",
+      turnId: "turn",
+      attempt: 1,
+      startSeq: 0,
+      leaseOwner: "worker",
+      seedBlocks: [],
+      allowRememberedApprovals: false,
+    });
+    pipeline.timing.event = async () => {};
+    pipeline.apply = async () => {};
+    pipeline.flush = async () => {};
+    try {
+      await executor["driveChatLoop"]({
+        loop,
+        pipeline,
+        initialRoundFailed: false,
+        rejectedToolCallIds: new Set(),
+        conversationId: "chat",
+        turnId: "turn",
+        abortController: controller,
+        interruption,
+        prepared: prepareAiTools({ tools: [] }),
+        allowRememberedApprovals: false,
+        rememberableCapabilityApprovals: new Map(),
+        capabilityActionReviews: new Map(),
+        approvalTargets: new Map(),
+        linkedApprovals: new Map(),
+        appliedSteers: [],
+        noteToolRound: () => {},
+        noteToolCall: () => {},
+        failureReason: { current: null },
+      });
+      expect(pushed).toEqual([]);
+      const messages = await store.load();
+      expect(messages).toHaveLength(1);
+      expect(messages[0]?.message).toMatchObject({
+        role: "tool_result",
+        callId: "call",
+        reason: kind === "approval" ? "not_run" : "not_returned",
+        result: { code: "QUEUE_INTERRUPTED" },
+      });
+      expect(JSON.stringify(messages)).not.toContain("denied");
+      const blocks = buildBlocksFromMessages([
+        { seq: 1, message: { role: "assistant", content: [{ type: "tool_call", id: "call", name: "send", args: {} }] } },
+        ...messages.map((entry) => ({ ...entry, seq: 2 })),
+      ]);
+      expect(blocks[0]).toMatchObject({ kind: "tool", status: "running", isError: false });
+    } finally {
+      session.mockRestore();
+    }
+  });
+
+  test("a successful heartbeat withdraws an already delivered interrupt before the running effect settles (#3515)", async () => {
+    const executor = new AiTurnExecutor({ leaseOwner: "worker", heartbeatMs: 60_000, enqueueContinuation: async () => {} });
+    const controller = new AbortController();
+    const interruption = new AiTurnInterruption(() => controller.abort());
+    interruption.begin("effect");
+    interruption.request();
+    const heartbeat = spyOn(aiConversations, "heartbeatTurn").mockResolvedValue(true);
+    const get = spyOn(aiConversations, "getTurn").mockResolvedValue({
+      id: "turn",
+      shortId: "turn",
+      conversationId: "chat",
+      status: "running",
+      attempt: 1,
+      modelId: null,
+      createdAt: "2026-11-17T00:00:00Z",
+      completedAt: null,
+      error: null,
+      cancellationReason: null,
+      cancelRequestedAt: null,
+    });
+    const stop = executor["startHeartbeat"]("chat", "turn", controller, interruption);
+    try {
+      await Bun.sleep(0);
+      interruption.settled("effect");
+      expect(controller.signal.aborted).toBe(false);
+      expect(interruption.draining).toBe(false);
+      expect(() => interruption.begin("next-effect")).not.toThrow();
+    } finally {
+      stop();
+      heartbeat.mockRestore();
+      get.mockRestore();
+    }
+  });
+
+  test("a queue interrupt cannot keep a worker alive after losing its lease (#3515)", async () => {
+    const executor = new AiTurnExecutor({ leaseOwner: "worker", heartbeatMs: 60_000, enqueueContinuation: async () => {} });
+    const controller = new AbortController();
+    const interruption = new AiTurnInterruption(() => controller.abort());
+    interruption.begin("effect");
+    const heartbeat = spyOn(aiConversations, "heartbeatTurn").mockResolvedValue(false);
+    const get = spyOn(aiConversations, "getTurn").mockResolvedValue({
+      id: "turn",
+      shortId: "turn",
+      conversationId: "chat",
+      status: "running",
+      attempt: 1,
+      modelId: null,
+      createdAt: "2026-11-17T00:00:00Z",
+      completedAt: null,
+      error: null,
+      cancellationReason: "queue_interrupt",
+      cancelRequestedAt: "2026-11-17T11:59:59Z",
+    });
+    const stop = executor["startHeartbeat"]("chat", "turn", controller, interruption);
+    try {
+      await Bun.sleep(0);
+      expect(heartbeat).toHaveBeenCalledTimes(2);
+      expect(controller.signal.aborted).toBe(true);
+    } finally {
+      stop();
+      heartbeat.mockRestore();
+      get.mockRestore();
+    }
+  });
+
+  test("a queue interrupt cannot override an expired turn deadline (#3515)", async () => {
+    const now = spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-17T12:00:00Z"));
+    const executor = new AiTurnExecutor({ leaseOwner: "worker", heartbeatMs: 60_000, enqueueContinuation: async () => {} });
+    const controller = new AbortController();
+    const interruption = new AiTurnInterruption(() => controller.abort());
+    interruption.begin("effect");
+    const heartbeat = spyOn(aiConversations, "heartbeatTurn").mockResolvedValue(false);
+    const get = spyOn(aiConversations, "getTurn").mockResolvedValue({
+      id: "turn",
+      shortId: "turn",
+      conversationId: "chat",
+      status: "running",
+      attempt: 1,
+      modelId: null,
+      createdAt: "2026-11-17T00:00:00Z",
+      completedAt: null,
+      error: null,
+      cancellationReason: "queue_interrupt",
+      cancelRequestedAt: "2026-11-17T11:59:59Z",
+      deadline: "2026-11-17T11:59:59Z",
+      runBudgetMs: 60_000,
+    });
+    const stop = executor["startHeartbeat"]("chat", "turn", controller, interruption);
+    try {
+      await Bun.sleep(0);
+      expect(controller.signal.aborted).toBe(true);
+      expect(controller.signal.reason?.turnError()).toEqual({ code: "time_limit", limitMinutes: 1 });
+    } finally {
+      stop();
+      heartbeat.mockRestore();
+      get.mockRestore();
+      now.mockRestore();
+    }
+  });
+});
+
+describe("Send now tool-start races", () => {
+  const startLoop = (tool: Tool) => {
+    const store = memoryStore();
+    let calls = 0;
+    const loop = nessi({
+      agentId: "fixture",
+      loopId: "turn",
+      input: "Run the effect",
+      systemPrompt: "",
+      store,
+      tools: [tool],
+      maxTurns: 2,
+      provider: {
+        name: "fixture",
+        family: "openai-compatible",
+        model: "fixture",
+        capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
+        async *stream() {
+          if (calls++ === 0) {
+            yield { type: "block_start", blockId: "call", index: 0, kind: "tool_call", callId: "effect", name: tool.def.name };
+            yield {
+              type: "block_end",
+              blockId: "call",
+              index: 0,
+              block: { type: "tool_call", id: "effect", name: tool.def.name, args: {} },
+            };
+          }
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+        },
+      },
+    });
+    const result = Promise.withResolvers<Extract<OutboundEvent, { type: "tool_execution_end" }>>();
+    const finished = (async () => {
+      for await (const event of loop) if (event.type === "tool_execution_end") result.resolve(event);
+      return (await store.load()).flatMap(({ message }) => (message.role === "tool_result" ? [message] : []));
+    })();
+    return { result: result.promise, finished };
+  };
+
+  test.each(["automatic", "authoring"] as const)(
+    "queue interruption cannot bypass or refill automatic and authoring tool limits (%s)",
+    async (mode) => {
+      const controller = new AbortController();
+      const interruption = new AiTurnInterruption(() => controller.abort());
+      const held = Promise.withResolvers<void>();
+      const waiting = interruption.waitForDecision.bind(interruption);
+      const wait = spyOn(interruption, "waitForDecision").mockImplementation((signal) => {
+        held.resolve();
+        return waiting(signal);
+      });
+      const audit = spyOn(aiToolAudit, "noteToolStarted").mockResolvedValue(true);
+      const allocation = mode === "automatic" ? AUTOMATION_TURN_BUDGET : CODE_AUTHORING_TURN_BUDGET;
+      const guard = createCodeAuthoringTurnBudget({
+        selected: true,
+        nonPerson: mode === "automatic",
+        priorCalls: { calls: allocation.modelCalls, inputTokens: 1234 },
+        finishedToolCalls: Array.from({ length: 3 }, (_, i) => ({
+          callId: `prior-${i}`,
+          name: "code_test",
+          args: { codeId: "c6" },
+          status: "failed" as const,
+          result: "same failure",
+        })),
+      });
+      let effects = 0;
+      const body = defineTool({ name: "code_test", description: "Check", inputSchema: z.object({}), timeoutMs: false }).server(async () => {
+        effects++;
+        return { ok: true };
+      });
+      const [bounded] = guard.tools([body]);
+      const review = { kind: "chat" as const, input: "Review", codeReview: { codeId: "c6", versionId: "v6" } };
+      expect(["code_test", "write_file", "code_run"].filter((name) => aiCodeReviewToolAllowed(review, name))).toEqual(["code_test"]);
+      if (!bounded || bounded.kind !== "server") throw new Error("Missing bounded server tool");
+      const tool = __aiExecutorTest.guardToolStart(bounded, {
+        conversationId: "chat",
+        turnId: "turn",
+        toolName: "code_test",
+        signal: controller.signal,
+        interruption,
+      });
+      interruption.request();
+      const run = startLoop(tool);
+      try {
+        await held.promise;
+        expect(effects).toBe(0);
+        expect(audit).not.toHaveBeenCalled();
+        interruption.withdraw();
+        const results = await run.finished;
+        expect(results).toHaveLength(1);
+        expect(results[0]).toMatchObject({ result: { error: { code: "code_authoring_turn_limit" } } });
+        expect(effects).toBe(0);
+        expect(audit).toHaveBeenCalledTimes(1);
+        let upstream = 0;
+        const provider: Provider = {
+          name: "bounded",
+          model: "fixture",
+          family: "openai-compatible",
+          capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
+          async *stream() {
+            upstream++;
+            yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "Forbidden" } };
+          },
+        };
+        for (let retry = 0; retry < 2; retry++)
+          for await (const _ of guard.wrap(provider).stream({ messages: [] })) {
+            /* consume terminal local response */
+          }
+        expect(upstream).toBe(0);
+        expect(["code_test", "write_file"].filter((name) => aiCodeReviewToolAllowed(review, name))).toEqual(["code_test"]);
+      } finally {
+        interruption.withdraw();
+        controller.abort();
+        await run.finished;
+        wait.mockRestore();
+        audit.mockRestore();
+      }
+    },
+  );
+  test("withdrawal during the audit wait resumes the same call without execution_failed", async () => {
+    const controller = new AbortController();
+    const interruption = new AiTurnInterruption(() => controller.abort());
+    const entered = Promise.withResolvers<void>();
+    const audited = Promise.withResolvers<boolean>();
+    const held = Promise.withResolvers<void>();
+    let executions = 0;
+    const audit = spyOn(aiToolAudit, "noteToolStarted").mockImplementation(() => {
+      entered.resolve();
+      return audited.promise;
+    });
+    const waitForDecision = interruption.waitForDecision.bind(interruption);
+    const wait = spyOn(interruption, "waitForDecision").mockImplementation((signal) => {
+      if (interruption.draining) held.resolve();
+      return waitForDecision(signal);
+    });
+    const tool = __aiExecutorTest.guardToolStart(
+      defineTool({ name: "effect", description: "Effect", inputSchema: z.object({}), timeoutMs: false }).server(async () => {
+        executions++;
+        return { done: true };
+      }),
+      { conversationId: "chat", turnId: "turn", toolName: "effect", signal: controller.signal, interruption },
+    );
+    const run = startLoop(tool);
+    try {
+      await entered.promise;
+      interruption.request();
+      // The database has already withdrawn the request: its audit succeeds.
+      // Local withdrawal arrives only after the audit has returned.
+      audited.resolve(true);
+      await Promise.race([held.promise, run.finished]);
+      interruption.withdraw();
+      const results = await run.finished;
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ result: { done: true } });
+      expect(results[0]?.isError).not.toBe(true);
+      expect(executions).toBe(1);
+      expect(audit).toHaveBeenCalledTimes(1);
+    } finally {
+      interruption.withdraw();
+      audited.resolve(true);
+      await run.finished;
+      wait.mockRestore();
+      audit.mockRestore();
+    }
+  });
+
+  test.each(["initial barrier", "audit retry", "audit wait", "final barrier"] as const)(
+    "a tool timeout at %s cannot start the body after withdrawal",
+    async (phase) => {
+      const controller = new AbortController();
+      const interruption = new AiTurnInterruption(() => controller.abort());
+      const settled = Promise.withResolvers<void>();
+      const audited = Promise.withResolvers<boolean>();
+      let executions = 0;
+      let auditCalls = 0;
+      const audit = spyOn(aiToolAudit, "noteToolStarted").mockImplementation(async () => {
+        if (auditCalls++ === 0) {
+          if (phase === "audit wait") return audited.promise;
+          if (phase !== "initial barrier") interruption.request();
+          return phase !== "audit retry";
+        }
+        return true;
+      });
+      if (phase === "initial barrier") interruption.request();
+      const guarded = __aiExecutorTest.guardToolStart(
+        defineTool({ name: "effect", description: "Effect", inputSchema: z.object({}), timeoutMs: 20 }).server(async () => {
+          executions++;
+          return { done: true };
+        }),
+        { conversationId: "chat", turnId: "turn", toolName: "effect", signal: controller.signal, interruption },
+      );
+      const run = startLoop({
+        ...guarded,
+        execute: async (args, context) => {
+          try {
+            return await guarded.execute(args, context);
+          } finally {
+            settled.resolve();
+          }
+        },
+      });
+      try {
+        const result = await run.result;
+        interruption.withdraw();
+        audited.resolve(true);
+        await settled.promise;
+        const results = await run.finished;
+        expect(result).toMatchObject({ isError: true, result: expect.stringContaining("timed out") });
+        expect(results[0]?.reason).toBe("timeout");
+        expect(results).toHaveLength(1);
+        expect(executions).toBe(0);
+        expect(audit).toHaveBeenCalledTimes(phase === "initial barrier" ? 0 : 1);
+      } finally {
+        interruption.withdraw();
+        audited.resolve(true);
+        controller.abort();
+        await run.finished;
+        await settled.promise;
+        audit.mockRestore();
+      }
+    },
+  );
 });

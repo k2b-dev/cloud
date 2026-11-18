@@ -17,6 +17,7 @@ import { createAgentHost } from "./agent-host";
 import { createChatCodeServiceRoutes } from "./api";
 import { runtimeCapabilities } from "./capability-runtime";
 import * as chatAccess from "./chat-access";
+import { clientCalls } from "./client-calls";
 import { HttpPrepare } from "./http-contracts";
 import { httpService as chatHttpService, HttpError, httpService } from "./http-service";
 import { migrateChatCode } from "./migrate";
@@ -1072,6 +1073,109 @@ databaseSuite()("Assistant chat runner persistence", () => {
       await sql`DELETE FROM ai.project_access WHERE project_id=${projectId}::uuid`;
       await sql`DELETE FROM auth.access WHERE id=${grant!.id}::uuid`;
       await sql`DELETE FROM ai.projects WHERE id=${projectId}::uuid`;
+    }
+  });
+  test("two browsers cannot execute one tool call twice and interrupted claims never replay", async () => {
+    const id = "Abc234";
+    const start = spyOn(cloudAi.aiToolAudit, "noteToolStarted").mockResolvedValue(true);
+    const conversationId = crypto.randomUUID(),
+      turnId = crypto.randomUUID();
+    const input = { operation: "secret" as const, name: "crm", origin: "https://example.test" };
+    const conversation = spyOn(aiConversations, "getConversation").mockImplementation(async (request) =>
+      request.ownerUserId !== owner.user.id
+        ? null
+        : {
+            id: conversationId,
+            shortId: "abcdef",
+            title: "Test",
+            titleSource: "user",
+            description: "",
+            descriptionSource: "user",
+            keywords: [],
+            pinnedAt: null,
+            done: null,
+            isDone: false,
+            lastUsedAt: "2026-09-14T00:00:00.000Z",
+            archivedAt: null,
+            runStatus: "needs_attention",
+            runError: null,
+            unreadCompletion: false,
+            projectId: null,
+            draft: { content: [], revision: 1, updatedAt: null },
+            createdByUserId: owner.user.id,
+            createdAt: "2026-11-18T00:00:00.000Z",
+            updatedAt: "2026-11-18T00:00:00.000Z",
+          },
+    );
+    const turn = spyOn(aiConversations, "getActiveTurn").mockResolvedValue({
+      turn: {
+        id: turnId,
+        shortId: "ghijkl",
+        conversationId,
+        status: "waiting_for_action",
+        attempt: 1,
+        modelId: null,
+        createdAt: "2026-11-18T00:00:00.000Z",
+        completedAt: null,
+        error: null,
+      },
+      liveBlocks: [
+        {
+          id: "block",
+          kind: "tool",
+          callId: "call",
+          name: "code_secret",
+          args: { name: input.name, origin: input.origin },
+          status: "awaiting_client",
+          frontendMode: "client",
+        },
+      ],
+      liveSeq: 1,
+      actionWaitMs: 0,
+      waitingSince: null,
+    });
+    const first = { conversationId, turnId: "ghijkl", callId: "call", clientId: crypto.randomUUID(), input };
+    const second = { ...first, turnId, clientId: crypto.randomUUID() };
+    try {
+      await expect(clientCalls.claim({ ...first, turnId: "wrong1" }, owner)).rejects.toMatchObject({ code: "CONFLICT" });
+      const claims = await Promise.all([clientCalls.claim(first, owner), clientCalls.claim(second, owner)]);
+      expect(claims.map((claim) => claim.status).sort()).toEqual(["execute", "pending"]);
+      const winner = claims[0]!.status === "execute" ? first : second;
+      const loser = winner === first ? second : first;
+      await expect(clientCalls.complete({ ...loser, result: { opened: id } }, owner)).rejects.toMatchObject({ code: "CONFLICT" });
+      await clientCalls.complete({ ...winner, result: { opened: id } }, owner);
+      expect(await clientCalls.claim(loser, owner)).toEqual({ status: "done", result: { opened: id } });
+      await expect(clientCalls.claim(first, stranger)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(clientCalls.claim({ ...first, input: { ...input, name: "another-secret" } }, owner)).rejects.toMatchObject({
+        code: "INVALID_INPUT",
+      });
+      for (const result of ["null", "42", '{"x":1}', "hello", null, { x: 1 }, ["null", 42], 42, true]) {
+        await sql`UPDATE assistant.code_client_calls SET result=NULL WHERE turn_id=${turnId}::uuid`;
+        await clientCalls.complete({ ...winner, result }, owner);
+        expect(await clientCalls.claim(loser, owner)).toEqual({ status: "done", result });
+        const [stored] = await sql<{ input_kind: string; result: string }[]>`SELECT jsonb_typeof(input) AS input_kind,result::text AS result
+          FROM assistant.code_client_calls WHERE turn_id=${turnId}::uuid`;
+        expect(stored?.input_kind).toBe("object");
+        expect(JSON.parse(stored!.result)).toEqual(result);
+      }
+      await sql`UPDATE assistant.code_client_calls SET result=NULL, created_at=now()-interval '10 minutes' WHERE turn_id=${turnId}::uuid`;
+      // Human approval can take longer than the old fixed execution timeout.
+      expect(await clientCalls.claim(winner, owner)).toEqual({ status: "pending" });
+      expect(await clientCalls.claim(loser, owner)).toEqual({ status: "pending" });
+      await clientCalls.complete({ ...winner, result: { late: true } }, owner);
+      expect(await clientCalls.claim(loser, owner)).toEqual({ status: "done", result: { late: true } });
+      await sql`UPDATE assistant.code_client_calls SET result=NULL, heartbeat_at=now()-interval '3 minutes' WHERE turn_id=${turnId}::uuid`;
+      expect(await clientCalls.claim(loser, owner)).toEqual({ status: "interrupted" });
+      expect(await clientCalls.claim(winner, owner)).toEqual({ status: "interrupted" });
+      await expect(clientCalls.complete({ ...winner, result: {} }, owner)).rejects.toMatchObject({ code: "CONFLICT" });
+      // A new browser claim cannot cross the runtime's Send now barrier.
+      await sql`DELETE FROM assistant.code_client_calls WHERE turn_id=${turnId}::uuid`;
+      start.mockResolvedValue(false);
+      expect(await clientCalls.claim(first, owner)).toEqual({ status: "interrupted" });
+    } finally {
+      start.mockRestore();
+      conversation.mockRestore();
+      turn.mockRestore();
     }
   });
 });

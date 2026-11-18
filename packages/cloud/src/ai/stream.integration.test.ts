@@ -1,14 +1,27 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
 import { createSync, type Sync } from "@k2b/sync";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
+import * as registry from "../_internal/registry";
+import { appAccess } from "../contracts/app-access";
 import { sql } from "../runtime/clients";
 import { latestTopicCursor } from "../services/topic-cursor";
 import { migrateCloudAi } from "./migrate";
 import type { AiStreamEvent, AiTurnBlock, AiWireEvent } from "./protocol";
+import { publicAiStoredMessages } from "./public-projection";
+import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
-import { type AiLiveTopicEvent, aiStreamTopic, publishAiWireEvent, streamAiConversationEvents } from "./stream";
+import {
+  type AiLiveTopicEvent,
+  aiStreamTopic,
+  publishAiTurnInterrupt,
+  publishAiWireEvent,
+  streamAiConversationEvents,
+  subscribeAiTurnInterrupts,
+} from "./stream";
 import type { AiConversation } from "./types";
 
 const suite = suiteFor("database", "nats");
@@ -62,12 +75,12 @@ const startTurn = async (chat: AiConversation, text = "Build the report") => {
 };
 
 /** Follow a conversation's stream and read its events one by one. */
-const follow = (chat: AiConversation) => {
+const follow = (chat: AiConversation, originViewer: { locale: string; userId?: string | null } = { locale: "en" }) => {
   const abort = new AbortController();
   const events: AiStreamEvent[] = [];
   let wake: (() => void) | undefined;
   void (async () => {
-    for await (const event of streamAiConversationEvents({ conversation: chat, signal: abort.signal })) {
+    for await (const event of streamAiConversationEvents({ conversation: chat, originViewer, signal: abort.signal })) {
       events.push(event);
       wake?.();
     }
@@ -118,7 +131,7 @@ suite("AI conversation stream repair", () => {
     await connection.drain();
   });
 
-  test("thinking and Code stay private in live, retained, held-back and reconnect events", async () => {
+  test("all public reads combine private thinking Code and viewer-safe writer labels", async () => {
     const chat = await createChat();
     const { turn, save, event } = await startTurn(chat);
     const thinking = "INTERNAL_INSTRUCTION code_Open42 22222222-2222-4222-8222-222222222222";
@@ -135,17 +148,80 @@ suite("AI conversation stream repair", () => {
         { type: "tool_call", id: "run", name: "code_run", args: { code: source } },
       ],
     });
+    await store.append({
+      role: "tool_result",
+      callId: "check",
+      name: "code_check",
+      result: {
+        project: { files: { "code.ts": source } },
+        result: { ok: false, diagnostics: [{ code: "TS2322", message: "PRIVATE_C5_DIAGNOSTIC", file: "code.ts", line: 1 }] },
+      },
+    });
+    const app = spyOn(registry, "getApp").mockResolvedValue({
+      id: "notebooks",
+      name: "Notebooks",
+      description: "Notes",
+      icon: "ti ti-app",
+      baseUrl: "http://notebooks.test",
+      routes: [],
+      access: appAccess.signedIn(),
+      presentation: { baseLocale: "en", translations: { de: { name: "Notizbücher" } } },
+    });
+    cleanup.push(async () => app.mockRestore());
+    await sql`UPDATE ai.messages SET meta=${JSON.stringify({ toolPresentations: { run: { kind: "capability", appId: "notebooks", appName: "Stored name", appIcon: "ti ti-app", title: "Notiz erstellen", capabilityKind: "action" } }, toolReviews: { run: { ...reviewFixture(), locale: "de" } } })}::text::jsonb
+      WHERE conversation_id=${chat.id}::uuid AND role='assistant'`;
+    for (const origin of [
+      { kind: "person", id: chat.createdByUserId },
+      { kind: "chat", id: chat.shortId, turnId: turn.shortId },
+      { kind: "automation", id: "c_private" },
+    ]) {
+      await sql`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message,search_text,loop_id,meta)
+        SELECT ${createAiShortId()},${chat.id}::uuid,COALESCE(max(seq),0)+1,'message','user',
+          '{"role":"user","content":[{"type":"text","text":"Attributed"}]}'::jsonb,'Attributed',${turn.id},
+          ${JSON.stringify({ writerOrigin: origin })}::text::jsonb FROM ai.messages WHERE conversation_id=${chat.id}::uuid`;
+    }
     await save(blocks, 1);
     const expectPublic = (value: unknown) => {
-      for (const forbidden of [thinking, source, "sync59-signature", "sync59-redacted"])
+      for (const forbidden of [thinking, source, "sync59-signature", "sync59-redacted", "PRIVATE_C5_DIAGNOSTIC", "writerOrigin"])
         expect(JSON.stringify(value)).not.toContain(forbidden);
     };
     const stream = follow(chat);
     const initial = expectState(await stream.next());
     expectPublic(initial);
+    const assertAuthors = (messages: typeof initial.messages) => {
+      const origins = messages.flatMap((message) => (message.meta?.origin ? [message.meta.origin] : []));
+      expect(origins).toContainEqual(expect.objectContaining({ kind: "person", name: "AI Stream" }));
+      expect(origins).toContainEqual({ kind: "automation", id: "c_private", name: "Automation" });
+      expect(origins.find((origin) => origin.kind === "chat")?.href).toBeUndefined();
+      expect(messages.find((message) => message.message.role === "assistant")?.meta?.toolPresentations?.run?.appName).toBe("Notizbücher");
+    };
+    assertAuthors(initial.messages);
+    const page = await aiConversations.listMessagesPage({ conversationId: chat.id });
+    const paged = await publicAiStoredMessages(page.messages, chat, undefined, { locale: "en" });
+    expectPublic(paged);
+    assertAuthors(paged);
+    const authorized = await publicAiStoredMessages(page.messages, chat, chat.createdByUserId, {
+      locale: "en",
+      userId: chat.createdByUserId,
+    });
+    const chatOrigin = authorized.flatMap((message) => (message.meta?.origin?.kind === "chat" ? [message.meta.origin] : []))[0];
+    expect(chatOrigin?.href).toBe(`/app/assistant?conversation=${chat.shortId}`);
     expect(initial.activeTurn?.blocks).toMatchObject([{ kind: "thinking", text: "" }, { args: {} }]);
-    await publishAiWireEvent(event(2, { type: "block_delta", blockId: "thought", blockKind: "thinking", delta: thinking }));
-    expect(await stream.next()).toMatchObject({ type: "block_delta", delta: "" });
+    const meter = await meterSql();
+    const interrupted = Promise.withResolvers<void>();
+    const stopControl = await subscribeAiTurnInterrupts({ conversationId: chat.id, turnId: turn.id, onInterrupt: interrupted.resolve });
+    try {
+      const statements = await meter.during(async () => {
+        await publishAiTurnInterrupt({ conversationId: chat.id, turnId: turn.id, requestId: crypto.randomUUID() });
+        await interrupted.promise;
+        await publishAiWireEvent(event(2, { type: "block_delta", blockId: "thought", blockKind: "thinking", delta: thinking }));
+        expect(await stream.next()).toMatchObject({ type: "block_delta", delta: "" });
+      });
+      expect(statements).toEqual([]);
+    } finally {
+      await stopControl();
+      await meter.close();
+    }
     // Bypass today's publisher to represent retained events from a worker before either public filter.
     const retained = async (data: AiWireEvent) => {
       await aiStreamTopic().publish({ tenantId: chat.id, orderingKey: turn.id, data });
@@ -155,15 +231,25 @@ suite("AI conversation stream repair", () => {
     const message = (await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id }))[1]!;
     await retained(event(4, { type: "message_saved", message }));
     expectPublic(await stream.next());
+    const attributed = page.messages.find((message) => message.meta?.writerOrigin?.kind === "automation")!;
+    await retained(event(5, { type: "message_saved", message: attributed }));
+    const saved = await stream.next();
+    expectPublic(saved);
+    expect(saved).toMatchObject({ type: "message_saved", message: { meta: { origin: { name: "Automation" } } } });
     // A sequence hole holds the event back until the stored snapshot covers it.
-    await save(blocks, 6);
-    await retained(event(6, { type: "block_set", block: blocks[0]! }));
-    expectPublic(expectState(await stream.next()));
-    expectPublic(expectState(await follow(chat).next()));
-    await retained(event(7, { type: "turn_finished", status: "completed", error: null, messages: [message] }));
+    await save(blocks, 7);
+    await retained(event(7, { type: "block_set", block: blocks[0]! }));
+    const held = expectState(await stream.next());
+    expectPublic(held);
+    assertAuthors(held.messages);
+    const reconnect = expectState(await follow(chat).next());
+    expectPublic(reconnect);
+    assertAuthors(reconnect.messages);
+    await retained(event(8, { type: "turn_finished", status: "completed", error: null, messages: page.messages }));
     const finished = await stream.next();
     expect(finished.type).toBe("turn_finished");
     expectPublic(finished);
+    if (finished.type === "turn_finished") assertAuthors(finished.messages ?? []);
     const canonical = JSON.stringify(await store.load());
     for (const original of [thinking, source, "sync59-signature", "sync59-redacted"]) expect(canonical).toContain(original);
   });
@@ -277,6 +363,30 @@ suite("AI conversation stream repair", () => {
     const canonical = JSON.stringify(await store.load());
     expect(canonical).toContain(source);
     expect(canonical).toContain(literal);
+  });
+
+  test("ordinary live deltas and worker interruption delivery execute zero SQL statements (DATA-13)", async () => {
+    const chat = await createChat();
+    const { turn, event } = await startTurn(chat);
+    const stream = follow(chat);
+    expectState(await stream.next());
+    const delivered = Promise.withResolvers<void>();
+    const stop = await subscribeAiTurnInterrupts({ conversationId: chat.id, turnId: turn.id, onInterrupt: delivered.resolve });
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(async () => {
+        await publishAiTurnInterrupt({ conversationId: chat.id, turnId: turn.id, requestId: crypto.randomUUID() });
+        await delivered.promise;
+        for (let seq = 1; seq <= 3; seq++) {
+          await publishAiWireEvent(event(seq, { type: "block_delta", blockId: "text", blockKind: "text", delta: "x" }));
+          expect(await stream.next()).toMatchObject({ type: "block_delta", seq });
+        }
+      });
+      expect(statements).toEqual([]);
+    } finally {
+      await stop();
+      await meter.close();
+    }
   });
 
   test("a lost live event: the stream sends the saved state once it holds the next event, then continues without a hole", async () => {

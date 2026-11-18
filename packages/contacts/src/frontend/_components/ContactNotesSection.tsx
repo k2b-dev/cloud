@@ -230,9 +230,10 @@ export default function ContactNotesSection(props: Props) {
             onCancel={() => setComposerOpen(false)}
             lines={5}
             onSubmit={async (content) => {
-              await createMutation.mutate({ bookId: props.bookId, contactId: props.contactId, content });
-              const error = createMutation.error();
-              if (error) throw error;
+              const outcome = await createMutation.mutate({ bookId: props.bookId, contactId: props.contactId, content });
+              if (outcome === "error") throw createMutation.error();
+              // A call that did not run keeps the draft.
+              return outcome === "success";
             }}
           />
         </Show>
@@ -309,9 +310,14 @@ export default function ContactNotesSection(props: Props) {
                       onCancel={cancelEdit}
                       lines={3}
                       onSubmit={async (content) => {
-                        await updateMutation.mutate({ bookId: props.bookId, contactId: props.contactId, noteId: note.id, content });
-                        const error = updateMutation.error();
-                        if (error) throw error;
+                        const outcome = await updateMutation.mutate({
+                          bookId: props.bookId,
+                          contactId: props.contactId,
+                          noteId: note.id,
+                          content,
+                        });
+                        if (outcome === "error") throw updateMutation.error();
+                        return outcome === "success";
                       }}
                     />
                   </Show>

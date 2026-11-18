@@ -262,9 +262,10 @@ export default function NoteCommentsSection(props: Props) {
         onCancel={cancelComposer}
         lines={5}
         onSubmit={async (content) => {
-          await createMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, content });
-          const error = createMutation.error();
-          if (error) throw error;
+          const outcome = await createMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, content });
+          if (outcome === "error") throw createMutation.error();
+          // A call that did not run keeps the draft.
+          return outcome === "success";
         }}
       />
     </Show>
@@ -381,14 +382,14 @@ export default function NoteCommentsSection(props: Props) {
                       onCancel={() => setEditingId(null)}
                       lines={3}
                       onSubmit={async (content) => {
-                        await updateMutation.mutate({
+                        const outcome = await updateMutation.mutate({
                           notebookId: props.notebookId,
                           noteId: props.noteId,
                           commentId: comment.id,
                           content,
                         });
-                        const error = updateMutation.error();
-                        if (error) throw error;
+                        if (outcome === "error") throw updateMutation.error();
+                        return outcome === "success";
                       }}
                     />
                   </Show>

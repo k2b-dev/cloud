@@ -196,8 +196,7 @@ export default function MailMessageDeliveryControl(props: {
         (close) => {
           closeScheduledDialog = () => close();
           const cancelQueuedSend = async () => {
-            await cancel.mutate({ submissionId });
-            if (!cancel.error()) close();
+            if ((await cancel.mutate({ submissionId })) === "success") close();
           };
 
           const editDraft = () => {
