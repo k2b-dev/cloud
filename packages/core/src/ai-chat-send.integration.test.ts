@@ -37,6 +37,7 @@ import {
 } from "../../../scripts/fixtures/code-platform";
 import { meterSql } from "../../../scripts/fixtures/sql-meter";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
+import { admitCodeChatTurn } from "./ai-chat-budget";
 import { validateQueuedChatStart } from "./ai-chat-queue";
 import { aiChatSendAction, lockOwnerCodeChats } from "./ai-chat-send";
 import { aiCapabilities } from "./capabilities";
@@ -1065,6 +1066,195 @@ suiteFor(
       content: [{ type: "text", text: "Unfinished" }],
     });
   });
+  test("a durable queue interrupt resumes Code through admission with its original scope and reservation", async () => {
+    await setup();
+    const manifest = {
+      version: 1,
+      entry: "code.ts",
+      entrypoints: [],
+      ai: true,
+      policyRows: ["ai_chat_you"],
+      permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null }, file: "code.ts", line: 1 }],
+      hashes: { source: "a".repeat(64), sdk: "c".repeat(64), bundle: "b".repeat(64) },
+    };
+    await sql`UPDATE code.versions SET manifest=${JSON.stringify(manifest)}::text::jsonb WHERE id=${versionId}::uuid`;
+    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding) VALUES(${versionId}::uuid,${codeId},'{}') ON CONFLICT DO NOTHING`;
+    const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${owner}::uuid,'read') RETURNING id`;
+    await sql`INSERT INTO ai.model_access_resources(model_id) VALUES('chat') ON CONFLICT DO NOTHING`;
+    await sql`INSERT INTO ai.model_access(model_id,access_id) VALUES('chat',${access!.id}::uuid)`;
+    const sent = await start({ ...ctx(), locale: "de" });
+    const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
+    if (!turn) throw new Error("Missing C8 Code turn");
+    const target = { conversationId: chat.id, turnId: turn.id };
+    await sql`UPDATE ai.conversations SET allowed_tools=ARRAY['client_probe','budget_probe'],loaded_tools=ARRAY['client_probe','budget_probe','excluded_operation'] WHERE id=${chat.id}::uuid`;
+    const allowed = mock(async (args: { round: number }) => {
+      if (args.round === 11)
+        await expect(beginAiCall(profile, { ...target, userId: owner, kind: "chat", task: "chat" }, 1, 16)).rejects.toMatchObject({
+          code: "automation_turn_limit",
+          reason: "model_calls",
+        });
+      return { done: true };
+    });
+    const excluded = mock(async () => ({ done: true }));
+    let requests = 0;
+    const call = (id: string, name: string, args: unknown) =>
+      [
+        {
+          choices: [
+            {
+              delta: {
+                role: "assistant",
+                tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }],
+              },
+            },
+          ],
+        },
+        { choices: [{ delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } },
+      ]
+        .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+        .join("") + "data: [DONE]\n\n";
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: async (request) => {
+        const body = await request.json();
+        expect(JSON.stringify(body.tools)).not.toContain('"name":"excluded_operation"');
+        const index = requests++;
+        const response =
+          index === 0
+            ? call("c8-client", "client_probe", {})
+            : index === 1
+              ? call("c8-excluded", "excluded_operation", {})
+              : call(`c8-allowed-${index}`, "budget_probe", { round: index });
+        return new Response(response, { headers: { "content-type": "text/event-stream" } });
+      },
+    });
+    const profile = aiModelFixture({
+      id: "fixture",
+      provider: "openai-compatible",
+      model: "fixture",
+      baseURL: `http://127.0.0.1:${server.port}/v1`,
+      contextWindow: 128_000,
+      maxToolRounds: 20,
+      pricing: { inputPerMillion: 1, outputPerMillion: 1 },
+    });
+    let admissions = 0;
+    const executor = new AiTurnExecutor({
+      leaseOwner: "c8-worker",
+      heartbeatMs: 100,
+      enqueueContinuation: async () => {},
+      beforeChatTurn: async (input) => {
+        await admitCodeChatTurn(input);
+        admissions++;
+      },
+      validateTurn: async () => ({
+        settings: aiSettingsFixture({ profiles: [profile], assignments: [aiAssignmentFixture("balanced", profile.id)] }),
+        resolved: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
+      }),
+      tools: [
+        {
+          location: "client",
+          def: {
+            name: "client_probe",
+            description: "Client effect",
+            approval: "never",
+            inputSchema: z.strictObject({}),
+            outputSchema: z.unknown(),
+          },
+        },
+        {
+          location: "server",
+          def: {
+            name: "budget_probe",
+            description: "Continue work",
+            approval: "never",
+            inputSchema: z.strictObject({ round: z.number() }),
+            outputSchema: z.strictObject({ done: z.boolean() }),
+          },
+          run: allowed,
+        },
+        {
+          location: "server",
+          def: {
+            name: "excluded_operation",
+            description: "Excluded operation",
+            approval: "never",
+            inputSchema: z.strictObject({}),
+            outputSchema: z.strictObject({ done: z.boolean() }),
+          },
+          run: excluded,
+        },
+      ],
+    });
+    const run = async (from: "queue" | "waiting") => {
+      const claim = await aiConversations.claimTurn({
+        ...target,
+        leaseOwner: "c8-worker",
+        leaseMs: 30_000,
+        from,
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected C8 worker claim");
+      await executor.run({ ...target, claim, signal: new AbortController().signal });
+    };
+    const reservation = () => sql`SELECT * FROM code.chat_turn_budgets WHERE turn_id=${turn.id}::uuid`;
+    const usage = () => sql<{ calls: number; input: number; output: number }[]>`SELECT count(*)::int AS calls,
+      COALESCE(sum(input),0)::int AS input,COALESCE(sum(output),0)::int AS output FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
+    try {
+      await run("queue");
+      expect((await aiConversations.getTurn(target))?.status).toBe("waiting_for_action");
+      expect(admissions).toBe(1);
+      const reserved = await reservation();
+      expect(reserved).toHaveLength(1);
+      expect(Number(reserved[0]!.reserved)).toBeGreaterThan(0);
+      const originalConfig = await aiConversations.getTurnRunConfig(target);
+      expect(originalConfig).toMatchObject({
+        turnTrigger: { kind: "automation", id: codeId },
+        writerOrigin: { kind: "automation", id: codeId },
+        inferenceBudget: { modelCalls: 12, inputTokens: 192_000, outputTokens: 12_000 },
+      });
+      expect((await usage())[0]).toEqual({ calls: 1, input: 5, output: 3 });
+      // An uncertain client receipt withdraws Send now and keeps this reserved turn alive.
+      const urgent = await invoke(chat.shortId, { ...personContext(), idempotencyKey: "c8-urgent" }, "Urgent");
+      if (!urgent.ok) throw new Error(urgent.error.message);
+      const urgentId = dataSchema.parse(urgent.data.data).id;
+      await requestQueuedMessageSendNow(chat.id, urgentId);
+      await aiConversations.resolvePendingTurnAction({
+        ...target,
+        callId: "c8-client",
+        signedInSession: false,
+        event: { type: "tool_result", callId: "c8-client", result: { code: "ACTION_OUTCOME_UNKNOWN" } },
+      });
+      await reconcileQueuedInterruptions(chat.id);
+      expect((await usage())[0]?.calls).toBe(1);
+      expect(await reservation()).toEqual(reserved);
+      await run("waiting");
+      expect(admissions).toBe(2); // Real Core admission ran again under the new worker claim.
+      expect(excluded).not.toHaveBeenCalled();
+      const messages = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id });
+      const refused = messages.find(({ message }) => message.role === "tool_result" && message.callId === "c8-excluded")?.message;
+      expect(refused).toMatchObject({ role: "tool_result", isError: true });
+      expect(JSON.stringify(refused)).toMatch(/not (found|available)|unknown tool/i);
+      expect(messages.filter(({ message }) => message.role === "tool_result" && message.callId === "c8-client")).toHaveLength(1);
+      expect(await reservation()).toEqual(reserved);
+      expect(await aiConversations.getTurnRunConfig(target)).toMatchObject({
+        sourceRestricted: true,
+        inferenceBudget: originalConfig?.kind === "chat" ? originalConfig.inferenceBudget : undefined,
+      });
+      expect((await usage())[0]).toEqual({ calls: 12, input: 60, output: 36 });
+      expect(requests).toBe(12);
+      expect(allowed).toHaveBeenCalledTimes(10);
+      expect((await aiConversations.getTurn(target))?.status).toBe("completed");
+      expect(messages.at(-1)?.meta?.automationTurnStop).toMatchObject({ reason: "model_calls" });
+      expect(await read(sent.id)).toMatchObject({ ok: true, data: { data: { message: { status: "done" } } } });
+    } finally {
+      await server.stop(true);
+      await sql`UPDATE code.versions SET manifest=NULL WHERE id=${versionId}::uuid`;
+      await sql`DELETE FROM code.version_submissions WHERE version_id=${versionId}::uuid`;
+    }
+  }, 30_000);
+
   test.each(["expired", "paused", "budget"] as const)(
     "send now cannot revive an expired paused or budget-refused Code (%s)",
     async (reason) => {

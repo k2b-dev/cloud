@@ -879,6 +879,241 @@ suite("AI executor integration", () => {
     }
   });
 
+  test("a restricted tool answer survives queue interruption and withdrawal exactly once (withdrawn)", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["client_effect", "budget_probe"] });
+    const probe = mock(async () => ({ done: true }));
+    const tool = defineAiTool({
+      name: "budget_probe",
+      description: "Continue the existing work",
+      approval: "never",
+      inputSchema: z.strictObject({ round: z.number() }),
+      outputSchema: z.strictObject({ done: z.boolean() }),
+    }).server(probe);
+    const clientTool = defineAiTool({
+      name: "client_effect",
+      description: "A client effect whose outcome is uncertain",
+      approval: "never",
+      inputSchema: z.strictObject({}),
+      outputSchema: z.strictObject({ code: z.literal("ACTION_OUTCOME_UNKNOWN") }),
+    }).client();
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: conversation.id,
+      modelId: MODEL_ID,
+      userMessage: userMessage("Continue within this turn"),
+      runConfig: {
+        kind: "chat",
+        input: "Continue within this turn",
+        locale: "de",
+        assistantChat: true,
+        actor: { kind: "user", user: actorUser(userId) },
+        accessSubject: { type: "user", userId },
+        turnTrigger: { kind: "automation", id: "c4" },
+        toolSource: { kind: "default" },
+        client: { kind: "cli", cwd: "/work", os: "Linux", shell: "bash", localTools: "ask" },
+      },
+    });
+    const [modelAccess] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'read') RETURNING id`;
+    await sql`INSERT INTO ai.model_access_resources(model_id) VALUES(${MODEL_ID}) ON CONFLICT DO NOTHING`;
+    await sql`INSERT INTO ai.model_access(model_id,access_id) VALUES(${MODEL_ID},${modelAccess!.id}::uuid)`;
+    const target = { conversationId: conversation.id, turnId: turn.id };
+    const run = async (from: "queue" | "waiting") => {
+      const claim = await aiConversations.claimTurn({
+        ...target,
+        leaseOwner: "c4-worker",
+        leaseMs: 30_000,
+        from,
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected C4 worker claim");
+      await new AiTurnExecutor({
+        leaseOwner: "c4-worker",
+        heartbeatMs: 100,
+        enqueueContinuation: async () => {},
+        validateTurn: fakeValidateToolTurn,
+        tools: [tool, clientTool],
+      }).run({ ...target, claim, signal: new AbortController().signal });
+    };
+    try {
+      completionRequestCount = 0;
+      completionQueue = [
+        toolCallCompletion("c4-effect", "client_effect", {}),
+        ...Array.from({ length: AUTOMATION_TURN_BUDGET.modelCalls }, (_, round) =>
+          toolCallCompletion(`c4-next-${round}`, "budget_probe", { round }),
+        ),
+      ];
+      await run("queue");
+      expect((await aiConversations.getTurn(target))?.status).toBe("waiting_for_action");
+      const initialConfig = await aiConversations.getTurnRunConfig(target);
+      const allowance = initialConfig?.kind === "chat" ? initialConfig.inferenceBudget : undefined;
+      expect(allowance).toMatchObject({ modelCalls: AUTOMATION_TURN_BUDGET.modelCalls });
+      const used = () => sql<{ calls: number }[]>`SELECT count(*)::int AS calls FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
+      expect((await used())[0]?.calls).toBe(1);
+      const id = crypto.randomUUID();
+      await enqueueChatMessage(
+        id,
+        {
+          conversationId: conversation.id,
+          modelId: MODEL_ID,
+          userMessage: userMessage("Urgent"),
+          runConfig: { kind: "chat", input: "Urgent", writerOrigin: { kind: "person", id: userId }, toolSource: { kind: "none" } },
+        },
+        [{ type: "text", text: "Urgent" }],
+      );
+      await requestQueuedMessageSendNow(conversation.id, id);
+      const answer = {
+        ...target,
+        callId: "c4-effect",
+        signedInSession: false,
+        event: { type: "tool_result" as const, callId: "c4-effect", isError: true, result: { code: "ACTION_OUTCOME_UNKNOWN" } },
+      };
+      await aiConversations.resolvePendingTurnAction(answer);
+      await aiConversations.resolvePendingTurnAction({ ...answer, signedInSession: true });
+      await reconcileQueuedInterruptions(conversation.id);
+      expect(await queuedMessageReceipt(conversation.id, id)).toMatchObject({ state: "failed", error: "interruption_unconfirmed" });
+      expect((await used())[0]?.calls).toBe(1);
+      // This is a real waiting->running claim and Nessi resume, not just reconciliation.
+      await run("waiting");
+      const receipts = (await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id })).filter(
+        ({ message }) => message.role === "tool_result" && message.callId === "c4-effect",
+      );
+      expect(receipts).toHaveLength(1);
+      expect(receipts[0]?.message).toMatchObject({ result: { code: "ACTION_OUTCOME_UNKNOWN" } });
+      expect(await aiConversations.getTurnRunConfig(target)).toMatchObject({
+        sourceRestricted: true,
+        locale: "de",
+        inferenceBudget: allowance,
+      });
+      expect((await used())[0]?.calls).toBe(AUTOMATION_TURN_BUDGET.modelCalls);
+      expect(completionRequestCount).toBe(AUTOMATION_TURN_BUDGET.modelCalls);
+      expect(probe).toHaveBeenCalledTimes(AUTOMATION_TURN_BUDGET.modelCalls - 1);
+      expect(
+        (await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id })).at(-1)?.meta?.automationTurnStop,
+      ).toMatchObject({ reason: "model_calls" });
+      expect((await aiConversations.getTurn(target))?.status).toBe("completed");
+      expect(
+        await aiConversations.claimTurn({
+          ...target,
+          leaseOwner: "c4-replay",
+          leaseMs: 30_000,
+          from: "waiting",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        }),
+      ).toBeNull();
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 30_000);
+
+  test("a restricted tool answer survives queue interruption and withdrawal exactly once (confirmed)", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["approval_probe"] });
+    const effect = mock(async () => ({}));
+    const tool = defineAiTool({
+      name: "approval_probe",
+      description: "Requires approval",
+      approval: "always",
+      inputSchema: z.strictObject({}),
+      outputSchema: z.strictObject({}),
+    }).server(effect);
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: conversation.id,
+      modelId: MODEL_ID,
+      userMessage: userMessage("Review the effect"),
+      runConfig: {
+        kind: "chat",
+        input: "Review the effect",
+        locale: "de",
+        actor: { kind: "user", user: actorUser(userId) },
+        toolSource: { kind: "default" },
+      },
+    });
+    const target = { conversationId: conversation.id, turnId: turn.id };
+    const save = aiConversations.savePendingTurnAction;
+    let queuedId = "";
+    const saving = spyOn(aiConversations, "savePendingTurnAction").mockImplementation(async (input) => {
+      if (input.turnId === turn.id && input.callId === "c4-review") {
+        // Deliver the client receipt while the real worker reaches another approval.
+        await save({
+          ...target,
+          callId: "c4-effect",
+          kind: "client_tool",
+          status: "pending",
+          name: "local_bash",
+          args: {},
+          approvalScope: "local",
+          allowAlways: false,
+          frontendMode: "client",
+          resolvedEvent: null,
+        });
+        queuedId = crypto.randomUUID();
+        await enqueueChatMessage(
+          queuedId,
+          {
+            conversationId: conversation.id,
+            modelId: MODEL_ID,
+            userMessage: userMessage("Urgent"),
+            runConfig: { kind: "chat", input: "Urgent", writerOrigin: { kind: "person", id: userId }, toolSource: { kind: "none" } },
+          },
+          [{ type: "text", text: "Urgent" }],
+        );
+        await requestQueuedMessageSendNow(conversation.id, queuedId);
+        const answer = {
+          ...target,
+          callId: "c4-effect",
+          signedInSession: false,
+          event: { type: "tool_result" as const, callId: "c4-effect", result: { written: true } },
+        };
+        await aiConversations.resolvePendingTurnAction(answer);
+        await aiConversations.resolvePendingTurnAction({ ...answer, signedInSession: true });
+      }
+      return save(input);
+    });
+    try {
+      completionQueue = [toolCallCompletion("c4-review", "approval_probe", {}), textCompletion("Must not run")];
+      const claim = await aiConversations.claimTurn({
+        ...target,
+        leaseOwner: "c4-confirmed",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected C4 claim");
+      await new AiTurnExecutor({
+        leaseOwner: "c4-confirmed",
+        heartbeatMs: 25,
+        enqueueContinuation: async () => {},
+        validateTurn: fakeValidateToolTurn,
+        tools: [tool],
+      }).run({ ...target, claim, signal: new AbortController().signal });
+      await reconcileQueuedInterruptions(conversation.id);
+      const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+      expect(messages.filter(({ message }) => message.role === "tool_result" && message.callId === "c4-effect")).toHaveLength(1);
+      expect(messages.find(({ message }) => message.role === "tool_result" && message.callId === "c4-review")?.message).toMatchObject({
+        reason: "not_run",
+        result: { code: "QUEUE_INTERRUPTED", started: false },
+      });
+      expect(effect).not.toHaveBeenCalled();
+      expect(await aiConversations.getTurnRunConfig(target)).toMatchObject({ sourceRestricted: true, locale: "de" });
+      expect((await aiConversations.getTurn(target))?.status).toBe("aborted");
+      expect(await queuedMessageReceipt(conversation.id, queuedId)).toMatchObject({ state: "sending" });
+    } finally {
+      saving.mockRestore();
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 30_000);
+
   const resumeModes = ["unchanged", "changed", "revoked", "used", "rejected_empty", "approved_empty", "failed_empty"] as const;
   test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();
