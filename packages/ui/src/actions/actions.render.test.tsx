@@ -207,7 +207,7 @@ describe("@k2b/ui complete action migrations", () => {
     expect(rule('.k2b-ui .k2b-button[data-size="xs"]')).toContain("min-height: 1.5rem");
     // Subtle and secondary share one look: white with a light 1 px border.
     const quiet = rule('.k2b-ui .k2b-button:is([data-variant="secondary"], [data-variant="subtle"])');
-    expect(quiet).toContain("border-color: var(--k2b-control-border-soft)");
+    expect(quiet).toContain("border-color: var(--k2b-edge)");
     expect(quiet).toContain("background: var(--k2b-surface)");
     const warningRule = rule('.k2b-ui .k2b-button[data-variant="warning"]');
     expect(warningRule).toContain("color: #422006");

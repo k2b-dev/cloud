@@ -187,8 +187,8 @@
   --k2b-edge-selected-share: 100%;
   --k2b-edge-selected-fill: 8%;
   --k2b-edge-selected-hover-fill: 14%;
-  /* The 1 px border of secondary buttons: the field edge. */
-  --k2b-control-border-soft: var(--k2b-edge);
+  /* A soft 1 px line beside controls, such as a discussion thread's rail. */
+  --k2b-control-border-soft: #c8c8d0;
   /* The resting rail of a slider: at least 3:1 on every surface, muted included, so the track reads as one. */
   --k2b-rail: #8a8a94;
   --k2b-rail-hover: var(--k2b-neutral-500);
@@ -478,6 +478,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-edge-hover: #56616e;
   --k2b-edge-ring-share: 24%;
   --k2b-edge-mark: #8d8d98;
+  --k2b-control-border-soft: #46505c;
   --k2b-edge-success: var(--k2b-success-500);
   --k2b-edge-warning: var(--k2b-warning-500);
   --k2b-rail: #6b7280;
@@ -2517,7 +2518,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    Hover darkens the edge one step and the fill slightly, like a field; focus
    is the shared ring with a gap. */
 .k2b-ui .k2b-button:is([data-variant="secondary"], [data-variant="subtle"]) {
-  border-color: var(--k2b-control-border-soft);
+  border-color: var(--k2b-edge);
   color: var(--k2b-text);
   background: var(--k2b-surface);
 }

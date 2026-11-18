@@ -96,7 +96,7 @@ control casts a shadow.
 | `FilterChip`, `FilterToggle` | the field edge, as a 1 px inset | `--k2b-edge-hover` edge, `--k2b-edge-hover-bg` | selected edge and fill in the app ink | `--k2b-edge-focus` edge and ring |
 | `SegmentedControl` option | none until selected; options sit on `--k2b-tray` | light tint | 1 px selected edge and fill in the app ink | `--k2b-edge-focus` edge and ring |
 | `Tabs` tab, `ViewTabs` view | none | light tint | selected fill in the app ink, no edge | `--k2b-edge-focus` edge, the band inside (the strip clips) |
-| Secondary and subtle `Button` | 1 px `--k2b-control-border-soft` (the field edge) | `--k2b-edge-hover` edge, `--k2b-edge-hover-bg` | | focus ring with a gap |
+| Secondary and subtle `Button` | 1 px `--k2b-edge` (the field edge) | `--k2b-edge-hover` edge, `--k2b-edge-hover-bg` | | focus ring with a gap |
 | Interactive `Paper` | 1 px `--k2b-border-strong`, never darker | `--k2b-edge-hover-bg` | | focus ring |
 
 A chosen control (an active chip, the selected segment, a chosen card or
