@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { liveConnection } from "./live-connection";
 
 class FakeWebSocket {
@@ -41,6 +41,8 @@ const originals = {
 let timers: { run: () => void; delay: number }[];
 
 beforeEach(() => {
+  setSystemTime(new Date("2026-11-18T12:00:00Z"));
+  spyOn(Math, "random").mockReturnValue(0);
   FakeWebSocket.instances = [];
   timers = [];
   (globalThis as unknown as { window: unknown }).window = Object.assign(new EventTarget(), {
@@ -52,6 +54,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setSystemTime();
+  // Restore Math.random after the fixed reconnect jitter.
+  mock.restore();
   (globalThis as unknown as { window: unknown }).window = originals.window;
   (globalThis as unknown as { document: unknown }).document = originals.document;
   (globalThis as unknown as { WebSocket: unknown }).WebSocket = originals.WebSocket;
@@ -96,6 +101,142 @@ const recorder = () => {
 };
 
 describe("liveConnection", () => {
+  test("connected distinguishes a socket drop during long apply and confirms reconnect before apply finishes", async () => {
+    const connected: boolean[] = [];
+    const caughtUp: boolean[] = [];
+    let release = () => {};
+    const subscription = liveConnection("/api/app/live").subscribe(
+      "item",
+      {},
+      {
+        ...recorder().handlers(),
+        connected: (value) => connected.push(value),
+        caughtUp: (value) => caughtUp.push(value),
+        apply: () => new Promise<void>((resolve) => (release = resolve)),
+      },
+    );
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.open();
+    expect(connected).toEqual([]);
+    socket.message({ t: "ready", id: "1", cursor: "s6t.app.1" });
+    socket.message({ t: "event", id: "1", cursor: "s6t.app.2", data: 2 });
+    setSystemTime(new Date("2026-11-18T12:01:01Z"));
+    socket.message({ t: "progress", cursor: "s6t.app.3" });
+    expect(connected).toEqual([true]);
+    expect(caughtUp).toEqual([true, false]);
+
+    socket.close(1012, "restart");
+    expect(connected).toEqual([true, false]);
+    // caughtUp was already false: it cannot report this loss of connection.
+    expect(caughtUp).toEqual([true, false]);
+    await elapse(Math.min(...timers.map((timer) => timer.delay).filter((delay) => delay < 10_000)));
+    const next = FakeWebSocket.instances[1] as FakeWebSocket;
+    next.open();
+    next.message({ t: "progress", cursor: "s6t.app.99" });
+    expect(connected).toEqual([true, false]);
+    next.message({ t: "ready", id: "1", cursor: "s6t.app.4" });
+    next.message({ t: "ready", id: "1", cursor: "s6t.app.4" });
+    expect(connected).toEqual([true, false, true]);
+    expect(caughtUp).toEqual([true, false]);
+    release();
+    await Bun.sleep(1);
+    expect(connected).toEqual([true, false, true]);
+    subscription.close();
+  });
+
+  for (const disconnected of [false, true]) {
+    test(`close silences connected during pending work (disconnected=${disconnected})`, async () => {
+      const connected: boolean[] = [];
+      let release = () => {};
+      const subscription = liveConnection("/api/app/live").subscribe(
+        "item",
+        {},
+        {
+          ...recorder().handlers(),
+          connected: (value) => connected.push(value),
+          apply: () => new Promise<void>((resolve) => (release = resolve)),
+        },
+      );
+      const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+      socket.open();
+      socket.message({ t: "ready", id: "1", cursor: "s6t.app.1" });
+      socket.message({ t: "event", id: "1", cursor: "s6t.app.2", data: 2 });
+      if (disconnected) socket.close(1012, "restart");
+      expect(connected).toEqual(disconnected ? [true, false] : [true]);
+      subscription.close();
+      socket.message({ t: "ready", id: "1", cursor: "s6t.app.3" });
+      socket.close();
+      release();
+      await elapse(1_000);
+      expect(connected).toEqual(disconnected ? [true, false] : [true]);
+    });
+  }
+
+  test("connected confirms during resync and reports a hidden tab once", async () => {
+    const connected: boolean[] = [];
+    let release = () => {};
+    const subscription = liveConnection("/api/app/live").subscribe(
+      "item",
+      {},
+      {
+        ...recorder().handlers(),
+        connected: (value) => connected.push(value),
+        resync: () => new Promise<void>((resolve) => (release = resolve)),
+      },
+    );
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.open();
+    socket.message({ t: "resync", id: "1", cursor: "s6t.app.1" });
+    expect(connected).toEqual([true]);
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(connected).toEqual([true, false]);
+    subscription.close();
+    release();
+    await Bun.sleep(1);
+    expect(connected).toEqual([true, false]);
+  });
+
+  for (const terminal of ["revoked", "apply failure"]) {
+    test(`close from connected(false) silences terminal callbacks (${terminal})`, async () => {
+      const live = recorder();
+      live.failNext(4);
+      const subscription = liveConnection("/api/app/live").subscribe(
+        "item",
+        {},
+        {
+          ...live.handlers(),
+          connected: (value) => {
+            live.log.push(`connected:${value}`);
+            if (!value) subscription.close();
+          },
+          caughtUp: (value) => live.log.push(`caughtUp:${value}`),
+        },
+      );
+      const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+      socket.open();
+      socket.message({ t: "ready", id: "1", cursor: "s6t.app.1" });
+      if (terminal === "revoked") {
+        socket.message({ t: "revoked", id: "1", code: "access_denied" });
+        expect(live.log).toEqual(["connected:true", "caughtUp:true", "connected:false"]);
+      } else {
+        socket.message({ t: "event", id: "1", cursor: "s6t.app.2", data: 2 });
+        for (const delay of [1_000, 3_000, 9_000]) await elapse(delay);
+        expect(live.log).toEqual([
+          "connected:true",
+          "caughtUp:true",
+          "caughtUp:false",
+          "apply:2",
+          "apply:2",
+          "apply:2",
+          "apply:2",
+          "connected:false",
+        ]);
+      }
+    });
+  }
+
   test("reports caught up only while confirmed with no pending work, including after reconnects and pauses", async () => {
     const caughtUp: boolean[] = [];
     let releaseApply = () => {};
@@ -335,6 +476,9 @@ describe("liveConnection", () => {
       {
         ...live.handlers(),
         caughtUp: (value) => live.log.push(`caughtUp:${value}`),
+        connected: (value) => {
+          live.log.push(`connected:${value}`);
+        },
       },
     );
     const socket = FakeWebSocket.instances[0] as FakeWebSocket;
@@ -345,7 +489,17 @@ describe("liveConnection", () => {
       socket.message({ t: "progress", cursor: "s6t.app.3" });
       await elapse(delay);
     }
-    expect(live.log).toEqual(["caughtUp:true", "caughtUp:false", "apply:2", "apply:2", "apply:2", "apply:2", "unavailable"]);
+    expect(live.log).toEqual([
+      "connected:true",
+      "caughtUp:true",
+      "caughtUp:false",
+      "apply:2",
+      "apply:2",
+      "apply:2",
+      "apply:2",
+      "connected:false",
+      "unavailable",
+    ]);
     expect(socket.sent.at(-1)).toEqual({ t: "unsub", id: "1" });
   });
 
@@ -401,6 +555,7 @@ describe("liveConnection", () => {
       {
         ...first.handlers(),
         caughtUp: (value) => first.log.push(`caughtUp:${value}`),
+        connected: (value) => first.log.push(`connected:${value}`),
       },
     );
     liveConnection("/api/app/live").subscribe(
@@ -409,6 +564,7 @@ describe("liveConnection", () => {
       {
         ...second.handlers(),
         caughtUp: (value) => second.log.push(`caughtUp:${value}`),
+        connected: (value) => second.log.push(`connected:${value}`),
       },
     );
     const socket = FakeWebSocket.instances[0] as FakeWebSocket;
@@ -417,8 +573,8 @@ describe("liveConnection", () => {
     socket.message({ t: "ready", id: "2", cursor: "s6t.app.1" });
     socket.message({ t: "revoked", id: "1", code: "access_denied" });
     socket.close(1008, "session_expired");
-    expect(first.log).toEqual(["caughtUp:true", "caughtUp:false", "revoked:access_denied"]);
-    expect(second.log).toEqual(["caughtUp:true", "caughtUp:false", "unavailable"]);
+    expect(first.log).toEqual(["connected:true", "caughtUp:true", "connected:false", "caughtUp:false", "revoked:access_denied"]);
+    expect(second.log).toEqual(["connected:true", "caughtUp:true", "connected:false", "caughtUp:false", "unavailable"]);
     liveConnection("/api/app/live").subscribe("item", { key: "a" }, recorder().handlers()).close();
     expect(FakeWebSocket.instances).toHaveLength(2);
   });

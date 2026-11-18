@@ -12,6 +12,16 @@ export type LiveSubscriptionHandlers<T> = {
   resync: () => Promise<void>;
   /** Reports changes in whether the subscription is confirmed and has no pending work. Never called after `close()`. */
   caughtUp?: (caughtUp: boolean) => void;
+  /**
+   * Reports changes in whether the server has confirmed this subscription on an
+   * open socket, independently of pending `apply` or `resync` work. Starts false
+   * without an initial callback; confirmation reports true even during work.
+   * A non-open socket reports false; reconnect reports true only after a new
+   * confirmation. Terminal `revoked`/`unavailable` reports a final false first
+   * if connected, so ended subscriptions cannot appear connected. Never called
+   * after the owner calls `close()` (including disposal).
+   */
+  connected?: (connected: boolean) => void;
   /** The subscription ended because its resource is gone or no longer readable. */
   revoked?: (code: "not_found" | "access_denied") => void;
   /** Live updates stopped: the session ended, or `apply` or `resync` kept failing. Never called after `close()`. */
@@ -106,11 +116,21 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
     /** The cursor of a `resync` that has not finished: a reconnect resumes after it. */
     let resyncAt: string | null = null;
     let ended = false;
+    let closed = false;
     let running = false;
     let caughtUp = false;
+    let connected = false;
     const work: Work<T>[] = [];
 
+    const reportConnected = () => {
+      const next = !ended && subscriber.confirmed;
+      if (next === connected) return;
+      connected = next;
+      handlers.connected?.(next);
+    };
+
     const report = () => {
+      reportConnected();
       const next = !ended && subscriber.confirmed && !running && work.length === 0;
       if (next === caughtUp) return;
       caughtUp = next;
@@ -147,7 +167,7 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
             // A closed subscription reports nothing: its owner ended it.
             if (ended) return;
             stop();
-            handlers.unavailable();
+            if (!closed) handlers.unavailable();
             return;
           }
           cursor = item.kind === "events" ? (item.events.at(-1)?.cursor ?? cursor) : item.cursor;
@@ -179,7 +199,7 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
         if (ended) return;
         if (message.t === "revoked") {
           stop();
-          handlers.revoked?.(message.code);
+          if (!closed) handlers.revoked?.(message.code);
           return;
         }
         if (message.t === "ready" || message.t === "progress") {
@@ -202,21 +222,26 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
           else if (last?.kind === "events" && last.events.length < MAX_BATCH) last.events.push({ data, cursor: message.cursor });
           else work.push({ kind: "events", events: [{ data, cursor: message.cursor }] });
         }
+        reportConnected();
         void drain();
       },
       end: () => {
         if (ended) return;
         stop();
-        handlers.unavailable();
+        if (!closed) handlers.unavailable();
       },
     };
 
     const stop = (notify = true) => {
+      if (!notify) {
+        closed = true;
+        caughtUp = false;
+        connected = false;
+      }
       if (ended) return;
       ended = true;
       work.length = 0;
       if (notify) report();
-      else caughtUp = false;
       if (subscribers.get(id) !== subscriber) return;
       subscribers.delete(id);
       socket.send({ t: "unsub", id });
