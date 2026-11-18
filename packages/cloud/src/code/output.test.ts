@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { LIVE_LIMITS } from "../events/live-engine";
 import {
   appendCodeOutput,
@@ -65,6 +65,68 @@ test("terminal sequences, C1 CSI, controls and direction marks are removed; HTML
     { type: "secret", name: "TOKEN" },
     { type: "text", text: " <script>after</script>" },
   ]);
+});
+
+test.each(["\x1b]", "\x9d"])("OSC %j keeps its terminator and incomplete-sequence behavior", (start) => {
+  for (const terminator of ["\x07", "\x1b\\", "\x9c"]) {
+    expect(cleanCodeOutput(`before${start}title${terminator}after`)).toBe("beforeafter");
+    expect(cleanCodeOutput(`${start}outer\x9dinner${terminator}after`)).toBe("after");
+  }
+  expect(cleanCodeOutput(`before${start}title`)).toBe("before");
+  expect(cleanCodeOutput(`${start}title\x1b!`)).toBe("title!");
+  expect(cleanCodeOutput(`${start}outer\x9dinner\x1b!after`)).toBe("outerinnerfter");
+  expect(cleanCodeOutput(`${start}title\x1b\x00after`)).toBe("titleafter");
+  expect(cleanCodeOutput(`${start}title\x1b[31mafter`)).toBe("titleafter");
+  expect(cleanCodeOutput(`${start}outer\x1b]inner\x07after`)).toBe("outerafter");
+});
+
+test.each(["\x1bP", "\x1b^", "\x1b_", "\x1bX", "\x90", "\x98", "\x9e", "\x9f"])(
+  "string sequence %j ends at ST or input end, and permits other escapes in its body",
+  (start) => {
+    for (const terminator of ["\x1b\\", "\x9c"]) {
+      expect(cleanCodeOutput(`before${start}private\x1b]title\x07${terminator}after`)).toBe("beforeafter");
+    }
+    expect(cleanCodeOutput(`before${start}private\x1b!`)).toBe("before");
+  },
+);
+
+test.each(["\x1b[", "\x9b"])("CSI %j preserves parameter, intermediate and final byte boundaries", (start) => {
+  expect(cleanCodeOutput(`before${start}0:;? !/mafter`)).toBe("beforeafter");
+  expect(cleanCodeOutput(`before${start}0:;? !/`)).toBe("before");
+  expect(cleanCodeOutput(`${start}31\x00after`)).toBe("31after");
+  expect(cleanCodeOutput(`${start}31 0after`)).toBe("31 0after");
+  expect(cleanCodeOutput(`${start}0 /@after${start}?~end`)).toBe("afterend");
+});
+
+test("generic escapes, trailing escapes, Unicode and empty input keep their existing behavior", () => {
+  expect(cleanCodeOutput("a\x1b !0b\x1b!\x00c\x1b")).toBe("ab!c");
+  expect(cleanCodeOutput("a\x1b~b\x1b\x7fc")).toBe("abc");
+  expect(cleanCodeOutput("\x1b\x1b[31mred\x1b]unfinished\n")).toBe("red");
+  expect(cleanCodeOutput("é😀\ud800\udfff\u2028\u2029\u200d\n")).toBe("é😀\ud800\udfff");
+  expect(cleanCodeOutput("")).toBe("");
+});
+
+test("failed OSC prefixes take linear character reads on long output without a timing assertion", () => {
+  const reads = spyOn(String.prototype, "charCodeAt");
+  try {
+    const work = (length: number) => {
+      const input = `${"\x9d".repeat(length)}\x1b!`;
+      reads.mockClear();
+      const result = cleanCodeOutput(input);
+      const count = reads.mock.calls.length;
+      expect(result).toBe("!");
+      // Includes the outer scan and OSC lookahead, not just successful matches.
+      expect(count).toBeGreaterThan(length);
+      expect(count).toBeLessThan(8 * input.length);
+      return count;
+    };
+    const single = work(100_000);
+    const double = work(200_000);
+    expect(double).toBeGreaterThanOrEqual(single * 1.99);
+    expect(double).toBeLessThanOrEqual(single * 2);
+  } finally {
+    reads.mockRestore();
+  }
 });
 
 test("future entry kinds survive snapshot and live window accounting without becoming log entries", () => {

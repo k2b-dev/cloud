@@ -265,12 +265,61 @@ export function applyCodeOutputEvent(window: CodeOutputWindow, event: CodeOutput
 
 /** ANSI CSI/OSC/DCS sequences, controls and direction/format marks are never rendered. Newlines split lines upstream. */
 export function cleanCodeOutput(text: string): string {
-  return text
-    .replace(
-      /(?:(?:\u001b\]|\u009d)[^\u0007\u001b\u009c]*(?:\u0007|\u001b\\|\u009c|$))|(?:(?:\u001b[P^_X]|[\u0090\u0098\u009e\u009f])[\s\S]*?(?:\u001b\\|\u009c|$))|(?:(?:\u001b\[|\u009b)[0-?]*[ -/]*(?:[@-~]|$))|(?:\u001b[ -/]*[0-~])/g,
-      "",
-    )
-    .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "");
+  const kept: string[] = [];
+  let offset = 0;
+  let oscBoundary = -1;
+  for (let index = 0; index < text.length; ) {
+    const code = text.charCodeAt(index);
+    const escape = code === 0x1b;
+    const kind = escape ? text.charCodeAt(index + 1) : code;
+    const body = index + (escape ? 2 : 1);
+    let end = index;
+    if (escape ? kind === 0x5d : kind === 0x9d) {
+      // A failed OSC may contain more OSC introducers. Reuse its first boundary
+      // rather than scanning the same suffix again for every nested introducer.
+      if (oscBoundary < body) {
+        oscBoundary = body;
+        while (oscBoundary < text.length) {
+          const next = text.charCodeAt(oscBoundary);
+          if (next === 0x07 || next === 0x1b || next === 0x9c) break;
+          oscBoundary++;
+        }
+      }
+      const terminator = text.charCodeAt(oscBoundary);
+      if (oscBoundary === text.length) end = oscBoundary;
+      else if (terminator === 0x07 || terminator === 0x9c) end = oscBoundary + 1;
+      else if (text.charCodeAt(oscBoundary + 1) === 0x5c) end = oscBoundary + 2;
+    } else if (escape ? kind === 0x50 || kind === 0x5e || kind === 0x5f || kind === 0x58 : code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f) {
+      end = body;
+      while (end < text.length) {
+        const next = text.charCodeAt(end++);
+        if (next === 0x9c) break;
+        if (next === 0x1b && text.charCodeAt(end) === 0x5c) {
+          end++;
+          break;
+        }
+      }
+    } else if (escape ? kind === 0x5b : code === 0x9b) {
+      let cursor = body;
+      while (text.charCodeAt(cursor) >= 0x30 && text.charCodeAt(cursor) <= 0x3f) cursor++;
+      while (text.charCodeAt(cursor) >= 0x20 && text.charCodeAt(cursor) <= 0x2f) cursor++;
+      if (cursor === text.length) end = cursor;
+      else if (text.charCodeAt(cursor) >= 0x40 && text.charCodeAt(cursor) <= 0x7e) end = cursor + 1;
+    }
+    // Incomplete OSC/CSI sequences still allow the original generic ESC match.
+    if (end === index && escape) {
+      let cursor = index + 1;
+      while (text.charCodeAt(cursor) >= 0x20 && text.charCodeAt(cursor) <= 0x2f) cursor++;
+      if (text.charCodeAt(cursor) >= 0x30 && text.charCodeAt(cursor) <= 0x7e) end = cursor + 1;
+    }
+    if (end > index) {
+      kept.push(text.slice(offset, index));
+      offset = end;
+      index = end;
+    } else index++;
+  }
+  kept.push(text.slice(offset));
+  return kept.join("").replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "");
 }
 /** Core supplies already-redacted text. Markers become data, never HTML or an unescaped secret value. */
 export function codeOutputParts(text: string): CodeOutputText {
