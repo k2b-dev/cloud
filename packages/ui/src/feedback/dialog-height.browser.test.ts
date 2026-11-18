@@ -1093,6 +1093,7 @@ describe(`${browserName} the frame follows its content`, () => {
       expect((await save.boundingBox())!.y).toBeCloseTo(before.y, 0);
       await page.mouse.up();
       expect(await page.evaluate(() => (window as unknown as HeightWindow).saved)).toBe(1);
+      await page.mouse.move(0, 0);
       await settled(page);
       expect((await save.boundingBox())!.y).toBeCloseTo(before.y - 60, 0);
     } finally {
