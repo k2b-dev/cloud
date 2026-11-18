@@ -87,7 +87,14 @@ test("the sent signature alone matches the signature block of a sent message", (
     format: "markdown" as const,
     customCss: ".mail-signature strong { text-transform: uppercase; } .mail-signature hr ~ p { color: #71717a; font-size: 11px; }",
     renderLiquid: true,
-    logo: { src: "data:image/png;base64,iVBORw0KGgo=", altText: "Beispiel Logo", displayWidth: 120, pixelWidth: 240, pixelHeight: 60, byteLength: 8 },
+    logo: {
+      src: "data:image/png;base64,iVBORw0KGgo=",
+      altText: "Beispiel Logo",
+      displayWidth: 120,
+      pixelWidth: 240,
+      pixelHeight: 60,
+      byteLength: 8,
+    },
   };
   const alone = renderComposeContent({ ...shared, body: "" });
   const sent = renderComposeContent({
@@ -110,4 +117,27 @@ test("the sent signature alone matches the signature block of a sent message", (
   expect(block).toMatch(/<hr[^>]*>\s*<p style="[^"]*color: #71717a[^"]*font-size: 11px[^"]*">Beispiel Handel GmbH/);
   expect(block).toContain('href="tel:+4930000000"');
   expect(block).toContain("<hr");
+});
+
+test("the sent signature keeps no script, event attribute, script URL, or remote image", () => {
+  const context: ComposeRenderContext = {
+    actor: { display_name: "Erika Beispiel", email: "erika@beispiel.test" },
+    mailbox: { name: "Beispiel Handel GmbH", description: "" },
+    sender: { display_name: "Beispiel Handel", email: "info@beispiel.test", reply_to: "" },
+    message: { subject: "", to: [], cc: [] },
+  };
+  const signature = [
+    "Erika Beispiel<script>parent.postMessage('signature-script', '*')</script>",
+    '<span onclick="alert(1)" onmouseover="alert(2)">Musterweg 1</span>',
+    '[Website](javascript:alert(3)) · <a href="javascript:alert(4)">Kontakt</a>',
+    '<img src="https://remote.beispiel.test/pixel.png" onerror="alert(5)">',
+  ].join("\n\n");
+  const rendered = renderComposeContent({ signature, context, format: "markdown", customCss: "", renderLiquid: true, body: "" });
+  // A template the renderer refuses never reaches the composer either; one it accepts carries none of it.
+  if (!rendered.ok) return;
+  const html = rendered.data.html ?? "";
+  expect(html).not.toMatch(/<script/i);
+  expect(html).not.toMatch(/\son[a-z]+\s*=/i);
+  expect(html).not.toMatch(/javascript:/i);
+  expect(html).not.toContain("remote.beispiel.test");
 });

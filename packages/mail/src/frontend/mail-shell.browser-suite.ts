@@ -3853,7 +3853,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
        * The compose-signature answer as the server gives it for an HTML draft: the send renderer's signature with an
        * empty text, plus the editor fragment and text. Fictional sender data only.
        */
-      const signatureAnswer = (signature: string, design: Pick<Parameters<typeof renderComposeContent>[0], "customCss" | "logo"> = { customCss: "" }) => {
+      const signatureAnswer = (
+        signature: string,
+        design: Pick<Parameters<typeof renderComposeContent>[0], "customCss" | "logo"> = { customCss: "" },
+      ) => {
         const shared = {
           signature,
           context: {
@@ -3869,7 +3872,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         const alone = renderComposeContent({ ...shared, body: "" });
         const block = renderComposeSignatureBlock({ ...shared, logoAltText: design.logo?.altText });
         if (!alone.ok || !alone.data.html || !block.ok) throw new Error("The fixture signature did not render");
-        return { answer: { ...block.data, mailHtml: alone.data.html }, render: (body: string) => renderComposeContent({ ...shared, body }) };
+        return {
+          answer: { ...block.data, mailHtml: alone.data.html },
+          render: (body: string) => renderComposeContent({ ...shared, body }),
+        };
       };
       const defaultSignature = signatureAnswer("Kind regards  \nAda Example  \nExample support · Hall A").answer;
       const draftApi = async (page: Page, suggestedBy = "Gustav", options: { consolidated?: number; sendFails?: boolean } = {}) => {
@@ -4018,8 +4024,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               : route.fulfill({ json: { id: "00000000-0000-4000-8000-0000000000f1", result: { conversationId: "Conv01" } } });
           if (path === "/compose-templates") return route.fulfill({ json: [{ id: "Sig001", kind: "signature", name: "Support" }] });
           if (path === "/compose-signature-defaults") return route.fulfill({ json: [] });
-          if (method === "POST" && path === "/compose-signature")
-            return route.fulfill({ json: defaultSignature });
+          if (method === "POST" && path === "/compose-signature") return route.fulfill({ json: defaultSignature });
           if (method === "POST" && path === "/compose-preview")
             return route.fulfill({ json: { html: "<p>Preview of the mail as it arrives.</p>", text: "", formattingWarnings: [] } });
           if (draftPath) {
@@ -4232,43 +4237,48 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       };
       for (const variant of ["frame", "text"] as const)
         test(`a long signature that arrives last fades at the reserved height and moves nothing until the person writes (${variant})`, async () => {
-        const releaseSignature = Promise.withResolvers<void>();
-        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
-          await draftApi(next);
-          await next.route("**/compose-signature", async (route) => {
-            await releaseSignature.promise;
-            await route.fulfill({ json: longSignatureAnswers[variant] });
+          const releaseSignature = Promise.withResolvers<void>();
+          const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
+            await draftApi(next);
+            await next.route("**/compose-signature", async (route) => {
+              await releaseSignature.promise;
+              await route.fulfill({ json: longSignatureAnswers[variant] });
+            });
           });
+          try {
+            await readyDraft(page);
+            await settled(page);
+            const messagesTop = () =>
+              page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top);
+            const before = await messagesTop();
+            releaseSignature.resolve();
+            if (variant === "frame") {
+              const frame = page.locator("[data-mail-signature-frame]");
+              await frame.waitFor();
+              await page.frameLocator("[data-mail-signature-frame]").getByText("Example support line 12").waitFor();
+              await eventually(
+                async () => (await frame.evaluate((element) => element.getBoundingClientRect().height)) > 150,
+                true,
+                "frame height",
+              );
+            } else
+              await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("line 12"));
+            await page.locator(".mail-inline-draft-signature[data-reply-box-clipped]").waitFor();
+            await settled(page);
+            expect(Math.abs((await messagesTop()) - before)).toBeLessThanOrEqual(0.5);
+            // Send stays in view at the reserved height.
+            expect(await page.locator("[data-mail-reply-box='mail'] footer").isVisible()).toBe(true);
+            // Writing in the box lets it grow to the whole signature, without a fade.
+            await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+            await page.locator("[data-reply-box-clipped]").waitFor({ state: "detached" });
+            expect(
+              await page.locator("[data-mail-draft-signature]").evaluate((element) => element.getBoundingClientRect().height),
+            ).toBeGreaterThan(150);
+          } finally {
+            releaseSignature.resolve();
+            await close(page);
+          }
         });
-        try {
-          await readyDraft(page);
-          await settled(page);
-          const messagesTop = () =>
-            page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top);
-          const before = await messagesTop();
-          releaseSignature.resolve();
-          if (variant === "frame") {
-            const frame = page.locator("[data-mail-signature-frame]");
-            await frame.waitFor();
-            await page.frameLocator("[data-mail-signature-frame]").getByText("Example support line 12").waitFor();
-            await eventually(async () => (await frame.evaluate((element) => element.getBoundingClientRect().height)) > 150, true, "frame height");
-          } else await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("line 12"));
-          await page.locator(".mail-inline-draft-signature[data-reply-box-clipped]").waitFor();
-          await settled(page);
-          expect(Math.abs((await messagesTop()) - before)).toBeLessThanOrEqual(0.5);
-          // Send stays in view at the reserved height.
-          expect(await page.locator("[data-mail-reply-box='mail'] footer").isVisible()).toBe(true);
-          // Writing in the box lets it grow to the whole signature, without a fade.
-          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
-          await page.locator("[data-reply-box-clipped]").waitFor({ state: "detached" });
-          expect(
-            await page.locator("[data-mail-draft-signature]").evaluate((element) => element.getBoundingClientRect().height),
-          ).toBeGreaterThan(150);
-        } finally {
-          releaseSignature.resolve();
-          await close(page);
-        }
-      });
 
       // The composer shows the signature exactly as the recipient gets it (2026-11-18): the same markup, logo, link and
       // design as the sent HTML, in the reader's message document. Fictional sender data only.
@@ -4309,7 +4319,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       const signatureFrame = async (page: Page, scope: Locator) => {
         const frame = scope.locator("[data-mail-signature-frame]");
         await frame.waitFor();
-        await eventually(async () => (await frame.evaluate((element) => element.getBoundingClientRect().height)) > 40, true, "frame height");
+        await eventually(
+          async () => (await frame.evaluate((element) => element.getBoundingClientRect().height)) > 40,
+          true,
+          "frame height",
+        );
         return scope.frameLocator("[data-mail-signature-frame]");
       };
       const expectSentSignature = async (page: Page, scope: Locator, theme: "light" | "dark") => {
@@ -4320,7 +4334,9 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         const shownText = await composed.locator("body").innerText();
         expect(shownText).not.toMatch(/\[(?:tel|https?):/);
         expect(shownText).toContain("ERIKA BEISPIEL");
-        expect(await composed.locator('img[alt="Beispiel Handel Logo"]').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(48);
+        expect(await composed.locator('img[alt="Beispiel Handel Logo"]').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(
+          48,
+        );
         expect(await composed.locator('a[href="tel:+4930000000"]').count()).toBe(1);
         expect(await composed.locator("hr").count()).toBe(1);
         // The same signature as the sent HTML in the reader's document beside it.
@@ -4354,7 +4370,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       for (const theme of reviewThemes)
         for (const width of [1440, 390])
           test(`${theme} ${width}: the reply box shows the signature exactly as the sent HTML, without moving the box`, async () => {
-            const page = await open(`${boxPath}?conversation=Conv01&identity=1&theme=${theme}`, width, undefined, "reduce", withSentSignature);
+            const page = await open(
+              `${boxPath}?conversation=Conv01&identity=1&theme=${theme}`,
+              width,
+              undefined,
+              "reduce",
+              withSentSignature,
+            );
             try {
               await readyDraft(page);
               await expectSentSignature(page, draftBox(page), theme);
@@ -4378,6 +4400,58 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await close(page);
             }
           });
+
+      test("the signature frame runs nothing from the signature, loads nothing remote, and a late signature never moves the caret", async () => {
+        type HostileWindow = { hostile: string[] };
+        const remote: string[] = [];
+        // Markup the server never sends, handed to the frame directly: the reader's sandbox and policy must still hold.
+        const hostile = [
+          '<div class="mail-content"><div class="mail-signature"><p>Erika Beispiel</p>',
+          '<script>parent.postMessage({ hostile: "script" }, "*")</script>',
+          `<img src="data:," onerror="parent.postMessage({ hostile: 'onerror' }, '*')">`,
+          '<img src="https://remote.beispiel.test/pixel.png" alt="">',
+          "</div></div>",
+        ].join("");
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          await draftApi(next);
+          next.on("request", (request) => {
+            if (request.url().includes("remote.beispiel.test")) remote.push(request.url());
+          });
+          await next.route("**/compose-signature", async (route) => {
+            await held;
+            await route.fulfill({ json: { html: "", text: "Erika Beispiel", mailHtml: hostile } });
+          });
+        });
+        try {
+          await page.evaluate(() => {
+            const state = window as unknown as HostileWindow;
+            state.hostile = [];
+            addEventListener("message", (event) => {
+              if (event.data && typeof event.data === "object" && "hostile" in event.data) state.hostile.push(String(event.data.hostile));
+            });
+          });
+          await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("Hallo");
+          const caret = () =>
+            page.evaluate(() => document.querySelector("[data-mail-reply-box='mail'] .cm-cursor")?.getBoundingClientRect().top ?? null);
+          const before = await caret();
+          expect(before).not.toBeNull();
+          release();
+          await page.waitForFunction(() => (document.querySelector<HTMLElement>("[data-mail-signature-frame]")?.offsetHeight ?? 0) > 0);
+          await settled(page);
+          // The signature grows in below the text once; the caret in the text stays where it was.
+          expect(await caret()).toBe(before);
+          expect(await page.evaluate(() => (window as unknown as HostileWindow).hostile)).toEqual([]);
+          expect(remote).toEqual([]);
+        } finally {
+          await close(page);
+        }
+      });
 
       for (const theme of reviewThemes)
         for (const width of [1440, 390])
