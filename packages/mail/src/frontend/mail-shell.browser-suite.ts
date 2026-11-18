@@ -3742,6 +3742,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               // The feed moves beside the reader and keeps its rows; the open conversation's event is marked.
               expect(await rows(page).count()).toBe(11);
               expect(await rows(page).first().locator("a").getAttribute("aria-current")).toBe("true");
+              const selectedRow = rows(page).first().locator(".k2b-activity__entry");
+              await page.mouse.move(0, 0);
+              const selectedFill = await selectedRow.evaluate((element) => getComputedStyle(element).backgroundColor);
+              await hoverInPlace(selectedRow);
+              expect(await selectedRow.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(selectedFill);
               if (screenshots) await page.screenshot({ path: join(screenshots, "events-reader-light-1440.png") });
             }
           } finally {

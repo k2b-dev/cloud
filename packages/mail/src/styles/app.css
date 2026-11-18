@@ -1940,7 +1940,7 @@
 /* VirtualFeed owns scrolling. Each item supplies the message list's two half-rem insets. */
 [data-mail-event] { padding-inline: 0.5rem; }
 /* Keep exactly the Mail message-list hover token on the shared row. */
-.k2b-ui .mail-events__row:hover { background: var(--ui-hover); }
+.k2b-ui .mail-events__row:where(:hover) { background: var(--ui-hover); }
 
 /* The reply box (Mail v5): always open above the newest message or under the conversation, one reply draft, and the internal note. One flat
    surface with the 2 px field edge; every state keeps the same place and height, so nothing above or below moves. */

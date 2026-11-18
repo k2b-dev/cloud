@@ -7715,10 +7715,9 @@
   padding: 0.5rem 0.75rem;
   border-radius: var(--k2b-radius-control);
 }
-.k2b-ui .k2b-activity__entry:hover { background: var(--k2b-app-workspace-hover); }
+.k2b-ui .k2b-activity__entry:where(:hover) { background: var(--k2b-app-workspace-hover); }
 .k2b-ui .k2b-activity__entry[data-clickable] { cursor: pointer; }
-.k2b-ui .k2b-activity__entry[data-selected],
-.k2b-ui .k2b-activity__entry[data-selected]:hover { background: var(--k2b-row-selected); }
+.k2b-ui .k2b-activity__entry[data-selected] { background: var(--k2b-row-selected); }
 /* The rail pauses behind the avatar and its optional status mark, on every surface. */
 .k2b-ui .k2b-activity > li.k2b-activity__entry::before {
   bottom: auto;
