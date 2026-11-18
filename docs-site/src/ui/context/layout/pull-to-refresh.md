@@ -13,8 +13,11 @@ the accent color; releasing there calls `onRefresh` once. Wheel overscroll
 does not move the indicator: it adds up quietly, and the same distance calls
 `onRefresh` once and slides the indicator in. While the refresh runs, the
 indicator shows a continuously spinning loader; when the returned promise
-settles, it slides out and fades. A shorter pull, an upward move, or a
-cancelled pointer resets without a call.
+settles, it slides out and fades. When the promise rejects, the indicator
+stays in place for 2.6 seconds with an exclamation mark in the danger color and
+a "Refresh failed" hint beneath it, then slides out the same way. The view
+still reports the error in its own way, for example with a toast. A shorter
+pull, an upward move, or a cancelled pointer resets without a call.
 
 The indicator floats above the list with a very light shadow
 (`--k2b-shadow-raised`). A mouse or pen pull ends when its
@@ -55,7 +58,7 @@ started a refresh, including the trackpad's momentum, cannot start another
 one, however long it outlasts the refresh.
 
 `onRefresh` must return a promise. From the start of a refresh until the
-indicator has slid out again, every input is ignored, so neither a slow
+indicator has slid out again, including a failure mark, every input is ignored, so neither a slow
 refresh nor a quick one can be triggered twice and the indicator never
 flickers back in. Pass `disabled` while the view is already loading for
 another reason.
@@ -63,8 +66,9 @@ another reason.
 ## Accessibility
 
 The indicator is a polite live region that announces `label` (or the shared
-"Refreshing" message) only while the refresh runs; it is otherwise silent and
-takes no pointer events. The gesture is an enhancement: keep a keyboard-reachable
+"Refreshing" message) while the refresh runs and the shared "Refresh failed"
+message while a failure shows; it is otherwise silent and takes no pointer
+events. The gesture is an enhancement: keep a keyboard-reachable
 refresh next to it, such as an existing refresh or retry button or the page
 reload. Under `prefers-reduced-motion` or the reduced-motion setting, the indicator
 neither eases, slides out, turns, nor spins; it still appears at the pull

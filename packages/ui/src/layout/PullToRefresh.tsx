@@ -10,12 +10,14 @@ const RESISTANCE = 0.5;
 const WHEEL_IDLE_MS = 300;
 /** Matches the indicator's slide-out in CSS; a new pull starts only once it has left. */
 const LEAVE_MS = 200;
+/** How long a failed refresh keeps its mark and message in view. */
+const ERROR_MS = 2600;
 const LINE_HEIGHT = 16;
 
-export type PullToRefreshState = "idle" | "pulling" | "ready" | "refreshing";
+export type PullToRefreshState = "idle" | "pulling" | "ready" | "refreshing" | "error";
 
 export type PullToRefreshProps = {
-  /** Reloads the wrapped content. The indicator stays busy until the promise settles. */
+  /** Reloads the wrapped content. The indicator stays busy until the promise settles; a rejection shows a short failure mark. */
   onRefresh: () => Promise<void>;
   disabled?: boolean;
   /** Status text announced while refreshing. Defaults to the shared "Refreshing" message. */
@@ -66,6 +68,7 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     setState(next >= THRESHOLD ? "ready" : next > 0 ? "pulling" : "idle");
   };
   let leaveTimer: ReturnType<typeof setTimeout> | undefined;
+  let errorTimer: ReturnType<typeof setTimeout> | undefined;
   let wheelTravel = 0;
   let wheelArmed = true;
   let wheelTimer: ReturnType<typeof setTimeout> | undefined;
@@ -76,19 +79,26 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     if (wheelTimer !== undefined) wheelArmed = false;
     setState("refreshing");
     setDistance(THRESHOLD);
-    try {
-      await props.onRefresh();
-    } finally {
+    const leave = () => {
       reset();
       leaveTimer = setTimeout(() => setSettling(false), LEAVE_MS);
+    };
+    try {
+      await props.onRefresh();
+    } catch {
+      // The view reports its own error; the indicator only marks the failed refresh in place.
+      setState("error");
+      errorTimer = setTimeout(leave, ERROR_MS);
+      return;
     }
+    leave();
   };
   const release = () => {
     if (state() === "ready") void refresh();
-    else if (state() !== "refreshing") reset();
+    else if (!settling()) reset();
   };
   const abort = () => {
-    if (state() !== "refreshing") reset();
+    if (!settling()) reset();
   };
 
   // Wheel overscroll never moves the indicator: it only adds up travel, and
@@ -191,6 +201,7 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     onCleanup(() => {
       clearTimeout(wheelTimer);
       clearTimeout(leaveTimer);
+      clearTimeout(errorTimer);
       root.removeEventListener("wheel", onWheel);
       root.removeEventListener("pointerdown", onPointerDown);
       root.removeEventListener("pointermove", onPointerMove);
@@ -205,6 +216,14 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
 
   const className = () => (props.class?.trim() ? `k2b-pull-to-refresh ${props.class.trim()}` : "k2b-pull-to-refresh");
   const progress = () => Math.min(1, distance() / THRESHOLD);
+  const icon = () =>
+    state() === "refreshing" ? "ti ti-loader-2 k2b-spin" : state() === "error" ? "ti ti-exclamation-mark" : "ti ti-refresh";
+  const announcement = () =>
+    state() === "refreshing"
+      ? (props.label ?? refreshMessages().refreshing)
+      : state() === "error"
+        ? refreshMessages().refreshFailed
+        : "";
 
   return (
     <div
@@ -215,9 +234,12 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     >
       <div class="k2b-pull-to-refresh__indicator" role="status" aria-live="polite">
         <span class="k2b-pull-to-refresh__icon" aria-hidden="true">
-          <i class={state() === "refreshing" ? "ti ti-loader-2 k2b-spin" : "ti ti-refresh"} />
+          <i class={icon()} />
         </span>
-        <span class="k2b-sr-only">{state() === "refreshing" ? (props.label ?? refreshMessages().refreshing) : ""}</span>
+        <span class="k2b-sr-only">{announcement()}</span>
+        <span class="k2b-pull-to-refresh__message" aria-hidden="true">
+          {state() === "error" ? refreshMessages().refreshFailed : ""}
+        </span>
       </div>
       {props.children}
     </div>

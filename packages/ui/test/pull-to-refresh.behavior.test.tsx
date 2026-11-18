@@ -5,13 +5,15 @@ import { isServer, render } from "solid-js/web";
 import { cssDeclarations, readShippedCssRules } from "../src/styles/css-contract-test-helpers";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
-type Deferred = { promise: Promise<void>; resolve: () => void };
+type Deferred = { promise: Promise<void>; resolve: () => void; reject: (error: Error) => void };
 const deferred = (): Deferred => {
   let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 };
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -229,6 +231,50 @@ else {
 
       jest.advanceTimersByTime(200);
       // A touch refresh leaves no wheel gesture behind: the first overscroll counts.
+      view.wheel(view.row, -200);
+      expect(view.calls).toHaveLength(2);
+      view.calls[1]!.resolve();
+      await flush();
+    } finally {
+      view.dispose();
+      dom.cleanup();
+      jest.useRealTimers();
+    }
+  });
+
+  test("a failed refresh marks the indicator in place, announces it, and leaves calmly", async () => {
+    jest.useFakeTimers();
+    const dom = createDomTestHarness();
+    const view = await mount(dom);
+    const flush = async () => {
+      for (let step = 0; step < 5; step++) await Promise.resolve();
+    };
+    const status = () => view.root.querySelector('[role="status"]')!;
+    try {
+      view.wheel(view.row, -200);
+      expect(view.state()).toBe("refreshing");
+      view.calls[0]!.reject(new Error("offline"));
+      await flush();
+
+      expect(view.state()).toBe("error");
+      expect(view.root.style.getPropertyValue("--k2b-pull-to-refresh-distance")).toBe("64px");
+      expect(status().querySelector("i")?.className).toBe("ti ti-exclamation-mark");
+      expect(status().querySelector(".k2b-sr-only")?.textContent).toBe("Refresh failed");
+      expect(status().querySelector(".k2b-pull-to-refresh__message")?.textContent).toBe("Refresh failed");
+      expect(status().querySelector(".k2b-pull-to-refresh__message")?.getAttribute("aria-hidden")).toBe("true");
+
+      // While the mark shows, no input starts another refresh.
+      view.touch("touchstart", view.row, 100);
+      view.touch("touchmove", view.row, 300);
+      view.touch("touchend", view.row, 300);
+      jest.advanceTimersByTime(400);
+      view.wheel(view.row, -400);
+      expect(view.calls).toHaveLength(1);
+
+      jest.advanceTimersByTime(2600);
+      expect(view.state()).toBe("idle");
+      expect(status().textContent).toBe("");
+      jest.advanceTimersByTime(200);
       view.wheel(view.row, -200);
       expect(view.calls).toHaveLength(2);
       view.calls[1]!.resolve();
