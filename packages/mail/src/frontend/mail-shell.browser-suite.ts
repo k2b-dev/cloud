@@ -120,7 +120,7 @@ type Strip = {
   rightInset: number;
   labels: { text: string | null; scroll: number; width: number }[];
 };
-const largeMailbox = process.env.MAIL_SHELL_FOLDER_SCALE === "1";
+let largeMailbox = false;
 let css = "";
 let controller = "";
 let navigation = "";
@@ -543,6 +543,7 @@ export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" 
 /** The shell tests of one part. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (part: MailShellPart, screenshots: string | undefined) =>
   describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    largeMailbox = part === "performance";
     const section = (name: MailShellPart, define: () => void) => {
       if (name === part) define();
     };
