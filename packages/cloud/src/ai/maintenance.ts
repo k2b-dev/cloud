@@ -2,10 +2,9 @@ import type { Worker } from "@k2b/sync";
 import { lazySync } from "../_internal/process-sync";
 import { coreSettings } from "../services";
 import { logger, trace } from "../services/logging";
-
-import { type AiWakeupBudgetCheck, tickAiWakeups } from "./wakeup-tick";
 import { enrichDirtyAiConversations } from "./enrich";
 import { learnAiMemoriesFromPrivateChats } from "./memory-learning";
+import { type AiWakeupBudgetCheck, tickAiWakeups } from "./wakeup-tick";
 
 const log = logger("ai:maintenance");
 
@@ -238,7 +237,10 @@ const doRegister = async (): Promise<void> => {
     });
   }
   await aiScheduler().create({
-    id: "ai-wakeups", cron: "* * * * *", timezone: "UTC", misfire: "latest",
+    id: "ai-wakeups",
+    cron: "* * * * *",
+    timezone: "UTC",
+    misfire: "latest",
     process: async (context) => {
       if (!wakeupBudget) throw new Error("Scheduled chat budget admission is unavailable.");
       await tickAiWakeups(wakeupBudget, { signal: context.signal, heartbeat: () => context.heartbeat() });

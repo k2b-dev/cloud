@@ -75,7 +75,6 @@ import { AI_MESSAGE_SEARCH_TEXT_MAX_CHARS } from "./limits";
 import { aiLive, subscribeAiConversationAccess } from "./live";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema } from "./local-tool-contracts";
 import { aiMaintenanceJobs } from "./maintenance";
-import { aiWakeupRoutes } from "./wakeup-routes";
 import { aiMapRoutes } from "./map-routes";
 import { AI_MEMORY_CONTENT_MAX_CHARS, aiMemories } from "./memories";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
@@ -138,6 +137,7 @@ import { aiToolPromptHints } from "./tools";
 import type { AiConversation, AiTurn } from "./types";
 import { isAiViewFile } from "./view-block";
 import { nameViewReferences } from "./view-names";
+import { aiWakeupRoutes } from "./wakeup-routes";
 
 const retryInstruction = (mode: "retry" | "details" | "concise"): string | null => {
   if (mode === "details") return "Answer the user's request again with more detail and specificity.";

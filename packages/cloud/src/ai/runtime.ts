@@ -795,6 +795,6 @@ export const __aiRuntimeTest = { actionMatchesResolvedEvent, processMessage, pub
 export { AUTOMATION_TURN_BUDGET } from "./code-authoring-turn";
 export { editAiApprovalDraft } from "./draft-edit";
 export type AiChatTurnAdmission = NonNullable<ExecutorConfig["beforeChatTurn"]>;
-export { AiTurnFailure } from "./turn-failure";
 
 export { enqueueAiChatSend } from "./chat-send";
+export { AiTurnFailure } from "./turn-failure";

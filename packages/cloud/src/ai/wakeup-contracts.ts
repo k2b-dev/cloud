@@ -22,12 +22,18 @@ export const AiWakeupInputSchema = z.strictObject({
   cron: z.string().trim().min(1).nullable().optional(),
   timezone: z.string().trim().min(1),
   endsAt: z.iso.datetime({ offset: true }).nullable().optional(),
-  note: z.string().trim().min(1).refine((text) => [...text].length <= AI_WAKEUP_NOTE_CHARACTERS, "The note is too long."),
+  note: z
+    .string()
+    .trim()
+    .min(1)
+    .refine((text) => [...text].length <= AI_WAKEUP_NOTE_CHARACTERS, "The note is too long."),
 });
-export const AiWakeupPatchSchema = AiWakeupInputSchema.partial().extend({
-  /** Optimistic concurrency: list/create/update returns the current revision. */
-  revision: z.number().int().nonnegative(),
-}).refine((input) => Object.keys(input).length > 1, "Supply a change.");
+export const AiWakeupPatchSchema = AiWakeupInputSchema.partial()
+  .extend({
+    /** Optimistic concurrency: list/create/update returns the current revision. */
+    revision: z.number().int().nonnegative(),
+  })
+  .refine((input) => Object.keys(input).length > 1, "Supply a change.");
 export const AiWakeupSchema = z.strictObject({
   id: z.uuid(),
   at: z.string().nullable(),

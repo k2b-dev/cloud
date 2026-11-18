@@ -14,8 +14,8 @@ import { aiNeutralizeQuoteMarkers } from "./quote-markers";
 import { readAiSettingsState } from "./settings";
 import { aiConversations } from "./store";
 import type { AiConversationService, AiDraftContentPart, AiSettingsState } from "./types";
-import { markAiWakeupMissed } from "./wakeup-store";
 import { isAiSettingsError } from "./validate";
+import { markAiWakeupMissed } from "./wakeup-store";
 
 const log = logger("ai:message-queue");
 /** Composer capacity agreed for the queue; automation places are counted separately below. */
@@ -420,9 +420,13 @@ export const drainQueuedMessages = async (
               content=CASE WHEN ${terminal && Boolean(row.automation_source)} THEN '[]'::jsonb ELSE content END
               WHERE id=${row.id}::uuid`;
             if (terminal && row.submission.runConfig?.wakeup)
-              await markAiWakeupMissed(chat.conversation_id, row.id,
+              await markAiWakeupMissed(
+                chat.conversation_id,
+                row.id,
                 error instanceof AiQuotaError || code.startsWith("host_budget") ? "budget" : "access",
-                row.submission.runConfig.locale ?? "en", tx);
+                row.submission.runConfig.locale ?? "en",
+                tx,
+              );
             if (terminal && row.automation_source) await tx`DELETE FROM ai.queued_message_files WHERE message_id=${row.id}::uuid`;
             log.warn("Queued message could not start", {
               conversationId: chat.conversation_id,

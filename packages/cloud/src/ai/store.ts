@@ -4453,15 +4453,38 @@ export const aiConversations: AiConversationService = {
 };
 
 /** Cloud-authored timeline fact, persisted without a model call. Caller holds the conversation lock. */
-export async function appendAiWakeupEvent(input: {
-  conversationId: string; event: import("./wakeup-contracts").AiWakeupEvent; locale: string;
-}, db: SQL): Promise<void> {
+export async function appendAiWakeupEvent(
+  input: {
+    conversationId: string;
+    event: import("./wakeup-contracts").AiWakeupEvent;
+    locale: string;
+  },
+  db: SQL,
+): Promise<void> {
   const de = input.locale.startsWith("de");
   const labels = de
-    ? { created: "Wecker gestellt", updated: "Wecker geändert", deleted: "Wecker gelöscht", missed: "Wecker verpasst", expired: "Wecker abgelaufen", caught_up: "Wecker nachgeholt" }
-    : { created: "Alarm set", updated: "Alarm changed", deleted: "Alarm deleted", missed: "Alarm missed", expired: "Alarm expired", caught_up: "Alarm caught up" };
-  await insertMessageLocked({ conversationId: input.conversationId,
-    message: { role: "assistant", content: [{ type: "text", text: labels[input.event.kind] }] },
-    meta: { wakeupEvent: input.event },
-  }, db);
+    ? {
+        created: "Wecker gestellt",
+        updated: "Wecker geändert",
+        deleted: "Wecker gelöscht",
+        missed: "Wecker verpasst",
+        expired: "Wecker abgelaufen",
+        caught_up: "Wecker nachgeholt",
+      }
+    : {
+        created: "Alarm set",
+        updated: "Alarm changed",
+        deleted: "Alarm deleted",
+        missed: "Alarm missed",
+        expired: "Alarm expired",
+        caught_up: "Alarm caught up",
+      };
+  await insertMessageLocked(
+    {
+      conversationId: input.conversationId,
+      message: { role: "assistant", content: [{ type: "text", text: labels[input.event.kind] }] },
+      meta: { wakeupEvent: input.event },
+    },
+    db,
+  );
 }

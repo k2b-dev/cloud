@@ -35,8 +35,12 @@ test("downtime skips old recurring slots and returns the next future occurrence"
 });
 
 test("DST spring skips nonexistent times and autumn repeats a local minute only once", () => {
-  expect(nextAiWakeupAt("30 2 * * *", "Europe/Berlin", new Date("2026-03-29T00:00:00Z"), new Date("2026-03-31T00:00:00Z"))?.toISOString()).toBe("2026-03-30T00:30:00.000Z");
-  expect(nextAiWakeupAt("30 2 * * *", "Europe/Berlin", new Date("2026-10-25T00:30:00Z"), new Date("2026-10-27T00:00:00Z"))?.toISOString()).toBe("2026-10-26T01:30:00.000Z");
+  expect(
+    nextAiWakeupAt("30 2 * * *", "Europe/Berlin", new Date("2026-03-29T00:00:00Z"), new Date("2026-03-31T00:00:00Z"))?.toISOString(),
+  ).toBe("2026-03-30T00:30:00.000Z");
+  expect(
+    nextAiWakeupAt("30 2 * * *", "Europe/Berlin", new Date("2026-10-25T00:30:00Z"), new Date("2026-10-27T00:00:00Z"))?.toISOString(),
+  ).toBe("2026-10-26T01:30:00.000Z");
 });
 
 test("notes count Unicode characters and product rhythm text never falls back to cron", () => {

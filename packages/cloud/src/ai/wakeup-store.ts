@@ -5,14 +5,31 @@ import type { AiWakeup, AiWakeupEvent } from "./wakeup-contracts";
 import { describeAiWakeupRhythm } from "./wakeup-time";
 
 export type AiWakeupRow = {
-  id: string; conversation_id: string; created_by: string; next_at: Date | null; cron: string | null;
-  timezone: string; ends_at: Date | null; note: string; snoozes: number; status: AiWakeup["status"];
-  missed_reason: AiWakeup["missedReason"]; revision: number;
+  id: string;
+  conversation_id: string;
+  created_by: string;
+  next_at: Date | null;
+  cron: string | null;
+  timezone: string;
+  ends_at: Date | null;
+  note: string;
+  snoozes: number;
+  status: AiWakeup["status"];
+  missed_reason: AiWakeup["missedReason"];
+  revision: number;
 };
 export const publicAiWakeup = (row: AiWakeupRow, locale: string): AiWakeup => ({
-  id: row.id, at: row.next_at?.toISOString() ?? null, cron: row.cron, timezone: row.timezone,
-  endsAt: row.ends_at?.toISOString() ?? null, note: row.note, snoozes: row.snoozes,
-  status: row.status, missedReason: row.missed_reason, revision: Number(row.revision), rhythm: describeAiWakeupRhythm(row.cron, locale),
+  id: row.id,
+  at: row.next_at?.toISOString() ?? null,
+  cron: row.cron,
+  timezone: row.timezone,
+  endsAt: row.ends_at?.toISOString() ?? null,
+  note: row.note,
+  snoozes: row.snoozes,
+  status: row.status,
+  missedReason: row.missed_reason,
+  revision: Number(row.revision),
+  rhythm: describeAiWakeupRhythm(row.cron, locale),
 });
 
 export async function migrateAiWakeups() {
@@ -34,7 +51,14 @@ export async function migrateAiWakeups() {
 }
 
 export async function recordAiWakeupEvent(row: AiWakeupRow, kind: AiWakeupEvent["kind"], locale: string, db: SQL, at = new Date()) {
-  await appendAiWakeupEvent({ conversationId: row.conversation_id, event: { id: crypto.randomUUID(), kind, at: at.toISOString(), wakeup: publicAiWakeup(row, locale) }, locale }, db);
+  await appendAiWakeupEvent(
+    {
+      conversationId: row.conversation_id,
+      event: { id: crypto.randomUUID(), kind, at: at.toISOString(), wakeup: publicAiWakeup(row, locale) },
+      locale,
+    },
+    db,
+  );
 }
 /** Admission can fail after queuing. Never overwrite a newer occurrence, an edit or a deletion. Caller locks the chat. */
 export async function markAiWakeupMissed(conversationId: string, messageId: string, reason: "access" | "budget", locale: string, db: SQL) {

@@ -1,13 +1,16 @@
 import { sql } from "@k2b/cloud";
-import { accounts } from "@k2b/cloud/services";
-import { isAccountAllowed } from "@k2b/cloud/services";
-import { isAccountExpired } from "@k2b/cloud/services/account-model";
-import { AiWakeupBudgetError, type AiWakeupBudgetCheck, markAiWakeupMissed } from "@k2b/cloud/ai";
+import { type AiWakeupBudgetCheck, AiWakeupBudgetError, markAiWakeupMissed } from "@k2b/cloud/ai";
 import { type AiChatTurnAdmission, AiTurnFailure } from "@k2b/cloud/ai/runtime";
-import { coreSettings, logger } from "@k2b/cloud/services";
+import { accounts, coreSettings, isAccountAllowed, logger } from "@k2b/cloud/services";
+import { isAccountExpired } from "@k2b/cloud/services/account-model";
 import { aiWakeupMessages } from "./ai-wakeup-messages";
 import { codeChatBudgetMessages } from "./code/chat-budget-messages";
-import { CodeChatBudgetError, checkAutomationChatBudget, reserveCodeChatTurnBudget, settleCodeChatTurnBudget } from "./code/chat-turn-budget";
+import {
+  CodeChatBudgetError,
+  checkAutomationChatBudget,
+  reserveCodeChatTurnBudget,
+  settleCodeChatTurnBudget,
+} from "./code/chat-turn-budget";
 import { codeChatModelPolicyRow } from "./code/policy-contracts";
 import { codeSettings } from "./code/settings";
 import { findCode } from "./code/store";
@@ -106,7 +109,11 @@ const wakeupBudgetLimits = async (db: import("bun").SQL) => ({
 
 export const checkWakeupChatBudget: AiWakeupBudgetCheck = async ({ owner, wakeupId, profile, db }) => {
   try {
-    await checkAutomationChatBudget({ turnId: wakeupId, codeId: `wakeup:${wakeupId}`, ownerUserId: owner, profile }, db, await wakeupBudgetLimits(db));
+    await checkAutomationChatBudget(
+      { turnId: wakeupId, codeId: `wakeup:${wakeupId}`, ownerUserId: owner, profile },
+      db,
+      await wakeupBudgetLimits(db),
+    );
   } catch (error) {
     if (error instanceof CodeChatBudgetError) throw new AiWakeupBudgetError(error.code);
     throw error;
@@ -115,14 +122,25 @@ export const checkWakeupChatBudget: AiWakeupBudgetCheck = async ({ owner, wakeup
 
 async function admitWakeupChatTurn(input: Parameters<AiChatTurnAdmission>[0]) {
   const { wakeup, actor, send, writerOrigin, turnTrigger } = input.runConfig;
-  if (!wakeup || actor?.kind !== "user" || actor.delegation || actor.sessionKind === "app" || !send ||
-    send.accountId !== actor.user.id || writerOrigin?.kind !== "wakeup" || writerOrigin.id !== wakeup.id ||
-    writerOrigin.scheduledAt !== wakeup.scheduledAt || turnTrigger?.kind !== "wakeup" || turnTrigger.id !== wakeup.id)
+  if (
+    !wakeup ||
+    actor?.kind !== "user" ||
+    actor.delegation ||
+    actor.sessionKind === "app" ||
+    !send ||
+    send.accountId !== actor.user.id ||
+    writerOrigin?.kind !== "wakeup" ||
+    writerOrigin.id !== wakeup.id ||
+    writerOrigin.scheduledAt !== wakeup.scheduledAt ||
+    turnTrigger?.kind !== "wakeup" ||
+    turnTrigger.id !== wakeup.id
+  )
     throw new AiTurnFailure("not_allowed", "Alarm authority is unavailable.");
   try {
     await sql.begin(async (db) => {
       const user = await accounts.users.get({ id: actor.user.id }, { db });
-      if (!user || isAccountExpired(user.accountExpires) || !(await isAccountAllowed(user, db))) throw new AiTurnFailure("not_allowed", "Alarm owner is inactive.");
+      if (!user || isAccountExpired(user.accountExpires) || !(await isAccountAllowed(user, db)))
+        throw new AiTurnFailure("not_allowed", "Alarm owner is inactive.");
       // The queue refreshes the owner; recheck the durable receipt and worker fence on every resumption.
       const [valid] = await db`SELECT 1 FROM ai.chat_send_receipts r JOIN ai.conversations c ON c.id=r.conversation_id
         JOIN ai.wakeups w ON w.id=${wakeup.id}::uuid
@@ -134,17 +152,27 @@ async function admitWakeupChatTurn(input: Parameters<AiChatTurnAdmission>[0]) {
       const fence = await db`SELECT id FROM ai.turns WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid
         AND status='running' AND lease_owner=${input.leaseOwner} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
       if (!fence.length) throw new AiTurnFailure("not_allowed", "Alarm chat worker lease was lost.");
-      await reserveCodeChatTurnBudget({ turnId: input.turnId, codeId: `wakeup:${wakeup.id}`, ownerUserId: actor.user.id, profile: input.profile }, db, await wakeupBudgetLimits(db));
+      await reserveCodeChatTurnBudget(
+        { turnId: input.turnId, codeId: `wakeup:${wakeup.id}`, ownerUserId: actor.user.id, profile: input.profile },
+        db,
+        await wakeupBudgetLimits(db),
+      );
     });
   } catch (error) {
     if (error instanceof CodeChatBudgetError || (error instanceof AiTurnFailure && error.code === "not_allowed")) {
       await sql.begin(async (db) => {
         await db`SELECT id FROM ai.conversations WHERE id=${input.conversationId}::uuid FOR UPDATE`;
-        await markAiWakeupMissed(input.conversationId, send.id, error instanceof CodeChatBudgetError ? "budget" : "access", input.runConfig.locale ?? "en", db);
+        await markAiWakeupMissed(
+          input.conversationId,
+          send.id,
+          error instanceof CodeChatBudgetError ? "budget" : "access",
+          input.runConfig.locale ?? "en",
+          db,
+        );
       });
     }
-    if (error instanceof CodeChatBudgetError) throw new AiTurnFailure("host_budget_limit", error.code,
-      aiWakeupMessages(input.runConfig.locale ?? "en").budget(error.code));
+    if (error instanceof CodeChatBudgetError)
+      throw new AiTurnFailure("host_budget_limit", error.code, aiWakeupMessages(input.runConfig.locale ?? "en").budget(error.code));
     throw error;
   }
 }

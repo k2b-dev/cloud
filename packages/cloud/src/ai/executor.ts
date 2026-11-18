@@ -64,7 +64,6 @@ import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { aiModelAccess } from "./model-access";
-import { createAiWakeupTools } from "./wakeup-tools";
 import { createAiNextMessageRuntime, isVisibleAiNextMessageOp } from "./next-message";
 import { withPlaceAssistantContext } from "./place-prompt";
 import { loadPlaceAssistantRound } from "./place-round";
@@ -147,6 +146,7 @@ import type {
 import { isAiImageMediaType } from "./types";
 import { validateAiTurnRequest } from "./validate";
 import { CLOUD_AI_VIEW_ICONS, CloudAiViewSummarySchema } from "./view-block";
+import { createAiWakeupTools } from "./wakeup-tools";
 
 const log = logger("ai:executor");
 
@@ -1004,7 +1004,8 @@ export class AiTurnExecutor {
       if (isAssistantChatTurn(config)) {
         await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, accessSubjectForActor(material.actor));
       }
-      if ((config.codeOrigin || config.wakeup) && !this.config.beforeChatTurn) throw new AiTurnFailure("not_allowed", "Code chat admission is unavailable.");
+      if ((config.codeOrigin || config.wakeup) && !this.config.beforeChatTurn)
+        throw new AiTurnFailure("not_allowed", "Code chat admission is unavailable.");
       const admission = await this.config.beforeChatTurn?.({
         turnId,
         conversationId,

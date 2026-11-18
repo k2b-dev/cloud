@@ -512,14 +512,25 @@ export {
   type CloudAiViewImageOutput,
   CloudAiViewImageOutputSchema,
 } from "./vision-tool";
-export { readWebPageForPerson, type WebReaderResult, WebReaderResultSchema } from "./web-reader";
-
-export { aiWakeups, AiWakeupError } from "./wakeups";
-export { markAiWakeupMissed } from "./wakeup-store";
 export {
-  AI_WAKEUP_CHAT_LIMIT, AI_WAKEUP_MIN_INTERVAL_MINUTES, AI_WAKEUP_LIFETIME_DAYS, AI_WAKEUP_MAX_YEARS,
-  AI_WAKEUP_SNOOZE_LIMIT, AI_WAKEUP_NOTE_CHARACTERS, AI_WAKEUP_TICK_BATCH, AI_WAKEUP_MISSED_DAYS,
-  AiWakeupInputSchema, AiWakeupPatchSchema, AiWakeupSchema,
-  type AiWakeup, type AiWakeupEvent, type AiWakeupInput, type AiWakeupOccurrence, type AiWakeupPatch,
+  AI_WAKEUP_CHAT_LIMIT,
+  AI_WAKEUP_LIFETIME_DAYS,
+  AI_WAKEUP_MAX_YEARS,
+  AI_WAKEUP_MIN_INTERVAL_MINUTES,
+  AI_WAKEUP_MISSED_DAYS,
+  AI_WAKEUP_NOTE_CHARACTERS,
+  AI_WAKEUP_SNOOZE_LIMIT,
+  AI_WAKEUP_TICK_BATCH,
+  type AiWakeup,
+  type AiWakeupEvent,
+  type AiWakeupInput,
+  AiWakeupInputSchema,
+  type AiWakeupOccurrence,
+  type AiWakeupPatch,
+  AiWakeupPatchSchema,
+  AiWakeupSchema,
 } from "./wakeup-contracts";
-export { AiWakeupBudgetError, type AiWakeupBudgetCheck } from "./wakeup-tick";
+export { markAiWakeupMissed } from "./wakeup-store";
+export { type AiWakeupBudgetCheck, AiWakeupBudgetError } from "./wakeup-tick";
+export { AiWakeupError, aiWakeups } from "./wakeups";
+export { readWebPageForPerson, type WebReaderResult, WebReaderResultSchema } from "./web-reader";

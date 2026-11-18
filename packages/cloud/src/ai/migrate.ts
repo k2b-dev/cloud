@@ -3,13 +3,13 @@ import { sql } from "../runtime/clients";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateAiCapabilityTargets } from "./capability-targets-migrate";
 import { migrateAiMaps } from "./map-store";
-import { migrateAiWakeups } from "./wakeup-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiNextMessages } from "./next-message-store";
 import { migrateAiQuotas } from "./quotas-migrate";
 import { retireChatRoutines } from "./retired-routines-migrate";
 import { withAiShortId } from "./short-id";
+import { migrateAiWakeups } from "./wakeup-store";
 
 const backfillAiShortIds = async (
   constraint: string,

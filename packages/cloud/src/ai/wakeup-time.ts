@@ -8,7 +8,15 @@ export function nextAiWakeupAt(cron: string, timezone: string, after: Date, end:
   // Start one day earlier so repeated local minutes across a DST rollback are remembered,
   // including when the prior occurrence was already delivered before this call.
   const seen = new Set<string>();
-  const local = new Intl.DateTimeFormat("sv-SE", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const local = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
   for (let start = +after - 26 * 3_600_000; start <= +end; start += DAY_MS) {
     let next: Date | null = null;
     visitCronDaySlots({ cron, timezone }, new Date(start), new Date(Math.min(start + DAY_MS, +end + 1)), (slot) => {
@@ -32,7 +40,7 @@ export function validateAiWakeupCron(cron: string, timezone: string) {
     minutes.push((+slot - +start) / 60_000);
   });
   for (let i = 0; i < minutes.length; i++) {
-    const gap = (minutes[(i + 1) % minutes.length]! + (i === minutes.length - 1 ? 1440 : 0)) - minutes[i]!;
+    const gap = minutes[(i + 1) % minutes.length]! + (i === minutes.length - 1 ? 1440 : 0) - minutes[i]!;
     if (gap < AI_WAKEUP_MIN_INTERVAL_MINUTES) throw new Error("Alarms must be at least 15 minutes apart.");
   }
   return schedule;

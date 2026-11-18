@@ -1,10 +1,16 @@
 import { sql } from "@k2b/cloud";
-import { aiProjects, isAiSettingsError, personalAiModelPolicy, selectAssistantAiModel } from "@k2b/cloud/ai";
+import {
+  AiWakeupBudgetError,
+  aiProjects,
+  isAiSettingsError,
+  personalAiModelPolicy,
+  readAiSettingsState,
+  selectAiModelProfile,
+  selectAssistantAiModel,
+} from "@k2b/cloud/ai";
 import { AiQueuedChatStartError, type ValidateQueuedChatStart } from "@k2b/cloud/ai/runtime";
-import { accounts, coreSettings } from "@k2b/cloud/services";
-import { isAccountAllowed } from "@k2b/cloud/services";
+import { accounts, coreSettings, isAccountAllowed } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
-import { AiWakeupBudgetError, readAiSettingsState, selectAiModelProfile } from "@k2b/cloud/ai";
 import { checkWakeupChatBudget } from "./ai-chat-budget";
 import { lockOwnerCodeChats, openOwnerCodeChatWork } from "./ai-chat-send";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
@@ -67,7 +73,12 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
         AND r.origin=(${JSON.stringify(origin)}::text)::jsonb AND r.turn_trigger=(${JSON.stringify(trigger)}::text)::jsonb`;
     if (!valid) throw new AiQueuedChatStartError("source_restricted");
     try {
-      await checkWakeupChatBudget({ owner, wakeupId: wakeup.id, profile: selectAiModelProfile(state ?? await readAiSettingsState(), personalAiModelPolicy, { id: input.modelId }), db });
+      await checkWakeupChatBudget({
+        owner,
+        wakeupId: wakeup.id,
+        profile: selectAiModelProfile(state ?? (await readAiSettingsState()), personalAiModelPolicy, { id: input.modelId }),
+        db,
+      });
     } catch (error) {
       if (error instanceof AiWakeupBudgetError) throw new AiQueuedChatStartError("host_budget_limit");
       throw error;
