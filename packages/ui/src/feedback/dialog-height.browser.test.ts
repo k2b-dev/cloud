@@ -461,6 +461,7 @@ describe(`${browserName} the frame follows its content`, () => {
           new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
         await frames();
         const during = dialog.hasAttribute("data-k2b-frame-motion");
+        animation.playbackRate = 1;
         animation.finish();
         await animation.finished;
         await frames();
@@ -1061,7 +1062,7 @@ describe(`${browserName} the frame follows its content`, () => {
         await page.evaluate((type) => {
           const input = document.createElement("input");
           input.type = type;
-          document.querySelector("[data-content]")!.append(input);
+          document.querySelector("[data-content] label")!.append(input);
           input.focus();
         }, type);
         await settled(page);
@@ -1290,6 +1291,7 @@ describe(`${browserName} the frame follows its content`, () => {
         animation.currentTime = 140;
         for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
         const during = folds;
+        animation.playbackRate = 1;
         animation.finish();
         await animation.finished;
         for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
