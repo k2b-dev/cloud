@@ -174,8 +174,8 @@ describe("v10 approval card in Chromium", () => {
             expect(measured.quiet.y - measured.main.y - measured.main.height).toBeLessThanOrEqual(4);
             expect(measured.quiet.y - measured.main.y - measured.main.height).toBeGreaterThanOrEqual(0);
             if (width === 1440) expect(measured.card.height).toBe(64);
-            expect(await h.page.locator(".assistant-code-version-host .k2b-notice-card__description").getAttribute("title")).toBe(
-              await h.page.locator(".assistant-code-version-host .k2b-notice-card__description").textContent(),
+            expect(await h.page.locator(".assistant-code-version-host .k2b-notice-card__detail-text").getAttribute("title")).toBe(
+              await h.page.locator(".assistant-code-version-host .k2b-notice-card__detail-text").textContent(),
             );
             const card = h.page.locator(".assistant-code-version-host .cloud-approval-frame");
             expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
