@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { aiConversations } from "@k2b/cloud/ai";
+import { aiModelFixture } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
-import { aiModelFixture } from "../../cloud/src/ai/model-fixture";
 import {
   CodeChatBudgetError,
   checkAutomationChatBudget,
