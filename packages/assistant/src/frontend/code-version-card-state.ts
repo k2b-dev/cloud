@@ -2,9 +2,9 @@ import { formatCodeMoment } from "@k2b/cloud/code/schedule";
 import type { CodePageLinks } from "@k2b/cloud/contracts/code-routes";
 import type { CodeVersionCardSnapshot } from "@k2b/cloud/contracts/code-version-cards";
 import type { CodeVersionPreview, CodeVersionReview } from "./code-activation";
-import { codeVersionPageHref } from "./code-activation";
 import { codeVersionCardCopy } from "./code-version-card-copy";
 import { codeVersionCardMessages } from "./code-version-card-messages";
+import { codeVersionPageHref } from "./code-version-page";
 
 type CodeVersionCardCode = Pick<CodeVersionCardSnapshot["code"], "state" | "activeVersionId"> &
   Partial<Pick<CodeVersionCardSnapshot["code"], "pausedAt" | "pausedBy">>;
