@@ -873,7 +873,8 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     descriptionText.data = currentDescription;
     // A short message without a title, such as "Link copied", is the outcome itself: it reads in the title's type.
     // Anything longer stays calm body text, so an old sentence never turns into a bold paragraph.
-    if (!currentTitle && currentProgress === null && !currentLink && isShortLabel(currentDescription)) contentElement.dataset.short = "true";
+    if (!currentTitle && currentProgress === null && !currentLink && isShortLabel(currentDescription))
+      contentElement.dataset.short = "true";
     else delete contentElement.dataset.short;
     const href = currentLink ? safeHref(currentLink.href) : null;
     if (currentLink && href !== null) {

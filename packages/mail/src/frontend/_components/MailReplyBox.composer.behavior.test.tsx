@@ -377,7 +377,12 @@ describe("MailReplyBox with the real composer", () => {
       const send = dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-send]");
       expect(send).toBeDefined();
       send!.click();
-      await waitFor(() => Boolean(dom.root.textContent?.includes("Gib mindestens eine Empfängeradresse an.")));
+      // The reason stands in the toast "Nicht gesendet"; the box keeps its text.
+      await waitFor(() =>
+        Boolean(
+          dom.document.querySelector("[data-k2b-toast-container]")?.textContent?.includes("Gib mindestens eine Empfängeradresse an."),
+        ),
+      );
       expect(requests.some((request) => request.path.endsWith("/send") || request.path.endsWith("/safety-review"))).toBe(false);
     });
   }
