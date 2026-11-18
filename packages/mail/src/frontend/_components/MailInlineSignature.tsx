@@ -24,6 +24,13 @@ const hostAppearance = (): MessageAppearanceMode => {
 };
 
 /**
+ * In the sent message, the signature's outer margins set it apart from the text above it; here the block after the
+ * text does that, as for a plain signature. Only these outer margins go; markup, design, and inner spacing stay as sent.
+ */
+const SIGNATURE_EDGES =
+  ".mail-signature, .mail-signature > :first-child { margin-block-start: 0 !important; } .mail-signature, .mail-signature > :last-child { margin-block-end: 0 !important; }";
+
+/**
  * The signature exactly as the sent HTML message shows it, in the reader's sandboxed message document: no script of
  * the message runs and nothing loads from the network. The frame keeps its last height until the new document reports
  * its own, so switching the signature never moves the text around it.
@@ -44,6 +51,7 @@ const SentSignatureFrame = (props: { html: string; title: string }) => {
       localized.locale,
       { show: localized.t.showQuotedText, hide: localized.t.hideQuotedText },
       untrack(appearance),
+      SIGNATURE_EDGES,
     );
   });
   // The same colors the reader hands its message frame: the text color here and the first solid background behind it.
@@ -131,7 +139,8 @@ export default function MailInlineSignature(props: {
       <div
         class="mail-inline-draft-signature"
         data-mail-draft-signature
-        data-signature-sent-html={signature.latest?.mailHtml && !signature.error ? "" : undefined}
+        // A failed load holds its error in `latest`, so the error is checked before the value is read.
+        data-signature-sent-html={!signature.error && signature.latest?.mailHtml ? "" : undefined}
         role="group"
         aria-label={t().signatureBlock}
       >

@@ -4349,7 +4349,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           document.body.append(reference);
         }, sentSignature.sentDocument);
         const sent = page.frameLocator("#sent-reference");
-        await sent.locator(".mail-signature").waitFor();
+        // The reference stays invisible, so it is ready once its signature is there, not once it shows.
+        await sent.locator(".mail-signature").waitFor({ state: "attached" });
         const footer = (frame: typeof sent) =>
           frame.locator(".mail-signature hr ~ p").evaluate((element) => {
             const style = getComputedStyle(element);
@@ -4418,8 +4419,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         });
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
           await draftApi(next);
-          next.on("request", (request) => {
-            if (request.url().includes("remote.beispiel.test")) remote.push(request.url());
+          // Only a request that reaches the network counts: Chromium also reports the image the policy blocked.
+          await next.route("https://remote.beispiel.test/**", (route) => {
+            remote.push(route.request().url());
+            return route.abort();
           });
           await next.route("**/compose-signature", async (route) => {
             await held;
@@ -4596,7 +4599,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         try {
           await readyDraft(page);
           const signature = page.locator("[data-mail-reply-box='mail'] [data-mail-draft-signature]");
-          await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("Ada Example"));
+          // An HTML draft shows the sent signature in its frame.
+          await page.frameLocator("[data-mail-reply-box='mail'] [data-mail-signature-frame]").getByText("Ada Example").waitFor();
           // Fixed: the block is not part of the editable text.
           expect(await signature.evaluate((element) => element.closest(".cm-content"))).toBeNull();
           const quote = page.locator("[data-mail-draft-quote]");

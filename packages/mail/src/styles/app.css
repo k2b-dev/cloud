@@ -1302,9 +1302,10 @@
   color: var(--k2b-text-muted);
   white-space: pre-wrap;
 }
-/* The sent signature brings its own design and spacing in the reader's message document. */
+/* The sent signature brings its own design and line spacing in the reader's message document; it keeps the room of a
+   plain signature, so the reply box above the conversation keeps its reserved height when it takes the focus. */
 .k2b-ui .mail-inline-draft-signature[data-signature-sent-html] {
-  padding-block-start: 0;
+  padding-block: 0;
   white-space: normal;
 }
 .k2b-ui .mail-inline-draft-signature-frame {
