@@ -83,7 +83,7 @@ test("a turn that Send now interrupted says paused and offers neither answering 
   ]);
   expect(html).toContain("Im November gab es 37 PayPal-Buchungen");
   // "Paused" stands in the turn's summary line, as its status word; there is no system line for it.
-  expect(html).toMatch(/class="ai-turn-work__sentence[^"]*">Angehalten</);
+  expect(html).toMatch(/class="ai-turn-work__sentence[^"]*"[^>]*>Angehalten</);
   expect(html).not.toContain("ai-turn__paused");
   // No stopped line with "Answer again", no "Continue": Gustav takes the queued message and decides himself.
   expect(html).not.toContain("ai-turn__stopped");
