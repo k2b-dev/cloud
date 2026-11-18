@@ -397,7 +397,7 @@ suite("Mail document lifecycle boundaries", () => {
       const lease = await authority.get(target.draftId);
       expect(lease?.value.state).toBe("frozen");
       if (lease?.value.state !== "frozen" || !lease.value.freezeCursor) throw new Error("Missing committed freeze marker");
-      expect(await send(target, checked)).toMatchObject({ ok: false, error: { code: "DRAFT_DOCUMENT_UNAVAILABLE", status: 503 } });
+      expect(await send(target, checked)).toMatchObject({ ok: false, error: { code: "DOCUMENT_FROZEN", status: 409 } });
       expect(value(await getDraft(context, mailboxId, target.draftId)).revision).toBe(before.revision);
       await nothingQueued(target.draftId);
       const persistedCursor = value(await readDraftDocument(target)).durable.cursor;

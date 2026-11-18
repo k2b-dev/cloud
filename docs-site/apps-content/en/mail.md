@@ -890,6 +890,9 @@ If shared draft preparation returns `DRAFT_DOCUMENT_UNAVAILABLE` (503), nothing
 was queued. Editing can remain locked for up to a minute while the interrupted
 attempt expires. Reopen and review the current draft before sending again.
 Preparation may have saved edits already accepted from another editor.
+Known draft errors retain their codes and status. `DOCUMENT_FROZEN` (409) means
+another preparation holds the temporary lock; review the draft again after that
+attempt finishes or its lock expires within a minute.
 
 Administration, providers, identities, automations, and operator commands keep
 their group names, such as `cld mail admin` and `cld mail provider`. Run

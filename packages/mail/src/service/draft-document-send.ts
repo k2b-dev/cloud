@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { SharedTextBoundaryError, type SharedTextRoomFreeze } from "@k2b/cloud/shared-text";
+import { isServiceError } from "@k2b/stdlib";
 import { ConflictError } from "@k2b/sync";
 import type { ActorCommandInput } from "../contracts";
 import { requireDraftAccess } from "./access";
@@ -43,10 +44,21 @@ export const withFrozenDraftSends = async <T>(
       const initialized = await readDraftDocument({ context: params.context, mailboxId: params.mailboxId, draftId: input.draftId });
       if (!initialized.ok) throw initialized.error;
       const state = await mailDraftRoom.freeze(input.draftId).catch((error: unknown) => {
-        const rejection = error instanceof Error && error.cause instanceof Error ? error.cause : error;
-        if (isDraftDocumentStreamFull(rejection)) throw rejection;
-        if (rejection instanceof SharedTextBoundaryError && rejection.code !== "DOCUMENT_FROZEN") throw changed();
-        if (rejection && typeof rejection === "object" && "code" in rejection && rejection.code === "SEND_CONTENT_CHANGED") throw rejection;
+        // A typed rejection may itself have a low-level cause (e.g. StoreFullError).
+        // Classify it before inspecting an app snapshot rejection wrapped as cause.
+        for (const rejection of [error, error instanceof Error ? error.cause : undefined]) {
+          if (isDraftDocumentStreamFull(rejection) || isServiceError(rejection)) throw rejection;
+          if (rejection instanceof SharedTextBoundaryError)
+            throw Object.assign(
+              new Error(
+                rejection.code === "DOCUMENT_FROZEN"
+                  ? "The draft is temporarily locked. Nothing was queued. Reopen and review it after the current send preparation finishes or its lease expires within a minute."
+                  : changed().message,
+              ),
+              { code: rejection.code, status: 409 },
+            );
+          if (rejection instanceof ConflictError) throw Object.assign(rejection, { code: "CONFLICT", status: 409 });
+        }
         log.error("Shared draft preparation failed before command creation", {
           draftId: input.draftId,
           error: error instanceof Error ? error.message : String(error),
