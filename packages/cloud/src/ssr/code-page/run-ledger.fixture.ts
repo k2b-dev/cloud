@@ -13,6 +13,10 @@ export function runLedgerFixture(failed = false) {
   Object.assign(run, { state: failed ? "failed" : "running", title: "Lieferschein #4711", trigger: "event", createdAt: "2026-11-14T12:48:42.000Z", startedAt: "2026-11-14T12:48:42.000Z", endedAt: failed ? RUN_LEDGER_NOW : null });
   data.state.runs.items[0] = run;
   if (data.state.words?.runs[run.id]) Object.assign(data.state.words.runs[run.id]!, { title: "Lieferschein #4711", state: run.state, reason: failed ? "Der Beleg konnte nicht abgelegt werden." : null });
+  if (failed) {
+    const failure = codePageFixture("run-failed");
+    if (failure.state.kind === "ready" && failure.state.run) data.state.run.refusal = failure.state.run.refusal;
+  }
   data.state.run.consoleOutput = runLedgerOutput(failed);
   return data;
 }

@@ -4,6 +4,7 @@ import { registerSsrTestPlugin } from "../../packages/ui/test/ssr-test-plugin";
 
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { withoutRunLogLifecycle } from "./run-log-lifecycle";
 import { renderedText } from "./rendered-markup";
 
 setSystemTime(new Date("2026-11-14T12:00:00.000Z"));
@@ -46,11 +47,8 @@ function collect(file: string, name: string, locale: string, render: Parameters<
   // Only explicitly marked source fields are exempt. A whole review or tab container never is.
   const ordinary = new HTMLRewriter()
     .on('[data-code-source-region="admin-approval"], [data-code-source-region="code-tab"]', { element: (element) => element.remove() })
-    // RunLog announces its named region's lifecycle separately for screen readers.
-    // v13 explicitly uses "Fertig" / "Done" there. Its visible head and all entries remain checked.
-    .on('.k2b-run-log__head > .k2b-sr-only[role="status"]', { element: (element) => element.remove() })
     .transform(html);
-  fixtures.push({ file, name: `${locale}/${name}`, text: renderedText(ordinary, "\n") });
+  fixtures.push({ file, name: `${locale}/${name}`, text: renderedText(withoutRunLogLifecycle(ordinary), "\n") });
 }
 const pageStates: Parameters<typeof codePageFixture>[0][] = [
   "overview",

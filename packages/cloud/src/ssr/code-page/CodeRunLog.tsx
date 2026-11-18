@@ -4,6 +4,7 @@ import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from
 import { followCodeRun, readCodeRunEntries } from "../../browser/code-runs";
 import { type CodeOutputWindow, type CodeOutputText, emptyCodeOutput, isCodeOutputLogEntry, isCodeOutputStepEntry } from "../../code/output";
 import type { CodeRunEntries } from "../../code/run-ledger";
+import type { CodeRunReadModel } from "../../contracts/code-read-model";
 import type { CodePageRunDetail } from "./data";
 import { codePageMessages } from "./messages";
 
@@ -25,7 +26,7 @@ export function codeRunLogEntries(output: CodeOutputWindow, locale: string): Run
 }
 
 /** SSR supplies every initial row. The host owns the clock, live channel and recovery. */
-export function CodeRunLog(props: { codeId: string; detail: CodePageRunDetail; now: string; manager: boolean; reason?: string | null; actions?: readonly RunLogAction[] }) {
+export function CodeRunLog(props: { codeId: string; detail: CodePageRunDetail; now: string; manager: boolean; reason?: string | null; actions?: readonly RunLogAction[]; confirmed?: CodeRunReadModel["untilThen"] }) {
   const locale = useLocale();
   const t = createMemo(() => messages.resolve([locale()]).t);
   const [snapshot, setSnapshot] = createSignal<CodeRunEntries>({
@@ -73,13 +74,27 @@ export function CodeRunLog(props: { codeId: string; detail: CodePageRunDetail; n
     const words = code ? codePageMessages.resolve([locale()]).t.outcome({ code }) : null;
     return words && words !== code ? words : props.reason;
   };
-  const meta = () => connection() === "loading" ? t().connecting : connection() === "revoked" ? t().revoked : connection() === "unavailable" ? t().stopped : !snapshot().output ? t().hidden : snapshot().output!.droppedLines ? t().lost({ count: snapshot().output!.droppedLines }) : reason();
+  const meta = () => [
+    connection() === "loading" ? t().connecting : connection() === "revoked" ? t().revoked : connection() === "unavailable" ? t().stopped : null,
+    reason(),
+    snapshot().output?.droppedLines ? t().lost({ count: snapshot().output!.droppedLines }) : null,
+    !snapshot().output && connection() !== "revoked" ? t().hidden : null,
+  ].filter(Boolean).join(" · ");
+  const output = createMemo(() => props.manager && connection() !== "revoked" ? "open" as const : "hidden" as const);
+  const entries = (): RunEntry[] => {
+    const current = snapshot();
+    if (!current.output) return [];
+    const at = current.endedAt ?? current.startedAt ?? props.now;
+    return [...codeRunLogEntries(current.output, locale()), ...(props.confirmed?.items ?? []).map((row, index): RunEntry => ({
+      kind: "log", id: `confirmed:${index}`, at, level: "info", text: row.text,
+    })), ...(props.confirmed?.moreText ? [{ kind: "log" as const, id: "confirmed:more", at, level: "info" as const, text: props.confirmed.moreText }] : [])];
+  };
   const actions = (): readonly RunLogAction[] => [
     ...(connection() === "unavailable" ? [{ icon: "ti ti-refresh", label: t().retry, onClick: connect }] : []),
     ...(connection() === "revoked" ? [{ icon: "ti ti-refresh", label: t().reload, onClick: () => window.location.reload() }] : []),
     ...(props.actions ?? []),
   ];
-  return <Show when={snapshot().state !== "skipped"} fallback={<NoticeCard tone="muted" icon="ti ti-player-skip-forward" title={t().skipped} detail={reason() ?? undefined} />}><RunLog state={state()} entries={snapshot().output ? codeRunLogEntries(snapshot().output!, locale()) : []}
-    duration={duration()} output={props.manager && connection() !== "revoked" ? "open" : "hidden"}
+  return <Show when={snapshot().state !== "skipped"} fallback={<NoticeCard tone="muted" icon="ti ti-player-skip-forward" title={t().skipped} detail={reason() ?? undefined} />}><RunLog state={state()} entries={entries()}
+    duration={duration()} output={output()}
     meta={<span role="status" title={meta() ?? undefined}>{meta()}</span>} actions={actions()} /></Show>;
 }

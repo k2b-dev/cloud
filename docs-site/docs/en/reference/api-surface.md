@@ -819,8 +819,8 @@ The chat runtime also exports `appendAiBackgroundMessages` and
 [background manager candidates](/en/docs/platform/resource-types-and-discussions#resolve-managers-for-background-notices).
 
 
-For editor-only [Code live details](/en/docs/platform/code-runs#follow-calls-and-console-output),
-`@k2b/cloud/code` also exports `CodeRunEntriesInputSchema`, `CodeRunEntriesSchema`,
+For [Code run snapshots and live entries](/en/docs/platform/code-runs#read-one-run-and-its-entries),
+`@k2b/cloud/code` exports `CodeRunEntriesInputSchema`, `CodeRunEntriesSchema`,
 `CodeRunLiveEventSchema`, `CodeRunEntries`, `CodeRunLiveEvent` and `codeRunKey` for
 the selected run's snapshot and live channel.
 `@k2b/cloud/code` exports `CodeCallEventSchema`, `codeDetailsKey`, the
@@ -828,9 +828,9 @@ the selected run's snapshot and live channel.
 available from browser-safe `@k2b/cloud/contracts`), `emptyCodeOutput`, `appendCodeOutput` and
 `applyCodeOutputEvent`, `isCodeOutputLogEntry` and `isCodeOutputStepEntry`. The discriminated
 `CodeOutputKnownEntrySchema` describes known kinds; `CodeOutputEntrySchema`
-also preserves unknown kinds as opaque objects. `@k2b/cloud/ssr/code-live` exports
-`followCodeDetails`, `CodeDetailEvent` and `CodeDetailPositions`. Its resync
-callback returns positions for the active runs in the replacement snapshot.
+also preserves unknown kinds as opaque objects. The browser entry point
+`@k2b/cloud/browser/code-runs` exports `readCodeRunEntries` and `followCodeRun`.
+`@k2b/cloud/ssr/code-live` exports `followCodeRuns` for Code-wide lifecycle hints.
 Core supplies structured `entries` with `kind`, `level`, `at` and sanitized
 `text` parts, plus a stable run-local `id`. Step entries use `kind: "step"`
 with sanitized label, description and message parts and a lifecycle status.

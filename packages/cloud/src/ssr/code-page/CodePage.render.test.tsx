@@ -1,11 +1,12 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { type Context, Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { codeSurfaceFindings } from "../../../../../scripts/checks/code-no-source";
+import { withoutRunLogLifecycle } from "../../../../../scripts/fixtures/run-log-lifecycle";
 import { renderedText, withoutComments } from "../../../../../scripts/fixtures/rendered-markup";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { currentLibrary } from "../../../test/future-capability-manifest";
@@ -25,6 +26,7 @@ import { nameRecentResults } from "./recent-names";
 import { describeCodeSchedule } from "./schedule";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-code-page-render-"));
+process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 
 const { default: CodePage } = await import("./CodePage");
@@ -240,12 +242,35 @@ describe("Code page: runs (Bild 22)", () => {
     if (data.state.kind !== "ready" || !data.state.run) throw new Error("Missing fixture");
     const detail = data.state.run;
     const markup = () => renderMarkup(() => createComponent(LocaleProvider, { locale: "de", get children() { return createComponent(CodePage, { data }); } }));
-    Object.assign(detail.run, { state: "failed", outcome: "code_run_wall_clock_limit", endedAt: data.dates.now });
+    Object.assign(detail.run, { state: "failed", outcome: "wall_clock_limit", endedAt: data.dates.now });
     expect(visibleText(markup())).toContain("Laufzeitlimit erreicht");
-    expect(visibleText(markup())).not.toContain("code_run_wall_clock_limit");
+    expect(visibleText(markup())).not.toContain("wall_clock_limit");
     Object.assign(detail.run, { state: "skipped", outcome: "previous_schedule_running" });
     expect(visibleText(markup())).toContain("Lauf übersprungen");
     expect(visibleText(markup())).not.toContain("Noch nicht ausgeführt");
+  });
+  test("an aborted run with no steps or logs keeps its confirmed calls", () => {
+    const data = codePageFixture("run-failed");
+    if (data.state.kind !== "ready" || !data.state.run) throw new Error("Missing fixture");
+    data.state.run.consoleOutput = { generation: 1, seq: 0, entries: [], droppedLines: 0, droppedBytes: 0 };
+    data.state.run.run.outcome = "lease_lost";
+    data.state.words!.runs[data.state.run.run.id]!.reason = null;
+    const page = visibleText(renderMarkup(() => createComponent(LocaleProvider, { locale: "de", get children() { return createComponent(CodePage, { data }); } })));
+    expect(page).toContain("Unterhaltungen lesen · 2 bestätigt");
+    expect(page).toContain("1 Aufruf abgelehnt");
+    expect(page).toContain("Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe");
+  });
+  test("failed readers keep the cause before the output restriction; loss does not hide it", () => {
+    const data = runLedgerFixture(true);
+    if (data.state.kind !== "ready" || !data.state.run) throw new Error("Missing fixture");
+    data.state.run.run.outcome = "wall_clock_limit";
+    data.state.words!.runs[data.state.run.run.id]!.reason = null;
+    data.state.run.consoleOutput!.droppedLines = 2;
+    const render = () => visibleText(renderMarkup(() => createComponent(LocaleProvider, { locale: "de", get children() { return createComponent(CodePage, { data }); } })));
+    expect(render()).toContain("Laufzeitlimit erreicht · 2 Ausgabeeinträge konnten nicht aufbewahrt werden.");
+    data.state.permission = "reader";
+    expect(render()).toContain("Laufzeitlimit erreicht · Nur wer diesen Code verwaltet, sieht seine Ausgabe.");
+    expect(render()).not.toContain("14 Positionen erkannt");
   });
   test("filters with counts, runs in words without numbers or code names, the selected run on the right", () => {
     const page = text("runs");
@@ -381,22 +406,28 @@ for (const locale of ["de", "en"]) {
   describe(`${locale}: no state shows source, identifiers or an unqualified status word`, () => {
     test.each(CODE_PAGE_FIXTURE_STATES.filter((name) => name !== "code"))("%s", (state) => {
       const visible = renderedText(
-        new HTMLRewriter()
-          .on('script, .k2b-run-log__head > .k2b-sr-only[role="status"]', { element: (element) => void element.remove() })
-          .transform(html(state, locale)),
+        withoutRunLogLifecycle(new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale))),
         "\n",
       );
       expect(codeSurfaceFindings(`${locale}/${state}`, visible)).toEqual([]);
       // v13 names the run state in RunLog's head ("Fertig nach …" / "Done in …").
       // Other surfaces must continue to name the concrete result.
       const outsideRunLog = renderedText(
-        new HTMLRewriter().on("script, .k2b-run-log", { element: (element) => void element.remove() }).transform(html(state, locale)),
+        withoutRunLogLifecycle(new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale))),
         "\n",
       );
       for (const word of ["Passt", "Fertig", "Done", "OK"]) expect(outsideRunLog.split(/\s+/)).not.toContain(word);
     });
   });
 }
+
+test("only fixed lifecycle words are exempt; RunLog metadata and output stay checked", () => {
+  const markup = '<section class="k2b-run-log"><header class="k2b-run-log__head"><span class="k2b-run-log__main">Fertig nach 0:12</span><span class="k2b-sr-only" role="status">Fertig</span><span class="k2b-run-log__meta">Done</span></header><p>source.ts</p></section>';
+  const remaining = renderedText(withoutRunLogLifecycle(markup));
+  expect(remaining).toContain("Done"); expect(remaining).toContain("source.ts");
+  expect(remaining).not.toContain("Fertig");
+  expect(() => withoutRunLogLifecycle(markup.replace("Fertig nach 0:12", "source.ts"))).toThrow("Unexpected RunLog lifecycle text");
+});
 
 test("English copy", () => {
   const page = text("overview", "en");

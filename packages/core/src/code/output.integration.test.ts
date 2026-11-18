@@ -39,6 +39,7 @@ import {
   renewCodeOutput,
   replayCodeOutput,
 } from "./output";
+import * as access from "./access";
 import * as redaction from "./output-redaction";
 import { createCodeRunnerRoutes } from "./runner-routes";
 import { secretEchoReplacements } from "./secret-echo";
@@ -269,6 +270,55 @@ suiteFor(
       expect(await codeLiveChannels.codeRun.authorize(codeRunKey(codeId, "99999999-9999-4999-8999-999999999999"), [who])).toEqual(new Set());
     }
   });
+  test("foreign and guest readers get NOT_FOUND, including a deleted Code", async () => {
+    const guestId = "66666666-6666-4666-8666-666666666666";
+    await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${guestId}::uuid,'output-guest','local','guest')`;
+    const guest = await accounts.users.get({ id: guestId });
+    if (!guest) throw new Error("Missing guest");
+    for (const user of [guest, { ...guest, profile: "user" as const, roles: ["user"] }]) {
+      const context = { authority: { actor: { kind: "user" as const, user }, accessSubject: { type: "user" as const, userId: user.id }, credentialKind: "session" as const, scopes: [] } };
+      await expect(readCodeRunEntries({ codeId, runId }, context)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(readCodeRunEntries({ codeId: "c_deleted", runId }, context)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    }
+  });
+  test("the owning resource manager gets output and an open connection is revoked on lost management", async () => {
+    setSystemTime(fixed);
+    const resourceCodeId = "c_resourceout";
+    const resourceRunId = "88888888-8888-4888-8888-888888888888";
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,created_by)
+      VALUES('code:example.item:output-place','code',${owner}::uuid) RETURNING id`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title)
+      VALUES(${resourceCodeId},'resource','example.item','output-place',${account!.id}::uuid,'Resource output')`;
+    const [version] = await sql<{ id: string }[]>`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,source_bytes,bundle_bytes,created_by)
+      VALUES(${resourceCodeId},1,'{}'::jsonb,'fixture',${"a".repeat(64)},${"b".repeat(64)},2,7,${owner}::uuid) RETURNING id`;
+    const output = emptyCodeOutput(1);
+    await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,payload_bytes,calls_limit,state,console_output)
+      VALUES(${resourceRunId}::uuid,${resourceCodeId},${version!.id}::uuid,'manual','run',32768,200,'running',${JSON.stringify(output)}::jsonb)`;
+    const user = await accounts.users.get({ id: owner });
+    if (!user) throw new Error("Missing resource manager");
+    const authority = { actor: { kind: "user" as const, user }, accessSubject: { type: "user" as const, userId: user.id }, credentialKind: "session" as const, scopes: [] };
+    let manager = true;
+    const ownerReader = spyOn(access, "readCodeOwner").mockImplementation(async () => ({ title: "Output place", admin: manager }));
+    const topic = sync.topic<LiveEnvelope>(liveTopicConfig("core"));
+    await sync.ready();
+    const engine = createLiveEngine({ appId: "core", topic: () => topic, channels: codeLiveChannels });
+    const frames: { t: string; code?: string }[] = [];
+    const until = async (ready: () => boolean) => { for (let n = 0; n < 100 && !ready(); n++) await Bun.sleep(5); expect(ready()).toBe(true); };
+    try {
+      expect((await readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).output).toEqual(output);
+      const viewer = { id: `user:${owner}`, actor: authority.actor, accessSubject: authority.accessSubject, scopes: [] };
+      const socket = engine.open({ send: (frame) => frames.push(JSON.parse(frame)), close: () => {}, getBufferedAmount: () => 0 }, viewer, async () => viewer);
+      socket.message(JSON.stringify({ t: "sub", id: "resource", channel: "codeRun", scope: { codeId: resourceCodeId, runId: resourceRunId }, after: await topic.head() }));
+      await until(() => frames.some((frame) => frame.t === "ready"));
+      manager = false;
+      await topic.publish({ data: { v: 1, k: resourceCodeId, a: true }, orderingKey: resourceCodeId });
+      await until(() => frames.some((frame) => frame.t === "revoked"));
+      expect(frames.at(-1)).toMatchObject({ t: "revoked", code: "access_denied" });
+      await expect(readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await sql`DELETE FROM code.codes WHERE id=${resourceCodeId}`;
+      await expect(readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    } finally { engine.stop(); ownerReader.mockRestore(); }
+  });
   test("stale generations cannot publish into a newer attempt and earlier output is reset", async () => {
     const newerToken = `${token}.next-attempt`;
     await openCodeOutput(
@@ -360,13 +410,15 @@ suiteFor(
     await receiveCodeOutput(proof, { seq: 1, entries: [step], droppedLines: 0, droppedBytes: 0 });
     const cacheKey = `core:code-output:v1:${proof.runId}`;
     const state = JSON.parse((await redis.get(cacheKey))!);
+    const fresh = state.stepReservations["1:step:1"];
     delete state.stepReservations;
     await redis.set(cacheKey, JSON.stringify(state));
     setSystemTime(fixed + 1000);
-    await receiveCodeOutput(proof, { seq: 2, entries: [{ ...step, status: "succeeded", endedAt: new Date().toISOString(), message: "Done" }], droppedLines: 0, droppedBytes: 0 });
+    await receiveCodeOutput(proof, { seq: 2, entries: [{ ...step, status: "succeeded", endedAt: new Date().toISOString(), message: "x".repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes - 2) }], droppedLines: 0, droppedBytes: 0 });
     const saved = JSON.parse((await redis.get(cacheKey))!);
-    expect(saved.stepReservations["1:step:1"].bytes).toBeGreaterThan(0);
-    expect((await replayCodeOutput(proof.runId)).entries).toEqual([expect.objectContaining({ status: "succeeded", label: [{ type: "text", text: "Read" }], message: [{ type: "text", text: "Done" }] })]);
+    expect(saved.stepReservations["1:step:1"]).toEqual(fresh);
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual([expect.objectContaining({ status: "succeeded", label: [{ type: "text", text: "Read" }], message: [{ type: "text", text: "x".repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes - 2) }] })]);
+    expect((await replayCodeOutput(proof.runId)).droppedLines).toBe(0);
   });
   test("all short handles survive the shipped collector, supervisor and Core with a remembered secret", async () => {
     setSystemTime(fixed);

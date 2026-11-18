@@ -8,7 +8,7 @@ type Action = { action: string };
 type Version = { version: number };
 
 const OUTCOME_DE: Record<string, string> = {
-  previous_schedule_running: "Übersprungen, vorheriger Lauf läuft noch",
+  previous_schedule_running: "Der vorige Lauf läuft noch",
   lease_lost: "Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe vor der erneuten Ausführung.",
   resource_access_revoked:
     "Das Code-Konto kann den Ereignisort nicht mehr lesen. Stelle den Lesezugriff auf den Ort und die App wieder her und wiederhole die Zustellung oder den Lauf.",
@@ -22,15 +22,11 @@ const OUTCOME_DE: Record<string, string> = {
   wall_clock_limit: "Laufzeitlimit erreicht",
   memory_limit: "Speicherlimit des Runners erreicht",
   stalled: "Runner antwortet nicht mehr",
-  code_run_wall_clock_limit: "Laufzeitlimit erreicht",
-  code_run_memory_limit: "Speicherlimit des Runners erreicht",
-  code_runner_stalled: "Runner antwortet nicht mehr",
-  code_runner_lost: "Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe vor der erneuten Ausführung.",
   code_result_unknown: "Das Ergebnis des Laufs ist unklar. Prüfe die gespeicherten Aufrufe vor der erneuten Ausführung.",
 };
 
 const OUTCOME_EN: Record<string, string> = {
-  previous_schedule_running: "Skipped, previous run is still running",
+  previous_schedule_running: "The previous run is still running",
   lease_lost: "Runner disconnected. Review the recorded calls before running again.",
   resource_access_revoked:
     "The Code account can no longer read the event place. Restore access to the place and its app, then retry delivery or the run.",
@@ -44,10 +40,6 @@ const OUTCOME_EN: Record<string, string> = {
   wall_clock_limit: "Run time limit reached",
   memory_limit: "Runner memory limit reached",
   stalled: "Runner stopped responding",
-  code_run_wall_clock_limit: "Run time limit reached",
-  code_run_memory_limit: "Runner memory limit reached",
-  code_runner_stalled: "Runner stopped responding",
-  code_runner_lost: "Runner disconnected. Review the recorded calls before running again.",
   code_result_unknown: "The run's result is unknown. Review the recorded calls before running again.",
 };
 
@@ -342,7 +334,6 @@ export const codePageMessages = i18n.define({
       runVersion: ({ version }: Version) => `Version ${version}`,
       calls: "Calls",
       callsEmpty: "No calls.",
-      callsHidden: "Only editors of this Code see what a run did.",
       moreCalls: "Show more calls",
       callsFailed: "More calls could not be loaded.",
       callUnknown: "Result unknown. The call may have completed.",
@@ -576,7 +567,6 @@ export const codePageMessages = i18n.define({
       runTriggerNamed: ({ trigger, name }: { trigger: string; name: string }) => `${trigger} “${name}”`,
       seconds: ({ count }: { count: number }) => (count === 1 ? "1 second" : `${count} seconds`),
       minutes: ({ count }: { count: number }) => (count === 1 ? "1 minute" : `${count} minutes`),
-      whatHappened: "What happened",
       rerunDots: "Run again …",
       rerunNote:
         "“Run again …” starts a new run with the version that is switched on then. Before that, Cloud shows what this run already changed.",
@@ -910,7 +900,6 @@ export const codePageMessages = i18n.define({
       runVersion: ({ version }: Version) => `Version ${version}`,
       calls: "Aufrufe",
       callsEmpty: "Keine Aufrufe.",
-      callsHidden: "Was ein Lauf getan hat, sehen nur Bearbeiter dieses Codes.",
       moreCalls: "Weitere Aufrufe anzeigen",
       callsFailed: "Weitere Aufrufe konnten nicht geladen werden.",
       callUnknown: "Ergebnis unbekannt. Der Aufruf könnte abgeschlossen sein.",
@@ -1139,7 +1128,6 @@ export const codePageMessages = i18n.define({
       runTriggerNamed: ({ trigger, name }) => `${trigger} „${name}“`,
       seconds: ({ count }) => (count === 1 ? "1 Sekunde" : `${count} Sekunden`),
       minutes: ({ count }) => (count === 1 ? "1 Minute" : `${count} Minuten`),
-      whatHappened: "Was passiert ist",
       rerunDots: "Lauf wiederholen …",
       rerunNote:
         "„Lauf wiederholen …“ startet einen neuen Lauf mit der Version, die dann eingeschaltet ist. Vorher zeigt Cloud, was dieser Lauf schon geändert hat.",

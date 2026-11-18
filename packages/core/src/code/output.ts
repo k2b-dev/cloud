@@ -12,8 +12,8 @@ import {
   CodeOutputStepEntrySchema,
   type CodeOutputWindow,
   CodeOutputWindowSchema,
-  codeDetailsKey,
   codeRunKey,
+  codeOutputStepBytes,
   codeOutputEntryLines,
   codeOutputStepsBudget,
   emptyCodeOutput,
@@ -73,8 +73,12 @@ const StateSchema = z.object({
 }).transform((state) => {
   // An in-flight run may cross a deploy that introduced reservations. Retain
   // its accepted fields and reserve their terminal envelope before new steps.
+  const text = (parts: (typeof state.steps)[string]["label"]) => parts.map((part) => part.type === "text" ? part.text : part.name).join("");
   for (const [id, step] of Object.entries(state.steps))
-    state.stepReservations[id] ??= { bytes: stepReserve(step) + Buffer.byteLength(JSON.stringify(id)) + 2 };
+    state.stepReservations[id] ??= { bytes: Math.max(
+      codeOutputStepBytes({ label: text(step.label), icon: step.icon, description: step.description ? text(step.description) : undefined, message: step.message ? text(step.message) : undefined }),
+      stepReserve(step) + Buffer.byteLength(JSON.stringify(id)) + 2,
+    ) };
   return state;
 });
 type State = z.infer<typeof StateSchema>;
@@ -374,11 +378,6 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
       orderingKey: claims.runId,
       data: event,
       idempotencyKey: `${claims.runId}:${claims.generation}:${event.seq}`,
-    });
-    await live.publishTransient({
-      key: codeDetailsKey(claims.codeId),
-      data: event,
-      idempotencyKey: `output:${claims.runId}:${claims.generation}:${event.seq}`,
     });
     await live.publishTransient({
       key: codeRunKey(claims.codeId, claims.runId),

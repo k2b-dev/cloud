@@ -57,14 +57,15 @@ Core keeps its existing socket at `/api/ai/live`. Its `user` channel follows
 the viewer's AI data; its `code` channel takes the strict scope `{ codeId }`
 and follows that Code ID as its key. Both use the topic `cloud:live:core`.
 The `code` channel sends `{ type: "code.run", runId, state, at }`, where
-`runId` is a UUID, `state` is `queued`, `running`, `succeeded`, `failed`, or
-`skipped`, and `at` is a UTC ISO timestamp. Run creation and state changes
-produce hints; a cancelled run is reported as `skipped`. Hints contain no
+`runId` is a UUID, `state` is `queued`, `running`, `succeeded`, `failed`,
+`cancelled`, or `skipped`, and `at` is a UTC ISO timestamp. Run creation and
+state changes produce hints; cancellation matches the server snapshot. Hints contain no
 names, call arguments, or results. Read the
 authorized snapshot for details. Effects are counted at run completion:
 the transition to `succeeded` or `failed` tells the page to refresh them.
 Individual calls do not write live outbox rows (DATA-13). Editor-only call
 hints use committed transient publication on the separate `codeDetails` key;
+Sanitized output uses only the selected run’s `codeRun` key;
 see [Code live details](/en/docs/platform/code-runs#follow-calls-and-console-output).
 
 Code live admission uses the same read permissions as Code's HTTP service:

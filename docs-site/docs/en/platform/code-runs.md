@@ -314,7 +314,8 @@ The `codeRun` channel on the existing `/api/ai/live` socket accepts
 `{ codeId, runId }`. It admits Code managers for that exact run. Core checks
 rights at admission and on access changes; the existing reauthorization
 sweep covers owner rights outside Core. NATS distributes `code.output` and
-payload-free `code.run` events. Ordinary output delivery and local application
+payload-free `code.run` events. Cancelled runs retain `state: "cancelled"` on
+both the Code-wide and selected-run channels, matching the server snapshot. Ordinary output delivery and local application
 issue zero SQL. Admission, a sequence or replay gap, and the terminal state load a
 covering snapshot. Reconnects replay from the existing live cursor or request
 that covering snapshot when the cursor is no longer retained. There is no
@@ -323,7 +324,8 @@ per-output-event query or separate socket.
 and their result/event types are exported from `@k2b/cloud/code`.
 
 `RunLog` from `@k2b/ui` remains presentational. Its host owns the clock,
-connection, duration, recovery and loading. Gustav's **Runs** detail renders
+connection, duration, recovery and loading. Confirmed call summaries remain
+visible as quiet output lines, including runs with no logged steps or messages. Gustav's **Runs** detail renders
 the server snapshot first and opens output for Code managers. A stopped
 connection retains the last visible snapshot with **Try again**; revoked
 access removes its output and offers **Reload**.
@@ -334,7 +336,8 @@ The `code` channel on `/api/ai/live` carries only run state. Readers receive
 no call hints or console output. The separate `codeDetails` channel accepts
 `{ codeId }` and authorizes Code editors, including administrators of the
 owning resource. Being a Cloud administrator alone does not grant access to
-these contents. Revocation and credential scopes apply to both channels.
+these contents. This Code-wide channel carries call hints only; output travels solely on
+the selected run’s `codeRun` channel. Revocation and credential scopes apply to all channels.
 
 After committing a call receipt, Core publishes a `code.call` hint with
 `runId`, `ordinal`, `operation` and `state`. Completion publishes another
@@ -508,13 +511,11 @@ Each raw bundle, including the runner's proof envelope, fits
 `LIVE_LIMITS.frameBytes`. The trusted supervisor joins submissions and waits at least the AI
 stream's existing snapshot interval between bundles; Core discards excess
 bundles and counts their lines and bytes. This cadence spans all attempts of
-the same run. Sanitized NATS deltas obey the same frame limit. `followCodeDetails` from `@k2b/cloud/ssr/code-live` requests a
-covering snapshot on admission, reconnect or a sequence gap. Apply deltas
-with `applyCodeOutputEvent` from `@k2b/cloud/code`; replace the window on a
-snapshot. The resync callback returns `CodeDetailPositions` for the currently
-observed active runs. Snapshot replacement and disposal remove old positions.
-Render only this bounded window, so the live, replayed and stored
-tails agree.
+the same run. Sanitized NATS deltas obey the same frame limit. `followCodeRun`
+requests a covering snapshot on admission, reconnect or a sequence gap.
+Apply deltas with `applyCodeOutputEvent` from `@k2b/cloud/code`; replace the
+window on a snapshot. Render only this bounded window, so the live, replayed
+and stored tails agree.
 
 Late arrivals replay the run's dedicated NATS topic. A shared cache repairs
 publication gaps or topic retention with a covering snapshot. Terminal

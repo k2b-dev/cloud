@@ -78,7 +78,7 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
     const run = data.state.run.run;
     let snapshot: CodeRunEntries = { state: "running", outcome: null, startedAt: run.startedAt, endedAt: null, output: runLedgerOutput() };
     let reads = 0;
-    const live: { event?: (data: unknown) => void; revoke?: () => void } = {};
+    const live: { event?: (data: unknown) => void; revoke?: () => void; unavailable?: () => void } = {};
     await page.addInitScript((at) => { const RealDate = Date; globalThis.Date = new Proxy(RealDate, { construct: (target, args) => Reflect.construct(target, args.length ? args : [at]), get: (target, key, receiver) => key === "now" ? () => at : Reflect.get(target, key, receiver) }); }, Date.parse(RUN_LEDGER_NOW));
     await page.route("**/api/capabilities/v1/queries/**", async (route) => { reads++; await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: snapshot }) }); });
     await page.routeWebSocket("**/api/ai/live*", (socket) => {
@@ -87,6 +87,7 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
         if (message.t !== "sub") return;
         socket.send(JSON.stringify({ t: "ready", id: message.id, cursor: "0" }));
         live.event = (data) => socket.send(JSON.stringify({ t: "event", id: message.id, cursor: "1", data }));
+        live.unavailable = () => socket.close({ code: 1008, reason: "fixture_unavailable" });
         live.revoke = () => socket.send(JSON.stringify({ t: "revoked", id: message.id, code: "access_denied" }));
       });
     });
@@ -104,7 +105,7 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
       live.event({ type: "code.output", runId: run.id, generation: 1, seq: 2, entries: [finishedStep], droppedLines: 0, droppedBytes: 0, budget: 32768 });
       await page.locator('.k2b-run-log__step[data-status="failed"]').waitFor();
       expect(reads).toBe(1);
-      snapshot = { ...snapshot, state: "failed", outcome: "code_runner_lost", endedAt: RUN_LEDGER_NOW, output: runLedgerOutput(true) };
+      snapshot = { ...snapshot, state: "failed", outcome: "lease_lost", endedAt: RUN_LEDGER_NOW, output: runLedgerOutput(true) };
       live.event({ type: "code.run", runId: run.id, state: "failed", at: RUN_LEDGER_NOW });
       await page.locator('.k2b-run-log[data-state="failed"]').waitFor();
       expect(reads).toBe(2);
@@ -113,10 +114,34 @@ for (const theme of ["light", "dark"] as const) for (const width of [1440, 390])
       await page.getByRole("button", { name: /^Ausgabe/ }).focus();
       await page.keyboard.press("Enter");
       expect(await page.locator(".k2b-run-log__output-toggle").getAttribute("aria-expanded")).toBe("false");
+      live.event({ type: "code.output", runId: run.id, generation: 1, seq: 3, entries: [], droppedLines: 0, droppedBytes: 0, budget: 32768 });
+      await settled(page);
+      expect(await page.locator(".k2b-run-log__output-toggle").getAttribute("aria-expanded")).toBe("false");
+      if (width === 390 && theme === "light") {
+        const folded = await bounds(page);
+        if (!live.unavailable) throw new Error("Missing unavailable fixture");
+        live.unavailable();
+        await page.getByText(/Updates angehalten/, { exact: false }).waitFor();
+        expect(await bounds(page)).toEqual(folded);
+        await shot(page, "updates-angehalten", theme, width);
+        await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+        await page.waitForFunction(() => !document.body.textContent?.includes("Verbindung wird hergestellt"));
+      }
       if (!live.revoke) throw new Error("Missing revoke fixture");
       live.revoke();
-      await page.getByText("Zugriff geändert. Lade die Seite neu, um deinen Zugriff zu prüfen.", { exact: true }).waitFor();
+      await page.getByText("Zugriff geändert. Lade die Seite neu, um deinen Zugriff zu prüfen.", { exact: false }).waitFor();
       expect(await page.getByText("14 Positionen erkannt", { exact: true }).count()).toBe(0);
+      if (width === 390 && theme === "light") {
+        await page.goto(`${origin}/?theme=${theme}&failed=1`);
+        await page.getByText("Lieferschein #4711", { exact: true }).waitFor();
+        await shot(page, "kopf-aktionen", theme, width);
+        expect(await page.locator(".k2b-run-log__actions").count()).toBe(1);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page.goto(`${origin}/?theme=${theme}&failed=1&reader=1`);
+        await page.getByText("Nur wer diesen Code verwaltet, sieht seine Ausgabe.", { exact: false }).waitFor();
+        expect(await page.getByText("14 Positionen erkannt", { exact: true }).count()).toBe(0);
+        await shot(page, "leser", theme, width);
+      }
       expect(errors).toEqual([]);
     } finally { await context.close(); }
   });

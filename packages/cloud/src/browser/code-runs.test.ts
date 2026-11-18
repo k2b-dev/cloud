@@ -44,9 +44,12 @@ test("one run applies ordinary output without reads and covers gaps, reconnects 
     expect(reads).toBe(3); expect(snapshots.at(-1)?.state).toBe("succeeded");
     await current().apply([{ cursor: "3", data: { type: "code.run", runId: scope.runId, state: "running", at } }]);
     expect(snapshots.at(-1)?.state).toBe("succeeded");
+    authoritative = { ...authoritative, state: "cancelled" };
+    await current().apply([{ cursor: "5", data: { type: "code.run", runId: scope.runId, state: "cancelled", at } }]);
+    expect(reads).toBe(4); expect(snapshots.at(-1)?.state).toBe("cancelled");
     current().revoked?.("access_denied");
     await current().resync(); await current().apply([output(4)]);
-    expect(reads).toBe(3); expect(reasons).toEqual(["revoked"]);
+    expect(reads).toBe(4); expect(reasons).toEqual(["revoked"]);
   } finally { stop(); spy.mockRestore(); }
   expect(closed).toBeGreaterThan(0);
 });

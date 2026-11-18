@@ -3,7 +3,7 @@ import { applyCodeOutputEvent, type CodeOutputWindow } from "../code/output";
 import { CodeRunEntriesInputSchema, CodeRunEntriesSchema, CodeRunLiveEventSchema, type CodeRunEntries } from "../code/run-ledger";
 import { liveConnection } from "./live";
 
-/** Public Core query; SSR uses the same capability with its request authority. */
+/** Browser query for the permission-aware Core run-output service also used by SSR. */
 export function readCodeRunEntries(scope: { codeId: string; runId: string }, signal?: AbortSignal) {
   return invokeCapabilityWithDataSchema({
     appId: "core", capabilityId: "code.run.entries", kind: "query",
@@ -57,7 +57,7 @@ export function followCodeRun(
       for (const { data } of events) {
         if (closed || data.runId !== scope.runId) continue;
         if (data.type === "code.run") {
-          if (["succeeded", "failed", "skipped"].includes(data.state)) await refresh();
+          if (["succeeded", "failed", "cancelled", "skipped"].includes(data.state)) await refresh();
           else if (current.state === "queued" || current.state === "running") {
             current = { ...current, state: data.state, ...(data.state === "running" && !current.startedAt ? { startedAt: data.at } : {}) };
             options.apply(current);

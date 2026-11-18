@@ -16,12 +16,12 @@ export async function migrateCodeLive(tx: SQL): Promise<void> {
       PERFORM events.enqueue(gen_random_uuid(), 'core', 'live', NEW.code_id,
         jsonb_build_object('v',1,'k',NEW.code_id,'d',jsonb_build_object(
           'type','code.run','runId',NEW.id,
-          'state',CASE WHEN NEW.state='cancelled' THEN 'skipped' ELSE NEW.state END,
+          'state',NEW.state,
           'at',to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))));
       run_key := 'code.run:' || NEW.code_id || ':' || NEW.id::text;
       payload := jsonb_build_object('v',1,'k',run_key,'d',jsonb_build_object(
         'type','code.run','runId',NEW.id,
-        'state',CASE WHEN NEW.state='cancelled' THEN 'skipped' ELSE NEW.state END,
+        'state',NEW.state,
         'at',to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')));
       PERFORM events.enqueue(gen_random_uuid(), 'core', 'live', run_key, payload);
       RETURN NULL;
