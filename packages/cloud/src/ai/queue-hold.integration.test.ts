@@ -12,7 +12,9 @@ import {
   requestQueuedMessageSendNow,
 } from "./message-queue";
 import { userResourceContext } from "./projects.test-fixture";
+import { AiMessageQueueConflict } from "./queue-conflict";
 import type { AiStoredMessageOrigin } from "./queue-contracts";
+import { abortAiTurn } from "./runtime";
 import { aiConversations } from "./store";
 import type { AiConversationService } from "./types";
 
@@ -279,8 +281,8 @@ integration("archiving a chat with queued entries lets them lapse (#108)", async
     const retained = await sql`SELECT id FROM ai.queued_messages WHERE conversation_id=${f.chat.id}::uuid
       AND (submission <> '{}'::jsonb OR content <> '[]'::jsonb)`;
     expect(retained).toEqual([]);
-    await expect(aiConversations.submitChatTurn(f.input("Too late", { kind: "person", id: f.userId }))).rejects.toThrow(
-      "Conversation not found.",
+    await expect(aiConversations.submitChatTurn(f.input("Too late", { kind: "person", id: f.userId }))).rejects.toBeInstanceOf(
+      AiMessageQueueConflict,
     );
     // A stale Stop request arriving after archive must not put the old hold back before restore.
     expect(await aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: f.turnId, reason: "user" })).toEqual({
@@ -311,11 +313,14 @@ integration("direct submissions identify the person before admission: a service 
     const input = f.input("Direct message", { kind: "person", id: f.userId });
     delete input.runConfig.writerOrigin;
     input.runConfig.actor = { kind: "service_account", serviceAccount, delegatedUser: null, scopes: ["write"] };
-    await expect(aiConversations.submitChatTurn(input)).rejects.toThrow("Queued messages must be sent first.");
+    await expect(aiConversations.submitChatTurn(input)).rejects.toMatchObject({
+      code: "queue_held",
+      message: "A person stopped this chat; only their next message resumes it.",
+    });
     expect(await f.started()).toBe(0);
     // Explicit platform automation provenance cannot resume it either.
     await expect(aiConversations.submitChatTurn(f.input("Automation", { kind: "automation", id: account!.id }))).rejects.toThrow(
-      "Queued messages must be sent first.",
+      "A person stopped this chat; only their next message resumes it.",
     );
     input.runConfig.actor = userResourceContext({ type: "user", userId: f.userId }).actor;
     const person = await aiConversations.submitChatTurn(input);
@@ -390,5 +395,52 @@ integration("the global sweep skips held chats and resumes them only after a per
     expect((await listQueuedMessages(f.chat.id)).map(({ id }) => id)).not.toContain(f.person);
   } finally {
     await f.close();
+  }
+});
+
+integration("a stale Stop does not withdraw Send now interrupting a different active turn", async () => {
+  const f = await fixture();
+  try {
+    await f.finish(f.turnId);
+    const [active] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id,conversation_id,status)
+      VALUES(${testShortId()},${f.chat.id}::uuid,'running') RETURNING id`;
+    const requested = await requestQueuedMessageSendNow(f.chat.id, f.automation);
+    expect(requested?.interrupt?.turnId).toBe(active!.id);
+    await aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: f.turnId, reason: "user" });
+    // The old click holds the chat, but cannot orphan the newer turn's interrupt handshake.
+    const [entry] = await sql<{ interrupted_turn_id: string | null; requested: boolean }[]>`
+      SELECT interrupted_turn_id,send_requested_at IS NOT NULL AS requested FROM ai.queued_messages WHERE id=${f.automation}::uuid`;
+    expect(entry).toEqual({ interrupted_turn_id: active!.id, requested: true });
+    expect(await aiConversations.getTurn({ conversationId: f.chat.id, turnId: active!.id })).toMatchObject({
+      cancellationReason: "queue_interrupt",
+    });
+  } finally {
+    await f.close();
+  }
+});
+
+integration("a service-account Stop aborts its target without holding the foreground queue", async () => {
+  const f = await fixture();
+  const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)
+    VALUES (${`stop-${crypto.randomUUID()}`},'standalone') RETURNING id`;
+  try {
+    const serviceAccount = await serviceAccounts.get({ id: account!.id });
+    if (!serviceAccount) throw new Error("Missing service account fixture");
+    await abortAiTurn({
+      conversationId: f.chat.id,
+      turnId: f.turnId,
+      actor: { kind: "service_account", serviceAccount, delegatedUser: null, scopes: ["write"] },
+    });
+    expect(await aiConversations.getTurn({ conversationId: f.chat.id, turnId: f.turnId })).toMatchObject({
+      status: "aborted",
+      cancellationReason: "service_account",
+    });
+    const [chat] = await sql<{ queue_held_at: Date | null }[]>`SELECT queue_held_at FROM ai.conversations WHERE id=${f.chat.id}::uuid`;
+    expect(chat?.queue_held_at).toBeNull();
+    await f.drain();
+    expect(f.jobs).toHaveLength(1);
+  } finally {
+    await f.close();
+    await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
   }
 });

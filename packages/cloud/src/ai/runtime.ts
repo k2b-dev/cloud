@@ -345,10 +345,16 @@ export const submitAiCompaction = async (input: SubmitAiCompactionInput): Promis
 // Abort
 // ---------------------------------------------------------------------------
 
-export const abortAiTurn = async (input: { conversationId: string; turnId: string }): Promise<{ ok: true }> => {
+export const abortAiTurn = async (input: {
+  conversationId: string;
+  turnId: string;
+  actor: RequestActor;
+  reason?: "retry";
+}): Promise<{ ok: true }> => {
   // Capture wire coordinates before the cancellation flag can wake its owner.
   const active = await aiConversations.getActiveTurn({ conversationId: input.conversationId }).catch(() => null);
-  const request = await aiConversations.requestTurnAbort({ ...input, reason: "user" });
+  const reason = input.reason ?? (input.actor.kind === "user" ? "user" : "service_account");
+  const request = await aiConversations.requestTurnAbort({ conversationId: input.conversationId, turnId: input.turnId, reason });
   await finishAiTurnAbort(input, request, active);
   return { ok: true };
 };

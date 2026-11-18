@@ -156,3 +156,16 @@ test("queue_waiting explains how to resume without resubmitting or clearing the 
   ).rejects.toThrow("send the draft to join the queue, or choose Send now");
   expect(requests.filter(({ path }) => path.endsWith("/draft"))).toHaveLength(1);
 });
+
+test("queue_held explains that an automated submission cannot resume the person's stopped chat", async () => {
+  const { ctx, requests } = setup();
+  const fetch = ctx.fetch;
+  ctx.fetch = async (path, init) =>
+    path.endsWith("/turns")
+      ? Response.json({ code: "queue_held", message: "A person stopped this chat; only their next message resumes it." }, { status: 409 })
+      : fetch(path, init);
+  await expect(
+    submitAssistantTurn({ ctx, conversationId: "chat", path: "/conversations/chat/turns", body: { message: "Continue" }, watch: false }),
+  ).rejects.toThrow("only their next message resumes it. Automated submissions cannot resume it.");
+  expect(requests.filter(({ path }) => path.endsWith("/draft"))).toHaveLength(1);
+});

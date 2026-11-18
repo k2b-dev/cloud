@@ -10,6 +10,7 @@ import { canonicalizeAiConversationAttachments } from "./file-context";
 import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT } from "./files-store";
 import { aiInputToUserMessage, aiTurnInputToContent } from "./http";
 import { type AiOriginViewer, projectAiMessageOrigins } from "./message-origin";
+import { AiMessageQueueConflict } from "./queue-conflict";
 import type { AiQueuedMessage, AiSendQueuedMessageResult } from "./queue-contracts";
 import { AI_MESSAGE_QUEUE_LIMIT, type AiStoredMessageOrigin } from "./queue-contracts";
 import { aiQueueInterruptionContext, type InterruptedStep } from "./queue-interruption-context";
@@ -23,8 +24,8 @@ import type { AiConversationService, AiDraftContentPart } from "./types";
 
 const log = logger("ai:message-queue");
 
+export { AiMessageQueueConflict } from "./queue-conflict";
 export { AI_MESSAGE_QUEUE_LIMIT } from "./queue-contracts";
-export class AiMessageQueueConflict extends Error {}
 
 type Submission = Parameters<AiConversationService["submitChatTurn"]>[0];
 

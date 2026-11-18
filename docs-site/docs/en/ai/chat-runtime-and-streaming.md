@@ -46,11 +46,15 @@ schedule after a Stop.
 
 A direct submission cannot overtake waiting entries: it returns HTTP 409 with
 `code: "queue_waiting"` and leaves the draft intact. The web chat and PWA then
-queue the person's message at the end, which lifts the hold. Other API clients
+queue the person's message at the end, which lifts the hold. A person's client
 can submit the saved draft with a new `queueId` to do the same. The CLI explains
 how to send the saved draft in Assistant or use Send now on a waiting entry.
 Without waiting entries, the person's direct submission lifts the hold; a
-service account or automation cannot start directly while it is held. Messages
+service account or automation receives HTTP 409 with `code: "queue_held"`
+while it is held. Retrying a message cancels an approval wait without setting
+a new hold; a retry with waiting entries returns `queue_waiting`. A service
+account stopping a turn does not hold the queue. If the chat is archived before
+a direct submission or retry commits, it returns HTTP 409. Messages
 from other chats wait as they do for a busy chat. The server owns the hold;
 archiving clears it, so restoring the chat does not restore an old Stop.
 

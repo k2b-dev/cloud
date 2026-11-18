@@ -225,6 +225,8 @@ export const submitAssistantTurn = async (input: {
         .clone()
         .json()
         .catch(() => null);
+      if (rejection?.code === "queue_held")
+        throw new Error("A person stopped this chat; only their next message resumes it. Automated submissions cannot resume it.");
       if (rejection?.code === "queue_waiting")
         throw new Error(
           "Queued messages are waiting. Your message is saved in the chat draft. Open this chat in Assistant and send the draft to join the queue, or choose Send now on a waiting entry.",

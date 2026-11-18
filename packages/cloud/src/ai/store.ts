@@ -18,6 +18,7 @@ import { aiTurnErrorText } from "./chat/turn-error";
 import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
+import { AiMessageQueueConflict } from "./queue-conflict";
 import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
 import {
   compactCapabilityReview,
@@ -3019,7 +3020,7 @@ export const aiConversations: AiConversationService = {
       >`
         SELECT draft_revision, project_id, queue_held_at FROM ai.conversations WHERE id = ${input.conversationId} AND archived_at IS NULL FOR UPDATE
       `;
-      if (!conversation) throw new Error("Conversation not found.");
+      if (!conversation) throw new AiMessageQueueConflict("Conversation not found.");
       if (input.queuedMessageId) {
         const [head] = await tx<
           { id: string; status: string; send_requested_at: Date | string | null }[]
@@ -3040,10 +3041,11 @@ export const aiConversations: AiConversationService = {
       const writer = input.runConfig.writerOrigin?.kind ?? (input.runConfig.actor?.kind === "service_account" ? "automation" : "person");
       const person = writer === "person";
       if (!input.queuedMessageId) {
-        if (conversation.queue_held_at && !person) throw new Error("Queued messages must be sent first.");
+        if (conversation.queue_held_at && !person)
+          throw new AiMessageQueueConflict("A person stopped this chat; only their next message resumes it.", "queue_held");
         const [queued] =
           await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
-        if (queued) throw new Error("Queued messages must be sent first.");
+        if (queued) throw new AiMessageQueueConflict("Queued messages must be sent first.", "queue_waiting");
       }
       if (input.expectedDraftRevision !== undefined && Number(conversation.draft_revision) !== input.expectedDraftRevision) {
         throw new Error("Conversation draft changed before the turn was submitted.");
@@ -3394,8 +3396,8 @@ export const aiConversations: AiConversationService = {
       SET cancel_requested_at = COALESCE(cancel_requested_at, now()),
           cancellation_reason = CASE WHEN ${reason} = 'routine_deleted' THEN ${reason}
             WHEN ${reason} = 'routine_paused' AND cancellation_reason IS DISTINCT FROM 'routine_deleted' THEN ${reason}
-            -- A person's Stop ends the turn now instead of waiting on Send now's drain.
-            WHEN ${reason} = 'user' AND cancellation_reason = 'queue_interrupt' THEN ${reason}
+            -- Explicit cancellation ends the turn instead of waiting on Send now's drain.
+            WHEN ${reason} IN ('user', 'retry', 'service_account') AND cancellation_reason = 'queue_interrupt' THEN ${reason}
             ELSE COALESCE(cancellation_reason, ${reason}) END
       WHERE id = ${input.turnId}
         AND conversation_id = ${input.conversationId}
@@ -3410,10 +3412,11 @@ export const aiConversations: AiConversationService = {
         )
         RETURNING id
       ), withdrawn AS (
-        -- Stop is the later intent: this entry waits again, without being removed or failed.
+        -- Stop wins over this turn's Send now. A stale Stop must not withdraw a different turn's interrupt.
         UPDATE ai.queued_messages SET send_requested_at = NULL, interrupted_turn_id = NULL,
           interruption_deadline = NULL, interruption_client_calls = NULL, interruption_steps = NULL
         WHERE conversation_id IN (SELECT id FROM held) AND status IN ('pending','failed') AND send_requested_at IS NOT NULL
+          AND (interrupted_turn_id IS NULL OR interrupted_turn_id = ${input.turnId}::uuid)
       )
       SELECT * FROM stopped
     `;

@@ -300,11 +300,11 @@ const publicPendingAction = (
   turnId: string,
 ) => ({ ...action, conversationId, turnId });
 
-const prepareConversationForMessageRetry = async (conversationId: string): Promise<"ready" | "busy"> => {
+const prepareConversationForMessageRetry = async (conversationId: string, actor: RequestActor): Promise<"ready" | "busy"> => {
   const active = await aiConversations.getActiveTurn({ conversationId });
   if (!active) return "ready";
   if (active.turn.status !== "waiting_for_action") return "busy";
-  await abortAiTurn({ conversationId, turnId: active.turn.id });
+  await abortAiTurn({ conversationId, turnId: active.turn.id, actor, reason: "retry" });
   return (await aiConversations.getActiveTurn({ conversationId })) ? "busy" : "ready";
 };
 
@@ -1187,9 +1187,8 @@ export const aiRoutes = (() => {
             201,
           );
         } catch (error) {
-          if (error instanceof Error && error.message === "Queued messages must be sent first.")
-            return respond(c, fail({ ...err.conflict(error.message), code: "queue_waiting" }));
-          if (error instanceof AiMessageQueueConflict) return respond(c, fail(err.conflict(error.message)));
+          if (error instanceof AiMessageQueueConflict)
+            return respond(c, fail({ ...err.conflict(error.message), ...(error.code ? { code: error.code } : {}) }));
           return toAiErrorResponse(c, error);
         }
       })
@@ -1248,7 +1247,7 @@ export const aiRoutes = (() => {
             body.model ?? originalProject?.defaultModel ?? undefined,
             ctx.modelPolicy,
           );
-          if ((await prepareConversationForMessageRetry(conversation.id)) === "busy") {
+          if ((await prepareConversationForMessageRetry(conversation.id, ctx.actor)) === "busy") {
             return respond(c, fail(err.conflict("Stop the active response before trying a message again.")));
           }
           const result = await submitAiChatTurn({
@@ -1300,6 +1299,8 @@ export const aiRoutes = (() => {
             201,
           );
         } catch (error) {
+          if (error instanceof AiMessageQueueConflict)
+            return respond(c, fail({ ...err.conflict(error.message), ...(error.code ? { code: error.code } : {}) }));
           return toAiErrorResponse(c, error);
         }
       })
@@ -1382,7 +1383,7 @@ export const aiRoutes = (() => {
         if (!conversation) return notFound(c);
         const turn = await loadTurn(conversation, c.req.param("turnId"));
         if (!turn) return notFound(c);
-        await abortAiTurn({ conversationId: conversation.id, turnId: turn.id });
+        await abortAiTurn({ conversationId: conversation.id, turnId: turn.id, actor: ctx.actor });
         return respond(c, ok({ ok: true }));
       })
       .post("/conversations/:conversationId/turns/:turnId/calls/:callId/check", async (c) => {
