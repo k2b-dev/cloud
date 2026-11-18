@@ -139,6 +139,8 @@ for (const theme of ["light", "dark"])
                   actions: actions.map((action) => ({
                     width: action.getBoundingClientRect().width,
                     top: action.getBoundingClientRect().top,
+                    bottom: action.getBoundingClientRect().bottom,
+                    inset: node.getBoundingClientRect().bottom - action.getBoundingClientRect().bottom,
                   })),
                 };
               });
@@ -146,7 +148,8 @@ for (const theme of ["light", "dark"])
               expect(geometry.gap).toBeGreaterThanOrEqual(0);
               expect(geometry.gap).toBeLessThanOrEqual(4);
               expect(geometry.actions.length).toBeLessThanOrEqual(2);
-              expect(geometry.height).toBe(width === 1440 ? 64 : geometry.reserve ? 168 : geometry.height);
+              expect(geometry.height).toBe(width === 1440 ? 64 : geometry.reserve ? 156 : geometry.height);
+              if (width === 390) for (const action of geometry.actions) expect(action.inset).toBeCloseTo(11, 0);
               if (width === 390 && geometry.actions.length === 2) {
                 expect(Math.abs(geometry.actions[0]!.width - geometry.actions[1]!.width)).toBeLessThan(1);
                 expect(geometry.actions[0]!.top).toBe(geometry.actions[1]!.top);

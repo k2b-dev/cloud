@@ -31,7 +31,7 @@ for (const locale of ["de", "en"])
       };
       const html = renderToString(() => createComponent(ApprovalFrame, props));
       expect(detailsRead).toBe(false);
-      expect(html).toContain('data-layout="row"');
+      expect(html).toContain('data-row=""');
       expect(html).toContain('data-tone="ai"');
       expect(html).toContain('data-reserve=""');
       expect(html.match(/ti-shield-check/g)).toHaveLength(1);

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { ApprovalPage, PendingApproval } from "../contracts/approvals";
@@ -339,7 +339,9 @@ describe("Approvals", () => {
     );
     try {
       const rows = () => Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
-      const line = (row: HTMLElement | undefined) => row?.querySelector(".k2b-notice-card__content")?.textContent?.trim() ?? "";
+      const sentence = (row: HTMLElement | undefined) => row?.querySelector(".k2b-notice-card__title")?.textContent?.trim() ?? "";
+      const line = (row: HTMLElement | undefined) =>
+        [sentence(row), row?.querySelector(".k2b-notice-card__detail-text")?.textContent?.trim()].filter(Boolean).join(" ");
       const tone = (row: HTMLElement | undefined) => row?.querySelector(".cloud-approval-frame")?.getAttribute("data-outcome-tone");
       await Bun.sleep(550);
       for (const row of rows()) {
@@ -351,10 +353,12 @@ describe("Approvals", () => {
       await waitFor(() => rows()[3]?.dataset.decided === "rejected", "the rejection");
       // A 409 or 404 changed nothing: the line says so in a neutral tone, never the success check.
       expect(rows()[0]?.dataset.decided).toBe("elsewhere");
-      expect(line(rows()[0])).toBe("Already decided elsewhere");
+      expect(sentence(rows()[0])).toBe("Already decided elsewhere");
+      expect(line(rows()[0])).toContain("The request is no longer open");
+      expect(line(rows()[0])).not.toContain("Nothing was run");
       expect(tone(rows()[0])).toBe("off");
       expect(rows()[1]?.dataset.decided).toBe("gone");
-      expect(line(rows()[1])).toBe("Expired or withdrawn");
+      expect(sentence(rows()[1])).toBe("Expired or withdrawn");
       expect(rows()[2]?.dataset.decided).toBeUndefined();
       expect(tone(rows()[2])).toBe("warning");
       expect(line(rows()[3])).toContain("Rejected: Send “Offer 4”");
@@ -404,6 +408,27 @@ describe("Approvals", () => {
     }
   });
 
+  test("a proposal without detail blocks still shows the pure reason and expiry exactly once in its dialog", async () => {
+    setSystemTime(new Date("2026-10-12T07:51:00.000Z"));
+    const request = item("a1");
+    if (!request.review || !("sentence" in request.review)) throw new Error("Fixture must use a sentence review");
+    const view = await mount(
+      { initial: page([{ ...request, review: { ...request.review, view: { version: 1, blocks: [] }, links: [] } }]) },
+      () => Response.json({ status: "approved" }),
+    );
+    try {
+      const dialog = await openDetails(view.dom.root);
+      const paragraphs = [...dialog.querySelectorAll(".cloud-approval-details > p")].map((p) => p.textContent);
+      expect(paragraphs[0]).toBe("I'm asking because Mail always asks for this.");
+      expect(paragraphs.filter((p) => p?.includes("Expires"))).toEqual(["Expires in 9 min."]);
+      expect(dialog.querySelector(".cloud-action-details")).toBeNull();
+      expect(view.requests).toEqual([]);
+    } finally {
+      view.cleanup();
+      setSystemTime();
+    }
+  });
+
   test("offers to remember for the chat only where the request offers it, and never Always", async () => {
     const view = await mount(
       {
@@ -416,7 +441,7 @@ describe("Approvals", () => {
     );
     try {
       const rows = Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
-      expect(rows[1]?.querySelector(".k2b-notice-card__description")?.textContent).toContain("Asks every time");
+      expect(rows[1]?.querySelector(".k2b-notice-card__description")?.textContent).not.toContain("Asks every time");
       expect(view.dom.root.querySelector("input[type=checkbox]")).toBeNull();
       await Bun.sleep(550);
       const dialog = await openDetails(rows[0]!);

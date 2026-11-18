@@ -115,4 +115,7 @@
 .k2b-ui .cloud-approval-details { display: flex; flex-direction: column; gap: .75rem; }
 .k2b-ui .cloud-approval-details > p { margin: 0; }
 
-.k2b-ui .cloud-approval-details__error { min-block-size: 2lh; }
+.k2b-ui .cloud-approval-details > [role="alert"]:empty { display: none; }
+
+.k2b-ui .cloud-approval-details__edit { margin-inline-end: auto; }
+.k2b-ui .cloud-approval-details__decisions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }

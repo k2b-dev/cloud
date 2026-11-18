@@ -300,22 +300,21 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     }
   };
 
-  const ask = async (kind: "changes" | "reject") => {
+  const ask = async () => {
     if (busy() || unknown()) return;
     setFailure(null);
     await openCodeReviewDialog({
-      kind,
       number: props.number,
       recipient: props.recipient,
       keep: keep(),
       comments: total(),
       next: props.next,
-      draft: drafts[kind],
+      drafts,
       t: t(),
-      keepDraft: (text) => {
-        drafts[kind] = text;
+      keepDraft: (text, chosen) => {
+        drafts[chosen] = text;
       },
-      send: (comment) => send(kind === "changes" ? "changes_requested" : "rejected", comment),
+      send: (comment, chosen) => send(chosen === "changes" ? "changes_requested" : "rejected", comment),
     });
   };
 
@@ -508,12 +507,12 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   );
 
   // ---------- Approval ----------
-  const changesDetails = (): ApprovalFrameProps["details"] => {
+  const [showSame, setShowSame] = createSignal(false);
+  const changesSection = () => {
     const changes = props.readModel?.changes;
-    if (!changes) return undefined;
+    if (!changes) return null;
     const rows = changes.rows.items;
     const same = rows.filter((row) => row.kind === "same");
-    const [showSame, setShowSame] = createSignal(false);
     const items = (): ChangeListItem[] => [
       ...rows
         .filter((row) => row.kind !== "same")
@@ -537,24 +536,15 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
             ]
         : []),
     ];
-    return {
-      label: props.comparison ? t().detailsFrom({ n: props.comparison }) : t().detailsFirst,
-      content: () => <ChangeList label={t().detailsFirst} items={items()} />,
-      note: { text: changes.assurance, icon: "ti ti-info-circle" },
-    };
+    return (
+      <Section frame="line" title={props.comparison ? t().changesFrom({ n: props.comparison }) : t().detailsFirst}>
+        <ChangeList label={t().detailsFirst} items={items()} />
+        <p class="core-code-review__muted">{changes.assurance}</p>
+      </Section>
+    );
   };
-  const examplesFact = (): NonNullable<ApprovalFrameProps["meta"]>[number] | null => {
-    const examples = props.readModel?.examples;
-    if (!examples || examples.state === "unavailable") return null;
-    return {
-      text: examples.summary,
-      icon: examples.state === "passed" ? "ti ti-circle-check" : "ti ti-alert-triangle",
-      tone: examples.state === "passed" ? "success" : "warning",
-    };
-  };
-  const answers = (): Pick<ApprovalFrameProps, "confirm" | "decline" | "more" | "unavailable"> => ({
-    more: [{ label: t().reject, onSelect: () => ask("reject") }],
-    decline: { label: t().requestChanges, onSelect: () => ask("changes") },
+  const answers = (): Pick<ApprovalFrameProps, "confirm" | "secondary" | "unavailable"> => ({
+    secondary: { label: t().rejectOrChange, onSelect: ask },
     confirm: { label: t().approve({ n: props.number }), icon: "ti ti-check", onSelect: approve },
     unavailable:
       !mayDecide() || blocked()
@@ -564,21 +554,14 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           }
         : undefined,
   });
-  const openFrame = (short: boolean) => (
+  const openFrame = () => (
     <ApprovalFrame
       locale={locale()}
       state="open"
       source={{ name: t().source, icon: "ti ti-code" }}
       sentence={sentenceOf(t().question({ n: props.number, title: props.title }))}
       reason={{ text: props.reason, icon: "ti ti-eye" }}
-      details={short ? undefined : changesDetails()}
-      meta={
-        short
-          ? [{ text: t().commentsGo({ n: total() }), icon: "ti ti-message-2" }]
-          : [...(examplesFact() ? [examplesFact()!] : []), { text: t().boundTo({ n: props.number }), icon: "ti ti-lock" }]
-      }
-      more={answers().more}
-      decline={answers().decline}
+      secondary={answers().secondary}
       confirm={answers().confirm}
       unavailable={answers().unavailable}
     />
@@ -651,47 +634,46 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       };
     };
     return (
-      <ApprovalFrame
-        locale={locale()}
-        state="decided"
-        source={{ name: t().source, icon: "ti ti-code" }}
-        status={status()}
-        reason={{ text: why().text }}
-        resultAnchor
-        sentence={sentenceOf(sentence())}
-        details={
-          message()
-            ? {
-                label: message()!.label,
-                content: () => (
-                  <div class="core-code-review__message">
-                    <CloudAvatar username={message()!.avatar} userId={message()!.avatarId} size="xs" />
-                    <div>
-                      <p class="core-code-review__message-head">
-                        {message()!.who}
-                        <Show when={message()!.at}>{(at) => <span> · {when(at())}</span>}</Show>
-                      </p>
-                      <p class="core-code-review__comment">{message()!.text}</p>
-                    </div>
-                  </div>
-                ),
-              }
-            : undefined
-        }
-        confirm={
-          pendingUnknown
-            ? { label: t().checkState, filled: false, onSelect: () => reloadCodeArea() }
-            : {
-                label: props.nextHref ? t().nextApproval : t().backToList,
-                href: props.nextHref ?? props.listHref,
-                filled: false,
-              }
-        }
-      />
+      <div class="core-code-review__closed-frame">
+        <ApprovalFrame
+          locale={locale()}
+          state="decided"
+          source={{ name: t().source, icon: "ti ti-code" }}
+          status={status()}
+          reason={{ text: why().text }}
+          resultAnchor
+          sentence={sentenceOf(sentence())}
+          confirm={
+            pendingUnknown
+              ? { label: t().checkState, filled: false, onSelect: () => reloadCodeArea() }
+              : {
+                  label: props.nextHref ? t().nextApproval : t().backToList,
+                  href: props.nextHref ?? props.listHref,
+                  filled: false,
+                }
+          }
+        />
+        <Show when={message()}>
+          {(note) => (
+            <Section frame="line" title={note().label}>
+              <div class="core-code-review__message">
+                <CloudAvatar username={note().avatar} userId={note().avatarId} size="xs" />
+                <div>
+                  <p class="core-code-review__message-head">
+                    {note().who}
+                    <Show when={note().at}>{(at) => <span> · {when(at())}</span>}</Show>
+                  </p>
+                  <p class="core-code-review__comment">{note().text}</p>
+                </div>
+              </div>
+            </Section>
+          )}
+        </Show>
+      </div>
     );
   };
 
-  const frame = (short: boolean) => (closed() ? closedFrame() : openFrame(short));
+  const frame = () => (closed() ? closedFrame() : openFrame());
 
   // ---------- Notices ----------
   const notices = () => (
@@ -978,7 +960,8 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
 
   const overview = () => (
     <div class="core-code-review__panel">
-      {frame(false)}
+      {frame()}
+      {changesSection()}
       <div class="core-code-review__columns">
         <div class="core-code-review__column">
           {description()}
@@ -994,7 +977,8 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
 
   const codeView = (view: "code" | "diff") => (
     <div class="core-code-review__panel">
-      {frame(true)}
+      {frame()}
+      {changesSection()}
       {codeField(view)}
     </div>
   );

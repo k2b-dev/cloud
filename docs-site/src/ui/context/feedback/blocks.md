@@ -1,6 +1,6 @@
 # Notices and inline guidance
 
-`NoticeCard` keeps an important finding visible between an ephemeral toast and a full empty or error state. `NoticeCard.Grid` arranges several findings without nested card chrome. `NoticeRow` is the one-line form with a subject tile and one action at the end.
+`NoticeCard` keeps an important finding visible between an ephemeral toast and a full empty or error state. `NoticeCard.Grid` arranges several findings without nested card chrome. `NoticeRow` is the row form, with an optional quiet second line and responsive actions.
 
 `InlineGuidance` explains one local prerequisite, consequence, or recovery step without adding a card surface. Use it beside the affected control when a section or field description cannot explain the current state on its own.
 
@@ -90,15 +90,15 @@ forced-colors mode a system border outlines every notice.
 
 ### Compact row with actions
 
-Use `layout="row"` for a notice that changes state in place: one icon, one
-short sentence, one quiet `detail`, and one or two controls. `tone="ai"`
+Use `NoticeRow` with `detail` for a notice that changes state in place: one
+icon, one short sentence, one quiet `detail`, and one or two controls. `tone="ai"`
 uses the shared AI surface and accent; it carries no Cloud-specific meaning.
 The row owns its responsive grid, spacing and state reserve.
 
 ```tsx
-<NoticeCard
-  layout="row" tone="ai" icon="ti ti-shield-check"
-  title="The proposal is ready to review."
+<NoticeRow
+  tone="ai" icon="ti ti-shield-check"
+  children="The proposal is ready to review."
   detail="Reads mail · daily at 8:00"
   detailTitle="Reads mail · daily at 8:00"
   actions={({ narrow }) => <>
@@ -111,9 +111,10 @@ The row owns its responsive grid, spacing and state reserve.
 
 Desktop rows are 64 px high, with a 2 px gap between the two lines and an
 automatic action column. The full quiet text belongs in `detailTitle` when
-it may truncate. Below 35 rem of the row's own container, text wraps to at
-most two lines and actions fill an equal-width row below it. The reserved
-height is 168 px; spare space stays below the actions. Keep `reserve` enabled
+it may truncate. `detailAction` keeps a quiet text action visible beside that
+text. Below 35 rem of the row's own container, text wraps to at most two lines and actions fill an equal-width row below it. The reserved
+height derives from two title lines, two quiet lines, the control height and
+spacing. Actions sit at the bottom with a buffer above them. Keep `reserve` enabled
 through loading and retry. Only an actionless final receipt sets it to
 `false`. For feedback that needs two quiet lines reserved on phones, pass
 `detailLines={2}`. The default reserves one line.

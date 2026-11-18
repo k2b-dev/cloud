@@ -150,7 +150,7 @@ test("the area without a section shows the approvals next to the area column, an
   ).toBe(true);
 }, 30_000);
 
-test("a review opens at its head with one row of tabs, and the approval with three decisions in view", async () => {
+test("a review shows both decision paths and the change list directly", async () => {
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 390, height: 780 },
@@ -162,14 +162,26 @@ test("a review opens at its head with one row of tabs, and the approval with thr
     for (const name of ["Übersicht", "Code", "Diff"]) expect(await tab(name).count()).toBe(1);
     await page.getByText("Sie darf etwas tun, das andere sehen.", { exact: false }).waitFor();
     expect(await page.locator(".cloud-approval-frame").first().getByRole("button").count()).toBe(2);
-    await page.getByRole("button", { name: "Alles ansehen", exact: true }).first().click();
-    for (const name of ["Ablehnen …", "Änderungen anfordern …", "Version 3 freigeben"])
-      expect(await page.getByRole("dialog").getByRole("button", { name }).count()).toBe(1);
+    expect(await page.getByRole("button", { name: "Alles ansehen", exact: true }).count()).toBe(0);
+    await page.getByRole("heading", { name: "Was sich gegenüber Version 2 ändert" }).waitFor();
+    await page.getByRole("button", { name: "Ablehnen oder ändern …", exact: true }).first().click();
+    for (const name of ["Ablehnen …", "Änderungen anfordern …"])
+      expect(await page.getByRole("dialog").getByRole("radio", { name, exact: true }).count()).toBe(1);
     await page.keyboard.press("Escape");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
     // A phone closes the review with the head's back arrow; the close button shows only beside the columns.
     expect(await page.getByRole("link", { name: "Schließen, zurück zur Liste" }).isVisible()).toBe(viewport.width > 600);
   }
+}, 30_000);
+
+test("showing unchanged rows stays expanded across review tab changes", async () => {
+  await goto(review);
+  await page.getByRole("button", { name: "Anzeigen", exact: true }).click();
+  expect(await page.getByRole("button", { name: "Anzeigen", exact: true }).count()).toBe(0);
+  await tab("Code").click();
+  expect(await page.getByRole("button", { name: "Anzeigen", exact: true }).count()).toBe(0);
+  await tab("Übersicht").click();
+  expect(await page.getByRole("button", { name: "Anzeigen", exact: true }).count()).toBe(0);
 }, 30_000);
 
 test("switching tabs keeps head and tabs in place, writes ?tab= and survives a reload", async () => {
@@ -253,8 +265,7 @@ test("an unchanged file in Diff shows its commented lines, and the first version
 test("requesting changes asks for a text in a dialog that names who gets it, keeps its error line, and sends the outcome", async () => {
   await goto(review);
   await settled(page);
-  await page.getByRole("button", { name: "Alles ansehen", exact: true }).first().click();
-  await page.getByRole("dialog").getByRole("button", { name: "Änderungen anfordern …" }).click();
+  await page.getByRole("button", { name: "Ablehnen oder ändern …", exact: true }).first().click();
   const dialog = page.getByRole("dialog");
   await dialog
     .getByText(
@@ -272,10 +283,10 @@ test("requesting changes asks for a text in a dialog that names who gets it, kee
   expect(fixture.requests).toEqual([]);
   await dialog.getByRole("button", { name: "Abbrechen" }).click();
   // The text is kept for the next opening.
-  await page.getByRole("button", { name: "Änderungen anfordern …" }).click();
+  await page.getByRole("button", { name: "Ablehnen oder ändern …", exact: true }).first().click();
   await page.getByRole("dialog").getByRole("textbox").fill("Bitte nur Rückrufwünsche.");
   await page.getByRole("dialog").getByRole("button", { name: "Abbrechen" }).click();
-  await page.getByRole("button", { name: "Änderungen anfordern …" }).click();
+  await page.getByRole("button", { name: "Ablehnen oder ändern …", exact: true }).first().click();
   expect(await page.getByRole("dialog").getByRole("textbox").inputValue()).toBe("Bitte nur Rückrufwünsche.");
   await page.getByRole("dialog").getByRole("button", { name: "Änderungen anfordern" }).click();
   await page.waitForLoadState("load");
@@ -301,8 +312,8 @@ test("requesting changes asks for a text in a dialog that names who gets it, kee
 
 test("a refused decision keeps the dialog with its text; approving sends the binding and reloads into the result", async () => {
   await goto(`${review}&state=dialogfail`);
-  await page.getByRole("button", { name: "Alles ansehen", exact: true }).first().click();
-  await page.getByRole("dialog").getByRole("button", { name: "Ablehnen …" }).click();
+  await page.getByRole("button", { name: "Ablehnen oder ändern …", exact: true }).first().click();
+  await page.getByRole("dialog").getByRole("radio", { name: "Ablehnen …", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("textbox").fill("Nicht bei uns.");
   await dialog.getByRole("button", { name: "Version 3 ablehnen" }).click();
@@ -635,8 +646,9 @@ for (const theme of ["light", "dark"] as const)
         await page.screenshot({ path: resolve(directory, `admin-${state}-${theme}-${width}.png`), fullPage: true });
       };
       await goto(`${review}&state=dialogfail&theme=${theme}`, viewport);
-      await page.getByRole("button", { name: "Alles ansehen", exact: true }).first().click();
-      await page.getByRole("dialog").getByRole("button", { name: "Ablehnen …" }).click();
+      await page.getByRole("button", { name: "Ablehnen oder ändern …", exact: true }).first().click();
+      await capture("decision-dialog");
+      await page.getByRole("dialog").getByRole("radio", { name: "Ablehnen …", exact: true }).click();
       const dialog = page.getByRole("dialog");
       await dialog.getByRole("textbox").fill("Nicht bei uns.");
       await dialog.getByRole("button", { name: "Version 3 ablehnen" }).click();

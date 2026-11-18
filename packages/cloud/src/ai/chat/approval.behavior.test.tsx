@@ -77,7 +77,7 @@ const mountTurn = async (
     if (frame)
       return [
         frame.querySelector(".k2b-notice-card__title")?.textContent,
-        frame.querySelector(".k2b-notice-card__description")?.textContent,
+        frame.querySelector(".k2b-notice-card__detail-text")?.textContent,
       ]
         .filter(Boolean)
         .join(" ")
@@ -137,7 +137,7 @@ domTest("an answer collapses the question at once to its outcome line, which tak
     // The server has not answered yet; the card already is its outcome line, in the same place.
     expect(view.question()).toBeNull();
     const outcome = view.outcome()!;
-    expect(view.line()).toBe("Running: Run code");
+    expect(view.line()).toBe("Running: Run code Cloud is running the action now");
     expect(document.activeElement === outcome).toBe(true);
     expect(outcome.querySelector('[role="status"]')?.textContent).toBe("Running: Run code");
 
@@ -151,7 +151,7 @@ domTest("an answer collapses the question at once to its outcome line, which tak
     await settle();
     expect(view.place() === place).toBe(true);
     expect(view.outcome() === outcome).toBe(true);
-    expect(view.line()).toBe("Ran code");
+    expect(view.line()).toBe("Ran code The action ran");
     expect(outcome.querySelector('[role="status"]')?.textContent).toBe("Ran code");
   } finally {
     view.cleanup();
@@ -180,7 +180,7 @@ domTest("an answer that did not arrive says so and asks again with the focus on 
     view.button("Code ausführen").click();
     await settle();
     expect(view.decisions).toEqual([{ approved: true }, { approved: true }]);
-    expect(view.line()).toBe("Wird ausgeführt: Code ausführen");
+    expect(view.line()).toBe("Wird ausgeführt: Code ausführen Cloud führt die Aktion gerade aus");
   } finally {
     view.cleanup();
   }
@@ -200,10 +200,10 @@ domTest("an answer whose response was lost still shows the outcome the server re
     view.setBlocks([{ ...runCode, status: "running", approved: true, approval: undefined }]);
     view.setPhase("running");
     await settle();
-    expect(view.line()).toBe("Running: Run code");
+    expect(view.line()).toBe("Running: Run code Cloud is running the action now");
     view.setBlocks([{ ...runCode, status: "completed", approved: true, approval: undefined, result: { status: "ok" } }]);
     await settle();
-    expect(view.line()).toBe("Ran code");
+    expect(view.line()).toBe("Ran code The action ran");
   } finally {
     view.cleanup();
   }
@@ -307,7 +307,7 @@ domTest("code that asks again gets a new question in the same place after each d
     const place = view.place();
     view.button("Run code").click();
     await settle();
-    expect(view.line()).toBe("Running: Run code");
+    expect(view.line()).toBe("Running: Run code Cloud is running the action now");
 
     // The turn reports the decision; the code runs on and asks again.
     view.setBlocks([{ ...ask(0), status: "running", approved: true, approval: undefined }]);
@@ -416,7 +416,7 @@ domTest("an answer given here stays this window's answer when the block returns 
     await settle();
     view.setBlocks([{ ...runCode, callId: "run", status: "completed", approved: true, approval: undefined, result: { status: "ok" } }]);
     await settle();
-    expect(view.line()).toBe("Ran code");
+    expect(view.line()).toBe("Ran code The action ran");
     expect(view.place().textContent).not.toContain("another window");
   } finally {
     view.cleanup();
@@ -538,7 +538,7 @@ domTest("an app Action's catalog sentences name the question and every outcome l
     expect(english.place().textContent).not.toContain("Acme Mail: Send email to jana@example.com");
     english.button("Send email").click();
     await settle();
-    expect(english.line()).toBe("Running: Send email to jana@example.com");
+    expect(english.line()).toBe("Running: Send email to jana@example.com Cloud is running the action now");
     const outcome = english.outcome();
     english.setPhase("running");
     await settle();
@@ -554,7 +554,7 @@ domTest("an app Action's catalog sentences name the question and every outcome l
     ]);
     await settle();
     expect(english.outcome() === outcome).toBe(true);
-    expect(english.line()).toBe("Sent email to jana@example.com (M-42)");
+    expect(english.line()).toBe("Sent email to jana@example.com (M-42) The action ran");
   } finally {
     english.cleanup();
   }
@@ -583,7 +583,7 @@ domTest("an app Action's catalog sentences name the question and every outcome l
     { locale: "de", phase: "stopped" },
   );
   try {
-    expect(withoutData.line()).toBe("Zugestellt");
+    expect(withoutData.line()).toBe("Zugestellt Die Aktion wurde ausgeführt");
   } finally {
     withoutData.cleanup();
   }
@@ -633,7 +633,7 @@ domTest("without a done sentence the outcome is the app's own summary of the cal
     { phase: "stopped" },
   );
   try {
-    expect(view.line()).toBe("Scheduled “Q4 report”.");
+    expect(view.line()).toBe("Scheduled “Q4 report”. The action ran");
   } finally {
     view.cleanup();
   }
@@ -746,7 +746,7 @@ domTest("offline, both answers wait with the reason in place and come back with 
   try {
     window.dispatchEvent(new Event("offline"));
     await settle();
-    expect(view.place().querySelector(".k2b-notice-card__description")?.textContent).toBe("Offline. Antworten geht wieder mit Netz.");
+    expect(view.place().querySelector(".k2b-notice-card__detail-text")?.textContent).toBe("Offline. Antworten geht wieder mit Netz.");
     expect(view.button("Code ausführen").disabled).toBe(true);
     await view.openDetails();
     expect(view.button("Nicht ausführen").disabled).toBe(true);

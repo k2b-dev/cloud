@@ -12,7 +12,7 @@ const entry = resolve(import.meta.dir, "notice-card.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
 import { createSignal } from "solid-js";
-import { Button, NoticeCard } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Button, NoticeCard, NoticeRow } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const button = (variant, children) => createComponent(Button, { variant, size: "sm", children });
 const notices = [
@@ -29,10 +29,10 @@ const notices = [
 ];
 const [state, setState] = createSignal("ready");
 window.noticeRow = setState;
-render(() => createComponent(NoticeCard, {
-  layout: "row", tone: "ai", icon: "ti ti-shield-check",
+render(() => createComponent(NoticeRow, {
+  tone: "ai", icon: "ti ti-shield-check",
   get reserve() { return state() !== "terminal"; },
-  get title() { return state() === "failed" ? "This version could not be enabled." : state() === "loading" ? "This version is loading …" : "This version is ready to enable."; },
+  get children() { return state() === "failed" ? "This version could not be enabled." : state() === "loading" ? "This version is loading …" : "This version is ready to enable."; },
   get detail() { return state() === "loading" ? "Checking the current status" : "Mailbox · reads mail · daily at 8:00 · keeps the current version until you enable this one"; },
   detailTitle: "Mailbox · reads mail · daily at 8:00 · keeps the current version until you enable this one",
   actions: ({ narrow }) => state() === "loading" || state() === "terminal" ? undefined : [
@@ -221,7 +221,7 @@ for (const width of [1440, 390])
             return { card: box("#summary .k2b-notice-card"), next: box("#following") };
           });
         const first = await measure();
-        expect(first.card.height).toBe(width === 390 ? 168 : 64);
+        expect(first.card.height).toBe(width === 390 ? 156 : 64);
         for (const state of ["failed", "loading", "ready", "single"]) {
           await page.evaluate((value) => window.noticeRow(value), state);
           await settled(page);
@@ -235,7 +235,9 @@ for (const width of [1440, 390])
             if (boxes.length === 2) expect(Math.abs(boxes[0]!.width - boxes[1]!.width)).toBeLessThan(0.5);
             else expect(boxes[0]!.width).toBe((await actions.boundingBox())!.width);
             const quiet = (await card.locator(".k2b-notice-card__description").boundingBox())!;
-            expect(boxes[0]!.y - quiet.y - quiet.height).toBeLessThanOrEqual(4);
+            expect(boxes[0]!.y - quiet.y - quiet.height).toBeGreaterThanOrEqual(12);
+            const root = (await card.boundingBox())!;
+            expect(root.y + root.height - boxes[0]!.y - boxes[0]!.height).toBeCloseTo(11, 0);
           }
         }
         const primary = card.getByRole("button", { name: "Enable", exact: true });

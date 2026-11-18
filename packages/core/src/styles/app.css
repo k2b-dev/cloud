@@ -1368,3 +1368,5 @@ main > .code-page-host {
     padding-left: 2.75rem;
   }
 }
+
+.k2b-ui .core-code-review__closed-frame { display: grid; gap: 1rem; }

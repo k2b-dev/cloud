@@ -46,7 +46,7 @@ focused entries above to keep list and proposal code out of a summary-only view.
 
 There are no look props. `ApprovalCard` and `ApprovalFrame` take data and
 answers only; the `approval-card-calls` rule rejects `class`, `style`, variants,
-and spreads on either. `ApprovalFrame` composes the public `NoticeCard` row layout; apps do not restyle its controls or grid.
+and spreads on either. `ApprovalFrame` composes the public `NoticeRow` with its quiet detail line; apps do not restyle its controls or grid.
 
 ## Approval frame
 
@@ -61,7 +61,8 @@ with its own data. The frame knows no Capability:
 - `sentence` accepts plain text or `ActionText`. Chips become their full text
   in the summary. `reason.text` is the quiet line, with `quietTitle` when its
   full text differs from the rendered content.
-- `details` supplies `{ label, context?, content, note? }`. Pass `content` as a
+- `details` supplies `{ label, context?, reason?, content, note? }`. A separate
+  `reason` keeps summary facts out of the dialog’s introductory reason. Pass `content` as a
   function to mount the complete proposal only when the person opens it.
   Optional `load` prepares its module before the dialog opens; a rejected load
   leaves a visible error on the card and **See everything** retries it.
@@ -70,6 +71,9 @@ with its own data. The frame knows no Capability:
   supply `href` for navigation. A domain-specific control such as a split
   button can be passed through `actions`; its renderer receives `{ narrow }`
   for the public button size and variant. Supply at most two logical controls.
+- `secondary` is a direct second decision. It never loads the proposal.
+  `detailsPlacement="quiet"` puts **See everything** in the quiet line,
+  leaving both card controls for decisions.
 - `decline`, `back`, `more` and the `remember` checkbox are available through
   **See everything**. `waiting` disables decisions; `unavailable` disables
   confirmation while leaving rejection and the proposal reachable.
@@ -102,8 +106,9 @@ At 35 rem of the card's container and below, text stays at the top and actions
 move below it. Two actions have equal widths: the secondary one on the left
 with a neutral frame, the main one on the right. A single action fills the
 row. Public buttons use `size="md"`. The sentence and quiet line each show up
-to two lines. Transitions keep a 168 px card with spare space below the
-controls; only actionless terminal receipts become compact. The card and the
+to two lines. The transition reserve derives from those four text lines,
+the control height and spacing. Controls stay at the bottom with a buffer
+above; only actionless terminal receipts become compact. The card and the
 following content stay in place through sending, failure, retry and loading.
 
 Answers arm half a second after a request appears in the list, so a click meant
@@ -200,3 +205,16 @@ Pass it to the island that shows the draft:
 Use the same `draftHref` in the Action review's `links`.
 See [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app)
 for the server and island imports.
+
+Capability send approvals show **Send** and **Don't send** directly on the card.
+**See everything** is a quiet link beside the reason and expiry, including on
+phones. Rejection never waits for a full proposal. **Don't ask again in this
+chat** is in the detail dialog; **Change** sits on the left of its footer and
+the decision pair stays together on the right. A reviewed draft's send action
+is filled. The app name is announced by the card's accessible name, not repeated
+in its quiet line.
+
+Administrator reviews show **Approve version N** and **Reject or request changes …**.
+The latter opens the decision dialog with both choices and the required text.
+The change list is a separate section below the frame. This page has no
+**See everything** control.

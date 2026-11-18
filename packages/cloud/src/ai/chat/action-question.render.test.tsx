@@ -83,6 +83,35 @@ describe("ApprovalCard at the public rendering seam", () => {
     expect(details.querySelector('input[value="Wartungsfenster Dienstag"]')?.hasAttribute("readonly")).toBe(true);
   });
 
+  test("send decisions stay on the card while details and remembering stay separate", () => {
+    const body = render({ remember: { onSelect: () => {} } });
+    const actions = body.querySelector(".k2b-notice-card__actions")!;
+    expect(words(actions)).toContain("Senden");
+    expect(words(actions)).toContain("Nicht senden");
+    expect(words(actions)).not.toContain("Alles ansehen");
+    expect(words(body.querySelector(".k2b-notice-card__description")!)).toContain("Alles ansehen");
+    expect(body.querySelector('input[type="checkbox"]')).toBeNull();
+  });
+
+  test("sending, success with time, and failure have distinct nonempty quiet facts", () => {
+    for (const [state, tone, fact] of [
+      ["sending", "running", "Cloud sendet gerade"],
+      ["decided", "done", "Die Nachricht wurde gesendet"],
+      ["decided", "error", "Nichts ging raus. Versuch es noch einmal."],
+    ] as const) {
+      const body = render({
+        state,
+        outcome: {
+          lines: { now: { tone, text: [{ kind: "text", text: "Der Zustand." }], time: tone === "done" ? "14:52" : undefined } },
+          current: "now",
+        },
+      });
+      const quiet = body.querySelector(".k2b-notice-card__detail-text")!.textContent;
+      expect(quiet).toContain(fact);
+      if (tone === "done") expect(quiet).toContain("14:52");
+    }
+  });
+
   test("consequences stay a list with their change markers", () => {
     const source = actionFixtures("de").share!.block;
     const body = renderDetails(toolActionCard(source, { locale: "de", timeZone: "UTC", outcome: legacyOutcomeWords(source, "de", "UTC") }));
@@ -107,9 +136,9 @@ describe("ApprovalCard at the public rendering seam", () => {
     }
   });
 
-  test("remember stays behind the complete details action; otherwise asks every time", () => {
+  test("remember stays in details without repeating the app or asking policy on the card", () => {
     expect(render().querySelector('input[type="checkbox"]')).toBeNull();
-    expect(words(render())).toContain("Fragt jedes Mal");
+    expect(words(render())).not.toContain("Fragt jedes Mal");
     const remembered = render({ remember: { onSelect: () => {} } });
     expect(remembered.querySelector('input[type="checkbox"]')).toBeNull();
     expect(words(remembered)).toContain("Alles ansehen");

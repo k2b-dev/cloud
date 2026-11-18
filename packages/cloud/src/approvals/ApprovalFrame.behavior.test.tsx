@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
@@ -140,6 +141,62 @@ domTest("a failed detail module stays visible on the card and See everything ret
     await waitFor(() => Boolean(document.querySelector(".cloud-approval-details")));
     expect(loads).toBe(2);
     expect(document.querySelector(".cloud-approval-details")?.textContent).toContain("Der vollständige Vorschlag");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+domTest("discarding an editable draft then answering again invokes the result action instead of reopening details", async () => {
+  const dom = createDomTestHarness();
+  const { ApprovalFrame } = await import("./ApprovalFrame");
+  const [failed, setFailed] = createSignal(false);
+  let discards = 0;
+  let retries = 0;
+  const dispose = render(
+    () => (
+      <ApprovalFrame
+        locale="de"
+        state={failed() ? "decided" : "open"}
+        mode="edit"
+        source={{ name: "Mail", icon: "ti ti-mail" }}
+        sentence={failed() ? "Deine Antwort konnte nicht gespeichert werden." : "Nachricht senden?"}
+        reason={{ text: "Nichts ging raus" }}
+        details={{ label: "Details von Mail", content: "Der Entwurf" }}
+        secondary={
+          failed()
+            ? undefined
+            : {
+                label: "Verwerfen",
+                onSelect: async () => {
+                  discards++;
+                  setFailed(true);
+                  throw new Error("persist failed");
+                },
+              }
+        }
+        confirm={{
+          label: failed() ? "Noch einmal antworten" : "Senden …",
+          onSelect: () => {
+            retries++;
+            setFailed(false);
+          },
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Verwerfen")!.click();
+    await waitFor(
+      () =>
+        Boolean(dom.root.textContent?.includes("Noch einmal antworten")) &&
+        !dom.root.querySelector<HTMLButtonElement>("[data-approval-primary]")!.disabled,
+    );
+    dom.root.querySelector<HTMLButtonElement>("[data-approval-primary]")!.click();
+    await waitFor(() => retries === 1);
+    expect(discards).toBe(1);
+    expect(document.querySelector(".cloud-approval-details")).toBeNull();
   } finally {
     dispose();
     dom.cleanup();

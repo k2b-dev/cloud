@@ -154,7 +154,7 @@ test("approvals are a page: a list with who, owner, main change and reason, and 
   expect(render(review, "missing")).toContain("Diese Anfrage ist geschlossen.");
 });
 
-test("a review has one row of tabs, a head with who, how and whose, and the approval with three decisions", () => {
+test("a review has one row of tabs, a head with who, how and whose, visible changes and two decision paths", () => {
   const html = render(review);
   const text = renderedText(html, " ");
   expect(text).toContain("Rückruf bestätigen · Version 3");
@@ -163,12 +163,13 @@ test("a review has one row of tabs, a head with who, how and whose, and the appr
   for (const tab of ["Übersicht", "Code", "Diff"]) expect(html).toContain(`>${tab}<`);
   expect(text).toContain("Sie darf etwas tun, das andere sehen. Das gibt laut Richtlinie Standard ein Admin frei.");
   expect(text).not.toContain("Details von Code · gegenüber Version 2");
-  expect(text).not.toContain("Darf neu Aufgaben anlegen im Space Logistik");
-  expect(text).not.toContain("3 weitere bleiben gleich.");
-  expect(text).not.toContain("Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.");
+  expect(text).toContain("Darf neu Aufgaben anlegen im Space Logistik");
+  expect(text).toContain("3 weitere bleiben gleich.");
+  expect(text).toContain("Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.");
   expect(text).toContain("3 von 3 Beispielen erfolgreich");
   expect(text).not.toContain("Gilt genau für Version 3");
-  expect(text).toContain("Alles ansehen");
+  expect(text).toContain("Ablehnen oder ändern …");
+  expect(text).not.toContain("Alles ansehen");
   expect(text).toContain("Version 3 freigeben");
   for (const answer of ["Ablehnen …", "Änderungen anfordern …"]) expect(text).not.toContain(answer);
   expect(text).toContain("Was sie damit tut");
@@ -180,20 +181,20 @@ test("a review has one row of tabs, a head with who, how and whose, and the appr
   expect(text).not.toMatch(/[0-9a-f]{4}…[0-9a-f]{2}|Z\. \d+|sp_2lg8/);
   expect(renderedText(render(review, "cli"), " ")).toContain("über die Kommandozeile eingereicht");
   expect(renderedText(render({ ...review, tab: "code" }), " ")).not.toContain("3 Kommentare gehen mit deiner Entscheidung mit");
-  // The decision carries these comments in the complete approval dialog, opened via the one detail control.
-  expect(renderedText(render({ ...review, tab: "code" }), " ")).toContain("Alles ansehen");
+  // Both decisions open directly from the frame; the change list stays visible below it.
+  expect(renderedText(render({ ...review, tab: "code" }), " ")).toContain("Ablehnen oder ändern …");
 });
 
 test("the first version locks its Diff tab, and a decided version freezes its comments", () => {
   const first = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.lieferzeit1 });
   expect(first).toMatch(/role="tab"[^>]*disabled[^>]*>(?:(?!<\/button>).)*Diff/s);
   expect(renderedText(first, " ")).toContain("Erste Version: Es gibt keinen Unterschied.");
-  expect(renderedText(first, " ")).toContain("Alles ansehen");
+  expect(renderedText(first, " ")).toContain("Ablehnen oder ändern …");
   const changes = renderedText(render(review, "changes"), " ").replaceAll(/\s+/g, " ");
 
   expect(changes).toContain("Du hast Änderungen an Version 3 angefordert.");
-  expect(changes).toContain("Alles ansehen");
-  expect(changes).not.toContain("Bitte nur für Mails mit einem Rückrufwunsch eine Aufgabe anlegen");
+  expect(changes).not.toContain("Ablehnen oder ändern …");
+  expect(changes).toContain("Bitte nur für Mails mit einem Rückrufwunsch eine Aufgabe anlegen");
   expect(changes).not.toContain("Version 3 freigeben");
   expect(renderedText(render(review, "rejected"), " ")).toContain("Version 3 lässt sich nicht mehr einschalten.");
   const decidedCode = render({ ...review, tab: "code" }, "changes");

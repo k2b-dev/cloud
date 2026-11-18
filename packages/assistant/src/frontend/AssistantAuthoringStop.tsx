@@ -1,6 +1,6 @@
 import type { AiCodeAuthoringStop } from "@k2b/cloud/ai";
 import { useAiChatActions } from "@k2b/cloud/ai/ui";
-import { Button, NoticeCard, useLocale } from "@k2b/ui";
+import { Button, NoticeRow, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 
@@ -71,15 +71,14 @@ export default function AssistantAuthoringStop(props: {
   // Reserve the action while this is the latest receipt; an overtaken receipt becomes compact.
   return (
     <div class="assistant-authoring-stop-host">
-      <NoticeCard
+      <NoticeRow
         tone="neutral"
         icon="ti ti-player-pause"
-        layout="row"
         reserve={!props.superseded()}
         detailLines={props.superseded() ? 1 : 2}
         class="ai-turn__notice assistant-authoring-stop"
         data-current={!props.superseded() ? "" : undefined}
-        title={<span title={title()}>{title()}</span>}
+        children={<span title={title()}>{title()}</span>}
         actions={({ narrow }) => (
           <Show when={!props.superseded() && Boolean(actions.onContinueTurn)}>
             <Button

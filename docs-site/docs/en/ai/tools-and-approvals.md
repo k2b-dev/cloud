@@ -743,10 +743,12 @@ component from `@k2b/cloud/approvals/ui`, and on phones. Only its width follows
 the place.
 
 - Cloud draws one shield, a sentence that says the state once, one quiet line
-  for the app, reason and expiry, and at most two controls. The app supplies
+  for the reason and expiry, and at most two controls. The app supplies
   sentence templates and the proposal as
   [`review.view`](/en/docs/platform/capability-views#approvals). Full proposals,
-  drafts and further decisions open through **See everything**.
+  drafts and further details open through **See everything**. Capability sends
+  keep **Send** and **Don't send** directly on the card; the quiet
+  **See everything** link never replaces rejection.
 - The card uses the quiet AI surface, without a nested box, rule or shadow.
   Code versions and administrator reviews use the same `ApprovalFrame`.
   Only the main action is filled when it commits or opens the result.
@@ -754,9 +756,8 @@ the place.
   frame. Its height stays fixed through transitions. On phones, equal-width
   controls sit below the text; actionless terminal receipts may be compact.
 - Where remembering for this chat is allowed, **See everything** offers the
-  checkbox **Don't ask again in this chat** (`remember: "chat"`); otherwise
-  the quiet line says **Asks every time**. A chat choice ends when the chat
-  is deleted.
+  checkbox **Don't ask again in this chat** (`remember: "chat"`). A chat
+  choice ends when the chat is deleted.
 - A place passes data and answers, never a class, a style, or a variant. The
   `approval-card-calls` rule fails on look props, on `Chat.Decision` outside
   `ApprovalCard`, and on other stylesheets that style the card.
@@ -769,6 +770,17 @@ the place.
 The **Approvals** list no longer has a band layout. A list scoped to one
 resource with `link` shows nothing until a request for it waits, then the same
 card.
+
+The focused imports `@k2b/cloud/approvals/frame`, `/list` and `/navigation`
+provide `ApprovalFrame`, default `Approvals`, and default `ApprovalsNavStatus`
+with `approvalNavCount`, respectively. The combined `/ui` entry remains.
+`ApprovalFrame` uses the public `NoticeRow` with `detail`; `secondary` is a
+direct decision, and `detailsPlacement="quiet"` keeps the full-proposal link
+in the quiet line. `details.reason` supplies the dialog's pure reason when
+`reason.text` on the card includes other facts. `details.load` may prepare the
+proposal module on demand; a failure stays visible with retry.
+Administrator reviews show rejection/change choices directly and keep their
+change list in a section below the shared frame.
 
 The API still accepts `remember: "always"` and applies earlier choices, but the
 browser no longer offers it. A pending

@@ -90,28 +90,48 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     );
   });
 
-  test("NoticeCard row server-renders its two summary lines, AI tone and reserved action slots", () => {
+  test("NoticeRow server-renders its two summary lines, AI tone and reserved action slots", () => {
     const html = renderToString(() =>
-      createComponent(NoticeCard, {
-        layout: "row",
+      createComponent(NoticeRow, {
         tone: "ai",
         icon: "ti ti-shield-check",
-        title: "Ready to enable.",
+        children: "Ready to enable.",
         detail: "Mailbox · reads mail",
         detailTitle: "Mailbox · reads mail",
         actions: ["See everything", "Enable"],
       }),
     );
-    expect(html).toContain('data-layout="row"');
+    expect(html).toContain('data-row=""');
     expect(html).toContain('data-tone="ai"');
     expect(html).toContain('data-reserve=""');
     expect(html.match(/k2b-notice-card__action-slot/g)).toHaveLength(2);
     expect(html).toContain('<p class="k2b-notice-card__title">Ready to enable.</p>');
-    expect(html).toContain('title="Mailbox · reads mail">Mailbox · reads mail</p>');
+    expect(html).toContain('title="Mailbox · reads mail"><span class="k2b-notice-card__detail-text">Mailbox · reads mail</span>');
     expect(html).not.toContain("k2b-notice-card__body");
-    const terminal = renderToString(() => createComponent(NoticeCard, { layout: "row", title: "Done.", reserve: false }));
+    const terminal = renderToString(() => createComponent(NoticeRow, { children: "Done.", reserve: false }));
     expect(terminal).not.toContain("data-reserve");
     expect(terminal).not.toContain("k2b-notice-card__actions");
+  });
+
+  test("NoticeRow icon=true resolves each tone icon and inherits its screen-reader language", () => {
+    for (const locale of ["en", "de"])
+      for (const [tone, icon, en, de] of [
+        ["success", "ti-circle-check", "Success", "Erfolgreich"],
+        ["warning", "ti-alert-triangle", "Warning", "Warnung"],
+        ["danger", "ti-alert-octagon", "Caution", "Achtung"],
+      ] as const) {
+        const html = renderToString(() =>
+          createComponent(LocaleProvider, {
+            locale,
+            get children() {
+              return createComponent(NoticeRow, { tone, icon: true, children: "Review result", detail: "No changes" });
+            },
+          }),
+        );
+        expect(html).toContain(icon);
+        expect(html).toContain(`k2b-sr-only">${locale === "de" ? de : en}: `);
+        expect(html).not.toContain("ti-info-circle");
+      }
   });
 
   test("NoticeRow renders one notice row: decorative tile, text, then the action, with NoticeCard's tones", () => {

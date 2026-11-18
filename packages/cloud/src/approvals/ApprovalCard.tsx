@@ -21,7 +21,7 @@ export type ApprovalCardProps = {
   timeZone: string;
   onConfirm: () => void | Promise<void>;
   onDecline: () => void | Promise<void>;
-  /** Where the approval may be remembered for this chat; without, the card says that it asks every time. */
+  /** Offers remembering this approval for the chat in its detail dialog. */
   remember?: { website?: boolean; onSelect: () => void | Promise<void> };
   /**
    * Sends a draft's edited fields so Cloud reviews the Action again; resolves `true` once the card shows the new
@@ -108,7 +108,6 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
     const left = timeLeft();
     if (left !== undefined)
       items.push({ icon: "ti ti-clock", text: left < 60_000 ? words.expiresSoon : words.expiresIn({ milliseconds: left }) });
-    if (!props.remember) items.push({ icon: "ti ti-repeat", text: words.asksEveryTime });
     return items;
   });
   // A complete proposal that is not inline must be read before it can be approved.
@@ -133,6 +132,16 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
     const text = actionPlainText(line?.text ?? props.card.forms.unknown);
     return line?.detail && !/[.!?…]["“”»«]?\s*$/.test(text) ? `${text}.` : text;
   };
+  const resultQuiet = () => {
+    const line = currentLine();
+    if (line?.detail) return line.detail;
+    if (props.state === "sending" || line?.tone === "running") return props.card.reason.code === "sends" ? t().sending : t().executing;
+    if (line?.tone === "error") return props.card.reason.code === "sends" ? t().sendFailed : t().executionFailed;
+    if (line?.tone === "done") return props.card.reason.code === "sends" ? t().sent : t().executed;
+    if (props.state === "expired") return t().expiredQuiet;
+    if (line?.tone === "off") return t().requestClosed;
+    return t().lostDetail;
+  };
   const moveOn = async () => {
     if (sending()) return;
     const original = draftValues(props.card.view);
@@ -154,26 +163,24 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
       sentence={open() ? (editing() ? intent(props.card) : props.card.question) : resultSentence()}
       reason={
         open()
-          ? { ...reason(), text: [props.card.app.name, reason().text, ...meta().map((fact) => fact.text)].join(" · ") }
+          ? { ...reason(), text: [reason().text, ...meta().map((fact) => fact.text)].join(" · ") }
           : {
               text: (
                 <>
-                  {currentLine()?.detail}
+                  {resultQuiet()}
                   <Show when={currentLine()?.time}>{(time) => <> · {time()}</>}</Show>
                 </>
               ),
             }
       }
       quietTitle={
-        !open() && typeof currentLine()?.detail === "string"
-          ? [currentLine()?.detail, currentLine()?.time].filter(Boolean).join(" · ")
-          : undefined
+        !open() && typeof resultQuiet() === "string" ? [resultQuiet(), currentLine()?.time].filter(Boolean).join(" · ") : undefined
       }
       alert={currentLine()?.tone === "error" && !open()}
       unavailable={open() && ((!editing() && unavailable()) || sending()) ? reason() : undefined}
       waiting={props.waiting ? reason() : undefined}
       details={
-        // Without anything to show there is no details island, not an empty one.
+        // A proposal loads its renderer; a decision-only dialog still gets the pure reason, without repeating meta.
         currentLine()?.actions ||
         (props.card.view?.length ?? 0) > 0 ||
         props.card.readMore ||
@@ -182,6 +189,7 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
         (props.card.consequences ?? []).length > 0
           ? {
               label: t().detailsFrom({ app: props.card.app.name }),
+              reason: props.card.reason.text,
               load: async () => {
                 ActionDetails = (await import("../ai/chat/action-details")).ActionDetails;
               },
@@ -200,7 +208,13 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
                 </>
               ),
             }
-          : undefined
+          : open() || meta().length > 0
+            ? { label: t().detailsFrom({ app: props.card.app.name }), reason: props.card.reason.text, content: null }
+            : undefined
+      }
+      detailsPlacement="quiet"
+      secondary={
+        open() ? { label: props.card.reason.code === "sends" ? t().dontSend : props.card.decline, onSelect: props.onDecline } : undefined
       }
       meta={editing() ? [] : meta()}
       confirm={
@@ -210,7 +224,7 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
             : undefined
           : editing()
             ? { label: `${props.card.confirm.label} …`, icon: confirmIcon(props.card), onSelect: moveOn }
-            : { label: props.card.confirm.label, onSelect: props.onConfirm }
+            : { label: props.card.reason.code === "sends" ? t().send : props.card.confirm.label, onSelect: props.onConfirm }
       }
       decline={open() ? { label: editing() ? t().discard : props.card.decline, onSelect: props.onDecline } : undefined}
       back={

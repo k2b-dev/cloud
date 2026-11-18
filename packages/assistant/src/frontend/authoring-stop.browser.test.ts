@@ -145,7 +145,7 @@ const boxes = (page: Page) =>
       button: document.querySelector(".assistant-authoring-stop button") ? box(".assistant-authoring-stop button") : null,
     };
   });
-const quiet = (page: Page) => page.locator(".assistant-authoring-stop .k2b-notice-card__description > [role]:not(:empty)");
+const quiet = (page: Page) => page.locator(".assistant-authoring-stop .k2b-notice-card__detail-text > [role]:not(:empty)");
 const count = (page: Page) => page.evaluate(() => (window as unknown as { continued: string[] }).continued.length);
 const busy = (page: Page, value: boolean) =>
   page.evaluate((next) => (window as unknown as { setBusy: (busy: boolean) => void }).setBusy(next), value);

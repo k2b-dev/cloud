@@ -1,4 +1,4 @@
-import { children, createSignal, For, type JSX, onCleanup, onMount, Show, splitProps } from "solid-js";
+import { children, For, type JSX, Show, splitProps } from "solid-js";
 import { dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
 import { useUiMessages } from "../intl/messages";
 import type { IntentTone } from "../semantics";
@@ -10,8 +10,7 @@ type NoticeCardContentProps =
   | { title?: never; detail?: never; meta?: never; children: JSX.Element };
 
 export type NoticeCardProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "class" | "title"> &
-  NoticeCardContentProps &
-  ({ layout?: "line" | "card" } | { layout: "row"; title: JSX.Element; meta?: never; children?: never }) & {
+  NoticeCardContentProps & {
     tone?: NoticeTone;
     /**
      * A Tabler icon class. By default it turns the notice into a compact status line whose icon and text take the tone
@@ -23,19 +22,13 @@ export type NoticeCardProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" |
      * Where an icon goes. `line`, the default, is the compact status line above. `card` keeps the calm card and sets the
      * icon in the tone colour beside the title, text, and actions, which share one text edge.
      */
-    layout?: "line" | "card" | "row";
-    /** Full text for the row's ellipsis; the visible detail keeps one desktop line and up to two phone lines. */
-    detailTitle?: string;
-    /** Row layout reserves space through loading and other transitions. Only actionless final receipts set false. */
-    reserve?: boolean;
-    /** Minimum quiet-line reserve on narrow rows; two lines suit receipts whose feedback changes in place. */
-    detailLines?: 1 | 2;
+    layout?: "line" | "card";
     /**
      * The direct next step: one or two `Button`s or `ButtonLink`s (`size="sm"`) in one row below the text. The primary
      * action takes the tone's button variant; a second one is `secondary`. In a `NoticeCard.Grid` row the actions of all
      * cards share the bottom edge.
      */
-    actions?: JSX.Element | ((layout: { narrow: boolean }) => JSX.Element);
+    actions?: JSX.Element;
     class?: string;
     bodyClass?: string;
   };
@@ -54,22 +47,11 @@ export const NOTICE_CARD_CLASSES = {
 
 /** Whether resolved children render something; a Show whose condition is false, or a boolean, renders nothing. */
 const rendersSomething = (nodes: unknown[]) => nodes.some((node) => node != null && typeof node !== "boolean" && node !== "");
-// A Button may also return an empty tooltip marker. It must not become an action column of its own.
-const rendersAction = (node: unknown) =>
-  typeof Node !== "undefined" && node instanceof Node
-    ? node.nodeType === Node.ELEMENT_NODE || Boolean(node.textContent?.trim())
-    : rendersSomething([node]);
-
 function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
-  // The opt-in row has its own container; existing card/line markup remains byte-for-byte stable.
-  if (props.layout === "row") return <NoticeCardRow {...props} />;
   const [local, articleProps] = splitProps(props, [
     "tone",
     "icon",
     "layout",
-    "detailTitle",
-    "reserve",
-    "detailLines",
     "title",
     "detail",
     "meta",
@@ -81,7 +63,7 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
   // Children that render nothing, such as a Show whose condition is false, add no body and no gap.
   const body = children(() => local.children);
   const hasBody = () => rendersSomething(body.toArray());
-  const actions = children(() => (typeof local.actions === "function" ? local.actions({ narrow: false }) : local.actions));
+  const actions = children(() => local.actions);
   const hasActions = () => rendersSomething(actions.toArray());
   const messages = useUiMessages();
   /** The tone a dialog also knows, so `icon` true shows the same icon and word; info and neutral have no word. */
@@ -131,64 +113,6 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
         </Show>
       </div>
     </article>
-  );
-}
-
-/** A two-line notice with an action column that becomes an equal-width row on narrow containers. */
-function NoticeCardRow(props: NoticeCardProps): JSX.Element {
-  const [local, articleProps] = splitProps(props, [
-    "tone",
-    "icon",
-    "layout",
-    "title",
-    "detail",
-    "detailTitle",
-    "reserve",
-    "detailLines",
-    "meta",
-    "children",
-    "actions",
-    "class",
-    "bodyClass",
-  ]);
-  let host: HTMLDivElement | undefined;
-  const [narrow, setNarrow] = createSignal(false);
-  onMount(() => {
-    const observer = new ResizeObserver(([entry]) => {
-      const breakpoint = 35 * Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
-      setNarrow((entry?.contentRect.width ?? 0) <= breakpoint);
-    });
-    if (host) observer.observe(host);
-    onCleanup(() => observer.disconnect());
-  });
-  const actions = children(() => (typeof local.actions === "function" ? local.actions({ narrow: narrow() }) : local.actions));
-  return (
-    <div class="k2b-notice-card-container" ref={host}>
-      <article
-        {...articleProps}
-        class={`k2b-notice-card ${local.class ?? ""}`}
-        data-tone={local.tone ?? "neutral"}
-        data-layout="row"
-        data-detail-lines={local.detailLines === 2 ? "2" : undefined}
-        data-row-icon={local.icon ? "" : undefined}
-        data-reserve={local.reserve !== false ? "" : undefined}
-      >
-        <Show when={local.icon}>
-          <i class={`${local.icon === true ? "ti ti-info-circle" : local.icon} k2b-notice-card__icon`} aria-hidden="true" />
-        </Show>
-        <div class="k2b-notice-card__content">
-          <p class="k2b-notice-card__title">{local.title}</p>
-          <p class="k2b-notice-card__description" title={local.detailTitle}>
-            {local.detail}
-          </p>
-        </div>
-        <Show when={actions.toArray().some(rendersAction)}>
-          <div class="k2b-notice-card__actions">
-            <For each={actions.toArray().filter(rendersAction)}>{(action) => <div class="k2b-notice-card__action-slot">{action}</div>}</For>
-          </div>
-        </Show>
-      </article>
-    </div>
   );
 }
 

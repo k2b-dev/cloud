@@ -106,7 +106,7 @@ export function ActionDetails(props: { card: ActionCard; draft?: BlockDraftState
           <Show when={props.card.readMore}>
             {(href) => (
               <a href={href()} target="_blank" rel="noopener noreferrer" title={t().readMoreTitle}>
-                {t().readMore}
+                {t().openIn({ app: props.card.app.name })}
               </a>
             )}
           </Show>

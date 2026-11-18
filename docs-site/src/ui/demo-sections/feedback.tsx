@@ -47,8 +47,8 @@ const BlocksDemo = () => (
   {(notice) => <NoticeCard {...notice} />}
 </NoticeCard.Grid>
 
-<NoticeCard layout="row" tone="ai" icon="ti ti-shield-check"
-  title="The proposal is ready to review." detail="Reads mail · daily at 8:00"
+<NoticeRow tone="ai" icon="ti ti-shield-check"
+  children="The proposal is ready to review." detail="Reads mail · daily at 8:00"
   detailTitle="Reads mail · daily at 8:00"
   actions={({ narrow }) => <>
     <Button size={narrow ? "md" : "sm"} variant={narrow ? "secondary" : "link"}>See everything</Button>
@@ -80,11 +80,10 @@ const BlocksDemo = () => (
       >
         {(notice) => <NoticeCard {...notice} />}
       </NoticeCard.Grid>
-      <NoticeCard
-        layout="row"
+      <NoticeRow
         tone="ai"
         icon="ti ti-shield-check"
-        title="The proposal is ready to review."
+        children="The proposal is ready to review."
         detail="Reads mail · daily at 8:00"
         detailTitle="Reads mail · daily at 8:00"
         actions={({ narrow }) => (

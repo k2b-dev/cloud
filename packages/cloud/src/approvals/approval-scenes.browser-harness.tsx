@@ -42,6 +42,9 @@ const cardOf = (key: string, review: CapabilityActionCallReview = reviewOf(key),
 const text = (value: string): ActionText => [{ kind: "text", text: value }];
 const expiresAt = new Date(Date.parse(FIXTURE_AT) + 9 * 60_000).toISOString();
 
+const sceneAnswers = { declined: 0, remembered: 0 };
+Object.assign(window, { approvalSceneAnswers: sceneAnswers });
+
 function Card(props: { card: ActionCard; state?: ChatDecisionState; line?: ActionLine; remember?: boolean; draft?: boolean }): JSX.Element {
   return (
     <ApprovalCard
@@ -49,10 +52,20 @@ function Card(props: { card: ActionCard; state?: ChatDecisionState; line?: Actio
       state={props.state ?? "open"}
       timeZone="Europe/Berlin"
       expiresAt={props.state && props.state !== "open" ? undefined : expiresAt}
-      remember={props.remember ? { onSelect: () => {} } : undefined}
+      remember={
+        props.remember
+          ? {
+              onSelect: () => {
+                sceneAnswers.remembered++;
+              },
+            }
+          : undefined
+      }
       onEditDraft={props.draft ? async () => true : undefined}
       onConfirm={() => {}}
-      onDecline={() => {}}
+      onDecline={() => {
+        sceneAnswers.declined++;
+      }}
       outcome={{ lines: props.line ? { now: props.line } : {}, current: "now" }}
     />
   );

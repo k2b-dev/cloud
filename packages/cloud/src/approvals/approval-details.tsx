@@ -40,15 +40,17 @@ export function openApprovalDetails(input: {
             />
             <PanelDialog.Body>
               <div class="cloud-approval-details">
-                <p>{p.reason.text}</p>
+                <p>{p.details?.reason ?? p.reason.text}</p>
                 {typeof p.details?.content === "function" ? p.details.content() : p.details?.content}
                 <Show when={p.details?.note}>{(note) => <p>{note().text}</p>}</Show>
                 <For each={p.notes}>{(note) => <p>{note.text}</p>}</For>
                 <For each={p.meta}>{(fact) => <p>{fact.text}</p>}</For>
                 <Show when={p.unavailable || p.waiting}>{(reason) => <p role="status">{reason().text}</p>}</Show>
-                <InlineGuidance class="cloud-approval-details__error" tone="danger" role="alert">
-                  {input.failed() ? t().frameAnswerFailed : ""}
-                </InlineGuidance>
+                <div role="alert" aria-atomic="true">
+                  <Show when={input.failed()}>
+                    <InlineGuidance tone="danger">{t().frameAnswerFailed}</InlineGuidance>
+                  </Show>
+                </div>
                 <Show when={p.state === "open" && p.mode !== "edit" ? p.remember : undefined}>
                   {(remember) => (
                     <Checkbox
@@ -70,47 +72,55 @@ export function openApprovalDetails(input: {
                 )}
               </Show>
               <Show when={p.state === "open"}>
-                <Show when={p.back}>
-                  {(answer) => (
-                    <Button
-                      variant="secondary"
-                      disabled={Boolean(p.waiting || input.pending())}
-                      onClick={() => void input.invoke(answer())}
-                    >
-                      {answer().label}
-                    </Button>
-                  )}
-                </Show>
-                <For each={p.more}>
-                  {(answer) => (
-                    <Button variant="secondary" disabled={Boolean(p.waiting || input.pending())} onClick={() => void input.invoke(answer)}>
-                      {answer.label}
-                    </Button>
-                  )}
-                </For>
-                <Show when={p.decline}>
-                  {(answer) => (
-                    <Button
-                      variant="secondary"
-                      disabled={Boolean(p.waiting || input.pending())}
-                      onClick={() => void input.invoke(answer())}
-                    >
-                      {answer().label}
-                    </Button>
-                  )}
-                </Show>
-                <Show when={p.confirm?.onSelect && p.confirm}>
-                  {(answer) => (
-                    <Button
-                      variant={p.mode === "edit" ? "secondary" : "ai"}
-                      loading={input.pending() || answer().busy}
-                      disabled={Boolean(p.waiting || p.unavailable || answer().disabled)}
-                      onClick={() => void input.invoke({ label: answer().label, onSelect: answer().onSelect! }, true)}
-                    >
-                      {answer().label}
-                    </Button>
-                  )}
-                </Show>
+                <div class="cloud-approval-details__edit">
+                  <Show when={p.back}>
+                    {(answer) => (
+                      <Button
+                        variant="secondary"
+                        disabled={Boolean(p.waiting || input.pending())}
+                        onClick={() => void input.invoke(answer())}
+                      >
+                        {answer().label}
+                      </Button>
+                    )}
+                  </Show>
+                </div>
+                <div class="cloud-approval-details__decisions">
+                  <For each={p.more}>
+                    {(answer) => (
+                      <Button
+                        variant="secondary"
+                        disabled={Boolean(p.waiting || input.pending())}
+                        onClick={() => void input.invoke(answer)}
+                      >
+                        {answer.label}
+                      </Button>
+                    )}
+                  </For>
+                  <Show when={p.decline}>
+                    {(answer) => (
+                      <Button
+                        variant="secondary"
+                        disabled={Boolean(p.waiting || input.pending())}
+                        onClick={() => void input.invoke(answer())}
+                      >
+                        {answer().label}
+                      </Button>
+                    )}
+                  </Show>
+                  <Show when={p.confirm?.onSelect && p.confirm}>
+                    {(answer) => (
+                      <Button
+                        variant="ai"
+                        loading={input.pending() || answer().busy}
+                        disabled={Boolean(p.waiting || p.unavailable || answer().disabled)}
+                        onClick={() => void input.invoke({ label: answer().label, onSelect: answer().onSelect! }, true)}
+                      >
+                        {answer().label}
+                      </Button>
+                    )}
+                  </Show>
+                </div>
               </Show>
             </PanelDialog.Footer>
           </PanelDialog>

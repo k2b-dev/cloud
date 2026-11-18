@@ -6,8 +6,8 @@ import {
   type ChatDecisionReason,
   type ChatOutcomeTone,
   LocaleProvider,
-  NoticeCard,
-  type NoticeCardProps,
+  NoticeRow,
+  type NoticeRowProps,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, Show } from "solid-js";
 import { type ActionText, actionPlainText } from "../ai/chat/action-card";
@@ -22,8 +22,8 @@ export type ApprovalFrameAction = Omit<ChatDecisionAnswer, "onSelect"> & {
 } & ({ onSelect: ChatDecisionAnswer["onSelect"]; href?: never } | { href: string; onSelect?: never });
 
 /**
- * The one approval form: an icon, a sentence, one quiet line and at most two controls. Full proposals and secondary
- * decisions live behind "See everything". The frame owns presentation and interaction, never rights or transport.
+ * The one approval form: an icon, a sentence, one quiet line and at most two controls. Full proposals live behind "See everything"; a direct secondary
+ * decision can remain on the card. The frame owns presentation and interaction, never rights or transport.
  */
 export type ApprovalFrameProps = {
   locale: string;
@@ -37,6 +37,7 @@ export type ApprovalFrameProps = {
   details?: {
     label: string;
     context?: string;
+    reason?: JSX.Element;
     content: JSX.Element | (() => JSX.Element);
     note?: { text: string; icon?: string };
     load?: () => Promise<void>;
@@ -45,6 +46,10 @@ export type ApprovalFrameProps = {
   meta?: readonly ChatDecisionFact[];
   confirm?: ApprovalFrameAction;
   decline?: ChatDecisionAnswer;
+  /** A direct secondary decision; it never loads or requires the proposal. */
+  secondary?: ChatDecisionAnswer;
+  /** Capability proposals keep their detail link in the quiet line, away from the two decisions. */
+  detailsPlacement?: "action" | "quiet";
   back?: ChatDecisionAnswer;
   link?: { label: string; href: string };
   more?: readonly ChatDecisionAnswer[];
@@ -57,8 +62,8 @@ export type ApprovalFrameProps = {
   reserve?: boolean;
   alert?: boolean;
   quietAlert?: boolean;
-  /** A domain-specific main control, e.g. a public SplitButton; NoticeCard still owns its placement. */
-  actions?: NoticeCardProps["actions"];
+  /** A domain-specific main control, e.g. a public SplitButton; NoticeRow still owns its placement. */
+  actions?: NoticeRowProps["actions"];
   resultAnchor?: boolean;
 };
 
@@ -168,12 +173,12 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
           <Button
             data-approval-primary=""
             size={narrow ? "md" : "sm"}
-            variant={answer.filled === false || props.mode === "edit" ? "secondary" : "ai"}
+            variant={answer.filled === false || (props.state === "open" && props.mode === "edit") ? "secondary" : "ai"}
             wrap
             disabled={disabled()}
             loading={pending() || answer.busy}
             onClick={() => {
-              if (props.mode === "edit") void showDetails();
+              if (props.state === "open" && props.mode === "edit") void showDetails();
               else if (answer.onSelect) void invoke({ ...answer, onSelect: answer.onSelect! }, true);
             }}
           >
@@ -185,13 +190,12 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
   );
   return (
     <LocaleProvider locale={props.locale}>
-      <NoticeCard
+      <NoticeRow
         ref={(element) => {
           root = element;
         }}
         class="cloud-approval-frame"
         tone="ai"
-        layout="row"
         icon="ti ti-shield-check"
         data-approval-frame=""
         data-outcome-tone={props.status?.tone}
@@ -204,7 +208,7 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
         aria-label={`${t().approvalKind} · ${props.source.name}`}
         aria-busy={props.state === "loading" || props.state === "sending" || undefined}
         reserve={props.state === "loading" || props.reserve !== false}
-        title={
+        children={
           <>
             <span role="status" aria-atomic="true">
               {props.alert ? "" : sentence()}
@@ -222,12 +226,35 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
             </span>
           </>
         }
+        detailAction={
+          props.detailsPlacement === "quiet" && hasDetails() ? (
+            <>
+              <span aria-hidden="true"> · </span>
+              <button type="button" class="k2b-text-link" onClick={() => void showDetails()}>
+                {t().seeEverything}
+              </button>
+            </>
+          ) : undefined
+        }
         detailTitle={quietTitle()}
         actions={
           props.actions ??
           (({ narrow }) => (
             <>
-              <Show when={props.link || hasDetails()}>
+              <Show when={props.secondary}>
+                {(answer) => (
+                  <Button
+                    size={narrow ? "md" : "sm"}
+                    variant={narrow ? "secondary" : "link"}
+                    wrap
+                    disabled={Boolean(props.waiting || pending())}
+                    onClick={() => void invoke(answer())}
+                  >
+                    {answer().label}
+                  </Button>
+                )}
+              </Show>
+              <Show when={!props.secondary && props.detailsPlacement !== "quiet" && (props.link || hasDetails())}>
                 <Show
                   when={directLink()}
                   fallback={

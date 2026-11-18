@@ -153,6 +153,38 @@ const shot = async (page: Page, name: string) => {
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 describe("Approval scenes", () => {
+  test("declining from the card never requires a proposal; remembering remains in its dialog", async () => {
+    const page = await open("large", 390);
+    let reads = 0;
+    try {
+      await page.route("**/api/approvals/*/content?*", (route) => {
+        reads++;
+        return route.fulfill({ status: 503 });
+      });
+      const frame = page.locator(".cloud-approval-frame");
+      expect(await frame.locator("[data-approval-primary]").isDisabled()).toBe(true);
+      await frame.getByRole("button", { name: "Nicht senden", exact: true }).click();
+      expect(await page.getByRole("dialog").count()).toBe(0);
+      expect(reads).toBe(0);
+      expect(
+        await page.evaluate(() => (window as unknown as { approvalSceneAnswers: { declined: number } }).approvalSceneAnswers.declined),
+      ).toBe(1);
+      await page.goto("https://cloud.example.test/?scene=states");
+      await settled(page);
+      const remembered = page.locator(".cloud-approval-frame").first();
+      expect(await remembered.getByRole("checkbox").count()).toBe(0);
+      await remembered.getByRole("button", { name: "Alles ansehen", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("checkbox", { name: "In diesem Chat nicht mehr fragen" }).check();
+      await dialog.locator('.k2b-button[data-variant="ai"]').click();
+      expect(
+        await page.evaluate(() => (window as unknown as { approvalSceneAnswers: { remembered: number } }).approvalSceneAnswers.remembered),
+      ).toBe(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
   for (const theme of ["light", "dark"] as const)
     for (const width of [1440, 390])
       test(`the complete proposal loads only in details, recovers after a read failure, and then permits approval at ${width}px in ${theme}`, async () => {
@@ -163,7 +195,7 @@ describe("Approval scenes", () => {
             reads++;
             return reads === 1
               ? route.fulfill({ status: 503 })
-              : route.fulfill({ json: { version: 1, blocks: [{ kind: "Text", text: "Der vollständige Vorschlag ist da." }] } });
+              : route.fulfill({ json: { version: 1, blocks: [{ kind: "Text", text: "Wartungsfenster: Dienstag von 20 bis 21 Uhr." }] } });
           });
           const frame = page.locator(".cloud-approval-frame");
           expect(reads).toBe(0);
@@ -174,7 +206,7 @@ describe("Approval scenes", () => {
           expect(reads).toBe(1);
           await shot(page, `preview-failed-${theme}-${width}`);
           await dialog.getByRole("button", { name: "Noch einmal versuchen" }).click();
-          await dialog.getByText("Der vollständige Vorschlag ist da.", { exact: true }).waitFor();
+          await dialog.getByText("Wartungsfenster: Dienstag von 20 bis 21 Uhr.", { exact: true }).waitFor();
           expect(reads).toBe(2);
           expect(await dialog.locator('.k2b-button[data-variant="ai"]').isEnabled()).toBe(true);
           await shot(page, `preview-ready-${theme}-${width}`);
@@ -654,7 +686,7 @@ describe("Approval scenes", () => {
           })),
         );
         for (const look of looks) {
-          expect(look).toMatchObject({ height: width === 390 ? 168 : 64, radius: "12px", shadow: "none", sentence: "14px", boxes: 0 });
+          expect(look).toMatchObject({ height: width === 390 ? 156 : 64, radius: "12px", shadow: "none", sentence: "14px", boxes: 0 });
           expect(look.actions).toBeLessThanOrEqual(2);
         }
         expect(await frames.first().getByRole("link", { name: "Alles ansehen" }).getAttribute("href")).toBe("/app/code/info");

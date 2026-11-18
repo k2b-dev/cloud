@@ -50,12 +50,12 @@ export function CodeVersionCardView(props: {
     if (action.href)
       return (
         <ButtonLink {...common} href={action.href}>
-          {action.label}
+          {narrow && action.id === "rework" ? c().reworkShort : action.label}
         </ButtonLink>
       );
     return (
       <Button {...common} disabled={action.disabled} loading={action.busy} onClick={() => props.onAction(action.id)}>
-        {action.label}
+        {narrow && action.id === "rework" ? c().reworkShort : action.label}
       </Button>
     );
   };

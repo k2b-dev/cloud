@@ -33,7 +33,7 @@ const capLine = () => {
   return s === "sending"
     ? { tone: "running" as const, text: card.forms.running }
     : s === "done"
-      ? { tone: "done" as const, text: card.forms.done }
+      ? { tone: "done" as const, text: card.forms.done, time: "09:49" }
       : s === "declined"
         ? { tone: "off" as const, text: card.forms.rejected, detail: "Du hast abgelehnt." }
         : s === "expired"

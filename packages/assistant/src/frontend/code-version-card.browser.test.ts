@@ -195,8 +195,12 @@ describe("v10 approval card in Chromium", () => {
                 expect(await actions.first().locator(".k2b-button").getAttribute("data-variant")).toBe("secondary");
               }
               expect(a.y).toBeGreaterThanOrEqual(measured.quiet.y + measured.quiet.height);
-              expect(a.y - measured.quiet.y - measured.quiet.height, `${state}: actions follow the quiet line`).toBeLessThanOrEqual(4);
-              const quietStyle = await card.locator(".k2b-notice-card__description").evaluate((element) => {
+              expect(
+                a.y - measured.quiet.y - measured.quiet.height,
+                `${state}: a buffer separates the text and decisions`,
+              ).toBeGreaterThanOrEqual(12);
+              expect(measured.card.y + measured.card.height - a.y - a.height).toBeCloseTo(11, 0);
+              const quietStyle = await card.locator(".k2b-notice-card__detail-text").evaluate((element) => {
                 const style = getComputedStyle(element);
                 return {
                   whiteSpace: style.whiteSpace,
@@ -242,7 +246,7 @@ describe("v10 approval card in Chromium", () => {
         await h.page.waitForFunction(() => (window as unknown as { cardReadCount(): number }).cardReadCount() === 1);
         await h.page.locator(".assistant-code-version-host[data-state=loading] .cloud-approval-frame").waitFor();
         const first = await stableBoxes(h.page);
-        expect(first.card.height).toBe(168);
+        expect(first.card.height).toBe(156);
         await screenshot(h.page, "loading", theme, 390);
         await h.page.evaluate(() => (window as unknown as { finishCardRead(state: string): void }).finishCardRead("failed"));
         await h.page.locator(".assistant-code-version-host[data-state=load-failed] .cloud-approval-frame").waitFor();
@@ -448,8 +452,8 @@ describe("v10 approval card in Chromium", () => {
         expect(edges[0]).toEqual(edges[1]);
         if (width === 390) {
           for (const selector of [
-            ".assistant-authoring-stop .k2b-notice-card__description",
-            ".assistant-code-version-host .k2b-notice-card__description",
+            ".assistant-authoring-stop .k2b-notice-card__detail-text",
+            ".assistant-code-version-host .k2b-notice-card__detail-text",
           ]) {
             expect(await h.page.locator(selector).evaluate((element) => getComputedStyle(element).webkitLineClamp)).toBe("2");
           }
