@@ -62,6 +62,7 @@ const probes = {
   selectedFill: "color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-fill), var(--k2b-surface))",
   selectedHover: "color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-hover-fill), var(--k2b-surface))",
   danger: "var(--k2b-edge-danger)",
+  disabled: "var(--k2b-edge-disabled)",
   muted: "var(--k2b-surface-muted)",
 };
 
@@ -230,7 +231,7 @@ for (const theme of ["light", "dark"] as const)
       );
 
     test(
-      "an invalid checkbox card has a red edge, a disabled card no edge on a muted fill, and the input variant is the same card",
+      "an invalid checkbox card has a red edge and ring, a disabled card a light edge on a muted fill, and the input variant is the same card",
       async () => {
         const page = await load(theme);
         try {
@@ -244,8 +245,10 @@ for (const theme of ["light", "dark"] as const)
           expect(input.fill).toBe(plain.fill);
           expect(invalid.edgeColors).toEqual([p.danger!]);
           expect(invalid.fill).toBe(p.surface!);
+          expect(invalid.outerShadows).toBe(1);
+          expect(invalid.ring).toBe(3);
           for (const state of [locked, lockedChoice]) {
-            expect(state.edgeColors.every((color) => color.endsWith(",0"))).toBe(true);
+            expect(state.edgeColors).toEqual([p.disabled!]);
             expect(state.outerShadows).toBe(0);
           }
         } finally {
