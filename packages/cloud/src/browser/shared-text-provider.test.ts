@@ -93,6 +93,52 @@ const fixture = (options: Partial<SharedTextProviderOptions<string, { name: stri
 };
 const publishes = (socket: Socket) => socket.sent.filter((request) => request.type === "syncPublish");
 
+test.each(["handshake", "replay"])("a stalled %s reconnects without a close event and retains edits until their echo", (phase) => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-18T08:00:00Z"));
+  try {
+    const errors: SharedTextProviderError[] = [];
+    const connections: boolean[] = [];
+    const { provider, socket, local } = fixture({
+      onError: (error) => errors.push(error),
+      onConnectionChange: (connected) => connections.push(connected),
+    });
+    if (phase === "handshake") {
+      // Retire the initial connection and leave its replacement in CONNECTING.
+      socket.close();
+      provider.reconnectNow();
+      Socket.instances.at(-1)!.readyState = 0;
+    }
+    const stalled = Socket.instances.at(-1)!;
+    local.getText("codemirror").insert(0, "Text typed while connecting");
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS - 1);
+    expect(stalled.readyState).toBe(phase === "handshake" ? 0 : Socket.OPEN);
+    jest.advanceTimersByTime(1);
+    expect(stalled.readyState).toBe(3);
+    expect(connections.at(-1)).toBe(false);
+    expect(errors.at(-1)?.code).toBe("SYNC_TIMEOUT");
+    jest.advanceTimersByTime(2_000);
+    const replacement = Socket.instances.at(-1)!;
+    expect(replacement).not.toBe(stalled);
+    replacement.open();
+    replacement.ready();
+    expect(provider.hasUnsentChanges()).toBe(true);
+    const pending = publishes(replacement)[0]!;
+    expect(pending.payload.baseCursor).toBe("s6t.test.1");
+    expect(provider.recoveryInput().text).toBe("Text typed while connecting");
+    // Queued callbacks from the abandoned connection cannot disturb recovery.
+    stalled.ready("obsolete-generation");
+    stalled.onclose?.({ code: 1006, reason: "late close" });
+    replacement.sync(pending.payload.payload);
+    expect(provider.hasUnsentChanges()).toBe(false);
+    jest.advanceTimersByTime(SHARED_TEXT_ACK_TIMEOUT_MS * 2);
+    expect(Socket.instances.at(-1)).toBe(replacement);
+    expect(replacement.readyState).toBe(Socket.OPEN);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test("an unacknowledged update closes a silent socket and reconnects with its original input base", () => {
   jest.useFakeTimers();
   setSystemTime(new Date("2026-11-09T12:00:00Z"));
@@ -337,7 +383,10 @@ test("trusted awareness sends only local state and suppresses its rewritten serv
 test("a burst of cursor moves sends the first and then only the latest state per interval", () => {
   const timers: { run: () => void; delay: number }[] = [];
   const originalSetTimeout = globalThis.setTimeout;
-  Object.assign(globalThis, { setTimeout: (run: () => void, delay: number) => timers.push({ run, delay }) });
+  Object.assign(globalThis, {
+    setTimeout: (run: () => void, delay: number) =>
+      delay === SHARED_TEXT_ACK_TIMEOUT_MS ? originalSetTimeout(run, delay) : timers.push({ run, delay }),
+  });
   cleanups.push(() => Object.assign(globalThis, { setTimeout: originalSetTimeout }));
   const { awareness, socket } = fixture();
   socket.ready();

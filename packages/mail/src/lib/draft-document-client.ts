@@ -479,6 +479,8 @@ export async function openMailDraftDocumentClient(options: {
       if (draftSnapshotCovers(durableState, Y.encodeStateAsUpdate(doc))) {
         state.dirty = false;
         state.changes = 0;
+        // A BUSY retry can recover on the same socket, without another onReady.
+        transportError = false;
         if (!state.terminal && !storageFailure) {
           state.message = t().saved;
           state.error = false;
@@ -576,8 +578,8 @@ export async function openMailDraftDocumentClient(options: {
         state.ready = true;
         if (transportError && !state.terminal) {
           transportError = false;
-          state.error = false;
-          state.message = state.dirty ? t().pending : t().saved;
+          state.error = storageFailure !== null;
+          state.message = storageFailure ? t().storageFailed : state.dirty ? t().pending : t().saved;
         }
         if (!state.dirty && !state.error) state.message = t().saved;
         emit();
@@ -701,8 +703,8 @@ export async function openMailDraftDocumentClient(options: {
       emit();
     };
     const awaitSynchronized = async () => {
-      if (!state.connected || !state.ready || state.terminal) throw new Error(state.message || t().syncFirst);
-      if (provider.canStructure()) return;
+      if (state.terminal) throw new Error(state.message || t().syncFirst);
+      if (state.connected && state.ready && provider.canStructure()) return;
       await new Promise<void>((resolve, reject) => {
         const stop = () => {
           clearTimeout(timer);
@@ -711,13 +713,14 @@ export async function openMailDraftDocumentClient(options: {
         };
         const timer = setTimeout(() => {
           stop();
+          transportError = true;
           reject(new Error(t().syncTimeout));
         }, SHARED_TEXT_ACK_TIMEOUT_MS);
         const check = () => {
-          if (disposed || options.signal.aborted || state.terminal || !state.connected) {
+          if (disposed || options.signal.aborted || state.terminal) {
             stop();
             reject(new Error(state.message || t().syncFirst));
-          } else if (provider.canStructure()) {
+          } else if (state.connected && state.ready && provider.canStructure()) {
             stop();
             resolve();
           }
