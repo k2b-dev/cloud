@@ -71,7 +71,7 @@ import { startCodeRun } from "./code/scheduling";
 import { codeSchedulingContracts } from "./code/scheduling-contracts";
 import { codeSecretContracts } from "./code/secret-contracts";
 import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
-import { countOwnCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { countOwnCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeRunEntries, readCodeVersion } from "./code/store";
 import { readCodeVersionCards } from "./code/version-cards";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
@@ -810,6 +810,13 @@ export const aiCapabilities = defineCapabilities({
       ...codeQueryContracts.runRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),
+    },
+    "code.run.entries": {
+      title: "Read Code run entries",
+      description: "Read the bounded sanitized output tail and lifecycle of one run. Only Code managers receive output; readers receive output:null.",
+      ...codeQueryContracts.runEntries,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeRunEntries(input, ctx)),
     },
     "code.attention.list": {
       title: "List Code that needs you",

@@ -1,11 +1,12 @@
 import { documentNavigate, refreshCurrentPath } from "@k2b/ssr/nav";
-import { Button, ButtonLink, FilterToggle, NoticeCard, Placeholder, prompts, toast } from "@k2b/ui";
+import { Button, FilterToggle, Placeholder, prompts, toast } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { z } from "zod";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { type CodeRunReadModel, CodeRunReadModelSchema } from "../../contracts/code-read-model";
-import { type CodeLive, RunStrip, stripCaption } from "./CodeLiveStrip";
+import type { CodeLive } from "./CodeLiveStrip";
 import { nextRunOf, timing } from "./CodeOverview";
+import { CodeRunLog } from "./CodeRunLog";
 import {
   type CodePageData,
   type CodePageInvoke,
@@ -18,7 +19,7 @@ import {
   RunListSchema,
   StartSchema,
 } from "./data";
-import { Happened, Island, type PageText, Quiet, Row, runStatus, runStatusWords, Status, sentence, withQuery } from "./page-kit";
+import { Island, type PageText, Quiet, Row, runStatus, runStatusWords, Status, sentence, withQuery } from "./page-kit";
 
 /** The browser calls Core's public Code capabilities with the person's own session, like any page. */
 const browserInvoke: CodePageInvoke = (invocation, schema) => invokeCapabilityWithDataSchema(invocation, schema);
@@ -41,13 +42,6 @@ export const runTitle = (run: CodePageRun, words: CodeRunReadModel | undefined, 
 const triggerWord = (run: CodePageRun, text: PageText) => {
   const t = text.t();
   return { schedule: t.triggerSchedule, manual: t.triggerManual, event: t.triggerEvent, path: t.triggerPath }[run.trigger];
-};
-
-/** "2 seconds" or "3 minutes": how long a finished run took. */
-const duration = (run: CodePageRun, text: PageText) => {
-  if (!run.startedAt || !run.endedAt) return null;
-  const seconds = Math.max(0, Math.round((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 1000));
-  return seconds < 120 ? text.t().seconds({ count: seconds }) : text.t().minutes({ count: Math.round(seconds / 60) });
 };
 
 /** Event deliveries that wait for admission or failed: named by their event, with a retry for editors. */
@@ -125,9 +119,9 @@ function EventDelivery(props: { delivery: z.infer<typeof EventDeliverySchema>; s
 }
 
 /** The detail of one run in words (Bild 22): title, when and how, status, what happened, and what to do next. */
-function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: CodePageRunDetail; text: PageText }) {
+function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: CodePageRunDetail; text: PageText; live: CodeLive }) {
   const t = props.text.t;
-  const run = () => props.detail.run;
+  const run = () => ({ ...props.detail.run, ...props.live.runs().find((run) => run.id === props.detail.run.id) });
   const words = () => props.state.words?.runs[run().id];
   const [rerunning, setRerunning] = createSignal(false);
   const calls = () => props.detail.calls;
@@ -166,9 +160,9 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
         idempotencyKey: `rerun:${run().id}`,
       },
       StartSchema,
-    );
+    ).catch(() => null);
     setRerunning(false);
-    if (!result.ok) return toast.error(t().rerunFailed);
+    if (!result?.ok) return toast.error(t().rerunFailed);
     toast.success(t().rerunStarted);
     documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.runId }));
   };
@@ -183,13 +177,11 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
           })
         : triggerWord(run(), props.text),
       run().versionNumber ? t().runVersion({ version: run().versionNumber! }) : null,
-      duration(run(), props.text),
       run().rerunByName ? t().rerunBy({ name: run().rerunByName! }) : null,
     ]
       .filter(Boolean)
       .join(" · ");
   const refusalHref = () => (props.detail.refusal?.kind === "target_refused" ? (props.detail.refusal.call?.target?.href ?? null) : null);
-  const status = () => runStatus(words()?.state ?? run().state, t());
   /** An AI budget refusal has its own sentence: what was spent and when it frees up again. */
   const budget = () => {
     const code = props.detail.refusal?.code;
@@ -212,47 +204,13 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
           <h2 id="cloud-code-run-title">{runTitle(run(), words(), props.state, props.text)}</h2>
           <p class="cloud-code__meta">{meta()}</p>
         </div>
-        <Status {...status()} label={words()?.status ?? status().label} />
       </header>
-      <Show when={run().state === "failed" || run().state === "cancelled"}>
-        <NoticeCard
-          tone="danger"
-          icon={props.detail.refusal ? "ti ti-lock" : "ti ti-alert-circle"}
-          layout="card"
-          role="alert"
-          title={words()?.reason ?? t().lastRunFailed}
-          detail={
-            budget() ??
-            (words()
-              ?.untilThen.items.map((row) => row.text)
-              .join(" · ") ||
-              undefined)
-          }
-          actions={
-            <Show when={refusalHref() || canRerun()}>
-              <Show when={refusalHref()}>
-                {(href) => (
-                  <ButtonLink size="sm" variant="secondary" href={href()}>
-                    <i class="ti ti-lock" aria-hidden="true" />
-                    {t().checkAccess}
-                  </ButtonLink>
-                )}
-              </Show>
-              <Show when={canRerun()}>
-                <Button type="button" size="sm" variant="secondary" loading={rerunning()} onClick={() => void rerun()}>
-                  <i class="ti ti-refresh" aria-hidden="true" />
-                  {t().rerunDots}
-                </Button>
-              </Show>
-            </Show>
-          }
-        />
-      </Show>
-      <Island title={t().whatHappened} meta={words() ? String(words()!.untilThen.items.length) : undefined}>
-        <Show when={words()} fallback={<p class="cloud-code__quiet-line">{t().callsHidden}</p>}>
-          {(current) => <Happened rows={current().untilThen.items} label={t().whatHappened} />}
-        </Show>
-      </Island>
+      <CodeRunLog codeId={props.state.code.id} detail={{ ...props.detail, run: run() }} now={props.data.dates.now}
+        manager={props.state.permission === "editor"} reason={budget() ?? words()?.reason}
+        actions={[
+          ...(refusalHref() ? [{ icon: "ti ti-lock", label: t().checkAccess, href: refusalHref()! }] : []),
+          ...(canRerun() ? [{ icon: "ti ti-refresh", label: t().rerunDots, disabled: rerunning(), onClick: () => void rerun() }] : []),
+        ]} />
       <Show when={run().rerunOf}>
         {(original) => (
           <Quiet icon="ti ti-repeat">
@@ -331,8 +289,8 @@ export function CodeRuns(props: { data: CodePageData; state: CodePageReady; text
       const result = await browserInvoke(
         coreQuery("code.run.list", { codeId: props.state.code.id, limit: MORE, cursor: cursor() }),
         RunListSchema,
-      );
-      if (!result.ok) {
+      ).catch(() => null);
+      if (!result?.ok) {
         setLoading(false);
         return setFailed(true);
       }
@@ -350,12 +308,6 @@ export function CodeRuns(props: { data: CodePageData; state: CodePageReady; text
     setLoading(false);
     setShown(next);
   };
-  const caption = () => {
-    const next = nextRunOf(props.state);
-    return next && props.state.code.state === "active"
-      ? `${stripCaption(props.live, props.text)} · ${t().stripNext({ when: props.text.moment(next) })}`
-      : stripCaption(props.live, props.text);
-  };
   const empty = (): JSX.Element => {
     const next = nextRunOf(props.state);
     return (
@@ -371,9 +323,6 @@ export function CodeRuns(props: { data: CodePageData; state: CodePageReady; text
     <div class="cloud-code__body">
       <Show when={props.state.runs} fallback={<Failed title={t().runsLoadFailed} detail={t().loadKeeps} />}>
         <Show when={all().length > 0} fallback={empty()}>
-          <section class="cloud-code__lage cloud-code__lage--runs" aria-label={t().tabRuns}>
-            <RunStrip data={props.data} live={props.live} text={props.text} caption={caption()} />
-          </section>
           <div class="cloud-code__md" data-phone={props.state.runSelected ? "detail" : "list"}>
             <div class="cloud-code__list-col">
               <div class="cloud-code__filters" role="group" aria-label={t().filterLabel}>
@@ -431,7 +380,7 @@ export function CodeRuns(props: { data: CodePageData; state: CodePageReady; text
                   </Show>
                 }
               >
-                {(detail) => <RunDetail data={props.data} state={props.state} detail={detail()} text={props.text} />}
+                {(detail) => <RunDetail data={props.data} state={props.state} detail={detail()} text={props.text} live={props.live} />}
               </Show>
             </div>
           </div>

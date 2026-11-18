@@ -6,6 +6,7 @@ import {
   type CodeOutputBatch,
   CodeOutputBatchSchema,
   codeOutputStepBytes,
+  codeRunKey,
   emptyCodeOutput,
   isCodeOutputLogEntry,
   isCodeOutputStepEntry,
@@ -13,6 +14,7 @@ import {
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import { RUNNER_PATHS, RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import { LIVE_LIMITS } from "@k2b/cloud/events";
+import { createLiveEngine, liveTopicConfig, type LiveEnvelope } from "@k2b/cloud/events/testing";
 import { accounts } from "@k2b/cloud/services";
 import { createSync, type Sync } from "@k2b/sync";
 import { generateKeyPair } from "jose";
@@ -22,6 +24,7 @@ import { RunnerOutput, runnerOutputLimits } from "../../../runner/src/output";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
+import { migrate as migrateCodeLive } from "../migrate/core/code-live";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateEvents } from "../migrate/core/events";
 import { migrate as migrateSettings } from "../migrate/core/settings";
@@ -39,7 +42,7 @@ import {
 import * as redaction from "./output-redaction";
 import { createCodeRunnerRoutes } from "./runner-routes";
 import { secretEchoReplacements } from "./secret-echo";
-import { expireCodeRuns, readCodeRun } from "./store";
+import { expireCodeRuns, readCodeRun, readCodeRunEntries } from "./store";
 
 const owner = "11111111-1111-4111-8111-111111111111";
 const reader = "22222222-2222-4222-8222-222222222222";
@@ -88,7 +91,7 @@ suiteFor(
     sync = createSync({ connection, namespace: testSyncNamespace("code-output"), application: "core", defaults: { replicas: 1 } });
     bindProcessSync(sync, connection);
     await sync.ready();
-    for (const migrate of [migrateAuth, migrateEvents, migrateSettings, migrateCode, migrateScheduling]) await migrate();
+    for (const migrate of [migrateAuth, migrateEvents, migrateSettings, migrateCode, migrateScheduling, migrateCodeLive]) await migrate();
     for (const [uid, id] of Object.entries({ owner, reader }))
       await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${id}::uuid,${uid},'local','user')`;
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title) VALUES(${codeId},'person',${owner}::uuid,'Output fixture')`;
@@ -233,6 +236,9 @@ suiteFor(
       const context = { authority };
       const result = await readCodeRun({ codeId, runId }, context);
       expect(result.contents === null).toBe(id === reader);
+      const entries = await readCodeRunEntries({ codeId, runId }, context);
+      expect(entries.output === null).toBe(id === reader);
+      if (id === owner) expect(entries.output).toEqual(result.contents?.consoleOutput);
       for (const origin of ["http", "assistant", "mcp"] as const) {
         const capability = await aiCapabilities.queries["code.run.read"].run(
           { codeId, runId, cursor: 0, offset: 0, length: 16_384 },
@@ -249,9 +255,18 @@ suiteFor(
         );
         if (!capability.ok) throw new Error("Run read capability failed");
         expect(capability.data.data.contents === null).toBe(id === reader);
+        const ledger = await aiCapabilities.queries["code.run.entries"].run(
+          { codeId, runId },
+          { ...context, actor: authority.actor, accessSubject: authority.accessSubject, user,
+            requestId: "fixture", locale: "en", origin, signal: new AbortController().signal },
+        );
+        if (!ledger.ok) throw new Error("Run entries capability failed");
+        expect(ledger.data.data).toEqual(entries);
       }
       const who = { id: `user:${id}`, actor: authority.actor, accessSubject: authority.accessSubject, scopes: [] };
       expect((await codeLiveChannels.codeDetails.authorize(`code.details:${codeId}`, [who])).has(who.id)).toBe(id === owner);
+      expect((await codeLiveChannels.codeRun.authorize(codeRunKey(codeId, runId), [who])).has(who.id)).toBe(id === owner);
+      expect(await codeLiveChannels.codeRun.authorize(codeRunKey(codeId, "99999999-9999-4999-8999-999999999999"), [who])).toEqual(new Set());
     }
   });
   test("stale generations cannot publish into a newer attempt and earlier output is reset", async () => {
@@ -305,6 +320,54 @@ suiteFor(
     await openCodeOutput({ ...proof, codeId, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, budget);
     return proof;
   }
+  test("a run channel fans out through NATS with 0 SQL per delivery and isolates other runs", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    const other = await attempt();
+    const user = await accounts.users.get({ id: owner });
+    if (!user) throw new Error("Missing output owner");
+    const viewer = { id: `user:${owner}`, actor: { kind: "user" as const, user }, accessSubject: { type: "user" as const, userId: owner }, scopes: [] };
+    const topic = sync.topic<LiveEnvelope>(liveTopicConfig("core"));
+    await sync.ready();
+    const engine = createLiveEngine({ appId: "core", topic: () => topic, channels: codeLiveChannels });
+    const frames: { t: string; data?: unknown }[] = [];
+    const meter = await meterSql();
+    const until = async (ready: () => boolean) => { for (let n = 0; n < 100 && !ready(); n++) await Bun.sleep(5); expect(ready()).toBe(true); };
+    try {
+      const admission = await meter.during(async () => {
+        const socket = engine.open({ send: (frame) => frames.push(JSON.parse(frame)), close: () => {}, getBufferedAmount: () => 0 }, viewer, async () => viewer);
+        socket.message(JSON.stringify({ t: "sub", id: "run", channel: "codeRun", scope: { codeId, runId: proof.runId }, after: await topic.head() }));
+        await until(() => frames.some((frame) => frame.t === "ready"));
+      });
+      expect(admission).toHaveLength(2);
+      expect(await meter.during(async () => {
+        await receiveCodeOutput(other, batch(1, "Other run"));
+        await receiveCodeOutput(proof, batch(1, "Selected run"));
+        await until(() => frames.some((frame) => frame.t === "event"));
+        await connection.flush();
+      })).toEqual([]);
+      expect(frames.filter((frame) => frame.t === "event").map((frame) => frame.data)).toEqual([expect.objectContaining({ type: "code.output", runId: proof.runId })]);
+      expect(codeLiveChannels.codeRun.accessKey(codeRunKey(codeId, proof.runId))).toBe(codeId);
+      const [saved] = await sql<{ payload: LiveEnvelope }[]>`SELECT payload FROM events.outbox WHERE ordering_key=${codeRunKey(codeId, proof.runId)} ORDER BY seq DESC LIMIT 1`;
+      expect(saved?.payload.d).toMatchObject({ type: "code.run", runId: proof.runId, state: "running" });
+    } finally { engine.stop(); await meter.close(); }
+  });
+  test("a running step restores missing reservations after a deploy before accepting more metadata", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    const at = new Date(fixed).toISOString();
+    const step = { kind: "step" as const, id: 1, at, label: "Read", status: "running" as const, startedAt: at };
+    await receiveCodeOutput(proof, { seq: 1, entries: [step], droppedLines: 0, droppedBytes: 0 });
+    const cacheKey = `core:code-output:v1:${proof.runId}`;
+    const state = JSON.parse((await redis.get(cacheKey))!);
+    delete state.stepReservations;
+    await redis.set(cacheKey, JSON.stringify(state));
+    setSystemTime(fixed + 1000);
+    await receiveCodeOutput(proof, { seq: 2, entries: [{ ...step, status: "succeeded", endedAt: new Date().toISOString(), message: "Done" }], droppedLines: 0, droppedBytes: 0 });
+    const saved = JSON.parse((await redis.get(cacheKey))!);
+    expect(saved.stepReservations["1:step:1"].bytes).toBeGreaterThan(0);
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual([expect.objectContaining({ status: "succeeded", label: [{ type: "text", text: "Read" }], message: [{ type: "text", text: "Done" }] })]);
+  });
   test("all short handles survive the shipped collector, supervisor and Core with a remembered secret", async () => {
     setSystemTime(fixed);
     const proof = await attempt();

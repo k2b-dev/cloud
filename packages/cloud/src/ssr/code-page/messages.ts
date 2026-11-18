@@ -22,6 +22,11 @@ const OUTCOME_DE: Record<string, string> = {
   wall_clock_limit: "Laufzeitlimit erreicht",
   memory_limit: "Speicherlimit des Runners erreicht",
   stalled: "Runner antwortet nicht mehr",
+  code_run_wall_clock_limit: "Laufzeitlimit erreicht",
+  code_run_memory_limit: "Speicherlimit des Runners erreicht",
+  code_runner_stalled: "Runner antwortet nicht mehr",
+  code_runner_lost: "Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe vor der erneuten Ausführung.",
+  code_result_unknown: "Das Ergebnis des Laufs ist unklar. Prüfe die gespeicherten Aufrufe vor der erneuten Ausführung.",
 };
 
 const OUTCOME_EN: Record<string, string> = {
@@ -39,6 +44,11 @@ const OUTCOME_EN: Record<string, string> = {
   wall_clock_limit: "Run time limit reached",
   memory_limit: "Runner memory limit reached",
   stalled: "Runner stopped responding",
+  code_run_wall_clock_limit: "Run time limit reached",
+  code_run_memory_limit: "Runner memory limit reached",
+  code_runner_stalled: "Runner stopped responding",
+  code_runner_lost: "Runner disconnected. Review the recorded calls before running again.",
+  code_result_unknown: "The run's result is unknown. Review the recorded calls before running again.",
 };
 
 const VERSIONSTATUS_DE: Record<string, string> = {

@@ -6,6 +6,7 @@ import {
   CodePageLinksSchema,
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
+import { CodeRunEntriesInputSchema, CodeRunEntriesSchema } from "@k2b/cloud/code";
 
 export const CodeEventDeliverySchema = z
   .object({
@@ -346,6 +347,7 @@ export const codeQueryContracts = {
       })
       .strict(),
   },
+  runEntries: { input: CodeRunEntriesInputSchema, data: CodeRunEntriesSchema },
   /** Runs of the caller's own personal Code created since a moment in the last 7 days. */
   runCount: {
     input: z

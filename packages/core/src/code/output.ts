@@ -13,6 +13,7 @@ import {
   type CodeOutputWindow,
   CodeOutputWindowSchema,
   codeDetailsKey,
+  codeRunKey,
   codeOutputEntryLines,
   codeOutputStepsBudget,
   emptyCodeOutput,
@@ -31,6 +32,7 @@ import {
   type OutputRedactor,
   OutputRedactionPendingSchema as PendingSchema,
   redactOutput,
+  stepReserve,
 } from "./output-redaction";
 import { secretEchoReplacements } from "./secret-echo";
 
@@ -68,6 +70,12 @@ const StateSchema = z.object({
   stepReservations: z
     .record(z.string(), z.object({ bytes: z.number().nonnegative().safe(), rejected: z.boolean().optional() }))
     .default({}),
+}).transform((state) => {
+  // An in-flight run may cross a deploy that introduced reservations. Retain
+  // its accepted fields and reserve their terminal envelope before new steps.
+  for (const [id, step] of Object.entries(state.steps))
+    state.stepReservations[id] ??= { bytes: stepReserve(step) + Buffer.byteLength(JSON.stringify(id)) + 2 };
+  return state;
 });
 type State = z.infer<typeof StateSchema>;
 const tokenDigest = (token: string) => new Bun.CryptoHasher("sha256").update(token).digest("hex");
@@ -371,6 +379,11 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
       key: codeDetailsKey(claims.codeId),
       data: event,
       idempotencyKey: `output:${claims.runId}:${claims.generation}:${event.seq}`,
+    });
+    await live.publishTransient({
+      key: codeRunKey(claims.codeId, claims.runId),
+      data: event,
+      idempotencyKey: `run-output:${claims.runId}:${claims.generation}:${event.seq}`,
     });
   } catch {
     // The accepted snapshot survives. Missing live deltas recover from that snapshot on gap/reconnect or terminal state.

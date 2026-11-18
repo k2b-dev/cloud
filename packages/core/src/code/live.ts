@@ -1,4 +1,5 @@
-import { type CodeCallEvent, CodeCallEventSchema, codeDetailsKey } from "@k2b/cloud/code";
+import { type CodeCallEvent, CodeCallEventSchema, CodeRunEntriesInputSchema, codeDetailsKey, codeRunKey } from "@k2b/cloud/code";
+import { sql } from "@k2b/cloud";
 import type { LiveViewer } from "@k2b/cloud/events";
 import { defineLive } from "@k2b/cloud/events";
 import { z } from "zod";
@@ -8,6 +9,20 @@ import { findCode } from "./store";
 
 /** Served beside `user` on Core's socket. SQL is confined to admission, access changes and reauthorize sweeps. */
 export const codeLiveChannels = {
+  codeRun: {
+    eventOnly: true as const,
+    reauthorize: true as const,
+    scope: CodeRunEntriesInputSchema,
+    keys: async ({ codeId, runId }: { codeId: string; runId: string }) => [codeRunKey(codeId, runId)],
+    accessKey: (key: string) => key.split(":")[1]!,
+    authorize: async (key: string, viewers: readonly LiveViewer[]) => {
+      const [, codeId, runId] = key.split(":");
+      if (!codeId || !runId) return new Set<string>();
+      const [run] = await sql`SELECT id FROM code.runs WHERE code_id=${codeId} AND id=${runId}::uuid`;
+      const code = run ? await findCode(codeId) : null;
+      return code ? codeLiveReaders(code, viewers, undefined, true) : new Set<string>();
+    },
+  },
   codeDetails: {
     eventOnly: true as const,
     reauthorize: true as const,

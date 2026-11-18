@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # API surface
@@ -532,6 +532,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/access/members` | Supported | `accessMemberEntries` turns a resource's `AccessMember` list into `DetailAccess` rows in the words of the access dialog, without loading the access dialog's controls | [Detail panels](/en/docs/frontend/detail-panels) |
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists; `codeSharing` for a Code's editors and readers; `ServiceAccountSection` with `AccessRowFrame`, `AccessRowControls`, `AccessLevelMenu`, `serviceAccountLine` and `serviceAccountLevels` for the access dialog's Service accounts section beside additional grant fields; `ServiceAccountLookup` for the add button and handle field alone | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager), [Code with access](/en/docs/identity/authorization#code-with-access) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
+| `@k2b/cloud/browser/code-runs` | Supported, browser | `readCodeRunEntries`, `followCodeRun`: authorized entries and live updates for one Code run, separate from its display | [Run entries](/en/docs/platform/code-runs#read-one-run-and-its-entries) |
 | `@k2b/cloud/events` | Supported, server-only | `appEvents`: publish declared app events in a transaction; `defineLive`: transactional live updates; `routes(channels)` serves them over one socket per application with access checked at delivery | [App events](/en/docs/platform/app-events), [Live updates](/en/docs/automation/live-updates) |
 | `@k2b/cloud/events/testing` | Supported, tests only | `appEventFixture` and `deliverAppEvent` validate event fixtures and subscriber handlers; `installLiveOutbox(db)` installs Core’s events schema in `*_test` databases; real live engine, memory topic controls, the live outbox publisher and topic configuration, and integration outbox startup | [Test app events](/en/docs/platform/app-events#test-a-handler-locally), [Test channels](/en/docs/automation/live-updates#test-channels) |
 | `@k2b/cloud/browser/app-badges` | Supported, browser | `refreshAppBadges` reads the app bar's badge counts again after a change | [Layout and navigation](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
@@ -819,6 +820,9 @@ The chat runtime also exports `appendAiBackgroundMessages` and
 
 
 For editor-only [Code live details](/en/docs/platform/code-runs#follow-calls-and-console-output),
+`@k2b/cloud/code` also exports `CodeRunEntriesInputSchema`, `CodeRunEntriesSchema`,
+`CodeRunLiveEventSchema`, `CodeRunEntries`, `CodeRunLiveEvent` and `codeRunKey` for
+the selected run's snapshot and live channel.
 `@k2b/cloud/code` exports `CodeCallEventSchema`, `codeDetailsKey`, the
 `CodeOutput*` schemas/types (`CodeOutputWindowSchema` and its type are also
 available from browser-safe `@k2b/cloud/contracts`), `emptyCodeOutput`, `appendCodeOutput` and

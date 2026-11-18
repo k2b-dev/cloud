@@ -90,6 +90,7 @@ describe("Core Code data contracts", () => {
       "code.readable",
       "code.resource.read",
       "code.run.count",
+      "code.run.entries",
       "code.run.list",
       "code.run.read",
       "code.run.words",

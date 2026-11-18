@@ -46,6 +46,9 @@ function collect(file: string, name: string, locale: string, render: Parameters<
   // Only explicitly marked source fields are exempt. A whole review or tab container never is.
   const ordinary = new HTMLRewriter()
     .on('[data-code-source-region="admin-approval"], [data-code-source-region="code-tab"]', { element: (element) => element.remove() })
+    // RunLog announces its named region's lifecycle separately for screen readers.
+    // v13 explicitly uses "Fertig" / "Done" there. Its visible head and all entries remain checked.
+    .on('.k2b-run-log__head > .k2b-sr-only[role="status"]', { element: (element) => element.remove() })
     .transform(html);
   fixtures.push({ file, name: `${locale}/${name}`, text: renderedText(ordinary, "\n") });
 }

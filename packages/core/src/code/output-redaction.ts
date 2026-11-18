@@ -313,7 +313,7 @@ const terminalStep = (status: string) => ["succeeded", "failed", "skipped"].incl
 /** Accepted metadata is canonical, bounded by the admitted handle count and output
  * budget. Revisions advance lifecycle only; repeated text never re-enters the matcher.
  */
-const stepReserve = (entry: z.infer<typeof CodeOutputStepEntrySchema>) =>
+export const stepReserve = (entry: z.infer<typeof CodeOutputStepEntrySchema>) =>
   Buffer.byteLength(
     JSON.stringify({
       ...entry,
