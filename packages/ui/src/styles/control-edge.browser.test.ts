@@ -4,9 +4,10 @@ import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
 import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
-// The edge contract: every field keeps a 2 px edge in every state, drawn
+// The edge contract: every field keeps a 1 px edge in every state, drawn
 // inside its box, so the outer box and the text never move. States change the
-// edge colour or the fill only, and no field casts a shadow.
+// edge colour or the fill; focus and errors add a flat 3 px ring outside the
+// edge, and no field casts a shadow.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const TEST_TIMEOUT = 30_000;
@@ -37,7 +38,7 @@ const fields = (invalid) => {
     ["conversation", composer("conversation", { error })],
   ];
 };
-// Disabled fields, also invalid ones, drop the edge and sit as a muted well. Built inside the root, as every
+// Disabled fields, also invalid ones, sit as a muted well with a light edge. Built inside the root, as every
 // component that runs effects needs.
 const disabled = () => [
   ["text", createComponent(TextInput, { label: "Name", value: "Ada", disabled: true, error: "Check this value" })],
@@ -120,13 +121,18 @@ const geometry = (element: Locator, text: Locator) =>
     return { outer, inner, paint };
   });
 
-// The painted edge: one 2 px border and nothing else. A second source beside
+// The painted edge: one 1 px border inside the box. A second source inside
 // it (an inset shadow, an outline) leaves a lighter seam between the two at
 // fractional zoom, and a child's fill paints over an inset but never over a
-// border.
+// border. The only other layer is the ring outside: spread 3 px, no offset,
+// no blur, so it marks a state without depth.
 const edgeOf = (paint: { borderWidth: string; borderColor: string; boxShadow: string; outline: number }) => {
   const shadows = paint.boxShadow === "none" ? [] : paint.boxShadow.split(/,(?![^(]*\))/).map((part) => part.trim());
-  return { width: Number.parseFloat(paint.borderWidth), shadows, outline: paint.outline, borderColor: paint.borderColor };
+  const rings = shadows.map((layer) => {
+    const lengths = [...layer.matchAll(/(-?[\d.]+)px/g)].map((match) => Number(match[1]));
+    return { layer, inset: layer.includes("inset"), lengths, color: layer.match(/(?:rgba?|color)\([^)]*\)/)?.[0] ?? "" };
+  });
+  return { width: Number.parseFloat(paint.borderWidth), rings, outline: paint.outline, borderColor: paint.borderColor };
 };
 
 const states = ["rest", "hover", "focus", "focus-hover"] as const;
@@ -169,7 +175,7 @@ describe("field edge contract in the browser", () => {
   for (const theme of ["light", "dark"] as const) {
     for (const width of [1280, 390]) {
       test(
-        `${theme} ${width}px: 2 px edge in every state, same box and text position, no shadow`,
+        `${theme} ${width}px: 1 px edge in every state, ring on focus and error, same box and text position, no shadow`,
         async () => {
           const page = await open(theme, width);
           try {
@@ -184,6 +190,8 @@ describe("field edge contract in the browser", () => {
                 edge: read("var(--k2b-edge)"),
                 focus: read("var(--k2b-edge-focus)"),
                 danger: read("var(--k2b-edge-danger)"),
+                edgeHover: read("var(--k2b-edge-hover)"),
+                disabled: read("var(--k2b-edge-disabled)"),
                 surface: read("var(--k2b-surface)"),
                 muted: read("var(--k2b-surface-muted)"),
                 hover: read("var(--k2b-edge-hover-bg)"),
@@ -192,6 +200,7 @@ describe("field edge contract in the browser", () => {
               return result;
             });
             expect(tokens.focus).not.toBe(tokens.edge);
+            expect(tokens.edgeHover).not.toBe(tokens.edge);
             expect(tokens.hover).not.toBe(tokens.surface);
 
             for (const invalid of [false, true]) {
@@ -215,22 +224,29 @@ describe("field edge contract in the browser", () => {
                   const painted = edgeOf(paint);
                   expect(outer, `${label} ${state} box`).toEqual(seen.rest!.outer);
                   expect(inner, `${label} ${state} text`).toEqual(seen.rest!.inner);
-                  expect(painted.width, `${label} ${state} edge width`).toBe(2);
-                  expect(painted.shadows, `${label} ${state} shadow beside the border`).toEqual([]);
+                  expect(painted.width, `${label} ${state} edge width`).toBe(1);
                   expect(painted.outline, `${label} ${state} outline beside the border`).toBe(0);
-                  const expected = state.startsWith("focus") ? tokens.focus : invalid ? tokens.danger : tokens.edge;
+                  const focused = state.startsWith("focus");
+                  const expected = focused ? tokens.focus : invalid ? tokens.danger : state === "hover" ? tokens.edgeHover : tokens.edge;
                   expect(painted.borderColor, `${label} ${state} edge colour`).toBe(expected);
+                  // One ring layer outside the border: no inset, no offset, no blur, 3 px spread.
+                  expect(painted.rings.length, `${label} ${state} layers beside the border`).toBe(1);
+                  const [ring] = painted.rings;
+                  expect(ring!.inset, `${label} ${state} ring inset`).toBe(false);
+                  expect(ring!.lengths, `${label} ${state} ring geometry`).toEqual([0, 0, 0, 3]);
+                  const ringVisible = !/,\s*0\)$|rgba\(0, 0, 0, 0\)/.test(ring!.color);
+                  expect(ringVisible, `${label} ${state} ring ${ring!.color}`).toBe(focused || invalid);
                 }
                 if (!invalid && name !== "input-button") {
-                  // Disabled: same box and edge width, no visible edge, muted fill.
+                  // Disabled: same box and edge width, a light edge, no ring, muted fill.
                   const off = page.locator(`[data-field="${name}-disabled"]`);
                   if ((await off.count()) > 0) {
                     await page.mouse.move(5, 1090);
                     const locked = await geometry(off.locator(shells[name]!.edge).first(), off.locator(shells[name]!.text).first());
                     expect(locked.outer.width, `${label} disabled width`).toBe(seen.rest!.outer.width);
                     expect(locked.outer.height, `${label} disabled height`).toBe(seen.rest!.outer.height);
-                    expect(edgeOf(locked.paint).width, `${label} disabled edge width`).toBe(2);
-                    expect(locked.paint.borderColor, `${label} disabled edge`).toBe("rgba(0, 0, 0, 0)");
+                    expect(edgeOf(locked.paint).width, `${label} disabled edge width`).toBe(1);
+                    expect(locked.paint.borderColor, `${label} disabled edge`).toBe(tokens.disabled);
                     expect(locked.paint.background, `${label} disabled fill`).toBe(tokens.muted);
                   }
                 }
@@ -292,8 +308,8 @@ describe("one edge source in the browser", () => {
           const seam = (distances: number[]) => {
             const strongest = Math.max(...distances);
             const strong = distances.map((distance) => distance >= strongest * 0.8);
-            // The column has to cross a visible edge at least two device pixels deep.
-            if (strongest < 40 || strong.filter(Boolean).length < 2) return true;
+            // The column has to cross a visible edge; a 1 px edge is one or two device pixels deep at 1.5x.
+            if (strongest < 40) return true;
             const first = strong.indexOf(true);
             const last = strong.lastIndexOf(true);
             return strong.slice(first, last + 1).includes(false);
@@ -343,10 +359,11 @@ describe("one edge source in the browser", () => {
               }),
             ]);
             const label = `${theme} stepper ${state}`;
-            // The fill starts right inside the border and is clipped to its rounded corner.
-            expect(inner.x, `${label} left`).toBe(outer.x + outer.border);
-            expect(inner.y, `${label} top`).toBe(outer.y + outer.border);
-            expect(inner.height, `${label} height`).toBe(outer.height - 2 * outer.border);
+            // The fill starts right inside the border and is clipped to its rounded corner. WebKit lays out in 1/64 px,
+            // so a 1 px border at 1.5x lands within that unit.
+            expect(inner.x, `${label} left`).toBeCloseTo(outer.x + outer.border, 1);
+            expect(inner.y, `${label} top`).toBeCloseTo(outer.y + outer.border, 1);
+            expect(inner.height, `${label} height`).toBeCloseTo(outer.height - 2 * outer.border, 1);
             expect(outer.overflow, `${label} clip`).toBe("hidden");
             expect(inner.shadow, `${label} own edge`).toBe("none");
             // 1 px; WebKit snaps it to one device pixel at 1.5x (0.667 px).
@@ -369,9 +386,11 @@ describe("one edge source in the browser", () => {
   }
 });
 
-// Filters share the field edge as a pure inset (no border); an active filter
-// takes the selected edge and fill. Secondary buttons and clickable cards keep
-// a light 1 px border in every state and change only their fill. The card sits
+// Filters share the field edge as a pure 1 px inset (no border); an active
+// filter takes the selected edge and fill, and focus adds the ring outside.
+// Selected tabs and views show the fill only. Secondary buttons keep the 1 px
+// field edge, one step darker on hover; clickable cards keep a light 1 px
+// border in every state and change only their fill. The card sits
 // in a flat layer here: in the main content a clickable card is an island with
 // the island shadow (elevation.browser.test.ts), which no state changes.
 const controlsEntry = resolve(import.meta.dir, "control-edge-controls.fixture.ts");
@@ -411,7 +430,7 @@ const controlsScript = await controlsBuild.outputs[0]!.text();
 describe("filters, secondary buttons, and clickable cards in the browser", () => {
   for (const theme of ["light", "dark"] as const) {
     test(
-      `${theme}: fixed geometry, no shadow, border never darkens`,
+      `${theme}: fixed geometry, 1 px edges, ring only on focus, no shadow`,
       async () => {
         const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
         try {
@@ -440,10 +459,10 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
               focus: read("var(--k2b-edge-focus)"),
               surface: read("var(--k2b-surface)"),
               hover: read("var(--k2b-edge-hover-bg)"),
+              edgeHover: read("var(--k2b-edge-hover)"),
               selected: mix("--k2b-edge-selected-share"),
               selectedFill: mix("--k2b-edge-selected-fill"),
               selectedHover: mix("--k2b-edge-selected-hover-fill"),
-              soft: read("var(--k2b-control-border-soft)"),
               cardBorder: read("var(--k2b-border-strong)"),
               tray: read("var(--k2b-tray)"),
               trayHover: read("var(--k2b-tray-hover)"),
@@ -469,45 +488,65 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
               const shadows = style.boxShadow === "none" ? [] : style.boxShadow.split(/,(?![^(]*\))/).map((part) => part.trim());
               const inset = shadows.filter((part) => part.includes("inset"));
               const color = inset[0]?.match(/(?:rgba?|color)\([^)]*\)/)?.[0];
+              // The focus ring: an outer layer without offset or blur. Transparent at rest.
+              const outer = shadows.filter((part) => !part.includes("inset"));
+              const ringColor = outer[0]?.match(/(?:rgba?|color)\([^)]*\)/)?.[0];
               return {
                 box: { x: x + scrollX, y: y + scrollY, width, height },
                 border: Number.parseFloat(style.borderTopWidth),
                 borderColor: rgba(style.borderTopColor),
                 inset: Number(inset[0]?.match(/(-?[\d.]+)px\s+inset/)?.[1] ?? 0),
                 insetColor: color ? rgba(color) : undefined,
-                // A transparent no-op layer (the flat island hook) paints nothing.
-                drop: shadows.filter((part) => !part.includes("inset") && part !== "rgba(0, 0, 0, 0) 0px 0px 0px 0px"),
+                // Any outer layer with an offset or a blur is depth; a ring (spread only) is a state mark.
+                drop: outer.filter((part) => {
+                  const [x = 0, y = 0, blur = 0] = [...part.matchAll(/(-?[\d.]+)px/g)].map((match) => Number(match[1]));
+                  return x !== 0 || y !== 0 || blur !== 0;
+                }),
+                ring: ringColor && ringColor !== "rgba(0, 0, 0, 0)" ? rgba(ringColor) : undefined,
+                outline: style.outlineStyle === "none" ? "none" : `${style.outlineStyle} ${style.outlineWidth}`,
                 background: rgba(style.backgroundColor),
               };
             });
 
-          type Expect = { border: number; edge: (state: string) => string; fill: (state: string) => string };
-          const filter = (rest: string, fill: string, hover: string): Expect => ({
+          // `ring`: focus shows the soft ring; `outline`: focus on a chosen control shows the shared ring with a gap.
+          type Expect = {
+            border: number;
+            ring: boolean;
+            outline?: boolean;
+            edge: (state: string) => string;
+            fill: (state: string) => string;
+          };
+          const filter = (rest: string, fill: string, hover: string, hoverEdge = rest): Expect => ({
             border: 0,
-            edge: (state) => (state === "focus" ? tokens.focus : rest),
+            ring: true,
+            edge: (state) => (state === "focus" ? tokens.focus : state === "hover" ? hoverEdge : rest),
             fill: (state) => (state === "hover" ? hover : fill),
           });
-          const bordered = (color: string): Expect => ({
+          const bordered = (color: string, hoverEdge = color): Expect => ({
             border: 1,
-            edge: () => color,
+            ring: false,
+            edge: (state) => (state === "hover" ? hoverEdge : color),
             fill: (state) => (state === "hover" ? tokens.hover : tokens.surface),
           });
-          // Group members (segment options, tabs, views) have no edge until selected.
+          // Group members (segment options, tabs, views) have no edge until selected; tabs and views not even then.
           const member = (hover: string) => filter(tokens.none, tokens.none, hover);
-          const selected = filter(tokens.selected, tokens.selectedFill, tokens.selectedHover);
+          // Tabs and views sit in a clipping strip: their soft focus band lies inside, so no outer ring.
+          const strip = (expected: Expect): Expect => ({ ...expected, ring: false });
+          const selected: Expect = { ...filter(tokens.selected, tokens.selectedFill, tokens.selectedHover), ring: false, outline: true };
+          const fillOnly = filter(tokens.none, tokens.selectedFill, tokens.selectedHover);
           const controls: Record<string, [string, Expect, string?]> = {
-            chip: [".k2b-filter-chip", filter(tokens.edge, tokens.surface, tokens.hover)],
-            "chip-active": [".k2b-filter-chip", filter(tokens.selected, tokens.selectedFill, tokens.selectedHover)],
-            "toggle-active": [".k2b-filter-chip", filter(tokens.selected, tokens.selectedFill, tokens.selectedHover)],
-            secondary: [".k2b-button", bordered(tokens.soft)],
-            subtle: [".k2b-button", bordered(tokens.soft)],
+            chip: [".k2b-filter-chip", filter(tokens.edge, tokens.surface, tokens.hover, tokens.edgeHover)],
+            "chip-active": [".k2b-filter-chip", selected],
+            "toggle-active": [".k2b-filter-chip", selected],
+            secondary: [".k2b-button", bordered(tokens.edge, tokens.edgeHover)],
+            subtle: [".k2b-button", bordered(tokens.edge, tokens.edgeHover)],
             card: [".k2b-paper", bordered(tokens.cardBorder)],
             segment: ['.k2b-segmented-control__option:not([aria-checked="true"])', member(tokens.trayHover)],
             "segment-selected": ['.k2b-segmented-control__option[aria-checked="true"]', selected, "segment"],
-            tab: ['[role="tab"]:not([aria-selected="true"])', member(tokens.tabHover), "tabs"],
-            "tab-selected": ['[role="tab"][aria-selected="true"]', selected, "tabs"],
-            view: ['.k2b-view-tabs__tab:not([aria-current="page"])', member(tokens.tabHover), "views"],
-            "view-selected": ['.k2b-view-tabs__tab[aria-current="page"]', selected, "views"],
+            tab: ['[role="tab"]:not([aria-selected="true"])', strip(member(tokens.tabHover)), "tabs"],
+            "tab-selected": ['[role="tab"][aria-selected="true"]', strip(fillOnly), "tabs"],
+            view: ['.k2b-view-tabs__tab:not([aria-current="page"])', strip(member(tokens.tabHover)), "views"],
+            "view-selected": ['.k2b-view-tabs__tab[aria-current="page"]', strip(fillOnly), "views"],
           };
 
           // Segment options sit on the grey track.
@@ -537,8 +576,13 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
               expect(actual.drop, `${label} drop shadow`).toEqual([]);
               expect(actual.border, `${label} border width`).toBe(expected.border);
               expect(actual.background, `${label} fill`).toBe(expected.fill(state));
+              if (expected.ring) expect(actual.ring !== undefined, `${label} focus ring`).toBe(state === "focus");
+              if (expected.outline) {
+                expect(actual.ring, `${label} no soft ring`).toBeUndefined();
+                expect(actual.outline, `${label} focus outline`).toBe(state === "focus" ? "solid 2px" : "none");
+              }
               if (expected.border === 0) {
-                expect(actual.inset, `${label} edge width`).toBe(2);
+                expect(actual.inset, `${label} edge width`).toBe(1);
                 expect(actual.insetColor, `${label} edge colour`).toBe(expected.edge(state));
               } else {
                 expect(actual.inset, `${label} inset`).toBe(0);

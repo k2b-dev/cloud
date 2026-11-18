@@ -74,7 +74,8 @@ moves it.
   name order, as 36 px rows on the dialog surface. A provider shows the
   source name and icon it declares, such as **Scanner**, or else its
   application's name and icon. The open source carries
-  the selected edge of the edge rule: a light app-blue fill with a 2 px edge.
+  the selected edge of the edge rule: a light app-blue fill with a 1 px edge in
+  the app blue.
   While the catalog loads, two grey loading rows hold the providers' place; a
   failed load leaves **Try again** in the same height. On phones the sources
   are a row of tabs under the title.
