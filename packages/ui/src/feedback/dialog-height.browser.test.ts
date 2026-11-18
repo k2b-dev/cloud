@@ -32,6 +32,7 @@ window.openSheet = (adaptive = false, detents = false) => void dialogCore.open((
   } }),
 ]; } }), adaptive ? bottomSheetAdaptiveOptions : bottomSheetOptions);
 window.openForm = (fixed = false, top = false, previewMode) => void dialogCore.open((close, context) => {
+  window.closeForm = () => close();
   window.placeAt = (x, y) => context.setPosition(typeof x === "object" ? x : { x, y });
   window.setModal = context.setModal;
   const [saving, setSaving] = createSignal(false);
@@ -82,6 +83,7 @@ if (!build.success) throw new AggregateError(build.logs, "Could not bundle the d
 const script = await build.outputs[0]!.text();
 
 type HeightWindow = Window & {
+  closeForm: () => void;
   holdMotion: () => void;
   mountTasks: () => void;
   toggleTasks: () => void;
@@ -1562,4 +1564,51 @@ describe(`${browserName} the frame follows its content`, () => {
       await page.context().close();
     }
   });
+
+  for (const hidden of [false, true])
+    test(`closing skips an arrived notice's unrendered fade (hidden ${hidden})`, async () => {
+      const page = await load();
+      try {
+        // settled: hold the arrival fade until its target disappears and the dialog closes.
+        const result = await page.evaluate(async (hidden) => {
+          const motion = window as unknown as HeightWindow;
+          const animate = Element.prototype.animate;
+          let invalidCommits = 0;
+          let fades = 0;
+          Element.prototype.animate = function (this: Element, ...args: Parameters<Element["animate"]>) {
+            const animation = animate.apply(this, args);
+            animation.pause();
+            if (this.matches("[data-notice]")) {
+              fades++;
+              const commit = animation.commitStyles.bind(animation);
+              animation.commitStyles = () => {
+                if (!this.getClientRects().length) invalidCommits++;
+                commit();
+              };
+            }
+            return animation;
+          };
+          try {
+            motion.addNotice();
+            for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+            const notice = document.querySelector<HTMLElement>("[data-notice]")!;
+            if (hidden) notice.hidden = true;
+            else notice.remove();
+            const dialog = document.querySelector("dialog")!;
+            let error: string | null = null;
+            try {
+              motion.closeForm();
+            } catch (cause) {
+              error = String(cause);
+            }
+            return { fades, invalidCommits, error, open: dialog.open };
+          } finally {
+            Element.prototype.animate = animate;
+          }
+        }, hidden);
+        expect(result).toEqual({ fades: 1, invalidCommits: 0, error: null, open: false });
+      } finally {
+        await page.context().close();
+      }
+    });
 });

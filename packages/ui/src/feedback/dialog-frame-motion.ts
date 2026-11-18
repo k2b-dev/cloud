@@ -706,14 +706,14 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       frame.cancel();
       frame = undefined;
     }
-    const pending = [...fades.values()];
+    const pending = [...fades];
     fades.clear();
-    for (const { animation } of pending) {
-      animation.commitStyles();
+    for (const [element, { animation }] of pending) {
+      if (element.getClientRects().length) animation.commitStyles();
       animation.cancel();
     }
     return () => {
-      for (const { done } of pending) done();
+      for (const [, { done }] of pending) done();
     };
   };
 
