@@ -1,9 +1,14 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { databaseSuite, testInfra, useMigratedDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { sql } from "../../runtime/clients";
 import * as bulk from "../outgoing-mail/enqueue";
 import { toPgTextArray, toPgUuidArray } from "../postgres";
 import { __notificationBatchTest } from "./batches";
+
+if (testInfra.database) {
+  const database = await useMigratedDatabase("notification_claims");
+  afterAll(() => database.drop());
+}
 
 const suite = databaseSuite();
 

@@ -387,14 +387,20 @@ export const registerAiTurnAbortHandler = (handler: (input: { conversationId: st
   };
 };
 
-export const abortAiTurn = async (input: { conversationId: string; turnId: string }): Promise<{ ok: true }> => {
+export const abortAiTurn = async (input: {
+  conversationId: string;
+  turnId: string;
+  actor: RequestActor;
+  reason?: "retry";
+}): Promise<{ ok: true }> => {
   if (turnAbortHandlers.size) {
     const config = await aiConversations.getTurnRunConfig(input);
     if (config?.kind === "chat" && config.codeReview) for (const handler of turnAbortHandlers) await handler(input);
   }
   // Capture wire coordinates before the cancellation flag can wake its owner.
   const active = await aiConversations.getActiveTurn({ conversationId: input.conversationId }).catch(() => null);
-  const request = await aiConversations.requestTurnAbort({ ...input, reason: "user" });
+  const reason = input.reason ?? (input.actor.kind === "user" ? "user" : "service_account");
+  const request = await aiConversations.requestTurnAbort({ conversationId: input.conversationId, turnId: input.turnId, reason });
   await finishAiTurnAbort(input, request, active);
   return { ok: true };
 };

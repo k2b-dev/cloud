@@ -1457,7 +1457,7 @@ suiteFor(
       expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: owner, done: true })).toMatchObject({
         ok: true,
       });
-      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toBeTrue();
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toEqual({ discardedQueuedMessages: 0 });
     } finally {
       await sql`DELETE FROM ai.inference_calls WHERE code_id=${codeId}`;
     }
@@ -1475,7 +1475,7 @@ suiteFor(
       expect(await read(m1)).toMatchObject({ ok: true, data: { data: { message: { status: "failed" } } } });
       // A refused automation entry leaves the chat's queue.
       expect(await listQueuedMessages(chat.id)).toEqual([]);
-      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toBeTrue();
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toEqual({ discardedQueuedMessages: 0 });
     } finally {
       await sql`DELETE FROM ai.inference_calls WHERE code_id=${codeId}`;
     }
@@ -1742,7 +1742,7 @@ suiteFor(
       await sql`UPDATE ai.queued_messages SET created_at=clock_timestamp()-interval '2 days' WHERE id=${id}::uuid`;
       await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
       await final(true);
-      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toBeTrue();
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toEqual({ discardedQueuedMessages: 0 });
       await final(true);
       expect(await read(id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed", reason } } } });
     },

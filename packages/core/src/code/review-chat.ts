@@ -388,7 +388,7 @@ export async function cancelCodeReviewRevision(input: { codeId: string; versionI
       turn: work.turn_id ? { conversationId: work.conversation_id, turnId: work.turn_id } : null,
     };
   });
-  if (result.turn) await abortAiTurn(result.turn);
+  if (result.turn) await abortAiTurn({ ...result.turn, actor: context.authority.actor });
   const { turn: _turn, ...response } = result;
   return response;
 }

@@ -93,7 +93,9 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
     const archived = await aiConversations.createConversation({ ownerUserId: userId, title: "Archived" });
     const foreign = await aiConversations.createConversation({ ownerUserId: otherUserId, title: "Foreign" });
     try {
-      expect(await aiConversations.archiveConversation({ conversationId: archived.id, ownerUserId: userId })).toBe(true);
+      expect(await aiConversations.archiveConversation({ conversationId: archived.id, ownerUserId: userId })).toEqual({
+        discardedQueuedMessages: 0,
+      });
       const sourceTurn = await aiConversations.createCompactionTurn({
         conversationId: source.id,
         modelId: "test-model",

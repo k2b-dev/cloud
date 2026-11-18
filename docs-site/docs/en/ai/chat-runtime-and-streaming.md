@@ -86,6 +86,27 @@ so it never redirects an accepted message. The caller's current authority is
 checked first: paused Code or an ended run gets no receipt back. Read current state with
 `ai.chat.read({ id: originalChatId, message: sendId })`.
 
+A person's **Stop** holds the foreground queue, even if the response just
+finished. Every entry, including those of automations, stays queued. Send now
+starts only its own entry; a later Stop withdraws that request and leaves the
+entry waiting. A new message from the person resumes the queue in its order;
+a message from an automation or another chat does not. Stop does not change
+a Code schedule.
+
+A direct submission cannot overtake waiting entries: it returns HTTP 409 with
+`code: "queue_waiting"` and leaves the draft intact. The web chat and PWA then
+queue the person's message at the end, which lifts the hold. A person's client
+can submit the saved draft with a new `queueId` to do the same. The CLI explains
+how to send the saved draft in Assistant or use Send now on a waiting entry.
+Without waiting entries, the person's direct submission lifts the hold; a
+service account or automation receives HTTP 409 with `code: "queue_held"`
+while it is held. Retrying a message cancels an approval wait without setting
+a new hold; a retry with waiting entries returns `queue_waiting`. A service
+account stopping a turn does not hold the queue. If the chat is archived before
+a direct submission or retry commits, it returns HTTP 409. Messages
+from other chats wait as they do for a busy chat. The server owns the hold;
+archiving clears it, so restoring the chat does not restore an old Stop.
+
 With **Automations as Code**, automation messages will use a separate queue:
 up to **32 entries per chat**, with at most **one waiting entry per source**
 (Code or source chat). These entries will have their own capacity, preserving
@@ -108,7 +129,25 @@ The owner-authorized queue API provides:
 All paths above use the `/api/ai` prefix. Editing or deleting races safely with
 promotion: once an entry becomes a turn, the queue endpoint returns not found.
 Normal submissions cannot overtake the queue. Chats with pending entries cannot
-be archived or marked done and do not become done through inactivity.
+be marked done and do not become done through inactivity. Archiving such a chat
+lets its entries lapse (`cancelled` with error `chat_archived`). A turn that
+runs or waits for a decision still keeps a chat from being archived; the
+conflict says which of the two it is.
+
+The archive dialog warns that waiting messages will be discarded. It names the
+count when known; otherwise it uses a general warning. The Cloud app archives
+chats with an empty queue directly and offers Undo. Waiting entries require
+confirmation; if the queue cannot be read, confirmation uses the general
+warning.
+Restoring the chat does not recover discarded messages or their queued
+attachments.
+
+`POST /api/ai/conversations/:id/archive` keeps its success response shape and
+adds the number of pending and failed entries discarded by this operation:
+`{ "ok": true, "discardedQueuedMessages": 2 }`. The count is zero when none were
+discarded. Already submitted or cancelled entries do not count. The Assistant
+CLI (`cld assistant chats archive <chat-id> --yes`) prints the count as a sentence
+when it is above zero; JSON and JSONL include the same response field.
 
 ### Send a queued message now
 

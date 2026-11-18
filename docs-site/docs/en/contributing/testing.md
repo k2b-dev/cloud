@@ -968,6 +968,14 @@ the oldest candidates of a background job, runs in a private database from
 `useMigratedDatabase()` in `scripts/fixtures/test-infra`. Call `drop()` in
 `afterAll` or `finally`.
 
+Suites whose fixtures leave outbox work after cleanup use a private migrated database.
+Deleting fixture records can enqueue more rows through triggers, even after
+the suite has cleaned its application outbox. Those rows otherwise remain for
+later suites and delay their dispatchers. Select the private database before
+importing `authorization-preload` or a fixture that imports it, then register
+`drop()` in `afterAll` immediately. When checking isolation, count shared outbox
+rows after all cleanup hooks have finished.
+
 The bootstrap also prepares an immutable PostgreSQL template with Core and
 **every application's migrations**, using the same migration entry point as
 the shared target. `createMigratedDatabase()` clones it without binding Bun's

@@ -12,6 +12,7 @@ import { canonicalizeAiConversationAttachments } from "./file-context";
 import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT } from "./files-store";
 import { aiDraftContentProblem, aiInputToUserMessage, aiTurnInputToContent } from "./http";
 import { type AiOriginViewer, projectAiMessageOrigins } from "./message-origin";
+import { AiMessageQueueConflict } from "./queue-conflict";
 import type { AiQueuedMessage, AiSendQueuedMessageResult } from "./queue-contracts";
 import { AI_MESSAGE_QUEUE_LIMIT, type AiStoredMessageOrigin } from "./queue-contracts";
 import { aiQueueInterruptionContext, type InterruptedStep } from "./queue-interruption-context";
@@ -37,7 +38,7 @@ const AI_QUEUE_SWEEP_CHAT_LIMIT = 32;
 import { finishAiTurnAbort } from "./turn-abort";
 import { AI_ACTION_BUDGET_MS } from "./turn-action-budget";
 import { isQueueInterruptedResult, queuedClientInterruptionState } from "./turn-interruption";
-export class AiMessageQueueConflict extends Error {}
+export { AiMessageQueueConflict } from "./queue-conflict";
 
 export type QueuedChatSubmission = Parameters<AiConversationService["submitChatTurn"]>[0];
 type Submission = QueuedChatSubmission;
@@ -137,6 +138,9 @@ export const migrateAiQueuedMessagesTable = async () => {
     ADD COLUMN IF NOT EXISTS interruption_deadline timestamptz,
     ADD COLUMN IF NOT EXISTS interruption_client_calls text[],
     ADD COLUMN IF NOT EXISTS submitted_turn_id uuid REFERENCES ai.turns(id) ON DELETE SET NULL`.simple();
+  // A person's Stop holds the queue until that person acts again (coordinator, 16.11.): Send now starts one entry, a new
+  // message of the person releases the hold. Kept on the chat, so no entry needs a second state.
+  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS queue_held_at timestamptz`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_queued_messages_one_send_now ON ai.queued_messages(conversation_id)
     WHERE send_requested_at IS NOT NULL AND status IN ('pending','failed')`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_pending ON ai.queued_messages(conversation_id, position) WHERE status IN ('pending','failed')`.simple();
@@ -333,9 +337,9 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
       if (!copied.length) throw new AiMessageQueueConflict("An attached file changed before the message was queued.");
     }
     if (input.expectedDraftRevision !== undefined)
-      await tx`UPDATE ai.conversations SET draft_content = '[]'::jsonb, draft_revision = draft_revision + 1, draft_updated_at = now(), last_used_at = now(), done = CASE WHEN done IS TRUE THEN NULL ELSE done END WHERE id = ${input.conversationId}::uuid`;
+      await tx`UPDATE ai.conversations SET draft_content = '[]'::jsonb, draft_revision = draft_revision + 1, draft_updated_at = now(), last_used_at = now(), done = CASE WHEN done IS TRUE THEN NULL ELSE done END, queue_held_at = CASE WHEN ${origin.kind === "person"} THEN NULL ELSE queue_held_at END WHERE id = ${input.conversationId}::uuid`;
     else
-      await tx`UPDATE ai.conversations SET last_used_at = now(), done = CASE WHEN done IS TRUE THEN NULL ELSE done END WHERE id = ${input.conversationId}::uuid`;
+      await tx`UPDATE ai.conversations SET last_used_at = now(), done = CASE WHEN done IS TRUE THEN NULL ELSE done END, queue_held_at = CASE WHEN ${origin.kind === "person"} THEN NULL ELSE queue_held_at END WHERE id = ${input.conversationId}::uuid`;
   };
   return db ? enqueue(db) : sql.begin(enqueue);
 };
@@ -545,6 +549,7 @@ export const drainQueuedMessages = async (
       AND (q.error IS DISTINCT FROM 'dispatch_failed' OR q.quota_checked_at IS NULL
         OR q.quota_checked_at <= clock_timestamp() - (${AI_QUEUE_SWEEP_INTERVAL_MS} * interval '1 millisecond'))
       AND (${Boolean(validateStart)} OR q.automation_source IS NULL)
+      AND (q.send_requested_at IS NOT NULL OR c.queue_held_at IS NULL)
       AND (q.automation_source IS NOT NULL OR (c.archived_at IS NULL AND c.created_by_user_id IS NOT NULL))
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages earlier WHERE earlier.conversation_id=q.conversation_id
         AND ((earlier.send_requested_at IS NOT NULL AND q.send_requested_at IS NULL)
@@ -566,8 +571,8 @@ export const drainQueuedMessages = async (
     for (let remaining = AUTOMATION_QUEUE_LIMIT + 1; remaining > 0; remaining--) {
       const outcome = await sql
         .begin(async (tx) => {
-          const [conversation] = await tx<{ archived_at: unknown; created_by_user_id: string | null }[]>`
-          SELECT archived_at,created_by_user_id FROM ai.conversations WHERE id=${chat.conversation_id}::uuid FOR UPDATE`;
+          const [conversation] = await tx<{ archived_at: unknown; created_by_user_id: string | null; queue_held_at: Date | string | null }[]>`
+          SELECT archived_at,created_by_user_id,queue_held_at FROM ai.conversations WHERE id=${chat.conversation_id}::uuid FOR UPDATE`;
           const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id=${chat.conversation_id}::uuid
           AND NOT COALESCE(run_config ? 'background',false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
           if (busy) return null;
@@ -576,6 +581,7 @@ export const drainQueuedMessages = async (
               id: string;
               submission: Submission;
               revision: string;
+              send_requested_at: Date | string | null;
               status: string;
               quota_checked_at: Date | null;
               created_at: Date;
@@ -586,10 +592,11 @@ export const drainQueuedMessages = async (
               interruption_steps: InterruptedStep[] | null;
             }[]
           >`
-          SELECT id,submission,revision::text,status,error,automation_source,quota_checked_at,created_at,origin,interrupted_turn_id,interruption_steps FROM ai.queued_messages
+          SELECT id,submission,revision::text,send_requested_at,status,error,automation_source,quota_checked_at,created_at,origin,interrupted_turn_id,interruption_steps FROM ai.queued_messages
           WHERE conversation_id=${chat.conversation_id}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL))
           ORDER BY send_requested_at NULLS LAST, position LIMIT 1 FOR UPDATE`;
           if (!row || (row.status === "failed" && !isAiQueueRetryableError(row.error))) return null;
+          if (conversation?.queue_held_at && !row.send_requested_at) return null;
           if (!row.automation_source && (!conversation || conversation.archived_at || !conversation.created_by_user_id)) return null;
           // Recheck the retry deadline after locking: another dispatcher may just have failed this head.
           let dispatchExpired = false;

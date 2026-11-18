@@ -103,6 +103,7 @@ import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./Assistan
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
+import { assistantArchiveBlocker } from "./archive-blocker";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
@@ -3271,7 +3272,17 @@ export default function AssistantWorkspace(props: Props) {
           }}
           onOpenProject={openProject}
           onOpenConversation={openAndFocusConversation}
-          canArchiveConversation={(conversation) => conversation.id !== chat.activeConversationId() || !chat.activeTurn()}
+          archiveBlocker={(conversation) =>
+            assistantArchiveBlocker(conversation, conversation.id === chat.activeConversationId() ? chat.activeTurn() : null)
+          }
+          queuedMessageCount={(conversation) =>
+            conversation.id === chat.activeConversationId() &&
+            !queuedMessages.loading() &&
+            !queuedMessages.stale() &&
+            !queuedMessages.error()
+              ? queuedMessages.data()?.length
+              : undefined
+          }
           onConversationUpdated={updateConversation}
           onConversationArchived={archiveConversation}
           pendingApprovals={props.approvals.page.count}

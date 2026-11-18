@@ -217,7 +217,20 @@ export const submitAssistantTurn = async (input: {
       await clear?.().catch(() => undefined);
       input.signal.throwIfAborted();
     }
-    submitted = await readApi<TurnSubmission>(input.ctx, input.path, jsonRequest("POST", body));
+    const response = await input.ctx.fetch(`${AI_API}${input.path}`, jsonRequest("POST", body));
+    if (response.status === 409) {
+      const rejection = await response
+        .clone()
+        .json()
+        .catch(() => null);
+      if (rejection?.code === "queue_held")
+        throw new Error("A person stopped this chat; only their next message resumes it. Automated submissions cannot resume it.");
+      if (rejection?.code === "queue_waiting")
+        throw new Error(
+          "Queued messages are waiting. Your message is saved in the chat draft. Open this chat in Assistant and send the draft to join the queue, or choose Send now on a waiting entry.",
+        );
+    }
+    submitted = await input.ctx.readJson<TurnSubmission>(response);
   } catch (error) {
     await streamResponse?.body?.cancel().catch(() => undefined);
     throw error;

@@ -1012,7 +1012,7 @@ export type AiConversationService = {
     ownerUserId: string;
     done: boolean | null;
   }): Promise<{ ok: true; conversation: AiConversation } | { ok: false; reason: "not_found" | "active_turn" }>;
-  archiveConversation(input: { conversationId: string; ownerUserId?: string }): Promise<boolean>;
+  archiveConversation(input: { conversationId: string; ownerUserId?: string }): Promise<false | { discardedQueuedMessages: number }>;
   restoreConversation(input: { conversationId: string; ownerUserId?: string }): Promise<AiConversation | null>;
   markConversationViewed(input: { conversationId: string; ownerUserId?: string }): Promise<boolean>;
   /**

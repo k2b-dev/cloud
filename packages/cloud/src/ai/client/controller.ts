@@ -149,6 +149,7 @@ class AiRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -280,7 +281,14 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   const request = async <T>(path: string, init: RequestInit, fallback: string): Promise<T> => {
     const response = await fetchAppAction(url(path), { ...init, headers: { "Content-Type": "application/json", ...init.headers } });
-    if (!response.ok) throw new AiRequestError(await readError(response, fallback), response.status);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new AiRequestError(
+        typeof body?.message === "string" ? body.message : fallback,
+        response.status,
+        typeof body?.code === "string" ? body.code : undefined,
+      );
+    }
     return (await response.json()) as T;
   };
 
@@ -957,6 +965,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const send = (input: ComposerDraftInput & { model?: AiModelRequest }): Promise<boolean> => {
     if (!isComposerDraftSendable(input)) return Promise.resolve(false);
     const targetConversation = input.conversationId ? Promise.resolve(input.conversationId) : ensureConversation();
+    let queueFallback: Parameters<typeof queueMessage>[0] | undefined;
     return queueDraftOperation(async () => {
       const conversationId = await targetConversation;
       if (!conversationId || uncertainSubmissions()[conversationId] !== undefined || (isActiveConversation(conversationId) && running()))
@@ -1002,6 +1011,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       }
 
       let submittedRevision: number | undefined;
+      let submittedContent: AiDraftContentPart[] | undefined;
       try {
         const savedDraft = await persistComposerDraft(input, conversationId);
         if (!savedDraft) {
@@ -1034,6 +1044,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
           },
         }));
         submittedRevision = savedDraft.revision;
+        submittedContent = savedDraft.content;
         const submissionBody = JSON.stringify({
           draftRevision: savedDraft.revision,
           clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
@@ -1087,6 +1098,15 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         return true;
       } catch (sendError) {
         completedDuringSend.delete(conversationId);
+        if (sendError instanceof AiRequestError && sendError.status === 409 && sendError.code === "queue_waiting") {
+          // This submission was refused. Queue the exact saved content, including uploaded files, after releasing
+          // the draft-operation queue; awaiting queueMessage here would wait on this operation itself.
+          submissionBodies.delete(conversationId);
+          clearPendingSend(conversationId);
+          if (isActiveConversation(conversationId)) setRunStatusRaw(null);
+          queueFallback = { conversationId, draftContent: submittedContent, expectedDraftRevision: submittedRevision, model: input.model };
+          return false;
+        }
         // A 4xx on this first submission rejects it. Transport/5xx failures may have committed.
         if (
           submittedRevision !== undefined &&
@@ -1101,7 +1121,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         setConversationError(conversationId, sendError instanceof Error ? sendError.message : "AI request failed");
         return false;
       }
-    });
+    }).then((sent) => (queueFallback ? queueMessage(queueFallback) : sent));
   };
 
   // Keep the local draft locked until its post-submission revision is available.
