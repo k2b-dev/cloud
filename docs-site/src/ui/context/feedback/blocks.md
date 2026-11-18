@@ -88,6 +88,40 @@ lighter share of the tone surface so notices stay calm. The neutral tone is a
 translucent tint that stays visible on white and muted surfaces. In
 forced-colors mode a system border outlines every notice.
 
+### Compact row with actions
+
+Use `layout="row"` for a notice that changes state in place: one icon, one
+short sentence, one quiet `detail`, and one or two controls. `tone="ai"`
+uses the shared AI surface and accent; it carries no Cloud-specific meaning.
+The row owns its responsive grid, spacing and state reserve.
+
+```tsx
+<NoticeCard
+  layout="row" tone="ai" icon="ti ti-shield-check"
+  title="The proposal is ready to review."
+  detail="Reads mail · daily at 8:00"
+  detailTitle="Reads mail · daily at 8:00"
+  actions={({ narrow }) => <>
+    <Button size={narrow ? "md" : "sm"}
+      variant={narrow ? "secondary" : "link"}>See everything</Button>
+    <Button size={narrow ? "md" : "sm"} variant="ai">Enable</Button>
+  </>}
+/>
+```
+
+Desktop rows are 64 px high, with a 2 px gap between the two lines and an
+automatic action column. The full quiet text belongs in `detailTitle` when
+it may truncate. Below 35 rem of the row's own container, text wraps to at
+most two lines and actions fill an equal-width row below it. The reserved
+height is 168 px; spare space stays below the actions. Keep `reserve` enabled
+through loading and retry. Only an actionless final receipt sets it to
+`false`. For feedback that needs two quiet lines reserved on phones, pass
+`detailLines={2}`. The default reserves one line.
+
+Supply at most two logical controls, secondary first. The action renderer's
+`narrow` follows the same container breakpoint as the layout. Existing
+`line` and `card` layouts keep their markup and behaviour.
+
 ### Icon and actions in a card
 
 `layout="card"` keeps the calm card for an icon notice instead of the compact

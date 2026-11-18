@@ -574,6 +574,37 @@
 .k2b-ui .k2b-notice-card[data-actions] > .k2b-notice-card__content { display: flex; flex: 1 1 auto; flex-direction: column; align-self: stretch; }
 .k2b-ui .k2b-notice-card__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: auto; padding-top: 0.75rem; }
 .k2b-ui .k2b-notice-card__actions:first-child { padding-top: 0; }
+/* A row notice owns the entire compact responsive form. Domain consumers supply words and public controls. */
+.k2b-ui .k2b-notice-card[data-tone="ai"] { --k2b-notice-ink: var(--k2b-ai-accent); --k2b-notice-surface: var(--k2b-ai-surface); }
+.k2b-ui .k2b-notice-card-container { container-type: inline-size; min-width: 0; }
+.k2b-ui .k2b-notice-card[data-layout="row"] {
+  display: grid;
+  grid-template-columns: 1.125rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .125rem .625rem;
+  block-size: 4rem;
+  padding: .6875rem .875rem;
+  border: 0;
+  border-radius: var(--k2b-radius-surface);
+}
+.k2b-ui .k2b-notice-card[data-layout="row"][data-tone="neutral"] { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-notice-card[data-layout="row"] > .k2b-notice-card__icon { font-size: 1.0625rem; color: var(--k2b-notice-ink); }
+.k2b-ui .k2b-notice-card[data-layout="row"][data-tone="neutral"] > .k2b-notice-card__icon { color: var(--k2b-text-muted); }
+.k2b-ui .k2b-notice-card[data-layout="row"]:not([data-row-icon]) { grid-template-columns: minmax(0, 1fr) auto; }
+.k2b-ui .k2b-notice-card[data-layout="row"] > .k2b-notice-card__content { display: flex; flex-direction: column; gap: .125rem; }
+.k2b-ui .k2b-notice-card[data-layout="row"] .k2b-notice-card__title { margin: 0; font-size: var(--k2b-type-14); line-height: 1.3125rem; font-weight: 400; }
+.k2b-ui .k2b-notice-card[data-layout="row"] .k2b-notice-card__description { min-block-size: 1lh; margin: 0; color: var(--k2b-text-muted); font-size: var(--k2b-type-13); line-height: 1.1875rem; }
+.k2b-ui .k2b-notice-card[data-layout="row"] :is(.k2b-notice-card__title, .k2b-notice-card__description) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-notice-card[data-layout="row"] > .k2b-notice-card__actions { display: flex; align-items: stretch; flex-wrap: nowrap; gap: .75rem; margin: 0 0 0 .125rem; padding: 0; }
+.k2b-ui .k2b-notice-card[data-layout="row"] .k2b-notice-card__action-slot { display: grid; min-width: 0; }
+@container (max-width: 35rem) {
+  .k2b-ui .k2b-notice-card[data-layout="row"] { grid-template-columns: 1.125rem minmax(0, 1fr); grid-template-rows: auto auto 1fr; align-content: start; align-items: start; block-size: auto; }
+  .k2b-ui .k2b-notice-card[data-layout="row"]:not([data-row-icon]) { grid-template-columns: minmax(0, 1fr); }
+  .k2b-ui .k2b-notice-card[data-layout="row"][data-reserve] { block-size: 10.5rem; }
+  .k2b-ui .k2b-notice-card[data-layout="row"] :is(.k2b-notice-card__title, .k2b-notice-card__description) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; }
+  .k2b-ui .k2b-notice-card[data-layout="row"][data-detail-lines="2"] .k2b-notice-card__description { min-block-size: 2lh; }
+  .k2b-ui .k2b-notice-card[data-layout="row"] > .k2b-notice-card__actions { grid-column: 1 / -1; grid-row: 2; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .5rem; margin: 0; padding: 0; }
+}
 /* `NoticeRow`: a notice as one row of at least 48px: the 32px tile, the text,
    then the action, all centred. The action never wraps below the text; the
    text takes what is left. Phones get a 28px tile. The padding gives way to

@@ -90,6 +90,30 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     );
   });
 
+  test("NoticeCard row server-renders its two summary lines, AI tone and reserved action slots", () => {
+    const html = renderToString(() =>
+      createComponent(NoticeCard, {
+        layout: "row",
+        tone: "ai",
+        icon: "ti ti-shield-check",
+        title: "Ready to enable.",
+        detail: "Mailbox · reads mail",
+        detailTitle: "Mailbox · reads mail",
+        actions: ["See everything", "Enable"],
+      }),
+    );
+    expect(html).toContain('data-layout="row"');
+    expect(html).toContain('data-tone="ai"');
+    expect(html).toContain('data-reserve=""');
+    expect(html.match(/k2b-notice-card__action-slot/g)).toHaveLength(2);
+    expect(html).toContain('<p class="k2b-notice-card__title">Ready to enable.</p>');
+    expect(html).toContain('title="Mailbox · reads mail">Mailbox · reads mail</p>');
+    expect(html).not.toContain("k2b-notice-card__body");
+    const terminal = renderToString(() => createComponent(NoticeCard, { layout: "row", title: "Done.", reserve: false }));
+    expect(terminal).not.toContain("data-reserve");
+    expect(terminal).not.toContain("k2b-notice-card__actions");
+  });
+
   test("NoticeRow renders one notice row: decorative tile, text, then the action, with NoticeCard's tones", () => {
     const html = renderToString(() =>
       createComponent(NoticeRow, {
