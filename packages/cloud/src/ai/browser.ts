@@ -246,3 +246,5 @@ export {
   parseCloudAiView,
   sortCloudAiViewRows,
 } from "./view-block";
+
+export type { AiWakeup, AiWakeupEvent, AiWakeupInput, AiWakeupPatch } from "./wakeup-contracts";

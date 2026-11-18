@@ -20,6 +20,9 @@ Interactive submissions and retries enforce the caller's
 The model list and status return only permitted models. A denied explicit model
 selection returns HTTP 403 before a retry changes the conversation.
 
+[Scheduled chat messages](/en/docs/ai/chat-alarms) use this same queue and send
+receipt contract for one-off and recurring Gustav alarms.
+
 ## Queue follow-up messages
 
 Add a client-generated UUID `queueId` to `POST /api/ai/conversations/:id/turns`

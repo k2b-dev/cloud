@@ -641,6 +641,7 @@ const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_obj
   'codeReviewStart', ${todoMetaJson()}->'codeReviewStart',
   'writerOrigin', ${todoMetaJson()}->'writerOrigin',
   'automationTurnStop', ${todoMetaJson()}->'automationTurnStop',
+  'wakeupEvent', ${todoMetaJson()}->'wakeupEvent',
   'turnTrigger', ${todoMetaJson()}->'turnTrigger'
 )), '{}'::jsonb)`;
 
@@ -3298,11 +3299,13 @@ export const aiConversations: AiConversationService = {
                   ? config?.writerOrigin
                   : undefined,
             // The current actor starts this retry on their own allowance. Retain the receipt
-            // for status, but neither the original trigger nor Code budget attribution.
+            // for status, but neither the original trigger nor automation budget attribution.
             turnTrigger:
               input.runConfig.actor?.kind === "user" ? { kind: "person" as const, id: input.runConfig.actor.user.id } : undefined,
             send: config?.kind !== "compact" ? config?.send : undefined,
             codeOrigin: undefined,
+            wakeup: undefined,
+            inferenceBudget: undefined,
             ...(config?.kind !== "compact" && config?.sourceRestricted ? { sourceRestricted: true as const } : {}),
           },
         };
@@ -4448,3 +4451,17 @@ export const aiConversations: AiConversationService = {
     },
   }),
 };
+
+/** Cloud-authored timeline fact, persisted without a model call. Caller holds the conversation lock. */
+export async function appendAiWakeupEvent(input: {
+  conversationId: string; event: import("./wakeup-contracts").AiWakeupEvent; locale: string;
+}, db: SQL): Promise<void> {
+  const de = input.locale.startsWith("de");
+  const labels = de
+    ? { created: "Wecker gestellt", updated: "Wecker geändert", deleted: "Wecker gelöscht", missed: "Wecker verpasst", expired: "Wecker abgelaufen", caught_up: "Wecker nachgeholt" }
+    : { created: "Alarm set", updated: "Alarm changed", deleted: "Alarm deleted", missed: "Alarm missed", expired: "Alarm expired", caught_up: "Alarm caught up" };
+  await insertMessageLocked({ conversationId: input.conversationId,
+    message: { role: "assistant", content: [{ type: "text", text: labels[input.event.kind] }] },
+    meta: { wakeupEvent: input.event },
+  }, db);
+}

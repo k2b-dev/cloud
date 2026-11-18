@@ -64,6 +64,7 @@ import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { aiModelAccess } from "./model-access";
+import { createAiWakeupTools } from "./wakeup-tools";
 import { createAiNextMessageRuntime, isVisibleAiNextMessageOp } from "./next-message";
 import { withPlaceAssistantContext } from "./place-prompt";
 import { loadPlaceAssistantRound } from "./place-round";
@@ -1003,7 +1004,7 @@ export class AiTurnExecutor {
       if (isAssistantChatTurn(config)) {
         await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, accessSubjectForActor(material.actor));
       }
-      if (config.codeOrigin && !this.config.beforeChatTurn) throw new AiTurnFailure("not_allowed", "Code chat admission is unavailable.");
+      if ((config.codeOrigin || config.wakeup) && !this.config.beforeChatTurn) throw new AiTurnFailure("not_allowed", "Code chat admission is unavailable.");
       const admission = await this.config.beforeChatTurn?.({
         turnId,
         conversationId,
@@ -1013,7 +1014,7 @@ export class AiTurnExecutor {
         signal: abortController.signal,
       });
       if (admission?.systemPrompt) material.systemPrompt = [material.systemPrompt, admission.systemPrompt].filter(Boolean).join("\n\n");
-      if (!config.codeOrigin && isAutomaticAiChatTurn(config))
+      if (!config.codeOrigin && !config.wakeup && isAutomaticAiChatTurn(config))
         await installAiTurnInferenceAllocation({ turnId, conversationId, leaseOwner: this.config.leaseOwner });
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
@@ -1142,6 +1143,7 @@ export class AiTurnExecutor {
           ]
         : []),
       ...nextMessage.tools,
+      ...createAiWakeupTools(config, chatId, turnId, allowedTools),
     ];
     const toolsSupported = resolved.profile.capabilities.includes("tools");
     const allowed = allowedTools === null ? null : new Set(allowedTools);

@@ -116,6 +116,7 @@ export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enq
 // ---------------------------------------------------------------------------
 
 export type SubmitAiChatTurnInput = {
+  wakeup?: AiChatTurnRunConfig["wakeup"];
   writerOrigin?: AiChatTurnRunConfig["writerOrigin"];
   turnTrigger?: AiChatTurnRunConfig["turnTrigger"];
   sourceRestricted?: true;
@@ -218,6 +219,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     sourceRestricted: input.sourceRestricted,
     send: input.send,
     codeOrigin: input.codeOrigin,
+    wakeup: input.wakeup,
     selectedSkillIds: [
       ...new Set(
         (userMessage.role === "user" ? userMessage.content : []).flatMap((part) => {
@@ -794,3 +796,5 @@ export { AUTOMATION_TURN_BUDGET } from "./code-authoring-turn";
 export { editAiApprovalDraft } from "./draft-edit";
 export type AiChatTurnAdmission = NonNullable<ExecutorConfig["beforeChatTurn"]>;
 export { AiTurnFailure } from "./turn-failure";
+
+export { enqueueAiChatSend } from "./chat-send";

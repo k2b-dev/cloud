@@ -2,7 +2,10 @@ import { sql } from "@k2b/cloud";
 import { aiProjects, isAiSettingsError, personalAiModelPolicy, selectAssistantAiModel } from "@k2b/cloud/ai";
 import { AiQueuedChatStartError, type ValidateQueuedChatStart } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings } from "@k2b/cloud/services";
+import { isAccountAllowed } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
+import { AiWakeupBudgetError, readAiSettingsState, selectAiModelProfile } from "@k2b/cloud/ai";
+import { checkWakeupChatBudget } from "./ai-chat-budget";
 import { lockOwnerCodeChats, openOwnerCodeChatWork } from "./ai-chat-send";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
 import { codeSettings } from "./code/settings";
@@ -52,6 +55,23 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
       throw new AiQueuedChatStartError("source_restricted");
     if (source.run_config.turnTrigger?.kind !== "person" || source.run_config.turnTrigger.id !== owner)
       throw new AiQueuedChatStartError("chat_chain_forbidden");
+  }
+  if (origin.kind === "wakeup") {
+    if (!(await isAccountAllowed(user, db))) throw new AiQueuedChatStartError("source_restricted");
+    const wakeup = config.wakeup;
+    if (!wakeup || wakeup.id !== origin.id || wakeup.scheduledAt !== origin.scheduledAt)
+      throw new AiQueuedChatStartError("source_restricted");
+    const [valid] = await db`SELECT 1 FROM ai.wakeups w JOIN ai.chat_send_receipts r ON r.id=${messageId}::uuid
+      WHERE w.id=${origin.id}::uuid AND w.conversation_id=${input.conversationId}::uuid AND w.created_by=${owner}::uuid
+        AND w.status<>'deleted' AND r.conversation_id=w.conversation_id AND r.account_id=w.created_by
+        AND r.origin=(${JSON.stringify(origin)}::text)::jsonb AND r.turn_trigger=(${JSON.stringify(trigger)}::text)::jsonb`;
+    if (!valid) throw new AiQueuedChatStartError("source_restricted");
+    try {
+      await checkWakeupChatBudget({ owner, wakeupId: wakeup.id, profile: selectAiModelProfile(state ?? await readAiSettingsState(), personalAiModelPolicy, { id: input.modelId }), db });
+    } catch (error) {
+      if (error instanceof AiWakeupBudgetError) throw new AiQueuedChatStartError("host_budget_limit");
+      throw error;
+    }
   }
   if (origin.kind === "automation") {
     if (!origin.runId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(origin.runId))

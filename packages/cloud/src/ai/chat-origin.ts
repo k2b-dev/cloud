@@ -4,9 +4,10 @@ import { z } from "zod";
 export const AiChatOriginSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("person"), id: z.string().min(1) }),
   z.strictObject({ kind: z.literal("automation"), id: z.string().min(1), runId: z.string().optional() }),
+  z.strictObject({ kind: z.literal("wakeup"), id: z.uuid(), scheduledAt: z.iso.datetime() }),
   z.strictObject({ kind: z.literal("chat"), id: z.string().min(1), turnId: z.string() }),
 ]);
 export type AiChatOrigin = z.infer<typeof AiChatOriginSchema>;
 
 /** Immutable turn initiator, independent of writer attribution and current execution authority. */
-export type AiChatTurnTrigger = { kind: "person" | "automation" | "chat"; id: string };
+export type AiChatTurnTrigger = { kind: "person" | "automation" | "chat" | "wakeup"; id: string };

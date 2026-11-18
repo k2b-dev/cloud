@@ -11,7 +11,7 @@ import {
   selectAiModelProfile,
   selectAssistantAiModel,
 } from "@k2b/cloud/ai";
-import { AiMessageQueueConflict, enqueueAutomationChatMessage, prepareAiChatTurn, wakeAiMessageQueue } from "@k2b/cloud/ai/runtime";
+import { AiMessageQueueConflict, enqueueAiChatSend, prepareAiChatTurn, wakeAiMessageQueue } from "@k2b/cloud/ai/runtime";
 import { CAPABILITY_CLAIM_RETENTION_HOURS } from "@k2b/cloud/capabilities/store";
 import { type CapabilityExecutionContext, CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { accounts, coreSettings } from "@k2b/cloud/services";
@@ -282,10 +282,7 @@ export const aiChatSendAction = {
         await db`UPDATE ai.queued_messages SET submission=submission #- '{runConfig,send,keyHash}'
           WHERE submission#>>'{runConfig,send,accountId}'=${owner} AND submission#>>'{runConfig,send,keyHash}'=${keyHash}
             AND created_at <= clock_timestamp() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})`;
-        await enqueueAutomationChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
-        await db`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)
-          VALUES(${id}::uuid,${owner}::uuid,'ai.chat.send',${keyHash},${hash},${chat.id}::uuid,${chat.short_id},
-            (${JSON.stringify(source.data.origin)}::text)::jsonb,(${JSON.stringify(source.data.turnTrigger)}::text)::jsonb,${id}::uuid)`;
+        await enqueueAiChatSend(prepared, [{ type: "text", text: parsed.data.text }], db);
         return ok(null);
       });
       if (!admitted.ok) return admitted;

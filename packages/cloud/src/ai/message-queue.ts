@@ -14,6 +14,7 @@ import { aiNeutralizeQuoteMarkers } from "./quote-markers";
 import { readAiSettingsState } from "./settings";
 import { aiConversations } from "./store";
 import type { AiConversationService, AiDraftContentPart, AiSettingsState } from "./types";
+import { markAiWakeupMissed } from "./wakeup-store";
 import { isAiSettingsError } from "./validate";
 
 const log = logger("ai:message-queue");
@@ -66,6 +67,7 @@ export const migrateAiMessageQueue = async () => {
         author_user_id=c.created_by_user_id FROM ai.conversations c WHERE c.id=q.conversation_id
         AND COALESCE(q.submission#>>'{runConfig,actor,user,id}',c.created_by_user_id::text) IS NOT NULL`.simple();
   });
+  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS queue_held_at timestamptz`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_queued_messages_send_key
     ON ai.queued_messages((submission#>>'{runConfig,send,accountId}'),(submission#>>'{runConfig,send,keyHash}'))
     WHERE submission#>>'{runConfig,send,keyHash}' IS NOT NULL`.simple();
@@ -305,6 +307,7 @@ export const drainQueuedMessages = async (
         OR q.quota_checked_at <= clock_timestamp() - (${AI_QUEUE_SWEEP_INTERVAL_MS} * interval '1 millisecond'))
       AND (${Boolean(validateStart)} OR q.automation_source IS NULL)
       AND (q.automation_source IS NOT NULL OR (c.archived_at IS NULL AND c.created_by_user_id IS NOT NULL))
+      AND (q.origin->>'kind' IS DISTINCT FROM 'wakeup' OR (c.queue_held_at IS NULL AND c.archived_at IS NULL))
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages earlier WHERE earlier.conversation_id=q.conversation_id
         AND earlier.position<q.position AND (earlier.status='pending' OR (earlier.status='failed' AND earlier.automation_source IS NULL)))
       AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id=${conversationId ?? null}::uuid)
@@ -323,8 +326,8 @@ export const drainQueuedMessages = async (
     for (let remaining = AUTOMATION_QUEUE_LIMIT + 1; remaining > 0; remaining--) {
       const outcome = await sql
         .begin(async (tx) => {
-          const [conversation] = await tx<{ archived_at: unknown; created_by_user_id: string | null }[]>`
-          SELECT archived_at,created_by_user_id FROM ai.conversations WHERE id=${chat.conversation_id}::uuid FOR UPDATE`;
+          const [conversation] = await tx<{ archived_at: unknown; created_by_user_id: string | null; queue_held_at: Date | null }[]>`
+          SELECT archived_at,created_by_user_id,queue_held_at FROM ai.conversations WHERE id=${chat.conversation_id}::uuid FOR UPDATE`;
           const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id=${chat.conversation_id}::uuid
           AND NOT COALESCE(run_config ? 'background',false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
           if (busy) return null;
@@ -343,6 +346,7 @@ export const drainQueuedMessages = async (
           SELECT id,submission,revision::text,status,error,automation_source,quota_checked_at,created_at FROM ai.queued_messages
           WHERE conversation_id=${chat.conversation_id}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL))
           ORDER BY position LIMIT 1 FOR UPDATE`;
+          if (row?.submission.runConfig?.wakeup && (!conversation || conversation.queue_held_at || conversation.archived_at)) return null;
           if (!row || (row.status === "failed" && !isAiQueueRetryableError(row.error))) return null;
           if (!row.automation_source && (!conversation || conversation.archived_at || !conversation.created_by_user_id)) return null;
           // Recheck the retry deadline after locking: another dispatcher may just have failed this head.
@@ -415,6 +419,10 @@ export const drainQueuedMessages = async (
               submission=CASE WHEN ${terminal && Boolean(row.automation_source)} THEN ${retiredSubmission(tx)} ELSE submission END,
               content=CASE WHEN ${terminal && Boolean(row.automation_source)} THEN '[]'::jsonb ELSE content END
               WHERE id=${row.id}::uuid`;
+            if (terminal && row.submission.runConfig?.wakeup)
+              await markAiWakeupMissed(chat.conversation_id, row.id,
+                error instanceof AiQuotaError || code.startsWith("host_budget") ? "budget" : "access",
+                row.submission.runConfig.locale ?? "en", tx);
             if (terminal && row.automation_source) await tx`DELETE FROM ai.queued_message_files WHERE message_id=${row.id}::uuid`;
             log.warn("Queued message could not start", {
               conversationId: chat.conversation_id,

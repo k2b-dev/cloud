@@ -3,6 +3,7 @@ import { lazySync } from "../_internal/process-sync";
 import { coreSettings } from "../services";
 import { logger, trace } from "../services/logging";
 
+import { type AiWakeupBudgetCheck, tickAiWakeups } from "./wakeup-tick";
 import { enrichDirtyAiConversations } from "./enrich";
 import { learnAiMemoriesFromPrivateChats } from "./memory-learning";
 
@@ -119,6 +120,7 @@ const aiScheduler = lazySync((sync) => {
   return handle;
 });
 
+let wakeupBudget: AiWakeupBudgetCheck | undefined;
 let started = false;
 let registered = false;
 let registerPromise: Promise<void> | null = null;
@@ -235,6 +237,13 @@ const doRegister = async (): Promise<void> => {
       resourceId: "personal-memory-learning",
     });
   }
+  await aiScheduler().create({
+    id: "ai-wakeups", cron: "* * * * *", timezone: "UTC", misfire: "latest",
+    process: async (context) => {
+      if (!wakeupBudget) throw new Error("Scheduled chat budget admission is unavailable.");
+      await tickAiWakeups(wakeupBudget, { signal: context.signal, heartbeat: () => context.heartbeat() });
+    },
+  });
   registered = true;
 };
 
@@ -250,8 +259,9 @@ const ensureRegistered = async (): Promise<void> => {
 
 /** AI maintenance jobs (chat enrichment). Started next to the AI runtime; leases make this horizontally safe. */
 export const aiMaintenanceJobs = {
-  start: async (): Promise<void> => {
+  start: async (options?: { wakeupBudget: AiWakeupBudgetCheck }): Promise<void> => {
     if (started) return;
+    wakeupBudget = options?.wakeupBudget;
     try {
       await ensureRegistered();
       await startWorkers();
@@ -270,6 +280,7 @@ export const aiMaintenanceJobs = {
     for (const worker of active) worker.stop();
     await Promise.all(active.map((worker) => worker.drain()));
     started = false;
+    wakeupBudget = undefined;
     registered = false;
     registerPromise = null;
   },
