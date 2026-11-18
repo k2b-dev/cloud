@@ -502,7 +502,13 @@ const MarkdownSelectionDemo = () => {
 />
 <MarkdownSelectionToolbar textarea={textarea()} />`}
     >
-      <div style={{ "max-width": "36rem", border: "var(--k2b-frame-width) solid var(--k2b-edge)", "border-radius": "var(--k2b-radius-surface)" }}>
+      <div
+        style={{
+          "max-width": "36rem",
+          border: "var(--k2b-frame-width) solid var(--k2b-edge)",
+          "border-radius": "var(--k2b-radius-surface)",
+        }}
+      >
         <MarkdownEditor
           aria-label="Message"
           variant="embedded"

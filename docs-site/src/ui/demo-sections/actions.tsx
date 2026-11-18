@@ -452,7 +452,11 @@ const commands = ({ atStart }: CommandContext) => entries.filter((entry) => atSt
       <div style={{ display: "grid", gap: "0.5rem", "max-width": "36rem" }}>
         <div
           ref={setComposer}
-          style={{ border: "var(--k2b-frame-width) solid var(--k2b-edge)", "border-radius": "var(--k2b-radius-surface)", padding: "0.25rem" }}
+          style={{
+            border: "var(--k2b-frame-width) solid var(--k2b-edge)",
+            "border-radius": "var(--k2b-radius-surface)",
+            padding: "0.25rem",
+          }}
         >
           <MarkdownEditor
             aria-label="Nachricht"
