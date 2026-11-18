@@ -389,9 +389,11 @@ suiteFor(
     spyOn(runtime, "prepareAiChatTurn").mockRejectedValue(new AiMessageQueueConflict("Queue full"));
     await tick();
     await tick(new Date(+due + AI_WAKEUP_SCHEDULE.intervalMs));
-    expect(await sql<{ status: string; missed_reason: string | null }[]>`SELECT status,missed_reason FROM ai.wakeups WHERE id=${oneOff.id}::uuid`).toEqual([
-      { status: "missed", missed_reason: "queue_full" },
-    ]);
+    expect(
+      await sql<
+        { status: string; missed_reason: string | null }[]
+      >`SELECT status,missed_reason FROM ai.wakeups WHERE id=${oneOff.id}::uuid`,
+    ).toEqual([{ status: "missed", missed_reason: "queue_full" }]);
     expect(
       await sql`SELECT 1 FROM ai.messages WHERE conversation_id=${own.id}::uuid AND meta#>>'{wakeupEvent,wakeup,id}'=${oneOff.id} AND meta#>>'{wakeupEvent,kind}'='missed'`,
     ).toHaveLength(1);

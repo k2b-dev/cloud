@@ -107,9 +107,11 @@ suiteFor(
     expect(await sql`SELECT 1 FROM code.chat_turn_budgets WHERE turn_id=${f.worker.turnId}::uuid`).toHaveLength(0);
     await admitCodeChatTurn(f.worker);
     await admitCodeChatTurn(f.worker);
-    expect(await sql<{ reserved: number }[]>`SELECT reserved::float8 AS reserved FROM code.chat_turn_budgets WHERE turn_id=${f.worker.turnId}::uuid`).toEqual([
-      { reserved: 0.68 },
-    ]);
+    expect(
+      await sql<
+        { reserved: number }[]
+      >`SELECT reserved::float8 AS reserved FROM code.chat_turn_budgets WHERE turn_id=${f.worker.turnId}::uuid`,
+    ).toEqual([{ reserved: 0.68 }]);
     const saved = await aiConversations.getTurnRunConfig({ conversationId: f.chat.id, turnId: f.worker.turnId });
     expect(saved).toMatchObject({ inferenceBudget: { modelProfileId: profile.id, modelCalls: 12 } });
   });
@@ -138,9 +140,11 @@ suiteFor(
     await validate(f);
     budgetSettings.mockResolvedValue(0.2);
     await expect(admitCodeChatTurn(f.worker)).rejects.toMatchObject({ code: "host_budget_limit" });
-    expect(await sql<{ status: string; missed_reason: string | null }[]>`SELECT status,missed_reason FROM ai.wakeups WHERE id=${f.alarm.id}::uuid`).toEqual([
-      { status: "missed", missed_reason: "budget" },
-    ]);
+    expect(
+      await sql<
+        { status: string; missed_reason: string | null }[]
+      >`SELECT status,missed_reason FROM ai.wakeups WHERE id=${f.alarm.id}::uuid`,
+    ).toEqual([{ status: "missed", missed_reason: "budget" }]);
     expect(
       await sql`SELECT 1 FROM ai.messages WHERE conversation_id=${f.chat.id}::uuid AND meta#>>'{wakeupEvent,kind}'='missed'`,
     ).toHaveLength(1);
@@ -150,9 +154,11 @@ suiteFor(
     const f = await fixture();
     await sql`UPDATE ai.turns SET lease_owner='replacement-worker' WHERE id=${f.worker.turnId}::uuid`;
     await expect(admitCodeChatTurn(f.worker)).rejects.toMatchObject({ code: "not_allowed" });
-    expect(await sql<{ status: string; missed_reason: string | null }[]>`SELECT status,missed_reason FROM ai.wakeups WHERE id=${f.alarm.id}::uuid`).toEqual([
-      { status: "done", missed_reason: null },
-    ]);
+    expect(
+      await sql<
+        { status: string; missed_reason: string | null }[]
+      >`SELECT status,missed_reason FROM ai.wakeups WHERE id=${f.alarm.id}::uuid`,
+    ).toEqual([{ status: "done", missed_reason: null }]);
     expect(
       await sql`SELECT 1 FROM ai.messages WHERE conversation_id=${f.chat.id}::uuid AND meta#>>'{wakeupEvent,kind}'='missed'`,
     ).toHaveLength(0);
