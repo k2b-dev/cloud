@@ -517,11 +517,15 @@
     box-shadow: var(--ui-control-recess) !important;
   }
 
+  /* The recipients field follows the shared field edge (see `--k2b-edge`): 1 px, one step darker on hover, the
+     blue edge with the soft ring on focus, red with a red ring when invalid. */
   .mail-recipient-control {
-    border: 1px solid transparent;
+    --k2b-edge-color: var(--k2b-edge);
+    --k2b-edge-ring: transparent;
+    border: var(--k2b-edge-width) solid var(--k2b-edge-color);
     border-radius: var(--ui-radius-control);
-    background: var(--ui-field);
-    box-shadow: none;
+    background: var(--k2b-surface);
+    box-shadow: 0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
     transition:
       background-color 150ms ease,
       border-color 150ms ease,
@@ -529,18 +533,19 @@
   }
 
   .mail-recipient-control:hover {
-    border-color: var(--ui-border);
-    background: var(--ui-hover);
-  }
-
-  .mail-recipient-control:focus-within {
-    border-color: transparent;
-    background: var(--ui-surface);
-    box-shadow: var(--ui-focus);
+    --k2b-edge-color: var(--k2b-edge-hover);
+    background: var(--k2b-edge-hover-bg);
   }
 
   .mail-recipient-control[data-invalid="true"] {
-    border-color: var(--k2b-danger-500);
+    --k2b-edge-color: var(--k2b-edge-danger);
+    --k2b-edge-ring: color-mix(in srgb, var(--k2b-edge-color) var(--k2b-edge-ring-share), transparent);
+  }
+
+  .mail-recipient-control:focus-within {
+    --k2b-edge-color: var(--k2b-edge-focus);
+    --k2b-edge-ring: color-mix(in srgb, var(--k2b-edge-color) var(--k2b-edge-ring-share), transparent);
+    background: var(--k2b-surface);
   }
 
   .mail-recipient-control[data-invalid="true"] input {
@@ -1254,6 +1259,10 @@
 }
 .k2b-ui .mail-inline-draft-subject .k2b-input-shell:focus-within {
   --k2b-edge-color: var(--k2b-edge-focus);
+}
+/* In a reply the recipients read as text first, like the subject: the edge shows on hover and focus. */
+.k2b-ui .mail-inline-draft-recipients .mail-recipient-control:not(:hover, :focus-within, [data-invalid="true"]) {
+  --k2b-edge-color: transparent;
 }
 .k2b-ui .mail-inline-draft-recipients .mail-recipient-control {
   height: 2rem;
