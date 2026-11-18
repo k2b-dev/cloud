@@ -423,6 +423,7 @@ export async function codeRunnerLease(
     deadlineAt,
     leaseExpiresAt: renewed.lease_expires_at.getTime(),
     heartbeatMs: CODE_RUN_HEARTBEAT_MS,
+    outputBytes: run.payload_bytes,
     input:
       run.trigger === "path" || run.trigger === "event"
         ? run.input

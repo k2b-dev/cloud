@@ -667,8 +667,13 @@ Step labels, descriptions and messages receive the same cleaning and secret
 redaction as console text, including across fields and batches. The terminal
 report remains text-free. Pending steps are interpreted by RunLog from the
 run outcome; Core stores them unchanged. At closure, remaining running steps
-succeed with a successful run, or fail with the stable message code
-`code_run_ended` for other outcomes. RunLog localizes that code. Transient
+succeed with a successful run, or fail with `reason: "run_ended"` and an empty
+`message` array for other outcomes. This Core-owned reason is separate from
+author text; its localized presentation follows in the RunLog UI update.
+Runner and Core use the same canonical step reservation within the pinned
+payload window and live frame, including lifecycle fields and named secret
+parts. The lease carries that pinned output budget. Core retains a bounded
+reservation per handle, including inactive IDs, until the attempt ends. Transient
 `chat` and `test` invocations have the run-local console and logger but send
 no production output.
 Several runs may share a workerd process: process stderr is never a source

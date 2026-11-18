@@ -74,6 +74,8 @@ export {
   cleanCodeOutput,
   codeOutputEntryLines,
   codeOutputParts,
+  codeOutputStepBytes,
+  codeOutputStepsBudget,
   emptyCodeOutput,
   isCodeOutputLogEntry,
   isCodeOutputStepEntry,

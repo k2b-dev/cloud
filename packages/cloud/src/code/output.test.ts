@@ -11,6 +11,8 @@ import {
   CodeOutputWindowSchema,
   cleanCodeOutput,
   codeOutputParts,
+  codeOutputStepBytes,
+  codeOutputStepsBudget,
   emptyCodeOutput,
   isCodeOutputLogEntry,
   isCodeOutputStepEntry,
@@ -170,4 +172,31 @@ test("retained steps keep creation order while more than a window of logs is dis
   window = appendCodeOutput(window, [done], 32768);
   expect(window.entries.filter(isCodeOutputStepEntry)).toEqual([done, second]);
   expect(Buffer.byteLength(JSON.stringify(window.entries))).toBeLessThanOrEqual(32768);
+});
+
+test("the complete canonical short-handle count fits the pinned window and live event", () => {
+  const runId = "11111111-1111-4111-8111-111111111111";
+  const budget = codeOutputStepsBudget(runId, Number.MAX_SAFE_INTEGER, 32768);
+  const step = { label: "Upload!", icon: "upload", description: "Transfer!", message: "Done!" };
+  expect(CODE_OUTPUT_STEP_LIMITS.count * codeOutputStepBytes(step) + Buffer.byteLength("{}")).toBeLessThanOrEqual(budget);
+  expect(codeOutputStepsBudget(runId, 1, 1024)).toBe(1024);
+  const entry = {
+    kind: "step",
+    id: "1:step:1",
+    at: "2030-01-02T00:00:00.000Z",
+    label: codeOutputParts("Read"),
+    status: "failed",
+    reason: "run_ended",
+    message: [],
+  };
+  expect(CodeOutputWindowSchema.parse({ ...emptyCodeOutput(1), entries: [entry] }).entries).toEqual([entry]);
+  expect(CodeOutputWindowSchema.safeParse({ ...emptyCodeOutput(1), entries: [{ ...entry, reason: "future_reason" }] }).success).toBe(true);
+  expect(
+    CodeOutputBatchSchema.safeParse({
+      seq: 1,
+      entries: [{ ...entry, id: 1, label: "Read", message: "", reason: "run_ended" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    }).success,
+  ).toBe(false);
 });

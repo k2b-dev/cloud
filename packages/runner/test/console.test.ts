@@ -1,17 +1,19 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
-import { CODE_OUTPUT_INTERVAL_MS, CODE_OUTPUT_OPERATION, CODE_OUTPUT_STEP_LIMITS, type CodeOutputBatch } from "@k2b/cloud/code";
+import { CODE_OUTPUT_OPERATION, CODE_OUTPUT_STEP_LIMITS, type CodeOutputBatch, codeOutputStepBytes } from "@k2b/cloud/code";
 import { LIVE_LIMITS } from "@k2b/cloud/events/limits";
+import { runnerOutputLimits } from "../src/output";
 
 const source = await Bun.file(new URL("../src/assets/console.js", import.meta.url)).text();
 const { createCodeConsole } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 const fixed = Date.UTC(2030, 0, 2);
 afterEach(() => setSystemTime());
-const limits = {
-  bytes: LIVE_LIMITS.frameBytes,
-  intervalMs: CODE_OUTPUT_INTERVAL_MS,
-  operation: CODE_OUTPUT_OPERATION,
-  step: CODE_OUTPUT_STEP_LIMITS,
-};
+const limits = runnerOutputLimits({
+  runId: "11111111-1111-4111-8111-111111111111",
+  generation: 1,
+  token: "fixture-proof",
+  trustTier: "code",
+  outputBytes: 32768,
+});
 test("a run owns its console; error stacks travel only through its bounded output call", async () => {
   setSystemTime(fixed);
   const batches: { operation: string; batch: CodeOutputBatch }[] = [];
@@ -155,7 +157,9 @@ test("logger steps start pending, keep a run-local ID and settle once; pending s
   await output.finish();
   const entries = batches.flatMap((batch) => batch.entries);
   expect(entries.filter((entry) => entry.kind === "log").map((entry) => entry.level)).toEqual(["info", "warn", "error"]);
-  const steps = entries.filter((entry) => entry.kind === "step");
+  const revisions = entries.filter((entry) => entry.kind === "step");
+  const steps = [...new Map(revisions.map((entry) => [entry.id, entry])).values()];
+  expect(revisions.slice(0, 2).map((entry) => entry.status)).toEqual(["pending", "pending"]);
   expect(steps.map((entry) => entry.status)).toEqual(["succeeded", "skipped"]);
   expect(steps.map((entry) => entry.id)).toEqual([1, 2]);
   expect(steps.at(-2)).toMatchObject({
@@ -182,11 +186,9 @@ test("unhandled errors fail running steps only and retain pending steps; success
   running.start();
   output.error(new Error("Document unavailable"));
   await output.finish();
+  const revisions = batches.flatMap((batch) => batch.entries).filter((entry) => entry.kind === "step");
   expect(
-    batches
-      .flatMap((batch) => batch.entries)
-      .filter((entry) => entry.kind === "step")
-      .map((entry) => [entry.id, entry.status, entry.message]),
+    [...new Map(revisions.map((entry) => [entry.id, entry])).values()].map((entry) => [entry.id, entry.status, entry.message]),
   ).toEqual([
     [1, "failed", "Document unavailable"],
     [2, "pending", undefined],
@@ -284,7 +286,7 @@ test("automatic failure fits reserved lifecycle metadata even when handle storag
   expect(batches.flatMap((batch) => batch.entries).some((entry) => entry.kind === "step" && entry.status === "failed")).toBe(true);
 });
 
-test.each(["chat", "test"])("%s output supplies console and logger without production bridge traffic", async (_tier) => {
+test.each(["chat", "test"])("%s output supplies console and logger without production bridge traffic", async (trustTier) => {
   setSystemTime(fixed);
   const calls: unknown[] = [];
   const output = createCodeConsole(
@@ -293,7 +295,7 @@ test.each(["chat", "test"])("%s output supplies console and logger without produ
         calls.push(args);
       },
     },
-    { ...limits, enabled: false },
+    runnerOutputLimits({ runId: "fixture", generation: 1, token: "fixture-proof", trustTier }),
   );
   const step = output.logger.step("Read");
   step.start();
@@ -324,9 +326,73 @@ test("buffered step rows retain creation order while logs exceed a frame", async
   first.succeed("Done");
   second.skip("Unneeded");
   await output.finish();
-  expect(batches[0]!.entries.filter((entry) => entry.kind === "step").map((entry) => [entry.id, entry.status])).toEqual([
+  expect(
+    [...new Map(batches[0]!.entries.filter((entry) => entry.kind === "step").map((entry) => [entry.id, entry])).values()].map((entry) => [
+      entry.id,
+      entry.status,
+    ]),
+  ).toEqual([
     [1, "succeeded"],
     [2, "skipped"],
   ]);
   expect(batches[0]!.droppedLines).toBeGreaterThan(0);
+});
+
+test("completion text follows intervening logs in the captured stream", async () => {
+  setSystemTime(fixed);
+  const batches: CodeOutputBatch[] = [];
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
+  const step = output.logger.step("Upload");
+  step.start();
+  output.logger.info("Bearer abcd");
+  step.succeed("efgh");
+  await output.finish();
+  expect(batches[0]!.entries.map((entry) => (entry.kind === "log" ? entry.text : [entry.status, entry.message]))).toEqual([
+    ["running", undefined],
+    "Bearer abcd",
+    ["succeeded", "efgh"],
+  ]);
+});
+
+test("handle admission reserves canonical parts and completion text within the pinned budget", async () => {
+  setSystemTime(fixed);
+  const batches: CodeOutputBatch[] = [];
+  const label = "Read!",
+    message = "Done!".repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes);
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    {
+      ...limits,
+      step: { ...limits.step, budget: codeOutputStepBytes({ label, message }) + Buffer.byteLength("{}") },
+    },
+  );
+  const step = output.logger.step(label);
+  step.start();
+  step.succeed(message);
+  output.logger.step("Another!").start();
+  await output.finish();
+  expect(batches[0]!.entries).toEqual([
+    {
+      kind: "step",
+      id: 1,
+      at: new Date(fixed).toISOString(),
+      label,
+      status: "succeeded",
+      startedAt: new Date(fixed).toISOString(),
+      endedAt: new Date(fixed).toISOString(),
+      message,
+    },
+  ]);
+  expect(batches[0]!.droppedLines).toBe(1);
 });

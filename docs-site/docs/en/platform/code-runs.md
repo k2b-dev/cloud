@@ -399,17 +399,24 @@ to the exception message, within the output limits. Its text and stack also
 appear as error logs. Pending steps stay `pending` in storage: after a
 successful run, RunLog displays them as skipped; after a failed run it displays
 them as pending. The display owns this distinction. At attempt closure, Core
-completes any remaining running step as `succeeded` when the run succeeds, or `failed` for
-failure, cancellation or expiry. That automatic failure uses the stable message
-code `code_run_ended`; the display translates it. A forced termination may
+completes any remaining running step as `succeeded` when the run succeeds,
+or `failed` for failure, cancellation or expiry. That automatic failure sets
+`reason: "run_ended"` and an empty `message` array. The reason is separate from author-supplied completion text. Consumers
+accept an optional string `reason`; localized display text belongs to the
+upcoming RunLog presentation update. A forced termination may
 lose the last unflushed update, just like console output.
 
 Steps and logs share the existing output window and loss counters.
 `CODE_OUTPUT_STEP_LIMITS` derives a lifetime step count from the
-serialized complete step and `LIVE_LIMITS.frameBytes`. Its per-field encoded
-JSON byte limit divides the remaining raw bundle among label, icon, description
+canonical complete step, including string IDs, named secret parts, lifecycle
+timestamps and automatic completion, and `LIVE_LIMITS.frameBytes`. Its per-field
+encoded JSON byte limit divides the remaining raw bundle among label, icon, description
 and message, after reserving the lease envelope. Run-local handle metadata
-also fits one raw output frame, including reserved lifecycle timestamps.
+uses the same canonical byte reservation in Runner and Core, within the pinned
+`core.code.payload_bytes` window and the available live frame. Each short
+text field reserves space for a named secret marker; larger fields consume
+the remaining shared budget. Redaction expansion stays within that handle
+reservation. Rejected IDs stay inactive for the rest of the attempt.
 Long fields are shortened. When handle storage is exhausted, `step` returns
 an inert handle and counts one lost entry; the run continues. Completion
 messages are shortened to the remaining handle budget. Only invalid argument
@@ -419,7 +426,9 @@ only at the first completion. Revisions advance status and monotone timestamps;
 accepted text and completed steps cannot be rewritten. Step metadata shares
 the pinned output budget. Logs yield before steps when the window fills, so
 retained steps keep their creation order. Output batches remain subject to
-the same frame and cadence limits, so a busy run can lose updates.
+the same frame and cadence limits, so a busy run can lose updates. Buffered
+revisions only coalesce while adjacent to their own handle; completion text
+keeps its position after intervening logs or other steps.
 Only authorized Code editors see steps, including through API, CLI and agents.
 
 The window contains `generation`, `seq`, `entries`, `droppedLines` and

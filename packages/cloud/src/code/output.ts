@@ -39,8 +39,49 @@ const stepEnvelope = {
   message: "",
 };
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+// Reserve the canonical map form, including the largest safe generation/ID,
+// named secret parts, optional fields and automatic completion. Short fields may
+// expand to one maximum-size secret marker without consuming another handle's slot.
+const canonicalId = `${Number.MAX_SAFE_INTEGER}:step:${Number.MAX_SAFE_INTEGER}`;
+// The part schema permits one initial name character plus 63 following ones;
+// the icon schema below permits at most 64 ASCII characters.
+const secretPart = { type: "secret", name: "S".repeat(64) };
+const canonicalStep = {
+  ...stepEnvelope,
+  id: canonicalId,
+  label: [secretPart],
+  icon: "a".repeat(64),
+  description: [secretPart],
+  message: [secretPart],
+  reason: "run_ended",
+};
+const stepMetadataBytes = bytes(canonicalStep) + bytes(canonicalId) + 2;
+const stepTextReserveBytes = bytes(secretPart) - bytes({ type: "text", text: "" });
+/** Canonical event overhead uses the safe-integer transport widths, not observed counters. */
+export function codeOutputStepsBudget(runId: string, generation: number, budget: number) {
+  return Math.min(
+    budget,
+    LIVE_LIMITS.frameBytes -
+      bytes({
+        generation,
+        entries: [],
+        seq: Number.MAX_SAFE_INTEGER,
+        droppedLines: Number.MAX_SAFE_INTEGER,
+        droppedBytes: Number.MAX_SAFE_INTEGER,
+        type: "code.output",
+        runId,
+        budget: Number.MAX_SAFE_INTEGER,
+      }) +
+      bytes([]),
+  );
+}
 export const CODE_OUTPUT_STEP_LIMITS = Object.freeze({
-  count: Math.floor(LIVE_LIMITS.frameBytes / bytes(stepEnvelope)),
+  count: Math.floor(
+    (codeOutputStepsBudget("00000000-0000-4000-8000-000000000000", Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER) - bytes({})) /
+      stepMetadataBytes,
+  ),
+  metadataBytes: stepMetadataBytes,
+  textReserveBytes: stepTextReserveBytes,
   textBytes: Math.floor(
     (LIVE_LIMITS.frameBytes -
       bytes({
@@ -52,6 +93,18 @@ export const CODE_OUTPUT_STEP_LIMITS = Object.freeze({
       CODE_OUTPUT_STEP_TEXT_FIELDS.length,
   ),
 });
+/** Same reservation in the isolate and Core. Repeated immutable fields cost once;
+ * redacted parts are bounded to this reservation before another step is admitted.
+ */
+export function codeOutputStepBytes(entry: Partial<Record<(typeof CODE_OUTPUT_STEP_TEXT_FIELDS)[number], string>>) {
+  return (
+    CODE_OUTPUT_STEP_LIMITS.metadataBytes +
+    CODE_OUTPUT_STEP_TEXT_FIELDS.reduce(
+      (size, field) => size + Math.max(0, bytes(entry[field] ?? "") - bytes("") - CODE_OUTPUT_STEP_LIMITS.textReserveBytes),
+      0,
+    )
+  );
+}
 const stepText = z.string().refine((value) => bytes(value) <= CODE_OUTPUT_STEP_LIMITS.textBytes);
 export const CodeOutputLogInputSchema = z.object({ ...logMetadata, text: z.string() }).strict();
 export const CodeOutputStepInputSchema = z
@@ -95,6 +148,7 @@ export const CodeOutputStepEntrySchema = z
       .optional(),
     description: z.array(CodeOutputPartSchema).optional(),
     message: z.array(CodeOutputPartSchema).optional(),
+    reason: z.string().optional(),
   })
   .strict();
 export const CodeOutputKnownEntrySchema = z.discriminatedUnion("kind", [

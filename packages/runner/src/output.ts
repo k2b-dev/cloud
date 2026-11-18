@@ -1,7 +1,38 @@
-import { CODE_OUTPUT_INTERVAL_MS, type CodeOutputBatch, CodeOutputBatchSchema, codeOutputEntryLines } from "@k2b/cloud/code";
+import {
+  CODE_OUTPUT_INTERVAL_MS,
+  CODE_OUTPUT_OPERATION,
+  CODE_OUTPUT_STEP_LIMITS,
+  CODE_OUTPUT_STEP_TEXT_FIELDS,
+  type CodeOutputBatch,
+  CodeOutputBatchSchema,
+  codeOutputEntryLines,
+  codeOutputStepsBudget,
+} from "@k2b/cloud/code";
 
-import type { RunnerLeaseProof } from "@k2b/cloud/code/runner";
+import type { RunnerLease, RunnerLeaseProof } from "@k2b/cloud/code/runner";
 import { LIVE_LIMITS } from "@k2b/cloud/events/limits";
+
+/** Engine-owned capture configuration: transient tiers keep their local console,
+ * while only durable Code invocations send the production output stream. */
+export function runnerOutputLimits(lease: Pick<RunnerLease, "runId" | "generation" | "token" | "trustTier" | "outputBytes">) {
+  const bytes =
+    LIVE_LIMITS.frameBytes -
+    Buffer.byteLength(JSON.stringify({ runId: lease.runId, generation: lease.generation, token: lease.token, batch: null }));
+  return {
+    enabled: !["chat", "test"].includes(lease.trustTier),
+    bytes,
+    intervalMs: CODE_OUTPUT_INTERVAL_MS,
+    operation: CODE_OUTPUT_OPERATION,
+    step: {
+      ...CODE_OUTPUT_STEP_LIMITS,
+      budget: codeOutputStepsBudget(lease.runId, lease.generation, lease.outputBytes ?? LIVE_LIMITS.frameBytes),
+      textBytes: Math.max(
+        0,
+        CODE_OUTPUT_STEP_LIMITS.textBytes - Math.ceil((LIVE_LIMITS.frameBytes - bytes) / CODE_OUTPUT_STEP_TEXT_FIELDS.length),
+      ),
+    },
+  };
+}
 
 const sum = (a: number, b: number) => Math.min(Number.MAX_SAFE_INTEGER, a + b);
 

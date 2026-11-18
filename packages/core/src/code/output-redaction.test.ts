@@ -584,11 +584,18 @@ test("canonical step metadata stays within its shared budget without displacing 
   const steps: OutputSteps = {};
   const dropped = { lines: 0, bytes: 0 };
   const budget = 1024;
+  const reservations = {};
   const base = { kind: "step" as const, id: 1, at: line("").at, label: "Read", status: "pending" as const };
   const redactor = compileOutputRedaction(new Map());
-  assembleCodeOutput(redactOutput(codeOutputFragments([base], 1, steps, budget), redactor).entries, { steps, budget, dropped });
+  assembleCodeOutput(redactOutput(codeOutputFragments([base], 1, steps, budget, dropped, reservations), redactor).entries, {
+    reservations,
+    dropped,
+  });
   const next = { ...base, id: 2, label: "x".repeat(1000), description: "y".repeat(1000) };
-  assembleCodeOutput(redactOutput(codeOutputFragments([next], 1, steps, budget), redactor).entries, { steps, budget, dropped });
+  assembleCodeOutput(redactOutput(codeOutputFragments([next], 1, steps, budget, dropped, reservations), redactor).entries, {
+    reservations,
+    dropped,
+  });
   expect(Buffer.byteLength(JSON.stringify(steps))).toBeLessThanOrEqual(budget);
   expect(steps["1:step:1"]?.label).toEqual([{ type: "text", text: "Read" }]);
   expect(dropped.lines).toBeGreaterThan(0);
@@ -606,4 +613,59 @@ test("step lifecycle timestamp spellings use the same bounded precision as the h
   expect(steps["1:step:1"]).toMatchObject({ status: "running", startedAt: at });
   codeOutputFragments([{ ...base, status: "succeeded", startedAt: extended, endedAt: extended }], 1, steps);
   expect(steps["1:step:1"]).toMatchObject({ status: "succeeded", startedAt: at, endedAt: at });
+});
+
+test("canonical reservations remember rejected IDs and keep their later revisions out of continuity accounting", async () => {
+  const { CODE_OUTPUT_STEP_LIMITS } = await import("@k2b/cloud/code");
+  const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
+  const steps: OutputSteps = {};
+  const reservations = {};
+  const budget = CODE_OUTPUT_STEP_LIMITS.metadataBytes + 2;
+  const dropped = { lines: 0, bytes: 0 };
+  const base = { kind: "step" as const, id: 1, at: line("").at, label: "Read!", status: "pending" as const };
+  const redactor = compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]]));
+  assembleCodeOutput(redactOutput(codeOutputFragments([base], 1, steps, budget, dropped, reservations), redactor).entries, {
+    reservations,
+    dropped,
+  });
+  expect(codeOutputFragments([{ ...base, id: 2 }], 1, steps, budget, dropped, reservations)).toEqual([]);
+  expect(dropped.lines).toBe(1);
+  const previous = { ...dropped };
+  const fragments = codeOutputFragments(
+    [{ ...base, id: 2, status: "running", startedAt: base.at }, line("kept!")],
+    1,
+    steps,
+    budget,
+    dropped,
+    reservations,
+  );
+  expect(dropped).toEqual(previous);
+  expect(assembleCodeOutput(redactOutput(fragments, redactor).entries)).toEqual([
+    { ...line("kept!"), text: [{ type: "text", text: "kept!" }] },
+  ]);
+  expect(Object.keys(reservations)).toHaveLength(2);
+});
+
+test("named-part expansion stays in its own reservation and leaves later handle slots available", async () => {
+  const { CODE_OUTPUT_STEP_LIMITS, codeOutputStepsBudget } = await import("@k2b/cloud/code");
+  const { codeOutputFragments, assembleCodeOutput } = await import("./output-redaction");
+  const steps: OutputSteps = {};
+  const reservations = {};
+  const budget = codeOutputStepsBudget("11111111-1111-4111-8111-111111111111", 1, 32768);
+  const admission = { lines: 0, bytes: 0 };
+  const raw = Array.from({ length: CODE_OUTPUT_STEP_LIMITS.count }, (_, index) => ({
+    kind: "step" as const,
+    id: index + 1,
+    at: line("").at,
+    label: index === 0 ? "a".repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes) : `Next ${index}!`,
+    status: "pending" as const,
+  }));
+  const fragments = codeOutputFragments(raw, 1, steps, budget, admission, reservations);
+  const result = redactOutput(fragments, compileOutputRedaction(new Map([["a", "[secret:TOKEN]"]])));
+  assembleCodeOutput(result.entries, { reservations, dropped: result.dropped });
+  expect(admission).toEqual({ lines: 0, bytes: 0 });
+  expect(Object.keys(steps)).toHaveLength(CODE_OUTPUT_STEP_LIMITS.count);
+  expect(steps["1:step:2"]?.label).toEqual([{ type: "text", text: "Next 1!" }]);
+  expect(result.dropped.lines).toBeGreaterThan(0);
+  expect(Buffer.byteLength(JSON.stringify(steps))).toBeLessThanOrEqual(budget);
 });

@@ -14,6 +14,7 @@ import {
   CodeOutputWindowSchema,
   codeDetailsKey,
   codeOutputEntryLines,
+  codeOutputStepsBudget,
   emptyCodeOutput,
 } from "@k2b/cloud/code";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
@@ -64,6 +65,9 @@ const StateSchema = z.object({
   countedDropBytes: z.number(),
   window: CodeOutputWindowSchema,
   steps: z.record(z.string(), CodeOutputStepEntrySchema).default({}),
+  stepReservations: z
+    .record(z.string(), z.object({ bytes: z.number().nonnegative().safe(), rejected: z.boolean().optional() }))
+    .default({}),
 });
 type State = z.infer<typeof StateSchema>;
 const tokenDigest = (token: string) => new Bun.CryptoHasher("sha256").update(token).digest("hex");
@@ -94,6 +98,7 @@ export async function openCodeOutput(
     countedDropBytes: 0,
     window: emptyCodeOutput(lease.generation),
     steps: {},
+    stepReservations: {},
   };
   await redis.send("EVAL", [
     // Replace only our encoded timestamp: re-encoding the state with Lua cjson
@@ -289,28 +294,12 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
     : null;
   // Reserve the maximum encoded counter/sequence widths, derived from the safe-integer wire schema.
   // Trim in linear time before windowing: one raw text can contain many newline-separated lines.
-  const envelopeBytes =
-    Buffer.byteLength(
-      JSON.stringify({
-        ...emptyCodeOutput(state.generation),
-        seq: Number.MAX_SAFE_INTEGER,
-        droppedLines: Number.MAX_SAFE_INTEGER,
-        droppedBytes: Number.MAX_SAFE_INTEGER,
-        type: "code.output",
-        runId: claims.runId,
-        budget: state.budget,
-      }),
-    ) - Buffer.byteLength(JSON.stringify([]));
-  // The canonical map reserves complete lifecycle metadata within both existing
-  // budgets, so retained steps together fit a live frame and the pinned window.
+  const stepBudget = codeOutputStepsBudget(claims.runId, state.generation, state.budget);
+  const frameBudget = codeOutputStepsBudget(claims.runId, state.generation, LIVE_LIMITS.frameBytes);
+  // Both ends reserve the canonical form, not the smaller author input. The
+  // per-step ledger also bounds redaction expansion without consuming later slots.
   const admissionDrops = { lines: 0, bytes: 0 };
-  const fragments = codeOutputFragments(
-    batch.entries,
-    state.generation,
-    state.steps,
-    Math.min(state.budget, LIVE_LIMITS.frameBytes - envelopeBytes),
-    admissionDrops,
-  );
+  const fragments = codeOutputFragments(batch.entries, state.generation, state.steps, stepBudget, admissionDrops, state.stepReservations);
   const redacted = redactOutput(
     fragments,
     await redactorFor(claims, state.deadlineAt, state.redactionRevision),
@@ -336,15 +325,14 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
   // Identity belongs to the accepted stream position, survives window eviction and
   // replay, and needs neither caller-selected keys nor another persistence model.
   const entries = assembleCodeOutput(redacted.entries, {
-    steps: state.steps,
-    budget: Math.min(state.budget, LIVE_LIMITS.frameBytes - envelopeBytes),
+    reservations: state.stepReservations,
     dropped: redacted.dropped,
   }).map((entry, index) => ({
     ...entry,
     id: entry.kind === "step" ? entry.id : `${state.generation}:${state.window.seq + 1}:${index}`,
   }));
   const dropped = { lines: sum(batch.droppedLines, redacted.dropped.lines), bytes: sum(batch.droppedBytes, redacted.dropped.bytes) };
-  const frame = appendCodeOutput(emptyCodeOutput(state.generation), entries, LIVE_LIMITS.frameBytes - envelopeBytes, dropped);
+  const frame = appendCodeOutput(emptyCodeOutput(state.generation), entries, frameBudget, dropped);
   const nextWindow = appendCodeOutput({ ...withDrops(state, counts), seq: state.window.seq + 1 }, frame.entries, state.budget, {
     lines: frame.droppedLines,
     bytes: frame.droppedBytes,
@@ -435,7 +423,7 @@ export async function closeCodeOutput(runId: string, generation?: number, outcom
   if (state.pending) {
     const pending = PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))));
     const settled = redactOutput([], compileOutputRedaction(new Map()), bindOutputPending(pending, state.steps), true);
-    const final = assembleCodeOutput(settled.entries, { steps: state.steps, budget: state.budget, dropped: settled.dropped });
+    const final = assembleCodeOutput(settled.entries, { reservations: state.stepReservations, dropped: settled.dropped });
     window = {
       ...window,
       droppedLines: sum(window.droppedLines, settled.dropped.lines),
@@ -457,7 +445,7 @@ export async function closeCodeOutput(runId: string, generation?: number, outcom
       ...entry,
       status: outcome === "succeeded" ? ("succeeded" as const) : ("failed" as const),
       endedAt: new Date(Math.max(Date.now(), Date.parse(entry.startedAt ?? entry.at))).toISOString(),
-      ...(outcome === "succeeded" ? {} : { message: [{ type: "text" as const, text: "code_run_ended" }] }),
+      ...(outcome === "succeeded" ? {} : { reason: "run_ended" as const, message: [] }),
     }));
   if (ended.length) window = appendCodeOutput({ ...window, seq: window.seq + 1 }, ended, state.budget);
   for (const entry of ended) state.steps[entry.id] = entry;

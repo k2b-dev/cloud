@@ -18,10 +18,10 @@ export function createCodeConsole(cloud, limits) {
   const enqueue = (entry) => {
     if (limits.enabled === false) return;
     if (bytes({ ...batch(), entries: [entry] }) > limits.bytes) return drop(entry);
-    // A buffered revision updates its existing row. Preserve planned steps
-    // before discarding logs, just like the shared retained-window reducer.
-    const position = entry.kind === "step" ? entries.findIndex((old) => old.kind === "step" && old.id === entry.id) : -1;
-    if (position < 0) entries.push(entry);
+    // Coalesce only adjacent revisions of this handle: crossing another entry
+    // would move completion text before it and change the continuous text stream.
+    const position = entry.kind === "step" ? entries.findLastIndex((old) => old.kind === "step" && old.id === entry.id) : -1;
+    if (position < 0 || entries.slice(position + 1).some((old) => old.kind !== "step" || old.id !== entry.id)) entries.push(entry);
     else entries[position] = entry;
     while (entries.length && bytes(batch()) > limits.bytes) {
       const log = entries.findIndex((old) => old.kind !== "step");
@@ -76,10 +76,10 @@ export function createCodeConsole(cloud, limits) {
   const console = Object.freeze(
     Object.fromEntries(["log", "info", "debug", "warn", "error"].map((level) => [level, (...args) => append(level, args)])),
   );
-  // Lifetime IDs and retained handle metadata share the existing raw output budget.
+  // Lifetime IDs and retained handle metadata share the canonical output budget.
   // The trusted host derives field/count limits from the serialized live-frame contract.
   const steps = new Map();
-  let stepBytes = 0;
+  let stepBytes = bytes({});
   const refuse = (code) => {
     throw Object.assign(new Error(code), { code });
   };
@@ -101,11 +101,15 @@ export function createCodeConsole(cloud, limits) {
   const terminal = (status) => ["succeeded", "failed", "skipped"].includes(status);
   // Reserve lifecycle timestamps at creation, so an automatic failure can always settle.
   const stepCost = (entry) =>
-    bytes({ ...entry, status: "succeeded", startedAt: entry.at, endedAt: entry.at, message: entry.message ?? "" });
+    limits.step.metadataBytes +
+    ["label", "icon", "description", "message"].reduce(
+      (size, field) => size + Math.max(0, bytes(entry[field] ?? "") - bytes("") - limits.step.textReserveBytes),
+      0,
+    );
   const update = (entry) => {
     const previous = steps.get(entry.id);
     const nextBytes = stepBytes - (previous ? stepCost(previous) : 0) + stepCost(entry);
-    if (nextBytes > limits.bytes) return false;
+    if (nextBytes > limits.step.budget) return false;
     stepBytes = nextBytes;
     steps.set(entry.id, entry);
     enqueue(entry);
@@ -149,11 +153,13 @@ export function createCodeConsole(cloud, limits) {
         if ((status === "failed" || status === "skipped") && message === undefined) refuse("code_output_invalid_text");
         const base = { ...current, status, endedAt: new Date().toISOString() };
         // Keep the original handle metadata; completion text uses its remaining
-        // share of the same raw frame instead of throwing into author code.
-        const available = limits.bytes - stepBytes + stepCost(current) - stepCost({ ...base, message: "" });
+        // share of the canonical reservation instead of throwing into author code.
+        const available = limits.step.budget - stepBytes + stepCost(current) - stepCost({ ...base, message: "" });
         update({
           ...base,
-          ...(message === undefined ? {} : { message: clipped(checkText(message), Math.max(bytes(""), available + bytes(""))) }),
+          ...(message === undefined
+            ? {}
+            : { message: clipped(checkText(message), Math.max(bytes(""), available + bytes("") + limits.step.textReserveBytes)) }),
         });
       };
       return Object.freeze({
@@ -188,8 +194,11 @@ export function createCodeConsole(cloud, limits) {
       for (const entry of steps.values())
         if (entry.status === "running") {
           const base = { ...entry, status: "failed", endedAt: new Date().toISOString(), message: "" };
-          const remaining = limits.bytes - stepBytes + stepCost(entry) - stepCost(base);
-          const message = clipped(text, Math.min(limits.step.textBytes, Math.max(bytes(""), remaining + bytes(""))));
+          const remaining = limits.step.budget - stepBytes + stepCost(entry) - stepCost(base);
+          const message = clipped(
+            text,
+            Math.min(limits.step.textBytes, Math.max(bytes(""), remaining + bytes("") + limits.step.textReserveBytes)),
+          );
           update({ ...base, message });
         }
       console.error(error);

@@ -64,10 +64,8 @@ test.each([null, true, [], {}, { ok: false }, { ok: false, error: null }].map((e
 );
 
 test("the shipped loader binds logger inside the isolate and keeps terminal errors text-free", async () => {
-  const { CODE_OUTPUT_STEP_LIMITS, CODE_OUTPUT_INTERVAL_MS, CODE_OUTPUT_OPERATION, CodeOutputBatchSchema } = await import(
-    "@k2b/cloud/code"
-  );
-  const { LIVE_LIMITS } = await import("@k2b/cloud/events/limits");
+  const { CODE_OUTPUT_OPERATION, CodeOutputBatchSchema } = await import("@k2b/cloud/code");
+  const { runnerOutputLimits } = await import("../src/output");
   const hostModule = await import(
     `data:text/javascript;base64,${Buffer.from(
       source
@@ -120,12 +118,7 @@ test("the shipped loader binds logger inside the isolate and keeps terminal erro
       input: null,
       modules: {},
       source: `export async function main(_,cloud) { const step=cloud.logger.step("Read"); step.start(); throw new Error("Document unavailable"); }`,
-      outputLimits: {
-        bytes: LIVE_LIMITS.frameBytes,
-        intervalMs: CODE_OUTPUT_INTERVAL_MS,
-        operation: CODE_OUTPUT_OPERATION,
-        step: CODE_OUTPUT_STEP_LIMITS,
-      },
+      outputLimits: runnerOutputLimits({ runId: "fixture", generation: 1, token: "fixture-proof", trustTier: "code" }),
     }),
   });
   const response = await hostModule.default.fetch(request, env, { exports: { Cloud: () => transport } });

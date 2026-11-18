@@ -61,6 +61,8 @@ export const RunnerLeaseSchema = z
     deadlineAt: positive,
     leaseExpiresAt: positive,
     heartbeatMs: positive,
+    /** Pinned retained output budget; transient chat/test jobs have no production output. */
+    outputBytes: positive.optional(),
     input: z.json(),
   })
   .strict();
