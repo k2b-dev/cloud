@@ -1,7 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { StoreEntry } from "@k2b/nessi";
+import type { RequestActor } from "../server";
 import { __compactionTest } from "./compaction";
-import { __aiRuntimeTest } from "./runtime";
+import { userResourceContext } from "./projects.test-fixture";
+import { __aiRuntimeTest, abortAiTurn } from "./runtime";
+import { aiConversations } from "./store";
 
 describe("AI compaction split", () => {
   const messageEntry = (seq: number, role: "user" | "assistant"): StoreEntry => ({
@@ -82,5 +85,42 @@ describe("AI action response idempotency", () => {
         "call-2",
       ),
     ).toBe(false);
+  });
+});
+
+describe("interactive cancellation intent", () => {
+  const person = userResourceContext({ type: "user", userId: "11111111-1111-4111-8111-111111111111" }).actor;
+  const machine: RequestActor = {
+    kind: "service_account",
+    serviceAccount: {
+      id: "44444444-4444-4444-8444-444444444444",
+      name: "Automation",
+      kind: "standalone",
+      status: "active",
+      delegatedUserId: null,
+      appId: null,
+      resourceType: null,
+      resourceId: null,
+      createdBy: null,
+      createdAt: "2026-11-18T00:00:00Z",
+    },
+    delegatedUser: null,
+    scopes: ["write"],
+  };
+  test.each([
+    { actor: person, reason: undefined, expected: "user" },
+    { actor: machine, reason: undefined, expected: "service_account" },
+    { actor: person, reason: "retry" as const, expected: "retry" },
+    { actor: machine, reason: "retry" as const, expected: "retry" },
+  ])("uses $expected cancellation for the caller's intent", async ({ actor, reason, expected }) => {
+    const active = spyOn(aiConversations, "getActiveTurn").mockResolvedValue(null);
+    const request = spyOn(aiConversations, "requestTurnAbort").mockResolvedValue({ found: false });
+    try {
+      await abortAiTurn({ conversationId: "chat", turnId: "turn", actor, reason });
+      expect(request).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "chat", turnId: "turn", reason: expected }));
+    } finally {
+      request.mockRestore();
+      active.mockRestore();
+    }
   });
 });

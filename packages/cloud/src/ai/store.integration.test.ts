@@ -2543,7 +2543,9 @@ suite("AI conversation store integration", () => {
       });
       expect((await aiConversations.getConversation({ conversationId: done.id }))?.unreadCompletion).toBe(false);
 
-      expect(await aiConversations.archiveConversation({ conversationId: pinned.id, ownerUserId: userId })).toBe(true);
+      expect(await aiConversations.archiveConversation({ conversationId: pinned.id, ownerUserId: userId })).toEqual({
+        discardedQueuedMessages: 0,
+      });
       expect(await aiConversations.getConversation({ conversationId: pinned.id })).toBeNull();
       expect(await aiConversations.listConversations({ ownerUserId: userId, archived: true })).toHaveLength(1);
       expect(await aiConversations.restoreConversation({ conversationId: pinned.id, ownerUserId: userId })).toMatchObject({

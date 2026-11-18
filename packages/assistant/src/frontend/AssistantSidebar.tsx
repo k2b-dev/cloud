@@ -27,6 +27,7 @@ import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { openAssistantPrefsModal } from "./AssistantPrefsModals";
 import { openActivities } from "./activities-dialog";
+import type { AssistantArchiveBlocker } from "./archive-blocker";
 import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
 import { assistantProjectSearchOptions, assistantProjectsSearchOptions, assistantSearchOptions } from "./assistant-search";
@@ -67,7 +68,9 @@ type AssistantSidebarProps = {
   onCreateProject?: () => void | Promise<void>;
   onOpenProject?: (projectId: string) => Promise<boolean>;
   onOpenConversation?: (conversationId: string) => Promise<boolean>;
-  canArchiveConversation?: (conversation: AiConversation) => boolean;
+  /** What keeps a chat from being archived; the editor says it instead of offering a request that fails. */
+  archiveBlocker?: (conversation: AiConversation) => AssistantArchiveBlocker;
+  queuedMessageCount?: (conversation: AiConversation) => number | undefined;
   onConversationUpdated?: (conversation: AiConversation) => void;
   onConversationArchived?: (conversation: AiConversation) => void;
   /** Open approvals the page rendered with; the Approvals row shows while this or the live count is above zero. */
@@ -442,10 +445,11 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   };
 
   const openEditor = async (conversation: AiConversation) => {
-    const canArchive = props.canArchiveConversation?.(conversation) ?? true;
+    const blocker = props.archiveBlocker?.(conversation) ?? null;
     const result = await openAssistantConversationEditor(conversation, {
-      archiveDisabled: !canArchive,
-      archiveDisabledReason: canArchive ? undefined : t().stopBeforeArchive,
+      archiveDisabled: blocker !== null,
+      queuedMessageCount: () => props.queuedMessageCount?.(conversation),
+      archiveDisabledReason: blocker === "waiting" ? t().decideBeforeArchive : blocker === "running" ? t().stopBeforeArchive : undefined,
     });
     if (!result) return;
     if (result.action === "save") props.onConversationUpdated?.(result.conversation);
