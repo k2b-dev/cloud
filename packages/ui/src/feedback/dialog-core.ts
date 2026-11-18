@@ -431,8 +431,8 @@ export const createDialogCore = () => {
     if (frameMotion) state.motion = frameMotion.createFrameMotion(element);
     else
       void loadFrameMotion().then(() => {
-        const top = state.stack[state.stack.length - 1];
-        if (state.element !== element || state.motion || !frameMotion) return;
+        const top = state.stack.at(-1);
+        if (state.element !== element || !frameMotion) return;
         state.motion = frameMotion.createFrameMotion(element);
         if (top) state.motion.follow(top.container);
       });
@@ -544,15 +544,10 @@ export const createDialogCore = () => {
 
   /** A level that replaces another says its name; before the module has loaded, as soon as it has, if it still shows. */
   const announceLevel = (entry: DialogStackEntry) => {
-    if (state.motion) state.motion.announce(entry.role);
-    else {
-      const element = state.element;
-      void loadFrameMotion().then(() => {
-        if (!element || state.element !== element || state.stack.at(-1) !== entry || !frameMotion) return;
-        state.motion ??= frameMotion.createFrameMotion(element);
-        state.motion.announce(entry.role);
-      });
-    }
+    // ensureDialogElement registered creation first on this same module promise.
+    void loadFrameMotion().then(() => {
+      if (state.stack.at(-1) === entry) state.motion?.announce(entry.role);
+    });
   };
 
   /** Closes the shown level. `below` are the levels under it that close with it (lowest last): they leave with the frame. */
@@ -678,7 +673,6 @@ export const createDialogCore = () => {
     // A dialog that waited for history while islands were disposed would open over content it was never meant for.
     if (disposals !== requested) return Promise.resolve(undefined);
     const dialog = ensureDialogElement();
-    if (!state.motion && frameMotion) state.motion = frameMotion.createFrameMotion(dialog);
     listen();
     const previousTop = state.stack[state.stack.length - 1];
     // The shown level fades out while the new one replaces it in the same frame; it is hidden once it has faded.

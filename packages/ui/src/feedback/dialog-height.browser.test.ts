@@ -31,7 +31,7 @@ window.openSheet = (adaptive = false, detents = false) => void dialogCore.open((
     return body;
   } }),
 ]; } }), adaptive ? bottomSheetAdaptiveOptions : bottomSheetOptions);
-window.openForm = (fixed = false, top = false, previewMode) => void dialogCore.open((close, context) => {
+window.openForm = (fixed = false, top = false, previewMode, fractional = false) => void dialogCore.open((close, context) => {
   window.closeForm = () => close();
   window.placeAt = (x, y) => context.setPosition(typeof x === "object" ? x : { x, y });
   window.setModal = context.setModal;
@@ -42,6 +42,7 @@ window.openForm = (fixed = false, top = false, previewMode) => void dialogCore.o
   createComponent(PanelDialog.Body, { get children() {
     const body = document.createElement("div");
     body.dataset.content = "";
+    if (fractional) body.style.height = "123.375px";
     body.innerHTML = "<label>Name <input aria-label='Name' value='Summer fest'></label>";
     if (previewMode) {
       const preview = document.createElement("div"); preview.dataset.preview = "";
@@ -89,7 +90,7 @@ type HeightWindow = Window & {
   toggleTasks: () => void;
   saved?: number;
   openPicker: () => void;
-  openForm: (fixed?: boolean, top?: boolean, previewMode?: "flow" | "overlay") => void;
+  openForm: (fixed?: boolean, top?: boolean, previewMode?: "flow" | "overlay", fractional?: boolean) => void;
   openSheet: (adaptive?: boolean, detents?: boolean) => void;
   placeAt: (x: number | null | { x: number; y: number }, y?: number) => void;
   setModal: (modal: boolean) => void;
@@ -216,6 +217,40 @@ const watch = (page: Page, change: "add" | "remove" | "failed-save", lines = 3) 
   );
 
 describe(`${browserName} the frame follows its content`, () => {
+  test("holding a fractional natural height preserves the exact top and height", async () => {
+    const page = await (await browser.newContext({ ...desktop, reducedMotion: "reduce" })).newPage();
+    try {
+      await page.setContent(`<html><head><style>${css}</style></head><body class="k2b-ui"></body></html>`);
+      await page.addScriptTag({ content: script });
+      // settled: the natural and first held rectangles are the subject; reduced motion disables the entrance.
+      const result = await page.evaluate(async () => {
+        let natural: { top: number; height: number } | undefined;
+        const show = HTMLDialogElement.prototype.showModal;
+        HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+          show.call(this);
+          const { top, height } = this.getBoundingClientRect();
+          natural = { top, height };
+        };
+        try {
+          (window as unknown as HeightWindow).openForm(false, false, undefined, true);
+          // Wait for lazy following and its first layout report, without sampling an entrance animation.
+          while (!document.querySelector("[data-k2b-dialog-live]")) await new Promise(requestAnimationFrame);
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          const dialog = document.querySelector("dialog")!;
+          const { top, height } = dialog.getBoundingClientRect();
+          return { natural: natural!, held: { top, height }, holding: Boolean(dialog.style.height) };
+        } finally {
+          HTMLDialogElement.prototype.showModal = show;
+        }
+      });
+      expect(result.natural.height % 1).not.toBe(0);
+      expect(result.holding).toBe(true);
+      expect(result.held).toEqual(result.natural);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   for (const previewMode of ["flow", "overlay"] as const)
     test(`500 replaced ${previewMode} preview nodes with unchanged height cause no frame measurements or observer churn`, async () => {
       const page = await load(desktop, false, false, previewMode);
@@ -226,6 +261,7 @@ describe(`${browserName} the frame follows its content`, () => {
           const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight")!;
           const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth")!;
           const computed = window.getComputedStyle;
+          const rect = Element.prototype.getBoundingClientRect;
           const observe = ResizeObserver.prototype.observe;
           const unobserve = ResizeObserver.prototype.unobserve;
           let layoutReads = 0,
@@ -244,6 +280,10 @@ describe(`${browserName} the frame follows its content`, () => {
               return width.get!.call(this);
             },
           });
+          Element.prototype.getBoundingClientRect = function (this: Element) {
+            if (this === dialog) layoutReads++;
+            return rect.call(this);
+          };
           window.getComputedStyle = (...args) => {
             if (args[0] === dialog) layoutReads++;
             return computed(...args);
@@ -273,6 +313,7 @@ describe(`${browserName} the frame follows its content`, () => {
             Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
             Object.defineProperty(HTMLElement.prototype, "offsetWidth", width);
             window.getComputedStyle = computed;
+            Element.prototype.getBoundingClientRect = rect;
             ResizeObserver.prototype.observe = observe;
             ResizeObserver.prototype.unobserve = unobserve;
           }
@@ -363,6 +404,7 @@ describe(`${browserName} the frame follows its content`, () => {
       await page.addScriptTag({ content: script });
       await page.evaluate(() => (window as unknown as HeightWindow).openPicker());
       await page.getByRole("combobox", { name: "Many targets" }).click();
+      await page.mouse.move(0, 0);
       await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
       await settled(page);
       const search = page.getByRole("searchbox", { name: "Search", exact: true });
@@ -1099,6 +1141,73 @@ describe(`${browserName} the frame follows its content`, () => {
       await page.mouse.move(0, 0);
       await settled(page);
       expect((await save.boundingBox())!.y).toBeCloseTo(before.y - 60, 0);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("retrying an unstructured form freezes a running fold and defers size reports until the click lands", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => {
+        const form = document.createElement("form");
+        form.style.cssText = "display:flex;flex-direction:column;gap:16px;padding:24px";
+        form.innerHTML =
+          '<div data-content><label>Name <input value="Transcript cleanup"></label></div><button type="submit">Create API key</button>';
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          form.textContent = "One-time key";
+        });
+        document.querySelector("dialog > :last-child")!.replaceChildren(form);
+      });
+      const save = page.getByRole("button", { name: "Create API key", exact: true });
+      await save.focus();
+      await page.mouse.move(0, 0);
+      await settled(page);
+      await page.evaluate(() => {
+        const motion = window as unknown as HeightWindow;
+        motion.holdMotion();
+        motion.addNotice(8);
+        // The changing natural content is below the control; only frame motion can move the pressed button.
+        document.querySelector("form")!.append(document.querySelector("[data-notice]")!);
+      });
+      await page.waitForSelector("dialog[data-k2b-frame-motion]", { state: "attached" });
+      // settled: the held intermediate fold is the subject; completing it would erase the pointer race.
+      const before = await page.evaluate(() => {
+        const dialog = document.querySelector("dialog")!;
+        const fold = dialog
+          .getAnimations()
+          .find(
+            (animation) =>
+              animation.effect instanceof KeyframeEffect && animation.effect.getKeyframes().some((keyframe) => "height" in keyframe),
+          )!;
+        fold.currentTime = Number(fold.effect!.getComputedTiming().endTime) / 4;
+        return dialog.getBoundingClientRect().height;
+      });
+      // settled: the button's intermediate position during a held fold determines the real pointer target.
+      // The button is already focused, so no focusout can arm the old M2 barrier.
+      const box = (await save.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      // settled: the frame must remain still across size reports while the actual mouse is pressed.
+      const during = await page.evaluate(async () => {
+        const dialog = document.querySelector("dialog")!;
+        const folding = dialog.hasAttribute("data-k2b-frame-motion");
+        (window as unknown as HeightWindow).removeNotices();
+        for (let i = 0; i < 5; i++) await new Promise(requestAnimationFrame);
+        return {
+          folding,
+          height: dialog.getBoundingClientRect().height,
+          buttonY: dialog.querySelector("button")!.getBoundingClientRect().y,
+          restarted: dialog.hasAttribute("data-k2b-frame-motion"),
+        };
+      });
+      expect(during.folding).toBe(false);
+      expect(during.restarted).toBe(false);
+      expect(during.height).toBe(before);
+      expect(during.buttonY).toBeCloseTo(box.y, 0);
+      await page.mouse.up();
+      expect(await page.getByText("One-time key", { exact: true }).count()).toBe(1);
     } finally {
       await page.context().close();
     }

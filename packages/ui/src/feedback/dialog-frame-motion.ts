@@ -104,11 +104,10 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     return asDialog ? "center" : "bottom";
   };
   /** What the eye sees now, including a size or place that is still moving. */
-  const seen = () => ({
-    width: dialog.offsetWidth,
-    height: dialog.offsetHeight,
-    top: Number.parseFloat(getComputedStyle(dialog).top) || 0,
-  });
+  const seen = () => {
+    const { width, height } = dialog.getBoundingClientRect();
+    return { width, height, top: Number.parseFloat(getComputedStyle(dialog).top) || 0 };
+  };
 
   /** Its exact laid-out size: `offsetWidth` rounds, and a content a fraction narrower can wrap differently. */
   const laidOut = (element: HTMLElement) => {
@@ -188,7 +187,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   let arrived = new Set<HTMLElement>();
   let arrivalFrame = 0;
   const pointers = new Set<number>();
-  let focusFold = false;
+  let deferredFold = false;
 
   const ownSize = () => dialog.matches(OWN_SIZE) || (dialog.matches("[data-sheet-detents]") && anchor() === "bottom");
   const BUSY_CONTENT = '[aria-busy="true"]:not(button, [role="button"])';
@@ -228,12 +227,17 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   const fold = () => {
     if (!level || started || frameKind === "morph") return;
     const loading = busy || loadingChange || isBusy();
-    if (focusFold && pointers.size && firstRest && !initialMeasure && !loading) return;
-    focusFold = false;
-    // A child already animating its height owns that motion. Measure its final height once, rather than folding
-    // the frame towards intermediate samples and then folding it a second time.
     const where = anchor();
     const anchorChanged = followingAnchor !== where;
+    // A pressed control stays under the pointer even when a size report, rather than focusout, starts the fold.
+    // Viewport/anchor corrections and loading still take their natural size immediately.
+    if (pointers.size && firstRest && !initialMeasure && !loading && !resized && !anchorChanged) {
+      deferredFold = true;
+      return;
+    }
+    deferredFold = false;
+    // A child already animating its height owns that motion. Measure its final height once, rather than folding
+    // the frame towards intermediate samples and then folding it a second time.
     const heightMotion = dialog
       .getAnimations({ subtree: true })
       .filter(
@@ -281,10 +285,10 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     // All measurement and layout writes run here, in a frame, never inside an observer delivery.
     dialog.style.removeProperty("height");
     if (ownSize()) {
-      rested = dialog.offsetHeight;
+      rested = dialog.getBoundingClientRect().height;
       return;
     }
-    const natural = dialog.offsetHeight;
+    const natural = dialog.getBoundingClientRect().height;
     const canFold = firstRest && !initialMeasure && !loading;
     const height = canFold && !wasResize && textFocused() ? Math.max(natural, shown.height) : natural;
     const from = interrupted ? shown.height : rested;
@@ -484,7 +488,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
         })
       : undefined;
   const onFocusOut = () => {
-    focusFold = true;
+    deferredFold = true;
     if (!pointers.size) changed();
   };
   const onFocusIn = () => {
@@ -497,10 +501,16 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   };
   const onPointerDown = (event: PointerEvent) => {
     pointers.add(event.pointerId);
+    if (frameKind !== "fold") return;
+    const shown = seen();
+    holdHeight(shown.height);
+    if (anchor() === "center") place(shown.top - window.innerHeight / 2);
+    endFrame();
+    deferredFold = true;
   };
   const onPointerEnd = (event: PointerEvent) => {
     pointers.delete(event.pointerId);
-    if (!pointers.size && focusFold) changed();
+    if (!pointers.size && deferredFold) changed();
   };
   const onResize = () => {
     resized = true;
@@ -527,7 +537,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     loadingChange = busy;
     // A morph's pinned content has its final size already. Its observer begins measuring after the morph releases it.
     if (frameKind !== "morph") {
-      rested = dialog.offsetHeight;
+      rested = dialog.getBoundingClientRect().height;
       if (!ownSize()) holdHeight(rested);
     }
     known.add(next);
@@ -575,7 +585,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     window.removeEventListener("pointerup", onPointerEnd, true);
     window.removeEventListener("pointercancel", onPointerEnd, true);
     pointers.clear();
-    focusFold = false;
+    deferredFold = false;
     if (arrivalFrame) cancelAnimationFrame(arrivalFrame);
     arrivalFrame = 0;
     arrived.clear();
