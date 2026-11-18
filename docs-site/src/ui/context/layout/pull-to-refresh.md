@@ -55,7 +55,9 @@ A trackpad has no release event, so overscroll triggers as soon as the
 distance is reached. The added-up distance resets when the user scrolls back
 down. A wheel gesture ends after 300 ms without wheel input; the gesture that
 started a refresh, including the trackpad's momentum, cannot start another
-one, however long it outlasts the refresh.
+one, however long it outlasts the refresh. A wheel gesture that began while
+the list was still scrolled cannot start one either, so the momentum of a
+scroll that reaches the top is not a pull.
 
 `onRefresh` must return a promise. From the start of a refresh until the
 indicator has slid out again, including a failure mark, every input is ignored, so neither a slow

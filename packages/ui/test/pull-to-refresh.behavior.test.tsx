@@ -242,6 +242,35 @@ else {
     }
   });
 
+  test("momentum of a scroll that reaches the top is not a pull, and a fresh gesture after a pause is", async () => {
+    jest.useFakeTimers();
+    const dom = createDomTestHarness();
+    const view = await mount(dom);
+    try {
+      view.port.scrollTop = 120;
+      view.wheel(view.row, -60);
+      jest.advanceTimersByTime(16);
+      // The list reaches its top while the flick still runs.
+      view.port.scrollTop = 0;
+      for (let frame = 0; frame < 30; frame++) {
+        view.wheel(view.row, -40);
+        jest.advanceTimersByTime(16);
+      }
+      expect(view.calls).toHaveLength(0);
+      expect(view.state()).toBe("idle");
+
+      jest.advanceTimersByTime(300);
+      view.wheel(view.row, -200);
+      expect(view.calls).toHaveLength(1);
+      view.calls[0]!.resolve();
+      for (let step = 0; step < 5; step++) await Promise.resolve();
+    } finally {
+      view.dispose();
+      dom.cleanup();
+      jest.useRealTimers();
+    }
+  });
+
   test("a failed refresh marks the indicator in place, announces it, and leaves calmly", async () => {
     jest.useFakeTimers();
     const dom = createDomTestHarness();
@@ -273,8 +302,11 @@ else {
 
       jest.advanceTimersByTime(2600);
       expect(view.state()).toBe("idle");
-      expect(status().textContent).toBe("");
+      expect(status().querySelector(".k2b-sr-only")?.textContent).toBe("");
+      // The hint slides out with the indicator instead of vanishing first.
+      expect(status().querySelector(".k2b-pull-to-refresh__message")?.textContent).toBe("Refresh failed");
       jest.advanceTimersByTime(200);
+      expect(status().textContent).toBe("");
       view.wheel(view.row, -200);
       expect(view.calls).toHaveLength(2);
       view.calls[1]!.resolve();
