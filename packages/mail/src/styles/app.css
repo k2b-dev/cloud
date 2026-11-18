@@ -517,11 +517,15 @@
     box-shadow: var(--ui-control-recess) !important;
   }
 
+  /* The recipients field follows the shared field edge (see `--k2b-edge`): 1 px, one step darker on hover, the
+     blue edge with the soft ring on focus, red with a red ring when invalid. */
   .mail-recipient-control {
-    border: 1px solid transparent;
+    --k2b-edge-color: var(--k2b-edge);
+    --k2b-edge-ring: transparent;
+    border: var(--k2b-edge-width) solid var(--k2b-edge-color);
     border-radius: var(--ui-radius-control);
-    background: var(--ui-field);
-    box-shadow: none;
+    background: var(--k2b-surface);
+    box-shadow: 0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
     transition:
       background-color 150ms ease,
       border-color 150ms ease,
@@ -529,18 +533,19 @@
   }
 
   .mail-recipient-control:hover {
-    border-color: var(--ui-border);
-    background: var(--ui-hover);
-  }
-
-  .mail-recipient-control:focus-within {
-    border-color: transparent;
-    background: var(--ui-surface);
-    box-shadow: var(--ui-focus);
+    --k2b-edge-color: var(--k2b-edge-hover);
+    background: var(--k2b-edge-hover-bg);
   }
 
   .mail-recipient-control[data-invalid="true"] {
-    border-color: var(--k2b-danger-500);
+    --k2b-edge-color: var(--k2b-edge-danger);
+    --k2b-edge-ring: color-mix(in srgb, var(--k2b-edge-color) var(--k2b-edge-ring-share), transparent);
+  }
+
+  .mail-recipient-control:focus-within {
+    --k2b-edge-color: var(--k2b-edge-focus);
+    --k2b-edge-ring: color-mix(in srgb, var(--k2b-edge-color) var(--k2b-edge-ring-share), transparent);
+    background: var(--k2b-surface);
   }
 
   .mail-recipient-control[data-invalid="true"] input {
@@ -1099,10 +1104,10 @@
   padding: 0.5rem 0.875rem;
   border-radius: 0.875rem;
   background: var(--k2b-surface);
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
+  box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
 }
 .k2b-ui .mail-inline-draft:focus-within {
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
+  box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge-focus);
 }
 /* Full screen: the list and details stepped aside; the draft takes the column and the history follows below. */
 .k2b-ui .mail-inline-draft[data-fullscreen] {
@@ -1114,7 +1119,7 @@
 /* A suggestion from Gustav: plum (AI) until a person types or changes anything; then it is an ordinary draft. */
 .k2b-ui .mail-inline-draft[data-suggestion] {
   background: color-mix(in srgb, var(--k2b-ai-surface) 55%, var(--k2b-surface));
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--k2b-ai-border) 45%, var(--k2b-surface));
+  box-shadow: inset 0 0 0 var(--k2b-frame-width) color-mix(in srgb, var(--k2b-ai-border) 45%, var(--k2b-surface));
 }
 .k2b-ui .mail-inline-draft[data-suggestion] .mail-inline-draft-intent,
 .k2b-ui .mail-inline-draft[data-suggestion] .mail-inline-draft-suggestion-hint,
@@ -1250,10 +1255,14 @@
   font-weight: 600;
 }
 .k2b-ui .mail-inline-draft-subject .k2b-input-shell:hover {
-  --k2b-edge-color: var(--k2b-edge);
+  --k2b-edge-color: var(--k2b-edge-hover);
 }
 .k2b-ui .mail-inline-draft-subject .k2b-input-shell:focus-within {
   --k2b-edge-color: var(--k2b-edge-focus);
+}
+/* In a reply the recipients read as text first, like the subject: the edge shows on hover and focus. */
+.k2b-ui .mail-inline-draft-recipients .mail-recipient-control:not(:hover, :focus-within, [data-invalid="true"]) {
+  --k2b-edge-color: transparent;
 }
 .k2b-ui .mail-inline-draft-recipients .mail-recipient-control {
   height: 2rem;
@@ -1340,6 +1349,18 @@
   line-height: 1.5;
   color: var(--k2b-text-muted);
   white-space: pre-wrap;
+}
+/* The sent signature brings its own design and line spacing in the reader's message document; it keeps the room of a
+   plain signature, so the reply box above the conversation keeps its reserved height when it takes the focus. */
+.k2b-ui .mail-inline-draft-signature[data-signature-sent-html] {
+  padding-block: 0;
+  white-space: normal;
+}
+.k2b-ui .mail-inline-draft-signature-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  overflow: hidden;
 }
 .k2b-ui .mail-inline-draft-signature-note {
   font-size: 0.75rem;
@@ -2129,7 +2150,7 @@
   padding: 0.5rem 0.875rem;
   border-radius: 0.875rem;
   background: var(--k2b-surface);
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
+  box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
 }
 /* #3297: above the conversation, the placeholder and the loaded box share one reserved height, so a late draft,
    signature, or suggestion never moves the messages below. Text and signature fade out at that height (the signature
@@ -2239,7 +2260,9 @@
 }
 .k2b-ui .mail-reply-box-mode:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
+  box-shadow:
+    inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus),
+    0 0 0 var(--k2b-edge-ring-width) color-mix(in srgb, var(--k2b-edge-focus) var(--k2b-edge-ring-share), transparent);
 }
 .k2b-ui .mail-reply-box-mode > .ti {
   font-size: 1rem;
@@ -2363,10 +2386,10 @@
     padding-inline: 0.75rem;
     border-radius: 0.875rem;
     background: var(--k2b-surface);
-    box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
+    box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
   }
   .k2b-ui .mail-inline-draft.mail-reply-box:focus-within {
-    box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
+    box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge-focus);
   }
   .k2b-ui .mail-inline-draft.mail-reply-box::after,
   .k2b-ui .mail-reply-box-head::after {

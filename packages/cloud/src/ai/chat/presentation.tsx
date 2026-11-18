@@ -32,6 +32,7 @@ import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view
 import {
   aiSteerMessageText,
   aiUserMessageAttachments,
+  aiUserMessageSource,
   aiUserMessageText,
   createAiSteerMessageActions,
   createAiUserMessageActions,
@@ -260,6 +261,7 @@ const storedItems = (
         role: "user",
         createdAt: item.entry.createdAt,
         content: text ? <p class="whitespace-pre-wrap">{text}</p> : undefined,
+        source: aiUserMessageSource(item.entry, locale),
         attachments: aiUserMessageAttachments(item.entry, actions),
         actions: createAiUserMessageActions(item.entry, actions, locale),
         actionDisplay: "inline",
@@ -347,8 +349,11 @@ const storedItems = (
       const error = last ? turnError : undefined;
       const lastMessage = item.entries.findLast((entry) => entry.message.role === "assistant");
       // One ending, never two: the person's stop is the quiet line; only a turn Cloud ended explains itself in a notice.
-      const byPerson = last && segmentPhase === "stopped" && stoppedByPerson(item.entries);
-      const storedNotice = index === lastAssistant && lastMessage && !byPerson ? aiMessageStopNotice(lastMessage) : null;
+      // "Send now" interrupted the turn for a queued message: it keeps its text and says "paused", nothing more.
+      const queueInterrupted = last && segmentPhase === "stopped" && item.entries.some((entry) => entry.meta?.queueInterrupted === true);
+      const byPerson = last && segmentPhase === "stopped" && !queueInterrupted && stoppedByPerson(item.entries);
+      const storedNotice =
+        index === lastAssistant && lastMessage && !byPerson && !queueInterrupted ? aiMessageStopNotice(lastMessage) : null;
       // A finished turn whose steps leave nothing to read, act on, or explain ends visibly, never in silence.
       const silent =
         last &&
@@ -382,10 +387,15 @@ const storedItems = (
             scheduledTask: task,
             error,
             stoppedByPerson: byPerson,
+            queueInterrupted,
             stopNotice: error ? null : stopNotice,
             // A stopped answer offers to answer the person's message again, where it stopped.
             answerAgain:
-              last && (segmentPhase === "stopped" || silent) && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
+              last &&
+              ((segmentPhase === "stopped" && !queueInterrupted) || silent) &&
+              answerPrompt &&
+              !answerPrompt.compactedAt &&
+              actions.onRetryMessage
                 ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
                 : undefined,
             continuable: idle && (item.loopId ? newestLoop === item.loopId : lastMessage?.id === messages.at(-1)?.id),

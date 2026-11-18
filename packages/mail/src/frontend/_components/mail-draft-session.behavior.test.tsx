@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
-import { setImmediate } from "node:timers";
+import { afterAll, afterEach, beforeEach, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { clearTimeout as clearRealTimeout, setImmediate, setTimeout as setRealTimeout } from "node:timers";
 import * as sharedText from "@k2b/cloud/browser/shared-text";
 import { crypto as cryptoUtils, encoding } from "@k2b/stdlib";
-import { createRenderEffect, createRoot, createSignal } from "solid-js";
+import { createRenderEffect, createSignal, createRoot as createSolidRoot } from "solid-js";
 import { isServer } from "solid-js/web";
 import * as Y from "yjs";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
@@ -10,6 +11,9 @@ import type { DraftEditableContent, DraftLease, MailDraft, MailDraftSeed } from 
 import { createDraftDocument } from "../../lib/draft-document";
 import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
 import { mailDraftJournalKey } from "./mail-draft-journal";
+
+type Fixture = { id: number; closed: boolean; requests: Array<{ method: string; url: string; body: unknown }> };
+const requestOwner = new AsyncLocalStorage<{ fixture: Fixture; disposed: boolean }>();
 
 const MAILBOX_ID = "Box001";
 const DRAFT_ID = "Drf001";
@@ -88,6 +92,11 @@ class FakeWebSocket {
   static readonly CLOSED = 3;
   static instances: FakeWebSocket[] = [];
   static acknowledge: boolean | "echo" = true;
+  private readonly owner = requestOwner.getStore();
+  private deliver(callback: () => void) {
+    if (this.owner) requestOwner.run(this.owner, callback);
+    else callback();
+  }
   readyState = FakeWebSocket.CONNECTING;
   sent: Array<{
     t: string;
@@ -136,15 +145,15 @@ class FakeWebSocket {
   }
   open() {
     this.readyState = FakeWebSocket.OPEN;
-    this.onopen?.();
+    this.deliver(() => this.onopen?.());
   }
   message(frame: unknown) {
-    this.onmessage?.({ data: JSON.stringify(frame) });
+    this.deliver(() => this.onmessage?.({ data: JSON.stringify(frame) }));
   }
   close(code = 1000, reason = "") {
     if (this.readyState === FakeWebSocket.CLOSED) return;
     this.readyState = FakeWebSocket.CLOSED;
-    this.onclose?.({ code, reason });
+    this.deliver(() => this.onclose?.({ code, reason }));
   }
 }
 
@@ -173,13 +182,44 @@ describe("Mail draft session", () => {
   const originalWebSocket = globalThis.WebSocket;
   const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
   let dom: DomTestHarness;
-  let requests: Array<{ method: string; url: string; body: unknown }>;
+  let requests: Fixture["requests"];
   let dispose = () => {};
+  let onLeaseRelease = (_token: string) => {};
+  let fixture: Fixture;
+  let fixtureId = 0;
+  let sharedClosers: Array<() => Promise<void>>;
+  const closeSharedFixtures = () => Promise.all(sharedClosers.map((close) => close()));
+  const lateRequests: string[] = [];
+  const createRoot = <T,>(run: (dispose: () => void) => T): T => {
+    const owner = { fixture, disposed: false };
+    const result = requestOwner.run(owner, () =>
+      createSolidRoot((disposeRoot) =>
+        run(() => {
+          owner.disposed = true;
+          requestOwner.run(owner, disposeRoot);
+        }),
+      ),
+    );
+    // Calls made by the test, such as persist(), retain the session's owner across native promises too.
+    if (result && typeof result === "object")
+      return new Proxy(result, {
+        get(target, key, receiver) {
+          const value: unknown = Reflect.get(target, key, receiver);
+          return typeof value === "function"
+            ? (...args: unknown[]) => requestOwner.run(owner, () => Reflect.apply(value, target, args))
+            : value;
+        },
+      });
+    return result;
+  };
 
   beforeEach(() => {
     dom = createDomTestHarness();
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+    sharedClosers = [];
     requests = [];
+    fixture = { id: ++fixtureId, closed: false, requests };
+    onLeaseRelease = () => {};
     Object.defineProperty(dom.document, "visibilityState", { configurable: true, get: () => "visible" });
     FakeWebSocket.instances = [];
     FakeWebSocket.acknowledge = true;
@@ -187,6 +227,7 @@ describe("Mail draft session", () => {
   });
 
   afterEach(async () => {
+    await closeSharedFixtures();
     dispose();
     // A disposed session still saves the typing it held before it releases its lease. Let that finish against this
     // test's server, so it never reaches the next test's.
@@ -196,27 +237,87 @@ describe("Mail draft session", () => {
       quiet = requests.length === seen ? quiet + 1 : 0;
       seen = requests.length;
     }
-    globalThis.fetch = originalFetch;
+    fixture.closed = true;
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWebSocket;
     if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
     else delete (globalThis as { localStorage?: unknown }).localStorage;
     dom.cleanup();
     setSystemTime();
+    expect(lateRequests.splice(0)).toEqual([]);
+  });
+
+  afterAll(() => {
+    globalThis.fetch = originalFetch;
+    expect(lateRequests.splice(0)).toEqual([]);
   });
 
   const respondWith = (handler: (method: string, url: string, body: unknown) => Response | Promise<Response>) => {
+    const serverFixture = fixture;
+    const release = onLeaseRelease;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
         const url = new URL(request.url).pathname;
+        request.signal.throwIfAborted();
+        const owner = requestOwner.getStore();
+        const origin = owner?.fixture ?? serverFixture;
+        const closeSave =
+          (request.method === "PUT" && url.endsWith(`/drafts/${DRAFT_ID}`)) ||
+          (request.method === "DELETE" && url.endsWith("/lease")) ||
+          (request.method === "POST" && url.endsWith("/document/snapshot"));
+        const violation =
+          origin.closed || origin !== serverFixture
+            ? "after fixture completion"
+            : owner?.disposed && !closeSave
+              ? "after session disposal"
+              : null;
+        if (violation) {
+          const message = `Fixture ${origin.id}: ${request.method} ${url} ${violation} (server fixture ${serverFixture.id})`;
+          lateRequests.push(message);
+          throw new Error(message);
+        }
         const text = await request.text();
         const body = text ? JSON.parse(text) : null;
-        requests.push({ method: request.method, url, body });
-        return handler(request.method, url, body);
+        origin.requests.push({ method: request.method, url, body });
+        if (origin.closed) {
+          const message = `Fixture ${origin.id}: ${request.method} ${url} body completed after fixture completion`;
+          lateRequests.push(message);
+          throw new Error(message);
+        }
+        if (
+          request.method === "DELETE" &&
+          url.endsWith("/lease") &&
+          body &&
+          typeof body === "object" &&
+          "token" in body &&
+          typeof body.token === "string"
+        )
+          release(body.token);
+        const response = await handler(request.method, url, body);
+        request.signal.throwIfAborted();
+        return response;
       },
       { preconnect: originalFetch.preconnect },
     );
   };
+
+  test("request accounting rejects disposed writers and requests from completed fixtures", async () => {
+    const handler = jest.fn(() => Response.json({ ok: true }));
+    respondWith(handler);
+    try {
+      await expect(requestOwner.run({ fixture, disposed: true }, () => fetch("/api/mail/lease", { method: "POST" }))).rejects.toThrow(
+        "after session disposal",
+      );
+      const previous = { ...fixture, id: fixture.id - 1, closed: true };
+      await expect(requestOwner.run({ fixture: previous, disposed: false }, () => fetch("/api/mail/draft"))).rejects.toThrow(
+        "after fixture completion",
+      );
+      expect(lateRequests).toHaveLength(2);
+      expect(handler).not.toHaveBeenCalled();
+    } finally {
+      lateRequests.length = 0;
+    }
+  });
 
   for (const editMode of ["lock", "shared"] as const) {
     for (const answer of ["conflict", "conflict without id", "existing"] as const) {
@@ -294,8 +395,15 @@ describe("Mail draft session", () => {
     });
     const { createMailDraftSession } = await import("./mail-draft-session");
     const [current, setCurrent] = createSignal(editable);
+    let disposed = false;
+    let closeRoot = () => {};
     const session = createRoot((disposeRoot) => {
-      dispose = disposeRoot;
+      closeRoot = () => {
+        if (disposed) return;
+        disposed = true;
+        disposeRoot();
+      };
+      dispose = closeRoot;
       return createMailDraftSession({
         mailboxId: MAILBOX_ID,
         currentActor: { kind: "user", id: "Usr001" },
@@ -304,14 +412,85 @@ describe("Mail draft session", () => {
         hasVerifiedIdentity: () => true,
         content: current,
         applyDraftContent: setCurrent,
-        isDisposed: () => false,
+        isDisposed: () => disposed,
         onRecovered: () => undefined,
         onMaterialized: () => undefined,
         locale: () => "en",
       });
     });
-    return { session, current, setCurrent };
+    const close = async () => {
+      closeRoot();
+      // Initialization and IndexedDB work must finish before the next test replaces their spies and browser.
+      await session.ensureDraft();
+      const client = session.shared();
+      if (!client) return;
+      const saving = client.state().saving ? client.save().catch(() => undefined) : Promise.resolve();
+      client.dispose();
+      await saving;
+      await client.flushLocal();
+    };
+    sharedClosers.push(close);
+    return { session, current, setCurrent, close };
   };
+
+  test("closing a shared fixture waits for initialization before restoring its dependencies", async () => {
+    const originalIndexedDB = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+    Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: {} });
+    const loading = Promise.withResolvers<void>();
+    const generationsReady = Promise.withResolvers<string[]>();
+    const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockImplementation(() => {
+      loading.resolve();
+      return generationsReady.promise;
+    });
+    let closing: Promise<void> | undefined;
+    try {
+      const state = await sharedFixture();
+      await loading.promise;
+      let closed = false;
+      closing = state.close().then(() => {
+        closed = true;
+      });
+      await Bun.sleep(0);
+      expect(closed).toBe(false);
+      generationsReady.resolve([]);
+      await closing;
+      expect(FakeWebSocket.instances.every((socket) => socket.readyState === FakeWebSocket.CLOSED)).toBe(true);
+    } finally {
+      generationsReady.resolve([]);
+      await closing;
+      generations.mockRestore();
+      if (originalIndexedDB) Object.defineProperty(globalThis, "indexedDB", originalIndexedDB);
+      else delete (globalThis as { indexedDB?: unknown }).indexedDB;
+    }
+  });
+
+  test("closing an offline shared fixture cancels reconnects before the next fixture", async () => {
+    const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockResolvedValue([]);
+    jest.useFakeTimers();
+    setSystemTime(Date.parse(now));
+    localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, "no");
+    try {
+      const state = await sharedFixture();
+      await state.session.ensureDraft();
+      const socket = FakeWebSocket.instances.find((entry) => entry.url.includes("/document/socket"))!;
+      const sockets = [...FakeWebSocket.instances];
+      socket.close(1006);
+      state.setCurrent({ ...state.current(), body: "Offline input at close" });
+      state.session.shared()!.edit(state.current());
+      const posts = requests.filter((request) => request.method === "POST");
+      await state.close();
+      jest.advanceTimersByTime(1_000);
+      for (let round = 0; round < 30; round++) await Promise.resolve();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(requests.filter((request) => request.method === "POST")).toEqual(posts);
+      expect(FakeWebSocket.instances).toEqual(sockets);
+      expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+    } finally {
+      await closeSharedFixtures();
+      generations.mockRestore();
+      jest.useRealTimers();
+    }
+  });
 
   test("shared transport echoes and offline input never claim durable server storage", async () => {
     FakeWebSocket.acknowledge = false;
@@ -467,8 +646,7 @@ describe("Mail draft session", () => {
           expect(await outcome).toBe(mode === "remembered" ? "ready" : "blocked");
           expect(f.session.saveStatus()).toBe(mode === "remembered" ? "local" : "pending");
           if (mode === "remembered") {
-            dispose();
-            await Bun.sleep(0);
+            await f.close();
             const reloaded = await sharedFixture();
             await reloaded.session.ensureDraft();
             expect(reloaded.current().body).toBe("Only on this device");
@@ -477,8 +655,7 @@ describe("Mail draft session", () => {
         expect(openMailUserDraftStorage(localStorage, "Usr001").getItem(mailDraftJournalKey(MAILBOX_ID, DRAFT_ID))).toBeNull();
       } finally {
         write.resolve();
-        dispose();
-        await Bun.sleep(0);
+        await closeSharedFixtures();
         offline.mockRestore();
         generations.mockRestore();
       }
@@ -554,8 +731,7 @@ describe("Mail draft session", () => {
       expect(leaving.defaultPrevented).toBe(true);
     } finally {
       write.resolve();
-      dispose();
-      await Bun.sleep(0);
+      await closeSharedFixtures();
       offline.mockRestore();
       generations.mockRestore();
     }
@@ -942,16 +1118,45 @@ describe("Mail draft session", () => {
       jest.advanceTimersByTime(ms);
       await flush();
     };
+    let closingSessions: Promise<void>[];
+    let sessionDisposers: Array<() => void>;
+    let leaseExits: Array<{ token: string; resolve: () => void }>;
+    const finishSessions = async () => {
+      dispose();
+      let deadline: ReturnType<typeof setRealTimeout> | undefined;
+      try {
+        await Promise.race([
+          Promise.all(closingSessions),
+          new Promise<never>((_resolve, reject) => {
+            deadline = setRealTimeout(() => reject(new Error("Draft fixture cleanup did not release its lease")), 3_000);
+          }),
+        ]);
+      } finally {
+        clearRealTimeout(deadline);
+      }
+    };
     let restoreRandom = () => {};
     beforeEach(() => {
+      closingSessions = [];
+      sessionDisposers = [];
+      leaseExits = [];
+      onLeaseRelease = (token) => {
+        const index = leaseExits.findIndex((exit) => exit.token === token);
+        if (index >= 0) leaseExits.splice(index, 1)[0]!.resolve();
+      };
       const random = spyOn(Math, "random").mockReturnValue(0.5);
       restoreRandom = () => random.mockRestore();
       jest.useFakeTimers();
       setSystemTime(Date.parse(now));
     });
-    afterEach(() => {
-      restoreRandom();
+    afterEach(async () => {
+      // Close-time retries must be able to run even if an assertion interrupted the test clock.
       jest.useRealTimers();
+      try {
+        await finishSessions();
+      } finally {
+        restoreRandom();
+      }
     });
 
     const mountSession = async (
@@ -966,10 +1171,18 @@ describe("Mail draft session", () => {
       const trace: Array<{ status: string; message: string; conflict: unknown }> = [];
       let disposed = false;
       const session = createRoot((disposeRoot) => {
-        dispose = () => {
+        sessionDisposers.push(() => {
+          if (disposed) return;
           disposed = true;
+          const token = session.lease()?.token;
+          if (token) {
+            const exited = Promise.withResolvers<void>();
+            leaseExits.push({ token, resolve: () => exited.resolve() });
+            closingSessions.push(exited.promise);
+          }
           disposeRoot();
-        };
+        });
+        dispose = () => sessionDisposers.forEach((close) => close());
         const session = createMailDraftSession({
           mailboxId: MAILBOX_ID,
           currentActor: { kind: "user", id: "Usr001" },
@@ -1000,8 +1213,10 @@ describe("Mail draft session", () => {
     let stored: MailDraft;
     let heldLease: typeof lease | null;
     let offline: boolean;
+    let nextLease: number;
     beforeEach(() => {
       offline = false;
+      nextLease = 0;
       heartbeatAnswers = [];
       acquireAnswer = undefined;
       saveAnswer = undefined;
@@ -1010,9 +1225,13 @@ describe("Mail draft session", () => {
       respondWith((method, url, body) => {
         if (offline) throw new TypeError("Failed to fetch");
         if (url.endsWith("/lease")) {
-          if (method === "POST") return acquireAnswer?.(body) ?? Response.json({ ...lease, token: "local-token" });
+          if (method === "POST") return acquireAnswer?.(body) ?? Response.json({ ...lease, token: `local-token-${++nextLease}` });
           if (method === "GET") return Response.json(heldLease);
-          if (method === "PUT") return heartbeatAnswers.shift() ?? Response.json({ ...lease, token: "local-token" });
+          if (method === "PUT") {
+            if (!body || typeof body !== "object" || !("token" in body) || typeof body.token !== "string")
+              throw new Error("Heartbeat request is missing its lease token");
+            return heartbeatAnswers.shift() ?? Response.json({ ...lease, token: body.token });
+          }
           return Response.json({ ok: true });
         }
         if (method === "GET") return Response.json(stored);
@@ -1323,6 +1542,36 @@ describe("Mail draft session", () => {
       healthy(state);
       editableThroughout(state.trace);
       expect(requests.filter((r) => r.method === "PUT" && r.url.endsWith("/lease"))).toHaveLength(2);
+    });
+
+    test("live callbacks keep their session's request owner across fixture replacement", async () => {
+      const state = await mountSession();
+      await state.session.ensureDraft();
+      const socket = FakeWebSocket.instances.at(-1)!;
+      socket.open();
+      socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+      await flush();
+      const previous = fixture;
+      const previousFetch = globalThis.fetch;
+      const handler = jest.fn(() => Response.json(stored));
+      const following: Fixture = { id: previous.id + 1, closed: false, requests: [] };
+      try {
+        previous.closed = true;
+        fixture = following;
+        respondWith(handler);
+        socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: null } });
+        await flush();
+        expect(lateRequests).toContain(
+          `Fixture ${previous.id}: GET /api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID} after fixture completion (server fixture ${following.id})`,
+        );
+        expect(handler).not.toHaveBeenCalled();
+        expect(following.requests).toEqual([]);
+      } finally {
+        fixture = previous;
+        previous.closed = false;
+        globalThis.fetch = previousFetch;
+        lateRequests.length = 0;
+      }
     });
 
     test("reload shares its person's lease without waiting for the predecessor's release", async () => {
@@ -1710,6 +1959,55 @@ describe("Mail draft session", () => {
       const next = new Event("beforeunload", { cancelable: true });
       window.dispatchEvent(next);
       expect(next.defaultPrevented).toBe(true);
+    });
+
+    test("a predecessor's close-save finishes before the next attachment fixture starts", async () => {
+      const predecessor = await mountSession();
+      await predecessor.session.ensureDraft();
+      if (!predecessor.session.lease()) await predecessor.session.acquireLease(predecessor.session.draft()!);
+      const hashing = Promise.withResolvers<void>();
+      const proceed = Promise.withResolvers<void>();
+      const originalHash = cryptoUtils.common.hash;
+      let block = true;
+      const hash = spyOn(cryptoUtils.common, "hash").mockImplementation(async (...args) => {
+        if (block) {
+          block = false;
+          hashing.resolve();
+          await proceed.promise;
+        }
+        return originalHash(...args);
+      });
+      predecessor.setCurrent({ ...predecessor.current(), body: "Previous fixture's unsaved input" });
+      const closing = finishSessions();
+      const following = closing.then(async () => {
+        // Start the next fixture with an empty server log and browser storage.
+        requests.length = 0;
+        stored = { ...draft(3, content("Local text", "ada@example.test")), conversationId: "Conv01" };
+        localStorage.clear();
+        const state = await mountSession();
+        await state.session.ensureDraft();
+        if (!state.session.lease()) await state.session.acquireLease(state.session.draft()!);
+        return state;
+      });
+      try {
+        await hashing.promise;
+        // Request silence is not completion: hold SHA-256 across the old cleanup deadline.
+        for (let round = 0; round < 4; round++) await advance(500);
+        proceed.resolve();
+        const state = await following;
+        await predecessor.session.persist();
+        state.setCurrent({ ...state.current(), body: "Typed during attachment retry" });
+        state.session.acceptMutationDraft({ ...stored, revision: 4 });
+        expect(state.session.revisionConflict()).toBe(false);
+        expect((await state.session.persist())?.body).toBe("Typed during attachment retry");
+        expect(requests.find((request) => request.method === "PUT" && !request.url.endsWith("/lease"))?.body).toMatchObject({
+          expectedRevision: 4,
+        });
+      } finally {
+        proceed.resolve();
+        hash.mockRestore();
+        await following;
+      }
     });
 
     test("an attachment-only returned revision keeps newer typing saveable", async () => {

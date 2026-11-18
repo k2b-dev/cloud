@@ -34,8 +34,9 @@ accessible name with `aria-label`.
 
 `CheckboxCard` takes a text or JSX `label`. Add either `icon` or a valid three-
 or six-digit hex `color` as supporting context. The card follows the field
-edge: 2 px grey at rest, a darker fill on hover, a strong blue edge on focus,
-and a light blue edge and fill when checked; see
+edge: 1 px grey at rest, a darker edge and fill on hover, a strong blue edge
+with the soft focus ring on focus, and a second blue line inside the edge with
+a light blue fill when checked; see
 [Controls stay platform blue](/en/ui/surfaces/color#controls-stay-platform-blue).
 `variant="input"` renders the same card, because fields share that edge; the
 default is `"card"`.

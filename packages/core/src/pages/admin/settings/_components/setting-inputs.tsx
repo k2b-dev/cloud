@@ -295,6 +295,7 @@ function TemplateSettingInput(props: FieldInputProps) {
 
             <p class="text-xs text-dimmed">{isActionNotice() ? t().actionNoticeDescription : t().templateHelp}</p>
 
+            {/* field-edges: allow the template editor is a large writing surface with its own frame */}
             <div class="h-[min(62vh,46rem)] min-h-[34rem] min-w-0 overflow-hidden rounded-lg border-2 border-[var(--k2b-edge)]">
               <Panes
                 layout={layout()}
