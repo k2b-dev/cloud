@@ -1,17 +1,19 @@
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { isServer, render } from "solid-js/web";
 import { cssDeclarations, readShippedCssRules } from "../src/styles/css-contract-test-helpers";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
-type Deferred = { promise: Promise<void>; resolve: () => void };
+type Deferred = { promise: Promise<void>; resolve: () => void; reject: (error: Error) => void };
 const deferred = (): Deferred => {
   let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 };
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -130,17 +132,17 @@ else {
     }
   });
 
-  test("wheel overscroll accumulates at the top, resets when scrolling back, and triggers once", async () => {
+  test("wheel overscroll adds up at the top without moving the indicator, resets when scrolling back, and triggers once", async () => {
     const dom = createDomTestHarness();
     const view = await mount(dom);
     try {
       view.wheel(view.row, -60);
-      expect(view.state()).toBe("pulling");
-      view.wheel(view.row, 20);
       expect(view.state()).toBe("idle");
+      view.wheel(view.row, 20);
       view.wheel(view.row, -60);
       view.wheel(view.row, -60);
-      expect(view.state()).toBe("pulling");
+      expect(view.state()).toBe("idle");
+      expect(view.calls).toHaveLength(0);
       view.wheel(view.row, -20);
       expect(view.state()).toBe("refreshing");
       view.wheel(view.row, -200);
@@ -152,6 +154,168 @@ else {
     } finally {
       view.dispose();
       dom.cleanup();
+    }
+  });
+
+  test("trackpad momentum after a wheel refresh slides the indicator in once and never starts a second refresh", async () => {
+    jest.useFakeTimers();
+    const dom = createDomTestHarness();
+    const view = await mount(dom);
+    const states: string[] = [];
+    const record = () => {
+      if (states.at(-1) !== view.state()) states.push(view.state()!);
+    };
+    const flush = async () => {
+      for (let step = 0; step < 5; step++) await Promise.resolve();
+    };
+    // A flick: fast upward deltas that decay, one every 16 ms, for about 1.3 s.
+    const momentum = async (from: number, frames: number) => {
+      for (let frame = 0; frame < frames; frame++) {
+        view.wheel(view.row, -Math.max(1, from * 0.94 ** frame));
+        record();
+        jest.advanceTimersByTime(16);
+        await flush();
+        record();
+      }
+    };
+    try {
+      record();
+      await momentum(60, 20);
+      // The refresh is quick and settles while the momentum still runs.
+      expect(view.calls).toHaveLength(1);
+      view.calls[0]!.resolve();
+      await flush();
+      record();
+      await momentum(25, 60);
+      jest.advanceTimersByTime(1000);
+      await flush();
+      record();
+
+      expect(view.calls).toHaveLength(1);
+      expect(states).toEqual(["idle", "refreshing", "idle"]);
+
+      // Once the gesture rested and the indicator left, a new overscroll refreshes again.
+      view.wheel(view.row, -200);
+      expect(view.calls).toHaveLength(2);
+      view.calls[1]!.resolve();
+      await flush();
+    } finally {
+      view.dispose();
+      dom.cleanup();
+      jest.useRealTimers();
+    }
+  });
+
+  test("a refresh stays calm until its indicator has left, then the next pull may start", async () => {
+    jest.useFakeTimers();
+    const dom = createDomTestHarness();
+    const view = await mount(dom);
+    const flush = async () => {
+      for (let step = 0; step < 5; step++) await Promise.resolve();
+    };
+    try {
+      view.touch("touchstart", view.row, 100);
+      view.touch("touchmove", view.row, 240);
+      view.touch("touchend", view.row, 240);
+      expect(view.calls).toHaveLength(1);
+      view.calls[0]!.resolve();
+      await flush();
+      expect(view.state()).toBe("idle");
+
+      // The indicator is still sliding out: a pull now does nothing.
+      view.touch("touchstart", view.row, 100);
+      expect(view.touch("touchmove", view.row, 240)).toBe(false);
+      view.touch("touchend", view.row, 240);
+      expect(view.state()).toBe("idle");
+      expect(view.calls).toHaveLength(1);
+
+      jest.advanceTimersByTime(200);
+      // A touch refresh leaves no wheel gesture behind: the first overscroll counts.
+      view.wheel(view.row, -200);
+      expect(view.calls).toHaveLength(2);
+      view.calls[1]!.resolve();
+      await flush();
+    } finally {
+      view.dispose();
+      dom.cleanup();
+      jest.useRealTimers();
+    }
+  });
+
+  test("momentum of a scroll that reaches the top is not a pull, and a fresh gesture after a pause is", async () => {
+    jest.useFakeTimers();
+    const dom = createDomTestHarness();
+    const view = await mount(dom);
+    try {
+      view.port.scrollTop = 120;
+      view.wheel(view.row, -60);
+      jest.advanceTimersByTime(16);
+      // The list reaches its top while the flick still runs.
+      view.port.scrollTop = 0;
+      for (let frame = 0; frame < 30; frame++) {
+        view.wheel(view.row, -40);
+        jest.advanceTimersByTime(16);
+      }
+      expect(view.calls).toHaveLength(0);
+      expect(view.state()).toBe("idle");
+
+      jest.advanceTimersByTime(300);
+      view.wheel(view.row, -200);
+      expect(view.calls).toHaveLength(1);
+      view.calls[0]!.resolve();
+      for (let step = 0; step < 5; step++) await Promise.resolve();
+    } finally {
+      view.dispose();
+      dom.cleanup();
+      jest.useRealTimers();
+    }
+  });
+
+  test("a failed refresh marks the indicator in place, announces it, and leaves calmly", async () => {
+    jest.useFakeTimers();
+    const dom = createDomTestHarness();
+    const view = await mount(dom);
+    const flush = async () => {
+      for (let step = 0; step < 5; step++) await Promise.resolve();
+    };
+    const status = () => view.root.querySelector('[role="status"]')!;
+    try {
+      view.wheel(view.row, -200);
+      expect(view.state()).toBe("refreshing");
+      view.calls[0]!.reject(new Error("offline"));
+      await flush();
+
+      expect(view.state()).toBe("error");
+      expect(view.root.style.getPropertyValue("--k2b-pull-to-refresh-distance")).toBe("64px");
+      expect(status().querySelector("i")?.className).toBe("ti ti-exclamation-mark");
+      expect(status().querySelector(".k2b-sr-only")?.textContent).toBe("Refresh failed");
+      expect(status().querySelector(".k2b-pull-to-refresh__message")?.textContent).toBe("Refresh failed");
+      expect(status().querySelector(".k2b-pull-to-refresh__message")?.getAttribute("aria-hidden")).toBe("true");
+
+      // While the mark shows, no input starts another refresh.
+      view.touch("touchstart", view.row, 100);
+      view.touch("touchmove", view.row, 300);
+      view.touch("touchend", view.row, 300);
+      jest.advanceTimersByTime(400);
+      view.wheel(view.row, -400);
+      expect(view.calls).toHaveLength(1);
+
+      // 400 ms have passed; the mark shows for 2600 ms in all.
+      jest.advanceTimersByTime(2200);
+      expect(view.state()).toBe("idle");
+      expect(status().querySelector(".k2b-sr-only")?.textContent).toBe("");
+      // The hint slides out with the indicator instead of vanishing first.
+      expect(status().querySelector(".k2b-pull-to-refresh__message")?.textContent).toBe("Refresh failed");
+      jest.advanceTimersByTime(200);
+      expect(status().textContent).toBe("");
+      view.wheel(view.row, -200);
+      expect(view.calls).toHaveLength(2);
+      view.calls[1]!.resolve();
+      await flush();
+    } finally {
+      view.dispose();
+      dom.cleanup();
+      jest.useRealTimers();
     }
   });
 
@@ -170,7 +334,8 @@ else {
       view.pointer("pointerup", view.row, 240);
       expect(view.calls).toHaveLength(1);
       view.calls[0]!.resolve();
-      await settle();
+      // Wait until the indicator has left, so the drags below are really tried.
+      await new Promise((resolve) => setTimeout(resolve, 250));
 
       view.pointer("pointerdown", view.link, 100);
       view.pointer("pointermove", view.link, 300);

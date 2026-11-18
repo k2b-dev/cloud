@@ -133,6 +133,7 @@ import {
 import {
   captureMailWorkspaceRefreshError,
   type MailWorkspaceRefreshResult,
+  reportMailWorkspaceRefresh,
   requireMailWorkspaceRefresh,
 } from "./_components/mail-workspace-refresh";
 import { createMailboxSearch } from "./_components/mailbox-search";
@@ -1620,6 +1621,9 @@ function createMailboxController(props: MailboxControllerProps) {
   const reconcileWorkspace = async (): Promise<void> => {
     await reconcileWorkspaceForActions();
   };
+  /** The list's pull to refresh marks a failure in place, so it also receives the rejection; the toast stays. */
+  const refreshList = () =>
+    reportMailWorkspaceRefresh(requireWorkspaceReconcile, (message) => toast.error(message, { title: t().refreshMailboxFailedTitle }));
 
   /**
    * The change was saved, only this view is stale: say so, and let Try again reload what the workspace shows now. It
@@ -3157,6 +3161,7 @@ function createMailboxController(props: MailboxControllerProps) {
     retryPresence: () => retryPresence(),
     reassignMessage,
     reconcileWorkspace,
+    refreshList,
     requestPath,
     requireWorkspaceReconcile,
     routeLoading,
@@ -3292,7 +3297,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       onOpenHref={controller().openWorkspaceHref}
       onNavigationStart={props.onNavigationStart}
       onLoadMore={controller().loadMoreConversations}
-      onRefresh={controller().reconcileWorkspace}
+      onRefresh={controller().refreshList}
       assignees={controller().sharedMailbox() ? controller().rowAssignees : undefined}
       assignedGroups={controller().listCounts().assignedGroups}
       hiddenDone={(() => {
