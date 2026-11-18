@@ -382,7 +382,8 @@ describe("Approvals", () => {
       // A 409 or 404 changed nothing: the line says so in a neutral tone, never the success check.
       expect(rows()[0]?.dataset.decided).toBe("elsewhere");
       expect(sentence(rows()[0])).toBe("Already decided elsewhere");
-      expect(line(rows()[0])).toContain("The request is no longer open");
+      // No invented fallback detail: this outcome supplies its state exactly once.
+      expect(rows()[0]?.querySelector(".k2b-notice-card__detail-text")?.textContent?.trim()).toBe("");
       expect(line(rows()[0])).not.toContain("Nothing was run");
       expect(tone(rows()[0])).toBe("off");
       expect(rows()[1]?.dataset.decided).toBe("gone");
