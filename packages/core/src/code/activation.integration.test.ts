@@ -197,23 +197,6 @@ suiteFor("database", "nats")("durable Code activation", () => {
       owner,
     );
   }
-  async function addPage(versionId: string) {
-    const [row] = await sql<{ manifest: CodeCheckedVersionManifest }[]>`SELECT manifest FROM code.versions WHERE id=${versionId}::uuid`;
-    const manifest: CodeCheckedVersionManifest = CodeCheckedVersionManifestSchema.parse({
-      ...row!.manifest,
-      entrypoints: [
-        {
-          kind: "route",
-          entrypoint: "home",
-          cron: null,
-          file: "code.ts",
-          line: 1,
-          route: { method: "GET", path: "/", public: false, page: true },
-        },
-      ],
-    });
-    await sql`UPDATE code.versions SET manifest=${JSON.stringify(manifest)}::text::jsonb WHERE id=${versionId}::uuid`;
-  }
   async function start(code: Code, versionId: string, ctx = owner) {
     return activateCodeVersion({ codeId: code.id, versionId, activationId: crypto.randomUUID() }, ctx);
   }
@@ -248,18 +231,17 @@ suiteFor("database", "nats")("durable Code activation", () => {
     }
   });
   test("the public transport continues two different owners and reuses the same owner's answer within an invocation", async () => {
-    const codes = [await newCode(), await newCode(), await newCode()];
-    // Two separate Codes use the first resource owner; the second owner still needs a fresh invocation.
-    if (codes[0]!.owner.kind !== "resource") throw new Error("Expected resource owner");
-    await sql`UPDATE code.codes SET owner_id=${codes[0]!.owner.ref.id} WHERE id=${codes[2]!.id}`;
+    // A resource owns exactly one Code. Multiple versions of each Code reuse its owner answer.
+    const codes = [await newCode(), await newCode()];
     const versions: Array<{ codeId: string; versionId: string }> = [];
     for (const code of codes) {
       const saved = await version(code, []);
       versions.push({ codeId: code.id, versionId: saved.version.id });
     }
-    // Two historical versions of the first resource share its canonical owner answer.
-    const newer = await version(codes[0]!, [], versions[0]!.versionId);
-    versions.push({ codeId: codes[0]!.id, versionId: newer.version.id });
+    for (const [index, code] of codes.entries()) {
+      const newer = await version(code, [], versions[index]!.versionId);
+      versions.push({ codeId: code.id, versionId: newer.version.id });
+    }
     await sql`DELETE FROM code.shares WHERE code_id=ANY(${sql.array(
       codes.map((code) => code.id),
       "text",
@@ -373,9 +355,9 @@ suiteFor("database", "nats")("durable Code activation", () => {
   });
 
   test("version-card rights matrix: owner, reader, admin view, shared chat and revoked rights", async () => {
-    const code = await newCode();
-    const saved = await version(code, []);
-    await addPage(saved.version.id);
+    // Grant revocation is independent of an unavailable foreign owner reader.
+    const code = await newCode("person");
+    const saved = await version(code, [], null, "item.change", undefined, true);
     const versions = [{ codeId: code.id, versionId: saved.version.id }];
     const [grant] = await sql<
       { id: string }[]
@@ -389,7 +371,7 @@ suiteFor("database", "nats")("durable Code activation", () => {
         permission: "reader",
         canManage: false,
         review: { message: null, origin: { kind: "cli" } },
-        pages: { pages: [{ isRoot: true }] },
+        pages: { pages: [{ isRoot: true }, { isRoot: false }] },
       },
     });
     expect(await read(administrator)).toMatchObject({ state: "available", snapshot: { permission: "reader", canManage: false } });
@@ -407,12 +389,11 @@ suiteFor("database", "nats")("durable Code activation", () => {
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by)
       VALUES(${personalId},'person',${ownerId}::uuid,'Personal',${ownerId}::uuid)`;
     for (const code of [await newCode(), (await findCode(personalId))!]) {
-      const saved = await version(code, []);
-      await addPage(saved.version.id);
+      const saved = await version(code, [], null, "item.change", undefined, true);
       await sql`UPDATE code.codes SET active_version_id=${saved.version.id}::uuid,state='active' WHERE id=${code.id}`;
       const versions = [{ codeId: code.id, versionId: saved.version.id }];
       expect(await readCodeVersionCards({ versions }, owner)).toMatchObject({
-        items: [{ state: "available", snapshot: { pages: { pages: [{ isRoot: true }] } } }],
+        items: [{ state: "available", snapshot: { pages: { pages: [{ isRoot: true }, { isRoot: false }] } } }],
       });
       for (const delegated of [false, true]) {
         const guest = context(ownerId);
@@ -575,6 +556,91 @@ suiteFor("database", "nats")("durable Code activation", () => {
     readersSpy?.mockRestore();
     setSystemTime();
     await runtime?.stop();
+  });
+
+  test("every version-card trigger queues the author and Code without adding client statements to its write", async () => {
+    const attachments = await sql<{ table_name: string; trigger_name: string }[]>`
+      SELECT t.tgrelid::regclass::text AS table_name,t.tgname AS trigger_name
+      FROM pg_trigger t WHERE t.tgfoid='code.version_card_live()'::regprocedure ORDER BY 1,2`;
+    expect(attachments).toEqual([
+      { table_name: "code.activations", trigger_name: "activation_insert_live" },
+      { table_name: "code.activations", trigger_name: "activation_live" },
+      { table_name: "code.version_decisions", trigger_name: "decision_live" },
+      { table_name: "code.version_withdrawals", trigger_name: "withdrawal_live" },
+    ]);
+    const code = await newCode();
+    const submitted = await version(code, []);
+    const versionId = submitted.version.id;
+    const activationId = crypto.randomUUID();
+    const [submission] = await sql<
+      { binding: unknown }[]
+    >`SELECT binding FROM code.version_submissions WHERE version_id=${versionId}::uuid`;
+    const bound = JSON.stringify(submission!.binding);
+    const cases = [
+      {
+        name: "decision",
+        write:
+          () => sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch,outcome)
+          VALUES(${versionId}::uuid,${bound}::text::jsonb,true,true,${ownerId}::uuid,'web',0,'approved')`,
+        reset: () => sql`DELETE FROM code.version_decisions WHERE version_id=${versionId}::uuid`,
+        disable: () => sql`ALTER TABLE code.version_decisions DISABLE TRIGGER decision_live`,
+        enable: () => sql`ALTER TABLE code.version_decisions ENABLE TRIGGER decision_live`,
+      },
+      {
+        name: "withdrawal",
+        write: () => sql`INSERT INTO code.version_withdrawals(version_id,withdrawn_by) VALUES(${versionId}::uuid,${ownerId}::uuid)`,
+        reset: () => sql`DELETE FROM code.version_withdrawals WHERE version_id=${versionId}::uuid`,
+        disable: () => sql`ALTER TABLE code.version_withdrawals DISABLE TRIGGER withdrawal_live`,
+        enable: () => sql`ALTER TABLE code.version_withdrawals ENABLE TRIGGER withdrawal_live`,
+      },
+      {
+        name: "activation insert",
+        write: () => sql`INSERT INTO code.activations(id,code_id,version_id,activating_person,locale,cloud_admin,state)
+          VALUES(${activationId}::uuid,${code.id},${versionId}::uuid,${ownerId}::uuid,'de',false,'active')`,
+        reset: () => sql`DELETE FROM code.activations WHERE id=${activationId}::uuid`,
+        disable: () => sql`ALTER TABLE code.activations DISABLE TRIGGER activation_insert_live`,
+        enable: () => sql`ALTER TABLE code.activations ENABLE TRIGGER activation_insert_live`,
+      },
+      {
+        name: "activation update",
+        write: () => sql`UPDATE code.activations SET state='active' WHERE id=${activationId}::uuid`,
+        reset: () => sql`UPDATE code.activations SET state='pending' WHERE id=${activationId}::uuid`,
+        disable: () => sql`ALTER TABLE code.activations DISABLE TRIGGER activation_live`,
+        enable: () => sql`ALTER TABLE code.activations ENABLE TRIGGER activation_live`,
+      },
+    ];
+    const meter = await meterSql();
+    try {
+      for (const entry of cases) {
+        if (entry.name === "activation update") await entry.reset();
+        await entry.disable();
+        let baseline: string[];
+        try {
+          baseline = await meter.during(async () => {
+            await entry.write();
+          });
+          await entry.reset();
+        } finally {
+          await entry.enable();
+        }
+        const before = await sql`SELECT seq FROM events.outbox WHERE app_id='core' AND kind='live'
+          AND payload->'d'->>'codeId'=${code.id}`;
+        const enabled = await meter.during(async () => {
+          await entry.write();
+        });
+        expect({ path: entry.name, baseline: baseline.length, enabled: enabled.length }).toEqual({
+          path: entry.name,
+          baseline: 1,
+          enabled: 1,
+        });
+        const after = await sql<{ ordering_key: string; data: unknown }[]>`SELECT ordering_key,payload->'d' AS data
+          FROM events.outbox WHERE app_id='core' AND kind='live' AND payload->'d'->>'codeId'=${code.id} ORDER BY seq`;
+        expect(after).toHaveLength(before.length + 1);
+        expect(after.at(-1)).toMatchObject({ ordering_key: `u:${ownerId}`, data: { codeId: code.id, domains: ["code-versions"] } });
+      }
+    } finally {
+      await meter.close();
+    }
   });
 
   test("activation invalidates the author's card at commit without waiting for chat delivery", async () => {

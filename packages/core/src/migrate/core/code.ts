@@ -215,7 +215,10 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     END $$ LANGUAGE plpgsql`.simple();
     await tx`CREATE OR REPLACE FUNCTION code.version_card_live() RETURNS TRIGGER AS $$
     BEGIN
-      PERFORM code.enqueue_card_live((SELECT created_by FROM code.versions WHERE id=NEW.version_id),NEW.code_id,ARRAY['code-versions']::text[]);
+      -- Decisions and withdrawals carry only version_id; activations carry both IDs.
+      -- One indexed lookup supplies the author and Code for every attached table.
+      PERFORM code.enqueue_card_live(v.created_by,v.code_id,ARRAY['code-versions']::text[])
+        FROM code.versions v WHERE v.id=NEW.version_id;
       RETURN NEW;
     END $$ LANGUAGE plpgsql`.simple();
     await tx`ALTER TABLE code.codes ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ,
