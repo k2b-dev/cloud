@@ -4608,6 +4608,28 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
+      test("Maximize turns a new message window large and back with the same text, without a page error (#3683)", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await page.getByRole("link", { name: "New message" }).first().click();
+          await readyWindow(page);
+          await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+          await eventually(() => api.drafts.get("DrfNew")?.subject, "Pickup on Saturday", "subject saved");
+          await composeWindow(page).getByRole("button", { name: "Maximize" }).click();
+          await composeWindow(page).locator(".mail-inline-draft[data-large] .mail-large-panes .mail-draft-block").waitFor();
+          expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
+          await composeWindow(page).getByRole("button", { name: "Restore size" }).click();
+          await composeWindow(page).locator(".mail-inline-draft:not([data-large]) > .mail-draft-block-place > .mail-draft-block").waitFor();
+          expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
+          // close() fails on any page error, such as the HierarchyRequestError the move used to raise.
+        } finally {
+          await close(page);
+        }
+      });
+
       test("390: a new message is a full-screen sheet with Send in its head; Close keeps the draft", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?identity=1`, 390, undefined, "reduce", async (next) => {

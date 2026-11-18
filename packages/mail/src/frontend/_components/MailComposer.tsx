@@ -3283,7 +3283,9 @@ export default function MailComposer(props: {
             if (files.length > 0 && !disposed) void attachments.addFiles(files);
           }}
         />
-        <Show when={shownLarge()} fallback={draftBlockElement}>
+        {/* The draft block is one element that moves between this place and the large layout's pane. Its fallback place
+            is a wrapper of its own, so turning large replaces the wrapper, never the block that already moved. */}
+        <Show when={shownLarge()} fallback={<div class="mail-draft-block-place">{draftBlockElement}</div>}>
           <MailComposerLarge
             sheet={() => Boolean(windowSlots?.sheet())}
             layout={largeLayout}
