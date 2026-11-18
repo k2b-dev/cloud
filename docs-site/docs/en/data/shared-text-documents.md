@@ -5,7 +5,7 @@ section: Data
 order: 430
 description: Let people and agents edit the same text through a retained log and application-owned snapshots.
 tags: [data, text, collaboration, sync, yjs]
-updated: 2026-11-13
+updated: 2026-11-18
 ---
 
 # Shared text documents
@@ -49,7 +49,15 @@ commit, `log.topic().prune({ through })` removes the inclusive stream prefix
 through the minimum persisted snapshot cursor across **all documents** in the
 log. A missing snapshot contributes sequence zero. The application owns this
 watermark and must serialize it with restores and lifecycle changes; the
-snapshot pipeline does not prune automatically. A stalled snapshot holds back
+snapshot pipeline does not prune automatically. Stores must return a replay cursor that
+includes any durable proof that a pruned prefix contained no newer events for
+the document, alongside the corresponding state and restore token. Retain
+events for tombstones until their pending room close finishes. Synchronous
+flushes reject uncovered retention gaps without quarantining domain history;
+the owned freeze is released on this definite rejection. Background recovery
+must serialize with pruning and recheck coverage before marking history lost.
+A queued snapshot whose target disappeared is skipped only when the stored
+snapshot already covers that target. A stalled snapshot holds back
 pruning and can block writes. Keep rejected input available for retry, and
 keep snapshot work independent of new writes. Existing log declarations
 retain their current policies.
@@ -408,11 +416,15 @@ a fresh editor. Local queue overflow also requires reopening.
 `isEarlierGeneration` is only for ordered revisions whose retired events
 must advance the replay cursor without applying their bytes.
 
-An update without a transport echo for `SHARED_TEXT_ACK_TIMEOUT_MS` closes
-the socket and reconnects with the original pending input and base cursors.
-The deadline is the awareness expiry window, currently 30 seconds. New edits
-do not extend an older update's deadline. `onError` reports `SYNC_TIMEOUT`;
-the application keeps a visible retry or copy action. Dispose cancels the timer.
+The connection must finish its WebSocket handshake and reach `replayReady`
+within `SHARED_TEXT_ACK_TIMEOUT_MS`. An update without a transport echo for
+the same interval also closes the socket and reconnects with the original
+pending input and base cursors. Neither timeout depends on a socket close
+event. The deadline is the awareness expiry window, currently 30 seconds.
+New edits do not extend an older update's deadline. `onError` reports
+`SYNC_TIMEOUT`; the application keeps a visible retry or copy action and
+clears the connection error after `onReady`. Keep device-storage failures
+visible until storage itself recovers. Dispose cancels both timers.
 
 The returned handle provides `reconnectNow()` for dropped connections,
 `resume()` for recoverable terminal sessions, `hasUnsentChanges()`,

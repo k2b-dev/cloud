@@ -25,8 +25,8 @@ The slider reads as one control to drag. It has one continuous track. The
 track fills in the primary colour up to the centre of the thumb, and the rest
 of the track stays grey with at least 3:1 contrast against the surface. The
 stops sit on the track as small dots. The thumb is surface-coloured, which is
-white in light mode, with the same 2 px primary-colour edge as other controls
-and no shadow. While someone drags, the thumb fills lightly in the primary
+white in light mode, with a 2 px primary-colour line like a chosen card and no
+shadow. While someone drags, the thumb fills lightly in the primary
 colour.
 
 The fill and the thumb edge use the primary tokens, so the slider follows the

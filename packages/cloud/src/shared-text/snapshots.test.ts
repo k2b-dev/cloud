@@ -347,7 +347,10 @@ for (const mode of ["covered", "newer", "missing", "no-events"] as const)
     const f = fixture();
     if (mode === "covered" || mode === "newer") f.states.get("doc")!.cursor = cursor(mode === "covered" ? 5 : 6);
     if (mode === "missing") f.states.delete("doc");
-    if (mode === "no-events") f.latest.delete("doc");
+    if (mode === "no-events") {
+      f.latest.delete("doc");
+      f.states.get("doc")!.cursor = cursor(5);
+    }
     await f.run();
     expect(f.saves).toHaveLength(0);
     expect(f.replays).toHaveLength(0);
@@ -1024,3 +1027,62 @@ for (const covered of [false, true])
         expect(f.saves.at(-1)?.[1].cursor).toBe(cursor(11));
       }
     });
+
+test("an uncovered synchronous gap never invokes domain recovery", async () => {
+  const f = fixture();
+  const error = new RetentionGapError(cursor(1), cursor(5), cursor(4));
+  f.control.replayError = error;
+  await expect(f.pipeline.flushNow("doc")).rejects.toBe(error);
+  expect(f.recoveries).toEqual([]);
+  expect(f.saves).toEqual([]);
+});
+
+test("a queued snapshot with a missing uncovered target requires recovery instead of silently skipping", async () => {
+  const f = fixture();
+  f.latest.delete("doc");
+  await expect(f.run()).rejects.toBeInstanceOf(RetentionGapError);
+  expect(f.recoveries).toHaveLength(1);
+  expect(f.saves).toEqual([]);
+});
+
+test("background replay retries from newly proven coverage instead of quarantining covered history", async () => {
+  const f = fixture();
+  const error = new RetentionGapError(cursor(1), cursor(5), cursor(4));
+  f.control.replayError = error;
+  f.control.replayHook = async () => {
+    f.states.get("doc")!.cursor = cursor(4);
+    f.control.replayHook = async () => {
+      f.control.replayError = undefined;
+    };
+  };
+  await f.run();
+  expect(f.saves).toHaveLength(1);
+  expect(f.saves[0]![1].cursor).toBe(cursor(10));
+});
+
+test("recovered incomplete history is never mistaken for concurrent snapshot coverage", async () => {
+  const f = fixture();
+  const error = new RetentionGapError(cursor(1), cursor(5), cursor(4));
+  f.control.replayError = error;
+  f.store.recover = async () => {
+    f.states.set("doc", { ...f.states.get("doc")!, cursor: cursor(10) });
+  };
+  await expect(f.run()).rejects.toBe(error);
+  expect(f.saves).toEqual([]);
+});
+
+test("a second coverage race preserves the retention error so the freeze owner can release its token", async () => {
+  const f = fixture();
+  f.latest.set("doc", cursor(9));
+  const first = new RetentionGapError(cursor(1), cursor(5), cursor(4));
+  const second = new RetentionGapError(cursor(5), cursor(7), cursor(6));
+  let calls = 0;
+  f.control.replayHook = async () => {
+    calls++;
+    f.states.set("doc", { ...f.states.get("doc")!, cursor: cursor(calls === 1 ? 4 : 6) });
+    f.control.replayError = calls === 1 ? first : second;
+  };
+  await expect(f.pipeline.flushNow("doc")).rejects.toBe(second);
+  expect(f.recoveries).toEqual([]);
+  expect(f.saves).toEqual([]);
+});

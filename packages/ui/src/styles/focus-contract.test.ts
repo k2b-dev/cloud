@@ -184,11 +184,13 @@ describe("@k2b/ui focus and color contract", () => {
         .map((rule) => rule.body)
         .join("\n");
       expect(body, selector).toMatch(/min-height:\s*2\.25rem/);
-      // White field, one 2 px border in the state colour as the only edge.
+      // White field, one 1 px border in the state colour as the edge; the only other paint is the soft ring outside.
       expect(body, selector).toMatch(/--k2b-edge-color:\s*var\(--k2b-edge\)/);
+      expect(body, selector).toMatch(/--k2b-edge-ring:\s*transparent/);
       expect(body, selector).toMatch(/border:\s*var\(--k2b-edge-width\) solid var\(--k2b-edge-color\)/);
       expect(body, selector).toMatch(/background:\s*var\(--k2b-surface\)/);
-      expect(body, selector).not.toMatch(/box-shadow/);
+      expect(body, selector).toMatch(/box-shadow:\s*0 0 0 var\(--k2b-edge-ring-width\) var\(--k2b-edge-ring\);/);
+      expect(body, selector).not.toMatch(/inset/);
     }
     expect(css).not.toContain(".k2b-select-shell");
     expect(css).toMatch(
@@ -283,7 +285,9 @@ describe("@k2b/ui focus and color contract", () => {
       (rule) => rule.selector.split(",").some((part) => part.trim() === ".k2b-ui .k2b-input-shell") && rule.body.includes("border:"),
     );
     expect(shell?.body).toContain("border: var(--k2b-edge-width) solid var(--k2b-edge-color)");
-    expect(shell?.body).not.toContain("box-shadow");
+    // The ring lies outside the border; nothing is painted inside it.
+    expect(shell?.body).toContain("box-shadow: 0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring)");
+    expect(shell?.body).not.toContain("inset");
     expect(rules.some((rule) => rule.selector.includes(":autofill)::after"))).toBe(false);
   });
 

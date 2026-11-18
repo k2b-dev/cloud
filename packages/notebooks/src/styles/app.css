@@ -127,14 +127,20 @@
   flex: none;
 }
 /* Quick filters read like FilterChip: the field edge at rest, drawn as the button's border at the edge width, so a
-   state never changes the chip's size. Focus turns the edge blue inside the chip. */
+   state never changes the chip's size. Hover darkens the edge a step; focus turns it blue and adds the ring. */
 .k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button {
   --k2b-edge-color: var(--k2b-edge);
+  --k2b-edge-ring: transparent;
   border-width: var(--k2b-edge-width);
   border-color: var(--k2b-edge-color);
+  box-shadow: 0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
+}
+.k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:where(:not(:disabled, [aria-pressed="true"], [aria-current="true"]):hover) {
+  --k2b-edge-color: var(--k2b-edge-hover);
 }
 .k2b-ui .notebook-sidebar .notebook-sidebar-chip.k2b-button:focus-visible {
   --k2b-edge-color: var(--k2b-edge-focus);
+  --k2b-edge-ring: color-mix(in srgb, var(--k2b-edge-color) var(--k2b-edge-ring-share), transparent);
   outline: none;
 }
 .notebook-sidebar-chip > span {

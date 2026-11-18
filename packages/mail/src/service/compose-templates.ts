@@ -875,6 +875,15 @@ const mailboxStyleSource = async (db: SqlClient, mailboxId: string): Promise<str
   return style?.custom_css ?? "";
 };
 
+const composeLogo = (logo: DbMailboxLogo, src: string) => ({
+  src,
+  altText: logo.alt_text,
+  displayWidth: logo.display_width,
+  pixelWidth: logo.pixel_width,
+  pixelHeight: logo.pixel_height,
+  byteLength: logo.content.byteLength,
+});
+
 export const renderComposeDraft = async (params: {
   db?: SqlClient;
   mailboxId: string;
@@ -916,16 +925,7 @@ export const renderComposeDraft = async (params: {
     : ok(null);
   if (!quote.ok) return quote;
   const rendered = renderComposeContent({
-    logo: logo
-      ? {
-          src: params.logoSource === "cid" ? `cid:${contentId}` : mailboxLogoDataUrl(logo),
-          altText: logo.alt_text,
-          displayWidth: logo.display_width,
-          pixelWidth: logo.pixel_width,
-          pixelHeight: logo.pixel_height,
-          byteLength: logo.content.byteLength,
-        }
-      : null,
+    logo: logo ? composeLogo(logo, params.logoSource === "cid" ? `cid:${contentId}` : mailboxLogoDataUrl(logo)) : null,
     signature: signature?.body_template ?? null,
     quoteSource: parsed.data.quoteSource,
     sourceQuote: quote.data,
@@ -984,12 +984,26 @@ export const previewComposeSignature = async (params: {
   });
   if (!context.ok) return context;
   const logo = await currentMailboxLogo(sql, params.mailboxId, false);
-  return renderComposeSignatureBlock({
+  const block = renderComposeSignatureBlock({
     signature: signature?.body_template ?? null,
     context: context.data,
     format: parsed.data.format,
     logoAltText: logo?.alt_text,
   });
+  if (!block.ok) return block;
+  if (!signature || parsed.data.format === "plain") return ok({ ...block.data, mailHtml: null });
+  // The send renderer with an empty text and no quote: the message holds only the signature, exactly as sent.
+  const sent = renderComposeContent({
+    body: "",
+    format: parsed.data.format,
+    customCss: await mailboxStyleSource(sql, params.mailboxId),
+    context: context.data,
+    renderLiquid: true,
+    signature: signature.body_template,
+    logo: logo ? composeLogo(logo, mailboxLogoDataUrl(logo)) : null,
+  });
+  if (!sent.ok) return sent;
+  return ok({ ...block.data, mailHtml: sent.data.html });
 };
 
 export const previewComposeDraft = async (params: {
