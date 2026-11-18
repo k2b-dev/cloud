@@ -64,6 +64,16 @@ test("multiple pages keep the home card and quiet additional text links", () => 
   expect(html).toContain("+1 weitere");
   expect(html).toContain('href="/app/assistant/code/c_opaque123"');
 });
+test("without a Code-page target, SSR reserves one additional link and renders an accessible text count", () => {
+  const html = render({
+    ...handoff([page("/", "Lieferscheine"), page("/month", "Monatsübersicht"), page("/settings", "Einstellungen")]),
+    codePageHref: null,
+  });
+  expect(html).toContain('<span class="assistant-code-decision__remaining" title="Monatsübersicht; Einstellungen">');
+  expect(html).toContain("+1 weitere");
+  expect(html).toContain('<span class="k2b-sr-only">: Einstellungen</span>');
+  expect(html).not.toContain('href="/app/assistant/code/c_opaque123"');
+});
 test("no page or no current management access shows no card, and approval alone never opens a page", () => {
   expect(render(null)).not.toContain("k2b-link-card");
   expect(render(handoff([]))).not.toContain("k2b-link-card");

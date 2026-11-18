@@ -163,8 +163,10 @@ its “You switched on version N” event. This uses no AI turn or allowance.
 The card opens the home page and shows its name and “Home page” for the root
 route, or its readable, Code-relative path otherwise. Additional pages appear
 as text links on one line. Long titles are shortened; pages that do not fit
-are counted in a “+N more” link to the Code page. The actual destination stays
-in the link, so opaque Code identifiers do not appear as the displayed address.
+are counted in a “+N more” link to the Code page. If no Code page is available,
+the count is plain text, with the full list in its tooltip and omitted titles
+available to screen readers. The actual destination stays in the link, so
+opaque Code identifiers do not appear as the displayed address.
 
 Core selects pages through `describeCodePages`, the same projection used by the
 Code page. Its required viewer carries the current person and permission for

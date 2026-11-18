@@ -26,8 +26,9 @@ const handoff = (multiple = false): CodeDecisionPages => ({
   },
 });
 const preview = (multiple = false) => ({ ...handoff(multiple), codeId: "c_delivery", ownerKind: "person" });
-const crowded = (): CodeDecisionPages => ({
+const crowded = (codePageHref = handoff().codePageHref): CodeDecisionPages => ({
   ...handoff(),
+  codePageHref,
   pages: {
     ...handoff().pages,
     pages: [
@@ -82,7 +83,14 @@ beforeAll(async () => {
               deferred: true,
               replaced: mode === "dynamic-replaced",
             }
-          : { pages: mode === "none" ? null : mode === "crowded" ? crowded() : handoff(mode === "multiple") }),
+          : {
+              pages:
+                mode === "none"
+                  ? null
+                  : mode.startsWith("crowded")
+                    ? crowded(mode === "crowded-no-target" ? null : handoff().codePageHref)
+                    : handoff(mode === "multiple"),
+            }),
       };
       return new Response(
         `<!doctype html><html class="${url.searchParams.get("theme") === "dark" ? "dark" : ""}" lang="${fixture.locale}" data-theme="${url.searchParams.get("theme") === "dark" ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script>window.decisionFixture=${JSON.stringify(fixture)}</script><script src="/fixture.js"></script></body></html>`,
@@ -370,6 +378,44 @@ test("many long page titles at 390 px keep one row, an ellipsis and a counted Co
       await page.setViewportSize({ width: 1440, height: 900 });
       await settled(page);
       expect(await more.evaluate((node) => node.getBoundingClientRect().height)).toBe(metrics.line);
+      expect(pageErrors(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }
+});
+
+test("without a Code-page target, many long titles at 390 px keep a text count and the full accessible list", async () => {
+  for (const theme of ["light", "dark"]) {
+    const page = await open("crowded-no-target", 390, theme);
+    try {
+      const more = page.locator(".assistant-code-decision__more");
+      const remaining = more.locator(":scope > span.assistant-code-decision__remaining");
+      expect(await more.locator(".assistant-code-decision__additional-item:visible").count()).toBe(1);
+      expect(await remaining.textContent()).toContain("+11 weitere");
+      expect(await more.locator("a.assistant-code-decision__remaining").count()).toBe(0);
+      expect(await remaining.getAttribute("title")).toBe(
+        crowded()
+          .pages.pages.slice(1)
+          .map((page) => page.title)
+          .join("; "),
+      );
+      const omitted = remaining.locator(".k2b-sr-only");
+      expect(await omitted.textContent()).toContain("Ausführliche Monatsübersicht für den Lieferbereich 12");
+      const metrics = await more.evaluate((node) => {
+        const title = node.querySelector<HTMLElement>(".assistant-code-decision__additional-item a > span")!;
+        return {
+          height: node.getBoundingClientRect().height,
+          line: parseFloat(getComputedStyle(node).lineHeight),
+          ellipsis: getComputedStyle(title).textOverflow,
+          cut: title.scrollWidth > title.clientWidth,
+          overflow: document.documentElement.scrollWidth > innerWidth,
+        };
+      });
+      expect(metrics.height).toBe(metrics.line);
+      expect(metrics.ellipsis).toBe("ellipsis");
+      expect(metrics.cut).toBe(true);
+      expect(metrics.overflow).toBe(false);
       expect(pageErrors(page)).toEqual([]);
     } finally {
       await page.close();

@@ -213,12 +213,12 @@ export default function AssistantCodeDecisionLine(props: {
   );
 }
 
-/** A single fixed-height row; omitted destinations stay available on the Code page. */
+/** A single fixed-height row with an accessible count of omitted destinations. */
 function AdditionalPageLinks(props: { handoff: CodeDecisionPages }): JSX.Element {
   const locale = useLocale();
   const text = createMemo(() => codeDecisionMessages.resolve([locale()]).t);
   const pages = () => props.handoff.pages.pages.slice(1);
-  const [visible, setVisible] = createSignal(props.handoff.codePageHref ? 1 : pages().length);
+  const [visible, setVisible] = createSignal(1);
   let row: HTMLParagraphElement | undefined;
   let label: HTMLSpanElement | undefined;
   let countMeasure: HTMLSpanElement | undefined;
@@ -228,12 +228,12 @@ function AdditionalPageLinks(props: { handoff: CodeDecisionPages }): JSX.Element
     const widths = items.map((item) => item.getBoundingClientRect().width);
     const available = row.clientWidth - label.getBoundingClientRect().width;
     const total = widths.reduce((sum, width) => sum + width, 0);
-    if (!props.handoff.codePageHref || total <= available) {
+    if (total <= available) {
       setVisible(pages().length);
       return;
     }
     // The count reserves its maximum width, so it never gets pushed out by a long first title.
-    const limit = available - (props.handoff.codePageHref ? countMeasure.getBoundingClientRect().width : 0);
+    const limit = available - countMeasure.getBoundingClientRect().width;
     let used = widths[0] ?? 0;
     let count = 1;
     while (count < widths.length && used + widths[count]! <= limit) used += widths[count++]!;
@@ -270,10 +270,22 @@ function AdditionalPageLinks(props: { handoff: CodeDecisionPages }): JSX.Element
           )}
         </For>
       </span>
-      <Show when={props.handoff.codePageHref && visible() < pages().length}>
-        <a class="assistant-code-decision__remaining" href={props.handoff.codePageHref!}>
-          {text().remaining({ count: pages().length - visible() })}
-        </a>
+      <Show when={visible() < pages().length}>
+        <Show
+          when={props.handoff.codePageHref}
+          fallback={
+            <span class="assistant-code-decision__remaining" title={pages().map(title).join("; ")}>
+              {text().remaining({ count: pages().length - visible() })}
+              <span class="k2b-sr-only">: {pages().slice(visible()).map(title).join("; ")}</span>
+            </span>
+          }
+        >
+          {(href) => (
+            <a class="assistant-code-decision__remaining" href={href()}>
+              {text().remaining({ count: pages().length - visible() })}
+            </a>
+          )}
+        </Show>
       </Show>
       <span class="assistant-code-decision__measure" aria-hidden="true">
         <For each={pages()}>{(page) => <span data-page-measure>{title(page)}</span>}</For>
