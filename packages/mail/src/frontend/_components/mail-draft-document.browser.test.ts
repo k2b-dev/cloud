@@ -135,9 +135,14 @@ const buildHarness = async () => {
 };
 const harness = await buildHarness();
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", new URL("../../../../cloud/", import.meta.url).pathname))).default;
-const cssBuild = await Bun.build({ entrypoints: [new URL("../../../../../styles.css", import.meta.url).pathname], plugins: [tailwind] });
-if (!cssBuild.success) throw new AggregateError(cssBuild.logs, "Mail shared CSS failed");
-const css = await cssBuild.outputs[0]!.text();
+// The shared styles and Mail's own, so the hint under the text renders as in the app.
+const cssBuilds = await Promise.all(
+  [new URL("../../../../../styles.css", import.meta.url).pathname, new URL("../../styles/app.css", import.meta.url).pathname].map((entry) =>
+    Bun.build({ entrypoints: [entry], plugins: [tailwind] }),
+  ),
+);
+for (const build of cssBuilds) if (!build.success) throw new AggregateError(build.logs, "Mail shared CSS failed");
+const css = (await Promise.all(cssBuilds.map((build) => build.outputs[0]!.text()))).join("\n");
 const server = Bun.serve<{ document: boolean }>({
   hostname: "127.0.0.1",
   port: 0,

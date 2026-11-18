@@ -3115,82 +3115,80 @@ export default function MailComposer(props: {
               <footer class="mail-inline-draft-foot mail-compose-window-foot">
                 {/* On a phone sheet Send stands in the window's head, within reach above the keyboard. */}
                 <Show when={!slots().sheet()}>{sendButton()}</Show>
-                <>
-                  <span class="mail-inline-draft-tools">
-                    <Show when={format() === "markdown"}>
-                      <Tooltip.Anchor content={t().formatting}>
-                        <IconButton
-                          type="button"
-                          size="sm"
-                          label={t().formatting}
-                          aria-pressed={inlineFormatting()}
-                          disabled={!editable() || inlinePreview()}
-                          onClick={() => setInlineFormatting((value) => !value)}
-                        >
-                          <i class="ti ti-typography" aria-hidden="true" />
-                        </IconButton>
-                      </Tooltip.Anchor>
-                    </Show>
-                    <Tooltip.Anchor content={t().attachFiles}>
+                <span class="mail-inline-draft-tools">
+                  <Show when={format() === "markdown"}>
+                    <Tooltip.Anchor content={t().formatting}>
                       <IconButton
                         type="button"
                         size="sm"
-                        label={t().attachFiles}
-                        disabled={!editable()}
-                        onClick={() => void chooseAttachments()}
+                        label={t().formatting}
+                        aria-pressed={inlineFormatting()}
+                        disabled={!editable() || inlinePreview()}
+                        onClick={() => setInlineFormatting((value) => !value)}
                       >
-                        <i class="ti ti-paperclip" aria-hidden="true" />
+                        <i class="ti ti-typography" aria-hidden="true" />
                       </IconButton>
                     </Tooltip.Anchor>
-                    <Show when={signatureChoiceVisible()}>
-                      <MailComposerSignature
-                        quiet
-                        signatures={props.signatures}
-                        value={signatureTemplateId()}
-                        senderDefaultId={senderDefaultSignatureId()}
-                        disabled={!editable()}
-                        onChange={setSignatureTemplateId}
-                      />
-                    </Show>
-                    <Tooltip.Anchor content={t().writeWithAi}>
-                      <IconButton
-                        type="button"
-                        size="sm"
-                        class="mail-inline-draft-ai"
-                        label={t().writeWithAi}
-                        disabled={!editable() || uploads().length > 0 || composeWithAi.loading()}
-                        onClick={() =>
-                          void composeWithAi
-                            .mutate()
-                            .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : t().assistantFailed))
-                        }
-                      >
-                        <i class="ti ti-sparkles" aria-hidden="true" />
-                      </IconButton>
-                    </Tooltip.Anchor>
-                    <Show when={format() === "markdown" && !shownLarge()}>
-                      {/* A visible switch, not a menu entry: the person checks exactly how the mail arrives. */}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        class="mail-inline-draft-preview-toggle"
-                        aria-pressed={inlinePreview()}
-                        title={inlinePreview() ? t().hidePreview : t().showPreview}
-                        data-mail-draft-preview
-                        onClick={() => setInlinePreview((value) => !value)}
-                      >
-                        <i class={`ti ${inlinePreview() ? "ti-pencil" : "ti-eye"}`} aria-hidden="true" />
-                        <span class="mail-inline-draft-preview-label">{inlinePreview() ? t().write : t().preview}</span>
-                      </Button>
-                    </Show>
-                  </span>
-                  <Dropdown.Root position="top-left" width="16rem" items={draftMenu()}>
-                    <Dropdown.Trigger iconOnly type="button" variant="ghost" size="sm" label={t().draftActions}>
-                      <i class="ti ti-dots" aria-hidden="true" />
-                    </Dropdown.Trigger>
-                  </Dropdown.Root>
-                </>
+                  </Show>
+                  <Tooltip.Anchor content={t().attachFiles}>
+                    <IconButton
+                      type="button"
+                      size="sm"
+                      label={t().attachFiles}
+                      disabled={!editable()}
+                      onClick={() => void chooseAttachments()}
+                    >
+                      <i class="ti ti-paperclip" aria-hidden="true" />
+                    </IconButton>
+                  </Tooltip.Anchor>
+                  <Show when={signatureChoiceVisible()}>
+                    <MailComposerSignature
+                      quiet
+                      signatures={props.signatures}
+                      value={signatureTemplateId()}
+                      senderDefaultId={senderDefaultSignatureId()}
+                      disabled={!editable()}
+                      onChange={setSignatureTemplateId}
+                    />
+                  </Show>
+                  <Tooltip.Anchor content={t().writeWithAi}>
+                    <IconButton
+                      type="button"
+                      size="sm"
+                      class="mail-inline-draft-ai"
+                      label={t().writeWithAi}
+                      disabled={!editable() || uploads().length > 0 || composeWithAi.loading()}
+                      onClick={() =>
+                        void composeWithAi
+                          .mutate()
+                          .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : t().assistantFailed))
+                      }
+                    >
+                      <i class="ti ti-sparkles" aria-hidden="true" />
+                    </IconButton>
+                  </Tooltip.Anchor>
+                  <Show when={format() === "markdown" && !shownLarge()}>
+                    {/* A visible switch, not a menu entry: the person checks exactly how the mail arrives. */}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      class="mail-inline-draft-preview-toggle"
+                      aria-pressed={inlinePreview()}
+                      title={inlinePreview() ? t().hidePreview : t().showPreview}
+                      data-mail-draft-preview
+                      onClick={() => setInlinePreview((value) => !value)}
+                    >
+                      <i class={`ti ${inlinePreview() ? "ti-pencil" : "ti-eye"}`} aria-hidden="true" />
+                      <span class="mail-inline-draft-preview-label">{inlinePreview() ? t().write : t().preview}</span>
+                    </Button>
+                  </Show>
+                </span>
+                <Dropdown.Root position="top-left" width="16rem" items={draftMenu()}>
+                  <Dropdown.Trigger iconOnly type="button" variant="ghost" size="sm" label={t().draftActions}>
+                    <i class="ti ti-dots" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
                 <Tooltip.Anchor content={t().discardDraft}>
                   <IconButton
                     type="button"

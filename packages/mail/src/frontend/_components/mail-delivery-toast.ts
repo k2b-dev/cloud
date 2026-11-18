@@ -29,25 +29,25 @@ export const showDeliveryToast = (
       : null;
   let notice: ReturnType<typeof toast>;
   if (delivery.scheduledAt) {
-    notice = toast.success(t().scheduledFor({ value: dates.formatDateTime(delivery.scheduledAt, options.dateConfig) }), {
-      title: t().scheduledTitle,
+    notice = toast.success(t.scheduledFor({ value: dates.formatDateTime(delivery.scheduledAt, options.dateConfig) }), {
+      title: t.scheduledTitle,
       iconClass: "ti ti-clock",
-      action: takeBack(t().change),
+      action: takeBack(t.change),
     });
     return;
   }
   if (delivery.undoSeconds > 0 && submissionId && reopen) {
     // The toast lasts exactly as long as the send can still be undone.
-    notice = toast.success(t().sendingIn({ seconds: delivery.undoSeconds }), {
-      title: t().sendingTitle,
+    notice = toast.success(t.sendingIn({ seconds: delivery.undoSeconds }), {
+      title: t.sendingTitle,
       iconClass: "ti ti-send",
       duration: delivery.undoSeconds * 1000,
-      action: takeBack(t().undo),
+      action: takeBack(t.undo),
     });
     return;
   }
-  notice = toast.success(delivery.undoSeconds > 0 ? t().sendingIn({ seconds: delivery.undoSeconds }) : t().sent, {
-    title: delivery.undoSeconds > 0 ? t().sendingTitle : t().sentTitle,
+  notice = toast.success(delivery.undoSeconds > 0 ? t.sendingIn({ seconds: delivery.undoSeconds }) : t.sent, {
+    title: delivery.undoSeconds > 0 ? t.sendingTitle : t.sentTitle,
     iconClass: "ti ti-send",
   });
 };
