@@ -6,6 +6,7 @@ import { isolateYjsHistory } from "@k2b/editor/collab";
 import { Button, type Completion, useLocale } from "@k2b/ui";
 import { type TableHost, TextEditor, type TextEditorController, type TextEditorControls } from "@k2b/ui/text-editor";
 import { type Accessor, createEffect, createSignal, onCleanup, Show, untrack } from "solid-js";
+import { Portal } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import { type MailDraftDocumentClient, type MailSharedDraftState, mailSharedDraftMessages } from "../../lib/draft-document-client";
@@ -26,6 +27,8 @@ export type MailTextEditorActions = {
 export default function MailTextEditor(props: {
   shared?: MailDraftDocumentClient;
   sharedState?: Accessor<MailSharedDraftState | null>;
+  /** Where the shared draft's hint stands, such as right above the composer's bar; without it, under the text. */
+  hintMount?: Accessor<HTMLElement | undefined>;
   onTableCheck?: (needsCheck: boolean) => void;
   format: Accessor<"plain" | "markdown">;
   body: Accessor<string>;
@@ -180,6 +183,40 @@ export default function MailTextEditor(props: {
       controls?.notify(error instanceof Error ? error.message : st().bodyEditFailed);
     }
   };
+  const hint = () => (
+    <div class="mail-draft-hint" data-tone={props.sharedState?.()?.error ? "danger" : undefined} role="status" data-mail-draft-hint>
+      <span class="mail-draft-hint-text">
+        {unknownAction() ? st().tableUnknown : props.sharedState?.()?.error ? props.sharedState?.()?.message : st().notRemembered}
+      </span>
+      <span class="mail-draft-hint-actions">
+        <Show
+          when={unknownAction()}
+          fallback={
+            <>
+              <Show when={props.sharedState?.()?.rejectedEdit}>
+                <Button size="sm" variant="secondary" disabled={props.sharedState?.()?.terminal} onClick={restoreProposal}>
+                  {st().restoreProposal}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => binding?.discardRejectedEdit()}>
+                  {st().discardProposal}
+                </Button>
+              </Show>
+              <Button size="sm" variant="secondary" onClick={retry}>
+                {t().draftHintRetry}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => void copy()}>
+                {t().draftHintCopy}
+              </Button>
+            </>
+          }
+        >
+          <Button size="sm" variant="secondary" onClick={() => unknownAction()?.stopWaiting()}>
+            {st().stopWaiting}
+          </Button>
+        </Show>
+      </span>
+    </div>
+  );
   return (
     <div class={props.inline ? "mail-inline-text-editor" : "flex h-full min-h-72 flex-col"}>
       {/* The message scrolls here, under the editor's toolbar; the hint below takes its own line under the text. */}
@@ -257,54 +294,12 @@ export default function MailTextEditor(props: {
           }}
         />
       </div>
-      {/* A quiet line under the text, never over it: what keeps the draft from saving normally, with its way out. The
-          saved state itself stands once, in the composer's head. */}
-      <Show
-        when={
-          binding &&
-          (!props.sharedState?.()?.remembering || props.sharedState?.()?.error || props.sharedState?.()?.structuring || unknownAction())
-        }
-      >
-        <div class="mail-draft-hint" data-tone={props.sharedState?.()?.error ? "danger" : undefined} role="status" data-mail-draft-hint>
-          <span class="mail-draft-hint-text">
-            {unknownAction()
-              ? st().tableUnknown
-              : props.sharedState?.()?.error
-                ? props.sharedState?.()?.message
-                : props.sharedState?.()?.structuring
-                  ? st().tablePending
-                  : st().notRemembered}
-          </span>
-          <Show when={!props.sharedState?.()?.structuring || unknownAction()}>
-            <span class="mail-draft-hint-actions">
-              <Show
-                when={unknownAction()}
-                fallback={
-                  <>
-                    <Show when={props.sharedState?.()?.rejectedEdit}>
-                      <Button size="sm" variant="ghost" disabled={props.sharedState?.()?.terminal} onClick={restoreProposal}>
-                        {st().restoreProposal}
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => binding?.discardRejectedEdit()}>
-                        {st().discardProposal}
-                      </Button>
-                    </Show>
-                    <Button size="sm" variant="ghost" onClick={retry}>
-                      {t().draftHintRetry}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => void copy()}>
-                      {t().draftHintCopy}
-                    </Button>
-                  </>
-                }
-              >
-                <Button size="sm" variant="ghost" onClick={() => unknownAction()?.stopWaiting()}>
-                  {st().stopWaiting}
-                </Button>
-              </Show>
-            </span>
-          </Show>
-        </div>
+      {/* A quiet line, never over the text: what keeps the draft from saving normally, with its way out. In a composer
+          it stands right above the bar; the saved state itself stands once, in the composer's head. */}
+      <Show when={binding && (!props.sharedState?.()?.remembering || props.sharedState?.()?.error || unknownAction())}>
+        <Show when={props.hintMount?.()} fallback={hint()}>
+          {(mount) => <Portal mount={mount()}>{hint()}</Portal>}
+        </Show>
       </Show>
     </div>
   );

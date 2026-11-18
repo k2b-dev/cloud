@@ -489,6 +489,8 @@ export default function MailComposer(props: {
     // A shared draft says so while it connects; its hint under the text explains anything that needs a hand.
     const current = sharedState();
     if (current && !current.terminal && !current.connected) return t().draftConnecting;
+    // A table change waits for its confirmation: a passing state, so it stands here and never moves the text.
+    if (current?.structuring) return sharedT().tablePending;
     if (status() === "saving" || status() === "preparing") return t().savingDraft;
     return saveStatus() === "saved" ? t().draftSaved : t().savingDraft;
   };
@@ -1095,7 +1097,7 @@ export default function MailComposer(props: {
     };
   };
   let attachAfterDeliveryReview = false;
-  /** The reason the last send failed, until the next attempt: Send turns into Send again while it is set. */
+  /** The reason the last send failed, until the next attempt: Send then repeats that send, scheduled time included. */
   const [sendFailure, setSendFailure] = createSignal<string | null>(null);
   /**
    * A draft that closes while it is open here, with nothing unsaved, needs no notice. One that was already sent or
@@ -1145,7 +1147,7 @@ export default function MailComposer(props: {
   let currentDelivery: { scheduledAt?: string } = {};
   /**
    * A failed send keeps the composer open with its text. The toast names the reason and retries; the Send button turns
-   * into Send again in place, which stays reachable where the toast is not, such as behind a phone sheet.
+   * Send in its place repeats it, which stays reachable where the toast is not, such as behind a phone sheet.
    */
   let sendFailureToast: ToastHandle | null = null;
   const dismissSendFailure = () => {
@@ -1892,6 +1894,8 @@ export default function MailComposer(props: {
     onCleanup(() => client.awareness.off("change", changed));
     changed();
   });
+  /** Where a shared draft's hint stands in the current layout: right above its bar. */
+  const [hintSlot, setHintSlot] = createSignal<HTMLElement>();
   /**
    * What a shared draft offers besides its text: these used to sit in a menu inside the text and now join each layout's
    * own menu, so the text area holds only what someone writes.
@@ -2522,6 +2526,7 @@ export default function MailComposer(props: {
             </div>
           </Show>
           <MailComposerEditor
+            hintMount={hintSlot}
             shared={shared}
             sharedState={sharedState}
             onTableCheck={setTableNeedsCheck}
@@ -2585,7 +2590,9 @@ export default function MailComposer(props: {
               </div>
             )}
           </Show>
-          {/* One bar at a fixed place. After a failed send, Send again stands where Send was; the toast names the reason. */}
+          {/* One bar at a fixed place. After a failed send, Send stays and repeats it; the toast names the reason. */}
+          {/* A shared draft's hint stands here, over the bar and below the signature, never in the text. */}
+          <div class="mail-draft-hint-slot" ref={setHintSlot} />
           <footer class="mail-inline-draft-foot mail-reply-box-foot">
             <SplitButton
               class="mail-compose-action"
@@ -2602,7 +2609,7 @@ export default function MailComposer(props: {
               items={sendLaterItems()}
               onClick={() => void sendDraft(sendFailure() ? currentDelivery : {})}
             >
-              {sendFailure() ? r().sendAgain : t().send}
+              {t().send}
             </SplitButton>
             <span class="mail-inline-draft-tools mail-reply-box-tools">
               <Show when={format() === "markdown"}>
@@ -2737,8 +2744,8 @@ export default function MailComposer(props: {
         data-mail-send-again={sendFailure() ? "" : undefined}
         onClick={() => void sendDraft(sendFailure() ? currentDelivery : {})}
       >
-        <i class={`ti ${sendFailure() ? "ti-refresh" : "ti-send"}`} aria-hidden="true" />
-        {sendFailure() ? windowT().sendAgain : t().send}
+        <i class="ti ti-send" aria-hidden="true" />
+        {t().send}
       </SplitButton>
     );
     // Esc leaves full screen first, then collapses the draft. A menu, a completion list, or a dialog takes Esc first.
@@ -2946,6 +2953,7 @@ export default function MailComposer(props: {
         <DraftNotices />
 
         <MailComposerEditor
+          hintMount={hintSlot}
           shared={shared}
           sharedState={sharedState}
           onTableCheck={setTableNeedsCheck}
@@ -3016,6 +3024,8 @@ export default function MailComposer(props: {
           )}
         </Show>
 
+        {/* A shared draft's hint stands here, over the bar and below the signature, never in the text. */}
+        <div class="mail-draft-hint-slot" ref={setHintSlot} />
         <Show
           when={windowSlots}
           fallback={
@@ -3614,6 +3624,7 @@ export default function MailComposer(props: {
         </div>
 
         <MailComposerEditor
+          hintMount={hintSlot}
           shared={shared}
           sharedState={sharedState}
           onTableCheck={setTableNeedsCheck}
@@ -3683,6 +3694,8 @@ export default function MailComposer(props: {
         </div>
       </Show>
       {/* Phones set the tools closer, so the labelled send action and every tool keep one row in each language. */}
+      {/* A shared draft's hint stands here, over the bar and below the signature, never in the text. */}
+      <div class="mail-draft-hint-slot" ref={setHintSlot} />
       <footer class="flex shrink-0 items-center gap-1 sm:gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2">
         <SplitButton
           class="mail-compose-action"

@@ -24,7 +24,6 @@ export const mailComposeWindowMessages = i18n.define({
       sendFailedTitle: "Not sent",
       sendFailed: ({ reason }: { reason: string }) => `${reason} Your text stays in the draft.`,
       tryAgain: "Try again",
-      sendAgain: "Send again",
     },
     de: {
       newMessage: "Neue Nachricht",
@@ -46,7 +45,6 @@ export const mailComposeWindowMessages = i18n.define({
       sendFailedTitle: "Nicht gesendet",
       sendFailed: ({ reason }) => `${reason} Dein Text bleibt im Entwurf.`,
       tryAgain: "Erneut versuchen",
-      sendAgain: "Erneut senden",
     },
   },
 });

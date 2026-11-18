@@ -37,8 +37,8 @@ export const showDeliveryToast = (
     return;
   }
   if (delivery.undoSeconds > 0 && submissionId && reopen) {
-    // The toast lasts exactly as long as the send can still be undone.
-    notice = toast.success(t.sendingIn({ seconds: delivery.undoSeconds }), {
+    // Nothing has left yet: an info toast, which lasts exactly as long as the send can still be undone.
+    notice = toast(t.sendingIn({ seconds: delivery.undoSeconds }), {
       title: t.sendingTitle,
       iconClass: "ti ti-send",
       duration: delivery.undoSeconds * 1000,

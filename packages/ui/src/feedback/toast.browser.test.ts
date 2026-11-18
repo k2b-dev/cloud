@@ -248,7 +248,11 @@ test("the first line has one type: a title or a short message alone is semibold,
   try {
     await page.evaluate(() => {
       const { toast } = window as unknown as ToastWindow;
-      toast.success("Link copied", { duration: 0, link: { label: "Open settings", href: "https://cloud.example/me" } });
+      toast.success("Link copied", { duration: 0 });
+      toast.success("This browser now signs out after 10 minutes without input and when it closes.", {
+        duration: 0,
+        link: { label: "Open settings", href: "https://cloud.example/me" },
+      });
       toast.success("Budget 2027.xlsx · 48 KB", { title: "Export finished", duration: 0 });
     });
     await arrived(page);
@@ -272,9 +276,10 @@ test("the first line has one type: a title or a short message alone is semibold,
       );
     const folded = await read();
     expect(folded.map(({ title, message, link }) => ({ title, message, link: link?.fontWeight ?? null }))).toEqual([
-      // Alone, the short message takes the title's place and type: semibold in the text colour. Its link keeps that
-      // weight and differs only by colour and underline.
-      { title: null, message: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false }, link: "600" },
+      // A short message alone takes the title's place and type: semibold in the text colour, with no description.
+      { title: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false }, message: null, link: null },
+      // A longer one without a title stays calm body text; its link keeps that weight and differs only by colour.
+      { title: null, message: { fontWeight: "400", fontSize: "14px", lineHeight: "20px", muted: false }, link: "400" },
       // With a title, the message is the description: the smaller, muted line under it.
       {
         title: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false },
@@ -290,7 +295,7 @@ test("the first line has one type: a title or a short message alone is semibold,
     await settled(page);
     const fanned = await read();
     expect(fanned.map(({ title, message }) => ({ title, message }))).toEqual(folded.map(({ title, message }) => ({ title, message })));
-    expect(fanned[1]!.height).toBe(folded[1]!.height);
+    expect(fanned[2]!.height).toBe(folded[2]!.height);
   } finally {
     await page.context().close();
   }
@@ -395,6 +400,36 @@ test("on a phone the stack sits at the top, shows three toasts, a tap fans it ou
     // A tap beside the stack folds it.
     await page.touchscreen.tap(200, 700);
     await page.waitForFunction(() => document.querySelector("[data-k2b-toast-container]")?.getAttribute("data-expanded") === "false");
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
+test("a tap that lands while a toast arrives does not trigger its action; a later tap and a click do", async () => {
+  const page = await open();
+  try {
+    await page.evaluate(() => {
+      const { toast } = window as unknown as ToastWindow;
+      const state = window as unknown as { undone: number };
+      state.undone = 0;
+      toast.success("The message goes out in 20 s.", {
+        title: "Sending",
+        duration: 0,
+        action: { label: "Undo", variant: "ghost", onClick: () => void (state.undone += 1) },
+      });
+      // A tap at once, as from a double tap on Send that stood in the same place.
+      document
+        .querySelector<HTMLElement>(".k2b-toast__action")!
+        .dispatchEvent(new PointerEvent("click", { bubbles: true, cancelable: true, pointerType: "touch" }));
+    });
+    expect(await page.evaluate(() => (window as unknown as { undone: number }).undone)).toBe(0);
+    await page.waitForTimeout(550);
+    await page.evaluate(() =>
+      document
+        .querySelector<HTMLElement>(".k2b-toast__action")!
+        .dispatchEvent(new PointerEvent("click", { bubbles: true, cancelable: true, pointerType: "touch" })),
+    );
+    expect(await page.evaluate(() => (window as unknown as { undone: number }).undone)).toBe(1);
   } finally {
     await page.context().close();
   }
