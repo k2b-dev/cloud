@@ -496,3 +496,31 @@ test("a full stream keeps pending text on device and shows an error with a worki
     await context.close();
   }
 }, 30_000);
+
+// Review screenshots of the hint under the text, only on request: MAIL_DRAFT_SCREENSHOTS=<directory>.
+const screenshots = process.env.MAIL_DRAFT_SCREENSHOTS;
+if (screenshots)
+  test("hint review screenshots", async () => {
+    const { mkdirSync } = await import("node:fs");
+    const { join, resolve } = await import("node:path");
+    const directory = resolve(screenshots);
+    mkdirSync(directory, { recursive: true });
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390]) {
+        const { page, context } = await open(width);
+        try {
+          if (theme === "dark") await page.evaluate(() => (globalThis.document.documentElement.className = "dark"));
+          await page.evaluate(() => window.mailSharedFixture.remember(false));
+          await page.locator("[data-mail-draft-hint]").waitFor();
+          await settled(page);
+          await page.screenshot({ path: join(directory, `hint-not-remembered-${theme}-${width}.png`) });
+          await page.evaluate(() => window.mailSharedFixture.remember(true));
+          expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), "Fictional proposal text")).toBe(true);
+          await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).waitFor();
+          await settled(page);
+          await page.screenshot({ path: join(directory, `hint-proposal-${theme}-${width}.png`) });
+        } finally {
+          await context.close();
+        }
+      }
+  }, 120_000);

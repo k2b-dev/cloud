@@ -1095,8 +1095,14 @@ export default function MailComposer(props: {
     };
   };
   let attachAfterDeliveryReview = false;
-  /** The reason the last send failed, shown in a window's bar until the next attempt. */
+  /** The reason the last send failed, until the next attempt: Send turns into Send again while it is set. */
   const [sendFailure, setSendFailure] = createSignal<string | null>(null);
+  /**
+   * A draft that closes while it is open here, with nothing unsaved, needs no notice. One that was already sent or
+   * discarded when it opened, such as from an old link, keeps the notice that says so.
+   */
+  const openedAsDraft = !props.initialDraft || props.initialDraft.state === "draft";
+  const closesOnLifecycle = (transition: { hasUnsavedChanges: boolean }) => openedAsDraft && !transition.hasUnsavedChanges;
   /** This composer sent its shared draft and waits for the server's comparison before it closes. */
   const [closingAfterSend, setClosingAfterSend] = createSignal<(() => void) | null>(null);
   createEffect(() => {
@@ -1111,7 +1117,7 @@ export default function MailComposer(props: {
    */
   createEffect(() => {
     const transition = lifecycleTransition();
-    if (!transition || transition.hasUnsavedChanges || untrack(closingAfterSend) || sharedState()?.recoveryDraft) return;
+    if (!transition || !closesOnLifecycle(transition) || untrack(closingAfterSend) || sharedState()?.recoveryDraft) return;
     untrack(() => {
       const current = transition.draft;
       const name = current.lastEditedByDisplayName;
@@ -1137,7 +1143,6 @@ export default function MailComposer(props: {
   let lastDeliveryAttempt: PreparedDelivery | null = null;
   /** The send that runs or failed last, so Try again repeats it, scheduled time included. */
   let currentDelivery: { scheduledAt?: string } = {};
-  /** The reply box and a window show why a send failed in their bar, in place of Send; the page keeps the dialog. */
   /**
    * A failed send keeps the composer open with its text. The toast names the reason and retries; the Send button turns
    * into Send again in place, which stays reachable where the toast is not, such as behind a phone sheet.
@@ -2095,7 +2100,9 @@ export default function MailComposer(props: {
         </Show>
         <Show
           when={
-            lifecycleTransition()?.hasUnsavedChanges && !sharedState()?.recoveryDraft && !closingAfterSend() ? lifecycleTransition() : null
+            lifecycleTransition() && !closesOnLifecycle(lifecycleTransition()!) && !sharedState()?.recoveryDraft && !closingAfterSend()
+              ? lifecycleTransition()
+              : null
           }
         >
           {(transition) => (
@@ -3519,7 +3526,9 @@ export default function MailComposer(props: {
 
       <Show
         when={
-          lifecycleTransition()?.hasUnsavedChanges && !sharedState()?.recoveryDraft && !closingAfterSend() ? lifecycleTransition() : null
+          lifecycleTransition() && !closesOnLifecycle(lifecycleTransition()!) && !sharedState()?.recoveryDraft && !closingAfterSend()
+            ? lifecycleTransition()
+            : null
         }
       >
         {(transition) => (

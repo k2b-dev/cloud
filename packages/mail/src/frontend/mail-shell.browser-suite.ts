@@ -5036,6 +5036,51 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await composeWindow(page).getByRole("button", { name: "Close window" }).click();
             await page.locator("[data-k2b-toast-container]", { hasText: "It is in “Drafts”." }).waitFor();
           });
+          // After Send: the composer is gone and one short toast says what happens next; a failure keeps the text.
+          const sendNew = async (page: Page, width: number) => {
+            await compose(page);
+            await composeWindow(page).locator(".mail-inline-draft-recipients input").first().fill("lena@example.test");
+            await composeWindow(page).locator(".cm-content").click();
+            await page.keyboard.type("The chairs are ready in hall A.");
+            await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
+            const send =
+              width < 640
+                ? composeWindow(page).locator(".k2b-floating-window__actions .mail-compose-action .k2b-split-button__primary")
+                : composeWindow(page).locator(".mail-compose-window-foot .mail-compose-action .k2b-split-button__primary");
+            await send.click();
+          };
+          for (const theme of ["light", "dark"] as const)
+            for (const width of [1440, 390]) {
+              const list = `${boxPath}?${width < 640 ? "" : "conversation=Conv01&"}identity=1`;
+              await shoot("12-new-written", theme, width, list, async (page) => {
+                await compose(page);
+                await composeWindow(page).locator(".cm-content").click();
+                await page.keyboard.type("The chairs are ready in hall A.");
+                await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
+              });
+              await shoot("13-new-sent-toast", theme, width, list, async (page) => {
+                await sendNew(page, width);
+                await composeWindow(page).waitFor({ state: "detached" });
+                await page.locator("[data-k2b-toast-container] .k2b-toast", { hasText: "Sending" }).waitFor();
+              });
+              await shoot(
+                "14-box-send-failed-toast",
+                theme,
+                width,
+                thread,
+                async (page) => {
+                  await reply(page);
+                  await page.keyboard.press("Control+Enter");
+                  await page.locator("[data-k2b-toast-container] .k2b-toast", { hasText: "Not sent" }).waitFor();
+                },
+                { sendFails: true },
+              );
+              await shoot("15-box-sent-toast", theme, width, thread, async (page) => {
+                await reply(page);
+                await page.keyboard.press("Control+Enter");
+                await page.locator("[data-k2b-toast-container] .k2b-toast", { hasText: "Sending" }).waitFor();
+              });
+            }
           await shoot("08-box-preview", "light", 1440, thread, async (page) => {
             await reply(page);
             await page.locator("[data-mail-reply-box='mail'] button[aria-label='More']").click();
