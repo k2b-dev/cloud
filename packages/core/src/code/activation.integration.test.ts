@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { sql, startProcessSync } from "@k2b/cloud";
 import { migrateCloudAi } from "@k2b/cloud/ai";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { migrateCloudCapabilities } from "@k2b/cloud/capabilities/store";
@@ -16,7 +16,7 @@ import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
-import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { codeVersionCardTransport } from "../../test/code-version-cards.transport.test-fixture";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
@@ -33,6 +33,7 @@ import { type CodeContext, CodeOwnerUnavailableError } from "./access";
 import { activateCodeVersion, cancelCodeActivation, previewCodeActivation, processCodeActivation, readCodeActivation } from "./activation";
 import { cleanupCodeActivation, codeActivationCleanupOutbox } from "./activation-maintenance";
 import * as authoringChecks from "./authoring-check";
+import { chatPageManifest } from "./chat-pages.test-fixture";
 import type { Code } from "./contracts";
 import * as explanations from "./read-model/explanation";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -111,7 +112,8 @@ const catalog = compileCapabilityManifest("example", {
 });
 
 let database: Awaited<ReturnType<typeof useFreshDatabase>>;
-databaseSuite()("durable Code activation", () => {
+suiteFor("database", "nats")("durable Code activation", () => {
+  let runtime: Awaited<ReturnType<typeof startProcessSync>>;
   let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let explanation: ReturnType<typeof spyOn<typeof explanations, "storeCodeVersionExplanation">>;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>,
@@ -131,14 +133,22 @@ databaseSuite()("durable Code activation", () => {
       revoked ? null : row.activating_person === adminId ? administrator : context(row.activating_person ?? ownerId),
   };
   const run = (id: string) => processCodeActivation(id, deps);
-  async function newCode(): Promise<Code> {
+  async function newCode(kind: "resource" | "app" | "person" = "resource"): Promise<Code> {
     const id = `c_c9${String(++ordinal).padStart(4, "0")}`,
       ownerRef = `owner-${ordinal}`;
-    const [account] = await sql<
-      { id: string }[]
-    >`INSERT INTO auth.service_accounts(name,kind) VALUES(${`code:example.item:${ownerRef}`},'code') RETURNING id`;
-    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,title,service_account_id,created_by)
-      VALUES(${id},'resource','example.item',${ownerRef},'Weekly report',${account!.id}::uuid,${ownerId}::uuid)`;
+    if (kind === "person") {
+      await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by)
+        VALUES(${id},'person',${ownerId}::uuid,'Weekly report',${ownerId}::uuid)`;
+    } else {
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)
+        VALUES(${kind === "app" ? "code:app:example" : `code:example.item:${ownerRef}`},'code') RETURNING id`;
+      if (kind === "app")
+        await sql`INSERT INTO code.codes(id,owner_kind,owner_app_id,title,service_account_id,created_by)
+        VALUES(${id},'app','example','Weekly report',${account!.id}::uuid,${ownerId}::uuid)`;
+      else
+        await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,title,service_account_id,created_by)
+        VALUES(${id},'resource','example.item',${ownerRef},'Weekly report',${account!.id}::uuid,${ownerId}::uuid)`;
+    }
     const [share] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${ownerId}::uuid,'write') RETURNING id`;
     await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${id},${share!.id}::uuid)`;
     return (await findCode(id))!;
@@ -149,6 +159,7 @@ databaseSuite()("durable Code activation", () => {
     baseVersionId: string | null = null,
     op = "item.change",
     eventPlace?: { type: string; id: string },
+    pages = false,
   ) {
     const sourceFiles = { "code.ts": `export const version = '${++ordinal}';` },
       bundle = `bundle:${ordinal}`;
@@ -156,18 +167,20 @@ databaseSuite()("durable Code activation", () => {
       version: 1,
       entry: "code.ts",
       hashes: { source: codeSourceHash(sourceFiles, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
-      entrypoints: eventPlace
-        ? [
-            {
-              kind: "event",
-              entrypoint: "event:example.changed@1:place:0",
-              event: { type: "example.changed", version: 1, place: eventPlace },
-              cron: null,
-              file: "code.ts",
-              line: 1,
-            },
-          ]
-        : [{ kind: "manual", entrypoint: "run", title: "Lieferungen eintragen", cron: null, file: "code.ts", line: 1 }],
+      entrypoints: pages
+        ? chatPageManifest.entrypoints
+        : eventPlace
+          ? [
+              {
+                kind: "event",
+                entrypoint: "event:example.changed@1:place:0",
+                event: { type: "example.changed", version: 1, place: eventPlace },
+                cron: null,
+                file: "code.ts",
+                line: 1,
+              },
+            ]
+          : [{ kind: "manual", entrypoint: "run", title: "Lieferungen eintragen", cron: null, file: "code.ts", line: 1 }],
       policyRows: ["silent_draft"],
       ai: false,
       // The checker could place the call at A in the run entrypoint, not the one at B.
@@ -422,6 +435,53 @@ databaseSuite()("durable Code activation", () => {
       }
     }
   });
+  test("page handoff preview follows current activity and editor rights through the canonical page selection", async () => {
+    const code = await newCode();
+    const submitted = await version(code, [], null, "item.change", undefined, true);
+    const input = { codeId: code.id, versionId: submitted.version.id };
+    expect((await previewCodeActivation(input, owner, deps)).pages).toBeNull();
+    await sql`UPDATE code.codes SET state='active',active_version_id=${input.versionId}::uuid WHERE id=${code.id}`;
+    const links = (await previewCodeActivation(input, owner, deps)).pages;
+    expect(links?.pages.map(({ title, path }) => ({ title, path }))).toEqual([
+      { title: "Lieferscheine", path: "/" },
+      { title: "Archiv", path: "/archive" },
+    ]);
+    expect(links?.homeUrl).toBe(`/code/${code.id}/`);
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${code.id}`;
+    expect((await previewCodeActivation(input, owner, deps)).pages).toBeNull();
+    await sql`UPDATE code.codes SET state='active' WHERE id=${code.id}`;
+    await sql`UPDATE auth.access SET permission='read' WHERE id IN (SELECT access_id FROM code.shares WHERE code_id=${code.id})`;
+    await expect(previewCodeActivation(input, owner, { ...deps, readOwner: async () => null })).rejects.toThrow("Code not found");
+  });
+
+  test("page previews require current member/editor rights independently of activation eligibility", async () => {
+    for (const kind of ["resource", "app"] as const) {
+      const code = await newCode(kind);
+      const submitted = await version(code, [], null, "item.change", undefined, true);
+      await sql`UPDATE code.codes SET state='active',active_version_id=${submitted.version.id}::uuid WHERE id=${code.id}`;
+      const preview = await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, administrator, {
+        ...deps,
+        readOwner: async () => null,
+      });
+      expect(preview.allowed).toEqual({ allowed: true });
+      expect(preview.pages).toBeNull();
+    }
+    for (const kind of ["resource", "person"] as const) {
+      const code = await newCode(kind);
+      const submitted = await version(code, [], null, "item.change", undefined, true);
+      await sql`UPDATE code.codes SET state='active',active_version_id=${submitted.version.id}::uuid WHERE id=${code.id}`;
+      const guest = context();
+      if (guest.authority.actor.kind !== "user") throw new Error("Expected user fixture");
+      guest.authority.actor.user.profile = "guest";
+      await sql`UPDATE auth.users SET profile='guest' WHERE id=${ownerId}::uuid`;
+      try {
+        expect((await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, guest, deps)).pages).toBeNull();
+      } finally {
+        await sql`UPDATE auth.users SET profile='user' WHERE id=${ownerId}::uuid`;
+      }
+    }
+  });
+
   test("SQL budget of an open approval card's initial preview and invalidation reload", async () => {
     const code = await newCode();
     const [rule] = await sql<{ value: string }[]>`SELECT value FROM code.policy_rules WHERE row='silent_draft' AND group_id IS NULL`;
@@ -454,6 +514,8 @@ databaseSuite()("durable Code activation", () => {
     explanation = spyOn(explanations, "storeCodeVersionExplanation").mockResolvedValue({ text: "Fictional automation." });
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
+    // App-owned submissions refresh their owner through the process registry.
+    runtime = await startProcessSync({ application: "core" });
     await migrateAuth();
     await migrateEvents();
     await migrateAppEvents();
@@ -512,6 +574,7 @@ databaseSuite()("durable Code activation", () => {
     catalogSpy?.mockRestore();
     readersSpy?.mockRestore();
     setSystemTime();
+    await runtime?.stop();
   });
 
   test("activation invalidates the author's card at commit without waiting for chat delivery", async () => {

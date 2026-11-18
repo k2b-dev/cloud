@@ -1,8 +1,11 @@
 import { sql } from "@k2b/cloud";
 import { listResourceManagers } from "@k2b/cloud/capabilities/server";
 import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
+import { logger } from "@k2b/cloud/services";
 import { resolveResourceReaders } from "@k2b/cloud/services/identity";
 import type { SQL } from "bun";
+import { type CodePageViewer, canDescribeCodePages } from "./page-links";
+import { readPageSnapshot } from "./page-read";
 
 export type CodeManagerCandidate = {
   version_id: string;
@@ -22,17 +25,28 @@ export async function currentChatManagers(
   signal: AbortSignal,
   db: SQL = sql,
   resourceManagers?: ReadonlySet<string>,
-): Promise<Set<string>> {
-  const readers = await resolveResourceReaders(
-    [...new Set(rows.flatMap((row) => (row.user_id ? [row.user_id] : [])))].map((userId) => ({ type: "user" as const, userId })),
+): Promise<Map<string, CodePageViewer>> {
+  const readers = await readPageSnapshot(signal, () =>
+    resolveResourceReaders(
+      [...new Set(rows.flatMap((row) => (row.user_id ? [row.user_id] : [])))].map((userId) => ({ type: "user" as const, userId })),
+    ),
   );
-  const users = await db<{ id: string }[]>`SELECT id FROM auth.users WHERE id=ANY(${sql.array(
-    readers.flatMap((reader) => (reader.subject.type === "user" ? [reader.subject.userId] : [])),
-    "uuid",
-  )}) AND profile='user'`;
-  const active = new Set(users.map((user) => user.id));
-  const candidates = rows.filter((row) => row.user_id && active.has(row.user_id));
-  if (!candidates.length) return new Set();
+  const users = await readPageSnapshot(
+    signal,
+    () =>
+      db<{ id: string; profile: "user" | "guest" }[]>`SELECT id,profile FROM auth.users WHERE id=ANY(${sql.array(
+        readers.flatMap((reader) => (reader.subject.type === "user" ? [reader.subject.userId] : [])),
+        "uuid",
+      )})`,
+  );
+  const active = new Map(users.map((user) => [user.id, user]));
+  const viewer = (row: CodeManagerCandidate): CodePageViewer => ({
+    codeId: row.code_id,
+    person: row.user_id ? (active.get(row.user_id) ?? null) : null,
+    permission: "editor",
+  });
+  const candidates = rows.filter((row) => canDescribeCodePages(viewer(row), "editor"));
+  if (!candidates.length) return new Map();
   const projections = candidates.map((row) => {
     const principal = buildAccessPrincipalCondition({
       subject: { type: "user", userId: row.user_id! },
@@ -52,7 +66,7 @@ export async function currentChatManagers(
     ) AS allowed`;
   });
   const query = projections.slice(1).reduce((all, part) => sql`${all} UNION ALL ${part}`, projections[0]!);
-  const local = await db<{ version_id: string; allowed: boolean }[]>`${query}`;
+  const local = await readPageSnapshot(signal, () => db<{ version_id: string; allowed: boolean }[]>`${query}`);
   const allowed = new Set(local.filter((row) => row.allowed).map((row) => row.version_id));
   // Collapse repeated decisions for the same owner/person to one bounded provider read.
   const external = new Map<string, Promise<string[]>>();
@@ -65,14 +79,24 @@ export async function currentChatManagers(
     const key = JSON.stringify([row.owner_type, row.owner_id, row.user_id]);
     let check = external.get(key);
     if (!check) {
-      check = listResourceManagers({ ref: { type: row.owner_type, id: row.owner_id }, userId: row.user_id!, limit: 1, signal });
+      check = readPageSnapshot(signal, () =>
+        listResourceManagers({ ref: { type: row.owner_type!, id: row.owner_id! }, userId: row.user_id!, limit: 1, signal }),
+      );
       external.set(key, check);
     }
     try {
       if ((await check).includes(row.user_id!)) allowed.add(row.version_id);
-    } catch {
-      signal.throwIfAborted(); /* An unavailable owner yields no current management grant. */
+    } catch (error) {
+      signal.throwIfAborted();
+      // A provider failure is different from a successful answer with no grant. Fail closed for this owner only.
+      logger("core:code-managers").warn("Code manager provider unavailable", {
+        codeId: row.code_id,
+        versionId: row.version_id,
+        ownerType: row.owner_type,
+        reason: "provider_unavailable",
+        errorType: error instanceof Error ? error.name : "unknown",
+      });
     }
   }
-  return allowed;
+  return new Map(candidates.filter((row) => allowed.has(row.version_id)).map((row) => [row.version_id, viewer(row)]));
 }

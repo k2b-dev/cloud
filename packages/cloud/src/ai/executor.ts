@@ -332,14 +332,17 @@ export type ExecutorConfig = {
   enqueueContinuation: (input: { conversationId: string; turnId: string }) => Promise<void>;
   /** Settings/model resolution seam — tests inject a fake so they never touch shared settings. */
   validateTurn?: typeof validateAiTurnRequest;
-  /** Host policy sees the executed profile, never a requested class or display label. */
+  /** Host policy sees the executed profile, never a requested class or display label.
+   * Optional instructions are rebuilt once per attempt, before any model call, and are never persisted in history. */
   beforeChatTurn?: (input: {
     turnId: string;
     conversationId: string;
     leaseOwner: string;
     runConfig: AiChatTurnRunConfig;
     profile: AiModelProfile;
-  }) => Promise<void>;
+    /** Execution cancellation, shared with model and tool work. */
+    signal: AbortSignal;
+  }) => Promise<{ systemPrompt?: string } | void>;
   /** Runs after the durable turn state and final wire event are flushed. */
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
   onApprovalRequested?: (event: { approvalId: string }) => Promise<void>;
@@ -1001,13 +1004,15 @@ export class AiTurnExecutor {
         await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, accessSubjectForActor(material.actor));
       }
       if (config.codeOrigin && !this.config.beforeChatTurn) throw new AiTurnFailure("not_allowed", "Code chat admission is unavailable.");
-      await this.config.beforeChatTurn?.({
+      const admission = await this.config.beforeChatTurn?.({
         turnId,
         conversationId,
         leaseOwner: this.config.leaseOwner,
         runConfig: config,
         profile: validated.resolved.profile,
+        signal: abortController.signal,
       });
+      if (admission?.systemPrompt) material.systemPrompt = [material.systemPrompt, admission.systemPrompt].filter(Boolean).join("\n\n");
       if (!config.codeOrigin && isAutomaticAiChatTurn(config))
         await installAiTurnInferenceAllocation({ turnId, conversationId, leaseOwner: this.config.leaseOwner });
     } catch (error) {

@@ -1200,6 +1200,62 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
+  test("host page context reaches the model once per turn and never persists in conversation history", async () => {
+    const userId = await insertUser();
+    const actor: RequestActor = { kind: "user", user: actorUser(userId) };
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const pageContext = "Current page: [Delivery notes](/code/c_fixture/)";
+    let admissions = 0;
+    const prompts: string[] = [];
+    const provider = syntheticProvider(async function* (request) {
+      prompts.push(request.systemPrompt ?? "");
+      yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
+      yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "Done" } };
+      yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+    });
+    try {
+      for (const allowed of [true, false]) {
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelId: MODEL_ID,
+          runConfig: { kind: "chat", input: "Help", actor, toolSource: { kind: "none" }, systemPrompt: "Keep this base instruction." },
+          userMessage: userMessage("Help"),
+        });
+        const leaseOwner = `host-context-${allowed}`;
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner,
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected turn claim");
+        await new AiTurnExecutor({
+          leaseOwner,
+          heartbeatMs: 5_000,
+          enqueueContinuation: async () => {},
+          validateTurn: fakeValidateWithProvider(provider),
+          beforeChatTurn: async (input) => {
+            admissions++;
+            expect(input.conversationId).toBe(conversation.id);
+            return allowed ? { systemPrompt: pageContext } : undefined;
+          },
+        }).run({ conversationId: conversation.id, turnId: turn.id, claim, signal: new AbortController().signal });
+        expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+        expect(prompts.at(-1)).toContain("Keep this base instruction.");
+        expect(prompts.at(-1)?.includes(pageContext)).toBe(allowed);
+      }
+      expect(admissions).toBe(2);
+      expect(prompts).toHaveLength(2);
+      expect(JSON.stringify(await aiConversations.listMessages({ conversationId: conversation.id }))).not.toContain(pageContext);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("the executor adds place data only for a bound chat using the default Assistant tools", async () => {
     const userId = await insertUser();
     const actor: RequestActor = { kind: "user", user: actorUser(userId) };

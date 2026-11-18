@@ -4,15 +4,7 @@ import { CodeCheckedVersionManifestSchema, cloudResourceRefAppId } from "@k2b/cl
 import { type CodeVersionCardSnapshot, type CodeVersionCards, codeVersionCardsContract } from "@k2b/cloud/contracts/code-version-cards";
 import { isAppSessionActor } from "@k2b/cloud/server";
 import type { z } from "zod";
-import {
-  type CodeContext,
-  CodeDataError,
-  CodeOwnerUnavailableError,
-  codePerson,
-  isCodePageMember,
-  readCodeOwner,
-  requireCodePermission,
-} from "./access";
+import { type CodeContext, CodeDataError, CodeOwnerUnavailableError, codePerson, readCodeOwner, requireCodePermission } from "./access";
 import { describeCodePages } from "./page-links";
 import { readCodePolicyGroups, readCodePolicySnapshot } from "./policy";
 import { readModelNames } from "./read-model/names";
@@ -173,7 +165,6 @@ export async function readCodeVersionCards(
   const knownPages = new Set(input.knownPages);
   const { authority } = outerContext;
   const credentialKind = authority.credentialKind === "invocation" ? authority.actor.delegation?.credentialKind : authority.credentialKind;
-  const mayOpen = isCodePageMember({ ...authority, credentialKind: credentialKind === "session" ? "session" : undefined });
   const pagesByCode = new Map<string, Promise<string | null>>();
   const pageOf = (code: ReturnType<typeof mapCode>) => {
     if (code.owner.kind !== "resource") return Promise.resolve(null);
@@ -247,6 +238,7 @@ export async function readCodeVersionCards(
       locale: outerContext.locale ?? "en",
       limits: { cases: 0 },
     });
+    const pages = describeCodePages(code.id, { id: row.id, manifest }, { codeId: code.id, person: viewer, permission });
     const snapshot: CodeVersionCardSnapshot = {
       preview: {
         ...ref,
@@ -295,11 +287,7 @@ export async function readCodeVersionCards(
         pausedBy: access.pausedByName ? { name: access.pausedByName } : null,
       },
       facts: [...words.mayDo.items.slice(0, 2), ...words.timing.items.slice(0, 1)].map((item) => item.text),
-      ...(!mayOpen
-        ? { pages: { versionId: row.id, homeUrl: null, pages: [] } }
-        : knownPages.has(row.id)
-          ? {}
-          : { pages: describeCodePages(code.id, { id: row.id, manifest }) }),
+      ...(knownPages.has(row.id) && pages.pages.length ? {} : { pages }),
       latest: row.latest_number > row.number ? { id: row.latest_id, number: row.latest_number } : null,
       permission,
       canActivate,
