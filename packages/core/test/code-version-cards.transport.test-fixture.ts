@@ -8,16 +8,12 @@ import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
 import { z } from "zod";
-import {
-  compileCapabilities,
-  invokeCompiledCapability,
-  serializeCapabilityProviderResult,
-} from "../../../cloud/src/_internal/capabilities";
-import { type CapabilityRouteDependencies, createCapabilityRoutes, dispatchCapability } from "../../../cloud/src/api/capabilities";
-import { createIdentityChildInvocationRoutes } from "../../../cloud/src/api/identity-child-invocation";
-import { signInvocationToken, verifyInvocationToken } from "../../../cloud/src/services/identity/invocation-token";
-import { type NestedInvocationLease, nestedInvocationLeases } from "../../../cloud/src/services/identity/nested-invocation";
-import { aiCapabilities } from "../capabilities";
+import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../../cloud/src/_internal/capabilities";
+import { type CapabilityRouteDependencies, createCapabilityRoutes, dispatchCapability } from "../../cloud/src/api/capabilities";
+import { createIdentityChildInvocationRoutes } from "../../cloud/src/api/identity-child-invocation";
+import { signInvocationToken, verifyInvocationToken } from "../../cloud/src/services/identity/invocation-token";
+import { type NestedInvocationLease, nestedInvocationLeases } from "../../cloud/src/services/identity/nested-invocation";
+import { aiCapabilities } from "../src/capabilities";
 
 /** Real public client, dispatcher, compiled provider and one-use child exchange; only identity and owner domain data are fixtures. */
 export async function codeVersionCardTransport(authority: RequestAuthority) {

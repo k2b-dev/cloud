@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } f
 import { sql } from "@k2b/cloud";
 import { migrateCloudAi } from "@k2b/cloud/ai";
 import * as provider from "@k2b/cloud/capabilities/server";
+import { migrateCloudCapabilities } from "@k2b/cloud/capabilities/store";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -16,7 +17,7 @@ import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.tes
 import { z } from "zod";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
-import { migrateCloudCapabilities } from "../../../cloud/src/capabilities/executions";
+import { codeVersionCardTransport } from "../../test/code-version-cards.transport.test-fixture";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
@@ -37,7 +38,6 @@ import * as explanations from "./read-model/explanation";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode, insertCodeRun, readCode } from "./store";
 import { readCodeVersionCards } from "./version-cards";
-import { codeVersionCardTransport } from "./version-cards.transport.test-fixture";
 import { submitCodeVersion } from "./versions";
 
 const fixed = new Date("2026-10-31T12:00:00.000Z");
