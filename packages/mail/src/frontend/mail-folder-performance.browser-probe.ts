@@ -150,7 +150,7 @@ export async function measureFolderSwitches(page: Page) {
   console.info(`MAIL_FOLDER_GUARD ${JSON.stringify(measurements)}`);
   // Discard four cold switches; keep ten warm switches, five in each direction.
   const warm = measurements.slice(4);
-  const largestTasks = warm.map(result => Math.max(0, ...result.tasks)).sort((a, b) => a - b);
+  const largestTasks = warm.map((result) => Math.max(0, ...result.tasks)).sort((a, b) => a - b);
   expect((largestTasks[4]! + largestTasks[5]!) / 2, JSON.stringify(warm)).toBeLessThanOrEqual(150);
   for (const result of warm) {
     expect(Math.max(0, ...result.tasks), JSON.stringify(result)).toBeLessThanOrEqual(longTaskBudgetMs);
