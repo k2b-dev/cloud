@@ -753,20 +753,49 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
       const [outbound] = await sql`SELECT draft_snapshot FROM mail.outbox_submissions WHERE command_id=${sent.id}::uuid`;
       expect(outbound?.draft_snapshot.body).toBe("Updated reply");
       expect(value(await getDraft(context, mailboxId, target.draftId)).revision).toBe(updated.revision);
+    } finally {
+      await release();
+      await retire(other, ...(target ? [target] : []));
+    }
+  });
+
+  test("a sent draft keeps its replay boundary until its pending document close finishes", async () => {
+    const release = await holdCoverage();
+    const target = await draft("Sent content stays immutable");
+    try {
+      const sent = value(await sendReviewed(target));
       // Commit the same tombstone/intent as the real SMTP outcome, without SMTP.
       await sql.begin(async (db) => {
-        await db`UPDATE mail.drafts SET state='sent' WHERE id=${target!.draftId}::uuid`;
+        await db`UPDATE mail.drafts SET state='sent' WHERE id=${target.draftId}::uuid`;
         await recordDraftSendCloseIntent(db, sent.id);
       });
-      await marker(other.draftId);
-      await pruneDraftDocumentLog();
+      const [before] = await sql<
+        { doc_seq: string; revision: number; body_markdown: string }[]
+      >`SELECT doc_seq::text, revision::int, body_markdown
+        FROM mail.drafts WHERE id=${target.draftId}::uuid`;
+      if (!before) throw new Error("Missing sent fixture");
+      const topic = mailDraftDocumentLog.topic();
+      const latest = await topic.latestCursor({ tenantId: target.draftId });
+      // The post-command thaw marker is still uncovered; close must replay it.
+      if (!latest) throw new Error("Missing post-command thaw marker");
+      expect(topic.cursorSequence(latest)).toBeGreaterThan(Number(before.doc_seq));
+      await marker(crypto.randomUUID());
+      await release();
+      const pruned = await pruneDraftDocumentLog();
+      expect(pruned?.through).toBeLessThanOrEqual(Number(before.doc_seq));
+      expect(await mailDraftDocumentLog.firstSequence()).toBeLessThanOrEqual(Number(before.doc_seq) + 1);
       await finishDraftSendClose(sent.id);
       expect(
         await sql`SELECT 1 FROM mail.draft_document_sends WHERE command_id=${sent.id}::uuid AND NOT close_pending AND close_cursor IS NOT NULL`,
       ).toHaveLength(1);
+      expect((await mailDraftDocumentLog.lifecycle!.get(target.draftId))?.value.state).toBe("closed");
+      const [after] = await sql<
+        { revision: number; body_markdown: string }[]
+      >`SELECT revision::int, body_markdown FROM mail.drafts WHERE id=${target.draftId}::uuid`;
+      expect(after).toEqual({ revision: before.revision, body_markdown: before.body_markdown });
     } finally {
       await release();
-      await retire(other, ...(target ? [target] : []));
+      await retire(target);
     }
   });
 

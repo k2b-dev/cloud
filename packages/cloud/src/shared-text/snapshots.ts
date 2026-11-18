@@ -50,7 +50,8 @@ export type SharedTextSnapshotRequest = { docId: string; targetCursor: string; r
 export type SharedTextSnapshotStore = {
   /** Stable keyset order by docId; include only documents that take snapshots. */
   list(options: { limit: number; after?: string; signal?: AbortSignal }): Promise<Array<{ docId: string; cursor: string | null }>>;
-  /** Anchor legacy cursors to this log before returning. */
+  /** Anchor legacy cursors to this log and include application-owned durable
+   * pruning coverage in the returned cursor (see SharedTextStoredState). */
   load(docId: string, options: { signal?: AbortSignal }): Promise<SharedTextStoredState | null>;
   /**
    * Atomically fence restoreRevision and non-newer cursors. Apply projections
