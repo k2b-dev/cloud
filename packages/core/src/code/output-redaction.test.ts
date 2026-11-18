@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import { cleanCodeOutput } from "@k2b/cloud/code";
 import {
   bindOutputPending,
   compileOutputRedaction,
@@ -332,15 +333,23 @@ test("harden preceding-gap resumption with a deterministic linear comparison bou
   });
   let result: ReturnType<typeof redactOutput>;
   let work: number;
+  let cleaning: number;
   try {
+    // redactOutput cleans each line once on input and once on output; measure one
+    // cleaning pass with the same counter so the matcher keeps its own bound.
+    cleanCodeOutput(text);
+    cleaning = comparisons;
+    comparisons = 0;
     result = redactOutput([line(text)], redactor, null, false, { lost: true, skip: 0, lossBeforeBatch: true });
     work = comparisons;
   } finally {
     lookup.mockRestore();
   }
+  // Cleaning is linear itself (packages/cloud/src/code/output.test.ts).
+  expect(cleaning).toBeLessThanOrEqual(2 * text.length);
   // One unit read and one comparison per position; each fallback decreases the
-  // matched length, so total charCodeAt calls are at most three per input unit.
-  expect(work).toBeLessThanOrEqual(3 * (text.length + spelling.length));
+  // matched length, so the matcher's charCodeAt calls are at most three per input unit.
+  expect(work - 2 * cleaning).toBeLessThanOrEqual(3 * (text.length + spelling.length));
   expect(result.entries.flatMap((entry) => entry.text)).toEqual([{ type: "text", text }]);
 });
 
