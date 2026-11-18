@@ -41,7 +41,7 @@ import { loadPendingApprovals } from "@k2b/cloud/server";
 
 There are no look props. `ApprovalCard` and `ApprovalFrame` take data and
 answers only; the `approval-card-calls` rule rejects `class`, `style`, variants,
-and spreads on either, and lets only `ApprovalFrame` draw `Chat.Decision`.
+and spreads on either. `ApprovalFrame` composes the public `NoticeCard` row layout; apps do not restyle its controls or grid.
 
 ## Approval frame
 
@@ -49,32 +49,31 @@ Something that must look like an approval but is no Capability Action, such as
 switching on a Code version or an admin's review of one, fills `ApprovalFrame`
 with its own data. The frame knows no Capability:
 
-- `locale`, `state` (`open`, `sending`, `decided`, `expired`, or `loading`),
-  and `mode` (`approve` or `edit`, which reads "Draft").
-- `source`: the app's `name`, `icon`, and `accent`, shown as "Approval · App".
-- `status`: `{ tone, label }` at the end of the head in every state but an open
-  question. The frame picks the icon from the tone (`running`, `done`, `off`,
-  `waiting`, `warning`, `error`, `expired`); `loading` says "Loading" itself and
-  holds the place with two placeholder lines.
-- `sentence`: text and chips (`ActionText`), never markup. `reason`: the line
-  under it, with an icon and a `neutral`, `warning`, or `danger` tone.
-- `details`: `{ label, content, note? }` on the surface colour; `note` is one
-  quiet line under them that holds for every such question, such as "Cloud
-  checks access and triggers, not behaviour."
-- `notes`: lines after the details, such as what happens now and what holds
-  until then.
-- `meta`: quiet facts at the start of the answer row; `tone: "success"` or
-  `"warning"` colours a result such as "3 of 3 examples passed".
-- Answers: `confirm` (the one filled answer), `decline`, `back` and `link`
-  (quiet text in the AI colour, such as **Change** or **See everything**),
-  `more` (further answers on the surface colour, such as **Withdraw**), and
-  `remember`. All are optional; `waiting` turns every answer off, `unavailable`
-  the confirming ones.
-- `outcome`: the result line of every closed state, usually `Chat.Outcome`.
+- `locale`, `state` (`open`, `sending`, `decided`, `expired`, `loading`) and
+  `mode` (`approve`, `edit`) describe the current interaction.
+- `source` names the app for accessibility. `status` supplies state metadata;
+  the visible `sentence` says the state once, without a separate state label.
+- `sentence` accepts plain text or `ActionText`. Chips become their full text
+  in the summary. `reason.text` is the quiet line, with `quietTitle` when its
+  full text differs from the rendered content.
+- `details` supplies `{ label, context?, content, note? }`. Pass `content` as a
+  function to mount the complete proposal only when the person opens it.
+  `notes` and `meta` remain available in that detail view.
+- `confirm` is the main control. Set `filled: false` for a neutral action or
+  supply `href` for navigation. A domain-specific control such as a split
+  button can be passed through `actions`; its renderer receives `{ narrow }`
+  for the public button size and variant. Supply at most two logical controls.
+- `decline`, `back`, `more` and the `remember` checkbox are available through
+  **See everything**. `waiting` disables decisions; `unavailable` disables
+  confirmation while leaving rejection and the proposal reachable.
+- `link` makes **See everything** navigate to the full page. When additional
+  decisions need a detail dialog, that dialog also exposes the link.
+- `reserve: false` makes an actionless terminal receipt compact on phones.
+  Loading always reserves its space. `alert` and `quietAlert` announce errors
+  separately from the ordinary status sentence.
 
-The answer row of a tall frame, such as an admin review, stays at the bottom of
-the view while the frame is in view. That is the frame's behaviour, not an
-option.
+Keep the same frame through state changes. Give it the current sentence,
+quiet line and actions rather than replacing it with `Chat.Outcome`.
 
 An app that confirms an Action itself before it runs it, such as a runner
 dialog, draws the review's details with `ApprovalDetails` from
@@ -82,29 +81,23 @@ dialog, draws the review's details with `ApprovalDetails` from
 
 ## The card
 
-- **Ground.** A tinted ground in the AI colour (`--k2b-ai-surface`) in every
-  place, light and dark, with 12 px corners, no rules, and no shadow. The card
-  sets its own AI primary scope, so it looks the same in a blue app. A flat side
-  panel keeps the tint: a tint without a shadow is no depth.
-- **Head.** "Approval · App" with a shield icon and the app's icon tile. After
-  an answer, the head ends with the state as a word and an icon: Running, Done,
-  Declined, Expired, Failed, or Unclear.
-- **Question.** The app's sentence with chips (18 px), then Cloud's reason line
-  with its icon, such as "Sends something to other people."
-- **Details.** The app's [view blocks](/en/docs/platform/capability-views) on the
-  surface colour under "Details from App". An image and the details that follow
-  it stand as one row. Only the app's part comes from the app.
-- **Answer row.** Left, quiet facts: "Expires in 9 min." (hours under a day,
-  then days, such as "Expires in 1 day") where Cloud knows the expiry, and either the checkbox **Don't ask again in this chat** (only on
-  `standard` requests that offer it) or "Asks every time". Right, **Change** for
-  a draft as quiet text in the AI colour, the decline answer, and the one filled
-  approve answer. Facts are short and always stay whole; when facts and answers
-  do not fit one line, the answers move together to a line of their own.
-  Answers are the library's normal button size, with a 44 px hit area on touch
-  screens. While a tall
-  card is in view, the answer row stays at the bottom of the view. Below 32.5 rem
-  of the card's own width the answers take the full row and the facts sit under
-  them.
+The card has one shield icon, one 14 px sentence and one quiet 13 px line.
+It uses the AI surface in light and dark mode, 12 px corners and no nested
+box, rule or shadow. The state appears once in the sentence. Full proposals,
+messages, consequences and additional decisions are behind **See everything**.
+
+On desktop the two text lines sit 2 px apart and are vertically centred in a
+64 px card. Both truncate with an ellipsis; keep the full quiet text in its
+`title`. The action column takes only the width it needs. Public buttons use
+`size="sm"`.
+
+At 35 rem of the card's container and below, text stays at the top and actions
+move below it. Two actions have equal widths: the secondary one on the left
+with a neutral frame, the main one on the right. A single action fills the
+row. Public buttons use `size="md"`. The sentence and quiet line each show up
+to two lines. Transitions keep a 168 px card with spare space below the
+controls; only actionless terminal receipts become compact. The card and the
+following content stay in place through sending, failure, retry and loading.
 
 Answers arm half a second after a request appears in the list, so a click meant
 for the page cannot approve it. A complete proposal that is not inline must be
@@ -112,33 +105,30 @@ read before it can be approved; the approve answer says why it waits.
 
 ## Drafts
 
-When the review's details contain a `Draft`, the card starts as "Draft · App"
-in edit mode: one raised island with the intent, the note "Nothing goes out
-before you approve.", the fields with their labels above them, **Discard** as
-quiet text, and **Send …**. Read-only context rows such as "To" stand above the fields; people,
-places, and files are never edited here. A review link with `rel: "edit"` such
-as **Change recipients in Mail** opens the app.
+When an editable `Draft` is present, the compact card states its intent.
+**See everything** or its main control opens the fields, with labels above
+them. Read-only recipients, places and files remain context; review links
+open the source app when those need changing.
 
-**Send …** sends the edited values to Cloud, which reviews the Action again with
-them. The same card then becomes the approval: the ground turns to the tint and
-the fields lose their edge in 200 ms; size, head, fields, and answer row stay in
-place. The text is locked while the card asks; **Change** returns to editing. A
-person approves exactly what they see. Under `prefers-reduced-motion` the
-switch has no transition. Converted older reviews and Code-version requests are
-never editable.
+**Send …** submits changed values for a fresh review. The dialog keeps the
+fields and values when that fails. Once reviewed, those fields become
+read-only and the main control confirms exactly that proposal. **Change**
+returns to editing; **Discard** declines it. Converted older reviews and
+Code-version requests remain read-only.
 
 ## States and outcomes
 
-An answer collapses the card at once to its head and one outcome line in its
-place, with the focus on that line. **Approved.** says that the chat it came
+An answer changes the sentence, quiet line and controls in the same frame.
+Focus follows the next main control or the result frame when the person has
+not deliberately moved it elsewhere. **Approved.** says that the chat it came
 from carries the Action out. Code-version approvals instead say that the
 approval was recorded for this version. A rejection reads as the app's rejected
 sentence and "You declined.". When another tab or channel decided first, or the
 request expired or was withdrawn, the line says **Already decided elsewhere** or
 **Expired or withdrawn** in a neutral tone. A decision that did not go through
 says so and offers **Answer again**, which brings the question back. In the
-chat, an unclear outcome offers **Check again**, and a failed Action **Try
-again**.
+chat, the full details retain outcome links and **Check again** when a status
+query is available.
 
 A `code_version` request links to its Code instead of a chat, labelled
 **Code “title”**. It addresses current Cloud admins and never offers remembered
@@ -169,13 +159,12 @@ count. An app does not need a `nav.badge` route for that.
 
 ## Accessibility
 
-Each request is an `article` named after its question. An open card is a
-section named by its sentence and described by its reason; a decided card is
-named by its kind, app, and state. The outcome line takes the focus after an
-answer and announces itself through a polite live region. The remember choice is
-a real checkbox. A failed **Show more** is announced as an alert, and focus stays
-on the button that retries it. The navigation count tells screen readers how
-many requests wait, in the inherited locale.
+Each request is an `article` named after its question. The compact frame is
+named by its kind and app. Its sentence is a polite status region; failures
+have their own alert region. **See everything** opens a focus-managed dialog
+or follows the full-page link. The remember choice is a real checkbox.
+A failed **Show more** is announced as an alert, and focus stays on its retry
+button. Navigation counts use the inherited locale.
 
 ## Runtime
 

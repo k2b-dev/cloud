@@ -69,20 +69,37 @@ const mountTurn = async (
     ),
     dom.root,
   );
-  const button = (label: string) => Array.from(dom.root.querySelectorAll("button")).find((node) => node.textContent?.trim() === label)!;
+  const button = (label: string) => Array.from(dom.document.querySelectorAll("button")).find((node) => node.textContent?.trim() === label)!;
   const place = () => dom.root.querySelector<HTMLElement>(".ai-turn__action")!;
   // A person chip's initials are decoration; the line reads the name.
   const line = () => {
+    const frame = place().querySelector(".cloud-approval-frame");
+    if (frame)
+      return [
+        frame.querySelector(".k2b-notice-card__title")?.textContent,
+        frame.querySelector(".k2b-notice-card__description")?.textContent,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
     const current = place().querySelector<HTMLElement>('.k2b-chat-outcome__text[data-current="true"]');
     if (!current) return null;
     const copy = current.cloneNode(true) as HTMLElement;
     for (const avatar of copy.querySelectorAll(".k2b-reference__avatar")) avatar.remove();
     return copy.textContent?.trim() ?? null;
   };
-  const outcome = () => place().querySelector<HTMLElement>(".k2b-chat-outcome");
-  const question = () => place().querySelector<HTMLElement>('.k2b-chat-decision[data-state="open"]');
+  const outcome = () => place().querySelector<HTMLElement>('.cloud-approval-frame:not([data-state="open"]), .k2b-chat-outcome');
+  const question = () => place().querySelector<HTMLElement>('.cloud-approval-frame[data-state="open"]');
+  const openDetails = async () => {
+    const opener = button(options.locale === "de" ? "Alles ansehen" : "See everything");
+    if (!opener || dom.document.querySelector(".cloud-approval-details")) return;
+    opener.click();
+    for (let attempt = 0; attempt < 200 && !dom.document.querySelector(".cloud-approval-details"); attempt++) await tick();
+    expect(dom.document.querySelector(".cloud-approval-details")).not.toBeNull();
+  };
   return {
     dom,
+    openDetails,
     decisions,
     continued,
     line,
@@ -151,6 +168,7 @@ domTest("an answer that did not arrive says so and asks again with the focus on 
     },
   });
   try {
+    view.button("Code ausführen").focus();
     view.button("Code ausführen").click();
     await settle();
     expect(view.line()).toContain("Deine Antwort zu Code ausführen ist nicht bestätigt.");
@@ -158,7 +176,7 @@ domTest("an answer that did not arrive says so and asks again with the focus on 
     view.button("Noch einmal antworten").click();
     await settle();
     expect(view.question()).not.toBeNull();
-    expect(document.activeElement?.classList.contains("k2b-chat-decision__sentence")).toBe(true);
+    expect(document.activeElement?.hasAttribute("data-approval-primary")).toBe(true);
     view.button("Code ausführen").click();
     await settle();
     expect(view.decisions).toEqual([{ approved: true }, { approved: true }]);
@@ -194,6 +212,7 @@ domTest("an answer whose response was lost still shows the outcome the server re
 domTest("a declined question and one a stop left open read as outcome lines in the reader's language", async () => {
   const view = await mountTurn([runCode], { locale: "de" });
   try {
+    await view.openDetails();
     view.button("Nicht ausführen").click();
     await settle();
     expect(view.decisions).toEqual([{ approved: false }]);
@@ -213,7 +232,7 @@ domTest("a declined question and one a stop left open read as outcome lines in t
   });
   try {
     expect(stopped.line()).toBe("Nicht ausgeführt: Code ausführen. Die Antwort wurde angehalten.");
-    expect(stopped.place().querySelector(".ti-circle-off")).not.toBeNull();
+    expect(stopped.place().querySelector(".ti-shield-check")).not.toBeNull();
   } finally {
     stopped.cleanup();
   }
@@ -267,7 +286,7 @@ domTest("an expired question offers to ask again through a visible message", asy
   const view = await mountTurn([{ ...runCode, status: "running", approved: false, approval: undefined }], { phase: "completed" });
   try {
     expect(view.line()).toContain("Not run: Run code. The question expired.");
-    expect(view.place().querySelector(".ti-clock-x")).not.toBeNull();
+    expect(view.place().querySelector(".ti-shield-check")).not.toBeNull();
     view.button("Ask again").click();
     await settle();
     expect(view.continued).toEqual(["Please ask me again: Run code"]);
@@ -296,7 +315,11 @@ domTest("code that asks again gets a new question in the same place after each d
     view.setBlocks([{ ...ask(1), approved: true }]);
     view.setPhase("waiting");
     await settle();
-    expect(view.question()?.textContent).toContain("Step 1");
+    await view.openDetails();
+    expect(document.querySelector(".cloud-approval-details")?.textContent).toContain("Step 1");
+    (await import("@k2b/ui")).dialogCore.close();
+    await settle();
+    await view.openDetails();
     view.button("Don't run").click();
     await settle();
     expect(view.decisions).toEqual([{ approved: true }, { approved: false }]);
@@ -305,7 +328,10 @@ domTest("code that asks again gets a new question in the same place after each d
     // A rejected request does not decide the next one either.
     view.setBlocks([{ ...ask(2), approved: true }]);
     await settle();
-    expect(view.question()?.textContent).toContain("Step 2");
+    await view.openDetails();
+    expect(document.querySelector(".cloud-approval-details")?.textContent).toContain("Step 2");
+    (await import("@k2b/ui")).dialogCore.close();
+    await settle();
     expect(view.place() === place).toBe(true);
   } finally {
     view.cleanup();
@@ -321,6 +347,7 @@ domTest("a turn stopped while it checked keeps the open outcome and its check", 
   });
   try {
     expect(view.line()).toContain("Still not known whether this happened");
+    await view.openDetails();
     expect(view.button("Check again")).toBeDefined();
   } finally {
     view.cleanup();
@@ -346,6 +373,7 @@ domTest("a live check whose claim went stale offers to check again", async () =>
   );
   try {
     expect(view.line()).toContain("Not known yet whether this happened");
+    await view.openDetails();
     expect(view.button("Check again")).toBeDefined();
   } finally {
     view.cleanup();
@@ -364,6 +392,7 @@ domTest("a check claim that arrives long after the card mounted expires on time"
     setSystemTime(new Date("2026-10-17T12:05:00.000Z"));
     view.setBlocks([{ ...running, check: { state: "checking", at: "2026-10-17T12:03:00.000Z" } }]);
     await settle();
+    await view.openDetails();
     expect(view.button("Check again")).toBeDefined();
   } finally {
     view.cleanup();
@@ -410,7 +439,10 @@ domTest("a lost answer to an earlier question never marks the next one", async (
     await settle();
     fail(new Error("response lost"));
     await settle();
-    expect(view.question()?.textContent).toContain("Step 1");
+    await view.openDetails();
+    expect(document.querySelector(".cloud-approval-details")?.textContent).toContain("Step 1");
+    (await import("@k2b/ui")).dialogCore.close();
+    await settle();
     expect(view.place().textContent).not.toContain("is not confirmed");
   } finally {
     view.cleanup();
@@ -445,6 +477,7 @@ domTest("a check that could not settle the outcome is asked again only on reques
   try {
     expect(view.line()).toContain("Still not known whether this happened");
     expect(view.button("Send to Lea Berg")).toBeUndefined();
+    await view.openDetails();
     view.button("Check again").click();
     await settle();
     expect(checks).toBe(1);
@@ -498,10 +531,10 @@ const sendMail = (locale: "en" | "de"): Extract<AiTurnBlock, { kind: "tool" }> =
 domTest("an app Action's catalog sentences name the question and every outcome line; the model's reason never shows", async () => {
   const english = await mountTurn([sendMail("en")]);
   try {
-    expect(english.question()?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Send email to jana@example.com?");
+    expect(english.question()?.querySelector(".k2b-notice-card__title")?.textContent).toBe("Send email to jana@example.com?");
     expect(english.question()?.textContent).toContain("I'm asking because Acme Mail always asks for this.");
     // Cloud's reason replaces the model's own words; the text for text-only readers is not repeated.
-    expect(english.place().querySelector(".k2b-chat-decision__reason")?.textContent).not.toContain("Jana asked for the offer.");
+    expect(english.place().querySelector(".k2b-notice-card__description")?.textContent).not.toContain("Jana asked for the offer.");
     expect(english.place().textContent).not.toContain("Acme Mail: Send email to jana@example.com");
     english.button("Send email").click();
     await settle();
@@ -528,8 +561,9 @@ domTest("an app Action's catalog sentences name the question and every outcome l
 
   const german = await mountTurn([sendMail("de")], { locale: "de" });
   try {
-    expect(german.question()?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("E-Mail an jana@example.com senden?");
+    expect(german.question()?.querySelector(".k2b-notice-card__title")?.textContent).toBe("E-Mail an jana@example.com senden?");
     expect(german.place().textContent).not.toContain("Warum");
+    await german.openDetails();
     german.button("Nicht ausführen").click();
     await settle();
     expect(german.line()).toBe("E-Mail an jana@example.com nicht gesendet. Du hast abgelehnt.");
@@ -561,7 +595,7 @@ domTest("an Action without sentences reads as its title with its labelled fields
   plain.args = { to: [{ name: "Jana Berger", address: "jana@example.com" }, { address: "max@example.com" }] };
   const view = await mountTurn([plain], { locale: "de" });
   try {
-    expect(view.question()?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe(
+    expect(view.question()?.querySelector(".k2b-notice-card__title")?.textContent).toBe(
       "E-Mail senden · Empfänger: jana@example.com und max@example.com?",
     );
     expect(view.place().textContent).not.toContain("Warum");
@@ -580,7 +614,8 @@ domTest("a value shaped like a date that is no real day never breaks the questio
   block.args = { sendAt: "0000-00-00" };
   const view = await mountTurn([block]);
   try {
-    expect(view.question()?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Send email at 0000-00-00?");
+    expect(view.question()?.querySelector(".k2b-notice-card__title")?.textContent).toBe("Send email at 0000-00-00?");
+    await view.openDetails();
     view.button("Don't run").click();
     await settle();
     expect(view.line()).toBe("Did not send email at 0000-00-00. You declined.");
@@ -621,6 +656,7 @@ domTest("a check settled elsewhere replaces this card's own older check answer",
     check: async () => ({ state: "pending", at: "2026-10-17T12:03:00.000Z" }),
   });
   try {
+    await view.openDetails();
     view.button("Check again").click();
     await settle();
     expect(view.line()).toContain("Mail doesn't know yet either.");
@@ -688,8 +724,9 @@ domTest("the complete draft view stays read-only while the question waits", asyn
   if (!("sentence" in review)) throw new Error("Expected a view review");
   const view = await mountTurn([{ ...fixture, status: "awaiting_approval", review: { ...review, links: [] } }]);
   try {
-    const subject = view.place().querySelector<HTMLInputElement>('[data-field="subject"] input')!;
-    const body = view.place().querySelector<HTMLTextAreaElement>('[data-field="body"] textarea')!;
+    await view.openDetails();
+    const subject = view.dom.document.querySelector<HTMLInputElement>('[data-field="subject"] input')!;
+    const body = view.dom.document.querySelector<HTMLTextAreaElement>('[data-field="body"] textarea')!;
     expect(subject.value).toBe("Maintenance window Tuesday");
     expect(subject.readOnly).toBe(true);
     expect(body.readOnly).toBe(true);
@@ -709,9 +746,11 @@ domTest("offline, both answers wait with the reason in place and come back with 
   try {
     window.dispatchEvent(new Event("offline"));
     await settle();
-    expect(view.place().querySelector(".k2b-chat-decision__reason")?.textContent).toBe("Offline. Antworten geht wieder mit Netz.");
+    expect(view.place().querySelector(".k2b-notice-card__description")?.textContent).toBe("Offline. Antworten geht wieder mit Netz.");
     expect(view.button("Code ausführen").disabled).toBe(true);
+    await view.openDetails();
     expect(view.button("Nicht ausführen").disabled).toBe(true);
+    await view.openDetails();
     view.button("Nicht ausführen").click();
     await settle();
     expect(view.decisions).toEqual([]);
@@ -719,7 +758,7 @@ domTest("offline, both answers wait with the reason in place and come back with 
     connected = true;
     window.dispatchEvent(new Event("online"));
     await settle();
-    expect(view.place().querySelector(".k2b-chat-decision__reason")?.textContent).not.toContain("Offline");
+    expect(view.place().querySelector(".k2b-notice-card__description")?.textContent).not.toContain("Offline");
     expect(view.button("Nicht ausführen").disabled).toBe(false);
   } finally {
     if (online) Object.defineProperty(navigator, "onLine", online);

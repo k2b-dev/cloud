@@ -1,144 +1,245 @@
 import {
-  Chat,
+  Button,
+  ButtonLink,
   type ChatDecisionAnswer,
   type ChatDecisionFact,
   type ChatDecisionReason,
   type ChatOutcomeTone,
   LocaleProvider,
-  Skeleton,
+  NoticeCard,
+  type NoticeCardProps,
 } from "@k2b/ui";
-import { createMemo, type JSX } from "solid-js";
-import type { ActionText } from "../ai/chat/action-card";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, Show } from "solid-js";
+import { type ActionText, actionPlainText } from "../ai/chat/action-card";
 import { actionMessages } from "../ai/chat/action-messages";
-import { ActionTextView } from "../ai/chat/action-question";
 
-/** `loading` shows the head with the word "Loading" and placeholder lines; the others are the question's states. */
 export type ApprovalFrameState = "open" | "sending" | "decided" | "expired" | "loading";
-
-/**
- * The state as a word at the end of the head. The frame chooses the icon from the tone, so a state looks alike
- * everywhere; `icon` names a state that has its own sign, such as a version that waits for an administrator.
- */
+/** State metadata is for accessibility; the visible sentence says the state exactly once. */
 export type ApprovalFrameStatus = { tone: ChatOutcomeTone | "expired"; label: string; icon?: string };
+export type ApprovalFrameAction = Omit<ChatDecisionAnswer, "onSelect"> & {
+  filled?: boolean;
+  disabled?: boolean;
+} & ({ onSelect: ChatDecisionAnswer["onSelect"]; href?: never } | { href: string; onSelect?: never });
 
 /**
- * The drawing part of every approval: head "Approval · App" with its state, one sentence, the reason, the details on
- * the surface colour, notes, and the answer row. It knows no Capability: the Capability approval (`ApprovalCard`), a
- * Code version, and an admin review fill it with data. It takes no class, style, or variant
- * (`scripts/checks/approval-card-calls.ts`), sets its own AI colour scope, and keeps its answer row at the bottom of
- * the view while a tall question is in view.
+ * The one approval form: an icon, a sentence, one quiet line and at most two controls. Full proposals and secondary
+ * decisions live behind "See everything". The frame owns presentation and interaction, never rights or transport.
  */
 export type ApprovalFrameProps = {
-  /** The language of Cloud's own words on the frame, such as "Approval" and "Loading". */
   locale: string;
   state: ApprovalFrameState;
-  /** `edit` is the same frame while the person still changes its details: "Draft", a raised island, editable fields. */
   mode?: "approve" | "edit";
-  /** Who asks: the app's name and icon, its icon tile in `accent`. */
   source: { name: string; icon: string; accent?: string };
-  /**
-   * Shown in every closed state, and on an open question that has a state of its own, such as "Waiting for admin"; a
-   * `loading` frame says "Loading" by itself.
-   */
   status?: ApprovalFrameStatus;
-  /** The question, or in a closed state nothing: `outcome` takes its place. Text and chips, never markup. */
-  sentence?: ActionText;
-  /** Why it is asked, in the platform's words. */
+  sentence?: ActionText | string;
   reason: ChatDecisionReason;
-  /**
-   * The thing itself under its label, such as "Details from Code" in bold; `context` follows quietly, such as
-   * "compared with version 4"; `note` is one quiet line under it.
-   */
-  details?: { label: string; context?: string; content: JSX.Element; note?: { text: string; icon?: string } };
-  /** Lines after the details, such as what happens now and what holds until then. */
+  quietTitle?: string;
+  details?: { label: string; context?: string; content: JSX.Element | (() => JSX.Element); note?: { text: string; icon?: string } };
   notes?: readonly ChatDecisionReason[];
-  /** Quiet facts at the start of the answer row; `success` and `warning` colour a result such as tried examples. */
   meta?: readonly ChatDecisionFact[];
-  /** The one filled answer. */
-  confirm?: ChatDecisionAnswer;
+  confirm?: ApprovalFrameAction;
   decline?: ChatDecisionAnswer;
-  /** A quiet text answer, such as "Change". */
   back?: ChatDecisionAnswer;
-  /** A quiet text link, such as "See everything". */
   link?: { label: string; href: string };
-  /** Further answers on the surface colour, such as "Withdraw". */
   more?: readonly ChatDecisionAnswer[];
-  /** "Don't ask again here": checked, `confirm` calls this answer instead. */
   remember?: ChatDecisionAnswer;
-  /** Turns the confirming answers off; this reason replaces `reason`. */
   unavailable?: ChatDecisionReason;
-  /** Turns every answer off until it clears, such as without a connection. */
   waiting?: ChatDecisionReason;
-  /** The result line of every closed state, usually `Chat.Outcome`. */
-  outcome?: JSX.Element;
   onAnswerError?: (error: unknown) => void;
-  /** Facts that change while the question stays open keep two lines where they wrap, so the frame never changes height. */
-  factLines?: 1 | 2;
   anchorId?: string | number;
-};
-
-const STATUS_ICONS: Record<ApprovalFrameStatus["tone"], string> = {
-  running: "ti ti-loader-2",
-  done: "ti ti-circle-check",
-  off: "ti ti-circle-x",
-  waiting: "ti ti-clock",
-  warning: "ti ti-alert-triangle",
-  error: "ti ti-alert-circle",
-  expired: "ti ti-clock-x",
+  /** Only terminal receipts without controls opt out of the phone reserve. Loading always keeps it. */
+  reserve?: boolean;
+  alert?: boolean;
+  quietAlert?: boolean;
+  /** A domain-specific main control, e.g. a public SplitButton; NoticeCard still owns its placement. */
+  actions?: NoticeCardProps["actions"];
+  resultAnchor?: boolean;
 };
 
 export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
   const t = () => actionMessages(props.locale);
-  // A memo, so moving between closed states (sending, decided) does not rebuild the outcome line: it keeps its node,
-  // its focus and its live region while only its words change.
-  const loading = createMemo(() => props.state === "loading");
-  // Passed as a memo, never as an expression: the decision then draws its outcome line before its focus effect runs.
-  const state = createMemo(() => (props.state === "loading" ? "decided" : props.state));
-  const editing = createMemo(() => props.mode === "edit" && props.state === "open");
-  const mode = createMemo(() => (editing() ? "edit" : "approve"));
-  const status = createMemo(() => {
-    if (loading()) return { label: t().statusLoading, icon: STATUS_ICONS.running, tone: "running" as const };
-    const given = props.status;
-    if (!given) return undefined;
-    return {
-      label: given.label,
-      icon: given.icon ?? STATUS_ICONS[given.tone],
-      tone: given.tone === "expired" ? ("off" as const) : given.tone,
-    };
-  });
+  let root: HTMLElement | undefined;
+  let detailsAbort: AbortController | undefined;
+  const [pending, setPending] = createSignal(false);
+  const [remembered, setRemembered] = createSignal(false);
+  const [detailFailure, setDetailFailure] = createSignal(false);
+  const [answerFailure, setAnswerFailure] = createSignal(false);
+  let focusOwned = false;
+  onCleanup(() => detailsAbort?.abort());
+  const sentence = () =>
+    props.state === "loading" && !props.sentence
+      ? t().frameLoading
+      : typeof props.sentence === "string"
+        ? props.sentence
+        : actionPlainText(props.sentence ?? []);
+  const reason = createMemo(() => props.waiting ?? props.unavailable ?? props.reason);
+  const quiet = () => (detailFailure() ? t().fullReviewFailed : answerFailure() ? t().frameAnswerFailed : reason().text);
+  const quietTitle = (): string | undefined => {
+    const text = quiet();
+    return detailFailure() || answerFailure()
+      ? typeof text === "string"
+        ? text
+        : undefined
+      : (props.quietTitle ?? (typeof text === "string" ? text : undefined));
+  };
+  const disabled = () => Boolean(props.waiting || props.unavailable || props.confirm?.disabled || props.confirm?.busy || pending());
+  const hasDetails = () =>
+    Boolean(
+      props.details || props.decline || props.back || props.more?.length || props.remember || props.notes?.length || props.meta?.length,
+    );
+  const restoreFocus = () => {
+    if (!focusOwned || !root) return;
+    const active = root.ownerDocument.activeElement;
+    // A deliberate move to another control always wins, including one outside this card.
+    if (
+      active !== root.ownerDocument.body &&
+      active !== root &&
+      !(active && root.contains(active) && active.matches("[data-approval-primary]"))
+    )
+      return;
+    const next = root.querySelector<HTMLElement>("[data-approval-primary]:not(:disabled)");
+    (next ?? root).focus({ preventScroll: true });
+  };
+  createEffect(
+    on(
+      () => [props.state, props.mode, props.confirm?.label] as const,
+      () => {
+        queueMicrotask(restoreFocus);
+      },
+      { defer: true },
+    ),
+  );
+  const invoke = async (answer: ChatDecisionAnswer, confirming = false) => {
+    if (pending() || props.waiting || (confirming && disabled())) return;
+    focusOwned = Boolean(root?.contains(root.ownerDocument.activeElement)) || Boolean(detailsAbort);
+    setPending(true);
+    setAnswerFailure(false);
+    try {
+      const choice = confirming && remembered() && props.remember && props.mode !== "edit" ? props.remember : answer;
+      await choice.onSelect();
+    } catch (error) {
+      setAnswerFailure(true);
+      props.onAnswerError?.(error);
+    } finally {
+      setPending(false);
+      queueMicrotask(restoreFocus);
+    }
+  };
+  const showDetails = async () => {
+    if (detailsAbort) return;
+    setDetailFailure(false);
+    const controller = new AbortController();
+    detailsAbort = controller;
+    try {
+      const { openApprovalDetails } = await import("./approval-details");
+      if (!controller.signal.aborted)
+        await openApprovalDetails({ props, invoke, remembered, setRemembered, pending, failed: answerFailure, signal: controller.signal });
+    } catch (error) {
+      setDetailFailure(true);
+      props.onAnswerError?.(error);
+    } finally {
+      if (detailsAbort === controller) detailsAbort = undefined;
+      queueMicrotask(restoreFocus);
+    }
+  };
+  const confirm = (): ApprovalFrameAction | undefined =>
+    props.confirm ?? (props.state === "open" && props.more?.[0] ? { ...props.more[0], filled: false } : undefined);
+  const directLink = () => (props.link && !props.decline && !props.back && !props.remember && !props.more?.length ? props.link : undefined);
+  const button = (narrow: boolean) => (
+    <Show keyed when={confirm()}>
+      {(answer) =>
+        answer.href ? (
+          <ButtonLink
+            data-approval-primary=""
+            size={narrow ? "md" : "sm"}
+            variant={answer.filled === false ? "secondary" : "ai"}
+            wrap
+            href={answer.href!}
+          >
+            {answer.label}
+          </ButtonLink>
+        ) : (
+          <Button
+            data-approval-primary=""
+            size={narrow ? "md" : "sm"}
+            variant={answer.filled === false || props.mode === "edit" ? "secondary" : "ai"}
+            wrap
+            disabled={disabled()}
+            loading={pending() || answer.busy}
+            onClick={() => {
+              if (props.mode === "edit") void showDetails();
+              else if (answer.onSelect) void invoke({ ...answer, onSelect: answer.onSelect! }, true);
+            }}
+          >
+            {answer.label}
+          </Button>
+        )
+      }
+    </Show>
+  );
   return (
     <LocaleProvider locale={props.locale}>
-      <Chat.Decision
-        state={state()}
-        mode={mode()}
-        anchorId={props.anchorId}
-        kind={editing() ? { label: t().draftKind, icon: "ti ti-pencil" } : { label: t().approvalKind, icon: "ti ti-shield-check" }}
-        source={props.source}
-        status={status()}
-        sentence={<ActionTextView text={props.sentence ?? []} accent={props.source.accent} />}
-        reason={props.reason}
-        details={props.details}
-        notes={props.notes}
-        meta={props.meta}
-        confirm={props.confirm}
-        decline={props.decline}
-        back={props.back}
-        link={props.link}
-        more={props.more}
-        remember={props.remember}
-        unavailable={props.unavailable}
-        waiting={props.waiting}
-        onAnswerError={props.onAnswerError}
-        factLines={props.factLines}
-        outcome={
-          loading() ? (
-            <div class="cloud-approval-frame__loading" aria-busy="true">
-              <Skeleton />
-              <Skeleton />
-            </div>
-          ) : (
-            props.outcome
-          )
+      <NoticeCard
+        ref={(element) => {
+          root = element;
+        }}
+        class="cloud-approval-frame"
+        tone="ai"
+        layout="row"
+        icon="ti ti-shield-check"
+        data-approval-frame=""
+        data-outcome-tone={props.status?.tone}
+        data-k2b-primary="ai"
+        data-state={props.state}
+        data-mode={props.mode ?? "approve"}
+        data-chat-anchor={props.anchorId}
+        data-review-result={props.resultAnchor ? "" : undefined}
+        tabIndex={-1}
+        aria-label={`${t().approvalKind} · ${props.source.name}`}
+        aria-busy={props.state === "loading" || props.state === "sending" || undefined}
+        reserve={props.state === "loading" || props.reserve !== false}
+        title={
+          <>
+            <span role="status" aria-atomic="true">
+              {props.alert ? "" : sentence()}
+            </span>
+            <span role="alert" aria-atomic="true">
+              {props.alert ? sentence() : ""}
+            </span>
+          </>
+        }
+        detail={
+          <>
+            <span>{props.quietAlert || detailFailure() || answerFailure() ? "" : quiet()}</span>
+            <span role="alert" aria-atomic="true">
+              {props.quietAlert || detailFailure() || answerFailure() ? quiet() : ""}
+            </span>
+          </>
+        }
+        detailTitle={quietTitle()}
+        actions={
+          props.actions ??
+          (({ narrow }) => (
+            <>
+              <Show when={props.link || hasDetails()}>
+                <Show
+                  when={directLink()}
+                  fallback={
+                    <Button size={narrow ? "md" : "sm"} variant={narrow ? "secondary" : "link"} wrap onClick={() => void showDetails()}>
+                      {t().seeEverything}
+                    </Button>
+                  }
+                >
+                  {(link) => (
+                    <ButtonLink size={narrow ? "md" : "sm"} variant={narrow ? "secondary" : "link"} wrap href={link().href}>
+                      {link().label}
+                    </ButtonLink>
+                  )}
+                </Show>
+              </Show>
+              {button(narrow)}
+            </>
+          ))
         }
       />
     </LocaleProvider>

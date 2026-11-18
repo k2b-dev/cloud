@@ -5,13 +5,26 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-16
+updated: 2026-11-18
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## One compact approval frame
+
+`ApprovalFrame` from `@k2b/cloud/approvals/ui` now renders the same compact
+summary for Capability Actions, Code versions and administrator reviews.
+Replace `outcome` and `factLines` with the current `sentence` and `reason.text`;
+put complete proposals in `details.content` and additional facts in `meta`.
+Pass `details.content` as a function so it mounts when **See everything** opens.
+Existing `confirm`, `decline`, `back` and `remember` callbacks keep their meaning;
+secondary decisions and draft editing are available in the details dialog.
+`status` supplies metadata, not a second visible state label.
+See [Cloud approvals](/en/ui/cloud/approvals) for the current props and flow.
+Stored approvals, authorization and decision endpoints are unchanged.
 
 ## One chat-writing capability
 

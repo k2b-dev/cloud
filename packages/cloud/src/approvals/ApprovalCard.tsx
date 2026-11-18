@@ -1,8 +1,8 @@
 import type { ChatDecisionState } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount } from "solid-js";
-import type { ActionCard, ActionText } from "../ai/chat/action-card";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { type ActionCard, type ActionText, actionPlainText } from "../ai/chat/action-card";
 import { actionMessages } from "../ai/chat/action-messages";
-import { ActionDetails, type ActionLine, ActionReceipt } from "../ai/chat/action-question";
+import { ActionDetails, type ActionLine } from "../ai/chat/action-question";
 import type { Block } from "../blocks/schema";
 import { ApprovalFrame, type ApprovalFrameStatus } from "./ApprovalFrame";
 
@@ -124,6 +124,13 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
         : unavailable()
           ? { text: unavailable()!, icon: "ti ti-player-pause", tone: "neutral" as const }
           : { text: props.card.reason.text, icon: props.card.reason.icon, tone: props.card.reason.tone };
+  const currentLine = () => props.outcome.lines[props.outcome.current];
+  const open = () => props.state === "open";
+  const resultSentence = () => {
+    const line = currentLine();
+    const text = actionPlainText(line?.text ?? props.card.forms.unknown);
+    return line?.detail && !/[.!?…]["“”»«]?\s*$/.test(text) ? `${text}.` : text;
+  };
   const moveOn = async () => {
     if (sending()) return;
     const original = draftValues(props.card.view);
@@ -142,12 +149,30 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
       anchorId={props.anchorId}
       source={{ name: props.card.app.name, icon: props.card.app.icon, accent: props.card.app.accent }}
       status={status()}
-      sentence={editing() ? intent(props.card) : props.card.question}
-      reason={reason()}
-      unavailable={!editing() && unavailable() ? reason() : sending() ? reason() : undefined}
+      sentence={open() ? (editing() ? intent(props.card) : props.card.question) : resultSentence()}
+      reason={
+        open()
+          ? { ...reason(), text: [props.card.app.name, reason().text, ...meta().map((fact) => fact.text)].join(" · ") }
+          : {
+              text: (
+                <>
+                  {currentLine()?.detail}
+                  <Show when={currentLine()?.time}>{(time) => <> · {time()}</>}</Show>
+                </>
+              ),
+            }
+      }
+      quietTitle={
+        !open() && typeof currentLine()?.detail === "string"
+          ? [currentLine()?.detail, currentLine()?.time].filter(Boolean).join(" · ")
+          : undefined
+      }
+      alert={currentLine()?.tone === "error" && !open()}
+      unavailable={open() && ((!editing() && unavailable()) || sending()) ? reason() : undefined}
       waiting={props.waiting ? reason() : undefined}
       details={
         // Without anything to show there is no details island, not an empty one.
+        currentLine()?.actions ||
         (props.card.view?.length ?? 0) > 0 ||
         props.card.readMore ||
         props.card.contentRef ||
@@ -155,29 +180,36 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
         (props.card.consequences ?? []).length > 0
           ? {
               label: t().detailsFrom({ app: props.card.app.name }),
-              content: (
-                <ActionDetails
-                  card={props.card}
-                  onContentLoaded={setLoadedContent}
-                  draft={{
-                    editable: editing(),
-                    values: values(),
-                    onChange: (name, value) => setValues((current) => ({ ...current, [name]: value })),
-                  }}
-                />
+              content: () => (
+                <>
+                  {!open() ? currentLine()?.actions : undefined}
+                  <ActionDetails
+                    card={props.card}
+                    onContentLoaded={setLoadedContent}
+                    draft={{
+                      editable: editing(),
+                      values: values(),
+                      onChange: (name, value) => setValues((current) => ({ ...current, [name]: value })),
+                    }}
+                  />
+                </>
               ),
             }
           : undefined
       }
       meta={editing() ? [] : meta()}
       confirm={
-        editing()
-          ? { label: `${props.card.confirm.label} …`, icon: confirmIcon(props.card), onSelect: moveOn }
-          : { label: props.card.confirm.label, onSelect: props.onConfirm }
+        !open()
+          ? currentLine()?.action
+            ? { ...currentLine()!.action!, filled: currentLine()?.tone === "error" }
+            : undefined
+          : editing()
+            ? { label: `${props.card.confirm.label} …`, icon: confirmIcon(props.card), onSelect: moveOn }
+            : { label: props.card.confirm.label, onSelect: props.onConfirm }
       }
-      decline={{ label: editing() ? t().discard : props.card.decline, onSelect: props.onDecline }}
+      decline={open() ? { label: editing() ? t().discard : props.card.decline, onSelect: props.onDecline } : undefined}
       back={
-        !editing() && editable()
+        open() && !editing() && editable()
           ? {
               label: t().change,
               onSelect: () => {
@@ -187,11 +219,10 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
           : undefined
       }
       remember={
-        props.remember
+        open() && props.remember
           ? { label: props.remember.website ? t().rememberWebsite : t().remember, onSelect: props.remember.onSelect }
           : undefined
       }
-      outcome={<ActionReceipt card={props.card} lines={props.outcome.lines} current={props.outcome.current} />}
     />
   );
 }

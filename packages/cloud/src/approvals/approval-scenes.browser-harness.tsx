@@ -1,4 +1,4 @@
-import { ButtonLink, ChangeList, Chat, type ChatDecisionState, LocaleProvider } from "@k2b/ui";
+import { ChangeList, type ChatDecisionState, LocaleProvider } from "@k2b/ui";
 import { createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import type { ActionCard, ActionText } from "../ai/chat/action-card";
@@ -129,6 +129,7 @@ const page: ApprovalPage = {
 const Label = (props: { children: string }) => <p class="scene-label">{props.children}</p>;
 
 const scenes: Record<string, () => JSX.Element> = {
+  large: () => <Card card={cardOf("large")} />,
   states: () => {
     const mail = cardOf("mail");
     const del = cardOf("del");
@@ -480,7 +481,7 @@ const scenes: Record<string, () => JSX.Element> = {
       label: "Details von Code",
       context: "gegenüber Version 4",
       note: { text: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.", icon: "ti ti-info-circle" },
-      content: (
+      content: () => (
         <ChangeList
           label="Änderungen"
           items={[
@@ -549,23 +550,9 @@ const scenes: Record<string, () => JSX.Element> = {
           source={code}
           status={{ tone: "waiting", label: "Wartet auf Admin" }}
           reason={{ text: "In eurer Cloud gibt ein Admin jede Automation frei, die etwas tut, das andere sehen.", icon: "ti ti-eye" }}
-          outcome={
-            <Chat.Outcome
-              current="state"
-              lines={{
-                state: {
-                  tone: "waiting",
-                  text: "Version 5 wartet auf die Freigabe eines Admins.",
-                  detail: "Die Admins wissen Bescheid. Bis dahin bleibt Version 4 eingeschaltet.",
-                  actions: (
-                    <ButtonLink variant="text" href="/app/code/info">
-                      Alles ansehen
-                    </ButtonLink>
-                  ),
-                },
-              }}
-            />
-          }
+          sentence="Version 5 wartet auf die Freigabe eines Admins."
+          notes={[{ text: "Die Admins wissen Bescheid. Bis dahin bleibt Version 4 eingeschaltet." }]}
+          link={{ label: "Alles ansehen", href: "/app/code/info" }}
         />
         <Label>Lädt</Label>
         <ApprovalFrame locale="de" state="loading" source={code} reason={{ text: "" }} />

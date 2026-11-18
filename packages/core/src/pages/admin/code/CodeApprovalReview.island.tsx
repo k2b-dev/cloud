@@ -539,7 +539,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     ];
     return {
       label: props.comparison ? t().detailsFrom({ n: props.comparison }) : t().detailsFirst,
-      content: <ChangeList label={t().detailsFirst} items={items()} />,
+      content: () => <ChangeList label={t().detailsFirst} items={items()} />,
       note: { text: changes.assurance, icon: "ti ti-info-circle" },
     };
   };
@@ -657,65 +657,35 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         source={{ name: t().source, icon: "ti ti-code" }}
         status={status()}
         reason={{ text: why().text }}
-        outcome={
-          <div tabIndex={-1} class="core-code-review__closed" data-review-result>
-            <p class="k2b-chat-decision__sentence">
-              <For each={chipParts(sentence())}>
-                {(part, index) => (index() % 2 === 1 ? <span class="core-code-review__chip">{part}</span> : part)}
-              </For>
-            </p>
-            <p class="k2b-chat-line k2b-chat-decision__reason">
-              <i class={`k2b-chat-line__icon ${why().icon}`} aria-hidden="true" />
-              <span class="k2b-chat-line__text">{why().text}</span>
-            </p>
-            <Show when={message()}>
-              {(shown) => (
-                <div class="k2b-chat-decision__details">
-                  <p class="k2b-chat-decision__details-label">
-                    <span class="k2b-chat-decision__tile k2b-icon-tile">
-                      <i class="ti ti-code" aria-hidden="true" />
-                    </span>
-                    {shown().label}
-                  </p>
+        resultAnchor
+        sentence={sentenceOf(sentence())}
+        details={
+          message()
+            ? {
+                label: message()!.label,
+                content: () => (
                   <div class="core-code-review__message">
-                    <CloudAvatar username={shown().avatar} userId={shown().avatarId} size="xs" />
+                    <CloudAvatar username={message()!.avatar} userId={message()!.avatarId} size="xs" />
                     <div>
                       <p class="core-code-review__message-head">
-                        <strong>{shown().who}</strong>
-                        <Show when={shown().at}>{(at) => <span> · {when(at())}</span>}</Show>
+                        {message()!.who}
+                        <Show when={message()!.at}>{(at) => <span> · {when(at())}</span>}</Show>
                       </p>
-                      <p class="core-code-review__comment">{shown().text}</p>
+                      <p class="core-code-review__comment">{message()!.text}</p>
                     </div>
                   </div>
-                </div>
-              )}
-            </Show>
-            <div class="k2b-chat-decision__answers">
-              <span class="k2b-chat-decision__meta">
-                <Show when={pendingUnknown}>
-                  <span class="k2b-chat-decision__fact" data-tone="neutral">
-                    <i class="ti ti-history" aria-hidden="true" />
-                    {keep()}
-                  </span>
-                </Show>
-              </span>
-              <span class="k2b-chat-decision__buttons">
-                <Show
-                  when={!pendingUnknown}
-                  fallback={
-                    <Button class="k2b-chat-decision__answer" variant="ai" onClick={() => reloadCodeArea()}>
-                      <i class="ti ti-refresh" aria-hidden="true" />
-                      {t().checkState}
-                    </Button>
-                  }
-                >
-                  <ButtonLink class="k2b-chat-decision__answer" variant="secondary" href={props.nextHref ?? props.listHref}>
-                    {props.nextHref ? t().nextApproval : t().backToList}
-                  </ButtonLink>
-                </Show>
-              </span>
-            </div>
-          </div>
+                ),
+              }
+            : undefined
+        }
+        confirm={
+          pendingUnknown
+            ? { label: t().checkState, filled: false, onSelect: () => reloadCodeArea() }
+            : {
+                label: props.nextHref ? t().nextApproval : t().backToList,
+                href: props.nextHref ?? props.listHref,
+                filled: false,
+              }
         }
       />
     );

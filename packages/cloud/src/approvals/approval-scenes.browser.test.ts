@@ -104,7 +104,7 @@ const open = async (scene: string, width: number, theme: "light" | "dark" = "lig
     });
   });
   await page.goto(`${origin}/?scene=${scene}`);
-  await page.locator(".k2b-chat-decision, .cloud-blocks__choice, .cloud-capability-view").first().waitFor();
+  await page.locator(".cloud-approval-frame, .cloud-blocks__choice, .cloud-capability-view").first().waitFor();
   await settled(page);
   return page;
 };
@@ -153,6 +153,39 @@ const shot = async (page: Page, name: string) => {
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 describe("Approval scenes", () => {
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [1440, 390])
+      test(`the complete proposal loads only in details, recovers after a read failure, and then permits approval at ${width}px in ${theme}`, async () => {
+        const page = await open("large", width, theme);
+        let reads = 0;
+        try {
+          await page.route("**/api/approvals/*/content?*", (route) => {
+            reads++;
+            return reads === 1
+              ? route.fulfill({ status: 503 })
+              : route.fulfill({ json: { version: 1, blocks: [{ kind: "Text", text: "Der vollständige Vorschlag ist da." }] } });
+          });
+          const frame = page.locator(".cloud-approval-frame");
+          expect(reads).toBe(0);
+          expect(await frame.locator("[data-approval-primary]").isDisabled()).toBe(true);
+          await frame.getByRole("button", { name: "Alles ansehen" }).click();
+          const dialog = page.getByRole("dialog");
+          await dialog.getByText("Der vollständige Vorschlag konnte nicht geladen werden.", { exact: false }).waitFor();
+          expect(reads).toBe(1);
+          await shot(page, `preview-failed-${theme}-${width}`);
+          await dialog.getByRole("button", { name: "Noch einmal versuchen" }).click();
+          await dialog.getByText("Der vollständige Vorschlag ist da.", { exact: true }).waitFor();
+          expect(reads).toBe(2);
+          expect(await dialog.locator('.k2b-button[data-variant="ai"]').isEnabled()).toBe(true);
+          await shot(page, `preview-ready-${theme}-${width}`);
+          await page.keyboard.press("Escape");
+          await dialog.waitFor({ state: "detached" });
+          expect(await frame.locator("[data-approval-primary]").isEnabled()).toBe(true);
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
+
   for (const width of [1440, 390])
     test(`Gustav's chart at ${width} px is an island with its own head: title, Copy and Maximize, no origin line`, async () => {
       const page = await open("gustav", width);
@@ -604,96 +637,37 @@ describe("Approval scenes", () => {
     });
 
   for (const width of [1440, 390])
-    test(`the approval frame a Code version fills at ${width} px draws the same card from data`, async () => {
+    test(`the approval frame a Code version fills at ${width} px draws the same compact card from data`, async () => {
       const page = await open("frame", width);
       try {
         expect(await noOverflow(page)).toBe(0);
-        const frames = await page.locator(".k2b-chat-decision").evaluateAll((nodes) =>
-          nodes.map((node) => {
-            const style = getComputedStyle(node);
-            const answers = node.querySelector<HTMLElement>(".k2b-chat-decision__answers");
-            return {
-              primary: node.getAttribute("data-k2b-primary"),
-              radius: style.borderTopLeftRadius,
-              shadow: style.boxShadow,
-              sentence: node.querySelector(".k2b-chat-decision__sentence")
-                ? getComputedStyle(node.querySelector(".k2b-chat-decision__sentence")!).fontSize
-                : null,
-              note: node.querySelector(".k2b-chat-decision__details-note")?.textContent ?? null,
-              notes: node.querySelectorAll(".k2b-chat-decision__note").length,
-              facts: [...node.querySelectorAll(".k2b-chat-decision__fact")].map((fact) => fact.getAttribute("data-tone")),
-              answers: [...node.querySelectorAll(".k2b-chat-decision__buttons > *")].map((answer) => [
-                answer.textContent?.trim(),
-                answer.getAttribute("data-variant"),
-              ]),
-              sticky: answers ? getComputedStyle(answers).position : null,
-              status: node.querySelector(".k2b-chat-decision__status")?.textContent ?? null,
-              // A text action reads the same wherever the card shows it: among the answers or under a decided outcome.
-              textAction: (() => {
-                const action = node.querySelector<HTMLElement>(
-                  '.k2b-chat-decision__buttons > [data-variant="text"], .k2b-chat-outcome__actions > *',
-                );
-                if (!action) return null;
-                const style = getComputedStyle(action);
-                return { text: action.textContent?.trim(), color: style.color, weight: style.fontWeight, fill: style.backgroundColor };
-              })(),
-              busy: node.querySelector("[aria-busy='true']") !== null,
-              origin: node.querySelector(".k2b-chat-decision__details-label strong")
-                ? getComputedStyle(node.querySelector(".k2b-chat-decision__details-label strong")!).fontWeight
-                : null,
-              edges: [...node.querySelectorAll<HTMLElement>('.k2b-chat-decision__buttons [data-variant="secondary"]')].map(
-                (button) => getComputedStyle(button).borderTopColor,
-              ),
-              // Facts and answers share one line when they fit: the first fact's middle lies within the buttons' line.
-              oneLine: (() => {
-                const fact = node.querySelector(".k2b-chat-decision__fact")?.getBoundingClientRect();
-                const button = node.querySelector(".k2b-chat-decision__buttons > *")?.getBoundingClientRect();
-                return fact && button ? Math.abs(fact.top + fact.height / 2 - (button.top + button.height / 2)) < 4 : null;
-              })(),
-            };
-          }),
+        const frames = page.locator(".cloud-approval-frame");
+        expect(await frames.count()).toBe(5);
+        const looks = await frames.evaluateAll((nodes) =>
+          nodes.map((node) => ({
+            height: node.getBoundingClientRect().height,
+            radius: getComputedStyle(node).borderTopLeftRadius,
+            shadow: getComputedStyle(node).boxShadow,
+            sentence: getComputedStyle(node.querySelector(".k2b-notice-card__title")!).fontSize,
+            actions: node.querySelectorAll(".k2b-notice-card__actions .k2b-button").length,
+            boxes: node.querySelectorAll(".k2b-chat-decision__details").length,
+          })),
         );
+        for (const look of looks) {
+          expect(look).toMatchObject({ height: width === 390 ? 168 : 64, radius: "12px", shadow: "none", sentence: "14px", boxes: 0 });
+          expect(look.actions).toBeLessThanOrEqual(2);
+        }
+        expect(await frames.first().getByRole("link", { name: "Alles ansehen" }).getAttribute("href")).toBe("/app/code/info");
+        // The full facts and assurance are still available, behind the same details control.
+        await frames.nth(2).getByRole("button", { name: "Alles ansehen" }).click();
+        const details = page.getByRole("dialog");
+        await details.waitFor();
+        expect(await details.textContent()).toContain("Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.");
+        expect(await details.textContent()).toContain("Keine Beispiele: Niemand hat ausprobiert, was sie tut");
+        expect(await details.getByRole("button", { name: "Erst Beispiele ausprobieren" }).count()).toBe(1);
+        await page.keyboard.press("Escape");
+        await details.waitFor({ state: "detached" });
         await shot(page, `40-freigabe-rahmen-light-${width}`);
-        expect(frames.map((frame) => [frame.primary, frame.radius, frame.shadow])).toEqual(
-          Array.from({ length: 5 }, () => ["ai", "12px", "none"]),
-        );
-        // The answers come first and "See everything" last; side answers are white without an edge.
-        expect(frames[0]).toMatchObject({
-          sentence: "18px",
-          note: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
-          origin: "600",
-          facts: ["success", "neutral"],
-          answers: [
-            ["Version 5 einschalten", "ai"],
-            ["Alles ansehen", "text"],
-          ],
-          sticky: "sticky",
-        });
-        expect(frames[1]).toMatchObject({
-          notes: 2,
-          facts: ["success"],
-          answers: [
-            ["Zurückziehen", "secondary"],
-            ["Ohne Dateien ablegen bauen", "secondary"],
-            ["Alles ansehen", "text"],
-          ],
-          edges: ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"],
-        });
-        expect(frames[2]).toMatchObject({
-          facts: ["warning", "neutral"],
-          answers: [
-            ["Erst Beispiele ausprobieren", "secondary"],
-            ["Trotzdem einschalten", "ai"],
-          ],
-        });
-        // On a wide card the short fact stands left in the answer row, not on a line of its own.
-        if (width === 1440) expect(frames[1]!.oneLine).toBe(true);
-        // On the Code page a waiting version's "See everything" sits under its outcome: the same text action in the
-        // place's colour as among the answers, not black text.
-        expect(frames[3]!.status).toBe("Wartet auf Admin");
-        expect(frames[3]!.textAction).toEqual(frames[0]!.textAction);
-        expect(frames[0]!.textAction).toMatchObject({ text: "Alles ansehen", weight: "600", fill: "rgba(0, 0, 0, 0)" });
-        expect(frames[4]).toMatchObject({ status: "Lädt", busy: true, sentence: null });
       } finally {
         await page.context().close();
       }
@@ -704,82 +678,95 @@ describe("Approval scenes", () => {
       const page = await open("states", width);
       try {
         expect(await noOverflow(page)).toBe(0);
-        const cards = await page.locator(".k2b-chat-decision").evaluateAll((nodes) =>
+        const cards = await page.locator(".cloud-approval-frame").evaluateAll((nodes) =>
           nodes.map((node) => ({
             ground: getComputedStyle(node).backgroundColor,
-            head: node.querySelector(".k2b-chat-decision__kind")?.textContent,
-            status: node.querySelector(".k2b-chat-decision__status")?.textContent ?? null,
+            sentence: node.querySelector(".k2b-notice-card__title")?.textContent,
+            status: node.getAttribute("data-outcome-tone"),
+            icons: node.querySelectorAll(".k2b-notice-card__icon").length,
           })),
         );
-        expect(cards.map((card) => card.status)).toEqual([
-          null,
-          "Läuft",
-          "Erledigt",
-          "Abgelehnt",
-          "Abgelaufen",
-          "Fehlgeschlagen",
-          "Unklar",
-        ]);
+        expect(cards.map((card) => card.status)).toEqual([null, "running", "done", "off", "expired", "error", "warning"]);
         expect(new Set(cards.map((card) => card.ground)).size).toBe(1);
-        expect(new Set(cards.map((card) => card.head))).toEqual(new Set(["Freigabe"]));
+        expect(cards.every((card) => card.sentence && card.icons === 1)).toBe(true);
         await shot(page, `08-zustaende-alle-light-${width}`);
       } finally {
         await page.context().close();
       }
     }, 60_000);
 
-  for (const width of [1440, 390])
-    test(`a mail draft at ${width} px turns into its approval in place`, async () => {
-      const page = await open("mail", width);
-      try {
-        const card = page.locator(".k2b-chat-decision").first();
-        expect(await card.getAttribute("data-mode")).toBe("edit");
-        expect(await card.locator(".k2b-chat-decision__kind").textContent()).toBe("Entwurf");
-        await shot(page, `05-mail-entwurf-light-${width}`);
-        await card.locator(".k2b-chat-decision__answer").last().click();
-        await page.waitForFunction(() => document.querySelector(".k2b-chat-decision")?.getAttribute("data-mode") === "approve");
-        await settled(page);
-        expect(await card.locator(".k2b-chat-decision__kind").textContent()).toBe("Freigabe");
-        expect(await card.locator("textarea").evaluate((field) => (field as HTMLTextAreaElement).readOnly)).toBe(true);
-        expect(await noOverflow(page)).toBe(0);
-        await shot(page, `06-mail-freigabe-light-${width}`);
-      } finally {
-        await page.context().close();
-      }
-    }, 60_000);
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [1440, 390])
+      test(`a mail draft at ${width} px in ${theme} turns into its approval in place`, async () => {
+        const page = await open("mail", width, theme);
+        try {
+          const card = page.locator(".cloud-approval-frame").first();
+          expect(await card.getAttribute("data-mode")).toBe("edit");
+          expect(await card.locator("textarea").count()).toBe(0);
+          await shot(page, `05-mail-entwurf-${theme}-${width}`);
+          await card.getByRole("button", { name: "Alles ansehen" }).click();
+          const dialog = page.getByRole("dialog");
+          await dialog.locator("textarea").waitFor();
+          expect(await dialog.locator("textarea").evaluate((field) => (field as HTMLTextAreaElement).readOnly)).toBe(false);
+          await shot(page, `mail-edit-details-${theme}-${width}`);
+          await dialog.getByRole("button", { name: /An Lea Berg senden/ }).click();
+          await page.waitForFunction(() => document.querySelector(".cloud-approval-frame")?.getAttribute("data-mode") === "approve");
+          await settled(page);
+          expect(await card.locator("textarea").count()).toBe(0);
+          expect(await dialog.locator("textarea").evaluate((field) => (field as HTMLTextAreaElement).readOnly)).toBe(true);
+          expect(await noOverflow(page)).toBe(0);
+          await shot(page, `06-mail-freigabe-${theme}-${width}`);
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
 
-  for (const width of [1440, 390])
-    test(`drafts of three apps at ${width} px share one form with labels above the fields`, async () => {
-      const page = await open("drafts", width);
-      try {
-        const labels = await page.locator(".cloud-blocks__field").evaluateAll((fields) =>
-          fields.map((field) => {
-            const label = field.querySelector("label")?.getBoundingClientRect();
-            const input = field.querySelector("input, textarea")?.getBoundingClientRect();
-            return label && input ? label.bottom <= input.top + 1 : false;
-          }),
-        );
-        expect(labels.length).toBe(7);
-        expect(labels.every(Boolean)).toBe(true);
-        expect(await noOverflow(page)).toBe(0);
-        await shot(page, `21-entwuerfe-light-${width}`);
-      } finally {
-        await page.context().close();
-      }
-    }, 60_000);
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [1440, 390])
+      test(`drafts of three apps at ${width} px in ${theme} share one form with labels above the fields`, async () => {
+        const page = await open("drafts", width, theme);
+        try {
+          const labels: boolean[] = [];
+          let draftNumber = 0;
+          for (const card of await page.locator(".cloud-approval-frame").all()) {
+            await card.getByRole("button", { name: "Alles ansehen" }).click();
+            const dialog = page.getByRole("dialog");
+            await dialog.locator(".cloud-blocks__field").first().waitFor();
+            await shot(page, `draft-${++draftNumber}-details-${theme}-${width}`);
+            labels.push(
+              ...(await dialog.locator(".cloud-blocks__field").evaluateAll((fields) =>
+                fields.map((field) => {
+                  const label = field.querySelector("label")?.getBoundingClientRect();
+                  const input = field.querySelector("input, textarea")?.getBoundingClientRect();
+                  return label && input ? label.bottom <= input.top + 1 : false;
+                }),
+              )),
+            );
+            await page.keyboard.press("Escape");
+            await dialog.waitFor({ state: "detached" });
+          }
+          expect(labels.length).toBe(7);
+          expect(labels.every(Boolean)).toBe(true);
+          expect(await noOverflow(page)).toBe(0);
+          await shot(page, `21-entwuerfe-${theme}-${width}`);
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
 
   for (const [width, theme] of [
     [1440, "light"],
     [390, "light"],
     [1440, "dark"],
+    [390, "dark"],
   ] as const)
     test(`one approval looks the same in the chat, a flat panel and the approvals page (${width} px, ${theme})`, async () => {
       const page = await open("everywhere", width, theme);
       try {
-        const looks = await page.locator(".k2b-chat-decision").evaluateAll((nodes) =>
+        const looks = await page.locator(".cloud-approval-frame").evaluateAll((nodes) =>
           nodes.map((node) => {
             const css = getComputedStyle(node);
-            const approve = node.querySelector<HTMLElement>('.k2b-chat-decision__answer[data-variant="ai"]');
+            const approve = node.querySelector<HTMLElement>("[data-approval-primary]");
             return [
               css.backgroundColor,
               css.borderRadius,

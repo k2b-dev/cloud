@@ -31,7 +31,7 @@ for (const locale of ["de", "en"])
       const html = render(model, locale);
       expect(live(html, model.alert ? "alert" : "status")).toBe(model.main);
       expect(live(html, model.alert ? "status" : "alert")).toBe("");
-      expect(html).toContain("assistant-code-version__quiet");
+      expect(html).toContain("k2b-notice-card__description");
       expect(html.match(/ti-shield-check/g)).toHaveLength(1);
       expect(html).not.toContain("k2b-chat-decision");
       expect(html.match(/data-code-version-primary/g)).toHaveLength(1);
@@ -76,7 +76,7 @@ test("missing pages offer retry, while a real empty list offers runs and never i
     });
     expect(model.primary?.id).toBe(pages && pages.versionId === approvalVersionId ? "runs" : "load");
     const html = render(model, "en");
-    const quiet = html.match(/<p class="assistant-code-version__quiet"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    const quiet = html.match(/<p class="k2b-notice-card__description"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
     if (pages && pages.versionId === approvalVersionId) {
       expect(model.secondary).toBeUndefined();
       expect(live(quiet, "alert")).toBe("");

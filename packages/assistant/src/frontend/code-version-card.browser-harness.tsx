@@ -109,7 +109,10 @@ const initial = [
 ];
 const snapshotBefore =
   mode === "snapshot"
-    ? { text: root.innerText, rect: root.querySelector(".assistant-code-version")?.getBoundingClientRect().toJSON() }
+    ? {
+        text: root.innerText,
+        rect: root.querySelector(".assistant-code-version-host .cloud-approval-frame")?.getBoundingClientRect().toJSON(),
+      }
     : null;
 // @k2b/ssr replaces an island's server output with its first browser render. Both use the same snapshot here.
 if (mode === "snapshot") root.replaceChildren();

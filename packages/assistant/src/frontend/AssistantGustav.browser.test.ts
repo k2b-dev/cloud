@@ -957,7 +957,7 @@ describe("Gustav", () => {
       for (const view of [desktop, panel, phone]) {
         const h = await open(view, state.scenario, { path: "/app/assistant/panel" });
         try {
-          const card = h.page.locator(".assistant-code-version");
+          const card = h.page.locator(".assistant-code-version-host .cloud-approval-frame");
           await card.locator("[role=status]").waitFor();
           expect(await card.locator("[role=status]").innerText()).toBe(state.sentence);
           expect(await card.getAttribute("data-k2b-primary")).toBe("ai");
@@ -1027,10 +1027,12 @@ describe("Gustav", () => {
         expect(await line.innerText()).toContain("Jana Probe hat Version 5 freigegeben");
         await shot(h.page, `f-ereigniszeile-vorher-${view.name}-light`);
         await line.getByRole("button", { name: "Zur Karte" }).click();
-        const main = h.page.locator(".assistant-code-version").getByRole("button", { name: "Einschalten", exact: true });
+        const main = h.page
+          .locator(".assistant-code-version-host .cloud-approval-frame")
+          .getByRole("button", { name: "Einschalten", exact: true });
         await h.page.waitForFunction(() => document.activeElement?.textContent?.includes("Einschalten"));
         expect(await main.evaluate((element) => element === document.activeElement)).toBe(true);
-        const box = await h.page.locator(".assistant-code-version").boundingBox();
+        const box = await h.page.locator(".assistant-code-version-host .cloud-approval-frame").boundingBox();
         expect(box && box.y >= 0 && box.y < view.height).toBe(true);
         expect(h.errors).toEqual([]);
         await shot(h.page, `f-ereigniszeile-nachher-${view.name}-light`);
@@ -1054,7 +1056,10 @@ describe("Gustav", () => {
       try {
         const line = h.page.locator(".assistant-code-decision");
         await line.locator(".assistant-code-decision__text").waitFor();
-        await h.page.locator(".assistant-code-version").getByText("Version 5 wurde durch Version 6 ersetzt.").waitFor();
+        await h.page
+          .locator(".assistant-code-version-host .cloud-approval-frame")
+          .getByText("Version 5 wurde durch Version 6 ersetzt.")
+          .waitFor();
         await settled(h.page);
         expect(await line.innerText()).toContain("Jana Probe hat Version 5 freigegeben");
         expect(await line.getByRole("button").count()).toBe(0);
@@ -1085,7 +1090,7 @@ describe("Gustav", () => {
           { path: "/app/assistant/panel" },
         );
         try {
-          const card = h.page.locator(".assistant-code-version");
+          const card = h.page.locator(".assistant-code-version-host .cloud-approval-frame");
           await card.locator("[role=status]").waitFor();
           heights.push(Math.round((await card.boundingBox())!.height));
         } finally {
@@ -1110,7 +1115,7 @@ describe("Gustav", () => {
         { path: "/app/assistant/panel" },
       );
       try {
-        const card = h.page.locator(".assistant-code-version");
+        const card = h.page.locator(".assistant-code-version-host .cloud-approval-frame");
         const switchOn = card.getByRole("button", { name: "Einschalten", exact: true });
         await switchOn.waitFor();
         const top = async () => Math.round((await card.boundingBox())!.y);
@@ -1149,7 +1154,7 @@ describe("Gustav", () => {
       };
       const h = await open(view, scenario, { path: "/app/assistant/panel" });
       try {
-        const card = h.page.locator(".assistant-code-version");
+        const card = h.page.locator(".assistant-code-version-host .cloud-approval-frame");
         await card.getByText("Version 5 wartet auf einen Admin. Du bekommst Bescheid.").waitFor();
         expect(await card.innerText()).not.toContain("Jana");
         const before = (await card.boundingBox())!;

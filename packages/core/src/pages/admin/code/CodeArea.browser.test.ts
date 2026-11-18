@@ -1,4 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/browser";
 import { codeAreaBrowserFixture } from "./CodeArea.browser-fixture";
@@ -159,8 +161,11 @@ test("a review opens at its head with one row of tabs, and the approval with thr
     expect(await page.getByRole("tablist").count()).toBe(1);
     for (const name of ["Übersicht", "Code", "Diff"]) expect(await tab(name).count()).toBe(1);
     await page.getByText("Sie darf etwas tun, das andere sehen.", { exact: false }).waitFor();
+    expect(await page.locator(".cloud-approval-frame").first().getByRole("button").count()).toBe(2);
+    await page.getByRole("button", { name: "Alles ansehen", exact: true }).first().click();
     for (const name of ["Ablehnen …", "Änderungen anfordern …", "Version 3 freigeben"])
-      expect(await page.getByRole("button", { name }).count()).toBe(1);
+      expect(await page.getByRole("dialog").getByRole("button", { name }).count()).toBe(1);
+    await page.keyboard.press("Escape");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
     // A phone closes the review with the head's back arrow; the close button shows only beside the columns.
     expect(await page.getByRole("link", { name: "Schließen, zurück zur Liste" }).isVisible()).toBe(viewport.width > 600);
@@ -248,7 +253,8 @@ test("an unchanged file in Diff shows its commented lines, and the first version
 test("requesting changes asks for a text in a dialog that names who gets it, keeps its error line, and sends the outcome", async () => {
   await goto(review);
   await settled(page);
-  await page.getByRole("button", { name: "Änderungen anfordern …" }).click();
+  await page.getByRole("button", { name: "Alles ansehen", exact: true }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "Änderungen anfordern …" }).click();
   const dialog = page.getByRole("dialog");
   await dialog
     .getByText(
@@ -273,7 +279,9 @@ test("requesting changes asks for a text in a dialog that names who gets it, kee
   expect(await page.getByRole("dialog").getByRole("textbox").inputValue()).toBe("Bitte nur Rückrufwünsche.");
   await page.getByRole("dialog").getByRole("button", { name: "Änderungen anfordern" }).click();
   await page.waitForLoadState("load");
-  await page.getByText("Änderungen angefordert", { exact: true }).waitFor();
+  const result = page.locator(".cloud-approval-frame[data-review-result]:visible");
+  await result.waitFor();
+  expect(await result.locator(".k2b-notice-card__title").innerText()).toBe("Jana Probe hat Änderungen an Version 3 angefordert.");
   expect(fixture.requests).toEqual([
     {
       path: "decide",
@@ -293,7 +301,8 @@ test("requesting changes asks for a text in a dialog that names who gets it, kee
 
 test("a refused decision keeps the dialog with its text; approving sends the binding and reloads into the result", async () => {
   await goto(`${review}&state=dialogfail`);
-  await page.getByRole("button", { name: "Ablehnen …" }).click();
+  await page.getByRole("button", { name: "Alles ansehen", exact: true }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "Ablehnen …" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("textbox").fill("Nicht bei uns.");
   await dialog.getByRole("button", { name: "Version 3 ablehnen" }).click();
@@ -316,7 +325,7 @@ test("a refused decision keeps the dialog with its text; approving sends the bin
 test("a lost answer leaves only Check state; a conflict and a withdrawal say what happened", async () => {
   await goto(`${review}&state=lost`);
   await page.getByRole("button", { name: "Version 3 freigeben" }).click();
-  await page.getByText("Ausgang unklar", { exact: true }).waitFor();
+  await page.getByText("Cloud weiß noch nicht, ob deine Entscheidung zu Version 3 gespeichert ist.", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Stand prüfen" }).waitFor();
   expect(await page.getByRole("button", { name: "Version 3 freigeben" }).count()).toBe(0);
   expect(await page.getByText("Erneut versuchen").count()).toBe(0);
@@ -613,3 +622,37 @@ for (const locale of ["en", "de"] as const) {
     }, 20_000);
   }
 }
+
+for (const theme of ["light", "dark"] as const)
+  for (const width of [1440, 390])
+    test(`approval recovery retains its frame and decision text at ${width}px in ${theme}`, async () => {
+      const viewport = { width, height: width === 390 ? 780 : 900 };
+      const capture = async (state: string) => {
+        const directory = process.env.APPROVAL_RECOVERY_SHOTS;
+        if (!directory) return;
+        mkdirSync(directory, { recursive: true });
+        await settled(page);
+        await page.screenshot({ path: resolve(directory, `admin-${state}-${theme}-${width}.png`), fullPage: true });
+      };
+      await goto(`${review}&state=dialogfail&theme=${theme}`, viewport);
+      await page.getByRole("button", { name: "Alles ansehen", exact: true }).first().click();
+      await page.getByRole("dialog").getByRole("button", { name: "Ablehnen …" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("textbox").fill("Nicht bei uns.");
+      await dialog.getByRole("button", { name: "Version 3 ablehnen" }).click();
+      await dialog.getByText("Nicht entschieden. Dein Text bleibt hier.", { exact: false }).waitFor();
+      expect(await dialog.getByRole("textbox").inputValue()).toBe("Nicht bei uns.");
+      await capture("answer-failed");
+      fixture.reset();
+      await goto(`${review}&state=lost&theme=${theme}`, viewport);
+      await settled(page);
+      const frame = () => page.locator(".cloud-approval-frame:visible").first();
+      const before = await frame().boundingBox();
+      await frame().getByRole("button", { name: "Version 3 freigeben" }).click();
+      await page.getByText("Cloud weiß noch nicht, ob deine Entscheidung zu Version 3 gespeichert ist.", { exact: true }).waitFor();
+      await frame().getByRole("button", { name: "Stand prüfen" }).waitFor();
+      await settled(page);
+      expect(await frame().boundingBox()).toEqual(before);
+      expect(await frame().getByRole("button", { name: "Erneut versuchen" }).count()).toBe(0);
+      await capture("unknown");
+    }, 45_000);

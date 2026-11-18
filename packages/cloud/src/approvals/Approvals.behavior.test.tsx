@@ -79,6 +79,20 @@ describe("Approvals", () => {
     return;
   }
 
+  const openDetails = async (host: ParentNode) => {
+    const opener = [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      /^(See everything|Alles ansehen)$/.test(button.textContent?.trim() ?? ""),
+    );
+    expect(opener).toBeDefined();
+    opener!.click();
+    await waitFor(() => document.querySelector(".cloud-approval-details") !== null, "the complete proposal");
+    return document.querySelector<HTMLElement>("dialog[open]")!;
+  };
+  const closeDetails = async () => {
+    const { dialogCore } = await import("@k2b/ui");
+    dialogCore.close();
+    await waitFor(() => document.querySelector(".cloud-approval-details") === null, "the closed proposal");
+  };
   const mount = async (
     props: { initial?: ApprovalPage; link?: string; app?: string },
     answer: (url: string, init?: RequestInit) => Response | Promise<Response>,
@@ -100,7 +114,7 @@ describe("Approvals", () => {
     return {
       dom,
       requests,
-      button: (label: string, within: ParentNode = dom.root) =>
+      button: (label: string, within: ParentNode = dom.document) =>
         Array.from(within.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === label),
       cleanup: () => {
         dispose();
@@ -116,9 +130,9 @@ describe("Approvals", () => {
       const rows = () => Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
       expect(rows()).toHaveLength(2);
       // The app supplies its sentence and view; the platform owns the question card.
-      expect(rows()[0]?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Send “Offer 1”?");
+      expect(rows()[0]?.querySelector(".k2b-notice-card__title")?.textContent).toBe("Send “Offer 1”?");
       expect(rows()[0]?.textContent).toContain("I'm asking because Mail always asks for this.");
-      expect(rows()[0]?.textContent).toContain("customer@example.com");
+      expect(rows()[0]?.textContent).not.toContain("customer@example.com");
       expect(rows()[0]?.textContent).not.toContain("Mail: Send");
       expect(rows()[0]?.querySelector("a")?.getAttribute("href")).toBe("/app/assistant?conversation=chat1");
       expect(rows()[0]?.textContent).not.toMatch(/Always approve|Immer freigeben/);
@@ -130,8 +144,8 @@ describe("Approvals", () => {
       expect(view.requests.at(-1)).toEqual({ url: "/api/approvals/a1/decision", body: { approved: true } });
       expect(rows()).toHaveLength(2);
       expect(rows()[0]?.querySelector(".k2b-chat-decision__details")).toBeNull();
-      expect(rows()[0]?.querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent).toContain("Approved.");
-      expect(rows()[0]?.querySelector(".k2b-chat-outcome")?.getAttribute("data-tone")).toBe("done");
+      expect(rows()[0]?.querySelector(".k2b-notice-card__content")?.textContent).toContain("Approved.");
+      expect(rows()[0]?.querySelector(".cloud-approval-frame")?.getAttribute("data-outcome-tone")).toBe("done");
       expect(view.button("Send “Offer 2”", rows()[1]!)).toBeDefined();
       expect(view.dom.root.textContent).toContain("1 open");
     } finally {
@@ -147,7 +161,7 @@ describe("Approvals", () => {
     try {
       expect(view.dom.root.querySelector(".cloud-approvals__toolbar")).toBeNull();
       expect(view.dom.root.textContent).not.toContain("1 open");
-      expect(view.dom.root.querySelector("article.cloud-approval .k2b-chat-decision__sentence")?.textContent).toBe("Send “Offer 1”?");
+      expect(view.dom.root.querySelector("article.cloud-approval .k2b-notice-card__title")?.textContent).toBe("Send “Offer 1”?");
       expect(view.dom.root.querySelector("article.cloud-approval .k2b-chat-decision__details")).toBeNull();
     } finally {
       view.cleanup();
@@ -163,6 +177,7 @@ describe("Approvals", () => {
     try {
       expect(view.dom.root.textContent).toContain("Another Cloud admin must approve your version.");
       await Bun.sleep(550);
+      await openDetails(view.dom.root);
       const reject = view.button("Don't run");
       expect(reject?.disabled).toBe(false);
       reject!.click();
@@ -213,6 +228,7 @@ describe("Approvals", () => {
         "updated eligibility",
       );
       expect(view.dom.root.textContent).not.toContain("There is no second Cloud admin");
+      await openDetails(view.dom.root);
       expect(view.button("Don't run")?.disabled).toBe(false);
     } finally {
       view.cleanup();
@@ -272,14 +288,18 @@ describe("Approvals", () => {
       );
       try {
         const approval = view.dom.root.querySelector("article.cloud-approval")!;
-        const details = (host: ParentNode) => host.querySelector(".cloud-action-details")!;
-        expect(details(approval).textContent).toBe(details(chatRoot).textContent);
+        const shown: string[] = [];
         for (const host of [approval, chatRoot]) {
+          const dialog = await openDetails(host);
+          const details = dialog.querySelector(".cloud-action-details")!;
+          shown.push(details.textContent ?? "");
           for (const value of ["Lea Berg", "Mira Hoffmann", "Tom Weber", "Wartungsplan-KW43.pdf"])
-            expect(details(host).textContent).toContain(value);
-          expect(host.querySelector<HTMLInputElement>("input")?.readOnly).toBe(true);
-          expect(host.querySelector('a[href="/app/mail/drafts/dr-42?revision=7"]')).not.toBeNull();
+            expect(details.textContent).toContain(value);
+          expect(dialog.querySelector<HTMLInputElement>("input")?.readOnly).toBe(true);
+          expect(dialog.querySelector('a[href="/app/mail/drafts/dr-42?revision=7"]')).not.toBeNull();
+          await closeDetails();
         }
+        expect(shown[0]).toBe(shown[1]);
         expect(view.requests.filter((request) => request.url.endsWith("/decision"))).toEqual([]);
       } finally {
         disposeChat();
@@ -296,10 +316,10 @@ describe("Approvals", () => {
     try {
       const row = () => view.dom.root.querySelector<HTMLElement>("article.cloud-approval")!;
       await Bun.sleep(550);
-      // Declining comes before the one filled answer.
-      row().querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer")[0]!.click();
+      const dialog = await openDetails(row());
+      view.button(review.sentence.decline!, dialog)!.click();
       await waitFor(() => row().dataset.decided === "rejected", "the outcome");
-      const line = row().querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent ?? "";
+      const line = row().querySelector(".k2b-notice-card__content")?.textContent ?? "";
       expect(line).toContain("Du hast abgelehnt.");
       expect(line).not.toContain("You declined.");
     } finally {
@@ -319,11 +339,14 @@ describe("Approvals", () => {
     );
     try {
       const rows = () => Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
-      const line = (row: HTMLElement | undefined) =>
-        row?.querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent?.trim() ?? "";
-      const tone = (row: HTMLElement | undefined) => row?.querySelector(".k2b-chat-outcome")?.getAttribute("data-tone");
+      const line = (row: HTMLElement | undefined) => row?.querySelector(".k2b-notice-card__content")?.textContent?.trim() ?? "";
+      const tone = (row: HTMLElement | undefined) => row?.querySelector(".cloud-approval-frame")?.getAttribute("data-outcome-tone");
       await Bun.sleep(550);
-      for (const row of rows()) view.button("Don't run", row)!.click();
+      for (const row of rows()) {
+        const dialog = await openDetails(row);
+        view.button("Don't run", dialog)!.click();
+        await closeDetails();
+      }
       await waitFor(() => line(rows()[2]).includes("Your decision was not applied."), "the failure");
       await waitFor(() => rows()[3]?.dataset.decided === "rejected", "the rejection");
       // A 409 or 404 changed nothing: the line says so in a neutral tone, never the success check.
@@ -338,8 +361,8 @@ describe("Approvals", () => {
       expect(line(rows()[3])).toContain("You declined.");
       // Answering again brings back the question, armed, in the same place.
       view.button("Answer again", rows()[2]!)!.click();
-      await waitFor(() => rows()[2]?.querySelector('.k2b-chat-decision[data-state="open"]') !== null, "the question again");
-      expect(view.button("Don't run", rows()[2]!)).toBeDefined();
+      await waitFor(() => rows()[2]?.querySelector('.cloud-approval-frame[data-state="open"]') !== null, "the question again");
+      expect(view.button("Send “Offer 3”", rows()[2]!)).toBeDefined();
     } finally {
       view.cleanup();
     }
@@ -393,15 +416,16 @@ describe("Approvals", () => {
     );
     try {
       const rows = Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
-      expect(rows[0]?.querySelector(".k2b-chat-decision__remember")?.textContent?.trim()).toBe("Don't ask again in this chat");
-      // `confirm` asks every time, whatever the stored options say, and says so.
-      expect(rows[1]?.querySelector(".k2b-chat-decision__remember")).toBeNull();
-      expect(rows[1]?.querySelector(".k2b-chat-decision__meta")?.textContent).toContain("Asks every time");
-      expect(view.dom.root.textContent).not.toMatch(/Always approve|Immer freigeben/);
+      expect(rows[1]?.querySelector(".k2b-notice-card__description")?.textContent).toContain("Asks every time");
+      expect(view.dom.root.querySelector("input[type=checkbox]")).toBeNull();
       await Bun.sleep(550);
-      (rows[0]!.querySelector(".k2b-chat-decision__remember input") as HTMLInputElement).click();
-      const answers = rows[0]!.querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer");
-      answers[answers.length - 1]!.click();
+      const dialog = await openDetails(rows[0]!);
+      const checkbox = dialog.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+      expect(checkbox).not.toBeNull();
+      expect(dialog.textContent).toContain("Don't ask again in this chat");
+      expect(dialog.textContent).not.toMatch(/Always approve|Immer freigeben/);
+      checkbox.click();
+      view.button("Send “Offer 1”", dialog)!.click();
       await waitFor(() => view.requests.length > 0, "the decision");
       expect(view.requests.at(-1)).toEqual({ url: "/api/approvals/a1/decision", body: { approved: true, remember: "chat" } });
     } finally {
@@ -434,9 +458,9 @@ describe("Approvals", () => {
     try {
       const row = scoped.dom.root.querySelector<HTMLElement>("article.cloud-approval")!;
       // The same card as everywhere: no count or bulk action beside one resource.
-      expect(row.querySelector(".k2b-chat-decision")?.getAttribute("data-k2b-primary")).toBe("ai");
+      expect(row.querySelector(".cloud-approval-frame")?.getAttribute("data-k2b-primary")).toBe("ai");
       expect(scoped.dom.root.querySelector(".cloud-approvals__toolbar")).toBeNull();
-      expect(row.querySelector(".k2b-chat-decision__reason")?.textContent).toBe("I'm asking because Mail always asks for this.");
+      expect(row.querySelector(".k2b-notice-card__description")?.textContent).toContain("I'm asking because Mail always asks for this.");
     } finally {
       scoped.cleanup();
     }
