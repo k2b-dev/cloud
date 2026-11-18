@@ -3,6 +3,8 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { CAPABILITY_MAX_RESULT_BYTES } from "../contracts/capability-limits";
 import { type AuthContext, err, fail, getLocale, ok, respond, v } from "../server";
+import { toAiErrorResponse } from "./http";
+import { AiMessageQueueConflict } from "./message-queue";
 import { catchUpAiWakeup } from "./wakeup-catch-up";
 import { AiWakeupInputSchema, AiWakeupPatchSchema } from "./wakeup-contracts";
 import { aiWakeupMessages } from "./wakeup-messages";
@@ -15,7 +17,8 @@ const wakeupParams = chatParams.extend({ wakeupId: z.uuid() });
 export const aiWakeupRoutes = new Hono<AuthContext>()
   .use("/:conversationId/wakeups/*", bodyLimit({ maxSize: CAPABILITY_MAX_RESULT_BYTES }))
   .onError((error, c) => {
-    if (!(error instanceof AiWakeupError)) throw error;
+    if (error instanceof AiMessageQueueConflict) return respond(c, fail(err.conflict(error.message)));
+    if (!(error instanceof AiWakeupError)) return toAiErrorResponse(c, error);
     const status = error.code === "forbidden" ? 403 : error.code === "not_found" ? 404 : error.code === "invalid" ? 400 : 409;
     return c.json({ code: `wakeup_${error.code}`, message: aiWakeupMessages(getLocale(c))[error.code] }, status);
   })

@@ -6,6 +6,7 @@ import type { AiChatTurnRunConfig } from "./types";
 import {
   AI_WAKEUP_CHAT_LIMIT,
   AI_WAKEUP_SNOOZE_LIMIT,
+  type AiWakeupNoteSource,
   type AiWakeupInput,
   AiWakeupInputSchema,
   type AiWakeupPatch,
@@ -71,7 +72,7 @@ export async function requireOwnedAiWakeupChat(chatId: string, subject: AiWakeup
 
 async function capacity(conversationId: string, db: SQL, exclude?: string) {
   const [row] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.wakeups
-    WHERE conversation_id=${conversationId}::uuid AND status IN ('active','missed','expired') AND id IS DISTINCT FROM ${exclude ?? null}::uuid`;
+    WHERE conversation_id=${conversationId}::uuid AND (status IN ('active','missed') OR (status='expired' AND cron IS NOT NULL)) AND id IS DISTINCT FROM ${exclude ?? null}::uuid`;
   if (row!.count >= AI_WAKEUP_CHAT_LIMIT)
     throw new AiWakeupError("limit", "This chat already has five alarms. Change or delete one first.");
 }
@@ -87,6 +88,10 @@ const note = (input: AiWakeupInput | AiWakeupPatch) => {
   if (!parsed.success) throw new AiWakeupError("invalid", "Check the alarm's time and note.");
 };
 
+const noteSource = (subject: AiWakeupAuthority, owner: string): AiWakeupNoteSource => subject.turnId
+  ? { kind: "gustav", userId: owner, turnId: subject.turnId }
+  : { kind: "person", userId: owner };
+
 /** Same retirement shape as ordinary queue cancellation, including release of queued file bytes. */
 async function cancelPendingAiWakeupMessages(conversationId: string, wakeupId: string, db: SQL) {
   await db`WITH cancelled AS (
@@ -100,7 +105,7 @@ export const aiWakeups = {
   async list(chatId: string, subject: AiWakeupAuthority, locale: string) {
     const chat = await requireOwnedAiWakeupChat(chatId, subject, sql);
     const rows = await sql<AiWakeupRow[]>`SELECT * FROM ai.wakeups WHERE conversation_id=${chat.id}::uuid
-      AND (status IN ('active','missed','expired') OR id=${chat.trigger?.kind === "wakeup" ? chat.trigger.id : null}::uuid)
+      AND ((status IN ('active','missed') OR (status='expired' AND cron IS NOT NULL)) OR id=${chat.trigger?.kind === "wakeup" ? chat.trigger.id : null}::uuid)
       ORDER BY next_at NULLS LAST,created_at LIMIT ${AI_WAKEUP_CHAT_LIMIT + (chat.trigger?.kind === "wakeup" ? 1 : 0)}`;
     return { items: rows.map((row) => publicAiWakeup(row, locale)), limit: AI_WAKEUP_CHAT_LIMIT, paused: Boolean(chat.archived_at) };
   },
@@ -111,8 +116,8 @@ export const aiWakeups = {
       const chat = await requireOwnedAiWakeupChat(chatId, subject, db, true);
       if (chat.trigger?.kind === "wakeup") throw new AiWakeupError("forbidden", "An alarm turn cannot create another alarm.");
       await capacity(chat.id, db);
-      const [row] = await db<AiWakeupRow[]>`INSERT INTO ai.wakeups(id,conversation_id,created_by,next_at,cron,timezone,ends_at,note)
-        VALUES(${crypto.randomUUID()}::uuid,${chat.id}::uuid,${chat.owner}::uuid,${time.nextAt},${time.cron},${time.timezone},${time.endsAt},${input.note.trim()}) RETURNING *`;
+      const [row] = await db<AiWakeupRow[]>`INSERT INTO ai.wakeups(id,conversation_id,created_by,next_at,cron,timezone,ends_at,note,note_source)
+        VALUES(${crypto.randomUUID()}::uuid,${chat.id}::uuid,${chat.owner}::uuid,${time.nextAt},${time.cron},${time.timezone},${time.endsAt},${input.note.trim()},(${JSON.stringify(noteSource(subject, chat.owner))}::text)::jsonb) RETURNING *`;
       await recordAiWakeupEvent(row!, "created", locale, db, now);
       return publicAiWakeup(row!, locale);
     });
@@ -122,14 +127,13 @@ export const aiWakeups = {
     return sql.begin(async (db) => {
       const chat = await requireOwnedAiWakeupChat(chatId, subject, db, true);
       const [row] = await db<AiWakeupRow[]>`SELECT * FROM ai.wakeups WHERE id=${id}::uuid AND conversation_id=${chat.id}::uuid FOR UPDATE`;
-      if (!row) throw new AiWakeupError("not_found", "Alarm not found.");
+      if (!row || row.status === "deleted") throw new AiWakeupError("not_found", "Alarm not found.");
       if (row.revision !== input.revision) throw new AiWakeupError("conflict", "The alarm changed. Read it again.");
       const snooze = chat.trigger?.kind === "wakeup";
       if (snooze && (chat.trigger?.id !== id || !input.at || Object.keys(input).some((key) => key !== "at" && key !== "revision")))
         throw new AiWakeupError("forbidden", "An alarm turn may only postpone its own time.");
       if (snooze && row.snoozes >= AI_WAKEUP_SNOOZE_LIMIT)
         throw new AiWakeupError("snooze_limit", "This alarm has already been postponed three times.");
-      if (snooze && row.status === "deleted") throw new AiWakeupError("forbidden", "The person deleted this alarm.");
       const cron = input.cron === undefined ? row.cron : input.cron;
       const unchangedTime =
         input.at === undefined && input.cron === undefined && input.endsAt === undefined && (!cron || input.timezone === undefined);
@@ -147,7 +151,7 @@ export const aiWakeups = {
       const [updated] = await db<
         AiWakeupRow[]
       >`UPDATE ai.wakeups SET next_at=${time.nextAt},cron=${time.cron},timezone=${time.timezone},ends_at=${time.endsAt},
-        note=${input.note?.trim() ?? row.note},snoozes=${snooze ? row.snoozes + 1 : 0},status='active',missed_reason=NULL,last_message_id=NULL,revision=revision+1,updated_at=${now}
+        note=${input.note?.trim() ?? row.note},note_source=(${JSON.stringify(input.note === undefined ? row.note_source : noteSource(subject, chat.owner))}::text)::jsonb,failure_count=0,retry_at=NULL,snoozes=${snooze ? row.snoozes + 1 : 0},status='active',missed_reason=NULL,last_message_id=NULL,revision=revision+1,updated_at=${now}
         WHERE id=${id}::uuid RETURNING *`;
       // A person's edit replaces the old commitment, including a due message still waiting in the queue.
       await cancelPendingAiWakeupMessages(chat.id, id, db);

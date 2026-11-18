@@ -1,6 +1,6 @@
 import { sql } from "@k2b/cloud";
-import { type AiWakeupBudgetCheck, AiWakeupBudgetError, markAiWakeupMissed } from "@k2b/cloud/ai";
-import { type AiChatTurnAdmission, AiTurnFailure } from "@k2b/cloud/ai/runtime";
+import { type AiWakeupBudgetCheck, AiWakeupBudgetError } from "@k2b/cloud/ai";
+import { type AiChatTurnAdmission, AiTurnFailure, markAiWakeupMissed } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings, isAccountAllowed, logger } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
 import { aiWakeupMessages } from "./ai-wakeup-messages";
@@ -120,6 +120,10 @@ export const checkWakeupChatBudget: AiWakeupBudgetCheck = async ({ owner, wakeup
   }
 };
 
+class AiWakeupAccessError extends AiTurnFailure {
+  constructor(message: string) { super("not_allowed", message); }
+}
+
 async function admitWakeupChatTurn(input: Parameters<AiChatTurnAdmission>[0]) {
   const { wakeup, actor, send, writerOrigin, turnTrigger } = input.runConfig;
   if (
@@ -138,20 +142,21 @@ async function admitWakeupChatTurn(input: Parameters<AiChatTurnAdmission>[0]) {
     throw new AiTurnFailure("not_allowed", "Alarm authority is unavailable.");
   try {
     await sql.begin(async (db) => {
+      const fence = await db`SELECT id FROM ai.turns WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid
+        AND status='running' AND lease_owner=${input.leaseOwner} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
+      if (!fence.length) throw new AiTurnFailure("not_allowed", "Alarm chat worker lease was lost.");
       const user = await accounts.users.get({ id: actor.user.id }, { db });
       if (!user || isAccountExpired(user.accountExpires) || !(await isAccountAllowed(user, db)))
-        throw new AiTurnFailure("not_allowed", "Alarm owner is inactive.");
+        throw new AiWakeupAccessError("Alarm owner is inactive.");
       // The queue refreshes the owner; recheck the durable receipt and worker fence on every resumption.
       const [valid] = await db`SELECT 1 FROM ai.chat_send_receipts r JOIN ai.conversations c ON c.id=r.conversation_id
         JOIN ai.wakeups w ON w.id=${wakeup.id}::uuid
         WHERE r.id=${send.id}::uuid AND r.account_id=${actor.user.id}::uuid AND r.conversation_id=${input.conversationId}::uuid
           AND c.created_by_user_id=r.account_id AND c.archived_at IS NULL
           AND w.conversation_id=c.id AND w.created_by=r.account_id AND w.status<>'deleted'
+          AND r.queued_message_id=${send.id}::uuid AND r.key_hash=${send.keyHash} AND r.input_hash=${send.requestHash}
           AND r.origin=(${JSON.stringify(writerOrigin)}::text)::jsonb AND r.turn_trigger=(${JSON.stringify(turnTrigger)}::text)::jsonb`;
-      if (!valid) throw new AiTurnFailure("not_allowed", "Alarm authority is unavailable.");
-      const fence = await db`SELECT id FROM ai.turns WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid
-        AND status='running' AND lease_owner=${input.leaseOwner} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
-      if (!fence.length) throw new AiTurnFailure("not_allowed", "Alarm chat worker lease was lost.");
+      if (!valid) throw new AiWakeupAccessError("Alarm authority is unavailable.");
       await reserveCodeChatTurnBudget(
         { turnId: input.turnId, codeId: `wakeup:${wakeup.id}`, ownerUserId: actor.user.id, profile: input.profile },
         db,
@@ -159,9 +164,12 @@ async function admitWakeupChatTurn(input: Parameters<AiChatTurnAdmission>[0]) {
       );
     });
   } catch (error) {
-    if (error instanceof CodeChatBudgetError || (error instanceof AiTurnFailure && error.code === "not_allowed")) {
+    if (error instanceof CodeChatBudgetError || error instanceof AiWakeupAccessError) {
       await sql.begin(async (db) => {
         await db`SELECT id FROM ai.conversations WHERE id=${input.conversationId}::uuid FOR UPDATE`;
+        const fence = await db`SELECT id FROM ai.turns WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid
+          AND status='running' AND lease_owner=${input.leaseOwner} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
+        if (!fence.length) return;
         await markAiWakeupMissed(
           input.conversationId,
           send.id,

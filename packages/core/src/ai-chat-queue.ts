@@ -65,11 +65,12 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
   if (origin.kind === "wakeup") {
     if (!(await isAccountAllowed(user, db))) throw new AiQueuedChatStartError("source_restricted");
     const wakeup = config.wakeup;
-    if (!wakeup || wakeup.id !== origin.id || wakeup.scheduledAt !== origin.scheduledAt)
+    if (!wakeup || wakeup.id !== origin.id || wakeup.scheduledAt !== origin.scheduledAt || config.send?.id !== messageId)
       throw new AiQueuedChatStartError("source_restricted");
     const [valid] = await db`SELECT 1 FROM ai.wakeups w JOIN ai.chat_send_receipts r ON r.id=${messageId}::uuid
       WHERE w.id=${origin.id}::uuid AND w.conversation_id=${input.conversationId}::uuid AND w.created_by=${owner}::uuid
         AND w.status<>'deleted' AND r.conversation_id=w.conversation_id AND r.account_id=w.created_by
+        AND r.queued_message_id=${messageId}::uuid AND r.key_hash=${config.send.keyHash} AND r.input_hash=${config.send.requestHash}
         AND r.origin=(${JSON.stringify(origin)}::text)::jsonb AND r.turn_trigger=(${JSON.stringify(trigger)}::text)::jsonb`;
     if (!valid) throw new AiQueuedChatStartError("source_restricted");
     try {

@@ -1,7 +1,7 @@
 import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
 import { appendAiWakeupEvent } from "./store";
-import type { AiWakeup, AiWakeupEvent } from "./wakeup-contracts";
+import type { AiWakeup, AiWakeupEvent, AiWakeupNoteSource } from "./wakeup-contracts";
 import { describeAiWakeupRhythm } from "./wakeup-time";
 
 export type AiWakeupRow = {
@@ -13,6 +13,9 @@ export type AiWakeupRow = {
   timezone: string;
   ends_at: Date | null;
   note: string;
+  note_source: AiWakeupNoteSource;
+  failure_count: number;
+  retry_at: Date | null;
   snoozes: number;
   status: AiWakeup["status"];
   missed_reason: AiWakeup["missedReason"];
@@ -25,6 +28,7 @@ export const publicAiWakeup = (row: AiWakeupRow, locale: string): AiWakeup => ({
   timezone: row.timezone,
   endsAt: row.ends_at?.toISOString() ?? null,
   note: row.note,
+  noteSource: row.note_source,
   snoozes: row.snoozes,
   status: row.status,
   missedReason: row.missed_reason,
@@ -37,9 +41,10 @@ export async function migrateAiWakeups() {
     id uuid PRIMARY KEY, conversation_id uuid NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
     created_by uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     next_at timestamptz, cron text, timezone text NOT NULL, ends_at timestamptz,
+    note_source jsonb NOT NULL, failure_count integer NOT NULL DEFAULT 0, retry_at timestamptz,
     note text NOT NULL CHECK(char_length(note) BETWEEN 1 AND 200), snoozes integer NOT NULL DEFAULT 0 CHECK(snoozes BETWEEN 0 AND 3),
     status text NOT NULL DEFAULT 'active' CHECK(status IN ('active','missed','expired','done','deleted')),
-    missed_reason text CHECK(missed_reason IN ('access','budget','queue_full')), revision integer NOT NULL DEFAULT 0,
+    missed_reason text CHECK(missed_reason IN ('access','budget','queue_full','delivery')), revision integer NOT NULL DEFAULT 0,
     last_message_id uuid, updated_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_wakeups_due ON ai.wakeups(next_at) WHERE status='active'`.simple();
@@ -66,6 +71,6 @@ export async function markAiWakeupMissed(conversationId: string, messageId: stri
     next_at=CASE WHEN w.cron IS NULL THEN (r.origin->>'scheduledAt')::timestamptz ELSE w.next_at END,
     missed_reason=${reason},revision=w.revision+1,updated_at=clock_timestamp()
     FROM ai.chat_send_receipts r WHERE w.conversation_id=${conversationId}::uuid AND w.last_message_id=${messageId}::uuid
-      AND r.id=w.last_message_id AND w.status IN ('active','done','expired') AND w.missed_reason IS NULL RETURNING w.*`;
+      AND r.id=w.last_message_id AND w.status IN ('active','done','expired') AND w.missed_reason IS DISTINCT FROM ${reason} RETURNING w.*`;
   if (row) await recordAiWakeupEvent(row, "missed", locale, db);
 }

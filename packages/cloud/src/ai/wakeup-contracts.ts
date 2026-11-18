@@ -17,6 +17,17 @@ export const AI_WAKEUP_TICK_BATCH = 100;
 /** Alarm v1 recovery contract: a missed one-off remains actionable for seven days. */
 export const AI_WAKEUP_MISSED_DAYS = 7;
 
+/** One-minute scheduler retries fit inside the minimum fifteen-minute alarm interval.
+ * Delays 1+2+4+8 minutes use that interval; the fifth failed attempt is terminal. */
+export const AI_WAKEUP_TICK_INTERVAL_MS = 60_000;
+export const AI_WAKEUP_FAILURE_LIMIT = 1 + Math.floor(Math.log2(AI_WAKEUP_MIN_INTERVAL_MINUTES * 60_000 / AI_WAKEUP_TICK_INTERVAL_MS + 1));
+
+export const AiWakeupNoteSourceSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("person"), userId: z.uuid() }),
+  z.strictObject({ kind: z.literal("gustav"), userId: z.uuid(), turnId: z.uuid() }),
+]);
+export type AiWakeupNoteSource = z.infer<typeof AiWakeupNoteSourceSchema>;
+
 export const AiWakeupInputSchema = z.strictObject({
   at: z.iso.datetime({ offset: true }).optional(),
   cron: z.string().trim().min(1).nullable().optional(),
@@ -41,9 +52,10 @@ export const AiWakeupSchema = z.strictObject({
   timezone: z.string(),
   endsAt: z.string().nullable(),
   note: z.string(),
+  noteSource: AiWakeupNoteSourceSchema,
   snoozes: z.number().int(),
   status: z.enum(["active", "missed", "expired", "done", "deleted"]),
-  missedReason: z.enum(["access", "budget", "queue_full"]).nullable(),
+  missedReason: z.enum(["access", "budget", "queue_full", "delivery"]).nullable(),
   revision: z.number().int(),
   rhythm: z.string(),
 });

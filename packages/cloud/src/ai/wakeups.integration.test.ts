@@ -11,7 +11,7 @@ import * as runtime from "./runtime";
 import * as settings from "./settings";
 import { aiConversations } from "./store";
 import { catchUpAiWakeup } from "./wakeup-catch-up";
-import { AI_WAKEUP_CHAT_LIMIT } from "./wakeup-contracts";
+import { AI_WAKEUP_CHAT_LIMIT, AI_WAKEUP_FAILURE_LIMIT, AI_WAKEUP_TICK_INTERVAL_MS, AI_WAKEUP_MISSED_DAYS } from "./wakeup-contracts";
 import { markAiWakeupMissed } from "./wakeup-store";
 import { AiWakeupBudgetError, aiWakeupOccurrenceId, tickAiWakeups } from "./wakeup-tick";
 import type { AiWakeupAuthority } from "./wakeups";
@@ -314,6 +314,110 @@ suiteFor(
     expect(await sql`SELECT 1 FROM ai.queued_messages WHERE conversation_id=${own.id}::uuid AND status='pending'`).toHaveLength(0);
     await sql`DELETE FROM ai.conversations WHERE id=${own.id}::uuid`;
     expect(await sql`SELECT 1 FROM ai.wakeups WHERE id=${alarm.id}::uuid`).toHaveLength(0);
+  });
+
+  test("alarm facts stay visible in history but never enter current or subsequent model context", async () => {
+    const own = await chat();
+    const alarm = await aiWakeups.create(own.shortId, note, subject, "en", now);
+    const { turn } = await aiConversations.submitChatTurn({ conversationId: own.id, modelId: "chat",
+      userMessage: { role: "user", content: ["Continue"] }, runConfig: { kind: "chat", input: "Continue" } });
+    await aiWakeups.update(own.shortId, alarm.id, { revision: alarm.revision, note: "Later" }, subject, "en", now);
+    const current = await aiConversations.createSessionStore({ conversationId: own.id, turnId: turn.id, leaseOwner: "context-test" }).load();
+    expect(current.filter((entry) => entry.meta?.wakeupEvent)).toEqual([]);
+    expect(JSON.stringify(current)).not.toContain("Alarm set");
+    expect(JSON.stringify(current)).not.toContain("Alarm changed");
+    await sql`UPDATE ai.turns SET status='completed' WHERE id=${turn.id}::uuid`;
+    const next = await aiConversations.submitChatTurn({ conversationId: own.id, modelId: "chat",
+      userMessage: { role: "user", content: ["Next"] }, runConfig: { kind: "chat", input: "Next" } });
+    const following = await aiConversations.createSessionStore({ conversationId: own.id, turnId: next.turn.id, leaseOwner: "next-context" }).load();
+    expect(following.filter((entry) => entry.meta?.wakeupEvent)).toEqual([]);
+    const context = await aiConversations.listContextMessages({ conversationId: own.id });
+    expect(context.filter((entry) => entry.meta?.wakeupEvent)).toEqual([]);
+    for (const entries of [following, context]) {
+      expect(JSON.stringify(entries)).not.toContain("Alarm set");
+      expect(JSON.stringify(entries)).not.toContain("Alarm changed");
+    }
+    expect((await aiConversations.listMessages({ conversationId: own.id })).filter((entry) => entry.meta?.wakeupEvent)).toHaveLength(2);
+  });
+
+  test("three recurring refusals record only the transition; an already queued occurrence skips silently", async () => {
+    const own = await chat();
+    const recurring = { ...note, at: "2026-11-18T12:15:00Z", cron: "*/15 * * * *" };
+    await aiWakeups.create(own.shortId, recurring, subject, "en", now);
+    for (const minute of [15, 30, 45]) await tickAiWakeups(async () => { throw new AiWakeupBudgetError("spent"); }, { now: new Date(`2026-11-18T12:${minute}:00Z`) });
+    expect(await sql`SELECT 1 FROM ai.messages WHERE conversation_id=${own.id}::uuid AND meta#>>'{wakeupEvent,kind}'='missed'`).toHaveLength(1);
+    await sql`UPDATE ai.conversations SET allowed_tools='{}'::text[] WHERE id=${own.id}::uuid`;
+    await tick(new Date("2026-11-18T13:00:00Z"));
+    await tick(new Date("2026-11-18T13:15:00Z"));
+    expect(await sql`SELECT 1 FROM ai.messages WHERE conversation_id=${own.id}::uuid AND meta#>>'{wakeupEvent,kind}'='missed'`).toHaveLength(2);
+    const queuedChat = await chat();
+    await aiWakeups.create(queuedChat.shortId, recurring, subject, "en", now);
+    for (const minute of [15, 30, 45]) await tick(new Date(`2026-11-18T12:${minute}:00Z`));
+    expect(await sql`SELECT 1 FROM ai.queued_messages WHERE conversation_id=${queuedChat.id}::uuid AND status='pending'`).toHaveLength(1);
+    expect(await sql`SELECT 1 FROM ai.messages WHERE conversation_id=${queuedChat.id}::uuid AND meta#>>'{wakeupEvent,kind}'='missed'`).toHaveLength(0);
+  });
+
+  test("deleted alarms cannot be revived by a person or the stored alarm turn", async () => {
+    const own = await chat();
+    const alarm = await aiWakeups.create(own.shortId, note, subject, "en", now);
+    const { turn } = await aiConversations.submitChatTurn({ conversationId: own.id, modelId: "chat",
+      userMessage: { role: "user", content: ["Alarm"] }, runConfig: { kind: "chat", input: "Alarm", actor: subject.actor,
+        assistantChat: true, toolSource: { kind: "default" }, turnTrigger: { kind: "wakeup", id: alarm.id } } });
+    await sql`UPDATE ai.turns SET status='running' WHERE id=${turn.id}::uuid`;
+    const removed = await aiWakeups.remove(own.shortId, alarm.id, alarm.revision, subject, "en", now);
+    for (const authority of [subject, { ...subject, turnId: turn.id }])
+      await expect(aiWakeups.update(own.shortId, alarm.id, { revision: removed.revision, at: "2026-11-18T13:00:00Z" }, authority, "en", now)).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  test("notes retain session or Gustav turn provenance, including the delivery framing", async () => {
+    const own = await chat();
+    const person = await aiWakeups.create(own.shortId, note, subject, "en", now);
+    expect(person.noteSource).toEqual({ kind: "person", userId: owner });
+    const { turn } = await aiConversations.submitChatTurn({ conversationId: own.id, modelId: "chat", userMessage: { role: "user", content: ["Later"] },
+      runConfig: { kind: "chat", input: "Later", actor: subject.actor, assistantChat: true, toolSource: { kind: "default" }, turnTrigger: { kind: "person", id: owner } } });
+    await sql`UPDATE ai.turns SET status='running' WHERE id=${turn.id}::uuid`;
+    const alarm = await aiWakeups.create(own.shortId, note, { ...subject, turnId: turn.id }, "en", now);
+    expect(alarm.noteSource).toEqual({ kind: "gustav", userId: owner, turnId: turn.id });
+    const shifted = await aiWakeups.update(own.shortId, alarm.id, { revision: alarm.revision, at: due.toISOString() }, subject, "en", now);
+    expect(shifted.noteSource).toEqual(alarm.noteSource);
+    const changed = await aiWakeups.update(own.shortId, person.id, { revision: person.revision, note: "Saved by Gustav" }, { ...subject, turnId: turn.id }, "en", now);
+    expect(changed.noteSource).toEqual(alarm.noteSource);
+    const prepare = spyOn(runtime, "prepareAiChatTurn");
+    await tick();
+    const inputs = prepare.mock.calls.map((call) => call[0]);
+    expect(inputs.find((input) => input.wakeup?.id === alarm.id)?.systemPrompt).toContain("previously stored reminder");
+    expect(inputs.find((input) => input.wakeup?.id === alarm.id)?.systemPrompt).toContain(turn.id);
+  });
+
+  test("unknown delivery failures back off on the minute ticks and become one actionable missed fact", async () => {
+    const own = await chat();
+    const alarm = await aiWakeups.create(own.shortId, { ...note, cron: "*/15 * * * *" }, subject, "en", now);
+    const prepare = spyOn(runtime, "prepareAiChatTurn").mockRejectedValue(new Error("Delivery unavailable"));
+    let at = due;
+    for (let attempt = 1; attempt <= AI_WAKEUP_FAILURE_LIMIT; attempt++) {
+      await tick(at);
+      if (attempt < AI_WAKEUP_FAILURE_LIMIT) {
+        await tick(new Date(+at + AI_WAKEUP_TICK_INTERVAL_MS / 2));
+        expect(prepare).toHaveBeenCalledTimes(attempt);
+        at = new Date(+at + 2 ** (attempt - 1) * AI_WAKEUP_TICK_INTERVAL_MS);
+      }
+    }
+    expect((await aiWakeups.list(own.shortId, subject, "en")).items[0]).toMatchObject({ id: alarm.id, status: "missed", missedReason: "delivery" });
+    expect(await sql`SELECT 1 FROM ai.messages WHERE conversation_id=${own.id}::uuid AND meta#>>'{wakeupEvent,kind}'='missed'`).toHaveLength(1);
+    await tick(new Date(+at + 15 * AI_WAKEUP_TICK_INTERVAL_MS));
+    expect(prepare).toHaveBeenCalledTimes(AI_WAKEUP_FAILURE_LIMIT);
+  });
+
+  test("a missed one-off releases its place after the seven-day catch-up period", async () => {
+    const own = await chat();
+    const alarm = await aiWakeups.create(own.shortId, note, subject, "en", now);
+    await tickAiWakeups(async () => { throw new AiWakeupBudgetError("spent"); }, { now: due });
+    const expiredAt = new Date(+due + AI_WAKEUP_MISSED_DAYS * 86_400_000);
+    await tick(expiredAt);
+    expect(await sql`SELECT status FROM ai.wakeups WHERE id=${alarm.id}::uuid`).toEqual([{ status: "expired" }]);
+    expect((await aiWakeups.list(own.shortId, subject, "en")).items).toEqual([]);
+    for (let i = 0; i < AI_WAKEUP_CHAT_LIMIT; i++) await aiWakeups.create(own.shortId, { ...note, at: new Date(+expiredAt + 60_000).toISOString() }, subject, "en", expiredAt);
+    expect((await aiWakeups.list(own.shortId, subject, "en")).items).toHaveLength(AI_WAKEUP_CHAT_LIMIT);
   });
 
   test("DATA-13: empty tick is one read; alarm live delivery authorizes in memory with zero SQL", async () => {

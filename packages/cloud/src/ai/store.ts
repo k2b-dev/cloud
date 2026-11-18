@@ -647,10 +647,11 @@ const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_obj
 
 // A background result arriving during an interactive turn becomes context on the next turn.
 const visibleToTurn = (turnId?: string) => sql`(
+  NOT COALESCE(${todoMetaJson()} ? 'wakeupEvent', false) AND (
   ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ?| ARRAY['scheduledTask','codeDecision'], false) OR seq < ALL (
     SELECT input_message.seq FROM ai.messages input_message
     WHERE input_message.loop_id = ${turnId ?? null} AND input_message.role = 'user'
-  )
+  ))
 )`;
 
 const rowToConversation = (row: ConversationRow): AiConversation => ({
@@ -2964,6 +2965,7 @@ export const aiConversations: AiConversationService = {
       FROM ai.messages
       WHERE conversation_id = ${input.conversationId}
         AND compacted_at IS NULL
+        AND NOT COALESCE(${todoMetaJson()} ? 'wakeupEvent', false)
       ORDER BY seq ASC
     `;
     return projectAiMaps(rows.map(rowToMessage).map(aiCodeDecisionContext));

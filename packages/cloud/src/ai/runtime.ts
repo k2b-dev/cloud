@@ -798,3 +798,5 @@ export type AiChatTurnAdmission = NonNullable<ExecutorConfig["beforeChatTurn"]>;
 
 export { enqueueAiChatSend } from "./chat-send";
 export { AiTurnFailure } from "./turn-failure";
+
+export { markAiWakeupMissed } from "./wakeup-store";

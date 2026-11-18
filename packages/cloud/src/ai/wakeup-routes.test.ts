@@ -2,6 +2,9 @@ import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import type { AuthContext } from "../server";
 import { userResourceContext } from "./projects.test-fixture";
+import * as catchUp from "./wakeup-catch-up";
+import { AiMessageQueueConflict } from "./message-queue";
+import { AiQuotaError } from "./quotas";
 import { aiWakeupRoutes } from "./wakeup-routes";
 import { AiWakeupError, aiWakeups } from "./wakeups";
 
@@ -54,4 +57,16 @@ test("optimistic conflicts use a stable code and request-localized recovery text
     code: "wakeup_conflict",
     message: "Der Wecker wurde geändert. Öffne die Liste vor dem Speichern erneut.",
   });
+});
+
+
+test("catch-up reports queue conflicts as 409 and quota failures through the AI response contract", async () => {
+  const catchUpCall = spyOn(catchUp, "catchUpAiWakeup").mockRejectedValue(new AiMessageQueueConflict("Queue full"));
+  const response = await app().request(`${path}/${id}/catch-up`, request("POST", { revision: 0 }));
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ message: "Queue full" });
+  catchUpCall.mockRejectedValue(new AiQuotaError("quota_exhausted", "Budget spent"));
+  const quota = await app().request(`${path}/${id}/catch-up`, request("POST", { revision: 0 }));
+  expect(quota.status).toBe(429);
+  expect(await quota.json()).toMatchObject({ code: "quota_exhausted", message: "Budget spent" });
 });

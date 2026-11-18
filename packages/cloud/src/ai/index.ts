@@ -514,6 +514,7 @@ export {
 } from "./vision-tool";
 export {
   AI_WAKEUP_CHAT_LIMIT,
+  AI_WAKEUP_FAILURE_LIMIT,
   AI_WAKEUP_LIFETIME_DAYS,
   AI_WAKEUP_MAX_YEARS,
   AI_WAKEUP_MIN_INTERVAL_MINUTES,
@@ -521,16 +522,18 @@ export {
   AI_WAKEUP_NOTE_CHARACTERS,
   AI_WAKEUP_SNOOZE_LIMIT,
   AI_WAKEUP_TICK_BATCH,
+  AI_WAKEUP_TICK_INTERVAL_MS,
   type AiWakeup,
   type AiWakeupEvent,
   type AiWakeupInput,
   AiWakeupInputSchema,
+  type AiWakeupNoteSource,
+  AiWakeupNoteSourceSchema,
   type AiWakeupOccurrence,
   type AiWakeupPatch,
   AiWakeupPatchSchema,
   AiWakeupSchema,
 } from "./wakeup-contracts";
-export { markAiWakeupMissed } from "./wakeup-store";
 export { type AiWakeupBudgetCheck, AiWakeupBudgetError } from "./wakeup-tick";
 export { AiWakeupError, aiWakeups } from "./wakeups";
 export { readWebPageForPerson, type WebReaderResult, WebReaderResultSchema } from "./web-reader";

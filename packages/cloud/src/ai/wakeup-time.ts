@@ -1,5 +1,5 @@
 import { describeCodeSchedule } from "../code/schedule";
-import { normalizeCronSchedule, visitCronDaySlots } from "../shared/cron-schedule";
+import { cronRangeHasCalendarMatch, normalizeCronSchedule, visitCronDaySlots } from "../shared/cron-schedule";
 import { AI_WAKEUP_LIFETIME_DAYS, AI_WAKEUP_MAX_YEARS, AI_WAKEUP_MIN_INTERVAL_MINUTES, type AiWakeupInput } from "./wakeup-contracts";
 
 const DAY_MS = 86_400_000;
@@ -18,8 +18,10 @@ export function nextAiWakeupAt(cron: string, timezone: string, after: Date, end:
     hourCycle: "h23",
   });
   for (let start = +after - 26 * 3_600_000; start <= +end; start += DAY_MS) {
+    const from = new Date(start), to = new Date(Math.min(start + DAY_MS, +end + 1));
+    if (!cronRangeHasCalendarMatch({ cron, timezone }, from, to)) continue;
     let next: Date | null = null;
-    visitCronDaySlots({ cron, timezone }, new Date(start), new Date(Math.min(start + DAY_MS, +end + 1)), (slot) => {
+    visitCronDaySlots({ cron, timezone }, from, to, (slot) => {
       const key = local.format(slot);
       if (seen.has(key)) return;
       seen.add(key);
