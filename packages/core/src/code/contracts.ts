@@ -192,6 +192,9 @@ export const CodeRefusedCallSchema = z
   })
   .strict();
 export type CodeRefusedCall = z.infer<typeof CodeRefusedCallSchema>;
+// Run and call payloads share one recursive JSON definition in their capability
+// projection, leaving room for structured output within the registry byte limit.
+const runJson = z.json();
 /** Ordered observational record, not a replay journal or an idempotency reservation. */
 export const CodeCallSchema = z
   .object({
@@ -200,10 +203,10 @@ export const CodeCallSchema = z
     capability: z.string(),
     refusalKind: CodeCallRefusalKindSchema.nullable(),
     /** Historical normalized JSON; output validation must not depend on the current invocation schema. */
-    call: z.json().nullable(),
+    call: runJson.nullable(),
     callChunked: z.boolean(),
     resultChunked: z.boolean(),
-    result: z.json().nullable(),
+    result: runJson.nullable(),
     state: z.enum(["running", "succeeded", "failed", "uncertain"]),
     startedAt: timestamp,
     endedAt: timestamp.nullable(),
@@ -326,8 +329,8 @@ export const codeQueryContracts = {
         run: CodeRunSchema,
         contents: z
           .object({
-            input: z.json(),
-            output: z.json().nullable(),
+            input: runJson,
+            output: runJson.nullable(),
             consoleOutput: CodeOutputWindowSchema.nullable()
               .optional()
               .describe("Sanitized output tail on the first call page; null on later pages. Editors only."),

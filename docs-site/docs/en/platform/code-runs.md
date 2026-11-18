@@ -308,16 +308,24 @@ The same permission-aware service serves API, CLI and agent calls. SSR exposes
 the window as `CodePageRunDetail.consoleOutput`.
 
 Stored snapshots and live deltas carry an `entries` array of structured records.
-The current discriminated record is:
+The discriminated records are:
 
 ```ts
+type OutputText = Array<{ type: "text", text: string } | { type: "secret", name: string }>;
 type LogEntry = {
   id: string, // stable within this run
   kind: "log",
   level: "log" | "info" | "debug" | "warn" | "error",
   at: string, // ISO 8601 UTC timestamp captured by the invocation's console
-  text: Array<{ type: "text", text: string } | { type: "secret", name: string }>
+  text: OutputText
 };
+type StepEntry = {
+  kind: "step"; id: string; at: string;
+  label: OutputText; icon?: string; description?: OutputText;
+  status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+  startedAt?: string; endedAt?: string; message?: OutputText;
+};
+type RunEntry = LogEntry | StepEntry;
 ```
 
 `console.log` produces `kind: "log", level: "log"`; the other console methods
@@ -329,21 +337,99 @@ and `seq` order transport deltas. Core assigns each published log entry an
 survives window eviction, snapshot reads and replay; it is not an author-supplied key.
 
 Readers retain unknown `kind` values as opaque objects in the same bounded
-window and skip their rendering. Use `isCodeOutputLogEntry` from
-`@k2b/cloud/code` before reading log fields. Malformed known entries are
-rejected. This extensible JSON format allows future kinds, including steps,
-without a database migration; no step API is available yet. In particular,
-future `kind: "step"` records can retain `id`, creation time `at`, `label`,
-optional `icon` and `description`, `status` (`pending`, `running`, `succeeded`,
-`failed` or `skipped`), and optional `startedAt`, `endedAt` and `message` for
-the result or reason in this same array. Current readers preserve those fields
-without interpreting step transitions. The later step implementation owns
-updates of the same step ID and the step lifecycle.
+window and skip their rendering. Use `isCodeOutputLogEntry` and
+`isCodeOutputStepEntry` from `@k2b/cloud/code` before reading known fields.
+Malformed known entries are rejected. Steps use the existing JSON storage;
+no migration is needed. Core derives each step ID from the attempt generation
+and its run-local ordinal. A new revision replaces the same ID at its original
+position in the retained window. Apply live events with `applyCodeOutputEvent`
+to get the same result as stored snapshots and replay.
 
 At the RunLog display boundary, render named secret parts as text labels and
 map console `log`/`debug` to the display level `info`. Never pass raw HTML.
-Step descriptions and reasons will need the same text sanitization and secret
-redaction as log text before publication when step production is added.
+Step labels, descriptions and messages use the same text parts, cleaning and
+continuous secret redaction as logs, including across fields and bundles.
+Deferred text retains the originating field. Icons are optional identifiers;
+names use at most 64 lowercase letters, digits or hyphens, without an
+icon-library prefix. Unusable or redacted icons are omitted; RunLog adds its
+own prefix.
+
+### Report steps with logger
+
+Import `logger` from the Code SDK. Declare the steps at the start of the
+handler so viewers can see the planned work before it starts:
+
+```ts
+import { app, logger } from "@k2b/cloud/code";
+
+app.schedule({ cron: "0 8 * * *", name: "report" }, async () => {
+  const read = logger.step("Read document", {
+    icon: "file-text", description: "Read the document and its positions."
+  });
+  const save = logger.step({ label: "Save positions", icon: "table-plus" });
+
+  read.start();
+  logger.info("Reading positions");
+  read.succeed("Document read");
+
+  save.skip("Already saved");
+});
+export default app;
+```
+
+`logger.step(label, { icon?, description? })` and
+`logger.step({ label, icon?, description? })` immediately create a `pending`
+entry and return a `CodeLogStep` handle. Call `start()` to make it `running`,
+then `succeed(message?)`, `fail(reason)` or `skip(reason)`. You can also skip a
+pending step, or fail it without starting it; neither sets `startedAt`.
+Starting twice, completing an unstarted step with `succeed`, and all calls
+after the first terminal result have no effect.
+Each handle keeps one row; there is no separate step definition or string key.
+`CodeLogger`, `CodeLogStep` and `CodeLogStepOptions` are public SDK types.
+
+`logger.info(text)`, `logger.warn(text)` and `logger.error(text)` produce
+ordinary `kind: "log"` entries with that level. Existing console methods keep
+their behavior. For transient `chat` and `test` invocations, the run-local
+console and logger are available but do not send production output.
+These methods report output; calling `fail` or `error` does
+not itself fail the run or throw an exception.
+
+An uncaught Code exception fails every running step and sets its `message`
+to the exception message, within the output limits. Its text and stack also
+appear as error logs. Pending steps stay `pending` in storage: after a
+successful run, RunLog displays them as skipped; after a failed run it displays
+them as pending. The display owns this distinction. At attempt closure, Core
+completes any remaining running step as `succeeded` when the run succeeds,
+or `failed` for failure, cancellation or expiry. That automatic failure sets
+`reason: "run_ended"` and an empty `message` array. The reason is separate from author-supplied completion text. Consumers
+accept an optional string `reason`; localized display text belongs to the
+upcoming RunLog presentation update. A forced termination may
+lose the last unflushed update, just like console output.
+
+Steps and logs share the existing output window and loss counters.
+`CODE_OUTPUT_STEP_LIMITS` derives a lifetime step count from the
+canonical complete step, including string IDs, named secret parts, lifecycle
+timestamps and automatic completion, and `LIVE_LIMITS.frameBytes`. Its per-field
+encoded JSON byte limit divides the remaining raw bundle among label, icon, description
+and message, after reserving the lease envelope. Run-local handle metadata
+uses the same canonical byte reservation in Runner and Core, within the pinned
+`core.code.payload_bytes` window and the available live frame. Each short
+text field reserves space for a named secret marker; larger fields consume
+the remaining shared budget. Redaction expansion stays within that handle
+reservation. Rejected IDs stay inactive for the rest of the attempt.
+Long fields are shortened. When handle storage is exhausted, `step` returns
+an inert handle and counts one lost entry; the run continues. Completion
+messages are shortened to the remaining handle budget. Only invalid argument
+types throw (`code_output_invalid_text` or `code_output_invalid_step`).
+Core accepts each step's label, icon and description once, and its message
+only at the first completion. Revisions advance status and monotone timestamps;
+accepted text and completed steps cannot be rewritten. Step metadata shares
+the pinned output budget. Logs yield before steps when the window fills, so
+retained steps keep their creation order. Output batches remain subject to
+the same frame and cadence limits, so a busy run can lose updates. Buffered
+revisions only coalesce while adjacent to their own handle; completion text
+keeps its position after intervening logs or other steps.
+Only authorized Code editors see steps, including through API, CLI and agents.
 
 The window contains `generation`, `seq`, `entries`, `droppedLines` and
 `droppedBytes`. It keeps whole recent lines within the run's pinned

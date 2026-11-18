@@ -1,6 +1,15 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { bindProcessSync, redis, sql, unbindProcessSync } from "@k2b/cloud";
-import { applyCodeOutputEvent, emptyCodeOutput, isCodeOutputLogEntry } from "@k2b/cloud/code";
+import {
+  applyCodeOutputEvent,
+  CODE_OUTPUT_STEP_LIMITS,
+  type CodeOutputBatch,
+  CodeOutputBatchSchema,
+  codeOutputStepBytes,
+  emptyCodeOutput,
+  isCodeOutputLogEntry,
+  isCodeOutputStepEntry,
+} from "@k2b/cloud/code";
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import { RUNNER_PATHS, RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import { LIVE_LIMITS } from "@k2b/cloud/events";
@@ -9,6 +18,7 @@ import { createSync, type Sync } from "@k2b/sync";
 import { generateKeyPair } from "jose";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { RunnerOutput, runnerOutputLimits } from "../../../runner/src/output";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
@@ -295,6 +305,277 @@ suiteFor(
     await openCodeOutput({ ...proof, codeId, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, budget);
     return proof;
   }
+  test("all short handles survive the shipped collector, supervisor and Core with a remembered secret", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    await rememberCodeOutputSecrets({ ...claims, ...proof }, [{ name: "TOKEN", value: "abcdefgh", sent: "Bearer abcdefgh" }]);
+    const source = await Bun.file(new URL("../../../runner/src/assets/console.js", import.meta.url)).text();
+    const { createCodeConsole } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+    const captureLimits = runnerOutputLimits({ ...proof, trustTier: "code", outputBytes: 32768 });
+    const sent: CodeOutputBatch[] = [];
+    const supervisor = new RunnerOutput(async (batch) => {
+      sent.push(batch);
+      await receiveCodeOutput(proof, batch);
+    }, proof);
+    const output = createCodeConsole(
+      { call: async (_operation: string, input: unknown) => supervisor.write(CodeOutputBatchSchema.parse(input)) },
+      captureLimits,
+    );
+    output.logger.info("abcdefgh!");
+    const labels = Array.from({ length: CODE_OUTPUT_STEP_LIMITS.count }, (_, index) => `Upload ${index}!`);
+    for (const label of labels) {
+      const step = output.logger.step(label, { icon: "upload", description: "Transfer!" });
+      step.start();
+      step.succeed("Done!");
+    }
+    output.logger.info("ordinary output!");
+    const meter = await meterSql();
+    try {
+      expect(await meter.during(() => output.finish())).toEqual([]);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.droppedLines).toBe(0);
+      const snapshot = await replayCodeOutput(proof.runId);
+      expect(snapshot.droppedLines).toBe(0);
+      expect(snapshot.entries.filter(isCodeOutputStepEntry).map((step) => step.label)).toEqual(
+        labels.map((text) => [{ type: "text", text }]),
+      );
+      expect(snapshot.entries.filter(isCodeOutputLogEntry).flatMap((log) => log.text)).toEqual([
+        { type: "secret", name: "TOKEN" },
+        { type: "text", text: "!" },
+        { type: "text", text: "ordinary output!" },
+      ]);
+      const state = JSON.parse((await redis.get(`core:code-output:v1:${proof.runId}`))!);
+      for (const entry of sent[0]!.entries)
+        if (entry.kind === "step") expect(state.stepReservations[`1:step:${entry.id}`]).toEqual({ bytes: codeOutputStepBytes(entry) });
+      let live = emptyCodeOutput();
+      for await (const event of codeOutputTopic().replay({ tenantId: proof.runId })) live = applyCodeOutputEvent(live, event.data);
+      expect(live).toEqual(snapshot);
+      expect(await meter.during(() => persistCodeOutput(proof.runId, sql, 1, "succeeded"))).toHaveLength(1);
+      const [row] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${proof.runId}::uuid`;
+      expect(row!.console_output).toEqual(snapshot);
+    } finally {
+      await meter.close();
+    }
+  });
+  test("collector revisions keep completion text after logs through Core and replay", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    await rememberCodeOutputSecrets({ ...claims, ...proof }, [{ name: "TOKEN", value: "abcdefgh", sent: "Bearer abcdefgh" }]);
+    const source = await Bun.file(new URL("../../../runner/src/assets/console.js", import.meta.url)).text();
+    const { createCodeConsole } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+    const supervisor = new RunnerOutput((batch) => receiveCodeOutput(proof, batch), proof);
+    const output = createCodeConsole(
+      { call: async (_operation: string, batch: unknown) => supervisor.write(batch) },
+      runnerOutputLimits({ ...proof, trustTier: "code", outputBytes: 32768 }),
+    );
+    const step = output.logger.step("Upload");
+    step.start();
+    output.logger.info("Bearer abcd");
+    step.succeed("efgh");
+    await output.finish();
+    const snapshot = await replayCodeOutput(proof.runId);
+    expect(snapshot.droppedLines).toBe(0);
+    expect(snapshot.entries.filter(isCodeOutputStepEntry)).toMatchObject([
+      { label: [{ type: "text", text: "Upload" }], status: "succeeded" },
+    ]);
+    expect(JSON.stringify(snapshot)).toContain('"type":"secret"');
+    expect(JSON.stringify(snapshot)).not.toContain("efgh");
+    expect(JSON.stringify(snapshot)).not.toContain("abcd");
+    let live = emptyCodeOutput();
+    for await (const event of codeOutputTopic().replay({ tenantId: proof.runId })) live = applyCodeOutputEvent(live, event.data);
+    expect(live).toEqual(snapshot);
+    await persistCodeOutput(proof.runId);
+    expect(await replayCodeOutput(proof.runId)).toEqual(snapshot);
+  });
+  test("rejected handle revisions are tombstoned without suppressing later output", async () => {
+    setSystemTime(fixed);
+    const admittedCount = Math.floor(CODE_OUTPUT_STEP_LIMITS.count / 2);
+    const proof = await attempt(CODE_OUTPUT_STEP_LIMITS.metadataBytes * admittedCount + 2);
+    await rememberCodeOutputSecrets({ ...claims, ...proof }, [{ name: "TOKEN", value: "abcdefgh", sent: "Bearer abcdefgh" }]);
+    const at = new Date(fixed).toISOString();
+    const step = { kind: "step" as const, id: 1, at, label: "Read!", status: "pending" as const };
+    await receiveCodeOutput(proof, {
+      seq: 1,
+      entries: Array.from({ length: admittedCount }, (_, index) => ({ ...step, id: index + 1 })),
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
+    setSystemTime(fixed + 1000);
+    const rejected = { ...step, id: admittedCount + 1 };
+    await receiveCodeOutput(proof, { seq: 2, entries: [rejected], droppedLines: 0, droppedBytes: 0 });
+    setSystemTime(fixed + 2000);
+    await receiveCodeOutput(proof, batch(3, "ordinary text after gap!"));
+    const before = await replayCodeOutput(proof.runId);
+    setSystemTime(fixed + 3000);
+    await receiveCodeOutput(proof, {
+      seq: 4,
+      entries: [{ ...rejected, status: "running", startedAt: at }, ...batch(4, "kept!").entries],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
+    const after = await replayCodeOutput(proof.runId);
+    expect(after.droppedLines).toBe(before.droppedLines);
+    expect(after.entries.filter(isCodeOutputLogEntry).at(-1)?.text).toEqual([{ type: "text", text: "kept!" }]);
+    const state = JSON.parse((await redis.get(`core:code-output:v1:${proof.runId}`))!);
+    expect(state.stepReservations[`1:step:${rejected.id}`]).toEqual({ bytes: 0, rejected: true });
+    expect(Object.keys(state.stepReservations).length).toBeLessThanOrEqual(CODE_OUTPUT_STEP_LIMITS.count);
+  });
+  test("steps upsert in one window with zero SQL per update and one final write", async () => {
+    const proof = await attempt();
+    setSystemTime(fixed);
+    const step = { kind: "step" as const, id: 1, at: new Date(fixed).toISOString(), label: "Read", status: "pending" as const };
+    const meter = await meterSql();
+    try {
+      const submit = (seq: number, entry: Parameters<typeof receiveCodeOutput>[1]["entries"][number]) =>
+        receiveCodeOutput(proof, { seq, entries: [entry], droppedLines: 0, droppedBytes: 0 });
+      expect(await meter.during(() => submit(1, step))).toEqual([]);
+      setSystemTime(fixed + 1000);
+      expect(await meter.during(() => submit(2, { ...step, status: "running", startedAt: step.at }))).toEqual([]);
+      setSystemTime(fixed + 2000);
+      expect(
+        await meter.during(() =>
+          submit(3, { ...step, status: "succeeded", startedAt: step.at, endedAt: new Date().toISOString(), message: "Done" }),
+        ),
+      ).toEqual([]);
+      const window = await replayCodeOutput(proof.runId);
+      expect(window.entries).toEqual([
+        {
+          ...step,
+          id: "1:step:1",
+          label: [{ type: "text", text: "Read" }],
+          status: "succeeded",
+          startedAt: step.at,
+          endedAt: new Date().toISOString(),
+          message: [{ type: "text", text: "Done" }],
+        },
+      ]);
+      let replay = emptyCodeOutput();
+      for await (const event of codeOutputTopic().replay({ tenantId: proof.runId })) replay = applyCodeOutputEvent(replay, event.data);
+      expect(replay).toEqual(window);
+      expect(await meter.during(() => persistCodeOutput(proof.runId))).toHaveLength(1);
+      const [row] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${proof.runId}::uuid`;
+      expect(row!.console_output).toEqual(window);
+      for (const id of [owner, reader]) {
+        const user = await accounts.users.get({ id });
+        if (!user) throw new Error("Missing step fixture user");
+        const result = await readCodeRun(
+          { codeId, runId: proof.runId },
+          {
+            authority: {
+              actor: { kind: "user", user },
+              accessSubject: { type: "user", userId: id },
+              credentialKind: "session",
+              scopes: [],
+            },
+          },
+        );
+        if (id === reader) expect(result.contents).toBeNull();
+        else expect(result.contents?.consoleOutput).toEqual(window);
+      }
+    } finally {
+      await meter.close();
+    }
+  });
+  test("step revisions preserve accepted text in live, covering snapshot and replay", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    await rememberCodeOutputSecrets({ ...claims, runId: proof.runId }, [{ name: "TOKEN", value: "abcdefgh", sent: "Bearer abcdefgh" }]);
+    const at = new Date(fixed).toISOString();
+    const step = { kind: "step" as const, id: 1, at, label: "gh", status: "pending" as const };
+    await receiveCodeOutput(proof, { ...batch(1, "abcdef"), entries: [...batch(1, "abcdef").entries, step] });
+    setSystemTime(fixed + 1000);
+    await receiveCodeOutput(proof, { seq: 2, entries: [{ ...step, status: "running", startedAt: at }], droppedLines: 0, droppedBytes: 0 });
+    const snapshot = await replayCodeOutput(proof.runId);
+    expect(JSON.stringify(snapshot)).toContain('"type":"secret"');
+    expect(JSON.stringify(snapshot)).not.toContain('"text":"gh"');
+    const raw = await redis.get(`core:code-output:v1:${proof.runId}`);
+    expect(JSON.parse(raw!).window).toEqual(snapshot);
+    let liveWindow = emptyCodeOutput();
+    for await (const event of codeOutputTopic().replay({ tenantId: proof.runId })) {
+      expect(JSON.stringify(event.data)).not.toContain('"text":"gh"');
+      liveWindow = applyCodeOutputEvent(liveWindow, event.data);
+    }
+    expect(liveWindow).toEqual(snapshot);
+    setSystemTime(fixed + 2000);
+    await receiveCodeOutput(proof, {
+      seq: 3,
+      entries: [{ ...step, status: "succeeded", startedAt: at, endedAt: at, message: "Done" }],
+      droppedLines: 1,
+      droppedBytes: 1,
+    });
+    expect((await replayCodeOutput(proof.runId)).entries.find((entry) => entry.kind === "step")).toMatchObject({
+      status: "succeeded",
+      label: [],
+    });
+    const settled = await replayCodeOutput(proof.runId);
+    setSystemTime(fixed + 3000);
+    await receiveCodeOutput(proof, {
+      seq: 4,
+      entries: [{ ...step, label: "Changed", status: "failed", endedAt: at, message: "Changed" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual(settled.entries);
+  });
+  for (const outcome of ["succeeded", "failed", "cancelled", "wall_clock_limit"]) {
+    test(`closing ${outcome} settles running steps and retains pending plans`, async () => {
+      setSystemTime(fixed);
+      const proof = await attempt();
+      const at = new Date(fixed).toISOString();
+      const base = { kind: "step" as const, id: 1, at, label: "Read", status: "pending" as const };
+      await receiveCodeOutput(proof, {
+        seq: 1,
+        entries: [base, { ...base, status: "running", startedAt: at }, { ...base, id: 2, label: "Save" }],
+        droppedLines: 0,
+        droppedBytes: 0,
+      });
+      const window = await closeCodeOutput(proof.runId, 1, outcome);
+      expect(window.entries[0]).toMatchObject({ status: outcome === "succeeded" ? "succeeded" : "failed", endedAt: at });
+      expect(window.entries[1]).toMatchObject({ status: "pending" });
+      if (outcome !== "succeeded") expect(window.entries[0]).toMatchObject({ reason: "run_ended", message: [] });
+      expect(await closeCodeOutput(proof.runId, 1, outcome)).toEqual(window);
+      await persistCodeOutput(proof.runId, sql, 1, outcome);
+      const [row] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${proof.runId}::uuid`;
+      expect(row!.console_output).toEqual(window);
+    });
+  }
+  test("author completion text stays distinct from the automatic reason field", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    const at = new Date(fixed).toISOString();
+    await receiveCodeOutput(proof, {
+      seq: 1,
+      entries: [{ kind: "step", id: 1, at, label: "Read", status: "failed", endedAt: at, message: "code_run_ended" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
+    const window = await closeCodeOutput(proof.runId);
+    expect(window.entries[0]).toMatchObject({ message: [{ type: "text", text: "code_run_ended" }] });
+    expect(window.entries[0]).not.toHaveProperty("reason");
+  });
+  test("final settlement completes a pending step field in the same persisted row", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    await rememberCodeOutputSecrets({ ...claims, runId: proof.runId }, [{ name: "TOKEN", value: "abcdefgh", sent: "Bearer abcdefgh" }]);
+    const step = {
+      kind: "step" as const,
+      id: 1,
+      at: new Date(fixed).toISOString(),
+      label: "Read",
+      status: "failed" as const,
+      endedAt: new Date(fixed).toISOString(),
+      message: "abcd",
+    };
+    await receiveCodeOutput(proof, { seq: 1, entries: [step], droppedLines: 0, droppedBytes: 0 });
+    expect((await replayCodeOutput(proof.runId)).entries).toHaveLength(1);
+    await persistCodeOutput(proof.runId);
+    const window = await replayCodeOutput(proof.runId);
+    expect(window.entries).toEqual([
+      { ...step, id: "1:step:1", label: [{ type: "text", text: "Read" }], message: [{ type: "secret", name: "TOKEN" }] },
+    ]);
+    const [row] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${proof.runId}::uuid`;
+    expect(row!.console_output).toEqual(window);
+  });
   test("harden output continuity and finalization across transport boundaries", async () => {
     const value = 'abcdefgh /+"value';
     const inserted = [{ name: "TOKEN", value, sent: `Bearer ${value}` }];

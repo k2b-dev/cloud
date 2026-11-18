@@ -659,8 +659,23 @@ protocol adds `/_internal/code/runner/output`. A run's console stays inside
 its dynamic workerd isolate and uses that run's existing bridge binding.
 Saved windows and live deltas use the same structured `entries` records
 (`kind`, `id`, `level`, `at`, `text`); see the [output contract](/en/docs/platform/code-runs#follow-calls-and-console-output).
-Readers retain unknown entry kinds in their bounded window and skip rendering them,
-so adding a future kind does not require a storage migration.
+Steps from `logger.step` use `kind: "step"` in that same stream. Update Core,
+Runner and the checker together for the logger contract. Existing JSON storage
+needs no migration. Consumers upsert the same step ID and keep its original
+position. Readers retain unknown entry kinds and skip rendering them.
+Step labels, descriptions and messages receive the same cleaning and secret
+redaction as console text, including across fields and batches. The terminal
+report remains text-free. Pending steps are interpreted by RunLog from the
+run outcome; Core stores them unchanged. At closure, remaining running steps
+succeed with a successful run, or fail with `reason: "run_ended"` and an empty
+`message` array for other outcomes. This Core-owned reason is separate from
+author text; its localized presentation follows in the RunLog UI update.
+Runner and Core use the same canonical step reservation within the pinned
+payload window and live frame, including lifecycle fields and named secret
+parts. The lease carries that pinned output budget. Core retains a bounded
+reservation per handle, including inactive IDs, until the attempt ends. Transient
+`chat` and `test` invocations have the run-local console and logger but send
+no production output.
 Several runs may share a workerd process: process stderr is never a source
 for this feature.
 
@@ -684,7 +699,16 @@ exceptions still do not enter the sandbox as raw text.
 
 No new setting is introduced. `core.code.payload_bytes` also bounds the
 structured console window, pinned when the run is admitted. Reducing this
-setting reduces retained console output as well as accepted input sizes.
+setting reduces retained console output and steps as well as accepted input sizes.
+Step count and field limits derive from `LIVE_LIMITS.frameBytes`, including
+serialized lifecycle metadata; handle metadata also fits one raw frame.
+Long step text is shortened. Exhausted handle storage returns an inert handle
+and increments `droppedLines`, without failing the run. Core retains initial
+step metadata once and ignores revisions after completion; logs yield first
+when the window fills. Canonical step metadata is bounded by the admitted
+payload budget and handle count, without per-step SQL;
+see [the logger contract](/en/docs/platform/code-runs#report-steps-with-logger).
+No additional setting, topic or per-step database write is introduced.
 The same admitted byte budget bounds encrypted, deduplicated HTTP redaction
 entries. Further secret-bearing requests are refused with
 `code_http_output_redaction_limit` if their required entries cannot fit;

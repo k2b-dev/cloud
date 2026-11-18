@@ -1050,7 +1050,9 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           !(
             declarationOwner &&
             ts.isTypeAliasDeclaration(declarationOwner) &&
-            ["CodeContext", "CodeRequest", "CodeHttpResult", "CodePageComponent"].includes(declarationOwner.name.text)
+            ["CodeContext", "CodeRequest", "CodeHttpResult", "CodePageComponent", "CodeLogger", "CodeLogStep"].includes(
+              declarationOwner.name.text,
+            )
           )
         ) {
           report(node, "code_unresolved_call", t.detached_sdk_method2);

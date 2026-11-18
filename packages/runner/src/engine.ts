@@ -1,18 +1,12 @@
 import { chmod, chown, lstat, mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  CODE_OUTPUT_INTERVAL_MS,
-  CODE_OUTPUT_OPERATION,
-  CODE_REQUEST_LIMITS,
-  type CodeRouteResponse,
-  CodeRouteResponseSchema,
-} from "@k2b/cloud/code";
+import { CODE_OUTPUT_OPERATION, CODE_REQUEST_LIMITS, type CodeRouteResponse, CodeRouteResponseSchema } from "@k2b/cloud/code";
 import type { RunnerConfig, RunnerJsonValue, RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { RunnerCallError } from "@k2b/cloud/code/runner";
-import { LIVE_LIMITS } from "@k2b/cloud/events/limits";
 import { z as schema } from "zod";
 import { readBytes } from "./bridge";
 import { allocateRunnerIdentities } from "./identities";
+import { runnerOutputLimits } from "./output";
 
 /** Only bridge calls can leave a sandbox. No run token or app key crosses this interface. */
 export type SandboxCall = (operation: string, input: RunnerJsonValue) => Promise<RunnerJsonValue>;
@@ -322,16 +316,7 @@ const config :Workerd.Config = (
           entrypoint: lease.entrypoint,
           input: lease.input,
           modules: loaded.modules,
-          outputLimits: ["chat", "test"].includes(lease.trustTier)
-            ? null
-            : {
-                // Reserve the exact signed Core envelope; the raw batch and its lease proof together fit one live frame.
-                bytes:
-                  LIVE_LIMITS.frameBytes -
-                  Buffer.byteLength(JSON.stringify({ runId: lease.runId, generation: lease.generation, token: lease.token, batch: null })),
-                intervalMs: CODE_OUTPUT_INTERVAL_MS,
-                operation: CODE_OUTPUT_OPERATION,
-              },
+          outputLimits: runnerOutputLimits(lease),
         }),
         signal,
         timeout: false,

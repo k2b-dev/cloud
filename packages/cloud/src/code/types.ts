@@ -1,5 +1,6 @@
 import type { CloudResourceRef, NormalizedCapabilityCall } from "../contracts/capabilities";
 import type { CodeHttpRequest } from "../contracts/code-secrets";
+import type { CodeLogger } from "./authoring-types";
 
 /** Resource/app Code has statically enumerable targets; personal Code and code_run may use dynamic IDs. */
 export type CodeSdkMode = "resource" | "personal" | "code_run";
@@ -21,6 +22,8 @@ export type CodeSdkInvocation = { call: NormalizedCapabilityCall; metadata: Code
 
 /** Runner-compatible object capability. Resolves query data/page envelopes, streaming FileRefs or Action domain data; the host throws on bridge refusals. No tokens enter the SDK. */
 export type CodeSdkBridge = {
+  /** Run-local structured output supplied by the sandbox loader. */
+  readonly logger?: CodeLogger;
   call(operation: string, input: CodeSdkInvocation): Promise<unknown>;
   call(operation: "http.fetch", input: CodeHttpRequest): Promise<unknown>;
 };

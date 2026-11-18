@@ -22,6 +22,11 @@ const db = Object.freeze({
   exec: (sql, params = []) => invoke("db.exec", { sql, params }),
   batch: statements => invoke("db.batch", { statements: statements.map(({ sql, params = [] }) => ({ sql, params })) }),
 });
+// The loader binds the run-local output object, never a second bridge or credential.
+const logger = Object.freeze(Object.fromEntries(["info", "warn", "error", "step"].map(method => [method, (...args) => {
+  if (!bridge?.logger) throw new CodeError("code_sdk_bridge_unbound");
+  return bridge.logger[method](...args);
+}])));
 const handles = new WeakMap();
 const aiTools = new WeakMap();
 let bridge;
@@ -212,7 +217,7 @@ const http = Object.freeze({
 const builtPages = new WeakSet();
 const __codeSdk = Object.freeze({
   markPage: page => { builtPages.add(page); return page; },
-  namespaces, chat, owner, app, secrets, http, db, CodeError,
+  namespaces, chat, owner, app, secrets, http, db, logger, CodeError,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new CodeError("code_sdk_invalid_bridge");
     bridge = cloud;
