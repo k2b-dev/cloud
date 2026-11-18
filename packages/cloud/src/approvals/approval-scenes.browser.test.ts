@@ -190,10 +190,17 @@ describe("Approval scenes", () => {
           await page.goto("https://cloud.example.test/?scene=review-admin");
           const admin = page.locator(".cloud-approval-frame");
           const secondary = admin.getByRole("button", {
-            name: width === 390 ? "Ablehnen / ändern …" : "Ablehnen oder ändern …",
+            name: width === 390 ? "Ablehnen / ändern" : "Ablehnen oder ändern …",
             exact: true,
           });
           await secondary.waitFor();
+          if (width === 390) {
+            const singleLine = await secondary.locator(".k2b-button__label").evaluate((label) => ({
+              height: label.getBoundingClientRect().height,
+              line: Number.parseFloat(getComputedStyle(label).lineHeight),
+            }));
+            expect(singleLine.height).toBeLessThanOrEqual(singleLine.line + 1);
+          }
           expect(await noOverflow(page)).toBe(0);
           await shot(page, `review-admin-${theme}-${width}`);
           await secondary.click();
