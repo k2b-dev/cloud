@@ -480,9 +480,9 @@ describe("One notebook sidebar with quick filters", () => {
           });
           expect(colors.fill, theme).toBe(colors.selectedFill);
           expect(colors.edge, theme).toBe(colors.selectedEdge);
-          // One 2 px border is the whole edge; no inset beside it.
-          expect(colors.edgeWidth, theme).toBe("2px");
-          expect(colors.shadow, theme).toBe("none");
+          // One 1 px border is the whole edge; no inset beside it, and the focus ring rests transparent.
+          expect(colors.edgeWidth, theme).toBe("1px");
+          expect(colors.shadow, theme).toBe("rgba(0, 0, 0, 0) 0px 0px 0px 3px");
           expect(colors.ink, theme).toBe(rgb(appColors("#eab308")[theme].ink));
           expect(colors.fill).not.toBe(colors.oldFill);
         }

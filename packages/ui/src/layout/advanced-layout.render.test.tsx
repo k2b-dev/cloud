@@ -1190,9 +1190,9 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(tab).toContain("min-width:5rem");
       expect(tab).toContain("max-width:16rem");
       expect(tab).toContain("flex:0 auto");
-      // Selected like every tab: selection fill and 2 px edge in the app colour, one weight in every state.
+      // Selected like every tab: selection fill in the app colour and no edge, one weight in every state.
       expect(rule(".k2b-panes__tab[data-active=true]")).toContain("var(--k2b-app-workspace-active)");
-      expect(rule(".k2b-panes__tab[data-active=true]")).toContain("box-shadow:inset 0 0 0 var(--k2b-edge-width)");
+      expect(rule(".k2b-panes__tab[data-active=true]")).not.toContain("box-shadow");
       expect(rule(".k2b-panes__tab[data-active=true]")).not.toContain("font-weight");
       expect(tab).toContain("font-weight:500");
       expect(css).not.toContain(".k2b-panes__single-header");

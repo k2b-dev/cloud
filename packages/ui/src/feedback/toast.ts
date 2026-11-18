@@ -26,13 +26,21 @@ export type ToastOptions = {
   variant?: ToastVariant;
   /** Milliseconds until the toast closes; `0` keeps it until it is closed. Omit it for the default by variant, length, and action. */
   duration?: number;
+  /**
+   * The icon comes from the variant. Pass a glyph only when it says more than the tone, such as `ti-send` for a queued
+   * message; it keeps the variant's colour. Never pass a tone glyph: an error is `variant: "error"`, not its icon.
+   */
   iconClass?: string;
   /**
    * A finished success, such as an issued document: the success toast draws its check once when it appears, in place of
    * its icon. Leave it off for routine saves. Other variants and running progress ignore it.
    */
   celebrate?: boolean;
-  /** A short line of context above the message. There is no default title. */
+  /**
+   * The outcome in one to three words ("Sent", "Could not save"), at most 32 characters, so it stays one line beside the
+   * icon on a phone. The message then becomes the muted description under it. Leave it out only when the whole message is
+   * that short; a short message alone takes the title's type.
+   */
   title?: string;
   action?: ToastAction | null;
   /** A second action. With it, both actions sit in a row under the message: `action` first, as the primary button. */
@@ -85,6 +93,14 @@ export interface ToastFn {
   dismissAll: () => void;
 }
 
+/**
+ * A title names the outcome in at most three words and 32 characters: one semibold line beside the icon tile in the
+ * narrowest toast (about 260 px of text on a 390 px phone). The repository rule `toast-copy` checks the same limits.
+ */
+const TITLE_MAX_WORDS = 3;
+const TITLE_MAX_CHARACTERS = 32;
+const isShortLabel = (text: string): boolean =>
+  text.trim().length <= TITLE_MAX_CHARACTERS && text.trim().split(/\s+/).filter(Boolean).length <= TITLE_MAX_WORDS;
 /** Toasts in the stack at every width; older ones leave by the eviction rule below. */
 const MAX_VISIBLE_TOASTS = 3;
 /** The same media query that moves the rail to the top edge in the stylesheet. */
@@ -855,6 +871,11 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     titleElement.textContent = currentTitle ?? "";
     titleElement.hidden = !currentTitle;
     descriptionText.data = currentDescription;
+    // A short message without a title, such as "Link copied", is the outcome itself: it reads in the title's type.
+    // Anything longer stays calm body text, so an old sentence never turns into a bold paragraph.
+    if (!currentTitle && currentProgress === null && !currentLink && isShortLabel(currentDescription))
+      contentElement.dataset.short = "true";
+    else delete contentElement.dataset.short;
     const href = currentLink ? safeHref(currentLink.href) : null;
     if (currentLink && href !== null) {
       linkElement.href = href;
@@ -1003,7 +1024,6 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     if (has("title")) currentTitle = nextOptions!.title;
     if (has("link")) currentLink = nextOptions!.link ?? null;
     if (nextOptions?.dismissLabel) dismissLabel = nextOptions.dismissLabel;
-    renderText();
     if (has("action") || has("secondaryAction")) {
       if (has("action")) currentAction = nextOptions!.action ?? null;
       if (has("secondaryAction")) currentSecondary = nextOptions!.secondaryAction ?? null;
@@ -1012,6 +1032,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     if (has("duration")) explicitDuration = nextOptions!.duration;
     if (has("progress")) currentProgress = nextOptions!.progress ?? null;
     if (has("celebrate")) currentCelebrate = nextOptions!.celebrate ?? false;
+    renderText();
     renderProgress();
     renderCheck();
     resetDismissTimer();

@@ -30,10 +30,10 @@ const navFill = [
 // The stacked object chip below 64rem (#1441) is the same selected navigation fill.
 const stackedChip =
   '.k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"] > .k2b-app-workspace__sidebar-desktop :is( .k2b-app-workspace__sidebar-body > .k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-section-content > .k2b-app-workspace__sidebar-item ):is(.is-active, [aria-current], :has(> [aria-current]))';
-// Tabs, view tabs, segments, and a menu's segment row take the selected edge and fill in the app ink, like an
-// active filter chip: no navigation fill.
-const edgeSelected = [
-  '.k2b-ui .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"])',
+// Segments and a menu's segment row take the selected edge and fill in the app ink, like an active filter chip;
+// tabs and view tabs take the fill only. No navigation fill.
+const edgeSelected = ['.k2b-ui .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"])'];
+const fillSelected = [
   '.k2b-ui .k2b-tabs__list button[aria-selected="true"]',
   '.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"])',
   '.k2b-ui .k2b-view-tabs__tab[aria-current="page"]',
@@ -75,10 +75,11 @@ describe("selection hooks", () => {
     expect(declarations(`${sidebar}.is-active`).get("font-weight")).toEqual(["600"]);
   });
 
-  test("tabs, view tabs, and segments take the selected edge and fill in the host ink", () => {
-    for (const selector of edgeSelected) {
+  test("segments take the selected edge and fill in the host ink, tabs and view tabs the fill only", () => {
+    for (const selector of [...edgeSelected, ...fillSelected]) {
       const selected = declarations(selector);
-      expect(selected.get("--k2b-edge-color"), selector).toEqual([selectedEdge]);
+      expect(selected.get("--k2b-edge-color"), selector).toEqual(edgeSelected.includes(selector) ? [selectedEdge] : undefined);
+      expect(selected.get("box-shadow"), selector).toBeUndefined();
       expect(selected.get("background"), selector).toEqual([selectedFill]);
       expect(
         [...selected.keys()].filter((property) => /^(?:font(?:-weight)?|padding(?:-.+)?|border(?:-.+)?)$/.test(property)),

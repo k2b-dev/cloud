@@ -49,7 +49,15 @@ commit, `log.topic().prune({ through })` removes the inclusive stream prefix
 through the minimum persisted snapshot cursor across **all documents** in the
 log. A missing snapshot contributes sequence zero. The application owns this
 watermark and must serialize it with restores and lifecycle changes; the
-snapshot pipeline does not prune automatically. A stalled snapshot holds back
+snapshot pipeline does not prune automatically. Stores must return a replay cursor that
+includes any durable proof that a pruned prefix contained no newer events for
+the document, alongside the corresponding state and restore token. Retain
+events for tombstones until their pending room close finishes. Synchronous
+flushes reject uncovered retention gaps without quarantining domain history;
+the owned freeze is released on this definite rejection. Background recovery
+must serialize with pruning and recheck coverage before marking history lost.
+A queued snapshot whose target disappeared is skipped only when the stored
+snapshot already covers that target. A stalled snapshot holds back
 pruning and can block writes. Keep rejected input available for retry, and
 keep snapshot work independent of new writes. Existing log declarations
 retain their current policies.

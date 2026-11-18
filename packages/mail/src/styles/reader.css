@@ -138,7 +138,7 @@
   border: 0;
   border-radius: 9999px;
   background: var(--k2b-surface-muted);
-  box-shadow: inset 0 0 0 2px transparent;
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) transparent;
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
   font-weight: 500;
@@ -158,7 +158,9 @@
 
 .k2b-ui .mail-reader-chip:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 2px var(--k2b-focus-ring);
+  box-shadow:
+    inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus),
+    0 0 0 var(--k2b-edge-ring-width) color-mix(in srgb, var(--k2b-edge-focus) var(--k2b-edge-ring-share), transparent);
 }
 
 .k2b-ui .mail-reader-chip[data-kind="add"] {
@@ -624,11 +626,11 @@
    is dark with a lock, and it says who sees the note. */
 .k2b-ui .mail-reply-box-note {
   background: var(--mail-note-surface);
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--mail-note-edge);
+  box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--mail-note-edge);
   color: var(--mail-note-ink);
 }
 .k2b-ui .mail-reply-box-note:focus-within {
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--mail-note-ink) 45%, var(--mail-note-edge));
+  box-shadow: inset 0 0 0 var(--k2b-frame-width) color-mix(in srgb, var(--mail-note-ink) 45%, var(--mail-note-edge));
 }
 .k2b-ui .mail-reply-box-note .mail-reply-box-mode {
   color: var(--mail-note-ink);

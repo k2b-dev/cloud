@@ -1,6 +1,6 @@
 import type { AiOpenQuestion } from "@k2b/cloud/ai";
 import { Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, children, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 import type { WaitingAttention, WaitingQuestionsView } from "./waiting-questions";
 
@@ -44,9 +44,16 @@ export function AssistantWaitingStrip(props: {
    * chat and names it after the questions the read left out, only while there are such.
    */
   more?: { label: string; always: boolean };
+  /**
+   * The second part of the row (Feinschliff v6, 6b): "Queued · n" at its end, which opens the queued messages. The row
+   * still never grows past one line.
+   */
+  queue?: JSX.Element;
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
+  // Resolved once, so reading it for the row's state and its place does not render it twice.
+  const queue = children(() => props.queue);
   const entryList = createMemo((): Entry[] => [
     ...props.view.attention.map((item) => ({ key: item.key, kind: item.kind, short: item.short, where: null, open: item.open })),
     ...props.view.entries.map((question) => ({
@@ -128,7 +135,13 @@ export function AssistantWaitingStrip(props: {
     ];
   };
   return (
-    <nav class="assistant-waiting" aria-label={t().needsAttention} data-quiet={props.quiet ? "" : undefined} inert={props.quiet}>
+    <nav
+      class="assistant-waiting"
+      aria-label={t().needsAttention}
+      data-quiet={props.quiet ? "" : undefined}
+      data-queue={queue() ? "" : undefined}
+      inert={props.quiet}
+    >
       <span class="assistant-waiting__label" aria-hidden="true">
         <i class="ti ti-hand-stop" />
         <span class="assistant-waiting__title">{t().needsAttention}</span>
@@ -178,6 +191,10 @@ export function AssistantWaitingStrip(props: {
             </span>
           </Dropdown.Trigger>
         </Dropdown.Root>
+      </Show>
+      <Show when={queue()}>
+        <span class="assistant-waiting__grow" />
+        {queue()}
       </Show>
     </nav>
   );
