@@ -16,10 +16,12 @@ export type LiveSubscriptionHandlers<T> = {
    * Reports changes in whether the server has confirmed this subscription on an
    * open socket, independently of pending `apply` or `resync` work. Starts false
    * without an initial callback; confirmation reports true even during work.
-   * A non-open socket reports false; reconnect reports true only after a new
-   * confirmation. Terminal `revoked`/`unavailable` reports a final false first
-   * if connected, so ended subscriptions cannot appear connected. Never called
-   * after the owner calls `close()` (including disposal).
+   * A disconnect or pause (a hidden tab with `activity: "visible"`) reports
+   * false; reconnect reports true only after a new confirmation. Terminal
+   * `revoked`/`unavailable` reports a final false first
+   * if connected, so ended subscriptions cannot appear connected. No callbacks
+   * follow the terminal notification or the owner calling `close()` (including
+   * disposal); owner close does not report a final false.
    */
   connected?: (connected: boolean) => void;
   /** The subscription ended because its resource is gone or no longer readable. */

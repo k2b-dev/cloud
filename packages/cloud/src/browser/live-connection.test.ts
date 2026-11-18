@@ -192,11 +192,52 @@ describe("liveConnection", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     document.dispatchEvent(new Event("visibilitychange"));
     expect(connected).toEqual([true, false]);
-    subscription.close();
+    socket.message({ t: "ready", id: "1", cursor: "s6t.app.2" });
     release();
     await Bun.sleep(1);
     expect(connected).toEqual([true, false]);
+    subscription.close();
   });
+
+  for (const terminal of ["revoked", "unavailable"]) {
+    test(`${terminal} reports a final connected(false), then ignores late frames and apply completion`, async () => {
+      const log: string[] = [];
+      let release = () => {};
+      const connection = liveConnection("/api/app/live");
+      const subscription = connection.subscribe(
+        "item",
+        {},
+        {
+          ...recorder().handlers(),
+          connected: (value) => log.push(`connected:${value}`),
+          apply: () => new Promise<void>((resolve) => (release = resolve)),
+          revoked: () => log.push("revoked"),
+          unavailable: () => log.push("unavailable"),
+        },
+      );
+      // Keep the shared socket alive after revoking only the first subscription.
+      const other = connection.subscribe("item", { key: "other" }, recorder().handlers());
+      const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+      socket.open();
+      expect(log).toEqual([]);
+      socket.message({ t: "ready", id: "1", cursor: "s6t.app.1" });
+      socket.message({ t: "event", id: "1", cursor: "s6t.app.2", data: 2 });
+      if (terminal === "revoked") socket.message({ t: "revoked", id: "1", code: "access_denied" });
+      else socket.close(1008, "session_expired");
+      expect(log).toEqual(["connected:true", "connected:false", terminal]);
+
+      socket.message({ t: "ready", id: "1", cursor: "s6t.app.3" });
+      socket.message({ t: "resync", id: "1", cursor: "s6t.app.4" });
+      socket.message({ t: "event", id: "1", cursor: "s6t.app.5", data: 5 });
+      socket.message({ t: "revoked", id: "1", code: "not_found" });
+      socket.message({ t: "progress", cursor: "s6t.app.6" });
+      release();
+      await elapse(1_000);
+      expect(log).toEqual(["connected:true", "connected:false", terminal]);
+      subscription.close();
+      other.close();
+    });
+  }
 
   for (const terminal of ["revoked", "apply failure"]) {
     test(`close from connected(false) silences terminal callbacks (${terminal})`, async () => {
@@ -501,6 +542,11 @@ describe("liveConnection", () => {
       "unavailable",
     ]);
     expect(socket.sent.at(-1)).toEqual({ t: "unsub", id: "1" });
+    const endedLog = [...live.log];
+    socket.message({ t: "ready", id: "1", cursor: "s6t.app.4" });
+    socket.message({ t: "event", id: "1", cursor: "s6t.app.5", data: 5 });
+    await elapse(1_000);
+    expect(live.log).toEqual(endedLog);
   });
 
   test("closing during a pending apply or retry reports nothing", async () => {

@@ -59,7 +59,8 @@ onMount(() => {
   `false` without an initial callback and reports only changes. Confirmation
   reports `true` even while work runs; a disconnect or hidden-tab pause reports
   `false` immediately. Reconnect reports `true` only after a new confirmation.
-  Before `revoked` or `unavailable`, it reports a final `false` if needed.
+  Before `revoked` or `unavailable`, it reports a final `false` if needed;
+  no connection callbacks follow that terminal notification.
   Calling `close()`, including during disposal, silences all later callbacks.
 - `caughtUp` reports whether the subscription has applied every update the
   server sent. It starts `false` and is `true` while the socket is open, the
