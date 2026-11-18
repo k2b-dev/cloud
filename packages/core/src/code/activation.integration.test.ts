@@ -238,6 +238,41 @@ databaseSuite()("durable Code activation", () => {
       items: [{ state: "available", snapshot: { pages: { pages: [], homeUrl: null } } }],
     });
   });
+  test("version-card pages require membership for direct and delegated reads, including owners and existing grants", async () => {
+    const personalId = `c_c9p${String(++ordinal).padStart(4, "0")}`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by)
+      VALUES(${personalId},'person',${ownerId}::uuid,'Personal',${ownerId}::uuid)`;
+    for (const code of [await newCode(), (await findCode(personalId))!]) {
+      const saved = await version(code, []);
+      await sql`UPDATE code.versions SET manifest=jsonb_set(manifest,'{entrypoints}',${JSON.stringify([
+        { kind: "route", entrypoint: "home", file: "code.ts", line: 1, route: { method: "GET", path: "/", public: false, page: true } },
+      ])}::text::jsonb) WHERE id=${saved.version.id}::uuid`;
+      await sql`UPDATE code.codes SET active_version_id=${saved.version.id}::uuid,state='active' WHERE id=${code.id}`;
+      const versions = [{ codeId: code.id, versionId: saved.version.id }];
+      expect(await readCodeVersionCards({ versions }, owner)).toMatchObject({
+        items: [{ state: "available", snapshot: { pages: { pages: [{ isRoot: true }] } } }],
+      });
+      for (const delegated of [false, true]) {
+        const guest = context(ownerId);
+        if (guest.authority.actor.kind !== "user") throw new Error("Expected person fixture");
+        guest.authority.actor.user = { ...guest.authority.actor.user, profile: "guest", roles: ["guest"] };
+        if (delegated) {
+          guest.authority.credentialKind = "invocation";
+          guest.authority.actor.delegation = {
+            kind: "invocation",
+            callingAppId: "assistant",
+            credentialKind: "session",
+            invocationId: nextOwnerId,
+          };
+        }
+        for (const knownPages of [[], [saved.version.id]]) {
+          expect(await readCodeVersionCards({ versions, knownPages }, guest)).toMatchObject({
+            items: [{ state: "available", snapshot: { pages: { pages: [], homeUrl: null } } }],
+          });
+        }
+      }
+    }
+  });
   test("SQL budget of an open approval card's initial preview and invalidation reload", async () => {
     const code = await newCode();
     const [rule] = await sql<{ value: string }[]>`SELECT value FROM code.policy_rules WHERE row='silent_draft' AND group_id IS NULL`;
