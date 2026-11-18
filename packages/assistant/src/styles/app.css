@@ -881,7 +881,7 @@
 }
 .k2b-ui .assistant-waiting[data-quiet] { visibility: hidden; }
 /* The slash list opens over the row's place: the row steps back, keeping its place, until the list closes. */
-.k2b-ui .assistant-chat-composer__column:has(.k2b-chat-composer-accessory[data-commands]) > .assistant-waiting { visibility: hidden; }
+.k2b-ui .assistant-chat-composer__column:has(.k2b-chat-composer-accessory[data-commands]) > :is(.assistant-waiting, .assistant-queue) { visibility: hidden; }
 .k2b-ui .assistant-waiting__label { display: inline-flex; flex: none; align-items: center; gap: .3125rem; color: var(--k2b-text-secondary); font-size: .75rem; font-weight: 600; line-height: 1rem; white-space: nowrap; }
 .k2b-ui .assistant-waiting__label > i { color: var(--k2b-ai-accent); font-size: .875rem; }
 /* Chips shrink sideways; nothing is cut above or below, so focus rings and the touch areas of coarse pointers stay whole. */
@@ -923,6 +923,122 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .assistant-chat-sidebar-item--leaving { transition: none; }
+}
+
+/* Queued messages ("Vorgemerkt", Gustav chat Feinschliff v6, 6b). The row lies in the same free end above the field as
+   "Waiting for you": 32 px, one line, it comes and goes without moving the field or the conversation. With something
+   waiting too, both share that row: "Waiting for you" on the left, "Queued · n" at the end. */
+.k2b-ui .assistant-chat-composer__column > .assistant-queue {
+  position: absolute;
+  z-index: 2;
+  inset-inline: 0;
+  inset-block-end: calc(100% + .375rem);
+}
+.k2b-ui .assistant-queue[data-layout="line"],
+.k2b-ui .assistant-waiting[data-queue] {
+  block-size: 2rem;
+  padding: 0 .25rem 0 .625rem;
+  border-radius: .625rem;
+  background: var(--k2b-surface-muted);
+}
+.k2b-ui .assistant-queue { display: flex; align-items: center; gap: .5rem; min-inline-size: 0; color: var(--k2b-text-secondary); font-size: .8125rem; line-height: 1rem; }
+.k2b-ui .assistant-queue[data-layout="chip"] { flex: none; }
+.k2b-ui .assistant-waiting__grow { flex: 1 1 0; min-inline-size: 0; }
+.k2b-ui .assistant-queue__head { display: inline-flex; flex: none; align-items: center; gap: .3125rem; color: var(--k2b-text); font-size: .75rem; font-weight: 600; white-space: nowrap; }
+.k2b-ui :is(.assistant-queue__head, .assistant-queue__chip) > .ti-hourglass { color: var(--k2b-text-subtle); font-size: .875rem; }
+.k2b-ui .assistant-queue__next { display: flex; flex: 1 1 auto; align-items: center; gap: .375rem; min-inline-size: 0; }
+/* Source signs on one 18 px axis: one's own in the third grey, an automation in text colour, another chat in plum. */
+.k2b-ui .assistant-queue__sign { flex: none; inline-size: 1.125rem; color: var(--k2b-text-subtle); font-size: .9375rem; text-align: center; }
+.k2b-ui .assistant-queue__sign[data-kind="automation"] { color: var(--k2b-text); }
+.k2b-ui .assistant-queue__sign[data-kind="chat"] { color: var(--k2b-ai-accent); }
+/* Text and source in a row: only the text gives way, cut after 56 characters; the source never shrinks or leaves. */
+.k2b-ui .assistant-queue__main { display: flex; flex: 1 1 auto; align-items: baseline; min-inline-size: 0; }
+.k2b-ui .assistant-queue__text { flex: 0 1 auto; max-inline-size: 56ch; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .assistant-queue__origin { flex: none; color: var(--k2b-text-subtle); font-size: .75rem; white-space: pre; }
+.k2b-ui .assistant-queue__state { display: inline-flex; flex: none; align-items: center; gap: .3125rem; color: var(--k2b-text-subtle); font-size: .75rem; white-space: nowrap; }
+.k2b-ui .assistant-queue__state[data-state="failed"] { color: var(--k2b-danger-text); }
+.k2b-ui .assistant-queue__state > i { font-size: .875rem; }
+.k2b-ui :is(.assistant-queue__all, .assistant-queue__chip) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: .25rem;
+  block-size: 1.625rem;
+  padding: 0 .375rem;
+  border: 0;
+  border-radius: .4375rem;
+  color: var(--k2b-text-subtle);
+  background: transparent;
+  font: inherit;
+  font-size: .75rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out), color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+.k2b-ui .assistant-queue__chip { color: var(--k2b-text); font-weight: 600; }
+.k2b-ui :is(.assistant-queue__all, .assistant-queue__chip):hover { color: var(--k2b-text); background: var(--k2b-edge-hover-bg); }
+.k2b-ui :is(.assistant-queue__all, .assistant-queue__chip):focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+/* Counters in table figures with a fixed width, so a new entry never moves what stands beside them. */
+.k2b-ui .assistant-queue__count { display: inline-block; min-inline-size: 2ch; font-variant-numeric: tabular-nums; text-align: start; }
+.k2b-ui .assistant-queue__chevron { font-size: .875rem; transition: transform var(--k2b-motion-base) var(--k2b-ease-out); }
+.k2b-ui [aria-expanded="true"] > .assistant-queue__chevron { transform: rotate(180deg); }
+/* The list floats over the row (layer 3), across its full width; from 8 entries on it scrolls. */
+.k2b-ui .assistant-queue__list {
+  position: absolute;
+  z-index: 20;
+  inset-inline: 0;
+  inset-block-end: calc(100% + .375rem);
+  padding: .375rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: .75rem;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+}
+.k2b-ui .assistant-queue__list[hidden] { display: none; }
+.k2b-ui .assistant-queue__list-head { display: flex; justify-content: space-between; gap: .75rem; padding: .25rem .5rem .375rem; color: var(--k2b-text-subtle); font-size: .75rem; }
+.k2b-ui .assistant-queue__list-head > span:first-child { flex: none; color: var(--k2b-text); font-weight: 600; white-space: nowrap; }
+.k2b-ui .assistant-queue__hint { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .assistant-queue__rows { max-block-size: calc(7.5 * 2.25rem); margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
+.k2b-ui .assistant-queue__row { display: flex; align-items: center; gap: .5rem; min-block-size: 2.25rem; padding: 0 .25rem 0 .5rem; border-radius: .5rem; transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
+.k2b-ui .assistant-queue__row:hover { background: var(--k2b-edge-hover-bg); }
+/* A fixed place of 94 px for three 30 px sign buttons: showing and hiding them changes paint only. */
+.k2b-ui .assistant-queue__actions { display: inline-flex; flex: none; align-items: center; justify-content: flex-end; gap: .125rem; inline-size: 5.875rem; }
+/* One step more specific than the shared small icon button (28 px), so every place is the same 30 px wide. */
+.k2b-ui .assistant-queue__row .assistant-queue__actions > :is(.k2b-icon-button, .assistant-queue__slot, .assistant-queue__busy) { flex: none; inline-size: 1.875rem; block-size: 1.875rem; min-block-size: 1.875rem; }
+.k2b-ui .assistant-queue__actions .k2b-icon-button { color: var(--k2b-text-muted); }
+/* 16 px signs in 30 px buttons, as the composer's own actions. */
+.k2b-ui .assistant-queue__actions :is(.k2b-icon-button, .assistant-queue__busy) .ti { font-size: 1rem; }
+/* What informs stays without a pointer: the ring while "Send now" runs. */
+.k2b-ui .assistant-queue__actions[data-pinned] { opacity: 1; }
+.k2b-ui .assistant-queue__busy { display: inline-flex; align-items: center; justify-content: center; color: var(--k2b-ai-accent); font-size: .9375rem; }
+/* Touch screens: the signs show on every row and take taps in 44 px; text and source may stand on two lines. */
+@media (hover: none) {
+  .k2b-ui .assistant-queue__row { min-block-size: 2.75rem; padding-block: .25rem; }
+  .k2b-ui .assistant-queue__row .assistant-queue__main { flex-wrap: wrap; row-gap: .125rem; }
+  .k2b-ui .assistant-queue__row .assistant-queue__text { max-inline-size: 100%; }
+  .k2b-ui .assistant-queue__row .assistant-queue__origin { flex-basis: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .k2b-ui .assistant-queue__row .assistant-queue__origin > span[aria-hidden] { display: none; }
+  .k2b-ui .assistant-queue__actions { inline-size: auto; gap: .5rem; }
+  .k2b-ui .assistant-queue__actions > :is(.k2b-icon-button, .assistant-queue__slot, .assistant-queue__busy) { position: relative; }
+  .k2b-ui .assistant-queue__actions > .k2b-icon-button::after { position: absolute; inset: -.4375rem -.25rem; content: ""; }
+  .k2b-ui .assistant-queue__rows { max-block-size: calc(7.5 * 2.75rem); }
+}
+/* Narrow, the row keeps the hour glass, the next entry's text and "+n". */
+@container assistant-waiting (max-width: 29.999rem) {
+  .k2b-ui .assistant-queue__chip > span:not(.assistant-queue__count) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@media (max-width: 640px) {
+  /* The row above the field drops the source (the list keeps every one) and the list its order hint; a state word such
+     as "Nicht gesendet" always stays. */
+  .k2b-ui .assistant-queue[data-layout="line"] > .assistant-queue__next .assistant-queue__origin,
+  .k2b-ui .assistant-queue__hint { display: none; }
+}
+@media (any-pointer: coarse) {
+  .k2b-ui :is(.assistant-queue__all, .assistant-queue__chip) { position: relative; }
+  .k2b-ui :is(.assistant-queue__all, .assistant-queue__chip)::after { position: absolute; inset: -.5625rem 0; content: ""; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .assistant-queue__busy > .k2b-spin { animation: none; }
 }
 
 /* A Studio app in the chat: one surface with a quiet header and the app below it, at a fixed height so nothing moves. */
