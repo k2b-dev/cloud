@@ -2,9 +2,9 @@ import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { WAITING_NOW, waitingChatHistory, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
 
 // The server renders "Waiting for you" from the same read the browser starts from. Its first client frame, in
@@ -14,8 +14,8 @@ const root = mkdtempSync(resolve(tmpdir(), "assistant-waiting-strip-"));
 const serovalLink = resolve(import.meta.dir, "../../node_modules/seroval");
 const createdSerovalLink = !existsSync(serovalLink);
 if (createdSerovalLink) symlinkSync(resolve(import.meta.dir, "../../../cloud/node_modules/seroval"), serovalLink, "dir");
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
   if (createdSerovalLink) unlinkSync(serovalLink);

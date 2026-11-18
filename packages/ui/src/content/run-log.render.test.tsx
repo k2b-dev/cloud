@@ -2,12 +2,11 @@ import { expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import type { RunLogProps, RunStepEntry } from "./RunLog";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-run-log-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 // No shared SSR preload exists for this suite. Keep JSX modules behind the same compiler as our neighbours.
 const { createComponent } = await import("solid-js");
 const { renderToString } = await import("solid-js/web");

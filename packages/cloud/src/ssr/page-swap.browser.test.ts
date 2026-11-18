@@ -2,19 +2,19 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { buildIslands } from "../../../ssr/src/build";
 import { islandIdFromFile } from "../../../ssr/src/island-id";
 import { launchBrowser } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 setDefaultTimeout(30_000);
 const rootDir = resolve(import.meta.dir, "../..");
 // Transform real SSR wrappers with the same root used by buildIslands below.
 // Discovery is explicit in beforeAll; importing a page must not start a second build.
-const { plugin } = createConfig({ dev: true, rootDir, componentRoots: [] });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir, componentRoots: [] });
+
 const rail = await import("../services/rail-snapshot");
 const settings = await import("../server/middleware/settings");
 const help = await import("./help");

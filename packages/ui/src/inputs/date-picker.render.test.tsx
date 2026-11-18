@@ -2,10 +2,10 @@ import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { dates } from "@k2b/stdlib";
 import { createComponent, createRoot } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import {
   dateKey,
   displayDate,
@@ -27,8 +27,8 @@ import {
 } from "./date-picker";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-date-picker-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const ui = await import("../index");

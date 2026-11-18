@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceItemReaction, type SpaceWormhole } from "@/contracts";
 import { browserName, hoverInPlace, keptThrough, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { kanbanBrowserPart as selectedPart } from "../../../../../test/kanban-browser";
 import type { KanbanBucketInitial } from "./types";
 
@@ -19,13 +19,13 @@ const packageCache = resolve(import.meta.dir, "../../../../../node_modules/.cach
 mkdirSync(packageCache, { recursive: true });
 const root = mkdtempSync(join(packageCache, "spaces-kanban-browser-"));
 const workspaceDir = resolve(import.meta.dir, "../workspace");
-const { plugin } = createConfig({
+registerSsrTestPlugin({
   dev: false,
   verbose: false,
   rootDir: root,
   componentRoots: [workspaceDir, resolve(import.meta.dir, "../filter")],
 });
-Bun.plugin(plugin());
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: KanbanFixture } = await import("./kanban-board.browser-fixture");
 

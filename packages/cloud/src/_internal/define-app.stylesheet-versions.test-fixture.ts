@@ -1,6 +1,6 @@
 import { spyOn } from "bun:test";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // The parent test passes everything as one JSON argument; NODE_ENV comes from the child's environment.
 const probe = JSON.parse(process.argv[2] ?? "{}") as {
@@ -12,8 +12,7 @@ const probe = JSON.parse(process.argv[2] ?? "{}") as {
 };
 const rootDir = probe.root;
 process.chdir(rootDir);
-const { plugin } = createConfig({ dev: false, rootDir });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: false, rootDir });
 
 const watcher = await import("./runtime-watcher");
 const coreRelease = spyOn(watcher, "registeredCoreRelease").mockReturnValue(probe.coreRelease);

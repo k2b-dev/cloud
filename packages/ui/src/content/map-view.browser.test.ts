@@ -2,20 +2,20 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import type { Button as ButtonComponent } from "../actions/Button";
 import type { MapView as MapViewComponent } from "./MapView";
 import { mapStyle } from "./map-style";
 import type { MapViewArea, MapViewHandle, MapViewLine, MapViewMarker, MapViewStyle } from "./map-view-types";
 
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-map-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: directory });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: directory });
+
 const { MapView } = await import("./MapView");
 const { MapViewFrame } = await import("./MapViewFrame");
 const { Button } = await import("../actions/Button");

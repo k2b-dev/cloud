@@ -3,19 +3,19 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AdminMailApp, AdminMailProfile } from "@k2b/cloud/contracts";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import type { OutgoingMailState } from "./OutgoingMail.island";
 
 // The outgoing mail page must stay flat and fit a phone: its tables scroll inside themselves, never the page.
 const root = mkdtempSync(join(tmpdir(), "core-outgoing-mail-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: OutgoingMail, AccessDialog, LogAccessDialog } = await import("./OutgoingMail.island.tsx");
 const { MessageDialog } = await import("./SendLog.tsx");

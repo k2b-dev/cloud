@@ -3,17 +3,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 // The server render of the same card, for the first-frame comparison below.
 const ssrRoot = mkdtempSync(resolve(tmpdir(), "cloud-action-question-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: ssrRoot });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: ssrRoot });
+
 process.once("exit", () => rmSync(ssrRoot, { recursive: true, force: true }));
 const { LocaleProvider } = await import("@k2b/ui");
 const { AiReaderTimeZoneProvider } = await import("./action-sentences");

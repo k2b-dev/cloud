@@ -3,21 +3,21 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Request } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, pageErrors } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { APPROVAL_COUNTS_PATH } from "../contracts/approval-paths";
 import type { RailApp } from "./rail-navigation";
 
 // Whether a badge moves anything or is clipped by the rail's scroller depends
 // on the compiled stylesheet and real layout, which only an engine shows.
 const root = mkdtempSync(resolve(tmpdir(), "cloud-app-badges-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: RailApps } = await import("./RailApps");

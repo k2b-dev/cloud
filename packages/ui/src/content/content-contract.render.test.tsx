@@ -2,17 +2,17 @@ import { describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { dates } from "@k2b/stdlib";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import type { CalendarEvent, CalendarView } from "./Calendar";
 import type { DataTableProps } from "./DataTable";
 import { getFileViewPreviewKind } from "./file-view-preview";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-content-contract-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: Calendar } = await import("./Calendar");
