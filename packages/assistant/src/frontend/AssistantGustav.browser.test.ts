@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation } from "@k2b/cloud/ai";
+import { CodeVersionCardSnapshotSchema } from "@k2b/cloud/contracts/code-version-cards";
 import { codePageFixture } from "@k2b/cloud/ssr/code-page/code-page.fixture";
 import type { Browser, Page, Route } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
@@ -543,7 +544,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
                   codeId: p.codeId,
                   versionId: p.versionId,
                   state: "available",
-                  snapshot: {
+                  snapshot: CodeVersionCardSnapshotSchema.parse({
                     preview: {
                       codeId: p.codeId,
                       versionId: p.versionId,
@@ -563,7 +564,10 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
                       decidedBy: r.decidedBy,
                       message: r.message,
                       commentCount: r.commentCount,
-                      revision: "revision" in r ? r.revision : null,
+                      revision:
+                        "revision" in r && typeof r.revision === "object" && r.revision !== null
+                          ? { submittedNumber: null, ...r.revision }
+                          : null,
                     },
                     facts: [],
                     code: { state: "active", activeVersionId: "v4", pausedAt: null, pausedBy: null },
@@ -572,7 +576,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
                     permission: "editor",
                     canManage: true,
                     canActivate: true,
-                  },
+                  }),
                 },
               ],
             },

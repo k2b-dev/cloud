@@ -1268,6 +1268,9 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
     line-clamp: 2;
     white-space: normal;
   }
+  /* The latest pause receipt keeps two quiet lines when feedback becomes shorter.
+     Its existing card reserve and historical receipts stay unchanged. */
+  .k2b-ui .assistant-authoring-stop[data-current] .assistant-authoring-stop__meta { min-block-size: 2lh; }
   .k2b-ui .assistant-code-version[data-card-icon] > .k2b-notice-card__icon,
   .k2b-ui .assistant-authoring-stop[data-card-icon] > .k2b-notice-card__icon { align-self: start; }
   .k2b-ui .assistant-code-version[data-tone][data-card-icon] > .k2b-notice-card__content,

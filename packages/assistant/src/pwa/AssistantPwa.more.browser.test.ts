@@ -398,7 +398,10 @@ describe("Code in the Cloud app", () => {
       await rejected.getByText("Rechnungen bitte weiter von Hand ablegen.", { exact: false }).waitFor();
       expect((await word(rejected)).trim()).toBe("Jana Probe hat Version 3 abgelehnt.");
       const text = await rejected.locator(".assistant-code-version").innerText();
-      expect(text).toContain("Version 2 bleibt eingeschaltet.");
+      // v10's quiet line joins facts without sentence-ending punctuation.
+      expect(await rejected.locator(".assistant-code-version__quiet").innerText()).toBe(
+        "„Rechnungen bitte weiter von Hand ablegen.“ · Version 2 bleibt eingeschaltet",
+      );
       expect(text).not.toContain("rejected or revoked");
       expect(await fits(rejected)).toBe(true);
       await shot(rejected, "f-pwa-karte-abgelehnt-390");

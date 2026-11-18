@@ -215,6 +215,19 @@ describe("the v10 pause card", () => {
                     overflow: card.scrollWidth - card.clientWidth,
                     pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
                     button: button.getBoundingClientRect().toJSON(),
+                    // NoticeCard inherits its line height into public Buttons. Resolve the
+                    // shipped sm metrics, rather than pinning an app-specific pixel height.
+                    expectedButtonHeight: (() => {
+                      const style = getComputedStyle(button);
+                      return Math.max(
+                        parseFloat(style.minHeight),
+                        parseFloat(style.lineHeight) +
+                          parseFloat(style.paddingTop) +
+                          parseFloat(style.paddingBottom) +
+                          parseFloat(style.borderTopWidth) +
+                          parseFloat(style.borderBottomWidth),
+                      );
+                    })(),
                     card: card.getBoundingClientRect().toJSON(),
                     textBottom: quiet.getBoundingClientRect().bottom,
                     reducedMotion: getComputedStyle(button).transitionDuration,
@@ -241,7 +254,7 @@ describe("the v10 pause card", () => {
                   expect(layout.button.y).toBeGreaterThanOrEqual(layout.textBottom);
                   expect(layout.button.width).toBeCloseTo(layout.card.width - 28, 0);
                 } else {
-                  expect(layout.button.height).toBeCloseTo(30, 0);
+                  expect(layout.button.height).toBeCloseTo(layout.expectedButtonHeight, 0);
                 }
                 expect(await card.innerText()).not.toMatch(/code_|\.tsx?\b|[a-z]+_[a-z]+|Version 2/);
                 expect(await count(page)).toBe(0);
