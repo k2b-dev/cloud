@@ -1404,7 +1404,7 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .assistant-code-decision__more a:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: var(--k2b-focus-offset);
-  border-radius: var(--k2b-radius-sm, 0.25rem);
+  border-radius: 0.25rem;
 }
 .assistant-code-decision__more a {
   color: inherit;

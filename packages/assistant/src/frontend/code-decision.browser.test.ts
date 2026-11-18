@@ -358,6 +358,7 @@ test("many long page titles at 390 px keep one row, an ellipsis and a counted Co
       expect(metrics.overflow).toBe(false);
       await page.keyboard.press("Tab");
       await page.keyboard.press("Tab");
+      await settled(page);
       const focus = await more.locator("a:focus-visible").evaluate((node) => {
         const style = getComputedStyle(node);
         return { width: style.outlineWidth, style: style.outlineStyle, radius: style.borderRadius };
