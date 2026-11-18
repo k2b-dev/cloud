@@ -103,6 +103,7 @@ describe("Mail reviews through the public Cloud card renderer", () => {
         expect(detailText).toContain("calendar.ics");
         expect(detailText).toContain(warning.title);
         expect(detailText).toContain(warning.description);
+        expect(review.sentence.confirm).toBe(locale === "de" ? "Senden" : "Send");
         expect(text).toContain(locale === "de" ? "Senden" : "Send");
         expect(text).toContain(locale === "de" ? "Nicht senden" : "Don't send");
         if (scheduled) expect(details).toContain("2026-10-20T06:00:00.000Z");

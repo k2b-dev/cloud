@@ -115,16 +115,7 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
           tone: props.state === "expired" ? "expired" : (currentLine()?.tone ?? "running"),
           label: resultSentence(),
         };
-  const resultQuiet = () => {
-    const line = currentLine();
-    if (line?.detail) return line.detail;
-    if (props.state === "sending" || line?.tone === "running") return props.card.reason.code === "sends" ? t().sending : t().executing;
-    if (line?.tone === "error") return props.card.reason.code === "sends" ? t().sendFailed : t().executionFailed;
-    if (line?.tone === "done") return props.card.reason.code === "sends" ? t().sent : t().executed;
-    if (props.state === "expired") return t().expiredQuiet;
-    if (line?.tone === "off") return t().requestClosed;
-    return t().lostDetail;
-  };
+  const resultQuiet = () => (props.state === "expired" ? undefined : currentLine()?.detail);
   const moveOn = async () => {
     if (sending()) return;
     const original = draftValues(props.card.view);
@@ -151,7 +142,14 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
               text: (
                 <>
                   {resultQuiet()}
-                  <Show when={currentLine()?.time}>{(time) => <> · {time()}</>}</Show>
+                  <Show when={currentLine()?.time}>
+                    {(time) => (
+                      <>
+                        {resultQuiet() ? " · " : ""}
+                        {time()}
+                      </>
+                    )}
+                  </Show>
                 </>
               ),
             }
@@ -196,9 +194,7 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
             : undefined
       }
       detailsPlacement="quiet"
-      secondary={
-        open() ? { label: props.card.reason.code === "sends" ? t().dontSend : props.card.decline, onSelect: props.onDecline } : undefined
-      }
+      secondary={open() ? { label: props.card.decline, onSelect: props.onDecline } : undefined}
       meta={editing() ? [] : meta()}
       confirm={
         !open()
@@ -207,7 +203,7 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
             : undefined
           : editing()
             ? { label: `${props.card.confirm.label} …`, icon: confirmIcon(props.card), onSelect: moveOn }
-            : { label: props.card.reason.code === "sends" ? t().send : props.card.confirm.label, onSelect: props.onConfirm }
+            : { label: props.card.confirm.label, onSelect: props.onConfirm }
       }
       decline={open() ? { label: editing() ? t().discard : props.card.decline, onSelect: props.onDecline } : undefined}
       back={

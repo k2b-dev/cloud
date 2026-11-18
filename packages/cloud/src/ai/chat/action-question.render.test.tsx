@@ -9,6 +9,7 @@ import { legacyReviewView } from "../../capabilities/legacy-review-view";
 import type { ApprovalPage } from "../../contracts/approvals";
 import { CapabilityActionCallReviewSchema, CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
 import type { AiStoredActionReview } from "../action-review";
+import { cloudToolReview } from "../tool-sentences";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-action-question-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -86,23 +87,25 @@ describe("ApprovalCard at the public rendering seam", () => {
   test("send decisions stay on the card while details and remembering stay separate", () => {
     const body = render({ remember: { onSelect: () => {} } });
     const actions = body.querySelector(".k2b-notice-card__actions")!;
-    expect(words(actions)).toContain("Senden");
+    expect(words(actions)).toContain(card().confirm.label);
     expect(words(actions)).toContain("Nicht senden");
     expect(words(actions)).not.toContain("Alles ansehen");
     expect(words(body.querySelector(".k2b-notice-card__description")!)).toContain("Alles ansehen");
     expect(body.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
-  test("sending, success with time, and failure have distinct nonempty quiet facts", () => {
+  test("sending, success with time, and failure show only the supplied quiet facts", () => {
     for (const [state, tone, fact] of [
-      ["sending", "running", "Cloud sendet gerade"],
-      ["decided", "done", "Die Nachricht wurde gesendet"],
+      ["sending", "running", "Mail bestätigt den Auftrag noch."],
+      ["decided", "done", "Mail hat den Versandauftrag übernommen."],
       ["decided", "error", "Nichts ging raus. Versuch es noch einmal."],
     ] as const) {
       const body = render({
         state,
         outcome: {
-          lines: { now: { tone, text: [{ kind: "text", text: "Der Zustand." }], time: tone === "done" ? "14:52" : undefined } },
+          lines: {
+            now: { tone, text: [{ kind: "text", text: "Der Zustand." }], detail: fact, time: tone === "done" ? "14:52" : undefined },
+          },
           current: "now",
         },
       });
@@ -112,6 +115,43 @@ describe("ApprovalCard at the public rendering seam", () => {
     }
   });
 
+  test("a website read with ask=sends keeps its own decisions and never invents a mail receipt", () => {
+    const source = block();
+    const review = cloudToolReview("web_extract", { url: "https://example.com" }, "de");
+    if (!review) throw new Error("Missing website review");
+    const site = toolActionCard(
+      { ...source, name: "web_extract", presentation: undefined, review: { ...review, ask: "sends" } },
+      { locale: "de", timeZone: "UTC", outcome: legacyOutcomeWords(source, "de", "UTC") },
+    );
+    const open = render({ card: site });
+    const labels = [...open.querySelectorAll(".k2b-notice-card__actions button")].map((node) => node.textContent);
+    expect(labels).toEqual(["Nicht lesen", "Seite lesen"]);
+    for (const state of ["sending", "decided", "expired"] as const) {
+      const body = render({
+        card: site,
+        state,
+        outcome: {
+          current: "now",
+          lines: {
+            now: {
+              tone: state === "sending" ? "running" : "done",
+              text: site.forms.done,
+              time: "14:52",
+            },
+          },
+        },
+      });
+      expect(body.querySelector(".k2b-notice-card__detail-text")?.textContent).toBe("14:52");
+      expect(words(body)).not.toContain("Nachricht wurde gesendet");
+      expect(words(body)).not.toContain("Cloud sendet");
+    }
+    const withoutTime = render({
+      card: site,
+      state: "decided",
+      outcome: { current: "done", lines: { done: { tone: "done", text: site.forms.done } } },
+    });
+    expect(withoutTime.querySelector(".k2b-notice-card__detail-text")?.textContent).toBe("");
+  });
   test("consequences stay a list with their change markers", () => {
     const source = actionFixtures("de").share!.block;
     const body = renderDetails(toolActionCard(source, { locale: "de", timeZone: "UTC", outcome: legacyOutcomeWords(source, "de", "UTC") }));

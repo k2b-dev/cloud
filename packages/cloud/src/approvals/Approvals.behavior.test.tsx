@@ -124,6 +124,34 @@ describe("Approvals", () => {
     };
   };
 
+  test("a rejection in flight says Cloud is saving the decision, never sending the message", async () => {
+    setSystemTime(new Date("2026-10-12T07:51:00.000Z"));
+    let finish: ((response: Response) => void) | undefined;
+    const original = item("a1");
+    const view = await mount({ initial: page([{ ...original, review: { ...original.review!, ask: "sends" } }]) }, (url) =>
+      url.endsWith("/decision")
+        ? new Promise<Response>((resolve) => {
+            finish = resolve;
+          })
+        : Response.json({ total: 0, apps: {} }),
+    );
+    try {
+      await Bun.sleep(550);
+      view.button("Don't run")!.click();
+      await waitFor(() => Boolean(finish), "the pending rejection");
+      const row = view.dom.root.querySelector<HTMLElement>("article.cloud-approval")!;
+      expect(row.querySelector(".k2b-notice-card__title")?.textContent).toBe("Sending your answer …");
+      expect(row.querySelector(".k2b-notice-card__detail-text")?.textContent).toBe("Cloud is saving your decision.");
+      expect(row.textContent).not.toMatch(/Cloud is sending|message was sent/);
+      finish!(Response.json({ status: "rejected" }));
+      await waitFor(() => row.dataset.decided === "rejected", "the rejected receipt");
+    } finally {
+      finish?.(Response.json({ status: "rejected" }));
+      view.cleanup();
+      setSystemTime();
+    }
+  });
+
   test("each request is the chat's question card; an answer collapses it to its outcome line and keeps the others", async () => {
     const view = await mount({ initial: page([item("a1"), item("a2")]) }, () => Response.json({ status: "approved" }));
     try {

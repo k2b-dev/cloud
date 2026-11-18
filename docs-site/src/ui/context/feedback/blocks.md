@@ -98,7 +98,6 @@ The row owns its responsive grid, spacing and state reserve.
 ```tsx
 <NoticeRow
   tone="ai" icon="ti ti-shield-check"
-  children="The proposal is ready to review."
   detail="Reads mail · daily at 8:00"
   detailTitle="Reads mail · daily at 8:00"
   actions={({ narrow }) => <>
@@ -106,7 +105,7 @@ The row owns its responsive grid, spacing and state reserve.
       variant={narrow ? "secondary" : "link"}>See everything</Button>
     <Button size={narrow ? "md" : "sm"} variant="ai">Enable</Button>
   </>}
-/>
+>The proposal is ready to review.</NoticeRow>
 ```
 
 Desktop rows are 64 px high, with a 2 px gap between the two lines and an
@@ -119,6 +118,8 @@ through loading and retry. Only an actionless final receipt sets it to
 `false`. For feedback that needs two quiet lines reserved on phones, pass
 `detailLines={2}`. The default reserves one line.
 
+The one- or two-line form is chosen at mount; keep it stable while the state changes.
+In the two-line form, supply controls only through `actions`.
 Supply at most two logical controls, secondary first. The action renderer's
 `narrow` follows the same container breakpoint as the layout. Existing
 `line` and `card` layouts keep their markup and behaviour.

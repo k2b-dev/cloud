@@ -9,7 +9,7 @@ export function openApprovalDetails(input: {
   invoke: (answer: NonNullable<ApprovalFrameProps["decline"]>, confirming?: boolean) => Promise<void>;
   remembered: () => boolean;
   setRemembered: (value: boolean) => void;
-  pending: () => boolean;
+  pending: () => "confirm" | "secondary" | null;
   failed: () => boolean;
   signal: AbortSignal;
 }) {
@@ -36,7 +36,7 @@ export function openApprovalDetails(input: {
               title={p.details?.label ?? t().seeEverything}
               subtitle={p.details?.context}
               close={leave}
-              closeDisabled={input.pending()}
+              closeDisabled={Boolean(input.pending())}
             />
             <PanelDialog.Body>
               <div class="cloud-approval-details">
@@ -112,8 +112,8 @@ export function openApprovalDetails(input: {
                     {(answer) => (
                       <Button
                         variant="ai"
-                        loading={input.pending() || answer().busy}
-                        disabled={Boolean(p.waiting || p.unavailable || answer().disabled)}
+                        loading={input.pending() === "confirm" || answer().busy}
+                        disabled={Boolean(p.waiting || p.unavailable || answer().disabled || input.pending())}
                         onClick={() => void input.invoke({ label: answer().label, onSelect: answer().onSelect! }, true)}
                       >
                         {answer().label}

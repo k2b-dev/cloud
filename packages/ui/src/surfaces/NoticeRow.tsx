@@ -49,6 +49,8 @@ const ROW_PROPS = [
  * A notice with an optional quiet line. Without it, one row of at least 48px: the tile, one line of text, then the action, all centred. It has the tint and
  * tones of `NoticeCard`, so a notice that changes state in place, such as blocked, loading, and failed, keeps its row and
  * the content below never moves.
+ * The one- or two-line form is chosen once at mount. Keep that form stable across state changes.
+ * In the two-line form use `actions`; `action` belongs to the original single-line form.
  */
 export function NoticeRow(props: NoticeRowProps): JSX.Element {
   const [local, articleProps] = splitProps(props, ROW_PROPS);
@@ -106,7 +108,7 @@ export function NoticeRow(props: NoticeRowProps): JSX.Element {
             <Show when={local.detailAction}>{(action) => <span class="k2b-notice-card__detail-action">{action()}</span>}</Show>
           </>
         }
-        actions={typeof local.actions === "function" ? local.actions({ narrow: narrow() }) : (local.actions ?? local.action)}
+        actions={typeof local.actions === "function" ? local.actions({ narrow: narrow() }) : local.actions}
       />
     </div>
   );

@@ -46,8 +46,8 @@ export type ApprovalFrameProps = {
   meta?: readonly ChatDecisionFact[];
   confirm?: ApprovalFrameAction;
   decline?: ChatDecisionAnswer;
-  /** A direct secondary decision; it never loads or requires the proposal. */
-  secondary?: ChatDecisionAnswer;
+  /** A direct secondary decision; `shortLabel` is used in narrow containers. It never requires the proposal. */
+  secondary?: ChatDecisionAnswer & { shortLabel?: string };
   /** Capability proposals keep their detail link in the quiet line, away from the two decisions. */
   detailsPlacement?: "action" | "quiet";
   back?: ChatDecisionAnswer;
@@ -71,7 +71,7 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
   const t = () => actionMessages(props.locale);
   let root: HTMLElement | undefined;
   let detailsAbort: AbortController | undefined;
-  const [pending, setPending] = createSignal(false);
+  const [pending, setPending] = createSignal<"confirm" | "secondary" | null>(null);
   const [remembered, setRemembered] = createSignal(false);
   const [detailFailure, setDetailFailure] = createSignal(false);
   const [answerFailure, setAnswerFailure] = createSignal(false);
@@ -123,7 +123,7 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
   const invoke = async (answer: ChatDecisionAnswer, confirming = false) => {
     if (pending() || props.waiting || (confirming && disabled())) return;
     focusOwned = Boolean(root?.contains(root.ownerDocument.activeElement)) || Boolean(detailsAbort);
-    setPending(true);
+    setPending(confirming ? "confirm" : "secondary");
     setAnswerFailure(false);
     try {
       const choice = confirming && remembered() && props.remember && props.mode !== "edit" ? props.remember : answer;
@@ -132,7 +132,7 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
       setAnswerFailure(true);
       props.onAnswerError?.(error);
     } finally {
-      setPending(false);
+      setPending(null);
       queueMicrotask(restoreFocus);
     }
   };
@@ -176,7 +176,7 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
             variant={answer.filled === false || (props.state === "open" && props.mode === "edit") ? "secondary" : "ai"}
             wrap
             disabled={disabled()}
-            loading={pending() || answer.busy}
+            loading={pending() === "confirm" || answer.busy}
             onClick={() => {
               if (props.state === "open" && props.mode === "edit") void showDetails();
               else if (answer.onSelect) void invoke({ ...answer, onSelect: answer.onSelect! }, true);
@@ -228,12 +228,9 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
         }
         detailAction={
           props.detailsPlacement === "quiet" && hasDetails() ? (
-            <>
-              <span aria-hidden="true"> · </span>
-              <button type="button" class="k2b-text-link" onClick={() => void showDetails()}>
-                {t().seeEverything}
-              </button>
-            </>
+            <button type="button" class="k2b-text-link" onClick={() => void showDetails()}>
+              {t().seeEverything}
+            </button>
           ) : undefined
         }
         detailTitle={quietTitle()}
@@ -248,9 +245,10 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
                     variant={narrow ? "secondary" : "link"}
                     wrap
                     disabled={Boolean(props.waiting || pending())}
+                    loading={pending() === "secondary"}
                     onClick={() => void invoke(answer())}
                   >
-                    {answer().label}
+                    {narrow && answer().shortLabel ? answer().shortLabel : answer().label}
                   </Button>
                 )}
               </Show>

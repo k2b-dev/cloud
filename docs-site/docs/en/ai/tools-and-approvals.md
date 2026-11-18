@@ -775,10 +775,14 @@ The focused imports `@k2b/cloud/approvals/frame`, `/list` and `/navigation`
 provide `ApprovalFrame`, default `Approvals`, and default `ApprovalsNavStatus`
 with `approvalNavCount`, respectively. The combined `/ui` entry remains.
 `ApprovalFrame` uses the public `NoticeRow` with `detail`; `secondary` is a
-direct decision, and `detailsPlacement="quiet"` keeps the full-proposal link
-in the quiet line. `details.reason` supplies the dialog's pure reason when
+direct decision; its optional `shortLabel` supplies the label for narrow
+containers. `detailsPlacement="quiet"` keeps the full-proposal link in the quiet
+line. `details.reason` supplies the dialog's pure reason when
 `reason.text` on the card includes other facts. `details.load` may prepare the
-proposal module on demand; a failure stays visible with retry.
+proposal module on demand; a failure stays visible with retry. Only the pending
+decision shows a spinner; both decisions stay disabled until it completes.
+Decision labels come from the app review, and the quiet receipt uses only the
+outcome detail and time; an ask reason never implies that a message was sent.
 Administrator reviews show rejection/change choices directly and keep their
 change list in a section below the shared frame.
 

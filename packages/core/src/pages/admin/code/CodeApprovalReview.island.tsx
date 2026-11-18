@@ -544,7 +544,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     );
   };
   const answers = (): Pick<ApprovalFrameProps, "confirm" | "secondary" | "unavailable"> => ({
-    secondary: { label: t().rejectOrChange, onSelect: ask },
+    secondary: { label: t().rejectOrChange, shortLabel: t().rejectOrChangeShort, onSelect: ask },
     confirm: { label: t().approve({ n: props.number }), icon: "ti ti-check", onSelect: approve },
     unavailable:
       !mayDecide() || blocked()

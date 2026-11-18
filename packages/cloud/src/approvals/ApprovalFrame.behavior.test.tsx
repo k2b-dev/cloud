@@ -202,3 +202,44 @@ domTest("discarding an editable draft then answering again invokes the result ac
     dom.cleanup();
   }
 });
+
+for (const choice of ["confirm", "secondary"] as const)
+  domTest(`only the ${choice} decision spins while both card controls are disabled`, async () => {
+    const dom = createDomTestHarness();
+    const { ApprovalFrame } = await import("./ApprovalFrame");
+    let finish: (() => void) | undefined;
+    const run = () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    const dispose = render(
+      () => (
+        <ApprovalFrame
+          locale="de"
+          state="open"
+          source={{ name: "Code", icon: "ti ti-code" }}
+          sentence="Version 5 wartet auf deine Entscheidung."
+          reason={{ text: "Version 4 bleibt eingeschaltet" }}
+          confirm={{ label: "Version 5 freigeben", onSelect: run }}
+          secondary={{ label: "Ablehnen oder ändern …", onSelect: run }}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const primary = dom.root.querySelector<HTMLButtonElement>("[data-approval-primary]")!;
+      const secondary = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((b) => b !== primary)!;
+      (choice === "confirm" ? primary : secondary).click();
+      await waitFor(() => Boolean(finish));
+      expect(primary.disabled).toBe(true);
+      expect(secondary.disabled).toBe(true);
+      expect(primary.getAttribute("aria-busy")).toBe(choice === "confirm" ? "true" : null);
+      expect(secondary.getAttribute("aria-busy")).toBe(choice === "secondary" ? "true" : null);
+      finish!();
+      await waitFor(() => !primary.disabled && !secondary.disabled);
+    } finally {
+      finish?.();
+      dispose();
+      dom.cleanup();
+    }
+  });

@@ -72,6 +72,7 @@ with its own data. The frame knows no Capability:
   button can be passed through `actions`; its renderer receives `{ narrow }`
   for the public button size and variant. Supply at most two logical controls.
 - `secondary` is a direct second decision. It never loads the proposal.
+  Its optional `shortLabel` replaces the label in a narrow container.
   `detailsPlacement="quiet"` puts **See everything** in the quiet line,
   leaving both card controls for decisions.
 - `decline`, `back`, `more` and the `remember` checkbox are available through
@@ -131,6 +132,11 @@ Code-version requests remain read-only.
 ## States and outcomes
 
 An answer changes the sentence, quiet line and controls in the same frame.
+Only the pending decision shows a spinner; both decisions stay disabled until
+it completes. Decision labels come from the app review, including Send and
+Don’t send for Mail. The quiet receipt uses the supplied outcome detail and
+time only; the ask reason does not imply that a message was sent. The detail
+dialog reserves its error region before a failed answer appears.
 Focus follows the next main control or the result frame when the person has
 not deliberately moved it elsewhere. **Approved.** says that the chat it came
 from carries the Action out. Code-version approvals instead say that the

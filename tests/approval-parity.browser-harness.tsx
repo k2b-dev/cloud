@@ -61,7 +61,7 @@ const capLine = () => {
             : {
                 tone: "warning" as const,
                 text: card.forms.unknown,
-                detail: "Der Stand wird geprüft.",
+                detail: "Prüf den Stand, bevor du es noch einmal versuchst",
                 action: {
                   label: "Stand prüfen",
                   onSelect: () => {

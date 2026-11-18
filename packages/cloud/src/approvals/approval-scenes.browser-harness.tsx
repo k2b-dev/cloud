@@ -1,6 +1,7 @@
 import { ChangeList, type ChatDecisionState, LocaleProvider } from "@k2b/ui";
 import { createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
+import CodeApprovalReview from "../../../core/src/pages/admin/code/CodeApprovalReview.island";
 import type { ActionCard, ActionText } from "../ai/chat/action-card";
 import { toolActionCard } from "../ai/chat/action-card";
 import type { ActionLine } from "../ai/chat/action-question";
@@ -14,6 +15,7 @@ import { CloudSurveyBlock } from "../ai/chat/visual-tools";
 import { cardToolResult, chartToolResult } from "../ai/gustav-views";
 import type { AiTurnBlock } from "../ai/protocol";
 import { capabilityResultView } from "../ai/result-view";
+import { cloudToolReview } from "../ai/tool-sentences";
 import type { ApprovalPage } from "../contracts/approvals";
 import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import { ApprovalCard } from "./ApprovalCard";
@@ -142,6 +144,102 @@ const page: ApprovalPage = {
 const Label = (props: { children: string }) => <p class="scene-label">{props.children}</p>;
 
 const scenes: Record<string, () => JSX.Element> = {
+  "review-fixes": () => {
+    const mail = cardOf("mail");
+    const review = cloudToolReview("web_extract", { url: "https://example.com" }, "de");
+    if (!review) throw new Error("Missing website review");
+    const website = toolActionCard(
+      { ...fixtures.mail!.block, name: "web_extract", presentation: undefined, review: { ...review, ask: "sends" } },
+      { locale: "de", timeZone: "Europe/Berlin", outcome: legacyOutcomeWords(fixtures.mail!.block, "de", "Europe/Berlin") },
+    );
+    return (
+      <>
+        <Label>Website lesen</Label>
+        <Card card={website} />
+        <Label>Website gelesen</Label>
+        <Card card={website} state="decided" line={{ tone: "done", text: website.forms.done, time: "14:52" }} />
+        <Label>Mail wird gesendet</Label>
+        <Card card={mail} state="sending" line={{ tone: "running", text: mail.forms.running }} />
+        <Label>Mail zum Versand übernommen</Label>
+        <Card card={mail} state="decided" line={{ tone: "done", text: mail.forms.done, time: "14:52" }} />
+        <Label>Abgelaufen</Label>
+        <Card card={mail} state="expired" line={{ tone: "off", text: text("Die Frage ist abgelaufen."), time: "14:53" }} />
+        <Label>Ausgang unklar</Label>
+        <Card
+          card={mail}
+          state="decided"
+          line={{
+            tone: "warning",
+            text: mail.forms.unknown,
+            detail: "Prüf den Stand, bevor du es noch einmal versuchst",
+            action: { label: "Stand prüfen", onSelect: () => {} },
+          }}
+        />
+      </>
+    );
+  },
+  "review-error": () => (
+    <ApprovalFrame
+      locale="de"
+      state="open"
+      source={{ name: "Code", icon: "ti ti-code" }}
+      sentence="Version 5 wartet auf einen Admin."
+      reason={{ text: "Version 4 bleibt eingeschaltet" }}
+      details={{ label: "Details von Code", content: "Nur diese Version ist betroffen." }}
+      more={[
+        {
+          label: "Zurückziehen",
+          onSelect: async () => {
+            throw new Error("offline");
+          },
+        },
+      ]}
+      confirm={{ label: "Einschalten", onSelect: () => {} }}
+    />
+  ),
+  "review-admin": () => (
+    <CodeApprovalReview
+      codeId="c_review"
+      versionId="11111111-1111-4111-8111-111111111111"
+      number={5}
+      title="Eingänge ordnen"
+      viewerId="22222222-2222-4222-8222-222222222222"
+      dateConfig={{ locale: "de", timeZone: "Europe/Berlin" }}
+      tab="overview"
+      authorUserId="33333333-3333-4333-8333-333333333333"
+      recipient="Lea Muster"
+      next="chat"
+      binding={{
+        codeId: "c_review",
+        versionId: "11111111-1111-4111-8111-111111111111",
+        sourceHash: "a".repeat(64),
+        bundleHash: "b".repeat(64),
+        manifestHash: "c".repeat(64),
+        comparisonVersionId: null,
+        comparisonSourceHash: null,
+        comparisonBundleHash: null,
+      }}
+      status="pending"
+      canApprove
+      own={false}
+      soleAdminNotice={null}
+      staleComparison={false}
+      newer={null}
+      reason="Sie darf Aufgaben anlegen, die andere sehen."
+      readModel={null}
+      explanation="Sie ordnet neue Eingänge."
+      activeVersion={4}
+      comparison={null}
+      files={[]}
+      decision={null}
+      previous={null}
+      comments={[]}
+      commentsNext={null}
+      commentsTotal={0}
+      listHref="/admin/code?sec=approvals"
+      nextHref={null}
+    />
+  ),
   large: () => <Card card={cardOf("large")} />,
   states: () => {
     const mail = cardOf("mail");

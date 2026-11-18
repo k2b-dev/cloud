@@ -48,13 +48,13 @@ const BlocksDemo = () => (
 </NoticeCard.Grid>
 
 <NoticeRow tone="ai" icon="ti ti-shield-check"
-  children="The proposal is ready to review." detail="Reads mail · daily at 8:00"
+  detail="Reads mail · daily at 8:00"
   detailTitle="Reads mail · daily at 8:00"
   actions={({ narrow }) => <>
     <Button size={narrow ? "md" : "sm"} variant={narrow ? "secondary" : "link"}>See everything</Button>
     <Button size={narrow ? "md" : "sm"} variant="ai">Enable</Button>
   </>}
-/>
+>The proposal is ready to review.</NoticeRow>
 
 <InlineGuidance loading>Loading templates…</InlineGuidance>
 <InlineGuidance tone="info" icon="ti ti-info-circle">Your content stays unchanged.</InlineGuidance>
@@ -83,7 +83,6 @@ const BlocksDemo = () => (
       <NoticeRow
         tone="ai"
         icon="ti ti-shield-check"
-        children="The proposal is ready to review."
         detail="Reads mail · daily at 8:00"
         detailTitle="Reads mail · daily at 8:00"
         actions={({ narrow }) => (
@@ -96,7 +95,9 @@ const BlocksDemo = () => (
             </Button>
           </>
         )}
-      />
+      >
+        The proposal is ready to review.
+      </NoticeRow>
       <div class="space-y-3">
         <h3 class="text-sm font-medium">Inline guidance</h3>
         <InlineGuidance loading>Loading templates…</InlineGuidance>
