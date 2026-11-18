@@ -1081,6 +1081,7 @@ describe(`${browserName} the frame follows its content`, () => {
     try {
       await watch(page, "add");
       await page.getByRole("textbox", { name: "Name" }).focus();
+      await settled(page);
       await watch(page, "remove");
       await settled(page);
       const save = page.getByRole("button", { name: "Save", exact: true });
@@ -1474,6 +1475,7 @@ describe(`${browserName} the frame follows its content`, () => {
     try {
       await watch(page, "add");
       await page.getByRole("textbox", { name: "Name" }).focus();
+      await settled(page);
       await watch(page, "remove");
       // settled: a synthetic held pointer must block the focusout fold until cancellation.
       const result = await page.evaluate(async () => {
