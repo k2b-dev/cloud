@@ -20,6 +20,7 @@ import { aiCapabilities } from "../capabilities";
 import { previewCodeActivation } from "./activation";
 import { loadCodeChatPages, projectCodeChatPages } from "./chat-pages";
 import { chatPageManifest } from "./chat-pages.test-fixture";
+import { CODE_SETTINGS, codeSettings } from "./settings";
 import { readCodeVersion } from "./store";
 
 registerSsrTestPlugin({ dev: true, rootDir: mkdtempSync(join(tmpdir(), "cloud-gl-render-")) });
@@ -62,10 +63,13 @@ suiteFor(
 )("page links across the public read paths", () => {
   let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
   let member: User, guest: User;
+  let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   let ordinal = 0;
   beforeAll(async () => {
     setSystemTime(fixed);
     database = await useMigratedDatabase("code_page_viewers");
+    // No app.start() registers Core settings in this service fixture.
+    settings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES
       (${memberId}::uuid,'page-member','local','user'),(${guestId}::uuid,'page-guest','local','guest')`;
     const users = await Promise.all([accounts.users.get({ id: memberId }), accounts.users.get({ id: guestId })]);
@@ -74,6 +78,7 @@ suiteFor(
   });
   afterAll(async () => {
     setSystemTime();
+    settings?.mockRestore();
     await database?.drop();
   });
   async function fixture(person: User, grant: "owner" | "editor" | "reader") {
@@ -92,9 +97,16 @@ suiteFor(
     }
     return { codeId, versionId, conversationId: chat.id };
   }
-  const input = (f: { codeId: string; versionId: string }) => ({ ...f, content: { kind: "manifest" as const }, offset: 0, length: 32000 });
+  const input = ({ codeId, versionId }: { codeId: string; versionId: string }) => ({
+    codeId,
+    versionId,
+    content: { kind: "manifest" as const },
+    offset: 0,
+    length: 32000,
+  });
   async function ssr(f: { codeId: string }, person: User) {
     const calls: string[] = [];
+    const failures: { capabilityId: string; error: unknown }[] = [];
     // Only transport is replaced: every Core query executes its compiled definition and service against the database.
     const invoke = spyOn(capabilities, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
       calls.push(invocation.capabilityId);
@@ -104,9 +116,12 @@ suiteFor(
         kind: "query",
         localId: invocation.capabilityId,
         input: invocation.input,
-        expectedSchemaHash: null,
+        // Mirror the transport's catalog handshake before running the real query.
+        expectedSchemaHash: compiled.queries.get(invocation.capabilityId)!.manifest.schemaHash,
         context: execution(person, true),
+        onUnexpectedError: (error) => failures.push({ capabilityId: invocation.capabilityId, error: String(error) }),
       });
+      if (!result.ok) failures.push({ capabilityId: invocation.capabilityId, error: result.error });
       return result.ok ? { ok: true, data: capabilityResultSchema(schema).parse(result.data) } : result;
     });
     const cursor = spyOn(aiLive, "cursor").mockResolvedValue("0");
@@ -132,6 +147,7 @@ suiteFor(
       });
       const response = await app.request("http://cloud.test/fixture");
       expect(response.status).toBe(200);
+      expect(failures).toEqual([]);
       const { data, html } = z
         .object({
           data: z.object({ state: z.object({ kind: z.literal("ready"), pages: CodePageLinksSchema.nullable() }) }),
@@ -165,10 +181,14 @@ suiteFor(
         },
         preview: async () => {
           if (grant !== "owner") {
-            await expect(previewCodeActivation(f, { authority: authority(guest) })).rejects.toThrow();
+            await expect(
+              previewCodeActivation({ codeId: f.codeId, versionId: f.versionId }, { authority: authority(guest) }),
+            ).rejects.toThrow();
             return [];
           }
-          return (await previewCodeActivation(f, { authority: authority(guest) })).pages?.pages ?? [];
+          return (
+            (await previewCodeActivation({ codeId: f.codeId, versionId: f.versionId }, { authority: authority(guest) })).pages?.pages ?? []
+          );
         },
         turn: () => loadCodeChatPages({ conversationId: f.conversationId, userId: guest.id, signal: AbortSignal.timeout(10000) }),
         projection: async () =>
@@ -199,7 +219,9 @@ suiteFor(
     const page = await ssr(f, member);
     expect(page.pages?.pages).toHaveLength(2);
     expect(page.html).toContain(`href="/code/${f.codeId}/`);
-    expect((await previewCodeActivation(f, { authority: authority(member) })).pages?.pages).toHaveLength(2);
+    expect(
+      (await previewCodeActivation({ codeId: f.codeId, versionId: f.versionId }, { authority: authority(member) })).pages?.pages,
+    ).toHaveLength(2);
     expect(
       await loadCodeChatPages({ conversationId: f.conversationId, userId: member.id, signal: AbortSignal.timeout(10000) }),
     ).toHaveLength(1);

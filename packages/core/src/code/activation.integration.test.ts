@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { sql, startProcessSync } from "@k2b/cloud";
 import { migrateCloudAi } from "@k2b/cloud/ai";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
@@ -9,7 +9,7 @@ import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
-import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
@@ -103,7 +103,8 @@ const catalog = compileCapabilityManifest("example", {
 });
 
 let database: Awaited<ReturnType<typeof useFreshDatabase>>;
-databaseSuite()("durable Code activation", () => {
+suiteFor("database", "nats")("durable Code activation", () => {
+  let runtime: Awaited<ReturnType<typeof startProcessSync>>;
   let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let explanation: ReturnType<typeof spyOn<typeof explanations, "storeCodeVersionExplanation">>;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>,
@@ -267,6 +268,8 @@ databaseSuite()("durable Code activation", () => {
     explanation = spyOn(explanations, "storeCodeVersionExplanation").mockResolvedValue({ text: "Fictional automation." });
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
+    // App-owned submissions refresh their owner through the process registry.
+    runtime = await startProcessSync({ application: "core" });
     await migrateAuth();
     await migrateEvents();
     await migrateAppEvents();
@@ -324,6 +327,7 @@ databaseSuite()("durable Code activation", () => {
     catalogSpy?.mockRestore();
     readersSpy?.mockRestore();
     setSystemTime();
+    await runtime?.stop();
   });
 
   test("activation invalidates the author's card at commit without waiting for chat delivery", async () => {
