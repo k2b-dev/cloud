@@ -3,6 +3,7 @@ import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, testInfra, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import { sql } from "../runtime/clients";
 import type { AiActionCheck } from "./action-review";
 import type { AiTurnBlock } from "./protocol";
 
@@ -10,7 +11,6 @@ const database = testInfra.database ? await useMigratedDatabase("archived_routin
 afterAll(async () => {
   await database?.drop();
 });
-const { sql } = await import("../runtime/clients");
 const { aiConversations, readAiToolCheck } = await import("./store");
 
 const review = reviewFixture();
@@ -82,9 +82,7 @@ databaseSuite()("archived routine message reads", () => {
         expect(await aiConversations.getActiveTurn({ conversationId })).toBeNull();
       });
       expect(archivedStatements).toHaveLength(1);
-      await expect(sql`UPDATE ai.turns SET status='running' WHERE id=${turnId}::uuid`.execute()).rejects.toThrow(
-        "routines are retired",
-      );
+      await expect(sql`UPDATE ai.turns SET status='running' WHERE id=${turnId}::uuid`.execute()).rejects.toThrow("routines are retired");
       await expect(
         sql`UPDATE ai.task_messages SET loop_id=${activeTurnId}, conversation_id=${activeConversationId}::uuid
           WHERE loop_id=${turnId}`.execute(),
