@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import { type CodeCheckedVersionManifest, CodePageLinksSchema } from "@k2b/cloud/contracts";
-import { describeCodePages } from "./page-links";
+import { describeCodePages as describeForViewer } from "./page-links";
+
+const viewer = (codeId: string) => ({ codeId, person: { id: "member", profile: "user" as const }, permission: "editor" as const });
+// Routing-only cases still name the authenticated member whose version read supplied the manifest.
+const describeCodePages = (codeId: string, version: Parameters<typeof describeForViewer>[1]) =>
+  describeForViewer(codeId, version, viewer(codeId));
 
 const route = (
   path: string,
@@ -78,4 +83,23 @@ test("only the entry hosting would select for GET can open, including ALL, param
   expect(visible.pages.map((page) => page.path)).toEqual(["/", "/archive"]);
   const withPost = describeCodePages("c_demo", version([route("/", { method: "POST", public: true }), route("/", { page: true })]));
   expect(withPost.pages).toHaveLength(1);
+});
+
+test("every projection requires a current member, a matching Code and the surface's read permission", () => {
+  const v = version([route("/", { title: "Member page" })]);
+  const member = viewer("c_demo");
+  for (const denied of [
+    null,
+    { ...member, person: null },
+    { ...member, person: { id: "guest", profile: "guest" as const } },
+    { ...member, permission: null },
+    { ...member, codeId: "c_other" },
+  ]) {
+    expect(describeForViewer("c_demo", v, denied)).toEqual({ versionId: v.id, homeUrl: null, pages: [] });
+  }
+  expect(Reflect.apply(describeForViewer, undefined, ["c_demo", v]).pages).toEqual([]);
+  expect(describeForViewer("c_demo", v, member).pages).toHaveLength(1);
+  const reader = { ...member, permission: "reader" as const };
+  expect(describeForViewer("c_demo", v, reader).pages).toHaveLength(1);
+  expect(describeForViewer("c_demo", v, reader, "editor").pages).toEqual([]);
 });

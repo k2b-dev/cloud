@@ -5,7 +5,7 @@ section: Platform services
 order: 963
 description: Switch an approved Code version on with its current account rights and a durable version entry.
 tags: [code, identity, permissions]
-updated: 2026-11-08
+updated: 2026-11-17
 ---
 
 # Activate a Code version
@@ -155,6 +155,45 @@ Once it has no open runs, Core revokes that old entry. Ordinary target shares
 belong to the service account, persist across version switches and pauses, and
 change only through normal sharing. Re-activation, retries and background
 cleanup never restore a share a target manager removed.
+
+## Page links after activation
+
+In the chat where a version was submitted, Cloud attaches a page link card to
+its “You switched on version N” event. This uses no AI turn or allowance.
+The card opens the home page and shows its name and “Home page” for the root
+route, or its readable, Code-relative path otherwise. Additional pages appear
+as text links on one line. Long titles are shortened; pages that do not fit
+are counted in a “+N more” link to the Code page. If no Code page is available,
+the count is plain text, with the full list in its tooltip and omitted titles
+available to screen readers. The actual destination stays in the link, so
+opaque Code identifiers do not appear as the displayed address.
+
+Core selects pages through `describeCodePages`, the same projection used by the
+Code page. Its required viewer carries the current person and permission for
+that Code; missing viewers and guests yield no pages on every read path,
+including delegated version reads and the server-rendered Code page. Only the
+latest activation line for each Code reads and shows its page handoff. The line appears with its authorized snapshot; a failed read
+keeps its space and offers a retry. The activation preview's optional `pages`
+field contains this `CodePageLinks` snapshot only for the currently running
+version of active Code.
+Both the preview and turn context require a signed-in member with current
+management access. Guests, readers and people who lost that access receive no
+page links. Versions without a page, paused Code and replaced
+versions have no page card. A failed preview offers **Try again**.
+
+Each Gustav turn receives a fresh, authorized snapshot of the active pages of
+Code associated with that chat, including titles, readable paths and exact
+hrefs. Gustav is instructed to include the supplied page link in each answer
+about that app or page. The snapshot is independent of history pagination and
+compaction and is read once during turn setup, with no SQL per message or model
+round. The candidate read uses one Code discovery page (20 Codes). The complete
+page instructions, metadata and omission notice fit the existing 32 KiB
+Assistant place-context envelope; only complete page entries are included.
+The snapshot names the number of omitted pages and directs Gustav to the Code
+page. Its optional read shares the turn's cancellation signal and the standard
+10-second request read budget. A read failure logs a structured warning and
+continues the admitted turn without page context. Page metadata remains data
+and grants no permissions.
 
 ## Integration contracts
 

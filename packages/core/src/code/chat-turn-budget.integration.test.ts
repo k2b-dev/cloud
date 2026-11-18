@@ -305,7 +305,7 @@ suiteFor(
       runBudgetMs: 30000,
     });
     expect(claim).not.toBeNull();
-    const input = { ...entry, leaseOwner, runConfig, profile };
+    const input = { ...entry, leaseOwner, runConfig, profile, signal: new AbortController().signal };
     await expect(admitCodeChatTurn({ ...input, leaseOwner: "stale-worker" })).rejects.toThrow("lease");
     await expect(
       admitCodeChatTurn({

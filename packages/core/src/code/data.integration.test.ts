@@ -833,6 +833,8 @@ databaseSuite()("Core Code data and Query authorization", () => {
       pages: [{ entrypoint: "home", title: null, path: "/", isRoot: true, href: `/code/${own.id}/` }],
     });
     expect((await readCodeVersion(input, ctx(ids.owner))).pages).toEqual(german.pages);
+    await addCodeShare(own.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.owner));
+    expect((await readCodeVersion(input, ctx(ids.reader))).pages).toEqual(german.pages);
     expect((await readCodeVersion({ ...input, versionId: second.id }, ctx(ids.owner))).pages).toEqual({
       versionId: second.id,
       homeUrl: null,

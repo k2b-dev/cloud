@@ -1,4 +1,4 @@
-import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import { CloudResourceRefSchema, CodePageLinksSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CodeIdSchema } from "./contracts";
 
@@ -86,6 +86,7 @@ export const CodeActivationPreviewSchema = z
     secrets: z.array(z.object({ name: z.string(), origin: z.string() }).strict()).optional(),
     /** Whether the version uses its own database. */
     database: z.boolean().optional(),
+    pages: CodePageLinksSchema.nullable().optional(),
     versionId: z.uuid(),
     number: z.number().int().positive(),
     /** The running version's number; null when none runs. */

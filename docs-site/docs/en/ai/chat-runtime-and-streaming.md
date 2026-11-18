@@ -1308,9 +1308,17 @@ The first `startAiRuntime` call from `@k2b/cloud/ai/runtime` can register
 `beforeChatTurn: AiChatTurnAdmission` and `onSweep`. The admission callback runs
 after current model resolution and access validation, before any model request.
 It receives `turnId`, `conversationId`, `leaseOwner`, the persisted `runConfig`
-and the executed `profile`. The host must fence its transaction against the
+and the executed `profile`, plus the execution `signal` for turn cancellation. The host must fence its transaction against the
 current running turn lease. A Code-attributed turn without this callback fails
 closed. Core uses it for policy and whole-turn daily cost reservations.
+The callback may return `{ systemPrompt }`: host-owned instructions appended
+to this attempt’s prompt before its first model request. They are rebuilt on
+resumption and do not enter stored history. Core uses this for the current,
+authorized page links of Code associated with the chat. Its optional page read
+uses the standard 10-second request read budget and the execution signal;
+failures warn and continue without this additional context. The full page
+instruction is bounded by the existing 32 KiB Assistant place-context envelope,
+with complete entries and a count of omitted pages.
 
 `onTurnFinalized` runs after durable completion. `onSweep` independently recovers
 host bookkeeping when a terminal callback was missed, even if the platform sweep
