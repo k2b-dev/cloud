@@ -1622,7 +1622,8 @@ function createMailboxController(props: MailboxControllerProps) {
     await reconcileWorkspaceForActions();
   };
   /** The list's pull to refresh marks a failure in place, so it also receives the rejection; the toast stays. */
-  const refreshList = () => reportMailWorkspaceRefresh(requireWorkspaceReconcile, (message) => toast.error(message));
+  const refreshList = () =>
+    reportMailWorkspaceRefresh(requireWorkspaceReconcile, (message) => toast.error(message, { title: t().refreshMailboxFailedTitle }));
 
   /**
    * The change was saved, only this view is stale: say so, and let Try again reload what the workspace shows now. It
