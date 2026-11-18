@@ -1286,7 +1286,7 @@
   color: color-mix(in srgb, var(--k2b-edge-danger) 70%, var(--k2b-text));
 }
 /* What keeps a shared draft from saving normally: one quiet line under the text, never over it, with its way out at
-   the end. One text style; the tone colours only a real failure. On a phone the actions wrap into a row of equal
+   the end. One text style; the tone colours only a real failure. On a phone the actions stand in rows of two equal
    buttons. */
 .k2b-ui .mail-draft-hint {
   display: flex;
@@ -1316,8 +1316,7 @@
   .k2b-ui .mail-draft-hint-actions {
     display: grid;
     width: 100%;
-    grid-auto-columns: minmax(0, 1fr);
-    grid-auto-flow: column;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-inline: 0;
   }
 }

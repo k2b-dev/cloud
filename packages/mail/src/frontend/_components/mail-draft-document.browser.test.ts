@@ -400,6 +400,18 @@ for (const width of [1440, 390])
           return notice.scrollWidth <= notice.clientWidth;
         }),
       ).toBe(true);
+      // The hint's actions never overlap and each label fits its button, also as rows of two on a phone.
+      expect(
+        await page.locator("[data-mail-draft-hint] button").evaluateAll((buttons) => {
+          const boxes = buttons.map((button) => button.getBoundingClientRect());
+          const overlap = boxes.some((a, i) =>
+            boxes.some(
+              (b, j) => i < j && a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5,
+            ),
+          );
+          return { overlap, clipped: buttons.some((button) => button.scrollWidth > button.clientWidth + 1) };
+        }),
+      ).toEqual({ overlap: false, clipped: false });
       await page.getByRole("button", { name: "Kopieren", exact: true }).click();
       await page.waitForFunction(() => (window.copiedTexts?.length ?? 0) > 0);
       expect((await page.evaluate(() => window.copiedTexts ?? [])).join("\n")).toContain(proposal);
