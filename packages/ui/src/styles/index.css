@@ -19082,9 +19082,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-edge-ring: transparent;
   color: var(--k2b-text-secondary);
   background: transparent;
+  /* Tabs sit in a strip that scrolls and clips, so the soft focus band lies inside the edge. */
   box-shadow:
     inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
-    0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
+    inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring);
   font: inherit;
   font-size: 0.75rem;
   font-weight: 500;
@@ -19196,9 +19197,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-edge-ring: transparent;
   color: var(--k2b-text-secondary);
   background: transparent;
+  /* Views sit in a strip that scrolls and clips, so the soft focus band lies inside the edge. */
   box-shadow:
     inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
-    0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
+    inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 500;

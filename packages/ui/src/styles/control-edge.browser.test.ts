@@ -531,6 +531,8 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
           });
           // Group members (segment options, tabs, views) have no edge until selected; tabs and views not even then.
           const member = (hover: string) => filter(tokens.none, tokens.none, hover);
+          // Tabs and views sit in a clipping strip: their soft focus band lies inside, so no outer ring.
+          const strip = (expected: Expect): Expect => ({ ...expected, ring: false });
           const selected: Expect = { ...filter(tokens.selected, tokens.selectedFill, tokens.selectedHover), ring: false, outline: true };
           const fillOnly = filter(tokens.none, tokens.selectedFill, tokens.selectedHover);
           const controls: Record<string, [string, Expect, string?]> = {
@@ -542,10 +544,10 @@ describe("filters, secondary buttons, and clickable cards in the browser", () =>
             card: [".k2b-paper", bordered(tokens.cardBorder)],
             segment: ['.k2b-segmented-control__option:not([aria-checked="true"])', member(tokens.trayHover)],
             "segment-selected": ['.k2b-segmented-control__option[aria-checked="true"]', selected, "segment"],
-            tab: ['[role="tab"]:not([aria-selected="true"])', member(tokens.tabHover), "tabs"],
-            "tab-selected": ['[role="tab"][aria-selected="true"]', fillOnly, "tabs"],
-            view: ['.k2b-view-tabs__tab:not([aria-current="page"])', member(tokens.tabHover), "views"],
-            "view-selected": ['.k2b-view-tabs__tab[aria-current="page"]', fillOnly, "views"],
+            tab: ['[role="tab"]:not([aria-selected="true"])', strip(member(tokens.tabHover)), "tabs"],
+            "tab-selected": ['[role="tab"][aria-selected="true"]', strip(fillOnly), "tabs"],
+            view: ['.k2b-view-tabs__tab:not([aria-current="page"])', strip(member(tokens.tabHover)), "views"],
+            "view-selected": ['.k2b-view-tabs__tab[aria-current="page"]', strip(fillOnly), "views"],
           };
 
           // Segment options sit on the grey track.

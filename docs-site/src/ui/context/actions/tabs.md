@@ -167,7 +167,7 @@ Both tab controls have no tray, baseline, or underline. A tab has no edge,
 also when selected: the selected tab or view takes only the selected fill and
 ink of the app (see
 [Filters, buttons, and clickable cards](/en/ui/surfaces/color#filters-buttons-and-clickable-cards)).
-Keyboard focus draws a 1 px blue edge with the soft focus ring outside it. Font weight and box never change
+Keyboard focus draws a 1 px blue edge with the soft focus band inside it, because the tab strip scrolls and clips. Font weight and box never change
 with selection, hover, or focus, so neighbouring controls keep their positions.
 A pill tab draws its fill around its label and close button together.
 
