@@ -26,13 +26,21 @@ export type ToastOptions = {
   variant?: ToastVariant;
   /** Milliseconds until the toast closes; `0` keeps it until it is closed. Omit it for the default by variant, length, and action. */
   duration?: number;
+  /**
+   * The icon comes from the variant. Pass a glyph only when it says more than the tone, such as `ti-send` for a queued
+   * message; it keeps the variant's colour. Never pass a tone glyph: an error is `variant: "error"`, not its icon.
+   */
   iconClass?: string;
   /**
    * A finished success, such as an issued document: the success toast draws its check once when it appears, in place of
    * its icon. Leave it off for routine saves. Other variants and running progress ignore it.
    */
   celebrate?: boolean;
-  /** A short line of context above the message. There is no default title. */
+  /**
+   * The outcome in one to three words ("Sent", "Could not save"), at most 32 characters, so it stays one line beside the
+   * icon on a phone. The message then becomes the muted description under it. Leave it out only when the whole message is
+   * that short; a short message alone takes the title's type.
+   */
   title?: string;
   action?: ToastAction | null;
   /** A second action. With it, both actions sit in a row under the message: `action` first, as the primary button. */

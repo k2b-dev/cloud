@@ -243,15 +243,12 @@ test("a loading toast turns into its result in place, without changing its size"
   }
 }, 30_000);
 
-test("a message alone reads calmly in the regular weight, only a title is semibold, and neither moves the stack", async () => {
+test("the first line has one type: a title or a short message alone is semibold, a description is muted, and neither moves the stack", async () => {
   const page = await open();
   try {
     await page.evaluate(() => {
       const { toast } = window as unknown as ToastWindow;
-      toast.success("This browser now signs out after 10 minutes without input and when it closes, so nobody else sees your data.", {
-        duration: 0,
-        link: { label: "Open settings", href: "https://cloud.example/me" },
-      });
+      toast.success("Link copied", { duration: 0, link: { label: "Open settings", href: "https://cloud.example/me" } });
       toast.success("Budget 2027.xlsx · 48 KB", { title: "Export finished", duration: 0 });
     });
     await arrived(page);
@@ -275,10 +272,10 @@ test("a message alone reads calmly in the regular weight, only a title is semibo
       );
     const folded = await read();
     expect(folded.map(({ title, message, link }) => ({ title, message, link: link?.fontWeight ?? null }))).toEqual([
-      // Alone, however long, the message is body text: regular weight in the text colour, never a headline. Its link
-      // keeps that weight and differs only by colour and underline.
-      { title: null, message: { fontWeight: "400", fontSize: "14px", lineHeight: "20px", muted: false }, link: "400" },
-      // With a title, only the title is semibold; the message is the smaller, muted line under it.
+      // Alone, the short message takes the title's place and type: semibold in the text colour. Its link keeps that
+      // weight and differs only by colour and underline.
+      { title: null, message: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false }, link: "600" },
+      // With a title, the message is the description: the smaller, muted line under it.
       {
         title: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false },
         message: { fontWeight: "400", fontSize: "13px", lineHeight: "18px", muted: true },

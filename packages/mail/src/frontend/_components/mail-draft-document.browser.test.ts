@@ -302,8 +302,9 @@ for (const width of [1440, 390])
       await page.keyboard.type("Local ");
       await page.waitForFunction(() => !window.mailSharedFixture.unsent());
       await waitStored(page, 1);
-      expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(0);
-      expect(await page.locator(".k2b-ste-status").innerText()).toContain("Speichert");
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.dirty)).toBe(true);
+      // The save state stands once, in the composer's head; the text area holds no status of its own.
+      expect(await page.locator(".k2b-ste-status").count()).toBe(0);
       const vector = Y.encodeStateVector(document);
       const before = readDraftDocument(document);
       writeLocalDraftHeaders(document, before, { ...before, subject: "Peer subject", bcc: [{ name: null, address: "peer@example.test" }] });
@@ -314,11 +315,12 @@ for (const width of [1440, 390])
       expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toContain("Peer footer");
       expect(await page.evaluate(() => window.mailSharedFixture.state()?.recipientsChanged)).toBe(true);
       // A peer's retained delta does not cover our cursorless local echo.
-      expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(0);
-      expect(await page.locator(".k2b-ste-status").innerText()).toContain("Speichert");
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.dirty)).toBe(true);
+      // The save state stands once, in the composer's head; the text area holds no status of its own.
+      expect(await page.locator(".k2b-ste-status").count()).toBe(0);
       holdAcknowledgements = false;
       for (const bytes of pendingAcknowledgements.splice(0)) publish(bytes);
-      await page.getByTitle("Auf dem Server gespeichert", { exact: true }).waitFor();
+      await page.waitForFunction(() => window.mailSharedFixture.state()?.dirty === false);
       await waitStored(page, 0);
       expect(revision).toBe(1); // Durable broker receipt precedes lazy SQL persistence.
       expect(requests.some((value) => value.endsWith("/snapshot"))).toBe(false);
@@ -362,7 +364,7 @@ for (const width of [1440, 390])
       await page.getByRole("button", { name: "Speichern", exact: true }).click();
       await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
       await waitStored(page, 0);
-      expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(1);
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.dirty)).toBe(false);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -393,7 +395,7 @@ for (const width of [1440, 390])
           return notice.scrollWidth <= notice.clientWidth;
         }),
       ).toBe(true);
-      await page.getByRole("button", { name: "Entwurf kopieren", exact: true }).click();
+      await page.getByRole("button", { name: "Kopieren", exact: true }).click();
       await page.waitForFunction(() => (window.copiedTexts?.length ?? 0) > 0);
       expect((await page.evaluate(() => window.copiedTexts ?? [])).join("\n")).toContain(proposal);
       await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).click();
@@ -423,10 +425,10 @@ test("offline input survives cleanup/reload, then closes as one stable Rest requ
     await page.keyboard.press("Control+Home");
     await page.keyboard.type("Offline ");
     await page.waitForFunction(() => window.mailSharedFixture.state()?.locallySaved);
-    expect(await page.getByTitle("Offline · Auf diesem Gerät gesichert", { exact: true }).count()).toBe(1);
     await waitStored(page, 1);
-    expect(await page.locator(".k2b-ste-status").innerText()).toContain("Offline");
-    expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(0);
+    expect(await page.evaluate(() => window.mailSharedFixture.state()?.connected)).toBe(false);
+    // Offline on a remembered device is no problem to solve: no hint under the text, the head says it.
+    expect(await page.locator("[data-mail-draft-hint]").count()).toBe(0);
     // The sent boundary excludes the disconnected edit. Re-authorize on reload before reading device bytes.
     frozen = Y.encodeStateAsUpdate(document);
     durable = frozen;
@@ -461,7 +463,7 @@ test("permission loss preserves readable input; device opt-out prevents local pe
     await page.waitForFunction(() => window.mailSharedFixture.state()?.terminal);
     expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toContain("Keep Hello");
     expect(await editor.getAttribute("contenteditable")).toBe("false");
-    expect(await page.locator(".k2b-ste-status").innerText()).toContain("Zugriff entzogen");
+    expect(await page.locator("[data-mail-draft-hint]").innerText()).toContain("Zugriff entzogen");
     expect(errors).toEqual([]);
   } finally {
     await context.close();
@@ -479,11 +481,11 @@ test("a full stream keeps pending text on device and shows an error with a worki
     await page.waitForFunction(() => window.mailSharedFixture.state()?.terminal && window.mailSharedFixture.state()?.error);
     expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toBe(`Unsent ${base.body}`);
     expect(await page.evaluate(() => window.mailSharedFixture.unsent())).toBe(true);
-    expect(await page.locator(".k2b-ste-status").innerText()).toContain("Entwurfsspeicher ist voll");
+    expect(await page.locator("[data-mail-draft-hint]").innerText()).toContain("Entwurfsspeicher ist voll");
     expect(readDraftDocument(document).body).toBe(base.body);
     await waitStored(page, 1);
     streamFull = false;
-    await page.getByRole("button", { name: "Speichern erneut versuchen", exact: true }).click();
+    await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
     await page.waitForFunction(() => window.mailSharedFixture.state()?.ready && !window.mailSharedFixture.unsent());
     expect(readDraftDocument(document).body).toBe(`Unsent ${base.body}`);
     await page.getByRole("button", { name: "Speichern", exact: true }).click();

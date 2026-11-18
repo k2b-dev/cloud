@@ -281,15 +281,20 @@ describe("MailComposer in a floating window", () => {
     expect(foot().querySelector('[aria-label="Draft actions"]')).not.toBeNull();
   });
 
-  test("a send that fails keeps the window; the bar turns red with the reason and Send again", async () => {
+  test("a send that fails keeps the window with its text; a toast names the reason and Send turns into Send again", async () => {
     await mount();
     commandFailure = "The mail server is not reachable.";
     sendButton()!.click();
-    await waitFor(() => foot().getAttribute("data-tone") === "danger");
-    expect(foot().querySelector("[data-mail-send-failure]")?.textContent).toBe(
-      "Not sent: The mail server is not reachable. Your text is saved.",
+    await waitFor(() => sendButton()!.textContent?.includes("Send again") === true);
+    const toastCard = () => dom.document.querySelector<HTMLElement>("[data-k2b-toast-container] .k2b-toast");
+    await waitFor(() => Boolean(toastCard()));
+    expect(toastCard()!.querySelector(".k2b-toast__title")?.textContent).toBe("Not sent");
+    expect(toastCard()!.querySelector(".k2b-toast__description")?.textContent).toBe(
+      "The mail server is not reachable. Your text stays in the draft.",
     );
-    expect(sendButton()!.textContent).toContain("Send again");
+    // One place for the reason: the bar keeps its tools and shows no second copy of it.
+    expect(foot().getAttribute("data-tone")).toBeNull();
+    expect(foot().textContent).not.toContain("not reachable");
     expect(dom.document.querySelector("dialog[open]")).toBeNull();
     expect(leaves).toEqual([]);
     commandFailure = null;

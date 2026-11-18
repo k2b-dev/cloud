@@ -1285,6 +1285,42 @@
   background: color-mix(in srgb, var(--k2b-edge-danger) 10%, var(--k2b-surface));
   color: color-mix(in srgb, var(--k2b-edge-danger) 70%, var(--k2b-text));
 }
+/* What keeps a shared draft from saving normally: one quiet line under the text, never over it, with its way out at
+   the end. One text style; the tone colours only a real failure. On a phone the actions wrap into a row of equal
+   buttons. */
+.k2b-ui .mail-draft-hint {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  color: var(--k2b-text-secondary);
+}
+.k2b-ui .mail-draft-hint[data-tone="danger"] {
+  color: color-mix(in srgb, var(--k2b-edge-danger) 70%, var(--k2b-text));
+}
+.k2b-ui .mail-draft-hint-text {
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+.k2b-ui .mail-draft-hint-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.25rem;
+  margin-inline-end: -0.5rem;
+}
+@media (max-width: 29.999rem) {
+  .k2b-ui .mail-draft-hint-actions {
+    display: grid;
+    width: 100%;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    margin-inline: 0;
+  }
+}
 /* The text grows with what someone writes; the conversation scrolls, the editor has no scrollbar of its own. A
    click into the empty room below the text reaches the editor, which puts the caret at the end. */
 .k2b-ui .mail-inline-draft-text {
@@ -1442,16 +1478,6 @@
   margin-inline-start: auto;
 }
 /* A failed send keeps the window: the bar turns light red and says so; Send again stands in Send's place. */
-.k2b-ui .mail-compose-window-foot[data-tone="danger"] {
-  background: var(--k2b-danger-surface);
-}
-.k2b-ui .mail-compose-window-failure {
-  min-width: 0;
-  flex: 1 1 auto;
-  margin: 0;
-  font-size: 0.8125rem;
-  color: var(--k2b-danger-text);
-}
 /* A minimized window lies over the bottom of the list: the list scrolls its last row above the bars. */
 .k2b-ui .mail-windows-docked .mail-columns-area {
   padding-bottom: calc(2.625rem + 1.5rem);
