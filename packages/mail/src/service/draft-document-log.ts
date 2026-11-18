@@ -44,13 +44,21 @@ export const pruneDraftDocumentLog = async (): Promise<{ through: number; purged
     // with sequence > D.doc_seq (null = 0). Idle proofs cover only absent events.
     scan: for (;;) {
       const rows = await db<Candidate[]>`
-        SELECT id, doc_seq, doc_generation,
-          GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)) AS coverage
-        FROM mail.drafts
-        WHERE state NOT IN ('sent', 'discarded') AND (doc_state IS NOT NULL OR edit_mode = 'shared')
-          AND GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)) < ${head}
-          ${last ? db`AND (GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)), id) > (${last.coverage}::bigint, ${last.id}::uuid)` : db``}
-        ORDER BY GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)), id LIMIT ${PAGE_SIZE}
+        SELECT * FROM (
+          SELECT id, doc_seq, doc_generation,
+            GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0)) AS coverage
+          FROM mail.drafts
+          WHERE state NOT IN ('sent', 'discarded') AND (doc_state IS NOT NULL OR edit_mode = 'shared')
+          UNION ALL
+          SELECT d.id, d.doc_seq, d.doc_generation,
+            GREATEST(COALESCE(d.doc_seq, 0), COALESCE(d.doc_idle_through, 0)) AS coverage
+          FROM (SELECT DISTINCT draft_id FROM mail.draft_document_sends WHERE close_pending) s
+          JOIN mail.drafts d ON d.id = s.draft_id
+          WHERE d.state = 'sent' AND (d.doc_state IS NOT NULL OR d.edit_mode = 'shared')
+        ) candidates
+        WHERE coverage < ${head}
+          ${last ? db`AND (coverage, id) > (${last.coverage}::bigint, ${last.id}::uuid)` : db``}
+        ORDER BY coverage, id LIMIT ${PAGE_SIZE}
       `;
       for (const row of rows) {
         const coverage = Number(row.coverage);
@@ -61,11 +69,16 @@ export const pruneDraftDocumentLog = async (): Promise<{ through: number; purged
         }
         // Never wait on a writer holding a row while it waits for our coverage
         // lock. A skipped proof is merely recomputed by a later prune run.
-        await db`
+        const proof = await db`
           UPDATE mail.drafts SET doc_idle_through = ${head}
           WHERE id IN (SELECT id FROM mail.drafts WHERE id = ${row.id}::uuid FOR UPDATE SKIP LOCKED)
             AND doc_seq IS NOT DISTINCT FROM ${row.doc_seq}::bigint AND doc_generation = ${row.doc_generation}::bigint
+          RETURNING id
         `;
+        if (!proof.length) {
+          through = coverage;
+          break scan;
+        }
       }
       if (rows.length < PAGE_SIZE) break;
       last = rows.at(-1);

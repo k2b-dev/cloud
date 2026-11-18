@@ -131,7 +131,12 @@ const createSnapshots = <Input>(
     // A final unload at a newer cursor must not coalesce with an already settling snapshot.
     await job().submit({ key: `${request.docId}:${sequence}`, coalesce: true, orderingKey: request.docId, input: input.encode(request) });
   };
-  const persist = async (request: SharedTextSnapshotRequest, signal: AbortSignal, heartbeat: () => Promise<void>) => {
+  const persist = async (
+    request: SharedTextSnapshotRequest,
+    signal: AbortSignal,
+    heartbeat: () => Promise<void>,
+    retryCoverage = true,
+  ): Promise<void> => {
     const { docId } = request;
     let heartbeatError: unknown;
     // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
@@ -148,12 +153,25 @@ const createSnapshots = <Input>(
       const head = await topic.head();
       // Cover queued older cursors in one replay; later jobs skip already saved state.
       const target = await topic.latestCursor({ tenantId: docId });
+      if (!initial) return;
       if (!target && !repair) {
+        if (!initial.cursor || compareStreamCursor(initial.cursor, request.targetCursor) < 0) {
+          const first = await log.firstSequence();
+          const error = new RetentionGapError(request.targetCursor, topic.cursorAt(first), topic.cursorAt(Math.max(0, first - 1)));
+          const fresh = await store.load(docId, { signal });
+          if (
+            fresh?.cursor &&
+            fresh.restoreRevision === initial.restoreRevision &&
+            compareStreamCursor(fresh.cursor, request.targetCursor) >= 0
+          )
+            return;
+          if (request.reason !== "flush") await store.recover(docId, error, { signal });
+          throw error;
+        }
         output.warn("Snapshot skipped: no retained events for the note", { docId, requestedCursor: request.targetCursor });
         return;
       }
       const requestedAt = Date.now();
-      if (!initial) return;
       const covered = !target || !!(initial.cursor && compareStreamCursor(initial.cursor, target) >= 0);
       if (covered && !repair) return;
       const doc = createDoc(initial);
@@ -197,8 +215,22 @@ const createSnapshots = <Input>(
         } catch (error) {
           // Preserve all valid retained updates and unresolved dependencies;
           // record the missing/invalid history once in the DLQ after recovery.
-          if (error instanceof RetentionGapError || error instanceof MalformedSharedTextEventError)
-            await store.recover(docId, error, { signal: signal });
+          if (error instanceof RetentionGapError) {
+            // A synchronous flush must reject before changing domain history.
+            // Background recovery may quarantine actual loss, but the app must
+            // first serialize with pruning and check its latest coverage proof.
+            const fresh = await store.load(docId, { signal });
+            if (
+              error.resumeAfter &&
+              fresh?.cursor &&
+              fresh.restoreRevision === initial.restoreRevision &&
+              compareStreamCursor(fresh.cursor, error.resumeAfter) >= 0
+            ) {
+              if (!retryCoverage) throw error;
+              return await persist(request, signal, heartbeat, false);
+            }
+            if (request.reason !== "flush") await store.recover(docId, error, { signal });
+          } else if (error instanceof MalformedSharedTextEventError) await store.recover(docId, error, { signal: signal });
           throw error;
         }
         signal.throwIfAborted();

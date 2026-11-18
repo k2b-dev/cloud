@@ -1,5 +1,5 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
-import { ConflictError, StoreFullError, type Sync } from "@k2b/sync";
+import { ConflictError, RetentionGapError, StoreFullError, type Sync } from "@k2b/sync";
 import * as Y from "yjs";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { createDoc } from "./documents";
@@ -373,4 +373,20 @@ test("a freeze followed by thaw cannot hide a lifecycle transition from a stalle
 test("the lifecycle declaration exposes no retirement deletion API", () => {
   const log = sharedText.define({ id: "fenced", lifecycle: { maxBytes: 4096 }, whenFull: "reject", retention: { maxBytes: 65536 } });
   expect(Object.keys(log.lifecycle!).sort()).toEqual(["get", "put"]);
+});
+
+test("a definite replay gap after the marker releases only the owned freeze for immediate retry", async () => {
+  const { source, state } = deleted();
+  try {
+    let fail = true;
+    const f = fixture(state, state, () => {
+      if (fail) throw new RetentionGapError("s6t.freeze.0", "s6t.freeze.2", "s6t.freeze.1");
+    });
+    await expect(f.room.freeze("doc")).rejects.toBeInstanceOf(RetentionGapError);
+    expect((await f.lifecycle.get("doc"))?.value.state).toBe("open");
+    fail = false;
+    expect(await f.room.freeze("doc")).not.toBeNull();
+  } finally {
+    source.destroy();
+  }
 });

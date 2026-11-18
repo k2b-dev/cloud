@@ -29,11 +29,13 @@ import {
   stopDraftDocumentLogPolicy,
 } from "./draft-document-log-policy";
 import { mailDraftRoom } from "./draft-document-room";
+import { finishDraftSendClose, recordDraftSendCloseIntent } from "./draft-document-send";
+import { draftDocumentSnapshotStore, draftDocumentSnapshots } from "./draft-document-snapshots";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, readDraftDocument } from "./draft-documents";
 import { applyDraftTableAction } from "./draft-table-actions";
-import { persistDraftDocument, restoreDraftRecoveryCopy, updateDraft } from "./drafts";
+import { createDraft, getDraft, persistDraftDocument, restoreDraftRecoveryCopy, updateDraft } from "./drafts";
 import { localizeMailError } from "./error-messages";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, updateMailbox } from "./mailboxes";
 import { loadSendContent } from "./send-content";
 
 const suite = suiteFor("database", "nats");
@@ -151,9 +153,11 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     await marker(lost.draftId);
     await marker(lost.draftId);
     const kept = await marker(lost.draftId);
+    const namespace = (await getProcessSync().resources()).find((resource) => resource.id === mailDraftDocumentLog.id)?.namespace;
     for await (const info of manager.streams.list())
       if (
         info.config.metadata?.["sync.id"] === mailDraftDocumentLog.id &&
+        info.config.metadata?.["sync.namespace"] === namespace &&
         info.config.subjects.some((subject) => subject.endsWith(".t.*.event"))
       )
         stream = info.config.name;
@@ -178,7 +182,6 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
         .map((row) => row.id)
         .sort();
     expect(await migrateDraftDocumentLogPolicy()).toBe(true);
-    const namespace = (await getProcessSync().resources()).find((resource) => resource.id === mailDraftDocumentLog.id)?.namespace;
     const lifecycleStreams = [];
     for await (const info of manager.streams.list())
       if (
@@ -654,6 +657,204 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
     expect(outbox?.draft_snapshot.body).toBe("Exact after restart");
     await retire(target, idle);
   });
+
+  const sendReviewed = async (target: Awaited<ReturnType<typeof draft>>) => {
+    const review = value(await reviewDraftComposeSafety({ ...target, expectedRevision: (await read(target)).revision }));
+    return createActorCommand({
+      context,
+      mailboxId,
+      input: {
+        kind: "send",
+        draftId: target.draftId,
+        senderIdentityId: senderId,
+        expectedDraftRevision: review.revision,
+        expectedContentHash: review.contentHash,
+        undoSeconds: 60,
+        idempotencyKey: crypto.randomUUID(),
+        safetyApproval: {
+          revision: review.revision,
+          fingerprint: review.fingerprint,
+          warningIds: review.warnings.map((warning) => warning.id),
+        },
+      },
+    });
+  };
+
+  test("reply replacement sends after another draft prunes its covered cursor without revising or quarantining it", async () => {
+    const release = await holdCoverage();
+    const other = await draft("Other mailbox activity");
+    let target: Awaited<ReturnType<typeof draft>> | undefined;
+    try {
+      value(await updateMailbox({ context, mailboxId, draftEditMode: "shared" }));
+      const [source] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
+        (short_id,mailbox_id,message_id,subject,plain_text,hydration_status,internal_date,content_hash)
+        VALUES (${newShortId()},${mailboxId}::uuid,'<retained-reply@example.test>','Original','Original body',
+          'complete','2026-01-01T00:00:00Z',${"c".repeat(64)}) RETURNING id`;
+      const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations
+        (short_id,mailbox_id,subject,participant_summary,latest_message_at)
+        VALUES (${newShortId()},${mailboxId}::uuid,'Original','recipient@example.test','2026-01-01T00:00:00Z') RETURNING id`;
+      if (!source || !conversation) throw new Error("Missing reply fixture");
+      await sql`INSERT INTO mail.message_addresses (message_id,role,position,email,normalized_email,display_name)
+        VALUES (${source.id}::uuid,'from',0,'recipient@example.test','recipient@example.test','Recipient')`;
+      await sql`INSERT INTO mail.conversation_messages (conversation_id,message_id,position,added_by)
+        VALUES (${conversation.id}::uuid,${source.id}::uuid,1,'headers')`;
+      const reply = value(
+        await createDraft({
+          context,
+          mailboxId,
+          input: {
+            senderIdentityId: senderId,
+            to: [],
+            cc: [],
+            bcc: [],
+            subject: "",
+            body: "Reply",
+            format: "plain",
+            conversationId: conversation.id,
+            sourceMessageId: source.id,
+            intent: "reply",
+            quoteSource: null,
+          },
+        }),
+      );
+      target = { context, mailboxId, draftId: reply.id };
+      const updated = value(
+        await updateDraft({
+          ...target,
+          expectedRevision: reply.revision,
+          input: {
+            senderIdentityId: senderId,
+            to: [{ address: "recipient@example.test" }],
+            cc: [],
+            bcc: [],
+            subject: reply.subject,
+            body: "Updated reply",
+            format: "plain",
+          },
+        }),
+      );
+      const base = await read(target);
+      await read(other);
+      await marker(other.draftId);
+      await withDraftDocumentCommit(async (db) => {
+        const handle = value(await lockDraftDocumentInTransaction({ ...other, db }));
+        value(await handle.project());
+      });
+      await release();
+      await pruneDraftDocumentLog();
+      const topic = mailDraftDocumentLog.topic();
+      expect(await mailDraftDocumentLog.firstSequence()).toBeGreaterThan(topic.cursorSequence(base.durable.cursor!) + 1);
+      // A queued old snapshot is already covered, even with no retained tenant events.
+      await draftDocumentSnapshots.flushNow(target.draftId, { targetCursor: base.durable.cursor! });
+      const result = await sendReviewed(target);
+      const [stored] = await sql`SELECT revision::int AS revision, doc_history_complete FROM mail.drafts WHERE id=${target.draftId}::uuid`;
+      expect(stored).toMatchObject({ revision: updated.revision, doc_history_complete: true });
+      const sent = value(result);
+      const [outbound] = await sql`SELECT draft_snapshot FROM mail.outbox_submissions WHERE command_id=${sent.id}::uuid`;
+      expect(outbound?.draft_snapshot.body).toBe("Updated reply");
+      expect(value(await getDraft(context, mailboxId, target.draftId)).revision).toBe(updated.revision);
+      // Commit the same tombstone/intent as the real SMTP outcome, without SMTP.
+      await sql.begin(async (db) => {
+        await db`UPDATE mail.drafts SET state='sent' WHERE id=${target!.draftId}::uuid`;
+        await recordDraftSendCloseIntent(db, sent.id);
+      });
+      await marker(other.draftId);
+      await pruneDraftDocumentLog();
+      await finishDraftSendClose(sent.id);
+      expect(
+        await sql`SELECT 1 FROM mail.draft_document_sends WHERE command_id=${sent.id}::uuid AND NOT close_pending AND close_cursor IS NOT NULL`,
+      ).toHaveLength(1);
+    } finally {
+      await release();
+      await retire(other, ...(target ? [target] : []));
+    }
+  });
+
+  test("pruning stops at a locked idle draft whose coverage proof cannot be saved", async () => {
+    const target = await draft("Locked idle snapshot");
+    const base = await read(target);
+    await drainDraftDocumentPruning();
+    await marker(crypto.randomUUID());
+    const held = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const writer = sql.begin(async (db) => {
+      await db`SELECT id FROM mail.drafts WHERE id=${target.draftId}::uuid FOR UPDATE`;
+      held.resolve();
+      await release.promise;
+    });
+    await held.promise;
+    try {
+      const pruned = await pruneDraftDocumentLog();
+      expect(pruned?.through).toBeLessThanOrEqual(Number(base.docSeq));
+      expect(await mailDraftDocumentLog.firstSequence()).toBeLessThanOrEqual(Number(base.docSeq) + 1);
+    } finally {
+      release.resolve();
+      await writer;
+      await retire(target);
+    }
+  });
+
+  test("background recovery rechecks an idle proof after pruning instead of incrementing the revision", async () => {
+    const target = await draft("Covered idle snapshot");
+    const other = await draft();
+    const base = await read(target);
+    await read(other);
+    await marker(other.draftId);
+    await retire(other);
+    await drainDraftDocumentPruning();
+    await pruneDraftDocumentLog();
+    const topic = mailDraftDocumentLog.topic();
+    const first = await mailDraftDocumentLog.firstSequence();
+    expect(first).toBeGreaterThan(topic.cursorSequence(base.durable.cursor!) + 1);
+    await expect(
+      draftDocumentSnapshotStore.recover(
+        target.draftId,
+        new RetentionGapError(
+          topic.cursorAt(topic.cursorSequence(base.durable.cursor!) + 1),
+          topic.cursorAt(first),
+          topic.cursorAt(first - 1),
+        ),
+        {},
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+    const current = await read(target);
+    expect(current.revision).toBe(base.revision);
+    expect(current.historyComplete).toBe(true);
+    expect(current.durable.content.body).toBe("Covered idle snapshot");
+    await retire(target);
+  });
+
+  test("a synchronous uncovered replay gap releases its freeze and never quarantines or revises the draft", async () => {
+    const target = await draft("Keep unchanged");
+    const base = await read(target);
+    await drainDraftDocumentPruning();
+    await marker(crypto.randomUUID());
+    await pruneDraftDocumentLog();
+    expect(await mailDraftDocumentLog.firstSequence()).toBeGreaterThan(1);
+    const release = await holdCoverage();
+    const originalLoad = draftDocumentSnapshotStore.load;
+    // Force the prune/replay race after the freeze marker, not before admission.
+    const load = spyOn(draftDocumentSnapshotStore, "load").mockImplementation(async (id, options) => {
+      const stored = await originalLoad(id, options);
+      if (id === target.draftId && stored) return { ...stored, cursor: mailDraftDocumentLog.topic().cursorAt(0) };
+      return stored;
+    });
+    try {
+      const result = await sendReviewed(target);
+      expect(result).toMatchObject({ ok: false, error: { code: "DRAFT_DOCUMENT_UNAVAILABLE", status: 503 } });
+      const [row] =
+        await sql`SELECT revision::int AS revision, doc_history_complete, doc_frozen_cursor FROM mail.drafts WHERE id=${target.draftId}::uuid`;
+      expect(row).toMatchObject({ revision: base.revision, doc_history_complete: true, doc_frozen_cursor: null });
+      expect((await mailDraftDocumentLog.lifecycle!.get(target.draftId))?.value.state).toBe("open");
+      expect(await sql`SELECT 1 FROM mail.draft_document_freezes WHERE draft_id=${target.draftId}::uuid`).toHaveLength(0);
+    } finally {
+      load.mockRestore();
+      await release();
+    }
+    expect((await sendReviewed(target)).ok).toBe(true);
+    await retire(target);
+  });
+
   test("startup snapshot recovery follows log preparation and shutdown cancels it", async () => {
     const prepared = Promise.withResolvers<AbortSignal>();
     startDraftDocumentLogPolicy(async (signal) => {
