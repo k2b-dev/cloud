@@ -251,6 +251,10 @@ cld --json mail draft create \
   --body-file body.md
 ```
 
+`draft update` replaces the editable content at `--revision`. After a successful
+update, use the returned revision for further edits; `send` reads it automatically.
+Recipient display names are optional, including when updating a reply.
+
 Discarding a draft is explicit and revision-fenced:
 
 ```bash
@@ -350,6 +354,12 @@ cld --json mail send <draft-id> \
 ```
 
 Use a stable `--idempotency-key` whenever automation may retry the same send. Reusing a key with different content fails instead of sending a different message under the same operation.
+
+If `send` returns `DRAFT_DOCUMENT_UNAVAILABLE` (503), Mail could not prepare the
+shared draft and queued no message. Editing can remain locked for up to a minute
+while the interrupted attempt expires. Read the current draft with `draft get`
+and review it before sending again. Preparation may have saved already accepted
+edits, so use the returned revision rather than assuming the old one still applies.
 
 `send` runs the same safety review as the Mail composer. When it reports warnings, read them and pass `--approve-safety` to approve exactly those warnings.
 

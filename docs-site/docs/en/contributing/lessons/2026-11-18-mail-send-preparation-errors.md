@@ -1,0 +1,6 @@
+### Shared draft preparation failures need a recoverable send error
+
+- **What happened:** A shared-document snapshot failure during send preparation returned a generic HTTP 500 without a recovery action.
+- **Root cause:** `withFrozenDraftSends` let a room freeze rejection reach the command service's generic exception handler. The send command had not been created, but the response did not distinguish failed preparation from an unknown delivery outcome. A failure after the snapshot commit can leave a bounded freeze lease, and preparation can persist already accepted edits. This change only classifies preparation failures; it does not explain the production 409 responses or revision increases reported in #3685.
+- **Error class:** Unclassified dependency failure before a domain transaction.
+- **Guard:** `draft-document-lifecycle.integration.test.ts` injects a failure after the real snapshot flush commits, checks the localized 503 and retained freeze lease, verifies no command or outbox submission, and retries after releasing only that fixture's owned lease. A marker-only flush preserves the content revision; saving accepted edits remains a separate content change. Reply fixtures also cover API replacement with missing recipient names, a replaced recipient, and repeated rejected send reviews without revision changes.

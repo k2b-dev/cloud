@@ -15,8 +15,10 @@ import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { createActorCommand } from "./commands";
 import { reviewDraftComposeSafety } from "./compose-safety";
+import { createComposeTemplate } from "./compose-templates";
 import * as revisionBase from "./draft-document-revision";
 import { mailDraftRoom } from "./draft-document-room";
+import { draftDocumentSnapshots } from "./draft-document-snapshots";
 import * as documentService from "./draft-documents";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, mailDraftDocumentLog, readDraftDocument } from "./draft-documents";
 import { draftProviderContentSchema } from "./draft-provider-mime";
@@ -38,6 +40,7 @@ import {
   restoreDraftRecoveryCopy,
   updateDraft,
 } from "./drafts";
+import { localizeMailError } from "./error-messages";
 import { createMailbox, getMailbox, updateMailbox } from "./mailboxes";
 import { storeReadableBlob } from "./message-blobs";
 import { cancelScheduledSend } from "./scheduled-sends";
@@ -298,6 +301,116 @@ suite("Mail document lifecycle boundaries", () => {
       supported.mockRestore();
       value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
     }
+  });
+
+  test.each(["same", "new"] as const)(
+    "API replacement with %s recipient remains readable and sends without another content revision",
+    async (recipient) => {
+      const address = recipient === "same" ? "recipient@example.test" : "replacement@example.test";
+      const target = await draft("Original reply");
+      const signature = value(
+        await createComposeTemplate({
+          context,
+          mailboxId,
+          input: {
+            kind: "signature",
+            scope: "mailbox",
+            name: `Reply signature ${recipient}`,
+            shortcut: `api_reply_${recipient}`,
+            body: "Regards",
+          },
+        }),
+      );
+      const [source] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
+      (short_id, mailbox_id, message_id, subject, plain_text, hydration_status, internal_date, content_hash)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<api-reply-${recipient}@example.test>`}, 'Original', 'Original message',
+        'complete', '2026-01-01T00:00:00Z', ${(recipient === "same" ? "e" : "f").repeat(64)}) RETURNING id`;
+      const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations
+      (short_id, mailbox_id, subject, participant_summary, latest_message_at)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Original', 'recipient@example.test', '2026-01-01T00:00:00Z') RETURNING id`;
+      if (!source || !conversation) throw new Error("Missing reply source");
+      await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+      VALUES (${conversation.id}::uuid, ${source.id}::uuid, 1, 'headers')`;
+      await sql`UPDATE mail.drafts SET intent = 'reply', signature_template_id = ${signature.id}::uuid, source_message_id = ${source.id}::uuid,
+      conversation_id = ${conversation.id}::uuid,
+      to_addresses = ${[{ name: "Recipient", address: "recipient@example.test" }]}::jsonb
+      WHERE id = ${target.draftId}::uuid`;
+      const original = value(await getDraft(context, mailboxId, target.draftId));
+      const updated = value(
+        await updateDraft({
+          ...target,
+          expectedRevision: original.revision,
+          input: {
+            senderIdentityId: senderId,
+            signatureTemplateId: original.signatureTemplateId,
+            to: [{ address }],
+            cc: original.cc,
+            bcc: original.bcc,
+            subject: original.subject,
+            body: "Updated reply",
+            format: "plain",
+          },
+        }),
+      );
+      expect(updated.revision).toBe(original.revision + 1);
+      expect(updated.generation).toBe(original.generation);
+      expect(value(await getDraft(context, mailboxId, target.draftId))).toMatchObject({
+        revision: updated.revision,
+        body: "Updated reply",
+        to: [{ address, name: null }],
+      });
+      const checked = await review(target);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        expect(await send(target, { ...checked, contentHash: "0".repeat(64) })).toMatchObject({
+          ok: false,
+          error: { code: "SEND_CONTENT_CHANGED", status: 409 },
+        });
+        expect(value(await getDraft(context, mailboxId, target.draftId)).revision).toBe(updated.revision);
+        await nothingQueued(target.draftId);
+      }
+      const sent = await send(target, checked);
+      expect(sent).toMatchObject({ ok: true });
+      const [stored] =
+        await sql`SELECT revision::int AS revision, state, doc_history_complete FROM mail.drafts WHERE id = ${target.draftId}::uuid`;
+      expect(stored).toMatchObject({ revision: updated.revision, state: "scheduled", doc_history_complete: true });
+    },
+  );
+
+  test("a failed send after snapshot commit reports its retained lease without changing marker-only content", async () => {
+    const target = await draft("Keep this reply");
+    const checked = await review(target);
+    const before = value(await getDraft(context, mailboxId, target.draftId));
+    const flush = draftDocumentSnapshots.flushNow;
+    const failure = spyOn(draftDocumentSnapshots, "flushNow").mockImplementationOnce(async (...args) => {
+      await flush(...args);
+      throw new Error("Fixture failure after snapshot commit");
+    });
+    try {
+      const rejected = await send(target, checked);
+      expect(rejected).toMatchObject({ ok: false, error: { code: "DRAFT_DOCUMENT_UNAVAILABLE", status: 503 } });
+      if (rejected.ok) throw new Error("The failed freeze queued a send");
+      expect(localizeMailError(rejected.error, "de").message).toContain("bis zu einer Minute");
+      const after = value(await getDraft(context, mailboxId, target.draftId));
+      expect(after).toMatchObject({ body: before.body, revision: before.revision, state: "draft" });
+      const authority = mailDraftDocumentLog.lifecycle;
+      if (!authority) throw new Error("Missing draft lifecycle authority");
+      const lease = await authority.get(target.draftId);
+      expect(lease?.value.state).toBe("frozen");
+      if (lease?.value.state !== "frozen" || !lease.value.freezeCursor) throw new Error("Missing committed freeze marker");
+      expect(await send(target, checked)).toMatchObject({ ok: false, error: { code: "DRAFT_DOCUMENT_UNAVAILABLE", status: 503 } });
+      expect(value(await getDraft(context, mailboxId, target.draftId)).revision).toBe(before.revision);
+      await nothingQueued(target.draftId);
+      const persistedCursor = value(await readDraftDocument(target)).durable.cursor;
+      if (!persistedCursor) throw new Error("Missing persisted freeze coverage");
+      expect(mailDraftDocumentLog.topic().cursorSequence(persistedCursor)).toBeGreaterThanOrEqual(
+        mailDraftDocumentLog.topic().cursorSequence(lease.value.freezeCursor),
+      );
+      // Release only this fixture's owned token after checking the real blocked retry.
+      await mailDraftRoom.thaw(target.draftId, { freezeCursor: lease.value.freezeCursor });
+    } finally {
+      failure.mockRestore();
+    }
+    expect(await send(target, checked)).toMatchObject({ ok: true });
   });
 
   test("two editors in the same second cannot send a previously reviewed body, even with the current revision", async () => {

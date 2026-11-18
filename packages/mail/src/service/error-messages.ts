@@ -30,6 +30,8 @@ export const safeErrorDetail = (text: string, secrets: readonly string[] = []): 
 const genericGermanMessage = (error: HumanFacingError): string => {
   if (error.message === "Only a Cloud administrator can stop keeping a conversation")
     return "Nur eine Cloud-Administratorin oder ein Cloud-Administrator kann die Aufbewahrung aufheben.";
+  if (error.code === "DRAFT_DOCUMENT_UNAVAILABLE")
+    return "Der Entwurf konnte nicht zum Senden vorbereitet werden. Es wurde nichts eingereiht. Die Bearbeitung kann noch bis zu einer Minute gesperrt sein. Öffne und prüfe den aktuellen Entwurf vor einem erneuten Sendeversuch.";
   if (error.code === "SEND_CONTENT_CHANGED")
     return "Der Nachrichteninhalt hat sich geändert. Es wurde nichts eingereiht. Öffne den Entwurf, prüfe ihn erneut und gib einen neuen Sendeversuch frei.";
   if (error.code === "CONVERSATION_KEPT")
