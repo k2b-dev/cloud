@@ -2231,7 +2231,9 @@ attempts, and one application hop. This covers one resource-reader check.
 The child cannot call another capability or return a stream, and it cannot
 call the parent application. Actions are not supported as nested calls.
 Do not retry a nested call automatically; another attempt needs a new parent
-invocation.
+invocation. A consumed or unavailable exchange lease returns HTTP 503
+`APP_UNAVAILABLE`; it must not be interpreted as a denial of resource access.
+An invalid token, changed authority or forbidden operation still fails closed.
 
 The child shares cancellation and the parent's remaining deadline. Its token
 expires no later than the parent token or source credential. Core removes

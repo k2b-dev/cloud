@@ -95,9 +95,15 @@ export const codeVersionCardsContract = {
         z.discriminatedUnion("state", [
           identity.extend({ state: z.literal("available"), snapshot: CodeVersionCardSnapshotSchema }),
           identity.extend({ state: z.literal("denied") }),
+          identity.extend({ state: z.literal("failed") }),
         ]),
       )
       .max(CODE_VERSION_CARD_BATCH_LIMIT),
+    remaining: z
+      .array(identity)
+      .max(CODE_VERSION_CARD_BATCH_LIMIT)
+      .default([])
+      .describe("Retry these references in a new invocation after this response reaches its byte or owner-reader budget."),
   }),
 };
 export type CodeVersionCards = z.infer<typeof codeVersionCardsContract.data>;

@@ -79,11 +79,24 @@ both the server and the browser. Its shared schemas are available from
 general contract entry. Any application can use this public Query:
 `{ versions: [{ codeId, versionId }], knownPages?: [versionId] }`. A batch holds
 at most 50 receipts, the existing `code.version.list` page limit. Longer
-histories load bounded batches. Each item is `available` with its authorized
-snapshot or `denied`, which reveals neither existence nor content. The snapshot
+histories load bounded batches. A response also stays below the 256 KiB
+Capability result limit, including its envelope and continuation references.
+`remaining` lists references the caller must read in a new invocation, until
+none remain. This also respects the single child Query allowed per invocation:
+identical resource owners share their canonical reader answer; different owners
+continue in separate invocations when needed. Every successful continuation
+settles at least one reference. A provider outage or an individually oversized
+card returns `failed`, never `denied`; callers show a retry action and stop
+continuing when no progress is possible.
+
+Each item is `available` with its authorized snapshot, `failed`, or `denied`,
+which reveals neither existence nor content. The snapshot
 contains the receipt, operating state, up to three localized `facts`, declared Code page and
 page links from Core's single `describeCodePages` selector. It does not read
-source, database size or refresh a service-account title. Readers see no editor
+source or bundle bytes, database size or refresh a service-account title.
+Readiness uses the already loaded manifest, hashes and decision against the
+same approval rule as activation; current policy and membership reads are
+shared within the batch. Readers see no editor
 review messages or mutation controls. Page links additionally require the same
 member session as the Code page; a shared chat reference grants no Code access.
 

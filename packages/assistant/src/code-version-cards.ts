@@ -4,7 +4,7 @@ import { CODE_VERSION_CARD_BATCH_LIMIT, type CodeVersionCards, codeVersionCardsC
 import type { CodeQueryInvoke } from "./code-summary";
 
 export type CodeVersionCardRef = { codeId: string; versionId: string };
-export type CodeVersionCardEntry = CodeVersionCards["items"][number] | (CodeVersionCardRef & { state: "failed" });
+export type CodeVersionCardEntry = CodeVersionCards["items"][number];
 export const codeVersionCardKey = (ref: CodeVersionCardRef) => `${ref.codeId}:${ref.versionId}`;
 
 /** Same public protocol projection as the turn renderer. Transcript references grant no access to the returned data. */
@@ -50,19 +50,36 @@ export async function loadCodeVersionCards(
   const unique = [...new Map(refs.map((ref) => [codeVersionCardKey(ref), ref])).values()];
   const items: CodeVersionCardEntry[] = [];
   for (let start = 0; start < unique.length; start += CODE_VERSION_CARD_BATCH_LIMIT) {
-    const versions = unique.slice(start, start + CODE_VERSION_CARD_BATCH_LIMIT);
-    const known = new Set(versions.map((ref) => ref.versionId));
-    const answer = await invoke(
-      {
-        appId: "core",
-        capabilityId: "code.version.cards",
-        kind: "query",
-        input: { versions, knownPages: knownPages.filter((id) => known.has(id)) },
-      },
-      codeVersionCardsContract.data,
-    ).catch(() => null);
-    const returned = answer?.ok ? new Map(answer.data.data.items.map((item) => [codeVersionCardKey(item), item])) : null;
-    for (const ref of versions) items.push(returned?.get(codeVersionCardKey(ref)) ?? { ...ref, state: "failed" });
+    let versions = unique.slice(start, start + CODE_VERSION_CARD_BATCH_LIMIT);
+    // Each successful continuation must settle a reference. At most the receipt window's 50 invocations.
+    while (versions.length) {
+      const known = new Set(versions.map((ref) => ref.versionId));
+      const answer = await invoke(
+        {
+          appId: "core",
+          capabilityId: "code.version.cards",
+          kind: "query",
+          input: { versions, knownPages: knownPages.filter((id) => known.has(id)) },
+        },
+        codeVersionCardsContract.data,
+      ).catch(() => null);
+      const returned = answer?.ok ? new Map(answer.data.data.items.map((item) => [codeVersionCardKey(item), item])) : null;
+      const remaining = new Set(answer?.ok ? answer.data.data.remaining.map(codeVersionCardKey) : []);
+      const next: CodeVersionCardRef[] = [];
+      for (const ref of versions) {
+        const key = codeVersionCardKey(ref);
+        const item = returned?.get(key);
+        if (item) items.push(item);
+        else if (remaining.has(key)) next.push(ref);
+        else items.push({ ...ref, state: "failed" });
+      }
+      if (next.length === versions.length) {
+        items.push(...next.map((ref) => ({ ...ref, state: "failed" as const })));
+        break;
+      }
+      versions = next;
+    }
   }
-  return items;
+  const settled = new Map(items.map((item) => [codeVersionCardKey(item), item]));
+  return unique.map((ref) => settled.get(codeVersionCardKey(ref))!);
 }

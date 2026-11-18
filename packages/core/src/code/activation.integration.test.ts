@@ -3,13 +3,20 @@ import { sql } from "@k2b/cloud";
 import { migrateCloudAi } from "@k2b/cloud/ai";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import type { CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
+import {
+  CAPABILITY_MAX_RESULT_BYTES,
+  type CodeCheckedVersionManifest,
+  CodeCheckedVersionManifestSchema,
+  type User,
+} from "@k2b/cloud/contracts";
+import { codeVersionCardsContract } from "@k2b/cloud/contracts/code-version-cards";
 import { coreSettings } from "@k2b/cloud/services";
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { migrateCloudCapabilities } from "../../../cloud/src/capabilities/executions";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
@@ -30,6 +37,7 @@ import * as explanations from "./read-model/explanation";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode, insertCodeRun, readCode } from "./store";
 import { readCodeVersionCards } from "./version-cards";
+import { codeVersionCardTransport } from "./version-cards.transport.test-fixture";
 import { submitCodeVersion } from "./versions";
 
 const fixed = new Date("2026-10-31T12:00:00.000Z");
@@ -171,7 +179,27 @@ databaseSuite()("durable Code activation", () => {
         ...(id === "A" ? { entrypoints: ["run"] } : {}),
       })),
     };
-    return submitCodeVersion({ codeId: code.id, sourceFiles, bundle, manifest, baseVersionId }, owner);
+    return submitCodeVersion(
+      { codeId: code.id, sourceFiles, bundle, manifest: CodeCheckedVersionManifestSchema.parse(manifest), baseVersionId },
+      owner,
+    );
+  }
+  async function addPage(versionId: string) {
+    const [row] = await sql<{ manifest: CodeCheckedVersionManifest }[]>`SELECT manifest FROM code.versions WHERE id=${versionId}::uuid`;
+    const manifest: CodeCheckedVersionManifest = CodeCheckedVersionManifestSchema.parse({
+      ...row!.manifest,
+      entrypoints: [
+        {
+          kind: "route",
+          entrypoint: "home",
+          cron: null,
+          file: "code.ts",
+          line: 1,
+          route: { method: "GET", path: "/", public: false, page: true },
+        },
+      ],
+    });
+    await sql`UPDATE code.versions SET manifest=${JSON.stringify(manifest)}::text::jsonb WHERE id=${versionId}::uuid`;
   }
   async function start(code: Code, versionId: string, ctx = owner) {
     return activateCodeVersion({ codeId: code.id, versionId, activationId: crypto.randomUUID() }, ctx);
@@ -206,12 +234,135 @@ databaseSuite()("durable Code activation", () => {
       await meter.close();
     }
   });
+  test("the public transport continues two different owners and reuses the same owner's answer within an invocation", async () => {
+    const codes = [await newCode(), await newCode(), await newCode()];
+    // Two separate Codes use the first resource owner; the second owner still needs a fresh invocation.
+    if (codes[0]!.owner.kind !== "resource") throw new Error("Expected resource owner");
+    await sql`UPDATE code.codes SET owner_id=${codes[0]!.owner.ref.id} WHERE id=${codes[2]!.id}`;
+    const versions: Array<{ codeId: string; versionId: string }> = [];
+    for (const code of codes) {
+      const saved = await version(code, []);
+      versions.push({ codeId: code.id, versionId: saved.version.id });
+    }
+    // Two historical versions of the first resource share its canonical owner answer.
+    const newer = await version(codes[0]!, [], versions[0]!.versionId);
+    versions.push({ codeId: codes[0]!.id, versionId: newer.version.id });
+    await sql`DELETE FROM code.shares WHERE code_id=ANY(${sql.array(
+      codes.map((code) => code.id),
+      "text",
+    )}::text[])`;
+    const unavailable = context();
+    if (unavailable.authority.actor.kind !== "user") throw new Error("Expected person fixture");
+    unavailable.authority.credentialKind = "invocation";
+    unavailable.authority.actor.delegation = {
+      kind: "invocation",
+      callingAppId: "assistant",
+      credentialKind: "session",
+      invocationId: nextOwnerId,
+    };
+    const missingExchange = await readCodeVersionCards({ versions }, unavailable);
+    expect(missingExchange.items).toHaveLength(4);
+    expect(missingExchange.items.every((item) => item.state === "failed")).toBe(true);
+    expect(missingExchange.remaining).toEqual([]);
+    unavailable.authority.actor.delegation.parentInvocationId = adminId;
+    unavailable.query = async () => {
+      throw new Error("A child must never attempt a second hop");
+    };
+    expect((await readCodeVersionCards({ versions }, unavailable)).items.every((item) => item.state === "failed")).toBe(true);
+    const transport = await codeVersionCardTransport(owner.authority);
+    try {
+      const first = await transport.invoke(
+        { appId: "core", capabilityId: "code.version.cards", kind: "query", input: { versions } },
+        codeVersionCardsContract.data,
+      );
+      expect(first.ok).toBe(true);
+      if (!first.ok) throw new Error(JSON.stringify(first.error));
+      expect(first.data.data.items.length).toBeGreaterThan(0);
+      expect(first.data.data.remaining.length).toBeGreaterThan(0);
+      expect(first.data.data.items.length + first.data.data.remaining.length).toBe(4);
+      const second = await transport.invoke(
+        { appId: "core", capabilityId: "code.version.cards", kind: "query", input: { versions: first.data.data.remaining } },
+        codeVersionCardsContract.data,
+      );
+      expect(second.ok).toBe(true);
+      if (!second.ok) throw new Error(JSON.stringify(second.error));
+      expect([...first.data.data.items, ...second.data.data.items]).toHaveLength(4);
+      expect(
+        [...first.data.data.items, ...second.data.data.items].every(
+          (item) => item.state === "available" && item.snapshot.permission === "editor",
+        ),
+      ).toBe(true);
+      expect(second.data.data.remaining).toEqual([]);
+      expect(transport.childOwners).toHaveLength(2);
+      expect(new Set(transport.childOwners).size).toBe(2);
+      expect(transport.taken.size).toBe(2);
+    } finally {
+      transport.dispose();
+    }
+  });
+
+  test("the real public transport fits page-heavy batches below 256 KiB and continues only remaining refs", async () => {
+    const code = await newCode();
+    const manifest: CodeCheckedVersionManifest = CodeCheckedVersionManifestSchema.parse({
+      version: 1,
+      entry: "code.ts",
+      ai: false,
+      policyRows: [],
+      permissions: [],
+      hashes: { source: "a".repeat(64), bundle: "b".repeat(64), sdk: "c".repeat(64) },
+      entrypoints: Array.from({ length: 100 }, (_, n) => ({
+        kind: "route",
+        entrypoint: `page-${n}`,
+        title: `Seite ${n} ${"Übersicht ".repeat(14)}`,
+        cron: null,
+        file: "code.ts",
+        line: n + 1,
+        route: { method: "GET", path: `/page-${n}`, public: false, page: true },
+      })),
+    });
+    const versions: Array<{ codeId: string; versionId: string }> = [];
+    for (let number = 1; number <= 50; number++) {
+      const [saved] = await sql<
+        { id: string }[]
+      >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by,created_at)
+        VALUES(${code.id},${number},'{}','',${manifest.hashes.source},${manifest.hashes.bundle},${JSON.stringify(manifest)}::text::jsonb,0,0,${ownerId}::uuid,${fixed.toISOString()}::timestamptz) RETURNING id`;
+      versions.push({ codeId: code.id, versionId: saved!.id });
+    }
+    const transport = await codeVersionCardTransport(owner.authority);
+    try {
+      let remaining = versions;
+      const received = new Set<string>();
+      for (let calls = 0; remaining.length && calls < versions.length; calls++) {
+        const result = await transport.invoke(
+          { appId: "core", capabilityId: "code.version.cards", kind: "query", input: { versions: remaining } },
+          codeVersionCardsContract.data,
+        );
+        expect(result.ok).toBe(true);
+        if (!result.ok) throw new Error(JSON.stringify(result.error));
+        expect(result.data.data.remaining.length).toBeLessThan(remaining.length);
+        for (const item of result.data.data.items) {
+          expect(item.state).toBe("available");
+          if (item.state === "available") expect(item.snapshot.pages?.pages).toHaveLength(100);
+          expect(received.has(item.versionId)).toBe(false);
+          received.add(item.versionId);
+        }
+        remaining = result.data.data.remaining;
+      }
+      expect(received.size).toBe(50);
+      expect(remaining).toEqual([]);
+      expect(transport.responses.length).toBeGreaterThan(1);
+      expect(transport.responses[0]!.data.remaining.length).toBeGreaterThan(0);
+      expect(transport.responses.every((response) => response.bytes <= CAPABILITY_MAX_RESULT_BYTES)).toBe(true);
+      expect(transport.publicResponseBytes.every((bytes) => bytes <= CAPABILITY_MAX_RESULT_BYTES)).toBe(true);
+    } finally {
+      transport.dispose();
+    }
+  });
+
   test("version-card rights matrix: owner, reader, admin view, shared chat and revoked rights", async () => {
     const code = await newCode();
     const saved = await version(code, []);
-    await sql`UPDATE code.versions SET manifest=jsonb_set(manifest,'{entrypoints}',${JSON.stringify([
-      { kind: "route", entrypoint: "home", file: "code.ts", line: 1, route: { method: "GET", path: "/", public: false, page: true } },
-    ])}::text::jsonb) WHERE id=${saved.version.id}::uuid`;
+    await addPage(saved.version.id);
     const versions = [{ codeId: code.id, versionId: saved.version.id }];
     const [grant] = await sql<
       { id: string }[]
@@ -244,9 +395,7 @@ databaseSuite()("durable Code activation", () => {
       VALUES(${personalId},'person',${ownerId}::uuid,'Personal',${ownerId}::uuid)`;
     for (const code of [await newCode(), (await findCode(personalId))!]) {
       const saved = await version(code, []);
-      await sql`UPDATE code.versions SET manifest=jsonb_set(manifest,'{entrypoints}',${JSON.stringify([
-        { kind: "route", entrypoint: "home", file: "code.ts", line: 1, route: { method: "GET", path: "/", public: false, page: true } },
-      ])}::text::jsonb) WHERE id=${saved.version.id}::uuid`;
+      await addPage(saved.version.id);
       await sql`UPDATE code.codes SET active_version_id=${saved.version.id}::uuid,state='active' WHERE id=${code.id}`;
       const versions = [{ codeId: code.id, versionId: saved.version.id }];
       expect(await readCodeVersionCards({ versions }, owner)).toMatchObject({
@@ -349,6 +498,7 @@ databaseSuite()("durable Code activation", () => {
   });
   beforeAll(async () => {
     await migrateCloudAi();
+    await migrateCloudCapabilities();
   });
   beforeEach(() => {
     ownerAdministrator = ownerId;

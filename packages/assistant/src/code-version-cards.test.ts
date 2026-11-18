@@ -53,3 +53,46 @@ test("the SSR loader selects the displayed successful version from a live turn a
   };
   expect(chatCodeVersionRefs([], active)).toEqual([{ codeId, versionId: nextId }]);
 });
+
+test("the loader follows only remaining refs with a fresh invocation and preserves display order", async () => {
+  const second = { codeId, versionId: "77777777-7777-4777-8777-777777777777" };
+  const first = { codeId, versionId };
+  const calls: unknown[] = [];
+  const invoke: CodeQueryInvoke = async (invocation, schema) => {
+    calls.push(invocation.input);
+    return ok({
+      data: schema.parse(
+        calls.length === 1
+          ? { items: [{ ...second, state: "denied" }], remaining: [first] }
+          : { items: [{ ...first, state: "denied" }], remaining: [] },
+      ),
+    });
+  };
+  expect(await loadCodeVersionCards(invoke, [first, second], [versionId, second.versionId])).toEqual([
+    { ...first, state: "denied" },
+    { ...second, state: "denied" },
+  ]);
+  expect(calls).toEqual([
+    { versions: [first, second], knownPages: [versionId, second.versionId] },
+    { versions: [first], knownPages: [versionId] },
+  ]);
+});
+
+test("an unavailable or non-progressing continuation is retryable, never denied or repeated forever", async () => {
+  const refs = [
+    { codeId, versionId },
+    { codeId, versionId: "77777777-7777-4777-8777-777777777777" },
+  ];
+  for (const noProgress of [false, true]) {
+    let calls = 0;
+    const invoke: CodeQueryInvoke = async (_invocation, schema) => {
+      calls++;
+      if (noProgress) return ok({ data: schema.parse({ items: [], remaining: refs }) });
+      if (calls === 1) return ok({ data: schema.parse({ items: [{ ...refs[0], state: "denied" }], remaining: [refs[1]] }) });
+      throw new Error("owner provider unavailable");
+    };
+    const items = await loadCodeVersionCards(invoke, refs);
+    expect(items.map((item) => item.state)).toEqual(noProgress ? ["failed", "failed"] : ["denied", "failed"]);
+    expect(calls).toBe(noProgress ? 1 : 2);
+  }
+});

@@ -153,3 +153,13 @@ leaving 45,945 bytes below the registry limit. Deploy matching Cloud library
 consumers before relying on a manifest above the previous limit; older
 application runtimes still reject it at startup. Invocation and island budgets
 are unchanged.
+
+The public version-card Query now returns `remaining` when the 256 KiB result
+budget or the single owner-reader child Query is used. Consumers must continue
+those references with a fresh invocation rather than repeating the original
+batch. An unavailable read is `failed`, not a permission denial. The maximum
+of 50 requested receipts and the platform's transport and child-query limits
+are unchanged.
+A consumed or unavailable child-Query exchange lease now returns
+`APP_UNAVAILABLE` (HTTP 503), so callers distinguish a missing dependency
+budget from missing resource rights. The one-Query, one-hop budget is unchanged.
