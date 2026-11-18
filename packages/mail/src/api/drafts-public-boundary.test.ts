@@ -45,14 +45,20 @@ suite("Mail draft public boundary", () => {
     spyOn(publicResources, "resolveMailboxPublicIds").mockImplementation(async (table, _mailboxId, ids) =>
       ids.map(() => (table === "senderIdentities" ? senderIdentityId : signatureTemplateId)),
     );
-    const preview = spyOn(composeTemplates, "previewComposeSignature").mockResolvedValue(ok({ html: "<p>Ada</p>", text: "Ada" }));
+    const preview = spyOn(composeTemplates, "previewComposeSignature").mockResolvedValue(
+      ok({ html: "<p>Ada</p>", text: "Ada", mailHtml: '<div class="mail-content"><div class="mail-signature"><p>Ada</p></div></div>' }),
+    );
     const response = await app.request("/mailboxes/mbx123/compose-signature", {
       method: "POST",
       headers: { authorization: "Bearer signature-test", "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
       body: JSON.stringify({ senderIdentityId: "snd123", signatureTemplateId: "sig123", format: "markdown" }),
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ html: "<p>Ada</p>", text: "Ada" });
+    expect(await response.json()).toEqual({
+      html: "<p>Ada</p>",
+      text: "Ada",
+      mailHtml: '<div class="mail-content"><div class="mail-signature"><p>Ada</p></div></div>',
+    });
     expect(preview).toHaveBeenCalledWith(
       expect.objectContaining({ mailboxId, input: { senderIdentityId, signatureTemplateId, format: "markdown" } }),
     );
