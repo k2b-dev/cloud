@@ -1038,7 +1038,7 @@ export const aiRoutes = (() => {
         describeRoute({
           tags: ["AI"],
           summary: "Archive a chat",
-          description: "Pauses its routines and discards pending and failed queued messages. Restoring does not recover those messages.",
+          description: "Discards pending and failed queued messages. Restoring does not recover those messages.",
           ...requiresAuth,
           responses: {
             200: jsonResponse(
