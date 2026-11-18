@@ -4,8 +4,9 @@ Every interactive `@k2b/ui` control shows a visible ring when it has keyboard
 focus (`:focus-visible`). The ring appears and disappears without moving or
 resizing anything on the page.
 
-Fields show focus with their own edge instead of a ring: the same 2 px edge
-turns `--k2b-edge-focus`. See [Field edge](/en/ui/surfaces/color#field-edge).
+Fields show focus with their own edge and a soft ring: the same 1 px edge
+turns `--k2b-edge-focus`, and a 3 px band of it lies outside. See
+[Field edge](/en/ui/surfaces/color#field-edge).
 
 ## Where the ring sits
 

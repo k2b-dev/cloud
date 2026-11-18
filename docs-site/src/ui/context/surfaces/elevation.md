@@ -39,7 +39,8 @@ fill and an edge, never as a shadow:
   calendar events, chat bubbles.
 
 **Controls never cast a shadow.** Buttons, fields, chips, tabs, segments,
-switches, and toggles have the 2 px edge and change only colour and fill
+switches, and toggles have the 1 px edge and change only colour and fill; the
+focus ring outside a field is a flat band, not depth
 ([Colors and selection](/en/ui/surfaces/color#field-edge)).
 
 **Columns, panels, sheets, dialogs, and menus are flat inside:** a header,

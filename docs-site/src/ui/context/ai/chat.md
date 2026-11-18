@@ -96,7 +96,7 @@ import { Chat, type ChatTimelineItem } from "@k2b/ui";
 
 ## Controlled behavior
 
-The assistant prompt is one card around the field and its footer. It carries the shared 2 px field edge in the AI colour: light plum (`--k2b-ai-edge-rest`) at rest, a slightly darker fill on hover, and the full plum (`--k2b-ai-accent`) of the same width with a soft glow outside (`--k2b-ai-glow`) while anything inside has focus. With `error` the edge is red until the card has focus again, and the error line stays; a `disabled` card is a muted well with a quiet `--k2b-border` edge. A state changes only the edge colour, the fill, and the glow, never the card's size or the text position. The glow is the one approved exception to "no control casts a shadow" (see [Field edge](/en/ui/surfaces/color#field-edge)). The conversation variant between people keeps the neutral field edge.
+The assistant prompt is one card around the field and its footer. It is a large writing surface with its own 2 px frame (`--k2b-frame-width`) in the AI colour: light plum (`--k2b-ai-edge-rest`) at rest, a slightly darker fill on hover, and the full plum (`--k2b-ai-accent`) of the same width with a soft glow outside (`--k2b-ai-glow`) while anything inside has focus. With `error` the edge is red until the card has focus again, and the error line stays; a `disabled` card is a muted well with a quiet `--k2b-border` edge. A state changes only the edge colour, the fill, and the glow, never the card's size or the text position. The glow is the one approved exception to "no control casts a shadow" (see [Field edge](/en/ui/surfaces/color#field-edge)). The conversation variant between people keeps the neutral field edge.
 
 `Chat.Composer` calls `onSubmit` with an `intent`, untrimmed text, generic attachments, and optional inline mentions. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft, attachments, and mentions; failures are passed to `onError`.
 
@@ -940,9 +940,10 @@ narrower container gives it its whole width.
 
 The conversation composer is one row without a card: an attach button with a
 plain plus, a quiet pill-shaped field, and a round Send button. The field has the
-shared 2 px field edge of every input: grey at rest, a slightly darker fill on
-hover, the blue edge of the same width on focus, red with `error`, and a muted
-well without an edge when `disabled`. It casts no shadow; only its paint changes.
+shared 1 px field edge of every input: grey at rest, a darker edge and a
+slightly darker fill on hover, the blue edge with the soft focus ring on focus,
+red with a red ring with `error`, and a muted well with a light edge when
+`disabled`. It casts no shadow; only its paint changes.
 Formatting, emoji, and the microphone sit inside the field at its end. While
 the text fits one row beside them, the field stays one row. Once it does not,
 the text takes the field's whole width, so its scrollbar sits at the field's

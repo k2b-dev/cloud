@@ -994,7 +994,7 @@ describe("@k2b/ui action geometry parity", () => {
     expect(option).toContain("flex-1");
     expect(option).toContain("min-height: 1.875rem");
     expect(option).toContain("padding: 0.25rem 0.5rem");
-    expect(option).toContain("box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color)");
+    expect(option).toMatch(/box-shadow:\s*inset 0 0 0 var\(--k2b-edge-width\) var\(--k2b-edge-color\),\s*0 0 0 var\(--k2b-edge-ring-width\) var\(--k2b-edge-ring\)/);
     // Selection never adds weight.
     expect(option).not.toContain("font-weight");
     expect(actionsCss).toMatch(/\.k2b-segmented-control__option:not\([^)]*\):hover/);
@@ -1024,7 +1024,7 @@ describe("@k2b/ui action geometry parity", () => {
     expect(chip).not.toContain("999px");
     expect(chip).toContain("border: 0");
     expect(chip).toContain("background: var(--k2b-surface)");
-    expect(chip).toContain("box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color)");
+    expect(chip).toMatch(/box-shadow:\s*inset 0 0 0 var\(--k2b-edge-width\) var\(--k2b-edge-color\),\s*0 0 0 var\(--k2b-edge-ring-width\) var\(--k2b-edge-ring\)/);
     expect(iconOnly).toContain("width: 2.25rem");
     expect(actionsCss).toContain(".k2b-ui .k2b-filter-chip:hover");
   });

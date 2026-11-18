@@ -1099,10 +1099,10 @@
   padding: 0.5rem 0.875rem;
   border-radius: 0.875rem;
   background: var(--k2b-surface);
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
+  box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
 }
 .k2b-ui .mail-inline-draft:focus-within {
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
+  box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge-focus);
 }
 /* Full screen: the list and details stepped aside; the draft takes the column and the history follows below. */
 .k2b-ui .mail-inline-draft[data-fullscreen] {
@@ -1114,7 +1114,7 @@
 /* A suggestion from Gustav: plum (AI) until a person types or changes anything; then it is an ordinary draft. */
 .k2b-ui .mail-inline-draft[data-suggestion] {
   background: color-mix(in srgb, var(--k2b-ai-surface) 55%, var(--k2b-surface));
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--k2b-ai-border) 45%, var(--k2b-surface));
+  box-shadow: inset 0 0 0 var(--k2b-frame-width) color-mix(in srgb, var(--k2b-ai-border) 45%, var(--k2b-surface));
 }
 .k2b-ui .mail-inline-draft[data-suggestion] .mail-inline-draft-intent,
 .k2b-ui .mail-inline-draft[data-suggestion] .mail-inline-draft-suggestion-hint,
@@ -1250,7 +1250,7 @@
   font-weight: 600;
 }
 .k2b-ui .mail-inline-draft-subject .k2b-input-shell:hover {
-  --k2b-edge-color: var(--k2b-edge);
+  --k2b-edge-color: var(--k2b-edge-hover);
 }
 .k2b-ui .mail-inline-draft-subject .k2b-input-shell:focus-within {
   --k2b-edge-color: var(--k2b-edge-focus);
@@ -2101,7 +2101,7 @@
   padding: 0.5rem 0.875rem;
   border-radius: 0.875rem;
   background: var(--k2b-surface);
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
+  box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
 }
 /* #3297: above the conversation, the placeholder and the loaded box share one reserved height, so a late draft,
    signature, or suggestion never moves the messages below. Text and signature fade out at that height (the signature
@@ -2211,7 +2211,9 @@
 }
 .k2b-ui .mail-reply-box-mode:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
+  box-shadow:
+    inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus),
+    0 0 0 var(--k2b-edge-ring-width) color-mix(in srgb, var(--k2b-edge-focus) var(--k2b-edge-ring-share), transparent);
 }
 .k2b-ui .mail-reply-box-mode > .ti {
   font-size: 1rem;
@@ -2335,10 +2337,10 @@
     padding-inline: 0.75rem;
     border-radius: 0.875rem;
     background: var(--k2b-surface);
-    box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
+    box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
   }
   .k2b-ui .mail-inline-draft.mail-reply-box:focus-within {
-    box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
+    box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge-focus);
   }
   .k2b-ui .mail-inline-draft.mail-reply-box::after,
   .k2b-ui .mail-reply-box-head::after {

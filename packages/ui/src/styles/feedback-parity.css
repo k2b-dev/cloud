@@ -290,8 +290,9 @@
     :has(> :last-child .k2b-panel-dialog[data-surface="contained"][data-tone])
   ),
 .k2b-ui .k2b-panel-dialog[data-surface="floating"][data-tone] {
-  outline: var(--k2b-edge-width) solid var(--k2b-dialog-tone);
-  outline-offset: calc(-1 * var(--k2b-edge-width));
+  /* A frame, not a field: the tone keeps its 2 px line. */
+  outline: var(--k2b-frame-width) solid var(--k2b-dialog-tone);
+  outline-offset: calc(-1 * var(--k2b-frame-width));
 }
 
 .k2b-ui .k2b-dialog.is-bare {
