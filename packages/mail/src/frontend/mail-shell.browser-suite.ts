@@ -3867,6 +3867,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         const calls: string[] = [];
         const notes: string[] = [];
         const drafts = new Map<string, Record<string, unknown>>();
+        /** Sent submissions by id, to the draft they came from, so Undo can return it. */
+        const submissions = new Map<string, string>();
         const stamp = MAIL_SHELL_NOW;
         const makeDraft = (id: string, content: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
           id,
@@ -4003,10 +4005,27 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               },
             });
           }
-          if (method === "POST" && path === "/commands")
-            return options.sendFails
-              ? route.fulfill({ status: 503, json: { code: "SMTP_UNAVAILABLE", message: "The mail server does not answer." } })
-              : route.fulfill({ json: { id: "00000000-0000-4000-8000-0000000000f1", result: { conversationId: "Conv01" } } });
+          if (method === "POST" && path === "/commands") {
+            if (options.sendFails)
+              return route.fulfill({ status: 503, json: { code: "SMTP_UNAVAILABLE", message: "The mail server does not answer." } });
+            const sent = String(request.postDataJSON().draftId);
+            const draft = drafts.get(sent);
+            if (draft) drafts.set(sent, { ...draft, state: "sending" });
+            submissions.set("Dlv001", sent);
+            return route.fulfill({
+              json: { id: "00000000-0000-4000-8000-0000000000f1", result: { conversationId: "Conv01", outboxSubmissionId: "Dlv001" } },
+            });
+          }
+          // Undo of a send: the submission returns to its draft.
+          const cancel = /^\/scheduled-sends\/(\w+)\/cancel$/.exec(path);
+          if (method === "POST" && cancel) {
+            const draftId = submissions.get(cancel[1]!);
+            const draft = draftId ? drafts.get(draftId) : undefined;
+            if (!draftId || !draft)
+              return route.fulfill({ status: 409, json: { code: "SEND_ALREADY_STARTED", message: "Already on its way" } });
+            drafts.set(draftId, { ...draft, state: "draft", revision: Number(draft.revision ?? 1) + 1 });
+            return route.fulfill({ json: { disposition: "draft", draftId, projectionSnapshotId: null } });
+          }
           if (path === "/compose-templates") return route.fulfill({ json: [{ id: "Sig001", kind: "signature", name: "Support" }] });
           if (path === "/compose-signature-defaults") return route.fulfill({ json: [] });
           if (method === "POST" && path === "/compose-signature")
@@ -4337,10 +4356,22 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
-      test("a failed send turns the bar light red in place; Send again retries", async () => {
+      /** The toasts on the rail, each as [title, description]. */
+      const toasts = (page: Page) =>
+        page.evaluate(() =>
+          [
+            ...document.querySelectorAll<HTMLElement>("[data-k2b-toast-container] .k2b-toast-slot:not([data-state='closing']) .k2b-toast"),
+          ].map((card) => [
+            card.querySelector<HTMLElement>(".k2b-toast__title:not([hidden])")?.textContent ?? null,
+            card.querySelector(".k2b-toast__description")?.textContent ?? "",
+          ]),
+        );
+
+      test("a failed send keeps the box and its text; one toast names the reason, and Try again sends", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
+        const failing = { sendFails: true };
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
-          api = await draftApi(next, "Gustav", { sendFails: true });
+          api = await draftApi(next, "Gustav", failing);
         });
         try {
           await readyDraft(page);
@@ -4352,12 +4383,46 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await settled(page);
           const before = await footTop();
           await page.keyboard.press("Control+Enter");
-          const bar = page.locator("[data-mail-send-failed]");
-          await bar.waitFor();
-          expect(await bar.textContent()).toContain("Not sent.");
-          expect(await bar.textContent()).toContain("Your text is saved.");
+          await page.locator("[data-mail-reply-box='mail'] [data-mail-send-again]").waitFor();
+          await eventually(async () => (await toasts(page)).length, 1, "one failure toast");
+          expect(await toasts(page)).toEqual([["Not sent", "The mail server does not answer. Your text stays in the draft."]]);
+          // The box stays with its text, the bar stays where it was, and the reason stands once: in the toast.
+          expect(await page.locator("[data-mail-reply-box='mail'] .cm-content").textContent()).toContain("Ready to go.");
           expect(Math.abs((await footTop()) - before)).toBeLessThanOrEqual(1);
-          expect(await bar.getByRole("button", { name: "Send again" }).isVisible()).toBe(true);
+          expect(await draftBox(page).textContent()).not.toContain("does not answer");
+          failing.sendFails = false;
+          await page.locator("[data-k2b-toast-container]").getByRole("button", { name: "Try again" }).click();
+          await eventually(async () => (await toasts(page)).map(([title]) => title).join(), "Sending", "sending toast");
+          await eventually(() => api.drafts.get("DrfNew")?.state, "sending", "sent");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("a sent reply closes the box; one toast says when it goes out, and Undo brings the text back", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("Saturday works.");
+          await eventually(() => api.drafts.get("DrfNew")?.body, "Saturday works.", "saved");
+          await page.keyboard.press("Control+Enter");
+          await eventually(() => api.drafts.get("DrfNew")?.state, "sending", "sent");
+          await eventually(async () => (await toasts(page)).length, 1, "one toast");
+          // A short title for the outcome, what happens next as the description; nothing big stays in the box.
+          expect(await toasts(page)).toEqual([["Sending", "The message goes out in 20 s."]]);
+          await eventually(
+            async () => (await page.locator("[data-mail-reply-box='mail'] .cm-content").textContent())?.includes("Saturday works."),
+            false,
+            "the box is empty again",
+          );
+          expect(await page.locator(".k2b-notice-card").count()).toBe(0);
+          await page.locator("[data-k2b-toast-container]").getByRole("button", { name: "Undo" }).click();
+          await eventually(() => api.calls.includes("POST /scheduled-sends/Dlv001/cancel"), true, "undo cancels the submission");
+          await page.locator("[data-mail-reply-box='mail'] .cm-content", { hasText: "Saturday works." }).waitFor();
         } finally {
           await close(page);
         }
@@ -4497,7 +4562,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await composeWindow(page).waitFor({ state: "detached" });
           expect(api.calls).not.toContain("POST /drafts/DrfNew/discard");
           expect(api.drafts.get("DrfNew")?.state).toBe("draft");
-          const notice = page.locator("[data-k2b-toast-container]", { hasText: "Draft is in “Drafts”" });
+          const notice = page.locator("[data-k2b-toast-container]", { hasText: "It is in “Drafts”." });
           await notice.waitFor();
           await notice.getByRole("button", { name: "Open" }).click();
           await readyWindow(page);
@@ -4507,6 +4572,37 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await readyWindow(page);
           await page.waitForFunction(() => !new URL(location.href).searchParams.has("draft"));
           expect(await page.locator(".mail-compose-window").count()).toBe(1);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("Send closes the new message window; the save state stands once, and the toast's Undo brings the window back", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await page.getByRole("link", { name: "New message" }).first().click();
+          await readyWindow(page);
+          await page.waitForFunction(() => document.activeElement?.closest(".mail-compose-window .mail-inline-draft-recipients") !== null);
+          await page.keyboard.type("lena@example.test");
+          await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+          await composeWindow(page).locator(".cm-content").click();
+          await page.keyboard.type("The chairs are ready.");
+          await eventually(() => api.drafts.get("DrfNew")?.body, "The chairs are ready.", "body saved");
+          await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
+          // One save state, in the head: the text area shows only what someone wrote.
+          expect(await composeWindow(page).getByText("Saved", { exact: true }).count()).toBe(1);
+          expect(await composeWindow(page).locator(".k2b-ste-status").count()).toBe(0);
+          await composeWindow(page).locator(".mail-compose-window-foot .mail-compose-action .k2b-split-button__primary").click();
+          await composeWindow(page).waitFor({ state: "detached" });
+          await eventually(async () => (await toasts(page)).length, 1, "one toast");
+          expect(await toasts(page)).toEqual([["Sending", "The message goes out in 20 s."]]);
+          await page.locator("[data-k2b-toast-container]").getByRole("button", { name: "Undo" }).click();
+          await readyWindow(page);
+          expect(api.calls).toContain("POST /scheduled-sends/Dlv001/cancel");
+          expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
         } finally {
           await close(page);
         }
@@ -4916,7 +5012,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             async (page) => {
               await reply(page);
               await page.keyboard.press("Control+Enter");
-              await page.locator("[data-mail-send-failed]").waitFor();
+              await page.locator("[data-mail-reply-box='mail'] [data-mail-send-again]").waitFor();
             },
             { sendFails: true },
           );
@@ -4945,6 +5041,51 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             ["dark", 1440],
           ] as const)
             await shoot("08-new-message", theme, width, `${boxPath}?${width < 640 ? "" : "conversation=Conv01&"}identity=1`, compose);
+          // After Send: the composer is gone and one short toast says what happens next; a failure keeps the text.
+          const sendNew = async (page: Page, width: number) => {
+            await compose(page);
+            await composeWindow(page).locator(".mail-inline-draft-recipients input").first().fill("lena@example.test");
+            await composeWindow(page).locator(".cm-content").click();
+            await page.keyboard.type("The chairs are ready in hall A.");
+            await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
+            const send =
+              width < 640
+                ? composeWindow(page).locator(".k2b-floating-window__actions .mail-compose-action .k2b-split-button__primary")
+                : composeWindow(page).locator(".mail-compose-window-foot .mail-compose-action .k2b-split-button__primary");
+            await send.click();
+          };
+          for (const theme of ["light", "dark"] as const)
+            for (const width of [1440, 390]) {
+              const list = `${boxPath}?${width < 640 ? "" : "conversation=Conv01&"}identity=1`;
+              await shoot("12-new-written", theme, width, list, async (page) => {
+                await compose(page);
+                await composeWindow(page).locator(".cm-content").click();
+                await page.keyboard.type("The chairs are ready in hall A.");
+                await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
+              });
+              await shoot("13-new-sent-toast", theme, width, list, async (page) => {
+                await sendNew(page, width);
+                await composeWindow(page).waitFor({ state: "detached" });
+                await page.locator("[data-k2b-toast-container] .k2b-toast", { hasText: "Sending" }).waitFor();
+              });
+              await shoot(
+                "14-box-send-failed-toast",
+                theme,
+                width,
+                thread,
+                async (page) => {
+                  await reply(page);
+                  await page.keyboard.press("Control+Enter");
+                  await page.locator("[data-k2b-toast-container] .k2b-toast", { hasText: "Not sent" }).waitFor();
+                },
+                { sendFails: true },
+              );
+              await shoot("15-box-sent-toast", theme, width, thread, async (page) => {
+                await reply(page);
+                await page.keyboard.press("Control+Enter");
+                await page.locator("[data-k2b-toast-container] .k2b-toast", { hasText: "Sending" }).waitFor();
+              });
+            }
           await shoot("09-new-minimized", "light", 1440, `${boxPath}?conversation=Conv01&identity=1`, async (page) => {
             await compose(page);
             await composeWindow(page).getByRole("button", { name: "Minimize" }).click();
@@ -4956,7 +5097,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await shoot("11-new-closed", "light", 1440, `${boxPath}?identity=1`, async (page) => {
             await compose(page);
             await composeWindow(page).getByRole("button", { name: "Close window" }).click();
-            await page.locator("[data-k2b-toast-container]", { hasText: "Draft is in “Drafts”" }).waitFor();
+            await page.locator("[data-k2b-toast-container]", { hasText: "It is in “Drafts”." }).waitFor();
           });
           await shoot("08-box-preview", "light", 1440, thread, async (page) => {
             await reply(page);

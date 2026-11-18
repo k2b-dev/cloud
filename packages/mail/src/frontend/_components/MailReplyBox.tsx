@@ -1,5 +1,5 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { announce, Button, Dropdown, type DropdownItem, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
+import { announce, Button, Dropdown, type DropdownItem, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { ConversationDraftSummary, MailDraft, MailDraftSeed, SenderIdentity } from "../../contracts";
@@ -11,6 +11,7 @@ import type { MailComposerHost, MailInlineDraftControls } from "./MailComposer";
 import { preloadMailComposerEditor } from "./MailComposerEditor";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import { deriveReplyIdentityId, forwardMessageBody, forwardSubject, replySubject } from "./mail-compose-derivation";
+import { mailComposeWindowMessages } from "./mail-compose-window-messages";
 import {
   type DraftTextSelection,
   draftWindowOpen,
@@ -21,6 +22,7 @@ import {
 import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { createDefaultMailComposerPanesLayout } from "./mail-composer-panes";
 import type { MailComposerSignatures } from "./mail-composer-signature";
+import { showDeliveryToast } from "./mail-delivery-toast";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import {
   isMailReplyMailMode,
@@ -721,6 +723,23 @@ export default function MailReplyBox(props: {
       if (!disposed) setScheduledBusy(false);
     }
   };
+  /** Undo of a send, or Change of a scheduled one, from its toast: the draft comes back into this box. */
+  const reopenDelivery = async (submissionId: string) => {
+    const wt = mailComposeWindowMessages.resolve([locale()]).t;
+    try {
+      const response = await apiClient.mailboxes[":mailboxId"]["scheduled-sends"][":scheduledSendId"].cancel.$post({
+        param: { mailboxId: props.mailboxId, scheduledSendId: submissionId },
+        json: { disposition: "draft" },
+      });
+      if (!response.ok) throw new Error(await readApiError(response, wt.reopenFailed));
+      const result = await response.json();
+      if (disposed) return;
+      openDraft(result.draftId);
+      void props.onReconcile().catch(() => undefined);
+    } catch (error) {
+      if (!disposed) toast.error(error instanceof Error ? error.message : wt.reopenFailed, { title: wt.reopenFailedTitle });
+    }
+  };
   const changeScheduledTime = async () => {
     const at = await chooseScheduledSendTime(props.dateConfig);
     if (at && !disposed) await cancelScheduled({ at });
@@ -875,6 +894,12 @@ export default function MailReplyBox(props: {
         });
     },
     openDraft,
+    delivered: (delivery) =>
+      showDeliveryToast(delivery, {
+        locale: locale(),
+        dateConfig: props.dateConfig,
+        reopen: (submissionId) => void reopenDelivery(submissionId),
+      }),
     box: {
       modeMenu: () => <ModeMenu />,
       banner: () => <Banner />,
