@@ -2426,7 +2426,11 @@
   padding: 0;
   overflow: hidden;
 }
-.k2b-ui .mail-inline-draft:not([data-large]) > .mail-draft-block {
+/* The draft block's own place outside the large layout: it adds no box, so the block lays out as a child of the draft. */
+.k2b-ui .mail-draft-block-place {
+  display: contents;
+}
+.k2b-ui .mail-inline-draft:not([data-large]) > .mail-draft-block-place > .mail-draft-block {
   display: contents;
 }
 .k2b-ui .mail-large-panes .mail-draft-block {
