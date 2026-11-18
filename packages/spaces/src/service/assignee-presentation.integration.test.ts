@@ -1,10 +1,15 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, testInfra, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import * as templates from "./item-templates";
 import * as items from "./items";
+
+if (testInfra.database) {
+  const database = await useMigratedDatabase("spaces_assignee");
+  afterAll(() => database.drop());
+}
 
 const suite = databaseSuite();
 
