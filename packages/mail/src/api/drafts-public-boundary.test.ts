@@ -45,7 +45,9 @@ suite("Mail draft public boundary", () => {
     spyOn(publicResources, "resolveMailboxPublicIds").mockImplementation(async (table, _mailboxId, ids) =>
       ids.map(() => (table === "senderIdentities" ? senderIdentityId : signatureTemplateId)),
     );
-    const preview = spyOn(composeTemplates, "previewComposeSignature").mockResolvedValue(ok({ html: "<p>Ada</p>", text: "Ada", mailHtml: '<div class="mail-content"><div class="mail-signature"><p>Ada</p></div></div>' }));
+    const preview = spyOn(composeTemplates, "previewComposeSignature").mockResolvedValue(
+      ok({ html: "<p>Ada</p>", text: "Ada", mailHtml: '<div class="mail-content"><div class="mail-signature"><p>Ada</p></div></div>' }),
+    );
     const response = await app.request("/mailboxes/mbx123/compose-signature", {
       method: "POST",
       headers: { authorization: "Bearer signature-test", "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },

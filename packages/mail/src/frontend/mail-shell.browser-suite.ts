@@ -4431,12 +4431,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const state = window as unknown as HostileWindow;
             state.hostile = [];
             addEventListener("message", (event) => {
+              // Only what the signature frame itself posts counts.
+              const frame = document.querySelector<HTMLIFrameElement>("[data-mail-signature-frame]");
+              if (!frame || event.source !== frame.contentWindow) return;
               if (event.data && typeof event.data === "object" && "hostile" in event.data) state.hostile.push(String(event.data.hostile));
             });
           });
           await readyDraft(page);
           await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
           await page.keyboard.type("Hallo");
+          await settled(page);
           const caret = () =>
             page.evaluate(() => document.querySelector("[data-mail-reply-box='mail'] .cm-cursor")?.getBoundingClientRect().top ?? null);
           const before = await caret();

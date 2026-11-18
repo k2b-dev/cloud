@@ -1,5 +1,16 @@
 import { useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createMemo, createResource, createSignal, createUniqueId, onCleanup, onMount, Show, untrack } from "solid-js";
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  createUniqueId,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+} from "solid-js";
 import { apiClient } from "../../api/client";
 import { readApiError } from "./api-response";
 import { mailComposerMessages } from "./mail-composer-messages";

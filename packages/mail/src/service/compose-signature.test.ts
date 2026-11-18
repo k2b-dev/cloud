@@ -113,8 +113,8 @@ test("the sent signature alone matches the signature block of a sent message", (
   expect(sent.data.html.startsWith(wrapper)).toBe(true);
   expect(sent.data.html).toContain(block);
   expect(block).toContain('src="data:image/png;base64,iVBORw0KGgo="');
-  expect(block).toMatch(/<strong style="[^"]*text-transform: uppercase/);
-  expect(block).toMatch(/<hr[^>]*>\s*<p style="[^"]*color: #71717a[^"]*font-size: 11px[^"]*">Beispiel Handel GmbH/);
+  expect(block).toMatch(/<strong style="[^"]*text-transform:\s*uppercase/);
+  expect(block).toMatch(/<hr[^>]*>\s*<p style="[^"]*color:\s*#71717a[^"]*font-size:\s*11px[^"]*">Beispiel Handel GmbH/);
   expect(block).toContain('href="tel:+4930000000"');
   expect(block).toContain("<hr");
 });

@@ -3004,7 +3004,10 @@ const mailOperationsApi = new Hono<MailApiContext>()
       summary: "Render the selected signature for the editor",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(composeSignatureSchema, "The signature as a sanitized fragment without outgoing styles or images, as text, and as the sent HTML message shows it"),
+        200: jsonResponse(
+          composeSignatureSchema,
+          "The signature as a sanitized fragment without outgoing styles or images, as text, and as the sent HTML message shows it",
+        ),
         400: jsonResponse(ErrorResponseSchema, "Invalid signature or compose render failure"),
         403: jsonResponse(ErrorResponseSchema, "Write access required"),
       },
