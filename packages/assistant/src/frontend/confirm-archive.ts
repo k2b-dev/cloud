@@ -10,10 +10,15 @@ export const confirmAssistantArchive = async (
 ) => {
   const copy = assistantCopyFor(locale);
   const text = (value: string) => copy.text({ value });
-  return prompts.confirm([copy.archiveChat({ title: conversation.title }), copy.archiveQueuedMessages({ count: queuedMessageCount })].filter(Boolean).join("\n\n"), {
-    title: text("Archive chat"),
-    icon: "ti ti-archive",
-    confirmText: text("Archive"),
-    cancelText: text("Cancel"),
-  });
+  return prompts.confirm(
+    [copy.archiveChat({ title: conversation.title }), copy.archiveQueuedMessages({ count: queuedMessageCount })]
+      .filter(Boolean)
+      .join("\n\n"),
+    {
+      title: text("Archive chat"),
+      icon: "ti ti-archive",
+      confirmText: text("Archive"),
+      cancelText: text("Cancel"),
+    },
+  );
 };

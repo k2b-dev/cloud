@@ -98,7 +98,13 @@ test("review submission hooks cannot block cancellation of an ordinary turn", as
   const active = spyOn(aiConversations, "getActiveTurn").mockResolvedValue(null);
   const request = spyOn(aiConversations, "requestTurnAbort").mockResolvedValue({ found: false });
   try {
-    expect(await abortAiTurn({ conversationId: "chat", turnId: "turn", actor: userResourceContext({ type: "user", userId: "11111111-1111-4111-8111-111111111111" }).actor })).toEqual({ ok: true });
+    expect(
+      await abortAiTurn({
+        conversationId: "chat",
+        turnId: "turn",
+        actor: userResourceContext({ type: "user", userId: "11111111-1111-4111-8111-111111111111" }).actor,
+      }),
+    ).toEqual({ ok: true });
     expect(calls).toBe(0);
   } finally {
     dispose();
@@ -124,7 +130,11 @@ test("Composer cancellation closes a review host's submission gate before aborti
     return { found: false };
   });
   try {
-    await abortAiTurn({ conversationId: "chat", turnId: "turn", actor: userResourceContext({ type: "user", userId: "11111111-1111-4111-8111-111111111111" }).actor });
+    await abortAiTurn({
+      conversationId: "chat",
+      turnId: "turn",
+      actor: userResourceContext({ type: "user", userId: "11111111-1111-4111-8111-111111111111" }).actor,
+    });
     expect(steps).toEqual(["submission-gate-closed", "turn-aborted"]);
   } finally {
     dispose();

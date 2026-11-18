@@ -38,6 +38,7 @@ const AI_QUEUE_SWEEP_CHAT_LIMIT = 32;
 import { finishAiTurnAbort } from "./turn-abort";
 import { AI_ACTION_BUDGET_MS } from "./turn-action-budget";
 import { isQueueInterruptedResult, queuedClientInterruptionState } from "./turn-interruption";
+
 export { AiMessageQueueConflict } from "./queue-conflict";
 
 export type QueuedChatSubmission = Parameters<AiConversationService["submitChatTurn"]>[0];
@@ -571,7 +572,9 @@ export const drainQueuedMessages = async (
     for (let remaining = AUTOMATION_QUEUE_LIMIT + 1; remaining > 0; remaining--) {
       const outcome = await sql
         .begin(async (tx) => {
-          const [conversation] = await tx<{ archived_at: unknown; created_by_user_id: string | null; queue_held_at: Date | string | null }[]>`
+          const [conversation] = await tx<
+            { archived_at: unknown; created_by_user_id: string | null; queue_held_at: Date | string | null }[]
+          >`
           SELECT archived_at,created_by_user_id,queue_held_at FROM ai.conversations WHERE id=${chat.conversation_id}::uuid FOR UPDATE`;
           const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id=${chat.conversation_id}::uuid
           AND NOT COALESCE(run_config ? 'background',false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;

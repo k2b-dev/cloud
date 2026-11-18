@@ -42,8 +42,7 @@ const fixture = async () => {
   const add = async (text: string, origin: AiStoredMessageOrigin = { kind: "person", id: user!.id }) => {
     const id = crypto.randomUUID();
     const submission = input(text, origin);
-    if (origin.kind !== "person")
-      submission.runConfig.send = { id, accountId: user!.id, keyHash: id, requestHash: id };
+    if (origin.kind !== "person") submission.runConfig.send = { id, accountId: user!.id, keyHash: id, requestHash: id };
     await enqueueChatMessage(id, submission, [{ type: "text", text }]);
     return id;
   };

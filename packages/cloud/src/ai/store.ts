@@ -1609,7 +1609,7 @@ export const aiConversations: AiConversationService = {
   archivePlaceConversation: async ({ ownerUserId, conversationId, ref }) => {
     const conversation = await aiConversations.getConversation({ conversationId, ownerUserId });
     if (conversation?.place?.ref.type !== ref.type || conversation.place.ref.id !== ref.id) return false;
-    return aiConversations.archiveConversation({ conversationId, ownerUserId });
+    return (await aiConversations.archiveConversation({ conversationId, ownerUserId })) !== false;
   },
 
   forkConversation: async (input) => {
@@ -3274,7 +3274,13 @@ export const aiConversations: AiConversationService = {
     assertInteractiveChatTurn(input.runConfig);
     const submit = async (tx: SQL) => {
       const [conversation] = await tx<
-        { draft_revision: number | string; project_id: string | null; created_by_user_id: string | null; archived_at: unknown; queue_held_at: Date | string | null }[]
+        {
+          draft_revision: number | string;
+          project_id: string | null;
+          created_by_user_id: string | null;
+          archived_at: unknown;
+          queue_held_at: Date | string | null;
+        }[]
       >`
         SELECT draft_revision, project_id, created_by_user_id, archived_at, queue_held_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
       `;
@@ -3335,7 +3341,13 @@ export const aiConversations: AiConversationService = {
       }
       if (input.queuedMessageId) {
         const [head] = await tx<
-          { id: string; status: string; revision: string; send_requested_at: Date | string | null; submission: Parameters<AiConversationService["submitChatTurn"]>[0] }[]
+          {
+            id: string;
+            status: string;
+            revision: string;
+            send_requested_at: Date | string | null;
+            submission: Parameters<AiConversationService["submitChatTurn"]>[0];
+          }[]
         >`SELECT id,status,revision::text,send_requested_at,submission FROM ai.queued_messages WHERE conversation_id=${input.conversationId}::uuid
           AND ${queuedMessageHoldsChat(tx)} ORDER BY send_requested_at NULLS LAST, position LIMIT 1 FOR UPDATE`;
         const [busy] =
