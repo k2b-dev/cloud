@@ -9,12 +9,12 @@ import { FIXTURE_AT } from "../ai/chat/action-question.fixtures";
 
 // The approval in each of its states and places, painted by a real layout engine at desktop and phone width.
 const ui = resolve(import.meta.dir, "../../../ui");
-const buildHarness = async (): Promise<string> => {
+const buildHarness = async (entrypoint = resolve(import.meta.dir, "approval-scenes.browser-harness.tsx")): Promise<string> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, "approval-scenes.browser-harness.tsx")],
+    entrypoints: [entrypoint],
     target: "browser",
     format: "esm",
     conditions: ["browser"],
@@ -44,11 +44,13 @@ const buildHarness = async (): Promise<string> => {
 
 let browser: Browser;
 let harness = "";
+let adminHarness = "";
 let css = "";
 let icons: { css: string; font: string };
 beforeAll(async () => {
-  const [bundle, styles, coreStyles] = await Promise.all([
+  const [bundle, adminBundle, styles, coreStyles] = await Promise.all([
     buildHarness(),
+    buildHarness(resolve(import.meta.dir, "../../../../tests/approval-review-admin.browser-harness.tsx")),
     Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] }),
     Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../core/src/styles/app.css")], plugins: [tailwind] }),
   ]);
@@ -56,6 +58,7 @@ beforeAll(async () => {
   if (!coreStyles.success) throw new AggregateError(coreStyles.logs, "Could not compile Core styles.");
   css = `${await styles.outputs[0]!.text()}\n${await coreStyles.outputs[0]!.text()}`;
   harness = bundle;
+  adminHarness = adminBundle;
   const iconCss = fileURLToPath(import.meta.resolve("@k2b/ui/icons/tabler.css"));
   const source = await Bun.file(iconCss).text();
   const font = source.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
@@ -96,13 +99,15 @@ const open = async (scene: string, width: number, theme: "light" | "dark" = "lig
   await page.route(`${origin}/**`, (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/harness.js") return route.fulfill({ contentType: "text/javascript", body: harness });
+    if (path === "/admin-harness.js") return route.fulfill({ contentType: "text/javascript", body: adminHarness });
     if (path === "/tabler.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (path === "/tabler.woff2") return route.fulfill({ path: icons.font });
     if (path === "/api/approvals/counts") return route.fulfill({ json: { total: 1, apps: { spaces: 1 } } });
     if (path !== "/") return route.fulfill({ status: 404 });
+    const script = new URL(route.request().url()).searchParams.get("scene") === "review-admin" ? "/admin-harness.js" : "/harness.js";
     return route.fulfill({
       contentType: "text/html",
-      body: `<!doctype html><html lang="de" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><style>${css}</style><style>${SCENE_CSS}</style></head><body class="k2b-ui${theme === "dark" ? " k2b-dark dark" : ""}"><script type="module" src="/harness.js"></script></body></html>`,
+      body: `<!doctype html><html lang="de" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><style>${css}</style><style>${SCENE_CSS}</style></head><body class="k2b-ui${theme === "dark" ? " k2b-dark dark" : ""}"><script type="module" src="${script}"></script></body></html>`,
     });
   });
   await page.goto(`${origin}/?scene=${scene}`);
