@@ -284,9 +284,20 @@ integration("archiving a chat with queued entries lets them lapse (#108)", async
     ]);
     const files = await sql`SELECT message_id FROM ai.queued_message_files WHERE message_id=${f.person}::uuid`;
     expect(files).toEqual([]);
-    const retained = await sql`SELECT id FROM ai.queued_messages WHERE conversation_id=${f.chat.id}::uuid
-      AND (submission <> '{}'::jsonb OR content <> '[]'::jsonb)`;
-    expect(retained).toEqual([]);
+    const retained =
+      await sql`SELECT submission,content FROM ai.queued_messages WHERE conversation_id=${f.chat.id}::uuid ORDER BY position`;
+    expect(retained).toEqual([
+      { submission: {}, content: [] },
+      {
+        submission: {
+          runConfig: {
+            send: { id: f.automation, accountId: f.userId, keyHash: f.automation, requestHash: f.automation },
+            turnTrigger: null,
+          },
+        },
+        content: [],
+      },
+    ]);
     await expect(aiConversations.submitChatTurn(f.input("Too late", { kind: "person", id: f.userId }))).rejects.toBeInstanceOf(
       AiMessageQueueConflict,
     );
@@ -361,7 +372,7 @@ integration("a later Stop withdraws an in-flight Send now and leaves its entry w
   }
 });
 
-integration("a late Stop holds a completed foreground turn's queue, but stopping a background routine does not", async () => {
+integration("a late Stop holds a completed foreground turn's queue, and a retired routine cannot regain authority", async () => {
   const f = await fixture();
   try {
     await f.finish(f.turnId);
@@ -371,11 +382,12 @@ integration("a late Stop holds a completed foreground turn's queue, but stopping
     await f.drain();
     expect(f.jobs).toEqual([]);
     await f.add("Resume before background Stop");
-    const [background] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id,conversation_id,status,run_config)
-      VALUES(${testShortId()},${f.chat.id}::uuid,'running','{"kind":"chat","background":{}}'::jsonb) RETURNING id`;
-    expect((await aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: background!.id, reason: "user" })).found).toBe(
-      true,
-    );
+    await expect(
+      sql`INSERT INTO ai.turns(short_id,conversation_id,status,run_config)
+      VALUES(${testShortId()},${f.chat.id}::uuid,'running','{"kind":"chat","background":{}}'::jsonb)`.execute(),
+    ).rejects.toThrow("Scheduled chat routines are retired");
+    const [resumed] = await sql`SELECT queue_held_at FROM ai.conversations WHERE id=${f.chat.id}::uuid`;
+    expect(resumed).toEqual({ queue_held_at: null });
     await f.drain();
     expect(f.jobs).toHaveLength(1);
   } finally {

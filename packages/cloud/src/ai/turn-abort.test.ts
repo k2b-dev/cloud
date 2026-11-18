@@ -18,7 +18,9 @@ test("an ownerless turn is finalized and reports completion even when abort fano
   spyOn(stream, "publishAiTurnAbort").mockRejectedValue(new Error("Fanout unavailable"));
   const complete = spyOn(aiConversations, "completeTurn").mockResolvedValue("completed");
   const wire = spyOn(stream, "publishAiWireEvent").mockResolvedValue();
+  const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue(null);
   await finishAiTurnAbort(input, { found: true, status: "queued", ownerless: true });
+  expect(config).toHaveBeenCalledWith(input);
   expect(complete).toHaveBeenCalledWith({ ...input, status: "aborted", error: null });
   expect(wire).toHaveBeenCalledWith(expect.objectContaining({ ...input, type: "turn_finished", status: "aborted" }));
 });

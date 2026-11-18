@@ -413,6 +413,8 @@ export const editQueuedMessage = async (
     return true;
   });
 
+type QueuedInterruption = { id: string; conversation_id: string; interrupted_turn_id: string };
+
 /** What a retired entry keeps: only its send receipt and initiator. */
 const retiredSubmission = (db: SQL) =>
   db`CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END`;
@@ -425,7 +427,7 @@ const retireExpiredCodeStarts = async (
   conversationId: string | undefined,
 ) => {
   const { expression: reason } = await expiredReason();
-  await sql`WITH expired AS (
+  return sql<QueuedInterruption[]>`WITH expired AS (
       SELECT q.id, ${reason} AS reason FROM ai.queued_messages q
       WHERE q.status='pending' AND q.submission->'runConfig' ? 'codeOrigin' AND ${reason} IS NOT NULL
         AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id = ${conversationId ?? null}::uuid)
@@ -434,17 +436,27 @@ const retireExpiredCodeStarts = async (
     ), retired AS (
       UPDATE ai.queued_messages SET status='failed', error=expired.reason, send_requested_at=NULL, submission=${retiredSubmission(sql)}, content='[]'::jsonb
       FROM expired WHERE ai.queued_messages.id = expired.id RETURNING ai.queued_messages.id
+    ), retired_files AS (
+      DELETE FROM ai.queued_message_files f USING retired WHERE f.message_id = retired.id
     )
-    DELETE FROM ai.queued_message_files f USING retired WHERE f.message_id = retired.id`;
+    -- Reuse the sweep's round trip for durable interruption recovery (DATA-13).
+    SELECT id,conversation_id,interrupted_turn_id FROM ai.queued_messages WHERE status='pending'
+      AND send_requested_at IS NOT NULL AND interrupted_turn_id IS NOT NULL
+      AND (${conversationId ?? null}::uuid IS NULL OR conversation_id=${conversationId ?? null}::uuid)
+    ORDER BY send_requested_at LIMIT ${AI_MESSAGE_QUEUE_LIMIT}`;
 };
 
 /** Reconcile durable effect receipts; never infer a successful interruption from a lost worker. */
 export const reconcileQueuedInterruptions = async (conversationId?: string): Promise<void> => {
-  const rows = await sql<{ id: string; conversation_id: string; interrupted_turn_id: string }[]>`
+  const rows = await sql<QueuedInterruption[]>`
     SELECT id,conversation_id,interrupted_turn_id FROM ai.queued_messages WHERE status='pending'
     AND send_requested_at IS NOT NULL AND interrupted_turn_id IS NOT NULL
     AND (${conversationId ?? null}::uuid IS NULL OR conversation_id=${conversationId ?? null}::uuid)
     ORDER BY send_requested_at LIMIT ${AI_MESSAGE_QUEUE_LIMIT}`;
+  await reconcileQueuedInterruptionRows(rows);
+};
+
+const reconcileQueuedInterruptionRows = async (rows: QueuedInterruption[]): Promise<void> => {
   for (const row of rows) {
     const ready = await sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id=${row.conversation_id}::uuid FOR NO KEY UPDATE`;
@@ -535,15 +547,17 @@ export const drainQueuedMessages = async (
   conversationId?: string,
   validateStart?: ValidateQueuedChatStart,
 ) => {
-  await reconcileQueuedInterruptions(conversationId);
-  if (validateStart?.expiredReason)
-    await retireExpiredCodeStarts(validateStart.expiredReason, conversationId).catch((error) =>
-      log.warn("Expired Code messages could not be retired", {
-        code: "queue_expiry_failed",
-        conversationId,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+  const interruptions = validateStart?.expiredReason
+    ? await retireExpiredCodeStarts(validateStart.expiredReason, conversationId).catch((error) =>
+        log.warn("Expired Code messages could not be retired", {
+          code: "queue_expiry_failed",
+          conversationId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      )
+    : undefined;
+  if (interruptions) await reconcileQueuedInterruptionRows(interruptions);
+  else await reconcileQueuedInterruptions(conversationId);
   const chats = await sql<{ conversation_id: string; person: boolean }[]>`
     SELECT q.conversation_id,q.automation_source IS NULL AS person FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
     WHERE (q.status='pending' OR (q.status='failed' AND q.automation_source IS NULL AND q.error IN ${sql([...AI_QUEUE_RETRYABLE_ERRORS])}))

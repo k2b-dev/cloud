@@ -3056,7 +3056,7 @@ export const aiConversations: AiConversationService = {
         usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
         feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at,
         ${compactReviewMetaSql(todoMetaJson())} AS meta
-      FROM ai.messages
+      FROM (SELECT * FROM ai.messages UNION ALL SELECT * FROM ai.task_messages) messages
       WHERE conversation_id = ${input.conversationId}
         AND loop_id = ${input.loopId}
         AND (${input.includeCompacted ?? false} OR compacted_at IS NULL)
@@ -3286,7 +3286,10 @@ export const aiConversations: AiConversationService = {
       `;
       if (!conversation) throw new AiMessageQueueConflict("Conversation not found.");
       // The dispatcher's snapshot can predate archiving; an archived chat starts no queued turn.
-      if (conversation.archived_at) throw new AiMessageQueueConflict("Conversation is archived.");
+      if (conversation.archived_at) {
+        if (input.choice) throw new AiChoiceConflict("choice_closed");
+        throw new AiMessageQueueConflict("Conversation not found.");
+      }
       if (input.retrySourceTurnId) {
         const [source] = await tx<{ run_config: AiTurnRunConfig | null }[]>`
           SELECT run_config FROM ai.turns WHERE id=${input.retrySourceTurnId}::uuid AND conversation_id=${input.conversationId}::uuid`;

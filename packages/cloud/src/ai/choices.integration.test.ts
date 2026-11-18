@@ -8,7 +8,9 @@ import { defineCapabilities } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { accounts } from "../services/accounts";
 import { buildAiCapabilityCatalog } from "./capabilities";
+import { createAiChoiceRoutes } from "./choice-routes";
 import { migrateCloudAi } from "./migrate";
+import { personalAiModelPolicy } from "./personal-agent";
 import { publicAiStoredMessages } from "./public-projection";
 import { aiQuoteModelText } from "./quote-markers";
 import { resolveAiQuotes } from "./quote-sources";
@@ -119,6 +121,40 @@ suite("choice admission transaction", () => {
   beforeAll(async () => {
     await migrateCloudAi();
     await migrateCloudCapabilities();
+  });
+  test("archiving after loading a choice returns 409 without admitting another turn", async () => {
+    const f = await fixture();
+    try {
+      const routes = createAiChoiceRoutes({
+        resolveContext: async () => ({
+          actor: { kind: "user", user: f.user },
+          ownerUserId: f.user.id,
+          modelPolicy: personalAiModelPolicy,
+          toolApprovalContext: { actorUserId: f.user.id },
+          toolApprovalChangeContext: { actorUserId: f.user.id, actor: { kind: "user", user: f.user }, requestId: null },
+          signedInSession: true,
+        }),
+        submit: async () => {
+          expect(await aiConversations.archiveConversation({ conversationId: f.conversation.id, ownerUserId: f.user.id })).not.toBe(false);
+          await f.submit();
+          return new Response(null, { status: 201 });
+        },
+      });
+      const response = await routes.request(`/${f.conversation.shortId}/choices`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turnId: f.source.turn.shortId, toolCallId: "source-call", blockId: "category", ids: ["jug"] }),
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ code: "choice_closed", message: "choice_closed" });
+      const turns = await sql<{ id: string }[]>`SELECT id FROM ai.turns WHERE conversation_id=${f.conversation.id}::uuid`;
+      expect(turns.map((turn) => turn.id)).toEqual([f.source.turn.id]);
+      expect((await aiConversations.listMessages({ conversationId: f.conversation.id })).filter((message) => message.meta?.choice)).toEqual(
+        [],
+      );
+    } finally {
+      await f.cleanup();
+    }
   });
   test("busy, wrong ids, and mode-one multiselection return conflicts without writing a choice", async () => {
     const f = await fixture();

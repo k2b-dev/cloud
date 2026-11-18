@@ -1080,7 +1080,7 @@ databaseSuite()("Assistant chat runner persistence", () => {
     const start = spyOn(cloudAi.aiToolAudit, "noteToolStarted").mockResolvedValue(true);
     const conversationId = crypto.randomUUID(),
       turnId = crypto.randomUUID();
-    const input = { operation: "open" as const, id };
+    const input = { operation: "secret" as const, name: "crm", origin: "https://example.test" };
     const conversation = spyOn(aiConversations, "getConversation").mockImplementation(async (request) =>
       request.ownerUserId !== owner.user.id
         ? null
@@ -1120,7 +1120,15 @@ databaseSuite()("Assistant chat runner persistence", () => {
         error: null,
       },
       liveBlocks: [
-        { id: "block", kind: "tool", callId: "call", name: "code_open", args: { id }, status: "awaiting_client", frontendMode: "client" },
+        {
+          id: "block",
+          kind: "tool",
+          callId: "call",
+          name: "code_secret",
+          args: { name: input.name, origin: input.origin },
+          status: "awaiting_client",
+          frontendMode: "client",
+        },
       ],
       liveSeq: 1,
       actionWaitMs: 0,
@@ -1138,7 +1146,7 @@ databaseSuite()("Assistant chat runner persistence", () => {
       await clientCalls.complete({ ...winner, result: { opened: id } }, owner);
       expect(await clientCalls.claim(loser, owner)).toEqual({ status: "done", result: { opened: id } });
       await expect(clientCalls.claim(first, stranger)).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(clientCalls.claim({ ...first, input: { ...input, id: "Xyz789" } }, owner)).rejects.toMatchObject({
+      await expect(clientCalls.claim({ ...first, input: { ...input, name: "another-secret" } }, owner)).rejects.toMatchObject({
         code: "INVALID_INPUT",
       });
       for (const result of ["null", "42", '{"x":1}', "hello", null, { x: 1 }, ["null", 42], 42, true]) {
