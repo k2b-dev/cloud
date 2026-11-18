@@ -1882,7 +1882,7 @@ suite("AI conversation store integration", () => {
       expect(active?.turn.status).toBe("waiting_for_action");
       expect(active?.liveBlocks).toEqual(blocks);
       expect(active?.liveSeq).toBe(7);
-      const reopened = await loadAiStreamState(conversation);
+      const reopened = await loadAiStreamState(conversation, undefined, { locale: "en" });
       expect(reopened.activeTurn?.status).toBe("waiting_for_action");
       expect(reopened.activeTurn?.blocks).toEqual(blocks);
       expect(await aiConversations.listPendingTurnActions({ conversationId: conversation.id, turnId: turn.id })).toEqual([
@@ -2359,7 +2359,7 @@ suite("AI conversation store integration", () => {
       const waitingFor = Date.now() - Date.parse(active!.waitingSince!);
       expect(waitingFor).toBeGreaterThanOrEqual(25_000);
       expect(waitingFor).toBeLessThanOrEqual(40_000);
-      const snapshot = (await loadAiStreamState(conversation)).activeTurn;
+      const snapshot = (await loadAiStreamState(conversation, undefined, { locale: "en" })).activeTurn;
       expect(snapshot).toMatchObject({ actionWaitMs: active!.actionWaitMs, waitingSince: active!.waitingSince });
 
       // The user stops while the approval waits: no loop runs, so the server records the stop on the message.

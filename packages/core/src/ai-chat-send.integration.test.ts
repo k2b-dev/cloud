@@ -21,6 +21,7 @@ import {
   aiModelSettings,
   aiQuotas,
   aiSettingsFixture,
+  aiToolAudit,
   beginAiCall,
   codeCapabilityOperation,
   compileCapabilities,
@@ -30,6 +31,8 @@ import {
   finishAiCall,
   invokeCompiledCapability,
   listQueuedMessages,
+  reconcileQueuedInterruptions,
+  requestQueuedMessageSendNow,
   updateQueuedMessage,
 } from "../../../scripts/fixtures/code-platform";
 import { meterSql } from "../../../scripts/fixtures/sql-meter";
@@ -218,7 +221,9 @@ suiteFor(
     const accepted = await invoke(chat.shortId, personContext());
     if (!accepted.ok) throw new Error(accepted.error.message);
     const sent = dataSchema.parse(accepted.data.data);
-    expect(await editQueuedMessage(chat.id, sent.id, "Edited from the terminal", { signedInSession: false })).toBeTrue();
+    expect(
+      await editQueuedMessage(chat.id, sent.id, "Edited from the terminal", { signedInSession: false, authorUserId: owner }),
+    ).toBeTrue();
     await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     expect(turn).not.toBeNull();
@@ -991,6 +996,150 @@ suiteFor(
     }
   }, 30_000);
 
+  test("send now promotes an automation once under its reserved bounded allowance", async () => {
+    await setup();
+    const old = await aiConversations.submitChatTurn({
+      conversationId: chat.id,
+      modelId: "fixture",
+      userMessage: { role: "user", content: [{ type: "text", text: "Old work" }] },
+      runConfig: { kind: "chat", input: "Old work", toolSource: { kind: "none" } },
+    });
+    await sql`UPDATE ai.conversations SET draft_content='[{"type":"text","text":"Unfinished"}]'::jsonb,draft_revision=7 WHERE id=${chat.id}::uuid`;
+    const accepted = await invoke();
+    if (!accepted.ok) throw new Error(accepted.error.message);
+    const sent = dataSchema.parse(accepted.data.data);
+    await Promise.all([requestQueuedMessageSendNow(chat.id, sent.id), requestQueuedMessageSendNow(chat.id, sent.id)]);
+    await reconcileQueuedInterruptions(chat.id);
+    expect((await aiConversations.getTurn({ conversationId: chat.id, turnId: old.turn.id }))?.status).toBe("aborted");
+    const jobs: { turnId: string }[] = [];
+    const push = async (job: { turnId: string }) => {
+      jobs.push(job);
+    };
+    await drainQueuedMessages(push, chat.id);
+    expect(jobs).toEqual([]); // An automation cannot start without the host's current authorization.
+    await Promise.all([
+      drainQueuedMessages(push, chat.id, validateQueuedChatStart),
+      drainQueuedMessages(push, chat.id, validateQueuedChatStart),
+    ]);
+    expect(jobs).toHaveLength(1);
+    const turnId = jobs[0]!.turnId;
+    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 }, contextWindow: 128_000 });
+    const reserve = () =>
+      sql.begin((db) =>
+        reserveCodeChatTurnBudget({ turnId, profile, codeId, ownerUserId: owner }, db, { code: 1, owner: 1, timeZone: "UTC" }),
+      );
+    await reserve();
+    const config = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId });
+    expect(config).toMatchObject({
+      send: { id: sent.id },
+      turnTrigger: { kind: "automation", id: codeId },
+      writerOrigin: { kind: "automation", id: codeId },
+      inferenceBudget: { modelCalls: 12, inputTokens: 192_000, outputTokens: 12_000 },
+    });
+    const claim = await aiConversations.claimTurn({
+      conversationId: chat.id,
+      turnId,
+      leaseOwner: "c2-worker",
+      leaseMs: 30_000,
+      from: "queue",
+      maxAttempts: 5,
+      runBudgetMs: 60_000,
+    });
+    expect(claim).not.toBeNull();
+    const inference = { userId: owner, conversationId: chat.id, turnId, kind: "chat" as const, task: "chat" };
+    for (let attempt = 0; attempt < 12; attempt++) {
+      if (attempt === 6) await reserve(); // Recovery must not refill the already charged attempts.
+      const call = await beginAiCall(profile, inference, 1, 16);
+      await finishAiCall(call.id, { input: 1, output: 1 }, "ok");
+    }
+    await expect(beginAiCall(profile, inference, 1, 16)).rejects.toMatchObject({ code: "automation_turn_limit", reason: "model_calls" });
+    await reserve(); // Recovery reuses the reservation, without another turn or receipt.
+    expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId })).toEqual(config);
+    expect(await sql`SELECT turn_id FROM code.chat_turn_budgets WHERE turn_id=${turnId}::uuid`).toHaveLength(1);
+    expect(await invoke()).toMatchObject({ ok: true, data: { data: { id: sent.id } } });
+    await requestQueuedMessageSendNow(chat.id, sent.id);
+    await drainQueuedMessages(push, chat.id, validateQueuedChatStart);
+    expect(jobs).toHaveLength(1);
+    expect((await aiConversations.getConversation({ conversationId: chat.id }))?.draft).toMatchObject({
+      revision: 7,
+      content: [{ type: "text", text: "Unfinished" }],
+    });
+  });
+  test.each(["expired", "paused", "budget"] as const)(
+    "send now cannot revive an expired paused or budget-refused Code (%s)",
+    async (reason) => {
+      await setup();
+      const old = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "fixture",
+        userMessage: { role: "user", content: [{ type: "text", text: "Old work" }] },
+        runConfig: { kind: "chat", input: "Old work", toolSource: { kind: "none" } },
+      });
+      const oldTarget = { conversationId: chat.id, turnId: old.turn.id };
+      const oldClaim = await aiConversations.claimTurn({
+        ...oldTarget,
+        leaseOwner: "c3-worker",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      expect(oldClaim).not.toBeNull();
+      expect(await aiToolAudit.noteToolStarted({ ...oldTarget, callId: "old-effect", toolName: "write_file" })).toBeTrue();
+      const accepted = await invoke();
+      if (!accepted.ok) throw new Error(accepted.error.message);
+      const id = dataSchema.parse(accepted.data.data).id;
+      await requestQueuedMessageSendNow(chat.id, id);
+      if (reason === "expired")
+        await sql`UPDATE ai.queued_messages SET created_at=clock_timestamp()-interval '2 days' WHERE id=${id}::uuid`;
+      if (reason === "paused") await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
+      if (reason === "budget") spyOn(aiQuotas, "assertAllowed").mockRejectedValueOnce(new AiQuotaError("quota_exhausted", "Empty"));
+      const jobs: { turnId: string }[] = [];
+      await drainQueuedMessages(
+        async (job) => {
+          jobs.push(job);
+        },
+        chat.id,
+        validateQueuedChatStart,
+      );
+      expect(jobs).toEqual([]);
+      expect(
+        await sql`SELECT id FROM ai.queued_messages WHERE id=${id}::uuid AND status='pending' AND send_requested_at IS NOT NULL`,
+      ).toHaveLength(1);
+      const journal = aiConversations.createSessionStore({ ...oldTarget, modelId: "fixture" });
+      await journal.append({ role: "tool_result", callId: "old-effect", name: "write_file", result: { written: true } });
+      expect(await aiConversations.completeTurn({ ...oldTarget, leaseOwner: "c3-worker", status: "completed" })).toBe("interrupted");
+      expect(
+        (await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: old.turn.id })).filter(
+          ({ message }) => message.role === "tool_result",
+        ),
+      ).toHaveLength(1);
+      await drainQueuedMessages(
+        async (job) => {
+          jobs.push(job);
+        },
+        chat.id,
+        validateQueuedChatStart,
+      );
+      const error = reason === "expired" ? "code_budget_day_ended" : reason === "paused" ? "code_inactive" : "quota_exhausted";
+      expect(await read(id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed", reason: error } } } });
+      expect(await requestQueuedMessageSendNow(chat.id, id)).toBeNull();
+      expect(await updateQueuedMessage(chat.id, id, "retry")).toBeFalse();
+      expect(jobs).toEqual([]);
+      expect(
+        await sql`SELECT b.turn_id FROM code.chat_turn_budgets b JOIN ai.turns t ON t.id=b.turn_id WHERE t.conversation_id=${chat.id}::uuid`,
+      ).toHaveLength(0);
+      expect((await invoke(chat.shortId, { ...personContext(), idempotencyKey: "next-person" }, "My question")).ok).toBeTrue();
+      await drainQueuedMessages(
+        async (job) => {
+          jobs.push(job);
+        },
+        chat.id,
+        validateQueuedChatStart,
+      );
+      expect(jobs).toHaveLength(1);
+    },
+  );
   test("queued code sends count against the daily budget", async () => {
     await setup();
     const results = [];

@@ -164,6 +164,8 @@ export default function MailRecipientInput(props: {
       input?.focus();
       const caret = input?.value.length ?? 0;
       input?.setSelectionRange(caret, caret);
+      // WebKit may expose only the caret at the edge of the horizontally scrolling recipient row.
+      input?.scrollIntoView({ block: "nearest", inline: "nearest" });
     };
     if (now) focus();
     else queueMicrotask(focus);
@@ -336,7 +338,7 @@ export default function MailRecipientInput(props: {
             <Show
               when={editingIndex() === index()}
               fallback={
-                <span class="chip mail-recipient-pill-shell h-7 max-w-56 shrink-0 py-0">
+                <span class="mail-recipient-pill-shell mr-1 inline-flex h-7 max-w-56 shrink-0 items-center gap-1.5 text-xs">
                   <button
                     ref={(element) => {
                       pillButtons[index()] = element;
@@ -353,10 +355,12 @@ export default function MailRecipientInput(props: {
                   </button>
                   <IconButton
                     type="button"
-                    class="!h-5 !w-5 !p-0"
+                    variant="text"
+                    size="xs"
+                    class="mail-recipient-remove !h-6 !w-6 !p-0 enabled:hover:!text-[var(--k2b-danger-text)] focus-visible:!text-[var(--k2b-danger-text)]"
                     label={t().removeRecipient({ recipient })}
                     disabled={props.disabled || props.readOnly}
-                    onClick={() => remove(index())}
+                    onClick={() => remove(index(), true)}
                   >
                     <i class="ti ti-x" aria-hidden="true" />
                   </IconButton>
@@ -371,6 +375,7 @@ export default function MailRecipientInput(props: {
                 readOnly={props.readOnly}
                 aria-label={t().editRecipient({ recipient })}
                 aria-invalid={Boolean(validationError())}
+                title={validationError() ?? undefined}
                 aria-describedby={validationError() ? errorId : undefined}
                 autocomplete="off"
                 role="combobox"
@@ -407,13 +412,14 @@ export default function MailRecipientInput(props: {
         <Show when={editingIndex() === null}>
           <input
             ref={input}
-            class="h-7 min-w-32 flex-1 bg-transparent px-1 text-sm outline-none"
+            class="h-7 min-w-32 flex-1 bg-transparent px-1 text-xs outline-none placeholder:text-xs"
             value={query()}
             placeholder={props.value().length === 0 ? props.placeholder : t().addAnotherRecipient}
             disabled={props.disabled}
             readOnly={props.readOnly}
             aria-label={props.placeholder}
             aria-invalid={Boolean(validationError())}
+            title={validationError() ?? undefined}
             aria-describedby={validationError() ? errorId : undefined}
             autocomplete="off"
             role="combobox"
@@ -453,7 +459,7 @@ export default function MailRecipientInput(props: {
       </div>
       <Show when={validationError()}>
         {(message) => (
-          <p id={errorId} class="mt-1 text-xs text-red-600 dark:text-red-300">
+          <p id={errorId} class="mt-1 text-xs text-[var(--k2b-danger-text)]">
             {message()}
           </p>
         )}

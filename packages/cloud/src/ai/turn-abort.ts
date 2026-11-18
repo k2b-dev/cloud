@@ -14,7 +14,8 @@ export const finishAiTurnAbort = async (
 
   if (request.ownerless) {
     const finalized = await aiConversations.completeTurn({ ...input, status: "aborted", error: null });
-    if (finalized === "completed") {
+    const config = await aiConversations.getTurnRunConfig(input);
+    if ((finalized === "completed" || finalized === "interrupted") && !(config?.kind === "chat" && config.background)) {
       const attempt = active?.turn.id === input.turnId ? active.turn.attempt : 1;
       const seq = (active?.turn.id === input.turnId ? active.liveSeq : 0) + 1;
       await publishAiWireEvent({

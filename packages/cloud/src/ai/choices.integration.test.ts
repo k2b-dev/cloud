@@ -1,5 +1,6 @@
-import { beforeAll, expect, test } from "bun:test";
+import { beforeAll, expect, spyOn, test } from "bun:test";
 import { z } from "zod";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { compileCapabilities } from "../_internal/capabilities";
 import { migrateCloudCapabilities, recordCapabilityExecution } from "../capabilities/executions";
@@ -9,6 +10,8 @@ import { accounts } from "../services/accounts";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { migrateCloudAi } from "./migrate";
 import { publicAiStoredMessages } from "./public-projection";
+import { aiQuoteModelText } from "./quote-markers";
+import { resolveAiQuotes } from "./quote-sources";
 import { aiConversations } from "./store";
 
 const suite = databaseSuite();
@@ -155,6 +158,8 @@ suite("choice admission transaction", () => {
       const projected = await publicAiStoredMessages(
         await aiConversations.listMessages({ conversationId: f.conversation.id }),
         f.conversation,
+        undefined,
+        { locale: "de" },
       );
       expect(projected.find((message) => message.message.role === "tool_result")?.meta?.resultChoice).toMatchObject({
         state: "answered",
@@ -164,6 +169,69 @@ suite("choice admission transaction", () => {
       await sql`UPDATE ai.turns SET status = 'completed' WHERE id = ${won.value.turn.id}::uuid`;
       await expect(f.submit()).rejects.toThrow("choice_closed");
     } finally {
+      await f.cleanup();
+    }
+  });
+  test("writer projection keeps choice history lazy and uses public turn ids", async () => {
+    const f = await fixture();
+    const list = spyOn(aiConversations, "listChoiceMessages");
+    const meter = await meterSql();
+    try {
+      const answer = await f.submit();
+      await sql`UPDATE ai.turns SET status='completed' WHERE id=${answer.turn.id}::uuid`;
+      const initial = (await aiConversations.listTurnMessages({ conversationId: f.conversation.id, loopId: f.source.turn.id }))[0]!;
+      const quotes = await resolveAiQuotes(f.conversation.id, [{ messageId: initial.shortId, text: "Hi" }], aiConversations);
+      const quoted = await aiConversations.submitChatTurn({
+        conversationId: f.conversation.id,
+        modelId: "mock",
+        runConfig: {
+          kind: "chat",
+          input: "Quoted reply",
+          toolSource: { kind: "none" },
+          quotes,
+          writerOrigin: { kind: "person", id: f.user.id },
+        },
+        userMessage: {
+          role: "user",
+          content: [
+            { type: "text", text: "Quoted reply" },
+            { type: "text", text: aiQuoteModelText(quotes[0]!) },
+          ],
+        },
+      });
+      const all = await aiConversations.listMessages({ conversationId: f.conversation.id });
+      const plain = all.filter(
+        (message) => message.message.role === "user" && !message.meta?.choice && message.loopId === f.source.turn.id,
+      );
+      const without = await meter.during(async () => {
+        const projected = await publicAiStoredMessages(plain, f.conversation, undefined, { locale: "en" });
+        expect(projected.every((message) => message.loopId === f.source.turn.shortId)).toBeTrue();
+        expect(projected[0]?.meta?.origin).toMatchObject({ kind: "person", name: "Choice Person" });
+      });
+      expect(list).not.toHaveBeenCalled();
+      let projected: Awaited<ReturnType<typeof publicAiStoredMessages>> = [];
+      const withChoice = await meter.during(async () => {
+        projected = await publicAiStoredMessages(all, f.conversation, undefined, { locale: "en" });
+      });
+      expect(list).toHaveBeenCalledTimes(1);
+      // Choice history adds its single read; choice turn IDs ride the existing origin/turn lookup.
+      expect(withChoice.length - without.length).toBe(1);
+      expect(withChoice.filter((text) => text.includes("display_name AS name"))).toHaveLength(1);
+      expect(projected.find((message) => message.meta?.choice)?.meta?.choice?.turnId).toBe(f.source.turn.shortId);
+      expect(
+        projected
+          .filter((message) => message.loopId)
+          .every((message) => [f.source.turn.shortId, answer.turn.shortId, quoted.turn.shortId].includes(message.loopId!)),
+      ).toBeTrue();
+      expect(projected.find((message) => message.message.role === "tool_result")?.meta?.resultChoice).toMatchObject({
+        state: "answered",
+        chosen: ["jug"],
+      });
+      expect(projected.find((message) => message.id === quoted.message.shortId)?.meta?.quotes).toEqual(quotes);
+      expect(JSON.stringify(projected)).not.toContain('"writerOrigin"');
+    } finally {
+      list.mockRestore();
+      await meter.close();
       await f.cleanup();
     }
   });

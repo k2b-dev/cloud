@@ -120,6 +120,8 @@ export const createRecordsViewColumnController = ({
   const effectiveViewColumns = () => (!isGrouped() ? (viewColumns() ?? defaultViewColumns()) : undefined);
 
   const patchRecordQueryMut = mutations.create<{ view: View; query: RecordQuery }, Partial<RecordQuery>>({
+    // Column changes apply at once in the UI; every patch must still be sent.
+    concurrency: "replace",
     mutation: async (patch) => {
       const view = props.activeView;
       if (!view) throw new Error(t().noActiveView);

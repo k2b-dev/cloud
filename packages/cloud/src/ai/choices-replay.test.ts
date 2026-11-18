@@ -53,6 +53,7 @@ test("a server-authored pending choice Query runs through the capability path be
   const steps: string[] = [];
   const audit = spyOn(aiToolAudit, "noteCapabilityDispatch").mockImplementation(async () => {
     steps.push("audit");
+    return true;
   });
   const choiceOrigin = createChoiceCapabilityOrigin(choice, false);
   const tools = createAiToolResolver({

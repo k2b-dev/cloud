@@ -165,7 +165,7 @@ const dispatchAiCapability = async (
       : null;
   if (key) headers.set("idempotency-key", key);
   if (!review && input.traceToolCall !== false && input.turnId && input.context.callId) {
-    await aiToolAudit.noteCapabilityDispatch({
+    const started = await aiToolAudit.noteCapabilityDispatch({
       conversationId: input.conversationId,
       turnId: input.turnId,
       callId: input.context.callId,
@@ -173,6 +173,7 @@ const dispatchAiCapability = async (
       requestId,
       idempotencyKey: key,
     });
+    if (!started) throw new AiCapabilityExecutionError("TURN_INTERRUPTED", 409, "Turn interrupted before this step ran.", false);
   }
   const request = new Request("http://cloud.internal/api/ai/capability", {
     method: "POST",

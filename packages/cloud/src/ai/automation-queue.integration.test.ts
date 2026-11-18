@@ -14,9 +14,12 @@ import {
   listQueuedMessages,
   migrateAiMessageQueue,
   type QueuedChatSubmission,
+  reconcileQueuedInterruptions,
+  requestQueuedMessageSendNow,
   updateQueuedMessage,
 } from "./message-queue";
 import { AiQuotaError } from "./quotas";
+import { aiQuoteModelText } from "./quote-markers";
 import { aiConversations } from "./store";
 
 const owner = "50000000-0000-4000-8000-000000000001";
@@ -105,7 +108,7 @@ suiteFor(
     const input = submission(chat.id, "Original");
     const id = crypto.randomUUID();
     await enqueueChatMessage(id, input, [{ type: "text", text: "Original" }]);
-    expect(await editQueuedMessage(chat.id, id, "Latest edit", { signedInSession: false })).toBeTrue();
+    expect(await editQueuedMessage(chat.id, id, "Latest edit", { signedInSession: false, authorUserId: owner })).toBeTrue();
     await expect(aiConversations.submitChatTurn({ ...input, queuedMessageId: id, queuedMessageRevision: "0" })).rejects.toThrow(
       "Queued message is no longer ready.",
     );
@@ -116,6 +119,68 @@ suiteFor(
     });
   });
 
+  test("send now races a quoted edit and promotes one current revision", async () => {
+    const chat = await aiConversations.createConversation({ ownerUserId: owner });
+    await aiConversations.submitChatTurn(submission(chat.id, "Old work"));
+    const id = crypto.randomUUID();
+    const input = submission(chat.id, "Original");
+    const quotes = [{ messageId: "Quote07", from: "assistant" as const, text: "Checked passage" }];
+    input.runConfig.quotes = quotes;
+    input.userMessage = {
+      role: "user",
+      content: [
+        { type: "text", text: "Original" },
+        { type: "text", text: aiQuoteModelText(quotes[0]!) },
+      ],
+    };
+    input.runConfig.input = input.userMessage.content;
+    input.runConfig.writerOrigin = { kind: "person", id: owner };
+    input.runConfig.turnTrigger = { kind: "person", id: owner };
+    input.runConfig.send = { id, accountId: owner, keyHash: "c7-key", requestHash: "c7-input" };
+    await enqueueChatMessage(id, input, [
+      { type: "text", text: "Original" },
+      { type: "quote", messageId: "Quote07", text: "Checked passage" },
+    ]);
+    const locked = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const blocker = sql.begin(async (tx) => {
+      await tx`SELECT id FROM ai.conversations WHERE id=${chat.id}::uuid FOR UPDATE`;
+      locked.resolve();
+      await release.promise;
+    });
+    try {
+      await locked.promise;
+      const edit = editQueuedMessage(chat.id, id, "Current revision", { signedInSession: false, authorUserId: owner });
+      const request = requestQueuedMessageSendNow(chat.id, id);
+      release.resolve();
+      await blocker;
+      const [edited, sent] = await Promise.all([edit, request]);
+      expect(sent).not.toBeNull();
+      await reconcileQueuedInterruptions(chat.id);
+      const jobs: { turnId: string }[] = [];
+      const push = async (job: { turnId: string }) => {
+        jobs.push(job);
+      };
+      await Promise.all([drainQueuedMessages(push, chat.id), drainQueuedMessages(push, chat.id)]);
+      expect(jobs).toHaveLength(1);
+      const config = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: jobs[0]!.turnId });
+      expect(config).toMatchObject({
+        quotes,
+        writerOrigin: { kind: "person", id: owner },
+        turnTrigger: { kind: "person", id: owner },
+        send: { id },
+      });
+      const [message] = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: jobs[0]!.turnId });
+      expect(message?.message).toMatchObject({
+        content: [{ type: "text", text: edited ? "Current revision" : "Original" }, expect.anything()],
+      });
+      if (edited) expect(config).toMatchObject({ sourceRestricted: true });
+      expect(message?.meta?.quotes).toEqual(quotes);
+    } finally {
+      release.resolve();
+      await blocker;
+    }
+  });
   test("concurrent drain starts the current revision exactly once", async () => {
     const chat = await aiConversations.createConversation({ ownerUserId: owner });
     const input = submission(chat.id, "Original");

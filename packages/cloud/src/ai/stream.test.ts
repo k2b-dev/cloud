@@ -65,7 +65,7 @@ test("the read snapshot clears thinking from legacy live blocks without rewritin
   ];
   try {
     for (const locale of ["de", "en"]) {
-      const state = await loadAiStreamState(conversation, null, locale);
+      const state = await loadAiStreamState(conversation, null, { locale });
       expect(state.activeTurn?.blocks).toEqual([{ id: "thought", kind: "thinking", text: "" }]);
       expect(JSON.stringify(state)).not.toContain(raw);
     }

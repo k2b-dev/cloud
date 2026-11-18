@@ -117,7 +117,7 @@ integration(
       expect(await updateQueuedMessage(chat.id, first, "retry")).toBe(false);
       await sql`UPDATE ai.files SET bytes=${new TextEncoder().encode("original")},size=8,version=${file.version} WHERE conversation_id=${chat.id}::uuid AND path=${file.path}`;
       const third = await enqueue("Cancel me");
-      expect(await editQueuedMessage(chat.id, third, "Edited in queue", { signedInSession: true })).toBe(true);
+      expect(await editQueuedMessage(chat.id, third, "Edited in queue", { signedInSession: true, authorUserId: user!.id })).toBe(true);
       expect((await listQueuedMessages(chat.id))[0]?.content).toEqual([{ type: "text", text: "Edited in queue" }]);
       const restricted = async (id: string) =>
         (
@@ -126,7 +126,9 @@ integration(
         )[0]?.restricted;
       // A session's edit keeps the message unrestricted; an edit from cld is accepted and restricts it.
       expect(await restricted(third)).toBe(false);
-      expect(await editQueuedMessage(chat.id, third, "Edited from the terminal", { signedInSession: false })).toBe(true);
+      expect(await editQueuedMessage(chat.id, third, "Edited from the terminal", { signedInSession: false, authorUserId: user!.id })).toBe(
+        true,
+      );
       expect(await restricted(third)).toBe(true);
       expect(await updateQueuedMessage(chat.id, third, "cancel")).toBe(true);
       expect(await listQueuedMessages(chat.id)).toEqual([]);
@@ -190,9 +192,11 @@ integration(
         expectedProjectId: null,
       };
       await enqueueChatMessage(id, input, content);
-      await expect(editQueuedMessage(chat.id, id, "Etwas mehr Text", { signedInSession: true })).rejects.toThrow(AiQueuedMessageTooLarge);
+      await expect(editQueuedMessage(chat.id, id, "Etwas mehr Text", { signedInSession: true, authorUserId: user!.id })).rejects.toThrow(
+        AiQueuedMessageTooLarge,
+      );
       // An edit from a source without a signed-in session restricts the turn; the checked quotes stay as they were.
-      expect(await editQueuedMessage(chat.id, id, "Morgen?", { signedInSession: false })).toBe(true);
+      expect(await editQueuedMessage(chat.id, id, "Morgen?", { signedInSession: false, authorUserId: user!.id })).toBe(true);
       const [row] = await sql<
         { submission: { userMessage: { content: { text: string }[] }; runConfig: { quotes: unknown; sourceRestricted?: boolean } } }[]
       >`SELECT submission FROM ai.queued_messages WHERE id = ${id}::uuid`;

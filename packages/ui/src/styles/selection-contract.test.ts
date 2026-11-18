@@ -128,6 +128,20 @@ describe("selection hooks", () => {
       expect(declarations(selector).get("background"), selector).toEqual(["var(--k2b-selected)"]);
   });
 
+  test("framed ChoiceList rows use platform selection without individual card edges", () => {
+    const frame = '.k2b-ui .k2b-choice-list[data-variant="list"]';
+    expect(declarations(frame).get("border")).toEqual(["1px solid var(--k2b-border)"]);
+    expect(declarations(frame).get("overflow")).toEqual(["hidden"]);
+    expect(declarations(`${frame} > .k2b-choice-list__option`).get("box-shadow")).toEqual(["none"]);
+    expect(declarations(`${frame} > .k2b-choice-list__option[aria-checked="true"]`).get("background")).toEqual([
+      "color-mix(in srgb, var(--k2b-selected) 50%, var(--k2b-surface))",
+    ]);
+    const focus = declarations(`${frame} > .k2b-choice-list__option:focus-visible`);
+    expect(focus.get("outline")).toEqual(["var(--k2b-focus-width) solid var(--k2b-edge-focus)"]);
+    expect(focus.get("outline-offset")).toEqual(["calc(-1 * var(--k2b-focus-width))"]);
+    expect(declarations(`${frame} > .k2b-choice-list__option:disabled`).get("opacity")).toEqual(["1"]);
+  });
+
   test("other controls retain their solid action fill", () => {
     for (const selector of ['.k2b-ui .k2b-date-grid button[aria-selected="true"]', '.k2b-ui .k2b-date-months button[data-selected="true"]'])
       expect(declarations(selector).get("background"), selector).toEqual(["var(--k2b-action-solid)"]);

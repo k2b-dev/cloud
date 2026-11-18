@@ -64,6 +64,30 @@ const { defaultBrowserType: _, ...phone } = devices[browserName === "webkit" ? "
 const profiles: Record<string, BrowserContextOptions> = { desktop: { viewport: { width: 1440, height: 900 } }, phone };
 for (const [name, options] of Object.entries(profiles))
   describe(name, () => {
+    test("phone toolbar clearance belongs only to an editor with its own toolbar", async () => {
+      const context = await browser.newContext(options);
+      try {
+        const page = await context.newPage();
+        const errors = pageErrors(page);
+        for (const ownToolbar of [true, false]) {
+          await page.goto(`${server.url.href}?state=empty${ownToolbar ? "" : "&toolbar=host"}`);
+          const editor = page.locator(".cm-content");
+          await editor.waitFor();
+          const host = page.locator(".k2b-ste-host");
+          const before = await host.boundingBox();
+          await editor.click();
+          await page.locator('.k2b-text-editor[data-active="true"]').waitFor();
+          expect(await host.evaluate((element) => getComputedStyle(element).paddingBottom)).toBe(
+            ownToolbar && name === "phone" ? "96px" : "0px",
+          );
+          if (!ownToolbar) expect(await host.boundingBox()).toEqual(before);
+        }
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
     test("toolbar formats the cell selection without a view switch; a source view returns to formatted", async () => {
       const context = await browser.newContext(options);
       try {

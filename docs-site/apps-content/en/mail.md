@@ -53,6 +53,11 @@ Draft rows lead with the subject, followed by recipients and a preview, with
 the edit time and person who started the draft. Members with write access can
 open a draft to continue it; readers can view the list.
 
+Recipient fields show addresses as plain text, with a small **×** after each
+address to remove it. Hovering or focusing **×** turns it red without adding a
+background; keyboard focus keeps its ring. Click an address to edit it. Invalid
+input stays in the field in red with an explanation so you can correct it.
+
 Assignee filters in search and saved-view summaries read **Assigned to a
 specific person**. Open the search editor to change the selected
 person; summaries do not show account IDs.
@@ -487,6 +492,7 @@ and restores unsaved changes kept in this browser.
 Replies and forwards are written in the conversation, not on a separate page.
 The reply box stands open at the place the browser chose (see the reader above);
 **Reply**, **Reply all**, **Forward**, a quote, and the **R** key all write into it.
+Focusing an empty reply keeps its starting height; longer replies grow with their content.
 Opening the conversation prepares a seed (`draft-seeds`); the first typed
 character creates the shared draft (`materialize`).
 A conversation has one reply draft. Reply, Reply all and Forward use the same

@@ -1006,8 +1006,8 @@ export default function AssistantWorkspace(props: Props) {
     const drafting = projectId || place || background ? undefined : draftCreation();
     if (drafting) return drafting;
     if (newConversation.loading() || composerPicking() > 0) return null;
-    await newConversation.mutate({ focus, projectId, navigate: shouldNavigate, ...(place ? { place } : {}), background });
-    return newConversation.data();
+    const outcome = await newConversation.mutate({ focus, projectId, navigate: shouldNavigate, ...(place ? { place } : {}), background });
+    return outcome === "success" ? newConversation.data() : null;
   };
   const createDraftConversation = () => {
     let creation!: Promise<AiConversation | null>;
