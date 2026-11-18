@@ -219,11 +219,7 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
   const icon = () =>
     state() === "refreshing" ? "ti ti-loader-2 k2b-spin" : state() === "error" ? "ti ti-exclamation-mark" : "ti ti-refresh";
   const announcement = () =>
-    state() === "refreshing"
-      ? (props.label ?? refreshMessages().refreshing)
-      : state() === "error"
-        ? refreshMessages().refreshFailed
-        : "";
+    state() === "refreshing" ? (props.label ?? refreshMessages().refreshing) : state() === "error" ? refreshMessages().refreshFailed : "";
 
   return (
     <div
