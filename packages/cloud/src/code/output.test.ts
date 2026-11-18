@@ -3,6 +3,7 @@ import { LIVE_LIMITS } from "../events/live-engine";
 import {
   appendCodeOutput,
   applyCodeOutputEvent,
+  CODE_OUTPUT_STEP_LIMITS,
   CodeOutputBatchSchema,
   type CodeOutputEvent,
   CodeOutputEventSchema,
@@ -10,11 +11,14 @@ import {
   CodeOutputWindowSchema,
   cleanCodeOutput,
   codeOutputParts,
+  codeOutputStepBytes,
+  codeOutputStepsBudget,
   emptyCodeOutput,
   isCodeOutputLogEntry,
+  isCodeOutputStepEntry,
 } from "./output";
 
-const line = (text: string): CodeOutputKnownEntry => ({
+const line = (text: string): Extract<CodeOutputKnownEntry, { kind: "log" }> => ({
   id: text,
   kind: "log" as const,
   at: "2030-01-02T00:00:00.000Z",
@@ -65,7 +69,7 @@ test("terminal sequences, C1 CSI, controls and direction marks are removed; HTML
 
 test("future entry kinds survive snapshot and live window accounting without becoming log entries", () => {
   const future = {
-    kind: "step",
+    kind: "future-step",
     id: "step-fixture",
     at: "2030-01-02T00:00:00.000Z",
     label: "Read document",
@@ -76,8 +80,7 @@ test("future entry kinds survive snapshot and live window accounting without bec
     endedAt: "2030-01-02T00:00:02.000Z",
     message: "Document unavailable",
   };
-  // Only log production is implemented today; tolerant reads do not grant a new
-  // raw step submission path before its sanitization and lifecycle are added.
+  // Tolerant reads do not allow unsupported kinds into the raw submission path.
   expect(CodeOutputBatchSchema.safeParse({ seq: 1, entries: [future], droppedLines: 0, droppedBytes: 0 }).success).toBe(false);
   const known = line("recent");
   const window = CodeOutputWindowSchema.parse({ ...emptyCodeOutput(1), seq: 1, entries: [future, known] });
@@ -104,3 +107,107 @@ test("future entry kinds survive snapshot and live window accounting without bec
     expect(CodeOutputWindowSchema.safeParse({ ...window, entries: [invalid] }).success).toBe(false);
   }
 });
+
+test("step revisions replace the same row in creation order in stored, live and replayed windows", () => {
+  const pending = {
+    kind: "step" as const,
+    id: "1:step:1",
+    at: "2030-01-02T00:00:00.000Z",
+    status: "pending" as const,
+    label: codeOutputParts("Read document"),
+  };
+  const second = { ...pending, id: "1:step:2", label: codeOutputParts("Save") };
+  const running = { ...pending, status: "running" as const, startedAt: pending.at };
+  const done = { ...running, status: "succeeded" as const, endedAt: pending.at, message: codeOutputParts("Done") };
+  const budget = LIVE_LIMITS.frameBytes;
+  let window = appendCodeOutput(emptyCodeOutput(1), [pending, line("between"), second], budget);
+  const initial = window;
+  window = appendCodeOutput(window, [running, done], budget);
+  expect(window.entries).toEqual([done, line("between"), second]);
+  expect(window.droppedLines).toBe(0);
+  expect(CodeOutputWindowSchema.parse(window)).toEqual(window);
+  const event: CodeOutputEvent = {
+    ...window,
+    seq: 2,
+    type: "code.output",
+    runId: "11111111-1111-4111-8111-111111111111",
+    budget,
+    entries: [running, done],
+  };
+  expect(applyCodeOutputEvent(initial, event)).toEqual({ ...window, seq: 2 });
+  expect(window.entries.filter(isCodeOutputStepEntry)).toHaveLength(2);
+});
+
+test("incoming steps use bounded run-local ordinals and known sanitized fields", () => {
+  const step = { kind: "step", id: 1, at: "2030-01-02T00:00:00.000Z", label: "Read", status: "pending" };
+  const batch = (entry: unknown) => ({ seq: 1, entries: [entry], droppedLines: 0, droppedBytes: 0 });
+  expect(CodeOutputBatchSchema.safeParse(batch(step)).success).toBe(true);
+  for (const change of [
+    { id: 0 },
+    { id: CODE_OUTPUT_STEP_LIMITS.count + 1 },
+    { id: "other-run" },
+    { status: "unknown" },
+    { label: "x".repeat(CODE_OUTPUT_STEP_LIMITS.textBytes) },
+    { kind: "future" },
+  ]) {
+    expect(CodeOutputBatchSchema.safeParse(batch({ ...step, ...change })).success).toBe(false);
+  }
+});
+
+test("retained steps keep creation order while more than a window of logs is displaced", () => {
+  const step = (id: number): Extract<CodeOutputKnownEntry, { kind: "step" }> => ({
+    kind: "step",
+    id: `1:step:${id}`,
+    at: line("").at,
+    status: "pending",
+    label: codeOutputParts(`Step ${id}`),
+  });
+  const first = step(1),
+    second = step(2);
+  let window = appendCodeOutput(emptyCodeOutput(1), [first, second], 32768);
+  for (let index = 0; index < 100; index++) window = appendCodeOutput(window, [line(`${index}: ${"x".repeat(1000)}`)], 32768);
+  expect(window.entries.filter(isCodeOutputStepEntry)).toEqual([first, second]);
+  expect(window.droppedLines).toBeGreaterThan(0);
+  const done = { ...first, status: "succeeded" as const, endedAt: first.at };
+  window = appendCodeOutput(window, [done], 32768);
+  expect(window.entries.filter(isCodeOutputStepEntry)).toEqual([done, second]);
+  expect(Buffer.byteLength(JSON.stringify(window.entries))).toBeLessThanOrEqual(32768);
+});
+
+test("the complete canonical short-handle count fits the pinned window and live event", () => {
+  const runId = "11111111-1111-4111-8111-111111111111";
+  const budget = codeOutputStepsBudget(runId, Number.MAX_SAFE_INTEGER, 32768);
+  const step = { label: "Upload!", icon: "upload", description: "Transfer!", message: "Done!" };
+  expect(CODE_OUTPUT_STEP_LIMITS.count * codeOutputStepBytes(step) + Buffer.byteLength("{}")).toBeLessThanOrEqual(budget);
+  expect(codeOutputStepsBudget(runId, 1, 1024)).toBe(1024);
+  const entry = {
+    kind: "step",
+    id: "1:step:1",
+    at: "2030-01-02T00:00:00.000Z",
+    label: codeOutputParts("Read"),
+    status: "failed",
+    reason: "run_ended",
+    message: [],
+  };
+  expect(CodeOutputWindowSchema.parse({ ...emptyCodeOutput(1), entries: [entry] }).entries).toEqual([entry]);
+  expect(CodeOutputWindowSchema.safeParse({ ...emptyCodeOutput(1), entries: [{ ...entry, reason: "future_reason" }] }).success).toBe(true);
+  expect(
+    CodeOutputBatchSchema.safeParse({
+      seq: 1,
+      entries: [{ ...entry, id: 1, label: "Read", message: "", reason: "run_ended" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    }).success,
+  ).toBe(false);
+});
+
+test.each(["ASCII", "é", "ह", "😀", "\ud800", "\udfff", '\u0000\n"\\'])(
+  "canonical reservations measure JSON UTF-8 bytes for %j without encoding globals",
+  (unit) => {
+    const text = unit.repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes + 1);
+    const textCost = Buffer.byteLength(JSON.stringify(text)) - Buffer.byteLength(JSON.stringify(""));
+    expect(codeOutputStepBytes({ label: text })).toBe(
+      CODE_OUTPUT_STEP_LIMITS.metadataBytes + Math.max(0, textCost - CODE_OUTPUT_STEP_LIMITS.textReserveBytes),
+    );
+  },
+);

@@ -1,7 +1,38 @@
-import { CODE_OUTPUT_INTERVAL_MS, type CodeOutputBatch, CodeOutputBatchSchema } from "@k2b/cloud/code";
+import {
+  CODE_OUTPUT_INTERVAL_MS,
+  CODE_OUTPUT_OPERATION,
+  CODE_OUTPUT_STEP_LIMITS,
+  CODE_OUTPUT_STEP_TEXT_FIELDS,
+  type CodeOutputBatch,
+  CodeOutputBatchSchema,
+  codeOutputEntryLines,
+  codeOutputStepsBudget,
+} from "@k2b/cloud/code";
 
-import type { RunnerLeaseProof } from "@k2b/cloud/code/runner";
+import type { RunnerLease, RunnerLeaseProof } from "@k2b/cloud/code/runner";
 import { LIVE_LIMITS } from "@k2b/cloud/events/limits";
+
+/** Engine-owned capture configuration: transient tiers keep their local console,
+ * while only durable Code invocations send the production output stream. */
+export function runnerOutputLimits(lease: Pick<RunnerLease, "runId" | "generation" | "token" | "trustTier" | "outputBytes">) {
+  const bytes =
+    LIVE_LIMITS.frameBytes -
+    Buffer.byteLength(JSON.stringify({ runId: lease.runId, generation: lease.generation, token: lease.token, batch: null }));
+  return {
+    enabled: !["chat", "test"].includes(lease.trustTier),
+    bytes,
+    intervalMs: CODE_OUTPUT_INTERVAL_MS,
+    operation: CODE_OUTPUT_OPERATION,
+    step: {
+      ...CODE_OUTPUT_STEP_LIMITS,
+      budget: codeOutputStepsBudget(lease.runId, lease.generation, lease.outputBytes ?? LIVE_LIMITS.frameBytes),
+      textBytes: Math.max(
+        0,
+        CODE_OUTPUT_STEP_LIMITS.textBytes - Math.ceil((LIVE_LIMITS.frameBytes - bytes) / CODE_OUTPUT_STEP_TEXT_FIELDS.length),
+      ),
+    },
+  };
+}
 
 const sum = (a: number, b: number) => Math.min(Number.MAX_SAFE_INTEGER, a + b);
 
@@ -29,7 +60,7 @@ export class RunnerOutput {
         this.#droppedLines,
         sum(
           batch.droppedLines,
-          batch.entries.reduce((total, line) => sum(total, line.text.split(/\r\n|\n|\r/).length), 0),
+          batch.entries.reduce((total, line) => sum(total, codeOutputEntryLines(line)), 0),
         ),
       );
       this.#droppedBytes = sum(this.#droppedBytes, sum(batch.droppedBytes, Buffer.byteLength(JSON.stringify(batch.entries))));
@@ -54,8 +85,10 @@ export class RunnerOutput {
         (!CodeOutputBatchSchema.safeParse(outgoing).success || Buffer.byteLength(JSON.stringify(outgoing)) > this.budget) &&
         entries.length
       ) {
-        const removed = entries.shift()!;
-        outgoing.droppedLines = sum(outgoing.droppedLines, removed.text.split(/\r\n|\n|\r/).length);
+        const log = entries.findIndex((entry) => entry.kind !== "step");
+        const [removed] = entries.splice(Math.max(0, log), 1);
+        if (!removed) break;
+        outgoing.droppedLines = sum(outgoing.droppedLines, codeOutputEntryLines(removed));
         outgoing.droppedBytes = sum(outgoing.droppedBytes, Buffer.byteLength(JSON.stringify(removed)));
       }
       if (Buffer.byteLength(JSON.stringify(outgoing)) > this.budget) throw new Error("runner_output_too_large");

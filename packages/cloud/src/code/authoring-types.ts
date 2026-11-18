@@ -189,6 +189,8 @@ export type KnownCodeErrorCode =
   | "code_owner_read"
   | "code_owner_reports_pending"
   | "code_owner_source_invalid"
+  | "code_output_invalid_step"
+  | "code_output_invalid_text"
   | "code_page_blocks"
   | "code_page_chart"
   | "code_page_child"
@@ -398,3 +400,20 @@ export type CodeGenerationOutput<Input> = Input extends { output: infer Output }
       ? CodeJsonOutput<Schema>
       : unknown
   : unknown;
+
+/** A run-local step. Its first terminal result wins; later calls do nothing. */
+export type CodeLogStep = {
+  start(): void;
+  succeed(message?: string): void;
+  fail(reason: string): void;
+  skip(reason: string): void;
+};
+export type CodeLogStepOptions = { icon?: string; description?: string };
+/** Structured output visible only to people who may manage the Code. */
+export type CodeLogger = {
+  info(text: string): void;
+  warn(text: string): void;
+  error(text: string): void;
+  step(label: string, options?: CodeLogStepOptions): CodeLogStep;
+  step(options: CodeLogStepOptions & { label: string }): CodeLogStep;
+};

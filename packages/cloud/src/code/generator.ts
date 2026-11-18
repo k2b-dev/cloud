@@ -318,7 +318,9 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
   );
   declarations.push("export declare const secrets: Readonly<Record<string, CodeSecret>>;", "export declare const http: CodeHttp;");
   if (options.mode !== "code_run") declarations.push("export declare const db: CodeDatabase;");
+  declarations.push("export declare const logger: CodeLogger;");
   const runtimeExports = [
+    "export const logger = __codeSdk.logger;",
     "export const secrets = __codeSdk.secrets;",
     "export const http = __codeSdk.http;",
     "export { __codeSdk };",

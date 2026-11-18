@@ -499,7 +499,18 @@ test("generated SDKs compile with tsgo and accept dynamic resource IDs and rejec
     writeFile(join(dir, "ids.ts"), 'export const workshop = "imported-shop";\n'),
     writeFile(
       join(dir, "valid.ts"),
-      `import { app, work_shop, owner, http, Chart, type CodeChartDescription, type CodePageTree } from "@sdk";
+      `import { app, work_shop, owner, http, Chart, logger, type CodeLogger, type CodeLogStep, type CodeChartDescription, type CodePageTree } from "@sdk";
+const log: CodeLogger = logger;
+const step: CodeLogStep = log.step("Read", {icon:"file-text",description:"Read the document"});
+const save = logger.step({label:"Save"});
+step.start(); step.succeed("Done"); step.fail("Unavailable"); save.skip("Already saved");
+logger.info("Information"); logger.warn("Warning"); logger.error("Error");
+// @ts-expect-error a failure reason is required
+step.fail();
+// @ts-expect-error a skipped step needs a reason
+save.skip();
+// @ts-expect-error labels are text
+logger.step(123);
 // @ts-expect-error Button is the only button component
 import { Action } from "@sdk";
 import { work_shop as personal } from "./personal";

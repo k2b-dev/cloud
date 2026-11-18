@@ -9,9 +9,12 @@ import {
   CodeOutputBatchSchema,
   type CodeOutputEvent,
   CodeOutputEventSchema,
+  CodeOutputStepEntrySchema,
   type CodeOutputWindow,
   CodeOutputWindowSchema,
   codeDetailsKey,
+  codeOutputEntryLines,
+  codeOutputStepsBudget,
   emptyCodeOutput,
 } from "@k2b/cloud/code";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
@@ -21,6 +24,9 @@ import { purposeSecretCipher } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
 import {
+  assembleCodeOutput,
+  bindOutputPending,
+  codeOutputFragments,
   compileOutputRedaction,
   type OutputRedactor,
   OutputRedactionPendingSchema as PendingSchema,
@@ -58,6 +64,10 @@ const StateSchema = z.object({
   countedDropLines: z.number(),
   countedDropBytes: z.number(),
   window: CodeOutputWindowSchema,
+  steps: z.record(z.string(), CodeOutputStepEntrySchema).default({}),
+  stepReservations: z
+    .record(z.string(), z.object({ bytes: z.number().nonnegative().safe(), rejected: z.boolean().optional() }))
+    .default({}),
 });
 type State = z.infer<typeof StateSchema>;
 const tokenDigest = (token: string) => new Bun.CryptoHasher("sha256").update(token).digest("hex");
@@ -87,6 +97,8 @@ export async function openCodeOutput(
     countedDropLines: 0,
     countedDropBytes: 0,
     window: emptyCodeOutput(lease.generation),
+    steps: {},
+    stepReservations: {},
   };
   await redis.send("EVAL", [
     // Replace only our encoded timestamp: re-encoding the state with Lua cjson
@@ -198,10 +210,12 @@ async function redactorFor(claims: Pick<CodeRunTokenClaims, "runId" | "generatio
   return redactor;
 }
 export function sanitizeCodeOutput(batch: CodeOutputBatch, replacements: ReadonlyMap<string, string>) {
-  return redactOutput(batch.entries, compileOutputRedaction(replacements), null, true, {
-    lost: batch.droppedLines > 0 || batch.droppedBytes > 0,
-    skip: 0,
-  }).entries;
+  return assembleCodeOutput(
+    redactOutput(codeOutputFragments(batch.entries, 0), compileOutputRedaction(replacements), null, true, {
+      lost: batch.droppedLines > 0 || batch.droppedBytes > 0,
+      skip: 0,
+    }).entries,
+  );
 }
 const sum = (a: number, b: number) => Math.min(Number.MAX_SAFE_INTEGER, a + b);
 async function uncountedDrops(runId: string, state: State) {
@@ -262,7 +276,7 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
       String(
         sum(
           batch.droppedLines,
-          batch.entries.reduce((total, line) => sum(total, line.text.split(/\r\n|\n|\r/).length), 0),
+          batch.entries.reduce((total, line) => sum(total, codeOutputEntryLines(line)), 0),
         ),
       ),
       String(sum(batch.droppedBytes, Buffer.byteLength(JSON.stringify(batch.entries)))),
@@ -278,37 +292,47 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
   const pending = state.pending
     ? PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))))
     : null;
-  const redacted = redactOutput(batch.entries, await redactorFor(claims, state.deadlineAt, state.redactionRevision), pending, false, {
-    // Counters locate no individual gap within a batch. Sequence gaps also cover
-    // failed delivery and saturated loss counters without touching the hot-path fence.
-    lost: batch.droppedLines > 0 || batch.droppedBytes > 0 || counts.seq > state.inputSeq || batch.seq > state.inputSeq + 1,
-    skip: state.redactionSkip,
-    // Core cadence/sequence gaps precede this batch; supervisor counters cannot
-    // locate a gap within it. Preserve that distinction when resuming output.
-    lossBeforeBatch: batch.droppedLines === 0 && batch.droppedBytes === 0,
-  });
-  // Identity belongs to the accepted stream position, survives window eviction and
-  // replay, and needs neither caller-selected keys nor another persistence model.
-  const entries = redacted.entries.map((entry, index) => ({
-    ...entry,
-    id: `${state.generation}:${state.window.seq + 1}:${index}`,
-  }));
-  const dropped = { lines: sum(batch.droppedLines, redacted.dropped.lines), bytes: sum(batch.droppedBytes, redacted.dropped.bytes) };
   // Reserve the maximum encoded counter/sequence widths, derived from the safe-integer wire schema.
   // Trim in linear time before windowing: one raw text can contain many newline-separated lines.
-  const envelopeBytes =
-    Buffer.byteLength(
-      JSON.stringify({
-        ...emptyCodeOutput(state.generation),
-        seq: Number.MAX_SAFE_INTEGER,
-        droppedLines: Number.MAX_SAFE_INTEGER,
-        droppedBytes: Number.MAX_SAFE_INTEGER,
-        type: "code.output",
-        runId: claims.runId,
-        budget: state.budget,
-      }),
-    ) - Buffer.byteLength(JSON.stringify([]));
-  const frame = appendCodeOutput(emptyCodeOutput(state.generation), entries, LIVE_LIMITS.frameBytes - envelopeBytes, dropped);
+  const stepBudget = codeOutputStepsBudget(claims.runId, state.generation, state.budget);
+  const frameBudget = codeOutputStepsBudget(claims.runId, state.generation, LIVE_LIMITS.frameBytes);
+  // Both ends reserve the canonical form, not the smaller author input. The
+  // per-step ledger also bounds redaction expansion without consuming later slots.
+  const admissionDrops = { lines: 0, bytes: 0 };
+  const fragments = codeOutputFragments(batch.entries, state.generation, state.steps, stepBudget, admissionDrops, state.stepReservations);
+  const redacted = redactOutput(
+    fragments,
+    await redactorFor(claims, state.deadlineAt, state.redactionRevision),
+    bindOutputPending(pending, state.steps),
+    false,
+    {
+      // Counters locate no individual gap within a batch. Sequence gaps also cover
+      // failed delivery and saturated loss counters without touching the hot-path fence.
+      lost:
+        admissionDrops.lines > 0 ||
+        batch.droppedLines > 0 ||
+        batch.droppedBytes > 0 ||
+        counts.seq > state.inputSeq ||
+        batch.seq > state.inputSeq + 1,
+      skip: state.redactionSkip,
+      // Core cadence/sequence gaps precede this batch; supervisor counters cannot
+      // locate a gap within it. Preserve that distinction when resuming output.
+      lossBeforeBatch: admissionDrops.lines === 0 && batch.droppedLines === 0 && batch.droppedBytes === 0,
+    },
+  );
+  redacted.dropped.lines += admissionDrops.lines;
+  redacted.dropped.bytes += admissionDrops.bytes;
+  // Identity belongs to the accepted stream position, survives window eviction and
+  // replay, and needs neither caller-selected keys nor another persistence model.
+  const entries = assembleCodeOutput(redacted.entries, {
+    reservations: state.stepReservations,
+    dropped: redacted.dropped,
+  }).map((entry, index) => ({
+    ...entry,
+    id: entry.kind === "step" ? entry.id : `${state.generation}:${state.window.seq + 1}:${index}`,
+  }));
+  const dropped = { lines: sum(batch.droppedLines, redacted.dropped.lines), bytes: sum(batch.droppedBytes, redacted.dropped.bytes) };
+  const frame = appendCodeOutput(emptyCodeOutput(state.generation), entries, frameBudget, dropped);
   const nextWindow = appendCodeOutput({ ...withDrops(state, counts), seq: state.window.seq + 1 }, frame.entries, state.budget, {
     lines: frame.droppedLines,
     bytes: frame.droppedBytes,
@@ -378,7 +402,7 @@ export async function replayCodeOutput(runId: string): Promise<CodeOutputWindow>
 /** Freeze each attempt before its durable end, including retries. A tombstone also
  * fences delayed admission of that generation; heartbeats never revive a closed lease.
  */
-export async function closeCodeOutput(runId: string, generation?: number): Promise<CodeOutputWindow> {
+export async function closeCodeOutput(runId: string, generation?: number, outcome = "failed"): Promise<CodeOutputWindow> {
   const raw = await redis.send("EVAL", [
     `local raw=redis.call('GET',KEYS[1]); local generation=tonumber(ARGV[1])
     if raw then local s=cjson.decode(raw); generation=generation or s.generation end
@@ -398,22 +422,33 @@ export async function closeCodeOutput(runId: string, generation?: number): Promi
   let window = withDrops(state, counts);
   if (state.pending) {
     const pending = PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))));
-    if ((pending.hidden ?? 0) < pending.text.length || pending.covered) {
+    const settled = redactOutput([], compileOutputRedaction(new Map()), bindOutputPending(pending, state.steps), true);
+    const final = assembleCodeOutput(settled.entries, { reservations: state.stepReservations, dropped: settled.dropped });
+    window = {
+      ...window,
+      droppedLines: sum(window.droppedLines, settled.dropped.lines),
+      droppedBytes: sum(window.droppedBytes, settled.dropped.bytes),
+    };
+    if (final.length)
       window = appendCodeOutput(
         { ...window, seq: window.seq + 1 },
-        [
-          {
-            kind: pending.kind,
-            level: pending.level,
-            at: pending.at,
-            id: `${state.generation}:${window.seq + 1}:0`,
-            text: [{ type: "secret", name: pending.name }],
-          },
-        ],
+        final.map((entry, index) => ({
+          ...entry,
+          id: entry.kind === "step" ? entry.id : `${state.generation}:${window.seq + 1}:${index}`,
+        })),
         state.budget,
       );
-    }
   }
+  const ended = Object.values(state.steps)
+    .filter((entry) => entry.status === "running")
+    .map((entry) => ({
+      ...entry,
+      status: outcome === "succeeded" ? ("succeeded" as const) : ("failed" as const),
+      endedAt: new Date(Math.max(Date.now(), Date.parse(entry.startedAt ?? entry.at))).toISOString(),
+      ...(outcome === "succeeded" ? {} : { reason: "run_ended" as const, message: [] }),
+    }));
+  if (ended.length) window = appendCodeOutput({ ...window, seq: window.seq + 1 }, ended, state.budget);
+  for (const entry of ended) state.steps[entry.id] = entry;
   const next: State = { ...state, pending: null, redactionSkip: 0, window, countedDropLines: counts.lines, countedDropBytes: counts.bytes };
   await redis.send("EVAL", [
     `if redis.call('GET',KEYS[1])~=ARGV[1] then return 0 end
@@ -427,7 +462,7 @@ export async function closeCodeOutput(runId: string, generation?: number): Promi
   return window;
 }
 /** One guarded write at the retained run's terminal transition, including recovery. */
-export async function persistCodeOutput(runId: string, db: SQL = sql, generation?: number) {
-  const window = await closeCodeOutput(runId, generation);
+export async function persistCodeOutput(runId: string, db: SQL = sql, generation?: number, outcome = "failed") {
+  const window = await closeCodeOutput(runId, generation, outcome);
   await db`UPDATE code.runs SET console_output=${JSON.stringify(window)}::text::jsonb WHERE id=${runId}::uuid AND console_output IS NULL`;
 }

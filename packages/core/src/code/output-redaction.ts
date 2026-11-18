@@ -1,8 +1,25 @@
-import { type CodeOutputBatch, CodeOutputBatchSchema, type CodeOutputKnownEntry, cleanCodeOutput, codeOutputParts } from "@k2b/cloud/code";
+import {
+  CODE_OUTPUT_STEP_LIMITS,
+  CODE_OUTPUT_STEP_TEXT_FIELDS,
+  type CodeOutputBatch,
+  type CodeOutputKnownEntry,
+  CodeOutputLogInputSchema,
+  CodeOutputStepEntrySchema,
+  type CodeOutputText,
+  cleanCodeOutput,
+  codeOutputParts,
+  codeOutputStepBytes,
+} from "@k2b/cloud/code";
 
 import { z } from "zod";
 
-type RedactedOutputEntry = Omit<CodeOutputKnownEntry, "id">;
+const StepFragmentSchema = z.object({
+  entry: CodeOutputStepEntrySchema,
+  field: z.enum(CODE_OUTPUT_STEP_TEXT_FIELDS),
+});
+const FragmentSchema = CodeOutputLogInputSchema.extend({ step: StepFragmentSchema.optional() });
+type Fragment = z.infer<typeof FragmentSchema>;
+type RedactedOutputEntry = Omit<Fragment, "text"> & { text: CodeOutputText };
 type Match = { length: number; marker: string };
 type Node = {
   next: Map<string, Node>;
@@ -11,7 +28,7 @@ type Node = {
   match?: Match;
   descendant?: string;
 };
-export const OutputRedactionPendingSchema = CodeOutputBatchSchema.shape.entries.element.extend({
+export const OutputRedactionPendingSchema = FragmentSchema.extend({
   text: z.string(),
   name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/),
   /** UTF-16 prefix already counted as suppressed; never release it as plain text. */
@@ -145,7 +162,7 @@ function scan(text: string, redactor: OutputRedactor, covered?: Span) {
  * join a pre-gap candidate to post-gap text or release it after a mismatch.
  */
 export function redactOutput(
-  input: CodeOutputBatch["entries"],
+  input: readonly Fragment[],
   redactor: OutputRedactor,
   pending: OutputRedactionPending = null,
   final = false,
@@ -157,11 +174,17 @@ export function redactOutput(
   const hadPending = pending !== null;
   if (pending && ((final && !input.length) || continuity.lost)) {
     if ((pending.hidden ?? 0) < pending.text.length || pending.covered)
-      entries.push({ kind: pending.kind, level: pending.level, at: pending.at, text: [{ type: "secret", name: pending.name }] });
+      entries.push({
+        kind: pending.kind,
+        level: pending.level,
+        at: pending.at,
+        ...(pending.step ? { step: pending.step } : {}),
+        text: [{ type: "secret", name: pending.name }],
+      });
     pending = null;
   }
-  const cleaned = input.flatMap(({ kind, level, at, text }) =>
-    text.split(/\r\n|\n|\r/).map((text) => ({ kind, level, at, text: cleanCodeOutput(text) })),
+  const cleaned = input.flatMap(({ text, ...metadata }) =>
+    text.split(/\r\n|\n|\r/).map((text) => ({ ...metadata, text: cleanCodeOutput(text) })),
   );
   // With a resolved previous boundary and loss known to precede this whole batch,
   // unrelated text can resume immediately. Unknown positions and open candidates
@@ -173,13 +196,15 @@ export function redactOutput(
     skip === 0 &&
     !couldContinueOutput(cleaned.map((fragment) => fragment.text).join(""), redactor.spellings);
   const suppressBatch = continuity.lost && redactor.longest > 0 && !resumes;
+  const suppressedSteps = new Set<object>();
   const fragments = [
     ...(pending ? [{ ...pending, suppressed: (pending.hidden ?? 0) === pending.text.length && !pending.covered }] : []),
     ...cleaned.map((fragment) => {
       const suppressed = suppressBatch || skip > 0;
       if (suppressed) {
         if (!suppressBatch) skip = Math.max(0, skip - fragment.text.length);
-        dropped.lines++;
+        if (!fragment.step || !suppressedSteps.has(fragment.step.entry)) dropped.lines++;
+        if (fragment.step) suppressedSteps.add(fragment.step.entry);
         dropped.bytes += Buffer.byteLength(JSON.stringify(fragment));
       }
       return { ...fragment, suppressed };
@@ -234,6 +259,7 @@ export function redactOutput(
     for (const fragment of fragments) {
       if (position + fragment.text.length > metadataAt) {
         held = {
+          ...(fragment.step ? { step: fragment.step } : {}),
           kind: fragment.kind,
           level: fragment.level,
           at: fragment.at,
@@ -252,9 +278,199 @@ export function redactOutput(
     ...fragments.flatMap((fragment, index) => {
       const before = start;
       start += fragment.text.length;
-      if (!emitted[index] && (fragment.suppressed || (held && before >= end))) return [];
-      return [{ kind: fragment.kind, level: fragment.level, at: fragment.at, text: codeOutputParts(cleanCodeOutput(emitted[index]!)) }];
+      if (!emitted[index] && !fragment.step && (fragment.suppressed || (held && before >= end))) return [];
+      return [
+        {
+          kind: fragment.kind,
+          level: fragment.level,
+          at: fragment.at,
+          ...(fragment.step ? { step: fragment.step } : {}),
+          text: codeOutputParts(cleanCodeOutput(emitted[index]!)),
+        },
+      ];
     }),
   );
+  if (held?.step) {
+    // A deferred suffix may span several revisions of the same step. Its later
+    // completion must update the latest snapshot, without restoring an old status.
+    const stepId = held.step.entry.id;
+    const latest = input.findLast((fragment) => fragment.step?.entry.id === stepId)?.step;
+    if (latest) held.step = { ...held.step, entry: latest.entry };
+  }
   return { entries, pending: held, skip, dropped };
+}
+
+/** Step fields participate in the same continuous matcher as console text. Only sanitized
+ * snapshots travel in fragment metadata. An unresolved field suffix stays in the encrypted
+ * pending envelope and completes the same step ID in a later delta or at final settlement.
+ */
+export type OutputSteps = Record<string, z.infer<typeof CodeOutputStepEntrySchema>>;
+/** Numeric reservations carry no author text. A tombstone remembers a rejected ID until
+ * this attempt ends, so further revisions cannot introduce another continuity gap.
+ * IDs are limited by the raw schema to the same lifetime handle count. */
+export type OutputStepReservations = Record<string, { bytes: number; rejected?: boolean }>;
+const terminalStep = (status: string) => ["succeeded", "failed", "skipped"].includes(status);
+/** Accepted metadata is canonical, bounded by the admitted handle count and output
+ * budget. Revisions advance lifecycle only; repeated text never re-enters the matcher.
+ */
+const stepReserve = (entry: z.infer<typeof CodeOutputStepEntrySchema>) =>
+  Buffer.byteLength(
+    JSON.stringify({
+      ...entry,
+      status: "succeeded",
+      startedAt: entry.at,
+      endedAt: entry.at,
+      reason: "run_ended",
+      message: entry.message ?? [],
+    }),
+  );
+export function codeOutputFragments(
+  input: CodeOutputBatch["entries"],
+  generation: number,
+  steps: OutputSteps = {},
+  budget = Infinity,
+  dropped = { lines: 0, bytes: 0 },
+  reservations: OutputStepReservations = {},
+): Fragment[] {
+  return input.flatMap((entry): Fragment[] => {
+    if (entry.kind === "log") return [entry];
+    // Capture timestamps have millisecond precision in the host. Normalize the
+    // transport spelling before budgeting lifecycle metadata (ISO permits longer fractions).
+    const timestamp = (value: string) => {
+      const at = Date.parse(value);
+      return Number.isFinite(at) ? new Date(at).toISOString() : null;
+    };
+    const at = timestamp(entry.at);
+    const startedAt = entry.startedAt === undefined ? undefined : timestamp(entry.startedAt);
+    const endedAt = entry.endedAt === undefined ? undefined : timestamp(entry.endedAt);
+    if (!at || startedAt === null || endedAt === null) return [];
+    entry = { ...entry, at, startedAt, endedAt };
+    if (!Number.isSafeInteger(entry.id) || entry.id < 1 || entry.id > CODE_OUTPUT_STEP_LIMITS.count) return [];
+    const id = `${generation}:step:${entry.id}`;
+    if (reservations[id]?.rejected) return [];
+    let safe = steps[id];
+    const first = safe === undefined;
+    if (safe) {
+      if (terminalStep(safe.status) || entry.at !== safe.at) return [];
+      const allowed = safe.status === "pending" ? ["running", "failed", "skipped"].includes(entry.status) : terminalStep(entry.status);
+      if (!allowed) return [];
+      // Capture time is author-provided, but lifecycle must never move backwards.
+      const priorAt = safe.startedAt ?? safe.at;
+      if (entry.status === "running") {
+        if (!entry.startedAt || entry.startedAt < priorAt || entry.endedAt !== undefined) return [];
+      } else {
+        if (!entry.endedAt || entry.endedAt < priorAt) return [];
+        if (entry.startedAt !== safe.startedAt) return [];
+      }
+    } else {
+      // Missing earlier deltas can make the first admitted revision running or
+      // terminal. It still has to carry a complete, monotone lifecycle snapshot.
+      if (entry.status === "pending" && (entry.startedAt || entry.endedAt)) return [];
+      if (entry.status === "running" && (!entry.startedAt || entry.endedAt)) return [];
+      if (terminalStep(entry.status) && (!entry.endedAt || (entry.status === "succeeded" && !entry.startedAt))) return [];
+      if (entry.startedAt && entry.startedAt < entry.at) return [];
+      if (entry.endedAt && entry.endedAt < (entry.startedAt ?? entry.at)) return [];
+      safe = {
+        kind: "step",
+        id,
+        at: entry.at,
+        status: entry.status,
+        label: [],
+        ...(entry.description === undefined ? {} : { description: [] }),
+        ...(entry.startedAt === undefined ? {} : { startedAt: entry.startedAt }),
+        ...(entry.endedAt === undefined ? {} : { endedAt: entry.endedAt }),
+      };
+    }
+    const previous = reservations[id]?.bytes ?? 0;
+    // Only new metadata and the first completion message participate. Repeated
+    // author copies neither consume another reservation nor enter the matcher.
+    const cost = first
+      ? codeOutputStepBytes({ ...entry, message: terminalStep(entry.status) ? entry.message : undefined })
+      : previous +
+        codeOutputStepBytes({ message: terminalStep(entry.status) ? entry.message : undefined }) -
+        CODE_OUTPUT_STEP_LIMITS.metadataBytes;
+    const total = Object.values(reservations).reduce<number>((size, value) => size + value.bytes, 2) - previous + cost;
+    if (total > budget) {
+      reservations[id] = { bytes: previous, rejected: true };
+      dropped.lines++;
+      dropped.bytes += Buffer.byteLength(JSON.stringify(entry));
+      return [];
+    }
+    reservations[id] = { bytes: cost };
+    if (first) steps[id] = safe;
+    else {
+      safe.status = entry.status;
+      if (entry.startedAt !== undefined) safe.startedAt = entry.startedAt;
+      if (entry.endedAt !== undefined) safe.endedAt = entry.endedAt;
+    }
+    const snapshot = safe;
+    const fields = CODE_OUTPUT_STEP_TEXT_FIELDS.filter((field) =>
+      field === "message" ? terminalStep(entry.status) && entry.message !== undefined : first && entry[field] !== undefined,
+    );
+    if (!fields.length) return [{ kind: "log", level: "info", at: safe.at, text: "", step: { entry: safe, field: "label" } }];
+    return fields.map((field) => ({
+      kind: "log",
+      level: "info",
+      at: entry.at,
+      text: entry[field] ?? "",
+      step: { entry: snapshot, field },
+    }));
+  });
+}
+/** JSON storage removes aliases. Rebind the deferred field to the canonical latest
+ * lifecycle before scanning/finalizing; its already-redacted text is never replaced.
+ */
+export function bindOutputPending(pending: OutputRedactionPending, steps: OutputSteps) {
+  if (pending?.step && steps[pending.step.entry.id]) pending.step.entry = steps[pending.step.entry.id]!;
+  return pending;
+}
+export function assembleCodeOutput(
+  fragments: readonly RedactedOutputEntry[],
+  bounded?: { reservations: OutputStepReservations; dropped: { lines: number; bytes: number } },
+): Array<Omit<Extract<CodeOutputKnownEntry, { kind: "log" }>, "id"> | Extract<CodeOutputKnownEntry, { kind: "step" }>> {
+  const entries: ReturnType<typeof assembleCodeOutput> = [];
+  const snapshots = new Set<object>();
+  for (const { step, ...fragment } of fragments) {
+    if (!step) {
+      entries.push(fragment);
+      continue;
+    }
+    if (step.field === "icon") {
+      // Icons are identifiers, never display text or secret placeholders.
+      const value = (step.entry.icon ?? "") + fragment.text.map((part) => (part.type === "text" ? part.text : "")).join("");
+      if (fragment.text.every((part) => part.type === "text") && value.length <= 64 && /^[a-z0-9-]+$/.test(value)) step.entry.icon = value;
+      else delete step.entry.icon;
+    } else {
+      const parts = step.entry[step.field] ?? [];
+      parts.push(...fragment.text);
+      step.entry[step.field] = parts;
+    }
+    const reserved = bounded?.reservations[step.entry.id]?.bytes;
+    let excess =
+      typeof reserved === "number" ? stepReserve(step.entry) + Buffer.byteLength(JSON.stringify(step.entry.id)) + 2 - reserved : 0;
+    if (bounded && excess > 0) {
+      // New text parts use only the remaining admitted metadata budget. Never
+      // evict already accepted fields or split a structural secret marker.
+      if (step.field === "icon") delete step.entry.icon;
+      else {
+        const parts = step.entry[step.field] ?? [];
+        // Account each removed part once; repeated full-map serialization here
+        // would make trimming expanded named parts quadratic in their count.
+        while (parts.length && excess > 0) {
+          const part = parts.pop()!;
+          const bytes = Buffer.byteLength(JSON.stringify(part));
+          excess -= bytes + (parts.length ? 1 : 0);
+          bounded.dropped.bytes += bytes;
+        }
+      }
+      bounded.dropped.lines++;
+    }
+    // The same safe snapshot may have several fields/fragments. Preserve its first
+    // stream position; the shared window reducer upserts separate revisions by ID.
+    if (!snapshots.has(step.entry)) {
+      snapshots.add(step.entry);
+      entries.push(step.entry);
+    }
+  }
+  return entries;
 }
