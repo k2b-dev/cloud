@@ -24,6 +24,8 @@ export function runLedgerFixture(failed = false) {
       title: "Lieferschein #4711",
       state: run.state,
       reason: failed ? "Der Beleg konnte nicht abgelegt werden." : null,
+      untilThen: { items: [{ text: "Lieferschein gelesen · 1 bestätigt" }], more: 0, moreText: null },
+      complete: failed,
     });
   if (failed) {
     const failure = codePageFixture("run-failed");
