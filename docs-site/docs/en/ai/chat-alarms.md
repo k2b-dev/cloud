@@ -2,7 +2,7 @@
 title: Scheduled chat messages
 navTitle: Chat alarms
 section: AI
-order: 1035
+order: 1032
 description: Schedule Gustav messages in an owned chat and handle missed alarms.
 tags: [ai, chat, scheduling]
 updated: 2026-11-18
