@@ -125,7 +125,9 @@ describe("ApprovalCard draft and host parity", () => {
         await page.waitForFunction(
           () => document.querySelector('[data-host="chat"] .cloud-approval-frame')?.getAttribute("data-mode") === "approve",
         );
-        await settled(page);
+        // This check measures the frame, not the dialog buttons' colour transitions. In WebKit the dialog's
+        // disabled → enabled transition can start after the mode changes; wait for the card's next layout frames.
+        await card.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
         const after = (await card.boundingBox())!;
         expect(await sentenceHeight()).toBe(sentenceBefore);
         for (const key of ["x", "y", "width"] as const) expect(Math.abs(after[key] - before[key])).toBeLessThanOrEqual(1);

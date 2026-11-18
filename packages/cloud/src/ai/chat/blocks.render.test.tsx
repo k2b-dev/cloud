@@ -18,6 +18,17 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
+const { toolActionCard } = await import("./action-card");
+const { legacyOutcomeWords } = await import("./tool-action-words");
+const { ApprovalDetails } = await import("../../approvals/ui");
+const renderApprovalDetails = (value: AiTurnBlock, locale = "en") => {
+  if (value.kind !== "tool") throw new Error("tool block missing");
+  const card = toolActionCard(value, { locale, timeZone: "UTC", outcome: legacyOutcomeWords(value, locale, "UTC") });
+  return renderToString(() => createComponent(ApprovalDetails, { card }));
+};
+const quietReceipt = (html: string) =>
+  (html.match(/<p class="k2b-notice-card__description"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "").replace(/<[^>]*>/g, "");
+
 const { AiReaderTimeZoneProvider } = await import("./action-sentences");
 const { AiTurnBlockView } = await import("./blocks");
 const { capabilityResultView } = await import("../result-view");
@@ -920,21 +931,23 @@ describe("capability tool presentation", () => {
           },
         }),
       );
-    // A call without a review asks Cloud's sentence for it, in card v4: no tinted card, no split button.
+    // The v10 frame names the app accessibly; the full input is deferred to the shared detail dialog.
     const html = renderApproval(block("awaiting_approval"));
-    expect(html).toContain("k2b-chat-decision__sentence");
+    expect(html).toContain('aria-label="Approval · Contacts"');
+    expect(html).toContain('data-approval-frame=""');
     expect(html).toContain("List contacts?");
     expect(html).toContain("I'm asking because Contacts always asks for this.");
     expect(html).toContain('data-variant="ai"');
-    expect(html).toContain("List contacts</span>");
-    expect(html).toContain("Don't run</span>");
+    expect(html).toContain("List contacts");
+    expect(html).toContain("Don't run");
     expect(html).not.toContain("Contacts: List contacts");
     expect(html).not.toContain("Review the validated arguments");
     expect(html).not.toContain("ai-approval");
     expect(html).not.toContain("k2b-split-button");
     expect(html).not.toContain("Always approve");
     // A question with nothing else to show shows the call's input in its details, as plain text.
-    expect(html).toContain('<p class="cloud-blocks__text">{\n  "limit": 10\n}</p>');
+    expect(html).not.toContain("cloud-action-details");
+    expect(renderApprovalDetails(block("awaiting_approval"))).toContain('<p class="cloud-blocks__text">{\n  "limit": 10\n}</p>');
 
     const rememberable = block("awaiting_approval");
     if (rememberable.kind !== "tool" || !rememberable.approval) throw new Error("approval block missing");
@@ -959,10 +972,13 @@ describe("capability tool presentation", () => {
       ],
       approvalScope: "book:default",
     };
-    const customHtml = renderApproval(customReview);
+    const compactHtml = renderApproval(customReview);
+    const customHtml = renderApprovalDetails(customReview);
+    expect(compactHtml).toContain("The draft includes an external recipient.");
+    expect(compactHtml).toContain("See everything");
+    expect(compactHtml).not.toContain("Release follow-up");
     // The old message is the question as it is; its details read as its lines did, as plain text, and times read in
     // the reader's zone instead of as ISO text.
-    expect(customHtml).toContain("The draft includes an external recipient.");
     expect(customHtml).toContain("Subject: Release follow-up\nRecipients: Ada\nSend on: Aug 20, 2026\nSend at: Aug 20, 2026, 07:00");
     expect(customHtml).toContain("Proposed body: Hello **Ada**");
     expect(customHtml).toContain("&lt;script>alert('plain text')&lt;/script>");
@@ -974,7 +990,7 @@ describe("capability tool presentation", () => {
     expect(customHtml).toContain('href="/app/contacts"');
     expect(customHtml).toContain('href="/app/mail/MbA123/drafts/DrG789"');
     expect(customHtml).toContain(">Edit draft</a>");
-    expect(customHtml.indexOf(">Edit draft</a>")).toBeLessThan(customHtml.indexOf("k2b-chat-decision__answers"));
+    expect(customHtml).not.toContain("data-approval-primary");
     expect(customHtml).not.toMatch(/border-[ty]\b/);
     expect(customHtml).not.toContain("book:default");
   });
@@ -1011,8 +1027,8 @@ describe("capability tool presentation", () => {
     const approval = render(german("awaiting_approval"), "de");
     expect(approval).toContain("Mail-Entwurf erstellen?");
     expect(approval).toContain("Ich frage, weil E-Mail hier jedes Mal fragt.");
-    expect(approval).toContain("Nicht ausführen</span>");
-    expect(approval).toContain("Mail-Entwurf erstellen</span>");
+    expect(approval).toContain("Nicht ausführen");
+    expect(approval).toContain("Mail-Entwurf erstellen");
     expect(approval).not.toContain("Immer freigeben");
     expect(approval).not.toContain("E-Mail: Mail-Entwurf erstellen");
     expect(approval).not.toMatch(/(Action|Reject|Always approve|Don't run)<\/span>/);
@@ -1027,7 +1043,8 @@ describe("capability tool presentation", () => {
     };
     const reviewedHtml = render(reviewed, "de");
     expect(reviewedHtml).toContain("Entwurf im Postfach Vertrieb speichern.");
-    expect(reviewedHtml).toContain("Betreff: Angebot");
+    expect(reviewedHtml).not.toContain("Betreff: Angebot");
+    expect(renderApprovalDetails(reviewed, "de")).toContain("Betreff: Angebot");
 
     // An app Action's outcome is one line in the same place: running, done, failed, rejected.
     const running = render(german("running"), "de");
@@ -1056,10 +1073,10 @@ describe("capability tool presentation", () => {
     // English readers keep the English chrome around whatever title the server presented.
     const english = render(block("awaiting_approval"), "en");
     expect(english).toContain("List contacts?");
-    expect(english).toContain("Don't run</span>");
+    expect(english).toContain("Don't run");
     expect(english).not.toContain("Nicht ausführen");
   });
-  test("offers the chat link where remembering for the chat exists, never Always, and names a website for a code run's request", () => {
+  test("defers remembering to the detail dialog, never offers Always, and keeps the full website request in its details", () => {
     const render = (approval: NonNullable<Extract<AiTurnBlock, { kind: "tool" }>["approval"]>, locale = "en") =>
       renderToString(() =>
         createComponent(LocaleProvider, {
@@ -1086,22 +1103,36 @@ describe("capability tool presentation", () => {
         }),
       );
     const action = render({ message: "Spaces: Create task", allowAlways: true, allowChat: true });
-    expect(action).toContain("Don't ask again in this chat");
+    expect(action).not.toContain("Don't ask again in this chat");
+    expect(action).toContain("See everything");
     expect(action).not.toContain("Always approve");
-    const website = render({
+    const websiteApproval = {
       message: "HTTP request: GET https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA",
       allowAlways: false,
       allowChat: true,
       website: "https://query1.finance.yahoo.com",
-    });
-    expect(website).toContain("Allow this website in this chat");
-    expect(website).toContain("https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA");
+    };
+    const website = render(websiteApproval);
+    expect(website).not.toContain("Allow this website in this chat");
+    expect(website).toContain("See everything");
+    expect(
+      renderApprovalDetails({
+        id: "run",
+        kind: "tool",
+        callId: "run-approval-0",
+        name: "code_run",
+        args: {},
+        status: "awaiting_approval",
+        approval: websiteApproval,
+      }),
+    ).toContain("https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA");
     expect(website).not.toContain("Always approve");
     expect(website).not.toContain("ask again in this chat");
     expect(render({ message: "POST", allowAlways: false, allowChat: false })).not.toContain("k2b-chat-decision__remember");
     const german = render({ message: "GET", allowAlways: false, allowChat: true, website: "https://example.com" }, "de");
-    expect(german).toContain("Diese Website in diesem Chat erlauben");
-    expect(render({ message: "Spaces", allowAlways: true, allowChat: true }, "de")).toContain("In diesem Chat nicht mehr fragen");
+    expect(german).not.toContain("Diese Website in diesem Chat erlauben");
+    expect(german).toContain("Alles ansehen");
+    expect(render({ message: "Spaces", allowAlways: true, allowChat: true }, "de")).not.toContain("In diesem Chat nicht mehr fragen");
   });
   test("shows every request a website approval let through with its full URL and a revoke action", () => {
     const run: AiTurnBlock = {
@@ -1185,8 +1216,9 @@ describe("capability tool presentation", () => {
 
     expect(html).toContain("Rejected: List contacts");
     expect(html).toContain("You declined.");
-    expect(html).toContain('class="k2b-chat-outcome');
-    expect(html).toContain('data-tone="off"');
+    expect(html).toContain('data-approval-frame=""');
+    expect(html).toContain('data-state="decided"');
+    expect(html).toContain('data-outcome-tone="off"');
     expect(html).not.toContain("Capability Action was rejected by the user.");
     expect(html).not.toContain(">Input</p>");
     expect(html).not.toContain(">Response</p>");
@@ -1875,22 +1907,17 @@ describe("turn places in the reader's language", () => {
   test.each(["en", "de"])("receipt outcome times stay on one line in %s, absent while running or unavailable", (locale) => {
     const at = "2026-10-07T10:23:45.000Z";
     const receipt = { ...mail({ summary: "Sent email" }), approved: true };
-    /** The visible line of an outcome; the other lines of its flow only reserve their height. */
-    const current = (html: string) => {
-      const start = html.indexOf('data-current="true"');
-      return html.slice(start, html.indexOf("</div>", start));
-    };
     for (const status of ["completed", "failed", "rejected"] as const) {
       const html = renderPlaces([{ ...receipt, status, at }], { locale, timeZone: "Europe/Berlin" });
-      expect(current(html)).toContain('<span class="k2b-chat-outcome__time">12:23</span>');
-      expect(html.match(/class="k2b-chat-outcome /g)).toHaveLength(1);
+      expect(quietReceipt(html)).toContain(" · 12:23");
+      expect(html.match(/data-approval-frame=""/g)).toHaveLength(1);
     }
     // Outside a browser and without a reader time zone, the time stays in UTC.
-    expect(current(renderPlaces([{ ...receipt, at }], { locale }))).toContain(">10:23</span>");
+    expect(quietReceipt(renderPlaces([{ ...receipt, at }], { locale }))).toContain(" · 10:23");
     expect(renderPlaces([receipt], { locale, timeZone: "Europe/Berlin" })).not.toContain("12:23");
     const running = renderPlaces([{ ...receipt, status: "running" }], { locale, phase: "running", timeZone: "Europe/Berlin" });
-    expect(current(running)).toContain(locale === "de" ? "Wird ausgeführt" : "Running");
-    expect(current(running)).not.toContain("k2b-chat-outcome__time");
+    expect(running).toContain(locale === "de" ? "Wird ausgeführt" : "Running");
+    expect(quietReceipt(running)).not.toMatch(/\d{2}:\d{2}/);
   });
   test("server-rendered history shows the receipt time in the reader's time zone", () => {
     const stored = (seq: number, message: AiStoredMessage["message"], meta: AiStoredMessage["meta"] = null): AiStoredMessage => ({
@@ -1929,7 +1956,7 @@ describe("turn places in the reader's language", () => {
         },
       }),
     );
-    expect(html).toContain('<span class="k2b-chat-outcome__time">12:23</span>');
+    expect(quietReceipt(html)).toContain(" · 12:23");
   });
 
   test("labels receipt links without a title in the reader's language", () => {

@@ -1169,7 +1169,7 @@ for (const view of [
       const text = "The chart API returns the totals per month. I send the summary to Jana Berger now.";
       const sent = "Email to Jana Berger sent";
       const place = ".ai-turn__text";
-      const receipt = ".ai-turn__action .k2b-chat-outcome";
+      const receipt = ".ai-turn__action [data-approval-frame]";
       // The chat opens while the action after the text runs: the text never showed as the answer before it is quiet.
       await emit(page, {
         ...base,
@@ -1234,7 +1234,8 @@ for (const view of [
       expect(await page.locator(`${place}.ai-turn__text--status`).count()).toBe(0);
       await settled(page, place);
       expect(await page.$eval(`${place} .assistant-markdown-block`, (node) => getComputedStyle(node).fontSize)).toBe("14px");
-      expect(await page.locator(`${receipt} .k2b-chat-outcome__text[data-current="true"]`).innerText()).toBe(`${sent}10:00`);
+      expect(await page.locator(`${receipt} [role="status"]`).innerText()).toBe(sent);
+      expect(await page.locator(`${receipt} .k2b-notice-card__detail-text`).innerText()).toContain(" · 10:00");
       expect(await viewportBox(page, place)).toEqual(before.text);
       expect(await viewportBox(page, receipt)).toEqual(before.receipt);
     } finally {
