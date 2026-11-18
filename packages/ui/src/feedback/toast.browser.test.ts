@@ -415,7 +415,13 @@ test("a tap that lands while a toast arrives does not trigger its action; a late
       toast.success("The message goes out in 20 s.", {
         title: "Sending",
         duration: 0,
-        action: { label: "Undo", variant: "ghost", onClick: () => void (state.undone += 1) },
+        action: {
+          label: "Undo",
+          variant: "ghost",
+          onClick: () => {
+            state.undone += 1;
+          },
+        },
       });
       // A tap at once, as from a double tap on Send that stood in the same place.
       document
