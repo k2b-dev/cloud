@@ -35,7 +35,7 @@ describe("PullToRefresh", () => {
     expect(html).toMatch(/k2b-pull-to-refresh__indicator[\s\S]*k2b-scroll-area[^>]*>Inbox rows/);
   });
 
-  test("moves only the indicator, uses inset elevation, and drops motion under reduced motion", async () => {
+  test("moves only the indicator, floats it with a very light shadow, slides it out, and drops motion under reduced motion", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const wrapper = css.match(/\.k2b-ui \.k2b-pull-to-refresh \{([^}]*)\}/)?.[1] ?? "";
     const indicator = css.match(/\.k2b-ui \.k2b-pull-to-refresh__indicator \{([^}]*)\}/)?.[1] ?? "";
@@ -45,7 +45,9 @@ describe("PullToRefresh", () => {
     expect(wrapper).toContain("min-height: 0");
     expect(wrapper).not.toContain("overflow");
     expect(wrapper).not.toMatch(/(?:^|\n)\s*height:/);
-    expect(indicator).toContain("box-shadow: inset");
+    expect(indicator).toMatch(/box-shadow:\s*inset 0 0 0 1px var\(--k2b-border\),\s*var\(--k2b-shadow-raised\);/);
+    // Back at idle the indicator slides out before it hides.
+    expect(indicator).toContain("visibility 0s linear var(--k2b-motion-base)");
     expect(indicator).toContain("pointer-events: none");
     expect(indicator).toContain("transform: translate(-50%, calc(var(--k2b-pull-to-refresh-distance) - 100%))");
     expect(reduced).toContain(".k2b-ui .k2b-pull-to-refresh__indicator {\n    transition: none;");

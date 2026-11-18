@@ -3572,15 +3572,21 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 9999px;
   background: var(--k2b-surface-elevated);
   color: var(--k2b-text-secondary);
-  box-shadow: inset 0 0 0 1px var(--k2b-border);
+  /* A very light layer shadow: the indicator floats above the list content. */
+  box-shadow:
+    inset 0 0 0 1px var(--k2b-border),
+    var(--k2b-shadow-raised);
   font-size: 1rem;
   opacity: var(--k2b-pull-to-refresh-progress);
   visibility: hidden;
   pointer-events: none;
   transform: translate(-50%, calc(var(--k2b-pull-to-refresh-distance) - 100%));
+  /* Back at idle it slides out and fades before it hides; PullToRefresh.tsx
+     waits as long (LEAVE_MS) before a new pull may start. */
   transition:
-    transform 160ms ease-out,
-    opacity 160ms ease-out;
+    transform var(--k2b-motion-base) var(--k2b-ease-out),
+    opacity var(--k2b-motion-base) var(--k2b-ease-out),
+    visibility 0s linear var(--k2b-motion-base);
 }
 
 /* The pull progress turns the wrapper, never the icon: a static transform on
@@ -3592,6 +3598,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-pull-to-refresh:not([data-state="idle"]) .k2b-pull-to-refresh__indicator {
   visibility: visible;
+  transition-delay: 0s;
 }
 
 /* The indicator follows the input directly; easing only smooths the snap back. */
@@ -3613,6 +3620,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-pull-to-refresh__icon {
     transform: none;
   }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-pull-to-refresh__indicator {
+  transition: none;
 }
 
 :where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-pull-to-refresh__icon {

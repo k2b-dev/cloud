@@ -6,8 +6,10 @@ import { useRefreshMessages } from "./refresh-messages";
 const THRESHOLD = 64;
 const MAX_DISTANCE = 96;
 const RESISTANCE = 0.5;
-/** A trackpad has no release event, so an idle gap ends the wheel gesture. */
+/** A trackpad has no release event, so an idle gap ends the wheel gesture, including its momentum. */
 const WHEEL_IDLE_MS = 300;
+/** Matches the indicator's slide-out in CSS; a new pull starts only once it has left. */
+const LEAVE_MS = 200;
 const LINE_HEIGHT = 16;
 
 export type PullToRefreshState = "idle" | "pulling" | "ready" | "refreshing";
@@ -38,7 +40,9 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
   const [distance, setDistance] = createSignal(0);
   let root!: HTMLDivElement;
 
-  const active = () => !props.disabled && state() !== "refreshing";
+  /** True from a refresh's start until the indicator has left again: no input starts anything. */
+  const [settling, setSettling] = createSignal(false);
+  const active = () => !props.disabled && !settling();
   const atTop = (target: EventTarget | null) => {
     for (let node = target instanceof Element ? target : null; node && node !== root; node = node.parentElement)
       if (node.scrollTop > 0) return false;
@@ -61,14 +65,22 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     setDistance(next);
     setState(next >= THRESHOLD ? "ready" : next > 0 ? "pulling" : "idle");
   };
+  let leaveTimer: ReturnType<typeof setTimeout> | undefined;
+  let wheelTravel = 0;
+  let wheelArmed = true;
+  let wheelTimer: ReturnType<typeof setTimeout> | undefined;
   const refresh = async () => {
-    if (state() === "refreshing") return;
+    if (settling()) return;
+    setSettling(true);
+    // A wheel gesture still in flight, such as the one that started this refresh, is spent.
+    if (wheelTimer !== undefined) wheelArmed = false;
     setState("refreshing");
     setDistance(THRESHOLD);
     try {
       await props.onRefresh();
     } finally {
       reset();
+      leaveTimer = setTimeout(() => setSettling(false), LEAVE_MS);
     }
   };
   const release = () => {
@@ -79,21 +91,27 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     if (state() !== "refreshing") reset();
   };
 
-  let wheelTravel = 0;
-  let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+  // Wheel overscroll never moves the indicator: it only adds up travel, and
+  // reaching the threshold starts the refresh, which slides the indicator in
+  // once. Trackpad momentum keeps sending wheel events long after the fingers
+  // left, so a wheel gesture that started a refresh stays spent until it has
+  // been quiet for WHEEL_IDLE_MS, however long it outlasts the refresh.
   const endWheel = () => {
+    wheelTimer = undefined;
     wheelTravel = 0;
-    abort();
+    wheelArmed = true;
   };
   const onWheel = (event: WheelEvent) => {
-    if (!active()) return;
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(endWheel, WHEEL_IDLE_MS);
-    if (event.deltaY >= 0 || !atTop(event.target)) return endWheel();
+    if (!wheelArmed || !active()) return;
+    if (event.deltaY >= 0 || !atTop(event.target)) {
+      wheelTravel = 0;
+      return;
+    }
     const scale = event.deltaMode === 1 ? LINE_HEIGHT : event.deltaMode === 2 ? root.clientHeight : 1;
     wheelTravel -= event.deltaY * scale;
-    pull(wheelTravel);
-    if (state() === "ready") {
+    if (wheelTravel * RESISTANCE >= THRESHOLD) {
       wheelTravel = 0;
       void refresh();
     }
@@ -172,6 +190,7 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     root.addEventListener("touchcancel", onTouchCancel);
     onCleanup(() => {
       clearTimeout(wheelTimer);
+      clearTimeout(leaveTimer);
       root.removeEventListener("wheel", onWheel);
       root.removeEventListener("pointerdown", onPointerDown);
       root.removeEventListener("pointermove", onPointerMove);
