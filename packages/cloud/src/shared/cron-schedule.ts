@@ -104,9 +104,11 @@ export function cronRangeHasCalendarMatch(schedule: CronSchedule, from: Date, to
   const format = new Intl.DateTimeFormat("en-US", { timeZone: normalized.timezone, day: "numeric", month: "numeric", weekday: "short" });
   return [+from, (+from + +to) / 2, +to - 1].some((at) => {
     const parts = new Map(format.formatToParts(at).map((part) => [part.type, part.value]));
-    const day = Number(parts.get("day")), month = Number(parts.get("month"));
+    const day = Number(parts.get("day")),
+      month = Number(parts.get("month"));
     const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.get("weekday") ?? "");
-    const dom = fields[2]!, dow = fields[4]!;
+    const dom = fields[2]!,
+      dow = fields[4]!;
     const dayMatches = dom.any ? dow.values.has(weekday) : dow.any ? dom.values.has(day) : dom.values.has(day) || dow.values.has(weekday);
     return fields[3]!.values.has(month) && dayMatches;
   });

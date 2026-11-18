@@ -17,12 +17,7 @@ export const AI_WAKEUP_TICK_BATCH = 100;
 /** Alarm v1 recovery contract: a missed one-off remains actionable for seven days. */
 export const AI_WAKEUP_MISSED_DAYS = 7;
 
-/** One-minute scheduler retries fit inside the minimum fifteen-minute alarm interval.
- * Delays 1+2+4+8 minutes use that interval; the fifth failed attempt is terminal. */
-export const AI_WAKEUP_TICK_INTERVAL_MS = 60_000;
-export const AI_WAKEUP_FAILURE_LIMIT = 1 + Math.floor(Math.log2(AI_WAKEUP_MIN_INTERVAL_MINUTES * 60_000 / AI_WAKEUP_TICK_INTERVAL_MS + 1));
-
-export const AiWakeupNoteSourceSchema = z.discriminatedUnion("kind", [
+const AiWakeupNoteSourceSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("person"), userId: z.uuid() }),
   z.strictObject({ kind: z.literal("gustav"), userId: z.uuid(), turnId: z.uuid() }),
 ]);

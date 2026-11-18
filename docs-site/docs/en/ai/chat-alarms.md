@@ -44,7 +44,9 @@ Keep the returned `revision` for the next mutation. A stale revision returns
 HTTP 409 with `wakeup_conflict`; read the list again. HTTP 400 means invalid
 timing or note, 403 means unavailable authority, and 404 means unavailable
 chat or alarm. A capacity or snooze refusal returns HTTP 409 with
-`wakeup_limit` or `wakeup_snooze_limit`.
+`wakeup_limit` or `wakeup_snooze_limit`. Catch-up with a full queue returns
+HTTP 409 with `wakeup_queue_full` and localized recovery text. Oversized request
+bodies return HTTP 413.
 
 There are at most five active or missed alarms and expired recurring alarms per
 chat. A completed, deleted or expired one-off releases its place. A note contains at most 200 Unicode
@@ -79,7 +81,8 @@ Each occurrence has a stable send receipt derived from alarm ID and planned
 time. Repeated ticks cannot insert it twice. After downtime, a recurring alarm
 queues once and moves to its next future time. A pending occurrence of the same
 alarm prevents another: later occurrences are skipped silently while it waits.
-A full automation queue also skips the occurrence without adding a timeline fact.
+A full automation queue also skips recurring occurrences without adding a timeline
+fact. A one-off instead becomes `missed` with reason `queue_full` and one fact.
 Alarms use the existing 32 automation queue places.
 
 An archived chat pauses its alarms without moving their next time. Restoring
@@ -96,8 +99,8 @@ who saved the note: `{ kind: "person", userId }` for a session, or
 the note's source; changing its note records the current source. The alarm prompt
 frames the note as a previously stored reminder, with this source.
 
-Account and budget refusals create a stored `meta.wakeupEvent` without a model
-call. Repeated refusals for the same reason add a fact only on the first transition.
+Account, model access and budget refusals before the turn starts create a stored
+`meta.wakeupEvent` without a model call. Repeated refusals for the same reason add a fact only on the first transition.
 A one-off becomes `missed`; a repeating alarm advances to its next occurrence.
 Model access is checked again before execution; a worker model refusal remains
 visible through the ordinary failed-turn state. The owner can catch up a missed one-off
@@ -109,6 +112,7 @@ Unexpected delivery errors retry on minute ticks with 1, 2, 4 and 8 minute delay
 These delays fit the minimum 15-minute alarm interval. A fifth failed attempt
 pauses the alarm as `missed`, with `missedReason: "delivery"` and one timeline
 fact. Change its time to retry it; missed one-offs also offer ordinary catch-up.
+A paused recurring alarm expires after its end time and remains available for renewal.
 Cancellation or a lost worker lease does not mark the alarm missed.
 
 Alarm turns share the [automation turn allocation](/en/docs/ai/tools-and-approvals)

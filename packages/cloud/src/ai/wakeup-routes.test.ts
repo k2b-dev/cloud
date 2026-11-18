@@ -1,10 +1,11 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { Hono } from "hono";
+import { CAPABILITY_MAX_RESULT_BYTES } from "../contracts/capability-limits";
 import type { AuthContext } from "../server";
-import { userResourceContext } from "./projects.test-fixture";
-import * as catchUp from "./wakeup-catch-up";
 import { AiMessageQueueConflict } from "./message-queue";
+import { userResourceContext } from "./projects.test-fixture";
 import { AiQuotaError } from "./quotas";
+import * as catchUp from "./wakeup-catch-up";
 import { aiWakeupRoutes } from "./wakeup-routes";
 import { AiWakeupError, aiWakeups } from "./wakeups";
 
@@ -59,14 +60,41 @@ test("optimistic conflicts use a stable code and request-localized recovery text
   });
 });
 
-
 test("catch-up reports queue conflicts as 409 and quota failures through the AI response contract", async () => {
   const catchUpCall = spyOn(catchUp, "catchUpAiWakeup").mockRejectedValue(new AiMessageQueueConflict("Queue full"));
   const response = await app().request(`${path}/${id}/catch-up`, request("POST", { revision: 0 }));
   expect(response.status).toBe(409);
-  expect(await response.json()).toMatchObject({ message: "Queue full" });
+  expect(await response.json()).toEqual({
+    code: "wakeup_queue_full",
+    message:
+      "In diesem Chat warten schon zu viele geplante Nachrichten. Warte, bis eine gesendet wurde, oder entferne eine aus der Warteschlange.",
+  });
   catchUpCall.mockRejectedValue(new AiQuotaError("quota_exhausted", "Budget spent"));
   const quota = await app().request(`${path}/${id}/catch-up`, request("POST", { revision: 0 }));
   expect(quota.status).toBe(429);
   expect(await quota.json()).toMatchObject({ code: "quota_exhausted", message: "Budget spent" });
+});
+
+test("an oversized alarm body retains HTTP 413 before reaching the service", async () => {
+  const create = spyOn(aiWakeups, "create");
+  const response = await app().request(
+    path,
+    request("POST", { at: "2026-11-19T12:00:00Z", note: "x".repeat(CAPABILITY_MAX_RESULT_BYTES), timezone: "UTC" }),
+  );
+  expect(response.status).toBe(413);
+  expect(create).not.toHaveBeenCalled();
+});
+
+test("unknown failures reach the global handler without exposing their raw text", async () => {
+  const failure = new Error("Internal storage details");
+  spyOn(catchUp, "catchUpAiWakeup").mockRejectedValue(failure);
+  let caught: Error | undefined;
+  const server = app().onError((error, c) => {
+    caught = error;
+    return c.json({ message: "Request failed" }, 500);
+  });
+  const response = await server.request(`${path}/${id}/catch-up`, request("POST", { revision: 0 }));
+  expect(response.status).toBe(500);
+  expect(caught).toBe(failure);
+  expect(await response.text()).not.toContain(failure.message);
 });

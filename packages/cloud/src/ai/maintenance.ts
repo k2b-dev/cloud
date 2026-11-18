@@ -4,6 +4,7 @@ import { coreSettings } from "../services";
 import { logger, trace } from "../services/logging";
 import { enrichDirtyAiConversations } from "./enrich";
 import { learnAiMemoriesFromPrivateChats } from "./memory-learning";
+import { AI_WAKEUP_SCHEDULE } from "./wakeup-schedule";
 import { type AiWakeupBudgetCheck, tickAiWakeups } from "./wakeup-tick";
 
 const log = logger("ai:maintenance");
@@ -238,8 +239,8 @@ const doRegister = async (): Promise<void> => {
   }
   await aiScheduler().create({
     id: "ai-wakeups",
-    cron: "* * * * *",
-    timezone: "UTC",
+    cron: AI_WAKEUP_SCHEDULE.cron,
+    timezone: AI_WAKEUP_SCHEDULE.timezone,
     misfire: "latest",
     process: async (context) => {
       if (!wakeupBudget) throw new Error("Scheduled chat budget admission is unavailable.");

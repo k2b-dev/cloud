@@ -14,10 +14,11 @@ import { prepareAiChatTurn, wakeAiMessageQueue } from "./runtime";
 import { readAiSettingsState, selectAiModelProfile } from "./settings";
 import type { AiModelProfile } from "./types";
 import { isAiSettingsError } from "./validate";
-import { AI_WAKEUP_MISSED_DAYS, AI_WAKEUP_TICK_BATCH, AI_WAKEUP_TICK_INTERVAL_MS, AI_WAKEUP_FAILURE_LIMIT } from "./wakeup-contracts";
+import { AI_WAKEUP_MISSED_DAYS, AI_WAKEUP_TICK_BATCH } from "./wakeup-contracts";
+import { AI_WAKEUP_FAILURE_LIMIT, AI_WAKEUP_SCHEDULE } from "./wakeup-schedule";
 import { type AiWakeupRow, recordAiWakeupEvent } from "./wakeup-store";
-import { AiWakeupError, requireOwnedAiWakeupChat } from "./wakeups";
 import { nextAiWakeupAt } from "./wakeup-time";
+import { AiWakeupError, requireOwnedAiWakeupChat } from "./wakeups";
 
 const log = logger("ai:wakeups");
 export class AiWakeupBudgetError extends Error {}
@@ -37,10 +38,13 @@ export async function tickAiWakeups(
   options: { now?: Date; signal?: AbortSignal; heartbeat?: () => Promise<unknown> } = {},
 ) {
   const now = options.now ?? new Date();
-  const candidates = await sql<{ id: string; conversation_id: string; revision: number }[]>`SELECT w.id,w.conversation_id,w.revision FROM ai.wakeups w
+  const candidates = await sql<
+    { id: string; conversation_id: string; revision: number }[]
+  >`SELECT w.id,w.conversation_id,w.revision FROM ai.wakeups w
     JOIN ai.conversations c ON c.id=w.conversation_id
     WHERE c.archived_at IS NULL AND ((w.status='active' AND w.next_at<=${now} AND (w.retry_at IS NULL OR w.retry_at<=${now}))
-      OR (w.status='missed' AND w.cron IS NULL AND w.updated_at<=${new Date(+now - AI_WAKEUP_MISSED_DAYS * 86_400_000)}))
+      OR (w.status='missed' AND ((w.cron IS NULL AND w.updated_at<=${new Date(+now - AI_WAKEUP_MISSED_DAYS * 86_400_000)})
+        OR (w.cron IS NOT NULL AND w.ends_at<${now}))))
     ORDER BY w.next_at NULLS LAST,w.id LIMIT ${AI_WAKEUP_TICK_BATCH}`;
   let queued = 0;
   for (const candidate of candidates) {
@@ -63,7 +67,8 @@ export async function tickAiWakeups(
         if (row.status === "missed") {
           // Recheck after locking: another request may have renewed or caught up this entry.
           const changed = await db<AiWakeupRow[]>`UPDATE ai.wakeups SET status='expired',next_at=NULL,revision=revision+1,updated_at=${now}
-            WHERE id=${row.id}::uuid AND status='missed' AND cron IS NULL AND updated_at<=${new Date(+now - AI_WAKEUP_MISSED_DAYS * 86_400_000)} RETURNING *`;
+            WHERE id=${row.id}::uuid AND status='missed' AND ((cron IS NULL AND updated_at<=${new Date(+now - AI_WAKEUP_MISSED_DAYS * 86_400_000)})
+              OR (cron IS NOT NULL AND ends_at<${now})) RETURNING *`;
           if (changed[0]) await recordAiWakeupEvent(changed[0], "expired", locale, db, now);
           return false;
         }
@@ -151,7 +156,7 @@ export async function tickAiWakeups(
           AiWakeupRow[]
         >`UPDATE ai.wakeups SET next_at=${status === "missed" ? scheduledAt : nextAt},status=${status},missed_reason=${missedReason},failure_count=0,retry_at=NULL,last_message_id=${sent || receipt ? id : null}::uuid,revision=revision+1,updated_at=${now}
           WHERE id=${row.id}::uuid RETURNING *`;
-        if (reason && reason !== "queue_full" && reason !== row.missed_reason)
+        if (reason && (reason !== "queue_full" || !row.cron) && reason !== row.missed_reason)
           await recordAiWakeupEvent(updated!, "missed", locale, db, now);
         if (status === "expired") await recordAiWakeupEvent(updated!, "expired", locale, db, now);
         return sent;
@@ -164,26 +169,35 @@ export async function tickAiWakeups(
       if (options.signal?.aborted) break;
       // A failed transaction did not deliver or advance this occurrence. Fence recovery against edits,
       // other schedulers and a commit whose acknowledgement was lost.
-      await sql.begin(async (db) => {
-        const locked = await db`SELECT id FROM ai.conversations WHERE id=${candidate.conversation_id}::uuid AND archived_at IS NULL FOR UPDATE`;
-        if (!locked.length) return;
-        const [row] = await db<AiWakeupRow[]>`SELECT * FROM ai.wakeups WHERE id=${candidate.id}::uuid
-          AND revision=${candidate.revision} AND status='active' FOR UPDATE`;
-        if (!row) return;
-        const failures = row.failure_count + 1;
-        const terminal = failures >= AI_WAKEUP_FAILURE_LIMIT;
-        const retryAt = terminal ? null : new Date(+now + 2 ** (failures - 1) * AI_WAKEUP_TICK_INTERVAL_MS);
-        const [updated] = await db<AiWakeupRow[]>`UPDATE ai.wakeups SET failure_count=${failures},retry_at=${retryAt},
+      await sql
+        .begin(async (db) => {
+          const locked =
+            await db`SELECT id FROM ai.conversations WHERE id=${candidate.conversation_id}::uuid AND archived_at IS NULL FOR UPDATE SKIP LOCKED`;
+          if (!locked.length) return;
+          const [row] = await db<AiWakeupRow[]>`SELECT * FROM ai.wakeups WHERE id=${candidate.id}::uuid
+          AND revision=${candidate.revision} AND status='active' FOR UPDATE SKIP LOCKED`;
+          if (!row) return;
+          const failures = row.failure_count + 1;
+          const terminal = failures >= AI_WAKEUP_FAILURE_LIMIT;
+          const retryAt = terminal ? null : new Date(+now + 2 ** (failures - 1) * AI_WAKEUP_SCHEDULE.intervalMs);
+          const [updated] = await db<AiWakeupRow[]>`UPDATE ai.wakeups SET failure_count=${failures},retry_at=${retryAt},
           status=${terminal ? "missed" : "active"},missed_reason=${terminal ? "delivery" : row.missed_reason},
           revision=revision+1,updated_at=${now} WHERE id=${row.id}::uuid RETURNING *`;
-        if (terminal) {
-          const locale = (await db<{ locale: string | null }[]>`SELECT notification_locale AS locale FROM auth.users WHERE id=${row.created_by}::uuid`)[0]?.locale ?? "en";
-          await recordAiWakeupEvent(updated!, "missed", locale, db, now);
-        }
-      }).catch((recoveryError: unknown) => {
-        // A database outage cannot persist a fact. Keep the due time intact for recovery on the next tick.
-        log.warn("Alarm failure state could not be saved", { wakeupId: candidate.id, error: recoveryError instanceof Error ? recoveryError.message : String(recoveryError) });
-      });
+          if (terminal) {
+            const locale =
+              (
+                await db<{ locale: string | null }[]>`SELECT notification_locale AS locale FROM auth.users WHERE id=${row.created_by}::uuid`
+              )[0]?.locale ?? "en";
+            await recordAiWakeupEvent(updated!, "missed", locale, db, now);
+          }
+        })
+        .catch((recoveryError: unknown) => {
+          // A database outage cannot persist a fact. Keep the due time intact for recovery on the next tick.
+          log.warn("Alarm failure state could not be saved", {
+            wakeupId: candidate.id,
+            error: recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+          });
+        });
       log.warn("Scheduled chat message could not be queued", {
         wakeupId: candidate.id,
         error: error instanceof Error ? error.message : String(error),

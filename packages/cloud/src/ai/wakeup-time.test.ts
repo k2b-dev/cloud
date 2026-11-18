@@ -52,13 +52,18 @@ test("notes count Unicode characters and product rhythm text never falls back to
   expect(describeAiWakeupRhythm(null, "en")).toBe("Once");
 });
 
-
 test("sparse calendars skip nonmatching days without losing UTC crossings or DST occurrences", () => {
   const range = { from: new Date("2026-11-18T12:00:00Z"), to: new Date("2026-11-19T12:00:00Z") };
   expect(cronRangeHasCalendarMatch({ cron: "0 8 1 12 *", timezone: "Europe/Berlin" }, range.from, range.to)).toBe(false);
   expect(cronRangeHasCalendarMatch({ cron: "0 8 * * 4", timezone: "Europe/Berlin" }, range.from, range.to)).toBe(true);
-  expect(nextAiWakeupAt("0 8 1 12 *", "Europe/Berlin", now, new Date("2026-12-18T12:00:00Z"))?.toISOString()).toBe("2026-12-01T07:00:00.000Z");
+  expect(nextAiWakeupAt("0 8 1 12 *", "Europe/Berlin", now, new Date("2026-12-18T12:00:00Z"))?.toISOString()).toBe(
+    "2026-12-01T07:00:00.000Z",
+  );
   // Restricted day-of-month and weekday use cron OR semantics.
-  expect(nextAiWakeupAt("0 8 1 12 3", "Europe/Berlin", now, new Date("2026-12-18T12:00:00Z"))?.toISOString()).toBe("2026-12-01T07:00:00.000Z");
-  expect(nextAiWakeupAt("0 8 1 12 3", "Europe/Berlin", new Date("2026-12-01T12:00:00Z"), new Date("2026-12-18T12:00:00Z"))?.toISOString()).toBe("2026-12-02T07:00:00.000Z");
+  expect(nextAiWakeupAt("0 8 1 12 3", "Europe/Berlin", now, new Date("2026-12-18T12:00:00Z"))?.toISOString()).toBe(
+    "2026-12-01T07:00:00.000Z",
+  );
+  expect(
+    nextAiWakeupAt("0 8 1 12 3", "Europe/Berlin", new Date("2026-12-01T12:00:00Z"), new Date("2026-12-18T12:00:00Z"))?.toISOString(),
+  ).toBe("2026-12-02T07:00:00.000Z");
 });

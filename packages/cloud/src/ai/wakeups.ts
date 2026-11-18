@@ -6,9 +6,9 @@ import type { AiChatTurnRunConfig } from "./types";
 import {
   AI_WAKEUP_CHAT_LIMIT,
   AI_WAKEUP_SNOOZE_LIMIT,
-  type AiWakeupNoteSource,
   type AiWakeupInput,
   AiWakeupInputSchema,
+  type AiWakeupNoteSource,
   type AiWakeupPatch,
   AiWakeupPatchSchema,
 } from "./wakeup-contracts";
@@ -88,9 +88,8 @@ const note = (input: AiWakeupInput | AiWakeupPatch) => {
   if (!parsed.success) throw new AiWakeupError("invalid", "Check the alarm's time and note.");
 };
 
-const noteSource = (subject: AiWakeupAuthority, owner: string): AiWakeupNoteSource => subject.turnId
-  ? { kind: "gustav", userId: owner, turnId: subject.turnId }
-  : { kind: "person", userId: owner };
+const noteSource = (subject: AiWakeupAuthority, owner: string): AiWakeupNoteSource =>
+  subject.turnId ? { kind: "gustav", userId: owner, turnId: subject.turnId } : { kind: "person", userId: owner };
 
 /** Same retirement shape as ordinary queue cancellation, including release of queued file bytes. */
 async function cancelPendingAiWakeupMessages(conversationId: string, wakeupId: string, db: SQL) {
@@ -116,7 +115,9 @@ export const aiWakeups = {
       const chat = await requireOwnedAiWakeupChat(chatId, subject, db, true);
       if (chat.trigger?.kind === "wakeup") throw new AiWakeupError("forbidden", "An alarm turn cannot create another alarm.");
       await capacity(chat.id, db);
-      const [row] = await db<AiWakeupRow[]>`INSERT INTO ai.wakeups(id,conversation_id,created_by,next_at,cron,timezone,ends_at,note,note_source)
+      const [row] = await db<
+        AiWakeupRow[]
+      >`INSERT INTO ai.wakeups(id,conversation_id,created_by,next_at,cron,timezone,ends_at,note,note_source)
         VALUES(${crypto.randomUUID()}::uuid,${chat.id}::uuid,${chat.owner}::uuid,${time.nextAt},${time.cron},${time.timezone},${time.endsAt},${input.note.trim()},(${JSON.stringify(noteSource(subject, chat.owner))}::text)::jsonb) RETURNING *`;
       await recordAiWakeupEvent(row!, "created", locale, db, now);
       return publicAiWakeup(row!, locale);

@@ -1,10 +1,13 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { CAPABILITY_MAX_RESULT_BYTES } from "../contracts/capability-limits";
 import { type AuthContext, err, fail, getLocale, ok, respond, v } from "../server";
 import { toAiErrorResponse } from "./http";
 import { AiMessageQueueConflict } from "./message-queue";
+import { AiQuotaError } from "./quotas";
+import { isAiSettingsError } from "./validate";
 import { catchUpAiWakeup } from "./wakeup-catch-up";
 import { AiWakeupInputSchema, AiWakeupPatchSchema } from "./wakeup-contracts";
 import { aiWakeupMessages } from "./wakeup-messages";
@@ -17,10 +20,15 @@ const wakeupParams = chatParams.extend({ wakeupId: z.uuid() });
 export const aiWakeupRoutes = new Hono<AuthContext>()
   .use("/:conversationId/wakeups/*", bodyLimit({ maxSize: CAPABILITY_MAX_RESULT_BYTES }))
   .onError((error, c) => {
-    if (error instanceof AiMessageQueueConflict) return respond(c, fail(err.conflict(error.message)));
-    if (!(error instanceof AiWakeupError)) return toAiErrorResponse(c, error);
-    const status = error.code === "forbidden" ? 403 : error.code === "not_found" ? 404 : error.code === "invalid" ? 400 : 409;
-    return c.json({ code: `wakeup_${error.code}`, message: aiWakeupMessages(getLocale(c))[error.code] }, status);
+    if (error instanceof HTTPException) return error.getResponse();
+    if (error instanceof AiWakeupError) {
+      const status = error.code === "forbidden" ? 403 : error.code === "not_found" ? 404 : error.code === "invalid" ? 400 : 409;
+      return c.json({ code: `wakeup_${error.code}`, message: aiWakeupMessages(getLocale(c))[error.code] }, status);
+    }
+    if (error instanceof AiMessageQueueConflict)
+      return c.json({ code: "wakeup_queue_full", message: aiWakeupMessages(getLocale(c)).queue_full }, 409);
+    if (error instanceof AiQuotaError || isAiSettingsError(error)) return toAiErrorResponse(c, error);
+    throw error;
   })
   .get("/:conversationId/wakeups", v("param", chatParams), async (c) => {
     const subject = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };

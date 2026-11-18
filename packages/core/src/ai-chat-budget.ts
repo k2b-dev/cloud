@@ -121,7 +121,9 @@ export const checkWakeupChatBudget: AiWakeupBudgetCheck = async ({ owner, wakeup
 };
 
 class AiWakeupAccessError extends AiTurnFailure {
-  constructor(message: string) { super("not_allowed", message); }
+  constructor(message: string) {
+    super("not_allowed", message);
+  }
 }
 
 async function admitWakeupChatTurn(input: Parameters<AiChatTurnAdmission>[0]) {

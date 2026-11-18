@@ -18,7 +18,8 @@ export function nextAiWakeupAt(cron: string, timezone: string, after: Date, end:
     hourCycle: "h23",
   });
   for (let start = +after - 26 * 3_600_000; start <= +end; start += DAY_MS) {
-    const from = new Date(start), to = new Date(Math.min(start + DAY_MS, +end + 1));
+    const from = new Date(start),
+      to = new Date(Math.min(start + DAY_MS, +end + 1));
     if (!cronRangeHasCalendarMatch({ cron, timezone }, from, to)) continue;
     let next: Date | null = null;
     visitCronDaySlots({ cron, timezone }, from, to, (slot) => {
