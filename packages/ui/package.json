@@ -136,7 +136,9 @@
     "fontnik": "0.7.7",
     "yjs": "13.6.33",
     "y-codemirror.next": "0.3.6",
-    "y-protocols": "1.0.7"
+    "y-protocols": "1.0.7",
+    "postcss": "8.5.32",
+    "postcss-selector-parser": "7.1.7"
   },
   "publishConfig": {
     "access": "public"

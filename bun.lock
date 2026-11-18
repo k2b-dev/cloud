@@ -823,6 +823,8 @@
         "happy-dom": "20.14.5",
         "hono": "4.13.17",
         "playwright": "1.65.0",
+        "postcss": "8.5.32",
+        "postcss-selector-parser": "7.1.7",
         "seroval": "1.6.7",
         "solid-js": "1.9.18",
         "tailwindcss": "4.3.5",
