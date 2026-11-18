@@ -129,6 +129,9 @@ export const rule: Rule = {
         inspect(launchpad, source, block, source.indexOf(block, at), "A launchpad fallback");
       }
     }
-    return findings;
+    // Reported by path and line, never in the order the file system lists directories.
+    return findings.sort((a, b) =>
+      (a.file ?? "") < (b.file ?? "") ? -1 : (a.file ?? "") > (b.file ?? "") ? 1 : (a.line ?? 0) - (b.line ?? 0),
+    );
   },
 };
