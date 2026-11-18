@@ -20,6 +20,7 @@ const page = (path: string, title: string | null = null) => ({
 });
 const handoff = (pages = [page("/", "Lieferscheine")]): CodeDecisionPages => ({
   title: "Lieferungen",
+  codePageHref: "/app/assistant/code/c_opaque123",
   pages: { versionId: "v_test", homeUrl: pages[0]?.href ?? null, pages },
 });
 const render = (pages: CodeDecisionPages | null, locale = "de", outcome: "activated" | "approved" = "activated") =>
@@ -60,7 +61,8 @@ test("multiple pages keep the home card and quiet additional text links", () => 
   expect(html.match(/k2b-link-card__title/g)).toHaveLength(1);
   expect(html).toContain("Weitere Seiten:");
   expect(html).toContain('href="/code/c_opaque123/month"');
-  expect(html).toContain("Einstellungen");
+  expect(html).toContain("+1 weitere");
+  expect(html).toContain('href="/app/assistant/code/c_opaque123"');
 });
 test("no page or no current management access shows no card, and approval alone never opens a page", () => {
   expect(render(null)).not.toContain("k2b-link-card");

@@ -4,6 +4,7 @@ import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { resolveResourceReaders } from "@k2b/cloud/services/identity";
 import type { SQL } from "bun";
+import { type CodePageViewer, canDescribeCodePages } from "./page-links";
 import { readPageSnapshot } from "./page-read";
 
 export type CodeManagerCandidate = {
@@ -24,7 +25,7 @@ export async function currentChatManagers(
   signal: AbortSignal,
   db: SQL = sql,
   resourceManagers?: ReadonlySet<string>,
-): Promise<Set<string>> {
+): Promise<Map<string, CodePageViewer>> {
   const readers = await readPageSnapshot(signal, () =>
     resolveResourceReaders(
       [...new Set(rows.flatMap((row) => (row.user_id ? [row.user_id] : [])))].map((userId) => ({ type: "user" as const, userId })),
@@ -33,14 +34,19 @@ export async function currentChatManagers(
   const users = await readPageSnapshot(
     signal,
     () =>
-      db<{ id: string }[]>`SELECT id FROM auth.users WHERE id=ANY(${sql.array(
+      db<{ id: string; profile: "user" | "guest" }[]>`SELECT id,profile FROM auth.users WHERE id=ANY(${sql.array(
         readers.flatMap((reader) => (reader.subject.type === "user" ? [reader.subject.userId] : [])),
         "uuid",
-      )}) AND profile='user'`,
+      )})`,
   );
-  const active = new Set(users.map((user) => user.id));
-  const candidates = rows.filter((row) => row.user_id && active.has(row.user_id));
-  if (!candidates.length) return new Set();
+  const active = new Map(users.map((user) => [user.id, user]));
+  const viewer = (row: CodeManagerCandidate): CodePageViewer => ({
+    codeId: row.code_id,
+    person: row.user_id ? (active.get(row.user_id) ?? null) : null,
+    permission: "editor",
+  });
+  const candidates = rows.filter((row) => canDescribeCodePages(viewer(row), "editor"));
+  if (!candidates.length) return new Map();
   const projections = candidates.map((row) => {
     const principal = buildAccessPrincipalCondition({
       subject: { type: "user", userId: row.user_id! },
@@ -92,5 +98,5 @@ export async function currentChatManagers(
       });
     }
   }
-  return allowed;
+  return new Map(candidates.filter((row) => allowed.has(row.version_id)).map((row) => [row.version_id, viewer(row)]));
 }

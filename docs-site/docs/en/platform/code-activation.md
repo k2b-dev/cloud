@@ -162,12 +162,15 @@ In the chat where a version was submitted, Cloud attaches a page link card to
 its “You switched on version N” event. This uses no AI turn or allowance.
 The card opens the home page and shows its name and “Home page” for the root
 route, or its readable, Code-relative path otherwise. Additional pages appear
-as text links. The actual destination stays in the link, so opaque Code
-identifiers do not appear as the displayed address.
+as text links on one line. Long titles are shortened; pages that do not fit
+are counted in a “+N more” link to the Code page. The actual destination stays
+in the link, so opaque Code identifiers do not appear as the displayed address.
 
 Core selects pages through `describeCodePages`, the same projection used by the
-Code page. Only the latest activation line for each Code reads and shows its
-page handoff. The line appears with its authorized snapshot; a failed read
+Code page. Its required viewer carries the current person and permission for
+that Code; missing viewers and guests yield no pages on every read path,
+including delegated version reads and the server-rendered Code page. Only the
+latest activation line for each Code reads and shows its page handoff. The line appears with its authorized snapshot; a failed read
 keeps its space and offers a retry. The activation preview's optional `pages`
 field contains this `CodePageLinks` snapshot only for the currently running
 version of active Code.

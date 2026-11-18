@@ -184,7 +184,12 @@ export async function deliverCodeReviewChatFacts(effects: readonly ReviewChatEff
                     pageCount: (() => {
                       const manifest = CodeCheckedVersionManifestSchema.safeParse(row.manifest);
                       return row.active_version_id === row.version_id && manifest.success
-                        ? describeCodePages(row.code_id, { id: row.version_id, manifest: manifest.data }).pages.length
+                        ? describeCodePages(
+                            row.code_id,
+                            { id: row.version_id, manifest: manifest.data },
+                            allowed.get(row.version_id) ?? null,
+                            "editor",
+                          ).pages.length
                         : 0;
                     })(),
                   }

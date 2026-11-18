@@ -201,7 +201,7 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
           if (failure === "read") throw new Error("Fixture account read failed");
           if (failure === "timeout") deadline.abort(new DOMException("Read budget exceeded", "TimeoutError"));
           else controller.abort(new DOMException("Turn stopped", "AbortError"));
-          return new Promise<Set<string>>(() => {});
+          return new Promise<Awaited<ReturnType<typeof managers.currentChatManagers>>>(() => {});
         })
       : null;
     const warnings: unknown[][] = [];

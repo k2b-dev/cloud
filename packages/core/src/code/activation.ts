@@ -8,15 +8,7 @@ import { catalogCache, describeOperations, describeTarget } from "@k2b/cloud/ssr
 import { codeActivationRows, codeDynamicOperations } from "@k2b/cloud/ssr/code-page/targets";
 import type { SQL } from "bun";
 import { z } from "zod";
-import {
-  type CodeContext,
-  CodeDataError,
-  codePermission,
-  codePerson,
-  isCodePageMember,
-  readCodeOwner,
-  requireCodePermission,
-} from "./access";
+import { type CodeContext, CodeDataError, codePermission, codePerson, readCodeOwner, requireCodePermission } from "./access";
 import {
   type CodeActivation,
   type CodeActivationFailure,
@@ -190,12 +182,13 @@ export async function previewCodeActivation(
   const owner = code.owner.kind === "resource" ? { ref: code.owner.ref, title: "" } : { codeId: code.id };
   const pageLinks =
     manifest.success && code.state === "active" && code.activeVersionId === input.versionId
-      ? describeCodePages(code.id, { id: input.versionId, manifest: manifest.data })
+      ? describeCodePages(
+          code.id,
+          { id: input.versionId, manifest: manifest.data },
+          { codeId: code.id, person, permission: await codePermission(code, context, sql, "edit", readOwnerOnce) },
+          "editor",
+        )
       : null;
-  const mayReadPages =
-    Boolean(pageLinks?.pages.length) &&
-    isCodePageMember(context.authority) &&
-    (await codePermission(code, context, sql, "edit", readOwnerOnce)) === "editor";
   const base = {
     codeId: code.id,
     automations: manifest.success
@@ -209,7 +202,7 @@ export async function previewCodeActivation(
           database: manifest.data.database === true,
         }
       : {}),
-    pages: mayReadPages ? pageLinks : null,
+    pages: pageLinks?.pages.length ? pageLinks : null,
     title: code.title,
     ownerKind: code.owner.kind,
     ...(code.owner.kind === "app" ? { appName: await previewAppName(code.owner.appId, catalog) } : {}),

@@ -1,11 +1,15 @@
 import { CodePageLinksSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
+import { codeVersionPageHref } from "./code-activation";
 
 const HandoffSchema = z.object({
   title: z.string(),
+  codeId: z.string(),
+  ownerKind: z.enum(["person", "resource", "app"]),
+  page: z.string().nullable().optional(),
   pages: CodePageLinksSchema.nullable().optional(),
 });
-export type CodeDecisionPages = { title: string; pages: z.infer<typeof CodePageLinksSchema> };
+export type CodeDecisionPages = { title: string; codePageHref: string | null; pages: z.infer<typeof CodePageLinksSchema> };
 
 /** The existing Core preview checks current management rights, including on a reloaded history line. */
 export async function loadCodeDecisionPages(
@@ -26,7 +30,7 @@ export async function loadCodeDecisionPages(
     const read = z.object({ data: HandoffSchema }).safeParse(await response.json());
     if (!read.success) return "failed";
     const { title, pages } = read.data.data;
-    return pages?.pages.length ? { title, pages } : null;
+    return pages?.pages.length ? { title, pages, codePageHref: codeVersionPageHref(read.data.data) } : null;
   } catch {
     return "failed";
   }

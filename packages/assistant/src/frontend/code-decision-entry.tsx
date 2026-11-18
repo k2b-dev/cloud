@@ -89,7 +89,7 @@ export function AssistantCodeDecisionEntry(props: {
               data-multiple={(decision?.pageCount ?? 1) > 1 || undefined}
               role="status"
             >
-              <span>{pageText().loading}</span>
+              <span class="sr-only k2b-sr-only">{pageText().loading}</span>
             </div>
           </Show>
         </div>

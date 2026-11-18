@@ -6,7 +6,7 @@ import { logger } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { codeQueryContracts } from "./contracts";
 import { type CodeManagerCandidate, currentChatManagers } from "./manager-recipients";
-import { describeCodePages } from "./page-links";
+import { type CodePageViewer, describeCodePages } from "./page-links";
 import { readPageSnapshot } from "./page-read";
 
 export type ChatPageRow = CodeManagerCandidate & { title: string; manifest: unknown };
@@ -40,13 +40,17 @@ export async function loadCodeChatPages(
   return projectCodeChatPages(rows, allowed);
 }
 
-/** Permission filtering precedes reading any author-supplied page metadata. */
-export function projectCodeChatPages(rows: readonly ChatPageRow[], allowed: ReadonlySet<string>): CodeChatPages[] {
+/** The shared page source applies membership and management rights to this authorized snapshot. */
+export function projectCodeChatPages(rows: readonly ChatPageRow[], viewers: ReadonlyMap<string, CodePageViewer>): CodeChatPages[] {
   return rows.flatMap((row) => {
-    if (!allowed.has(row.version_id)) return [];
     const manifest = CodeCheckedVersionManifestSchema.safeParse(row.manifest);
     if (!manifest.success) return [];
-    const links = describeCodePages(row.code_id, { id: row.version_id, manifest: manifest.data });
+    const links = describeCodePages(
+      row.code_id,
+      { id: row.version_id, manifest: manifest.data },
+      viewers.get(row.version_id) ?? null,
+      "editor",
+    );
     return links.pages.length ? [{ title: row.title, links }] : [];
   });
 }

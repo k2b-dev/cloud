@@ -15,8 +15,12 @@ const links = {
 };
 
 test("the activation event reads authorized pages through Core's existing preview, without model tools", async () => {
-  const fetch = response(200, { data: { title: "Lieferungen", pages: links } });
-  expect(await loadCodeDecisionPages("c_demo", "v")).toEqual({ title: "Lieferungen", pages: links });
+  const fetch = response(200, { data: { codeId: "c_demo", ownerKind: "person", title: "Lieferungen", pages: links } });
+  expect(await loadCodeDecisionPages("c_demo", "v")).toEqual({
+    title: "Lieferungen",
+    codePageHref: "/app/assistant/code/c_demo",
+    pages: links,
+  });
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(fetch.mock.calls[0]?.[0]).toBe("/api/code/activation/preview");
 });
@@ -29,7 +33,7 @@ test("readers and revoked access get no card", async () => {
 });
 test("no page, paused Code and an old active version have no card", async () => {
   for (const pages of [null, { ...links, homeUrl: null, pages: [] }]) {
-    response(200, { data: { title: "Lieferungen", pages } });
+    response(200, { data: { codeId: "c_demo", ownerKind: "person", title: "Lieferungen", pages } });
     expect(await loadCodeDecisionPages("c_demo", "v")).toBeNull();
     restore();
   }
@@ -40,4 +44,13 @@ test("transport and malformed answers expose a recoverable failure", async () =>
     expect(await loadCodeDecisionPages("c_demo", "v")).toBe("failed");
     restore();
   }
+});
+
+test("the overflow destination uses the resource owner's declared Code page", async () => {
+  response(200, { data: { codeId: "c_demo", ownerKind: "resource", page: "/app/grids/code/c_demo", title: "Lieferungen", pages: links } });
+  expect(await loadCodeDecisionPages("c_demo", "v")).toEqual({
+    title: "Lieferungen",
+    pages: links,
+    codePageHref: "/app/grids/code/c_demo",
+  });
 });

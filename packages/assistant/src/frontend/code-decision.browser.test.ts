@@ -18,10 +18,24 @@ const pageLink = (path: string, title: string) => ({
 const home = pageLink("/", "Lieferscheine");
 const handoff = (multiple = false): CodeDecisionPages => ({
   title: "Lieferungen",
+  codePageHref: "/app/assistant/code/c_delivery",
   pages: {
     versionId: "v_demo",
     homeUrl: home.href,
     pages: [home, ...(multiple ? [pageLink("/month", "Monatsübersicht"), pageLink("/settings", "Einstellungen")] : [])],
+  },
+});
+const preview = (multiple = false) => ({ ...handoff(multiple), codeId: "c_delivery", ownerKind: "person" });
+const crowded = (): CodeDecisionPages => ({
+  ...handoff(),
+  pages: {
+    ...handoff().pages,
+    pages: [
+      home,
+      ...Array.from({ length: 12 }, (_, index) =>
+        pageLink(`/report-${index}`, `Ausführliche Monatsübersicht für den Lieferbereich ${index + 1}`),
+      ),
+    ],
   },
 });
 const shots = process.env.GUSTAV_SCREENSHOTS?.trim();
@@ -68,7 +82,7 @@ beforeAll(async () => {
               deferred: true,
               replaced: mode === "dynamic-replaced",
             }
-          : { pages: mode === "none" ? null : handoff(mode === "multiple") }),
+          : { pages: mode === "none" ? null : mode === "crowded" ? crowded() : handoff(mode === "multiple") }),
       };
       return new Response(
         `<!doctype html><html class="${url.searchParams.get("theme") === "dark" ? "dark" : ""}" lang="${fixture.locale}" data-theme="${url.searchParams.get("theme") === "dark" ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script>window.decisionFixture=${JSON.stringify(fixture)}</script><script src="/fixture.js"></script></body></html>`,
@@ -180,7 +194,7 @@ test("current rights gate a live event; failed reads offer retry and Open naviga
       return route.fulfill({
         status: attempts === 1 ? status : 200,
         contentType: "application/json",
-        body: JSON.stringify({ data: { title: "Lieferungen", pages: handoff().pages } }),
+        body: JSON.stringify({ data: preview() }),
       });
     });
     try {
@@ -231,7 +245,7 @@ test("placeholder, failure and ready handoff preserve the sentence row and the f
           await route.fulfill({
             status: attempts === 1 ? 500 : 200,
             contentType: "application/json",
-            body: JSON.stringify({ data: handoff(multiple) }),
+            body: JSON.stringify({ data: preview(multiple) }),
           });
         });
         try {
@@ -239,6 +253,13 @@ test("placeholder, failure and ready handoff preserve the sentence row and the f
           const pending = page.locator(".assistant-code-decision__pages-pending");
           await pending.waitFor();
           await settled(page);
+          const loadingStyle = await pending.locator(".sr-only").evaluate((node) => {
+            const style = getComputedStyle(node);
+            return { position: style.position, width: style.width, height: style.height, clip: style.clip };
+          });
+          expect(loadingStyle).toEqual({ position: "absolute", width: "1px", height: "1px", clip: "rect(0px, 0px, 0px, 0px)" });
+          expect(await pending.locator(".sr-only").textContent()).toBe("Seitenlink wird geladen");
+          expect(await pending.getAttribute("role")).toBe("status");
           const before = await page.locator("main").boundingBox();
           const sentenceRow = await page.locator(".assistant-code-decision__placeholder-sentence").boundingBox();
           expect(await page.locator(".assistant-code-decision__text").count()).toBe(0);
@@ -284,7 +305,7 @@ test("a successful initial read shows the finished line once; replaced activatio
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ data: handoff(mode === "dynamic-multiple") }),
+        body: JSON.stringify({ data: preview(mode === "dynamic-multiple") }),
       });
     });
     try {
@@ -307,6 +328,49 @@ test("a successful initial read shows the finished line once; replaced activatio
       expect(pageErrors(page)).toEqual([]);
     } finally {
       gate.resolve();
+      await page.close();
+    }
+  }
+});
+
+test("many long page titles at 390 px keep one row, an ellipsis and a counted Code-page link", async () => {
+  for (const theme of ["light", "dark"]) {
+    const page = await open("crowded", 390, theme);
+    try {
+      const more = page.locator(".assistant-code-decision__more");
+      const remaining = more.locator("a.assistant-code-decision__remaining");
+      expect(await remaining.innerText()).toContain("+11 weitere");
+      expect(await remaining.getAttribute("href")).toBe("/app/assistant/code/c_delivery");
+      expect(await more.locator(".assistant-code-decision__additional-item:visible").count()).toBe(1);
+      const metrics = await more.evaluate((node) => {
+        const title = node.querySelector<HTMLElement>(".assistant-code-decision__additional-item a > span")!;
+        return {
+          height: node.getBoundingClientRect().height,
+          line: parseFloat(getComputedStyle(node).lineHeight),
+          ellipsis: getComputedStyle(title).textOverflow,
+          cut: title.scrollWidth > title.clientWidth,
+          overflow: document.documentElement.scrollWidth > innerWidth,
+        };
+      });
+      expect(metrics.height).toBe(metrics.line);
+      expect(metrics.ellipsis).toBe("ellipsis");
+      expect(metrics.cut).toBe(true);
+      expect(metrics.overflow).toBe(false);
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
+      const focus = await more.locator("a:focus-visible").evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { width: style.outlineWidth, style: style.outlineStyle, radius: style.borderRadius };
+      });
+      expect(focus.width).not.toBe("0px");
+      expect(focus.style).toBe("solid");
+      expect(focus.radius).not.toBe("0px");
+      if (shots) await page.screenshot({ path: resolve(shots, `gl-many-${theme}-390.png`) });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await settled(page);
+      expect(await more.evaluate((node) => node.getBoundingClientRect().height)).toBe(metrics.line);
+      expect(pageErrors(page)).toEqual([]);
+    } finally {
       await page.close();
     }
   }
