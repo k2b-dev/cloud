@@ -1,4 +1,4 @@
-import { ConflictError, PayloadTooLargeError, StoreFullError } from "@k2b/sync";
+import { ConflictError, PayloadTooLargeError, RetentionGapError, StoreFullError } from "@k2b/sync";
 import * as Y from "yjs";
 import { checkSharedTextBoundary, SHARED_TEXT_FREEZE_SAFETY_MS, SharedTextBoundaryError } from "./boundary";
 import { createDoc } from "./documents";
@@ -215,7 +215,7 @@ export const createRoomLifecycle = (config: {
       const persisted = await config
         .flushNow(docId, { signal, restoreRevision: stored.restoreRevision, targetCursor: marker.cursor })
         .catch(async (error: unknown) => {
-          if (error instanceof SharedTextSnapshotSaveError && !signal.aborted) {
+          if ((error instanceof SharedTextSnapshotSaveError || error instanceof RetentionGapError) && !signal.aborted) {
             try {
               // Release only this token, under admission and CAS. The open marker
               // also supersedes the retained freeze marker for the next editor.

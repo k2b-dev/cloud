@@ -24,6 +24,8 @@ export type SharedTextContributor = SharedTextActor & { lastContributedAt: Date 
 /** The store anchors legacy cursors to this log before returning a snapshot. */
 export type SharedTextStoredState = {
   state: Uint8Array | null;
+  /** Replay coverage for this generation, including durable proofs of absent
+   * document events in a pruned prefix. It need not identify a content edit. */
   cursor: string | null;
   restoreRevision: string;
   text: string | null;

@@ -360,6 +360,7 @@ shared draft and queued no message. Editing can remain locked for up to a minute
 while the interrupted attempt expires. Read the current draft with `draft get`
 and review it before sending again. Preparation may have saved already accepted
 edits, so use the returned revision rather than assuming the old one still applies.
+Pruning saved draft history does not change its content revision or invalidate the saved content.
 Known draft errors retain their codes and status. In particular, `DOCUMENT_FROZEN`
 (409) means another preparation still holds the temporary lock; review the draft
 again after that attempt finishes or its lock expires within a minute.

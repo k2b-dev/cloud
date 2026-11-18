@@ -7,6 +7,7 @@ import {
   sharedText,
   sharedTextSnapshotJobConfig,
 } from "@k2b/cloud/shared-text";
+import { ConflictError, RetentionGapError } from "@k2b/sync";
 import * as Y from "yjs";
 import { readDraftDocument } from "../lib/draft-document";
 import { refreshDraftAdoption } from "./draft-adoption";
@@ -52,13 +53,22 @@ export const draftDocumentSnapshotStore: SharedTextSnapshotStore = {
   },
   async load(docId, { signal }) {
     signal?.throwIfAborted();
-    const [row] = await sql<{ state: Uint8Array; text: string; cursor: string | null; restoreRevision: string }[]>`
-      SELECT doc_state AS state, body_markdown AS text, doc_cursor AS cursor, doc_generation::text AS "restoreRevision"
+    const [row] = await sql<{ state: Uint8Array; cursor: string | null; coverage: string; restoreRevision: string }[]>`
+      SELECT doc_state AS state, doc_cursor AS cursor, doc_generation::text AS "restoreRevision",
+        GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0))::text AS coverage
       FROM mail.drafts WHERE id = ${docId}::uuid AND edit_mode = 'shared' AND doc_state IS NOT NULL
         AND state IN ('draft', 'scheduled', 'sending', 'sent') AND doc_history_complete`;
     // A sent tombstone may drain late admitted room input without changing the
     // immutable outbound body. The room base must describe its technical state.
-    return row ? { ...row, text: project(row.state).body } : null;
+    if (!row) return null;
+    // An idle proof covers absent document events in the pruned global prefix.
+    // It advances replay coverage, never the content revision or stored cursor.
+    return {
+      state: row.state,
+      restoreRevision: row.restoreRevision,
+      text: project(row.state).body,
+      cursor: Number(row.coverage) > 0 ? mailDraftDocumentLog.topic().cursorAt(Number(row.coverage)) : row.cursor,
+    };
   },
   async save(docId, input: SharedTextSaveInput) {
     const content = project(input.state);
@@ -133,16 +143,32 @@ export const draftDocumentSnapshotStore: SharedTextSnapshotStore = {
     });
     mailLive.wake();
   },
-  async recover(docId, _cause, { signal }) {
+  async recover(docId, cause, { signal }) {
     await withDraftDocumentCommit(async (db) => {
       await lockDraftDocumentCoverage(db);
       const [row] = await db<
-        { doc_state: Uint8Array; doc_cursor: string | null; doc_generation: string; revision: number; mailbox_id: string }[]
+        {
+          doc_state: Uint8Array;
+          doc_cursor: string | null;
+          doc_generation: string;
+          revision: number;
+          mailbox_id: string;
+          coverage: string;
+        }[]
       >`
-        SELECT doc_state, doc_cursor, doc_generation::text, revision, mailbox_id FROM mail.drafts
+        SELECT doc_state, doc_cursor, doc_generation::text, revision, mailbox_id,
+          GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0))::text AS coverage FROM mail.drafts
         WHERE id = ${docId}::uuid AND edit_mode = 'shared' AND state = 'draft'
-          AND doc_frozen_cursor IS NULL AND doc_state IS NOT NULL FOR UPDATE`;
+          AND doc_frozen_cursor IS NULL AND doc_state IS NOT NULL AND doc_history_complete FOR UPDATE`;
       if (!row) return;
+      // Pruning happens before its SQL commit. Taking coverage above waits for
+      // the proof to become visible before classifying a concurrent replay gap.
+      if (
+        cause instanceof RetentionGapError &&
+        cause.resumeAfter &&
+        Number(row.coverage) >= mailDraftDocumentLog.topic().cursorSequence(cause.resumeAfter)
+      )
+        throw new ConflictError("Draft snapshot coverage advanced during pruning; retry the snapshot");
       const head = await mailDraftDocumentLog.topic().head();
       const doc = new Y.Doc();
       try {
