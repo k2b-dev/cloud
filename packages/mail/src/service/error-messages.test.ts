@@ -6,6 +6,14 @@ import { localizeMailError, MAX_ERROR_DETAIL_LENGTH, safeErrorDetail } from "./e
 import { providerBusy } from "./provider-operation-lock";
 
 describe("Mail service messages", () => {
+  test("localizes the missing send recipient without an English server detail", () => {
+    const error = err.badInput("At least one recipient is required before sending");
+    for (const locale of ["de", "de-DE", "de-CH"]) {
+      expect(localizeMailError(error, locale)).toEqual({ ...error, message: "Gib mindestens eine Empfängeradresse an." });
+    }
+    expect(localizeMailError(error, "en")).toBe(error);
+  });
+
   test("preserves stable error metadata while translating German regional locales", () => {
     expect(localizeMailError(err.notFound("Mailbox"), "de-CH")).toEqual({
       code: "NOT_FOUND",
