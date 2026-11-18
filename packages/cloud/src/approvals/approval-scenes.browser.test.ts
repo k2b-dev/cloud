@@ -25,6 +25,8 @@ const buildHarness = async (entrypoint = resolve(import.meta.dir, "approval-scen
       {
         name: "solid-approval-scenes-test",
         setup(builder) {
+          // Root fixtures have no application package scope; use the public browser distribution.
+          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "dist/browser/index.js") }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
