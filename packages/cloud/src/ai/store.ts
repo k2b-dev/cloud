@@ -3288,7 +3288,8 @@ export const aiConversations: AiConversationService = {
       // The dispatcher's snapshot can predate archiving; an archived chat starts no queued turn.
       if (conversation.archived_at) {
         if (input.choice) throw new AiChoiceConflict("choice_closed");
-        throw new AiMessageQueueConflict("Conversation not found.");
+        // A queued turn names the archive for the dispatcher; a person sees the chat as gone.
+        throw new AiMessageQueueConflict(input.queuedMessageId ? "Conversation is archived." : "Conversation not found.");
       }
       if (input.retrySourceTurnId) {
         const [source] = await tx<{ run_config: AiTurnRunConfig | null }[]>`
