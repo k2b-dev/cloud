@@ -312,6 +312,112 @@ describe("@k2b/ui Lightbox", () => {
     }
   });
 
+  // The file has the whole screen and the pills float above it: a PDF fills its width up to its natural 793 px, starts
+  // below the head, ends above the pills, and zoomed scrolls sideways across the whole screen from the middle.
+  for (const [width, height, phone] of [
+    [1440, 900, false],
+    [390, 844, true],
+  ] as const)
+    test(`a PDF and a picture fill the whole screen under floating pills (${width} px)`, async () => {
+      const page = await load({ search: "?index=1", width, height, phone });
+      try {
+        await page.locator('.k2b-lightbox [data-pdf-page="0"] img').waitFor();
+        await settled(page);
+        const box = (selector: string) =>
+          page
+            .locator(selector)
+            .first()
+            .evaluate((element) => {
+              const { x, y, width, height } = element.getBoundingClientRect();
+              return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+            });
+        const screen = { x: 0, y: 0, width, height };
+        expect(await box(".k2b-lightbox__stage")).toEqual(screen);
+        expect(await box(".k2b-lightbox .k2b-pdf-viewer__pages")).toEqual(screen);
+        const head = await box(".k2b-lightbox__actions");
+        const tools = await box(".k2b-lightbox__tools");
+        const strip = await box(".k2b-lightbox__strip");
+        // The pills lie over the pages, not beside them.
+        expect(tools.y + tools.height).toBeLessThan(height);
+        expect(strip.y + strip.height).toBe(height - 7);
+        const first = await box('[data-pdf-page="0"]');
+        expect(first.width).toBe(Math.min(width - 24, 793));
+        expect(first.y).toBeGreaterThanOrEqual(head.y + head.height);
+        // Over a document's text the pills are solid.
+        expect(await page.locator(".k2b-lightbox__tools").evaluate((pill) => getComputedStyle(pill).backdropFilter)).toBe("none");
+        await shot(page, `lightbox-vollbild-pdf-light-${width}.png`);
+
+        // Zoomed to 300 % the page runs past both screen edges and scrolls sideways, from its middle.
+        for (let step = 0; step < 4; step++) await page.getByRole("button", { name: "Zoom in" }).click();
+        expect(await page.locator(".k2b-lightbox__percent").textContent()).toBe("300 %");
+        await settled(page);
+        const zoomed = await page.locator(".k2b-lightbox .k2b-pdf-viewer__pages").evaluate((area) => ({
+          fit: area.hasAttribute("data-fit"),
+          overflowX: getComputedStyle(area).overflowX,
+          sideways: area.scrollWidth - area.clientWidth,
+          left: area.scrollLeft,
+        }));
+        expect(zoomed.fit).toBe(false);
+        expect(zoomed.overflowX).not.toBe("hidden");
+        expect(zoomed.sideways).toBeGreaterThan(0);
+        expect(Math.abs(zoomed.left - zoomed.sideways / 2)).toBeLessThanOrEqual(2);
+        const wide = await box('[data-pdf-page="0"]');
+        expect(wide.width).toBe(3 * Math.min(width - 24, 793));
+        expect(wide.x).toBeLessThan(0);
+        expect(wide.x + wide.width).toBeGreaterThan(width);
+        await shot(page, `lightbox-vollbild-pdf-300-light-${width}.png`);
+
+        // Fitted again, the end of the last page stays clear of the pills.
+        await page.locator(".k2b-lightbox__stage").focus();
+        await page.keyboard.press("0");
+        await page.locator(".k2b-lightbox .k2b-pdf-viewer__pages").evaluate((area) => {
+          area.scrollTop = area.scrollHeight;
+        });
+        await page.waitForFunction(() => document.querySelector(".k2b-lightbox__page")?.textContent === "Page 4 / 4");
+        await page.locator('.k2b-lightbox [data-pdf-page="3"] img').waitFor();
+        await settled(page);
+        const last = await box('[data-pdf-page="3"]');
+        expect(last.y + last.height).toBeLessThanOrEqual((await box(".k2b-lightbox__tools")).y);
+        await shot(page, `lightbox-vollbild-pdf-letzte-seite-light-${width}.png`);
+
+        // A picture shows whole on the full stage, under glass pills.
+        await page.locator(".k2b-lightbox__stage").focus();
+        await page.keyboard.press("ArrowLeft");
+        await page.locator(".k2b-lightbox__image").waitFor();
+        await settled(page);
+        expect(await box(".k2b-lightbox__stage")).toEqual(screen);
+        const picture = await box(".k2b-lightbox__image");
+        expect(picture.x).toBeGreaterThanOrEqual(0);
+        expect(picture.y).toBeGreaterThanOrEqual(0);
+        expect(picture.x + picture.width).toBeLessThanOrEqual(width);
+        expect(picture.y + picture.height).toBeLessThanOrEqual(height);
+        expect(Math.min(picture.width, 1200)).toBe(Math.min(width, 1200));
+        expect(await page.locator(".k2b-lightbox__tools").evaluate((pill) => getComputedStyle(pill).backdropFilter)).not.toBe("none");
+        await shot(page, `lightbox-vollbild-bild-light-${width}.png`);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+  test("a document's placeholder holds the place of its first page, so nothing moves when it shows", async () => {
+    const page = await load({ search: "?index=3&slow" });
+    try {
+      const rect = (selector: string) =>
+        page.locator(selector).evaluate((element) => {
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return [x, y, width, height].map(Math.round);
+        });
+      await page.locator('.k2b-lightbox__placeholder[role="status"]').waitFor();
+      const placeholder = await rect(".k2b-lightbox__placeholder");
+      await page.locator('.k2b-lightbox [data-pdf-page="0"] img').waitFor();
+      await settled(page);
+      const shown = await rect('[data-pdf-page="0"]');
+      for (const [index, value] of shown.entries()) expect(Math.abs(value - placeholder[index]!)).toBeLessThanOrEqual(1);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   test("a phone: full screen, no edge buttons, a swipe steps and a pull down closes", async () => {
     const page = await load({ width: 390, height: 844, phone: true });
     try {
@@ -341,7 +447,8 @@ describe("@k2b/ui Lightbox", () => {
         }
         await page.evaluate(
           ([from, to]) => {
-            const stage = document.querySelector(".k2b-lightbox__stage")!;
+            // The touch starts on what lies under the finger, such as a PDF's pages, as a real touch does.
+            const stage = document.elementFromPoint(from[0], from[1]) ?? document.querySelector(".k2b-lightbox__stage")!;
             const send = (type: string, touches: [number, number][], changed: [number, number]) => {
               const event = new Event(type, { bubbles: true });
               const point = ([clientX, clientY]: [number, number]) => ({ identifier: 1, target: stage, clientX, clientY });
@@ -360,6 +467,20 @@ describe("@k2b/ui Lightbox", () => {
       };
       await swipe([320, 400], [80, 410]);
       expect(await name(page)).toContain("Angebot-0412");
+      // Scrolled down in a PDF, a pull down scrolls back up and never closes.
+      const pages = page.locator(".k2b-lightbox .k2b-pdf-viewer__pages");
+      await page.locator('.k2b-lightbox [data-pdf-page="0"] img').waitFor();
+      await pages.evaluate((area) => {
+        area.scrollTop = 1200;
+      });
+      await settled(page);
+      await swipe([200, 200], [205, 500]);
+      await settled(page);
+      expect(await page.locator("dialog.k2b-lightbox[open]").count()).toBe(1);
+      await pages.evaluate((area) => {
+        area.scrollTop = 0;
+      });
+      await settled(page);
       await swipe([200, 200], [205, 500]);
       await settled(page);
       expect(await page.locator("dialog.k2b-lightbox").count()).toBe(0);

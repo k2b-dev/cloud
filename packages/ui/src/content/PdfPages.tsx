@@ -391,6 +391,31 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
     area.scrollLeft = 0;
     area.scrollTop = (top * factor()) / before;
   };
+  /*
+   * A host's zoom keeps the middle of the view where it is, as a pinch keeps the point between the fingers: the
+   * fractions of the scrolled content at the middle, remembered on every scroll. Before the first scroll the top of
+   * the document stays in view and the pages stay centred sideways.
+   */
+  let middle: { x: number; y: number } | undefined;
+  const remember = () => {
+    if (!area?.scrollWidth || !area.scrollHeight) return;
+    middle = {
+      x: (area.scrollLeft + area.clientWidth / 2) / area.scrollWidth,
+      y: (area.scrollTop + area.clientHeight / 2) / area.scrollHeight,
+    };
+  };
+  createEffect(
+    on(
+      hostScale,
+      () => {
+        if (!area) return;
+        const at = middle ?? { x: 0.5, y: area.clientHeight / 2 / Math.max(1, area.scrollHeight) };
+        area.scrollLeft = at.x * area.scrollWidth - area.clientWidth / 2;
+        area.scrollTop = at.y * area.scrollHeight - area.clientHeight / 2;
+      },
+      { defer: true },
+    ),
+  );
 
   onMount(() => {
     if (!area) return;
@@ -441,6 +466,7 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
     // The page in the middle of the view is the current one.
     let frame = 0;
     const track = () => {
+      remember();
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const middle = scroller.getBoundingClientRect().top + scroller.clientHeight / 2;
@@ -531,11 +557,11 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
   return (
     // Out of keyboard reach until the first page is drawn, so focus never lands on a viewer still being prepared.
     <div class="k2b-pdf-viewer__document" data-drawn={ready() ? "" : undefined} inert={!ready()}>
-      {/* One scroll area: fitted to the width it scrolls only down, zoomed the same area also scrolls sideways. */}
+      {/* One scroll area: fitted to the width it scrolls only down, zoomed (also by the host) it scrolls sideways too. */}
       <div
         ref={area}
         class="k2b-pdf-viewer__pages"
-        data-fit={fitWidth() ? "" : undefined}
+        data-fit={fitWidth() && hostScale() <= 1 ? "" : undefined}
         data-zoom={percent()}
         tabIndex={0}
         role="document"

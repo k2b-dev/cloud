@@ -1,0 +1,6 @@
+### The Lightbox showed a PDF in a narrow column and cut it off when zoomed
+
+- **What happened:** A PDF in the Lightbox sat in a column at most 56rem wide between the head and the zoom pill and film strip, fitted to the page height. At 300 % the page was cut off at the column's edge instead of running across the screen.
+- **Root cause:** The Lightbox stage kept the pills' room as padding and sized the PDF with `width: min(100%, 56rem)` and `fit="page"` (`packages/ui/src/styles/content-parity.css`, `packages/ui/src/content/Lightbox.tsx`). The host's zoom scaled the fitted width, but `PdfPages` still marked the area as fitted (`data-fit`), which hides sideways overflow (`packages/ui/src/content/PdfPages.tsx`).
+- **Error class:** Content made larger than its scroll area by a host, while the area still clips the overflow axis it assumes is unused.
+- **Guard:** `packages/ui/src/content/lightbox.browser.test.ts` checks at 1440 and 390 px that the stage and the PDF pages fill the whole screen under the pills, that a page at 300 % scrolls sideways from its middle, that the last page ends above the pills, that the loading stand-in holds the first page's place, and that a pull down in a scrolled PDF does not close the Lightbox.

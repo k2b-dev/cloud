@@ -113,11 +113,13 @@ const bytes = (content: FileViewContent) =>
  * shown through its preview PDF, and for anything else its icon, facts and Download. It loads the file itself and
  * shows every state: a placeholder after a short wait, a failure with "Try again", and "Preview not possible".
  *
- * The name sits in a pill at the top left; Open (when the caller gives a target), the caller's commands, Download
- * and Close in a pill at the top right. Large round buttons at the screen edges step between files, as do ← and →
- * and the film strip from two files on; there is no "2 / 8" counter. The only pill at the bottom holds zoom and the
- * page. Escape, Close, a press beside the file or a swipe down close it, and focus returns to the opener. On a phone
- * it fills the screen and a swipe steps between files.
+ * The file has the whole screen: a PDF or document fills its width up to its natural size and scrolls under the
+ * controls, a picture shows whole on the full screen, and zoomed in either pans across the full screen. The controls
+ * float above it: the name in a pill at the top left; Open (when the caller gives a target), the caller's commands,
+ * Download and Close in a pill at the top right. Large round buttons at the screen edges step between files, as do
+ * ← and → and the film strip from two files on; there is no "2 / 8" counter. The only pill at the bottom holds zoom
+ * and the page. Escape, Close, a press beside the file or a swipe down from the top close it, and focus returns to
+ * the opener. On a phone a swipe steps between files.
  */
 export default function Lightbox(props: LightboxProps): JSX.Element {
   const t = useLightboxMessages();
@@ -224,16 +226,22 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
   };
 
   // Touch: a sideways swipe steps, a pull down closes. A zoomed picture keeps its own drag.
-  let touch: { x: number; y: number } | null = null;
+  let touch: { x: number; y: number; top: boolean } | null = null;
+  /** Nothing under the finger is scrolled down, such as a PDF's pages; otherwise a pull down scrolls back up. */
+  const atTop = (target: EventTarget | null) => {
+    for (let node = target instanceof Element ? target : null; node && node !== dialog; node = node.parentElement)
+      if (node.scrollTop > 0) return false;
+    return true;
+  };
   const touchStart = (event: TouchEvent) => {
     const first = event.touches.length === 1 ? event.touches[0] : undefined;
-    touch = first && zoom() === 1 ? { x: first.clientX, y: first.clientY } : null;
+    touch = first && zoom() === 1 ? { x: first.clientX, y: first.clientY, top: atTop(event.target) } : null;
   };
   const touchMove = (event: TouchEvent) => {
     const first = event.touches[0];
     if (!touch || !first) return;
     const dy = first.clientY - touch.y;
-    setPull(dy > 0 && dy > Math.abs(first.clientX - touch.x) && stage.scrollTop <= 0 ? dy : 0);
+    setPull(dy > 0 && dy > Math.abs(first.clientX - touch.x) && touch.top ? dy : 0);
   };
   const touchEnd = (event: TouchEvent) => {
     const last = event.changedTouches[0];
@@ -397,7 +405,7 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
       </div>
       <Show when={props.items.length > 1}>
         <ThumbnailStrip
-          class="k2b-lightbox__strip"
+          class="k2b-lightbox__strip k2b-overlay-surface"
           label={t().files}
           items={props.items.map((entry, position) => ({
             id: String(position),
@@ -570,7 +578,6 @@ function LightboxStage(props: {
                 data={data()}
                 title={props.item.name}
                 zoom={false}
-                fit="page"
                 scale={props.zoom()}
                 onReady={(drawn) => {
                   props.onPages(drawn.pages);
