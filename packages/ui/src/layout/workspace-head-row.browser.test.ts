@@ -657,8 +657,15 @@ for (const theme of ["light", "dark"])
         expect(list.shadow).toBe("none");
         expect(list.borders).toEqual(["0px", "0px", "0px", "0px"]);
       }
-      // Edges are drawn inside: an inset shadow, never a drop shadow or a baseline.
-      const insetOnly = (shadow: string) => shadow === "none" || shadow.split(/,(?![^(]*\))/).every((part) => part.includes("inset"));
+      // Edges are drawn inside: an inset shadow, never a drop shadow or a baseline. The only outer layer is the flat
+      // focus ring (spread only, no offset or blur), transparent at rest.
+      const insetOnly = (shadow: string) =>
+        shadow === "none" ||
+        shadow.split(/,(?![^(]*\))/).every((part) => {
+          if (part.includes("inset")) return true;
+          const [x = 0, y = 0, blur = 0] = [...part.matchAll(/(-?[\d.]+)px/g)].map((match) => Number(match[1]));
+          return x === 0 && y === 0 && blur === 0;
+        });
       for (const tab of styles.tabs) {
         expect(insetOnly(tab.shadow), tab.shadow).toBe(true);
         expect(tab.borders[2]).toBe("0px");

@@ -359,10 +359,11 @@ describe("one edge source in the browser", () => {
               }),
             ]);
             const label = `${theme} stepper ${state}`;
-            // The fill starts right inside the border and is clipped to its rounded corner.
-            expect(inner.x, `${label} left`).toBe(outer.x + outer.border);
-            expect(inner.y, `${label} top`).toBe(outer.y + outer.border);
-            expect(inner.height, `${label} height`).toBe(outer.height - 2 * outer.border);
+            // The fill starts right inside the border and is clipped to its rounded corner. WebKit lays out in 1/64 px,
+            // so a 1 px border at 1.5x lands within that unit.
+            expect(inner.x, `${label} left`).toBeCloseTo(outer.x + outer.border, 1);
+            expect(inner.y, `${label} top`).toBeCloseTo(outer.y + outer.border, 1);
+            expect(inner.height, `${label} height`).toBeCloseTo(outer.height - 2 * outer.border, 1);
             expect(outer.overflow, `${label} clip`).toBe("hidden");
             expect(inner.shadow, `${label} own edge`).toBe("none");
             // 1 px; WebKit snaps it to one device pixel at 1.5x (0.667 px).

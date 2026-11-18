@@ -150,20 +150,21 @@ sidebar row also turns semibold; its label reserves that width in advance.
 
 ### Selected tabs, segments, and filters
 
-A selected tab, view tab, or segment and an active filter are selection
-states and carry the app ink like the selected navigation row. They draw it as
-the selected edge with a light fill instead of the navigation fill, so they
-read as controls (see
+A selected segment and an active filter are selection states and carry the
+app ink like the selected navigation row. They draw it as the 1 px selected
+edge with a light fill instead of the navigation fill, so they read as
+controls (see
 [Filters, buttons, and clickable cards](#filters-buttons-and-clickable-cards)).
 
 | State | Primitive | Class |
 | --- | --- | --- |
-| Selected tab | `Tabs` | `k2b-tabs` |
-| Current view | `ViewTabs` | `k2b-view-tabs` |
 | Selected segment | `SegmentedControl` | `k2b-segmented-control` |
 | Active filter | `FilterChip`, `FilterToggle` | `k2b-filter-chip` |
 | Selected choice in a menu's segment row or tiles | `Dropdown` | `k2b-dropdown` |
-| Active tab of a pane group | `Panes` | `k2b-panes` |
+
+A selected tab (`Tabs`), the current view (`ViewTabs`), and the active tab of a
+pane group (`Panes`) show the choice with the same light fill and app ink
+only, without an edge.
 
 Do not draw a chosen view, range, or filter as a filled primary button such
 as `variant={chosen ? "primary" : "secondary"}`. That makes a choice look like
