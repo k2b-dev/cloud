@@ -5,7 +5,6 @@ import { createDomTestHarness } from "../../../ui/test/dom";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { invalidateSpacesData } from "./[id]/_components/workspace/workspace-events";
 
-
 // Compile the island outside the first case's budget, with a document for @k2b/ui's browser entry.
 const loadOverview = async () => {
   const dom = createDomTestHarness();

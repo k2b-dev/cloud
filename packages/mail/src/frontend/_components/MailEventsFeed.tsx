@@ -235,17 +235,24 @@ export function MailEventsFeed(props: {
         actor: row.actorLabel,
         avatar: {
           name: row.actorLabel,
-          kind: row.automated || row.event.actor.kind === "service_account" ? "service" : row.event.actor.kind === "user" && row.event.actor.id ? "person" : "system",
+          kind:
+            row.automated || row.event.actor.kind === "service_account"
+              ? "service"
+              : row.event.actor.kind === "user" && row.event.actor.id
+                ? "person"
+                : "system",
           src: row.event.actor.kind === "user" ? cloudAvatarSource(row.event.actor.id, row.event.actor.avatarHash) : undefined,
         },
         icon: row.icon,
         tone: row.tone === "error" ? "danger" : row.tone === "warning" ? "warning" : "neutral",
-        text: <>
-          {row.before}
-          <Show when={row.subject}>{(subject) => <span>{subject()}</span>}</Show>
-          {row.after}
-          <Show when={row.count > 1}> · {t().times({ count: row.count })}</Show>
-        </>,
+        text: (
+          <>
+            {row.before}
+            <Show when={row.subject}>{(subject) => <span>{subject()}</span>}</Show>
+            {row.after}
+            <Show when={row.count > 1}> · {t().times({ count: row.count })}</Show>
+          </>
+        ),
         detail: row.detail,
         href: row.event.conversationId ? eventHref(row.event.conversationId) : undefined,
       }}

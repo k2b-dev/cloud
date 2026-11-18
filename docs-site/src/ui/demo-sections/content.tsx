@@ -1110,7 +1110,12 @@ const ActivityWideDemo = () => (
       <ActivityList.Row
         now={ACTIVITY_NOW}
         timeZone="Europe/Berlin"
-        entry={{ at: ACTIVITY_NOW, actor: "Import service", avatar: { name: "Import service", kind: "service" }, text: "Imported the latest records" }}
+        entry={{
+          at: ACTIVITY_NOW,
+          actor: "Import service",
+          avatar: { name: "Import service", kind: "service" },
+          text: "Imported the latest records",
+        }}
       />
     </div>
   </DemoCard>

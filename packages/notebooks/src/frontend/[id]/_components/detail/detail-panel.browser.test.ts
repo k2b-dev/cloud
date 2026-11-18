@@ -225,7 +225,11 @@ for (const width of [1440, 390]) {
           ),
         ]
           .filter((row) => visible(row) && !row.closest("[hidden]"))
-          .map((row) => ({ label: row.textContent?.trim().slice(0, 30) ?? "", x: inkLeft(row), inset: row.classList.contains("k2b-activity__entry") ? 20 : 0 }))
+          .map((row) => ({
+            label: row.textContent?.trim().slice(0, 30) ?? "",
+            x: inkLeft(row),
+            inset: row.classList.contains("k2b-activity__entry") ? 20 : 0,
+          }))
           .filter((row) => Number.isFinite(row.x));
         const right = [...document.querySelectorAll(".k2b-discussion__timestamp, .k2b-section__actions .k2b-button")]
           .filter(visible)
@@ -250,7 +254,11 @@ for (const width of [1440, 390]) {
       expect(edges.titles.filter((title) => Math.abs(title.x - edge) > 1).map((title) => title.label)).toEqual([]);
       // Presence, comments, tasks, contents, tags, links, attachments, references, access, properties, activity.
       expect(edges.bodies.length).toBeGreaterThanOrEqual(10);
-      expect(edges.bodies.filter((body) => Math.abs(body.x - edge - (body.label === "Aktivität" ? 20 : 0)) > 1).map((body) => `${body.label}: ${body.x - edge}`)).toEqual([]);
+      expect(
+        edges.bodies
+          .filter((body) => Math.abs(body.x - edge - (body.label === "Aktivität" ? 20 : 0)) > 1)
+          .map((body) => `${body.label}: ${body.x - edge}`),
+      ).toEqual([]);
       expect(edges.rows.length).toBeGreaterThan(30);
       expect(edges.rows.filter((row) => Math.abs(row.x - edge - row.inset) > 1).map((row) => `${row.label}: ${row.x - edge}`)).toEqual([]);
       // Activity avatars deliberately keep the shared list inset (8px surface + 12px row padding).
@@ -425,8 +433,11 @@ for (const width of [1440, 390]) {
       await hoverInPlace(activityRow);
       expect(await activityRow.boundingBox()).toEqual(rowBefore);
       expect(await page.locator(".notebook-activity [title]").count()).toBe(0);
-      expect(await page.locator(".notebook-activity .k2b-activity__text").evaluateAll((nodes) => nodes.every((node) => node.scrollWidth <= node.clientWidth))).toBe(true);
-
+      expect(
+        await page
+          .locator(".notebook-activity .k2b-activity__text")
+          .evaluateAll((nodes) => nodes.every((node) => node.scrollWidth <= node.clientWidth)),
+      ).toBe(true);
     } finally {
       release();
       await page.close();

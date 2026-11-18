@@ -110,7 +110,11 @@ const renderFeed = async (input: { page: MailEventsPage | null; error?: string |
 test.skipIf(isServer)("lists events under their day, opens a conversation in place, and leaves events without one unlinked", async () => {
   const feed = await renderFeed({
     page: page([
-      event("3", { actor: { kind: "user", id: MIRA, displayName: "Mira Schulz", avatarHash: "fixture-picture" }, action: "message.sent", metadata: { result: "failed", intent: "reply" } }),
+      event("3", {
+        actor: { kind: "user", id: MIRA, displayName: "Mira Schulz", avatarHash: "fixture-picture" },
+        action: "message.sent",
+        metadata: { result: "failed", intent: "reply" },
+      }),
       event("2", { action: "draft.created", conversationId: null, conversationSubject: null }),
       event("1", {
         actor: { kind: "workflow", id: null, displayName: "Rechnungen", avatarHash: null },
@@ -198,7 +202,9 @@ test.skipIf(isServer)("shows the empty, filtered empty, loading and error states
   }
   const loading = await renderFeed({ page: page([event("1")]), loading: true });
   try {
-    expect(loading.dom.root.querySelector(".mail-events__skeleton [role='status']")?.getAttribute("aria-label")).toContain("Ereignisse werden geladen");
+    expect(loading.dom.root.querySelector(".mail-events__skeleton [role='status']")?.getAttribute("aria-label")).toContain(
+      "Ereignisse werden geladen",
+    );
     expect(loading.rows()).toHaveLength(0);
     // The chips stay in place while the feed loads.
     expect(loading.dom.root.querySelector("[data-mail-events-filters]")).not.toBeNull();

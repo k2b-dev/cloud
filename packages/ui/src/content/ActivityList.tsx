@@ -353,7 +353,6 @@ function ActivityRowItem(props: {
   };
   return (
     // tabindex -1: the target for focus after a reload, never in the tab order.
-    // biome-ignore lint/a11y/useKeyWithClickEvents: the sentence's own button is the keyboard target; a row click only widens the pointer target.
     <Dynamic
       component={props.listItem ? "li" : "div"}
       {...e().attrs}

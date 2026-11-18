@@ -8,7 +8,6 @@ import {
   type ActivityEntry,
   ActivityList,
   AppWorkspace,
-  Avatar,
   Button,
   createNavigation,
   DetailPanel,
@@ -255,9 +254,10 @@ export default function SpacesOverview(props: Props) {
         avatar: {
           name: entry.actor.displayName,
           kind: entry.actor.kind === "service_account" ? "service" : entry.actor.kind === "user" && entry.actor.id ? "person" : "system",
-          src: entry.actor.kind === "user" && entry.actor.id && entry.actor.avatarHash
-            ? `/api/accounts/users/${encodeURIComponent(entry.actor.id)}/avatar?rev=${encodeURIComponent(entry.actor.avatarHash)}`
-            : undefined,
+          src:
+            entry.actor.kind === "user" && entry.actor.id && entry.actor.avatarHash
+              ? `/api/accounts/users/${encodeURIComponent(entry.actor.id)}/avatar?rev=${encodeURIComponent(entry.actor.avatarHash)}`
+              : undefined,
         },
       }),
     );

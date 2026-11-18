@@ -3714,8 +3714,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const beforeHover = await firstRow.boundingBox();
             await hoverInPlace(firstRow);
             expect(await firstRow.boundingBox()).toEqual(beforeHover);
-            const ink = await firstRow.evaluate((element) => [getComputedStyle(element.querySelector(".k2b-activity__text")!).color,
-              getComputedStyle(element.querySelector("a")!).color]);
+            const ink = await firstRow.evaluate((element) => [
+              getComputedStyle(element.querySelector(".k2b-activity__text")!).color,
+              getComputedStyle(element.querySelector("a")!).color,
+            ]);
             expect(ink[0]).toBe(ink[1]);
             const failed = page.locator('[data-mail-event="6"]');
             expect(await failed.getAttribute("data-tone")).toBe("error");
@@ -3748,84 +3750,84 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         });
 
       for (const width of [1440, 390])
-      test(`events filters ${width}: kind, person and concerns-me survive a reload without moving the feed`, async () => {
-        const english = `${boxPath}?view=events`;
-        const page = await open(english, width, width === 390 ? 844 : 900);
-        try {
-          const filters = page.locator("[data-mail-events-filters]");
-          const frame = await filters.boundingBox();
-          const feedFrame = await page.locator(".mail-events__feed").boundingBox();
-          await page.locator("[data-mail-events-filters] .k2b-filter-chip").first().click();
-          const response = page.waitForResponse((response) => response.url().includes("/workspace-"));
-          await page.getByRole("menuitemradio", { name: "Comments" }).click();
-          await response;
-          await page.waitForURL(/eventKind=comment/);
-          await settled(page);
-          expect(await rows(page).count()).toBe(1);
-          expect(await page.locator("[data-mail-events-filters]").textContent()).toContain("Kind: Comments");
-          expect(await filters.boundingBox()).toEqual(frame);
-          expect(await page.locator(".mail-events__feed").boundingBox()).toEqual(feedFrame);
-          await page.reload();
-          await ready(page);
-          expect(await rows(page).count()).toBe(1);
-          const reset = page.waitForResponse((response) => response.url().includes("/workspace-"));
-          await page.getByRole("button", { name: "Reset" }).click();
-          await reset;
-          await page.waitForURL(new URL(english, server.url).href);
-          await settled(page);
-          expect(await rows(page).count()).toBe(11);
-          await page.locator("[data-mail-events-person]").click();
-          const person = page.waitForResponse((response) => response.url().includes("/workspace-"));
-          await page.getByRole("option", { name: "Mira Schulz", exact: true }).click();
-          await person;
-          await page.waitForURL(/eventActor=/);
-          await page.reload();
-          await ready(page);
-          expect(await page.locator("[data-mail-events-person]").textContent()).toContain("Mira Schulz");
-          expect(await rows(page).count()).toBeGreaterThan(0);
-          expect(await filters.boundingBox()).toEqual(frame);
-          expect(await page.locator(".mail-events__feed").boundingBox()).toEqual(feedFrame);
-          const clearPerson = page.waitForResponse((response) => response.url().includes("/workspace-"));
-          await page.getByRole("button", { name: "Reset", exact: true }).click();
-          await clearPerson;
-          await settled(page);
+        test(`events filters ${width}: kind, person and concerns-me survive a reload without moving the feed`, async () => {
+          const english = `${boxPath}?view=events`;
+          const page = await open(english, width, width === 390 ? 844 : 900);
+          try {
+            const filters = page.locator("[data-mail-events-filters]");
+            const frame = await filters.boundingBox();
+            const feedFrame = await page.locator(".mail-events__feed").boundingBox();
+            await page.locator("[data-mail-events-filters] .k2b-filter-chip").first().click();
+            const response = page.waitForResponse((response) => response.url().includes("/workspace-"));
+            await page.getByRole("menuitemradio", { name: "Comments" }).click();
+            await response;
+            await page.waitForURL(/eventKind=comment/);
+            await settled(page);
+            expect(await rows(page).count()).toBe(1);
+            expect(await page.locator("[data-mail-events-filters]").textContent()).toContain("Kind: Comments");
+            expect(await filters.boundingBox()).toEqual(frame);
+            expect(await page.locator(".mail-events__feed").boundingBox()).toEqual(feedFrame);
+            await page.reload();
+            await ready(page);
+            expect(await rows(page).count()).toBe(1);
+            const reset = page.waitForResponse((response) => response.url().includes("/workspace-"));
+            await page.getByRole("button", { name: "Reset" }).click();
+            await reset;
+            await page.waitForURL(new URL(english, server.url).href);
+            await settled(page);
+            expect(await rows(page).count()).toBe(11);
+            await page.locator("[data-mail-events-person]").click();
+            const person = page.waitForResponse((response) => response.url().includes("/workspace-"));
+            await page.getByRole("option", { name: "Mira Schulz", exact: true }).click();
+            await person;
+            await page.waitForURL(/eventActor=/);
+            await page.reload();
+            await ready(page);
+            expect(await page.locator("[data-mail-events-person]").textContent()).toContain("Mira Schulz");
+            expect(await rows(page).count()).toBeGreaterThan(0);
+            expect(await filters.boundingBox()).toEqual(frame);
+            expect(await page.locator(".mail-events__feed").boundingBox()).toEqual(feedFrame);
+            const clearPerson = page.waitForResponse((response) => response.url().includes("/workspace-"));
+            await page.getByRole("button", { name: "Reset", exact: true }).click();
+            await clearPerson;
+            await settled(page);
 
-          const mine = page.waitForResponse((response) => response.url().includes("/workspace-"));
-          await page.locator("[data-mail-events-filters]").getByText("Concerns me").click();
-          await mine;
-          await settled(page);
-          expect(await rows(page).count()).toBe(3);
-          expect(await filters.boundingBox()).toEqual(frame);
-          expect(await page.locator(".mail-events__feed").boundingBox()).toEqual(feedFrame);
-          expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
-        } finally {
-          await close(page);
-        }
-        const empty = await open(`${english}&events=empty`, width, width === 390 ? 844 : 900);
-        try {
-          expect(await empty.locator(".mail-events .k2b-placeholder__title").textContent()).toBe("No events yet");
-        } finally {
-          await close(empty);
-        }
-        const filteredEmpty = await open(`${english}&events=empty&eventKind=sent`, width, width === 390 ? 844 : 900);
-        try {
-          expect(await filteredEmpty.locator(".mail-events .k2b-placeholder__title").textContent()).toBe("No events for this filter");
-          expect(await filteredEmpty.getByRole("button", { name: "Reset filter" }).isVisible()).toBe(true);
-        } finally {
-          await close(filteredEmpty);
-        }
-        const failed = await open(`${english}&events=error`, width, width === 390 ? 844 : 900);
-        try {
-          expect(await failed.locator(".mail-events [role='alert']").textContent()).toContain("Events could not be loaded.");
-          const retry = failed.waitForResponse((response) => response.url().includes("/workspace-"));
-          await failed.getByRole("button", { name: "Try again" }).click();
-          await retry;
-          // The chips stay usable while the feed cannot load.
-          expect(await failed.locator("[data-mail-events-filters] .k2b-filter-chip").count()).toBeGreaterThan(0);
-        } finally {
-          await close(failed);
-        }
-      });
+            const mine = page.waitForResponse((response) => response.url().includes("/workspace-"));
+            await page.locator("[data-mail-events-filters]").getByText("Concerns me").click();
+            await mine;
+            await settled(page);
+            expect(await rows(page).count()).toBe(3);
+            expect(await filters.boundingBox()).toEqual(frame);
+            expect(await page.locator(".mail-events__feed").boundingBox()).toEqual(feedFrame);
+            expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+          } finally {
+            await close(page);
+          }
+          const empty = await open(`${english}&events=empty`, width, width === 390 ? 844 : 900);
+          try {
+            expect(await empty.locator(".mail-events .k2b-placeholder__title").textContent()).toBe("No events yet");
+          } finally {
+            await close(empty);
+          }
+          const filteredEmpty = await open(`${english}&events=empty&eventKind=sent`, width, width === 390 ? 844 : 900);
+          try {
+            expect(await filteredEmpty.locator(".mail-events .k2b-placeholder__title").textContent()).toBe("No events for this filter");
+            expect(await filteredEmpty.getByRole("button", { name: "Reset filter" }).isVisible()).toBe(true);
+          } finally {
+            await close(filteredEmpty);
+          }
+          const failed = await open(`${english}&events=error`, width, width === 390 ? 844 : 900);
+          try {
+            expect(await failed.locator(".mail-events [role='alert']").textContent()).toContain("Events could not be loaded.");
+            const retry = failed.waitForResponse((response) => response.url().includes("/workspace-"));
+            await failed.getByRole("button", { name: "Try again" }).click();
+            await retry;
+            // The chips stay usable while the feed cannot load.
+            expect(await failed.locator("[data-mail-events-filters] .k2b-filter-chip").count()).toBeGreaterThan(0);
+          } finally {
+            await close(failed);
+          }
+        });
 
       test("events load older pages below the feed and show the loading state while a filter loads", async () => {
         const page = await open(`${events}&events=more`);

@@ -958,9 +958,10 @@ export default function NotebookDetailPanel(props: Props) {
   const activityAvatar = (actor: NotebookActivityActor | null | undefined): ActivityEntry["avatar"] => ({
     name: actor?.displayName ?? "",
     kind: actor?.kind === "service_account" ? "service" : actor?.kind === "user" && actor.id ? "person" : "system",
-    src: actor?.kind === "user" && actor.id && actor.avatarHash
-      ? `/api/accounts/users/${encodeURIComponent(actor.id)}/avatar?rev=${encodeURIComponent(actor.avatarHash)}`
-      : undefined,
+    src:
+      actor?.kind === "user" && actor.id && actor.avatarHash
+        ? `/api/accounts/users/${encodeURIComponent(actor.id)}/avatar?rev=${encodeURIComponent(actor.avatarHash)}`
+        : undefined,
   });
   const activityEntries = (): ActivityEntry[] => [
     ...visibleActivity().map((item): ActivityEntry => {

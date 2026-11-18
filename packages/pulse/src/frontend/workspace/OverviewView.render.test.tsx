@@ -25,8 +25,20 @@ const snapshot: Overview = {
   activity: {
     nextCursor: null,
     items: [
-      { id: "1", at: NOW, kind: "source_created", actor: { kind: "user", id: "Person01", name: "Mira Lang" }, data: { name: "Daily readings" } },
-      { id: "2", at: NOW, kind: "query_saved", actor: { kind: "service_account", id: "Service1", name: "Import service" }, data: { name: "Daily total" } },
+      {
+        id: "1",
+        at: NOW,
+        kind: "source_created",
+        actor: { kind: "user", id: "Person01", name: "Mira Lang" },
+        data: { name: "Daily readings" },
+      },
+      {
+        id: "2",
+        at: NOW,
+        kind: "query_saved",
+        actor: { kind: "service_account", id: "Service1", name: "Import service" },
+        data: { name: "Daily total" },
+      },
       { id: "3", at: NOW, kind: "source_freshness", actor: null, data: { name: "Daily readings", stale: false } },
     ],
   },
@@ -34,23 +46,56 @@ const snapshot: Overview = {
 
 test.each(["en", "de"])("%s activity distinguishes people, services and automatic changes without native hints", (locale) => {
   const noop = () => {};
-  const html = renderToString(() => createComponent(LocaleProvider, {
-    locale,
-    get children() {
-      return createComponent(OverviewView, {
-        data: snapshot, loading: false, error: null, canWrite: false, retry: noop, addSource: noop,
-        openSource: noop, openAlert: noop, askAssistant: noop, assistantPending: false, assistantError: null,
-        loadAttention: noop, loadActivity: noop, paging: false,
-      });
-    },
-  }));
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(OverviewView, {
+          data: snapshot,
+          loading: false,
+          error: null,
+          canWrite: false,
+          retry: noop,
+          addSource: noop,
+          openSource: noop,
+          openAlert: noop,
+          askAssistant: noop,
+          assistantPending: false,
+          assistantError: null,
+          loadAttention: noop,
+          loadActivity: noop,
+          paging: false,
+        });
+      },
+    }),
+  );
   const found = { rows: 0, people: 0, services: 0, automatic: 0, titles: 0 };
   new HTMLRewriter()
-    .on(".k2b-activity__entry", { element: () => { found.rows++; } })
-    .on(".k2b-activity__avatar [data-tint]", { element: () => { found.people++; } })
-    .on('.k2b-activity__avatar [data-shape="square"] .ti-robot', { element: () => { found.services++; } })
-    .on(".k2b-activity__avatar .ti-settings", { element: () => { found.automatic++; } })
-    .on(".k2b-activity [title]", { element: () => { found.titles++; } })
+    .on(".k2b-activity__entry", {
+      element: () => {
+        found.rows++;
+      },
+    })
+    .on(".k2b-activity__avatar [data-tint]", {
+      element: () => {
+        found.people++;
+      },
+    })
+    .on('.k2b-activity__avatar [data-shape="square"] .ti-robot', {
+      element: () => {
+        found.services++;
+      },
+    })
+    .on(".k2b-activity__avatar .ti-settings", {
+      element: () => {
+        found.automatic++;
+      },
+    })
+    .on(".k2b-activity [title]", {
+      element: () => {
+        found.titles++;
+      },
+    })
     .transform(html);
   expect(found).toEqual({ rows: 3, people: 1, services: 1, automatic: 1, titles: 0 });
   expect(html).toContain("Mira Lang");

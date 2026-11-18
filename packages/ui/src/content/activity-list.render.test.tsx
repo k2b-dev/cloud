@@ -208,13 +208,18 @@ test("the server renders the given now, so the first browser render agrees", () 
   expect(a).toBe(b);
 });
 
-
 test("the public row works in a feed and keeps identity kinds and pictures without native hints", () => {
   const row = (entry: Entry) => german(() => createComponent(ActivityList.Row, { entry, now: NOW, timeZone: ZONE, selected: true }));
-  const person = row({ at: NOW, actor: "Mira Lang", text: "Kommentar ergänzt", href: "/conversation", avatar: { name: "Mira Lang", kind: "person", src: "/fixture-mira.svg" } });
+  const person = row({
+    at: NOW,
+    actor: "Mira Lang",
+    text: "Kommentar ergänzt",
+    href: "/conversation",
+    avatar: { name: "Mira Lang", kind: "person", src: "/fixture-mira.svg" },
+  });
   expect(person).toContain('src="/fixture-mira.svg"');
   expect(person).toContain('aria-current="true"');
-  expect(person).toContain('data-selected');
+  expect(person).toContain("data-selected");
   expect(person).not.toContain("<li");
   expect(person).not.toContain(" title=");
   const service = row({ at: NOW, actor: "Workflow", text: "Importiert", avatar: { name: "Workflow", kind: "service" } });

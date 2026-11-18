@@ -328,33 +328,42 @@ describe("ActivityList", () => {
       await page.context().close();
     }
   });
-  test.each(["light", "dark"] as const)("public rows keep hover visible on an elevated %s surface and long names fit on a phone", async (theme) => {
-    const page = await load(390, theme);
-    try {
-      const row = page.locator("#standalone .k2b-activity__entry");
-      expect(await row.evaluate((element) => element.tagName)).toBe("DIV");
-      await row.scrollIntoViewIfNeeded();
-      const before = await row.boundingBox();
-      await hoverInPlace(row);
-      expect(await row.boundingBox()).toEqual(before);
-      const paint = await row.evaluate((element) => {
-        const text = element.querySelector(".k2b-activity__text")!;
-        return { hover: getComputedStyle(element).backgroundColor, surface: getComputedStyle(element.parentElement!).backgroundColor,
-          ink: getComputedStyle(text).color, link: getComputedStyle(text.querySelector("a")!).color, fits: text.scrollWidth <= text.clientWidth };
-      });
-      expect(paint.hover).not.toBe("rgba(0, 0, 0, 0)");
-      expect(paint.hover).not.toBe(paint.surface);
-      expect(paint.ink).toBe(paint.link);
-      expect(paint.fits).toBe(true);
-      expect(await row.locator("[title]").count()).toBe(0);
-      expect(await row.locator("img").count()).toBe(1);
-      await row.locator(".k2b-activity__meta").click();
-      expect((await counters(page)).opened).toBe(1);
-      await row.locator("a").focus();
-      await page.keyboard.press("Enter");
-      expect((await counters(page)).opened).toBe(2);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
-    } finally { await page.context().close(); }
-  });
-
+  test.each(["light", "dark"] as const)(
+    "public rows keep hover visible on an elevated %s surface and long names fit on a phone",
+    async (theme) => {
+      const page = await load(390, theme);
+      try {
+        const row = page.locator("#standalone .k2b-activity__entry");
+        expect(await row.evaluate((element) => element.tagName)).toBe("DIV");
+        await row.scrollIntoViewIfNeeded();
+        const before = await row.boundingBox();
+        await hoverInPlace(row);
+        expect(await row.boundingBox()).toEqual(before);
+        const paint = await row.evaluate((element) => {
+          const text = element.querySelector(".k2b-activity__text")!;
+          return {
+            hover: getComputedStyle(element).backgroundColor,
+            surface: getComputedStyle(element.parentElement!).backgroundColor,
+            ink: getComputedStyle(text).color,
+            link: getComputedStyle(text.querySelector("a")!).color,
+            fits: text.scrollWidth <= text.clientWidth,
+          };
+        });
+        expect(paint.hover).not.toBe("rgba(0, 0, 0, 0)");
+        expect(paint.hover).not.toBe(paint.surface);
+        expect(paint.ink).toBe(paint.link);
+        expect(paint.fits).toBe(true);
+        expect(await row.locator("[title]").count()).toBe(0);
+        expect(await row.locator("img").count()).toBe(1);
+        await row.locator(".k2b-activity__meta").click();
+        expect((await counters(page)).opened).toBe(1);
+        await row.locator("a").focus();
+        await page.keyboard.press("Enter");
+        expect((await counters(page)).opened).toBe(2);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+      } finally {
+        await page.context().close();
+      }
+    },
+  );
 });

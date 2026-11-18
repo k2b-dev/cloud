@@ -10,8 +10,8 @@ export {
   type ActivityKind,
   ActivityList,
   type ActivityListProps,
-  type ActivityTone,
   type ActivityRowProps,
+  type ActivityTone,
   openActivityDialog,
 } from "./ActivityList";
 export { BalanceSummary, type BalanceSummaryProps } from "./BalanceSummary";

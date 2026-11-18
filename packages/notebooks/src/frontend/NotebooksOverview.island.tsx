@@ -6,7 +6,6 @@ import {
   type ActivityEntry,
   ActivityList,
   AppWorkspace,
-  Avatar,
   Button,
   DetailPanel,
   Dropdown,
@@ -226,13 +225,14 @@ export default function NotebooksOverview(props: Props) {
       text: activityDescription(item, locale()),
       href: activityHref(item),
       actor: item.actor.kind === "system" ? null : item.actor.displayName,
-        avatar: {
-          name: item.actor.displayName,
-          kind: item.actor.kind === "service_account" ? "service" : item.actor.kind === "user" && item.actor.id ? "person" : "system",
-          src: item.actor.kind === "user" && item.actor.id && item.actor.avatarHash
+      avatar: {
+        name: item.actor.displayName,
+        kind: item.actor.kind === "service_account" ? "service" : item.actor.kind === "user" && item.actor.id ? "person" : "system",
+        src:
+          item.actor.kind === "user" && item.actor.id && item.actor.avatarHash
             ? `/api/accounts/users/${encodeURIComponent(item.actor.id)}/avatar?rev=${encodeURIComponent(item.actor.avatarHash)}`
             : undefined,
-        },
+      },
     }));
   const reloadActivity = () => {
     setInitialActivityError(null);

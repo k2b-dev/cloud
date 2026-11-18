@@ -126,9 +126,10 @@ export function RecordHistoryList(props: HistoryProps) {
         avatar: {
           name: entry.userDisplayName ?? "",
           kind: entry.userId !== null && entry.userDisplayName ? "person" : "system",
-          src: entry.userId && entry.userAvatarHash
-            ? `/api/accounts/users/${encodeURIComponent(entry.userId)}/avatar?rev=${encodeURIComponent(entry.userAvatarHash)}`
-            : undefined,
+          src:
+            entry.userId && entry.userAvatarHash
+              ? `/api/accounts/users/${encodeURIComponent(entry.userId)}/avatar?rev=${encodeURIComponent(entry.userAvatarHash)}`
+              : undefined,
         },
         details:
           answers.length > 0 || fieldsChanged.length > 0

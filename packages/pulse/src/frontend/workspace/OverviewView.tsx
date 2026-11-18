@@ -352,7 +352,7 @@ const activityEntry = (item: OverviewActivity, t: Messages): ActivityEntry => {
     tone: stale === true ? "warning" : stale === false ? "success" : "neutral",
     text: activityText(item, t),
     detail: changedKeys.length > 0 ? changedKeys.join(" · ") : undefined,
-    avatar: { name: item.actor?.name ?? "", kind: item.actor ? item.actor.kind === "user" ? "person" : "service" : "system" },
+    avatar: { name: item.actor?.name ?? "", kind: item.actor ? (item.actor.kind === "user" ? "person" : "service") : "system" },
     actor: item.actor ? (
       item.actor.kind === "user" ? (
         <bdi>{item.actor.name}</bdi>

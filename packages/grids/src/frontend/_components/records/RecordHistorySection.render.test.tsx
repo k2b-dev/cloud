@@ -85,7 +85,7 @@ describe("Record history", () => {
 
   test("keeps the person's profile picture on the shared row", () => {
     const html = render({ entries: [entry({ userAvatarHash: "fixture-picture" })] });
-    expect(html).toContain('/api/accounts/users/11111111-1111-4111-8111-111111111111/avatar?rev=fixture-picture');
+    expect(html).toContain("/api/accounts/users/11111111-1111-4111-8111-111111111111/avatar?rev=fixture-picture");
     expect(html).not.toContain('class="ti ti-settings"');
   });
 
