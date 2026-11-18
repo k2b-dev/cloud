@@ -86,19 +86,136 @@ so it never redirects an accepted message. The caller's current authority is
 checked first: paused Code or an ended run gets no receipt back. Read current state with
 `ai.chat.read({ id: originalChatId, message: sendId })`.
 
+A person's **Stop** holds the foreground queue, even if the response just
+finished. Every entry, including those of automations, stays queued. Send now
+starts only its own entry; a later Stop withdraws that request and leaves the
+entry waiting. A new message from the person resumes the queue in its order;
+a message from an automation or another chat does not. Stop does not change
+a Code schedule.
+
+A direct submission cannot overtake waiting entries: it returns HTTP 409 with
+`code: "queue_waiting"` and leaves the draft intact. The web chat and PWA then
+queue the person's message at the end, which lifts the hold. A person's client
+can submit the saved draft with a new `queueId` to do the same. The CLI explains
+how to send the saved draft in Assistant or use Send now on a waiting entry.
+Without waiting entries, the person's direct submission lifts the hold; a
+service account or automation receives HTTP 409 with `code: "queue_held"`
+while it is held. Retrying a message cancels an approval wait without setting
+a new hold; a retry with waiting entries returns `queue_waiting`. A service
+account stopping a turn does not hold the queue. If the chat is archived before
+a direct submission or retry commits, it returns HTTP 409. Messages
+from other chats wait as they do for a busy chat. The server owns the hold;
+archiving clears it, so restoring the chat does not restore an old Stop.
+
+With **Automations as Code**, automation messages will use a separate queue:
+up to **32 entries per chat**, with at most **one waiting entry per source**
+(Code or source chat). These entries will have their own capacity, preserving
+the person's 20 places. The automation queue will arrive with Automations as
+Code; the personal queue described here is available independently.
+
 The owner-authorized queue API provides:
 
-- `GET /conversations/:id/queue`: ordered pending and failed person entries, plus pending automation entries;
-  each item includes `error` and `retrying` for a visible infrastructure retry.
-- `PATCH /conversations/:id/queue/:messageId` with `{ text }`: edit queued text
-  while retaining attachments and resource references.
+- `GET /conversations/:id/queue`: ordered pending and failed entries, including
+  `id`, `text`, `content`, `origin`, `state`, `createdAt`, and `authorIsViewer`,
+  plus `error` and `retrying` for visible infrastructure retries.
+  The display states are `pending`, `sending`, and `failed`; storage keeps its
+  existing `pending`, `failed`, `submitted`, and `cancelled` statuses.
+- `PATCH /conversations/:id/queue/:messageId` with `{ text }`: edit the person's
+  own queued text while retaining attachments and resource references. Automation
+  and other-chat entries cannot be edited.
 - `DELETE /conversations/:id/queue/:messageId`: remove an entry that has not started.
 - `POST /conversations/:id/queue/:messageId/retry`: retry a failed dispatch.
 
 All paths above use the `/api/ai` prefix. Editing or deleting races safely with
 promotion: once an entry becomes a turn, the queue endpoint returns not found.
 Normal submissions cannot overtake the queue. Chats with pending entries cannot
-be archived or marked done and do not become done through inactivity.
+be marked done and do not become done through inactivity. Archiving such a chat
+lets its entries lapse (`cancelled` with error `chat_archived`). A turn that
+runs or waits for a decision still keeps a chat from being archived; the
+conflict says which of the two it is.
+
+The archive dialog warns that waiting messages will be discarded. It names the
+count when known; otherwise it uses a general warning. The Cloud app archives
+chats with an empty queue directly and offers Undo. Waiting entries require
+confirmation; if the queue cannot be read, confirmation uses the general
+warning.
+Restoring the chat does not recover discarded messages or their queued
+attachments.
+
+`POST /api/ai/conversations/:id/archive` keeps its success response shape and
+adds the number of pending and failed entries discarded by this operation:
+`{ "ok": true, "discardedQueuedMessages": 2 }`. The count is zero when none were
+discarded. Already submitted or cancelled entries do not count. The Assistant
+CLI (`cld assistant chats archive <chat-id> --yes`) prints the count as a sentence
+when it is above zero; JSON and JSONL include the same response field.
+
+### Send a queued message now
+
+`POST /conversations/:id/queue/:messageId/send-now` prioritizes that entry and
+interrupts the current turn. An already-started tool finishes and saves its
+result; the runtime starts no later tool. The interrupted turn stays in history
+with `meta.queueInterrupted: true` and an `aborted` status. The chat displays
+“Stopped” without a resume action. Other queue entries retain their order.
+
+A step skipped by this interruption records `QUEUE_INTERRUPTED`, with `not_run`
+for a tool that never started and `not_returned` for a tool interrupted at a
+nested approval or client wait. It is not recorded as a person's refusal. The
+chat shows the step as stopped; the next turn treats earlier effects of a
+partially executed tool as uncertain and checks them before retrying.
+
+The response is `{ id, state, turnId }`, where `state` is `sending`, `submitted`,
+or `failed`. A `failed` receipt also carries `error`: the cause, such as
+`interruption_unconfirmed` or `cancelled`, or `null` when Send now was never
+requested for that entry. The entry ID is the idempotency key. After a lost response, read
+`GET /conversations/:id/queue/:messageId/send-now` before replaying that same
+POST. A submitted receipt survives promotion; an absent list entry alone does
+not prove failure. Never allocate another ID to retry an uncertain send.
+
+A pending client tool uses its existing result deadline. The entry stays
+`sending` until the client result is saved. If the deadline expires or the
+result reports an uncertain outcome, the entry becomes `failed` (“Not sent”);
+Cloud releases the interruption request and leaves the original turn to its
+normal result and timeout handling. A live worker also releases its received
+interrupt when the request is withdrawn. Delivery alone never authorizes an
+irreversible stop: the worker confirms timely, known receipts before stopping,
+and the original run deadline and lease ownership still apply. It does not
+terminate the client effect.
+The same “Not sent” state applies if a lost server worker has no durable
+outcome for a started effect. The runtime never treats a lost lease alone as
+confirmation of a successful interruption. All queue mutations remain locked
+while a send-now request is in progress. Stop still works during that time: it
+ends the turn through the normal stop path without waiting for the client
+result, and the prioritized entry is sent next.
+
+The next turn receives the interrupted history, a system instruction with the
+last finished step and the interrupted step's outcome, the current `todo_write`
+state, and the prioritized message's provenance. It handles that message first,
+then explains in one sentence whether it will continue, change, or abandon the
+old work. It must check an uncertain effect before repeating it.
+
+### Preserve writer identity and live state
+
+Queue entries and history messages carry server-authored provenance.
+`origin.kind` is `person`, `automation`, or `chat`, with a stable ID and a
+resolved display name. Chat and automation links appear only when the viewer
+can open the target. Durable provenance stores IDs, never translated names or
+display links. The existing inter-chat delivery path also records its source
+chat. Its delivery lifecycle is unchanged.
+
+The admission limit is defined by `AI_MESSAGE_QUEUE_LIMIT` for the existing
+personal composer queue. Platform adapters supply provenance through the
+existing server-owned turn configuration;
+request JSON cannot set it. A personal-chat writer must have the owner's
+user access subject; a service-account subject is refused.
+
+Queue changes use the existing `/api/ai/live` invalidations for
+`conversation-detail` and `conversation-list`. Clients reload the authorized
+snapshot after an invalidation and never poll. Token delivery and worker
+interruption signals execute no SQL; the integration budget is pinned with
+`scripts/fixtures/sql-meter.ts`. The shared browser exports are
+`AI_MESSAGE_QUEUE_LIMIT`, `AiMessageOriginSchema`, `AiQueuedMessageSchema`,
+`AiMessageOrigin`, `AiQueuedMessage`, `AiSendQueuedMessageResult`, and
+`AiQueueLiveEvent`.
 
 Text from a source without a signed-in session restricts the turn it enters:
 a queued message, a queue edit, a steer or a tool result sent with `cld`, an API
@@ -164,7 +281,8 @@ carry conversation and turn IDs. A heartbeat warning is emitted once per failure
 streak; recovery uses the existing durable turn state.
 
 Upload storage failures emit `file_upload_failed` with the conversation ID and
-error type. Tool-audit write failures are warnings with turn and call IDs. Expected audio
+error type. A failed tool-start or dispatch audit prevents the effect from
+starting; other tool-audit write failures are warnings with turn and call IDs. Expected audio
 cancellation is informational; retryable dictation failures are warnings and
 terminal failures are errors. Provider/transcription traces retain their existing
 status, duration and accounting. Diagnostic metadata does not add prompt,

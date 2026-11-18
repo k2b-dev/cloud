@@ -48,8 +48,12 @@ export const aiToolAudit = {
     /** Correlates this call with its capabilities.executions row. */
     requestId: string;
     idempotencyKey?: string | null;
-  }): Promise<void> => {
-    await sql`
+  }): Promise<boolean> =>
+    sql.begin(async (tx) => {
+      const [turn] = await tx<{ cancellation_reason: string | null }[]>`SELECT cancellation_reason FROM ai.turns
+      WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid FOR NO KEY UPDATE`;
+      if (!turn || turn.cancellation_reason === "queue_interrupt") return false;
+      await tx`
       INSERT INTO ai.tool_calls (
         turn_id, conversation_id, call_id, tool_name, location, status, approval_state, request_id, idempotency_key, started_at
       ) VALUES (
@@ -62,7 +66,8 @@ export const aiToolAudit = {
         idempotency_key = COALESCE(EXCLUDED.idempotency_key, ai.tool_calls.idempotency_key),
         started_at = COALESCE(ai.tool_calls.started_at, now())
     `;
-  },
+      return true;
+    }),
 
   noteToolCall: async (input: {
     conversationId: string;
@@ -101,8 +106,14 @@ export const aiToolAudit = {
     `;
   },
 
-  noteToolStarted: async (input: { conversationId: string; turnId: string; callId: string; toolName: string }): Promise<void> => {
-    await sql`
+  noteToolStarted: async (input: { conversationId: string; turnId: string; callId: string; toolName: string }): Promise<boolean> =>
+    sql.begin(async (tx) => {
+      // This existing audit write also serializes step start with Send now. A delayed
+      // control delivery cannot let a new effect cross the durable interruption barrier.
+      const [turn] = await tx<{ cancellation_reason: string | null }[]>`SELECT cancellation_reason FROM ai.turns
+        WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid FOR NO KEY UPDATE`;
+      if (!turn || turn.cancellation_reason === "queue_interrupt") return false;
+      await tx`
       INSERT INTO ai.tool_calls (
         turn_id,
         conversation_id,
@@ -115,7 +126,8 @@ export const aiToolAudit = {
       ON CONFLICT (turn_id, call_id)
       DO UPDATE SET status = 'running', started_at = COALESCE(ai.tool_calls.started_at, now())
     `;
-  },
+      return true;
+    }),
 
   noteApprovalRequested: async (input: {
     conversationId: string;

@@ -22,7 +22,6 @@ import {
   respond,
   v,
 } from "../server";
-import { isAppSessionActor } from "../server/actor";
 import { appAccessRevalidator, credentialExpiresAt } from "../server/middleware/app-access";
 import { noTransform } from "../server/middleware/no-transform";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
@@ -79,6 +78,7 @@ import { aiMapRoutes } from "./map-routes";
 import { AI_MEMORY_CONTENT_MAX_CHARS, aiMemories } from "./memories";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { createCloudAiMemoryTool } from "./memory-tool";
+import type { AiOriginViewer } from "./message-origin";
 import {
   AiMessageQueueConflict,
   AiQueuedMessageTooLarge,
@@ -86,6 +86,7 @@ import {
   enqueueChatMessage,
   listQueuedMessages,
   queuedMessageAccepted,
+  queuedMessageReceipt,
   updateQueuedMessage,
 } from "./message-queue";
 import { createAiNextMessageTool } from "./next-message";
@@ -111,6 +112,7 @@ import {
   listPendingAiTurnActions,
   notifyAiConversationUnwatched,
   prepareAiChatTurn,
+  sendQueuedAiChatMessageNow,
   submitAiChatTurn,
   submitAiCompaction,
   submitAiTurnAction,
@@ -289,9 +291,13 @@ const rememberLastUsedModel = (actor: RequestActor, model: import("../shared/ai-
   void aiUserPrefs.update(userId, { selection: model }).catch(() => undefined);
 };
 
-const conversationDetail = async (conversation: AiConversation, subject: AiResourceContext, locale: string) => {
+const conversationDetail = async (
+  conversation: AiConversation,
+  subject: AiResourceContext,
+  originViewer: AiOriginViewer & { locale: string },
+) => {
   const [state, timeline, publicView] = await Promise.all([
-    loadAiStreamState(conversation, subject.actor?.kind === "user" ? subject.actor.user.id : null, locale),
+    loadAiStreamState(conversation, subject.actor?.kind === "user" ? subject.actor.user.id : null, originViewer),
     aiConversations.listConversationTimeline({ conversationId: conversation.id }),
     publicConversationFor(conversation, subject),
   ]);
@@ -316,11 +322,11 @@ const publicPendingAction = (
   turnId: string,
 ) => ({ ...action, args: publicAiToolInput(action.name, action.args), conversationId, turnId });
 
-const prepareConversationForMessageRetry = async (conversationId: string): Promise<"ready" | "busy"> => {
+const prepareConversationForMessageRetry = async (conversationId: string, actor: RequestActor): Promise<"ready" | "busy"> => {
   const active = await aiConversations.getActiveTurn({ conversationId });
   if (!active) return "ready";
   if (active.turn.status !== "waiting_for_action") return "busy";
-  await abortAiTurn({ conversationId, turnId: active.turn.id });
+  await abortAiTurn({ conversationId, turnId: active.turn.id, actor, reason: "retry" });
   return (await aiConversations.getActiveTurn({ conversationId })) ? "busy" : "ready";
 };
 
@@ -782,7 +788,16 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        return respond(c, ok(await conversationDetail(conversation, resourceContext(c), getLocale(c))));
+        return respond(
+          c,
+          ok(
+            await conversationDetail(conversation, resourceContext(c), {
+              userId: ctx.ownerUserId,
+              authority: appAccessAuthority(c),
+              locale: getLocale(c),
+            }),
+          ),
+        );
       })
       .get(
         "/conversations/:conversationId/submission/:draftRevision",
@@ -817,12 +832,11 @@ export const aiRoutes = (() => {
           c,
           ok({
             ...page,
-            messages: await publicAiStoredMessages(
-              page.messages,
-              conversation,
-              ctx.actor.kind === "user" ? ctx.actor.user.id : null,
-              getLocale(c),
-            ),
+            messages: await publicAiStoredMessages(page.messages, conversation, ctx.actor.kind === "user" ? ctx.actor.user.id : null, {
+              userId: ctx.ownerUserId,
+              authority: appAccessAuthority(c),
+              locale: getLocale(c),
+            }),
           }),
         );
       })
@@ -838,7 +852,17 @@ export const aiRoutes = (() => {
           beforeSeq: query.before,
           limit: query.limit ?? 50,
         });
-        return respond(c, ok({ ...page, messages: await publicAiStoredMessages(page.messages, conversation, null, getLocale(c)) }));
+        return respond(
+          c,
+          ok({
+            ...page,
+            messages: await publicAiStoredMessages(page.messages, conversation, undefined, {
+              userId: ctx.ownerUserId,
+              authority: appAccessAuthority(c),
+              locale: getLocale(c),
+            }),
+          }),
+        );
       })
       .delete("/conversations/:conversationId/messages/:messageId/suggested-next-message", async (c) => {
         const ctx = await resolveContext(c);
@@ -1009,21 +1033,60 @@ export const aiRoutes = (() => {
             : notFound(c);
         return respond(c, ok(await publicConversationFor(result.conversation, resourceContext(c))));
       })
-      .post("/conversations/:conversationId/archive", async (c) => {
-        const ctx = await resolveContext(c);
-        if (ctx instanceof Response) return ctx;
-        const conversation = await loadConversation(c, ctx);
-        if (!conversation) return notFound(c);
-        if (await aiConversations.getActiveTurn({ conversationId: conversation.id })) {
-          return respond(c, fail(err.conflict("Stop the current response before archiving this chat.")));
-        }
-        const archived = await aiConversations.archiveConversation({
-          conversationId: conversation.id,
-          ownerUserId: ctx.ownerUserId,
-        });
-        if (!archived) return notFound(c);
-        return respond(c, ok({ ok: true }));
-      })
+      .post(
+        "/conversations/:conversationId/archive",
+        describeRoute({
+          tags: ["AI"],
+          summary: "Archive a chat",
+          description: "Discards pending and failed queued messages. Restoring does not recover those messages.",
+          ...requiresAuth,
+          responses: {
+            200: jsonResponse(
+              z.object({
+                ok: z.literal(true),
+                discardedQueuedMessages: z
+                  .number()
+                  .int()
+                  .nonnegative()
+                  .describe("Number of queued messages discarded by this archive operation."),
+              }),
+              "Chat archived",
+            ),
+            401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+            404: jsonResponse(ErrorResponseSchema, "Chat not found"),
+            409: jsonResponse(ErrorResponseSchema, "Stop the active turn or answer its decision before archiving"),
+          },
+        }),
+        async (c) => {
+          const ctx = await resolveContext(c);
+          if (ctx instanceof Response) return ctx;
+          const conversation = await loadConversation(c, ctx);
+          if (!conversation) return notFound(c);
+          const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
+          const archived =
+            !active &&
+            (await aiConversations.archiveConversation({
+              conversationId: conversation.id,
+              ownerUserId: ctx.ownerUserId,
+            }));
+          if (!archived) {
+            const blocker = active ?? (await aiConversations.getActiveTurn({ conversationId: conversation.id }));
+            if (!blocker) return notFound(c);
+            // The transaction may have met a turn promoted after the first read. Give the same conflict in that race.
+            return respond(
+              c,
+              fail(
+                err.conflict(
+                  blocker.turn.status === "waiting_for_action"
+                    ? "This chat waits for a decision. Answer or stop it, then archive the chat."
+                    : "Stop the current response before archiving this chat.",
+                ),
+              ),
+            );
+          }
+          return respond(c, ok({ ok: true, discardedQueuedMessages: archived.discardedQueuedMessages }));
+        },
+      )
       .post("/conversations/:conversationId/restore", async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
@@ -1055,7 +1118,18 @@ export const aiRoutes = (() => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
-        return conversation ? respond(c, ok(await listQueuedMessages(conversation.id))) : notFound(c);
+        return conversation
+          ? respond(
+              c,
+              ok(
+                await listQueuedMessages(conversation.id, {
+                  userId: ctx.actor.kind === "user" ? ctx.actor.user.id : null,
+                  authority: appAccessAuthority(c),
+                  locale: getLocale(c),
+                }),
+              ),
+            )
+          : notFound(c);
       })
       .patch(
         "/conversations/:conversationId/queue/:messageId",
@@ -1065,9 +1139,11 @@ export const aiRoutes = (() => {
           if (ctx instanceof Response) return ctx;
           const conversation = await loadConversation(c, ctx);
           if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
+          if (ctx.actor.kind !== "user") return respond(c, fail(err.forbidden("Only the author may edit a queued message.")));
           try {
             return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text, {
               signedInSession: ctx.signedInSession,
+              authorUserId: ctx.actor.user.id,
             }))
               ? respond(c, ok({ ok: true }))
               : notFound(c);
@@ -1094,6 +1170,29 @@ export const aiRoutes = (() => {
         if (!(await updateQueuedMessage(conversation.id, c.req.param("messageId") ?? "", "retry"))) return notFound(c);
         wakeAiMessageQueue(conversation.id);
         return respond(c, ok({ ok: true }));
+      })
+      .post("/conversations/:conversationId/queue/:messageId/send-now", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        const id = c.req.param("messageId") ?? "";
+        if (!conversation || !z.uuid().safeParse(id).success) return notFound(c);
+        try {
+          const receipt = await sendQueuedAiChatMessageNow(conversation.id, id);
+          return receipt ? respond(c, ok(receipt)) : notFound(c);
+        } catch (error) {
+          if (error instanceof AiMessageQueueConflict) return respond(c, fail(err.conflict(error.message)));
+          return toAiErrorResponse(c, error);
+        }
+      })
+      .get("/conversations/:conversationId/queue/:messageId/send-now", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        const id = c.req.param("messageId") ?? "";
+        if (!conversation || !z.uuid().safeParse(id).success) return notFound(c);
+        const receipt = await queuedMessageReceipt(conversation.id, id);
+        return receipt ? respond(c, ok(receipt)) : notFound(c);
       })
       .put("/conversations/:conversationId/draft", v("json", AiSaveConversationDraftInputSchema), async (c) => {
         const ctx = await resolveContext(c);
@@ -1194,11 +1293,8 @@ export const aiRoutes = (() => {
             201,
           );
         } catch (error) {
-          if (
-            error instanceof AiMessageQueueConflict ||
-            (error instanceof Error && error.message === "Queued messages must be sent first.")
-          )
-            return respond(c, fail(err.conflict(error.message)));
+          if (error instanceof AiMessageQueueConflict)
+            return respond(c, fail({ ...err.conflict(error.message), ...(error.code ? { code: error.code } : {}) }));
           return toAiErrorResponse(c, error);
         }
       })
@@ -1273,7 +1369,7 @@ export const aiRoutes = (() => {
             body.model ?? originalProject?.defaultModel ?? undefined,
             ctx.modelPolicy,
           );
-          if ((await prepareConversationForMessageRetry(conversation.id)) === "busy") {
+          if ((await prepareConversationForMessageRetry(conversation.id, ctx.actor)) === "busy") {
             return respond(c, fail(err.conflict("Stop the active response before trying a message again.")));
           }
           const result = await submitAiChatTurn({
@@ -1335,6 +1431,8 @@ export const aiRoutes = (() => {
             201,
           );
         } catch (error) {
+          if (error instanceof AiMessageQueueConflict)
+            return respond(c, fail({ ...err.conflict(error.message), ...(error.code ? { code: error.code } : {}) }));
           return toAiErrorResponse(c, error);
         }
       })
@@ -1362,7 +1460,16 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
           title: body.title ?? conversation.title,
         });
-        return respond(c, ok(await conversationDetail(forked, resourceContext(c), getLocale(c))));
+        return respond(
+          c,
+          ok(
+            await conversationDetail(forked, resourceContext(c), {
+              userId: ctx.ownerUserId,
+              authority: appAccessAuthority(c),
+              locale: getLocale(c),
+            }),
+          ),
+        );
       })
       .get("/conversations/:conversationId/enrichment", async (c) => {
         const ctx = await resolveContext(c);
@@ -1408,7 +1515,7 @@ export const aiRoutes = (() => {
         if (!conversation) return notFound(c);
         const turn = await loadTurn(conversation, c.req.param("turnId"));
         if (!turn) return notFound(c);
-        await abortAiTurn({ conversationId: conversation.id, turnId: turn.id });
+        await abortAiTurn({ conversationId: conversation.id, turnId: turn.id, actor: ctx.actor });
         return respond(c, ok({ ok: true }));
       })
       .post("/conversations/:conversationId/turns/:turnId/calls/:callId/check", async (c) => {
@@ -1616,8 +1723,8 @@ export const aiRoutes = (() => {
         let initialCheck = true;
         c.set("appAccessGuard", { eventOnly: true });
         return createAiConversationStreamResponse({
+          originViewer: { userId: ctx.ownerUserId, authority: appAccessAuthority(c), locale: getLocale(c) },
           viewerUserId: ctx.actor.kind === "user" ? ctx.actor.user.id : null,
-          locale: getLocale(c),
           conversation,
           signal: c.req.raw.signal,
           ...(expiresAt !== undefined ? { expiresAt } : {}),

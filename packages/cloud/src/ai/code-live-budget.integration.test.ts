@@ -77,7 +77,9 @@ suiteFor(
     });
     pipeline.setStreamArgs(new Map([["code", ["code"]]]));
     const abort = new AbortController();
-    const readers = Array.from({ length: 3 }, () => streamAiConversationEvents({ conversation, signal: abort.signal }));
+    const readers = Array.from({ length: 3 }, () =>
+      streamAiConversationEvents({ conversation, originViewer: { locale: "en" }, signal: abort.signal }),
+    );
     const fixed = new Date("2026-11-13T00:00:00Z").getTime();
     setSystemTime(fixed);
     try {

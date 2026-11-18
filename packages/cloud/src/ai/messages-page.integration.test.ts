@@ -68,7 +68,7 @@ databaseSuite()("listMessagesPage (integration)", () => {
         content: [{ type: "tool_call", id: "run", name: "code_run", args: { code: source } }],
       });
       const page = await aiConversations.listMessagesPage({ conversationId: chat.id, limit: 20 });
-      const messages = await publicAiStoredMessages(page.messages, chat, userId, "de");
+      const messages = await publicAiStoredMessages(page.messages, chat, userId, { locale: "de" });
       expect(JSON.stringify(messages)).not.toContain(source);
       expect(JSON.stringify(page.messages)).toContain(source);
     } finally {
@@ -91,7 +91,7 @@ databaseSuite()("listMessagesPage (integration)", () => {
       await insertMessage({ conversationId: conversation.id, seq: 2, role: "assistant", text: "done", loopId: turnId });
 
       const page = await aiConversations.listMessagesPage({ conversationId: conversation.id });
-      const messages = await publicAiStoredMessages(page.messages, conversation);
+      const messages = await publicAiStoredMessages(page.messages, conversation, undefined, { locale: "en" });
 
       expect(messages.map((message) => message.loopId)).toEqual([turnShortId, turnShortId]);
       expect(messages.every((message) => message.conversationId === conversation.shortId)).toBe(true);

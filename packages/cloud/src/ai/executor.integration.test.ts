@@ -36,6 +36,13 @@ import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
 import { isMalformedToolCallId } from "./malformed-tool-calls";
 import { aiMemories } from "./memories";
+import {
+  drainQueuedMessages,
+  enqueueChatMessage,
+  queuedMessageReceipt,
+  reconcileQueuedInterruptions,
+  requestQueuedMessageSendNow,
+} from "./message-queue";
 import { migrateCloudAi } from "./migrate";
 import { aiModelAccess } from "./model-access";
 import { visionPdfFixture } from "./pdf-render.fixture";
@@ -55,6 +62,7 @@ import { aiConversations } from "./store";
 import * as stream from "./stream";
 import { type AiLiveTopicEvent, aiStreamTopic } from "./stream";
 import type { PreparedAiTools } from "./tools";
+import { AiTurnInterruption } from "./turn-interruption";
 import type { AiChatTurnRunConfig, AiModelProfile, AiTurnFinalizedEvent } from "./types";
 import { aiUsage } from "./usage";
 import type { validateAiTurnRequest } from "./validate";
@@ -82,6 +90,7 @@ let completionQueue: string[][] = [];
 let rejectionQueue: (() => Response)[] = [];
 let onCompletionRequest: ((body: unknown, index: number) => void | Promise<void>) | null = null;
 let completionRequestCount = 0;
+let interruptWorker: (() => void) | null = null;
 
 const mockProfile = (): AiModelProfile => ({
   modelId: MODEL_ID,
@@ -312,6 +321,13 @@ const suite = databaseSuite();
 
 beforeAll(() => {
   if (!testInfra.database) return;
+  // This database-only suite injects worker control delivery; the real NATS reader is covered by stream.integration.
+  spyOn(stream, "subscribeAiTurnInterrupts").mockImplementation(async ({ onInterrupt }) => {
+    interruptWorker = onInterrupt;
+    return async () => {
+      if (interruptWorker === onInterrupt) interruptWorker = null;
+    };
+  });
   mockServer = Bun.serve({
     port: 0,
     async fetch(req) {
@@ -673,6 +689,431 @@ suite("AI executor integration", () => {
       }
     },
   );
+  test.each(["before", "before_without_delivery", "during", "after"])(
+    "send now %s an external-effect step journals it once and starts no later step",
+    async (phase) => {
+      const userId = await insertUser();
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["write_file"] });
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Write two files",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Write two files"),
+      });
+      const queuedId = crypto.randomUUID();
+      await enqueueChatMessage(
+        queuedId,
+        {
+          conversationId: conversation.id,
+          modelId: MODEL_ID,
+          runConfig: { kind: "chat", input: "Urgent", writerOrigin: { kind: "person", id: userId }, toolSource: { kind: "none" } },
+          userMessage: userMessage("Urgent"),
+        },
+        [{ type: "text", text: "Urgent" }],
+      );
+      const originalWrite = aiFileStore.write;
+      let writes = 0;
+      let interrupted = false;
+      const interrupt = async () => {
+        if (interrupted) return;
+        interrupted = true;
+        await requestQueuedMessageSendNow(conversation.id, queuedId);
+        if (!interruptWorker) throw new Error("Missing worker control listener");
+        if (phase !== "before_without_delivery") interruptWorker();
+      };
+      const writing = spyOn(aiFileStore, "write").mockImplementation(async (input) => {
+        writes++;
+        if (phase === "during") await interrupt();
+        const result = await originalWrite(input);
+        if (phase === "after") await interrupt();
+        return result;
+      });
+      try {
+        completionQueue = [
+          toolCallCompletion("first-effect", "write_file", { path: "/first.txt", content: "First effect" }),
+          toolCallCompletion("forbidden-effect", "write_file", { path: "/second.txt", content: "Must not run" }),
+          textCompletion("Done"),
+        ];
+        onCompletionRequest = async () => {
+          if (phase.startsWith("before")) await interrupt();
+        };
+        const leaseOwner = `interrupt-${phase}`;
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner,
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        await createExecutor(leaseOwner, undefined, fakeValidateToolTurn).run({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          claim: claim!,
+          signal: new AbortController().signal,
+        });
+        expect(writes).toBe(phase.startsWith("before") ? 0 : 1);
+        expect(await aiFileStore.stat({ conversationId: conversation.id, path: "/second.txt" })).toBeNull();
+        expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("aborted");
+        const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        const outcomes = messages.filter(({ message }) => message.role === "tool_result" && message.callId === "first-effect");
+        if (!phase.startsWith("before")) expect(outcomes).toHaveLength(1);
+        const nextJobs: Array<{ conversationId: string; turnId: string }> = [];
+        await drainQueuedMessages(async (job) => {
+          nextJobs.push(job);
+        }, conversation.id);
+        expect(nextJobs).toHaveLength(1);
+        const next = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: nextJobs[0]!.turnId });
+        expect(next?.kind !== "compact" ? next?.systemPrompt : null).toContain(`"interruptedTurnId":"${turn.shortId}"`);
+        if (!phase.startsWith("before")) expect(next?.kind !== "compact" ? next?.systemPrompt : null).toContain("first-effect");
+      } finally {
+        writing.mockRestore();
+        completionQueue = [];
+        onCompletionRequest = null;
+        await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    },
+  );
+
+  test("a live worker continues after an already delivered Send now is withdrawn (#3515)", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["write_file"] });
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: conversation.id,
+      modelId: MODEL_ID,
+      runConfig: {
+        kind: "chat",
+        input: "Write two files",
+        actor: { kind: "user", user: actorUser(userId) },
+        toolSource: { kind: "default" },
+      },
+      userMessage: userMessage("Write two files"),
+    });
+    const queuedId = crypto.randomUUID();
+    await enqueueChatMessage(
+      queuedId,
+      {
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Urgent", writerOrigin: { kind: "person", id: userId }, toolSource: { kind: "none" } },
+        userMessage: userMessage("Urgent"),
+      },
+      [{ type: "text", text: "Urgent" }],
+    );
+    const originalWrite = aiFileStore.write;
+    let writes = 0;
+    const writing = spyOn(aiFileStore, "write").mockImplementation(async (input) => {
+      writes++;
+      if (writes === 1) {
+        await aiConversations.savePendingTurnAction({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          callId: "client-effect",
+          name: "local_bash",
+          args: {},
+          kind: "client_tool",
+          status: "pending",
+          approvalScope: "local",
+          allowAlways: false,
+          frontendMode: "client",
+          resolvedEvent: null,
+        });
+        expect((await requestQueuedMessageSendNow(conversation.id, queuedId))?.interrupt?.waitingForClient).toBe(true);
+        if (!interruptWorker) throw new Error("Missing worker control listener");
+        interruptWorker();
+        // Deliver the uncertain receipt while the original worker still owns a running effect.
+        await aiConversations.resolvePendingTurnAction({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          callId: "client-effect",
+          signedInSession: false,
+          event: { type: "tool_result", callId: "client-effect", result: { code: "ACTION_OUTCOME_UNKNOWN" } },
+        });
+        await reconcileQueuedInterruptions(conversation.id);
+        expect(await queuedMessageReceipt(conversation.id, queuedId)).toMatchObject({ state: "failed", error: "interruption_unconfirmed" });
+      }
+      return originalWrite(input);
+    });
+    try {
+      completionQueue = [
+        toolCallCompletion("first-effect", "write_file", { path: "/first.txt", content: "First" }),
+        toolCallCompletion("second-effect", "write_file", { path: "/second.txt", content: "Second" }),
+        textCompletion("Done"),
+      ];
+      const leaseOwner = "withdrawn-interrupt-worker";
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      const executor = new AiTurnExecutor({
+        leaseOwner,
+        heartbeatMs: 25,
+        enqueueContinuation: async () => {},
+        validateTurn: fakeValidateToolTurn,
+      });
+      await executor.run({ conversationId: conversation.id, turnId: turn.id, claim: claim!, signal: new AbortController().signal });
+      expect(writes).toBe(2);
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+      expect(await aiFileStore.stat({ conversationId: conversation.id, path: "/second.txt" })).toMatchObject({
+        path: "/second.txt",
+        size: 6,
+      });
+    } finally {
+      writing.mockRestore();
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  test("a restricted tool answer survives queue interruption and withdrawal exactly once (withdrawn)", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["client_effect", "budget_probe"] });
+    const probe = mock(async () => ({ done: true }));
+    const tool = defineAiTool({
+      name: "budget_probe",
+      description: "Continue the existing work",
+      approval: "never",
+      inputSchema: z.strictObject({ round: z.number() }),
+      outputSchema: z.strictObject({ done: z.boolean() }),
+    }).server(probe);
+    const clientTool = defineAiTool({
+      name: "client_effect",
+      description: "A client effect whose outcome is uncertain",
+      approval: "never",
+      inputSchema: z.strictObject({}),
+      outputSchema: z.strictObject({ code: z.literal("ACTION_OUTCOME_UNKNOWN") }),
+    }).client();
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: conversation.id,
+      modelId: MODEL_ID,
+      userMessage: userMessage("Continue within this turn"),
+      runConfig: {
+        kind: "chat",
+        input: "Continue within this turn",
+        locale: "de",
+        assistantChat: true,
+        actor: { kind: "user", user: actorUser(userId) },
+        accessSubject: { type: "user", userId },
+        turnTrigger: { kind: "automation", id: "c4" },
+        toolSource: { kind: "default" },
+        client: { kind: "cli", cwd: "/work", os: "Linux", shell: "bash", localTools: "ask" },
+      },
+    });
+    const [modelAccess] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'read') RETURNING id`;
+    await sql`INSERT INTO ai.model_access_resources(model_id) VALUES(${MODEL_ID}) ON CONFLICT DO NOTHING`;
+    await sql`INSERT INTO ai.model_access(model_id,access_id) VALUES(${MODEL_ID},${modelAccess!.id}::uuid)`;
+    const target = { conversationId: conversation.id, turnId: turn.id };
+    const run = async (from: "queue" | "waiting") => {
+      const claim = await aiConversations.claimTurn({
+        ...target,
+        leaseOwner: "c4-worker",
+        leaseMs: 30_000,
+        from,
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected C4 worker claim");
+      await new AiTurnExecutor({
+        leaseOwner: "c4-worker",
+        heartbeatMs: 100,
+        enqueueContinuation: async () => {},
+        validateTurn: fakeValidateToolTurn,
+        tools: [tool, clientTool],
+      }).run({ ...target, claim, signal: new AbortController().signal });
+    };
+    try {
+      completionRequestCount = 0;
+      completionQueue = [
+        toolCallCompletion("c4-effect", "client_effect", {}),
+        ...Array.from({ length: AUTOMATION_TURN_BUDGET.modelCalls }, (_, round) =>
+          toolCallCompletion(`c4-next-${round}`, "budget_probe", { round }),
+        ),
+      ];
+      await run("queue");
+      expect((await aiConversations.getTurn(target))?.status).toBe("waiting_for_action");
+      const initialConfig = await aiConversations.getTurnRunConfig(target);
+      const allowance = initialConfig?.kind === "chat" ? initialConfig.inferenceBudget : undefined;
+      expect(allowance).toMatchObject({ modelCalls: AUTOMATION_TURN_BUDGET.modelCalls });
+      const used = () => sql<{ calls: number }[]>`SELECT count(*)::int AS calls FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
+      expect((await used())[0]?.calls).toBe(1);
+      const id = crypto.randomUUID();
+      await enqueueChatMessage(
+        id,
+        {
+          conversationId: conversation.id,
+          modelId: MODEL_ID,
+          userMessage: userMessage("Urgent"),
+          runConfig: { kind: "chat", input: "Urgent", writerOrigin: { kind: "person", id: userId }, toolSource: { kind: "none" } },
+        },
+        [{ type: "text", text: "Urgent" }],
+      );
+      await requestQueuedMessageSendNow(conversation.id, id);
+      const answer = {
+        ...target,
+        callId: "c4-effect",
+        signedInSession: false,
+        event: { type: "tool_result" as const, callId: "c4-effect", isError: true, result: { code: "ACTION_OUTCOME_UNKNOWN" } },
+      };
+      await aiConversations.resolvePendingTurnAction(answer);
+      await aiConversations.resolvePendingTurnAction({ ...answer, signedInSession: true });
+      await reconcileQueuedInterruptions(conversation.id);
+      expect(await queuedMessageReceipt(conversation.id, id)).toMatchObject({ state: "failed", error: "interruption_unconfirmed" });
+      expect((await used())[0]?.calls).toBe(1);
+      // This is a real waiting->running claim and Nessi resume, not just reconciliation.
+      await run("waiting");
+      const receipts = (await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id })).filter(
+        ({ message }) => message.role === "tool_result" && message.callId === "c4-effect",
+      );
+      expect(receipts).toHaveLength(1);
+      expect(receipts[0]?.message).toMatchObject({ result: { code: "ACTION_OUTCOME_UNKNOWN" } });
+      expect(await aiConversations.getTurnRunConfig(target)).toMatchObject({
+        sourceRestricted: true,
+        locale: "de",
+        inferenceBudget: allowance,
+      });
+      expect((await used())[0]?.calls).toBe(AUTOMATION_TURN_BUDGET.modelCalls);
+      expect(completionRequestCount).toBe(AUTOMATION_TURN_BUDGET.modelCalls);
+      expect(probe).toHaveBeenCalledTimes(AUTOMATION_TURN_BUDGET.modelCalls - 1);
+      expect(
+        (await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id })).at(-1)?.meta?.automationTurnStop,
+      ).toMatchObject({ reason: "model_calls" });
+      expect((await aiConversations.getTurn(target))?.status).toBe("completed");
+      expect(
+        await aiConversations.claimTurn({
+          ...target,
+          leaseOwner: "c4-replay",
+          leaseMs: 30_000,
+          from: "waiting",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        }),
+      ).toBeNull();
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 30_000);
+
+  test("a restricted tool answer survives queue interruption and withdrawal exactly once (confirmed)", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["approval_probe"] });
+    const effect = mock(async () => ({}));
+    const tool = defineAiTool({
+      name: "approval_probe",
+      description: "Requires approval",
+      approval: "always",
+      inputSchema: z.strictObject({}),
+      outputSchema: z.strictObject({}),
+    }).server(effect);
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: conversation.id,
+      modelId: MODEL_ID,
+      userMessage: userMessage("Review the effect"),
+      runConfig: {
+        kind: "chat",
+        input: "Review the effect",
+        locale: "de",
+        actor: { kind: "user", user: actorUser(userId) },
+        toolSource: { kind: "default" },
+      },
+    });
+    const target = { conversationId: conversation.id, turnId: turn.id };
+    const save = aiConversations.savePendingTurnAction;
+    let queuedId = "";
+    const saving = spyOn(aiConversations, "savePendingTurnAction").mockImplementation(async (input) => {
+      if (input.turnId === turn.id && input.callId === "c4-review") {
+        // Deliver the client receipt while the real worker reaches another approval.
+        await save({
+          ...target,
+          callId: "c4-effect",
+          kind: "client_tool",
+          status: "pending",
+          name: "local_bash",
+          args: {},
+          approvalScope: "local",
+          allowAlways: false,
+          frontendMode: "client",
+          resolvedEvent: null,
+        });
+        queuedId = crypto.randomUUID();
+        await enqueueChatMessage(
+          queuedId,
+          {
+            conversationId: conversation.id,
+            modelId: MODEL_ID,
+            userMessage: userMessage("Urgent"),
+            runConfig: { kind: "chat", input: "Urgent", writerOrigin: { kind: "person", id: userId }, toolSource: { kind: "none" } },
+          },
+          [{ type: "text", text: "Urgent" }],
+        );
+        await requestQueuedMessageSendNow(conversation.id, queuedId);
+        const answer = {
+          ...target,
+          callId: "c4-effect",
+          signedInSession: false,
+          event: { type: "tool_result" as const, callId: "c4-effect", result: { written: true } },
+        };
+        await aiConversations.resolvePendingTurnAction(answer);
+        await aiConversations.resolvePendingTurnAction({ ...answer, signedInSession: true });
+      }
+      return save(input);
+    });
+    try {
+      completionQueue = [toolCallCompletion("c4-review", "approval_probe", {}), textCompletion("Must not run")];
+      const claim = await aiConversations.claimTurn({
+        ...target,
+        leaseOwner: "c4-confirmed",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected C4 claim");
+      await new AiTurnExecutor({
+        leaseOwner: "c4-confirmed",
+        heartbeatMs: 25,
+        enqueueContinuation: async () => {},
+        validateTurn: fakeValidateToolTurn,
+        tools: [tool],
+      }).run({ ...target, claim, signal: new AbortController().signal });
+      await reconcileQueuedInterruptions(conversation.id);
+      const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+      expect(messages.filter(({ message }) => message.role === "tool_result" && message.callId === "c4-effect")).toHaveLength(1);
+      expect(messages.find(({ message }) => message.role === "tool_result" && message.callId === "c4-review")?.message).toMatchObject({
+        reason: "not_run",
+        result: { code: "QUEUE_INTERRUPTED", started: false },
+      });
+      expect(effect).not.toHaveBeenCalled();
+      expect(await aiConversations.getTurnRunConfig(target)).toMatchObject({ sourceRestricted: true, locale: "de" });
+      expect((await aiConversations.getTurn(target))?.status).toBe("aborted");
+      expect(await queuedMessageReceipt(conversation.id, queuedId)).toMatchObject({ state: "sending" });
+    } finally {
+      saving.mockRestore();
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 30_000);
+
   const resumeModes = ["unchanged", "changed", "revoked", "used", "rejected_empty", "approved_empty", "failed_empty"] as const;
   test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();
@@ -1480,6 +1921,7 @@ suite("AI executor integration", () => {
           turnIndex: 0,
         } as Extract<OutboundEvent, { type: "tool_action_request" }>;
         const suspended = await createExecutor("approval-test")["handleActionRequest"]({
+          interruption: new AiTurnInterruption(() => {}),
           signal: new AbortController().signal,
           event,
           loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
@@ -1558,6 +2000,7 @@ suite("AI executor integration", () => {
         await pipeline.apply({ type: "tool_execution_start", ...fields, callId: "chart-1", name: "chart", args } as OutboundEvent);
         const pushed: InboundEvent[] = [];
         const suspended = await createExecutor("chart-test")["handleActionRequest"]({
+          interruption: new AiTurnInterruption(() => {}),
           signal: new AbortController().signal,
           event: { type: "tool_action_request", ...fields, kind: "client_tool", callId: "chart-1", name: "chart", args } as Extract<
             OutboundEvent,
@@ -1701,7 +2144,6 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
-
   test.each([false, true])("a linked chat code approval retains its stored question and content (full=%s)", async (fullContent) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
@@ -1804,6 +2246,7 @@ suite("AI executor integration", () => {
           capabilityActionReviews: reviews,
           approvalTargets: new Map(),
           linkedApprovals: new Map([[callId, approvalId]]),
+          interruption: new AiTurnInterruption(() => {}),
         });
       const linked = await codeApproval("code", fullContent ? fullReview : undefined);
       await ask("run-approval-0", linked);
@@ -1955,6 +2398,7 @@ suite("AI executor integration", () => {
             capabilityActionReviews: new Map(),
             approvalTargets,
             linkedApprovals: new Map(),
+            interruption: new AiTurnInterruption(() => {}),
           });
           // Resolved from a remembered approval, or saved as a question for the person.
           const asked = (await aiConversations.listPendingActionRecords({ conversationId: chat.id, turnId: turn.id })).some(

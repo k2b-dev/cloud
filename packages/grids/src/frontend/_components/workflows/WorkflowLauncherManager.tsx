@@ -128,7 +128,7 @@ function LauncherEditor(props: {
   tables: PublicTable[];
   launcher?: PublicWorkflowLauncher;
   close: () => void;
-  save: (draft: LauncherDraft) => Promise<void>;
+  save: (draft: LauncherDraft) => Promise<boolean>;
   setDismissHandler: (handler: () => void | Promise<void>) => void;
 }) {
   const locale = useLocale();
@@ -304,8 +304,7 @@ function LauncherEditor(props: {
     setSaving(true);
     setSaveError(undefined);
     try {
-      await props.save({ name: name().trim(), enabled: enabled(), config });
-      props.close();
+      if (await props.save({ name: name().trim(), enabled: enabled(), config })) props.close();
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : t().saveRunOptionFailed);
     } finally {
@@ -513,7 +512,7 @@ function LauncherEditor(props: {
 const requestLauncherDraft = (
   workflow: PublicWorkflow,
   tables: PublicTable[],
-  save: (draft: LauncherDraft) => Promise<void>,
+  save: (draft: LauncherDraft) => Promise<boolean>,
   launcher?: PublicWorkflowLauncher,
 ) =>
   dialogCore.open<void>(
@@ -544,6 +543,8 @@ export function WorkflowLauncherManager(props: {
   const [loaded, setLoaded] = createSignal(false);
 
   const loadMut = mutations.create<void, void>({
+    // A reload after a change must not be dropped by an older reload in flight.
+    concurrency: "replace",
     onBefore: () => setLoaded(false),
     mutation: async (_, { abortSignal }) => {
       const res = await workflowLauncherApi[":workflowId"].launchers.$get(
@@ -611,9 +612,9 @@ export function WorkflowLauncherManager(props: {
       props.workflow,
       props.tables,
       async (draft) => {
-        await saveMut.mutate({ launcher, draft });
-        const error = saveMut.error();
-        if (error) throw error;
+        const outcome = await saveMut.mutate({ launcher, draft });
+        if (outcome === "error") throw saveMut.error();
+        return outcome === "success";
       },
       launcher,
     );

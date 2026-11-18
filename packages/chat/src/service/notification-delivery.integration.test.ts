@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, setDefaultTimeout, setSystemTime, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, setDefaultTimeout, setSystemTime, spyOn, test } from "bun:test";
 import { redis as platformRedis, redis, sql } from "@k2b/cloud";
 import { ResourceReaderRateLimited } from "@k2b/cloud/capabilities/server";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
@@ -7,10 +7,10 @@ import { processNotificationDelivery } from "@k2b/cloud/services/notifications/d
 import type { sendTypedNotification } from "@k2b/cloud/services/notifications/platform";
 import { Hono } from "hono";
 import { z } from "zod";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, testInfra, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import chatApi from "../api";
-import { messageFixtures, type Person } from "../api/messages.test-fixture";
+import type { Person } from "../api/messages.test-fixture";
 import { app } from "../config";
 import { type PushData, PushDataSchema, renderPush } from "../notifications";
 import { badgeCount } from "./badge";
@@ -38,6 +38,13 @@ import {
   systemNotificationDependencies,
   systemNotificationHealth,
 } from "./system-notification-access";
+
+// Select the database before messageFixtures loads the authorization preload.
+if (testInfra.database && testInfra.nats && testInfra.valkey) {
+  const database = await useMigratedDatabase("chat_notifications");
+  afterAll(() => database.drop());
+}
+const { messageFixtures } = await import("../api/messages.test-fixture");
 
 const typedNotifications: { send: typeof sendTypedNotification } = notifications;
 setDefaultTimeout(30_000);

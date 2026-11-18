@@ -1,5 +1,64 @@
 # Changelog
 
+## [0.73.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.72.0...npm-cloud-v0.73.0) (2026-11-17)
+
+
+### Features
+
+* **ai:** return thinking steps without model content ([#3618](https://github.com/k2b-dev/cloud/issues/3618)) ([81233f1](https://github.com/k2b-dev/cloud/commit/81233f140076a3e72eb77be96666f9d2a579830a))
+* **cloud:** a waiting game on the maintenance page and the generic 404 and error pages ([#3528](https://github.com/k2b-dev/cloud/issues/3528)) ([bca7ff7](https://github.com/k2b-dev/cloud/commit/bca7ff77e9a7d87df21dd71e69c93cb7d2a4aec2))
+* **cloud:** apps can swap pages in named areas only ([#3457](https://github.com/k2b-dev/cloud/issues/3457)) ([d6769bd](https://github.com/k2b-dev/cloud/commit/d6769bde92c38f5a64ae4991ea294525cc994d69))
+* **cloud:** conflicts read the sentence they were given, on @k2b/stdlib 0.33.0 ([#3576](https://github.com/k2b-dev/cloud/issues/3576)) ([84b3ed1](https://github.com/k2b-dev/cloud/commit/84b3ed115927be23e0bc703ec9d8d384ea48db20))
+* **cloud:** discussion places return a page that agents can follow, and the platform rejects one that does not ([#3522](https://github.com/k2b-dev/cloud/issues/3522)) ([807d749](https://github.com/k2b-dev/cloud/commit/807d749cc60ac73294cd9c6e89e039c204769f7f))
+* **cloud:** Gustav's steps are one-line rows on one grid, with their details behind an ⓘ ([#3559](https://github.com/k2b-dev/cloud/issues/3559)) ([d0b8e2c](https://github.com/k2b-dev/cloud/commit/d0b8e2c28bb8da78473bc8bff94a236791538fe8))
+* **cloud:** Gustav's thinking line changes its word with time, one word at a time ([#3477](https://github.com/k2b-dev/cloud/issues/3477)) ([38f6371](https://github.com/k2b-dev/cloud/commit/38f637186d009f63561167cf6c77c396feddb3cb))
+* **cloud:** maintenance stage Ruhe pauses every platform worker and resumes it, with per-app quiet status ([#3519](https://github.com/k2b-dev/cloud/issues/3519)) ([cb2a26c](https://github.com/k2b-dev/cloud/commit/cb2a26cd7df9a7e69420e2146e419ab65b98b92c))
+* **cloud:** open pages keep their input and say why during maintenance or an app restart ([#3525](https://github.com/k2b-dev/cloud/issues/3525)) ([1f0df28](https://github.com/k2b-dev/cloud/commit/1f0df28202a0131a90501b40dfb608e60d90f604))
+* **cloud:** the phone header's app menu shows a dot while any app has news ([#3557](https://github.com/k2b-dev/cloud/issues/3557)) ([1a732d0](https://github.com/k2b-dev/cloud/commit/1a732d0537a45e4b69c9fff5a8eb891f3f136638))
+* **core:** administrators start, move and end maintenance mode in the admin settings ([#3508](https://github.com/k2b-dev/cloud/issues/3508)) ([88431af](https://github.com/k2b-dev/cloud/commit/88431afa3499f5b5250637cfaba1aa09c7ae2209))
+* **files:** folders and files offer discussions beside the page ([#3487](https://github.com/k2b-dev/cloud/issues/3487)) ([ec9e324](https://github.com/k2b-dev/cloud/commit/ec9e324ec7caf72c5c10c50923900bbfeaf9d8d8))
+* **gateway:** a calm maintenance page and stable 503 answers while the Cloud or one app is away, switched with cld ([#3501](https://github.com/k2b-dev/cloud/issues/3501)) ([2973442](https://github.com/k2b-dev/cloud/commit/297344273d2f5413c3f9199b93d5fd8df99113ef))
+* **gateway:** administrators pass the maintenance page with a personal link from cld ([#3503](https://github.com/k2b-dev/cloud/issues/3503)) ([b4ee80c](https://github.com/k2b-dev/cloud/commit/b4ee80cecca94a6eb6d7b5ea8c014cb6d0bf6f97))
+* **ssr:** page swaps fall back safely with a reported reason, give up after a deadline, and protect unsaved input ([#3460](https://github.com/k2b-dev/cloud/issues/3460)) ([268ca18](https://github.com/k2b-dev/cloud/commit/268ca184154d4a76a82673f44a6a7a3b9624d8f0))
+
+
+### Bug Fixes
+
+* **ai:** a suggested next message is never a word such as null and has at least six characters ([#3563](https://github.com/k2b-dev/cloud/issues/3563)) ([da3511a](https://github.com/k2b-dev/cloud/commit/da3511a5838206e4b1dbc6746859332a730b714a))
+* **ai:** earlier Gustav turns name an app as the catalog does today ([#3562](https://github.com/k2b-dev/cloud/issues/3562)) ([b3bb66c](https://github.com/k2b-dev/cloud/commit/b3bb66cbda9cd6eabd6ff53b0441d454a675d4fe))
+* **assistant:** accept ZIP file attachments ([#3456](https://github.com/k2b-dev/cloud/issues/3456)) ([fbe6915](https://github.com/k2b-dev/cloud/commit/fbe691515011db73117bc17f7b02e8dc60570015))
+* **assistant:** To the newest message stands clear of Waiting for you, and Gustav's thinking words change again ([#3543](https://github.com/k2b-dev/cloud/issues/3543)) ([3526194](https://github.com/k2b-dev/cloud/commit/352619436e7aa45039837fa30a0e396042cc3c3a))
+* **assistant:** web reading checks addresses and refuses API redirects ([#3464](https://github.com/k2b-dev/cloud/issues/3464)) ([a5e9b4d](https://github.com/k2b-dev/cloud/commit/a5e9b4df1d4d1358f8d0aba2936674590824eb93))
+* **cloud:** a Gustav turn that ends without any answer says so instead of ending in silence ([#3488](https://github.com/k2b-dev/cloud/issues/3488)) ([dcaf73d](https://github.com/k2b-dev/cloud/commit/dcaf73d2b1cf92ddd4b71a381044081739986e21))
+* **cloud:** an expired question says why the turn ended once, with one way out ([#3572](https://github.com/k2b-dev/cloud/issues/3572)) ([c59e178](https://github.com/k2b-dev/cloud/commit/c59e178f2f34069d913aa8033d6a7d79ea7dc953))
+* **cloud:** an outcome line ends its sentence before the detail, and an interrupted plan shows no running step ([#3534](https://github.com/k2b-dev/cloud/issues/3534)) ([3d7bb59](https://github.com/k2b-dev/cloud/commit/3d7bb5996a72bae38178edb47d65f5c921ed1e6a))
+* **cloud:** assert live identity catch-up delivery guarantees ([#3616](https://github.com/k2b-dev/cloud/issues/3616)) ([239ed4f](https://github.com/k2b-dev/cloud/commit/239ed4f62ab772e4685c7fef2cfbac7d3dfbda26)), closes [#3594](https://github.com/k2b-dev/cloud/issues/3594)
+* **cloud:** follow-up Code turns sum up their steps, a stopped turn ends once, and the start reads like v12 ([#3435](https://github.com/k2b-dev/cloud/issues/3435)) ([3747bf9](https://github.com/k2b-dev/cloud/commit/3747bf9aa4a06ffdc3430033de5de0403ee97707))
+* **cloud:** keep panel consent controls current during saves ([#3631](https://github.com/k2b-dev/cloud/issues/3631)) ([b9af89f](https://github.com/k2b-dev/cloud/commit/b9af89f6b15d37f912309ffc79a30c43911d9eb5))
+* **cloud:** keep the sign-out warning background blurred during countdown ([#3625](https://github.com/k2b-dev/cloud/issues/3625)) ([51adc93](https://github.com/k2b-dev/cloud/commit/51adc931c0ab8cd234d37b02b935c8bdd5c01f4f))
+* **cloud:** retain panel menu clicks while the controller loads ([#3622](https://github.com/k2b-dev/cloud/issues/3622)) ([275b630](https://github.com/k2b-dev/cloud/commit/275b630aa4d1405708eab41fa10e9b2c5636ee1d)), closes [#3621](https://github.com/k2b-dev/cloud/issues/3621)
+* **cloud:** stage identity hints before live reconnect checks ([#3595](https://github.com/k2b-dev/cloud/issues/3595)) ([68a05a0](https://github.com/k2b-dev/cloud/commit/68a05a093783756e2dd1dcbfbb5658dde0f8c5be)), closes [#3594](https://github.com/k2b-dev/cloud/issues/3594)
+* **cloud:** wait for calculated route in map ambiguity test ([#3599](https://github.com/k2b-dev/cloud/issues/3599)) ([6cee68c](https://github.com/k2b-dev/cloud/commit/6cee68caf92f8218c29ad8c7685de781d72867bc)), closes [#3598](https://github.com/k2b-dev/cloud/issues/3598)
+* **core:** the platform app shows itself to people as Cloud instead of Core ([#3547](https://github.com/k2b-dev/cloud/issues/3547)) ([1116efd](https://github.com/k2b-dev/cloud/commit/1116efd12647ea323b84dd9fc31e786cb43497d6))
+* **deps:** mutations ignore a second call while one runs ([#3602](https://github.com/k2b-dev/cloud/issues/3602)) ([3745df6](https://github.com/k2b-dev/cloud/commit/3745df635929ba3d0a4a42cf80404b9032ac61b5))
+* **editor:** a line over dates starts its axis at its first value ([#3454](https://github.com/k2b-dev/cloud/issues/3454)) ([d3742d2](https://github.com/k2b-dev/cloud/commit/d3742d233b86504b5eb86cc1cf158959dc86c81b))
+* **ssr:** keep text typed before an island renders, so the first chat message is sent; name untitled chats in the caller's language ([#3544](https://github.com/k2b-dev/cloud/issues/3544)) ([38ec07f](https://github.com/k2b-dev/cloud/commit/38ec07f502642dbc42d973a2deb434789bb4cb02))
+* **test:** the shared-workstation test waits for the warning's focus instead of reading it once ([#3579](https://github.com/k2b-dev/cloud/issues/3579)) ([f86d593](https://github.com/k2b-dev/cloud/commit/f86d5938b85f63a3cdd974b45422cd0402d9c75b)), closes [#3577](https://github.com/k2b-dev/cloud/issues/3577)
+
+
+### Performance Improvements
+
+* **ui:** the people list, rich select and phone help load their sheet only on phones ([#3551](https://github.com/k2b-dev/cloud/issues/3551)) ([d95523e](https://github.com/k2b-dev/cloud/commit/d95523e1783085b4e0762b5d504a51a685e2b595))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.21.3 to 0.22.0
+    * @k2b/ui bumped from 0.59.0 to 0.60.0
+    * @k2b/editor bumped from 0.11.6 to 0.12.0
+
 ## [0.72.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.71.0...npm-cloud-v0.72.0) (2026-11-15)
 
 

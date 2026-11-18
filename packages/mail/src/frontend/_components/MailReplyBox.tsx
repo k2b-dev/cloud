@@ -157,7 +157,7 @@ export default function MailReplyBox(props: {
   const [noteSaving, setNoteSaving] = createSignal(false);
   // Above the conversation the box opens at one reserved height, from placeholder to loaded draft, so a late draft,
   // signature, or suggestion never moves the messages below it (#3297). It grows to its content once the person
-  // works in it: a click, focus, or a dragged file.
+  // works in it: a click, focus, or a dragged file. The reserved height remains its minimum after that interaction.
   const [expanded, setExpanded] = createSignal(false);
   const expand = () => {
     if (!expanded()) setExpanded(true);

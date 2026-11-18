@@ -2,6 +2,7 @@ import type { CompactResult, InboundEvent, Message } from "@k2b/nessi";
 import type { BoundBlockView } from "../blocks/schema";
 import type { CapabilityActionReviewPresentation } from "../contracts/capabilities";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
+import { isQueueInterruptedResult } from "./turn-interruption";
 import type { AiConversation, AiFrontendToolMode, AiStoredMessage, AiToolPresentation, AiTurnStatus } from "./types";
 
 /**
@@ -329,11 +330,17 @@ export const buildBlocksFromMessages = (
         const outcome = meta?.toolOutcomes?.[message.callId];
         blocks[at!] = {
           ...existing,
-          status: outcome === "rejected" ? "rejected" : message.isError ? "failed" : "completed",
+          status: isQueueInterruptedResult(message.result)
+            ? "running"
+            : outcome === "rejected"
+              ? "rejected"
+              : message.isError
+                ? "failed"
+                : "completed",
           ...(meta?.resultView ? { view: meta.resultView } : {}),
           ...(meta?.resultChoice ? { choice: meta.resultChoice } : {}),
           result: message.isError && existing.result !== undefined ? existing.result : message.result,
-          isError: message.isError,
+          isError: !isQueueInterruptedResult(message.result) && message.isError,
           ...(createdAt ? { at: createdAt } : {}),
           ...(outcome === "approved" ? { approved: true } : {}),
         };

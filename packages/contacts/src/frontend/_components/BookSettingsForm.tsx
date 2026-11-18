@@ -154,16 +154,18 @@ export default function BookSettingsForm(props: Props) {
 
   const createTag = async (value: TagValue) => {
     if (disposed || settingsBusy()) return;
-    await createTagMutation.mutate({ bookId: bookId(), value: { ...value } });
+    const outcome = await createTagMutation.mutate({ bookId: bookId(), value: { ...value } });
     if (disposed) return;
-    if (createTagMutation.error()) throw createTagMutation.error();
+    if (outcome === "error") throw createTagMutation.error();
+    if (outcome !== "success") return;
     await completeTagWrite(t().tagCreated, t().tagCreatedReloadFailed);
   };
   const updateTag = async (tag: ContactTag, value: TagValue) => {
     if (disposed || settingsBusy()) return;
-    await updateTagMutation.mutate({ bookId: bookId(), tagId: tag.id, value: { ...value } });
+    const outcome = await updateTagMutation.mutate({ bookId: bookId(), tagId: tag.id, value: { ...value } });
     if (disposed) return;
-    if (updateTagMutation.error()) throw updateTagMutation.error();
+    if (outcome === "error") throw updateTagMutation.error();
+    if (outcome !== "success") return;
     await completeTagWrite(t().tagUpdated, t().tagUpdatedReloadFailed);
   };
 
@@ -179,9 +181,10 @@ export default function BookSettingsForm(props: Props) {
       });
       if (!confirmed || disposed) return;
 
-      await deleteTagMutation.mutate({ bookId: bookId(), tagId: tag.id });
+      const outcome = await deleteTagMutation.mutate({ bookId: bookId(), tagId: tag.id });
       if (disposed) return;
-      if (deleteTagMutation.error()) throw deleteTagMutation.error();
+      if (outcome === "error") throw deleteTagMutation.error();
+      if (outcome !== "success") return;
       await completeTagWrite(t().tagDeleted, t().tagDeletedReloadFailed);
     } finally {
       deleteTagConfirming = false;

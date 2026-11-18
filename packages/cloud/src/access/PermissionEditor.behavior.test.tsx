@@ -1448,6 +1448,7 @@ describe("PermissionEditor pending controls", () => {
           expect(confirmations).toHaveLength(1);
           expect(view.writes).toEqual([`${action}:lea`]);
           await view[action].settle();
+          await waitFor(() => !view.triggers[2]!.disabled, "the mutation to release its controls");
           expect(view.triggers[2]!.disabled).toBe(false);
           expect(view.writes).toEqual([`${action}:lea`]);
         } finally {
@@ -1473,6 +1474,7 @@ describe("PermissionEditor pending controls", () => {
         expect(view.writes).toEqual([`${action}:lea`]);
         view[action].reject(new Error("Could not save access"));
         await view[action].promise.catch(() => {});
+        await waitFor(() => view.dom.root.querySelector('[role="alert"] button') !== null, "the mutation error and retry");
         const retry = view.dom.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;
         expect(retry).not.toBeNull();
         view.removes[2]!.click();

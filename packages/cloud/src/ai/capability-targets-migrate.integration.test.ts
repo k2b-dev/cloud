@@ -271,7 +271,7 @@ databaseSuite()("capability target upgrade with existing Assistant data", () => 
       expect(final.messages).toHaveLength(1);
       expect(final.messages[0]).toMatchObject({ loopDoneReason: "aborted", meta: { turnError: { code: "capability_changed" } } });
       const conversation = await aiConversations.getConversation({ conversationId: pending[1]!.chatId });
-      const state = await loadAiStreamState(conversation!);
+      const state = await loadAiStreamState(conversation!, undefined, { locale: "en" });
       expect(state.messages).toHaveLength(3);
       expect(state.messages[1]).toMatchObject({ loopDoneReason: "aborted", meta: { turnError: { code: "capability_changed" } } });
 

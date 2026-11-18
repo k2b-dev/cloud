@@ -54,7 +54,9 @@ databaseSuite()("next message storage and projections", () => {
     const input = { conversationId: conversation.id, turnId, userId, text: suggestion };
     const complete = () => sql`UPDATE ai.turns SET status = 'completed', completed_at = ${frozen}::timestamptz WHERE id = ${turnId}::uuid`;
     const read = async (viewer: string | null = userId) =>
-      publicAiStoredMessages(await aiConversations.listMessages({ conversationId: conversation.id }), conversation, viewer);
+      publicAiStoredMessages(await aiConversations.listMessages({ conversationId: conversation.id }), conversation, viewer, {
+        locale: "de",
+      });
     return { userId, conversation, turnId, messageId, input, complete, read };
   };
 
@@ -137,6 +139,7 @@ databaseSuite()("next message storage and projections", () => {
         await aiConversations.listMessages({ conversationId: conversation.id }),
         conversation,
         userId,
+        { locale: "de" },
       );
       const answer = messages.find((message) => message.message.role === "assistant");
       expect(answer?.suggestedNextMessage).toEqual(saveFails ? undefined : { text: suggestion, dismissedAt: null });
@@ -165,8 +168,8 @@ databaseSuite()("next message storage and projections", () => {
     expect((await f.read())[0]?.suggestedNextMessage).toEqual({ text: suggestion, dismissedAt: null });
     expect((await f.read(await person()))[0]?.suggestedNextMessage).toBeUndefined();
     expect((await f.read(null))[0]?.suggestedNextMessage).toBeUndefined();
-    expect((await loadAiStreamState(f.conversation, f.userId)).messages[0]?.suggestedNextMessage?.text).toBe(suggestion);
-    expect((await loadAiStreamState(f.conversation)).messages[0]?.suggestedNextMessage).toBeUndefined();
+    expect((await loadAiStreamState(f.conversation, f.userId, { locale: "de" })).messages[0]?.suggestedNextMessage?.text).toBe(suggestion);
+    expect((await loadAiStreamState(f.conversation, undefined, { locale: "de" })).messages[0]?.suggestedNextMessage).toBeUndefined();
   });
 
   test("a suggestion stored as a placeholder or shorter than six characters never reaches the composer", async () => {
@@ -176,7 +179,7 @@ databaseSuite()("next message storage and projections", () => {
       await saveAiNextMessage({ ...f.input, text });
       await f.complete();
       expect((await f.read())[0]?.suggestedNextMessage).toBeUndefined();
-      expect((await loadAiStreamState(f.conversation, f.userId)).messages[0]?.suggestedNextMessage).toBeUndefined();
+      expect((await loadAiStreamState(f.conversation, f.userId, { locale: "de" })).messages[0]?.suggestedNextMessage).toBeUndefined();
     }
   });
 

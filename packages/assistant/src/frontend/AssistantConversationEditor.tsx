@@ -15,10 +15,12 @@ import {
   type StatusTone,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
-import { useAssistantCopy, useAssistantText } from "./ui-copy";
+import { confirmAssistantArchive } from "./confirm-archive";
+import { useAssistantText } from "./ui-copy";
 
 type EditConversationResult = { action: "save"; conversation: AiConversation } | { action: "archive"; conversation: AiConversation };
 
@@ -26,10 +28,11 @@ type EditConversationFormProps = {
   conversation: AiConversation;
   archiveDisabled?: boolean;
   archiveDisabledReason?: string;
+  queuedMessageCount?: () => number | undefined;
   close: (result?: EditConversationResult) => void;
 };
 
-type EditConversationOptions = Pick<EditConversationFormProps, "archiveDisabled" | "archiveDisabledReason">;
+type EditConversationOptions = Pick<EditConversationFormProps, "archiveDisabled" | "archiveDisabledReason" | "queuedMessageCount">;
 
 const formatRunTime = (iso: string): string =>
   new Date(iso).toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -65,6 +68,8 @@ function SearchIndexSection(props: { conversationId: string }) {
   onCleanup(stopPolling);
 
   const load = mutation.create<{ status: AiEnrichmentStatus | null; runs: AiEnrichmentRun[] }, void>({
+    // A reload after reindexing must not be dropped by a poll in flight.
+    concurrency: "replace",
     mutation: async () => assistantApi.getEnrichment(props.conversationId),
     onSuccess: (result) => {
       setStatus(result.status);
@@ -182,7 +187,7 @@ function SearchIndexSection(props: { conversationId: string }) {
 
 function EditConversationForm(props: EditConversationFormProps) {
   const text = useAssistantText();
-  const copy = useAssistantCopy();
+  const locale = useLocale();
   const [title, setTitle] = createSignal(props.conversation.title);
   const [description, setDescription] = createSignal(props.conversation.description);
   const [pinned, setPinned] = createSignal(Boolean(props.conversation.pinnedAt));
@@ -216,12 +221,7 @@ function EditConversationForm(props: EditConversationFormProps) {
   const archive = mutation.create<boolean, void>({
     mutation: async () => {
       if (props.archiveDisabled) return false;
-      const confirmed = await prompts.confirm(copy().archiveChat({ title: props.conversation.title }), {
-        title: text("Archive chat"),
-        icon: "ti ti-archive",
-        confirmText: text("Archive"),
-        cancelText: text("Cancel"),
-      });
+      const confirmed = await confirmAssistantArchive(props.conversation, locale(), props.queuedMessageCount?.());
       if (!confirmed) return false;
 
       await assistantApi.archiveConversation(props.conversation.id);

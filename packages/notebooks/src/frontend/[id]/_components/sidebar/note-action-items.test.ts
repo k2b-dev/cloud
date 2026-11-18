@@ -23,8 +23,8 @@ const locked: string[] = [];
 const placed: [string, NotePlacement | null][] = [];
 const sorted: (string | null)[] = [];
 const actions = {
-  handleCreateNote: async () => undefined,
-  handleCreateFromTemplate: async () => undefined,
+  handleCreateNote: async () => "success",
+  handleCreateFromTemplate: async () => "success",
   handleSaveAsTemplate: async (target: SidebarNote) => {
     savedAsTemplate.push(target.id);
   },

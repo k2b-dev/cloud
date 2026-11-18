@@ -324,12 +324,13 @@ describe("Spaces Kanban drop indicator", () => {
     );
     const { toast } = await import("@k2b/ui");
     const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     const dialog = () => dom.document.querySelector<HTMLDialogElement>('dialog[aria-label="Take over task"]');
     const dialogButton = (label: string) =>
       [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
     const settle = async (condition: () => boolean) => {
       for (let attempt = 0; attempt < 50 && !condition(); attempt++) await flush();
-      expect(condition()).toBe(true);
+      expect(condition(), condition.toString()).toBe(true);
     };
 
     // Cancel: nothing is sent, and the card stays where it was.
@@ -350,17 +351,22 @@ describe("Spaces Kanban drop indicator", () => {
     expect(transfers[0]).toEqual({ itemId: "A", wormholeId: "Worm01", json: { claimId: foreign.id, force: true } });
     await settle(() => slots()[0] === "Open: B");
 
+    // Removing the card is optimistic. Wait for the answered transfer before starting another drag.
+    await settle(() => successes.mock.calls.length === 1);
+
     // The holder's own claim ends without a question.
     await dropOnWormhole("B");
     await settle(() => transfers.length === 2);
     expect(dialog()).toBeNull();
     expect(transfers[1]).toEqual({ itemId: "B", wormholeId: "Worm01", json: { claimId: own.id } });
+    await settle(() => successes.mock.calls.length === 2);
     expect(errors).not.toHaveBeenCalled();
 
     answerTransfer = pending;
     dispose();
     await flush();
     errors.mockRestore();
+    successes.mockRestore();
     dom.cleanup();
   });
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.12.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.11.6...npm-editor-v0.12.0) (2026-11-17)
+
+
+### Features
+
+* **cloud:** conflicts read the sentence they were given, on @k2b/stdlib 0.33.0 ([#3576](https://github.com/k2b-dev/cloud/issues/3576)) ([84b3ed1](https://github.com/k2b-dev/cloud/commit/84b3ed115927be23e0bc703ec9d8d384ea48db20))
+
+
+### Bug Fixes
+
+* **deps:** mutations ignore a second call while one runs ([#3602](https://github.com/k2b-dev/cloud/issues/3602)) ([3745df6](https://github.com/k2b-dev/cloud/commit/3745df635929ba3d0a4a42cf80404b9032ac61b5))
+* **editor:** a line over dates starts its axis at its first value ([#3454](https://github.com/k2b-dev/cloud/issues/3454)) ([d3742d2](https://github.com/k2b-dev/cloud/commit/d3742d233b86504b5eb86cc1cf158959dc86c81b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.59.0 to 0.60.0
+
 ## [0.11.6](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.11.5...npm-editor-v0.11.6) (2026-11-15)
 
 

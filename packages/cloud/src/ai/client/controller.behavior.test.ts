@@ -593,6 +593,60 @@ const conversation = (id: string): AiConversation => ({
 });
 
 describe("AI controller conversation transitions", () => {
+  test.each(["queue_waiting", "CONFLICT", "quota_exhausted"])(
+    "direct send queues only after the queue_waiting rejection (%s)",
+    async (code) => {
+      const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
+      let revision = 0;
+      globalThis.fetch = Object.assign(
+        async (request: RequestInfo | URL, init?: RequestInit) => {
+          const path = String(request);
+          const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+          requests.push({ path, body });
+          if (path.endsWith("/draft")) return Response.json({ content: body.content, revision: ++revision, updatedAt: null });
+          if (path.endsWith("/turns"))
+            return body.queueId
+              ? Response.json({ queued: true })
+              : Response.json({ code, message: "Queued messages must be sent first." }, { status: 409 });
+          return Response.json([]);
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      let dispose!: () => void;
+      const current = conversation("held-chat");
+      const controller = createRoot((cleanup) => {
+        dispose = cleanup;
+        return createAiChatController({
+          baseUrl: "/api/ai",
+          initialConversationId: current.id,
+          initialDetail: { conversation: current, messages: [], activeTurn: null },
+        });
+      });
+      try {
+        const content = [
+          { type: "text" as const, text: "Please continue" },
+          { type: "file" as const, path: "/note.txt", size: 4, mediaType: "text/plain", version: 1 },
+        ];
+        expect(await controller.send({ conversationId: current.id, draftContent: content, model: { id: "chosen" } })).toBe(
+          code === "queue_waiting",
+        );
+        const posts = requests.filter(({ path }) => path.endsWith("/turns"));
+        expect(posts).toHaveLength(code === "queue_waiting" ? 2 : 1);
+        if (code === "queue_waiting") {
+          expect(posts[1]!.body).toMatchObject({ queueId: expect.any(String), model: { id: "chosen" } });
+          const drafts = requests.filter(({ path }) => path.endsWith("/draft"));
+          expect(drafts.at(-1)!.body.content).toEqual(content);
+          expect(controller.conversation()?.draft.content).toEqual([]);
+          expect(controller.messages()).toEqual([]);
+          expect(controller.error()).toBeNull();
+          expect(controller.uncertainSubmissions()).toEqual({});
+        }
+      } finally {
+        dispose();
+      }
+    },
+  );
+
   test("queues full content during a run and reuses the receipt after a lost response", async () => {
     const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
     let fail = true;

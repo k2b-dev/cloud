@@ -321,13 +321,14 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
       return;
     }
     const startedAtRevision = routeRevision;
-    await createEndpointMutation.mutate({ name });
+    const outcome = await createEndpointMutation.mutate({ name });
     if (disposed) return;
     const error = createEndpointMutation.error();
-    if (error) {
-      toast.error(error.message || t().endpointCreateFailed);
+    if (outcome === "error") {
+      toast.error(error?.message || t().endpointCreateFailed);
       return;
     }
+    if (outcome !== "success") return;
     const endpoint = createEndpointMutation.data()!;
     try {
       await reconcile([endpointsQuery.invalidate()]);
@@ -363,13 +364,14 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
   const deleteEndpoint = async (endpoint: Endpoint) => {
     if (writesBlocked()) return;
     const startedAtRevision = routeRevision;
-    await deleteEndpointMutation.mutate(endpoint);
+    const outcome = await deleteEndpointMutation.mutate(endpoint);
     if (disposed) return;
     const error = deleteEndpointMutation.error();
-    if (error) {
-      toast.error(error.message || t().endpointDeleteFailed);
+    if (outcome === "error") {
+      toast.error(error?.message || t().endpointDeleteFailed);
       return;
     }
+    if (outcome !== "success") return;
     try {
       await reconcile([endpointsQuery.invalidate(), logsQuery.invalidate()]);
     } catch {
@@ -394,13 +396,14 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
         headers: parseHeaders(headers(), t().headersMustBeJsonObject),
         body: body(),
       };
-      await sendRequestMutation.mutate(intent);
+      const outcome = await sendRequestMutation.mutate(intent);
       if (disposed) return;
       const error = sendRequestMutation.error();
-      if (error) {
-        toast.error(error.message || t().requestFailed);
+      if (outcome === "error") {
+        toast.error(error?.message || t().requestFailed);
         return;
       }
+      if (outcome !== "success") return;
       const log = sendRequestMutation.data()!;
       if (routeState().mode === "send") {
         try {

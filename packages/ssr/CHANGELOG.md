@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.21.3...npm-ssr-v0.22.0) (2026-11-17)
+
+
+### Features
+
+* **ssr:** page swaps fall back safely with a reported reason, give up after a deadline, and protect unsaved input ([#3460](https://github.com/k2b-dev/cloud/issues/3460)) ([268ca18](https://github.com/k2b-dev/cloud/commit/268ca184154d4a76a82673f44a6a7a3b9624d8f0))
+
+
+### Bug Fixes
+
+* **ssr:** keep text typed before an island renders, so the first chat message is sent; name untitled chats in the caller's language ([#3544](https://github.com/k2b-dev/cloud/issues/3544)) ([38ec07f](https://github.com/k2b-dev/cloud/commit/38ec07f502642dbc42d973a2deb434789bb4cb02))
+
 ## [0.21.3](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.21.2...npm-ssr-v0.21.3) (2026-11-15)
 
 

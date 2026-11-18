@@ -1,5 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import { batch, createComputed, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { IconButton } from "../actions/Button";
 import { prefersMenuSheet } from "../actions/phone-sheet";
 import { createFieldMeta, Field, fieldDescribedBy } from "../internal/field";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
@@ -8,18 +9,25 @@ import { useUiMessages } from "../intl/messages";
 import { DatePickerPanel } from "./DatePicker";
 import { dateInputPattern, formatDateInput, parseDateInput } from "./date-input";
 import { resolveDateInputMessages } from "./date-input-messages";
-import { errorText } from "./date-input-status";
+import { errorText, limitErrorText } from "./date-input-status";
 import { type DateRangeValue, parseDateValue, pickRangeDay, previewRange, rangeAnchor } from "./date-picker";
 import type { DateContext, MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
 import {
+  addPeriodDays,
+  currentPeriodOf,
   formatPeriodDays,
   formatPeriodRange,
+  formatPeriodUnit,
+  type PeriodKind,
   type PeriodPreset,
   type PeriodRange,
   type PeriodValue,
   periodContext,
   periodDayCount,
+  periodKind,
+  periodStep,
+  stepPeriod,
   widePeriodRangeSample,
 } from "./period";
 import { builtInPresetLabel, type PeriodPickerMessages, usePeriodPickerMessages } from "./period-picker-messages";
@@ -37,6 +45,16 @@ export type PeriodPickerProps = Omit<ValueFieldProps<PeriodValue | null>, "value
   now?: Date;
   /** Shows that a change is saving: the trigger keeps its size, cannot be opened, and shows a spinner. */
   loading?: boolean;
+  /**
+   * Arrows before the trigger step to the previous and next period, and a link after it leads back to the current
+   * one. A calendar week, month, quarter or year steps to its neighbour; any other range moves by its own length. An
+   * open period such as "All time" does not step. A step that lands on a preset stores the preset.
+   */
+  steps?: boolean;
+  /** The first day there is anything to show, a date key. The previous arrow stops before it and says why. */
+  min?: string;
+  /** The last day there is anything to show, a date key. The next arrow stops after it and says why. */
+  max?: string;
 };
 
 type PeriodText = { label: string; detail: string };
@@ -47,6 +65,29 @@ const TWO_MONTHS_QUERY = "(min-width: 56rem)";
 
 const presetLabel = (preset: PeriodPreset, t: PeriodPickerMessages): string =>
   preset.label ?? builtInPresetLabel(t, preset.key) ?? preset.key;
+
+/** The link back to the current period names it by kind: "This week", "This month", or "Current period". */
+const homeLabels = (t: PeriodPickerMessages): Record<PeriodKind, string> => ({
+  day: t.today,
+  week: t["this-week"],
+  month: t["this-month"],
+  quarter: t["this-quarter"],
+  year: t["this-year"],
+  range: t.currentPeriod,
+});
+
+/** Every month of today's year and the week that crosses into the next year: the widest texts a step can show. */
+const unitSamples = (today: string, weekStartsOn: 0 | 1): { start: string; end: string }[] => {
+  const year = Number(today.slice(0, 4));
+  const months = Array.from({ length: 12 }, (_, month) => ({
+    start: `${year}-${String(month + 1).padStart(2, "0")}-01`,
+    end: new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10),
+  }));
+  const lastDay = `${year}-12-31`;
+  const weekday = new Date(`${lastDay}T00:00:00Z`).getUTCDay();
+  const weekStart = addPeriodDays(lastDay, -((weekday - weekStartsOn + 7) % 7));
+  return [...months, { start: weekStart, end: addPeriodDays(weekStart, 6) }];
+};
 
 /** Places the popover under (or over) the trigger; it grows toward the side with room, right-aligned near the right edge. */
 const placePeriodPopover = (trigger: HTMLElement, popover: HTMLElement): void => {
@@ -102,10 +143,23 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
     label: presetLabel(preset, t()),
     detail: formatPeriodDays(preset.resolve(context()), context().today, locale(), since),
   });
-  const rangeText = (range: { start: string; end: string }): PeriodText => ({
+  const numericRangeText = (range: { start: string; end: string }): PeriodText => ({
     label: formatPeriodRange(range, locale()),
     detail: t().days({ count: periodDayCount(range) }),
   });
+  // A picker that steps names a calendar week, month or year as such: "9.–15. Nov. 2026", "Oktober 2026".
+  const rangeText = (range: { start: string; end: string }): PeriodText => {
+    const unit = props.steps ? formatPeriodUnit(range, context().weekStartsOn, locale()) : undefined;
+    return unit ? { label: unit, detail: "" } : numericRangeText(range);
+  };
+  const triggerPresetText = (preset: PeriodPreset): PeriodText => {
+    const days = preset.resolve(context());
+    const unit =
+      props.steps && preset.key !== "all" && days.start && days.end
+        ? formatPeriodUnit({ start: days.start, end: days.end }, context().weekStartsOn, locale())
+        : undefined;
+    return unit ? { label: unit, detail: "" } : presetText(preset);
+  };
   const selectedPreset = () => {
     const current = value();
     return current && "preset" in current ? props.presets.find((preset) => preset.key === current.preset) : undefined;
@@ -115,17 +169,95 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
     if (!selected) return undefined;
     if ("preset" in selected) {
       const preset = selectedPreset();
-      return preset ? presetText(preset) : undefined;
+      return preset ? triggerPresetText(preset) : undefined;
     }
     return rangeText(selected);
   });
   const joined = (text: PeriodText) => (text.detail ? `${text.label} · ${text.detail}` : text.label);
   // Every text the trigger can show shares one grid cell, so it keeps the widest one's width.
   const widths = createMemo(() => [
-    ...props.presets.map((preset) => joined(presetText(preset))),
-    ...(custom() ? [joined(rangeText(widePeriodRangeSample(context().today)))] : []),
+    ...props.presets.map((preset) => joined(triggerPresetText(preset))),
+    ...(custom() || props.steps ? [joined(numericRangeText(widePeriodRangeSample(context().today)))] : []),
+    ...(props.steps ? unitSamples(context().today, context().weekStartsOn).map((range) => joined(rangeText(range))) : []),
     t().choosePeriod,
   ]);
+
+  // Stepping: the resolved days of the value, its neighbours, and the current period of the same kind.
+  const range = createMemo((): { start: string; end: string } | undefined => {
+    const selected = value();
+    if (!selected) return undefined;
+    if (!("preset" in selected)) return selected;
+    if (selected.preset === "all") return undefined;
+    const resolved = selectedPreset()?.resolve(context());
+    return resolved?.start && resolved.end ? { start: resolved.start, end: resolved.end } : undefined;
+  });
+  const step = createMemo(() => {
+    const days = range();
+    return days ? periodStep(days) : undefined;
+  });
+  const neighbour = (count: -1 | 1) => {
+    const days = range();
+    const by = step();
+    return days && by ? stepPeriod(days, by, count) : undefined;
+  };
+  /** Why an arrow cannot step: the neighbour lies wholly before `min` or after `max`. */
+  const boundReason = (count: -1 | 1): string | undefined => {
+    const next = neighbour(count);
+    if (!next) return undefined;
+    if (count < 0 && props.min && next.end < props.min) return t().nothingBefore({ date: formatDateInput(props.min, locale()) });
+    if (count > 0 && props.max && next.start > props.max) return t().nothingAfter({ date: formatDateInput(props.max, locale()) });
+    return undefined;
+  };
+  const home = createMemo(() => {
+    const days = range();
+    const by = step();
+    return days && by ? currentPeriodOf(days, by, context().today) : undefined;
+  });
+  const atHome = () => {
+    const days = range();
+    const current = home();
+    return !days || !current || (days.start === current.start && days.end === current.end);
+  };
+  const kind = (): PeriodKind => {
+    const days = range();
+    return days ? periodKind(days, context().weekStartsOn) : "range";
+  };
+  const homeLabel = (of: PeriodKind) => homeLabels(t())[of];
+  /** A step that lands on a preset's days stores the preset, so "This week" stays relative. */
+  const valueFor = (days: { start: string; end: string }): PeriodValue => {
+    const preset = props.presets.find((candidate) => {
+      if (candidate.key === "all") return false;
+      const resolved = candidate.resolve(context());
+      return resolved.start === days.start && resolved.end === days.end;
+    });
+    return preset ? { preset: preset.key } : days;
+  };
+  const stepBy = (count: -1 | 1) => {
+    const next = neighbour(count);
+    if (!next || disabled() || boundReason(count)) return;
+    commitFieldValue(props, valueFor(next));
+  };
+  const goHome = () => {
+    const current = home();
+    if (current && !disabled()) commitFieldValue(props, valueFor(current));
+  };
+  const stepButton = (count: -1 | 1) => {
+    const reason = () => boundReason(count);
+    const name = () => (count < 0 ? t().previousPeriod : t().nextPeriod);
+    return (
+      <IconButton
+        variant="ghost"
+        size="xs"
+        // At a bound the arrow stays focusable and says why it does not step; without a neighbour it is plainly off.
+        label={reason() ? `${name()}: ${reason()}` : name()}
+        aria-disabled={reason() ? "true" : undefined}
+        disabled={disabled() || !step()}
+        onClick={() => stepBy(count)}
+      >
+        <i class={count < 0 ? "ti ti-chevron-left" : "ti ti-chevron-right"} aria-hidden="true" />
+      </IconButton>
+    );
+  };
 
   const [open, setOpen] = createSignal(false);
   const [view, setView] = createSignal<View>("list");
@@ -218,6 +350,8 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
           presetText={presetText}
           rangeText={rangeText}
           label={props["aria-label"] ?? t().period}
+          min={props.min}
+          max={props.max}
           onPick={closeSheet}
         />
       ),
@@ -244,6 +378,53 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
   const name = () =>
     props.label ? undefined : `${props["aria-label"] ?? t().period}: ${current() ? joined(current()!) : t().choosePeriod}`;
 
+  const triggerButton = (
+    <button
+      ref={trigger}
+      id={meta.controlId}
+      type="button"
+      class="k2b-period-picker__trigger"
+      aria-haspopup="dialog"
+      aria-expanded={open() || sheetOpen()}
+      aria-controls={sheetOpen() ? sheetId : popoverId}
+      aria-label={name()}
+      aria-labelledby={props.label ? `${meta.labelId} ${valueId}` : undefined}
+      aria-describedby={fieldDescribedBy(meta, props)}
+      aria-invalid={resolveMaybeAccessor(props.error) ? "true" : undefined}
+      aria-busy={props.loading ? "true" : undefined}
+      disabled={disabled()}
+      onClick={() => (open() ? close() : show())}
+      onKeyDown={(event) => {
+        if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !open()) {
+          event.preventDefault();
+          show();
+        }
+      }}
+    >
+      {/* Between the arrows the period reads as text with its chevron, as in a report head. */}
+      <Show when={!props.steps}>
+        <i class="ti ti-calendar" aria-hidden="true" />
+      </Show>
+      <span class="k2b-period-picker__value" data-placeholder={current() ? undefined : "true"}>
+        <span id={valueId}>
+          <Show when={current()} fallback={t().choosePeriod}>
+            {(text) => (
+              <>
+                {text().label}
+                <Show when={text().detail}>
+                  <span class="k2b-period-picker__detail"> · {text().detail}</span>
+                </Show>
+              </>
+            )}
+          </Show>
+        </span>
+        <For each={widths()}>{(text) => <span aria-hidden="true">{text}</span>}</For>
+      </span>
+      {/* Both glyphs are one icon wide, so a saving picker keeps its size. */}
+      <i class={props.loading ? "ti ti-loader-2 k2b-spin" : "ti ti-chevron-down"} aria-hidden="true" />
+    </button>
+  );
+
   return (
     <Field
       class={`k2b-period-picker ${props.class ?? ""}`}
@@ -254,47 +435,18 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
       required={props.required}
       disabled={disabled()}
     >
-      <button
-        ref={trigger}
-        id={meta.controlId}
-        type="button"
-        class="k2b-period-picker__trigger"
-        aria-haspopup="dialog"
-        aria-expanded={open() || sheetOpen()}
-        aria-controls={sheetOpen() ? sheetId : popoverId}
-        aria-label={name()}
-        aria-labelledby={props.label ? `${meta.labelId} ${valueId}` : undefined}
-        aria-describedby={fieldDescribedBy(meta, props)}
-        aria-invalid={resolveMaybeAccessor(props.error) ? "true" : undefined}
-        aria-busy={props.loading ? "true" : undefined}
-        disabled={disabled()}
-        onClick={() => (open() ? close() : show())}
-        onKeyDown={(event) => {
-          if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !open()) {
-            event.preventDefault();
-            show();
-          }
-        }}
-      >
-        <i class="ti ti-calendar" aria-hidden="true" />
-        <span class="k2b-period-picker__value" data-placeholder={current() ? undefined : "true"}>
-          <span id={valueId}>
-            <Show when={current()} fallback={t().choosePeriod}>
-              {(text) => (
-                <>
-                  {text().label}
-                  <Show when={text().detail}>
-                    <span class="k2b-period-picker__detail"> · {text().detail}</span>
-                  </Show>
-                </>
-              )}
-            </Show>
-          </span>
-          <For each={widths()}>{(text) => <span aria-hidden="true">{text}</span>}</For>
-        </span>
-        {/* Both glyphs are one icon wide, so a saving picker keeps its size. */}
-        <i class={props.loading ? "ti ti-loader-2 k2b-spin" : "ti ti-chevron-down"} aria-hidden="true" />
-      </button>
+      <Show when={props.steps} fallback={triggerButton}>
+        <div class="k2b-period-picker__steps">
+          {stepButton(-1)}
+          {stepButton(1)}
+          {triggerButton}
+          {/* Stepping never changes the kind of period, so the link keeps one label; on the current period it only
+              hides and keeps its place, so the row never moves. */}
+          <button type="button" class="k2b-period-picker__home" hidden={atHome()} disabled={disabled()} onClick={goHome}>
+            {homeLabel(kind())}
+          </button>
+        </div>
+      </Show>
       <div
         ref={(element) => {
           popover = element;
@@ -327,6 +479,8 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
             presetText={presetText}
             rangeText={rangeText}
             label={props["aria-label"] ?? t().period}
+            min={props.min}
+            max={props.max}
             onPick={pick}
           />
         </Show>
@@ -347,6 +501,8 @@ function PeriodPanel(props: {
   rangeText: (range: { start: string; end: string }) => PeriodText;
   label: string;
   sheet?: boolean;
+  min?: string;
+  max?: string;
   onPick: (value: PeriodValue) => void;
 }): JSX.Element {
   const t = usePeriodPickerMessages();
@@ -461,6 +617,8 @@ function PeriodPanel(props: {
           dateConfig={props.dateConfig}
           rangeText={props.rangeText}
           sheet={props.sheet}
+          min={props.min}
+          max={props.max}
           onBack={() => {
             setView("list");
             focusOption(props.presets.length);
@@ -478,6 +636,8 @@ function RangeEditor(props: {
   dateConfig: () => DateContext;
   rangeText: (range: { start: string; end: string }) => PeriodText;
   sheet?: boolean;
+  min?: string;
+  max?: string;
   onBack: () => void;
   onApply: (range: { start: string; end: string }) => void;
 }): JSX.Element {
@@ -542,6 +702,11 @@ function RangeEditor(props: {
     if (result.kind === "empty") return null;
     if (result.kind === "error") {
       setError(errorText(result.error, locale(), inputT(), props.today));
+      return undefined;
+    }
+    const limit = limitErrorText(result.date, { min: props.min, max: props.max }, locale(), inputT());
+    if (limit) {
+      setError(limit);
       return undefined;
     }
     setError("");
@@ -635,6 +800,8 @@ function RangeEditor(props: {
           onSelect={pickDay}
           onDayPreview={(key) => setPreview(rangeAnchor(draft(), anchor()) ? key : null)}
           dateConfig={config()}
+          min={props.min}
+          max={props.max}
           nav={twoMonths() ? "previous" : "both"}
           hideOutside={twoMonths()}
           isShown={isShown}
@@ -649,6 +816,8 @@ function RangeEditor(props: {
             onSelect={pickDay}
             onDayPreview={(key) => setPreview(rangeAnchor(draft(), anchor()) ? key : null)}
             dateConfig={config()}
+            min={props.min}
+            max={props.max}
             nav="next"
             hideOutside
             isShown={isShown}

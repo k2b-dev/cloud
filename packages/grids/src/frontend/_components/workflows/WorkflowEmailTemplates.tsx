@@ -326,6 +326,8 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
   const [templates, setTemplates] = createSignal<PublicEmailTemplate[]>([]);
   const [dependencies, setDependencies] = createSignal<PublicEmailTemplateDependencyMap>({});
   const loadMut = mutations.create<void, void>({
+    // A reload after a change must not be dropped by an older reload in flight.
+    concurrency: "replace",
     mutation: async (_, { abortSignal }) => {
       const [templatesRes, dependenciesRes] = await Promise.all([
         emailTemplateManagerApi["by-base"][":baseId"].$get({ param: { baseId: props.baseId } }, { init: { signal: abortSignal } }),

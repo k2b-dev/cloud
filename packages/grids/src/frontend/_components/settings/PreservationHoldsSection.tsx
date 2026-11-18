@@ -215,8 +215,9 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
           close={close}
           setDismissHandler={context.setDismissHandler}
           save={async (input) => {
-            await createHold.mutate(input);
-            if (createHold.error()) throw createHold.error();
+            const outcome = await createHold.mutate(input);
+            if (outcome === "error") throw createHold.error();
+            if (outcome !== "success") throw new DOMException("Hold creation did not run", "AbortError");
           }}
         />
       ),
@@ -228,8 +229,10 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
       const [reason, setReason] = createSignal("");
       const save = mutations.create({
         mutation: async () => {
-          await releaseHold.mutate({ holdId, reason: reason().trim() });
-          if (releaseHold.error()) throw releaseHold.error();
+          const outcome = await releaseHold.mutate({ holdId, reason: reason().trim() });
+          if (outcome === "error") throw releaseHold.error();
+          // The outer mutation's onSuccess closes the dialog; a dropped release must not.
+          if (outcome !== "success") throw new DOMException("Release did not run", "AbortError");
         },
         onSuccess: close,
       });

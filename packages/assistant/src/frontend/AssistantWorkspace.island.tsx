@@ -104,6 +104,7 @@ import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./Assistan
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
+import { assistantArchiveBlocker } from "./archive-blocker";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
@@ -1010,8 +1011,8 @@ export default function AssistantWorkspace(props: Props) {
     const drafting = projectId || place || background ? undefined : draftCreation();
     if (drafting) return drafting;
     if (newConversation.loading() || composerPicking() > 0) return null;
-    await newConversation.mutate({ focus, projectId, navigate: shouldNavigate, ...(place ? { place } : {}), background });
-    return newConversation.data();
+    const outcome = await newConversation.mutate({ focus, projectId, navigate: shouldNavigate, ...(place ? { place } : {}), background });
+    return outcome === "success" ? newConversation.data() : null;
   };
   const createDraftConversation = () => {
     let creation!: Promise<AiConversation | null>;
@@ -3275,7 +3276,17 @@ export default function AssistantWorkspace(props: Props) {
           }}
           onOpenProject={openProject}
           onOpenConversation={openAndFocusConversation}
-          canArchiveConversation={(conversation) => conversation.id !== chat.activeConversationId() || !chat.activeTurn()}
+          archiveBlocker={(conversation) =>
+            assistantArchiveBlocker(conversation, conversation.id === chat.activeConversationId() ? chat.activeTurn() : null)
+          }
+          queuedMessageCount={(conversation) =>
+            conversation.id === chat.activeConversationId() &&
+            !queuedMessages.loading() &&
+            !queuedMessages.stale() &&
+            !queuedMessages.error()
+              ? queuedMessages.data()?.length
+              : undefined
+          }
           onConversationUpdated={updateConversation}
           onConversationArchived={archiveConversation}
           pendingApprovals={props.approvals.page.count}
