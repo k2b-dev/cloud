@@ -66,21 +66,30 @@ await Promise.all(["400 14px 'IBM Plex Sans'", "500 14px 'IBM Plex Sans'", "16px
 let finish: ((ok: boolean) => void) | undefined;
 let active = mode === "snapshot";
 let reads = 0;
-if (mode === "interactive" || mode === "snapshot") {
+let finishCardRead: ((state: "failed" | "ready") => void) | undefined;
+if (mode === "interactive" || mode === "snapshot" || mode === "load-retry") {
   window.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
       const path = String(input);
       let data: unknown;
       if (path.endsWith("/code.version.cards")) {
         reads++;
+        const state =
+          mode === "load-retry"
+            ? await new Promise<"failed" | "ready">((resolve) => {
+                finishCardRead = resolve;
+              })
+            : "ready";
         data = {
           items: [
-            {
-              codeId: "c_info01",
-              versionId: approvalVersionId,
-              state: "available",
-              snapshot: approvalSnapshot(active ? "on" : "ready", locale),
-            },
+            state === "failed"
+              ? { codeId: "c_info01", versionId: approvalVersionId, state: "failed" }
+              : {
+                  codeId: "c_info01",
+                  versionId: approvalVersionId,
+                  state: "available",
+                  snapshot: approvalSnapshot(active ? "on" : "ready", locale),
+                },
           ],
         };
       } else if (path.endsWith("/activate")) {
@@ -164,7 +173,7 @@ render(
         <AssistantLiveProvider value={createAssistantLiveHub()}>
           {mode === "comparison" ? (
             <Comparison />
-          ) : mode === "interactive" ? (
+          ) : mode === "interactive" || mode === "load-retry" ? (
             <AssistantCodeVersionCard codeId="c_info01" versionId={approvalVersionId} number={1} timeZone="UTC" />
           ) : (
             <CodeVersionCardView model={model()} anchorId={`code-version-${approvalVersionId}`} onAction={() => {}} />
@@ -206,6 +215,7 @@ Object.assign(window, {
       setExtra(value);
   },
   finishActivation: (ok: boolean) => finish?.(ok),
+  finishCardRead: (state: "failed" | "ready") => finishCardRead?.(state),
   setRetired,
   snapshotBefore,
   cardReadCount: () => reads,

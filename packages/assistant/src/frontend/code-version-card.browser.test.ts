@@ -168,7 +168,7 @@ describe("v10 approval card in Chromium", () => {
           ]) {
             await setState(h.page, state);
             const measured = await boxes(h.page);
-            const noActions = width === 390 && ["loading", "denied"].includes(state);
+            const noActions = width === 390 && state === "denied";
             if (noActions) expect(measured.card.height).toBeLessThan(first.card.height);
             else expect({ state, card: measured.card, next: measured.next }).toEqual({ state, card: first.card, next: first.next });
             expect(measured.quiet.y - measured.main.y - measured.main.height).toBeLessThanOrEqual(4);
@@ -234,6 +234,33 @@ describe("v10 approval card in Chromium", () => {
         }
       }
   }, 120_000);
+
+  test("phone loading and a real failed-read retry keep the card and following message in place", async () => {
+    for (const theme of ["light", "dark"]) {
+      const h = await open(390, theme, "de", "load-retry");
+      try {
+        await h.page.waitForFunction(() => (window as unknown as { cardReadCount(): number }).cardReadCount() === 1);
+        await h.page.locator(".assistant-code-version[data-state=loading]").waitFor();
+        const first = await stableBoxes(h.page);
+        expect(first.card.height).toBe(168);
+        await screenshot(h.page, "loading", theme, 390);
+        await h.page.evaluate(() => (window as unknown as { finishCardRead(state: string): void }).finishCardRead("failed"));
+        await h.page.locator(".assistant-code-version[data-state=load-failed]").waitFor();
+        expect(await stableBoxes(h.page)).toEqual(first);
+        await h.page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+        await h.page.waitForFunction(() => (window as unknown as { cardReadCount(): number }).cardReadCount() === 2);
+        // The real store retains the failed snapshot while its retry is pending; it never clears it to loading.
+        expect(await h.page.locator(".assistant-code-version").getAttribute("data-state")).toBe("load-failed");
+        expect(await stableBoxes(h.page)).toEqual(first);
+        await h.page.evaluate(() => (window as unknown as { finishCardRead(state: string): void }).finishCardRead("ready"));
+        await h.page.locator(".assistant-code-version[data-state=ready]").waitFor();
+        expect(await stableBoxes(h.page)).toEqual(first);
+        expect(h.errors).toEqual([]);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 60_000);
 
   test("event jump focuses the main control on both widths; SplitButton offers only the other projected pages", async () => {
     for (const width of [1440, 390]) {
