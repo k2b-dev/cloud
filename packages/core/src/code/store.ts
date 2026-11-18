@@ -460,7 +460,7 @@ export const readCodeVersion = async (
 ) => {
   // A read: its permission checks share one owner reader answer, as an invocation may ask the owner app only once.
   const context: CodeContext = { ...outer, ownerReaderAnswer: outer.ownerReaderAnswer ?? null };
-  const { code } = await readCode(input.codeId, context);
+  const { code, permission } = await readCode(input.codeId, context);
   if (input.content?.kind === "source" || input.content?.kind === "bundle") await requireCodeSourcePermission(code, context);
   const [row] = await sql<VersionRow[]>`SELECT * FROM code.versions WHERE code_id = ${input.codeId} AND id = ${input.versionId}::uuid`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code version not found.");
@@ -472,7 +472,9 @@ export const readCodeVersion = async (
   if (input.content && text === undefined) throw new CodeDataError("NOT_FOUND", "Version content not found.");
   const content = text === undefined ? null : codeTextChunk(text, input.offset, input.length);
   const manifest = input.content?.kind === "manifest" ? CodeCheckedVersionManifestSchema.safeParse(row.manifest) : null;
-  const pages = manifest?.success ? describeCodePages(code.id, { id: row.id, manifest: manifest.data }) : null;
+  const pages = manifest?.success
+    ? describeCodePages(code.id, { id: row.id, manifest: manifest.data }, { codeId: code.id, person: codePerson(context), permission })
+    : null;
   return { version: mapVersion(row), content, pages };
 };
 

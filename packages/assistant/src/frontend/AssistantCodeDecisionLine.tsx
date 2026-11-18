@@ -1,6 +1,11 @@
 import { formatCodeMoment } from "@k2b/cloud/code/schedule";
-import { Button, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, type JSX, Show } from "solid-js";
+import { Button, LinkCard, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { codeDecisionMessages } from "./code-decision-messages";
+import { type CodeDecisionPages, loadCodeDecisionPages } from "./code-decision-pages";
+
+export { loadCodeDecisionPages } from "./code-decision-pages";
+
 import { codeVersionCardMessages } from "./code-version-card-messages";
 
 /** A decision on a version, as Cloud writes it at the end of the chat in which the version was made. */
@@ -13,6 +18,7 @@ export type AssistantCodeDecision = {
   /** The `data-chat-anchor` of the version card further up. */
   anchor: string;
   nextRunAt?: string | null;
+  pageCount?: number;
 };
 
 const TONES = {
@@ -62,9 +68,33 @@ export default function AssistantCodeDecisionLine(props: {
   settled?: boolean;
   /** Gustav revises by himself after these changes: the line has no action; the start line below says that he does. */
   automatic?: boolean;
+  /** An already authorized snapshot, also used by server-rendered fixtures. */
+  pages?: CodeDecisionPages | null | "failed";
+  /** A newer activation of this Code owns the current page handoff. */
+  superseded?: boolean;
 }): JSX.Element {
   const locale = useLocale();
   const t = createMemo(() => codeVersionCardMessages.resolve([locale()]).t);
+  const pageText = createMemo(() => codeDecisionMessages.resolve([locale()]).t);
+  const [pages, setPages] = createSignal(props.pages === "failed" ? null : props.pages);
+  const [pageState, setPageState] = createSignal<"loading" | "failed" | "ready">(props.pages === "failed" ? "failed" : "ready");
+  let disposed = false;
+  const pageRead = new AbortController();
+  onCleanup(() => {
+    disposed = true;
+    pageRead.abort();
+  });
+  const readPages = async () => {
+    setPageState("loading");
+    const result = await loadCodeDecisionPages(props.decision.codeId, props.decision.versionId, pageRead.signal);
+    if (disposed) return;
+    if (result === "failed") {
+      setPageState("failed");
+      return;
+    }
+    setPages(result);
+    setPageState("ready");
+  };
   const [missing, setMissing] = createSignal(false);
   let line: HTMLDivElement | undefined;
   // The same moment as on the card above and on the Code page.
@@ -133,12 +163,137 @@ export default function AssistantCodeDecisionLine(props: {
           </Button>
         )}
       </Show>
+      <Show when={props.decision.outcome === "activated" && !props.superseded && props.decision.pageCount !== 0}>
+        <Show
+          when={pages()?.pages.pages.length ? pages() : null}
+          fallback={
+            <Show when={pageState() !== "ready"}>
+              <div
+                class="assistant-code-decision__pages assistant-code-decision__pages-pending"
+                data-multiple={(props.decision.pageCount ?? 1) > 1 || undefined}
+                role="status"
+              >
+                <span classList={{ "sr-only": pageState() === "loading", "k2b-sr-only": pageState() === "loading" }}>
+                  {pageState() === "loading" ? pageText().loading : pageText().failed}
+                </span>
+                <Show when={pageState() === "failed"}>
+                  <Button size="sm" variant="secondary" onClick={() => void readPages()}>
+                    {pageText().retry}
+                  </Button>
+                </Show>
+              </div>
+            </Show>
+          }
+        >
+          {(handoff) => {
+            const home = () => handoff().pages.pages[0]!;
+            const title = (page: CodeDecisionPages["pages"]["pages"][number]) => page.title ?? (page.isRoot ? handoff().title : page.path);
+            return (
+              <div class="assistant-code-decision__pages">
+                <LinkCard
+                  href={home().href}
+                  title={title(home())}
+                  description={home().isRoot ? pageText().home : home().path}
+                  meta={pageText().open}
+                />
+                <Show when={handoff().pages.pages.length > 1}>
+                  <AdditionalPageLinks handoff={handoff()} />
+                </Show>
+              </div>
+            );
+          }}
+        </Show>
+      </Show>
       <Show when={missing()}>
         <p class="assistant-code-decision__missing" role="status">
           {t().eventGone}
         </p>
       </Show>
     </div>
+  );
+}
+
+/** A single fixed-height row with an accessible count of omitted destinations. */
+function AdditionalPageLinks(props: { handoff: CodeDecisionPages }): JSX.Element {
+  const locale = useLocale();
+  const text = createMemo(() => codeDecisionMessages.resolve([locale()]).t);
+  const pages = () => props.handoff.pages.pages.slice(1);
+  const [visible, setVisible] = createSignal(1);
+  let row: HTMLParagraphElement | undefined;
+  let label: HTMLSpanElement | undefined;
+  let countMeasure: HTMLSpanElement | undefined;
+  const measure = () => {
+    if (!row || !label || !countMeasure) return;
+    const items = Array.from(row.querySelectorAll<HTMLElement>("[data-page-measure]"));
+    const widths = items.map((item) => item.getBoundingClientRect().width);
+    const available = row.clientWidth - label.getBoundingClientRect().width;
+    const total = widths.reduce((sum, width) => sum + width, 0);
+    if (total <= available) {
+      setVisible(pages().length);
+      return;
+    }
+    // The count reserves its maximum width, so it never gets pushed out by a long first title.
+    const limit = available - countMeasure.getBoundingClientRect().width;
+    let used = widths[0] ?? 0;
+    let count = 1;
+    while (count < widths.length && used + widths[count]! <= limit) used += widths[count++]!;
+    setVisible(count);
+  };
+  onMount(() => {
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(row!);
+    // A webfont can arrive after the first measurement without changing the row width.
+    let disposed = false;
+    void document.fonts.ready.then(() => {
+      if (!disposed) measure();
+    });
+    onCleanup(() => {
+      disposed = true;
+      observer.disconnect();
+    });
+  });
+  const title = (page: CodeDecisionPages["pages"]["pages"][number]) => page.title ?? page.path;
+  return (
+    <p ref={row} class="assistant-code-decision__more">
+      <span ref={label} class="assistant-code-decision__more-label">
+        {text().more}
+      </span>
+      <span class="assistant-code-decision__additional">
+        <For each={pages()}>
+          {(page, index) => (
+            <span class="assistant-code-decision__additional-item" hidden={index() >= visible()}>
+              <a href={page.href}>
+                <span>{title(page)}</span>
+              </a>
+            </span>
+          )}
+        </For>
+      </span>
+      <Show when={visible() < pages().length}>
+        <Show
+          when={props.handoff.codePageHref}
+          fallback={
+            <span class="assistant-code-decision__remaining" title={pages().map(title).join("; ")}>
+              {text().remaining({ count: pages().length - visible() })}
+              <span class="k2b-sr-only">: {pages().slice(visible()).map(title).join("; ")}</span>
+            </span>
+          }
+        >
+          {(href) => (
+            <a class="assistant-code-decision__remaining" href={href()}>
+              {text().remaining({ count: pages().length - visible() })}
+            </a>
+          )}
+        </Show>
+      </Show>
+      <span class="assistant-code-decision__measure" aria-hidden="true">
+        <For each={pages()}>{(page) => <span data-page-measure>{title(page)}</span>}</For>
+        <span ref={countMeasure} class="assistant-code-decision__remaining">
+          {text().remaining({ count: pages().length })}
+        </span>
+      </span>
+    </p>
   );
 }
 
