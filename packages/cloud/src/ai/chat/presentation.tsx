@@ -126,6 +126,7 @@ const createTurnViews = (disclosureState: AiToolDisclosureState, timeZone: strin
     views.clear();
   });
   return {
+    workOpen: (id: string) => disclosureState.get(`work:${id}`) === true,
     content(segment: AiTurnSegment): JSX.Element {
       const existing = views.get(segment.id);
       if (existing) {
@@ -367,6 +368,8 @@ const storedItems = (
       const stopNotice: AiStopNotice | null = storedNotice ?? (silent ? { kind: "no_answer" } : null);
       if (isEmptyLayout(layout) && !messageActions && !task && !error && !stopNotice) return [];
       const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;
+      // An overview the person opened stays visible and full-width until closed, also after a turn without tools.
+      if (views.workOpen(id)) layout.showWork = true;
       return [
         {
           kind: "message",

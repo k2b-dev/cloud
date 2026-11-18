@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { type MutationOptions, mutation } from "@k2b/stdlib/solid";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
@@ -119,6 +120,34 @@ describe("Contact note feedback", () => {
       successes.mockRestore();
     }
   });
+
+  for (const outcome of ["dropped", "aborted", "superseded"] as const) {
+    test(`a ${outcome} comment keeps its draft and offers another submit`, async () => {
+      const originalCreate = mutation.create;
+      const create = spyOn(mutation, "create").mockImplementation(<T, V, C = unknown>(options: MutationOptions<T, V, C>) => {
+        const controller = originalCreate(options);
+        controller.mutate = async () => outcome;
+        return controller;
+      });
+      stored = [];
+      reloadFails = false;
+      const dispose = await renderSection();
+      try {
+        [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add comment"))!.click();
+        await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
+        const textarea = dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!;
+        submit(textarea, "Keep this draft.");
+        await flush();
+        expect(textarea.isConnected).toBe(true);
+        expect(textarea.value).toBe("Keep this draft.");
+        expect(dom.root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
+        expect(stored).toEqual([]);
+      } finally {
+        dispose();
+        create.mockRestore();
+      }
+    });
+  }
 
   test("a note saved while the list cannot be reloaded is not announced, because the error toast says it was saved", async () => {
     const { toast } = await import("@k2b/ui");

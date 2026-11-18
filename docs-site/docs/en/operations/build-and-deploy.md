@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-11-07
+updated: 2026-11-17
 ---
 
 # Build and deploy
@@ -18,6 +18,17 @@ optional application-specific build output.
 The build and development preload scripts preserve every `color-mix()` value
 in application CSS, including multiple variable-based mixes in one rule.
 See [Mix semantic colors](/en/docs/frontend/styling-and-accessibility#mix-semantic-colors).
+
+## Roll out chat queue holds
+
+Rebuild and restart applications that use the AI chat runtime with the updated
+Cloud package together. The additive startup migration creates
+`ai.conversations.queue_held_at`. Older workers do not enforce this hold and
+must not remain running alongside updated workers. No manual backfill is needed.
+
+The hold survives restarts. After a person stops a response, queued messages
+wait until the person sends one explicitly or sends a new message. See
+[Chat runtime and streaming](/en/docs/ai/chat-runtime-and-streaming).
 
 ## Enable an application's AI primary colour
 
@@ -416,6 +427,33 @@ New messages retain up to 20 distinct absolute HTTP/HTTPS links from Markdown
 links, autolinks and bare URLs. URLs longer than 2,048 characters are excluded.
 The shared list reads the messages themselves, so deleting a message removes
 its items from subsequent reads.
+
+## Chat quoted passages after the upgrade
+
+Chat's startup migration adds a `quotes` column (default `[]`) and one index on
+messages. No configuration is required.
+
+`POST /api/chat/conversations/:conversation/messages` accepts optional
+`quotes`: up to 10 entries `{ message, text }`, where `message` is a message ID
+in the same chat. Together the texts hold at most 20,000 Unicode code points;
+the same passage of the same message counts once. A quoted message that is
+missing, deleted, not a text message, or in a thread the sender cannot read
+returns 404. The quoted messages and a `replyTo` must share one thread, and the
+new message goes to that thread. Sources from several threads return 404, like
+a missing message. A different `thread` returns 400 when the sender can read it,
+otherwise 404. The words of `text` must occur in the message as a reader
+sees it (its plain text without Markdown marks), whitespace aside; otherwise
+the request returns 400. Chat stores that passage of the message with the
+message's own spacing, not the sent `text`.
+
+Message responses and live message events include `quotes`: each entry is
+`{ id, author, text }`, a snapshot taken when the message was sent. An edit of the
+quoted message keeps the snapshot while the new text still holds its words.
+An edit that takes them away, or deletion, turns its entries into
+`{ deleted: true }` in the same transaction. Each quoting message then gets a
+new `rev` of its own, so clients that follow `/changes` drop the old words.
+Deleting a quoting message removes its quotes with its text. Messages from
+before the upgrade return an empty list.
 
 ## Chat message attachments after the upgrade
 

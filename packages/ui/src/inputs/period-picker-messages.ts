@@ -25,6 +25,11 @@ const periodPickerMessages = i18n.define({
       "this-year": "This year",
       "last-year": "Last year",
       all: "All time",
+      previousPeriod: "Previous period",
+      nextPeriod: "Next period",
+      currentPeriod: "Current period",
+      nothingBefore: ({ date }: { date: string }) => `nothing before ${date}`,
+      nothingAfter: ({ date }: { date: string }) => `nothing after ${date}`,
     },
     de: {
       period: "Zeitraum",
@@ -46,6 +51,11 @@ const periodPickerMessages = i18n.define({
       "this-year": "Dieses Jahr",
       "last-year": "Letztes Jahr",
       all: "Gesamt",
+      previousPeriod: "Vorheriger Zeitraum",
+      nextPeriod: "Nächster Zeitraum",
+      currentPeriod: "Aktueller Zeitraum",
+      nothingBefore: ({ date }) => `nichts vor dem ${date}`,
+      nothingAfter: ({ date }) => `nichts nach dem ${date}`,
     },
   },
 });

@@ -95,6 +95,8 @@ export default function RecordDocumentsSection(props: {
     { documents: { items: PublicDocument[]; cursor: string | null; hasMore: boolean }; snapshots: PublicRecordSnapshotSummary[] },
     void
   >({
+    // A refresh after new documents must not be dropped by an older refresh in flight.
+    concurrency: "replace",
     mutation: async () => {
       const [nextDocuments, nextSnapshots] = await Promise.all([loadDocuments(), loadSnapshots()]);
       return { documents: nextDocuments, snapshots: nextSnapshots };
@@ -117,18 +119,32 @@ export default function RecordDocumentsSection(props: {
       setDocumentCursor(page.cursor);
       setHasMoreDocuments(page.hasMore);
     },
-    onError: (error) => retryToast(error.message, { retryLabel: t().retry, retry: () => loadMoreDocumentsMut.mutate() }),
+    onError: (error) =>
+      retryToast(error.message, {
+        retryLabel: t().retry,
+        retry: async () => {
+          await loadMoreDocumentsMut.mutate();
+        },
+      }),
   });
 
-  const redownloadMut = mutations.create<void, PublicDocument>({
-    onBefore: (document) => setActiveDownloadId(document.id),
+  const redownloadMut = mutations.create<void, PublicDocument, { documentId: string }>({
+    // Another row's download starts while one runs; the running download still finishes.
+    concurrency: "replace",
+    onBefore: (document) => {
+      setActiveDownloadId(document.id);
+      return { documentId: document.id };
+    },
     mutation: async (document) => {
       const res = await requestDocumentDownload(document.id);
       await downloadPdfResponse(res, document.filename);
     },
     // Runs from the open document details dialog, so the failure belongs in a dialog too.
     onError: (error) => prompts.error(error.message),
-    onFinally: () => setActiveDownloadId(null),
+    // A superseded download must not clear the newer row's busy mark.
+    onFinally: (ctx) => {
+      if (ctx?.documentId === activeDownloadId()) setActiveDownloadId(null);
+    },
   });
 
   const createSnapshotMut = mutations.create<PublicRecordSnapshotSummary[], void>({
@@ -227,7 +243,9 @@ export default function RecordDocumentsSection(props: {
       document,
       templateName: props.templates.find((candidate) => candidate.id === document.templateId)?.name,
       canWrite: props.canWrite,
-      onDownload: (item) => redownloadMut.mutate(item),
+      onDownload: async (item) => {
+        await redownloadMut.mutate(item);
+      },
       ...(props.live && props.canWrite && template ? { onGenerateAgain: () => generate(template) } : {}),
     });
   };

@@ -372,7 +372,7 @@ const insertApiToken = async (
     return ok({ credential: mapCredential(row), token: parts.token });
   } catch (error) {
     if (isForeignKeyViolation(error)) return fail(err.notFound("Service account"));
-    if (isUniqueViolation(error)) return fail(err.conflict("API key"));
+    if (isUniqueViolation(error)) return fail(err.conflict("API key already exists"));
     throw error;
   }
 };

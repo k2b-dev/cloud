@@ -1,7 +1,7 @@
 import { type ToastHandle, toast } from "@k2b/ui";
 import { onCleanup } from "solid-js";
 
-export type RetryToastOptions = { title?: string; retryLabel: string; retry: () => void | Promise<void> };
+export type RetryToastOptions = { title?: string; retryLabel: string; retry: () => unknown };
 
 /** The toast rail shows at most three toasts and closes older ones as new ones arrive. */
 const LIVE_TOASTS = 3;

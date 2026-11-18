@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   type AiTurnBlock,
   type AiWireEvent,
@@ -11,7 +11,69 @@ import {
   streamBlockId,
   toolBlockId,
 } from "./protocol";
+import { aiConversations } from "./store";
+import { loadAiStreamState } from "./stream";
+import type { AiConversation } from "./types";
 
+test("the read snapshot clears thinking from legacy live blocks without rewriting stored state", async () => {
+  const date = "2026-11-17T00:00:00.000Z";
+  const conversation: AiConversation = {
+    id: "internal-chat",
+    shortId: "cHt234",
+    title: "Fixture",
+    titleSource: "user",
+    description: "",
+    descriptionSource: "default",
+    keywords: [],
+    pinnedAt: null,
+    archivedAt: null,
+    done: null,
+    isDone: false,
+    lastUsedAt: date,
+    runStatus: "running",
+    runError: null,
+    unreadCompletion: false,
+    projectId: null,
+    draft: { content: [], revision: 0, updatedAt: null },
+    createdByUserId: "user",
+    createdAt: date,
+    updatedAt: date,
+  };
+  const raw = "INTERNAL_INSTRUCTION code_Open42 22222222-2222-4222-8222-222222222222 code_run({code: 'return 42'})";
+  const block: AiTurnBlock = { id: "thought", kind: "thinking", text: raw };
+  const mocks = [
+    spyOn(aiConversations, "listMessagesPage").mockResolvedValue({ messages: [], hasMore: false }),
+    spyOn(aiConversations, "getActiveTurn").mockResolvedValue({
+      turn: {
+        id: "internal-turn",
+        shortId: "tRn234",
+        conversationId: conversation.id,
+        status: "running",
+        attempt: 1,
+        modelId: null,
+        createdAt: date,
+        completedAt: null,
+        error: null,
+      },
+      liveBlocks: [block],
+      liveSeq: 1,
+      actionWaitMs: 0,
+      waitingSince: null,
+    }),
+    spyOn(aiConversations, "listTurnSteers").mockResolvedValue([]),
+    spyOn(aiConversations, "listResolvedPendingActions").mockResolvedValue([]),
+  ];
+  try {
+    for (const locale of ["de", "en"]) {
+      const state = await loadAiStreamState(conversation, null, { locale });
+      expect(state.activeTurn?.blocks).toEqual([{ id: "thought", kind: "thinking", text: "" }]);
+      expect(JSON.stringify(state)).not.toContain(raw);
+    }
+    expect(block.text).toBe(raw);
+  } finally {
+    for (const mock of mocks) mock.mockRestore();
+  }
+});
 const wire = (partial: Record<string, unknown>): AiWireEvent => ({ v: 1, conversationId: "c", turnId: "t", ...partial }) as AiWireEvent;
 
 describe("wire event ordering", () => {

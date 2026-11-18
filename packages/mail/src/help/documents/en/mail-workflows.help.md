@@ -271,6 +271,8 @@ On one reachable path, any number of `addFlag`, `removeFlag`, `addKeyword`, and 
 
 `createDraft` and `createReplyDraft` always produce `deliveryClass: normal`. `createReplyDraft` takes the recipient and subject from the source message, keeps reply threading, and stays attached to its conversation. Only `automaticReply` can create `deliveryClass: automatic_reply`. Normal workflow sends therefore get no automatic-reply headers and no null envelope sender. `scheduleDraftSend` accepts only a `mail.draft` result created earlier in the same reachable scope.
 
+If the source contains only the mailbox's own addresses, `createReplyDraft` leaves To empty for a person to complete. The draft occupies the conversation's reply box. `scheduleDraftSend` still refuses a draft without recipients.
+
 `forEach` is part of the shared workflow grammar, but the Mail vocabulary does not support it on purpose. Mail workflows work on one materialized message target at a time.
 
 ## Classify mail and create drafts with AI {icon="sparkles"}

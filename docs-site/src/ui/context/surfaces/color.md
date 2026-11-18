@@ -174,7 +174,7 @@ and checked cards.
 | Keyboard-active or selected option | `Select`, `Combobox`, `MultiSelectInput` | `k2b-choice-option` |
 | Checked choice chip in a field or picker filter | `ChoiceChips`, `Select` | `k2b-choice-groups` |
 | Chosen tile with a preview | `ChoiceTiles` | `k2b-choice-tiles` |
-| Chosen card with its sentence | `ChoiceList` | `k2b-choice-list` |
+| Chosen card or compact framed row | `ChoiceList` | `k2b-choice-list` |
 | Chosen icon of a few | `IconChoices` | `k2b-icon-choices` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
@@ -196,6 +196,10 @@ mixes `--k2b-edge-selected-share` of `--k2b-action` into its edge and
 hover), in platform blue like the radio or checkbox inside it. An invalid
 checkbox card has the `--k2b-edge-danger` edge; a disabled card has no edge on
 `--k2b-surface-muted`. Only colours change, so no card or text moves.
+
+`ChoiceList variant="list"` joins rows inside one fine neutral frame. A chosen
+row uses `--k2b-selected` and a semibold label; focus is an inset
+`--k2b-edge-focus` ring. The radio keeps the platform action ink.
 
 `TextEditor` and `TableSizePicker` use the optional `@k2b/ui/text-editor`
 entry point. The header switch is a checked menu control; it is not a drop

@@ -74,6 +74,8 @@ export function WorkflowRevisionHistory(props: {
   });
 
   const loadRevisionMut = mutations.create<PublicWorkflowRevision, number>({
+    // Selecting another revision replaces the read in flight.
+    concurrency: "replace",
     mutation: async (revision, { abortSignal }) => {
       const response = await revisionApi[":workflowId"].revisions[":revision"].$get(
         { param: { workflowId: props.workflow.id, revision: String(revision) } },

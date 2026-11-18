@@ -27,19 +27,6 @@ export type SheetMotion = {
   dispose: () => void;
 };
 
-/** Initial focus goes to the first input of the top sheet, otherwise to the
- * dialog element itself. Native `showModal()` focuses the first focusable
- * descendant, which is the drag handle; iOS shows a ring for that programmatic
- * focus, so the sheet moves it to the ring-less dialog before the next paint. */
-export const sheetInitialFocus = (dialog: HTMLDialogElement): HTMLElement => {
-  const input = dialog.lastElementChild?.querySelector<HTMLElement>(
-    "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role='combobox']:not([disabled]):not([aria-disabled='true'])",
-  );
-  if (input) return input;
-  dialog.tabIndex = -1;
-  return dialog;
-};
-
 /** Opening and moving between detents, and closing, as in the approved prototype. */
 const MOVE_MS = 280;
 const CLOSE_MS = 220;
@@ -68,7 +55,7 @@ const SCROLL_LOCK_MS = 100;
 /** From this width an adaptive sheet is a centred dialog and does not move. */
 const DIALOG_QUERY = "(min-width: 48rem)";
 
-type SheetOwner = { suspend: () => void; resume: () => void };
+type SheetOwner = { panel: HTMLElement; suspend: () => void; resume: () => void };
 /** The sheets on one dialog element, the visible one last. */
 const sheetOwners = new WeakMap<HTMLElement, SheetOwner[]>();
 
@@ -109,7 +96,7 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
   // dialogCore shows every level of its stack in one dialog element: only the sheet on top may style and move it.
   const owners = sheetOwners.get(frame) ?? [];
   sheetOwners.set(frame, owners);
-  const owner: SheetOwner = { suspend: () => suspend(), resume: () => resume() };
+  const owner: SheetOwner = { panel, suspend: () => suspend(), resume: () => resume() };
   /** A level that is no sheet, such as a full-screen prompt, covers this one in the same dialog element. */
   let covered = false;
   const owning = () => !disposed && !covered && owners.at(-1) === owner;
@@ -464,6 +451,9 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
   };
   view?.addEventListener("resize", relayout);
   cleanups.push(() => view?.removeEventListener("resize", relayout));
+  // The dialog core changed the frame's size to the shown level's: the rests follow.
+  frame.addEventListener("k2b-frame-resize", relayout);
+  cleanups.push(() => frame.removeEventListener("k2b-frame-resize", relayout));
   dialogQuery?.addEventListener?.("change", relayout);
   cleanups.push(() => dialogQuery?.removeEventListener?.("change", relayout));
 
@@ -494,6 +484,12 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
           if (!top && !covered) {
             suspend();
             covered = true;
+            // Closed: the level below shows again while this one still fades out, and its sheet takes over now.
+            const below = owners.at(-2);
+            if (below && frame.lastElementChild?.contains(below.panel)) {
+              owners.splice(owners.indexOf(owner), 1);
+              below.resume();
+            }
           } else if (top && covered) {
             covered = false;
             resume();

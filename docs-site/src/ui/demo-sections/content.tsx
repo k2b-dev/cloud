@@ -1,8 +1,13 @@
 import {
+  ActivityCard,
+  type ActivityEntry,
+  ActivityList,
   announce,
   BalanceSummary,
   Button,
   Chart,
+  Chat,
+  ChatComposerQuotes,
   CodeDisplay,
   createDataTableView,
   DataTable,
@@ -51,6 +56,7 @@ import {
   type MessageRowStatus,
   MessageSystemRow,
   mapPalette,
+  openActivityDialog,
   Pagination,
   PanelDialog,
   Paper,
@@ -62,6 +68,8 @@ import {
   panelDialogOptions,
   ReactionBar,
   reactionPeople,
+  SegmentedControl,
+  SelectionAction,
   StatusBadge,
   Steps,
   StructuredDataPreview,
@@ -90,6 +98,7 @@ import { BarChartStatesDemo, ChartDemo, ChartFrameStatesDemo, CountryMapDemo, Re
 import { tableExamples } from "./charts/examples/table";
 import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
+import { RunLogDemos } from "./run-log";
 import { CalendarDemo } from "./surfaces";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -948,6 +957,251 @@ const LoadMoreDemo = () => {
   );
 };
 
+// The history of a project in the approved mockup, with a fixed "now" so the server and the browser agree.
+const ACTIVITY_NOW = "2026-11-12T15:31:00Z";
+const activityKinds = [
+  { key: "mail", label: "Emails" },
+  { key: "change", label: "Changes" },
+  { key: "file", label: "Files" },
+];
+const activityDraft = (minute: string): ActivityEntry => ({
+  at: `2026-10-27T10:${minute}:00+01:00`,
+  icon: "ti ti-pencil",
+  text: "Draft changed",
+  bundle: { key: "draft", text: (count) => `Draft changed ${count} times` },
+  actor: "Elif Kaya",
+  kind: "change",
+});
+const activityEntries = (): ActivityEntry[] => [
+  {
+    at: "2026-11-12T08:31:00+01:00",
+    icon: "ti ti-mail-x",
+    tone: "danger",
+    text: "Invitation not delivered",
+    detail: "team@stadtpark.example · Mailbox full",
+    action: { icon: "ti ti-send", label: "Send the invitation again", onClick: () => toast.success("Invitation sent again") },
+    kind: "mail",
+  },
+  {
+    at: "2026-11-12T08:30:00+01:00",
+    icon: "ti ti-bell-ringing",
+    tone: "warning",
+    text: "Reminder sent",
+    detail: (
+      <>
+        New deadline Nov 20 · <a href="#activity-list">Letter</a>
+      </>
+    ),
+    actor: "Mira Lang",
+    kind: "mail",
+  },
+  {
+    at: "2026-11-10T14:05:00+01:00",
+    icon: "ti ti-circle-check",
+    tone: "success",
+    text: "Approved",
+    detail: <ActivityList.Change term="State" before="In review" now="Approved" />,
+    actor: "Jonas Weber",
+    kind: "change",
+  },
+  { at: "2026-10-28T08:14:00+01:00", icon: "ti ti-eye", text: "Opened through the link", actor: "Guest" },
+  {
+    at: "2026-10-27T11:02:00+01:00",
+    icon: "ti ti-mail",
+    text: "Sent by email",
+    actor: "Mira Lang",
+    kind: "mail",
+    details: () => "To team@stadtpark.example · Subject “Invitation to the summer party”",
+  },
+  { at: "2026-10-27T10:38:00+01:00", icon: "ti ti-lock-open", text: "Shared with the team", actor: "Mira Lang" },
+  {
+    at: "2026-10-27T10:36:00+01:00",
+    icon: "ti ti-paperclip",
+    text: (
+      <>
+        File <a href="#activity-list">Schedule.pdf</a> added
+      </>
+    ),
+    actor: "Elif Kaya",
+    kind: "file",
+  },
+  activityDraft("35"),
+  activityDraft("30"),
+  activityDraft("24"),
+  activityDraft("20"),
+  {
+    at: "2026-10-27T10:12:00+01:00",
+    icon: "ti ti-table-import",
+    text: "38 tasks taken over from a file",
+    actor: "Elif Kaya",
+    kind: "file",
+  },
+  {
+    at: "2026-10-27T10:05:00+01:00",
+    icon: "ti ti-plus",
+    text: (
+      <>
+        Created from the template <a href="#activity-list">Event</a>
+      </>
+    ),
+    actor: "Tom Reiter",
+    kind: "change",
+  },
+];
+
+type ActivityDemoState = "filled" | "loading" | "empty" | "error" | "reload-error";
+const ActivityListDemo = () => {
+  const [state, setState] = createSignal<ActivityDemoState>("filled");
+  const entries = () => (state() === "loading" || state() === "error" ? null : state() === "empty" ? [] : activityEntries());
+  return (
+    <DemoCard
+      id="activity-list"
+      chip={[
+        { kind: "component", name: "ActivityCard", from: "@k2b/ui" },
+        { kind: "component", name: "ActivityList", from: "@k2b/ui" },
+      ]}
+      description="The history of a project as a card: six rows, dashed day dividers, four drafts bundled into one row, and All 10 for the dialog with the filter by kind. Switch the state to see loading, empty, and both errors."
+      code={`<ActivityCard
+  entries={entries()}
+  now={data.now}
+  timeZone="Europe/Berlin"
+  subtitle="Summer party"
+  kinds={[{ key: "mail", label: "Emails" }, { key: "change", label: "Changes" }, { key: "file", label: "Files" }]}
+  error={failed()}
+  onReload={reload}
+/>`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem", "max-width": "40rem" }}>
+        <SegmentedControl
+          ariaLabel="State"
+          value={state()}
+          onValueChange={setState}
+          options={[
+            { value: "filled", label: "Filled" },
+            { value: "loading", label: "Loading" },
+            { value: "empty", label: "Empty" },
+            { value: "error", label: "Error" },
+            { value: "reload-error", label: "Error on reload" },
+          ]}
+        />
+        <ActivityCard
+          entries={entries()}
+          now={ACTIVITY_NOW}
+          timeZone="Europe/Berlin"
+          subtitle="Summer party"
+          kinds={activityKinds}
+          loading={state() === "loading"}
+          error={state() === "error" || state() === "reload-error"}
+          onReload={() => setState("filled")}
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
+const ActivityWideDemo = () => (
+  <DemoCard
+    id="activity-list-wide"
+    chip={{ kind: "component", name: "ActivityList", from: "@k2b/ui" }}
+    description="The wide density of the dialog: the meta line on the right of the first line, at most 80rem wide. Narrower than 34rem it goes under the sentence again."
+    code={`<ActivityList entries={entries()} density="wide" now={data.now} timeZone="Europe/Berlin" />`}
+  >
+    <ActivityList entries={activityEntries()} density="wide" now={ACTIVITY_NOW} timeZone="Europe/Berlin" />
+  </DemoCard>
+);
+
+const ActivityDialogDemo = () => (
+  <DemoCard
+    id="activity-list-dialog"
+    chip={{ kind: "component", name: "openActivityDialog", from: "@k2b/ui" }}
+    description="The same dialog as All N, opened from anywhere, such as a menu entry Show activity: the subtitle under the title, the filter by kind, and the list in the wide density."
+    code={`<Button onClick={() => void openActivityDialog({
+  entries: () => entries(),
+  subtitle: "Summer party",
+  kinds,
+  now: data.now,
+  timeZone: "Europe/Berlin",
+})}>Show activity</Button>`}
+  >
+    <div>
+      <Button
+        variant="secondary"
+        onClick={() =>
+          void openActivityDialog({
+            entries: activityEntries,
+            subtitle: "Summer party",
+            kinds: activityKinds,
+            now: ACTIVITY_NOW,
+            timeZone: "Europe/Berlin",
+          })
+        }
+      >
+        <i class="ti ti-history" aria-hidden="true" />
+        Show activity
+      </Button>
+    </div>
+  </DemoCard>
+);
+
+// Linked rows of a recent-activity column: each row links to its object and keeps its key across a refresh.
+const linkedActivity = (refreshes: number): ActivityEntry[] => [
+  {
+    id: "event-3",
+    at: "2026-11-12T14:58:00+01:00",
+    icon: "ti ti-circle-check",
+    tone: "success",
+    text: "Venue booked completed in Summer party",
+    href: "#activity-list-links",
+    actor: "Jonas Weber",
+  },
+  {
+    id: "event-2",
+    at: "2026-11-12T11:20:00+01:00",
+    icon: "ti ti-message-plus",
+    text: "Commented on Catering offers",
+    detail: refreshes > 0 ? `Refreshed ${refreshes} ${refreshes === 1 ? "time" : "times"}` : undefined,
+    href: "#activity-list-links",
+    actor: "Mira Lang",
+  },
+  {
+    id: "event-1",
+    at: "2026-11-11T09:02:00+01:00",
+    icon: "ti ti-mail",
+    text: "Invitation sent",
+    details: () => "To team@stadtpark.example · Subject “Invitation to the summer party”",
+    actor: "Mira Lang",
+  },
+];
+
+const ActivityLinksDemo = () => {
+  const [refreshes, setRefreshes] = createSignal(0);
+  return (
+    <DemoCard
+      id="activity-list-links"
+      chip={{ kind: "component", name: "ActivityList", from: "@k2b/ui" }}
+      description="Rows with href link to their object: the sentence is the link and a click anywhere on the row follows it; a middle click opens a new tab. With id a row keeps its node: fold out Invitation sent, then Refresh builds every entry anew and the details stay open. Below, a card under a page heading takes level 3."
+      code={`<ActivityList
+  entries={events().map((event) => ({ id: event.id, at: event.at, icon, text, href: event.href, actor }))}
+  now={data.now}
+  timeZone="Europe/Berlin"
+/>
+<ActivityCard level={3} entries={entries()} limit={3} now={data.now} timeZone="Europe/Berlin" />`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "1rem", "max-width": "40rem" }}>
+        <div>
+          <Button variant="secondary" size="sm" onClick={() => setRefreshes(refreshes() + 1)}>
+            <i class="ti ti-refresh" aria-hidden="true" />
+            Refresh
+          </Button>
+        </div>
+        <ActivityList entries={linkedActivity(refreshes())} now={ACTIVITY_NOW} timeZone="Europe/Berlin" label="Recent activity" />
+        <h2 style={{ margin: 0, "font-size": "1.125rem" }}>Summer party</h2>
+        <ActivityCard level={3} entries={activityEntries()} limit={3} now={ACTIVITY_NOW} timeZone="Europe/Berlin" kinds={activityKinds} />
+      </div>
+    </DemoCard>
+  );
+};
+
 // A week of a product team around today, in UTC so the server and the browser agree. Every week repeats the same
 // days: a busy today, a train ride, an empty day, a dense day with more overlaps than lanes, and a quiet one.
 const timelineDay = (offset: number) => {
@@ -1685,6 +1939,109 @@ const MessageRowsDemo = () => {
           </Show>
         </div>
       </div>
+    </DemoCard>
+  );
+};
+
+type QuoteEntry = { id: string; author: string; own?: boolean; text: string; quotes?: { id: string; author: string; text: string }[] };
+/** Select part of a message, quote it, and answer: the quotes stand above the field and then above the sent text. */
+const MessageQuotesDemo = () => {
+  const [entries, setEntries] = createSignal<QuoteEntry[]>([
+    { id: "q1", author: "Lea Muster", text: "The quarterly report is ready for review, the numbers are in the shared folder." },
+    { id: "q2", author: "Ben Schulz", text: "Thanks! I read it after lunch and send my notes by four." },
+  ]);
+  const [quotes, setQuotes] = createSignal<{ key: string; id: string; author: string; text: string }[]>([]);
+  const [draft, setDraft] = createSignal("");
+  let feed: VirtualFeedController | undefined;
+  let history!: HTMLDivElement;
+  return (
+    <DemoCard
+      id="message-quotes"
+      chip={[
+        { kind: "component", name: "SelectionAction", from: "@k2b/ui" },
+        { kind: "component", name: "ChatComposerQuotes", from: "@k2b/ui" },
+        { kind: "component", name: "MessageRow", from: "@k2b/ui" },
+      ]}
+      description="Select words in a message and press Quote, or Tab after a keyboard selection. The passage waits above the field; the sent message shows it above its text, and a click on it jumps back and tints the passage."
+      code={`<SelectionAction root={history} label="Quote" icon="ti ti-quote"
+  within={(node) => (node instanceof Element ? node : node.parentElement)?.closest(".k2b-message-row__text")}
+  onAction={({ text, element }) => addQuote(keyOf(element), text)} />
+<Chat.Composer variant="conversation" accessory={draft.quotes.length ? <ChatComposerQuotes quotes={draft.quotes.map((quote) => ({ ...quote, onRemove: () => remove(quote) }))} /> : undefined} … />
+<MessageRow quotes={message.quotes.map((quote) => ({ ...quote,
+  onSelect: () => feed.scrollToKey(quote.id, { highlight: true, highlightText: quote.text }) }))} … />`}
+    >
+      <div ref={history} style={{ display: "flex", "flex-direction": "column", gap: "0.5rem", "max-width": "40rem" }}>
+        <div style={{ display: "flex", height: "20rem" }}>
+          <VirtualFeed
+            items={entries()}
+            getKey={(entry) => entry.id}
+            estimateSize={() => 60}
+            label="Quotes demo"
+            controller={(controller) => (feed = controller)}
+          >
+            {(entry) => (
+              <MessageRow
+                author={{ name: entry.author }}
+                own={entry.own}
+                text={entry.text}
+                time="10:24"
+                quotes={entry.quotes?.map((quote) => ({
+                  author: quote.author,
+                  text: quote.text,
+                  onSelect: () => void feed?.scrollToKey(quote.id, { highlight: true, highlightText: quote.text }),
+                }))}
+              />
+            )}
+          </VirtualFeed>
+        </div>
+        <Chat.Composer
+          variant="conversation"
+          value={draft()}
+          onValueChange={setDraft}
+          inputLabel="Answer"
+          placeholder="Write an answer"
+          accessory={
+            quotes().length ? (
+              <ChatComposerQuotes
+                quotes={quotes().map((quote) => ({
+                  id: quote.key,
+                  author: quote.author,
+                  text: quote.text,
+                  onRemove: () => setQuotes((list) => list.filter((other) => other.key !== quote.key)),
+                  onSelect: () => void feed?.scrollToKey(quote.id, { highlight: true, highlightText: quote.text }),
+                }))}
+              />
+            ) : undefined
+          }
+          onSubmit={({ text }) => {
+            setEntries((list) => [
+              ...list,
+              {
+                id: `q${list.length + 1}`,
+                author: "You",
+                own: true,
+                text,
+                quotes: quotes().map(({ id, author, text }) => ({ id, author, text })),
+              },
+            ]);
+            setQuotes([]);
+            requestAnimationFrame(() => feed?.scrollToEnd());
+            return true;
+          }}
+        />
+      </div>
+      <SelectionAction
+        root={history}
+        label="Quote"
+        icon="ti ti-quote"
+        within={(node) => (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>(".k2b-message-row__text")}
+        onAction={({ text, element }) => {
+          const id = element.closest<HTMLElement>(".k2b-virtual-feed__item")?.dataset.key;
+          const entry = entries().find((candidate) => candidate.id === id);
+          if (entry)
+            setQuotes((list) => [...list, { key: `${id}-${list.length}-${text.length}`, id: entry.id, author: entry.author, text }]);
+        }}
+      />
     </DemoCard>
   );
 };
@@ -2516,6 +2873,7 @@ const demos: DemoSection = {
       <LogsDemo />
     </DemoGrid>
   ),
+  "run-log": () => <RunLogDemos />,
   timeline: () => (
     <DemoGrid columns="one">
       <TimelineDemo id="timeline" />
@@ -2533,9 +2891,18 @@ const demos: DemoSection = {
       <LoadMoreDemo />
     </DemoGrid>
   ),
+  "activity-list": () => (
+    <DemoGrid columns="one">
+      <ActivityListDemo />
+      <ActivityWideDemo />
+      <ActivityDialogDemo />
+      <ActivityLinksDemo />
+    </DemoGrid>
+  ),
   "message-rows": () => (
     <DemoGrid columns="one">
       <MessageRowsDemo />
+      <MessageQuotesDemo />
     </DemoGrid>
   ),
   "reaction-bar": () => <ReactionBarDemos />,

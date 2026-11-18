@@ -1,4 +1,5 @@
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
+import { startRuntimeInterval } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import apiRoutes from "./api";
 import { app, ssr } from "./config";
@@ -9,7 +10,7 @@ import { oauth } from "./service/oauth";
 import { probeOAuthTokenAuthority } from "./service/token-authority";
 
 const OAUTH_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1_000;
-let cleanupTimer: ReturnType<typeof setInterval> | undefined;
+let cleanup: ReturnType<typeof startRuntimeInterval> | undefined;
 
 const cleanupOAuthStorage = async (): Promise<void> => {
   await Promise.all([
@@ -41,19 +42,16 @@ export default await app.start({
       await migrate();
     },
     start: async (ctx) => {
-      await cleanupOAuthStorage().catch((error) => {
-        ctx.logger("oauth:cleanup").warn("OAuth cleanup failed", { error: error instanceof Error ? error.message : String(error) });
+      cleanup = startRuntimeInterval({
+        run: () => cleanupOAuthStorage(),
+        intervalMs: OAUTH_CLEANUP_INTERVAL_MS,
+        onError: (error) =>
+          ctx.logger("oauth:cleanup").warn("OAuth cleanup failed", { error: error instanceof Error ? error.message : String(error) }),
       });
-      cleanupTimer = setInterval(() => {
-        void cleanupOAuthStorage().catch((error) => {
-          ctx.logger("oauth:cleanup").warn("OAuth cleanup failed", { error: error instanceof Error ? error.message : String(error) });
-        });
-      }, OAUTH_CLEANUP_INTERVAL_MS);
-      cleanupTimer.unref?.();
     },
     stop: async () => {
-      if (cleanupTimer) clearInterval(cleanupTimer);
-      cleanupTimer = undefined;
+      await cleanup?.stop();
+      cleanup = undefined;
     },
   },
 });

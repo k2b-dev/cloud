@@ -205,9 +205,10 @@ export default function CommentsSection(props: Props) {
           placeholder={t.commentPlaceholder}
           submitLabel={t.postComment}
           onSubmit={async (content) => {
-            await createCommentMutation.mutate(content);
-            const error = createCommentMutation.error();
-            if (error) throw error;
+            const outcome = await createCommentMutation.mutate(content);
+            if (outcome === "error") throw createCommentMutation.error();
+            // A call that did not run keeps the draft.
+            return outcome === "success";
           }}
         />
       </Show>

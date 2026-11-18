@@ -19,7 +19,7 @@ import type {
   CapabilityActionSentences,
   CloudResourceRef,
 } from "../contracts/capabilities";
-import type { RequestActor } from "../server";
+import type { AccessSubject, RequestActor } from "../server";
 import type { AiModelRequest, AiResolvedModelRef } from "../shared/ai-models";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiToolUnavailableReason } from "./capabilities";
@@ -301,6 +301,11 @@ export type AiStoredMessage = {
   compactedAt: string | null;
   /** UI metadata (e.g. how many messages a compaction summary replaced). */
   meta: {
+    /** Server-authored writer attribution, with links projected for the viewer. */
+    origin?: import("./queue-contracts").AiMessageOrigin;
+    writerOrigin?: import("./queue-contracts").AiStoredMessageOrigin;
+    /** This turn was interrupted by Send now; its history has no resume action. */
+    queueInterrupted?: true;
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
     modelRequest?: AiModelRequest;
@@ -395,7 +400,7 @@ export type AiTurnSteer = {
 
 export type AiTurnSteerEnqueueResult = { ok: true; steer: AiTurnSteer } | { ok: false; reason: "not_found" | "not_chat" | "not_active" };
 
-export type AiTurnCompletionResult = "completed" | "pending_steering" | "lost";
+export type AiTurnCompletionResult = "completed" | "interrupted" | "pending_steering" | "waiting_for_client" | "lost";
 
 export type AiTurnFinalizedEvent = {
   conversationId: string;
@@ -408,6 +413,7 @@ export type AiTurn = {
   deadline?: string | null;
   runBudgetMs?: number | null;
   cancelRequestedAt?: string | null;
+  cancellationReason?: string | null;
   id: string;
   shortId: string;
   conversationId: string;
@@ -664,6 +670,10 @@ export type AiBackgroundRunContext = {
 };
 
 export type AiChatTurnRunConfig = {
+  /** Platform-authorized subject, separate from an automation's actor identity. */
+  accessSubject?: AccessSubject;
+  /** Provenance assigned by the platform, never taken from request JSON. */
+  writerOrigin?: import("./queue-contracts").AiStoredMessageOrigin;
   background?: AiBackgroundRunContext;
   selectedSkillIds?: string[];
   /** Server-owned marker: model grants apply only to interactive Assistant chat. */
@@ -751,6 +761,8 @@ export type AiConversationService = {
     requestId?: string;
     ownerUserId: string;
     title?: string;
+    /** The title without `title`, such as the default in the request locale; a replay may differ in it. */
+    defaultTitle?: string;
     description?: string;
     projectId?: string;
     draft?: AiDraftContentPart[];
@@ -859,7 +871,6 @@ export type AiConversationService = {
     modelId: string;
     runConfig: AiChatTurnRunConfig;
     userMessage: Message;
-    sourceHref?: string;
   }): Promise<
     { delivered: false; reason: "not_found" | "busy" | "failed" } | { delivered: true; message: AiInterChatMessage; turn: AiTurn }
   >;
@@ -882,7 +893,7 @@ export type AiConversationService = {
     ownerUserId: string;
     done: boolean | null;
   }): Promise<{ ok: true; conversation: AiConversation } | { ok: false; reason: "not_found" | "active_turn" }>;
-  archiveConversation(input: { conversationId: string; ownerUserId?: string }): Promise<boolean>;
+  archiveConversation(input: { conversationId: string; ownerUserId?: string }): Promise<false | { discardedQueuedMessages: number }>;
   restoreConversation(input: { conversationId: string; ownerUserId?: string }): Promise<AiConversation | null>;
   markConversationViewed(input: { conversationId: string; ownerUserId?: string }): Promise<boolean>;
   /**
@@ -1016,7 +1027,13 @@ export type AiConversationService = {
     maxAttempts: number;
     runBudgetMs: number;
   }): Promise<AiTurnClaim | null>;
-  heartbeatTurn(input: { conversationId: string; turnId: string; leaseOwner: string; leaseMs: number }): Promise<boolean>;
+  heartbeatTurn(input: {
+    conversationId: string;
+    turnId: string;
+    leaseOwner: string;
+    leaseMs: number;
+    drainingInterruption?: boolean;
+  }): Promise<boolean>;
   /** Release the worker: persist live state, drop the lease, park the turn until its actions resolve. */
   suspendTurn(input: {
     conversationId: string;
@@ -1051,7 +1068,7 @@ export type AiConversationService = {
   }): Promise<AiTurnCompletionResult>;
   /** Periodic maintenance: requeue lost turns, fail exhausted/over-budget turns, abort stale waits. */
   sweepTurns(input?: { limit?: number; maxAttempts?: number }): Promise<AiTurnSweepResult>;
-  savePendingTurnAction(input: AiPendingTurnActionRecord): Promise<void>;
+  savePendingTurnAction(input: AiPendingTurnActionRecord): Promise<boolean>;
   listPendingTurnActions(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnAction[]>;
   getPendingTurnAction(input: { conversationId: string; turnId: string; callId: string }): Promise<AiPendingTurnActionRecord | null>;
   findPendingTurnActionByApproval(input: { approvalId: string; ownerUserId: string }): Promise<AiPendingTurnActionRecord | null>;

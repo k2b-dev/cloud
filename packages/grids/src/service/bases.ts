@@ -99,7 +99,7 @@ export const listVisible = async (params: {
     },
   });
   const permissionRank = sql`CASE a.permission WHEN 'read' THEN 1 WHEN 'write' THEN 2 WHEN 'admin' THEN 3 ELSE 0 END`;
-  const rankFor = (principal: "serviceAccount" | "user" | "group" | "authenticated" | "public") => {
+  const rankFor = (principal: "serviceAccount" | "user" | "group" | "authenticated") => {
     const principalWhere = principalTiers[principal];
     return sql`(
       SELECT CASE
@@ -118,12 +118,11 @@ export const listVisible = async (params: {
       ${rankFor("serviceAccount")} AS service_account_rank,
       ${rankFor("user")} AS user_rank,
       ${rankFor("group")} AS group_rank,
-      ${rankFor("authenticated")} AS auth_rank,
-      ${rankFor("public")} AS public_rank
+      ${rankFor("authenticated")} AS auth_rank
     FROM grids.bases b
     WHERE ${where}
   `;
-  const visibleWhere = sql`COALESCE(service_account_rank, user_rank, group_rank, auth_rank, public_rank, 0) >= 1`;
+  const visibleWhere = sql`COALESCE(service_account_rank, user_rank, group_rank, auth_rank, 0) >= 1`;
   const [countRow] = await sql<{ total: number }[]>`
     SELECT COUNT(*)::int AS total
     FROM (${ranked()}) visible

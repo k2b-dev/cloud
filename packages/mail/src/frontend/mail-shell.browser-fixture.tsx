@@ -1,5 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
+import { scaleMailboxData } from "../../test/fixtures/mail-folder-scale.browser-fixture";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import {
   type ConversationDraftSummary,
@@ -502,7 +503,7 @@ export const fixtureWorkspacePreference = (url: URL, stored?: Partial<MailWorksp
 });
 
 /** URL state is resolved for every SSR request and every in-place workspace API read. */
-export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>): MailboxPageData {
+export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>, largeMailbox = false): MailboxPageData {
   const variant = fixturePermission(url);
   const permission = variant === "assigned-only" ? "write" : variant;
   const search = resolveMailSearchRoute(url);
@@ -521,7 +522,7 @@ export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>)
       : null;
   const selectedConversationId = url.searchParams.get("conversation");
   const selectedMailbox = mailboxes.find((box) => box.id === url.pathname.split("/").at(-1)) ?? mailboxes[0]!;
-  return {
+  const data: MailboxPageData = {
     workspacePreference: fixtureWorkspacePreference(url, stored),
     viewPreference: { large: "auto", phone: "compact" },
     // ?done=19,14 sets today's completed conversations and how many automations completed.
@@ -762,8 +763,9 @@ export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>)
         : "",
     selectedReference: null,
   };
+  return largeMailbox ? scaleMailboxData(data, url) : data;
 }
-export function mailboxList(url: URL): MailboxListView {
+export function mailboxList(url: URL, largeMailbox = false): MailboxListView {
   const {
     mailbox,
     permission,
@@ -791,7 +793,7 @@ export function mailboxList(url: URL): MailboxListView {
     hiddenDone,
     assignedGroups,
     listTitle,
-  } = mailboxData(url);
+  } = mailboxData(url, undefined, largeMailbox);
   return {
     mailbox,
     permission,
@@ -824,6 +826,7 @@ export function mailboxList(url: URL): MailboxListView {
 
 export default function MailShellFixture(props: {
   source: string;
+  largeMailbox?: boolean;
   locale?: "en" | "de";
   theme: "light" | "dark";
   /** The list share and seen hints the fixture server stored for this browser. */
@@ -835,7 +838,7 @@ export default function MailShellFixture(props: {
 }) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "en";
-  const data = mailboxData(url, props.storedWorkspace);
+  const data = mailboxData(url, props.storedWorkspace, props.largeMailbox);
   return (
     <LocaleProvider locale={locale}>
       <MailWorkspace

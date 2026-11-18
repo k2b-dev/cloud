@@ -60,6 +60,7 @@ import {
   type TagEditorItem,
   TagsInput,
   TextInput,
+  TimeInput,
 } from "@k2b/ui";
 import { TextEditor } from "@k2b/ui/text-editor";
 import { batch, createSignal, createUniqueId, type JSX, onCleanup } from "solid-js";
@@ -859,6 +860,58 @@ const DateDemo = () => {
   );
 };
 
+const TimeDemo = () => {
+  const [start, setStart] = createSignal<string | null>("09:30");
+  const [end, setEnd] = createSignal<string | null>("17:00");
+  const [opens, setOpens] = createSignal<string | null>("18:00");
+  const [closes, setCloses] = createSignal<string | null>("24:00");
+  const [reminder, setReminder] = createSignal<string | null>(null);
+  const [late, setLate] = createSignal<string | null>("16:00");
+  const endError = () => {
+    const from = start();
+    const to = end();
+    return from && to && to <= from ? "The end is before the start." : undefined;
+  };
+  const columns = { display: "grid", "grid-template-columns": "repeat(2, minmax(0, 10rem))", gap: "0.875rem" } as const;
+  return (
+    <DemoCard
+      id="time-input"
+      chip={[{ kind: "component", name: "TimeInput", from: "@k2b/ui" }]}
+      description="A clock time alone, as HH:mm. Type 9, 930 or 9:30 with the number keypad; Enter or leaving the field commits 09:30. Step snaps to a minute grid, min and max refuse a time outside them with the nearest allowed one, and max 24:00 allows until midnight. A refused text stays red with its reason and keeps the value; Escape restores it."
+      code={`<TimeInput label="Start" value={start} onValueChange={setStart} required />
+<TimeInput label="End" value={end} onValueChange={setEnd} required error={endError} />
+
+<TimeInput label="Opens" value={opens} onValueChange={setOpens} step={15} />
+<TimeInput label="Closes" value={closes} onValueChange={setCloses} step={15} max="24:00" />
+
+<TimeInput label="Reminder" description="Every weekday" value={reminder} onValueChange={setReminder} />
+<TimeInput label="Last pickup" value={late} onValueChange={setLate} min="08:00" max="18:00" />
+
+<TimeInput label="Start (disabled)" value="08:00" disabled />
+<TimeInput label="End (read only)" value="12:00" readOnly />`}
+    >
+      <div style={{ display: "grid", gap: "1.25rem" }}>
+        <div style={columns}>
+          <TimeInput label="Start" value={start} onValueChange={setStart} required />
+          <TimeInput label="End" value={end} onValueChange={setEnd} required error={endError} />
+        </div>
+        <div style={columns}>
+          <TimeInput label="Opens" value={opens} onValueChange={setOpens} step={15} />
+          <TimeInput label="Closes" value={closes} onValueChange={setCloses} step={15} max="24:00" />
+        </div>
+        <div style={columns}>
+          <TimeInput label="Reminder" description="Every weekday" value={reminder} onValueChange={setReminder} />
+          <TimeInput label="Last pickup" value={late} onValueChange={setLate} min="08:00" max="18:00" />
+        </div>
+        <div style={columns}>
+          <TimeInput label="Start (disabled)" value="08:00" disabled />
+          <TimeInput label="End (read only)" value="12:00" readOnly />
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
 const PeriodDemo = () => {
   const presets = [
     periodPresets.today,
@@ -925,6 +978,62 @@ const PeriodDemo = () => {
         {header(
           "Saving",
           <PeriodPicker aria-label="Period" value={{ preset: "last-month" }} presets={presets} dateConfig={dateConfig} loading />,
+        )}
+      </div>
+    </DemoCard>
+  );
+};
+
+const PeriodStepsDemo = () => {
+  const presets = [periodPresets.thisWeek, periodPresets.lastWeek, periodPresets.thisMonth, periodPresets.lastMonth, periodPresets.all()];
+  const dateConfig = { timeZone: "Europe/Berlin", weekStartsOn: 1 as const };
+  const [week, setWeek] = createSignal<PeriodValue | null>({ preset: "this-week" });
+  const [month, setMonth] = createSignal<PeriodValue | null>({ preset: "last-month" });
+  const [bounded, setBounded] = createSignal<PeriodValue | null>({ preset: "this-month" });
+  const [all, setAll] = createSignal<PeriodValue | null>({ preset: "all" });
+  const today = new Date().toISOString().slice(0, 10);
+  const row = (title: string, picker: JSX.Element) => (
+    <div style={{ display: "grid", gap: "0.375rem" }}>
+      <span style={{ "font-size": "0.75rem", color: "var(--k2b-text-muted)" }}>{title}</span>
+      {picker}
+    </div>
+  );
+  return (
+    <DemoCard
+      id="period-picker-steps"
+      chip={[{ kind: "component", name: "PeriodPicker", from: "@k2b/ui" }]}
+      description="With steps, two small arrows before the trigger step to the previous and next period, and a link after it leads back to the current one; on the current period the link only hides, so the row never moves. A week or month steps to its neighbour, any other range by its own length, All time not at all. At min or max the arrow stays focusable and says why it does not step."
+      code={`<PeriodPicker aria-label="Period" steps value={week()} onValueChange={setWeek}
+  presets={[periodPresets.thisWeek, periodPresets.lastWeek, periodPresets.thisMonth, periodPresets.lastMonth, periodPresets.all()]}
+  dateConfig={{ timeZone: "Europe/Berlin", weekStartsOn: 1 }} />
+
+<PeriodPicker aria-label="Period" steps min="2026-01-01" max={today} value={bounded()} onValueChange={setBounded} presets={presets} />`}
+    >
+      <div style={{ display: "grid", gap: "1rem", "max-width": "40rem" }}>
+        {row(
+          "Week",
+          <PeriodPicker aria-label="Period" steps value={week()} onValueChange={setWeek} presets={presets} dateConfig={dateConfig} />,
+        )}
+        {row(
+          "Month, one step back",
+          <PeriodPicker aria-label="Period" steps value={month()} onValueChange={setMonth} presets={presets} dateConfig={dateConfig} />,
+        )}
+        {row(
+          "Up to today: the next arrow stops and says why",
+          <PeriodPicker
+            aria-label="Period"
+            steps
+            min={`${today.slice(0, 4)}-01-01`}
+            max={today}
+            value={bounded()}
+            onValueChange={setBounded}
+            presets={presets}
+            dateConfig={dateConfig}
+          />,
+        )}
+        {row(
+          "All time does not step",
+          <PeriodPicker aria-label="Period" steps value={all()} onValueChange={setAll} presets={presets} dateConfig={dateConfig} />,
         )}
       </div>
     </DemoCard>
@@ -1081,6 +1190,52 @@ const SelectViewsDemo = () => {
         searchable
         clearable
       />
+    </DemoCard>
+  );
+};
+
+const marketplaceTag = () => (
+  <Tag color="#e8590c" size="sm">
+    Marketplace
+  </Tag>
+);
+const customerOptions = [
+  { value: "c-104", label: "Anna Berger", description: "Marketplace", descriptionVisual: marketplaceTag },
+  { value: "c-221", label: "Anna Berger", description: "Shop · Leipzig" },
+  { value: "c-318", label: "Jonas Keller", description: "Marketplace", descriptionVisual: marketplaceTag },
+  { value: "c-402", label: "Mira Hoffmann", description: "Shop · Dresden" },
+];
+
+const SelectDescriptionVisualDemo = () => {
+  const [customer, setCustomer] = createSignal<string | null>(null);
+  return (
+    <DemoCard
+      id="select-description-visual"
+      chip={[
+        { kind: "component", name: "Select", from: "@k2b/ui" },
+        { kind: "component", name: "Tag", from: "@k2b/ui" },
+      ]}
+      description="Two customers share a name; where they buy tells them apart. A colored tag stands in place of the grey second line, at the same height. Searching for marketplace still finds them, and screen readers still read the description."
+      code={`const marketplace = () => (
+  <Tag color="#e8590c" size="sm">
+    Marketplace
+  </Tag>
+);
+
+<Select
+  label="Customer"
+  value={customer}
+  onValueChange={setCustomer}
+  searchable
+  options={[
+    { value: "c-104", label: "Anna Berger", description: "Marketplace", descriptionVisual: marketplace },
+    { value: "c-221", label: "Anna Berger", description: "Shop · Leipzig" },
+    { value: "c-318", label: "Jonas Keller", description: "Marketplace", descriptionVisual: marketplace },
+    { value: "c-402", label: "Mira Hoffmann", description: "Shop · Dresden" },
+  ]}
+/>`}
+    >
+      <Select label="Customer" value={customer} onValueChange={setCustomer} options={customerOptions} searchable clearable />
     </DemoCard>
   );
 };
@@ -2020,6 +2175,32 @@ const ChoiceChipsDemo = () => {
   );
 };
 
+const ChoiceListReasonsDemo = (props: { icons?: boolean }) => {
+  const [reason, setReason] = createSignal<string | null>("other");
+  const [note, setNote] = createSignal("");
+  return (
+    <ChoiceList
+      variant="list"
+      label={props.icons ? "Why not bill yet? · With icons" : "Why not bill yet? · Without icons"}
+      value={reason}
+      onValueChange={setReason}
+      options={[
+        { value: "return", label: "Buyer is returning it", icon: props.icons ? "ti ti-package-export" : undefined },
+        { value: "cancel", label: "Purchase is being cancelled", icon: props.icons ? "ti ti-x" : undefined },
+        {
+          value: "relist",
+          label: "Will be relisted",
+          description: "Return still pending",
+          disabled: true,
+          icon: props.icons ? "ti ti-refresh" : undefined,
+        },
+        { value: "other", label: "Another reason", icon: props.icons ? "ti ti-dots" : undefined },
+      ]}
+      details={reason() === "other" ? <TextInput label="Reason" value={note} onValueChange={setNote} /> : undefined}
+    />
+  );
+};
+
 const ChoiceListDemo = () => {
   const [level, setLevel] = createSignal<string | null>("off");
   const [duration, setDuration] = createSignal<string | null>("8h");
@@ -2030,7 +2211,7 @@ const ChoiceListDemo = () => {
     <DemoCard
       id="choice-list"
       chip={{ kind: "component", name: "ChoiceList", from: "@k2b/ui" }}
-      description="A labeled radio group of cards, each with one sentence on its consequence. Cards sit side by side while each gets 11rem and stack in narrow places. A quiet marker names the default, an icon helps tell choices apart, a choice that is not possible now says why, details open under the chosen card, and a save in progress shows a spinner without moving anything."
+      description="Radio choices as cards with explanations or compact framed rows. The list examples compare icons, keep disabled reasons readable, and open follow-up input below the frame."
       code={`<ChoiceList
   label="Notifications"
   value={level}
@@ -2043,6 +2224,10 @@ const ChoiceListDemo = () => {
   details={level() === "off" ? <ChoiceChips ... /> : undefined}
 />`}
     >
+      <div class="mb-6 grid max-w-xl gap-6">
+        <ChoiceListReasonsDemo />
+        <ChoiceListReasonsDemo icons />
+      </div>
       <div class="grid max-w-xl gap-4">
         <ChoiceList
           label="How do we bill?"
@@ -2362,6 +2547,12 @@ const demos: DemoSection = {
   "period-picker": () => (
     <DemoGrid columns="one">
       <PeriodDemo />
+      <PeriodStepsDemo />
+    </DemoGrid>
+  ),
+  "time-input": () => (
+    <DemoGrid columns="one">
+      <TimeDemo />
     </DemoGrid>
   ),
   "rich-select": () => <RichSelectDemo />,
@@ -2370,6 +2561,7 @@ const demos: DemoSection = {
       <SelectDemo />
       <GroupedSelectDemo />
       <SelectViewsDemo />
+      <SelectDescriptionVisualDemo />
     </DemoGrid>
   ),
   "choice-chips": () => (

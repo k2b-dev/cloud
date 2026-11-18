@@ -120,6 +120,7 @@ type Strip = {
   rightInset: number;
   labels: { text: string | null; scroll: number; width: number }[];
 };
+let largeMailbox = false;
 let css = "";
 let controller = "";
 let navigation = "";
@@ -148,6 +149,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
   const html = renderToString(() =>
     createComponent(Fixture, {
       source: `${url.pathname}${url.search}`,
+      largeMailbox,
       locale,
       theme,
       // This opt-in exercises the same request-cookie reader as Mail's SSR page
@@ -187,8 +189,8 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
 beforeAll(async () => {
   setSystemTime(new Date(MAIL_SHELL_NOW));
   const builds = await Promise.all(
-    [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")].map((entry) =>
-      Bun.build({ entrypoints: [entry], plugins: [tailwind] }),
+    [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")].map((entry, index) =>
+      Bun.build({ entrypoints: [entry], plugins: [tailwind], minify: largeMailbox && index === 0 }),
     ),
   );
   for (const build of builds) if (!build.success) throw new AggregateError(build.logs, "Mail shell CSS failed");
@@ -256,7 +258,9 @@ beforeAll(async () => {
       if (url.pathname.endsWith("/workspace-route") || url.pathname.endsWith("/workspace-list")) {
         const target = new URL(url.searchParams.get("href") ?? boxPath, server.url);
         const stored = storedWorkspace(request.headers.get("cookie"));
-        return Response.json(url.pathname.endsWith("/workspace-list") ? mailboxList(target) : mailboxData(target, stored));
+        return Response.json(
+          url.pathname.endsWith("/workspace-list") ? mailboxList(target, largeMailbox) : mailboxData(target, stored, largeMailbox),
+        );
       }
       // The person's list share and seen hints, kept per browser like Mail keeps them per person and mailbox.
       if (url.pathname.endsWith("/workspace-preference") || url.pathname.endsWith("/workspace-preference/seen-hints")) {
@@ -534,11 +538,12 @@ const clickTab = async (page: Page, href: string) => {
 };
 
 /** One test file per part, so the runner spreads the cases over shards and each file stays inside its budget (#1966). */
-export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts";
+export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts" | "performance";
 
 /** The shell tests of one part. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (part: MailShellPart, screenshots: string | undefined) =>
   describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    largeMailbox = part === "performance";
     const section = (name: MailShellPart, define: () => void) => {
       if (name === part) define();
     };
@@ -546,6 +551,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     // and shadows, and the geometry matrix below compares every size in both themes. Dark copies run only for the
     // review screenshots (#1966).
     const reviewThemes = screenshots ? (["light", "dark"] as const) : (["light"] as const);
+    section("performance", () => {
+      test("large mailbox folder switches retain the pending list and bound warm tasks", async () => {
+        const { measureFolderSwitches } = await import("./mail-folder-performance.browser-probe");
+        const page = await open(`${boxPath}?folder=Inbox1`);
+        try {
+          await measureFolderSwitches(page);
+        } finally {
+          await close(page);
+        }
+      }, 60_000);
+    });
     section("head", () => {
       // One case per summary state, each on its own page; a last case compares the heights they measured (#1966).
       const summaryHeights = new Map<number, Record<string, number>>();
@@ -4100,6 +4116,67 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await close(page);
           }
         });
+
+      for (const theme of reviewThemes)
+        for (const width of [1440, 390])
+          for (const position of ["top", "bottom"] as const)
+            test(`reply focus keeps its height ${position} ${theme} ${width}`, async () => {
+              const page = await open(`${boxPath}?conversation=Conv01&identity=1&theme=${theme}`, width, 900, "reduce", async (next) => {
+                await replyAt(position)(next);
+                await draftApi(next);
+              });
+              try {
+                await readyDraft(page);
+                await draftBox(page).locator(".mail-inline-draft-signature").waitFor();
+                const editor = draftBox(page).locator(".cm-content");
+                await editor.scrollIntoViewIfNeeded();
+                await settled(page);
+                const measure = () =>
+                  draftBox(page).evaluate((element) => {
+                    const box = element.getBoundingClientRect();
+                    const send = element.querySelector("[data-mail-reply-send]")!.getBoundingClientRect();
+                    const quote = element.querySelector(".mail-inline-draft-quote")!.getBoundingClientRect();
+                    const signature = element.querySelector(".mail-inline-draft-signature")!.getBoundingClientRect();
+                    return { height: box.height, sendTop: send.top, quoteTop: quote.top, signatureTop: signature.top };
+                  });
+                const before = await measure();
+                const screenshot = async (state: string) => {
+                  if (!screenshots) return;
+                  mkdirSync(screenshots, { recursive: true });
+                  await page.screenshot({ path: join(screenshots, `reply-height-${position}-${theme}-${width}-${state}.png`) });
+                };
+                await screenshot("unfocused");
+                await editor.click();
+                await settled(page);
+                const after = await measure();
+                await screenshot("focused");
+                const sameGeometry = (actual: typeof before, expected: typeof before) => {
+                  for (const key of ["height", "sendTop", "quoteTop", "signatureTop"] as const)
+                    expect(Math.abs(actual[key] - expected[key]), `${key}: ${expected[key]} → ${actual[key]}`).toBeLessThanOrEqual(0.5);
+                };
+                sameGeometry(after, before);
+                // A keyboard focus return keeps the same geometry as well.
+                await page.keyboard.press("Shift+Tab");
+                await page.keyboard.press("Tab");
+                expect(await editor.evaluate((element) => element === document.activeElement)).toBe(true);
+                await settled(page);
+                sameGeometry(await measure(), after);
+                // The starting height is a floor, not a ceiling on the person's reply.
+                await page.keyboard.insertText(Array.from({ length: 24 }, (_, line) => `Example reply line ${line + 1}`).join("\n"));
+                await eventually(async () => (await measure()).height > before.height, true, "content grows the reply box");
+                await settled(page);
+                expect(await draftBox(page).evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
+                expect(await page.locator("[data-reply-box-clipped]").count()).toBe(0);
+                const send = draftBox(page).locator("[data-mail-reply-send]");
+                await send.scrollIntoViewIfNeeded();
+                await settled(page);
+                const sendBox = (await send.boundingBox())!;
+                expect(sendBox.y).toBeGreaterThanOrEqual(0);
+                expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(900);
+              } finally {
+                await close(page);
+              }
+            });
 
       // #3297: on a slow runner the first measurement met the placeholder, and the ready box grew 63 px taller. With
       // the box on top that moved the messages. A late draft answer makes every runner meet the placeholder.

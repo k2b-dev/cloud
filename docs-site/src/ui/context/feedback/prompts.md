@@ -152,7 +152,7 @@ if (!values) return;
 
 ## Search
 
-The search resolver receives the current query and an `AbortSignal`. It returns items with a `label` and optional `id`, `desc`, `icon`, root-relative `previewUrl`, or `value`. Give each result a stable `id`, such as its record ID. Then a newer answer that contains the same result keeps its row, so a click in progress still lands. Without an `id`, each answer replaces the rows. Results without `desc` use a compact single-line row; adding `desc` expands only that result to the two-line layout. Handle the selected value after the returned promise resolves; result items do not own application side effects.
+The search resolver receives the current query and an `AbortSignal`. It returns items with a `label` and optional `id`, `desc`, `icon`, root-relative `previewUrl`, or `value`. Give each result a stable `id`, such as its record ID. Then a newer answer that contains the same result keeps its row, so a click in progress still lands. Without an `id`, each answer replaces the rows. Results without `desc` use a compact single-line row; adding `desc` expands only that result to the two-line layout. `descriptionVisual`, such as a colored `Tag`, shows in place of the `desc` text, which screen readers still read; see [Show a visual in place of the description](../input/select#show-a-visual-in-place-of-the-description). Handle the selected value after the returned promise resolves; result items do not own application side effects.
 
 Search options include `placeholder`, `initialQuery`, `minQueryLength`, `debounceMs`, `emptyText`, and `noResultsText`.
 
@@ -218,7 +218,11 @@ const result = await prompts.dialog<"publish" | "draft">(
 );
 ```
 
-For a bare surface, the caller owns all visible panel structure. `DialogHeader` remains available for that structure. A prompt opened from inside another prompt is stacked above it; the underlying Solid state stays mounted until the nested prompt closes.
+For a bare surface, the caller owns all visible panel structure. `DialogHeader` remains available for that structure. A prompt opened from inside another prompt replaces it in the same frame; the underlying Solid state stays mounted until the nested prompt closes, so its inputs and scroll position are there again afterwards. See [One dialog replaces another](#one-dialog-replaces-another).
+
+## One dialog replaces another
+
+Dialogs never lie on top of each other. A dialog, prompt, or confirmation opened from an open dialog takes the same frame: the old content fades out in 80 ms, the frame changes to the new size in `--k2b-motion-morph` with `--k2b-ease-morph`, and the new content fades in from 110 ms, already at its final width, so it never rewraps. The backdrop stays. Focus moves into the new content at once, without waiting for the morph. Closing it, by its own button, Escape, or Back, runs the same morph backwards and returns focus to the control that opened it. A change that is interrupted turns around from where it is. On a phone, between sheets, only the height changes, from the bottom edge. With reduced motion the content and size change in one frame. The dialog announces the new level's title, and for an `alertdialog` its sentence too, through a live region inside the dialog. `panelDialogFixedOptions` keeps one size for flows that should not change size.
 
 A bare frame takes the height of its content, up to the dialog's height budget; only `size: "full"` gives it a fixed height. Content that needs a fixed height, such as a settings modal, sets that height itself, for example `height: min(86dvh, 40rem)`. A percentage such as `h-full` does not fill the dialog: the frame's height depends on the content, so the percentage has nothing to resolve against and the content keeps its own height.
 
@@ -267,7 +271,7 @@ type PromptSearchInput = {
 };
 
 type PromptSearchItem<T = unknown> = {
-  id?: string; label: string; desc?: string; icon?: string; previewUrl?: string; value?: T;
+  id?: string; label: string; desc?: string; descriptionVisual?: () => JSX.Element; icon?: string; previewUrl?: string; value?: T;
 };
 
 type PromptSearchOptions = DialogOptions & {
@@ -358,6 +362,7 @@ forms, and search should use `prompts`.
 type DialogClose<T> = (result?: T) => void;
 
 type OpenDialogOptions = {
+  primary?: "blue" | "ai";
   signal?: AbortSignal; panelClassName?: string; contentClassName?: string;
   initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
   cancelBehavior?: "resolve-undefined" | "ignore"; ariaLabel?: string;
@@ -385,6 +390,12 @@ Use `role: "alertdialog"` for a consequential confirmation that requires a
 response. Pass `ariaDescribedBy` with the ID of its consequence text so assistive
 technology announces it when the dialog opens. Ordinary dialogs keep the default
 `dialog` role. Both are labelled by their heading unless `ariaLabel` supplies a name.
+
+Dialogs inherit their opener's [primary scope](../primary-scope). Use
+`primary: "blue"` for an ordinary global question that can appear over AI work;
+`primary: "ai"` explicitly chooses the AI palette. The dialog keeps the inherited
+light or dark theme in either case. A warning tone changes the frame and icon,
+while the main action keeps the chosen primary palette.
 
 `dialogCore.open` resolves when that dialog closes. Escape/backdrop resolves
 `undefined` by default; `cancelBehavior="ignore"` disables those dismissals.
@@ -509,7 +520,7 @@ const removeProject = async () => {
 
 All prompts accept an optional `signal: AbortSignal`. Aborting resolves the
 prompt as cancellation and closes only that prompt, including when another
-prompt is stacked above it. An already-aborted signal does not mount a dialog.
+prompt has replaced it. An already-aborted signal does not mount a dialog.
 Use this to tie a prompt to an operation or component lifetime; it does not
 confirm or submit the form. Normal dismissal and unmount remove the listener.
 

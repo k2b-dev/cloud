@@ -1,5 +1,121 @@
 @reference "tailwindcss";
 
+/* RunLog: a run owns one surface. Only its disclosures change its height. */
+.k2b-ui .k2b-run-log {
+  container-type: inline-size;
+  min-width: 0;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-island-surface);
+  color: var(--k2b-text);
+  box-shadow: var(--k2b-island-shadow);
+  font-size: var(--k2b-type-14);
+  line-height: 1.5;
+}
+.k2b-ui .k2b-run-log__head {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.125rem minmax(0, 1fr) auto;
+  grid-template-rows: 1.3125rem 1.125rem;
+  gap: 0.0625rem 0.625rem;
+  align-content: center;
+  align-items: center;
+  height: 3.875rem;
+  padding: 0.6875rem 0.875rem;
+  border-radius: calc(var(--k2b-radius-surface) - 1px) calc(var(--k2b-radius-surface) - 1px) 0 0;
+  background: var(--k2b-info-surface);
+}
+.k2b-ui .k2b-run-log[data-state="idle"] .k2b-run-log__head { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-run-log[data-state="succeeded"] .k2b-run-log__head { background: var(--k2b-success-surface); }
+.k2b-ui .k2b-run-log[data-state="failed"] .k2b-run-log__head { background: var(--k2b-danger-surface); }
+.k2b-ui .k2b-run-log[data-body="false"] .k2b-run-log__head,
+.k2b-ui .k2b-run-log[data-expanded="false"] .k2b-run-log__head { border-radius: calc(var(--k2b-radius-surface) - 1px); }
+.k2b-ui .k2b-run-log__head-icon { grid-column: 1; grid-row: 1 / span 2; align-self: start; color: var(--k2b-action); font-size: 1.0625rem; }
+.k2b-ui .k2b-run-log[data-state="idle"] .k2b-run-log__head-icon { color: var(--k2b-text-muted); }
+.k2b-ui .k2b-run-log[data-state="succeeded"] .k2b-run-log__head-icon { color: var(--k2b-success-text); }
+.k2b-ui .k2b-run-log[data-state="failed"] .k2b-run-log__head-icon { color: var(--k2b-danger-text); }
+.k2b-ui .k2b-run-log__main,
+.k2b-ui .k2b-run-log__meta { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-run-log__main { grid-row: 1; color: var(--k2b-text); font-size: var(--k2b-type-14); font-weight: 400; }
+.k2b-ui .k2b-run-log__meta { grid-row: 2; min-height: 1.125rem; }
+.k2b-ui .k2b-run-log__meta,
+.k2b-ui .k2b-run-log__counts,
+.k2b-ui .k2b-run-log__reason,
+.k2b-ui .k2b-run-log__duration { color: var(--k2b-text-subtle); font-size: var(--k2b-type-12); }
+.k2b-ui .k2b-run-log__meta { color: var(--k2b-text-muted); }
+.k2b-ui .k2b-run-log__actions { grid-column: 3; grid-row: 1 / span 2; display: flex; align-items: center; margin-inline-end: -0.375rem; }
+.k2b-ui .k2b-run-log__inline-actions { display: flex; gap: 0.125rem; }
+.k2b-ui .k2b-run-log__action.k2b-button { min-height: 1.75rem; height: 1.75rem; gap: 0.3125rem; padding-inline: 0.5rem; font-size: var(--k2b-type-13); color: var(--k2b-text-secondary); }
+.k2b-ui .k2b-run-log__action.k2b-button[data-primary="true"] { color: var(--k2b-action); }
+.k2b-ui .k2b-run-log__more-actions { display: none; }
+.k2b-ui .k2b-run-log__fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--k2b-motion-fold) var(--k2b-ease-glide); }
+.k2b-ui .k2b-run-log__fold[data-open="true"] { grid-template-rows: 1fr; }
+.k2b-ui .k2b-run-log__clip { min-height: 0; overflow: hidden; border-end-start-radius: calc(var(--k2b-radius-surface) - 1px); border-end-end-radius: calc(var(--k2b-radius-surface) - 1px); }
+.k2b-ui .k2b-run-log__steps { list-style: none; padding: 0.75rem 0.875rem 0.375rem; margin: 0; }
+.k2b-ui .k2b-run-log__step { position: relative; display: grid; grid-template-columns: 1.375rem minmax(0, max-content) minmax(0, 1fr) auto; align-items: center; column-gap: 0.625rem; height: 2.125rem; }
+.k2b-ui .k2b-run-log__step:not(:last-child)::before { content: ""; position: absolute; left: 0.65625rem; top: 1.6875rem; bottom: -0.4375rem; width: 1px; background: var(--k2b-border-strong); }
+.k2b-ui .k2b-run-log__leading { grid-column: 1; grid-row: 1; }
+.k2b-ui .k2b-run-log__mark { position: relative; display: grid; place-items: center; width: 1.375rem; height: 1.375rem; border-radius: 50%; background: var(--k2b-island-surface); color: var(--k2b-text-subtle); font-size: var(--k2b-type-13); }
+.k2b-ui .k2b-run-log__mark[data-status="pending"] { border: 1.5px dashed var(--k2b-border-strong); }
+.k2b-ui .k2b-run-log__mark[data-status="pending"] .k2b-run-log__pip { visibility: hidden; }
+.k2b-ui .k2b-run-log__mark[data-status="running"] { color: var(--k2b-action); background: var(--k2b-info-surface); }
+.k2b-ui .k2b-run-log__mark[data-status="running"]::after { content: ""; position: absolute; inset: 0; border-radius: inherit; border: 1.5px solid color-mix(in srgb, var(--k2b-action) 22%, transparent); border-top-color: var(--k2b-action); animation: k2b-spin var(--k2b-motion-spin) linear infinite; }
+.k2b-ui .k2b-run-log__mark[data-status="succeeded"] { color: var(--k2b-success-text); background: var(--k2b-success-surface); }
+.k2b-ui .k2b-run-log__mark[data-status="failed"] { color: var(--k2b-danger-text); background: var(--k2b-danger-surface); }
+.k2b-ui .k2b-run-log__mark[data-status="skipped"] { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-run-log__pip { width: 0.375rem; height: 0.375rem; border-radius: 50%; background: currentColor; }
+.k2b-ui .k2b-run-log__label { grid-column: 2; grid-row: 1; display: flex; align-items: center; min-width: 0; gap: 0.25rem; }
+.k2b-ui .k2b-run-log__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-run-log__info { position: relative; flex: none; display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border: 0; border-radius: var(--k2b-radius-control); background: transparent; color: var(--k2b-text-subtle); cursor: help; }
+.k2b-ui .k2b-run-log__info:hover { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-run-log__reason { grid-column: 3; grid-row: 1; min-width: 0; }
+.k2b-ui .k2b-run-log__reason-button { display: block; min-width: 0; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: help; }
+.k2b-ui .k2b-run-log__reason-button > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-run-log__duration { grid-column: 4; grid-row: 1; padding-inline-start: 0.625rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k2b-ui .k2b-run-log__earlier > button { display: flex; align-items: center; gap: 0.625rem; width: 100%; height: 2.125rem; padding: 0; border: 0; background: none; color: var(--k2b-text); font: inherit; text-align: start; cursor: pointer; }
+.k2b-ui .k2b-run-log__earlier > button > i { width: 1.375rem; text-align: center; color: var(--k2b-text-subtle); }
+.k2b-ui .k2b-run-log__earlier > button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: underline; text-decoration-color: var(--k2b-border-strong); text-underline-offset: 3px; }
+.k2b-ui .k2b-run-log__output-toggle { display: grid; grid-template-columns: 1.375rem minmax(0, 1fr) auto; align-items: center; gap: 0.625rem; width: 100%; height: 2.5rem; padding: 0.5rem 0.875rem; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.k2b-ui .k2b-run-log__output-toggle:disabled { cursor: default; }
+.k2b-ui .k2b-run-log__output-toggle > i { justify-self: center; color: var(--k2b-text-subtle); transition: transform var(--k2b-motion-fast) var(--k2b-ease-out); }
+.k2b-ui .k2b-run-log__output-toggle[aria-expanded="true"] > i { transform: rotate(90deg); }
+.k2b-ui .k2b-run-log__counts { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-run-log__output { height: 11.25rem; overflow: auto; scrollbar-gutter: stable; padding: 0.5rem 0 0.625rem; background: var(--k2b-surface-muted); color: var(--k2b-text-secondary); font-family: var(--k2b-font-mono); font-size: var(--k2b-type-12); line-height: 1.65; }
+.k2b-ui .k2b-run-log__line { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: 0.625rem; padding-inline: 0.875rem; }
+.k2b-ui .k2b-run-log__line time { color: var(--k2b-text-muted); }
+.k2b-ui .k2b-run-log__line > span { white-space: pre-wrap; overflow-wrap: anywhere; }
+.k2b-ui .k2b-run-log__line[data-level="step"] > span { color: var(--k2b-info-text); }
+.k2b-ui .k2b-run-log__line[data-level="warn"] > span { color: var(--k2b-warning-text); }
+.k2b-ui .k2b-run-log__line[data-level="error"] { background: var(--k2b-danger-surface); }
+.k2b-ui .k2b-run-log__line[data-level="error"] > span { color: var(--k2b-danger-text); }
+.k2b-ui .k2b-run-log__older { display: block; border: 0; background: none; padding: 0 0.875rem 0.375rem 5.5rem; color: var(--k2b-text-muted); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.k2b-ui .k2b-run-log__older:disabled { cursor: default; }
+.k2b-ui .k2b-run-log[data-size="compact"] > .k2b-run-log__head { grid-template-columns: 1.375rem minmax(0, max-content) minmax(0, 1fr) auto 1.375rem; grid-template-rows: 1fr; gap: 0 0.625rem; height: 2.75rem; padding: 0.375rem 0.75rem; }
+.k2b-ui .k2b-run-log[data-size="compact"] .k2b-run-log__head-icon { grid-row: 1; align-self: center; }
+.k2b-ui .k2b-run-log[data-size="compact"] .k2b-run-log__meta { grid-column: 3; grid-row: 1; text-align: end; }
+.k2b-ui .k2b-run-log[data-size="compact"] .k2b-run-log__actions { grid-column: 4; grid-row: 1; margin: 0; }
+.k2b-ui .k2b-run-log[data-size="compact"][data-expanded="false"] .k2b-run-log__actions { display: none; }
+.k2b-ui .k2b-run-log__chevron { grid-column: 5; grid-row: 1; justify-self: center; color: var(--k2b-text-subtle); transition: transform var(--k2b-motion-fast) var(--k2b-ease-out); }
+.k2b-ui .k2b-run-log[data-expanded="true"] .k2b-run-log__chevron { transform: rotate(180deg); }
+.k2b-ui .k2b-run-log__toggle { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }
+.k2b-ui .k2b-run-log[data-size="compact"] .k2b-run-log__head > :not(.k2b-run-log__toggle) { position: relative; pointer-events: none; z-index: 1; }
+.k2b-ui .k2b-run-log[data-size="compact"] .k2b-run-log__head > .k2b-run-log__actions { pointer-events: auto; }
+.k2b-ui .k2b-run-log :is(button, a, [tabindex]):focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+@container (max-width: 30rem) {
+  .k2b-ui .k2b-run-log__actions[data-multiple="true"] .k2b-run-log__inline-actions { display: none; }
+  .k2b-ui .k2b-run-log__actions[data-multiple="true"] .k2b-run-log__more-actions { display: block; }
+}
+@media (max-width: 47.999rem), (pointer: coarse) {
+  .k2b-ui .k2b-run-log[data-size="full"] > .k2b-run-log__head { height: 4.125rem; }
+  .k2b-ui .k2b-run-log__action.k2b-button { min-height: 2.75rem; height: 2.75rem; min-width: 2.75rem; }
+  .k2b-ui .k2b-run-log__step,
+  .k2b-ui .k2b-run-log__output-toggle,
+  .k2b-ui .k2b-run-log__earlier > button { height: 2.75rem; }
+  .k2b-ui .k2b-run-log__info::after { content: ""; position: absolute; inset: min(0px, calc((100% - 2.75rem) / 2)); }
+  .k2b-ui .k2b-run-log__reason-button { min-height: 2.75rem; min-width: 2.75rem; }
+  .k2b-ui .k2b-run-log__older { min-height: 2.75rem; }
+}
+
 .k2b-ui .k2b-lightbox button:focus-visible,
 .k2b-ui .k2b-lightbox a:focus-visible,
 .k2b-ui .k2b-content-file-tree [role="treeitem"]:focus-visible {
@@ -4915,8 +5031,22 @@
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
 }
+/* A large surface: it only fades in, with its veil, over the base time. It leaves at once: its owner removes it the
+   moment it closes, so the owner can open the next file right away. A pull follows the finger without a transition. */
+.k2b-ui .k2b-lightbox[open],
+.k2b-ui .k2b-lightbox[open]::backdrop {
+  opacity: 1;
+  transition: opacity var(--k2b-motion-base) var(--k2b-ease-out);
+}
+@starting-style {
+  .k2b-ui .k2b-lightbox[open],
+  .k2b-ui .k2b-lightbox[open]::backdrop {
+    opacity: 0;
+  }
+}
 .k2b-ui .k2b-lightbox[style*="--k2b-lightbox-pull"] {
   opacity: calc(1 - var(--k2b-lightbox-pull) * 0.5);
+  transition: none;
 }
 .k2b-ui .k2b-lightbox__head {
   position: absolute;
@@ -7650,3 +7780,273 @@
 .k2b-ui .k2b-balance__part { white-space: nowrap; }
 .k2b-ui .k2b-balance__part b { color: var(--k2b-text); font-variant-numeric: tabular-nums; font-weight: 600; }
 .k2b-ui .k2b-balance__op { color: var(--k2b-text-muted); font-weight: 600; }
+
+/*
+ * ActivityList: the history as a vertical timeline, taken 1:1 from the Warenfluss building block "Verlauf". One grid
+ * for both densities: icon 20 px, 12 px gap, the text column. Two type sizes: the sentence 14 px, everything else
+ * 13 px. The rail is a vertical 2 px line through the middle of the icons; it starts at the newest entry and ends at
+ * the oldest, and with `data-end="more"` it fades out. It pauses behind each icon instead of being covered, so no
+ * surface has to match the one the list stands on. Dividers are dashed.
+ */
+.k2b-ui .k2b-activity {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.k2b-ui .k2b-activity > li { position: relative; }
+.k2b-ui .k2b-activity > li::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 9px;
+  width: 2px;
+  background: var(--k2b-border);
+}
+
+/* Dividers: today, yesterday, the days of the last week, then once "More than a week ago". */
+.k2b-ui .k2b-activity__day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  color: var(--k2b-text-muted);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.k2b-ui .k2b-activity__day::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--k2b-border-strong);
+}
+.k2b-ui .k2b-activity__day-line {
+  width: 22px;
+  flex: none;
+  border-top: 1px dashed var(--k2b-border-strong);
+}
+.k2b-ui .k2b-activity > .k2b-activity__day:first-child { padding-top: 0; }
+.k2b-ui .k2b-activity > .k2b-activity__day:first-child::before { display: none; }
+
+/* An entry; its hover area reaches 8 px past the column on both sides. */
+.k2b-ui .k2b-activity__entry {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 12px;
+  margin: 0 -8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.k2b-ui .k2b-activity__entry:hover { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-activity__entry[data-clickable] { cursor: pointer; }
+/* An entry's rail: above its icon (`::before`, 0 to 6 px) and below it (`::after`, from 26 px), so the icon box
+   (6 to 26 px) stays free. The first row has no rail above, the last none below. */
+.k2b-ui .k2b-activity > li.k2b-activity__entry::before {
+  bottom: auto;
+  left: 17px;
+  height: 6px;
+}
+.k2b-ui .k2b-activity > li.k2b-activity__entry::after {
+  content: "";
+  position: absolute;
+  top: 26px;
+  bottom: 0;
+  left: 17px;
+  width: 2px;
+  background: var(--k2b-border);
+}
+.k2b-ui .k2b-activity > li.k2b-activity__entry[data-first]::before,
+.k2b-ui .k2b-activity > li.k2b-activity__entry[data-end="last"]::after { display: none; }
+.k2b-ui .k2b-activity > li.k2b-activity__entry[data-end="more"]::after {
+  bottom: -12px;
+  background: linear-gradient(var(--k2b-border) 30%, transparent);
+}
+
+.k2b-ui .k2b-activity__icon {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--k2b-text-muted);
+  font-size: 15px;
+}
+/* The glyph fills the icon's box, so the row's ink starts on the column edge like the section title. */
+.k2b-ui .k2b-activity__icon > i {
+  width: 100%;
+  text-align: center;
+}
+.k2b-ui .k2b-activity__icon[data-tone="success"] { color: var(--k2b-success-text); }
+.k2b-ui .k2b-activity__icon[data-tone="warning"] { color: var(--k2b-warning-text); }
+.k2b-ui .k2b-activity__icon[data-tone="danger"] { color: var(--k2b-danger-text); }
+.k2b-ui .k2b-activity__icon[data-placeholder] { background: var(--k2b-surface-muted); }
+
+.k2b-ui .k2b-activity__body { min-width: 0; }
+.k2b-ui .k2b-activity__text {
+  color: var(--k2b-text);
+  font-size: 14px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.k2b-ui .k2b-activity :is(.k2b-activity__detail, .k2b-activity__meta, .k2b-activity__action) {
+  font-size: 13px;
+  line-height: 18px;
+}
+.k2b-ui .k2b-activity__detail {
+  margin-top: 2px;
+  color: var(--k2b-text-secondary);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.k2b-ui .k2b-activity__before { color: var(--k2b-text-muted); }
+.k2b-ui .k2b-activity__meta {
+  margin-top: 2px;
+  color: var(--k2b-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.k2b-ui .k2b-activity :where(a:not(.k2b-activity__action, .k2b-activity__text-link)) {
+  color: var(--k2b-action);
+  text-decoration: none;
+}
+.k2b-ui .k2b-activity :where(a:not(.k2b-activity__action, .k2b-activity__text-link)):hover { color: var(--k2b-action-hover); }
+.k2b-ui .k2b-activity__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--k2b-action);
+  background: none;
+  font-family: inherit;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
+.k2b-ui .k2b-activity__action:hover { color: var(--k2b-action-hover); }
+.k2b-ui .k2b-activity__action:disabled {
+  color: var(--k2b-text-muted);
+  cursor: default;
+}
+.k2b-ui .k2b-activity__action i { font-size: 15px; }
+.k2b-ui .k2b-activity__text-button {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* A linked sentence reads as the sentence; hovering its row shows that it leads somewhere. */
+.k2b-ui .k2b-activity__text-link {
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+.k2b-ui .k2b-activity__entry:hover .k2b-activity__text-link { color: var(--k2b-action-hover); }
+.k2b-ui .k2b-activity__details {
+  margin-top: 6px;
+  cursor: auto;
+}
+.k2b-ui :is(.k2b-activity__action, .k2b-activity__text-button, .k2b-activity__text-link, .k2b-activity__reload):focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+/* Wide: the same row, the meta line on the right of the first line; on large screens no wider than 80rem. Only the
+   wide list measures its own width: a compact list in a container sized by its content (a popover) keeps its width. */
+.k2b-ui .k2b-activity[data-density="wide"] {
+  container-type: inline-size;
+  max-width: 80rem;
+}
+.k2b-ui .k2b-activity[data-density="wide"] .k2b-activity__entry { grid-template-columns: 20px minmax(0, 1fr) auto; }
+.k2b-ui .k2b-activity[data-density="wide"] .k2b-activity__meta {
+  margin-top: 0;
+  line-height: 20px;
+  text-align: right;
+  white-space: nowrap;
+}
+/* Too narrow for the meta beside the sentence, such as a dialog on a phone: it goes below the text. */
+@container (max-width: 34rem) {
+  .k2b-ui .k2b-activity[data-density="wide"] .k2b-activity__entry { grid-template-columns: 20px minmax(0, 1fr); }
+  .k2b-ui .k2b-activity[data-density="wide"] .k2b-activity__meta {
+    grid-column: 2;
+    margin-top: 2px;
+    line-height: 18px;
+    text-align: left;
+    white-space: normal;
+  }
+}
+
+/* Focus after a reload (such as after "Send again"): visible with the keyboard only, inside the row. */
+.k2b-ui .k2b-activity__entry:focus { outline: none; }
+.k2b-ui .k2b-activity__entry:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+/* Loading: three quiet rows on the rail. */
+.k2b-ui .k2b-activity__placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 5px;
+}
+.k2b-ui .k2b-activity__placeholder-line {
+  height: 10px;
+  border-radius: 5px;
+}
+.k2b-ui .k2b-activity__placeholder-meta {
+  height: 8px;
+  border-radius: 5px;
+}
+
+.k2b-ui .k2b-activity-empty {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 13.5px;
+}
+.k2b-ui .k2b-activity__reload {
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--k2b-action);
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+.k2b-ui .k2b-activity__reload:hover { color: var(--k2b-action-hover); }
+
+/* ActivityCard: the history as a section; "All N" at the end of its heading. */
+.k2b-ui .k2b-activity-card__body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.k2b-ui .k2b-activity-card__alert { margin-bottom: 8px; }
+.k2b-ui .k2b-section__actions .k2b-button.k2b-activity-card__all {
+  color: var(--k2b-action);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.k2b-ui .k2b-section__actions .k2b-button.k2b-activity-card__all:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-action-hover);
+}
+
+/* The "All N" dialog: the object under the title, the filter, the list in the wide density. */
+.k2b-ui .k2b-activity-dialog {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+.k2b-ui .k2b-activity-dialog__subtitle {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 13px;
+}

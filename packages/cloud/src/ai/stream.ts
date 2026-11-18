@@ -4,6 +4,7 @@ import { watchAppAccess, watchCredentialExpiry } from "../server/middleware/app-
 import { logger } from "../services/logging";
 import { latestTopicCursor } from "../services/topic-cursor";
 import type { AiConversationWatch } from "./conversation-watchers";
+import type { AiOriginViewer } from "./message-origin";
 import {
   type AiStreamEvent,
   type AiTurnSnapshot,
@@ -13,7 +14,7 @@ import {
   steerAppliedBlockId,
   steerMessageBlockId,
 } from "./protocol";
-import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
+import { projectPublicAiStoredMessages, publicAiStoredMessages, publicAiTurnBlock, publicAiWireEvent } from "./public-projection";
 import { aiConversations } from "./store";
 import type { AiConversation } from "./types";
 
@@ -67,7 +68,7 @@ export const aiStreamTopic = lazySync((sync) =>
   }),
 );
 
-export type AiTurnControlEvent = { type: "abort"; conversationId: string; turnId: string };
+export type AiTurnControlEvent = { type: "abort" | "interrupt"; conversationId: string; turnId: string };
 
 export const aiTurnControlsTopic = lazySync((sync) =>
   sync.topic<AiTurnControlEvent>({
@@ -79,6 +80,30 @@ export const aiTurnControlsTopic = lazySync((sync) =>
     maxPayloadBytes: 5 * 1024,
   }),
 );
+
+/** One SQL-free control subscription per active worker, closed when the attempt ends. */
+export const subscribeAiTurnInterrupts = async (input: {
+  conversationId: string;
+  turnId: string;
+  onInterrupt: () => void;
+}): Promise<() => Promise<void>> => {
+  const controls = aiTurnControlsTopic();
+  const after = (await controls.latestCursor({ tenantId: input.conversationId })) ?? controls.cursorAt(0);
+  const controller = new AbortController();
+  const task = (async () => {
+    try {
+      for await (const event of controls.hub({ tenantId: input.conversationId }).subscribe({ after, signal: controller.signal })) {
+        if (event.data.turnId === input.turnId && event.data.type === "interrupt") input.onInterrupt();
+      }
+    } catch {
+      // The existing lease heartbeat reconciles the durable cancellation flag.
+    }
+  })();
+  return async () => {
+    controller.abort();
+    await task;
+  };
+};
 
 const publishLiveTopicEvent = async (event: AiLiveTopicEvent): Promise<void> => {
   await aiStreamTopic().publish({
@@ -98,7 +123,7 @@ const publishLiveTopicEvent = async (event: AiLiveTopicEvent): Promise<void> => 
  */
 export const publishAiWireEvent = async (event: AiWireEvent): Promise<void> => {
   try {
-    await publishLiveTopicEvent(event);
+    await publishLiveTopicEvent(publicAiWireEvent(event));
   } catch (error) {
     if (!(error instanceof PayloadTooLargeError)) throw error;
     const { v, conversationId, turnId, attempt, seq } = event;
@@ -112,6 +137,16 @@ export const publishAiTurnAbort = async (input: { conversationId: string; turnId
     orderingKey: input.turnId,
     data: { type: "abort", conversationId: input.conversationId, turnId: input.turnId },
     idempotencyKey: `turn-abort:${input.turnId}`,
+  });
+};
+
+export const publishAiTurnInterrupt = async (input: { conversationId: string; turnId: string; requestId: string }): Promise<void> => {
+  await aiTurnControlsTopic().publish({
+    tenantId: input.conversationId,
+    orderingKey: input.turnId,
+    data: { type: "interrupt", conversationId: input.conversationId, turnId: input.turnId },
+    // One signal per Send now request; a retry after "not sent" targets the same turn again.
+    idempotencyKey: `turn-interrupt:${input.turnId}:${input.requestId}`,
   });
 };
 
@@ -135,7 +170,7 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
   attempt: active.turn.attempt,
   status: active.turn.status,
   seq: active.liveSeq,
-  blocks: [...active.liveBlocks],
+  blocks: active.liveBlocks.map(publicAiTurnBlock),
   modelId: active.turn.modelId,
   createdAt: active.turn.createdAt,
   actionWaitMs: active.actionWaitMs,
@@ -151,12 +186,18 @@ type AiStreamSnapshot = {
   activeTurnId: string | null;
 };
 
+/** `originViewer` is the reader: names of origins, and the apps of stored steps, follow it and its `locale`. */
 export const loadAiStreamState = async (
   conversation: AiConversation,
   viewerUserId?: string | null,
-): Promise<Extract<AiStreamEvent, { type: "state" }>> => (await loadStreamSnapshot(conversation, viewerUserId)).state;
+  originViewer?: AiOriginViewer,
+): Promise<Extract<AiStreamEvent, { type: "state" }>> => (await loadStreamSnapshot(conversation, viewerUserId, originViewer)).state;
 
-const loadStreamSnapshot = async (conversation: AiConversation, viewerUserId?: string | null): Promise<AiStreamSnapshot> => {
+const loadStreamSnapshot = async (
+  conversation: AiConversation,
+  viewerUserId?: string | null,
+  originViewer?: AiOriginViewer,
+): Promise<AiStreamSnapshot> => {
   const [page, active] = await Promise.all([
     aiConversations.listMessagesPage({ conversationId: conversation.id, limit: AI_STREAM_INITIAL_MESSAGE_LIMIT }),
     aiConversations.getActiveTurn({ conversationId: conversation.id }),
@@ -187,7 +228,7 @@ const loadStreamSnapshot = async (conversation: AiConversation, viewerUserId?: s
     state: {
       type: "state",
       conversation: { ...conversation, id: conversation.shortId },
-      messages: await publicAiStoredMessages(page.messages, conversation, viewerUserId),
+      messages: await publicAiStoredMessages(page.messages, conversation, viewerUserId, originViewer),
       hasMoreMessages: page.hasMore,
       activeTurn: snapshot,
     },
@@ -260,6 +301,7 @@ const loadStreamSnapshotWith = async (
   event: AiLiveTopicEvent,
   signal: AbortSignal,
   viewerUserId?: string | null,
+  originViewer?: AiOriginViewer,
 ): Promise<AiStreamSnapshot | null> => {
   for (let read = 1; read < AI_STREAM_CATCH_UP_READS && !signal.aborted; read++) {
     const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
@@ -268,7 +310,7 @@ const loadStreamSnapshotWith = async (
   }
   const current = await aiConversations.getConversation({ conversationId: conversation.id });
   if (!current) return null;
-  const snapshot = await loadStreamSnapshot(current, viewerUserId);
+  const snapshot = await loadStreamSnapshot(current, viewerUserId, originViewer);
   if (!signal.aborted && !holdsEvent(positionOf(snapshot), event)) {
     // Readers miss this turn's events up to the event until it ends.
     log.warn("AI conversation stream continues without an event the saved state does not hold", {
@@ -300,6 +342,7 @@ const loadStreamSnapshotWith = async (
 export async function* streamAiConversationEvents(input: {
   conversation: AiConversation;
   viewerUserId?: string | null;
+  originViewer?: AiOriginViewer;
   signal: AbortSignal;
 }): AsyncGenerator<AiStreamEvent> {
   let current: StreamPosition | null = null;
@@ -307,7 +350,7 @@ export async function* streamAiConversationEvents(input: {
   const reloadedTurns = new Set<string>();
   for await (const item of streamSnapshotThenTail({
     captureCursor: () => latestTopicCursor({ topic: aiStreamTopic(), resourceId: "cloud-ai-stream", tenantId: input.conversation.id }),
-    loadSnapshot: () => loadStreamSnapshot(input.conversation, input.viewerUserId),
+    loadSnapshot: () => loadStreamSnapshot(input.conversation, input.viewerUserId, input.originViewer),
     tail: (after) => aiStreamTopic().hub({ tenantId: input.conversation.id }).subscribe({ after, signal: input.signal }),
   })) {
     if (item.kind === "snapshot") {
@@ -319,7 +362,7 @@ export async function* streamAiConversationEvents(input: {
     const event = item.value.data;
     if (needsSavedState(event, current, reloadedTurns)) {
       reloadedTurns.add(event.turnId);
-      const snapshot = await loadStreamSnapshotWith(input.conversation, event, input.signal, input.viewerUserId);
+      const snapshot = await loadStreamSnapshotWith(input.conversation, event, input.signal, input.viewerUserId, input.originViewer);
       // A conversation that was archived or deleted ends the stream; the reader's reconnect gets the route's answer.
       if (input.signal.aborted || !snapshot) return;
       yield snapshot.state;
@@ -363,7 +406,7 @@ export async function* streamAiConversationEvents(input: {
         ...event,
         conversationId: input.conversation.shortId,
         turnId: publicTurnId,
-        messages: await publicAiStoredMessages(messages, input.conversation, input.viewerUserId),
+        messages: await publicAiStoredMessages(messages, input.conversation, input.viewerUserId, input.originViewer),
       };
       continue;
     }
@@ -373,7 +416,7 @@ export async function* streamAiConversationEvents(input: {
       if (message) yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId, message };
       continue;
     }
-    yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId };
+    yield { ...publicAiWireEvent(event), conversationId: input.conversation.shortId, turnId: publicTurnId };
   }
 }
 
@@ -383,6 +426,7 @@ export const __aiStreamTest = { needsSavedState, streamSnapshotThenTail };
 export const createAiConversationStreamResponse = (input: {
   conversation: AiConversation;
   viewerUserId?: string | null;
+  originViewer?: AiOriginViewer;
   signal?: AbortSignal;
   heartbeatMs?: number;
   /** Checked at admission and on access events, never by the heartbeat. */
@@ -467,6 +511,7 @@ export const createAiConversationStreamResponse = (input: {
         }
 
         if (heartbeatMs > 0) {
+          // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
           heartbeat = setInterval(() => {
             if (!enqueue(encodeSseHeartbeat())) return;
             input.watch?.refresh();
@@ -487,6 +532,7 @@ export const createAiConversationStreamResponse = (input: {
           for await (const event of streamAiConversationEvents({
             conversation: input.conversation,
             viewerUserId: input.viewerUserId,
+            originViewer: input.originViewer,
             signal: liveAbort.signal,
           })) {
             if (!(await accessCurrent()) || !enqueue(encodeSseEvent(event))) return;

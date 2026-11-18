@@ -17,6 +17,7 @@ import cloudAssistantChat from "./cloud/assistant-chat.md" with { type: "text" }
 import cloudDashboardWidgets from "./cloud/dashboard-widgets.md" with { type: "text" };
 import cloudFileChooser from "./cloud/file-chooser.md" with { type: "text" };
 import cloudResourcePicker from "./cloud/resource-picker.md" with { type: "text" };
+import contentActivityList from "./content/activity-list.md" with { type: "text" };
 import contentCharts from "./content/charts.md" with { type: "text" };
 import contentCode from "./content/code.md" with { type: "text" };
 import contentDocs from "./content/docs.md" with { type: "text" };
@@ -35,6 +36,7 @@ import contentMessageRows from "./content/message-rows.md" with { type: "text" }
 import contentMoney from "./content/money.md" with { type: "text" };
 import contentProgressPath from "./content/progress-path.md" with { type: "text" };
 import contentReactionBar from "./content/reaction-bar.md" with { type: "text" };
+import contentRunLog from "./content/run-log.md" with { type: "text" };
 import contentSteps from "./content/steps.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
 import contentTables from "./content/tables.md" with { type: "text" };
@@ -82,6 +84,7 @@ import inputSlider from "./input/slider.md" with { type: "text" };
 import inputTagEditor from "./input/tag-editor.md" with { type: "text" };
 import inputTags from "./input/tags.md" with { type: "text" };
 import inputText from "./input/text.md" with { type: "text" };
+import inputTimeInput from "./input/time-input.md" with { type: "text" };
 import layoutAnchoredPopover from "./layout/anchored-popover.md" with { type: "text" };
 import layoutBottomSheet from "./layout/bottom-sheet.md" with { type: "text" };
 import layoutDetailPanel from "./layout/detail-panel.md" with { type: "text" };
@@ -134,6 +137,7 @@ const catalogContextSources = {
   "input/number": { file: "input/number.md", content: inputNumber },
   "input/date-picker": { file: "input/date-picker.md", content: inputDatePicker },
   "input/period-picker": { file: "input/period-picker.md", content: inputPeriodPicker },
+  "input/time-input": { file: "input/time-input.md", content: inputTimeInput },
   "input/rich-select": { file: "input/rich-select.md", content: inputRichSelect },
   "input/select": { file: "input/select.md", content: inputSelect },
   "input/choice-chips": { file: "input/choice-chips.md", content: inputChoiceChips },
@@ -220,6 +224,7 @@ const catalogContextSources = {
   "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
   "content/match-text": { file: "content/match-text.md", content: contentMatchText },
   "content/progress-path": { file: "content/progress-path.md", content: contentProgressPath },
+  "content/run-log": { file: "content/run-log.md", content: contentRunLog },
   "content/steps": { file: "content/steps.md", content: contentSteps },
   "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },
@@ -232,6 +237,7 @@ const catalogContextSources = {
   "content/logs": { file: "content/logs.md", content: contentLogs },
   "content/virtual-feed": { file: "content/virtual-feed.md", content: contentVirtualFeed },
   "content/load-more": { file: "content/load-more.md", content: contentLoadMore },
+  "content/activity-list": { file: "content/activity-list.md", content: contentActivityList },
   "content/reaction-bar": { file: "content/reaction-bar.md", content: contentReactionBar },
   "content/message-rows": { file: "content/message-rows.md", content: contentMessageRows },
   "content/structured-data": { file: "content/structured-data.md", content: contentStructuredData },

@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-11-07
+updated: 2026-11-17
 ---
 
 # Testing
@@ -392,7 +392,11 @@ draws real `@k2b/ui` surfaces once, so a fresh engine's one-time costs, such as
 WebKit's shader compile in a new Playwright container
 ([#2149](https://github.com/k2b-dev/cloud/issues/2149)), do not fall inside the
 first test's 5 s. It starts its own browser, shares only on-disk caches with the
-suites, and has its own bounded budget. When it fails, no suite runs.
+suites, and has its own bounded budget. When it fails, no suite runs. It also
+fails when even its fastest scene after the first takes half of a test's 5 s,
+against about 1 s on a normal runner: such a runner makes the tests fail one by
+one at their limit, and they read as hangs in the code they cover
+([#3526](https://github.com/k2b-dev/cloud/issues/3526)).
 
 Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,
@@ -769,6 +773,32 @@ branch:
   less often. Renewed playback can therefore stall in Linux WebKit, so its test
   waits for `ended` in Chromium and only for `playing` in WebKit.
 
+### Test an application's page swaps
+
+Before an application turns on `pageSwap`, it runs the shared contract in
+`scripts/fixtures/page-swap-app.ts` against its real SSR pages
+([Swap stability](/en/docs/frontend/url-state-and-navigation#swap-stability)).
+The test file calls `installSsrTransform()` before it imports the page modules,
+starts the harness with `startPageSwapApp()` in `beforeAll`, and registers
+`pageSwapContract()` with two linked pages, a `ready` check, and optionally a
+page with URL state, a tour through the heaviest pages, and extra regions to
+compare. `packages/tools/src/frontend/page-swap.browser.test.ts` is the
+example. The contract checks:
+
+- links, Back, and Forward without a document load;
+- the server render of a direct visit;
+- one document load with a reported fallback for a failing page;
+- a link to another application as a document load;
+- the same layout after a swap as after a reload, at 390 and 1440 pixels;
+- focus on a visible heading and the sidebar's current item in view;
+- 50 swaps, and three rounds through the tour, without growing listeners,
+  intervals, sockets, workers, or object URLs.
+
+The footprint runs keep below WebKit's history budget of 100 writes per 10
+seconds. They click links without Playwright's actionability wait, which
+lasts several animation frames, and headless WebKit renders only about 30
+frames a second. The links test keeps the full click checks.
+
 ## Replace modules in tests
 
 `mock.module` replaces a module for the whole Bun process. Without
@@ -923,6 +953,14 @@ the oldest candidates of a background job, runs in a private database from
 `useMigratedDatabase()` in `scripts/fixtures/test-infra`. Call `drop()` in
 `afterAll` or `finally`.
 
+Suites whose fixtures leave outbox work after cleanup use a private migrated database.
+Deleting fixture records can enqueue more rows through triggers, even after
+the suite has cleaned its application outbox. Those rows otherwise remain for
+later suites and delay their dispatchers. Select the private database before
+importing `authorization-preload` or a fixture that imports it, then register
+`drop()` in `afterAll` immediately. When checking isolation, count shared outbox
+rows after all cleanup hooks have finished.
+
 The bootstrap also prepares an immutable PostgreSQL template with Core and
 **every application's migrations**, using the same migration entry point as
 the shared target. `createMigratedDatabase()` clones it without binding Bun's
@@ -1063,6 +1101,12 @@ artifact service suite disposable PostgreSQL and rsql containers and runs
 every other Assistant integration file, such as the Code Mode PDF test against
 Gotenberg, against the `CLOUD_TEST_*` targets.
 
+A package whose script also accepts one of its files can add a
+`test:integration:list` script that prints the files without starting
+infrastructure. The root runner then runs each listed file as a suite of its
+own, `bun run test:integration <file>`, so CI shards balance the package by
+measured file times instead of carrying it as one block.
+
 Mail's entry point reuses the root runner's infrastructure-gate discovery,
 including gated files without an `.integration` suffix. It also retains the
 explicitly opted-in large-mailbox performance and IMAP connector suites. All
@@ -1070,7 +1114,9 @@ selected files run with `--isolate`, so the Mail preload gives each file its own
 database clone and Sync runtime;
 unit and browser files run through the normal test jobs instead. Inspect the
 selection without starting infrastructure with
-`bun run --cwd packages/mail test:integration --list`.
+`bun run --cwd packages/mail test:integration:list`; run one file with
+`bun run --cwd packages/mail test:integration src/service/sent-projection.integration.test.ts`.
+The root runner runs Mail this way, one file per suite.
 
 ### Sync namespaces on the test broker
 
@@ -1199,8 +1245,8 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in nine shards, WebKit tests in nineteen, and integration tests in
-five. Each mode uses its own measured seconds per suite in
+Unit tests run in twelve shards, WebKit tests in nineteen, and integration tests
+in six. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
 measurements; Chromium runs inside the unit suites. Equal weights use the suite
@@ -1208,6 +1254,12 @@ name to order suites; the least-loaded shard wins, with suite count and shard
 index breaking load ties. Integration keeps the Grids exclusion;
 Grids certification runs in its own path-filtered job. Every integration shard
 gets fresh service containers, and `gate` requires the whole matrix to succeed.
+
+The path-filtered `ui` job builds and typechecks `@k2b/ui` and its standalone
+fixture. UI tests run in the existing unfiltered `unit` shards, including the
+package's test parts, behavior suite, standalone fixture render test, and
+packed-consumer check. The `ui` job does not repeat them. `gate` requires both
+`unit` and, when `changes.outputs.ui` is true, `ui`.
 
 The unit, WebKit, integration, and Grids jobs run on the runner that the
 repository variable `CI_HEAVY_RUNNER` names, and on `ubuntu-24.04` when it is
@@ -1239,7 +1291,10 @@ Leave measured room below the target for new files. A recommendation that only
 just fits can fail the runner guard as soon as another browser file is added.
 If one suite alone exceeds that target, split the suite: `test:part:<name>`
 scripts in the package become the suites `<package> <name>` in place of its `test`
-script, and together they must run the same files. Commit the
+script, and together they must run the same files. An integration suite that
+a package runs through its own script splits with `test:integration:list`,
+which turns each listed file into a suite of its own; the runner test fails
+when a single integration suite is weighted above 10 minutes. Commit the
 refreshed weights and adjust the matrix together; keep the 20-minute execution
 budget unchanged. Refresh after browser suites grow or timings drift, even
 when the jobs still pass. An outdated table can balance predicted times while
@@ -1248,7 +1303,11 @@ leaving actual times far apart.
 The runner tests check that every unit, WebKit, and integration suite is
 assigned exactly once and each predicted shard fits its target. WebKit must
 fit 55% of its 20-minute execution budget. They also cover deterministic
-assignment and distributing unmeasured new files. These
+assignment and distributing unmeasured new files. A UI coverage guard derives
+its expected files from `listTestFiles(packages/ui)` and expands the actual
+`unit` matrix's package parts and behavior commands. Every UI test file must
+run exactly once; adding a file outside the selected paths fails the guard.
+The packed-consumer check must also run once. These
 checks validate the measured plan rather than a future runner's speed.
 Importer tests cover failed jobs, unexecuted suites, and replacing old weights
 when the selected runs are faster. Actual times still depend on the runner: a whole

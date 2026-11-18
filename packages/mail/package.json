@@ -12,7 +12,10 @@
   "scripts": {
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false",
     "test": "bun --cwd=../.. test --path-ignore-patterns '**/*.behavior.test.*' packages/mail/src packages/mail/scripts packages/mail/test",
-    "test:integration": "bun --no-env-file scripts/test-integration.ts"
+    "test:part:components": "bun --cwd=../.. test --path-ignore-patterns '**/*.behavior.test.*' packages/mail/src/frontend/_components",
+    "test:part:rest": "bun --cwd=../.. test --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'packages/mail/src/frontend/_components/**' packages/mail/src packages/mail/scripts packages/mail/test",
+    "test:integration": "bun --no-env-file scripts/test-integration.ts",
+    "test:integration:list": "bun --no-env-file scripts/test-integration.ts --list"
   },
   "dependencies": {
     "@codemirror/autocomplete": "catalog:",

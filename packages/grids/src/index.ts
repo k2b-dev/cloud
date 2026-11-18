@@ -1,5 +1,4 @@
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
-import { createRuntimeLifecycle, stopRuntimeResources } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
@@ -8,15 +7,8 @@ import { app, ssr } from "./config";
 import pageRoutes, { adminRoutes, customAppRoutes, publicRoutes } from "./frontend";
 import { gridsHelp } from "./help";
 import { migrate } from "./migrate";
+import { gridsRuntime } from "./runtime";
 import { gridsService } from "./service";
-import { stopBoundedQueryPool } from "./service/bounded-query";
-import { startControlledDestructionJobs, stopControlledDestructionJobs } from "./service/controlled-destruction";
-import { startEvidenceExportJobs, stopEvidenceExportJobs } from "./service/evidence-exports";
-import { startFieldIndexMaintenance, stopFieldIndexMaintenance } from "./service/field-index-maintenance";
-import { getQuerySettings } from "./service/query-settings";
-import { startRecordEventOutbox, stopRecordEventOutbox } from "./service/record-event-outbox";
-import { startExternalRecordOperationRetention, stopExternalRecordOperationRetention } from "./service/record-external-identity";
-import { startWorkflowRuntime, stopWorkflowRuntime } from "./service/workflow-runtime";
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
@@ -26,28 +18,6 @@ const router = new Hono<AuthContext>()
   .route("/admin/grids", adminRoutes)
   .route("/share/grids", publicRoutes)
   .route("/apps", customAppRoutes);
-
-const gridsRuntimeLifecycle = createRuntimeLifecycle({
-  start: async () => {
-    await getQuerySettings();
-    await startControlledDestructionJobs();
-    await startEvidenceExportJobs();
-    await startExternalRecordOperationRetention();
-    await startWorkflowRuntime();
-    await startRecordEventOutbox();
-    startFieldIndexMaintenance();
-  },
-  stop: () =>
-    stopRuntimeResources([
-      stopFieldIndexMaintenance,
-      stopRecordEventOutbox,
-      stopWorkflowRuntime,
-      stopExternalRecordOperationRetention,
-      stopBoundedQueryPool,
-      stopControlledDestructionJobs,
-      stopEvidenceExportJobs,
-    ]),
-});
 
 router.get("/app/grids/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/admin/grids/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
@@ -63,8 +33,8 @@ const result = await app.start({
     setup: async () => {
       await migrate();
     },
-    start: gridsRuntimeLifecycle.start,
-    stop: gridsRuntimeLifecycle.stop,
+    start: gridsRuntime.start,
+    stop: gridsRuntime.stop,
   },
 });
 

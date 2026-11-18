@@ -13,6 +13,7 @@ import {
 } from "solid-js";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
+import { StepRowContent } from "../internal/step-row";
 import { Format } from "../intl/Format";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -52,8 +53,11 @@ export type ChatMessageProps = {
   class?: string;
 };
 
+/** Colour of an activity's `meta` for an outcome that needs attention. */
+export type ChatActivityMetaTone = "danger" | "warning" | "ai";
+
 export type ChatActivityProps = {
-  /** The step as text, or as a sentence with `ReferenceChip`s. */
+  /** The step as text, or as a sentence with `ReferenceChip`s. One line; text that does not fit fades out. */
   label: JSX.Element;
   /** Spelled-out name for an expandable row whose visible text abbreviates, such as durations. */
   ariaLabel?: string;
@@ -68,6 +72,20 @@ export type ChatActivityProps = {
   busy?: boolean;
   /** Lets label and description wrap instead of ending in an ellipsis, for a system line whose whole sentence matters. */
   wrap?: boolean;
+  /** A status word or count in the row's right-aligned meta column, such as "2 steps" or "Failed". */
+  meta?: JSX.Element;
+  /** Colours the whole `meta`. A part of it, such as "1 failed" in "6 steps · 1 failed", can carry its own `data-tone`. */
+  metaTone?: ChatActivityMetaTone;
+  /** How long the step took, already formatted ("12 s"), in a fixed column with tabular figures. */
+  duration?: string;
+  /** The duration spelled out, shown as its title. */
+  durationTitle?: string;
+  /**
+   * The last column of a row without a body, such as an ⓘ that opens the step's details: a `HoverCard.Trigger` with
+   * `triggerClass="k2b-chat-activity__info"`. A row with a body keeps its chevron there.
+   */
+  end?: JSX.Element;
+  /** Controls at the end of the text, in the meta column, such as a button. */
   trailing?: JSX.Element;
   /** Controlled disclosure state. Omit to keep native details behavior. */
   open?: boolean;
@@ -357,24 +375,50 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
   );
 }
 
-const ActivityContent = (props: ChatActivityProps & { label: JSX.Element; disclosure?: boolean }) => (
-  <>
-    <span class="k2b-chat-activity__leading" aria-hidden="true">
+/**
+ * One row on the shared grid: icon, text, meta, duration, and the chevron or ⓘ. Every cell has its own column, so a
+ * missing one shifts nothing, and the right columns end on the same edge in every row.
+ */
+const ActivityContent = (props: ChatActivityProps & { label: JSX.Element; disclosure?: boolean; expandable?: boolean }) => (
+  <StepRowContent
+    classes={{
+      leading: "k2b-chat-activity__leading",
+      label: "k2b-chat-activity__copy k2b-truncate-fade",
+      meta: "k2b-chat-activity__meta k2b-truncate-fade",
+      duration: "k2b-chat-activity__duration",
+    }}
+    leading={
       <Show when={props.leading} fallback={<i class={props.icon ?? "ti ti-sparkles"} />}>
         {props.leading}
       </Show>
-    </span>
-    <span class="k2b-chat-activity__copy">
-      <strong>{props.label}</strong>
-      <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
-    </span>
-    <Show when={props.trailing}>
-      <span class="k2b-chat-activity__trailing">{props.trailing}</span>
-    </Show>
-    <Show when={props.disclosure}>
-      <i class="ti ti-chevron-right k2b-chat-activity__chevron" aria-hidden="true" />
-    </Show>
-  </>
+    }
+    label={
+      <>
+        <strong title={typeof props.label === "string" ? props.label : undefined}>{props.label}</strong>
+        <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
+      </>
+    }
+    meta={
+      (props.meta || props.trailing) && (
+        <>
+          {props.meta}
+          {props.trailing && <span class="k2b-chat-activity__trailing">{props.trailing}</span>}
+        </>
+      )
+    }
+    metaTone={props.metaTone}
+    duration={props.duration}
+    durationTitle={props.durationTitle}
+    silentDuration={props.busy}
+    end={
+      <>
+        <Show when={props.disclosure}>
+          <i class="ti ti-chevron-right k2b-chat-activity__chevron" aria-hidden="true" />
+        </Show>
+        {!props.expandable && props.end}
+      </>
+    }
+  />
 );
 
 type ActivityDisclosure = {
@@ -492,7 +536,7 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
                   aria-busy={props.busy ? "true" : undefined}
                 >
                   <div class="k2b-chat-activity__row">
-                    <ActivityContent {...props} label={label()} />
+                    <ActivityContent {...props} label={label()} expandable />
                   </div>
                   <div id={bodyId} class="k2b-chat-activity__body" hidden={!open()}>
                     {body()}
@@ -517,7 +561,7 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
                 aria-busy={props.busy ? "true" : undefined}
               >
                 <summary class="k2b-chat-activity__row" aria-label={props.ariaLabel}>
-                  <ActivityContent {...props} label={label()} disclosure />
+                  <ActivityContent {...props} label={label()} disclosure expandable />
                 </summary>
                 <div class="k2b-chat-activity__body">{body()}</div>
               </details>

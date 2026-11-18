@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { behaviorTest, discoverTestSuites, listTestFiles } from "../../../scripts/run-tests";
 import { mailIntegrationCommand } from "./test-integration";
 
@@ -41,8 +41,14 @@ test("Mail isolates each file and keeps both preloads in their original order", 
     "--preload",
     resolve(mailRoot, "test/integration-preload.ts"),
   ]);
+  // The root runner runs each selected file through this entry point, so shards balance Mail by file (#2055).
   const suites = await discoverTestSuites(workspaceRoot, { integration: true, filters: ["packages/mail"] });
-  expect(suites).toEqual([{ name: "@k2b/cloud-app-mail", cwd: mailRoot, command: ["bun", "run", "test:integration"] }]);
+  const files = (await mailIntegrationCommand()).slice(10).map((file) => relative(mailRoot, file));
+  expect(suites).toEqual(
+    files.map((file) => ({ name: `@k2b/cloud-app-mail ${file}`, cwd: mailRoot, command: ["bun", "run", "test:integration", file] })),
+  );
+  expect((await mailIntegrationCommand([files[0]!])).slice(10)).toEqual([resolve(mailRoot, files[0]!)]);
+  await expect(mailIntegrationCommand(["src/contracts.test.ts"])).rejects.toThrow("not a Mail integration file");
 });
 
 test("excluded Mail files retain normal CI coverage and the package entry point lists only concrete integration files", async () => {
@@ -51,7 +57,11 @@ test("excluded Mail files retain normal CI coverage and the package entry point 
     "bun --cwd=../.. test --path-ignore-patterns '**/*.behavior.test.*' packages/mail/src packages/mail/scripts packages/mail/test",
   );
   const suites = await discoverTestSuites(workspaceRoot, { integration: false, filters: ["packages/mail"] });
-  expect(suites.find((suite) => suite.name === "@k2b/cloud-app-mail")?.command).toEqual(["bun", "run", "test"]);
+  // CI runs the `test` script as its `test:part:*` parts; scripts/run-tests.test.ts checks that they cover the same files.
+  expect(suites.filter((suite) => suite.name !== "@k2b/cloud-app-mail behavior").map((suite) => suite.command)).toEqual([
+    ["bun", "run", "test:part:components"],
+    ["bun", "run", "test:part:rest"],
+  ]);
   const behavior = suites.find((suite) => suite.name === "@k2b/cloud-app-mail behavior");
   const selected = new Set((await mailIntegrationCommand()).slice(10));
   for (const file of await listTestFiles(mailRoot)) {

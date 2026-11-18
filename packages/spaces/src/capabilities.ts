@@ -1356,8 +1356,7 @@ const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>, cont
       : result.status === 404
         ? { code: "NOT_FOUND" as const, message: result.error, status: 404 as const }
         : result.status === 409
-          ? // err.conflict takes a subject noun and appends "already exists"; a service conflict is a full sentence.
-            { code: "CONFLICT" as const, message: result.error, status: 409 as const }
+          ? err.conflict(result.error)
           : result.status === 500
             ? err.internal(result.error)
             : err.badInput(result.error);
@@ -2460,13 +2459,16 @@ export const spacesCapabilities = defineCapabilities({
         });
         const containers = await spacesPublicResources.projectSpaces(page.items);
         const nextOffset = offset + containers.length;
+        const next =
+          nextOffset < page.total ? Buffer.from(JSON.stringify({ v: 1, offset: nextOffset }), "utf8").toString("base64url") : null;
         return ok({
+          page: capabilityPage(next),
           data: {
             items: containers.map((container) => ({
               ref: { type: "spaces.space", id: container.id },
               title: container.name.slice(0, 500),
             })),
-            next: nextOffset < page.total ? Buffer.from(JSON.stringify({ v: 1, offset: nextOffset }), "utf8").toString("base64url") : null,
+            next,
           },
         });
       },

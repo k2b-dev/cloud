@@ -614,7 +614,9 @@ databaseSuite()("AI memory learning (integration)", () => {
     try {
       const old = await insertLearningTurn(userId);
       await sql`UPDATE ai.turns SET memory_learn_failed_at = now(), memory_learn_fail_count = 2 WHERE id = ${old.turnId}::uuid`;
-      expect(await aiConversations.archiveConversation({ conversationId: old.conversationId, ownerUserId: userId })).toBe(true);
+      expect(await aiConversations.archiveConversation({ conversationId: old.conversationId, ownerUserId: userId })).toEqual({
+        discardedQueuedMessages: 0,
+      });
       const [turn] = await sql<{ learned: boolean; fail_count: number; failed_at: string | null }[]>`
         SELECT memory_learned_at = completed_at AS learned, memory_learn_fail_count AS fail_count, memory_learn_failed_at AS failed_at
         FROM ai.turns WHERE id = ${old.turnId}::uuid
@@ -697,7 +699,9 @@ databaseSuite()("AI memory learning (integration)", () => {
           if (timing.startsWith("deleted")) {
             await sql`DELETE FROM ai.conversations WHERE id = ${candidate.conversationId}::uuid`;
           } else {
-            expect(await aiConversations.archiveConversation({ conversationId: candidate.conversationId, ownerUserId: userId })).toBe(true);
+            expect(await aiConversations.archiveConversation({ conversationId: candidate.conversationId, ownerUserId: userId })).toEqual({
+              discardedQueuedMessages: 0,
+            });
             if (timing === "restored-during-model") {
               expect(
                 await aiConversations.restoreConversation({ conversationId: candidate.conversationId, ownerUserId: userId }),
@@ -772,7 +776,9 @@ databaseSuite()("AI memory learning (integration)", () => {
           if (timing.startsWith("deleted")) {
             await sql`DELETE FROM ai.conversations WHERE id = ${removed.conversationId}::uuid`;
           } else {
-            expect(await aiConversations.archiveConversation({ conversationId: removed.conversationId, ownerUserId: userId })).toBe(true);
+            expect(await aiConversations.archiveConversation({ conversationId: removed.conversationId, ownerUserId: userId })).toEqual({
+              discardedQueuedMessages: 0,
+            });
             if (timing === "restored-during-model") {
               expect(
                 await aiConversations.restoreConversation({ conversationId: removed.conversationId, ownerUserId: userId }),

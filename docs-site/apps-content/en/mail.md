@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-11-12
+updated: 2026-11-18
 ---
 
 # Mail
@@ -52,6 +52,11 @@ processing has begun.
 Draft rows lead with the subject, followed by recipients and a preview, with
 the edit time and person who started the draft. Members with write access can
 open a draft to continue it; readers can view the list.
+
+Recipient fields show addresses as plain text, with a small **×** after each
+address to remove it. Hovering or focusing **×** turns it red without adding a
+background; keyboard focus keeps its ring. Click an address to edit it. Invalid
+input stays in the field in red with an explanation so you can correct it.
 
 Assignee filters in search and saved-view summaries read **Assigned to a
 specific person**. Open the search editor to change the selected
@@ -553,6 +558,7 @@ and restores unsaved changes kept in this browser.
 Replies and forwards are written in the conversation, not on a separate page.
 The reply box stands open at the place the browser chose (see the reader above);
 **Reply**, **Reply all**, **Forward**, a quote, and the **R** key all write into it.
+Focusing an empty reply keeps its starting height; longer replies grow with their content.
 Opening the conversation prepares a seed (`draft-seeds`); the first typed
 character creates the shared draft (`materialize`).
 A conversation has one reply draft. Reply, Reply all and Forward use the same
@@ -864,6 +870,11 @@ and concurrent clients get the same single inverse. `unavailable` also means
 Mail cannot safely reverse the move, for example because it needs attention
 or current access or keep rules refuse the inverse. Each
 inverse is queued independently, so one refusal does not prevent the others.
+
+Reply and Reply all also open for messages addressed only to the mailbox's own
+verified identities. When no external recipient remains, the To field starts
+empty. You can save a draft without recipients and add them before sending.
+The reply box, API, CLI and Assistant use the same rule.
 
 `reply` and `forward` create a draft from a conversation's latest message, and
 `send` sends a draft:

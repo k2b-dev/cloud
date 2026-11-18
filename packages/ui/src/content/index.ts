@@ -1,4 +1,17 @@
 export type { ChartDateFormat, ChartDatum, ChartDatumRole, ChartFormat, ChartNumberFormat } from "../charts/core";
+export {
+  type ActivityAction,
+  ActivityCard,
+  type ActivityCardProps,
+  type ActivityDensity,
+  type ActivityDialogInput,
+  type ActivityEntry,
+  type ActivityKind,
+  ActivityList,
+  type ActivityListProps,
+  type ActivityTone,
+  openActivityDialog,
+} from "./ActivityList";
 export { BalanceSummary, type BalanceSummaryProps } from "./BalanceSummary";
 export type {
   CalendarAttendee,
@@ -200,6 +213,16 @@ export type {
   ReferenceChipTimeProps,
 } from "./ReferenceChip";
 export { REFERENCE_CHIP_MAX_CHARACTERS, ReferenceChip, truncateMiddle } from "./ReferenceChip";
+export {
+  type RunEntry,
+  type RunLevel,
+  RunLog,
+  type RunLogAction,
+  type RunLogEntry,
+  type RunLogProps,
+  type RunLogState,
+  type RunStepEntry,
+} from "./RunLog";
 export type { StepsProps } from "./Steps";
 export { Steps } from "./Steps";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";

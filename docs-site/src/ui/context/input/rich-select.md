@@ -24,6 +24,9 @@ so a preview helps. A sharing level needs one line per level; omit the preview.
 - Text wraps; it never truncates. A short line is a writing constraint, not a
   CSS line clamp.
 - An unavailable option uses `disabledReason` in place of `description`.
+- `descriptionVisual`, such as a colored `Tag`, shows in place of the
+  description text, also in the phone sheet; see
+  [Show a visual in place of the description](select#show-a-visual-in-place-of-the-description).
   Keep the reason specific, such as **No write access**.
 - Use one visual: `visual` takes precedence over `color`, which replaces `icon`.
   Supply a render function, for example `visual: () => <Avatar name="Anna" />`,
@@ -97,6 +100,9 @@ removing the item returns to the list.
 Choosing an enabled item closes the sheet before reporting its value. The
 sheet participates in dialog history, so browser Back also dismisses it.
 The opening focus stays on the sheet to avoid opening the phone keyboard.
+The sheet's code loads only on phones, in the background; if it cannot load,
+the list opens as the popover beside the field instead, the error goes to
+`reportError`, and the next opening tries the sheet again.
 
 ## API reference
 
@@ -111,6 +117,7 @@ type RichSelectItem = {
   value: string;
   label: string;
   description?: string;
+  descriptionVisual?: () => JSX.Element;
   icon?: string;
   color?: string;
   visual?: () => JSX.Element;

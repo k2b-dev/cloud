@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
+import postcss from "postcss";
 import { createComponent, type JSX } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
 import {
@@ -393,8 +394,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
     expect(css).toContain("@media (any-hover: hover)");
-    expect(css).toContain(':where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-app-workspace__sidebar-section-actions');
-    expect(css).toContain(':where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-app-workspace__sidebar-section-actions');
+    expect(css).toContain(
+      ':where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-app-workspace__sidebar-section-actions > :not([data-visibility="always"])',
+    );
+    expect(css).toContain(
+      ':where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-app-workspace__sidebar-section-actions > :not([data-visibility="always"])',
+    );
     expect(css).toContain(".k2b-app-workspace__sidebar-section-actions");
     expect(css).toContain(':has(.k2b-dropdown__trigger[aria-expanded="true"])');
     expect(css).toContain('.k2b-app-workspace__sidebar-item-action[data-visibility="hover"]');
@@ -999,11 +1004,38 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     test("reduces a collapsible sidebar to an intentional icon rail", () => {
       expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*sidebar-item-meta[^}]*\{display:none!important/);
       // Labels leave the view but stay the entries' accessible names, and the rail marks itself for their hints.
-      expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*sidebar-item-label\)[^{]*\{position:absolute;[^}]*clip:rect\(0/);
+      const stylesheet = postcss.parse(css);
+      const scope = ".k2b-ui .k2b-app-workspace[data-sidebar-collapsed=true]";
+      const declarations = (selector: string) => {
+        const values = new Map<string, string>();
+        stylesheet.walkRules((entry) => {
+          if (entry.selectors.includes(selector)) {
+            entry.walkDecls((declaration) => {
+              values.set(declaration.prop, declaration.value);
+            });
+          }
+        });
+        expect(values.size).toBeGreaterThan(0);
+        return values;
+      };
+      for (const part of ["copy", "label"]) {
+        const label = declarations(`${scope} .k2b-app-workspace__sidebar-item-${part}:not(.k2b-app-workspace__sidebar-preview *)`);
+        expect(label.get("position")).toBe("absolute");
+        expect(label.get("clip")).toBe("rect(0,0,0,0)");
+        expect(label.get("width")).toBe("1px");
+        expect(label.get("height")).toBe("1px");
+      }
       expect(css).toMatch(
         /data-sidebar-collapsed=true\] \.k2b-app-workspace__sidebar\[data-workspace-collapsible=true\]\{--k2b-sidebar-rail:1\}/,
       );
-      expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*:is\(\.k2b-app-workspace__sidebar-item,[^{]*\)\{justify-content:center/);
+      for (const part of ["sidebar-item", "sidebar-item-main"]) {
+        const item = declarations(
+          `${scope} .k2b-app-workspace__sidebar[data-workspace-collapsible=true] .k2b-app-workspace__${part}:not(.k2b-app-workspace__sidebar-preview *)`,
+        );
+        expect(item.get("justify-content")).toBe("center");
+        expect(item.get("padding-inline-start")).toBe("0");
+        expect(item.get("padding-inline-end")).toBe("0");
+      }
     });
 
     test("keeps DataPanel on Cloud's px-3 py-2 rhythm", () => {

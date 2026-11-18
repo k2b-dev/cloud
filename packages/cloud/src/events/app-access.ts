@@ -50,6 +50,7 @@ export const subscribeAppAccessChanged = (
       invalidateIdentityRuntimeConfig();
       for (const callbacks of listeners.values()) for (const callback of callbacks) callback.changed();
     };
+    // runtime-timer: access invalidations reach open requests and sockets; they never pause.
     void superviseRuntimeTask({
       name: "App access invalidations",
       signal: controller.signal,

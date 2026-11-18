@@ -28,10 +28,12 @@ import { aiChatTasks } from "./chat-tasks";
 import { aiFileStore } from "./files-store";
 import { aiLive } from "./live";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
+import { enqueueChatMessage } from "./message-queue";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import type { AiStreamEvent } from "./protocol";
 import { buildBlocksFromMessages } from "./protocol";
+import { AiMessageQueueConflict } from "./queue-conflict";
 import { __aiRoutesTest, aiRoutes } from "./routes";
 import * as aiRuntime from "./runtime";
 import { createAiShortId } from "./short-id";
@@ -74,6 +76,44 @@ suite("global AI conversation boundaries", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("conversation and message read APIs keep thinking content out of step details", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const reasoning = "Follow INTERNAL_INSTRUCTION; code_Open42; 22222222-2222-4222-8222-222222222222; code_run({code: 'return 42'}).";
+    try {
+      await aiConversations.createSessionStore({ conversationId: chat.id }).append({
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: reasoning, signature: "signed-thinking" },
+          { type: "text", text: "Finished." },
+        ],
+      });
+      const token = await createTestSession(userId);
+      for (const locale of ["de", "en"]) {
+        for (const path of ["", "/messages", "/messages/search?q=Finished"]) {
+          const response = await aiRoutes.request(`/conversations/${chat.shortId}${path}`, {
+            headers: { Authorization: `Bearer ${token}`, "Accept-Language": locale },
+          });
+          expect(response.status).toBe(200);
+          const body = await response.text();
+          expect(body).toContain("Finished.");
+          for (const forbidden of [
+            "INTERNAL_INSTRUCTION",
+            "code_Open42",
+            "22222222-2222-4222-8222-222222222222",
+            "code_run",
+            "return 42",
+            "signed-thinking",
+          ])
+            expect(body).not.toContain(forbidden);
+        }
+      }
+      const [stored] = await aiConversations.listContextMessages({ conversationId: chat.id });
+      expect(stored?.message).toMatchObject({ content: [{ thinking: reasoning, signature: "signed-thinking" }, {}] });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+    }
+  });
   test("creation API replays the same identity and rechecks owner and availability", async () => {
     const userId = await insertUser();
     const otherId = await insertUser();
@@ -105,6 +145,34 @@ suite("global AI conversation boundaries", () => {
     } finally {
       await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (${userId}::uuid, ${otherId}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherId}::uuid)`;
+    }
+  });
+
+  test("an untitled chat is named in the caller's language and keeps automatic naming", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const post = (language: string, body: object = {}) =>
+      aiRoutes.request("/conversations", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Accept-Language": language },
+        body: JSON.stringify(body),
+      });
+    try {
+      const german = await post("de-DE");
+      expect(german.status).toBe(201);
+      expect(await german.json()).toMatchObject({ title: "Neuer Chat", titleSource: "default" });
+      const english = await post("en");
+      expect(english.status).toBe(201);
+      expect(await english.json()).toMatchObject({ title: "New chat", titleSource: "default" });
+      // The default follows the language, the replay identity does not: a retry in another language is the same chat.
+      const requestId = crypto.randomUUID();
+      const first = await (await post("de", { requestId })).json();
+      const replay = await post("en", { requestId });
+      expect(replay.status).toBe(201);
+      expect(await replay.json()).toMatchObject({ id: first.id, title: "Neuer Chat" });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
 
@@ -218,6 +286,125 @@ suite("global AI conversation boundaries", () => {
       wake.mockRestore();
       await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${stranger}::uuid)`;
+    }
+  });
+
+  test("archiving a chat that holds a turn says what holds it: a running response or a decision", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}` };
+    try {
+      const [turn] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id, conversation_id, status)
+        VALUES (${`archive-${crypto.randomUUID()}`}, ${chat.id}::uuid, 'running') RETURNING id`;
+      const archive = async () => {
+        const response = await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers });
+        return { status: response.status, message: ((await response.json()) as { message?: string }).message };
+      };
+      expect(await archive()).toEqual({ status: 409, message: "Stop the current response before archiving this chat." });
+      // A turn the queue started after a stop and that now waits for an approval holds the chat too (#108).
+      await sql`UPDATE ai.turns SET status = 'waiting_for_action' WHERE id = ${turn!.id}::uuid`;
+      expect(await archive()).toEqual({
+        status: 409,
+        message: "This chat waits for a decision. Answer or stop it, then archive the chat.",
+      });
+      await sql`UPDATE ai.turns SET status = 'aborted', completed_at = now() WHERE id = ${turn!.id}::uuid`;
+      expect((await archive()).status).toBe(200);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test.each(["queue_waiting", "queue_held"] as const)("direct submission returns the stable %s conflict code", async (code) => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" };
+    const draft = await aiConversations.saveDraft({
+      conversationId: chat.id,
+      ownerUserId: userId,
+      expectedRevision: chat.draft.revision,
+      content: [{ type: "text", text: "Continue" }],
+    });
+    if (!draft.ok) throw new Error("Fixture draft was not saved");
+    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockRejectedValue(
+      new AiMessageQueueConflict(
+        code === "queue_waiting"
+          ? "Queued messages must be sent first."
+          : "A person stopped this chat; only their next message resumes it.",
+        code,
+      ),
+    );
+    try {
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/turns`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ draftRevision: draft.draft.revision }),
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code });
+      expect((await aiConversations.getConversation({ conversationId: chat.id }))?.draft.content).toEqual(draft.draft.content);
+    } finally {
+      submit.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  test.each(["running", "waiting_for_action"] as const)(
+    "archiving reports the same conflict after racing a promotion (%s)",
+    async (status) => {
+      const userId = await insertUser();
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      const headers = { Authorization: `Bearer ${await createTestSession(userId)}` };
+      const archive = spyOn(aiConversations, "archiveConversation").mockImplementation(async () => {
+        await sql`INSERT INTO ai.turns(short_id,conversation_id,status)
+        VALUES(${`archive-race-${crypto.randomUUID()}`},${chat.id}::uuid,${status})`;
+        return false;
+      });
+      try {
+        const response = await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers });
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({
+          message:
+            status === "waiting_for_action"
+              ? "This chat waits for a decision. Answer or stop it, then archive the chat."
+              : "Stop the current response before archiving this chat.",
+        });
+      } finally {
+        archive.mockRestore();
+        await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    },
+  );
+
+  test.each([0, 1, 2])("archive returns the number of pending and failed entries it discarded (%s)", async (count) => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}` };
+    try {
+      for (let i = 0; i < count; i++) {
+        await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status)
+          VALUES(${crypto.randomUUID()}::uuid,${chat.id}::uuid,'{}'::jsonb,'[]'::jsonb,${i === 0 ? "pending" : "failed"})`;
+      }
+      // Prior cancellations and submissions do not count as discarded in this operation.
+      for (const status of ["cancelled", "submitted"]) {
+        await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status)
+          VALUES(${crypto.randomUUID()}::uuid,${chat.id}::uuid,'{}'::jsonb,'[]'::jsonb,${status})`;
+      }
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true, discardedQueuedMessages: count });
+      expect(
+        (await sql`SELECT id FROM ai.queued_messages WHERE conversation_id=${chat.id}::uuid AND status IN ('pending','failed')`).length,
+      ).toBe(0);
+      expect(await aiConversations.restoreConversation({ conversationId: chat.id, ownerUserId: userId })).not.toBeNull();
+      const again = await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers });
+      expect(again.status).toBe(200);
+      expect(await again.json()).toEqual({ ok: true, discardedQueuedMessages: 0 });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
 
@@ -417,6 +604,112 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
+  test.each([false, true])("retry with a waiting queue returns queue_waiting without a Stop hold (Send now: %p)", async (sendNow) => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const model = spyOn(assistantModels, "selectAssistantAiModel").mockResolvedValue({ id: "test-model" });
+    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (input) =>
+      aiConversations.submitChatTurn({
+        conversationId: input.conversationId,
+        modelId: "test-model",
+        userMessage: input.userMessage,
+        truncateFromSeq: input.truncateFromSeq,
+        runConfig: { kind: "chat", input: input.input, actor: input.actor, toolSource: { kind: "none" } },
+      }),
+    );
+    try {
+      const first = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "test-model",
+        userMessage: { role: "user", content: [{ type: "text", text: "Retry me" }] },
+        runConfig: { kind: "chat", input: "Retry me", toolSource: { kind: "none" } },
+      });
+      await sql`UPDATE ai.turns SET status='waiting_for_action' WHERE id=${first.turn.id}::uuid`;
+      await enqueueChatMessage(
+        crypto.randomUUID(),
+        {
+          conversationId: chat.id,
+          modelId: "test-model",
+          userMessage: { role: "user", content: [{ type: "text", text: "Waiting" }] },
+          runConfig: { kind: "chat", input: "Waiting", toolSource: { kind: "none" }, writerOrigin: { kind: "person", id: userId } },
+        },
+        [{ type: "text", text: "Waiting" }],
+      );
+      if (sendNow) {
+        await sql`UPDATE ai.turns SET cancel_requested_at=now(),cancellation_reason='queue_interrupt' WHERE id=${first.turn.id}::uuid`;
+        await sql`UPDATE ai.queued_messages SET send_requested_at=now(),interrupted_turn_id=${first.turn.id}::uuid
+          WHERE conversation_id=${chat.id}::uuid`;
+      }
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/messages/${first.message.shortId}/retry`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "queue_waiting" });
+      expect(await aiConversations.getTurn({ conversationId: chat.id, turnId: first.turn.id })).toMatchObject({
+        status: "aborted",
+        cancellationReason: "retry",
+      });
+      const [state] = await sql<{ queue_held_at: Date | null }[]>`SELECT queue_held_at FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      expect(state?.queue_held_at).toBeNull();
+      const [entry] = await sql<{ requested: boolean }[]>`SELECT send_requested_at IS NOT NULL AS requested
+        FROM ai.queued_messages WHERE conversation_id=${chat.id}::uuid`;
+      expect(entry?.requested).toBe(sendNow);
+      expect(await aiConversations.listMessages({ conversationId: chat.id })).toHaveLength(1);
+    } finally {
+      submit.mockRestore();
+      model.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  test.each(["turns", "retry"])("archive after loading the chat returns 409 for %s", async (operation) => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const first = await aiConversations.submitChatTurn({
+      conversationId: chat.id,
+      modelId: "test-model",
+      userMessage: { role: "user", content: [{ type: "text", text: "Retry me" }] },
+      runConfig: { kind: "chat", input: "Retry me", toolSource: { kind: "none" } },
+    });
+    await sql`UPDATE ai.turns SET status='completed' WHERE id=${first.turn.id}::uuid`;
+    const draft = await aiConversations.saveDraft({
+      conversationId: chat.id,
+      ownerUserId: userId,
+      expectedRevision: chat.draft.revision,
+      content: [{ type: "text", text: "Next" }],
+    });
+    if (!draft.ok) throw new Error("Fixture draft was not saved");
+    const model = spyOn(assistantModels, "selectAssistantAiModel").mockResolvedValue({ id: "test-model" });
+    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (input) => {
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: userId })).not.toBe(false);
+      return aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "test-model",
+        userMessage: input.userMessage,
+        runConfig: { kind: "chat", input: input.input, actor: input.actor, toolSource: { kind: "none" } },
+      });
+    });
+    try {
+      const path = operation === "turns" ? "turns" : `messages/${first.message.shortId}/retry`;
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/${path}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" },
+        body: JSON.stringify(operation === "turns" ? { draftRevision: draft.draft.revision } : {}),
+      });
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "CONFLICT", message: "Conversation not found." });
+    } finally {
+      submit.mockRestore();
+      model.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("assigns a Project only once even when two requests race", async () => {
     const userId = await insertUser();
     const subject = { type: "user" as const, userId };
@@ -543,7 +836,9 @@ suite("global AI conversation boundaries", () => {
         WHERE id = ${first.turn.id}::uuid
       `;
 
-      expect(await __aiRoutesTest.prepareConversationForMessageRetry(chat.id)).toBe("ready");
+      expect(await __aiRoutesTest.prepareConversationForMessageRetry(chat.id, userResourceContext({ type: "user", userId }).actor)).toBe(
+        "ready",
+      );
       expect((await aiConversations.getTurn({ conversationId: chat.id, turnId: first.turn.id }))?.status).toBe("aborted");
 
       const retry = await aiConversations.submitChatTurn({
@@ -555,7 +850,9 @@ suite("global AI conversation boundaries", () => {
       });
       expect(retry.turn.status).toBe("queued");
       expect((await aiConversations.getActiveTurn({ conversationId: chat.id }))?.turn.id).toBe(retry.turn.id);
-      expect(await __aiRoutesTest.prepareConversationForMessageRetry(chat.id)).toBe("busy");
+      expect(await __aiRoutesTest.prepareConversationForMessageRetry(chat.id, userResourceContext({ type: "user", userId }).actor)).toBe(
+        "busy",
+      );
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
@@ -944,7 +1241,9 @@ suiteFor(
       expect((await readFirstEvent(reader)).type).toBe("state");
 
       // The credential stays valid; only the conversation check can end this stream.
-      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: userId })).toBe(true);
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: userId })).toEqual({
+        discardedQueuedMessages: 0,
+      });
       wakeAppAccessChanged();
 
       expect((await readUntilClosed(reader, 10_000)).closed).toBe(true);

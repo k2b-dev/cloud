@@ -1,4 +1,3 @@
-import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { openCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
@@ -6,6 +5,8 @@ import { listenPopState, navigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
 import {
+  type ActivityEntry,
+  ActivityList,
   AppWorkspace,
   Avatar,
   Button,
@@ -13,6 +14,7 @@ import {
   DetailPanel,
   dialogCore,
   IconButton,
+  LoadMore,
   PanelDialog,
   Placeholder,
   panelDialogOptions,
@@ -61,6 +63,8 @@ type Props = {
   initialActivity: { items: ActivityItem[]; nextCursor: string | null };
   initialActivityError: string | null;
   dateConfig: DateContext;
+  /** The server's time, so the server and the first browser render show the same activity times. */
+  now: string;
 };
 
 const activityIcon = (action: string) =>
@@ -167,7 +171,20 @@ export default function SpacesOverview(props: Props) {
     getNextCursor: (page) => page.nextCursor,
   });
   const activityItems = createMemo(() => activity.pages().flatMap((page) => page.data));
-  const activityError = () => activity.error()?.message ?? initialActivityError();
+  // A failed older page keeps the loaded rows and says so at the list's end, where "Load more" was; any other failure
+  // stands above the list (or alone without rows) with "Reload".
+  const [failedPage, setFailedPage] = createSignal<Error | null>(null);
+  const loadMoreActivity = async () => {
+    const before = activity.error();
+    await activity.loadMore();
+    const after = activity.error();
+    setFailedPage(after !== before ? after : null);
+  };
+  const pageError = () => {
+    const failed = activity.error();
+    return failed && failed === failedPage() ? failed.message : null;
+  };
+  const activityError = () => (pageError() ? null : (activity.error()?.message ?? initialActivityError()));
 
   const workViewOptions = () =>
     (["mine", "today", "upcoming"] as const).map((id) => ({
@@ -222,83 +239,64 @@ export default function SpacesOverview(props: Props) {
       );
   const openSearch = () => openGlobalSearch({ scope: { appId: "spaces", label: "Spaces", icon: "ti ti-layout-kanban" } });
 
+  const activityHref = (entry: ActivityItem) =>
+    entry.item ? `/app/spaces/${entry.space.id}?item=${entry.item.id}` : `/app/spaces/${entry.space.id}`;
+  // The sentence links to the Space or item; the person stands in the meta line, "automatic" for the system.
+  const activityEntries = (): ActivityEntry[] =>
+    activityItems().map(
+      (entry): ActivityEntry => ({
+        id: entry.id,
+        at: entry.lastOccurredAt,
+        icon: activityIcon(entry.action),
+        tone: entry.action.endsWith(".completed") ? "success" : "neutral",
+        text: activityDescription(entry),
+        href: activityHref(entry),
+        actor: entry.actor.kind === "system" ? null : entry.actor.displayName,
+      }),
+    );
+  const reloadActivity = () => {
+    setInitialActivityError(null);
+    void activity.refresh();
+  };
   const activityFeed = () => (
     <Show
-      when={!activityError()}
+      when={activityItems().length > 0}
       fallback={
-        <Placeholder
-          state="error"
-          title={t.couldNotLoadActivity}
-          description={activityError() ?? undefined}
-          icon="ti ti-alert-circle"
-          action={
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                setInitialActivityError(null);
-                void activity.refresh();
-              }}
-            >
-              <i class="ti ti-refresh" aria-hidden="true" /> {t.retry}
-            </Button>
+        <Show
+          when={activityError()}
+          fallback={
+            <Show when={activity.loading()} fallback={<ActivityList.Empty text={t.noActivityDescription} />}>
+              <ActivityList.Loading label={t.loadingActivity} />
+            </Show>
           }
-        />
+        >
+          {(message) => <ActivityList.Error text={`${t.couldNotLoadActivity}: ${message()}`} onReload={reloadActivity} />}
+        </Show>
       }
     >
-      <Show
-        when={activityItems().length > 0}
-        fallback={
-          <Placeholder
-            state={activity.loading() ? "loading" : "empty"}
-            title={activity.loading() ? t.loadingActivity : t.noActivity}
-            description={activity.loading() ? undefined : t.noActivityDescription}
-            icon="ti ti-history"
-          />
-        }
-      >
-        <ol class="spaces-overview-activity-list" aria-label={t.recentActivity}>
-          <For each={activityItems()}>
-            {(entry) => (
-              <li class="spaces-overview-activity-item">
-                <CloudAvatar
-                  username={entry.actor.displayName}
-                  userId={entry.actor.id}
-                  avatarHash={entry.actor.avatarHash}
-                  kind={entry.actor.kind}
-                  size="sm"
-                />
-                <a
-                  href={entry.item ? `/app/spaces/${entry.space.id}?item=${entry.item.id}` : `/app/spaces/${entry.space.id}`}
-                  class="spaces-overview-activity-row"
-                >
-                  <i class={`${activityIcon(entry.action)} spaces-overview-activity-icon app-accent-text`} aria-hidden="true" />
-                  <span class="spaces-overview-activity-meta">
-                    <strong>{entry.actor.displayName}</strong>
-                    <span aria-hidden="true">·</span>
-                    <time datetime={entry.lastOccurredAt} title={dates.formatDateTime(entry.lastOccurredAt, props.dateConfig)}>
-                      {dates.formatDateTimeRelative(entry.lastOccurredAt, props.dateConfig)}
-                    </time>
-                  </span>
-                  <span class="spaces-overview-activity-description">{activityDescription(entry)}</span>
-                </a>
-              </li>
-            )}
-          </For>
-        </ol>
-        <Show when={activity.hasMore()}>
-          <Button
-            size="sm"
-            variant="secondary"
-            class="mx-auto mt-2"
-            loading={activity.loadingMore()}
-            loadingLabel={t.loadingMoreActivity}
-            onClick={() => void activity.loadMore()}
-          >
-            {t.loadMore}
-          </Button>
-        </Show>
+      <Show when={activityError()}>
+        {(message) => (
+          <div class="spaces-overview-activity-alert">
+            <ActivityList.Error text={`${t.couldNotLoadActivity}: ${message()}`} onReload={reloadActivity} />
+          </div>
+        )}
       </Show>
+      <ActivityList
+        entries={activityEntries()}
+        now={props.now}
+        dateConfig={props.dateConfig}
+        label={t.recentActivity}
+        more={activity.hasMore()}
+      />
+      <LoadMore
+        hasMore={activity.hasMore()}
+        onLoadMore={loadMoreActivity}
+        auto={false}
+        loading={activity.loadingMore()}
+        error={pageError()}
+        label={t.loadMore}
+        loadingLabel={t.loadingMoreActivity}
+      />
     </Show>
   );
   const openMobileActivity = () =>

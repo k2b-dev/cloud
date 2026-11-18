@@ -513,3 +513,77 @@ describe("complete review proposal", () => {
       }, 30_000);
     }
 });
+
+describe("a step whose outcome Cloud could not see", () => {
+  for (const view of [VIEWS[0], VIEWS[1]])
+    test(`says so in meta, and its card offers Check status only on a press or Enter (${view.name})`, async () => {
+      const { page, errors, close } = await open(view, "scenarios=mail&state=pending");
+      try {
+        await page.locator(".ai-turn-work > summary").click();
+        await settled(page);
+        // The turn's only step: the send whose answer was lost.
+        const step = page.locator(".ai-turn-steps > .k2b-chat-activity").first();
+        const meta = step.locator(".k2b-chat-activity__meta");
+        expect(await meta.innerText()).toBe("Ausgang unklar");
+        expect(await meta.getAttribute("data-tone")).toBe("warning");
+        const info = step.getByRole("button", { name: /^Details: / });
+        expect(await info.getAttribute("aria-haspopup")).toBe("dialog");
+        const card = page.locator(".k2b-hover-card:popover-open");
+        if (view.touch) {
+          // A tap opens the card as a sheet from below.
+          await info.tap();
+          await card.waitFor();
+          expect(await card.getAttribute("data-sheet")).toBe("");
+        } else {
+          // A resting pointer opens no card with an action; Enter does, and the focus moves in.
+          await info.hover();
+          await page.waitForTimeout(700); // fixed wait: nothing may open, so there is no event to await
+          expect(await card.count()).toBe(0);
+          await info.focus();
+          await page.keyboard.press("Enter");
+          await card.waitFor();
+        }
+        expect(await card.innerText()).toContain("Ob das geschehen ist, steht nicht fest.");
+        const check = card.getByRole("button", { name: "Stand prüfen" });
+        await check.waitFor();
+        await check.click();
+        await page.waitForFunction(() => (window as unknown as { checks: string[] }).checks.length === 1);
+        // The check found it done: the card says so, the row's outcome word is gone, and the focus stayed in the card.
+        await card.getByText("Geprüft: Es ist geschehen.").waitFor();
+        expect(await meta.count()).toBe(0);
+        expect(await page.evaluate(() => document.querySelector(".k2b-hover-card:popover-open")?.contains(document.activeElement))).toBe(
+          true,
+        );
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => document.querySelector(".k2b-hover-card:popover-open") === null);
+        expect(await info.evaluate((node) => node === document.activeElement)).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }, 30_000);
+});
+
+test("a step that waits for an approval leads to it from its card", async () => {
+  const { page, errors, close } = await open(VIEWS[0], "scenarios=mail");
+  try {
+    await page.locator(".ai-turn-work > summary").click();
+    await settled(page);
+    const step = page.locator(".ai-turn-steps > .k2b-chat-activity", { has: page.locator('.k2b-chat-activity__meta[data-tone="ai"]') });
+    expect(await step.locator(".k2b-chat-activity__meta").innerText()).toBe("Wartet auf dich");
+    await step.getByRole("button", { name: /^Details: / }).click();
+    const card = page.locator(".k2b-hover-card:popover-open");
+    await card.waitFor();
+    await card.getByRole("button", { name: "Zur Freigabe" }).click();
+    // The host lands on the question's anchor, the step's block id, with the landing of "Waiting for you".
+    expect(await page.evaluate(() => (window as unknown as { shownQuestions: string[] }).shownQuestions)).toEqual([
+      await page
+        .locator(".k2b-chat-decision")
+        .first()
+        .evaluate((node) => node.closest("[data-chat-anchor]")?.getAttribute("data-chat-anchor") ?? ""),
+    ]);
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+}, 30_000);

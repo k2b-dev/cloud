@@ -16,6 +16,7 @@ import { installAppAccessRecovery } from "../browser/app-access-recovery";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
 import { type IdleState, type IdleWarning, installSharedWorkstation } from "../browser/idle-sign-out";
+import { installMaintenanceNotice } from "../browser/maintenance-notice";
 import { navigationSearchItems } from "../browser/navigation-search";
 import { reportPageSwapFallbacks } from "../browser/page-swap-fallbacks";
 import { openPanel, type PanelRequest } from "../browser/panel";
@@ -71,6 +72,11 @@ export type ShellRuntimeProps = {
   privacy?: { timerSeconds: PrivacyTimerSeconds; name: string };
   /** Signed-in browser sessions: with `idle` this browser is a shared workstation and signs out without input. */
   browserSession?: { userId: string; sid: string; idle?: IdleState };
+  /**
+   * Every page watches for maintenance and app restarts. `bypass`: the gateway let this page past the maintenance wall
+   * with an admin bypass link. `canEnd`: the viewer is an administrator and may end a maintenance from the notice.
+   */
+  maintenance?: { bypass?: true; canEnd?: true };
 };
 
 /** The search rows of the shell's destinations; the page carries each link once, without the fields a row repeats. */
@@ -103,6 +109,16 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
   onMount(() => {
     if (props.appAccess) onCleanup(installAppAccessRecovery(props.appAccess));
   });
+  onMount(() =>
+    onCleanup(
+      installMaintenanceNotice({
+        locale,
+        appName: (appId) => readShellData()?.apps.find((app) => app.id === appId)?.label,
+        bypass: props.maintenance?.bypass === true,
+        canEnd: props.maintenance?.canEnd === true,
+      }),
+    ),
+  );
   onMount(() => onCleanup(installInputModeController()));
   if (props.privacy) {
     const privacy = props.privacy;
@@ -174,7 +190,17 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
         if (!panel || stopped) return;
         dispose ??= panel.installPanelSlot();
         if (request) panel.handlePanelRequest(request);
+        return true;
       };
+      // Keep a click on the server-rendered trigger while the controller's chunk is still loading.
+      const menuPlaceholder = document.querySelector<HTMLButtonElement>("[data-cloud-panel-menu] button");
+      const openMenu = () => {
+        void load().then((loaded) => {
+          if (loaded && !stopped && !menuPlaceholder?.isConnected)
+            document.querySelector<HTMLButtonElement>("[data-cloud-panel-menu] button")?.click();
+        });
+      };
+      menuPlaceholder?.addEventListener("click", openMenu);
       const request = (event: CustomEvent<PanelRequest>) => {
         const detail = event.detail;
         if (detail.action === "open") {
@@ -210,6 +236,7 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
       onCleanup(() => {
         stopped = true;
         dispose?.();
+        menuPlaceholder?.removeEventListener("click", openMenu);
         window.removeEventListener("pageshow", restored);
         window.removeEventListener("cloud.panel.request", request);
         window.removeEventListener("keydown", key);

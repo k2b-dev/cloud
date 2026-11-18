@@ -1,24 +1,24 @@
 import { AccessSummary, openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
-import { text } from "@k2b/stdlib";
+import { dates, text } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,
   confirmDiscardIfDirty,
   DescriptionList,
-  Format,
   IconButton,
   IconInput,
   NoticeCard,
   NumberInput,
   Placeholder,
-  ProgressBar,
   prompts,
   SettingsField,
   SettingsGroup,
   SettingsModal,
   SettingsPanelFooter,
   Skeleton,
+  StatCell,
+  StatGrid,
   StatusBadge,
   TextInput,
   toast,
@@ -135,6 +135,15 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       const t = usePulseMessages();
       const locale = useLocale();
       const storeT = createMemo(() => baseStoreMessages.resolve([locale()]).t);
+      /** "24 % used": the share of a limit, on the third line of a usage figure. */
+      const shareUsed = (used: number, limit: number) =>
+        t().settingsShareUsed({
+          share: new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 0 }).format(limit > 0 ? used / limit : 0),
+        });
+      const queriesShare = () => {
+        const limits = usage.data();
+        return limits ? shareUsed(limits.queriesUsed, limits.queriesPerHour) : undefined;
+      };
       let disposed = false;
       const store = () => options.currentStore() ?? options.base.store;
       // A Cloud admin decides about a checkpoint mismatch first; clearing would take away the restore option.
@@ -251,29 +260,29 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       const grantAccess = async (principal: Principal, permission: GrantableLevel) => {
         requireOpen();
         requireAccessWritable();
-        await grantMutation.mutate({ principal, permission });
+        const outcome = await grantMutation.mutate({ principal, permission });
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
-        const error = grantMutation.error();
-        if (error) throw error;
+        if (outcome === "error") throw grantMutation.error();
+        if (outcome !== "success") throw new DOMException("Access grant did not run", "AbortError");
         wroteAccess = true;
         return grantMutation.data()!;
       };
       const updateAccess = async (accessId: string, permission: GrantableLevel) => {
         requireOpen();
         requireAccessWritable();
-        await updateMutation.mutate({ accessId, permission });
+        const outcome = await updateMutation.mutate({ accessId, permission });
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
-        const error = updateMutation.error();
-        if (error) throw error;
+        if (outcome === "error") throw updateMutation.error();
+        if (outcome !== "success") throw new DOMException("Access update did not run", "AbortError");
         wroteAccess = true;
       };
       const revokeAccess = async (accessId: string) => {
         requireOpen();
         requireAccessWritable();
-        await revokeMutation.mutate(accessId);
+        const outcome = await revokeMutation.mutate(accessId);
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
-        const error = revokeMutation.error();
-        if (error) throw error;
+        if (outcome === "error") throw revokeMutation.error();
+        if (outcome !== "success") throw new DOMException("Access revoke did not run", "AbortError");
         wroteAccess = true;
       };
       // Changes are collected in the access dialog and saved together; the list reloads once afterwards.
@@ -663,72 +672,48 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
             </SettingsModal.Tab>
 
             <SettingsModal.Tab id="usage" title={t().settingsUsage} icon="ti ti-gauge">
-              <div class="mb-6 grid max-w-[860px] grid-cols-1 gap-6 @min-[760px]/k2b-app-area:grid-cols-3">
-                <div>
-                  <p class="text-[13px] text-dimmed">{storeT().usage}</p>
-                  <Show when={store().usage} fallback={<p class="mt-2 text-sm text-secondary">{storeT().notMeasured}</p>}>
-                    {(measured) => (
-                      <>
-                        <p class="mt-0.5 mb-2 text-[22px] font-semibold tabular-nums">
+              {/* Three figures under the tab head: the limit stands quietly at the figure, the share and when it was
+                  measured on the third line. */}
+              <StatGrid variant="plain" columns={3} class="mb-6 max-w-[860px]">
+                <Show when={store().usage} fallback={<StatCell label={storeT().usage} value={null} sub={storeT().notMeasured} />}>
+                  {(measured) => (
+                    <StatCell
+                      label={storeT().usage}
+                      value={
+                        <>
                           {text.pprintBytes(measured().bytes, { locale: locale(), mode: "si" })}{" "}
-                          <span class="text-[13px] font-medium text-dimmed">
-                            / {text.pprintBytes(store().limits.storageBytes, { locale: locale(), mode: "si" })}
-                          </span>
-                        </p>
-                        <ProgressBar
-                          value={(measured().bytes / store().limits.storageBytes) * 100}
-                          label={storeT().usageOf({
-                            used: text.pprintBytes(measured().bytes, { locale: locale(), mode: "si" }),
-                            limit: text.pprintBytes(store().limits.storageBytes, { locale: locale(), mode: "si" }),
-                          })}
-                          size="xs"
-                        />
-                        <p class="mt-1 text-xs text-dimmed">
-                          {storeT().measured} <Format.RelativeTime value={measured().measuredAt} />
-                        </p>
-                      </>
-                    )}
-                  </Show>
-                </div>
-                <div>
-                  <p class="text-[13px] text-dimmed">{t().settingsValuesPerMinute}</p>
-                  <p class="mt-0.5 text-[22px] font-semibold tabular-nums">
-                    {new Intl.NumberFormat(locale()).format(store().limits.valuesPerMinute)}
-                  </p>
-                  <p class="text-xs text-dimmed">{t().settingsRateLimitOnly}</p>
-                </div>
-                <div>
-                  <p class="text-[13px] text-dimmed">{t().settingsQueriesPerHour}</p>
-                  <Show
-                    when={!usage.error() && usage.data()}
-                    fallback={
-                      <Show
-                        when={usage.loading() && !usage.error()}
-                        fallback={<p class="mt-2 text-sm text-secondary">{t().settingsUsageFailed}</p>}
-                      >
-                        <Skeleton class="mt-2 h-7 w-32" />
-                        <Skeleton class="mt-2 h-1 w-full" />
-                      </Show>
-                    }
-                  >
-                    {(limits) => (
-                      <>
-                        <p class="mt-0.5 mb-2 text-[22px] font-semibold tabular-nums">
+                          <small>/ {text.pprintBytes(store().limits.storageBytes, { locale: locale(), mode: "si" })}</small>
+                        </>
+                      }
+                      sub={`${shareUsed(measured().bytes, store().limits.storageBytes)} · ${storeT().measured} ${dates.formatTimeSpan(
+                        new Date(measured().measuredAt),
+                        { locale: locale(), timeZone: "UTC" },
+                      )}`}
+                    />
+                  )}
+                </Show>
+                <StatCell
+                  label={t().settingsValuesPerMinute}
+                  value={new Intl.NumberFormat(locale()).format(store().limits.valuesPerMinute)}
+                  sub={t().settingsRateLimitOnly}
+                />
+                <StatCell
+                  label={t().settingsQueriesPerHour}
+                  status={usage.error() ? "error" : !usage.data() ? "loading" : undefined}
+                  onRetry={() => void usage.refresh()}
+                  value={
+                    <Show when={usage.data()}>
+                      {(limits) => (
+                        <>
                           {new Intl.NumberFormat(locale()).format(limits().queriesUsed)}{" "}
-                          <span class="text-[13px] font-medium text-dimmed">
-                            / {new Intl.NumberFormat(locale()).format(limits().queriesPerHour)}
-                          </span>
-                        </p>
-                        <ProgressBar
-                          value={(limits().queriesUsed / limits().queriesPerHour) * 100}
-                          label={t().settingsQueriesPerHour}
-                          size="xs"
-                        />
-                      </>
-                    )}
-                  </Show>
-                </div>
-              </div>
+                          <small>/ {new Intl.NumberFormat(locale()).format(limits().queriesPerHour)}</small>
+                        </>
+                      )}
+                    </Show>
+                  }
+                  sub={queriesShare()}
+                />
+              </StatGrid>
               <StoreStatusGroup store={store} busy={retrying} onRetry={() => options.canAdmin && void retry()} />
               <SettingsGroup title={t().settingsSqlLimits}>
                 <div class="min-h-48">

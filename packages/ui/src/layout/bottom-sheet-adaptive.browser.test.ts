@@ -127,7 +127,9 @@ describe("adaptive bottom sheet", () => {
             );
           });
           expect(corners.every((radius) => radius > 0)).toBe(true);
-          expect(await dialog.evaluate((el) => getComputedStyle(el).animationName)).toBe("k2b-sheet-dialog-enter");
+          // As a dialog it rises and fades like every dialog, with no sheet keyframes of its own.
+          expect(await dialog.evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
+          expect(await dialog.evaluate((el) => getComputedStyle(el).transitionProperty)).toContain("translate");
           // The handle precedes these actions in the DOM; Tab must skip it.
           for (const name of ["Cancel", "Apply"]) {
             await page.keyboard.press("Tab");

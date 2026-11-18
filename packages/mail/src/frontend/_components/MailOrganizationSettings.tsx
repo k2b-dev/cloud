@@ -136,13 +136,11 @@ export default function MailOrganizationSettings(props: {
       variant: "danger",
     });
     if (!confirmed || disposed) return;
-    await removeTagMutation.mutate(tag);
-    if (removeTagMutation.error()) throw removeTagMutation.error();
+    if ((await removeTagMutation.mutate(tag)) === "error") throw removeTagMutation.error();
   };
 
   const saveTagValue = async (existing: LocalTag | undefined, value: { name: string; color: string }) => {
-    await saveTag.mutate({ existing, ...value });
-    if (saveTag.error()) throw saveTag.error();
+    if ((await saveTag.mutate({ existing, ...value })) === "error") throw saveTag.error();
   };
 
   return (

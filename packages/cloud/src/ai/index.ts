@@ -328,6 +328,15 @@ export {
   isNewerWireEvent,
 } from "./protocol";
 export { createAiProvider } from "./provider";
+export {
+  AI_MESSAGE_QUEUE_LIMIT,
+  type AiMessageOrigin,
+  AiMessageOriginSchema,
+  type AiQueuedMessage,
+  AiQueuedMessageSchema,
+  type AiQueueLiveEvent,
+  type AiSendQueuedMessageResult,
+} from "./queue-contracts";
 export { AiQuotaError } from "./quotas";
 export { isConversationResourceCursor } from "./resource-refs";
 export { describeAiResourceTypeCounts } from "./resource-type-counts";

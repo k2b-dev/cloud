@@ -1465,6 +1465,91 @@ const StatsDemo = () => (
   </DemoCard>
 );
 
+const PlainStatsDemo = () => {
+  const head = (
+    <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "1rem", "margin-bottom": "1rem" }}>
+      <div>
+        <b style={{ "font-size": "1.125rem", "font-weight": "600" }}>Tasks</b>
+        <span style={{ display: "block", "font-size": "0.8125rem", color: "var(--k2b-text-muted)" }}>Project summer fair</span>
+      </div>
+      <Button variant="primary" size="sm">
+        <i class="ti ti-plus" aria-hidden="true" />
+        New task
+      </Button>
+    </div>
+  );
+  return (
+    <DemoCard
+      id="stats-plain"
+      chip={[
+        { kind: "component", name: "StatGrid", from: "@k2b/ui" },
+        { kind: "component", name: "StatCell", from: "@k2b/ui" },
+      ]}
+      description={`variant="plain" sets the figures under a page head without tiles: equal columns with a thin line between, two columns in a container of 34rem or less. Every figure has the same three rows, label, figure and a reserved third line, so all figures stand on one line. The unit stands quietly in the figure; a warning colours the figure and its third line, with icon and word. size="lg" makes a main figure larger. The second row shows loading, error, empty and stale in the same place.`}
+      code={`<StatGrid variant="plain">
+  <StatCell label="Open" value={<>128 <small>of 340</small></>} sub="38 % of stock" />
+  <StatCell label="Due this week" value={12} accent={{ tone: "zinc", icon: "ti ti-trending-up", text: "4 more than last week" }} />
+  <StatCell label="Overdue" value={3} tone="amber" accent={{ tone: "amber", icon: "ti ti-alert-triangle", text: "oldest for 2 days" }} />
+  <StatCell label="Done" value={212} sub="62 % of all" />
+</StatGrid>
+
+<StatGrid variant="plain" size="lg" columns={3}>
+  <StatCell label="Revenue this month" value={<>48,210 <small>EUR</small></>} delta={{ value: 0.082, better: "up" }} compare={{ label: "Last month", value: "44,560" }} />
+  …
+</StatGrid>`}
+    >
+      <div style={{ display: "grid", gap: "1.5rem" }}>
+        <Paper as="section" style={{ padding: "1.25rem 1.5rem" }}>
+          {head}
+          <StatGrid variant="plain">
+            <StatCell
+              label="Open"
+              value={
+                <>
+                  128 <small>of 340</small>
+                </>
+              }
+              sub="38 % of stock"
+            />
+            <StatCell
+              label="Due this week"
+              value={12}
+              accent={{ tone: "zinc", icon: "ti ti-trending-up", text: "4 more than last week" }}
+            />
+            <StatCell
+              label="Overdue"
+              value={3}
+              tone="amber"
+              accent={{ tone: "amber", icon: "ti ti-alert-triangle", text: "oldest for 2 days" }}
+            />
+            <StatCell label="Done" value={212} sub="62 % of all" />
+          </StatGrid>
+        </Paper>
+        <StatGrid variant="plain">
+          <StatCell label="Open" value={null} status="loading" />
+          <StatCell label="Due this week" value={null} status="error" onRetry={() => undefined} />
+          <StatCell label="Overdue" value={null} sub="Nothing counted in this period" />
+          <StatCell label="Done" value={212} stale="As of 09:12 · not current" onRetry={() => undefined} />
+        </StatGrid>
+        <StatGrid variant="plain" size="lg" columns={3} title="This month" action={{ label: "Reports", href: "./reports" }}>
+          <StatCell
+            label="Revenue"
+            value={
+              <>
+                48,210 <small>EUR</small>
+              </>
+            }
+            delta={{ value: 0.082, better: "up" }}
+            compare={{ label: "Last month", value: "44,560" }}
+          />
+          <StatCell label="Orders" value={1284} delta={{ value: -0.031, better: "up" }} compare={{ label: "Last month", value: "1,325" }} />
+          <StatCell label="Returns" value={41} tone="red" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "twice the usual" }} />
+        </StatGrid>
+      </div>
+    </DemoCard>
+  );
+};
+
 const OperationalDemo = () => {
   const notices = [
     { tone: "neutral" as const, title: "Release deployed", detail: "Version 2.4 is serving all regions." },
@@ -2021,6 +2106,7 @@ const demos: DemoSection = {
   stats: () => (
     <DemoGrid columns="one">
       <StatsDemo />
+      <PlainStatsDemo />
     </DemoGrid>
   ),
   observability: () => (

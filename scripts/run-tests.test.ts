@@ -5,11 +5,14 @@ import { z } from "zod";
 import { hasIntegrationTarget } from "./fixtures/test-infra-env";
 import {
   behaviorIgnore,
+  behaviorTest,
   discoverTestSuites,
+  listTestFiles,
   parseArgs,
   planShards,
   runTestCommand,
   selectSuites,
+  shardTargetMinutes,
   shardTimeNotice,
   suiteWeight,
   type TestSuite,
@@ -28,7 +31,8 @@ describe("root test orchestration", () => {
     expect(byName.get("@k2b/ui rest")?.command).toEqual(["bun", "run", "test:part:rest"]);
     expect(byName.get("@k2b/cloud-app-pulse")?.command).toEqual(["bun", "run", "test"]);
     expect(byName.get("@k2b/cloud-app-accounts")?.command).toEqual(["bun", "run", "test"]);
-    expect(byName.get("@k2b/cloud-app-tools")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
+    // A package without a test script of its own; the gateway runs no SSR pages and keeps none.
+    expect(byName.get("@k2b/cloud-app-gateway")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
     expect(byName.get("workspace root tests")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
     expect(byName.get("workspace root scripts")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
   });
@@ -70,7 +74,10 @@ describe("root test orchestration", () => {
     expect(suites.length).toBeGreaterThan(0);
     for (const suite of suites) {
       if (suite.command[1] === "run") {
-        expect(suite.command).toEqual(["bun", "run", "test:integration"]);
+        expect(suite.command.slice(0, 3)).toEqual(["bun", "run", "test:integration"]);
+        // A package that lists its files runs each one as a suite named after it.
+        if (suite.command.length === 4) expect(suite.name).toEndWith(` ${suite.command[3]}`);
+        else expect(suite.command).toHaveLength(3);
         continue;
       }
       expect(suite.command.slice(0, 6)).toEqual(["bun", "test", "--preload", preload, "--timeout", "30000"]);
@@ -458,9 +465,89 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
         expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, observed), 0)).toBeLessThanOrEqual(targetMinutes * 60);
       }
     }
+    if (mode === "integration") {
+      // A suite above two thirds of the target leaves a shard no room to balance: Mail as one suite
+      // was weighted 13.6 min, took up to 19 min and stopped its shard at the budget (#2055).
+      const heavy = all.filter((suite) => suiteWeight(suite.name, weights) > ((shardTargetMinutes() * 2) / 3) * 60);
+      expect(heavy.map((suite) => suite.name)).toEqual([]);
+    }
     expect(workflow.jobs.gate.needs).toContain(mode);
   });
 }
+
+test("CI unit shards run every UI test file exactly once, including the fixture and packed-consumer check", async () => {
+  const cwd = join(workspaceRoot, "packages/ui");
+  const files = await listTestFiles(cwd);
+  const { scripts } = z.object({ scripts: z.record(z.string(), z.string()) }).parse(await Bun.file(join(cwd, "package.json")).json());
+  const filesForScript = (script: string): string[] => {
+    const commands = script.split(" && ").filter((part) => part.startsWith("bun test "));
+    expect(commands).toHaveLength(1);
+    const command = commands[0];
+    if (!command) throw new Error(`missing bun test command: ${script}`);
+    // These scripts use paths and ignore patterns. Reject other flags rather than silently losing coverage.
+    const args = [...command.matchAll(/'([^']*)'|(\S+)/g)].map((match) => match[1] ?? match[2]!);
+    const paths: string[] = [];
+    const ignores: Bun.Glob[] = [];
+    for (let index = 2; index < args.length; index += 1) {
+      const arg = args[index]!;
+      if (arg === "--path-ignore-patterns") ignores.push(new Bun.Glob(args[++index]!));
+      else {
+        expect(arg.startsWith("-")).toBeFalse();
+        expect(arg.startsWith("./")).toBeTrue();
+        paths.push(arg.slice(2));
+      }
+    }
+    return files.filter(
+      (file) => paths.some((path) => file === path || file.startsWith(`${path}/`)) && !ignores.some((glob) => glob.match(file)),
+    );
+  };
+  // The filesystem is the coverage contract, including files outside src/ and test/.
+  const expected = files;
+  const workflow = z
+    .object({
+      jobs: z.object({
+        unit: z.object({
+          strategy: z.object({ matrix: z.object({ shard: z.array(z.number()) }) }),
+          steps: z.array(z.object({ run: z.string().optional() })),
+        }),
+      }),
+    })
+    .parse(Bun.YAML.parse(await Bun.file(join(workspaceRoot, ".github/workflows/ci.yml")).text()));
+  const job = workflow.jobs.unit;
+  const command = job.steps.find((step) => step.run?.startsWith("bun run test "))?.run;
+  if (!command) throw new Error("unit job needs its test runner command");
+  const options = parseArgs(
+    command
+      .replace("${{ matrix.shard }}", "1")
+      .replace("${{ strategy.job-total }}", String(job.strategy.matrix.shard.length))
+      .split(" ")
+      .slice(3),
+  );
+  expect(options.integration).toBeFalse();
+  expect(Boolean(options.browser)).toBeFalse();
+  const shards = await Promise.all(
+    job.strategy.matrix.shard.map((index) =>
+      discoverTestSuites(workspaceRoot, { ...options, shard: { index, total: job.strategy.matrix.shard.length } }),
+    ),
+  );
+  const suites = shards.flat().filter((suite) => suite.cwd === cwd);
+  const selected: string[] = [];
+  let packedChecks = 0;
+  for (const suite of suites) {
+    if (suite.name === "@k2b/ui behavior") {
+      selected.push(...suite.command.filter((arg) => behaviorTest.test(arg)).map((file) => file.slice(cwd.length + 1)));
+      continue;
+    }
+    const script = scripts[suite.command[2]!];
+    if (!script) throw new Error(`missing UI test part: ${suite.name}`);
+    if (script.includes("bun run scripts/check-packed-consumer.ts")) packedChecks += 1;
+    selected.push(...filesForScript(script));
+  }
+  expect([...filesForScript(scripts.test!), ...files.filter((file) => behaviorTest.test(file))].toSorted()).toEqual(expected.toSorted());
+  expect(packedChecks).toBe(1);
+  expect(selected.toSorted()).toEqual(expected.toSorted());
+  expect(new Set(selected).size).toBe(expected.length);
+});
 
 test("a shard's time asks for fresh weights before it fails", () => {
   expect(shardTimeNotice("shard 1/5", 14.9, 20)).toBeUndefined();
@@ -474,15 +561,22 @@ test("a shard's time asks for fresh weights before it fails", () => {
 });
 
 test("a package's test parts run every file: the rest part excludes exactly what the other parts name", async () => {
-  for (const [workspace, part, name] of [
-    ["packages/cloud", "test:part:ssr-ai", "@k2b/cloud"],
-    ["packages/ui", "test:part:layout-content", "@k2b/ui"],
+  for (const [workspace, name] of [
+    ["packages/cloud", "@k2b/cloud"],
+    ["packages/mail", "@k2b/cloud-app-mail"],
+    ["packages/ui", "@k2b/ui"],
   ] as const) {
     const { scripts } = (await Bun.file(join(workspaceRoot, workspace, "package.json")).json()) as { scripts: Record<string, string> };
-    const directories = /test [^&]*'\*\*\/\*\.behavior\.test\.\*' ([^&]+?)\s*$/.exec(scripts[part]!)?.[1]?.split(" ") ?? [];
-    expect(directories.length).toBeGreaterThan(0);
-    for (const directory of directories) expect(scripts["test:part:rest"]).toContain(`--path-ignore-patterns '${directory}/**'`);
-    expect(scripts["test:part:rest"]!.match(/--path-ignore-patterns 'src\//g)?.length).toBe(directories.length);
+    const parts = Object.keys(scripts).filter((script) => script.startsWith("test:part:") && script !== "test:part:rest");
+    expect(parts.length).toBeGreaterThan(0);
+    const directories = parts.flatMap(
+      (part) => /test [^&]*'\*\*\/\*\.behavior\.test\.\*' ([^&]+?)\s*$/.exec(scripts[part]!)?.[1]?.split(" ") ?? [],
+    );
+    expect(directories.length).toBeGreaterThanOrEqual(parts.length);
+    for (const directory of directories)
+      expect(scripts["test:part:rest"]).toContain(`--path-ignore-patterns '${directory.replace(/^\.\//, "")}/**'`);
+    // Every other ignore pattern of the rest part is the behavior-test pattern that all parts share.
+    expect(scripts["test:part:rest"]!.match(/--path-ignore-patterns '/g)?.length).toBe(directories.length + 1);
     const suites = await discoverTestSuites(workspaceRoot, { integration: false, filters: [workspace] });
     expect(suites.map((suite) => suite.name)).not.toContain(name);
     expect(suites.map((suite) => suite.name)).toContain(`${name} rest`);
