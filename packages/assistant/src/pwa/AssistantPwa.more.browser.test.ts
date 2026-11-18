@@ -32,6 +32,11 @@ const attach = (page: Page) =>
 const field = (page: Page) => page.locator("textarea[aria-label]:visible");
 type Harness = { requests: string[]; fail: Set<string> };
 const requests = (page: Page) => page.evaluate(() => (window as unknown as { harness: Harness }).harness.requests);
+const confirmArchive = async (page: Page) => {
+  const dialog = page.getByRole("dialog");
+  await dialog.getByText("Wartende Nachrichten werden verworfen.", { exact: false }).waitFor();
+  await dialog.getByRole("button", { name: "Archivieren", exact: true }).click();
+};
 
 describe("Attachments in the Cloud app", () => {
   test("an attachment uploads while writing and shows its progress", async () => {
@@ -192,10 +197,20 @@ describe("Every chat in the Cloud app", () => {
 describe("The … of a chat in the Cloud app", () => {
   test("archiving returns to the list with Undo; offline every entry waits", async () => {
     const page = await open("screen=menu&chat=messe");
+    const chatUrl = page.url();
     try {
       await page.getByRole("button", { name: "Mehr zu diesem Chat" }).click();
       expect(await page.getByRole("menuitem").allTextContents()).toEqual(["Umbenennen", "Anheften", "Archivieren"]);
       await page.getByRole("menuitem", { name: "Archivieren" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByText("Wartende Nachrichten werden verworfen.", { exact: false }).waitFor();
+      expect((await requests(page)).filter((request) => request.endsWith("/archive"))).toEqual([]);
+      await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+      expect(page.url()).toBe(chatUrl);
+      expect((await requests(page)).filter((request) => request.endsWith("/archive"))).toEqual([]);
+      await page.getByRole("button", { name: "Mehr zu diesem Chat" }).click();
+      await page.getByRole("menuitem", { name: "Archivieren" }).click();
+      await confirmArchive(page);
       await page.waitForURL(/\/pwa\/assistant$/);
       await page.getByText("„Messe Köln: Standplan“ archiviert.").first().waitFor();
       await page.getByRole("button", { name: "Rückgängig" }).click();
@@ -230,12 +245,14 @@ describe("The … of a chat in the Cloud app", () => {
       try {
         await page.getByRole("button", { name: "Mehr zu diesem Chat" }).click();
         await page.getByRole("menuitem", { name: "Archivieren" }).click();
+        await confirmArchive(page);
         const notice = page.getByRole("alert").filter({ hasText: text });
         await notice.waitFor();
         // The chat stays open; nothing moved.
         expect(await page.getByRole("button", { name: "Mehr zu diesem Chat" }).isVisible()).toBe(true);
         await page.evaluate(() => (window as unknown as { harness: Harness }).harness.fail.clear());
         await notice.getByRole("button", { name: "Erneut versuchen" }).click();
+        await confirmArchive(page);
         await page.waitForURL(/\/pwa\/assistant$/);
       } finally {
         await page.context().close();

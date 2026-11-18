@@ -245,7 +245,7 @@ test.each([
   const { ctx } = context(["chats", "archive", "chat"], { yes: true });
   ctx.options.output = "text";
   const printed: string[] = [];
-  ctx.print = (value) => {
+  ctx.print = (value = "") => {
     printed.push(value);
   };
   ctx.fetch = async () => Response.json({ ok: true, discardedQueuedMessages: count });

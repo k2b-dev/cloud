@@ -379,55 +379,69 @@ integration("the start barrier does not wait on a concurrent audit insert that r
   }
 });
 
-integration("Stop during a Send now that waits on a client step ends the turn now and sends the entry afterwards", async () => {
-  const f = await fixture();
-  try {
-    const { turn } = await aiConversations.submitChatTurn(f.input("Run local tool"));
-    await aiConversations.claimTurn({
-      conversationId: f.chat.id,
-      turnId: turn.id,
-      leaseOwner: "client-worker",
-      leaseMs: 30_000,
-      from: "queue",
-      maxAttempts: 5,
-      runBudgetMs: 60_000,
-    });
-    await aiConversations.savePendingTurnAction({
-      conversationId: f.chat.id,
-      turnId: turn.id,
-      callId: "local-call",
-      kind: "client_tool",
-      status: "pending",
-      name: "local_bash",
-      args: { command: "effect" },
-      approvalScope: "local",
-      allowAlways: false,
-      frontendMode: "client",
-      resolvedEvent: null,
-    });
-    await aiConversations.suspendTurn({
-      conversationId: f.chat.id,
-      turnId: turn.id,
-      leaseOwner: "client-worker",
-      blocks: [],
-      seq: 1,
-      waitingBudgetMs: 24 * 60 * 60_000,
-    });
-    const id = await f.add("Urgent");
-    expect((await requestQueuedMessageSendNow(f.chat.id, id))?.interrupt?.waitingForClient).toBe(true);
-    await aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: turn.id, reason: "user" });
-    expect(await aiConversations.getTurn({ conversationId: f.chat.id, turnId: turn.id })).toMatchObject({ cancellationReason: "user" });
-    expect(await aiConversations.completeTurn({ conversationId: f.chat.id, turnId: turn.id, status: "aborted" })).toBe("completed");
-    const jobs: unknown[] = [];
-    await drainQueuedMessages(async (job) => {
-      jobs.push(job);
-    }, f.chat.id);
-    expect(jobs).toHaveLength(1);
-    expect(await queuedMessageReceipt(f.chat.id, id)).toMatchObject({ state: "submitted" });
-  } finally {
-    await f.close();
-  }
-});
+integration.each(["a new message from the person", "Send now again"] as const)(
+  "Stop during Send now waiting on a client step ends the turn immediately and keeps the entry waiting until %s",
+  async (resume) => {
+    const f = await fixture();
+    try {
+      const { turn } = await aiConversations.submitChatTurn(f.input("Run local tool"));
+      await aiConversations.claimTurn({
+        conversationId: f.chat.id,
+        turnId: turn.id,
+        leaseOwner: "client-worker",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      await aiConversations.savePendingTurnAction({
+        conversationId: f.chat.id,
+        turnId: turn.id,
+        callId: "local-call",
+        kind: "client_tool",
+        status: "pending",
+        name: "local_bash",
+        args: { command: "effect" },
+        approvalScope: "local",
+        allowAlways: false,
+        frontendMode: "client",
+        resolvedEvent: null,
+      });
+      await aiConversations.suspendTurn({
+        conversationId: f.chat.id,
+        turnId: turn.id,
+        leaseOwner: "client-worker",
+        blocks: [],
+        seq: 1,
+        waitingBudgetMs: 24 * 60 * 60_000,
+      });
+      const id = await f.add("Urgent");
+      expect((await requestQueuedMessageSendNow(f.chat.id, id))?.interrupt?.waitingForClient).toBe(true);
+      await aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: turn.id, reason: "user" });
+      expect(await aiConversations.getTurn({ conversationId: f.chat.id, turnId: turn.id })).toMatchObject({ cancellationReason: "user" });
+      expect(await aiConversations.completeTurn({ conversationId: f.chat.id, turnId: turn.id, status: "aborted" })).toBe("completed");
+      expect(await aiConversations.getTurn({ conversationId: f.chat.id, turnId: turn.id })).toMatchObject({ status: "aborted" });
+      const jobs: unknown[] = [];
+      await drainQueuedMessages(async (job) => {
+        jobs.push(job);
+      }, f.chat.id);
+      expect(jobs).toHaveLength(0);
+      expect((await listQueuedMessages(f.chat.id)).map(({ id, state }) => ({ id, state }))).toEqual([{ id, state: "pending" }]);
+
+      // Stop withdraws the earlier Send now. Only a fresh decision may start the entry.
+      const next = resume === "a new message from the person" ? await f.add("Please continue") : null;
+      if (resume === "Send now again") expect(await requestQueuedMessageSendNow(f.chat.id, id)).toEqual({ interrupt: null });
+      await drainQueuedMessages(async (job) => {
+        jobs.push(job);
+      }, f.chat.id);
+      expect(jobs).toHaveLength(1);
+      expect(await queuedMessageReceipt(f.chat.id, id)).toMatchObject({ state: "submitted" });
+      expect((await listQueuedMessages(f.chat.id)).map(({ id }) => id)).toEqual(next ? [next] : []);
+    } finally {
+      await f.close();
+    }
+  },
+);
 
 integration("the turn sweep leaves an interrupted server effect without a durable result to the queue reconciler", async () => {
   const f = await fixture();

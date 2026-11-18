@@ -405,7 +405,9 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     const items = archived ? OLDER : query ? search(query) : ALL;
     return json({ total: query ? items.length : 48, page: Number(url.searchParams.get("page") ?? 1), perPage, hasNext: !query, items });
   }
-  if (/\/(archive|restore|pin)$/.test(url.pathname)) return json(ALL.find((entry) => url.pathname.includes(`/${entry.id}/`)) ?? {});
+  if (url.pathname === "/api/ai/tasks") return json([]);
+  if (url.pathname.endsWith("/archive")) return json({ ok: true, discardedQueuedMessages: 0 });
+  if (/\/(restore|pin)$/.test(url.pathname)) return json(ALL.find((entry) => url.pathname.includes(`/${entry.id}/`)) ?? {});
   if (method === "POST" && url.pathname === "/api/ai/conversations") {
     created += 1;
     return json(chat(`neu-${created}`, "Neuer Chat", 0));
