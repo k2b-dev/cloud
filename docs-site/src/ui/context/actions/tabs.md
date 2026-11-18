@@ -169,7 +169,7 @@ ink of the app (see
 [Filters, buttons, and clickable cards](/en/ui/surfaces/color#filters-buttons-and-clickable-cards)).
 Keyboard focus draws a 1 px blue edge with the soft focus ring outside it. Font weight and box never change
 with selection, hover, or focus, so neighbouring controls keep their positions.
-A pill tab draws its fill and focus edge around its label and close button together.
+A pill tab draws its fill around its label and close button together.
 
 ```ts
 type ViewTab = {

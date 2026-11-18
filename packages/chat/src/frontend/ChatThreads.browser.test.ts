@@ -93,8 +93,8 @@ describe("Chat threads on a desktop", () => {
       // Each thread link starts a view transition; WebKit sends input during one to <html>, so Back and the next click wait.
       await viewTransitionEnded(page);
       await page.locator(".chat-thread-picker", { hasText: "Problems" }).waitFor();
-      // A choice carries the shared 2 px field edge (Linie B), not a grey fill.
-      expect(await page.locator(".chat-thread-picker").evaluate((picker) => getComputedStyle(picker).borderTopWidth)).toBe("2px");
+      // A choice carries the shared 1 px field edge, not a grey fill.
+      expect(await page.locator(".chat-thread-picker").evaluate((picker) => getComputedStyle(picker).borderTopWidth)).toBe("1px");
       // The picker stands right beside the chat's title text, not at the far end of the head.
       const titleEnd = await page.locator(".chat-conversation__header > .k2b-page-title").evaluate((title) => {
         const walker = document.createTreeWalker(title, NodeFilter.SHOW_TEXT);

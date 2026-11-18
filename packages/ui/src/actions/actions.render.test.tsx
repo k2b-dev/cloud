@@ -237,7 +237,9 @@ describe("@k2b/ui complete action migrations", () => {
     expect(inputRule).toContain("min-height: 2.25rem");
     expect(inputRule).toContain("background: var(--k2b-surface)");
     expect(inputRule).toContain("border-width: var(--k2b-edge-width)");
-    expect(inputRule).not.toContain("box-shadow");
+    // The only shadow is the flat focus ring outside the border, transparent at rest.
+    expect(inputRule).toContain("--k2b-edge-ring: transparent");
+    expect(inputRule).toContain("box-shadow: 0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring)");
     expect(rule('.k2b-ui .k2b-icon-button[data-variant="input"]')).toContain("width: 2.25rem");
   });
 

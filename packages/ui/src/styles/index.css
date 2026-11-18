@@ -4815,6 +4815,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-discussion-thread[data-writing] {
   padding-inline-start: 0.625rem;
+  /* field-edges: allow a rail beside the text being written, not a field edge */
   border-inline-start: 2px solid var(--k2b-edge-focus);
 }
 .k2b-ui .k2b-discussion-thread:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-width); }
@@ -6475,7 +6476,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* The hover edge stays below an error and focus. */
-.k2b-ui .k2b-signature-input:not([data-disabled], [data-readonly]) .k2b-signature-input__pad:where(:hover) {
+.k2b-ui :where(.k2b-signature-input:not([data-disabled], [data-readonly])) .k2b-signature-input__pad:where(:hover) {
   --k2b-edge-color: var(--k2b-edge-hover);
 }
 
@@ -7513,7 +7514,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--k2b-border-strong);
+  border: var(--k2b-edge-mark-width) solid var(--k2b-edge-mark);
   border-radius: 0.25rem;
   color: var(--k2b-action);
   font-size: 0.625rem;
@@ -8472,7 +8473,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--k2b-border-strong);
+  border: var(--k2b-edge-mark-width) solid var(--k2b-edge-mark);
   border-radius: 0.25rem;
   color: var(--k2b-action);
   font-size: 0.625rem;
@@ -9619,7 +9620,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--k2b-border-strong);
+  border: var(--k2b-edge-mark-width) solid var(--k2b-edge-mark);
   border-radius: 0.25rem;
   color: transparent;
   background: var(--k2b-surface);
@@ -10383,6 +10384,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-edge-ring: color-mix(in srgb, var(--k2b-edge-color) var(--k2b-edge-ring-share), transparent);
 }
 
+/* A checked card keeps its second line when it shows an error. */
+.k2b-ui .k2b-checkbox-card[data-state="invalid"]:has(> input:checked) {
+  --k2b-edge-line: var(--k2b-edge-selected-width);
+}
+
 /* Focus turns the card's edge blue and adds the ring, also when it is checked
    or invalid; an error keeps its message. */
 .k2b-ui .k2b-checkbox-card:has(> input:focus-visible) {
@@ -10411,7 +10417,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1rem;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--k2b-border-strong);
+  border: var(--k2b-edge-mark-width) solid var(--k2b-edge-mark);
   border-radius: 0.25rem;
   color: transparent;
   background: var(--k2b-surface);
