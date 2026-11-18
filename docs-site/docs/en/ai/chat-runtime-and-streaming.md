@@ -85,9 +85,12 @@ runs or waits for a decision still keeps a chat from being archived; the
 conflict says which of the two it is.
 
 The archive dialog warns that waiting messages will be discarded. It names the
-count when the client already knows it; otherwise it uses a general warning.
-A known empty queue adds no warning. Restoring the chat does not recover these
-messages or their queued attachments.
+count when known; otherwise it uses a general warning. The Cloud app archives
+chats with an empty queue directly and offers Undo. Waiting entries require
+confirmation; if the queue cannot be read, confirmation uses the general
+warning. Routine warnings appear only when this confirmation is needed.
+Restoring the chat does not recover discarded messages or their queued
+attachments.
 
 `POST /api/ai/conversations/:id/archive` keeps its success response shape and
 adds the number of pending and failed entries discarded by this operation:

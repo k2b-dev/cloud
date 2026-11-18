@@ -1,4 +1,4 @@
-import type { AiConversation, AiOpenQuestion, AiStoredMessage, AiTurnBlock } from "@k2b/cloud/ai";
+import type { AiConversation, AiOpenQuestion, AiQueuedMessage, AiStoredMessage, AiTurnBlock } from "@k2b/cloud/ai";
 import type { AiPeopleModels } from "@k2b/cloud/shared";
 import { ButtonLink, LocaleProvider, MobileShell, Placeholder, TabBar, type TabBarItem } from "@k2b/ui";
 import { render } from "solid-js/web";
@@ -404,6 +404,18 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     if (perPage === 1) return json({ total: archived ? 12 : 48, page: 1, perPage, hasNext: true, items: [] });
     const items = archived ? OLDER : query ? search(query) : ALL;
     return json({ total: query ? items.length : 48, page: Number(url.searchParams.get("page") ?? 1), perPage, hasNext: !query, items });
+  }
+  if (url.pathname.endsWith("/queue")) {
+    const queued: AiQueuedMessage[] = Array.from({ length: Number(params.get("queued") ?? 0) }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      text: "Prüf bitte auch den Aufbau.",
+      content: [{ type: "text", text: "Prüf bitte auch den Aufbau." }],
+      origin: { kind: "person", id: "robin", name: "Robin" },
+      state: "pending",
+      createdAt: NOW,
+      authorIsViewer: true,
+    }));
+    return json(queued);
   }
   if (url.pathname === "/api/ai/tasks") return json([]);
   if (url.pathname.endsWith("/archive")) return json({ ok: true, discardedQueuedMessages: 0 });

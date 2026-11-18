@@ -1093,8 +1093,14 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     const id = chat.activeConversationId();
     if (!conversation || !id) return;
     void mutate(t().archiveChat, async () => {
-      const { confirmAssistantArchive } = await import("../frontend/confirm-archive");
-      if (!(await confirmAssistantArchive(conversation, locale()))) return;
+      const queuedMessageCount = await assistantApi
+        .loadQueuedMessages(id)
+        .then((entries) => entries.length)
+        .catch(() => undefined);
+      if (queuedMessageCount !== 0) {
+        const { confirmAssistantArchive } = await import("../frontend/confirm-archive");
+        if (!(await confirmAssistantArchive(conversation, locale(), queuedMessageCount))) return;
+      }
       await assistantApi.archiveConversation(id);
       // Back to the list, which no longer shows the chat; a short note offers the way back and moves nothing.
       const view = listView();
