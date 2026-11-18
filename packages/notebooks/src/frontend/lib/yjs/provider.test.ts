@@ -396,7 +396,10 @@ describe("Yjs provider storage exhaustion", () => {
     let ready = 0;
     const timers: Array<() => void> = [];
     const originalSetTimeout = globalThis.setTimeout;
-    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    Object.assign(globalThis, {
+      setTimeout: (fn: () => void, delay: number) =>
+        delay === SHARED_TEXT_ACK_TIMEOUT_MS ? originalSetTimeout(fn, delay) : timers.push(fn),
+    });
     try {
       const provider = createYjsProvider({
         doc,
@@ -1485,7 +1488,10 @@ describe("trusted awareness transport", () => {
       socket.sent.map((value) => JSON.parse(value)).filter((value) => value.type === notebooksYjs.wsType.awarenessPublish);
     const timers: Array<() => void> = [];
     const originalSetTimeout = globalThis.setTimeout;
-    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    Object.assign(globalThis, {
+      setTimeout: (fn: () => void, delay: number) =>
+        delay === SHARED_TEXT_ACK_TIMEOUT_MS ? originalSetTimeout(fn, delay) : timers.push(fn),
+    });
     try {
       awareness.setLocalStateField("cursor", { anchor: { tname: "codemirror" }, head: { tname: "codemirror" } });
       provider.connect();

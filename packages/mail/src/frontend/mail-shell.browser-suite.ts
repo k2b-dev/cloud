@@ -120,6 +120,7 @@ type Strip = {
   rightInset: number;
   labels: { text: string | null; scroll: number; width: number }[];
 };
+let largeMailbox = false;
 let css = "";
 let controller = "";
 let navigation = "";
@@ -148,6 +149,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
   const html = renderToString(() =>
     createComponent(Fixture, {
       source: `${url.pathname}${url.search}`,
+      largeMailbox,
       locale,
       theme,
       // This opt-in exercises the same request-cookie reader as Mail's SSR page
@@ -187,8 +189,8 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
 beforeAll(async () => {
   setSystemTime(new Date(MAIL_SHELL_NOW));
   const builds = await Promise.all(
-    [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")].map((entry) =>
-      Bun.build({ entrypoints: [entry], plugins: [tailwind] }),
+    [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")].map((entry, index) =>
+      Bun.build({ entrypoints: [entry], plugins: [tailwind], minify: largeMailbox && index === 0 }),
     ),
   );
   for (const build of builds) if (!build.success) throw new AggregateError(build.logs, "Mail shell CSS failed");
@@ -256,7 +258,9 @@ beforeAll(async () => {
       if (url.pathname.endsWith("/workspace-route") || url.pathname.endsWith("/workspace-list")) {
         const target = new URL(url.searchParams.get("href") ?? boxPath, server.url);
         const stored = storedWorkspace(request.headers.get("cookie"));
-        return Response.json(url.pathname.endsWith("/workspace-list") ? mailboxList(target) : mailboxData(target, stored));
+        return Response.json(
+          url.pathname.endsWith("/workspace-list") ? mailboxList(target, largeMailbox) : mailboxData(target, stored, largeMailbox),
+        );
       }
       // The person's list share and seen hints, kept per browser like Mail keeps them per person and mailbox.
       if (url.pathname.endsWith("/workspace-preference") || url.pathname.endsWith("/workspace-preference/seen-hints")) {
@@ -534,11 +538,12 @@ const clickTab = async (page: Page, href: string) => {
 };
 
 /** One test file per part, so the runner spreads the cases over shards and each file stays inside its budget (#1966). */
-export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts";
+export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts" | "performance";
 
 /** The shell tests of one part. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (part: MailShellPart, screenshots: string | undefined) =>
   describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    largeMailbox = part === "performance";
     const section = (name: MailShellPart, define: () => void) => {
       if (name === part) define();
     };
@@ -546,6 +551,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     // and shadows, and the geometry matrix below compares every size in both themes. Dark copies run only for the
     // review screenshots (#1966).
     const reviewThemes = screenshots ? (["light", "dark"] as const) : (["light"] as const);
+    section("performance", () => {
+      test("large mailbox folder switches retain the pending list and bound warm tasks", async () => {
+        const { measureFolderSwitches } = await import("./mail-folder-performance.browser-probe");
+        const page = await open(`${boxPath}?folder=Inbox1`);
+        try {
+          await measureFolderSwitches(page);
+        } finally {
+          await close(page);
+        }
+      }, 60_000);
+    });
     section("head", () => {
       // One case per summary state, each on its own page; a last case compares the heights they measured (#1966).
       const summaryHeights = new Map<number, Record<string, number>>();

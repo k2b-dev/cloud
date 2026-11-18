@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-11-12
+updated: 2026-11-18
 ---
 
 # Mail
@@ -870,6 +870,11 @@ and concurrent clients get the same single inverse. `unavailable` also means
 Mail cannot safely reverse the move, for example because it needs attention
 or current access or keep rules refuse the inverse. Each
 inverse is queued independently, so one refusal does not prevent the others.
+
+Reply and Reply all also open for messages addressed only to the mailbox's own
+verified identities. When no external recipient remains, the To field starts
+empty. You can save a draft without recipients and add them before sending.
+The reply box, API, CLI and Assistant use the same rule.
 
 `reply` and `forward` create a draft from a conversation's latest message, and
 `send` sends a draft:

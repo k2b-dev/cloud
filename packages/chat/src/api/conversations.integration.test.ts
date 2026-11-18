@@ -1,16 +1,15 @@
-import { afterEach, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { UserSchema } from "@k2b/cloud/contracts";
 import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
 import { type AuthContext, createAccess, type PermissionLevel } from "@k2b/cloud/server";
 import { serviceAccountCredentials, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, testInfra, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { chatCapabilities } from "../capabilities";
-import "../../../../scripts/fixtures/authorization-preload";
-import { UserSchema } from "@k2b/cloud/contracts";
 import { app as chatApp } from "../config";
 import { migrate } from "../migrate";
 import { conversationAccessQuery, requireConversation } from "../service/access";
@@ -32,6 +31,13 @@ import {
 import { chatLiveChannels } from "../service/live-channels";
 import { systemNotificationDependencies } from "../service/system-notification-access";
 import chatApi from ".";
+
+// Core triggers enqueue live events during fixture cleanup; keep them out of the shared database.
+if (testInfra.database && testInfra.nats && testInfra.valkey) {
+  const database = await useMigratedDatabase("chat_conversations");
+  afterAll(() => database.drop());
+}
+await import("../../../../scripts/fixtures/authorization-preload");
 
 setDefaultTimeout(30_000);
 const suite = suiteFor("database", "nats", "valkey");
@@ -168,8 +174,7 @@ suite("chat conversations, people, and directory groups", () => {
       ? await sql<{ access_id: string }[]>`SELECT ca.access_id FROM chat.conversation_access ca
       JOIN chat.conversations c ON c.id = ca.conversation_id WHERE c.short_id = ANY(${toPgTextArray(conversations)}::text[])`
       : [];
-    // One statement per table: the shared test database keeps audit rows of earlier runs, and a scan per
-    // conversation outlasted the hook's budget.
+    // One statement per table: a separate audit scan per conversation can outlast the hook's budget.
     if (conversations.length) {
       const keys = conversations.flatMap((shortId) => ["c:" + shortId, "l:" + shortId]);
       await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ANY(${toPgTextArray(keys)}::text[])`;

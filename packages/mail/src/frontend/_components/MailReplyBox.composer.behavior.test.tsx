@@ -254,19 +254,21 @@ describe("MailReplyBox with the real composer", () => {
     dom.cleanup();
   });
 
-  const mount = async (options: { drafts?: ConversationDraftSummary[]; messages?: MessageDetail[] } = {}) => {
+  const mount = async (
+    options: { drafts?: ConversationDraftSummary[]; messages?: MessageDetail[]; identities?: SenderIdentity[]; locale?: "en" | "de" } = {},
+  ) => {
     const [{ default: MailReplyBox }, { LocaleProvider }] = await Promise.all([import("./MailReplyBox"), import("@k2b/ui")]);
     let api: MailReplyBoxApi | undefined;
     dispose = render(
       () => (
-        <LocaleProvider locale="en">
+        <LocaleProvider locale={options.locale ?? "en"}>
           <MailReplyBox
             mailboxId={`Box${mailbox}`}
             conversationId="Conv01"
             subject="Workbench"
             messages={options.messages ?? [message]}
             conversationDrafts={options.drafts ?? []}
-            identities={[identity]}
+            identities={options.identities ?? [identity]}
             canReplyAll={true}
             customerName="Mara Lindqvist"
             currentUserId="Usr001"
@@ -332,6 +334,53 @@ describe("MailReplyBox with the real composer", () => {
       release();
     };
   };
+
+  for (const mode of ["reply", "reply_all"] as const) {
+    test(`${mode} opens a self-addressed message with empty recipients and refuses sending in German`, async () => {
+      const ownAddress = { name: null, address: "info@example.test" };
+      const selfMessage = { ...message, id: "Self01", from: [ownAddress], to: [ownAddress], cc: [ownAddress], replyTo: [ownAddress] };
+      intercept = async ({ path, body }) => {
+        if (!path.endsWith("/draft-seeds")) return null;
+        const origin = body!.origin as { input: { intent: string; sourceMessageId: string; body: string } };
+        expect(origin.input.sourceMessageId).toBe(selfMessage.id);
+        return Response.json({
+          id: "66666666-6666-4666-8666-666666666666",
+          mailboxId: "Box001",
+          conversationId: "Conv01",
+          intent: origin.input.intent,
+          sourceMessageId: selfMessage.id,
+          derivedFromMessageId: null,
+          derivationKind: null,
+          content: { ...content, to: [], cc: [], bcc: [], body: origin.input.body },
+          attachments: [],
+          origin,
+          createdAt: now,
+        });
+      };
+      await mount({ messages: [selfMessage], identities: [{ ...identity, fromAddress: ownAddress.address }], locale: "de" });
+      if (mode === "reply_all") {
+        await chooseMode("Allen antworten");
+        await waitFor(
+          () =>
+            modeOnDisplay() === mode &&
+            !dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-mode]")?.disabled &&
+            Boolean(dom.root.querySelector(".cm-content")),
+        );
+      }
+      expect(dom.root.querySelector("[data-mail-reply-box='pending']")).toBeNull();
+      expect(dom.root.textContent).not.toContain("Die Antwortbox konnte nicht laden");
+      expect(dom.root.textContent).not.toContain("no reply recipient");
+      expect(dom.root.querySelectorAll(".mail-recipient-pill")).toHaveLength(0);
+      expect(dom.root.querySelector<HTMLInputElement>('input[role="combobox"][aria-label="Empfänger"]')?.value).toBe("");
+      type("Note to self");
+      await waitFor(() => dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-send]")?.disabled === false);
+      const send = dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-send]");
+      expect(send).toBeDefined();
+      send!.click();
+      await waitFor(() => Boolean(dom.root.textContent?.includes("Gib mindestens eine Empfängeradresse an.")));
+      expect(requests.some((request) => request.path.endsWith("/send") || request.path.endsWith("/safety-review"))).toBe(false);
+    });
+  }
 
   test("a failed mode switch of an unsaved seed keeps its text and its mode, and the next try carries the text", async () => {
     await mount();
