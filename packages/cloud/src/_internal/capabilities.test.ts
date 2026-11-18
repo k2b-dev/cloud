@@ -695,6 +695,28 @@ describe("capability v1 compilation", () => {
     });
   });
 
+  test("accepts exactly 400 KiB of manifest and rejects one additional byte", () => {
+    const definitions = (padding: number) =>
+      defineCapabilities({
+        protocolVersion: 2,
+        queries: {
+          read: {
+            title: "Read fixture",
+            description: "Returns a fixed payload to measure the manifest boundary.",
+            input: z.object({}).strict(),
+            data: z.object({ text: z.literal("x".repeat(padding)) }).strict(),
+            openWorld: false,
+            run: async () => ok({ data: { text: "x".repeat(padding) } }),
+          },
+        },
+      });
+    const baseline = Buffer.byteLength(JSON.stringify(compileCapabilities("example", definitions(0)).manifest));
+    const padding = 400 * 1024 - baseline;
+    const accepted = compileCapabilities("example", definitions(padding));
+    expect(Buffer.byteLength(JSON.stringify(accepted.manifest))).toBe(409600);
+    expect(() => compileCapabilities("example", definitions(padding + 1))).toThrow("manifest exceeds the 409600-byte");
+  });
+
   test("rejects manifests that are too large for the bounded live registry", () => {
     const fields = Object.fromEntries(
       Array.from({ length: 20 }, (_, index) => [`field_${index}`, z.string().describe(`Documented field ${index}. ${"x".repeat(100)}`)]),
@@ -714,7 +736,7 @@ describe("capability v1 compilation", () => {
     );
 
     expect(() => compileCapabilities("example", defineCapabilities({ protocolVersion: 2, queries }))).toThrow(
-      "manifest exceeds the 393216-byte",
+      "manifest exceeds the 409600-byte",
     );
   });
 

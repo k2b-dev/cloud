@@ -5,7 +5,12 @@ import {
   isPersonVisibleCapabilityQuery,
   resolveCapabilityManifestPresentation,
 } from "../packages/cloud/src/_internal/capabilities";
-import type { CapabilityDefinitions, CapabilityPresentationTranslation } from "../packages/cloud/src/contracts/capabilities";
+import { CAPABILITY_REGISTRY_CONFIG } from "../packages/cloud/src/_internal/registry";
+import {
+  CAPABILITY_APP_ID_MAX_LENGTH,
+  type CapabilityDefinitions,
+  type CapabilityPresentationTranslation,
+} from "../packages/cloud/src/contracts/capabilities";
 import { contactsCapabilities } from "../packages/contacts/src/capabilities";
 import { aiCapabilities } from "../packages/core/src/capabilities";
 import { filesCapabilities } from "../packages/filesv2/src/capabilities";
@@ -76,6 +81,13 @@ const missingPresentation = (appId: string, definitions: CapabilityDefinitions):
 };
 
 describe("built-in Capability presentation", () => {
+  test("Core's complete registry envelope leaves room for a maximum-size manifest", () => {
+    const { manifest, presentation } = compileCapabilities("core", aiCapabilities);
+    const record = { appId: "x".repeat(CAPABILITY_APP_ID_MAX_LENGTH), manifest, presentation };
+    const envelopeBytes = Buffer.byteLength(JSON.stringify(record)) - Buffer.byteLength(JSON.stringify(manifest));
+    expect(envelopeBytes + 400 * 1024).toBeLessThan(CAPABILITY_REGISTRY_CONFIG.maxValueBytes);
+  });
+
   test.each(builtIns)("%s ships complete German registry and input-schema presentation", (appId, definitions) => {
     expect(missingPresentation(appId, definitions)).toEqual([]);
   });

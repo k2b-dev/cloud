@@ -78,6 +78,7 @@ import { createChatWorkspace } from "../chat-code/workspace-controller";
 import { contextTab, fileTab, webTab } from "../chat-code/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { ChatWorkspaceSnapshot } from "../chat-workspace";
+import type { CodeVersionCardEntry } from "../code-version-cards";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
@@ -146,6 +147,7 @@ import { AssistantCodeDecisionEntry } from "./code-decision-deferred";
 import { AssistantCodeDetail, AssistantCodeView } from "./code-deferred-views";
 import type { CodeOverviewPage } from "./code-overview";
 import { AssistantCodeVersionCard } from "./code-version-card-deferred";
+import { createCodeVersionCardStore } from "./code-version-card-store";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
@@ -203,6 +205,7 @@ type InitialDetail = {
 };
 
 type Props = {
+  initialCodeVersionCards?: CodeVersionCardEntry[];
   embedded?: boolean;
   initialPanelContext?: ReturnType<typeof getContext>;
   /** The panel's place at render time, from `loadPlaceAssistant`; null without a place or before it is known. */
@@ -337,6 +340,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const [liveError, setLiveError] = createSignal<string | null>(null);
   const liveHub = createAssistantLiveHub();
+  const codeVersionCards = createCodeVersionCardStore(liveHub, props.initialCodeVersionCards);
 
   const chat = createAiChatController({
     baseUrl: "/api/ai",
@@ -3382,6 +3386,7 @@ export default function AssistantWorkspace(props: Props) {
                                     ),
                                     renderCodeVersion: (version) => (
                                       <AssistantCodeVersionCard
+                                        store={codeVersionCards}
                                         {...version}
                                         timeZone={props.timeZone}
                                         onActivated={() => setCodeRevision((revision) => revision + 1)}

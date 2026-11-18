@@ -525,6 +525,59 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     return json({ message: "Invented failure" }, Number(status ?? 500));
   }
   if (url.pathname.endsWith("/stream")) return quietStream();
+  if (url.pathname === "/api/capabilities/v1/queries/core/code.version.cards") {
+    const readFixture = async (path: string) => (await (await answer(new URL(path, location.href), { method: "POST" })).json()).data;
+    const p = await readFixture("/api/code/activation/preview");
+    const r = await readFixture("/api/code/review");
+    const words = await readFixture("/api/capabilities/v1/queries/core/code.version.words");
+    if (!p || !r || !words) return json({ message: "Fixture unavailable" }, 503);
+    const on = params.get("code") === "on";
+    return json({
+      data: {
+        items: [
+          {
+            codeId: p.codeId,
+            versionId: p.versionId,
+            state: "available",
+            snapshot: {
+              preview: {
+                codeId: p.codeId,
+                versionId: p.versionId,
+                number: p.number,
+                title: p.title,
+                ownerKind: p.ownerKind,
+                page: null,
+                running: p.running,
+                latest: p.latest,
+                activated: p.activated,
+                allowed: p.allowed,
+                readiness: p.readiness,
+              },
+              review: {
+                status: r.status,
+                origin: r.origin,
+                decidedBy: r.decidedBy,
+                message: r.message,
+                commentCount: r.commentCount,
+                revision: null,
+              },
+              facts: [...words.mayDo.items.slice(0, 2), ...words.timing.items.slice(0, 1)].map((item: { text: string }) => item.text),
+              code: { state: "active", activeVersionId: on ? p.versionId : "v2", pausedAt: null, pausedBy: null },
+              pages: {
+                versionId: p.versionId,
+                homeUrl: on ? "/code/c_rechnung/" : null,
+                pages: on ? [{ entrypoint: "home", title: "Rechnungen", path: "/", isRoot: true, href: "/code/c_rechnung/" }] : [],
+              },
+              latest: null,
+              permission: "editor",
+              canManage: true,
+              canActivate: true,
+            },
+          },
+        ],
+      },
+    });
+  }
   // `code=on`: the version is switched on; the card links its page, next run and runs.
   if (url.pathname === "/api/code/activation/preview")
     return json({

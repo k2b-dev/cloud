@@ -19,6 +19,7 @@ import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { loadAssistantChatWorkspace } from "../chat-workspace-service";
 import { catalogPerApp, loadCodePlace } from "../code-place";
 import { type CodePlace, type CodeQueryInvoke, hasPersonalCode, loadCodeAttention, loadCodeSummaries } from "../code-summary";
+import { chatCodeVersionRefs, loadCodeVersionCards } from "../code-version-cards";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
@@ -195,8 +196,13 @@ export default ssr<AuthContext>(async (c) => {
       ])
     : [null, [], null, null];
 
+  const initialCodeVersionCards = initialDetail
+    ? await loadCodeVersionCards(invokeCode, chatCodeVersionRefs(initialDetail.messages, initialDetail.activeTurn))
+    : [];
+
   const workspace = () => (
     <AssistantWorkspace
+      initialCodeVersionCards={initialCodeVersionCards}
       embedded={embedded}
       initialPanelContext={panelContext}
       initialPlace={initialPlace}

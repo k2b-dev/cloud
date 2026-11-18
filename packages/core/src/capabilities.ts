@@ -38,6 +38,7 @@ import {
   PrincipalSchema,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
+import { codeVersionCardsContract } from "@k2b/cloud/contracts/code-version-cards";
 import { accessRevision, type RequestAuthority, resolveDisplayNames, userFromActor } from "@k2b/cloud/server";
 import { type AuditActor, accountsAppService, audit, coreGeo, coreGeoMap } from "@k2b/cloud/services";
 import { coreUserEvents, coreUserEventTypes } from "@k2b/cloud/services/core-user-events";
@@ -71,6 +72,7 @@ import { codeSchedulingContracts } from "./code/scheduling-contracts";
 import { codeSecretContracts } from "./code/secret-contracts";
 import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
 import { countOwnCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { readCodeVersionCards } from "./code/version-cards";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
   decideCodeVersion,
@@ -714,6 +716,14 @@ export const aiCapabilities = defineCapabilities({
       ...codeVersionContracts.diff,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => diffCodeVersion(input, ctx)),
+    },
+    "code.version.cards": {
+      title: "Read Code version cards",
+      description:
+        "Read up to 50 authorized version receipts, operating state and openable pages in one batch. Rights are checked on every read; inaccessible versions reveal no data.",
+      ...codeVersionCardsContract,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersionCards(input, ctx)),
     },
     "code.version.list": {
       title: "List Code versions",

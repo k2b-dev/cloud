@@ -5,7 +5,7 @@ section: Platform services
 order: 963
 description: Switch an approved Code version on with its current account rights and a durable version entry.
 tags: [code, identity, permissions]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # Activate a Code version
@@ -73,10 +73,42 @@ the places with `cld code review show`. `/api/code/withdraw` withdraws a version
 that still waits for an administrator; it answers only that it worked, and the
 version stays unable to switch on.
 
-The chat version card reads the preview, the review and `core.code.version.words`
-together and shows one approval frame: what changes against the running version,
-the examples, what holds until a decision, and at most the answers its state
-allows. `cld code activate` uses the preview. It contains the
+Chat cards read `core.code.version.cards` once for the displayed versions, on
+both the server and the browser. Its shared schemas are available from
+`@k2b/cloud/contracts/code-version-cards`, without loading them through the
+general contract entry. Any application can use this public Query:
+`{ versions: [{ codeId, versionId }], knownPages?: [versionId] }`. A batch holds
+at most 50 receipts, the existing `code.version.list` page limit. Longer
+histories load bounded batches. A response also stays below the 256 KiB
+Capability result limit, including its envelope and continuation references.
+`remaining` lists references the caller must read in a new invocation, until
+none remain. This also respects the single child Query allowed per invocation:
+identical resource owners share their canonical reader answer; different owners
+continue in separate invocations when needed. Every successful continuation
+settles at least one reference. A provider outage or an individually oversized
+card returns `failed`, never `denied`; callers show a retry action and stop
+continuing when no progress is possible.
+
+Each item is `available` with its authorized snapshot, `failed`, or `denied`,
+which reveals neither existence nor content. The snapshot
+contains the receipt, operating state, up to three localized `facts`, declared Code page and
+page links from Core's single `describeCodePages` selector. It does not read
+source or bundle bytes, database size or refresh a service-account title.
+Readiness uses the already loaded manifest, hashes and decision against the
+same approval rule as activation; current policy and membership reads are
+shared within the batch. Readers see no editor
+review messages or mutation controls. Page links use the same current member and Code-permission check as other
+Code reads; a shared chat reference grants no Code access.
+
+A view shares the result by Code and version. On `code-versions`, the event's
+`codeId` selects only that Code's displayed versions for one covering batch.
+An omitted ID or resync rechecks all displayed versions. `knownPages` lets the
+view reuse immutable links after Core rechecks current rights; an absent
+`pages` field confirms that reuse, an empty list means no openable pages, and a
+failed read remains a visible, retryable error. The live cursor advances only
+after a successful covering read. Existing activation Actions are unchanged.
+
+`cld code activate` uses the preview. It contains the
 version's `number`, `running`, `latest`, optional `automations`, and
 `readiness`: `ready`, `approval_pending`, or `refused` with a stable code and
 message. A version that a Cloud administrator rejected is `refused` with
@@ -84,7 +116,7 @@ message. A version that a Cloud administrator rejected is `refused` with
 `tests` gives what Core recorded at submission: `state` (`passed`, `failed`,
 `none` or `unavailable`) with `passed` and `total` test cases; it is absent for
 versions submitted before Core recorded it. A running version also returns
-`activated`. A card waiting with `approval_pending` reads the preview again
+`activated`. A card waiting with `approval_pending` reads its batch snapshot again
 when the decision arrives as `code-versions` on
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates). For the version that would switch on next, optional
 `targets` lists each target its checked manifest calls, with `operations` and

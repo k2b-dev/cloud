@@ -31,7 +31,7 @@ const render = (locale: string, state: AiCodeAuthoringStop, available = true, bl
     }),
   );
 
-// Match the actual live regions, excluding the aria-hidden measurements that reserve their height.
+// Match actual live regions, excluding title attributes and other copies of the same text.
 const liveText = (html: string, role: "status" | "alert") =>
   (html.match(new RegExp(`<span role="${role}"[^>]*>([\\s\\S]*?)</span>`))?.[1] ?? "").replace(/<!--[\s\S]*?-->/g, "");
 

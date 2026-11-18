@@ -200,6 +200,17 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             "Liest vollständige Dateizeilen gegen die letzte freigegebene oder eingeschaltete Version mit genauem Entscheidungsstand.",
           input: codeVersionInput,
         },
+        "code.version.cards": {
+          title: "Code-Versionskarten lesen",
+          description:
+            "Liest bis zu 50 berechtigte Versionsbelege mit Betriebszustand und öffnbaren Seiten gemeinsam. Prüft heutige Rechte bei jedem Abruf.",
+          input: {
+            versions: "Angezeigte Code- und Versions-IDs; höchstens 50 wie bei code.version.list.",
+            "versions[].codeId": "Stabile ID des Codes.",
+            "versions[].versionId": "UUID der gespeicherten Version.",
+            knownPages: "Versions-UUIDs, deren unveränderliche Seitenlinks die Ansicht bereits hält. Rechte werden erneut geprüft.",
+          },
+        },
         "code.version.list": {
           title: "Code-Versionen auflisten",
           description: "Liest Einreichungen und Freigabe-Belege einschließlich der Allein-Admin-Entscheidung.",

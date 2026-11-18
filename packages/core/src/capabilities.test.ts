@@ -805,6 +805,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.secret.list",
     "code.source.tab",
     "code.summary",
+    "code.version.cards",
     "code.version.diff",
     "code.version.diff.read",
     "code.version.list",

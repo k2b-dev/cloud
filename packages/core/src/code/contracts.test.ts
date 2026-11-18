@@ -96,6 +96,7 @@ describe("Core Code data contracts", () => {
       "code.secret.list",
       "code.source.tab",
       "code.summary",
+      "code.version.cards",
       "code.version.diff",
       "code.version.diff.read",
       "code.version.list",
