@@ -38,7 +38,16 @@ const stepEnvelope = {
   endedAt: "2030-01-02T00:00:00.000Z",
   message: "",
 };
-const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+// This contract also loads in minimal script VMs without Web Encoding globals.
+// Count the JSON wire representation in UTF-8; iteration keeps surrogate pairs together.
+const bytes = (value: unknown) => {
+  let size = 0;
+  for (const character of JSON.stringify(value) ?? "") {
+    const code = character.charCodeAt(0);
+    size += character.length === 2 ? 4 : code < 0x80 ? 1 : code < 0x800 ? 2 : 3;
+  }
+  return size;
+};
 // Reserve the canonical map form, including the largest safe generation/ID,
 // named secret parts, optional fields and automatic completion. Short fields may
 // expand to one maximum-size secret marker without consuming another handle's slot.

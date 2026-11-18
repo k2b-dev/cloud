@@ -1,7 +1,15 @@
 // Executed inside one fresh dynamic isolate. It has no lease, process log or credential.
 export function createCodeConsole(cloud, limits) {
-  const encoder = new TextEncoder();
-  const bytes = (value) => encoder.encode(JSON.stringify(value)).length;
+  // Match the shared JSON wire accounting without requiring Web Encoding globals,
+  // including when capture is disabled for a transient runtime.
+  const bytes = (value) => {
+    let size = 0;
+    for (const character of JSON.stringify(value) ?? "") {
+      const code = character.charCodeAt(0);
+      size += character.length === 2 ? 4 : code < 0x80 ? 1 : code < 0x800 ? 2 : 3;
+    }
+    return size;
+  };
   const sum = (a, b) => Math.min(Number.MAX_SAFE_INTEGER, a + b);
   let entries = [],
     droppedLines = 0,

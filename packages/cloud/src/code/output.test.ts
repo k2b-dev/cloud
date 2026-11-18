@@ -200,3 +200,14 @@ test("the complete canonical short-handle count fits the pinned window and live 
     }).success,
   ).toBe(false);
 });
+
+test.each(["ASCII", "é", "ह", "😀", "\ud800", "\udfff", '\u0000\n"\\'])(
+  "canonical reservations measure JSON UTF-8 bytes for %j without encoding globals",
+  (unit) => {
+    const text = unit.repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes + 1);
+    const textCost = Buffer.byteLength(JSON.stringify(text)) - Buffer.byteLength(JSON.stringify(""));
+    expect(codeOutputStepBytes({ label: text })).toBe(
+      CODE_OUTPUT_STEP_LIMITS.metadataBytes + Math.max(0, textCost - CODE_OUTPUT_STEP_LIMITS.textReserveBytes),
+    );
+  },
+);

@@ -49,7 +49,8 @@ export default {
           export default class extends WorkerEntrypoint {
             async run(name, input) {
               const output = ${outputLimits ? `createCodeConsole(this.env.cloud, ${JSON.stringify(outputLimits)})` : "null"};
-              if (output) globalThis.console = output.console;
+              // Runtime adapters install their forwarding methods on this isolate-local copy.
+              if (output) globalThis.console = { ...output.console };
               try {
                 const bundle = await import('./bundle.js');
                 if (typeof bundle[name] !== 'function') throw new Error('missing_entrypoint');

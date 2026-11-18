@@ -361,38 +361,41 @@ test("completion text follows intervening logs in the captured stream", async ()
   ]);
 });
 
-test("handle admission reserves canonical parts and completion text within the pinned budget", async () => {
-  setSystemTime(fixed);
-  const batches: CodeOutputBatch[] = [];
-  const label = "Read!",
-    message = "Done!".repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes);
-  const output = createCodeConsole(
-    {
-      call: async (_operation: string, batch: CodeOutputBatch) => {
-        batches.push(batch);
+test.each(["Done!", 'éह😀\ud800\udfff\n\\"'])(
+  "handle admission reserves canonical UTF-8 parts (%j) and completion text within the pinned budget",
+  async (unit) => {
+    setSystemTime(fixed);
+    const batches: CodeOutputBatch[] = [];
+    const label = "Read!",
+      message = unit.repeat(CODE_OUTPUT_STEP_LIMITS.textReserveBytes);
+    const output = createCodeConsole(
+      {
+        call: async (_operation: string, batch: CodeOutputBatch) => {
+          batches.push(batch);
+        },
       },
-    },
-    {
-      ...limits,
-      step: { ...limits.step, budget: codeOutputStepBytes({ label, message }) + Buffer.byteLength("{}") },
-    },
-  );
-  const step = output.logger.step(label);
-  step.start();
-  step.succeed(message);
-  output.logger.step("Another!").start();
-  await output.finish();
-  expect(batches[0]!.entries).toEqual([
-    {
-      kind: "step",
-      id: 1,
-      at: new Date(fixed).toISOString(),
-      label,
-      status: "succeeded",
-      startedAt: new Date(fixed).toISOString(),
-      endedAt: new Date(fixed).toISOString(),
-      message,
-    },
-  ]);
-  expect(batches[0]!.droppedLines).toBe(1);
-});
+      {
+        ...limits,
+        step: { ...limits.step, budget: codeOutputStepBytes({ label, message }) + Buffer.byteLength("{}") },
+      },
+    );
+    const step = output.logger.step(label);
+    step.start();
+    step.succeed(message);
+    output.logger.step("Another!").start();
+    await output.finish();
+    expect(batches[0]!.entries).toEqual([
+      {
+        kind: "step",
+        id: 1,
+        at: new Date(fixed).toISOString(),
+        label,
+        status: "succeeded",
+        startedAt: new Date(fixed).toISOString(),
+        endedAt: new Date(fixed).toISOString(),
+        message,
+      },
+    ]);
+    expect(batches[0]!.droppedLines).toBe(1);
+  },
+);
