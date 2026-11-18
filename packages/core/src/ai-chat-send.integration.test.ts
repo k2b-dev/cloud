@@ -45,6 +45,7 @@ import { reserveCodeAiBudget, settleCodeAiBudget } from "./code/ai-budget";
 import { setCodeChatBinding } from "./code/chat-binding";
 import { reserveCodeChatTurnBudget } from "./code/chat-turn-budget";
 import { codeSettings } from "./code/settings";
+import { codeBundleHash, codeSourceHash } from "./code/store";
 import { migrate as migrateCode } from "./migrate/core/code";
 
 const owner = "4f000000-0000-4000-8000-000000000001";
@@ -1068,6 +1069,7 @@ suiteFor(
   });
   test("a durable queue interrupt resumes Code through admission with its original scope and reservation", async () => {
     await setup();
+    const hashes = { source: codeSourceHash({}, "code.ts"), sdk: "c".repeat(64), bundle: codeBundleHash("fixture") };
     const manifest = {
       version: 1,
       entry: "code.ts",
@@ -1075,14 +1077,26 @@ suiteFor(
       ai: true,
       policyRows: ["ai_chat_you"],
       permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null }, file: "code.ts", line: 1 }],
-      hashes: { source: "a".repeat(64), sdk: "c".repeat(64), bundle: "b".repeat(64) },
+      hashes,
     };
-    await sql`UPDATE code.versions SET manifest=${JSON.stringify(manifest)}::text::jsonb WHERE id=${versionId}::uuid`;
-    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding) VALUES(${versionId}::uuid,${codeId},'{}') ON CONFLICT DO NOTHING`;
+    const c8VersionId = crypto.randomUUID();
+    await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes)
+      SELECT ${c8VersionId}::uuid,code_id,number+1,source_files,bundle,${hashes.source},${hashes.bundle},
+        ${JSON.stringify(manifest)}::text::jsonb,source_bytes,bundle_bytes FROM code.versions WHERE id=${versionId}::uuid`;
+    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding) VALUES(${c8VersionId}::uuid,${codeId},'{}')`;
+    await sql`UPDATE code.codes SET active_version_id=${c8VersionId}::uuid WHERE id=${codeId}`;
+    await sql`UPDATE code.runs SET version_id=${c8VersionId}::uuid WHERE id=${runId}::uuid`;
+    const context = ctx();
+    if (context.actor.kind !== "user" || context.actor.delegation?.kind !== "invocation") throw new Error("Expected Code context");
+    const c8Context: CapabilityExecutionContext = {
+      ...context,
+      locale: "de",
+      actor: { ...context.actor, delegation: { ...context.actor.delegation, workloadId: c8VersionId } },
+    };
     const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${owner}::uuid,'read') RETURNING id`;
     await sql`INSERT INTO ai.model_access_resources(model_id) VALUES('chat') ON CONFLICT DO NOTHING`;
     await sql`INSERT INTO ai.model_access(model_id,access_id) VALUES('chat',${access!.id}::uuid)`;
-    const sent = await start({ ...ctx(), locale: "de" });
+    const sent = await start(c8Context);
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     if (!turn) throw new Error("Missing C8 Code turn");
     const target = { conversationId: chat.id, turnId: turn.id };
@@ -1247,11 +1261,10 @@ suiteFor(
       expect(allowed).toHaveBeenCalledTimes(10);
       expect((await aiConversations.getTurn(target))?.status).toBe("completed");
       expect(messages.at(-1)?.meta?.automationTurnStop).toMatchObject({ reason: "model_calls" });
-      expect(await read(sent.id)).toMatchObject({ ok: true, data: { data: { message: { status: "done" } } } });
+      expect(await read(sent.id, c8Context)).toMatchObject({ ok: true, data: { data: { message: { status: "done" } } } });
     } finally {
       await server.stop(true);
-      await sql`UPDATE code.versions SET manifest=NULL WHERE id=${versionId}::uuid`;
-      await sql`DELETE FROM code.version_submissions WHERE version_id=${versionId}::uuid`;
+      await sql`UPDATE code.codes SET active_version_id=${versionId}::uuid WHERE id=${codeId}`;
     }
   }, 30_000);
 
