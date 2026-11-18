@@ -273,3 +273,60 @@ test.each(["ASCII", "é", "ह", "😀", "\ud800", "\udfff", '\u0000\n"\\'])(
     );
   },
 );
+
+// The expression this scanner replaced. Kept only as an oracle: the scanner must return exactly what it returned.
+const replacedExpression =
+  /(?:(?:\u001b\]|\u009d)[^\u0007\u001b\u009c]*(?:\u0007|\u001b\\|\u009c|$))|(?:(?:\u001b[P^_X]|[\u0090\u0098\u009e\u009f])[\s\S]*?(?:\u001b\\|\u009c|$))|(?:(?:\u001b\[|\u009b)[0-?]*[ -/]*(?:[@-~]|$))|(?:\u001b[ -/]*[0-~])/g;
+const replacedControls = new RegExp("[\\p{Cc}\\p{Cf}\\u2028\\u2029]", "gu");
+const replacedClean = (text: string) => text.replace(replacedExpression, "").replace(replacedControls, "");
+
+test("the scanner returns exactly what the replaced expression returned, for every short input over the escape alphabet", () => {
+  // Introducers, terminators, parameter and final bytes, a control, a surrogate pair split in halves, a combining mark and text.
+  const alphabet = [
+    "\u001b",
+    "]",
+    "\u009d",
+    "\u0007",
+    "\\",
+    "\u009c",
+    "[",
+    "\u009b",
+    "P",
+    "\u0090",
+    "^",
+    "\u009e",
+    "0",
+    ";",
+    " ",
+    "m",
+    "!",
+    "\u0000",
+    "\ud83d",
+    "\ude00",
+    "́",
+    "a",
+  ];
+  const mismatches: string[] = [];
+  const visit = (prefix: string, depth: number) => {
+    if (cleanCodeOutput(prefix) !== replacedClean(prefix)) mismatches.push(JSON.stringify(prefix));
+    if (depth === 0) return;
+    for (const char of alphabet) visit(prefix + char, depth - 1);
+  };
+  visit("", 3);
+  expect(mismatches).toEqual([]);
+  // Longer cases the enumeration cannot reach: boundary reuse after another branch, empty payloads, trailing introducers, Unicode payloads.
+  for (const input of [
+    "\u009da\u009b31mb\u009dc\u001b!",
+    "\u001b]\u0007x",
+    "\u009d\u001b\\x",
+    "a\u001b]",
+    "a\u009d",
+    "a\u009b",
+    "a\u0090",
+    "a\u001b",
+    "\u001b\u009dx\u0007y",
+    "\u009d😀́\ud800\u0007z",
+    "x\u009d\ud800",
+  ])
+    expect(cleanCodeOutput(input)).toBe(replacedClean(input));
+});

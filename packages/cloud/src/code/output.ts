@@ -289,7 +289,11 @@ export function cleanCodeOutput(text: string): string {
       if (oscBoundary === text.length) end = oscBoundary;
       else if (terminator === 0x07 || terminator === 0x9c) end = oscBoundary + 1;
       else if (text.charCodeAt(oscBoundary + 1) === 0x5c) end = oscBoundary + 2;
-    } else if (escape ? kind === 0x50 || kind === 0x5e || kind === 0x5f || kind === 0x58 : code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f) {
+    } else if (
+      escape
+        ? kind === 0x50 || kind === 0x5e || kind === 0x5f || kind === 0x58
+        : code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f
+    ) {
       end = body;
       while (end < text.length) {
         const next = text.charCodeAt(end++);
