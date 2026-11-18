@@ -260,9 +260,9 @@ describe("The … of a chat in the Cloud app", () => {
         const dialog = page.getByRole("dialog");
         await dialog.getByText(warning, { exact: false }).waitFor();
         expect((await requests(page)).filter((request) => request.endsWith("/archive"))).toEqual([]);
+        // Routines are retired on this branch, so the warning needs only the queue.
         expect((await requests(page)).filter((request) => /\/(queue|tasks)$/.test(request))).toEqual([
           "GET /api/ai/conversations/messe/queue",
-          "GET /api/ai/tasks",
         ]);
         await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
         expect(page.url()).toBe(chatUrl);
