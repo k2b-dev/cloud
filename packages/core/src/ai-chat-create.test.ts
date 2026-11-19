@@ -84,6 +84,7 @@ test.each(["de", "en"])("review shows the complete proposed title in %s", async 
   expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBe(true);
   expect(review.data).toMatchObject({
     reach: "you",
+    scope: "personal-chats",
     locale,
     view: { blocks: [{ kind: "Draft", fields: [{ name: "title", value: input.title }] }] },
   });

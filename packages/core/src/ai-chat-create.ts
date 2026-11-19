@@ -10,14 +10,14 @@ import { z } from "zod";
 import { chatWriteAuthority } from "./ai-code-chat";
 
 export const aiChatCreateInput = z.strictObject({
-  title: z.string().trim().min(1).max(200).describe("Title of the new personal chat, 1 to 200 characters."),
+  title: z.string().trim().min(1).max(200).describe("New personal chat title, 1 to 200 characters."),
   project: z
     .strictObject({
       type: z.literal("core.ai.project").describe("Project resource type."),
-      id: z.string().regex(AI_SHORT_ID_PATTERN).describe("Public short ID of a readable Project."),
+      id: z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable Project's public short ID."),
     })
     .optional()
-    .describe("Optional Project for the new chat; current read access is required."),
+    .describe("Optional readable Project."),
 });
 export const aiChatCreateData = z.strictObject({
   chat: z.strictObject({ type: z.literal("core.ai.chat"), id: z.string() }),
@@ -40,7 +40,7 @@ const readableProject = (input: z.output<typeof aiChatCreateInput>, context: Cap
 export const aiChatCreateAction = {
   title: "Create a new chat",
   description:
-    "Create an empty personal chat, optionally in a readable Project. Reuse the same key and input to recover the original chat. Restricted sources, service accounts and chat chains cannot create chats. Use ai.chat.send separately to start a turn.",
+    "Create an empty personal chat, optionally in a readable Project. The same key and input recover it; ai.chat.send starts a turn separately.",
   input: aiChatCreateInput,
   data: aiChatCreateData,
   destructive: false,
@@ -56,6 +56,7 @@ export const aiChatCreateAction = {
     return ok({
       locale: de ? "de" : "en",
       reach: "you" as const,
+      scope: "personal-chats",
       slots: {
         title: {
           kind: "text" as const,

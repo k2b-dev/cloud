@@ -82,7 +82,8 @@ suiteFor(
   let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
   beforeAll(async () => {
     database = await useMigratedDatabase("code_chat_create");
-    await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${owner}::uuid,${owner},'local','user')`;
+    await sql`INSERT INTO auth.users(id,uid,provider,profile)
+      VALUES(${owner}::uuid,${owner},'local','user'),(${other}::uuid,${other},'local','user')`;
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title) VALUES(${codeId},'person',${owner}::uuid,'Create fixture')`;
     await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,source_bytes,bundle_bytes)
       VALUES(${versionId}::uuid,${codeId},1,'{}','fixture',${"a".repeat(64)},${"b".repeat(64)},0,7)`;
@@ -132,6 +133,21 @@ suiteFor(
       }),
     ).toEqual(first);
     expect(await created({ ...person(), idempotencyKey: context.idempotencyKey })).toEqual(first);
+  });
+  test("the same creation key belongs to each person independently", async () => {
+    const first = await created({ ...person(), idempotencyKey: "per-person" });
+    const otherUser = { ...user, id: other };
+    const actor = { kind: "user" as const, user: otherUser };
+    const accessSubject = { type: "user" as const, userId: other };
+    const second = await created({
+      ...person(),
+      idempotencyKey: "per-person",
+      user: otherUser,
+      actor,
+      accessSubject,
+      authority: { actor, accessSubject, credentialKind: "session", scopes: [] },
+    });
+    expect(second.chat.id).not.toBe(first.chat.id);
   });
   test.each(["archived", "deleted"])("a %s creation is never replaced on replay", async (state) => {
     const context = { ...person(), idempotencyKey: `unavailable-${state}` };

@@ -1519,7 +1519,7 @@ Core's `ai.chat.create` Action and `POST /api/ai/conversations` share
 Concurrent retries return the same active chat. Conflicting input fails;
 archiving or deleting the original never creates a replacement.
 `AiConversationCreationError` from `@k2b/cloud/ai/runtime` distinguishes
-`conflict` from `unavailable` for hosts translating transport errors.
+`conflict`, `unavailable` and `project_unavailable` for hosts translating transport errors.
 Core derives a domain-separated UUIDv8 from owner, operation and idempotency key;
 it checks full source authority and current Project read access before invoking
 the service. Creation writes an empty chat and does not submit an AI turn.
