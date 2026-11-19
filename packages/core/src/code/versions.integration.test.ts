@@ -207,6 +207,12 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await migratePolicy();
     await migrateApprovals();
     await migrateVersions();
+    // C5's NOWAIT population lock also conflicts with VACUUM/ANALYZE. Keep
+    // automatic maintenance out of this private fixture; test conflicts explicitly below.
+    await sql`ALTER TABLE auth.users SET (autovacuum_enabled=false)`;
+    await sql`ALTER TABLE settings.entries SET (autovacuum_enabled=false)`;
+    await sql`ALTER TABLE auth.ipa_user_effective_groups SET (autovacuum_enabled=false)`;
+    await sql`ALTER TABLE auth.user_ipa_data SET (autovacuum_enabled=false)`;
     for (const id of [authorId, reviewerId, strangerId])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',${id !== strangerId})`;
     await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by) VALUES(${machineId}::uuid,'admin-machine','standalone',${authorId}::uuid)`;
@@ -1243,6 +1249,58 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await expect(decideCodeVersion(next.binding, { outcome: "approved" }, signed)).rejects.toMatchObject({ code: "SELF_APPROVAL" });
     expect((await approvals.get(submission.approvalId!))?.soleAdmin).toBe(true);
   });
+  for (const end of ["commit", "rollback"] as const) {
+    test(`sole-admin decisions recover after database maintenance ends by ${end}`, async () => {
+      await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;
+      const code = await newCode();
+      const submission = await submitCodeVersion(input(code, "maintenance conflict"), author);
+      const signIn = await createTestBrowserSignIn(authorId);
+      const signed: CodeContext = {
+        ...author,
+        authority: {
+          ...author.authority,
+          credentialProof: { kind: "session", userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+        },
+      };
+      const analyzed = Promise.withResolvers<number>();
+      const release = Promise.withResolvers<void>();
+      const rollback = new Error("maintenance rollback");
+      const maintenance = sql
+        .begin(async (tx) => {
+          // ANALYZE retains the same table lock as automatic maintenance until this transaction ends.
+          await tx`ANALYZE auth.users`;
+          const [backend] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          analyzed.resolve(backend!.pid);
+          await release.promise;
+          if (end === "rollback") throw rollback;
+        })
+        .catch((error: unknown) => {
+          if (error !== rollback) throw error;
+        });
+      try {
+        const pid = await Promise.race([
+          analyzed.promise,
+          maintenance.then(() => {
+            throw new Error("Maintenance never acquired its lock");
+          }),
+        ]);
+        expect(
+          await sql<{ mode: string }[]>`SELECT mode FROM pg_locks
+          WHERE pid=${pid} AND relation='auth.users'::regclass AND granted AND mode='ShareUpdateExclusiveLock'`,
+        ).toEqual([{ mode: "ShareUpdateExclusiveLock" }]);
+        await expect(decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).rejects.toMatchObject({ code: "BUSY" });
+        expect(await approvals.get(submission.approvalId!)).toMatchObject({ status: "pending" });
+        expect(await sql`SELECT version_id FROM code.version_decisions WHERE version_id=${submission.version.id}::uuid`).toHaveLength(0);
+      } finally {
+        release.resolve();
+        await maintenance;
+      }
+      expect((await decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).decision).toMatchObject({
+        approved: true,
+        soleAdmin: true,
+      });
+    });
+  }
   for (const other of ["emergency", "locked_ipa", "disabled_category"] as const) {
     test(`Code self-approval ignores an ineligible second admin (${other})`, async () => {
       if (other === "emergency") await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${reviewerId}::uuid`;
