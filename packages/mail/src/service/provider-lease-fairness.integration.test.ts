@@ -3207,8 +3207,10 @@ suite("mail provider lease fairness", () => {
     } finally {
       for (const mailbox of onDeadHost) unreachable.delete(mailbox.account);
       await worker.stop();
-      // The stopped worker's jobs have ended, as in a process that stopped: they no longer wait in
-      // their mailboxes' lines. Their breakers stay as they are.
+      // This test runs no minute scheduler, whose wake a line needs when the jobs ahead in it never
+      // come back, as the stopped worker's jobs do not. Removing their entries stands in for that
+      // wake, so the recovery below shows what a push does, not how long the scheduler takes.
+      // Their breakers stay as they are.
       for (const mailbox of onDeadHost) {
         await redis.send(
           "DEL",
@@ -3279,6 +3281,29 @@ suite("mail provider lease fairness", () => {
       // IMAP push reaches the provider again: the parked waiter goes on now, not with the scheduler.
       await recordProviderReachable(resource);
       expect(woken).toEqual(["sync-folder:parked"]);
+
+      // A waiter that entered the line before the breaker opened does not park after it: no
+      // release may end that wait. Here the breaker opens between its ask and its parking.
+      const late = await mailProviderOperationMutex().acquire({ resource, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+      if (!late) throw new Error("The test could not take the provider lease again");
+      try {
+        const opened = await acquireProviderLease({
+          resource,
+          waiter: "sync-folder:late",
+          priority: "sync",
+          ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+          park: (left) => {
+            // Sent on the same connection before the parking, so Valkey runs it first.
+            void redis.send("HSET", [breaker, "window", "15000", "until", String(Date.now() + 15_000)]);
+            return JSON.stringify({ folderId: "late", left });
+          },
+        });
+        expect(opened).toMatchObject({ lock: null, parked: false });
+      } finally {
+        await mailProviderOperationMutex()
+          .release(late)
+          .catch(() => false);
+      }
     } finally {
       onParkedProviderWaiterWake(productionWaker);
       await mailProviderOperationMutex()
