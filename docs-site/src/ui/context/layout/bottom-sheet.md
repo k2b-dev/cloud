@@ -66,9 +66,21 @@ height. It is also usable on desktop; the host decides when to open it.
 
 ## Motion
 
-A sheet moves only by transform and opacity. Its layout height is fixed when
-it opens, the content's height or, with detents, the full height, and it never
-animates. It slides up from below the edge and lands directly on its rest,
+A sheet moves only by transform and opacity. Its layout height is the
+content's height or, with detents, the full height. A sheet without detents
+can opt in to content following with `followContent: true` in `dialogCore.open`:
+the core grows or shrinks it from the bottom edge in `--k2b-motion-fold`, and
+the sheet takes its new rest. The default is `false`, so content changes take
+their natural layout immediately, without held height or content observers.
+`prompts.form`, `prompts.prompt`, and `prompts.promptNumber` enable it by default,
+including on a phone; pass `followContent: false` to opt out. Use it for forms
+whose notices or fields come and go. Level morphs are independent of this choice.
+
+An opted-in sheet holds its height between changes. Before its entrance has
+finished and it has first come to rest,
+and while any content is `aria-busy="true"` (including the change that clears
+busy), it takes its new height without a fold. With detents the height
+never animates. It slides up from below the edge and lands directly on its rest,
 without overshoot or settle: 280 ms with `--k2b-ease-out`, 220 ms to close,
 instant with reduced motion. The frame clips with `overflow: clip`, never
 `hidden`, because a hidden box still scrolls and focus scrolling it would

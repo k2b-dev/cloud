@@ -35,6 +35,8 @@ export interface DialogOptions {
   cancelBehavior?: OpenDialogOptions["cancelBehavior"];
   /** Back closes the prompt like Cancel, as in a phone app; see `OpenDialogOptions.history`. */
   history?: boolean;
+  /** Animate content height changes. Defaults to false, or true for form, prompt and promptNumber. */
+  followContent?: boolean;
 }
 
 export type SuccessDialogOptions = Omit<DialogOptions, "variant"> & {
@@ -179,6 +181,8 @@ type PromptFormOptions<T extends Record<string, FieldSchema>> = {
   title?: string;
   ariaLabel?: string;
   icon?: string;
+  /** Hold and animate content height changes. Defaults to true. */
+  followContent?: boolean;
   fields: T;
   confirmText?: string;
   cancelText?: string | false;
@@ -670,6 +674,7 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
       signal: options?.signal,
       cancelBehavior: options?.cancelBehavior,
       history: options?.history,
+      followContent: options?.followContent,
       ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().search,
     },
   );
@@ -752,7 +757,7 @@ export const prompts = Object.assign(sharedPrompts, {
   form: async <T extends Record<string, FieldSchema>>(config: PromptFormOptions<T>): Promise<InferFormValues<T> | null> =>
     (await openPrompt<InferFormValues<T> | null>(
       (close) => <PromptFormDialog config={config} close={(value) => close(value)} />,
-      config,
+      { ...config, followContent: config.followContent ?? true },
       resolvePromptMessages().form,
     )) ?? null,
 

@@ -93,8 +93,13 @@ test("the production Chat island entry and its preload closure stay within their
     const id = islandIdFromFile(join(root, "packages/chat/src/frontend/ChatWorkspace.island.tsx"), root);
     const files = manifest.entries[id];
     if (!files?.length) throw new Error("Production Chat island missing");
-    expect(Bun.file(join(directory, files[0]!)).size).toBeLessThanOrEqual(ENTRY_BUDGET);
-    expect(files.reduce((bytes, file) => bytes + Bun.file(join(directory, file)).size, 0)).toBeLessThanOrEqual(STATIC_BUDGET);
+    const entryBytes = Bun.file(join(directory, files[0]!)).size;
+    const staticBytes = files.reduce((bytes, file) => bytes + Bun.file(join(directory, file)).size, 0);
+    console.info(
+      `Chat production budget (Bun ${Bun.version}): entry ${entryBytes}/${ENTRY_BUDGET}, static ${staticBytes}/${STATIC_BUDGET} bytes`,
+    );
+    expect(entryBytes).toBeLessThanOrEqual(ENTRY_BUDGET);
+    expect(staticBytes).toBeLessThanOrEqual(STATIC_BUDGET);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
