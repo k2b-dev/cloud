@@ -404,7 +404,7 @@ for (const refusal of ["paused", "approval", "conflict"] as const) {
         expect(notice.mock.calls[0]?.[1]?.action).toBeNull();
       } else if (refusal === "approval") {
         expect(page.control("Run now")).toBeDefined();
-        expect(notice.mock.calls[0]?.[0]).toBe("Not started: This version needs a new approval first.");
+        expect(notice.mock.calls[0]?.[0]).toBe("This version needs a new approval first.");
         expect(notice.mock.calls[0]?.[1]?.action).toMatchObject({ label: "View version", href: `${data.href}?tab=versions` });
       } else {
         expect(page.dom.root.querySelector(".cloud-code__state")?.textContent).not.toContain("Paused");

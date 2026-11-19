@@ -7,10 +7,10 @@ import { CodeRunEventSchema } from "../../code/live-events";
 const messages = i18n.define({
   baseLocale: "en",
   messages: {
-    en: { stoppedTitle: "Run updates stopped", stopped: "Run updates stopped. Reload to see the current state.", reload: "Reload" },
+    en: { stoppedTitle: "Run updates stopped", stopped: "Reload to see the current state.", reload: "Reload" },
     de: {
       stoppedTitle: "Lauf-Updates angehalten",
-      stopped: "Lauf-Updates wurden angehalten. Lade die Seite neu, um den aktuellen Stand zu sehen.",
+      stopped: "Lade die Seite neu, um den aktuellen Stand zu sehen.",
       reload: "Neu laden",
     },
   },

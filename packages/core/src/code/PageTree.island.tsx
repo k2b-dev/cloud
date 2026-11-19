@@ -374,7 +374,13 @@ function CodePageContent(props: PageProps) {
     // A failed form keeps its input and says why beside its button; a single action reports in a toast. A POST
     // is never retried automatically: the person decides whether to send again.
     if (kind === "form") setFormFailure({ form: owner, message });
-    else notices.add(toast.error(message, { title: t().actionFailedTitle }));
+    else
+      notices.add(
+        toast.error(message, {
+          title:
+            answer.code === "code_request_timeout" || answer.code === "code_answer_lost" ? t().outcomeUnknownTitle : t().actionFailedTitle,
+        }),
+      );
   };
 
   onMount(() => {
