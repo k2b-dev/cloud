@@ -32,7 +32,10 @@ export type LiveChannel<Scope extends z.ZodType = z.ZodType> = {
   keys(scope: z.output<Scope>, viewer: LiveViewer): Promise<readonly string[] | null>;
   /** IDs of the viewers allowed to read `key`. Called with at most 500 viewers. */
   authorize(key: string, viewers: readonly LiveViewer[], context?: { identityChanged: boolean }): Promise<ReadonlySet<string>>;
-  /** Delivery uses admitted keys. Every decision input needs an access event or the reauthorize sweep. */
+  /**
+   * Every channel decision input needs an access event or the reauthorize sweep; delivery uses admitted keys.
+   * Skips the 2/10/60-second checks. The app entry guard still checks periodically.
+   */
   eventOnly?: true;
   /** Keep the ten-second credential/access sweep for eventOnly channels with external owner authority. */
   reauthorize?: true;

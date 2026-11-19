@@ -857,8 +857,9 @@ export const mailSettingsMessages = i18n.define({
       newIdentity: "New identity",
       healthPausedTitle: "Mail sync is paused",
       healthPausedMessage: "New mail will not appear until synchronization is resumed.",
-      healthSlowTitle: "Mail is taking longer to connect",
-      healthSlowMessage: "The saved account is valid, but the latest synchronization timed out. Mail will retry automatically.",
+      healthSlowTitle: "Mail server not reachable",
+      healthSlowMessage:
+        "Mail cannot reach your provider's mail server and tries again at growing intervals. The saved account stays connected. If this lasts, ask your mail provider whether it blocks connections.",
       healthDegradedTitle: "Mail could not synchronize",
       healthDegradedMessage: "The saved account is still connected. Review the connection status for details and recovery actions.",
       healthAuthTitle: "Mail needs you to sign in again",
@@ -1776,9 +1777,9 @@ export const mailSettingsMessages = i18n.define({
       newIdentity: "Neue Absenderidentität",
       healthPausedTitle: "Mail-Synchronisierung ist pausiert",
       healthPausedMessage: "Neue E-Mails erscheinen erst, wenn die Synchronisierung fortgesetzt wird.",
-      healthSlowTitle: "Die Verbindung zu Mail dauert länger",
+      healthSlowTitle: "Mailserver nicht erreichbar",
       healthSlowMessage:
-        "Das gespeicherte Konto ist gültig, aber die letzte Synchronisierung hat das Zeitlimit überschritten. Mail versucht es automatisch erneut.",
+        "Mail erreicht den Mailserver deines Anbieters nicht und versucht es in wachsenden Abständen erneut. Das gespeicherte Konto bleibt verbunden. Hält das an, frag deinen Anbieter, ob er Verbindungen sperrt.",
       healthDegradedTitle: "Mail konnte nicht synchronisieren",
       healthDegradedMessage: "Das gespeicherte Konto bleibt verbunden. Prüfe den Verbindungsstatus für Details und mögliche Maßnahmen.",
       healthAuthTitle: "Erneute Anmeldung erforderlich",

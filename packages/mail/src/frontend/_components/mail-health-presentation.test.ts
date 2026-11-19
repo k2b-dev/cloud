@@ -35,19 +35,25 @@ const operationalHealth = {
 } satisfies MailboxOperationalHealth;
 
 describe("mailbox health presentation", () => {
-  test("explains a transient connection timeout without blaming saved settings", () => {
+  test("says a mail server that does not answer is unreachable and points to the provider, without blaming saved settings", () => {
     const presentation = mailboxHealthPresentation({
       health: "degraded",
       healthReason: "Failed to establish connection in required time",
     });
 
     expect(presentation).toMatchObject({
-      title: "Mail is taking longer to connect",
+      title: "Mail server not reachable",
       action: "health",
       actionLabel: "View status",
     });
-    expect(presentation?.message).toContain("saved account is valid");
+    expect(presentation?.message).toContain("saved account stays connected");
+    expect(presentation?.message).toContain("ask your mail provider");
     expect(presentation?.message).not.toContain("Failed to establish");
+    expect(
+      mailboxHealthPresentation({ health: "degraded", healthReason: "Failed to establish connection in required time" }, "de"),
+    ).toMatchObject({
+      title: "Mailserver nicht erreichbar",
+    });
   });
 
   test("directs authentication failures to delivery settings", () => {

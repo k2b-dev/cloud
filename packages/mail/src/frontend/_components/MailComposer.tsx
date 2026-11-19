@@ -1811,7 +1811,8 @@ export default function MailComposer(props: {
 
   const composerIntent = () => draft()?.intent ?? initial.intent;
   const retryPreview = () => void previewQuery.refresh();
-  const IdentitySwitcher = () => {
+  /** `start`: the menu opens towards the end, for a trigger near the start edge such as in a window's head. */
+  const IdentitySwitcher = (switcher: { align?: "start" }) => {
     const label = () => selectedIdentity()?.label ?? t().chooseSender;
     const address = () => selectedIdentity()?.fromAddress ?? "";
     const Content = () => (
@@ -1832,7 +1833,7 @@ export default function MailComposer(props: {
           </span>
         }
       >
-        <Dropdown.Root position="bottom-right" width="18rem" items={identityMenuItems()}>
+        <Dropdown.Root position={switcher.align === "start" ? "bottom-left" : "bottom-right"} width="18rem" items={identityMenuItems()}>
           <Dropdown.Trigger
             appearance="plain"
             type="button"
@@ -2817,138 +2818,141 @@ export default function MailComposer(props: {
     );
     const draftBlockElement = (
       <div ref={draftBlock} class="mail-draft-block" data-mail-draft-block>
-        <header class="mail-inline-draft-head">
-          <Show
-            when={suggestionUntouched()}
-            fallback={
-              // A new message in a window has its name in the window's title.
-              <Show when={!windowSlots || composerIntent() !== "new"}>
-                <span class="mail-inline-draft-intent">
-                  <i class={`ti ${composerIntent() === "new" ? "ti-pencil" : intentIcon(composerIntent())}`} aria-hidden="true" />
-                  {inlineIntentLabel()}
-                </span>
-              </Show>
-            }
-          >
-            <span class="mail-inline-draft-intent">
-              <i class="ti ti-sparkles" aria-hidden="true" />
-              {/* The account that suggested it; a pod from before `suggestedBy` still names the last (automated) editor. */}
-              {t().suggestionFrom({ name: draft()?.suggestedBy ?? draft()?.lastEditedByDisplayName ?? "" })}
-            </span>
-          </Show>
-          <span class="mail-inline-draft-field-label">{t().to}</span>
-          <div class="mail-inline-draft-recipients">
-            <MailRecipientInput
-              register={registerRecipientField}
-              mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
-              placeholder={t().recipients}
-              value={to}
-              onChange={setTo}
-              disabled={fieldsDisabled()}
-              readOnly={paused()}
-            />
-          </div>
-          <Show when={!showCc()}>
-            <Button variant="ghost" size="sm" type="button" disabled={!editable()} onClick={() => setShowCc(true)}>
-              {t().ccBcc}
-            </Button>
-          </Show>
-          <Show when={sharedPeers().length > 0}>
-            <span class="mail-inline-draft-peers" data-mail-draft-peers>
-              <For each={sharedPeers().slice(0, 3)}>
-                {(peer) => (
-                  <span class="mail-inline-draft-peer" style={{ "--mail-peer-color": peer.color }} aria-hidden="true">
-                    {peer.name
-                      .split(/\s+/)
-                      .filter(Boolean)
-                      .slice(0, 2)
-                      .map((part) => part[0]!.toUpperCase())
-                      .join("")}
+        {/* Recipients and subject stay in view while the text scrolls below them, as one block. */}
+        <div class="mail-draft-fields" data-mail-draft-fields>
+          <header class="mail-inline-draft-head">
+            <Show
+              when={suggestionUntouched()}
+              fallback={
+                // A new message in a window has its name in the window's title.
+                <Show when={!windowSlots || composerIntent() !== "new"}>
+                  <span class="mail-inline-draft-intent">
+                    <i class={`ti ${composerIntent() === "new" ? "ti-pencil" : intentIcon(composerIntent())}`} aria-hidden="true" />
+                    {inlineIntentLabel()}
                   </span>
-                )}
-              </For>
-              {t().writingAlong({
-                names: sharedPeers()
-                  .map((peer) => peer.name)
-                  .join(", "),
-                count: sharedPeers().length,
-              })}
+                </Show>
+              }
+            >
+              <span class="mail-inline-draft-intent">
+                <i class="ti ti-sparkles" aria-hidden="true" />
+                {/* The account that suggested it; a pod from before `suggestedBy` still names the last (automated) editor. */}
+                {t().suggestionFrom({ name: draft()?.suggestedBy ?? draft()?.lastEditedByDisplayName ?? "" })}
+              </span>
+            </Show>
+            <span class="mail-inline-draft-field-label">{t().to}</span>
+            <div class="mail-inline-draft-recipients">
+              <MailRecipientInput
+                register={registerRecipientField}
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().recipients}
+                value={to}
+                onChange={setTo}
+                disabled={fieldsDisabled()}
+                readOnly={paused()}
+              />
+            </div>
+            <Show when={!showCc()}>
+              <Button variant="ghost" size="sm" type="button" disabled={!editable()} onClick={() => setShowCc(true)}>
+                {t().ccBcc}
+              </Button>
+            </Show>
+            <Show when={sharedPeers().length > 0}>
+              <span class="mail-inline-draft-peers" data-mail-draft-peers>
+                <For each={sharedPeers().slice(0, 3)}>
+                  {(peer) => (
+                    <span class="mail-inline-draft-peer" style={{ "--mail-peer-color": peer.color }} aria-hidden="true">
+                      {peer.name
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((part) => part[0]!.toUpperCase())
+                        .join("")}
+                    </span>
+                  )}
+                </For>
+                {t().writingAlong({
+                  names: sharedPeers()
+                    .map((peer) => peer.name)
+                    .join(", "),
+                  count: sharedPeers().length,
+                })}
+              </span>
+            </Show>
+            {/* A window has its own Minimize, Maximize, and Close; the draft's actions sit in its bottom bar. */}
+            <Show when={!windowSlots}>
+              <span class="mail-inline-draft-head-tools">
+                <Dropdown.Root position="bottom-right" width="16rem" items={draftMenu()}>
+                  <Dropdown.Trigger iconOnly type="button" variant="ghost" size="sm" label={t().draftActions}>
+                    <i class="ti ti-dots" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
+                <Tooltip.Anchor content={host.fullscreen() ? t().exitFullscreen : t().enterFullscreen}>
+                  <IconButton
+                    type="button"
+                    size="sm"
+                    label={host.fullscreen() ? t().exitFullscreen : t().enterFullscreen}
+                    aria-pressed={host.fullscreen()}
+                    data-mail-draft-fullscreen
+                    onClick={host.toggleFullscreen}
+                  >
+                    <i class={`ti ${host.fullscreen() ? "ti-arrows-minimize" : "ti-arrows-maximize"}`} aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+                <Tooltip.Anchor content={t().collapseDraft}>
+                  <IconButton
+                    type="button"
+                    size="sm"
+                    label={t().collapseDraft}
+                    data-mail-draft-collapse
+                    disabled={composerTransition.active() !== null}
+                    onClick={() => void collapse()}
+                  >
+                    <i class="ti ti-chevron-up" aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+              </span>
+            </Show>
+          </header>
+          {/* The row starts with the subject; the sender stands in the head (in a window, the window's own head). */}
+          <div class="mail-inline-draft-meta">
+            <span class="mail-inline-draft-meta-subject">
+              <span class="shrink-0 text-dimmed">{t().subject}</span>
+              <TextInput
+                class="mail-inline-draft-subject"
+                aria-label={t().subject}
+                value={subject}
+                onValueChange={setSubject}
+                maxLength={998}
+                disabled={fieldsDisabled()}
+                readOnly={paused()}
+              />
             </span>
-          </Show>
-          {/* A window has its own Minimize, Maximize, and Close; the draft's actions sit in its bottom bar. */}
-          <Show when={!windowSlots}>
-            <span class="mail-inline-draft-head-tools">
-              <Dropdown.Root position="bottom-right" width="16rem" items={draftMenu()}>
-                <Dropdown.Trigger iconOnly type="button" variant="ghost" size="sm" label={t().draftActions}>
-                  <i class="ti ti-dots" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-              <Tooltip.Anchor content={host.fullscreen() ? t().exitFullscreen : t().enterFullscreen}>
-                <IconButton
-                  type="button"
-                  size="sm"
-                  label={host.fullscreen() ? t().exitFullscreen : t().enterFullscreen}
-                  aria-pressed={host.fullscreen()}
-                  data-mail-draft-fullscreen
-                  onClick={host.toggleFullscreen}
-                >
-                  <i class={`ti ${host.fullscreen() ? "ti-arrows-minimize" : "ti-arrows-maximize"}`} aria-hidden="true" />
-                </IconButton>
-              </Tooltip.Anchor>
-              <Tooltip.Anchor content={t().collapseDraft}>
-                <IconButton
-                  type="button"
-                  size="sm"
-                  label={t().collapseDraft}
-                  data-mail-draft-collapse
-                  disabled={composerTransition.active() !== null}
-                  onClick={() => void collapse()}
-                >
-                  <i class="ti ti-chevron-up" aria-hidden="true" />
-                </IconButton>
-              </Tooltip.Anchor>
-            </span>
-          </Show>
-        </header>
-        <div class="mail-inline-draft-meta">
-          <IdentitySwitcher />
-          <span class="mail-inline-draft-meta-subject">
-            <span class="shrink-0 text-dimmed">{t().subject}</span>
-            <TextInput
-              class="mail-inline-draft-subject"
-              aria-label={t().subject}
-              value={subject}
-              onValueChange={setSubject}
-              maxLength={998}
-              disabled={fieldsDisabled()}
-              readOnly={paused()}
-            />
-          </span>
-        </div>
-        <Show when={showCc()}>
-          <div class="mail-inline-draft-rows">
-            <span class="mail-inline-draft-field-label">Cc</span>
-            <MailRecipientInput
-              register={registerRecipientField}
-              mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
-              placeholder={t().ccRecipients}
-              value={cc}
-              onChange={setCc}
-              disabled={fieldsDisabled()}
-              readOnly={paused()}
-            />
-            <span class="mail-inline-draft-field-label">Bcc</span>
-            <MailRecipientInput
-              register={registerRecipientField}
-              mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
-              placeholder={t().bccRecipients}
-              value={bcc}
-              onChange={setBcc}
-              disabled={fieldsDisabled()}
-              readOnly={paused()}
-            />
           </div>
-        </Show>
+          <Show when={showCc()}>
+            <div class="mail-inline-draft-rows">
+              <span class="mail-inline-draft-field-label">Cc</span>
+              <MailRecipientInput
+                register={registerRecipientField}
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().ccRecipients}
+                value={cc}
+                onChange={setCc}
+                disabled={fieldsDisabled()}
+                readOnly={paused()}
+              />
+              <span class="mail-inline-draft-field-label">Bcc</span>
+              <MailRecipientInput
+                register={registerRecipientField}
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().bccRecipients}
+                value={bcc}
+                onChange={setBcc}
+                disabled={fieldsDisabled()}
+                readOnly={paused()}
+              />
+            </div>
+          </Show>
+        </div>
 
         <DraftNotices />
 
@@ -3214,6 +3218,10 @@ export default function MailComposer(props: {
               <Show when={slots().status()}>
                 {(mount) => (
                   <Portal mount={mount()}>
+                    {/* The sender leads the window's head, before the save state, so the subject row starts with it. */}
+                    <span class="mail-compose-window-sender" data-mail-compose-sender>
+                      <IdentitySwitcher align="start" />
+                    </span>
                     <span
                       class="mail-compose-window-status"
                       data-mail-save-status={!online() ? "offline" : uploadPercent() !== null ? "uploading" : saveStatus()}

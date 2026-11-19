@@ -111,9 +111,15 @@ At the planned time, the note arrives in this chat as a message with the source
 access. Actions still ask for your approval as usual. If Gustav is working at
 that moment, the alarm waits in the queue.
 
-To see, move or delete alarms, ask Gustav in the chat, for example: "Move that to
-17:00" or "Delete the alarm for Lena." Moving changes the same alarm. Deleting
-also removes its waiting message.
+Above the message field, the **Alarms** row shows the next alarm. Select it to
+see all alarms of the chat. Use the pencil to change the date, time, repeat, end
+and note. The change applies only after **Save**. The cross deletes the alarm at
+once; **Undo** in the notice sets it again. The pencil and the cross are also on
+the alarm's newest line in the chat.
+
+You can also ask Gustav in the chat, for example: "Move that to 17:00" or
+"Delete the alarm for Lena." Moving changes the same alarm. Deleting also
+removes its waiting message.
 
 :::reference
 - **Limits:** A chat has at most five alarms. A repeating alarm runs at most every 15 minutes and ends after 30 days; you can renew it for another 30 days. A one-time alarm can be at most one year ahead.

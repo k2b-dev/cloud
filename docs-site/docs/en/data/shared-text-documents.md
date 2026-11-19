@@ -895,7 +895,10 @@ principals/sessions; only settings and signing-key revocation are global.
 Revalidation is single-flight per context, and reads permission and revision
 metadata rather than the text snapshot. It remembers an event during join and checks it before replay starts.
 For the application-entry socket guard, pass
-`guardAppAccessSocket(context, appId, handlers, { eventOnly: true })`.
+`guardAppAccessSocket(context, appId, handlers)`.
+Its `eventOnly` option is deprecated: kept for compatibility, with no effect.
+The guard revalidates application access on events and periodically for every
+protected connection; the room itself continues to revalidate through events.
 
 ### Check access at connect or join, revoke through events
 

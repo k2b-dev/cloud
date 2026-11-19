@@ -108,10 +108,15 @@ der geplanten Zeit in diesen Chat. Gustav arbeitet sie dann mit deinem aktuellen
 Zugriff ab. Aktionen fragen wie gewohnt nach deiner Freigabe. Arbeitet Gustav in
 dem Moment, wartet der Wecker in der Warteschlange.
 
-Um Wecker zu sehen, zu verschieben oder zu löschen, bitte Gustav im Chat darum,
-zum Beispiel: „Verschieb das auf 17 Uhr“ oder „Lösch den Wecker für Lena.“
-Verschieben ändert denselben Wecker. Löschen entfernt auch seine wartende
-Nachricht.
+Über dem Eingabefeld zeigt die Zeile **Wecker** den nächsten Wecker. Wähle sie,
+um alle Wecker des Chats zu sehen. Mit dem Stift änderst du Datum, Uhrzeit,
+Wiederholen, Ende und Notiz. Die Änderung gilt erst nach **Speichern**. Das
+Kreuz löscht den Wecker sofort; **Rückgängig** im Hinweis stellt ihn wieder her.
+Stift und Kreuz stehen auch an der neuesten Zeile des Weckers im Chat.
+
+Du kannst Gustav auch im Chat darum bitten, zum Beispiel: „Verschieb das auf
+17 Uhr“ oder „Lösch den Wecker für Lena.“ Verschieben ändert denselben Wecker.
+Löschen entfernt auch seine wartende Nachricht.
 
 :::reference
 - **Grenzen:** Ein Chat hat höchstens fünf Wecker. Ein wiederkehrender Wecker klingelt höchstens alle 15 Minuten und endet nach 30 Tagen; du kannst ihn um 30 Tage verlängern. Ein einmaliger Wecker liegt höchstens ein Jahr voraus.
