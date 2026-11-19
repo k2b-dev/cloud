@@ -1553,6 +1553,15 @@
 .k2b-ui .mail-compose-window .mail-inline-draft-meta {
   margin-block-start: 0.375rem;
 }
+/* Long text never squeezes the field rows: their explicit minimum height would otherwise let them shrink below their
+   fields. A window's head holds only the recipients, so it needs no phone line break before them. */
+.k2b-ui .mail-compose-window .mail-inline-draft-head,
+.k2b-ui .mail-compose-window .mail-inline-draft-meta {
+  flex-shrink: 0;
+}
+.k2b-ui .mail-compose-window .mail-inline-draft-head::after {
+  content: none;
+}
 /* "To" and "Subject" take one label width, so both fields start on one edge. */
 .k2b-ui .mail-compose-window .mail-inline-draft-head > .mail-inline-draft-field-label,
 .k2b-ui .mail-compose-window .mail-inline-draft-meta-subject > :first-child {
