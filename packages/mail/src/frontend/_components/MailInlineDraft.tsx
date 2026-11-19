@@ -5,8 +5,8 @@ import { apiClient } from "../../api/client";
 import type { MailDraft, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
 import type { MailComposerHost } from "./MailComposer";
-import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { mailComposeWindowMessages } from "./mail-compose-window-messages";
+import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { createDefaultMailComposerPanesLayout, readMailComposerPanesFromCookieHeader } from "./mail-composer-panes";
 import type { MailComposerSignatures } from "./mail-composer-signature";
 

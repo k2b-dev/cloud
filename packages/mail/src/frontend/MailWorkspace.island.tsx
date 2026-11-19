@@ -64,8 +64,8 @@ import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkT
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
-import { preloadMailComposer } from "./_components/mail-composer-preload";
 import { openDraftWindow } from "./_components/mail-compose-windows";
+import { preloadMailComposer } from "./_components/mail-composer-preload";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
 import { type MailRespondIntent, type MailRespondRequest, openMailReplyWindow } from "./_components/mail-conversation-menu";
@@ -99,6 +99,7 @@ import {
   projectMailList,
 } from "./_components/mail-list-projection";
 import { createMailboxPreferences } from "./_components/mail-mailbox-preferences";
+import { mailMailboxViewMessages } from "./_components/mail-mailbox-view-messages";
 import {
   buildMailListHref,
   buildMailSearchClearHref,
@@ -110,7 +111,6 @@ import {
   resolveMailWorkspaceUrl,
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
-import { mailMailboxViewMessages } from "./_components/mail-mailbox-view-messages";
 import { mailRowAssignees } from "./_components/mail-row-assignees";
 import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection } from "./_components/mail-selection-detail";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./_components/mail-sender-preference";

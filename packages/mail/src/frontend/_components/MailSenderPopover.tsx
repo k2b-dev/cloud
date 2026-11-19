@@ -9,8 +9,8 @@ import { readApiError } from "./api-response";
 import type { SenderAction } from "./MailSenderMessageActions";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { createRetryToasts } from "./mail-feedback";
-import { mailReaderMessages } from "./mail-reader-messages";
 import { mailMailboxViewMessages } from "./mail-mailbox-view-messages";
+import { mailReaderMessages } from "./mail-reader-messages";
 
 const SENDER_ACTION_ORDER: readonly SenderAction["id"][] = ["find", "automation", "block", "block-domain", "unsubscribe"];
 

@@ -4,8 +4,7 @@
  * composer loads again and shows its own error with Retry.
  */
 export const preloadMailComposer = (): void => {
-  void Promise.all([
-    import("./MailComposer"),
-    import("./MailComposerEditor").then((editor) => editor.preloadMailComposerEditor()),
-  ]).catch(() => undefined);
+  void Promise.all([import("./MailComposer"), import("./MailComposerEditor").then((editor) => editor.preloadMailComposerEditor())]).catch(
+    () => undefined,
+  );
 };
