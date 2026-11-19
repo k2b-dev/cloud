@@ -211,10 +211,17 @@ const browserSources = async (entrypoints: string[], external?: string[]): Promi
   if (!discovery.success || !discovery.metafile)
     throw new AggregateError(discovery.logs, "[ssr] Could not list the island modules for variant builds.");
   const sources = new Map<string, string>();
+  // Bun names metafile inputs relative to the process directory, whatever directory the build scans.
   for (const input of Object.keys(discovery.metafile.inputs)) {
     const path = resolve(process.cwd(), input);
-    if (/\.[cm]?[jt]sx?$/.test(path) && existsSync(path)) sources.set(path, await Bun.file(path).text());
+    if (!/\.[cm]?[jt]sx?$/.test(path)) continue;
+    if (!existsSync(path)) throw new Error(`[ssr] Variant builds cannot read island module ${path}.`);
+    sources.set(path, await Bun.file(path).text());
   }
+  // A path that misses here would ship that module unchanged in every variant.
+  for (const entry of entrypoints)
+    if (!sources.has(canonicalFilePath(entry)))
+      throw new Error(`[ssr] Variant builds did not find island entry ${entry} among the listed modules.`);
   return sources;
 };
 

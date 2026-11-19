@@ -188,7 +188,8 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     const assets = dev ? undefined : readAssetManifest(config);
     // A variant missing from the manifest, such as one added after this build, loads the default build.
     const variant = assets && variants?.select(opts);
-    const manifest = (variant && assets?.variants?.[variant]) || assets;
+    // An own property only: a name such as "constructor" or "__proto__" is not a build.
+    const manifest = (variant && assets?.variants && Object.hasOwn(assets.variants, variant) && assets.variants[variant]) || assets;
     const assetPath = manifest ? `${ssrPath}/${manifest.version}` : ssrPath;
     // The loader preloads the rendered entries' shared static imports next to the entry imports, so the chain is one
     // level deep. It runs after script-blocking stylesheets, keeping the preload scanner from competing with first paint.
