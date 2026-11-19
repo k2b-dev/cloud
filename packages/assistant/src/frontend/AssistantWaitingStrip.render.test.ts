@@ -159,7 +159,14 @@ test("this chat's entry in view leaves the row, other chats' entries stay", asyn
     short: "Version 2 einschalten",
     createdAt: WAITING_NOW,
   };
-  const other = { ...version, id: "q-other", conversationId: "zz9999", conversationTitle: "Lieferavise", anchor: "x", short: "Lieferavise ansehen" };
+  const other = {
+    ...version,
+    id: "q-other",
+    conversationId: "zz9999",
+    conversationTitle: "Lieferavise",
+    anchor: "x",
+    short: "Lieferavise ansehen",
+  };
   const render = (inView: string | null) =>
     renderToString(() =>
       createComponent(LocaleProvider, {

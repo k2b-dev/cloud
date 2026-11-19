@@ -77,11 +77,17 @@ describe("waitingQuestionsView", () => {
 
   test("a version to switch on in this chat counts as its only entry once the chat is loaded", () => {
     const version: AiOpenQuestion = { ...mail, kind: "code_activate", anchor: "code-version-v2", short: "Version 2 einschalten" };
-    const loaded = waitingQuestionsView({ questions: { items: [version, routine, newest], count: 3 }, conversationId: "here01", local: [] });
+    const loaded = waitingQuestionsView({
+      questions: { items: [version, routine, newest], count: 3 },
+      conversationId: "here01",
+      local: [],
+    });
     // Its card may stand anywhere in the chat: it leaves the row only once the chat shows it.
     expect(loaded).toMatchObject({ total: 3, onlyHere: "code-version-v2", onlyHereAtEnd: false });
     // Not yet loaded, the row shows it until the card does.
-    expect(waitingQuestionsView({ questions: { items: [version, routine], count: 2 }, conversationId: "here01", local: null }).onlyHere).toBeNull();
+    expect(
+      waitingQuestionsView({ questions: { items: [version, routine], count: 2 }, conversationId: "here01", local: null }).onlyHere,
+    ).toBeNull();
     // Elsewhere it is never left out.
     expect(waitingQuestionsView({ questions: { items: [version], count: 1 }, conversationId: "other1", local: [] }).onlyHere).toBeNull();
   });

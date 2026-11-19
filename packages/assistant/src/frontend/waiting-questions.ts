@@ -64,7 +64,10 @@ export const waitingQuestionsView = (input: {
   // An approval shows its card while its tool block waits; a version card is in the loaded chat's timeline.
   const atEnd = only !== null && Boolean(openHere?.includes(only));
   const shown =
-    atEnd || (only !== null && local !== null && entries.some((question) => here(question) && question.anchor === only && question.kind !== "approval"));
+    atEnd ||
+    (only !== null &&
+      local !== null &&
+      entries.some((question) => here(question) && question.anchor === only && question.kind !== "approval"));
   return {
     attention,
     entries: [...entries.filter(here).sort(byAsked), ...entries.filter((question) => !here(question)).sort(byAsked)],

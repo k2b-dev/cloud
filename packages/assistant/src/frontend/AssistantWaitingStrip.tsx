@@ -64,19 +64,21 @@ export function AssistantWaitingStrip(props: {
     ...props.view.attention.map((item) => ({ key: item.key, kind: item.kind, short: item.short, where: null, open: item.open })),
     ...props.view.entries
       // A quiet row keeps its one entry, hidden, so it comes back as it was.
-      .filter((question) => props.quiet || !props.inView || question.conversationId !== props.conversationId || question.anchor !== props.inView)
+      .filter(
+        (question) => props.quiet || !props.inView || question.conversationId !== props.conversationId || question.anchor !== props.inView,
+      )
       .map((question) => ({
-      key: question.id,
-      kind: question.kind,
-      short: question.short,
-      where:
-        question.conversationId === props.conversationId
-          ? null
-          : question.conversationTitle
-            ? t().waitingInChat({ title: question.conversationTitle })
-            : t().waitingInOtherChat,
-      open: () => props.onJump(question),
-    })),
+        key: question.id,
+        kind: question.kind,
+        short: question.short,
+        where:
+          question.conversationId === props.conversationId
+            ? null
+            : question.conversationTitle
+              ? t().waitingInChat({ title: question.conversationTitle })
+              : t().waitingInOtherChat,
+        open: () => props.onJump(question),
+      })),
   ]);
   const entries = entryList;
   const byKey = createMemo(() => new Map(entries().map((entry) => [entry.key, entry])));
