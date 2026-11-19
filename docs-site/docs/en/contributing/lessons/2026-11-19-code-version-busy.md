@@ -1,0 +1,6 @@
+### Database maintenance competes with self-approval fixtures
+
+- **What happened:** A Code version self-approval test refused an eligible sole administrator with `BUSY`.
+- **Root cause:** The fixture repeatedly updated the administrator population while allowing automatic database maintenance. The population's `SHARE ROW EXCLUSIVE NOWAIT` lock also conflicts with the `SHARE UPDATE EXCLUSIVE` lock taken by `VACUUM` and `ANALYZE`. Holding an `ANALYZE auth.users` transaction reproduces the failure in the original `locked_ipa` case. The historical CI log identifies `auth.users`, but does not record its competing backend; automatic maintenance remains the suspected historical holder. The decision transaction releases its locks on commit and rollback; no decision lease is involved.
+- **Error class:** Uncontrolled database maintenance in lock-sensitive integration fixtures.
+- **Guard:** Disable automatic maintenance only on the four population tables in this suite's disposable database. Explicit maintenance tests retain the `BUSY` assertion, verify that no decision was written, and require the same decision to succeed after the maintenance transaction commits or rolls back. The eligibility assertions remain unchanged.
