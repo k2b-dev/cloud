@@ -829,6 +829,9 @@ export default function MailComposer(props: {
   createEffect(() => {
     // The own send's command keeps running: its answer carries the toast and Undo.
     if (!lifecycleTransition() || sendingHere()) return;
+    // A failure of a send the close overtook offers nothing to retry.
+    dismissSendFailure();
+    setSendFailure(null);
     deliveryPreparationController?.abort();
     deliveryPreparationController = null;
     send.abort();
@@ -1116,7 +1119,7 @@ export default function MailComposer(props: {
    * This composer's own send closes the draft. Its lifecycle is no news here: no notice, no hint, and no toast that
    * someone started sending; the send's own answer closes the composer with its toast and Undo.
    */
-  const ownSendCloses = () => sendingHere() || sentHere() || closingAfterSend() !== null;
+  const ownSendCloses = () => (sendingHere() || sentHere() || closingAfterSend() !== null) && !sharedState()?.restFailed;
   createEffect(() => {
     const leave = closingAfterSend();
     if (!leave || !sharedState()?.restUnchanged) return;
@@ -1267,6 +1270,29 @@ export default function MailComposer(props: {
         return;
       }
       if (error instanceof ComposeSafetyCancelled) return;
+      // The draft closed while this send ran. Its own close (the answer got lost after the server sent it) is this
+      // send: the composer leaves with the delivery toast, without Undo for want of its id. Someone else's close
+      // speaks for itself through the lifecycle, so no failure toast stands beside it.
+      const closed = untrack(lifecycleTransition)?.draft;
+      if (closed) {
+        const editor = closed.lastEditedBy;
+        const attempt = lastDeliveryAttempt;
+        if (
+          attempt &&
+          closed.state !== "discarded" &&
+          editor.kind === "user" &&
+          props.currentActor.kind === "user" &&
+          editor.userId === props.currentActor.id
+        ) {
+          setSentHere(true);
+          lastDeliveryAttempt = null;
+          const delivery = { submissionId: null, scheduledAt: attempt.scheduledAt ?? null, undoSeconds: attempt.request.undoSeconds };
+          if (props.host?.delivered) props.host.delivered(delivery);
+          else showDeliveryToast(delivery, { locale: locale(), dateConfig: props.dateConfig });
+          leaveBack("sent");
+        }
+        return;
+      }
       const delivery = currentDelivery;
       return reportDeliveryError(error.message, () => void sendDraft(delivery));
     },

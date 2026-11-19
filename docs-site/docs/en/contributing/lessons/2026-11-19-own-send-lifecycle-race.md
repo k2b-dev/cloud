@@ -10,5 +10,7 @@
   each later state change of the frozen draft and toasted each time.
 - **Error class:** A live event caused by this client's own pending request handled as someone else's change.
 - **Guard:** While its own send runs or has gone out, the composer keeps the command running and shows no lifecycle
-  notice, hint, or toast; the close effect runs once. The behavior test "a shared draft sent from the large window
-  closes once with one toast …" delivers the live close before the command answers and fails without the guard.
+  notice, hint, or toast, unless the comparison with the sent draft fails; the close effect runs once. An own send whose
+  answer got lost after the close leaves with the delivery toast. The behavior tests around "a shared draft sent from
+  the large window …" deliver the live close before the command answers: success, a lost answer, a peer who sent
+  first, and a failed comparison with input typed during the send.
