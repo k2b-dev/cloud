@@ -285,10 +285,13 @@ suiteFor(
   });
   test("foreign and guest readers get NOT_FOUND, including a deleted Code", async () => {
     const guestId = "66666666-6666-4666-8666-666666666666";
+    const foreignId = "77777777-7777-4777-8777-777777777777";
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${guestId}::uuid,'output-guest','local','guest')`;
+    await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${foreignId}::uuid,'output-foreign','local','user')`;
     const guest = await accounts.users.get({ id: guestId });
-    if (!guest) throw new Error("Missing guest");
-    for (const user of [guest, { ...guest, profile: "user" as const, roles: ["user" as const] }]) {
+    const foreign = await accounts.users.get({ id: foreignId });
+    if (!guest || !foreign) throw new Error("Missing guest or foreign user");
+    for (const user of [guest, foreign]) {
       const context = {
         authority: {
           actor: { kind: "user" as const, user },
@@ -362,6 +365,8 @@ suiteFor(
       await expect(readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).rejects.toMatchObject({
         code: "NOT_FOUND",
       });
+      // Deletion must deny even someone who can manage the owning resource.
+      manager = true;
       await sql`DELETE FROM code.codes WHERE id=${resourceCodeId}`;
       await expect(readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).rejects.toMatchObject({
         code: "NOT_FOUND",
