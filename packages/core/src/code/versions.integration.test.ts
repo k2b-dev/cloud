@@ -89,10 +89,12 @@ const action = {
 };
 const catalog = compileCapabilityManifest("example", {
   protocolVersion: 2,
+  code: { owners: ["item"] },
   types: { item: { title: "Fixture item", description: "Fixture owner.", reader: "item.read" } },
   queries: {
     "item.read": {
       ...operation,
+      codeResourceTitle: () => "Fixture item",
       input: z.object({ id: z.string().describe("Fixture item ID.") }).strict(),
       data: z.object({ view: CloudResourceReaderViewSchema }).strict(),
       run: () => ({ ok: true as const, data: { data: { view: { title: "Fixture item", permission: "admin" as const } } } }),

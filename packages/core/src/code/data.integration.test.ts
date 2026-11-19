@@ -21,6 +21,7 @@ import { readCodeAdminVersionSource } from "./admin";
 import { clearCodeAttentionCache, readCodeAttention } from "./attention";
 import { codeAuthoringServices } from "./authoring";
 import { type Code, codeQueryContracts } from "./contracts";
+import { codeOwnerCatalogFixture } from "./owner-registration.fixture";
 import { loadCodeActivityReadModel, readCodeActivityData } from "./read-model/activity";
 import { codeReadModelFixtureManifest } from "./read-model/fixtures";
 import { loadCodeRunReadModel } from "./read-model/run";
@@ -101,6 +102,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   const ownerState = new Map<string, { title: string; admin: boolean }>();
   let ownerSpy: ReturnType<typeof spyOn<typeof access, "readCodeOwner">>;
+  let catalogSpy: ReturnType<typeof spyOn<typeof catalog, "getCapabilityCatalogApp">>;
   beforeAll(async () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code");
@@ -123,6 +125,11 @@ databaseSuite()("Core Code data and Query authorization", () => {
       return definition.default;
     });
     ownerState.set(ids.admin, { title: "Mailbox today", admin: true });
+    const originalCatalog = catalog.getCapabilityCatalogApp;
+    const ownerCatalog = codeOwnerCatalogFixture("example", "mailbox");
+    catalogSpy = spyOn(catalog, "getCapabilityCatalogApp").mockImplementation(async (appId, ...rest) =>
+      appId === "example" ? { ok: true, data: ownerCatalog } : originalCatalog(appId, ...rest),
+    );
     ownerSpy = spyOn(access, "readCodeOwner").mockImplementation(async (owner, context) => {
       if (owner.kind === "person")
         return owner.userId === (context.authority.accessSubject.type === "user" ? context.authority.accessSubject.userId : null)
@@ -166,6 +173,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
   });
   afterAll(async () => {
     ownerSpy?.mockRestore();
+    catalogSpy?.mockRestore();
     settingsSpy?.mockRestore();
     await database?.drop();
     setSystemTime();
