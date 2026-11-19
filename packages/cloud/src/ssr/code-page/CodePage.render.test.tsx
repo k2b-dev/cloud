@@ -1838,3 +1838,40 @@ test("last and next starts share the request's timezone, including a DST change"
     expect(trail).toContain(next);
   }
 });
+
+// P5 Rundgang m02/m04: a grant on the whole app named its place after the app ("Spaces · Spaces").
+test("a grant on the whole app names the app once", () => {
+  const data = codePageFixture("overview", "de");
+  if (data.state.kind !== "ready" || !data.state.words?.current) throw new Error("ready fixture expected");
+  data.state.words.current.mayDo.items.push({ text: "Aufgaben auflisten · Spaces", app: "Spaces", icon: "tabler:layout-kanban" });
+  const page = visibleText(
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    ),
+  );
+  expect(page).toContain("Aufgaben auflisten Spaces");
+  expect(page).not.toContain("Spaces · Spaces");
+  expect(page).toContain("Aufgaben anlegen Spaces · Space Logistik");
+});
+
+// P5 Rundgang l01/l02/m02: "Letzte 1 Läufe · heute 1" – one run reads singular, and a count is never said twice.
+test("the run strip caption counts in the singular and never repeats its number", () => {
+  const de = codePageMessages.resolve(["de"]).t;
+  const en = codePageMessages.resolve(["en"]).t;
+  expect(de.stripCaption({ count: 1, today: 1, failed: 0 })).toBe("Letzter Lauf · heute");
+  expect(de.stripCaption({ count: 1, today: 1, failed: 1 })).toBe("Letzter Lauf · heute, fehlgeschlagen");
+  expect(de.stripCaption({ count: 1, today: 0, failed: 0 })).toBe("Letzter Lauf");
+  expect(de.stripCaption({ count: 2, today: 2, failed: 0 })).toBe("Letzte 2 Läufe · alle heute");
+  expect(de.stripCaption({ count: 30, today: 9, failed: 1 })).toBe("Letzte 30 Läufe · heute 9, davon 1 fehlgeschlagen");
+  expect(de.stripCaption({ count: 8, today: 0, failed: 0 })).toBe("Letzte 8 Läufe");
+  expect(de.stripPausedCaption({ count: 1 })).toBe("Letzter Lauf vor der Pause");
+  expect(de.stripLabel({ count: 1, failed: 0 })).toBe("Letzter Lauf");
+  expect(en.stripCaption({ count: 1, today: 1, failed: 0 })).toBe("Last run · today");
+  expect(en.stripCaption({ count: 30, today: 30, failed: 1 })).toBe("Last 30 runs · all today, 1 failed");
+  expect(en.stripLabel({ count: 1, failed: 1 })).toBe("Last run, failed");
+});
