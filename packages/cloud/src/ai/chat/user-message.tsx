@@ -41,7 +41,7 @@ export function AiUserMessageQuotes(props: { entry: AiStoredMessage }): JSX.Elem
  * Who wrote a message the person did not type: an automation, alarm or another chat. The server sets the origin from the
  * writer and links it only for a viewer who may open the source. The person's own messages carry none.
  */
-export const aiUserMessageSource = (entry: AiStoredMessage, locale: string, timeZone = "UTC"): JSX.Element | undefined => {
+export const aiUserMessageSource = (entry: AiStoredMessage, locale: string, timeZone?: string): JSX.Element | undefined => {
   // A turn Code started before writers carried their origin names its Code from the turn's own record, without a link.
   const code = entry.meta?.codeOrigin;
   const origin =
@@ -52,7 +52,7 @@ export const aiUserMessageSource = (entry: AiStoredMessage, locale: string, time
       <>
         <i class="ai-message-source__icon ti ti-alarm" data-kind="wakeup" aria-hidden="true" />
         <span>
-          {origin.name} {dates.formatTime(origin.scheduledAt, { locale, timeZone })}
+          {origin.name} {dates.formatTime(origin.scheduledAt, { locale, timeZone: timeZone ?? "UTC" })}
         </span>
       </>
     );
@@ -74,12 +74,24 @@ export const aiUserMessageSource = (entry: AiStoredMessage, locale: string, time
       <span>{label}</span>
     </>
   );
-  return origin.href ? (
-    <a href={origin.href} title={origin.kind === "automation" ? t.openAutomation : t.openChat}>
-      {content}
-    </a>
-  ) : (
-    content
+  // When it was written, quietly after the source, in the request's time zone: server and browser show the same time.
+  const time = timeZone ? dates.formatTime(entry.createdAt, { locale, timeZone }) : null;
+  return (
+    <>
+      {origin.href ? (
+        <a href={origin.href} title={origin.kind === "automation" ? t.openAutomation : t.openChat}>
+          {content}
+        </a>
+      ) : (
+        content
+      )}
+      {/* One element: its separator is drawn by CSS, so screen readers read only the time. */}
+      {time ? (
+        <time class="ai-message-source__time" dateTime={entry.createdAt}>
+          {time}
+        </time>
+      ) : undefined}
+    </>
   );
 };
 
