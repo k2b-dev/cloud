@@ -199,7 +199,7 @@ old work. It must check an uncertain effect before repeating it.
 ### Preserve writer identity and live state
 
 Queue entries and history messages carry server-authored provenance.
-`origin.kind` is `person`, `automation`, or `chat`, with a stable ID and a
+`origin.kind` is `person`, `automation`, `chat`, or `wakeup`, with a stable ID and a
 resolved display name. Chat and automation links appear only when the viewer
 can open the target. Durable provenance stores IDs, never translated names or
 display links. The existing inter-chat delivery path also records its source

@@ -13,6 +13,7 @@ import type { RequestAuthority } from "../server";
 import { toPgTextArray } from "../services/postgres";
 import type { AiMessageOrigin, AiStoredMessageOrigin } from "./queue-contracts";
 import { addCloudResourceHrefs } from "./resource-refs";
+import { aiWakeupMessages } from "./wakeup-messages";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -96,7 +97,14 @@ export const loadAiMessageOrigins = async (
   const projectedOrigins = await Promise.all(
     origins.map(async (origin): Promise<AiMessageOrigin> => {
       const row = known.get(`${origin.kind}:${origin.id}`);
-      const fallback = origin.kind === "person" ? "Person" : origin.kind === "chat" ? "Chat" : "Automation";
+      const fallback =
+        origin.kind === "wakeup"
+          ? aiWakeupMessages(viewer.locale ?? "en").origin
+          : origin.kind === "person"
+            ? "Person"
+            : origin.kind === "chat"
+              ? "Chat"
+              : "Automation";
       const resource = origin.kind === "automation" ? await resolveAutomation(origin) : null;
       return {
         kind: origin.kind,

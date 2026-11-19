@@ -92,7 +92,9 @@ the hold or start a turn by itself.
 
 The queued message has server-authored `writerOrigin.kind: "wakeup"`, its alarm
 ID and `scheduledAt`. Its immutable `turnTrigger` is also `wakeup`. The runtime
-adds planned time, actual time, alarm ID and postponement count to the turn.
+projects the queue entry's `origin` and the message's `meta.origin` with
+`kind: "wakeup"` and a localized `name` ("Alarm" in English, "Wecker" in German).
+The runtime adds planned time, actual time, alarm ID and postponement count to the turn.
 The turn runs with the owner's current identity and grants. `noteSource` records
 who saved the note: `{ kind: "person", userId }` for a session, or
 `{ kind: "gustav", userId, turnId }` for a tool. Updating only its time retains

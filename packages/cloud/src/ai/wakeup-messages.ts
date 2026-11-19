@@ -4,6 +4,7 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      origin: "Alarm",
       forbidden: "You cannot manage alarms in this chat with this access. Open your own chat with unrestricted access.",
       not_found: "The chat or alarm is unavailable. Open the chat again.",
       limit: "This chat already has five alarms. Change or delete one first.",
@@ -13,6 +14,7 @@ const messages = i18n.define({
       snooze_limit: "Gustav has already postponed this alarm three times. Set a new time yourself if needed.",
     },
     de: {
+      origin: "Wecker",
       forbidden:
         "Mit diesem Zugang kannst du in diesem Chat keine Wecker verwalten. Öffne deinen eigenen Chat mit uneingeschränktem Zugang.",
       not_found: "Der Chat oder Wecker ist nicht verfügbar. Öffne den Chat erneut.",
