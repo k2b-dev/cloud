@@ -56,7 +56,6 @@ const describe = (event: MailActivityEvent, context: MailEventContext): Sentence
     new Intl.ListFormat(context.locale, { type: "conjunction" }).format(
       people.map((person) => (you && person.id === context.currentUserId ? t.you : person.displayName)),
     );
-  const detailFor = (people: readonly MailActivityPerson[]) => (people.length ? t.assignees({ names: names(people, true) }) : null);
 
   if (event.action === "conversation.collaboration_updated" && event.assignees) {
     const { before: was, after: now } = event.assignees;
@@ -64,8 +63,13 @@ const describe = (event: MailActivityEvent, context: MailEventContext): Sentence
     const afterIds = assigneeIds(after);
     const added = now.filter((person) => !beforeIds.includes(person.id));
     const removed = was.filter((person) => !afterIds.includes(person.id));
-    // The line below names only assignees the sentence does not name already.
-    const detail = (named: readonly string[] = []) => detailFor(now.filter((person) => !named.includes(person.id)));
+    // The line below names only assignees the sentence does not name already; when the sentence names someone, the
+    // line says "also", so it never reads as the whole list.
+    const detail = (named: readonly string[] = []) => {
+      const others = now.filter((person) => !named.includes(person.id));
+      if (!others.length) return null;
+      return (named.length ? t.alsoAssigned : t.assignees)({ names: names(others, true) });
+    };
     if (afterIds.length === 0)
       return { icon: "ti ti-user-off", tone: "assign", before: t.unassignedBefore, after: t.unassignedAfter, detail: detail() };
     if (added.length === 0)

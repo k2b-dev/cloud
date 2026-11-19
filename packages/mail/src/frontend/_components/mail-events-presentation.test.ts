@@ -89,8 +89,8 @@ describe("mailbox event presentation", () => {
       "Rechnungen · Tag Rechnung gesetzt in Invoice 4711",
       "Mail · Wieder geöffnet: Invoice 4711",
     ]);
-    // The sentence names you; the line below names only the other assignee.
-    expect(rows[0]?.detail).toBe("Zuständig: Mira Schulz");
+    // The sentence names you; the line below names only the other assignee, as an addition.
+    expect(rows[0]?.detail).toBe("Ebenfalls zuständig: Mira Schulz");
     expect(rows.map((row) => row.tone)).toEqual(["assign", "done", "draft", "error", "sent", "automation", "done"]);
     // The failure names its reason and points to the conversation without asking to send again.
     expect(rows[3]?.detail).toBe("Die Nachricht wurde nicht zugestellt. Details in der Unterhaltung.");
@@ -117,7 +117,16 @@ describe("mailbox event presentation", () => {
     expect(alone?.detail).toBeNull();
     const [joined] = present([assign([nora], [nora, mira])], "en");
     expect(sentence(joined!)).toBe("Lea Brandt · Assigned to Mira Schulz: Invoice 4711");
-    expect(joined?.detail).toBe("Assigned: Nora Berg");
+    expect(joined?.detail).toBe("Also assigned: Nora Berg");
+    // "Zuständig" without "also" stays only where the sentence names nobody.
+    const [removed] = present([assign([nora, mira], [nora])]);
+    expect(sentence(removed!)).toBe("Lea Brandt · Zuweisung für Mira Schulz aufgehoben in Invoice 4711");
+    expect(removed?.detail).toBe("Zuständig: Nora Berg");
+    const [self] = present([
+      { ...assign([nora], [nora, mira]), actor: { kind: "user", id: MIRA, displayName: "Mira Schulz", avatarHash: null } },
+    ]);
+    expect(sentence(self!)).toBe("Mira Schulz · Selbst zugewiesen: Invoice 4711");
+    expect(self?.detail).toBe("Ebenfalls zuständig: Nora Berg");
   });
 
   test("names why a send failed as the reader does", () => {
