@@ -145,6 +145,8 @@ const startIdleListener = (options: {
       recordProviderReachable: async (remoteResourceId) => {
         events.reachable.push(remoteResourceId);
       },
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: options.leader,
       permits:
         options.permits ??
@@ -365,6 +367,8 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: leader,
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -400,6 +404,8 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: new FakeMutex(),
       permits: {
         acquire: async () => {
@@ -457,6 +463,8 @@ describe("IMAP push runtime", () => {
       },
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async (_ms: number, signal: AbortSignal) => {
@@ -507,6 +515,8 @@ describe("IMAP push runtime", () => {
         enqueueRediscovery: async () => undefined,
         loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
         recordProviderReachable: async () => undefined,
+        recordProviderFailure: async () => null,
+        providerBreakerOpenForMs: async () => 0,
         leaderMutex: new FakeMutex(),
         permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
         sleep: async (_ms: number, signal: AbortSignal) => {
@@ -540,6 +550,8 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -592,6 +604,8 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async (_ms: number, signal: AbortSignal) => {
@@ -649,6 +663,8 @@ describe("IMAP push runtime", () => {
         enqueueRediscovery: async () => undefined,
         loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
         recordProviderReachable: async () => undefined,
+        recordProviderFailure: async () => null,
+        providerBreakerOpenForMs: async () => 0,
         leaderMutex: new FakeMutex(),
         permits: {
           acquire: async () => ({ locks: [] }),
@@ -693,6 +709,8 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -702,6 +720,110 @@ describe("IMAP push runtime", () => {
     plans.resolve([plan]);
     await Promise.all([start, stop]);
     expect(listenCalls).toBe(0);
+  });
+});
+
+describe("IMAP push against a mail server that drops connection attempts", () => {
+  const CONNECT_TIMEOUT_MS = 15_000;
+  const LONGEST_WINDOW_MS = 15 * 60_000;
+  const connectTimeout = () => Object.assign(new Error("Failed to establish connection in required time"), { code: "CONNECT_TIMEOUT" });
+
+  /**
+   * Runs one binding on a virtual clock that only `sleep` and connection attempts advance. The server
+   * drops every attempt until `answersFrom`, as a host that blocks this installation's address does;
+   * each attempt waits for the connection timeout. The breaker behaves like the mailbox's provider
+   * breaker without its jitter: a timeout opens it for one connection timeout, each further one
+   * doubles the window up to fifteen minutes, and a connection that reaches the server closes it.
+   */
+  const runAgainstDroppingServer = async (answersFrom: number, stopAt: number) => {
+    const controller = new AbortController();
+    const clock = { now: 0 };
+    const breaker = { windowMs: 0, openUntil: 0 };
+    const events = { attempts: [] as number[], rediscoveries: 0, folderSyncs: [] as number[], reachableAt: [] as number[] };
+    await runImapPushBinding(
+      plan,
+      {
+        listPlans: async () => [plan],
+        loadPlan: async () => plan,
+        claimGeneration: async () => 1,
+        updateHealth: async () => undefined,
+        loadRuntime: async () => ({ runtime: runtimeConfig, secretRevision: plan.secretRevision }),
+        listen: async (): Promise<ConnectorChangeListener> => {
+          events.attempts.push(clock.now);
+          if (clock.now < answersFrom) {
+            clock.now += CONNECT_TIMEOUT_MS;
+            throw connectTimeout();
+          }
+          return {
+            mode: "idle",
+            hints: {
+              async *[Symbol.asyncIterator]() {
+                await new Promise((resolve) => controller.signal.addEventListener("abort", resolve, { once: true }));
+              },
+            },
+            close: async () => undefined,
+          };
+        },
+        enqueueFolder: async () => {
+          events.folderSyncs.push(clock.now);
+          // The listener that reached the server checks its folder once; the run ends there.
+          if (clock.now >= answersFrom) controller.abort(new Error("test complete"));
+        },
+        enqueueReconciliation: async () => undefined,
+        enqueueRediscovery: async () => {
+          events.rediscoveries += 1;
+        },
+        // Never rediscovered: the binding's last verification is always overdue.
+        loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+        recordProviderReachable: async () => {
+          events.reachableAt.push(clock.now);
+          breaker.windowMs = 0;
+          breaker.openUntil = 0;
+        },
+        recordProviderFailure: async (_resource, error) => {
+          if ((error as { code?: string }).code !== "CONNECT_TIMEOUT") return null;
+          breaker.windowMs = breaker.windowMs === 0 ? CONNECT_TIMEOUT_MS : Math.min(breaker.windowMs * 2, LONGEST_WINDOW_MS);
+          breaker.openUntil = clock.now + breaker.windowMs;
+          return breaker.windowMs;
+        },
+        providerBreakerOpenForMs: async () => Math.max(0, breaker.openUntil - clock.now),
+        leaderMutex: new FakeMutex(),
+        permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
+        sleep: async (ms: number, signal: AbortSignal) => {
+          clock.now += ms;
+          if (clock.now >= stopAt) controller.abort(new Error("test complete"));
+          if (signal.aborted) throw signal.reason;
+        },
+      },
+      controller.signal,
+    );
+    return events;
+  };
+
+  test("tries the server at growing intervals up to fifteen minutes instead of every minute, and queues no rediscovery", async () => {
+    const twoHours = 2 * 60 * 60_000;
+    const events = await runAgainstDroppingServer(Number.POSITIVE_INFINITY, twoHours);
+
+    // Before the breaker, push tried the server about every 75 seconds (its longest reconnect
+    // delay plus the connection timeout) and queued a folder sync and a rediscovery after each try.
+    const gaps = events.attempts.slice(1).map((at, index) => at - events.attempts[index]!);
+    expect(gaps.slice(0, 7).every((gap, index) => index === 0 || gap > gaps[index - 1]!)).toBe(true);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(LONGEST_WINDOW_MS + CONNECT_TIMEOUT_MS + 60_000);
+    expect(gaps.at(-1)).toBeGreaterThanOrEqual(LONGEST_WINDOW_MS);
+    expect(events.attempts.length).toBeLessThanOrEqual(15);
+    expect(events.rediscoveries).toBe(0);
+    expect(events.folderSyncs).toEqual([]);
+  });
+
+  test("a server that answers again is reached within one longest window, which resets the breaker and checks the folder", async () => {
+    const answersFrom = 60 * 60_000;
+    const events = await runAgainstDroppingServer(answersFrom, 3 * 60 * 60_000);
+
+    const reached = events.attempts.find((at) => at >= answersFrom)!;
+    expect(reached - answersFrom).toBeLessThanOrEqual(LONGEST_WINDOW_MS + 60_000);
+    expect(events.reachableAt).toEqual([reached]);
+    expect(events.folderSyncs).toEqual([reached]);
+    expect(events.rediscoveries).toBe(0);
   });
 });
 

@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, jest, spyOn, test } from "bun:test";
 import { connections, createSql, redis, sql } from "@k2b/cloud";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { initializeTestPlatform, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, type ProviderConnectionInput, unavailableProviderLimitSnapshot } from "../contracts";
@@ -18,11 +19,20 @@ import { createProviderConnection, replaceProviderConnection } from "./provider-
 import {
   acquireProviderLease,
   MAIL_PROVIDER_OPERATION_LEASE_MS,
+  providerBreakerOpenForMs,
   recordProviderReachable,
   releaseProviderLease,
 } from "./provider-operation-lock";
 import { takeFolderSyncActivity } from "./sync-activity";
-import { claimFence, commitSyncBatch, enqueueFolderSync, requestedSyncProgress, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
+import {
+  claimFence,
+  commitSyncBatch,
+  enqueueFolderSync,
+  requestedSyncProgress,
+  runSyncFolderJob,
+  submitDueFolderSyncs,
+  syncFolderBatch,
+} from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -159,6 +169,11 @@ suite("mail sync recovery", () => {
     return typeof stored?.result === "string" ? JSON.parse(stored.result) : (stored?.result ?? {});
   };
 
+  const folderSyncStatus = async (fixture: SyncFixture): Promise<string | undefined> => {
+    const [folder] = await sql<{ sync_status: string }[]>`SELECT sync_status FROM mail.folders WHERE id = ${fixture.folderId}::uuid`;
+    return folder?.sync_status;
+  };
+
   const degradeWithTimeout = async (fixture: SyncFixture): Promise<void> => {
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockRejectedValue(connectTimeout());
     try {
@@ -221,15 +236,14 @@ suite("mail sync recovery", () => {
     const before = await transportState(fixture);
     await degradeWithTimeout(fixture);
 
-    // The binding and its credential revision are still valid: push keeps listening and a manual sync queues real work.
+    // The binding and its credential revision are still valid: push keeps listening.
     expect(await loadImapPushPlan(fixture.bindingId)).toMatchObject({ bindingId: fixture.bindingId, folderId: fixture.folderId });
-    expect(await requestFolderSync(fixture, "degraded-sync")).toEqual({ folderId: fixture.folderId, queued: true });
 
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
     try {
-      // The timeout opened the mailbox's provider breaker: the next sync waits instead of connecting,
-      // until the breaker's window ends or, as here, IMAP push reaches the provider again.
-      await expect(syncFolderBatch(fixture.folderId, async () => undefined)).rejects.toMatchObject({ code: "SYNC_BUSY" });
+      // The timeout opened the mailbox's provider breaker: the next sync does not connect and says
+      // so, until the breaker's window ends or, as here, IMAP push reaches the provider again.
+      await expect(syncFolderBatch(fixture.folderId, async () => undefined)).rejects.toMatchObject({ code: "PROVIDER_UNREACHABLE" });
       expect(status).not.toHaveBeenCalled();
       await recordProviderReachable(fixture.resourceId);
       await expect(syncFolderBatch(fixture.folderId, async () => undefined)).resolves.toMatchObject({ hasMore: false });
@@ -250,6 +264,54 @@ suite("mail sync recovery", () => {
       { state: "failed", error_code: "CONNECT_TIMEOUT" },
       { state: "completed", error_code: null },
     ]);
+  });
+
+  test("a folder job that finds the mail server unreachable neither counts as done nor retries, and a manual sync tries it at once", async () => {
+    const fixture = await createSyncedMailbox("unreachable");
+    await degradeWithTimeout(fixture);
+    const breakerWindow = async () =>
+      Number(await redis.send("HGET", [`mail:provider-lease-line:{${fixture.resourceId}}:breaker`, "window"]));
+    expect(await breakerWindow()).toBe(15_000);
+    expect(await providerBreakerOpenForMs(fixture.resourceId)).toBeGreaterThan(0);
+    takeFolderSyncActivity();
+
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    const resubmit = jest.fn();
+    const meter = await meterSql();
+    try {
+      // Before, this turn found the lease "busy", resubmitted itself every few seconds, and settled
+      // as a successful run 30 to 250 ms after a timeout, while nothing synchronized.
+      const statements = await meter.during(() =>
+        runSyncFolderJob({
+          input: { folderId: fixture.folderId, remoteResourceId: fixture.resourceId },
+          heartbeat: async () => undefined,
+          resubmit,
+        }),
+      );
+      // One statement: the folder records that its sync gave up, so a waiting sync request ends.
+      expect(statements).toEqual([expect.stringContaining("UPDATE mail.folders SET sync_status = 'degraded'")]);
+    } finally {
+      await meter.close();
+    }
+    expect(status).not.toHaveBeenCalled();
+    expect(resubmit).not.toHaveBeenCalled();
+    expect(takeFolderSyncActivity().batches).toEqual({ unreachable: 1 });
+    expect(await folderSyncStatus(fixture)).toBe("degraded");
+    // The scheduler queues no check of the mailbox while its window is open.
+    expect(await submitDueFolderSyncs(100_000)).not.toContain(fixture.folderId);
+
+    // A person's sync tries the server at once: it closes the breaker before it queues the sync.
+    expect(await requestFolderSync(fixture, "unreachable-sync")).toEqual({ folderId: fixture.folderId, queued: true });
+    expect(await providerBreakerOpenForMs(fixture.resourceId)).toBe(0);
+    expect(await submitDueFolderSyncs(100_000)).toContain(fixture.folderId);
+    try {
+      await runSyncFolderJob({ input: { folderId: fixture.folderId }, heartbeat: async () => undefined, resubmit });
+      expect(status).toHaveBeenCalledTimes(1);
+    } finally {
+      status.mockRestore();
+    }
+    expect(await transportState(fixture)).toMatchObject({ resource_status: "active", health: "active", health_reason: null });
+    expect(await folderSyncStatus(fixture)).toBe("current");
   });
 
   test("a non-empty successful batch retains its completed history", async () => {

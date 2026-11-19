@@ -68,6 +68,7 @@ import {
   MAIL_PROVIDER_JOB_CONCURRENCY,
   mailProviderOperationMutex,
   type ProviderLeasePriority,
+  providerBreakerOpenForMs,
   providerBusyRetryAfterMs,
   providerLeaseWaitedFor,
   providerLeaseWaitedForByOtherWork,
@@ -2687,13 +2688,14 @@ export const syncFolderBatch = async (
   if (!resource) return emptyBatch();
   let mailboxId: string | null = null;
 
-  const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
+  const turn = await acquireProviderLease({
     resource,
     waiter: `sync-folder:${folderId}`,
     priority,
     ttlMs: SYNC_LEASE_MS,
   });
-  if (!lock) throw Object.assign(new Error("Mail sync resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
+  if (!turn.lock) throw leaseUnavailable(turn, "Mail sync resource is busy");
+  const { lock } = turn;
   await countServedFolderTurn(resource);
   let runId: string | null = null;
   let selectedBindingId: string | null = null;
@@ -2944,6 +2946,19 @@ export const syncFolderBatch = async (
   return batch;
 };
 
+/**
+ * The error of a turn that did not get the provider lease: `PROVIDER_UNREACHABLE` while the
+ * mailbox's provider breaker is open, which ends the job's turn without counting as done, and
+ * otherwise `SYNC_BUSY`, routine contention that retries soon.
+ */
+const leaseUnavailable = (turn: { retryAfterMs: number; unreachableForMs: number | null }, busyMessage: string): Error =>
+  turn.unreachableForMs !== null
+    ? Object.assign(new Error("The mail server did not answer recent connection attempts; Mail tries again later"), {
+        code: "PROVIDER_UNREACHABLE",
+        retryAfterMs: turn.unreachableForMs,
+      })
+    : Object.assign(new Error(busyMessage), { code: "SYNC_BUSY", retryAfterMs: turn.retryAfterMs });
+
 const normalizeSyncErrorCode = (error: unknown): string => {
   return providerErrorCode(error, "MAIL_SYNC_FAILED");
 };
@@ -3032,6 +3047,15 @@ const runSyncFolderJobOutcome = async (
       countFolderBatch("deferred");
       countFolderSyncTrigger("rate_limited");
       ctx.resubmit({ delayMs: retryAfterMs(error, 5_000), input: { folderId, backfill, ...carried } });
+      return { deferred: code };
+    }
+    // The mail server did not answer recent connection attempts, and its breaker keeps the job from
+    // trying again yet. The turn is neither done nor a failed attempt: the folder shows that its
+    // sync gave up, so a sync someone waits for ends, and the scheduler queues the folder again once
+    // the breaker's window ends. Retrying or resubmitting here would only ask the breaker again.
+    if (code === "PROVIDER_UNREACHABLE") {
+      countFolderBatch("unreachable");
+      await markFolderDegraded(folderId);
       return { deferred: code };
     }
     // A sibling job holds the remote resource: routine contention, not a failed attempt.
@@ -3612,13 +3636,14 @@ export const executeBindingRediscovery = async (
   `;
   if (!binding) throw Object.assign(new Error("Provider binding is unavailable for rediscovery"), { code: "BINDING_UNAVAILABLE" });
   // Rediscovery decides which folders sync at all, so it ranks with folder syncs.
-  const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
+  const turn = await acquireProviderLease({
     resource: binding.remote_resource_id,
     waiter: `rediscover:${bindingId}`,
     priority: "sync",
     ttlMs: SYNC_LEASE_MS,
   });
-  if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
+  if (!turn.lock) throw leaseUnavailable(turn, "Mail remote resource is busy");
+  const { lock } = turn;
   let result: BindingRediscoveryResult;
   try {
     result = await withLeaseHeartbeat({
@@ -3658,6 +3683,16 @@ const startRediscoveryJob = async (): Promise<void> => {
     } catch (error) {
       const code = normalizeSyncErrorCode(error);
       if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+      // The binding's provider did not answer recent connection attempts. The rediscovery ends
+      // without trying it: the scheduler asks again at its next verification, and a person's
+      // rediscovery resets the breaker first.
+      if (code === "PROVIDER_UNREACHABLE") {
+        log.info("Mail provider rediscovery skipped while the provider is unreachable", {
+          bindingId: ctx.input.bindingId,
+          retryAfterMs: retryAfterMs(error, 0),
+        });
+        return;
+      }
       if (code === "MAIL_RATE_LIMITED") {
         ctx.resubmit({ delayMs: retryAfterMs(error, 15_000) });
         return;
@@ -3828,6 +3863,15 @@ const boundDueFolders = async <F extends { id: string; remote_resource_id: strin
   return folders.filter((folder) => !left.has(folder.id));
 };
 
+/** The folders whose remote mailbox's provider breaker is closed; one Valkey call per mailbox. */
+const withoutUnreachableResources = async <F extends { remote_resource_id: string }>(folders: F[]): Promise<F[]> => {
+  const unreachable = new Set<string>();
+  for (const resource of new Set(folders.map((folder) => folder.remote_resource_id))) {
+    if ((await providerBreakerOpenForMs(resource)) > 0) unreachable.add(resource);
+  }
+  return unreachable.size === 0 ? folders : folders.filter((folder) => !unreachable.has(folder.remote_resource_id));
+};
+
 /**
  * Queues every eligible Inbox, then the next eligible folders after the one the previous run
  * stopped at, wrapping around to the first folder. Returns the queued folder ids in that order.
@@ -3867,9 +3911,12 @@ export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Pr
       ? await redis.mget(...folders.map((folder) => recentRequestKey(folder.id))).catch(() => [])
       : [];
   const unrequested = folders.filter((_folder, index) => recent[index] == null);
+  // A mailbox whose mail server did not answer recent connection attempts gets no check until its
+  // provider breaker's window ends: each check would only find the breaker open.
+  const reachable = await withoutUnreachableResources(unrequested);
   // Likewise only a run that reaches every eligible folder bounds a mailbox: within a page, its
   // turn would keep landing on the same folders.
-  const due = folders.length < limit ? await boundDueFolders(unrequested) : unrequested;
+  const due = folders.length < limit ? await boundDueFolders(reachable) : reachable;
   for (const folder of due) await submitSyncFolderJob(folder.id, "scheduled");
   return due.map((folder) => folder.id);
 };

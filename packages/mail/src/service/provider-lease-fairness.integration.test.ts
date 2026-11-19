@@ -36,6 +36,7 @@ import {
   mailProviderOperationMutex,
   type ProviderLeasePriority,
   type ProviderLeaseTurn,
+  providerBreakerOpenForMs,
   providerBusyRetryAfterMs,
   providerLeaseWaitedFor,
   recordProviderFailure,
@@ -2990,7 +2991,7 @@ suite("mail provider lease fairness", () => {
     }
   }, 90_000);
 
-  test("the provider breaker pauses for one connection timeout, doubles up to a minute, and its waiters notice when the provider answers", async () => {
+  test("the provider breaker pauses for one connection timeout, doubles up to fifteen minutes, and its waiters notice when the provider answers", async () => {
     const resource = crypto.randomUUID();
     const take = (waiter = "first") =>
       acquireProviderLease({ resource, waiter, priority: "sync", ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
@@ -3003,20 +3004,26 @@ suite("mail provider lease fairness", () => {
     expect(free.lock).not.toBeNull();
     await releaseProviderLease(free.lock!);
 
-    for (const windowMs of [15_000, 30_000, 60_000, 60_000]) {
+    // Before, the window stopped growing at one minute, so a server that drops every connection
+    // attempt was tried again every minute for as long as it stayed unreachable.
+    for (const windowMs of [15_000, 30_000, 60_000, 120_000, 240_000, 480_000, 900_000, 900_000]) {
       // Up to a quarter of the window is added at random.
       const pauseMs = await recordProviderFailure(resource, connectTimeout());
       expect(pauseMs).toBeGreaterThanOrEqual(windowMs);
       expect(pauseMs).toBeLessThanOrEqual(windowMs * 1.25);
+      expect(await providerBreakerOpenForMs(resource)).toBeGreaterThan(windowMs - 1_000);
       const turn = await take();
       expect(turn.lock).toBeNull();
-      // The waiter asks again within the lease line's longest retry, not only when the pause ends.
+      // The turn says the provider is unreachable, not busy, and for how long.
+      if (turn.lock === null) expect(turn.unreachableForMs).toBeGreaterThan(windowMs - 1_000);
+      // A waiter that keeps waiting asks again within the lease line's longest retry, not only when the pause ends.
       expect(turn.retryAfterMs).toBeLessThanOrEqual(4_500);
     }
 
     // Once the provider answers again, the waiter takes the lease at its next try, and the next
     // timeout pauses for one connection timeout again.
     await recordProviderReachable(resource);
+    expect(await providerBreakerOpenForMs(resource)).toBe(0);
     const reachable = await take();
     expect(reachable.lock).not.toBeNull();
     await releaseProviderLease(reachable.lock!);
