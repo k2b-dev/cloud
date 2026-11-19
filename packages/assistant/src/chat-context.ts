@@ -7,6 +7,7 @@ import {
   type AiFileStat,
   type AiResourceContext,
   type AiWakeup,
+  AiWakeupError,
   aiConversations,
   aiMemories,
   aiSkills,
@@ -17,6 +18,8 @@ import {
   isAiViewPath,
   loadAiConversationFileOverview,
 } from "@k2b/cloud/ai";
+import { logger } from "@k2b/cloud/services";
+import { i18n } from "@k2b/stdlib";
 import { aiWakeupWhen } from "./wakeup-when";
 
 /** Snapshot limits: results and files come from people and stay small; sources and working files can grow. */
@@ -122,9 +125,32 @@ export type AssistantChatContextSnapshot = {
   resourceCounts?: Array<{ type: string; count: number; label: string }>;
 };
 
-const wakeupWords = {
-  en: { label: "Alarms", missed: "Missed", expired: "Expired", edit: "Change alarm" },
-  de: { label: "Wecker", missed: "Verpasst", expired: "Abgelaufen", edit: "Wecker ändern" },
+const wakeupWords = /* @__PURE__ */ i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: { label: "Alarms", missed: "Missed", expired: "Expired", edit: "Change alarm" },
+    de: { label: "Wecker", missed: "Verpasst", expired: "Abgelaufen", edit: "Wecker ändern" },
+  },
+});
+
+const log = logger("assistant:chat-context");
+
+type ChatWakeups = NonNullable<AssistantChatContextSnapshot["wakeups"]>;
+/**
+ * The chat's alarms for the snapshot. A chat whose viewer may not manage alarms here (app session, delegation, limited
+ * tools) has none, quietly; any other failure is logged and leaves the alarms out, so the box and the chat still load.
+ */
+export const loadChatWakeups = async (chatId: string, load: () => Promise<ChatWakeups>): Promise<ChatWakeups | undefined> => {
+  try {
+    return await load();
+  } catch (error) {
+    if (error instanceof AiWakeupError && (error.code === "forbidden" || error.code === "not_found")) return undefined;
+    log.warn("Could not list the chat's alarms for its context", {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
 };
 
 /** The box's alarm group: note on the left, its time on the right ("16:00" today), in the order they ring. */
@@ -133,7 +159,7 @@ const wakeupGroup = (
   input: { locale: string; timeZone: string; now: string },
 ): AssistantChatContextGroup[] => {
   if (!wakeups.items.length) return [];
-  const words = wakeupWords[input.locale.startsWith("de") ? "de" : "en"];
+  const words = wakeupWords.resolve([input.locale]).t;
   return [
     {
       key: "wakeups",
@@ -231,7 +257,7 @@ export const loadAssistantChatContextSnapshot = async (
     aiSkills.listConversationUses(conversation.id),
     aiMemories.listFromConversation(userId, conversation.id),
     // Only a chat whose owner may manage alarms here lists them; any refusal leaves the box and the field without.
-    aiWakeups.list(chatId, identity, options.locale ?? "en").catch(() => undefined),
+    loadChatWakeups(chatId, () => aiWakeups.list(chatId, identity, options.locale ?? "en")),
   ]);
   // An upload stays the person's file, also when the assistant hands it over with present.
   const uploads = new Set(overview.files.flatMap((file) => (file.origin === "user" ? [file.path] : [])));
