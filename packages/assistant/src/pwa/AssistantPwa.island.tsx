@@ -39,7 +39,21 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  lazy,
+  Match,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js";
 import { assistantApi } from "../api/client";
 import type { CodeVersionCardEntry } from "../code-version-cards";
 import AssistantAuthoringStop from "../frontend/AssistantAuthoringStop";
@@ -66,6 +80,7 @@ import { type StoredChatFile, uploadChatFile } from "./upload";
 
 /** How many chats the start lists; the rest are one step away. */
 const RECENT = 6;
+const TurnErrorAction = lazy(() => import("../frontend/AssistantTurnErrorAction"));
 /** The draft of the field on the start and of a new chat. */
 const NEW_DRAFT = "new";
 
@@ -988,6 +1003,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
               <Match when={true}>
                 <AiChatActionsProvider
                   actions={{
+                    renderTurnErrorAction: (error) => (props.canConfigure ? <TurnErrorAction error={error} canConfigure /> : undefined),
                     // The same version card as the workspace: on a phone it says where switching on works.
                     renderCodeAuthoringStop: (state, continuable, superseded) => (
                       <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />

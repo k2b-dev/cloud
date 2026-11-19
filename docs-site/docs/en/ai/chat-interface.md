@@ -613,6 +613,12 @@ A turn whose last step failed and that ends without an answer also fails and
 shows this notice.
 Screen readers hear the notice once when the turn they followed fails.
 
+A host can supply `AiChatActions.renderTurnErrorAction(error)` for a remedy
+specific to its own failure. Resolve its visibility from the current viewer's
+permissions. Assistant links Core's unpriced-model rejection to **Model
+management** for administrators only; other viewers receive the explanatory
+text without a link. The remedy loads when a failed turn needs it.
+
 When the failed turn is the chat's newest, no turn runs, and a new turn can
 finish the work, the notice offers **Continue**. Supply
 `AiChatActions.onContinueTurn(message)` and send `message`, a visible request

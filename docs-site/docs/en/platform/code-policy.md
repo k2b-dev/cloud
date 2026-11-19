@@ -73,6 +73,11 @@ automation and model. An administrator can configure the model's reference
 price; ordinary AI approval does not bypass this requirement. Model names and
 requested model classes grant no exception.
 
+The model's **Prices** section explains this restriction for missing and zero
+prices. The chat directs the person to ask an administrator to enter the price
+in model management. Administrators also receive a link there; other viewers
+see the explanation without the administration link.
+
 A priced turn must have a known context window. At start, Cloud atomically
 reserves the turn's maximum against both the Code and owner's remaining daily
 allowance, using the executed profile's prices: 192,000 input tokens plus one

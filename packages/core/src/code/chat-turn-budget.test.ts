@@ -30,7 +30,11 @@ test.each(["de", "en"])("the unpriced-model reason names the automation, model a
   expect(message).toContain("Morning briefing");
   expect(message).toContain("Test Model");
   expect(message).toContain(locale === "de" ? "Preis" : "price");
-  expect(message).toContain(locale === "de" ? "Administration kann den Preis eintragen" : "administrator can enter the price");
+  expect(message).toContain(
+    locale === "de"
+      ? "Administration kann den Preis in der Modellverwaltung eintragen"
+      : "administrator can enter the price in model management",
+  );
 });
 
 test("priced models without an authoritative context limit cannot prove the maximum", () => {
