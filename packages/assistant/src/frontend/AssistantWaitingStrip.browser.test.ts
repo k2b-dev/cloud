@@ -703,13 +703,14 @@ describe("Waiting for you", () => {
         await page.waitForURL(/\?conversation=Tops42&question=tool-routine-1$/);
         await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence of the other chat focused");
         await settled(page);
-        // The sentence is in view, and the open chat's question now leads the row; the others name their chat.
+        // The sentence is in view. The open chat's only question has its answers in view, so it leaves the row (v12 3m);
+        // the others name their chat.
         const sentence = await rect(page, '[data-chat-anchor="tool-routine-1"] .k2b-notice-card__title');
         expect(sentence.top).toBeGreaterThanOrEqual(0);
         expect(sentence.bottom).toBeLessThanOrEqual((await rect(page, "nav.assistant-waiting")).top);
         // Its question ends the chat, so the chat stays at its end and keeps following.
         expect(await page.getByText("Zur neuesten Nachricht").count()).toBe(0);
-        const there = [short("de", "routine"), `${short("de", "mail")} in Wartung Oktober`, `${short("de", "del")} in Wartung Oktober`];
+        const there = [`${short("de", "mail")} in Wartung Oktober`, `${short("de", "del")} in Wartung Oktober`];
         expect(await entries(page)).toEqual(there);
 
         await page.reload();
