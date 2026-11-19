@@ -121,7 +121,11 @@ function EventDelivery(props: { delivery: z.infer<typeof EventDeliverySchema>; s
 /** The detail of one run in words (Bild 22): title, when and how, status, what happened, and what to do next. */
 function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: CodePageRunDetail; text: PageText; live: CodeLive }) {
   const t = props.text.t;
-  const run = () => ({ ...props.detail.run, ...props.live.runs().find((run) => run.id === props.detail.run.id) });
+  // The detail owns trigger and timing metadata; the list only updates its live state.
+  const run = () => ({
+    ...props.detail.run,
+    state: props.live.runs().find((run) => run.id === props.detail.run.id)?.state ?? props.detail.run.state,
+  });
   const words = () => props.state.words?.runs[run().id];
   const [rerunning, setRerunning] = createSignal(false);
   const calls = () => props.detail.calls;

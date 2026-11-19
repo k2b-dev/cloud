@@ -8,8 +8,8 @@ export const CodeRunEntriesInputSchema = z
     codeId: z
       .string()
       .regex(/^c_[a-z0-9]{4,16}$/)
-      .describe("Code ID from code.list/read."),
-    runId: z.uuid().describe("Run UUID from code.run.list."),
+      .describe("Code ID."),
+    runId: z.uuid().describe("Run UUID."),
   })
   .strict();
 export const CodeRunEntriesSchema = z
