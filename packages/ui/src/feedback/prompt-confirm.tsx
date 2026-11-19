@@ -1,7 +1,6 @@
 import { createSignal, type JSX } from "solid-js";
 import type { TextInput } from "../inputs/TextInput";
 import { resolveUiMessages } from "../intl/messages";
-import { loadedPromptForm, loadPromptForm } from "./prompt-form-loader";
 import { DialogHeader, promptButtonVariant, promptTone } from "./prompt-header";
 import { resolvePromptMessages } from "./prompt-messages";
 import { openPrompt } from "./prompt-sheet";
@@ -125,15 +124,26 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
     throw new Error("confirmationPhrase must be non-empty, visible, and single-line");
   }
   // The typed phrase uses the form's text field, which loads with the form prompts.
-  const form = loadedPromptForm();
-  if (form) return openConfirm(content, options, form.TextInput);
-  return loadPromptForm().then(
-    (module) => openConfirm(content, options, module.TextInput),
+  const field = phraseField?.loaded();
+  if (field) return openConfirm(content, options, field);
+  if (!phraseField) return promptFormUnavailable(options?.signal).then(() => false);
+  return phraseField.load().then(
+    (input) => openConfirm(content, options, input),
     async () => {
       await promptFormUnavailable(options?.signal);
       return false;
     },
   );
+};
+
+/**
+ * Where the typed phrase's text field comes from: `prompts` provides it from the form chunk that loads on demand.
+ * `PanelDialog` imports this module for its discard question, and the form's date picker imports `PanelDialog`
+ * through its phone sheet, so importing the form's loader here would be an import cycle.
+ */
+let phraseField: { loaded: () => typeof TextInput | undefined; load: () => Promise<typeof TextInput> } | undefined;
+export const providePhraseField = (source: NonNullable<typeof phraseField>) => {
+  phraseField = source;
 };
 
 /** `prompts` starts as this object; `PanelDialog` asks through it, so it reaches a replaced `prompts.confirm` too. */

@@ -6,7 +6,7 @@ import { KeyedFor } from "../internal/keyed-for";
 import { optionDescription } from "../internal/option-description";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
-import { openError, type PromptContent, promptFormUnavailable, sharedPrompts } from "./prompt-confirm";
+import { openError, type PromptContent, promptFormUnavailable, providePhraseField, sharedPrompts } from "./prompt-confirm";
 import { loadedPromptForm, loadPromptForm } from "./prompt-form-loader";
 import { DialogHeader, promptButtonVariant, promptTone } from "./prompt-header";
 import { resolvePromptMessages } from "./prompt-messages";
@@ -478,6 +478,11 @@ const openAlert = (content: PromptContent, options?: DialogOptions, celebrate?: 
     options,
     resolveUiMessages().info,
   );
+
+providePhraseField({
+  loaded: () => loadedPromptForm()?.TextInput,
+  load: () => loadPromptForm().then((module) => module.TextInput),
+});
 
 // The browser loads the form when it is idle after the island starts, so the first form opens at once and without a
 // half-drawn frame. Without idle callbacks (WebKit), the first press or key does it, before the click it starts. No
