@@ -962,6 +962,8 @@
 }
 /* The one way out is the library's link button (Gustav's plum inside Gustav); it keeps the 20 px line. */
 .k2b-ui .assistant-wakeup-line__link { flex: none; margin-block: -.25rem; white-space: nowrap; }
+/* One type size per line (6d): the link takes the line's 13 px, above the library's small button size. */
+.k2b-ui .assistant-wakeup-line > .k2b-button.assistant-wakeup-line__link { font-size: inherit; }
 /* Gustav's alarms (Gustav alarms v1, F1 A): the same 32 px row in the free end above the field, with the next alarm,
    or the chip "Alarms · n" at the end of the row "Waiting for you" or "Queued" share. The list has the form of "Queued":
    time in a fixed column of 8.75 rem, the note behind it, two fixed places for pencil and cross. */
