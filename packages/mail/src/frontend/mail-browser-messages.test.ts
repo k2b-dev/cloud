@@ -6,7 +6,7 @@ import { mailMailboxDetailsMessages } from "./_components/mail-mailbox-details-m
 import { mailMailboxViewMessages } from "./_components/mail-mailbox-view-messages";
 import { mailMessageMessages } from "./_components/mail-message-messages";
 import { mailReaderMessages } from "./_components/mail-reader-messages";
-import { mailRemainingMessages } from "./_components/mail-remaining-messages";
+import { mailPresetDescriptionMessages, mailRemainingMessages } from "./_components/mail-remaining-messages";
 import { mailSettingsMessages } from "./_components/mail-settings-messages";
 import { mailSidebarMessages } from "./_components/mail-sidebar-messages";
 import { mailAutomationPageMessages } from "./mail-automation-page-messages";
@@ -26,6 +26,7 @@ const catalogs = [
   mailComposerMessages,
   mailSettingsMessages,
   mailRemainingMessages,
+  mailPresetDescriptionMessages,
   mailMailboxViewMessages,
 ];
 

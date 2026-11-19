@@ -540,9 +540,7 @@ export const mailRemainingMessages = i18n.define({
       classificationsStep: ({ step }: { step: number }) => `Classifications · step ${step}`,
       eventDataStep: ({ step }: { step: number }) => `Event data · step ${step}`,
       important: "Important",
-      importantDescription: "Needs personal attention or a timely response",
       routine: "Routine",
-      routineDescription: "Can be handled as routine mail",
       classifyManyInstructions: "Choose the categories that best apply to this message.",
       classifyOneInstructions: "Choose the single best category for this message.",
       generateTextInstructions: "Write concise, useful text based on the incoming message. Do not invent facts or commitments.",
@@ -1302,9 +1300,7 @@ export const mailRemainingMessages = i18n.define({
       classificationsStep: ({ step }) => `Klassifizierungen · Schritt ${step}`,
       eventDataStep: ({ step }) => `Termindaten · Schritt ${step}`,
       important: "Wichtig",
-      importantDescription: "Erfordert persönliche Aufmerksamkeit oder eine zeitnahe Antwort",
       routine: "Routine",
-      routineDescription: "Kann als gewöhnliche E-Mail bearbeitet werden",
       classifyManyInstructions: "Wähle alle Kategorien aus, die auf diese Nachricht zutreffen.",
       classifyOneInstructions: "Wähle die am besten passende Kategorie für diese Nachricht aus.",
       generateTextInstructions:
@@ -1519,3 +1515,21 @@ export const mailRemainingMessages = i18n.define({
     },
   },
 });
+
+/**
+ * A stored preset choice keeps the description of the language it was created in. The page shows it in the reader's
+ * language, so it must recognize every language's text: `messages` is a variable, which keeps every language in each
+ * language's island build.
+ */
+const presetDescriptions = {
+  en: {
+    importantDescription: "Needs personal attention or a timely response",
+    routineDescription: "Can be handled as routine mail",
+  },
+  de: {
+    importantDescription: "Erfordert persönliche Aufmerksamkeit oder eine zeitnahe Antwort",
+    routineDescription: "Kann als gewöhnliche E-Mail bearbeitet werden",
+  },
+};
+
+export const mailPresetDescriptionMessages = i18n.define({ baseLocale: "en", messages: presetDescriptions });

@@ -17,15 +17,17 @@ export async function readPwaStaticAssets(root: string, appId: string, ssrPath: 
   const ssr = join(root, "_ssr");
   if (existsSync(join(ssr, "manifest.json"))) {
     const manifest: unknown = JSON.parse(await readFile(join(ssr, "manifest.json"), "utf8"));
-    if (
-      typeof manifest === "object" &&
-      manifest !== null &&
-      "version" in manifest &&
-      typeof manifest.version === "string" &&
-      /^[a-f0-9]{16}$/.test(manifest.version)
-    ) {
-      for await (const file of new Glob("*.js").scan(ssr))
-        await add(join(ssr, file), `${ssrPath}/${manifest.version}/${file}`, "text/javascript");
+    // The default island build sits in _ssr/, each language build in _ssr/<name>/ under its own version.
+    const builds: [string, unknown][] = [[ssr, manifest]];
+    if (typeof manifest === "object" && manifest !== null && "variants" in manifest && typeof manifest.variants === "object")
+      for (const [name, build] of Object.entries(manifest.variants ?? {}))
+        if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) builds.push([join(ssr, name), build]);
+    for (const [directory, build] of builds) {
+      if (typeof build !== "object" || build === null || !("version" in build)) continue;
+      const { version } = build;
+      if (typeof version !== "string" || !/^[a-f0-9]{16}$/.test(version)) continue;
+      for await (const file of new Glob("*.js").scan(directory))
+        await add(join(directory, file), `${ssrPath}/${version}/${file}`, "text/javascript");
     }
   }
   const publicDir = join(root, "public");

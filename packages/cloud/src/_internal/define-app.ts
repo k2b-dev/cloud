@@ -126,6 +126,7 @@ import { createInstallableRoutes } from "./installable-assets";
 import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
 import { getProcessSync, startProcessSync } from "./process-sync";
+import { catalogIslandVariants } from "./catalog-variants";
 import { readPwaStaticAssets } from "./pwa-assets";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry, getApp } from "./registry";
@@ -568,6 +569,8 @@ export const defineApp = <
     // Every island instance already mounts inside its own error boundary; this
     // only gives the fallback Cloud's look and the reader's language.
     errorFallback: fileURLToPath(new URL("../ssr/IslandError.tsx", import.meta.url)),
+    // Production islands ship only the request language's messages.
+    variants: catalogIslandVariants<ResolvedPageOptions>(),
     template: ({
       body,
       scripts,
