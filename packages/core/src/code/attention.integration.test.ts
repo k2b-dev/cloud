@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import * as catalog from "@k2b/cloud/capabilities/server";
 import type { User } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
@@ -15,6 +16,7 @@ import { migrate as migrateSettings } from "../migrate/core/settings";
 import * as access from "./access";
 import { clearCodeAttentionCache, listCodeAttention, readCodeSummary } from "./attention";
 import { listCodeAutomations } from "./automations";
+import { codeOwnerCatalogFixture } from "./owner-registration.fixture";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { countOwnCodeRuns, createCode, createCodeVersion, insertCodeRun } from "./store";
 import { readCodeWorkload } from "./workload-reader";
@@ -91,7 +93,12 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     await migrateActivation();
     for (const [name, id] of Object.entries(ids))
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${name},'local','user',${name === "admin"})`;
+    const originalCatalog = catalog.getCapabilityCatalogApp;
+    const ownerCatalog = codeOwnerCatalogFixture("mail", "mailbox");
     spies.push(
+      spyOn(catalog, "getCapabilityCatalogApp").mockImplementation(async (appId, ...rest) =>
+        appId === "mail" ? { ok: true, data: ownerCatalog } : originalCatalog(appId, ...rest),
+      ),
       spyOn(codeSettings, "get").mockImplementation(async (key) => {
         const definition = Object.entries(CODE_SETTINGS).find(([name]) => name === key)?.[1];
         if (!definition) throw new Error(`Unexpected setting ${key}`);
