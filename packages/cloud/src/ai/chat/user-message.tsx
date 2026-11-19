@@ -76,11 +76,11 @@ export const aiUserMessageSource = (entry: AiStoredMessage, locale: string, time
       ) : (
         content
       )}
+      {/* One element: its separator is drawn by CSS, so screen readers read only the time. */}
       {time ? (
-        <span class="ai-message-source__time">
-          <span aria-hidden="true">·</span>
-          <time dateTime={entry.createdAt}>{time}</time>
-        </span>
+        <time class="ai-message-source__time" dateTime={entry.createdAt}>
+          {time}
+        </time>
       ) : undefined}
     </>
   );

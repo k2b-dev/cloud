@@ -180,8 +180,7 @@ test("the source chip names when the message came, in the request's time zone, q
     );
   const [automation = "", own = ""] = articles(withZone("Europe/Berlin"));
   // 06:00 UTC is 07:00 in Berlin; the server and the browser both use the request's zone, so both write the same time.
-  expect(automation).toContain('<time datetime="2026-11-09T06:00:00.000Z">07:00</time>');
-  expect(automation).toMatch(/<\/a><span class="ai-message-source__time"><span aria-hidden="true">·<\/span><time/);
+  expect(automation).toMatch(/<\/a><time class="ai-message-source__time" datetime="2026-11-09T06:00:00.000Z">07:00<\/time>/);
   expect(articles(withZone("America/New_York"))[0]).toContain(">01:00</time>");
   // The person's own message has no chip, so no time either; without a known zone the chip names no time at all.
   expect(own).not.toContain("ai-message-source__time");
