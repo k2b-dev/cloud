@@ -60,6 +60,15 @@ generated SDKs and resubmit preview Code after upgrading. There are no aliases
 for the previous text-reader names; update external capability clients as
 described in [Deprecations](/en/docs/reference/deprecations-and-migrations#code-sdk-declarations-are-simpler).
 
+## Private secret entry from Assistant
+
+Deploy Core and Assistant from the same release to use `code_secret` with
+`target: { code, pathPrefix }`. Core's normal startup migration adds open secret
+requests to the existing waiting-list invalidations. No new runner setting,
+secret store or lease is required. Existing personal chat secrets continue to
+use Assistant storage; automation secrets use Core's editor-only capability.
+See [Code secrets](/en/docs/platform/code-secrets#ask-for-private-entry-in-gustav).
+
 ## Schedule and result delivery compatibility
 
 Code schedules use one declaration, `{ cron | at, timeZone?, name?, title? }`.

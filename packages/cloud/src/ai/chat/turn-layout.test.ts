@@ -330,3 +330,25 @@ test("a Code check's notices stand as a result until a clean check of the same C
   const old = { ...check("old", []), result: { version: 1, result: { ok: true }, manifest: null, permissions: [] } } as AiTurnBlock;
   expect(layoutAiTurn([old], { phase: "completed" }).results).toEqual([]);
 });
+
+test("secret cards and reloaded receipts contain only metadata and configured/name", () => {
+  const value = "fixture-private-secret";
+  const args = {
+    name: "API",
+    origin: "https://api.example.com",
+    header: "authorization",
+    prefix: "",
+    target: { code: "Abc234", pathPrefix: "/v1", value },
+    value,
+  };
+  for (const [phase, status, result, expected] of [
+    ["waiting", "awaiting_client", undefined, "interaction"],
+    ["completed", "completed", { configured: true, name: "API", value }, "done"],
+    ["completed", "completed", { configured: false, name: "API", value }, "rejected"],
+    ["completed", "completed", { failed: true, error: value }, "failed"],
+  ] as const) {
+    const layout = layoutAiTurn([tool("secret", "code_secret", { status, args, result })], { phase });
+    expect(layout.actions.map((action) => action.state)).toEqual([expected]);
+    expect(JSON.stringify(layout)).not.toContain(value);
+  }
+});

@@ -39,7 +39,10 @@ async function authorize(call: z.infer<typeof ClientCall>, identity: ArtifactIde
   )
     throw new ArtifactError("CONFLICT");
   // Schema parsing gives canonical property order and strips no unknown fields.
-  if (JSON.stringify(CodeRuntimeInput.parse(parseCodeToolInput(block.name, block.args))) !== JSON.stringify(call.input))
+  if (
+    JSON.stringify(CodeRuntimeInput.parse(parseCodeToolInput(block.name, block.args))) !==
+    JSON.stringify(CodeRuntimeInput.parse(call.input))
+  )
     throw new ArtifactError("INVALID_INPUT");
   return { user, turnId: active.turn.id, conversationId: conversation.id, toolName: block.name };
 }

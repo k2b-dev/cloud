@@ -286,3 +286,21 @@ test("cursor IDs are bounded and timestamp ties follow PostgreSQL C code-point o
   expect(sorted).toEqual(["-", "Z", "_", "a", "aa", "é", "\uE000", "😀"]);
   expect(compareAiOpenQuestions({ createdAt: "2026-10-01T00:00:00.000Z", id: "z" }, { createdAt, id: "a" })).toBeLessThan(0);
 });
+
+test("a secret waiting entry projects name and anchor, never tool arguments or results", async () => {
+  const { secretOpenQuestion } = await import("./open-questions");
+  const privateValue = "fixture-private-value";
+  const raw = {
+    id: "secret-1",
+    call_id: "secret-call",
+    name: "API",
+    short_id: "Chat42",
+    title: "Automation",
+    created_at: new Date(FIXTURE_AT),
+    args: { value: privateValue },
+    result: { value: privateValue },
+  };
+  const projected = secretOpenQuestion(raw);
+  expect(projected).toMatchObject({ kind: "secret", anchor: "tool-secret-call", short: "Secret API", conversationId: "Chat42" });
+  expect(JSON.stringify(projected)).not.toContain(privateValue);
+});

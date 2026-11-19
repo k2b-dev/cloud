@@ -8,6 +8,7 @@ import { mandates, requestPublicHttps as publicHttps, purposeSecretCipher, type 
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { resolvePublicNetworkAddresses } from "@k2b/cloud/services/network-security";
 import { createSync, type Sync } from "@k2b/sync";
+import { acceptanceProvider } from "../../../../scripts/fixtures/code-acceptance-provider";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
@@ -29,6 +30,7 @@ import { openCodeOutput } from "./output";
 import { dispatchCodeSecretHttp } from "./secret-http";
 import {
   CODE_SECRET_PURPOSE,
+  checkCodeSecretBinding,
   codeSecretContext,
   deleteCodeSecret,
   listCodeSecrets,
@@ -514,6 +516,57 @@ suiteFor(
       return { status: 204, headers: {}, body: new Uint8Array() };
     });
     expect(await response.json()).toMatchObject({ ok: true });
+  });
+  test("the browser capability seam enforces editor rights for list, check and target-bound set", async () => {
+    const { codeId, secret } = await fixture();
+    const provider = acceptanceProvider("core", aiCapabilities);
+    const privateValue = "private-browser-only-capability-fixture";
+    const logs = spyOn(console, "error");
+    const call = async (localId: string, kind: "query" | "action", input: unknown, userId: string) => {
+      const authority = context(userId).authority;
+      return provider.invoke({
+        kind,
+        localId,
+        input,
+        ...(kind === "action" ? { target: { type: "core.code", id: codeId } } : {}),
+        expectedSchemaHash: (kind === "action" ? provider.manifest.actions : provider.manifest.queries).find(
+          (operation) => operation.localId === localId,
+        )!.schemaHash,
+        context: {
+          authority,
+          actor: authority.actor,
+          accessSubject: authority.accessSubject,
+          user: person(userId),
+          origin: "http",
+          locale: "de",
+          requestId: "secret-card-test",
+          signal: new AbortController().signal,
+        },
+      });
+    };
+    try {
+      for (const userId of [authorId, reviewerId]) {
+        const listed = await call("code.secret.list", "query", { codeId }, userId);
+        const written = await call(
+          "code.secret.set",
+          "action",
+          { name: "API", value: privateValue, binding_revision: secret.binding_revision },
+          userId,
+        );
+        expect(listed.status).toBe(userId === authorId ? 200 : 403);
+        expect(written.status).toBe(userId === authorId ? 200 : 404);
+        expect(await listed.text()).not.toContain(privateValue);
+        expect(await written.text()).not.toContain(privateValue);
+      }
+      await expect(checkCodeSecretBinding({ codeId, binding: destination }, context(reviewerId))).rejects.toBeInstanceOf(CodeDataError);
+      expect(await checkCodeSecretBinding({ codeId, binding: destination }, context())).toEqual({ allowed: true });
+      expect(await checkCodeSecretBinding({ codeId, binding: { ...destination, origin: "https://cloud.example" } }, context())).toEqual({
+        allowed: false,
+      });
+      expect(JSON.stringify(logs.mock.calls)).not.toContain(privateValue);
+    } finally {
+      logs.mockRestore();
+    }
   });
   test("metadata and all mutations require an editor, including for Cloud administrators", async () => {
     const { codeId, secret } = await fixture();

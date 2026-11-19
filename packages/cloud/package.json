@@ -59,6 +59,7 @@
     "./browser/app-approval": "./src/browser/app-approval.ts",
     "./browser/app-badges": "./src/browser/app-badges.ts",
     "./browser/live": "./src/browser/live.ts",
+    "./browser/code-secrets": "./src/browser/code-secrets.ts",
     "./browser/code-runs": "./src/browser/code-runs.ts",
     "./browser/mermaid": "./src/browser/mermaid.ts",
     "./browser/hints": "./src/browser/hints.ts",

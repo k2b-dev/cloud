@@ -38,3 +38,35 @@ test("retired Studio tools and resource contexts cannot execute", () => {
   expect(() => parseCodeToolInput("code_run", { code: "export default () => 1", resourceId: id })).toThrow();
   expect(() => parseCodeToolInput("code_secret", { name: "crm", origin: "https://example.com", resourceId: id })).toThrow();
 });
+
+test("code_secret keeps legacy names/defaults and validates automation identifiers, bindings and empty prefix", () => {
+  const legacy = parseCodeToolInput("code_secret", { name: "my-key", origin: "https://example.com", header: "Authorization" });
+  expect(legacy).toMatchObject({ name: "my-key", header: "Authorization", prefix: "Bearer " });
+  const input = {
+    name: "_API",
+    origin: "https://example.com",
+    header: "Authorization",
+    prefix: "",
+    target: { code: id, pathPrefix: "/v1" },
+  };
+  expect(parseCodeToolInput("code_secret", input)).toMatchObject({ header: "authorization", target: input.target });
+  for (const patch of [
+    { name: "my-key" },
+    { name: "a".repeat(65) },
+    { name: "äpi" },
+    { prefix: "Bearer " },
+    { prefix: undefined },
+    { header: "cookie" },
+    { header: "host" },
+    { header: "a\nb" },
+    { origin: "http://example.com" },
+    { origin: "https://example.com/path" },
+    { target: { code: id, pathPrefix: "/v1/../admin" } },
+    { target: { code: id, pathPrefix: "/v1%2f" } },
+    { target: { code: "not-a-code", pathPrefix: "/" } },
+    { target: { code: id, pathPrefix: "/", value: "never-here" } },
+    { value: "never-here" },
+  ])
+    expect(() => parseCodeToolInput("code_secret", { ...input, ...patch })).toThrow();
+  expect(() => parseCodeToolInput("code_secret", { name: "_API", origin: "https://example.com" })).toThrow();
+});

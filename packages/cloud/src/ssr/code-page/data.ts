@@ -2,11 +2,13 @@ import type { DateContext } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CapabilityClientResult, CapabilityInvocation } from "../../capabilities/types";
 import { type CodeOutputWindow, CodeOutputWindowSchema } from "../../code/output";
+import type { SecretSchema } from "../../code/secret-metadata";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { CODE_BRIDGE_REFUSAL_KINDS, type CodeBridgeRefusalKind } from "../../contracts/code-call";
 import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
 import type { CodeActivityReadModel, CodeRunReadModel, CodeVersionReadModel } from "../../contracts/code-read-model";
 import { type CodePageLinks, CodePageLinksSchema } from "../../contracts/code-routes";
+import type { SecretPerson } from "../../shared/code-people";
 import type { CodeSourceTabInitial } from "./source-tab-load";
 import type { CodeOperationLabels } from "./targets";
 
@@ -227,19 +229,7 @@ export const AutomationListSchema = z.object({
   ),
 });
 /** Metadata only: Core has no operation that returns a secret's value. */
-const SecretSchema = z.object({
-  name: z.string(),
-  binding_revision: z.string(),
-  origin: z.string(),
-  pathPrefix: z.string(),
-  headers: z.array(z.string()),
-  configured: z.boolean(),
-});
-export const SecretListSchema = z.object({
-  items: z.array(SecretSchema.extend({ valueSetBy: z.string().nullable(), valueSetAt: z.string().nullable() })),
-  nextCursor: z.string().nullable(),
-});
-export const SecretSetSchema = z.object({ secret: SecretSchema });
+export { SecretListSchema, SecretSetSchema } from "../../code/secret-metadata";
 
 /** What the owner's navigation shows: an entry when the person may see this Code, and a warning dot when it needs someone. */
 export type CodeAttention = { visible: boolean; attention: boolean };
@@ -258,7 +248,7 @@ export const coreQuery = (capabilityId: string, input: unknown): CapabilityInvoc
 /** Direct Core HTTP routes return `{ data }`; capability clients already validate their own envelope. */
 export const wrapped = <T extends z.ZodType>(schema: T) => z.object({ data: schema });
 
-export type CodePagePerson = { id: string; name: string };
+export type CodePagePerson = SecretPerson;
 /**
  * A target or the owner, described from its app's manifest in the registry. The page never asks the target's app, so
  * a foreign target has only its type, ID and, where the type's page pattern allows, a link; its app names it once
