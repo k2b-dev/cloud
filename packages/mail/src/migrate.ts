@@ -283,6 +283,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     UNIQUE (rest_draft_id)
   )`.simple();
   await tx`ALTER TABLE mail.draft_document_rests ALTER COLUMN rest_draft_id DROP NOT NULL`.simple();
+  // Bind administrator retries to the inspected source revision; device rests
+  // leave this null and cannot be mistaken for a quarantine repair receipt.
+  await tx`ALTER TABLE mail.draft_document_rests ADD COLUMN IF NOT EXISTS quarantine_revision bigint
+    CHECK (quarantine_revision > 0), ADD COLUMN IF NOT EXISTS quarantine_state bytea`.simple();
 
   await tx.unsafe(automationLogSchema).simple();
   await ensureMailWorkflowEffectOrderSchema(tx);
