@@ -302,7 +302,7 @@ const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./as
 /** Loaded once a chat has queued messages; most chats never need it. */
 const AssistantQueue = lazy(() => import("./AssistantQueueConnected"));
 // Like "Queued", the alarms' row loads on first use: it lies on the timeline's free end, so it comes without a shift.
-const AssistantWakeupDock = lazy(() => import("./wakeup-dock"));
+const AssistantWakeupDock = lazy(async () => (await importOnDemand(() => import("./wakeup-dock"))) ?? { default: () => null });
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
@@ -1834,9 +1834,9 @@ export default function AssistantWorkspace(props: Props) {
   const wakeupLineHost: AssistantWakeupLineHost = {
     act: (action, id) => {
       const wakeup = wakeupContext.items().find((item) => item.id === id);
-      if (wakeup) void import("./wakeups").then((module) => module.actOnWakeup(wakeupContext, action, wakeup));
+      return wakeup ? importOnDemand(() => import("./wakeups")).then((module) => module?.actOnWakeup(wakeupContext, action, wakeup)) : undefined;
     },
-    retry: (input) => void import("./wakeups").then((module) => module.retryWakeup(wakeupContext, input)),
+    retry: (input) => importOnDemand(() => import("./wakeups")).then((module) => module?.retryWakeup(wakeupContext, input)),
   };
   /** The words of the alarm lines: the server's for the first frame, then this chat's own once they loaded. */
   const [wakeupWords, setWakeupWords] = createSignal<typeof import("./wakeup-line") | null>(null);
@@ -1844,7 +1844,7 @@ export default function AssistantWorkspace(props: Props) {
   const wakeupLine = (line: AiWakeupLineInput, key: string): AssistantWakeupLineText | undefined => {
     if (!wakeupWordsLoading && typeof window !== "undefined") {
       wakeupWordsLoading = true;
-      void import("./wakeup-line").then((module) => setWakeupWords(() => module));
+      void importOnDemand(() => import("./wakeup-line")).then((module) => module && setWakeupWords(() => module));
     }
     const words = wakeupWords();
     return words

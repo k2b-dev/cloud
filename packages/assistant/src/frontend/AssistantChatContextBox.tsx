@@ -173,7 +173,16 @@ function BoxGroup(props: {
       </Show>
       <Show when={!unfolded() && props.group.rest?.length}>
         {(count) => (
-          <button type="button" class="assistant-context-box__unfold" onClick={() => setUnfolded(true)}>
+          <button
+            type="button"
+            class="assistant-context-box__unfold"
+            onClick={(event) => {
+              // The button leaves; the focus goes on to the first row it unfolded.
+              const list = event.currentTarget.previousElementSibling;
+              setUnfolded(true);
+              list?.querySelectorAll<HTMLElement>(".assistant-context-box__main")[props.group.rows.length]?.focus();
+            }}
+          >
             {copy().boxMore({ count: count() })}
           </button>
         )}

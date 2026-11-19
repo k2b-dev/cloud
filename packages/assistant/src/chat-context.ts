@@ -123,8 +123,8 @@ export type AssistantChatContextSnapshot = {
 };
 
 const wakeupWords = {
-  en: { label: "Alarms", missed: "Missed", expired: "Expired" },
-  de: { label: "Wecker", missed: "Verpasst", expired: "Abgelaufen" },
+  en: { label: "Alarms", missed: "Missed", expired: "Expired", edit: "Change alarm" },
+  de: { label: "Wecker", missed: "Verpasst", expired: "Abgelaufen", edit: "Wecker ändern" },
 };
 
 /** The box's alarm group: note on the left, its time on the right ("16:00" today), in the order they ring. */
@@ -149,7 +149,8 @@ const wakeupGroup = (
           title: wakeup.note,
           word: state ?? aiWakeupWhen(wakeup, { ...input, short: true }),
           ...(state ? { tone: "warn" as const } : {}),
-          tooltip: `${wakeup.note} · ${when}`,
+          // The row opens the alarm's dialog, unlike the rows that jump into the chat: its tip says so.
+          tooltip: `${words.edit}: ${wakeup.note} · ${when}`,
           wakeup: wakeup.id,
         };
       }),

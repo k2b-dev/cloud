@@ -1,10 +1,11 @@
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { useLocale } from "@k2b/ui";
 import { createSignal, lazy, Show, Suspense } from "solid-js";
 import { aiWakeupWhen } from "../wakeup-when";
 import { aiWakeupWords } from "./wakeup-line";
 import type { AssistantWakeupContext } from "./wakeups";
 
-const WakeupList = lazy(() => import("./wakeups").then((module) => ({ default: module.WakeupList })));
+const WakeupList = lazy(async () => ({ default: (await importOnDemand(() => import("./wakeups")))?.WakeupList ?? (() => null) }));
 
 /**
  * Gustav's alarms above the field (Gustav alarms v1, F1 A): the 32 px row of "Queued" (v6) with the next alarm and
@@ -34,10 +35,10 @@ export default function AssistantWakeupDock(props: { context: AssistantWakeupCon
                 {next().note}
               </span>
             </span>
-            <Show when={next().status === "missed"}>
+            <Show when={next().status === "missed" || next().status === "expired"}>
               <span class="assistant-wakeups__state">
                 <i class="ti ti-alert-triangle" aria-hidden="true" />
-                {t().missed}
+                {next().status === "missed" ? t().missed : t().expiredWord}
               </span>
             </Show>
           </>
@@ -67,7 +68,13 @@ export default function AssistantWakeupDock(props: { context: AssistantWakeupCon
         <i class="ti ti-chevron-up assistant-queue__chevron" aria-hidden="true" />
       </button>
       <Show when={open()}>
-        <Suspense>
+        <Suspense
+          fallback={
+            <div class="assistant-queue__list assistant-wakeups__list" id={id} role="status" aria-label={t().head}>
+              <span class="assistant-wakeups__loading" />
+            </div>
+          }
+        >
           <WakeupList
             id={id}
             ctx={props.context}

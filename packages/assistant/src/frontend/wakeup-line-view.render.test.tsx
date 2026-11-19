@@ -21,7 +21,7 @@ afterAll(() => {
 });
 
 const { AssistantWakeupLine } = await import("./wakeup-line-view");
-const host = { act: () => undefined, retry: () => undefined };
+const host = { act: () => undefined, retry: async () => undefined };
 const wakeup: AiWakeup = {
   id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff",
   at: "2026-11-16T15:00:00.000Z",

@@ -106,33 +106,36 @@ const copy = (ctx: AssistantWakeupContext) => words.resolve([ctx.locale()]).t;
 const DAY_MS = 86_400_000;
 const client = api.create<AiRoutes>({ baseUrl: "/api/ai" });
 const route = client.conversations[":conversationId"].wakeups;
-/** The server's own sentence for a refused change, such as a stale revision or the limit of five. */
-const refused = async (response: Pick<Response, "json">, fallback: string) => {
+/** Cloud refused a change and said why in the person's language, such as a stale revision or the limit of five. */
+class WakeupRefused extends Error {}
+const refused = async (response: Pick<Response, "json">): Promise<never> => {
   const body: unknown = await response.json().catch(() => null);
-  throw new Error(body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback);
+  throw body && typeof body === "object" && "message" in body && typeof body.message === "string" ? new WakeupRefused(body.message) : new Error();
 };
+/** Cloud's sentence for a refusal; any other failure gets the chat's own words, never a technical message. */
+const reason = (error: unknown) => (error instanceof WakeupRefused ? error.message : null);
 const wakeupApi = {
   create: async (chatId: string, input: AiWakeupInput) => {
     const response = await route.$post({ param: { conversationId: chatId }, json: input });
-    if (!response.ok) await refused(response, "Could not set the alarm.");
+    if (!response.ok) await refused(response);
   },
   update: async (chatId: string, id: string, patch: AiWakeupPatch) => {
     const response = await route[":wakeupId"].$patch({ param: { conversationId: chatId, wakeupId: id }, json: patch });
-    if (!response.ok) await refused(response, "Could not change the alarm.");
+    if (!response.ok) await refused(response);
   },
   remove: async (chatId: string, wakeup: AiWakeup) => {
     const response = await route[":wakeupId"].$delete({
       param: { conversationId: chatId, wakeupId: wakeup.id },
       json: { revision: wakeup.revision },
     });
-    if (!response.ok) await refused(response, "Could not delete the alarm.");
+    if (!response.ok) await refused(response);
   },
   catchUp: async (chatId: string, wakeup: AiWakeup) => {
     const response = await route[":wakeupId"]["catch-up"].$post({
       param: { conversationId: chatId, wakeupId: wakeup.id },
       json: { revision: wakeup.revision },
     });
-    if (!response.ok) await refused(response, "Could not catch up the alarm.");
+    if (!response.ok) await refused(response);
   },
 };
 
@@ -144,7 +147,7 @@ const change = async (ctx: AssistantWakeupContext, work: (chatId: string) => Pro
     await work(chatId);
     return true;
   } catch (error) {
-    toast.error(error instanceof Error && error.message ? error.message : copy(ctx).failed, { title: copy(ctx).failedTitle });
+    toast.error(reason(error) ?? copy(ctx).failed, { title: copy(ctx).failedTitle });
     return false;
   } finally {
     void ctx.refresh().catch(() => undefined);
@@ -277,7 +280,10 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
     }
   };
   /** "What changes", over the foot, without a box: time and rhythm, before and after. */
+  const day = (key: string) =>
+    new Intl.DateTimeFormat(locale, { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(new Date(`${key}T12:00:00Z`));
   const changes = () => [
+    ...(date() && date() !== local.slice(0, 10) ? [{ label: t().date, from: day(local.slice(0, 10)), to: day(date()!) }] : []),
     ...(clock() && clock() !== local.slice(11, 16) ? [{ label: t().time, from: local.slice(11, 16), to: clock()! }] : []),
     ...(repeat() !== initialRepeat ? [{ label: t().repeat, from: repeatLabel(initialRepeat), to: repeatLabel(repeat()) }] : []),
   ];
@@ -316,7 +322,7 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
       void props.ctx.refresh().catch(() => undefined);
       props.close();
     } catch (error) {
-      setFailed(error instanceof Error ? error.message : "");
+      setFailed(reason(error) ?? "");
     } finally {
       setBusy(false);
     }
@@ -460,13 +466,16 @@ export function WakeupList(props: {
   const zone = { locale: props.ctx.locale(), timeZone: props.ctx.timeZone };
   createEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // Escape in the dialog over the list closes only the dialog.
+      if (event.key !== "Escape" || event.defaultPrevented || (event.target instanceof Element && event.target.closest("dialog"))) return;
       event.preventDefault();
       props.onClose(true);
     };
     const onPointer = (event: PointerEvent) => {
       const root = props.root();
-      if (root && !root.contains(event.target as Node) && !(event.target as Element).closest?.("dialog, .k2b-toast")) props.onClose(false);
+      const target = event.target;
+      // A press in the dialog or a toast the list opened keeps it.
+      if (root && target instanceof Element && !root.contains(target) && !target.closest("dialog, .k2b-toast")) props.onClose(false);
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onPointer, true);
@@ -534,11 +543,10 @@ export function WakeupList(props: {
 }
 
 /** For the archive dialog: the chat's alarms, which rest while it is archived, one per line; empty without any. */
-export const restingWakeups = async (chatId: string, locale: string) => {
+export const restingWakeups = async (chatId: string, locale: string, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone) => {
   const response = await route.$get({ param: { conversationId: chatId } });
   if (!response.ok) return "";
   const { items } = await response.json();
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return items.length
     ? [
         words.resolve([locale]).t.resting({ count: items.length }),

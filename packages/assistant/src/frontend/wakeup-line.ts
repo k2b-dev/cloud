@@ -28,9 +28,9 @@ export const aiWakeupWords = /* @__PURE__ */ i18n.define({
       access: "You had no access to Gustav.",
       budget: "The daily limit for turns without you is reached.",
       queue_full: "Too many messages were already waiting in this chat.",
-      delivery: "Cloud could not deliver it. Change its time to try again.",
+      delivery: "Cloud could not deliver it.",
       stays: "The alarm stays.",
-      next: "It tries again at its next time.",
+      next: "The alarm runs again at its next time.",
       edit: "Change alarm",
       remove: "Delete alarm",
       retry: "Try again",
@@ -38,6 +38,7 @@ export const aiWakeupWords = /* @__PURE__ */ i18n.define({
       renew: "Renew for 30 days",
       head: "Alarms",
       missed: "Missed",
+      expiredWord: "Expired",
       show: ({ count }: { count: number }) => (count > 1 ? `Show all ${count} alarms` : "Show the alarm"),
     },
     de: {
@@ -57,9 +58,9 @@ export const aiWakeupWords = /* @__PURE__ */ i18n.define({
       access: "Du hattest keinen Zugriff auf Gustav.",
       budget: "Das Tageslimit für Züge ohne dich ist erreicht.",
       queue_full: "In diesem Chat warteten schon zu viele Nachrichten.",
-      delivery: "Cloud konnte ihn nicht zustellen. Ändere die Zeit, um es erneut zu versuchen.",
+      delivery: "Cloud konnte ihn nicht zustellen.",
       stays: "Der Wecker bleibt stehen.",
-      next: "Er versucht es beim nächsten Termin wieder.",
+      next: "Der Wecker läuft beim nächsten Termin wieder.",
       edit: "Wecker ändern",
       remove: "Wecker löschen",
       retry: "Erneut versuchen",
@@ -67,6 +68,7 @@ export const aiWakeupWords = /* @__PURE__ */ i18n.define({
       renew: "Um 30 Tage verlängern",
       head: "Wecker",
       missed: "Verpasst",
+      expiredWord: "Abgelaufen",
       show: ({ count }: { count: number }) => (count > 1 ? `Alle ${count} Wecker zeigen` : "Wecker zeigen"),
     },
   },
@@ -74,7 +76,7 @@ export const aiWakeupWords = /* @__PURE__ */ i18n.define({
 
 /** One alarm line as text, ready to draw and to send from the server. */
 export type AssistantWakeupLineText = {
-  kind?: "notice" | "failed";
+  kind?: "missed" | "expired" | "failed";
   sign: string;
   struck?: boolean;
   verb: string;
@@ -120,13 +122,13 @@ export const describeWakeupLine = (
           : undefined;
     const reason = w.missedReason;
     return {
-      kind: "notice",
+      kind,
       sign: "ti-alarm-off",
       ...(kind === "expired"
         ? { verb: t.expired, body: ` ${w.cron ? `${t.after30} · ` : ""}${when} · ${w.note}` }
         : {
             verb: t.missedOne({ when }),
-            body: ` ${reason ? `${t[reason]} ` : ""}${reason === "delivery" ? "" : w.cron ? t.next : t.stays}`,
+            body: ` ${reason ? `${t[reason]} ` : ""}${w.cron ? t.next : t.stays}`,
           }),
       ...(link ? { link } : {}),
     };

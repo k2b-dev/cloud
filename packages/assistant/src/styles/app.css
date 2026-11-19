@@ -949,10 +949,18 @@
 .k2b-ui .assistant-wakeup-line__state { flex: none; color: var(--k2b-text-muted); }
 .k2b-ui .assistant-wakeup-line[data-struck] :is(.assistant-wakeup-line__text, b) { color: var(--k2b-text-subtle); font-weight: 400; text-decoration: line-through; }
 .k2b-ui .assistant-wakeup-line[data-struck] .assistant-wakeup-line__sign { color: var(--k2b-text-subtle); }
-.k2b-ui .assistant-wakeup-line[data-kind="notice"] .assistant-wakeup-line__sign { color: var(--k2b-warning-text); }
+.k2b-ui .assistant-wakeup-line[data-kind="missed"] .assistant-wakeup-line__sign { color: var(--k2b-warning-text); }
+.k2b-ui .assistant-wakeup-line[data-kind="expired"] .assistant-wakeup-line__sign { color: var(--k2b-text-subtle); }
 .k2b-ui .assistant-wakeup-line[data-kind="failed"] .assistant-wakeup-line__sign { color: var(--k2b-danger-text); }
 .k2b-ui .assistant-wakeup-line__acts { display: inline-flex; flex: none; gap: .125rem; margin-block: -.25rem; margin-inline-start: auto; }
-.k2b-ui .assistant-wakeup-line[data-kind="notice"] .assistant-wakeup-line__text { flex: 1 1 16rem; }
+.k2b-ui .assistant-wakeup-line:is([data-kind="missed"], [data-kind="expired"]) .assistant-wakeup-line__text { flex: 1 1 16rem; }
+.k2b-ui .assistant-wakeup-line__link:disabled { cursor: default; opacity: .6; }
+/* Touch: pencil and cross take taps in 44 px without moving the line. */
+@media (any-pointer: coarse) {
+  .k2b-ui .assistant-wakeup-line__acts { gap: .5rem; }
+  .k2b-ui .assistant-wakeup-line__acts > .k2b-icon-button { position: relative; }
+  .k2b-ui .assistant-wakeup-line__acts > .k2b-icon-button::after { position: absolute; inset: -.625rem -.25rem; content: ""; }
+}
 .k2b-ui .assistant-wakeup-line__link { flex: none; padding: 0; border: 0; color: var(--k2b-ai-accent); background: none; font: inherit; white-space: nowrap; cursor: pointer; }
 .k2b-ui .assistant-wakeup-line__link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .k2b-ui .assistant-wakeup-line__link:focus-visible { border-radius: .25rem; outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
@@ -980,21 +988,25 @@
 .k2b-ui .assistant-wakeups__state > i { font-size: .875rem; }
 .k2b-ui .assistant-queue__sign.assistant-wakeups__sign { color: var(--k2b-ai-accent); }
 .k2b-ui .assistant-wakeups__main { align-items: baseline; }
-.k2b-ui .assistant-wakeups__list .assistant-wakeups__when { inline-size: 8.75rem; margin: 0; }
+.k2b-ui .assistant-wakeups__list .assistant-wakeups__when { box-sizing: border-box; min-inline-size: 8.75rem; margin: 0; padding-inline-end: .5rem; }
+/* An alarm waiting in "Queued" carries Gustav's plum, as everything that comes from him. */
+.k2b-ui .assistant-queue__sign[data-kind="wakeup"] { color: var(--k2b-ai-accent); }
+/* While the list loads on first use: one placeholder row in its place. */
+.k2b-ui .assistant-wakeups__loading { display: block; block-size: .75rem; margin: .75rem .5rem; border-radius: .375rem; background: var(--k2b-surface-muted); }
 .k2b-ui .assistant-wakeups__main > .assistant-queue__text { max-inline-size: none; }
 /* Two 30 px places, pencil (or "Catch up now") and cross. */
 .k2b-ui .assistant-queue__actions.assistant-wakeups__actions { inline-size: 3.875rem; }
 /* Touch screens: the signs always show; time and note stand on two lines. */
 @media (hover: none) {
   .k2b-ui .assistant-wakeups__main { flex-direction: column; align-items: flex-start; }
-  .k2b-ui .assistant-wakeups__list .assistant-wakeups__when { inline-size: auto; }
+  .k2b-ui .assistant-wakeups__list .assistant-wakeups__when { min-inline-size: 0; }
   .k2b-ui .assistant-queue__actions.assistant-wakeups__actions { inline-size: auto; }
 }
 @media (max-width: 640px) {
   .k2b-ui .assistant-wakeups__main { flex-direction: column; align-items: flex-start; }
-  .k2b-ui .assistant-wakeups__list .assistant-wakeups__when { inline-size: auto; }
+  .k2b-ui .assistant-wakeups__list .assistant-wakeups__when { min-inline-size: 0; }
 }
-/* "Change alarm": flat inside, fields with their own 2 px edge, "What changes" over the foot without a box. */
+/* "Change alarm": flat inside, the shared fields with their own edge, "What changes" over the foot without a box. */
 .k2b-ui .assistant-wakeup-dialog { display: grid; gap: .875rem; }
 .k2b-ui .assistant-wakeup-dialog__pair { display: grid; grid-template-columns: minmax(0, 1fr) 7rem; gap: .625rem; align-items: start; }
 .k2b-ui .assistant-wakeup-dialog__hint { display: flex; justify-content: space-between; gap: .5rem; }
