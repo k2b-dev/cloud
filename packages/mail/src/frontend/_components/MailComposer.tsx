@@ -2472,7 +2472,9 @@ export default function MailComposer(props: {
               />
             </div>
             <Show when={verifiedIdentities().length > 1}>
-              <IdentitySwitcher />
+              <span class="mail-reply-box-sender">
+                <IdentitySwitcher />
+              </span>
             </Show>
             <Show when={sharedPeers().length > 0}>
               <span class="mail-inline-draft-peers" data-mail-draft-peers role="status">

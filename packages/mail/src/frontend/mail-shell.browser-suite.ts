@@ -4194,6 +4194,60 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       };
 
       for (const width of [1440, 390])
+        test(`${width}: with two senders the reply box's sender reads at the head's size and never covers Cc`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&identity=2`, width, undefined, "reduce", async (next) => {
+            await draftApi(next);
+          });
+          try {
+            await readyDraft(page);
+            const sender = '.mail-reply-box-head button[aria-haspopup="menu"][aria-label^="Change sender identity"]';
+            await page.locator(sender).waitFor();
+            const head = await page.locator("[data-mail-reply-box-frame]").evaluate((frame, sender) => {
+              const trigger = frame.querySelector<HTMLElement>(sender)!;
+              const cc = frame.querySelector<HTMLElement>(".mail-reply-box-cc button")!;
+              const input = frame.querySelector<HTMLInputElement>(".mail-reply-box-recipients input")!;
+              const style = getComputedStyle(input);
+              const context = document.createElement("canvas").getContext("2d")!;
+              context.font = style.font;
+              // The input keeps a minimum width inside a control that scrolls sideways: measure what is visible of it.
+              const control = input.closest<HTMLElement>(".mail-recipient-control")!;
+              const inner = control.getBoundingClientRect().left + control.clientLeft + control.clientWidth;
+              const shown = input.getBoundingClientRect();
+              const room =
+                Math.min(shown.right, inner) - shown.left - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
+              const wrapper = trigger.closest<HTMLElement>(".mail-reply-box-sender")!.getBoundingClientRect();
+              const button = trigger.getBoundingClientRect();
+              return {
+                trigger: getComputedStyle(trigger).fontSize,
+                cc: getComputedStyle(cc).fontSize,
+                placeholder: input.placeholder,
+                fits: context.measureText(input.placeholder).width <= room,
+                // The sender stays inside its own place, left of Cc, and keeps "from" and the chevron readable.
+                contained: button.left >= wrapper.left - 0.5 && button.right <= wrapper.right + 0.5,
+                beforeCc: button.right <= cc.getBoundingClientRect().left,
+                width: button.width,
+                name: (() => {
+                  const name = trigger.querySelector<HTMLElement>(".truncate")!;
+                  return name.scrollWidth <= name.clientWidth;
+                })(),
+              };
+            }, sender);
+            // "from Support ⌄" is a quiet label like Cc and Bcc beside it, not body text.
+            expect(head.trigger).toBe(head.cc);
+            expect(head.placeholder.length).toBeGreaterThan(0);
+            expect(head.contained).toBe(true);
+            expect(head.beforeCc).toBe(true);
+            if (width === 1440) {
+              // With room, the whole sender name shows and the recipients field keeps its hint.
+              expect(head.name).toBe(true);
+              expect(head.fits).toBe(true);
+            } else expect(head.width).toBeGreaterThanOrEqual(50);
+          } finally {
+            await close(page);
+          }
+        });
+
+      for (const width of [1440, 390])
         test(`${width}: the reply box stands open above the newest message; opening creates no draft, the first typing does`, async () => {
           let api!: Awaited<ReturnType<typeof draftApi>>;
           const page = await open(`${boxPath}?conversation=Conv01&identity=1`, width, undefined, "reduce", async (next) => {
