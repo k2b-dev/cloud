@@ -1020,9 +1020,9 @@
 .k2b-ui .assistant-wakeup-dialog__foot { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .k2b-ui .assistant-wakeup-dialog__grow { flex: 1 1 0; }
 .k2b-ui .assistant-wakeup-dialog__delete { color: var(--k2b-danger-text); }
-/* Narrow, the row keeps the hour glass, the next entry's text and "+n". */
+/* Narrow, the row keeps the hour glass, the next entry's text and "+n"; the alarm chip keeps its word (Gustav alarms v1). */
 @container assistant-waiting (max-width: 29.999rem) {
-  .k2b-ui .assistant-queue__chip > span:not(.assistant-queue__count) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .k2b-ui .assistant-queue > .assistant-queue__chip > span:not(.assistant-queue__count) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 @media (max-width: 640px) {
   /* The row above the field drops the source (the list keeps every one) and the list its order hint; a state word such

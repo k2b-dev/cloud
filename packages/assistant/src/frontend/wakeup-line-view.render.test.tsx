@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { AiWakeup } from "@k2b/cloud/ai";
@@ -83,4 +83,25 @@ test("the way out is the library's link button, so the activity row's bare-butto
   expect(html).toMatch(/class="[^"]*k2b-button[^"]*assistant-wakeup-line__link|assistant-wakeup-line__link[^"]*k2b-button/);
   expect(html).toContain('data-variant="link"');
   expect(html).toContain("Jetzt nachholen");
+});
+
+test("pencil and cross hide only for a hovering mouse or trackpad: on touch they show at rest, nothing in Assistant hides them", () => {
+  const css = (path: string) => readFileSync(resolve(import.meta.dir, path), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const hiding = (stylesheet: string) =>
+    [...stylesheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(
+        ([, selector = "", body = ""]) =>
+          /progressive-action|wakeup-line__acts/.test(selector) && /opacity:\s*0(?![.\d])|display:\s*none|visibility:\s*hidden/.test(body),
+      )
+      .map(([, selector = ""]) => selector.trim());
+  expect(hiding(css("../styles/app.css"))).toEqual([]);
+  const ui = css("../../../ui/src/styles/index.css");
+  expect(hiding(ui)).toEqual([
+    ':where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-progressive-action',
+    ':where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-progressive-action',
+  ]);
+  // The first rule holds only where a pointer can hover; a wheel scroll marks the page as trackpad.
+  expect(ui).toMatch(
+    /@media \(any-hover: hover\) \{\s*:where\(html:not\(\[data-k2b-input="touch"\]\)\) \.k2b-ui \.k2b-progressive-action \{/,
+  );
 });
