@@ -12,6 +12,7 @@ import {
   CodeChatSdkInputSchema,
   codeChatSdkIndex,
   codeChatSdkView,
+  compactDeclarations,
   readCodeChatSdk,
 } from "./chat-sdk";
 import { testIdentity } from "./files/test-identity";
@@ -175,6 +176,15 @@ test("declarations cover the requested apps, the shared app, page and event type
   expect(() => codeChatSdkView(manifests, { mode: "personal" }, ["nope"])).toThrow("Unknown app nope");
   expect(CodeChatSdkInputSchema.safeParse({ codeId: "c_1234", apps: ["a", "b", "c"] }).success).toBe(false);
 });
+
+test.each(["`code : ${string} | label`", "`escaped \\` : ${string} | label`"])(
+  "chat declaration compaction preserves template literal bytes: %s",
+  (literal) => {
+    const source = `type Example={ value : ${literal} ; other : string | number };`;
+    const expected = `type Example={value:${literal};other:string|number};`;
+    expect(Buffer.from(compactDeclarations(source))).toEqual(Buffer.from(expected));
+  },
+);
 
 test("chat declaration compaction preserves quoted punctuation and field documentation", () => {
   const app = manifests.find((manifest) => manifest.appId === "mail")!;

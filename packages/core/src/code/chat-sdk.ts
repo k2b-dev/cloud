@@ -75,10 +75,10 @@ const oneLine = (text: string): string => {
   return sentence.length > 160 ? `${sentence.slice(0, 159)}…` : sentence;
 };
 
-/** Keep generated JSON-quoted literals and documentation intact; omit only spacing around type punctuation. */
-const compactDeclarations = (source: string) =>
+/** Keep quoted and template literals and documentation intact; omit only spacing around type punctuation. */
+export const compactDeclarations = (source: string) =>
   source.replace(
-    /("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*(?:\r?\n|$))|\s*([{}\[\];:,|&])\s*/g,
+    /("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*(?:\r?\n|$))|\s*([{}\[\];:,|&])\s*/g,
     (match, literalOrComment: string | undefined, punctuation: string | undefined) => literalOrComment ?? punctuation ?? match,
   );
 
