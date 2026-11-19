@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { cloudLanguageBuild, islandBundleSize } from "../../../../scripts/fixtures/island-bundle-size";
 
 // Measured with this helper (#3729): 404,565 B on 309c61ccd6 before the split, 343,569 B after it (Bun 1.4.2). Since
-// #3770 a page loads its language's build: 320,567 B for English and 325,283 B for German on 2537630dd7, down from
+// #3770 a page loads its language's build: 320,856 B for English and 325,350 B for German on 66ef220d6b, down from
 // 344,016 B with every language. The budget is the larger value plus about 2 %, rounded up to the next KiB: 325 KiB.
 // It may only go down.
 export const MAIL_WORKSPACE_EAGER_BROTLI_BUDGET = 325 * 1024;
