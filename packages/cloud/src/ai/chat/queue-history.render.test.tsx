@@ -4,6 +4,7 @@ import { Chat, LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { AiStoredMessage } from "../types";
+import type { AiChatActions } from "./message-actions";
 
 const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
 
@@ -28,13 +29,13 @@ const message = (seq: number, role: "user" | "assistant", text: string, extra: P
   ...extra,
 });
 
-const render = (messages: AiStoredMessage[], locale = "de", timeZone = "UTC") =>
+const render = (messages: AiStoredMessage[], locale = "de", timeZone = "UTC", extra: Partial<AiChatActions> = {}) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
         return createComponent(AiChatActionsProvider, {
-          actions: { onContinueTurn: () => {}, onRetryMessage: () => {} },
+          actions: { onContinueTurn: () => {}, onRetryMessage: () => {}, ...extra },
           get children() {
             const timeline = createAiChatTimeline({ messages: () => messages, activeTurn: () => null, timeZone });
             return createComponent(Chat.Timeline, {
@@ -256,4 +257,39 @@ test("the source chip names when the message came, in the request's time zone, q
   // The person's own message has no chip, so no time either; without a known zone the chip names no time at all.
   expect(own).not.toContain("ai-message-source__time");
   expect(articles(withZone(undefined))[0]).not.toContain("ai-message-source__time");
+});
+
+test("an alarm Gustav could not set at the limit of five says Limit reached in its work line and offers no Try again", () => {
+  const turn = (seq: number, message: AiStoredMessage["message"]): AiStoredMessage => ({ ...message_(seq), message, loopId: "turn9" });
+  const message_ = (seq: number) => message(seq, "assistant", "");
+  const tried = { at: "2026-11-20T09:00:00.000Z", timezone: "Europe/Berlin", note: "Reisekosten" };
+  const history = (result: string) => [
+    { ...message(1, "user", "Erinnere mich Freitag um 10 an die Reisekosten."), loopId: "turn9" },
+    turn(2, { role: "assistant", content: [{ type: "tool_call", id: "call1", name: "wakeup_create", args: tried }] }),
+    turn(3, { role: "tool_result", callId: "call1", name: "wakeup_create", result, isError: true }),
+    turn(4, {
+      role: "assistant",
+      content: [{ type: "text", text: "In diesem Chat sind schon 5 Wecker gestellt. Soll ich einen ändern oder löschen?" }],
+    }),
+  ];
+  const drawn: string[] = [];
+  const host = {
+    renderWakeupLine: (line: Parameters<NonNullable<AiChatActions["renderWakeupLine"]>>[0]) => {
+      drawn.push(line.failed ? "failed" : "fact");
+      return createComponent(() => "Erneut versuchen", {});
+    },
+  };
+  const limit = render(
+    history("LIMIT_REACHED: This chat already has five alarms. Change or delete one first."),
+    "de",
+    "Europe/Berlin",
+    host,
+  );
+  expect(limit).toContain("Grenze erreicht");
+  expect(limit).not.toContain("fehlgeschlagen");
+  expect(drawn).toEqual([]);
+  // Any other failure keeps its quiet line with Try again.
+  const other = render(history("Choose a future time."), "de", "Europe/Berlin", host);
+  expect(other).toContain("1 fehlgeschlagen");
+  expect(drawn).toEqual(["failed"]);
 });

@@ -1,6 +1,7 @@
 import type { AiTurnBlock } from "../protocol";
 import type { AiMessageTimelineItem } from "../timeline";
 import type { AiWakeup, AiWakeupEvent, AiWakeupInput } from "../wakeup-contracts";
+import { stepFailure } from "./work-summary";
 
 /** How one alarm line reads: the fact, the alarm before it, and whether it is the alarm's newest line. */
 export type AiWakeupLinePlan = {
@@ -73,7 +74,8 @@ const failedWakeupInput = (blocks: readonly AiTurnBlock[]): AiWakeupInput | null
       continue;
     }
     const args = block.args;
-    if (block.status !== "failed" || !args || typeof args !== "object") continue;
+    // At the limit of five alarms there is nothing to try again; Gustav offers to change or delete one instead.
+    if (block.status !== "failed" || !args || typeof args !== "object" || stepFailure(block) === "limit") continue;
     const field = (key: string) => {
       const value: unknown = Reflect.get(args, key);
       return typeof value === "string" ? value : undefined;
