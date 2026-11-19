@@ -3447,6 +3447,7 @@ export default function AssistantWorkspace(props: Props) {
                         <AssistantApprovalsView
                           initial={approvalsRendered() ? props.approvals.page : undefined}
                           questions={() => waiting().entries}
+                          questionsPage={openQuestions}
                           onJump={(question) => void jumpToQuestion(question)}
                           initialAutomations={approvalsRendered() ? props.initialAutomations : undefined}
                           timeZone={props.timeZone}

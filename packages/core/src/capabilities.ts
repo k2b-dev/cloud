@@ -10,6 +10,7 @@ import {
   AiChatOriginSchema,
   type AiConversation,
   type AiConversationResourceRef,
+  AiOpenQuestionsCursorSchema,
   AiOpenQuestionsSchema,
   AiResourceCredentialError,
   type AiSkill,
@@ -646,6 +647,7 @@ export const aiCapabilities = defineCapabilities({
         .object({
           timeZone: z.string().max(100).describe("Reader time zone for displayed dates."),
           kind: z.enum(AI_OPEN_QUESTION_KINDS).optional().describe("Only this kind, in the same page size."),
+          cursor: AiOpenQuestionsCursorSchema.optional().describe("Continue after the previous page, keeping the same kind."),
         })
         .strict(),
       data: AiOpenQuestionsSchema,
@@ -660,6 +662,7 @@ export const aiCapabilities = defineCapabilities({
             locale: context.locale,
             timeZone: input.timeZone,
             ...(input.kind ? { kind: input.kind } : {}),
+            ...(input.cursor ? { cursor: input.cursor } : {}),
             sources: [(request) => listCodeWaiting(request, context.signal)],
           }),
         });

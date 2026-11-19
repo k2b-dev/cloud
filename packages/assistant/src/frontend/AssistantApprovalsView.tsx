@@ -1,9 +1,9 @@
-import type { AiOpenQuestion } from "@k2b/cloud/ai";
+import type { AiOpenQuestion, AiOpenQuestions } from "@k2b/cloud/ai";
 import Approvals from "@k2b/cloud/approvals/list";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { type ApprovalPage, ApprovalPageSchema } from "@k2b/cloud/contracts/approvals";
 import { Button, Paper, Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createMemo, createSignal, For, on, onMount, Show, untrack } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import type { WaitingAutomation } from "../waiting-automations";
 import AssistantWaitingAutomations from "./AssistantWaitingAutomations";
 import { WAITING_KIND_ICON } from "./AssistantWaitingStrip";
@@ -31,6 +31,8 @@ export default function AssistantApprovalsView(props: {
   initial?: ApprovalPage | null;
   /** The person's open questions as the row above the field shows them (`waitingQuestionsView`). */
   questions: Accessor<readonly AiOpenQuestion[]>;
+  /** The shared SSR snapshot, including its continuation beyond the strip's first page. */
+  questionsPage?: Accessor<AiOpenQuestions>;
   /** Goes to a question's card, as a press on the row's entry does. */
   onJump: (question: AiOpenQuestion) => void;
   /** The person's own Code that waits for them (Core's `code_attention` questions); null when it could not be read. */
@@ -40,6 +42,52 @@ export default function AssistantApprovalsView(props: {
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
+  const [extraQuestions, setExtraQuestions] = createSignal<AiOpenQuestion[]>([]);
+  const [cursor, setCursor] = createSignal(props.questionsPage?.().nextCursor);
+  const [paging, setPaging] = createSignal(false);
+  const [pagingFailed, setPagingFailed] = createSignal(false);
+  let pageRequest = 0;
+  let pageController: AbortController | undefined;
+  onCleanup(() => {
+    pageController?.abort();
+    pageRequest++;
+  });
+  createEffect(
+    on(
+      () => props.questionsPage?.(),
+      (page) => {
+        pageController?.abort();
+        pageRequest++;
+        setExtraQuestions([]);
+        setCursor(page?.nextCursor);
+        setPaging(false);
+        setPagingFailed(false);
+      },
+      { defer: true },
+    ),
+  );
+  const loadMore = async () => {
+    const after = cursor();
+    if (!after || paging()) return;
+    const request = ++pageRequest;
+    const controller = new AbortController();
+    pageController = controller;
+    setPaging(true);
+    setPagingFailed(false);
+    try {
+      // The response schema and reader load only when the person asks for another page.
+      const { loadWaitingQuestionsPage } = await import("../waiting-questions-page");
+      const page = await loadWaitingQuestionsPage(browserCodeInvoke, props.timeZone, after, controller.signal);
+      if (request !== pageRequest) return;
+      setExtraQuestions((previous) => [...new Map([...previous, ...page.items].map((item) => [item.id, item])).values()]);
+      setCursor(page.nextCursor);
+    } catch {
+      if (request === pageRequest) setPagingFailed(true);
+    } finally {
+      if (request === pageRequest) setPaging(false);
+    }
+  };
+  const allQuestions = createMemo(() => [...new Map([...props.questions(), ...extraQuestions()].map((item) => [item.id, item])).values()]);
   const [approvals, setApprovals] = createSignal<ApprovalPage | null | undefined>(props.initial);
   const [automations, setAutomations] = createSignal<readonly WaitingAutomation[] | null | undefined>(props.initialAutomations);
   const loadApprovals = async () => {
@@ -134,10 +182,24 @@ export default function AssistantApprovalsView(props: {
   };
 
   const loading = () => approvals() === undefined || automations() === undefined;
-  const versions = createMemo(() => props.questions().filter((question) => VERSION_KINDS.has(question.kind)));
+  const versions = createMemo(() => allQuestions().filter((question) => VERSION_KINDS.has(question.kind)));
   // A failed read shows its row with "Try again"; an empty one shows no section.
-  const automationsShow = () => automations() === null || (automations()?.length ?? 0) > 0;
-  const empty = () => (approvals()?.count ?? 0) === 0 && approvals() !== null && versions().length === 0 && !automationsShow();
+  const shownAutomations = createMemo(() =>
+    automations() == null
+      ? automations()
+      : [
+          ...new Map(
+            [
+              ...automations()!,
+              ...extraQuestions()
+                .filter((question) => question.kind === "code_attention")
+                .map((question) => ({ ...question, kind: "code_attention" as const })),
+            ].map((item) => [item.id, item]),
+          ).values(),
+        ],
+  );
+  const automationsShow = () => shownAutomations() === null || (shownAutomations()?.length ?? 0) > 0;
+  const empty = () => (approvals()?.count ?? 0) === 0 && approvals() !== null && versions().length === 0 && !automationsShow() && !cursor();
 
   return (
     <ScrollArea class="min-h-0 flex-1">
@@ -240,7 +302,7 @@ export default function AssistantApprovalsView(props: {
                 </Show>
                 <Show when={automationsShow()}>
                   <AssistantWaitingAutomations
-                    entries={automations() ?? null}
+                    entries={shownAutomations() ?? null}
                     onRetry={() => void loadAutomations()}
                     // A read that fails after the restore shows the section's error with "Try again", never silence.
                     onChanged={() =>
@@ -254,6 +316,16 @@ export default function AssistantApprovalsView(props: {
               </Show>
             )}
           </Show>
+        </Show>
+        <Show when={cursor()}>
+          <div class="assistant-waiting-page__section">
+            <Show when={pagingFailed()}>
+              <p role="alert">{t().waitingFailed}</p>
+            </Show>
+            <Button type="button" variant="secondary" loading={paging()} onClick={() => void loadMore()}>
+              {pagingFailed() ? t().codeViewRetry : t().waitingLoadMore}
+            </Button>
+          </div>
         </Show>
       </section>
     </ScrollArea>

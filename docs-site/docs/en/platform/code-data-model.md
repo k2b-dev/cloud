@@ -264,7 +264,11 @@ allow" answers are untouched.
   come with the shared approval card. **Versions** of the person's own Code
   (`code_activate`, `code_changes`, `code_expired`) come from the same open
   questions as the row (`ai.open_questions`); each leads to its card in the
-  chat. **Automations** that need the person (`code_attention`, such as a
+  chat. **Load more** continues the shared waiting feed beyond its first 20
+  entries, including newer versions and additional automations. The sidebar
+  counts the whole feed; the strip links to this page for its omitted entries.
+  Existing cards stay visible while another page loads; a failed read offers
+  a retry. **Automations** that need the person (`code_attention`, such as a
   missing secret or chat) are read with `kind: "code_attention"`; an archived
   chat can be restored in the row. This chat's only entry leaves the row above
   the field while its card's answers are in view; entries of other chats stay.

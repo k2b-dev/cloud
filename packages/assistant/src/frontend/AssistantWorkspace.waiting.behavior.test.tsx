@@ -60,7 +60,13 @@ const waitFor = async (condition: () => boolean, timeoutMs = 2_000) => {
 };
 
 const mount = (
-  server: { conversations: AiConversation[]; questions: AiOpenQuestions; approvals?: PendingApproval[] },
+  server: {
+    conversations: AiConversation[];
+    questions: AiOpenQuestions;
+    approvals?: PendingApproval[];
+    nextQuestions?: AiOpenQuestions;
+    pageFails?: boolean;
+  },
   here: AiConversation,
   activeTurn: AiTurnSnapshot | null = null,
 ) => {
@@ -76,7 +82,7 @@ const mount = (
   let approvalLoads = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(
-    async (input: RequestInfo | URL) => {
+    async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), "http://localhost");
       if (url.pathname === "/api/assistant/workspace/sidebar") {
         sidebarLoads.push(url.pathname);
@@ -89,10 +95,18 @@ const mount = (
       }
       if (/^\/api\/approvals\/[^/]+\/decision$/.test(url.pathname)) return Response.json({ status: "rejected" });
       // Core's open questions of one kind, the read the page's "Automations" section makes.
-      if (url.pathname === "/api/capabilities/v1/queries/core/ai.open_questions")
+      if (url.pathname === "/api/capabilities/v1/queries/core/ai.open_questions") {
+        const body = JSON.parse(String(init?.body)) as { input: { cursor?: unknown } };
+        if (body.input.cursor) {
+          expect(body.input.cursor).toEqual(server.questions.nextCursor!);
+          return server.pageFails
+            ? Response.json({ message: "unavailable" }, { status: 503 })
+            : Response.json({ data: server.nextQuestions });
+        }
         return Response.json({
           data: { count: 0, items: server.questions.items.filter((question) => question.kind === "code_attention") },
         });
+      }
       if (url.pathname.endsWith("/stream")) return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
       return Response.json({ message: "unavailable" }, { status: 503 });
     },
@@ -417,5 +431,47 @@ test("an approval decided on the page keeps its receipt; a new one elsewhere app
   await h.changed("Wart42");
   await waitFor(() => cards().some((entry) => entry.textContent?.includes("Angebot 2")));
   expect(h.approvalLoads()).toBe(loads + 1);
+  expect(h.root.querySelector(".assistant-waiting-page [aria-busy='true']")).toBeNull();
+});
+
+test("twenty approvals plus a newer Code version remain reachable with the sidebar count, including paging retry", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const approvals = Array.from({ length: 20 }, (_, index) =>
+    mailApproval(`00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, String(index)),
+  );
+  const last = approvals.at(-1)!.question;
+  const version = { ...codeEntries().activate, createdAt: "2026-11-20T12:00:00.000Z" };
+  const server = {
+    conversations: [here],
+    questions: { items: approvals.map((item) => item.question), count: 21, nextCursor: { createdAt: last.createdAt, id: last.id } },
+    approvals: approvals.map((item) => item.request),
+    nextQuestions: { count: 21, items: [version] },
+    pageFails: true,
+  };
+  const h = mount(server, here);
+  await waitFor(() => subscriptions.length > 0);
+  const sidebarRow = h.root.querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!;
+  const counter = () => sidebarRow.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent;
+  expect(counter()).toBe("21");
+  expect(h.strip()!.querySelector(".assistant-waiting__more")?.getAttribute("aria-label")).toContain("21");
+  sidebarRow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  const cards = () => h.root.querySelectorAll(".assistant-waiting-page article.cloud-approval");
+  const more = () =>
+    [...h.root.querySelectorAll<HTMLButtonElement>(".assistant-waiting-page button")].find(
+      (button) => button.textContent === "Mehr laden" || button.textContent === "Erneut versuchen",
+    );
+  await waitFor(() => cards().length === 20 && more() !== undefined);
+  const first = cards()[0];
+  expect(h.root.querySelector('[data-kind="code_activate"]')).toBeNull();
+  more()!.click();
+  await waitFor(() => h.root.querySelector(".assistant-waiting-page [role='alert']") !== null);
+  expect(cards()[0]).toBe(first);
+  server.pageFails = false;
+  more()!.click();
+  await waitFor(() => h.root.querySelector('[data-kind="code_activate"]') !== null);
+  expect(cards()[0]).toBe(first);
+  expect(cards().length + h.root.querySelectorAll('[data-kind="code_activate"]').length).toBe(Number(counter()));
+  expect(h.root.querySelector('[data-kind="code_activate"]')!.textContent).toContain("Version 2 einschalten");
+  expect(more()).toBeUndefined();
   expect(h.root.querySelector(".assistant-waiting-page [aria-busy='true']")).toBeNull();
 });

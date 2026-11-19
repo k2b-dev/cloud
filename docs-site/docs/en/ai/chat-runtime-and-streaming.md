@@ -834,7 +834,21 @@ const questions = await listAiOpenQuestions({
 ```
 
 `AiOpenQuestions` contains at most 20 `items`, oldest first, and a `count` of
-all matching questions. Each `AiOpenQuestion` carries its ID, required `kind`, chat
+all matching questions, independent of the current page. The bound comes from
+`APPROVALS_PAGE_SIZE`. When more entries remain, `nextCursor` contains the last
+item's `{ createdAt, id }`; pass it unchanged as `cursor` to read the next page,
+keeping the same `kind` filter. An absent `nextCursor` ends the list. Ordering
+uses creation time at millisecond precision, then ID, so timestamp ties and a
+resolved cursor entry do not skip other questions. The cursor carries no access:
+every page rechecks the same owner and permissions.
+
+SSR supplies the first page. An island can call Core's `ai.open_questions`
+Query with `{ timeZone, cursor }` on **Load more** and validate its answer with
+`AiOpenQuestionsSchema` from the browser-safe
+`@k2b/cloud/contracts/open-questions` entry point. Keep the existing rows visible
+while loading, and offer a retry on failure. Do not read every page on startup.
+
+Each `AiOpenQuestion` carries its ID, required `kind`, chat
 short ID and current title, tool-block `anchor`, short plain text, app
 presentation, and ISO creation time. The short text uses the review's `short`
 template when provided, otherwise its action sentence, rendered like the card's
