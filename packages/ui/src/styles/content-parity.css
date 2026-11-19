@@ -7783,9 +7783,14 @@
 
 /* ActivityList: inset rows like the Mail list, using the shared control radius and row fills.
    44px is Mail's single-line row height; the content padding matches FileGrid's list rows.
-   Embedded lists align the avatar with the surrounding heading. Sentences wrap; compact actor names ellipsize. */
+   Embedded lists align the avatar with the surrounding heading. Sentences wrap; compact actor names ellipsize.
+   --k2b-activity-bleed is how far the row surface reaches past the content edge: the list's outer margin, the row's
+   inline padding, the rail and the day line follow it, so the avatar stays on the title's edge. Embedded timelines
+   (sections, panels, dialogs) bleed 0.5rem, which keeps the surface at least 6px inside a framed section's 0.875rem
+   padding; Mail's feed rows stand outside a list and keep 0.75rem. */
+.k2b-ui :is(.k2b-activity, .k2b-activity-dialog__list) { --k2b-activity-bleed: 0.5rem; }
 .k2b-ui .k2b-activity {
-  margin: 0 -0.75rem;
+  margin: 0 calc(-1 * var(--k2b-activity-bleed));
   padding: 0;
   list-style: none;
 }
@@ -7795,7 +7800,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(0.75rem + 11px);
+  left: calc(var(--k2b-activity-bleed) + 11px);
   width: 2px;
   background: var(--k2b-border);
 }
@@ -7803,7 +7808,7 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem var(--k2b-activity-bleed);
   color: var(--k2b-text-muted);
   font-size: 13px;
   line-height: 18px;
@@ -7828,7 +7833,7 @@
   column-gap: 0.75rem;
   min-height: 2.75rem;
   margin: 0;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem var(--k2b-activity-bleed, 0.75rem);
   border-radius: var(--k2b-radius-control);
 }
 .k2b-ui .k2b-activity__entry:where(:hover) {
@@ -7850,7 +7855,7 @@
   position: absolute;
   top: 2rem;
   bottom: 0;
-  left: calc(0.75rem + 11px);
+  left: calc(var(--k2b-activity-bleed) + 11px);
   width: 2px;
   background: var(--k2b-border);
 }
@@ -7882,6 +7887,7 @@
 .k2b-ui .k2b-activity__icon[data-tone="success"] { color: var(--k2b-success-text); }
 .k2b-ui .k2b-activity__icon[data-tone="warning"] { color: var(--k2b-warning-text); }
 .k2b-ui .k2b-activity__icon[data-tone="danger"] { color: var(--k2b-danger-text); }
+.k2b-ui .k2b-activity__avatar .k2b-avatar > i { font-size: 14px; }
 .k2b-ui .k2b-activity__avatar[data-placeholder] { border-radius: 50%; background: var(--k2b-surface-muted); }
 
 .k2b-ui .k2b-activity__body { min-width: 0; padding-top: 2px; }
@@ -8045,8 +8051,9 @@
   flex-direction: column;
   gap: 16px;
 }
-/* The ScrollArea owns the same two insets as a workspace list, including its scroll track. */
-.k2b-ui .k2b-activity-dialog__list { flex: 1 1 0; margin-inline: -1.25rem; }
+/* The ScrollArea owns the same two insets as a workspace list, including its scroll track; it reaches out by that
+   0.5rem inset plus the bleed, so the avatar keeps the title's edge and the surface keeps the bleed's distance. */
+.k2b-ui .k2b-activity-dialog__list { flex: 1 1 0; margin-inline: calc(-0.5rem - var(--k2b-activity-bleed)); }
 .k2b-ui .k2b-activity-dialog__list > .k2b-activity { margin-inline: 0; padding-inline: 0; }
 .k2b-ui .k2b-activity-dialog__filters { flex: none; min-width: 0; }
 .k2b-ui .k2b-activity-dialog__subtitle {

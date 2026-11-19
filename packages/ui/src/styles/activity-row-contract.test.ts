@@ -20,13 +20,32 @@ test("activity details keep semantic failure colours and a small marker outside 
   expect(marker).not.toContain("background:");
 });
 
-test("timeline padding is cancelled symmetrically so avatar and section title share an edge", () => {
+test("one bleed drives the timeline's margin, row padding, rail and day line, so the avatar keeps the title's edge", () => {
   const list = body(".k2b-ui .k2b-activity");
   const row = body(".k2b-ui .k2b-activity__entry");
-  expect(list).toContain("margin: 0 -0.75rem");
+  expect(body(".k2b-ui :is(.k2b-activity, .k2b-activity-dialog__list)")).toContain("--k2b-activity-bleed: 0.5rem");
+  expect(list).toContain("margin: 0 calc(-1 * var(--k2b-activity-bleed))");
   expect(list).toContain("padding: 0");
-  expect(row).toContain("padding: 0.5rem 0.75rem");
+  // Mail's feed rows stand outside a list and keep the 0.75rem bleed.
+  expect(row).toContain("padding: 0.5rem var(--k2b-activity-bleed, 0.75rem)");
+  expect(body(".k2b-ui .k2b-activity__day")).toContain("padding: 0.5rem var(--k2b-activity-bleed)");
+  for (const rail of [".k2b-ui .k2b-activity > li::before", ".k2b-ui .k2b-activity > li.k2b-activity__entry::after"])
+    expect(body(rail), rail).toContain("left: calc(var(--k2b-activity-bleed) + 11px)");
+  expect(body(".k2b-ui .k2b-activity-dialog__list")).toContain("margin-inline: calc(-0.5rem - var(--k2b-activity-bleed))");
   expect(body(".k2b-ui .k2b-activity-dialog__list > .k2b-activity")).toContain("margin-inline: 0");
+});
+
+test("an embedded timeline's row surface keeps at least 6px from a framed section's edge", () => {
+  const rem = (value: string) => Number.parseFloat(value) * (value.endsWith("rem") ? 16 : 1);
+  const bleed = /--k2b-activity-bleed:\s*([\d.]+(?:rem|px))/.exec(body(".k2b-ui :is(.k2b-activity, .k2b-activity-dialog__list)"))?.[1];
+  const padding = /padding:\s*[\d.]+(?:rem|px)\s+([\d.]+(?:rem|px))/.exec(body('.k2b-ui .k2b-section[data-frame="line"]'))?.[1];
+  expect(bleed).toBeDefined();
+  expect(padding).toBeDefined();
+  expect(rem(padding!) - rem(bleed!)).toBeGreaterThanOrEqual(6);
+});
+
+test("icons in the 24px activity avatars read at 14px", () => {
+  expect(body(".k2b-ui .k2b-activity__avatar .k2b-avatar > i")).toContain("font-size: 14px");
 });
 
 test("only compact names clip, without removing the complete actor from the accessible DOM", () => {
