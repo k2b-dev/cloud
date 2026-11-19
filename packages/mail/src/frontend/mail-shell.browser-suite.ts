@@ -4862,8 +4862,18 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await readyWindow(page);
           await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
           await eventually(() => api.drafts.get("DrfNew")?.subject, "Pickup on Saturday", "subject saved");
+          // The bar stands on the scroller's bottom edge, normal and large: no inset below it where text scrolls on.
+          const barGap = (scroller: string) =>
+            composeWindow(page).evaluate((window, selector) => {
+              const box = window.querySelector(selector)!.getBoundingClientRect();
+              return Math.round(box.bottom - window.querySelector(".mail-compose-window-foot")!.getBoundingClientRect().bottom);
+            }, scroller);
+          // settled: the window's content is ready (readyWindow) and motion is reduced.
+          expect(await barGap(".mail-compose-window-body > .mail-inline-draft")).toBe(0);
           await composeWindow(page).getByRole("button", { name: "Maximize" }).click();
           await composeWindow(page).locator(".mail-inline-draft[data-large] .mail-large-panes .mail-draft-block").waitFor();
+          await settled(page);
+          expect(await barGap(".mail-large-panes .mail-draft-block")).toBe(0);
           expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
           await composeWindow(page).getByRole("button", { name: "Restore size" }).click();
           await composeWindow(page).locator(".mail-inline-draft:not([data-large]) > .mail-draft-block-place > .mail-draft-block").waitFor();

@@ -2853,6 +2853,9 @@ export default function MailComposer(props: {
               {t().ccBcc}
             </Button>
           </Show>
+          <Show when={!windowSlots}>
+            <IdentitySwitcher />
+          </Show>
           <Show when={sharedPeers().length > 0}>
             <span class="mail-inline-draft-peers" data-mail-draft-peers>
               <For each={sharedPeers().slice(0, 3)}>
@@ -2910,8 +2913,8 @@ export default function MailComposer(props: {
             </span>
           </Show>
         </header>
+        {/* The row starts with the subject; the sender stands in the head (in a window, the window's own head). */}
         <div class="mail-inline-draft-meta">
-          <IdentitySwitcher />
           <span class="mail-inline-draft-meta-subject">
             <span class="shrink-0 text-dimmed">{t().subject}</span>
             <TextInput
@@ -3214,6 +3217,10 @@ export default function MailComposer(props: {
               <Show when={slots().status()}>
                 {(mount) => (
                   <Portal mount={mount()}>
+                    {/* The sender leads the window's head, before the save state, so the subject row starts with it. */}
+                    <span class="mail-compose-window-sender" data-mail-compose-sender>
+                      <IdentitySwitcher />
+                    </span>
                     <span
                       class="mail-compose-window-status"
                       data-mail-save-status={!online() ? "offline" : uploadPercent() !== null ? "uploading" : saveStatus()}
