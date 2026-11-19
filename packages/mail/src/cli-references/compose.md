@@ -447,10 +447,13 @@ Cancellation succeeds only while the command is still cancelable. Ambiguous prov
 A reply quotes the message it answers by default, as in Mail itself:
 `mail reply` and `draft create --intent reply|reply_all --source-message <id>`
 append the readable source message after the signature, unless the body quotes
-on its own with a Markdown `>` line. An original without text, or one you cannot
-read, adds nothing. Pass `--no-quote` to leave it out. Other drafts omit it;
-pass `--quote` to `draft create` or `draft update` to append it, and
-`--no-quote` on `draft update` to remove it. `--quote` captures the CLI locale
+on its own with a Markdown `>` line or an HTML blockquote. An original without
+text, or one you cannot read, adds nothing. Pass `--no-quote` to leave it out.
+Other drafts omit it; pass `--quote` to `draft create` to append it.
+`draft update` replaces all content: pass `--quote` again to keep the original,
+because an update without it removes the quote. The automatic quote uses the CLI
+locale and the local time zone; pass `--quote --quote-time-zone <zone>` to date
+it elsewhere. `--quote` captures the CLI locale
 and local IANA time zone; use `--quote-time-zone Europe/Berlin` to override the
 zone. The editable body stays unchanged. Draft JSON uses
 `quoteSource: { "locale": "de", "timeZone": "Europe/Berlin" }` (or `null` to

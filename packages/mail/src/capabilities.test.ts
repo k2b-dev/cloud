@@ -10,6 +10,7 @@ import {
   cloudResourceHref,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
+import * as platformSettings from "@k2b/cloud/services/settings";
 import { err, fail } from "@k2b/stdlib";
 import { mailCapabilities } from "./capabilities";
 import {
@@ -353,8 +354,15 @@ describe("mail capabilities", () => {
     ],
     ["a body that quotes on its own keeps the original out", { intent: "reply", body: "> Saturday at 11?\n\nYes, that works." }, null],
     ["a forward never quotes", { intent: "forward" }, null],
+    ["a new message never quotes", {}, null],
+    [
+      "a reply to a conversation quotes its latest message",
+      { intent: "reply", sourceMessageId: undefined, conversationId },
+      { locale: "en", timeZone: "UTC" },
+    ],
   ] as const)("draft.create: %s", async (_name, choice, expected) => {
     const materialize = spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    spyOn(platformSettings, "get").mockResolvedValue(undefined);
     const action = mailCapabilities.actions["draft.create"];
     const input = action.input.parse({ mailboxId, senderIdentityId, sourceMessageId: messageId, body: "Saturday works.", ...choice });
     const english = { ...context, locale: "en" };
@@ -362,6 +370,16 @@ describe("mail capabilities", () => {
     expect(result.ok).toBeTrue();
     expect(materialize.mock.calls[0]?.[0].input.draft.quoteSource).toEqual(expected);
     expect(materialize.mock.calls[0]?.[0].input.origin).toMatchObject({ kind: "compose", input: { quoteSource: expected } });
+  });
+
+  test("draft.create dates the default quote in the installation's time zone", async () => {
+    const materialize = spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    spyOn(platformSettings, "get").mockResolvedValue("Europe/Berlin");
+    const action = mailCapabilities.actions["draft.create"];
+    const input = action.input.parse({ mailboxId, senderIdentityId, sourceMessageId: messageId, intent: "reply", body: "Gern." });
+    const result = await action.run(input, { ...context, locale: "de", idempotencyKey: "quote-zone" });
+    expect(result.ok).toBeTrue();
+    expect(materialize.mock.calls[0]?.[0].input.draft.quoteSource).toEqual({ locale: "de", timeZone: "Europe/Berlin" });
   });
 
   test("a deduplicated service-account create returns the existing suggestion without adding attachments", async () => {

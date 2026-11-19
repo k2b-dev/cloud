@@ -789,7 +789,10 @@ const draftSignatureChoice = (flags: { signature?: string; noSignature?: boolean
 };
 
 const draftEditableContentFlags = {
-  quote: flag.boolean({ description: "Append the source message after the signature; a reply does so by default" }),
+  quote: flag.boolean({
+    description:
+      "Append the source message after the signature; draft create does so for a reply by default, draft update replaces all content and keeps it only with this flag",
+  }),
   noQuote: flag.boolean({ name: "no-quote", description: "Do not append the source message, also not to a reply" }),
   quoteTimeZone: flag.string({ name: "quote-time-zone", description: "IANA time zone for --quote; defaults to the local time zone" }),
   signature: flag.string({ description: "Signature template id; omitted keeps the default or current signature" }),
@@ -877,8 +880,12 @@ const draftContentFlags = {
 };
 
 /** The quote context the CLI saves: the person's locale and this machine's time zone unless --quote-time-zone names one. */
-const cliQuoteSource = (locale: string | undefined, timeZone?: string) =>
-  draftQuoteSourceSchema.parse({ locale: locale ?? "en", timeZone: timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone });
+const cliQuoteSource = (locale: string | undefined, timeZone?: string) => {
+  if (timeZone) return draftQuoteSourceSchema.parse({ locale: locale ?? "en", timeZone });
+  // The automatic quote never fails a reply over this machine's time zone: an unusable one dates the quote in UTC.
+  const local = draftQuoteSourceSchema.safeParse({ locale: locale ?? "en", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+  return local.success ? local.data : draftQuoteSourceSchema.parse({ locale: locale ?? "en", timeZone: "UTC" });
+};
 
 const readDraftEditableContent = async (
   flags: {
@@ -945,7 +952,8 @@ const readDraftContent = async (
     quoteSource: defaultReplyQuoteSource({
       quoteSource: content.quoteSource,
       intent: flags.intent,
-      sourceMessageId,
+      // A conversation without a named message replies to its latest message, as the server derives it.
+      sourceMessageId: sourceMessageId ?? (flags.conversation ? flags.conversation : undefined),
       body: content.body,
       quote: () => cliQuoteSource(locale),
     }),
@@ -2887,7 +2895,7 @@ const everydayCommands = (t: Translate) => {
           sourceMessageId: source.id,
           quoteSource: defaultReplyQuoteSource({
             quoteSource: flags.noQuote ? null : undefined,
-            intent: "reply",
+            intent: flags.all ? "reply_all" : "reply",
             sourceMessageId: source.id,
             body: body ?? "",
             quote: () => cliQuoteSource(ctx.options.locale),

@@ -6552,6 +6552,7 @@ test("draft create quotes the source of a reply by default and nothing else", as
     ["--intent", "reply", "--source-message", MESSAGE_ID],
     ["--intent", "reply", "--source-message", MESSAGE_ID, "--no-quote"],
     [],
+    ["--intent", "forward", "--source-message", MESSAGE_ID],
   ]) {
     const result = await runCli(origin, [...base, ...extra]);
     expect(result.exitCode, result.stderr).toBe(0);
@@ -6560,7 +6561,27 @@ test("draft create quotes the source of a reply by default and nothing else", as
     expect.objectContaining({ quoteSource: { locale: "de", timeZone: expect.any(String) } }),
     expect.objectContaining({ quoteSource: null }),
     expect.objectContaining({ quoteSource: null }),
+    expect.objectContaining({ quoteSource: null }),
   ]);
+  // An update replaces all content: without --quote it sends no quote, which the server stores as none, so the help
+  // says to pass it again.
+  const update = await runCli(origin, [
+    "--json",
+    "mail",
+    "draft",
+    "update",
+    DRAFT_ID,
+    "--revision",
+    "1",
+    "--mailbox",
+    MAILBOX_ID,
+    "--identity",
+    IDENTITY_ID,
+    "--body",
+    "Gern.",
+  ]);
+  expect(update.exitCode, update.stderr).toBe(0);
+  expect(bodies.at(-1)).not.toHaveProperty("draft.quoteSource");
 });
 
 test("draft intent and acknowledge-consolidation use the revision-checked reply operations", async () => {

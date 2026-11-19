@@ -17,7 +17,8 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { logger } from "@k2b/cloud/services";
-import { principalLabel } from "@k2b/cloud/shared";
+import { get as settingsGet } from "@k2b/cloud/services/settings";
+import { normalizeTimeZone, principalLabel } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import { mailEvents } from "./app-events";
@@ -88,19 +89,23 @@ import { sendContentChanged } from "./service/send-content";
 
 /**
  * A reply draft from Gustav or the API quotes the message it answers unless the caller chooses (null leaves it out), as
- * the composer does. Capabilities know no person's time zone, so the quote's date is in UTC unless the caller passes one.
+ * the composer does. Capabilities know no person's time zone, so the quote's date uses the installation's time zone
+ * (UTC without one) unless the caller passes its own.
  */
-const replyQuoteSource = (
-  input: Pick<z.output<typeof c.DraftCreateInputSchema>, "quoteSource" | "intent" | "sourceMessageId" | "body">,
+const replyQuoteSource = async (
+  input: Pick<z.output<typeof c.DraftCreateInputSchema>, "quoteSource" | "intent" | "sourceMessageId" | "conversationId" | "body">,
   context: CapabilityExecutionContext,
-) =>
-  defaultReplyQuoteSource({
+) => {
+  const chosen = defaultReplyQuoteSource({
     quoteSource: input.quoteSource,
     intent: input.intent,
-    sourceMessageId: input.sourceMessageId,
+    sourceMessageId: input.sourceMessageId ?? input.conversationId,
     body: input.body,
     quote: () => ({ locale: context.locale, timeZone: "UTC" }),
   });
+  if (!chosen || input.quoteSource !== undefined) return chosen;
+  return { ...chosen, timeZone: normalizeTimeZone(String((await settingsGet<string>("app.timezone")) || "").trim(), "UTC") };
+};
 
 const requestContext = (context: CapabilityExecutionContext): MailRequestContext => ({
   actor: context.actor,
@@ -2841,6 +2846,7 @@ const actionDefinitions = {
       if (!conversation.ok) return conversation;
       if (!sourceMessage.ok) return sourceMessage;
       if (!signature.ok) return signature;
+      const quoteSource = await replyQuoteSource(input, context);
       // This is the same read-only origin preparation used when materializing the draft.
       const seed = await drafts.prepareDraftSeed({
         context: requestContext(context),
@@ -2863,7 +2869,7 @@ const actionDefinitions = {
             conversationId: conversation.data?.conversationId ?? null,
             sourceMessageId: sourceMessage.data,
             signatureTemplateId: signature.data,
-            quoteSource: replyQuoteSource(input, context),
+            quoteSource: quoteSource,
           },
         },
       });
@@ -2877,7 +2883,7 @@ const actionDefinitions = {
           attachments.push({ filename: attachment.filename, byteLength: bytes.byteLength, contentHash });
         }
       }
-      const proposed = { ...input, quoteSource: replyQuoteSource(input, context), attachments };
+      const proposed = { ...input, attachments };
       return ok(
         mailActionReviews["draft.create"](
           context.locale,
@@ -2914,7 +2920,7 @@ const actionDefinitions = {
       const draftContent = {
         senderIdentityId: senderIdentity.data,
         signatureTemplateId: signature.data,
-        quoteSource: replyQuoteSource(input, context),
+        quoteSource: await replyQuoteSource(input, context),
         to: input.to,
         cc: input.cc,
         bcc: input.bcc,
