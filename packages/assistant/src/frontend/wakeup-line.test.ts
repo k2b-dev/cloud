@@ -59,6 +59,19 @@ test("a repeating alarm reads in the reader's language, also when the fact store
 });
 
 describe("alarm lines", () => {
+  test.each(["de", "en"])("%s: missing model limits remain distinct from spent budget, with a remedy for each role", (locale) => {
+    const missed = alarm({ status: "missed", missedReason: "code_ai_budget_unknown" });
+    for (const canConfigureAi of [false, true]) {
+      const value = describeWakeupLine(line("missed", missed), { ...zone, locale, current: [missed], canConfigureAi });
+      expect(value.body).toContain(locale === "de" ? "Kontext- oder Ausgabegrenzen" : "context or output limits");
+      expect(value.body).toContain(locale === "de" ? "Modellverwaltung" : "model management");
+      expect(value.body).toContain(
+        locale === "de" ? (canConfigureAi ? "Trage" : "Bitte die Administration") : canConfigureAi ? "Enter" : "Ask your administrator",
+      );
+      expect(value.body).not.toContain(locale === "de" ? "Tageslimit" : "daily limit");
+      expect(value.link?.action).toBe("catch-up");
+    }
+  });
   test("set: alarm, time and note; a repeating one names its end; only a current alarm has pencil and cross", () => {
     expect(text(describeWakeupLine(line("created", alarm()), { ...zone, current: [alarm()] }))).toBe(
       "Wecker · heute 16:00 · Antwort von Lena Vogt prüfen",

@@ -147,12 +147,15 @@ suiteFor(
     const f = await fixture();
     await validate(f);
     budgetSettings.mockResolvedValue(0.2);
-    await expect(admitCodeChatTurn(f.worker)).rejects.toMatchObject({ code: "host_budget_limit" });
+    await expect(admitCodeChatTurn(f.worker)).rejects.toMatchObject({
+      code: "host_budget_limit",
+      message: "code_ai_turn_exceeds_daily_budget",
+    });
     expect(
       await sql<
         { status: string; missed_reason: string | null }[]
       >`SELECT status,missed_reason FROM ai.wakeups WHERE id=${f.alarm.id}::uuid`,
-    ).toEqual([{ status: "missed", missed_reason: "budget" }]);
+    ).toEqual([{ status: "missed", missed_reason: "code_ai_turn_exceeds_daily_budget" }]);
     expect(
       await sql`SELECT 1 FROM ai.messages WHERE conversation_id=${f.chat.id}::uuid AND meta#>>'{wakeupEvent,kind}'='missed'`,
     ).toHaveLength(1);

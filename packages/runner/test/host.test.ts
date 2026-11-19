@@ -53,6 +53,17 @@ test.each([403, 404, 429])("host preserves a structured refusal with status %s",
   });
 });
 
+test("host exposes Core's translated budget reason to Code", async () => {
+  const message = "Für das Modell fehlen Kontext- oder Ausgabegrenzen. Bitte die Administration um Hilfe.";
+  const host = new Cloud(
+    { props: { runId: "run" } },
+    {
+      BRIDGE: { fetch: async () => Response.json({ ok: false, error: { code: "code_ai_budget_unknown", status: 409, message } }) },
+    },
+  );
+  await expect(host.call("ai.chat.send", null)).rejects.toMatchObject({ code: "code_ai_budget_unknown", status: 409, message });
+});
+
 // A successful HTTP transport must still carry a bridge response envelope.
 test.each([null, true, [], {}, { ok: false }, { ok: false, error: null }].map((envelope) => ({ envelope })))(
   "host rejects a malformed JSON envelope (%j) with the stable transport error",

@@ -1,18 +1,21 @@
-import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import { aiConversations } from "@k2b/cloud/ai";
+import { AiWakeupBudgetError, aiConversations } from "@k2b/cloud/ai";
+import { coreSettings } from "@k2b/cloud/services";
 import { aiModelFixture } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
+import { checkWakeupChatBudget } from "./ai-chat-budget";
 import {
   CodeChatBudgetError,
   checkAutomationChatBudget,
   reserveCodeChatTurnBudget,
   settleCodeChatTurnBudget,
 } from "./code/chat-turn-budget";
+import { CODE_AI_DEFAULT_DAILY_BUDGET_USD, CODE_SETTINGS, codeSettings } from "./code/settings";
 
 const owner = "5c000000-0000-4000-8000-000000000001";
 const at = new Date("2026-11-18T12:00:00Z");
-const limits = { code: 1, owner: 1, timeZone: "UTC" };
+const limits = { code: CODE_AI_DEFAULT_DAILY_BUDGET_USD, owner: CODE_AI_DEFAULT_DAILY_BUDGET_USD, timeZone: "UTC" };
 const profile = aiModelFixture({
   id: "alarm-budget",
   pricing: { inputPerMillion: 2.5, outputPerMillion: 10 },
@@ -26,14 +29,32 @@ suiteFor(
   "nats",
 )("alarms reuse automation day and turn reservations", () => {
   let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
+  let budgetSettings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  let globalSettings: ReturnType<typeof spyOn<typeof coreSettings, "get">>;
   beforeAll(async () => {
     setSystemTime(at);
     database = await useMigratedDatabase("ai_wakeup_budget");
+    // These service tests do not run Core startup, which registers the setting defaults.
+    budgetSettings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);
+    globalSettings = spyOn(coreSettings, "get").mockResolvedValue("UTC");
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${owner}::uuid,'alarm-budget-owner','local','user')`;
   }, 30_000);
   afterAll(async () => {
     setSystemTime();
+    globalSettings?.mockRestore();
+    budgetSettings?.mockRestore();
     await database?.drop();
+  });
+
+  test("default alarm allowance accepts a standard model and preserves missing-context refusal", async () => {
+    const wakeupId = "5c000000-0000-4000-8000-000000000002";
+    await sql.begin(async (db) => {
+      await expect(checkWakeupChatBudget({ owner, wakeupId, profile, db })).resolves.toBeUndefined();
+      await expect(checkWakeupChatBudget({ owner, wakeupId, profile: { ...profile, contextWindow: undefined }, db })).rejects.toMatchObject(
+        { code: "code_ai_budget_unknown" },
+      );
+    });
+    expect(new AiWakeupBudgetError("code_ai_budget_unknown").code).toBe("code_ai_budget_unknown");
   });
 
   test("alarms share the Code owner's day: a waiting turn checks but a worker reserves", async () => {

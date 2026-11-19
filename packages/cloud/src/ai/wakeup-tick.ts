@@ -14,14 +14,18 @@ import { prepareAiChatTurn, wakeAiMessageQueue } from "./runtime";
 import { readAiSettingsState, selectAiModelProfile } from "./settings";
 import type { AiModelProfile } from "./types";
 import { isAiSettingsError } from "./validate";
-import { AI_WAKEUP_MISSED_DAYS, AI_WAKEUP_TICK_BATCH } from "./wakeup-contracts";
+import { AI_WAKEUP_MISSED_DAYS, AI_WAKEUP_TICK_BATCH, AiWakeupBudgetCodeSchema } from "./wakeup-contracts";
 import { AI_WAKEUP_FAILURE_LIMIT, AI_WAKEUP_SCHEDULE } from "./wakeup-schedule";
 import { type AiWakeupRow, recordAiWakeupEvent } from "./wakeup-store";
 import { nextAiWakeupAt } from "./wakeup-time";
 import { AiWakeupError, requireOwnedAiWakeupChat } from "./wakeups";
 
 const log = logger("ai:wakeups");
-export class AiWakeupBudgetError extends Error {}
+export class AiWakeupBudgetError extends Error {
+  get code() {
+    return AiWakeupBudgetCodeSchema.safeParse(this.message).data ?? "budget";
+  }
+}
 /** Core supplies the existing automation day allowance; the platform never reaches into Code data. */
 export type AiWakeupBudgetCheck = (input: { owner: string; wakeupId: string; profile: AiModelProfile; db: SQL }) => Promise<void>;
 export const aiWakeupOccurrenceId = (id: string, at: Date) => {
@@ -143,7 +147,8 @@ export async function tickAiWakeups(
               }
             } catch (error) {
               if (error instanceof AiMessageQueueConflict) reason = "queue_full";
-              else if (error instanceof AiQuotaError || error instanceof AiWakeupBudgetError) reason = "budget";
+              else if (error instanceof AiWakeupBudgetError) reason = error.code;
+              else if (error instanceof AiQuotaError) reason = "budget";
               else if (isAiSettingsError(error) || error instanceof AiWakeupError) reason = "access";
               else throw error;
             }

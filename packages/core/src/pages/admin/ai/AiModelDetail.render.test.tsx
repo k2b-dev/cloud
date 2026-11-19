@@ -16,16 +16,54 @@ afterAll(() => setSystemTime());
 
 for (const locale of ["de", "en"]) {
   for (const scenario of [
-    { kind: "chat", pricing: null, hint: true },
-    { kind: "chat", pricing: { inputPerMillion: 0, outputPerMillion: 0 }, hint: true },
-    { kind: "chat", pricing: { inputPerMillion: 0, outputPerMillion: 1 }, hint: false },
-    { kind: "transcription", pricing: null, hint: false },
-    { kind: "decision", pricing: null, hint: false },
+    { kind: "chat", pricing: null, hint: true, contextWindow: null, maxOutputTokens: null, limitsHint: false },
+    {
+      kind: "chat",
+      pricing: { inputPerMillion: 0, outputPerMillion: 0 },
+      hint: true,
+      contextWindow: null,
+      maxOutputTokens: null,
+      limitsHint: false,
+    },
+    {
+      kind: "chat",
+      pricing: { inputPerMillion: 0, outputPerMillion: 1 },
+      hint: false,
+      contextWindow: 128_000,
+      maxOutputTokens: 4096,
+      limitsHint: false,
+    },
+    {
+      kind: "chat",
+      pricing: { inputPerMillion: 2.5, outputPerMillion: 10 },
+      hint: false,
+      contextWindow: null,
+      maxOutputTokens: 4096,
+      limitsHint: true,
+    },
+    {
+      kind: "chat",
+      pricing: { inputPerMillion: 2.5, outputPerMillion: 10 },
+      hint: false,
+      contextWindow: 128_000,
+      maxOutputTokens: null,
+      limitsHint: true,
+    },
+    { kind: "transcription", pricing: null, hint: false, contextWindow: null, maxOutputTokens: null, limitsHint: false },
+    { kind: "decision", pricing: null, hint: false, contextWindow: 128_000, maxOutputTokens: null, limitsHint: false },
   ] as const) {
     test(`${locale}: ${scenario.kind} with prices ${JSON.stringify(scenario.pricing)} explains automation eligibility`, () => {
       const catalog = aiFixtureCatalog();
       const provider = catalog.providers[0]!;
-      const model = { ...catalog.models[0]!, kind: scenario.kind, pricing: scenario.pricing, variants: [] };
+      const model = {
+        ...catalog.models[0]!,
+        kind: scenario.kind,
+        pricing: scenario.pricing,
+        contextWindow: scenario.contextWindow,
+        maxOutputTokens: scenario.maxOutputTokens,
+        outputTokenLimit: null,
+        variants: [],
+      };
       const html = renderToString(() =>
         createComponent(LocaleProvider, {
           locale,
@@ -48,6 +86,11 @@ for (const locale of ["de", "en"]) {
           : "Without a price above zero, automations cannot start a Gustav turn with this model.";
       expect(html.includes(hint)).toBe(scenario.hint);
       if (scenario.hint) expect(html).toContain(`class="k2b-notice-card__body "><p>${hint}</p>`);
+      expect(
+        html.includes(
+          locale === "de" ? "Trage vor dem Speichern die dokumentierten Grenzen" : "Enter the limits documented by the provider",
+        ),
+      ).toBe(scenario.limitsHint);
     });
   }
 }

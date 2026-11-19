@@ -827,7 +827,11 @@ export default function MailComposer(props: {
   });
 
   createEffect(() => {
-    if (!lifecycleTransition()) return;
+    // The own send's command keeps running: its answer carries the toast and Undo.
+    if (!lifecycleTransition() || sendingHere()) return;
+    // A failure of a send the close overtook offers nothing to retry.
+    dismissSendFailure();
+    setSendFailure(null);
     deliveryPreparationController?.abort();
     deliveryPreparationController = null;
     send.abort();
@@ -1107,6 +1111,15 @@ export default function MailComposer(props: {
   const closesOnLifecycle = (transition: { hasUnsavedChanges: boolean }) => openedAsDraft && !transition.hasUnsavedChanges;
   /** This composer sent its shared draft and waits for the server's comparison before it closes. */
   const [closingAfterSend, setClosingAfterSend] = createSignal<(() => void) | null>(null);
+  /** This composer's send command is on its way; the server may close the draft live before the command answers. */
+  const [sendingHere, setSendingHere] = createSignal(false);
+  /** This composer's send went out; the composer is leaving. */
+  const [sentHere, setSentHere] = createSignal(false);
+  /**
+   * This composer's own send closes the draft. Its lifecycle is no news here: no notice, no hint, and no toast that
+   * someone started sending; the send's own answer closes the composer with its toast and Undo.
+   */
+  const ownSendCloses = () => (sendingHere() || sentHere() || closingAfterSend() !== null) && !sharedState()?.restFailed;
   createEffect(() => {
     const leave = closingAfterSend();
     if (!leave || !sharedState()?.restUnchanged) return;
@@ -1117,11 +1130,17 @@ export default function MailComposer(props: {
    * Someone else sent, scheduled, or discarded this draft. With nothing unsaved here the composer closes and a toast
    * says what happened; unsaved input keeps the composer open with its way to keep that input.
    */
+  let lifecycleClosed = false;
   createEffect(() => {
     const transition = lifecycleTransition();
-    if (!transition || !closesOnLifecycle(transition) || untrack(closingAfterSend) || sharedState()?.recoveryDraft) return;
+    if (!transition || sentHere() || !closesOnLifecycle(transition) || ownSendCloses() || sharedState()?.recoveryDraft || lifecycleClosed)
+      return;
+    // Once: later state changes of the closed draft (its frozen text, the server's comparison) say nothing new.
+    lifecycleClosed = true;
     untrack(() => {
       const current = transition.draft;
+      // A send of this composer failed, then the close came: the send went out after all.
+      if (leaveAsOwnSend(current)) return;
       const name = current.lastEditedByDisplayName;
       const lt = t();
       const [title, message] =
@@ -1143,6 +1162,37 @@ export default function MailComposer(props: {
     });
   });
   let lastDeliveryAttempt: PreparedDelivery | null = null;
+  /**
+   * The draft closed after a send of this composer failed or lost its answer, and this person closed it: that send
+   * went out. The composer leaves with the delivery toast, without Undo for want of its id, never with a toast that
+   * the person "started sending".
+   */
+  const leaveAsOwnSend = (closed: MailDraft): boolean => {
+    const attempt = lastDeliveryAttempt;
+    const editor = closed.lastEditedBy;
+    if (
+      !attempt ||
+      closed.state === "discarded" ||
+      editor.kind !== "user" ||
+      props.currentActor.kind !== "user" ||
+      editor.userId !== props.currentActor.id
+    )
+      return false;
+    lastDeliveryAttempt = null;
+    lifecycleClosed = true;
+    setSentHere(true);
+    dismissSendFailure();
+    setSendFailure(null);
+    const delivery = {
+      submissionId: null,
+      scheduledAt: closed.state === "scheduled" ? (attempt.scheduledAt ?? null) : null,
+      undoSeconds: attempt.request.undoSeconds,
+    };
+    if (props.host?.delivered) props.host.delivered(delivery);
+    else showDeliveryToast(delivery, { locale: locale(), dateConfig: props.dateConfig });
+    leaveBack("sent");
+    return true;
+  };
   /** The send that runs or failed last, so Try again repeats it, scheduled time included. */
   let currentDelivery: { scheduledAt?: string } = {};
   /**
@@ -1214,6 +1264,9 @@ export default function MailComposer(props: {
       return { command, attempt };
     },
     onSuccess: ({ command, attempt }) => {
+      // The draft's close is this send: its live lifecycle needs no second word.
+      lifecycleClosed = true;
+      setSentHere(true);
       lastDeliveryAttempt = null;
       setSendFailure(null);
       draftSession.forgetJournal(attempt.draftId, { closed: true });
@@ -1252,6 +1305,14 @@ export default function MailComposer(props: {
         return;
       }
       if (error instanceof ComposeSafetyCancelled) return;
+      // The draft closed while this send ran. Its own close (the answer got lost after the server sent it) is this
+      // send: the composer leaves with the delivery toast, without Undo for want of its id. Someone else's close
+      // speaks for itself through the lifecycle, so no failure toast stands beside it.
+      const closed = untrack(lifecycleTransition)?.draft;
+      if (closed) {
+        leaveAsOwnSend(closed);
+        return;
+      }
       const delivery = currentDelivery;
       return reportDeliveryError(error.message, () => void sendDraft(delivery));
     },
@@ -1343,11 +1404,13 @@ export default function MailComposer(props: {
         !disposed && !boxBlocksSend() && (draftId === undefined || draft()?.id === draftId);
       if (reusable) {
         if (!stillSendable(previousAttempt?.draftId)) throw new ComposeSafetyCancelled();
+        setSendingHere(true);
         await send.retry();
       } else {
         const prepared = await prepareDelivery(delivery, preparation.signal);
         if (!stillSendable(prepared.draftId)) throw new ComposeSafetyCancelled();
         lastDeliveryAttempt = prepared;
+        setSendingHere(true);
         await send.mutate(prepared);
       }
     } catch (error) {
@@ -1356,6 +1419,7 @@ export default function MailComposer(props: {
         reportDeliveryError(error instanceof Error ? error.message : t().messageNotReadySend, () => void sendDraft(delivery));
       }
     } finally {
+      setSendingHere(false);
       preparation.abort();
       if (deliveryPreparationController === preparation) deliveryPreparationController = null;
       finishDeliveryTransition(reservation);
@@ -2017,7 +2081,7 @@ export default function MailComposer(props: {
             opening={senderSettingsOpening()}
           />
         </Show>
-        <Show when={status() === "error" || status() === "readonly"}>
+        <Show when={(status() === "error" || status() === "readonly") && !ownSendCloses()}>
           <div
             class="mail-inline-draft-notice"
             data-tone={status() === "error" || connectionUnavailable() ? "danger" : "neutral"}
@@ -2105,7 +2169,7 @@ export default function MailComposer(props: {
         </Show>
         <Show
           when={
-            lifecycleTransition() && !closesOnLifecycle(lifecycleTransition()!) && !sharedState()?.recoveryDraft && !closingAfterSend()
+            lifecycleTransition() && !closesOnLifecycle(lifecycleTransition()!) && !sharedState()?.recoveryDraft && !ownSendCloses()
               ? lifecycleTransition()
               : null
           }
@@ -2120,7 +2184,7 @@ export default function MailComposer(props: {
             />
           )}
         </Show>
-        <Show when={sharedState()?.recoveryDraft || sharedState()?.restUnchanged}>
+        <Show when={sharedState()?.recoveryDraft || (sharedState()?.restUnchanged && !ownSendCloses())}>
           <div class="mail-inline-draft-notice" data-tone="neutral" role="status">
             <span class="min-w-0 flex-1">{sharedState()?.recoveryDraft ? sharedT().restSaved : sharedT().restUnchanged}</span>
             <Button
@@ -2593,7 +2657,7 @@ export default function MailComposer(props: {
           </Show>
           {/* One bar at a fixed place. After a failed send, Send stays and repeats it; the toast names the reason. */}
           {/* A shared draft's hint stands here, over the bar and below the signature, never in the text. */}
-          <div class="mail-draft-hint-slot" ref={setHintSlot} />
+          <div class="mail-draft-hint-slot" ref={setHintSlot} hidden={ownSendCloses()} />
           <footer class="mail-inline-draft-foot mail-reply-box-foot">
             <SplitButton
               class="mail-compose-action"
@@ -3029,7 +3093,7 @@ export default function MailComposer(props: {
         </Show>
 
         {/* A shared draft's hint stands here, over the bar and below the signature, never in the text. */}
-        <div class="mail-draft-hint-slot" ref={setHintSlot} />
+        <div class="mail-draft-hint-slot" ref={setHintSlot} hidden={ownSendCloses()} />
         <Show
           when={windowSlots}
           fallback={
@@ -3355,7 +3419,7 @@ export default function MailComposer(props: {
           <span class="shrink-0 text-sm font-semibold text-primary">{intentLabel(composerIntent())}</span>
           <IdentitySwitcher />
           <span class="min-w-0 flex-1" />
-          <Show when={status() === "error" || status() === "readonly"}>
+          <Show when={(status() === "error" || status() === "readonly") && !ownSendCloses()}>
             <span
               class="min-w-0 text-xs"
               classList={{
@@ -3445,7 +3509,7 @@ export default function MailComposer(props: {
         </div>
       </Show>
 
-      <Show when={props.popout && (status() === "error" || status() === "readonly")}>
+      <Show when={props.popout && (status() === "error" || status() === "readonly") && !ownSendCloses()}>
         <div
           class="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2 text-xs"
           classList={{
@@ -3544,7 +3608,7 @@ export default function MailComposer(props: {
 
       <Show
         when={
-          lifecycleTransition() && !closesOnLifecycle(lifecycleTransition()!) && !sharedState()?.recoveryDraft && !closingAfterSend()
+          lifecycleTransition() && !closesOnLifecycle(lifecycleTransition()!) && !sharedState()?.recoveryDraft && !ownSendCloses()
             ? lifecycleTransition()
             : null
         }
@@ -3684,7 +3748,7 @@ export default function MailComposer(props: {
         />
       </div>
 
-      <Show when={sharedState()?.recoveryDraft || sharedState()?.restUnchanged}>
+      <Show when={sharedState()?.recoveryDraft || (sharedState()?.restUnchanged && !ownSendCloses())}>
         <div
           class="absolute inset-x-3 bottom-14 z-30 flex max-h-[45%] flex-wrap items-center gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-sm shadow-[var(--k2b-shadow-toolbar)]"
           role="status"
@@ -3705,7 +3769,7 @@ export default function MailComposer(props: {
       </Show>
       {/* Phones set the tools closer, so the labelled send action and every tool keep one row in each language. */}
       {/* A shared draft's hint stands here, over the bar and below the signature, never in the text. */}
-      <div class="mail-draft-hint-slot" ref={setHintSlot} />
+      <div class="mail-draft-hint-slot" ref={setHintSlot} hidden={ownSendCloses()} />
       <footer class="flex shrink-0 items-center gap-1 sm:gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2">
         <SplitButton
           class="mail-compose-action"

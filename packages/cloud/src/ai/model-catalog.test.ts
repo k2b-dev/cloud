@@ -20,7 +20,7 @@ import {
   AiProviderSchema as LegacyProviderSchema,
 } from "./catalog-v0.70.test-fixture";
 import * as credentials from "./credentials";
-import { aiModelCatalog, flattenAiModelVariant, readAiModelProfiles, validateAiSlot } from "./model-catalog";
+import { aiModelCatalog, flattenAiModelVariant, readAiModelProfiles, validateAiCatalogModel, validateAiSlot } from "./model-catalog";
 import { validateAiReplacement } from "./model-delete";
 import * as headers from "./request-headers";
 
@@ -52,6 +52,17 @@ const model = {
   providerId: provider.id,
   ...metadata,
 };
+test("priced chat catalog writes require context and either an explicit or reported output limit", () => {
+  const priced = { ...model, pricing: { inputPerMillion: 2.5, outputPerMillion: 10 }, contextWindow: 128_000, maxOutputTokens: 4096 };
+  expect(() => validateAiCatalogModel(priced, provider)).not.toThrow();
+  expect(() => validateAiCatalogModel({ ...priced, maxOutputTokens: null }, provider)).not.toThrow();
+  expect(() => validateAiCatalogModel({ ...priced, contextWindow: null }, provider)).toThrow("context window");
+  expect(() => validateAiCatalogModel({ ...priced, maxOutputTokens: null, outputTokenLimit: null }, provider)).toThrow(
+    "output token limit",
+  );
+  for (const pricing of [null, { inputPerMillion: 0, outputPerMillion: 0 }])
+    expect(() => validateAiCatalogModel({ ...model, pricing, contextWindow: null, outputTokenLimit: null }, provider)).not.toThrow();
+});
 test("stored catalog schemas strip future columns while admin inputs stay strict", () => {
   const variant = AiVariantSchema.parse({ slug: "standard", id: "chat", modelId: "chat", label: "Standard", ...metadata });
   const assignment = AiAssignmentSchema.parse({ slot: "balanced", variantId: "chat", ...metadata });
