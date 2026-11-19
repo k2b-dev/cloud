@@ -286,8 +286,12 @@ export const aiChatSendAction = {
         await db`UPDATE ai.queued_messages SET submission=submission #- '{runConfig,send,keyHash}'
           WHERE submission#>>'{runConfig,send,accountId}'=${owner} AND submission#>>'{runConfig,send,keyHash}'=${keyHash}
             AND created_at <= clock_timestamp() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})`;
-        await enqueueAiChatSend(prepared, [{ type: "text", text: parsed.data.text }], db,
-          "source" in source.data ? source.data.source : undefined);
+        await enqueueAiChatSend(
+          prepared,
+          [{ type: "text", text: parsed.data.text }],
+          db,
+          "source" in source.data ? source.data.source : undefined,
+        );
         return ok(null);
       });
       if (!admitted.ok) return admitted;

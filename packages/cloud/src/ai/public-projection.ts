@@ -221,7 +221,9 @@ export const publicAiStoredMessages = async (
           ...(message.loopId ? [message.loopId] : []),
           ...(message.meta?.choice ? [message.meta.choice.turnId] : []),
         ]),
-        doneConversationIds: messages.flatMap((message) => message.meta?.chatDone?.targetConversationId ? [message.meta.chatDone.targetConversationId] : []),
+        doneConversationIds: messages.flatMap((message) =>
+          message.meta?.chatDone?.targetConversationId ? [message.meta.chatDone.targetConversationId] : [],
+        ),
       },
     ),
     withCurrentAppNames(messages, originViewer.locale),
@@ -236,10 +238,19 @@ export const publicAiStoredMessages = async (
       meta: {
         ...message.meta,
         ...(byId.has(message.id) ? { origin: byId.get(message.id)! } : {}),
-        ...(done ? { chatDone: {
-          chatId: done.chatId, turnId: done.turnId, status: done.status, messageSeq: done.messageSeq,
-          ...(target ? { name: target.name, href: target.href + (done.messageSeq === null ? "" : `&message=${done.messageSeq}`) } : {}),
-        } } : {}),
+        ...(done
+          ? {
+              chatDone: {
+                chatId: done.chatId,
+                turnId: done.turnId,
+                status: done.status,
+                messageSeq: done.messageSeq,
+                ...(target
+                  ? { name: target.name, href: target.href + (done.messageSeq === null ? "" : `&message=${done.messageSeq}`) }
+                  : {}),
+              },
+            }
+          : {}),
       },
     };
   });

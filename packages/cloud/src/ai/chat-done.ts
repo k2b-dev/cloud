@@ -19,7 +19,9 @@ export type AiChatDone = {
 /** The caller's terminal-turn transaction owns the destination lock. Never wait for another chat's lock:
  * two person-triggered turns may delegate to one another. A busy origin is repaired by the bounded sweep. */
 export async function appendAiChatDone(turnId: string, db: SQL): Promise<void> {
-  const [source] = await db<{ id: string; source_turn_id: string; target_id: string; chat_id: string; turn_id: string; status: AiChatDone["status"] }[]>`
+  const [source] = await db<
+    { id: string; source_turn_id: string; target_id: string; chat_id: string; turn_id: string; status: AiChatDone["status"] }[]
+  >`
     SELECT source.id, source_turn.id AS source_turn_id, target.id AS target_id, target.short_id AS chat_id, done.short_id AS turn_id, done.status
     FROM ai.turns done
     JOIN ai.conversations target ON target.id=done.conversation_id
@@ -54,7 +56,10 @@ export async function appendAiChatDone(turnId: string, db: SQL): Promise<void> {
   }
   // A fresh statement after acquiring the source lock sees the last committed sequence. The fact, its key and
   // the conversation bump commit together with the terminal status. Short-ID collisions use the shared savepoint.
-  await withAiShortIdForDb(db, "idx_ai_messages_conversation_short_id", (attempt, shortId) => attempt`
+  await withAiShortIdForDb(
+    db,
+    "idx_ai_messages_conversation_short_id",
+    (attempt, shortId) => attempt`
     WITH inserted AS (
       INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message,search_text,meta,
         delegated_source_turn_id,delegated_target_turn_id)
@@ -73,7 +78,8 @@ export async function appendAiChatDone(turnId: string, db: SQL): Promise<void> {
     ), bumped AS (
       UPDATE ai.conversations SET updated_at=now(),last_used_at=now(),background_received_at=now(),done=NULL
       WHERE id IN (SELECT conversation_id FROM inserted)
-    ) UPDATE ai.turns SET delegated_done_at=now() WHERE id=${turnId}::uuid`);
+    ) UPDATE ai.turns SET delegated_done_at=now() WHERE id=${turnId}::uuid`,
+  );
 }
 
 /** Restart repair, including turns ended by the runtime sweep. Shares its existing batch budget. */
@@ -85,7 +91,10 @@ export async function sweepAiChatDone(limit: number): Promise<void> {
       AND done.run_config#>>'{writerOrigin,kind}'='chat' AND done.run_config#>>'{send,id}' IS NOT NULL
     ORDER BY done.completed_at,done.id LIMIT ${limit}`;
   for (const turn of turns) {
-    try { await sql.begin((db) => appendAiChatDone(turn.id, db)); }
-    catch { logger("ai:chat-done").warn("Chat completion recovery failed", { code: "chat_done_recovery_failed", turnId: turn.id }); }
+    try {
+      await sql.begin((db) => appendAiChatDone(turn.id, db));
+    } catch {
+      logger("ai:chat-done").warn("Chat completion recovery failed", { code: "chat_done_recovery_failed", turnId: turn.id });
+    }
   }
 }

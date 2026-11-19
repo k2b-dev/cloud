@@ -123,7 +123,9 @@ const placeWakeupFacts = (
 export const buildAiMessageTimeline = (stored: AiStoredMessage[]): AiMessageTimelineItem[] => {
   const inLoop = new Map<AiStoredMessage, string>();
   const after = new Map<AiStoredMessage, string>();
-  const messages = stored.some((entry) => entry.meta?.wakeupEvent || entry.meta?.chatDone) ? placeWakeupFacts(stored, inLoop, after) : stored;
+  const messages = stored.some((entry) => entry.meta?.wakeupEvent || entry.meta?.chatDone)
+    ? placeWakeupFacts(stored, inLoop, after)
+    : stored;
   const items: AiMessageTimelineItem[] = [];
   let lastUserEntry: AiStoredMessage | null = null;
   let pendingSteers: Array<{ loopId: string | null; steerId: string }> = [];

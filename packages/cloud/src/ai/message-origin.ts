@@ -155,6 +155,8 @@ export const loadAiMessageOrigins = async (
       ),
     ),
   );
-  const doneChats = new Map(rows.flatMap((row) => row.kind === "done" && row.href ? [[row.id, { name: row.name, href: row.href }] as const] : []));
+  const doneChats = new Map(
+    rows.flatMap((row) => (row.kind === "done" && row.href ? [[row.id, { name: row.name, href: row.href }] as const] : [])),
+  );
   return { origins: projectedOrigins, turnShortIds, doneChats };
 };

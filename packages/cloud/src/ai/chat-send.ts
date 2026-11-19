@@ -4,8 +4,12 @@ import type { AiDraftContentPart } from "./types";
 
 /** Shared durable ai.chat.send admission. Callers check source authority and hold the destination lock.
  * The send receipt, queue entry and any schedule advancement commit in the same transaction. */
-export async function enqueueAiChatSend(input: QueuedChatSubmission, content: AiDraftContentPart[], db: SQL,
-  source?: { conversationId: string; turnId: string }): Promise<void> {
+export async function enqueueAiChatSend(
+  input: QueuedChatSubmission,
+  content: AiDraftContentPart[],
+  db: SQL,
+  source?: { conversationId: string; turnId: string },
+): Promise<void> {
   const { send, writerOrigin, turnTrigger, chatId } = input.runConfig;
   if (!send || !writerOrigin || !turnTrigger || !chatId) throw new Error("A chat send requires its server-owned receipt and origin.");
   await enqueueAutomationChatMessage(send.id, input, content, db);

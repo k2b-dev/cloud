@@ -1622,11 +1622,23 @@ describe("ACP session/load", () => {
 
   test("saved delegated completion is a status with the exact result link", async () => {
     const h = await harness();
-    h.streams.push([state([{
-      ...stored({ role: "assistant", content: [] }, null),
-      meta: { chatDone: { chatId: "Target", turnId: "Turn02", status: "completed", messageSeq: 2,
-        name: "Hotels in Lyon", href: "/app/assistant?conversation=Target&message=2" } },
-    }])]);
+    h.streams.push([
+      state([
+        {
+          ...stored({ role: "assistant", content: [] }, null),
+          meta: {
+            chatDone: {
+              chatId: "Target",
+              turnId: "Turn02",
+              status: "completed",
+              messageSeq: 2,
+              name: "Hotels in Lyon",
+              href: "/app/assistant?conversation=Target&message=2",
+            },
+          },
+        },
+      ]),
+    ]);
     await load(h);
     expect(said(of(h), "agent_message_chunk")).toBe(
       "Hotels in Lyon is done. View result: https://cloud.test/app/assistant?conversation=Target&message=2\n\n",
