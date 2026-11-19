@@ -506,7 +506,7 @@ const messages = /* @__PURE__ */ i18n.define({
       reconnecting: "Verbindung wird wiederhergestellt",
       authoringTurnStopped: "Die Arbeit pausiert, weil die Grenze für diesen Lauf erreicht ist.",
       turnErrorTitle: "Die Antwort wurde abgebrochen.",
-      turnInterrupted: ({ reason }) => `Die Antwort wurde unterbrochen: ${reason}`,
+      turnInterrupted: ({ reason }) => `Die Antwort wurde abgebrochen: ${reason}`,
       keptSoFar: "Was bis hier steht, bleibt erhalten.",
       stoppedByYou: "Du hast gestoppt.",
       stoppedTextStays: "Du hast gestoppt. Der Text bis hier bleibt.",

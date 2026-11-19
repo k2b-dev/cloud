@@ -1,4 +1,4 @@
-import { Button, DialogHeader, dialogCore, TextInput } from "@k2b/ui";
+import { Button, DialogHeader, dialogCore, SegmentedControl, TextInput } from "@k2b/ui";
 import { createSignal, createUniqueId, Show } from "solid-js";
 import { CODE_REVIEW_COMMENT_LENGTH } from "../../../code/review-contracts";
 import type { CodeReviewMessages } from "./review-messages";
@@ -7,7 +7,6 @@ export type CodeReviewDialogKind = "changes" | "reject";
 
 /** What the dialog names: who gets the message, what stays switched on, how many comments go along, and the origin. */
 export type CodeReviewDialogInput = {
-  kind: CodeReviewDialogKind;
   number: number;
   recipient: string;
   /** The sentence about what keeps running, already worded. */
@@ -15,15 +14,15 @@ export type CodeReviewDialogInput = {
   comments: number;
   /** How the person continues after "Request changes": Gustav by itself, by a button, or in the command line. */
   next: "chat" | "button" | "cli";
-  draft: string;
+  drafts: Record<CodeReviewDialogKind, string>;
   t: CodeReviewMessages;
   /**
    * Sends the decision. It resolves when the page leaves this dialog behind (the decision is saved, or its outcome is
    * unclear). A refusal rejects with the sentence to show; the dialog then stays open with the text.
    */
-  send: (comment: string) => Promise<void>;
+  send: (comment: string, kind: CodeReviewDialogKind) => Promise<void>;
   /** Keeps what was typed when the dialog closes unsent, so reopening shows it again. */
-  keepDraft: (comment: string) => void;
+  keepDraft: (comment: string, kind: CodeReviewDialogKind) => void;
 };
 
 /**
@@ -32,7 +31,6 @@ export type CodeReviewDialogInput = {
  */
 export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<boolean | undefined> {
   const t = input.t;
-  const changes = input.kind === "changes";
   let field: HTMLElement | undefined;
   return dialogCore.open<boolean>(
     (close, context) => {
@@ -40,7 +38,9 @@ export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<bool
       // Cloud's administration, not AI: it keeps the page's own colours (v12, picture 49).
       queueMicrotask(() => context.dialog.removeAttribute("data-k2b-primary"));
       const errorId = `code-review-dialog-error-${createUniqueId()}`;
-      const [text, setText] = createSignal(input.draft);
+      const [kind, setKind] = createSignal<CodeReviewDialogKind>("changes");
+      const changes = () => kind() === "changes";
+      const [text, setText] = createSignal(input.drafts[kind()]);
       const [error, setError] = createSignal<string | null>(null);
       const [sending, setSending] = createSignal(false);
       const leave = () => {
@@ -53,14 +53,14 @@ export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<bool
         if (sending()) return;
         const comment = text().trim();
         if (!comment) {
-          setError(changes ? t.changesMissing : t.rejectMissing);
+          setError(changes() ? t.changesMissing : t.rejectMissing);
           field?.focus();
           return;
         }
         setSending(true);
         setError(null);
         try {
-          await input.send(comment);
+          await input.send(comment, kind());
           close(true);
         } catch (failure) {
           setError(failure instanceof Error && failure.message ? failure.message : t.dialogFailed);
@@ -69,22 +69,37 @@ export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<bool
         }
       };
       const lead = () => {
-        if (!changes) return t.rejectText({ who: input.recipient, keep: input.keep });
+        if (!changes()) return t.rejectText({ who: input.recipient, keep: input.keep });
         if (input.next === "cli") return t.changesTextCli({ who: input.recipient, keep: input.keep });
         if (input.next === "button") return t.changesTextButton({ who: input.recipient, keep: input.keep });
         return t.changesTextChat({ who: input.recipient, keep: input.keep });
       };
       return (
-        <form class="k2b-dialog__panel" noValidate onSubmit={(event) => void submit(event)} data-code-review-dialog={input.kind}>
-          <DialogHeader title={changes ? t.changesTitle({ n: input.number }) : t.rejectTitle({ n: input.number })} close={leave} />
+        <form class="k2b-dialog__panel" noValidate onSubmit={(event) => void submit(event)} data-code-review-dialog={kind()}>
+          <DialogHeader title={changes() ? t.changesTitle({ n: input.number }) : t.rejectTitle({ n: input.number })} close={leave} />
           <div class="k2b-dialog__body core-code-review-dialog">
+            <SegmentedControl<CodeReviewDialogKind>
+              ariaLabel={t.decisionKind}
+              value={kind}
+              disabled={sending()}
+              options={[
+                { value: "changes", label: t.requestChanges },
+                { value: "reject", label: t.reject },
+              ]}
+              onValueChange={(next) => {
+                input.keepDraft(text(), kind());
+                setKind(next);
+                setText(input.drafts[next]);
+                setError(null);
+              }}
+            />
             <p class="core-code-review-dialog__lead">{lead()}</p>
             <TextInput
               ref={(element) => {
                 field = element;
               }}
-              label={changes ? t.changesLabel : t.rejectLabel}
-              placeholder={changes ? t.changesPlaceholder : t.rejectPlaceholder}
+              label={changes() ? t.changesLabel : t.rejectLabel}
+              placeholder={changes() ? t.changesPlaceholder : t.rejectPlaceholder}
               multiline
               lines={3}
               maxLength={CODE_REVIEW_COMMENT_LENGTH}
@@ -92,7 +107,7 @@ export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<bool
               onValueChange={(value) => {
                 setText(value);
                 // Escape, the close button and "Cancel" all keep the draft for the next opening.
-                input.keepDraft(value);
+                input.keepDraft(value, kind());
                 if (error() && value.trim()) setError(null);
               }}
               readOnly={sending()}
@@ -121,8 +136,8 @@ export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<bool
             <Button type="button" variant="secondary" disabled={sending()} onClick={leave}>
               {t.dialogCancel}
             </Button>
-            <Button type="submit" variant={changes ? "primary" : "danger"} loading={sending()}>
-              {changes ? t.changesConfirm : t.rejectConfirm({ n: input.number })}
+            <Button type="submit" variant={changes() ? "primary" : "danger"} loading={sending()}>
+              {changes() ? t.changesConfirm : t.rejectConfirm({ n: input.number })}
             </Button>
           </footer>
         </form>
@@ -132,7 +147,7 @@ export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<bool
       panelClassName: "k2b-dialog k2b-dialog--medium",
       contentClassName: "k2b-dialog__viewport",
       initialFocus: () => field ?? null,
-      ariaLabel: changes ? t.changesTitle({ n: input.number }) : t.rejectTitle({ n: input.number }),
+      ariaLabel: t.rejectOrChange,
       cancelBehavior: "resolve-undefined",
     },
   );

@@ -366,6 +366,16 @@ The `clipboard`, `copyToClipboard`, `url`, and `isImageUrl` exports are utility
 helpers outside the documented typed-client contract. Do not choose them as
 application APIs unless a guide names them.
 
+The platform-owned alarm service `aiWakeups`, `AiWakeupError`,
+and `AiWakeupBudgetCheck` / `AiWakeupBudgetError` come
+from `@k2b/cloud/ai`. Its `AiWakeup*` schemas, types and `AI_WAKEUP_*` limits
+support the [scheduled chat message contract](/en/docs/ai/chat-alarms).
+`@k2b/cloud/ai/browser` exports the `AiWakeup`, `AiWakeupEvent`,
+`AiWakeupInput`, `AiWakeupNoteSource` and `AiWakeupPatch` types without server dependencies.
+`enqueueAiChatSend` from `@k2b/cloud/ai/runtime` is the shared transactional
+queue-and-receipt helper for platform send admission and the existing scheduler.
+`markAiWakeupMissed` is a host admission helper on `@k2b/cloud/ai/runtime`.
+
 ## Mixed barrels
 
 Some barrels serve more than one audience. Use this boundary instead of
@@ -525,6 +535,9 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@k2b/cloud/services/approvals` | Platform-owned, server-only | `ApprovalKind`, `CodeVersionApprovalRequestInput`, `request`, `decide`, `registerApprovalDecisionHandler`, `ApprovalDecisionConflictError`, and recipient-aware lists for independent Code reviews | [Code-version approvals](/en/docs/identity/approvals#code-version-approvals) |
 | `@k2b/cloud/approvals/ui` | Supported, SolidJS | `Approvals`, `ApprovalsNavStatus`, and `approvalNavCount` for open Action requests; `ApprovalFrame`, the one look of every approval, which Code versions and admin reviews fill; `ApprovalDetails` for an app's own confirmation | [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app), [Cloud approvals](/en/ui/cloud/approvals) |
+| `@k2b/cloud/approvals/frame` | Supported, SolidJS | `ApprovalFrame` and its types without the list or proposal renderer | [Action approvals](/en/docs/ai/tools-and-approvals) |
+| `@k2b/cloud/approvals/list` | Supported, SolidJS | Default `Approvals` and `ApprovalsProps` | [Action approvals](/en/docs/ai/tools-and-approvals) |
+| `@k2b/cloud/approvals/navigation` | Supported, SolidJS | Default `ApprovalsNavStatus` and `approvalNavCount` | [Action approvals](/en/docs/ai/tools-and-approvals) |
 | `@k2b/cloud/blocks` | Supported, browser and server | The block view contract of capability results, approval details and search previews: `BlockViewSchema`, `bindView`, `validateBlocks`, `blocksText`, `blocksSummary` and the bounded limits | [Capability views](/en/docs/platform/capability-views) |
 | `@k2b/cloud/blocks/ui` | Supported, SolidJS | `BlockTree`, the one renderer of capability views, approval details, search previews and Code pages | [Capability views](/en/docs/platform/capability-views) |
 | `@k2b/cloud/code/ui` | Supported, SolidJS | `FeatCodeMark` and `FEAT_CODE_NAME`, the feat/code brand for every place that shows Code | [Code page](/en/docs/platform/code-page#show-the-featcode-brand) |

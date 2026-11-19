@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { AUTOMATION_TURN_BUDGET } from "@k2b/cloud/ai/runtime";
 import { aiCostDecimal, aiCostUnits, aiDecimalUnits } from "@k2b/cloud/shared";
 import { codeAiBudgetRemainder } from "./ai-budget";
+import { codeChatBudgetMessages } from "./chat-budget-messages";
 import { assertCodeChatTurnFits, codeChatCallOutputTokens, codeChatTurnMaximum } from "./chat-turn-budget";
 
 const briefingModel = { pricing: { inputPerMillion: 2.5, outputPerMillion: 10 }, contextWindow: 128_000 };
@@ -19,9 +20,21 @@ test("each call is capped by the turn budget, below a lower model ceiling", () =
   expect(codeChatCallOutputTokens({ maxOutputTokens: 2000, outputTokenLimit: 16_000 })).toBe(2000);
 });
 
-test("free and unpriced models have no monetary maximum and still need ordinary AI policy", () => {
+test("free and unpriced models have no monetary maximum", () => {
   expect(codeChatTurnMaximum({})).toBe("0");
   expect(codeChatTurnMaximum({ pricing: { inputPerMillion: 0, outputPerMillion: 0 } })).toBe("0");
+});
+
+test.each(["de", "en"])("the unpriced-model reason names the automation, model and remedy in %s", (locale) => {
+  const message = codeChatBudgetMessages(locale).unpricedModel({ automation: "Morning briefing", model: "Test Model" });
+  expect(message).toContain("Morning briefing");
+  expect(message).toContain("Test Model");
+  expect(message).toContain(locale === "de" ? "Preis" : "price");
+  expect(message).toContain(
+    locale === "de"
+      ? "Administration kann den Preis in der Modellverwaltung eintragen"
+      : "administrator can enter the price in model management",
+  );
 });
 
 test("priced models without an authoritative context limit cannot prove the maximum", () => {

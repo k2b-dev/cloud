@@ -218,7 +218,18 @@ test("a draft carries its newest version's timing in Core's words; active Code a
     { codeId: "c_draft1", limit: 1 },
     { codeId: "c_draft1", versionId: "77777777-7777-4777-8777-777777777777" },
   ]);
-  // Without a version or its words the card keeps its general word.
+  // A draft Gustav still writes has no version: no schedule, which the card says, apart from a read Core refused.
+  const unwritten = fakeCore({
+    "code.list": () => ({ items: [code("c_draft3", "draft")], nextCursor: null }),
+    "code.run.list": () => ({ items: [], nextCursor: null }),
+    "code.automation.list": (input) => ({ codeId: input.codeId, items: [], removedTargets: [] }),
+    "code.version.list": () => ({ items: [] }),
+  });
+  expect(
+    (await loadCodeSummaries(unwritten.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" })).items[0]
+      ?.proposedTiming,
+  ).toEqual([]);
+  // Without a version list or its words the card keeps its general word.
   const bare = fakeCore({ "code.list": () => ({ items: [code("c_draft2", "draft")], nextCursor: null }) });
   expect(
     (await loadCodeSummaries(bare.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" })).items[0]?.proposedTiming,

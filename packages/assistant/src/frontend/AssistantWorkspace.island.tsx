@@ -219,6 +219,8 @@ type Props = {
   initialPlacesFilter?: boolean;
   initialQuotas?: import("@k2b/cloud/shared").AiChatQuotaSnapshot | null;
   userId: string;
+  /** Current viewer may open AI administration; resolved by the server. */
+  canConfigureAi?: boolean;
   cloudUrl: string;
   status: Status;
   models: AiPeopleModels["options"];
@@ -278,6 +280,7 @@ const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) 
 const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
 /** Loaded once a chat has queued messages; most chats never need it. */
 const AssistantQueue = lazy(() => import("./AssistantQueueConnected"));
+const TurnErrorAction = lazy(() => import("./AssistantTurnErrorAction"));
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
@@ -2201,7 +2204,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const QueuePart = (partProps: { layout: "line" | "chip" }) => (
     <Suspense>
-      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} />
+      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} timeZone={props.timeZone} />
     </Suspense>
   );
   /**
@@ -3396,6 +3399,8 @@ export default function AssistantWorkspace(props: Props) {
                               fallback={
                                 <AiChatActionsProvider
                                   actions={{
+                                    renderTurnErrorAction: (error) =>
+                                      props.canConfigureAi ? <TurnErrorAction error={error} canConfigure /> : undefined,
                                     onQuote: addQuote,
                                     renderCodeAuthoringStop: (state, continuable, superseded) => (
                                       <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />

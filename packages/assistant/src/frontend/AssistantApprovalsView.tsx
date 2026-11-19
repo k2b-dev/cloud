@@ -1,5 +1,5 @@
 import type { AiOpenQuestion } from "@k2b/cloud/ai";
-import { Approvals } from "@k2b/cloud/approvals/ui";
+import Approvals from "@k2b/cloud/approvals/list";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { type ApprovalPage, ApprovalPageSchema } from "@k2b/cloud/contracts/approvals";
 import { Button, Paper, Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";

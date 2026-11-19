@@ -154,7 +154,7 @@ test("approvals are a page: a list with who, owner, main change and reason, and 
   expect(render(review, "missing")).toContain("Diese Anfrage ist geschlossen.");
 });
 
-test("a review has one row of tabs, a head with who, how and whose, and the approval with three decisions", () => {
+test("a review has one row of tabs, a head with who, how and whose, visible changes and two decision paths", () => {
   const html = render(review);
   const text = renderedText(html, " ");
   expect(text).toContain("Rückruf bestätigen · Version 3");
@@ -162,13 +162,16 @@ test("a review has one row of tabs, a head with who, how and whose, and the appr
   expect(text).toContain("1 von 4");
   for (const tab of ["Übersicht", "Code", "Diff"]) expect(html).toContain(`>${tab}<`);
   expect(text).toContain("Sie darf etwas tun, das andere sehen. Das gibt laut Richtlinie Standard ein Admin frei.");
-  expect(text).toContain("Details von Code · gegenüber Version 2");
+  expect(text).not.toContain("Details von Code · gegenüber Version 2");
   expect(text).toContain("Darf neu Aufgaben anlegen im Space Logistik");
   expect(text).toContain("3 weitere bleiben gleich.");
   expect(text).toContain("Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.");
   expect(text).toContain("3 von 3 Beispielen erfolgreich");
-  expect(text).toContain("Gilt genau für Version 3");
-  for (const answer of ["Ablehnen …", "Änderungen anfordern …", "Version 3 freigeben"]) expect(text).toContain(answer);
+  expect(text).not.toContain("Gilt genau für Version 3");
+  expect(text).toContain("Ablehnen oder ändern …");
+  expect(text).not.toContain("Alles ansehen");
+  expect(text).toContain("Version 3 freigeben");
+  for (const answer of ["Ablehnen …", "Änderungen anfordern …"]) expect(text).not.toContain(answer);
   expect(text).toContain("Was sie damit tut");
   expect(text).toContain("KI-Erklärung, nicht von Cloud geprüft");
   expect(text).toContain("Kommentare am Code");
@@ -177,18 +180,20 @@ test("a review has one row of tabs, a head with who, how and whose, and the appr
   // No hashes, no line references, no technical identifiers outside the marked code field.
   expect(text).not.toMatch(/[0-9a-f]{4}…[0-9a-f]{2}|Z\. \d+|sp_2lg8/);
   expect(renderedText(render(review, "cli"), " ")).toContain("über die Kommandozeile eingereicht");
-  expect(renderedText(render({ ...review, tab: "code" }), " ")).toContain("3 Kommentare gehen mit deiner Entscheidung mit");
+  expect(renderedText(render({ ...review, tab: "code" }), " ")).not.toContain("3 Kommentare gehen mit deiner Entscheidung mit");
+  // Both decisions open directly from the frame; the change list stays visible below it.
+  expect(renderedText(render({ ...review, tab: "code" }), " ")).toContain("Ablehnen oder ändern …");
 });
 
 test("the first version locks its Diff tab, and a decided version freezes its comments", () => {
   const first = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.lieferzeit1 });
   expect(first).toMatch(/role="tab"[^>]*disabled[^>]*>(?:(?!<\/button>).)*Diff/s);
   expect(renderedText(first, " ")).toContain("Erste Version: Es gibt keinen Unterschied.");
-  expect(renderedText(first, " ")).toContain("Details von Code · erste Version, alles ist neu");
+  expect(renderedText(first, " ")).toContain("Ablehnen oder ändern …");
   const changes = renderedText(render(review, "changes"), " ").replaceAll(/\s+/g, " ");
-  expect(changes).toContain("Änderungen angefordert");
+
   expect(changes).toContain("Du hast Änderungen an Version 3 angefordert.");
-  expect(changes).toContain("Deine Nachricht");
+  expect(changes).not.toContain("Ablehnen oder ändern …");
   expect(changes).toContain("Bitte nur für Mails mit einem Rückrufwunsch eine Aufgabe anlegen");
   expect(changes).not.toContain("Version 3 freigeben");
   expect(renderedText(render(review, "rejected"), " ")).toContain("Version 3 lässt sich nicht mehr einschalten.");
@@ -409,7 +414,7 @@ for (const locale of ["de", "en"]) {
       html.match(new RegExp(`<button[^>]*>(?:(?!</button>).)*${label}(?:(?!</button>).)*</button>`, "s"))?.[0] ?? "";
     expect(button(own)).toMatch(/\sdisabled(?:=""|\s|>)/);
     // The reason stands in the approval's own reason line, beside the disabled button.
-    const reason = own.match(/k2b-chat-decision__reason(?:(?!<\/p>).)*<\/p>/s)?.[0] ?? "";
+    const reason = own.match(/k2b-notice-card__description(?:(?!<\/p>).)*<\/p>/s)?.[0] ?? "";
     expect(renderedText(reason, " ")).toContain(t.ownSub);
     expect(button(sole)).not.toBe("");
     expect(button(sole)).not.toMatch(/\sdisabled(?:=""|\s|>)/);

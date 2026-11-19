@@ -88,7 +88,10 @@ for (const locale of ["de", "en"]) {
     );
     const button = () => dom.root.querySelector<HTMLButtonElement>(".assistant-authoring-stop button")!;
     const quiet = () =>
-      Array.from(dom.root.querySelectorAll(".assistant-authoring-stop__meta > [role]"), (node) => node.textContent).join("");
+      Array.from(
+        dom.root.querySelectorAll(".assistant-authoring-stop .k2b-notice-card__detail-text > [role]"),
+        (node) => node.textContent,
+      ).join("");
     try {
       expect(continued).toEqual([]);
       expect(dom.root.querySelector(".k2b-chat-task-list")).toBeNull();

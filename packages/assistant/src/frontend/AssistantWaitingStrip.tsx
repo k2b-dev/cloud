@@ -235,7 +235,7 @@ const questionElement = (content: HTMLElement | undefined, anchor: string): HTML
 
 /** Where the focus lands on a card: its sentence, its outcome once answered, else its main button. */
 const landingTarget = (element: HTMLElement): HTMLElement | null =>
-  element.querySelector<HTMLElement>(".k2b-chat-decision__sentence") ??
+  element.querySelector<HTMLElement>(".k2b-notice-card__title, .k2b-chat-decision__sentence") ??
   element.querySelector<HTMLElement>(".k2b-chat-outcome") ??
   element.querySelector<HTMLElement>('[data-chat-primary]:not(:disabled), .k2b-button[data-variant="primary"]:not(:disabled)') ??
   element.querySelector<HTMLElement>("button:not(:disabled), a[href]");
@@ -273,7 +273,7 @@ export const createWaitingQuestionFocus = (input: {
     });
     const attach = () => {
       frame = undefined;
-      const answers = questionElement(content, anchor)?.querySelector(".k2b-chat-decision__answers") ?? null;
+      const answers = questionElement(content, anchor)?.querySelector(".k2b-notice-card__actions, .k2b-chat-decision__answers") ?? null;
       if (answers === observed) return;
       if (observed) observer.unobserve(observed);
       observed = answers;
@@ -328,6 +328,7 @@ export const createWaitingQuestionFocus = (input: {
     const target = found.target ?? element;
     // A card without anything to focus still takes the focus, so the jump never ends on the page itself.
     if (!found.target && !element.hasAttribute("tabindex")) element.tabIndex = -1;
+    if (target.matches(".k2b-notice-card__title") && !target.hasAttribute("tabindex")) target.tabIndex = -1;
     target.focus({ preventScroll: true });
   };
 

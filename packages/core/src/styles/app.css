@@ -1001,19 +1001,6 @@ main > .code-page-host {
 .core-code-review__count [data-tone="del"] {
   color: var(--k2b-danger-text);
 }
-.core-code-review__closed {
-  display: grid;
-  gap: inherit;
-}
-.core-code-review__closed:focus {
-  outline: none;
-}
-.core-code-review__chip {
-  padding: 0 0.25rem;
-  border-radius: 0.25rem;
-  background: color-mix(in srgb, var(--k2b-text) 7%, transparent);
-  font-weight: 600;
-}
 .core-code-review__message {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1384,3 +1371,5 @@ main > .code-page-host {
     padding-left: 2.75rem;
   }
 }
+
+.k2b-ui .core-code-review__closed-frame { display: grid; gap: 1rem; }

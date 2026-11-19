@@ -24,6 +24,7 @@ import { splitAiSourceContext } from "./source-context";
 import { aiConversations } from "./store";
 import type { AiConversationService, AiDraftContentPart, AiSettingsState } from "./types";
 import { isAiSettingsError } from "./validate";
+import { markAiWakeupMissed } from "./wakeup-store";
 
 const log = logger("ai:message-queue");
 
@@ -573,6 +574,7 @@ export const drainQueuedMessages = async (
       AND (${Boolean(validateStart)} OR q.automation_source IS NULL)
       AND (q.send_requested_at IS NOT NULL OR c.queue_held_at IS NULL)
       AND (q.automation_source IS NOT NULL OR (c.archived_at IS NULL AND c.created_by_user_id IS NOT NULL))
+      AND (q.origin->>'kind' IS DISTINCT FROM 'wakeup' OR c.archived_at IS NULL)
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages earlier WHERE earlier.conversation_id=q.conversation_id
         AND ((earlier.send_requested_at IS NOT NULL AND q.send_requested_at IS NULL)
           OR ((earlier.send_requested_at IS NULL) = (q.send_requested_at IS NULL) AND earlier.position<q.position))
@@ -620,6 +622,7 @@ export const drainQueuedMessages = async (
           WHERE conversation_id=${chat.conversation_id}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL))
           ORDER BY send_requested_at NULLS LAST, position LIMIT 1 FOR UPDATE`;
           if (!row || (row.status === "failed" && !isAiQueueRetryableError(row.error))) return null;
+          if (row.submission.runConfig?.wakeup && (!conversation || conversation.archived_at)) return null;
           if (conversation?.queue_held_at && !row.send_requested_at) return null;
           if (!row.automation_source && (!conversation || conversation.archived_at || !conversation.created_by_user_id)) return null;
           // Recheck the retry deadline after locking: another dispatcher may just have failed this head.
@@ -719,6 +722,14 @@ export const drainQueuedMessages = async (
               submission=CASE WHEN ${terminal && Boolean(row.automation_source)} THEN ${retiredSubmission(tx)} ELSE submission END,
               content=CASE WHEN ${terminal && Boolean(row.automation_source)} THEN '[]'::jsonb ELSE content END
               WHERE id=${row.id}::uuid`;
+            if (terminal && row.submission.runConfig?.wakeup)
+              await markAiWakeupMissed(
+                chat.conversation_id,
+                row.id,
+                error instanceof AiQuotaError || code.startsWith("host_budget") ? "budget" : "access",
+                row.submission.runConfig.locale ?? "en",
+                tx,
+              );
             if (terminal && row.automation_source) await tx`DELETE FROM ai.queued_message_files WHERE message_id=${row.id}::uuid`;
             log.warn("Queued message could not start", {
               conversationId: chat.conversation_id,

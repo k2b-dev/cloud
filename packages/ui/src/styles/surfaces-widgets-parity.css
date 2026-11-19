@@ -574,12 +574,62 @@
 .k2b-ui .k2b-notice-card[data-actions] > .k2b-notice-card__content { display: flex; flex: 1 1 auto; flex-direction: column; align-self: stretch; }
 .k2b-ui .k2b-notice-card__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: auto; padding-top: 0.75rem; }
 .k2b-ui .k2b-notice-card__actions:first-child { padding-top: 0; }
+/* A row notice owns the entire compact responsive form. Domain consumers supply words and public controls. */
+.k2b-ui .k2b-notice-card[data-tone="ai"] { --k2b-notice-ink: var(--k2b-ai-accent); --k2b-notice-surface: var(--k2b-ai-surface); }
+.k2b-ui .k2b-notice-card-container { container-type: inline-size; min-width: 0; }
+.k2b-ui .k2b-notice-card[data-row][data-detail] {
+  --k2b-notice-title-line: 1.3125rem;
+  --k2b-notice-detail-line: 1.1875rem;
+  display: grid;
+  grid-template-columns: 1.125rem minmax(0, 1fr);
+  align-items: center;
+  gap: .125rem .625rem;
+  block-size: 4rem;
+  padding: .6875rem .875rem;
+  border: 0;
+  border-radius: var(--k2b-radius-surface);
+}
+.k2b-ui .k2b-notice-card[data-row][data-detail][data-row-tile] { grid-template-columns: 2rem minmax(0, 1fr); }
+.k2b-ui .k2b-notice-card[data-row][data-detail][data-tone="neutral"] { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-notice-card[data-row][data-detail] > .k2b-notice-card__icon { font-size: 1.0625rem; color: var(--k2b-notice-ink); }
+.k2b-ui .k2b-notice-card[data-row][data-detail][data-tone="neutral"] > .k2b-notice-card__icon { color: var(--k2b-text-muted); }
+.k2b-ui .k2b-notice-card[data-row][data-detail][data-row-tile] > .k2b-notice-card__icon { inline-size: 2rem; block-size: 2rem; border-radius: 28%; color: var(--k2b-notice-tile-color, var(--k2b-notice-ink)); background: color-mix(in srgb, currentColor var(--k2b-icon-tile-fill), transparent); }
+.k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-card-icon]) { grid-template-columns: minmax(0, 1fr); }
+.k2b-ui .k2b-notice-card[data-row][data-detail] > .k2b-notice-card__content { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; align-self: center; gap: .125rem 0; }
+.k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__head { grid-column: 1; grid-row: 1; min-width: 0; }
+.k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__title { margin: 0; font-size: var(--k2b-type-14); line-height: var(--k2b-notice-title-line); font-weight: 400; }
+.k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__description { grid-column: 1; grid-row: 2; min-width: 0; display: flex; align-items: baseline; gap: .25rem; min-block-size: 1lh; margin: 0; color: var(--k2b-text-muted); font-size: var(--k2b-type-13); line-height: var(--k2b-notice-detail-line); }
+.k2b-ui .k2b-notice-card[data-row][data-detail] :is(.k2b-notice-card__title, .k2b-notice-card__detail-text) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions { grid-column: 2; grid-row: 1 / 3; display: flex; align-items: stretch; flex-wrap: nowrap; gap: .75rem; margin: 0 0 0 .125rem; padding: 0; }
+.k2b-ui .k2b-notice-card__detail-text { flex: 0 1 auto; min-width: 0; }
+.k2b-ui .k2b-notice-card__detail-action { flex: 0 0 auto; white-space: nowrap; }
+@container (max-width: 35rem) {
+  .k2b-ui .k2b-notice-card[data-row][data-detail] { grid-template-columns: 1.125rem minmax(0, 1fr); grid-template-rows: auto auto minmax(.5rem, 1fr) auto; row-gap: .125rem; align-content: start; align-items: start; block-size: auto; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail][data-row-tile] { grid-template-columns: 1.75rem minmax(0, 1fr); }
+  .k2b-ui .k2b-notice-card[data-row][data-detail][data-row-tile] > .k2b-notice-card__icon { inline-size: 1.75rem; block-size: 1.75rem; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-card-icon]) { grid-template-columns: minmax(0, 1fr); }
+  .k2b-ui .k2b-notice-card[data-row][data-detail] > .k2b-notice-card__content { display: contents; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__head { grid-column: 2; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__description { grid-column: 2; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-card-icon]) :is(.k2b-notice-card__head, .k2b-notice-card__description) { grid-column: 1; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-actions], [data-reserve]) { grid-template-rows: auto auto; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail][data-reserve] { /* Two title lines + two quiet lines + their gap + a 40px action area,
+       with 12px between text and controls and the row's two 11px insets. */
+    block-size: calc(2 * var(--k2b-notice-title-line) + 2 * var(--k2b-notice-detail-line) + .125rem + 2.5rem + .75rem + 1.375rem); }
+  .k2b-ui .k2b-notice-card[data-row][data-detail] :is(.k2b-notice-card__title, .k2b-notice-card__detail-text) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail][data-detail-lines="2"] .k2b-notice-card__description { min-block-size: 2lh; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions { grid-column: 1 / -1; grid-row: 4; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .5rem; margin: 0; padding: 0; }
+  /* A final row sizes to its contents, including stable controls. The empty third track belongs only to the
+     transition reserve; keeping it here would leave 8px plus an extra row gap above a receipt's actions. */
+  .k2b-ui .k2b-notice-card[data-row][data-detail][data-actions]:not([data-reserve]) { grid-template-rows: auto auto auto; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail]:not([data-reserve]) .k2b-notice-card__actions { grid-row: 3; }
+}
 /* `NoticeRow`: a notice as one row of at least 48px: the 32px tile, the text,
    then the action, all centred. The action never wraps below the text; the
    text takes what is left. Phones get a 28px tile. The padding gives way to
    the transparent forced-colours border, so a small button (32px) makes the
    row exactly 48px. */
-.k2b-ui .k2b-notice-card[data-row] {
+.k2b-ui .k2b-notice-card[data-row]:not([data-detail]) {
   display: flex;
   min-height: 3rem;
   align-items: center;
@@ -587,12 +637,12 @@
   padding: calc(0.5rem - 1px) calc(0.5rem - 1px) calc(0.5rem - 1px) calc(0.875rem - 1px);
   border-radius: var(--k2b-radius-control);
 }
-.k2b-ui .k2b-notice-card[data-row]:has(> .k2b-notice-card__tile) { padding-left: calc(0.5rem - 1px); }
-.k2b-ui .k2b-notice-card[data-row] > .k2b-notice-card__content { flex: 1 1 auto; }
+.k2b-ui .k2b-notice-card[data-row]:not([data-detail]):has(> .k2b-notice-card__tile) { padding-left: calc(0.5rem - 1px); }
+.k2b-ui .k2b-notice-card[data-row]:not([data-detail]) > .k2b-notice-card__content { flex: 1 1 auto; }
 .k2b-ui .k2b-notice-card__tile { width: 2rem; height: 2rem; color: var(--k2b-notice-ink); font-size: 1.125rem; }
 .k2b-ui .k2b-notice-card__action { display: flex; flex: 0 0 auto; align-items: center; gap: 0.5rem; }
 @media not all and (min-width: 48rem) {
-  .k2b-ui .k2b-notice-card[data-row] { gap: 0.625rem; }
+  .k2b-ui .k2b-notice-card[data-row]:not([data-detail]) { gap: 0.625rem; }
   .k2b-ui .k2b-notice-card__tile { width: 1.75rem; height: 1.75rem; font-size: 1rem; }
 }
 /* Markdown callouts add a decorative type icon and a title in the tone colour.

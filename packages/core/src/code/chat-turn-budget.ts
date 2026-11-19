@@ -104,28 +104,7 @@ export async function reserveCodeChatTurnBudget(input: Admission, db: SQL, limit
     await install();
     return;
   }
-  assertCodeChatTurnFits(input.profile, limits);
-  // Match Postgres json_build_array(... )::text used by synchronous admission.
-  const [period] = await db<{ day: string; owner_key: string }[]>`SELECT
-    (COALESCE(${at ?? null}::timestamptz,clock_timestamp()) AT TIME ZONE ${limits.timeZone})::date::text AS day,
-    json_build_array('person',${input.ownerUserId}::text)::text AS owner_key`;
-  const day = period!.day;
-  const key = period!.owner_key;
-  for (const [kind, scopeKey, limit] of [
-    ["owner", key, limits.owner],
-    ["code", input.codeId, limits.code],
-  ] as const) {
-    await db`INSERT INTO code.ai_daily_budget(day,scope_kind,scope_key) VALUES(${day}::date,${kind},${scopeKey}) ON CONFLICT DO NOTHING`;
-    const [counter] = await db<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget
-      WHERE day=${day}::date AND scope_kind=${kind} AND scope_key=${scopeKey} FOR UPDATE`;
-    // Older turns have no whole-turn reservation. Include their ordinary and
-    // compaction calls, without counting turns covered by this table twice.
-    const legacy = await codeChatDailyUsage(db, day, limits.timeZone, kind, scopeKey, input.ownerUserId);
-    const spent = aiCostDecimal(aiDecimalUnits(counter!.cost) + aiDecimalUnits(legacy.cost));
-    const available = codeAiBudgetRemainder(limit, spent);
-    if (legacy.unknown || available === 0n || available < aiDecimalUnits(maximum))
-      throw new CodeChatBudgetError(kind === "owner" ? "code_ai_owner_daily_budget_limit" : "code_ai_daily_budget_limit");
-  }
+  const { day, key } = await checkAutomationChatBudget(input, db, limits, at);
   await db`UPDATE code.ai_daily_budget SET reference_cost=reference_cost+${maximum}::numeric WHERE day=${day}::date
     AND ((scope_kind='owner' AND scope_key=${key}) OR (scope_kind='code' AND scope_key=${input.codeId}))`;
   await db`INSERT INTO code.chat_turn_budgets(turn_id,code_id,owner_user_id,owner_key,day,reserved,model_profile_id,pricing,output_tokens,context_window)
@@ -161,4 +140,34 @@ export async function settleCodeChatTurnBudget(turnId: string, db: SQL): Promise
     await db`UPDATE code.ai_daily_budget SET reference_cost=reference_cost-${reservation.reserved}::numeric+${actual}::numeric
       WHERE day=${reservation.day}::date AND scope_kind=${kind} AND scope_key=${key}`;
   await db`UPDATE code.chat_turn_budgets SET cost=${actual}::numeric,settled_at=clock_timestamp() WHERE turn_id=${turnId}::uuid`;
+}
+
+/** The same Option B day admission for Code and scheduled chat messages. Alarm scope keys use
+ * wakeup:<id>; owner counters are shared, so five alarms cannot multiply the person's allowance.
+ * Only the worker creates a whole-turn reservation; scheduler admission merely checks availability. */
+export async function checkAutomationChatBudget(input: Admission, db: SQL, limits: Limits, at?: Date) {
+  assertCodeChatTurnFits(input.profile, limits);
+  const maximum = codeChatTurnMaximum(input.profile)!;
+  // Match Postgres json_build_array(... )::text used by synchronous admission.
+  const [period] = await db<{ day: string; owner_key: string }[]>`SELECT
+    (COALESCE(${at ?? null}::timestamptz,clock_timestamp()) AT TIME ZONE ${limits.timeZone})::date::text AS day,
+    json_build_array('person',${input.ownerUserId}::text)::text AS owner_key`;
+  const day = period!.day;
+  const key = period!.owner_key;
+  for (const [kind, scopeKey, limit] of [
+    ["owner", key, limits.owner],
+    ["code", input.codeId, limits.code],
+  ] as const) {
+    await db`INSERT INTO code.ai_daily_budget(day,scope_kind,scope_key) VALUES(${day}::date,${kind},${scopeKey}) ON CONFLICT DO NOTHING`;
+    const [counter] = await db<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget
+      WHERE day=${day}::date AND scope_kind=${kind} AND scope_key=${scopeKey} FOR UPDATE`;
+    // Older turns have no whole-turn reservation. Include their ordinary and
+    // compaction calls, without counting turns covered by this table twice.
+    const legacy = await codeChatDailyUsage(db, day, limits.timeZone, kind, scopeKey, input.ownerUserId);
+    const spent = aiCostDecimal(aiDecimalUnits(counter!.cost) + aiDecimalUnits(legacy.cost));
+    const available = codeAiBudgetRemainder(limit, spent);
+    if (legacy.unknown || available === 0n || available < aiDecimalUnits(maximum))
+      throw new CodeChatBudgetError(kind === "owner" ? "code_ai_owner_daily_budget_limit" : "code_ai_daily_budget_limit");
+  }
+  return { day, key };
 }

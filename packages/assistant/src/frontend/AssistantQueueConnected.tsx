@@ -35,6 +35,7 @@ export default function AssistantQueueConnected(props: {
   host: AssistantQueueHost;
   entries: readonly AssistantQueueEntry[];
   layout: "line" | "chip";
+  timeZone?: string;
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
@@ -109,6 +110,7 @@ export default function AssistantQueueConnected(props: {
     <AssistantQueue
       entries={props.entries}
       layout={props.layout}
+      timeZone={props.timeZone}
       sendingId={host().sendingId()}
       failedIds={host().failedIds()}
       busy={host().busy()}

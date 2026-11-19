@@ -352,7 +352,7 @@ export function CodeRuns(props: { data: CodePageData; state: CodePageReady; text
               </Show>
               <Island title={t().tabRuns} class="cloud-code__list-island">
                 <Show when={visible().length > 0} fallback={<p class="cloud-code__quiet-line">{t().runsFilterEmpty}</p>}>
-                  <ul class="cloud-code__rows cloud-code__rows--pick">
+                  <ul class="cloud-code__rows cloud-code__rows--pick cloud-code__run-rows">
                     <For each={visible()}>
                       {(run) => (
                         <Row

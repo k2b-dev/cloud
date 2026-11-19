@@ -4,6 +4,9 @@ import { assertCapabilityReview } from "../capabilities/testing";
 import { cloudToolReview } from "./tool-sentences";
 
 const inputs = {
+  wakeup_create: { at: "2026-11-19T12:00:00Z", note: "Check", timezone: "UTC" },
+  wakeup_update: { id: "5b000000-0000-4000-8000-000000000003", revision: 0, at: "2026-11-19T13:00:00Z" },
+  wakeup_delete: { id: "5b000000-0000-4000-8000-000000000003", revision: 0 },
   code_run: { code: "export default () => 1" },
   web_extract: { url: "https://example.com/page?private=value" },
   fetch_file: { url: "https://example.com/report.pdf" },

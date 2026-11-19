@@ -246,4 +246,58 @@ for (const theme of ["light", "dark"] as const)
         await context.close();
       }
     });
+    test(`${theme} ${width}: empty output stays quiet and run rows stay compact`, async () => {
+      const context = await browser.newContext({
+        viewport: { width, height: width === 390 ? 780 : 900 },
+        reducedMotion: "reduce",
+        colorScheme: theme,
+        timezoneId: "America/New_York",
+      });
+      const page = await context.newPage();
+      const errors = pageErrors(page);
+      await page.addInitScript((at) => {
+        const RealDate = Date;
+        globalThis.Date = new Proxy(RealDate, {
+          construct: (target, args) => Reflect.construct(target, args.length ? args : [at]),
+          get: (target, key, receiver) => (key === "now" ? () => at : Reflect.get(target, key, receiver)),
+        });
+      }, Date.parse(RUN_LEDGER_NOW));
+      try {
+        await page.goto(`${origin}/?theme=${theme}&empty=1`);
+        await page.getByText("Keine Ausgabe", { exact: true }).waitFor();
+        expect(await page.locator(".k2b-run-log__output-toggle").count()).toBe(0);
+        expect(await page.locator(".k2b-run-log__output").count()).toBe(0);
+        expect((await bounds(page)).height).toBeLessThan(100);
+        await shot(page, "ohne-ausgabe", theme, width);
+
+        await page.goto(`${origin}/?theme=${theme}&list=1`);
+        const rows = page.locator(".cloud-code__run-rows > li");
+        await rows.first().waitFor();
+        const rowBounds = await rows.first().boundingBox();
+        expect(rowBounds!.height).toBeLessThan(70);
+        const titleBounds = await rows.first().locator(".cloud-code__row-title").boundingBox();
+        const statusBounds = await rows.first().locator(".cloud-code__st").boundingBox();
+        expect(Math.abs(titleBounds!.y - statusBounds!.y)).toBeLessThan(3);
+        expect(statusBounds!.x).toBeGreaterThan(titleBounds!.x);
+        for (const selector of [".cloud-code__row-title", ".cloud-code__row-sub"]) {
+          expect(
+            await rows
+              .nth(1)
+              .locator(selector)
+              .evaluate((node) => node.scrollWidth <= node.clientWidth),
+          ).toBe(true);
+          expect(
+            await rows
+              .nth(1)
+              .locator(selector)
+              .evaluate((node) => getComputedStyle(node).whiteSpace),
+          ).toBe("normal");
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await shot(page, "liste", theme, width);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
   }

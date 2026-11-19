@@ -1,8 +1,8 @@
 import type { ChatDecisionState } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount } from "solid-js";
-import type { ActionCard, ActionText } from "../ai/chat/action-card";
+import { createEffect, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { type ActionCard, type ActionText, actionPlainText } from "../ai/chat/action-card";
 import { actionMessages } from "../ai/chat/action-messages";
-import { ActionDetails, type ActionLine, ActionReceipt } from "../ai/chat/action-question";
+import type { ActionLine } from "../ai/chat/action-question";
 import type { Block } from "../blocks/schema";
 import { ApprovalFrame, type ApprovalFrameStatus } from "./ApprovalFrame";
 
@@ -21,7 +21,7 @@ export type ApprovalCardProps = {
   timeZone: string;
   onConfirm: () => void | Promise<void>;
   onDecline: () => void | Promise<void>;
-  /** Where the approval may be remembered for this chat; without, the card says that it asks every time. */
+  /** Offers remembering this approval for the chat in its detail dialog. */
   remember?: { website?: boolean; onSelect: () => void | Promise<void> };
   /**
    * Sends a draft's edited fields so Cloud reviews the Action again; resolves `true` once the card shows the new
@@ -36,6 +36,8 @@ export type ApprovalCardProps = {
   waiting?: string;
   anchorId?: string | number;
 };
+
+let ActionDetails: typeof import("../ai/chat/action-details")["ActionDetails"];
 
 const confirmIcon = (card: ActionCard): string | undefined => (card.reason.code === "sends" ? "ti ti-send" : undefined);
 
@@ -72,7 +74,7 @@ const intent = (card: ActionCard): ActionText => [{ kind: "text", text: /[.!?…
 export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
   const t = () => actionMessages(props.card.locale);
   const timeLeft = useTimeLeft(() => props.expiresAt);
-  const editable = () => props.card.draft?.editable === true && props.onEditDraft !== undefined;
+  const editable = () => Boolean(props.card.draft?.editable && props.onEditDraft);
   // A draft the person may change starts in edit mode; "Change" returns to it, "Send …" moves on to approving.
   const [editing, setEditing] = createSignal(editable());
   const [values, setValues] = createSignal(draftValues(props.card.view));
@@ -85,30 +87,12 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
       { defer: true },
     ),
   );
-  const status = createMemo((): ApprovalFrameStatus | undefined => {
-    if (props.state === "open") return undefined;
-    const words = t();
-    if (props.state === "expired") return { label: words.statusExpired, tone: "expired" };
-    const tone = props.outcome.lines[props.outcome.current]?.tone ?? "running";
-    const label = {
-      running: words.statusRunning,
-      done: words.statusDone,
-      off: words.statusDeclined,
-      waiting: words.statusWaiting,
-      warning: words.statusUnknown,
-      error: words.statusFailed,
-    }[tone];
-    return { label, tone };
-  });
-  const meta = createMemo(() => {
-    const words = t();
-    const items: { text: string; icon: string }[] = [];
+  const meta = () => {
     const left = timeLeft();
-    if (left !== undefined)
-      items.push({ icon: "ti ti-clock", text: left < 60_000 ? words.expiresSoon : words.expiresIn({ milliseconds: left }) });
-    if (!props.remember) items.push({ icon: "ti ti-repeat", text: words.asksEveryTime });
-    return items;
-  });
+    return left === undefined
+      ? []
+      : [{ icon: "ti ti-clock", text: left < 60_000 ? t().expiresSoon : t().expiresIn({ milliseconds: left }) }];
+  };
   // A complete proposal that is not inline must be read before it can be approved.
   const [loadedContent, setLoadedContent] = createSignal<string>();
   const unavailable = () =>
@@ -116,14 +100,22 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
     (props.card.contentRef && loadedContent() !== `${props.card.contentRef.href}:${props.card.contentRef.digest}`
       ? t().fullReviewRequired
       : undefined);
-  const reason = () =>
-    props.waiting
-      ? { text: props.waiting, icon: "ti ti-wifi-off", tone: "neutral" as const }
-      : editing()
-        ? { text: t().draftNote, icon: "ti ti-lock", tone: "neutral" as const }
-        : unavailable()
-          ? { text: unavailable()!, icon: "ti ti-player-pause", tone: "neutral" as const }
-          : { text: props.card.reason.text, icon: props.card.reason.icon, tone: props.card.reason.tone };
+  const reason = () => ({ text: props.waiting ?? (editing() ? t().draftNote : (unavailable() ?? props.card.reason.text)) });
+  const currentLine = () => props.outcome.lines[props.outcome.current];
+  const open = () => props.state === "open";
+  const resultSentence = () => {
+    const line = currentLine();
+    const text = actionPlainText(line?.text ?? props.card.forms.unknown);
+    return line?.detail && !/[.!?…]["“”»«]?\s*$/.test(text) ? `${text}.` : text;
+  };
+  const status = (): ApprovalFrameStatus | undefined =>
+    open()
+      ? undefined
+      : {
+          tone: props.state === "expired" ? "expired" : (currentLine()?.tone ?? "running"),
+          label: resultSentence(),
+        };
+  const resultQuiet = () => (props.state === "expired" ? undefined : currentLine()?.detail);
   const moveOn = async () => {
     if (sending()) return;
     const original = draftValues(props.card.view);
@@ -140,14 +132,37 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
       state={props.state}
       mode={editing() ? "edit" : "approve"}
       anchorId={props.anchorId}
-      source={{ name: props.card.app.name, icon: props.card.app.icon, accent: props.card.app.accent }}
+      source={props.card.app}
       status={status()}
-      sentence={editing() ? intent(props.card) : props.card.question}
-      reason={reason()}
-      unavailable={!editing() && unavailable() ? reason() : sending() ? reason() : undefined}
+      sentence={open() ? (editing() ? intent(props.card) : props.card.question) : resultSentence()}
+      reason={
+        open()
+          ? { text: [reason().text, ...meta().map((fact) => fact.text)].join(" · ") }
+          : {
+              text: (
+                <>
+                  {resultQuiet()}
+                  <Show when={currentLine()?.time}>
+                    {(time) => (
+                      <>
+                        {resultQuiet() ? " · " : ""}
+                        {time()}
+                      </>
+                    )}
+                  </Show>
+                </>
+              ),
+            }
+      }
+      quietTitle={
+        !open() && typeof resultQuiet() === "string" ? [resultQuiet(), currentLine()?.time].filter(Boolean).join(" · ") : undefined
+      }
+      alert={currentLine()?.tone === "error" && !open()}
+      unavailable={open() && ((!editing() && unavailable()) || sending()) ? reason() : undefined}
       waiting={props.waiting ? reason() : undefined}
       details={
-        // Without anything to show there is no details island, not an empty one.
+        // A proposal loads its renderer; a decision-only dialog still gets the pure reason, without repeating meta.
+        currentLine()?.actions ||
         (props.card.view?.length ?? 0) > 0 ||
         props.card.readMore ||
         props.card.contentRef ||
@@ -155,29 +170,44 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
         (props.card.consequences ?? []).length > 0
           ? {
               label: t().detailsFrom({ app: props.card.app.name }),
-              content: (
-                <ActionDetails
-                  card={props.card}
-                  onContentLoaded={setLoadedContent}
-                  draft={{
-                    editable: editing(),
-                    values: values(),
-                    onChange: (name, value) => setValues((current) => ({ ...current, [name]: value })),
-                  }}
-                />
+              reason: props.card.reason.text,
+              load: async () => {
+                ActionDetails = (await import("../ai/chat/action-details")).ActionDetails;
+              },
+              content: () => (
+                <>
+                  {!open() ? currentLine()?.actions : undefined}
+                  <ActionDetails
+                    card={props.card}
+                    onContentLoaded={setLoadedContent}
+                    draft={{
+                      editable: editing(),
+                      values: values(),
+                      onChange: (name, value) => setValues((current) => ({ ...current, [name]: value })),
+                    }}
+                  />
+                </>
               ),
             }
-          : undefined
+          : open() || meta().length > 0
+            ? { label: t().detailsFrom({ app: props.card.app.name }), reason: props.card.reason.text, content: null }
+            : undefined
       }
+      detailsPlacement="quiet"
+      secondary={open() ? { label: props.card.decline, onSelect: props.onDecline } : undefined}
       meta={editing() ? [] : meta()}
       confirm={
-        editing()
-          ? { label: `${props.card.confirm.label} …`, icon: confirmIcon(props.card), onSelect: moveOn }
-          : { label: props.card.confirm.label, onSelect: props.onConfirm }
+        !open()
+          ? currentLine()?.action
+            ? { ...currentLine()!.action!, filled: currentLine()?.tone === "error" }
+            : undefined
+          : editing()
+            ? { label: `${props.card.confirm.label} …`, icon: confirmIcon(props.card), onSelect: moveOn }
+            : { label: props.card.confirm.label, onSelect: props.onConfirm }
       }
-      decline={{ label: editing() ? t().discard : props.card.decline, onSelect: props.onDecline }}
+      decline={open() ? { label: editing() ? t().discard : props.card.decline, onSelect: props.onDecline } : undefined}
       back={
-        !editing() && editable()
+        open() && !editing() && editable()
           ? {
               label: t().change,
               onSelect: () => {
@@ -187,11 +217,10 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
           : undefined
       }
       remember={
-        props.remember
+        open() && props.remember
           ? { label: props.remember.website ? t().rememberWebsite : t().remember, onSelect: props.remember.onSelect }
           : undefined
       }
-      outcome={<ActionReceipt card={props.card} lines={props.outcome.lines} current={props.outcome.current} />}
     />
   );
 }
