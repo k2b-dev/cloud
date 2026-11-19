@@ -342,6 +342,28 @@ describe("mail capabilities", () => {
     expect(result).toMatchObject({ ok: true, data: { data: { signatureTemplateId: signatureTemplateId ?? null } } });
   });
 
+  test.each([
+    ["a reply without a choice quotes its source", { intent: "reply" }, { locale: "en", timeZone: "UTC" }],
+    ["reply all quotes too", { intent: "reply_all" }, { locale: "en", timeZone: "UTC" }],
+    ["null leaves the original out", { intent: "reply", quoteSource: null }, null],
+    [
+      "an explicit quote context wins",
+      { intent: "reply", quoteSource: { locale: "de", timeZone: "Europe/Berlin" } },
+      { locale: "de", timeZone: "Europe/Berlin" },
+    ],
+    ["a body that quotes on its own keeps the original out", { intent: "reply", body: "> Saturday at 11?\n\nYes, that works." }, null],
+    ["a forward never quotes", { intent: "forward" }, null],
+  ] as const)("draft.create: %s", async (_name, choice, expected) => {
+    const materialize = spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    const action = mailCapabilities.actions["draft.create"];
+    const input = action.input.parse({ mailboxId, senderIdentityId, sourceMessageId: messageId, body: "Saturday works.", ...choice });
+    const english = { ...context, locale: "en" };
+    const result = await action.run(input, { ...english, idempotencyKey: `quote-${_name}` });
+    expect(result.ok).toBeTrue();
+    expect(materialize.mock.calls[0]?.[0].input.draft.quoteSource).toEqual(expected);
+    expect(materialize.mock.calls[0]?.[0].input.origin).toMatchObject({ kind: "compose", input: { quoteSource: expected } });
+  });
+
   test("a deduplicated service-account create returns the existing suggestion without adding attachments", async () => {
     spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: { ...mutableDraftFixture, suggestion: true } });
     const original = spyOn(drafts, "isOriginalDraftMaterialization").mockResolvedValue({ ok: true, data: false });

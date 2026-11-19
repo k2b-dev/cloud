@@ -59,6 +59,25 @@ ${t.to}: ${message.to.map(formatMailAddress).join(", ") || t.undisclosedRecipien
 ${messageForwardTextOf(message)}`;
 };
 
+/** Whether a body quotes on its own (a Markdown quote line), as "Quote selection" does: then the whole original stays out. */
+export const bodyQuotes = (body: string): boolean => /^ {0,3}>/m.test(body);
+
+/**
+ * The quote a reply draft gets when its caller does not choose: a reply or reply all with a source message quotes it,
+ * unless the body quotes on its own. An explicit choice, null included, always wins.
+ */
+export const defaultReplyQuoteSource = <T>(params: {
+  quoteSource: T | null | undefined;
+  intent: string | undefined;
+  sourceMessageId: string | null | undefined;
+  body: string;
+  quote: () => T;
+}): T | null => {
+  if (params.quoteSource !== undefined) return params.quoteSource;
+  const replies = params.intent === "reply" || params.intent === "reply_all";
+  return replies && params.sourceMessageId && !bodyQuotes(params.body) ? params.quote() : null;
+};
+
 export const quoteReplyBody = (
   message: QuoteMessage,
   selectedText: string,

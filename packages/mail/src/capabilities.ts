@@ -47,6 +47,7 @@ import {
   sendReceipt,
 } from "./capability-reviews";
 import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
+import { defaultReplyQuoteSource } from "./compose-quotation";
 import type { Mailbox, MailDraft, MailSearchExpression, MailSubscriptionSummary } from "./contracts";
 import { draftAdoptionMessages } from "./draft-adoption-messages";
 import { mailFolderPaths } from "./folder-tree";
@@ -84,6 +85,22 @@ import { keepError } from "./service/conversation-keep-rules";
 import { localizeMailError } from "./service/error-messages";
 import type { ConversationSummary, MessageSummary } from "./service/messages";
 import { sendContentChanged } from "./service/send-content";
+
+/**
+ * A reply draft from Gustav or the API quotes the message it answers unless the caller chooses (null leaves it out), as
+ * the composer does. Capabilities know no person's time zone, so the quote's date is in UTC unless the caller passes one.
+ */
+const replyQuoteSource = (
+  input: Pick<z.output<typeof c.DraftCreateInputSchema>, "quoteSource" | "intent" | "sourceMessageId" | "body">,
+  context: CapabilityExecutionContext,
+) =>
+  defaultReplyQuoteSource({
+    quoteSource: input.quoteSource,
+    intent: input.intent,
+    sourceMessageId: input.sourceMessageId,
+    body: input.body,
+    quote: () => ({ locale: context.locale, timeZone: "UTC" }),
+  });
 
 const requestContext = (context: CapabilityExecutionContext): MailRequestContext => ({
   actor: context.actor,
@@ -2846,7 +2863,7 @@ const actionDefinitions = {
             conversationId: conversation.data?.conversationId ?? null,
             sourceMessageId: sourceMessage.data,
             signatureTemplateId: signature.data,
-            quoteSource: input.quoteSource,
+            quoteSource: replyQuoteSource(input, context),
           },
         },
       });
@@ -2860,7 +2877,7 @@ const actionDefinitions = {
           attachments.push({ filename: attachment.filename, byteLength: bytes.byteLength, contentHash });
         }
       }
-      const proposed = { ...input, attachments };
+      const proposed = { ...input, quoteSource: replyQuoteSource(input, context), attachments };
       return ok(
         mailActionReviews["draft.create"](
           context.locale,
@@ -2897,7 +2914,7 @@ const actionDefinitions = {
       const draftContent = {
         senderIdentityId: senderIdentity.data,
         signatureTemplateId: signature.data,
-        quoteSource: input.quoteSource,
+        quoteSource: replyQuoteSource(input, context),
         to: input.to,
         cc: input.cc,
         bcc: input.bcc,

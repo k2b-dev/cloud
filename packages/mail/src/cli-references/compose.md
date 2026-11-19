@@ -444,9 +444,13 @@ Cancellation succeeds only while the command is still cancelable. Ambiguous prov
 | Draft attachments | `draft attachment add|remove|download`, `draft attachment upload list|cancel` |
 | Delivery | `send`, `scheduled list|cancel`, `command list|get|wait|cancel` |
 
-Drafts omit the original message by default. Pass `--quote` to `draft create`
-or `draft update` to append its readable source message after the signature;
-`--no-quote` removes that automatic history. `--quote` captures the CLI locale
+A reply quotes the message it answers by default, as in Mail itself:
+`mail reply` and `draft create --intent reply|reply_all --source-message <id>`
+append the readable source message after the signature, unless the body quotes
+on its own with a Markdown `>` line. An original without text, or one you cannot
+read, adds nothing. Pass `--no-quote` to leave it out. Other drafts omit it;
+pass `--quote` to `draft create` or `draft update` to append it, and
+`--no-quote` on `draft update` to remove it. `--quote` captures the CLI locale
 and local IANA time zone; use `--quote-time-zone Europe/Berlin` to override the
 zone. The editable body stays unchanged. Draft JSON uses
 `quoteSource: { "locale": "de", "timeZone": "Europe/Berlin" }` (or `null` to

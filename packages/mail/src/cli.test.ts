@@ -3160,6 +3160,8 @@ test("reply drafts from the latest message with the default identity, and send s
     conversationId: CONVERSATION_ID,
     intent: "reply_all",
     sourceMessageId: MESSAGE_ID,
+    // A reply quotes the message it answers, as in Mail itself.
+    quoteSource: { locale: expect.any(String), timeZone: expect.any(String) },
   });
   expect(JSON.parse(reply.stdout)).toMatchObject({ id: DRAFT_ID, intent: "reply_all" });
 
@@ -6499,6 +6501,65 @@ test("draft create and update carry the explicit quote choice", async () => {
     expect.objectContaining({ quoteSource: null }),
     expect.objectContaining({ draft: expect.objectContaining({ quoteSource: { locale: "de", timeZone: "Europe/Berlin" } }) }),
     expect.objectContaining({ draft: expect.objectContaining({ quoteSource: null }) }),
+  ]);
+});
+
+test("a reply quotes its source by default; --no-quote or a body that quotes on its own leaves the original out", async () => {
+  const bodies: Array<{ path: string; body: unknown }> = [];
+  const server = composeServer(bodies);
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const reply = (...extra: string[]) =>
+    runCli(origin, ["--locale", "de", "--json", "mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, ...extra]);
+  for (const extra of [
+    ["--body", "Gern."],
+    ["--body", "Gern.", "--no-quote"],
+    ["--body", "> Samstag um 11?\n\nJa, gern."],
+  ]) {
+    const result = await reply(...extra);
+    expect(result.exitCode, result.stderr).toBe(0);
+  }
+  expect(bodies.map((entry) => (entry.body as { quoteSource?: unknown }).quoteSource)).toEqual([
+    { locale: "de", timeZone: expect.any(String) },
+    null,
+    null,
+  ]);
+});
+
+test("draft create quotes the source of a reply by default and nothing else", async () => {
+  const bodies: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    bodies.push(await request.json());
+    return api(draftFixture());
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const base = [
+    "--locale",
+    "de",
+    "--json",
+    "mail",
+    "draft",
+    "create",
+    "--mailbox",
+    MAILBOX_ID,
+    "--identity",
+    IDENTITY_ID,
+    "--body",
+    "Gern.",
+  ];
+  for (const extra of [
+    ["--intent", "reply", "--source-message", MESSAGE_ID],
+    ["--intent", "reply", "--source-message", MESSAGE_ID, "--no-quote"],
+    [],
+  ]) {
+    const result = await runCli(origin, [...base, ...extra]);
+    expect(result.exitCode, result.stderr).toBe(0);
+  }
+  expect(bodies).toEqual([
+    expect.objectContaining({ quoteSource: { locale: "de", timeZone: expect.any(String) } }),
+    expect.objectContaining({ quoteSource: null }),
+    expect.objectContaining({ quoteSource: null }),
   ]);
 });
 
