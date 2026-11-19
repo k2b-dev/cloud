@@ -245,8 +245,8 @@ type Props = {
   initialProject: AiProject | null;
   initialProjectChats: AiConversationPage | null;
   initialProjectContext: AssistantProjectContextSnapshot | null;
-  /** The Assistant's open approvals at render time, and whether the page opened on the approvals view. */
-  approvals: { page: ApprovalPage; open: boolean };
+  /** Whether the page opened on the approvals view, and then its open approvals at render time. */
+  approvals: { page?: ApprovalPage; open: boolean };
   /**
    * The person's own Code: whether they have any (unknown counts as yes, so their Code stays reachable), whether the
    * page opened on its list, and the list's first page when it did (null when Core could not list it).
@@ -3308,7 +3308,7 @@ export default function AssistantWorkspace(props: Props) {
           }
           onConversationUpdated={updateConversation}
           onConversationArchived={archiveConversation}
-          pendingApprovals={props.approvals.page.count}
+          waitingCount={() => waiting().total}
           onOpenApprovals={openApprovals}
           hasPersonalCode={() => Boolean(props.code?.has)}
           onOpenCode={openCode}

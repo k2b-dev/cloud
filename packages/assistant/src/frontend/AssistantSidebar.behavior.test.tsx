@@ -317,8 +317,7 @@ test("failed Done request leaves the chat available and clears its pending feedb
   }
 });
 
-// Before any test reads live counts: the browser keeps the last read count for the whole page.
-test("the server's approvals count renders the row from the first paint", async () => {
+test("the waiting count renders the row from the first paint", async () => {
   const dom = createDomTestHarness();
   const live = createAssistantLiveHub();
   const dispose = render(
@@ -327,7 +326,7 @@ test("the server's approvals count renders the row from the first paint", async 
         timeZone="UTC"
         renderedAt={renderedAt}
         conversations={() => [conversation("first", "First", null)]}
-        pendingApprovals={3}
+        waitingCount={() => 3}
         live={live}
       />
     ),
@@ -346,14 +345,7 @@ test("the server's approvals count renders the row from the first paint", async 
 test("Waiting for you always keeps its place above Projects, with the live count", async () => {
   const dom = createDomTestHarness();
   const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
-  const { refreshAppBadges } = await import("@k2b/cloud/browser/app-badges");
-  const { watchAppBadges } = await import("@k2b/cloud/ssr/app-badges");
-  let counts = { total: 0, apps: {} as Record<string, number> };
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = Object.assign(async () => Response.json(counts), { preconnect: originalFetch.preconnect });
-  const settle = async () => {
-    for (let attempt = 0; attempt < 5; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 0));
-  };
+  const [waiting, setWaiting] = createSignal(0);
   const live = createAssistantLiveHub();
   let opened = 0;
   const dispose = render(
@@ -363,7 +355,7 @@ test("Waiting for you always keeps its place above Projects, with the live count
         renderedAt={renderedAt}
         conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
         activeConversationId={() => "first"}
-        pendingApprovals={0}
+        waitingCount={waiting}
         onOpenApprovals={() => {
           opened++;
         }}
@@ -381,19 +373,15 @@ test("Waiting for you always keeps its place above Projects, with the live count
     readWorkspaceNavigation()!
       .navigation.items()
       .map((item) => item.id);
-  const stopBadges = watchAppBadges([]);
   try {
     // Nothing waits: the row is still there, so a later request never slides the footer under the pointer.
-    await settle();
     expect(row()).not.toBeNull();
     expect(row()!.querySelector("i")?.className).toContain("ti-hand-stop");
     expect(labels()).toEqual(["Waiting for you", "Projects", "Personalize"]);
 
     expect(mobileIds()).toContain("approvals");
     expect(mobileIds()).not.toContain("apps");
-    counts = { total: 2, apps: { assistant: 2 } };
-    refreshAppBadges();
-    await settle();
+    setWaiting(2);
     expect(row()!.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent).toBe("2");
     const ids = mobileIds();
     expect(ids.indexOf("approvals")).toBeLessThan(ids.indexOf("projects"));
@@ -414,8 +402,6 @@ test("Waiting for you always keeps its place above Projects, with the live count
     expect(click.defaultPrevented).toBe(true);
     expect(opened).toBe(1);
   } finally {
-    stopBadges();
-    globalThis.fetch = originalFetch;
     dispose();
     dom.cleanup();
   }
