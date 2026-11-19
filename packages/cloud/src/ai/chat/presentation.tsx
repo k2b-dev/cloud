@@ -206,7 +206,9 @@ const storedItems = (
   const turnErrors = new Map<string, AiTurnError>();
   for (const message of messages) if (message.loopId && message.meta?.turnError) turnErrors.set(message.loopId, message.meta.turnError);
   // Only the chat's newest turn can be continued, and only while no other turn runs.
-  const newestLoop = idle ? (messages.at(-1)?.loopId ?? null) : null;
+  // An alarm fact the person or Cloud added afterwards never ends a turn's chance to continue.
+  const lastEntry = messages.findLast((entry) => !entry.meta?.wakeupEvent);
+  const newestLoop = idle ? (lastEntry?.loopId ?? null) : null;
   const segmentId = createSegmentIds();
   // The model never answered: the notice stands where the live turn showed its progress, under the same id.
   const unansweredNotice = (entry: AiStoredMessage, itemIndex: number): ChatTimelineItem[] => {
@@ -369,9 +371,10 @@ const storedItems = (
     if (item.type === "wakeup") {
       const input = wakeupLines.get(item.id);
       // A fact of the turn that still runs stands at its end once it finished.
-      if (!input || (activeTurnId !== null && (item.loopId ?? item.after) === activeTurnId)) return [];
-      const line = actions.renderWakeupLine?.(input, item.id);
-      // Without a host's line, the fact stands as Cloud stored it, quietly.
+      if (activeTurnId !== null && (item.loopId ?? item.after) === activeTurnId) return [];
+      // Without a host's line, every fact stands as Cloud stored it, quietly; a host draws only the lines it plans.
+      if (actions.renderWakeupLine && !input) return [];
+      const line = input && actions.renderWakeupLine?.(input, item.id);
       return line
         ? { kind: "activity", id: item.id, class: "ai-wakeup-line-row", anchorId: item.entry.seq, label: line }
         : {
@@ -497,11 +500,11 @@ const storedItems = (
               actions.onRetryMessage
                 ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
                 : undefined,
-            superseded: (activeTurnId !== null && activeTurnId !== item.loopId) || lastMessage?.id !== messages.at(-1)?.id,
+            superseded: (activeTurnId !== null && activeTurnId !== item.loopId) || lastMessage?.id !== lastEntry?.id,
             continuable:
               idle &&
               !(item.loopId && reviewLoops.has(item.loopId)) &&
-              (item.loopId ? newestLoop === item.loopId : lastMessage?.id === messages.at(-1)?.id),
+              (item.loopId ? newestLoop === item.loopId : lastMessage?.id === lastEntry?.id),
           }),
           actions: messageActions,
           actionDisplay: "inline",

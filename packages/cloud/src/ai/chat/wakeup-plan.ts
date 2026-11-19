@@ -13,7 +13,9 @@ export type AiWakeupLinePlan = {
   deleted: boolean;
 };
 
-const sameAlarm = (a: AiWakeup, b: AiWakeup) => a.at === b.at && a.cron === b.cron && a.endsAt === b.endsAt && a.note === b.note;
+/** A repeating alarm moves its next time without a fact, so only a one-off compares its time. */
+const sameAlarm = (a: AiWakeup, b: AiWakeup) =>
+  (a.cron ? a.cron === b.cron && a.timezone === b.timezone : a.at === b.at && !b.cron) && a.note === b.note;
 
 /**
  * One plan per alarm line of the chat, by timeline item. The person's deletion strikes the alarm's line through in
@@ -65,7 +67,11 @@ const failedWakeupInput = (blocks: readonly AiTurnBlock[]): AiWakeupInput | null
   let input: AiWakeupInput | null = null;
   for (const block of blocks) {
     if (block.kind !== "tool" || block.name !== "wakeup_create") continue;
-    if (block.status === "completed") return null;
+    // A later success sets the alarm after all; a failure after it still counts.
+    if (block.status === "completed") {
+      input = null;
+      continue;
+    }
     const args = block.args;
     if (block.status !== "failed" || !args || typeof args !== "object") continue;
     const field = (key: string) => {

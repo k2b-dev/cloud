@@ -72,10 +72,16 @@ const timestampMs = (value: string | undefined): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+/** A message of an alarm tool call: the turn that holds it wrote its own alarm facts. */
+const callsWakeupTool = ({ message }: AiStoredMessage) =>
+  message.role === "tool_result"
+    ? message.name.startsWith("wakeup_")
+    : message.role === "assistant" && message.content.some((part) => part.type === "tool_call" && part.name.startsWith("wakeup_"));
+
 /**
- * An alarm fact a running turn wrote (Gustav's tool) is stored between that turn's messages, without its loop. It
- * stands after the turn's last message, where the turn ends, and never splits the turn's answer. A fact after a turn
- * ended stays where it is. `inLoop` names the turn a fact belongs to; `after` the turn it follows.
+ * An alarm fact written while a turn runs is stored between that turn's messages, without its loop. It stands after
+ * the turn's last message, where the turn ends, and never splits the turn's answer; a fact after a turn ended stays
+ * where it is. `inLoop` names the turn that wrote a fact with its alarm tool; `after` the turn a fact follows.
  */
 const placeWakeupFacts = (
   messages: AiStoredMessage[],
@@ -85,6 +91,7 @@ const placeWakeupFacts = (
   const placed: AiStoredMessage[] = [];
   let held: AiStoredMessage[] = [];
   let loopId: string | null = null;
+  let toolTurn = false;
   for (const entry of messages) {
     if (entry.meta?.wakeupEvent) {
       if (!loopId) placed.push(entry);
@@ -94,16 +101,20 @@ const placeWakeupFacts = (
       }
       continue;
     }
+    const calls = callsWakeupTool(entry);
     if (held.length) {
-      // The turn goes on after the fact: it belongs to that turn and moves to its end.
-      if (loopId && entry.loopId === loopId) for (const fact of held) inLoop.set(fact, loopId);
-      else {
+      // The turn goes on after the fact: it moves to the turn's end, as the turn's own fact when it used the tool.
+      if (loopId && entry.loopId === loopId) {
+        if (toolTurn || calls) for (const fact of held) inLoop.set(fact, loopId);
+      } else {
         placed.push(...held);
         held = [];
       }
     }
     placed.push(entry);
+    if (entry.loopId !== loopId) toolTurn = false;
     loopId = entry.loopId;
+    if (calls) toolTurn = true;
   }
   return held.length ? [...placed, ...held] : placed;
 };

@@ -50,7 +50,7 @@ const fact = (id: string, seq: number, kind: AiWakeupEvent["kind"], wakeup = ala
     wakeupEvent: { id: `event-${id}`, kind, at: AT, wakeup },
   });
 const user = (id: string, seq: number, loopId: string) => stored(id, seq, { role: "user", content: [{ type: "text", text: id }] }, loopId);
-const call = (id: string, seq: number, loopId: string, name: string, args: unknown) =>
+const call = (id: string, seq: number, loopId: string, name: string, args: Record<string, unknown>) =>
   stored(id, seq, { role: "assistant", content: [{ type: "tool_call", id: `call-${id}`, name, args }] }, loopId);
 const result = (id: string, seq: number, loopId: string, name: string, value: unknown, isError = false) =>
   stored(id, seq, { role: "tool_result", callId: `call-${id.replace("-result", "")}`, name, result: value, isError }, loopId);
@@ -75,6 +75,23 @@ describe("alarm facts in the timeline", () => {
     const timeline = buildAiMessageTimeline([user("ask", 1, "turn-1"), answer("done", 2, "turn-1"), fact("deleted", 3, "deleted")]);
     const line = timeline.at(-1);
     expect(line?.type === "wakeup" && [line.loopId, line.after]).toEqual([null, "turn-1"]);
+  });
+});
+
+describe("alarm facts while a turn runs", () => {
+  test("the person's own change during a turn moves to its end but stays the person's, so it strikes the line in place", () => {
+    const timeline = buildAiMessageTimeline([
+      fact("created", 1, "created"),
+      user("ask", 2, "turn-2"),
+      call("read", 3, "turn-2", "mail_search", { q: "Lena" }),
+      fact("deleted", 4, "deleted"),
+      result("read-result", 5, "turn-2", "mail_search", []),
+      answer("done", 6, "turn-2"),
+    ]);
+    expect(timeline.map((item) => item.type)).toEqual(["wakeup", "user", "assistant", "wakeup"]);
+    const lines = collectAiWakeupLines(timeline);
+    expect([...lines.keys()]).toEqual(["created"]);
+    expect(lines.get("created")?.plan?.deleted).toBe(true);
   });
 });
 
@@ -119,6 +136,21 @@ describe("alarm lines", () => {
     );
     expect(lines.get("deleted")?.plan).toMatchObject({ latest: true, event: { kind: "deleted" } });
     expect(lines.get("created")?.plan?.latest).toBe(false);
+  });
+
+  test("a failure after an alarm Gustav did set still gets its line", () => {
+    const failedAfter = collectAiWakeupLines(
+      buildAiMessageTimeline([
+        user("ask", 1, "turn-1"),
+        call("first", 2, "turn-1", "wakeup_create", { at: AT, timezone: "Europe/Berlin", note: "Erstes" }),
+        fact("created", 3, "created", alarm({ note: "Erstes" })),
+        result("first-result", 4, "turn-1", "wakeup_create", alarm({ note: "Erstes" })),
+        call("second", 5, "turn-1", "wakeup_create", { at: AT, timezone: "Europe/Berlin", note: "Zweites" }),
+        result("second-result", 6, "turn-1", "wakeup_create", { error: "limit" }, true),
+        answer("done", 7, "turn-1"),
+      ]),
+    );
+    expect([...failedAfter.values()].find((line) => line.failed)?.failed?.input.note).toBe("Zweites");
   });
 
   test("an alarm Gustav could not set gets one line with its time and note, until an alarm with that note exists", () => {

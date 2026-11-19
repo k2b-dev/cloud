@@ -43,6 +43,7 @@ const words = i18n.define({
       monthly: ({ day }: { day: number }) => `Monthly on day ${day}`,
       past: "This time has already passed. Choose a later time or another day.",
       timeWrong: "Enter a time such as 16:00.",
+      noteWrong: "Write what Gustav should do then.",
       notSaved: ({ when }: { when: string }) => `Not saved. The alarm stays at ${when}.`,
       delete: "Delete",
       cancel: "Cancel",
@@ -81,6 +82,7 @@ const words = i18n.define({
       monthly: ({ day }: { day: number }) => `Monatlich am ${day}.`,
       past: "Diese Zeit ist schon vorbei. Wähle eine spätere Uhrzeit oder einen anderen Tag.",
       timeWrong: "Gib eine Uhrzeit wie 16:00 ein.",
+      noteWrong: "Schreib, was Gustav dann tun soll.",
       notSaved: ({ when }: { when: string }) => `Nicht gespeichert. Der Wecker bleibt bei ${when}.`,
       delete: "Löschen",
       cancel: "Abbrechen",
@@ -139,9 +141,11 @@ const wakeupApi = {
   },
 };
 
-/** Runs one change and reads the chat again; a refusal says the server's sentence in a toast, never silently. */
-const change = async (ctx: AssistantWakeupContext, work: (chatId: string) => Promise<void>) => {
-  const chatId = ctx.chatId();
+/**
+ * Runs one change in the chat it was asked for and reads the chats again; a refusal says the server's sentence in a
+ * toast, never silently.
+ */
+const change = async (ctx: AssistantWakeupContext, chatId: string | null, work: (chatId: string) => Promise<void>) => {
   if (!chatId) return false;
   try {
     await work(chatId);
@@ -163,28 +167,25 @@ const again = (wakeup: Pick<AiWakeup, "at" | "cron" | "timezone" | "endsAt" | "n
   note: wakeup.note,
 });
 
-/** The cross deletes at once; the toast offers "Undo", which sets the same alarm again. */
+/** The cross deletes at once; the toast offers "Undo", which sets the same alarm again in the same chat. */
 export const deleteWakeup = async (ctx: AssistantWakeupContext, wakeup: AiWakeup) => {
-  if (!(await change(ctx, (chatId) => wakeupApi.remove(chatId, wakeup)))) return;
+  const chatId = ctx.chatId();
+  if (!(await change(ctx, chatId, (chat) => wakeupApi.remove(chat, wakeup)))) return;
   const t = copy(ctx);
   toast(t.deleted, {
     iconClass: "ti-alarm-off",
-    action: { label: t.undo, variant: "ghost", onClick: () => void change(ctx, (chatId) => wakeupApi.create(chatId, again(wakeup))) },
+    action: { label: t.undo, variant: "ghost", onClick: () => void change(ctx, chatId, (chat) => wakeupApi.create(chat, again(wakeup))) },
   });
 };
-export const catchUpWakeup = (ctx: AssistantWakeupContext, wakeup: AiWakeup) => change(ctx, (chatId) => wakeupApi.catchUp(chatId, wakeup));
-/** A repeating alarm that ran out runs for another 30 days; a minute's margin keeps it within the server's bound. */
+export const catchUpWakeup = (ctx: AssistantWakeupContext, wakeup: AiWakeup) =>
+  change(ctx, ctx.chatId(), (chat) => wakeupApi.catchUp(chat, wakeup));
+/** A repeating alarm that ran out runs for another 30 days, by the server's own clock. */
 export const renewWakeup = (ctx: AssistantWakeupContext, wakeup: AiWakeup) =>
-  change(ctx, (chatId) =>
-    wakeupApi.update(chatId, wakeup.id, {
-      revision: wakeup.revision,
-      endsAt: new Date(Date.now() + 30 * DAY_MS - 60_000).toISOString(),
-    }),
-  );
+  change(ctx, ctx.chatId(), (chat) => wakeupApi.update(chat, wakeup.id, { revision: wakeup.revision, endsAt: null }));
 export const retryWakeup = (ctx: AssistantWakeupContext, input: AiWakeupInput) =>
-  change(ctx, (chatId) =>
+  change(ctx, ctx.chatId(), (chat) =>
     wakeupApi.create(
-      chatId,
+      chat,
       again({ at: input.at ?? null, cron: input.cron ?? null, timezone: input.timezone, endsAt: input.endsAt ?? null, note: input.note }),
     ),
   );
@@ -226,8 +227,13 @@ const cronOf = (repeat: Repeat, date: string, time: string): string | null => {
 /** "Change alarm": a small dialog on a computer, a sheet on a phone. Nothing applies before "Save". */
 function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; close: () => void; guard: (handler: () => void) => void }) {
   const t = () => copy(props.ctx);
-  const zone = props.ctx.timeZone;
+  // The alarm's own time zone: its rhythm and its times keep their meaning, whoever looks at them.
+  const zone = props.wakeup.timezone;
   const locale = props.ctx.locale();
+  // The chat the dialog opened in, also if the person moves on meanwhile.
+  const chatId = props.ctx.chatId();
+  /** The alarm as the chat lists it now, so "Try again" after a change elsewhere uses its newest revision. */
+  const latest = () => props.ctx.items().find((item) => item.id === props.wakeup.id) ?? props.wakeup;
   const startAt = props.wakeup.at ?? new Date(Date.now() + 3_600_000).toISOString();
   const local = dates.instantToZonedInput(startAt, zone);
   const initialRepeat = repeatOf(props.wakeup.cron);
@@ -243,10 +249,14 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
     return match && hour < 24 && minute < 60 ? `${String(hour).padStart(2, "0")}:${match[2]}` : null;
   };
   const [repeat, setRepeat] = createSignal<Repeat>(initialRepeat);
-  const [end, setEnd] = createSignal<string | null>(
-    props.wakeup.endsAt ? dates.instantToZonedInput(props.wakeup.endsAt, zone).slice(0, 10) : lastEnd,
-  );
+  // An alarm that ran out starts again with the longest end; otherwise its own end stands.
+  const initialEnd =
+    props.wakeup.endsAt && Date.parse(props.wakeup.endsAt) > Date.now()
+      ? dates.instantToZonedInput(props.wakeup.endsAt, zone).slice(0, 10)
+      : lastEnd;
+  const [end, setEnd] = createSignal<string | null>(initialEnd);
   const [note, setNote] = createSignal(props.wakeup.note);
+  const [noteWrong, setNoteWrong] = createSignal(false);
   const [past, setPast] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [failed, setFailed] = createSignal<string | null>(null);
@@ -272,9 +282,9 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
     (["never", "daily", "workdays", "weekly", "monthly", ...(initialRepeat === "custom" ? ["custom" as const] : [])] as const).map(
       (id) => ({ id, label: repeatLabel(id) }),
     );
-  const atIso = () => {
+  const atIso = (key: string) => {
     try {
-      return dates.zonedDateTimeToInstant(`${date()}T${clock()}`, zone, { disambiguation: "later" });
+      return dates.zonedDateTimeToInstant(`${key}T${clock()}`, zone, { disambiguation: "later" });
     } catch {
       return null;
     }
@@ -287,42 +297,57 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
     ...(clock() && clock() !== local.slice(11, 16) ? [{ label: t().time, from: local.slice(11, 16), to: clock()! }] : []),
     ...(repeat() !== initialRepeat ? [{ label: t().repeat, from: repeatLabel(initialRepeat), to: repeatLabel(repeat()) }] : []),
   ];
+  /** A weekday rhythm that would start on a weekend starts on the Monday after. */
+  const firstDay = (key: string) => {
+    const weekday = new Date(`${key}T12:00:00Z`).getUTCDay();
+    const skip = repeat() === "workdays" ? (weekday === 6 ? 2 : weekday === 0 ? 1 : 0) : 0;
+    return skip ? new Date(Date.parse(`${key}T12:00:00Z`) + skip * DAY_MS).toISOString().slice(0, 10) : key;
+  };
   const save = async (event: Event) => {
     event.preventDefault();
-    const at = clock() && date() ? atIso() : null;
-    if (!at || Date.parse(at) <= Date.now()) {
+    if (!chatId || busy()) return;
+    const text = note().trim();
+    if (!text) {
+      setNoteWrong(true);
+      return;
+    }
+    const recurring = repeat() !== "never";
+    const timeChanged = date() !== local.slice(0, 10) || clock() !== local.slice(11, 16);
+    // A named rhythm is rebuilt from day and time; Gustav's own rhythm stays and only its next time may move.
+    const cron = repeat() === "custom" ? undefined : recurring ? cronOf(repeat(), firstDay(date() ?? ""), clock() ?? "") : null;
+    const sendAt = repeat() !== "custom" || timeChanged;
+    const at = sendAt && clock() && date() ? (atIso(firstDay(date()!)) ?? null) : undefined;
+    if (sendAt && (!at || Date.parse(at) <= Date.now())) {
       setTimeWrong(!clock());
       setPast(Boolean(clock()));
       timeField?.querySelector("input")?.focus();
       return;
     }
-    const chatId = props.ctx.chatId();
-    if (!chatId || busy()) return;
-    const recurring = repeat() !== "never";
-    const endsAt = recurring
-      ? new Date(
-          Math.min(
-            Date.parse(dates.zonedDateTimeToInstant(`${end() ?? lastEnd}T23:59`, zone, { disambiguation: "later" })),
-            Date.now() + 30 * DAY_MS - 60_000,
-          ),
-        ).toISOString()
-      : undefined;
-    const cron = repeat() === "custom" ? undefined : cronOf(repeat(), date()!, clock()!);
+    // A new end, or the longest one (the server's own 30 days) for a renewed or newly repeating alarm.
+    const endChanged = end() !== initialEnd || props.wakeup.status === "expired" || !props.wakeup.cron;
+    const endsAt =
+      !recurring || !endChanged
+        ? undefined
+        : end() === lastEnd || !end()
+          ? null
+          : dates.zonedDateTimeToInstant(`${end()}T23:59`, zone, { disambiguation: "later" });
+    const patch = {
+      ...(at ? { at } : {}),
+      ...(cron !== undefined && cron !== props.wakeup.cron ? { cron } : {}),
+      ...(endsAt !== undefined ? { endsAt } : {}),
+      ...(text !== props.wakeup.note ? { note: text } : {}),
+    };
+    if (Object.keys(patch).length === 0) return props.close();
     setBusy(true);
     setFailed(null);
     try {
-      await wakeupApi.update(chatId, props.wakeup.id, {
-        revision: props.wakeup.revision,
-        at,
-        timezone: zone,
-        note: note().trim(),
-        ...(cron === undefined ? {} : { cron }),
-        ...(endsAt ? { endsAt } : {}),
-      });
+      await wakeupApi.update(chatId, props.wakeup.id, { revision: latest().revision, ...patch });
       void props.ctx.refresh().catch(() => undefined);
       props.close();
     } catch (error) {
       setFailed(reason(error) ?? "");
+      // A change elsewhere moved the revision on: the next try uses the newest one.
+      void props.ctx.refresh().catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -382,7 +407,11 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
           lines={2}
           maxLength={200}
           value={note()}
-          onValueChange={(value) => setNote(value ?? "")}
+          onValueChange={(value) => {
+            setNote(value ?? "");
+            setNoteWrong(false);
+          }}
+          error={noteWrong() ? t().noteWrong : undefined}
           description={
             <span class="assistant-wakeup-dialog__hint">
               <span>{t().noteHint}</span>
@@ -544,7 +573,8 @@ export function WakeupList(props: {
 
 /** For the archive dialog: the chat's alarms, which rest while it is archived, one per line; empty without any. */
 export const restingWakeups = async (chatId: string, locale: string, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone) => {
-  const response = await route.$get({ param: { conversationId: chatId } });
+  // The archive dialog never waits long for them: without an answer in three seconds it opens without the list.
+  const response = await route.$get({ param: { conversationId: chatId } }, { init: { signal: AbortSignal.timeout(3000) } });
   if (!response.ok) return "";
   const { items } = await response.json();
   return items.length

@@ -1,6 +1,6 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { useLocale } from "@k2b/ui";
-import { createSignal, lazy, Show, Suspense } from "solid-js";
+import { createSignal, createUniqueId, lazy, Show, Suspense } from "solid-js";
 import { aiWakeupWhen } from "../wakeup-when";
 import { aiWakeupWords } from "./wakeup-line";
 import type { AssistantWakeupContext } from "./wakeups";
@@ -17,7 +17,7 @@ export default function AssistantWakeupDock(props: { context: AssistantWakeupCon
   const t = () => aiWakeupWords.resolve([locale()]).t;
   const [open, setOpen] = createSignal(false);
   const items = () => props.context.items();
-  const id = `assistant-wakeups-${Math.random().toString(36).slice(2, 10)}`;
+  const id = `assistant-wakeups-${createUniqueId()}`;
   let root: HTMLDivElement | undefined;
   let toggle: HTMLButtonElement | undefined;
   return (
