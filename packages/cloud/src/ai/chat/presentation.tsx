@@ -29,7 +29,7 @@ import { type AiStopNotice, aiMessageStopNotice, stoppedByPerson } from "./stop-
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
-import { AiWakeupLine, planAiWakeupLines } from "./wakeup-line";
+import { collectAiWakeupLines } from "./wakeup-plan";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view";
 import {
@@ -192,31 +192,16 @@ const storedItems = (
     if (item.type === "assistant") lastItemOfLoop.set(loopId, index);
   });
   const reviewLoops = new Set(messages.flatMap((entry) => (entry.meta?.codeReviewStart && entry.loopId ? [entry.loopId] : [])));
-  const wakeupPlans = planAiWakeupLines(timeline);
-  const alarms = new Map([...wakeupPlans.values()].map((plan) => [plan.event.wakeup.id, plan.event.wakeup]));
+  const wakeupLines = collectAiWakeupLines(timeline);
+  const alarms = new Map(
+    [...wakeupLines.values()].flatMap((line) => (line.plan ? [[line.plan.event.wakeup.id, line.plan.event.wakeup] as const] : [])),
+  );
   /** Gustav could not set an alarm in this turn and did not set one either: the line with "Try again" ends the turn. */
-  const failedWakeup = (item: AiAssistantTimelineItem, itemIndex: number): ChatTimelineItem[] => {
-    let input: unknown;
-    for (const block of item.blocks)
-      if (block.kind === "tool" && block.name === "wakeup_create") {
-        if (block.status === "completed") return [];
-        if (block.status === "failed") input = block.args;
-      }
-    if (!isRecord(input) || typeof input.note !== "string" || typeof input.timezone !== "string") return [];
-    const tried = { note: input.note, timezone: input.timezone, ...input };
-    const retried = timeline
-      .slice(itemIndex + 1)
-      .some((later) => later.type === "wakeup" && later.entry.meta?.wakeupEvent?.wakeup.note === tried.note);
-    return [
-      {
-        kind: "activity",
-        id: `${item.id}:wakeup-failed`,
-        class: "ai-wakeup-line-row",
-        label: (
-          <AiWakeupLine failed={{ input: tried, retried }} host={actions.wakeups} locale={locale} timeZone={timeZone ?? "UTC"} />
-        ),
-      },
-    ];
+  const failedWakeup = (item: AiAssistantTimelineItem): ChatTimelineItem[] => {
+    const key = `${item.id}:wakeup-failed`;
+    const input = wakeupLines.get(key);
+    const line = input && actions.renderWakeupLine?.(input, key);
+    return line ? [{ kind: "activity", id: key, class: "ai-wakeup-line-row", label: line }] : [];
   };
   const turnErrors = new Map<string, AiTurnError>();
   for (const message of messages) if (message.loopId && message.meta?.turnError) turnErrors.set(message.loopId, message.meta.turnError);
@@ -382,16 +367,14 @@ const storedItems = (
     }
 
     if (item.type === "wakeup") {
-      const plan = wakeupPlans.get(item.id);
+      const input = wakeupLines.get(item.id);
       // A fact of the turn that still runs stands at its end once it finished.
-      if (!plan || (activeTurnId !== null && (item.loopId ?? item.after) === activeTurnId)) return [];
-      return {
-        kind: "activity",
-        id: item.id,
-        class: "ai-wakeup-line-row",
-        anchorId: item.entry.seq,
-        label: <AiWakeupLine plan={plan} host={actions.wakeups} locale={locale} timeZone={timeZone ?? "UTC"} />,
-      };
+      if (!input || (activeTurnId !== null && (item.loopId ?? item.after) === activeTurnId)) return [];
+      const line = actions.renderWakeupLine?.(input, item.id);
+      // Without a host's line, the fact stands as Cloud stored it, quietly.
+      return line
+        ? { kind: "activity", id: item.id, class: "ai-wakeup-line-row", anchorId: item.entry.seq, label: line }
+        : { kind: "activity", id: item.id, anchorId: item.entry.seq, label: textFromMessage(item.entry.message), icon: "ti ti-alarm", tone: "ai" };
     }
 
     if (item.type === "summary") {
@@ -518,7 +501,7 @@ const storedItems = (
         },
       ];
     });
-    return lastOfLoop && item.loopId !== activeTurnId ? [...rendered, ...failedWakeup(item, itemIndex)] : rendered;
+    return item.loopId !== activeTurnId ? [...rendered, ...failedWakeup(item)] : rendered;
   });
 };
 

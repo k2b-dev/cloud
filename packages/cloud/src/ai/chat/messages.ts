@@ -128,6 +128,8 @@ const messages = /* @__PURE__ */ i18n.define({
       messageFromAutomation: ({ name }: { name: string }) => `From automation “${name}”`,
       messageFromUnnamedAutomation: "From an automation",
       messageFromChat: ({ name }: { name: string }) => `From the chat “${name}”`,
+      /** An alarm message delivered well after its planned time. */
+      wakeupDelayed: ({ time }: { time: string }) => `planned ${time}, delayed`,
       openAutomation: "Open automation",
       messageData: ({ text }: { text: string }) => `Data: ${text}`,
       openChat: "Open chat",
@@ -582,6 +584,7 @@ const messages = /* @__PURE__ */ i18n.define({
       messageFromAutomation: ({ name }) => `Von Automation „${name}“`,
       messageFromUnnamedAutomation: "Von einer Automation",
       messageFromChat: ({ name }) => `Aus dem Chat „${name}“`,
+      wakeupDelayed: ({ time }) => `geplant ${time}, verspätet`,
       openAutomation: "Automation öffnen",
       messageData: ({ text }) => `Daten: ${text}`,
       openChat: "Chat öffnen",

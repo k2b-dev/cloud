@@ -6,6 +6,7 @@ import {
   getLiveDictationStatus,
   loadAiStreamState,
 } from "@k2b/cloud/ai";
+import { buildAiMessageTimeline, collectAiWakeupLines } from "@k2b/cloud/ai/browser";
 import { aiLive } from "@k2b/cloud/ai/live";
 import { loadPlaceAssistant } from "@k2b/cloud/ai/server";
 import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
@@ -28,6 +29,7 @@ import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { readAssistantPlace } from "./assistant-place";
 import { ASSISTANT_PANES_HINT_COOKIE } from "./chat-sidebar-layout";
+import { describeWakeupLine } from "./wakeup-line";
 import { loadCodeOverview } from "./code-overview";
 import { assistantMessages } from "./messages";
 
@@ -203,6 +205,16 @@ export default ssr<AuthContext>(async (c) => {
   const initialCodeVersionCards = initialDetail
     ? await loadCodeVersionCards(invokeCode, chatCodeVersionRefs(initialDetail.messages, initialDetail.activeTurn))
     : [];
+  // The chat's alarm lines in words for the first frame; the chat writes them itself once its words loaded.
+  const wakeupLines = initialDetail ? collectAiWakeupLines(buildAiMessageTimeline(initialDetail.messages)) : new Map();
+  const initialWakeupLines = wakeupLines.size
+    ? Object.fromEntries(
+        [...wakeupLines].map(([key, line]) => [
+          key,
+          describeWakeupLine(line, { locale, timeZone, current: initialContext?.wakeups?.items }),
+        ]),
+      )
+    : undefined;
 
   const workspace = () => (
     <AssistantWorkspace
@@ -240,6 +252,7 @@ export default ssr<AuthContext>(async (c) => {
           : null
       }
       initialContext={initialContext}
+      initialWakeupLines={initialWakeupLines}
       initialTabs={activeConversation && initialTabs ? { chatId: activeConversation.shortId, snapshot: initialTabs } : null}
       arrangeHintSeen={getCookie(c, ASSISTANT_PANES_HINT_COOKIE) === "seen"}
       projects={projects}

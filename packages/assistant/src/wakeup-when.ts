@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import type { AiWakeup } from "./wakeup-contracts";
+import type { AiWakeup } from "@k2b/cloud/ai";
 
 const day = (at: Date, timeZone: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);

@@ -15,7 +15,6 @@ import {
   vfsAttachmentsFromMessage,
 } from "./message-utils";
 import { aiChatMessages } from "./messages";
-import { aiWakeupWords } from "./wakeup-line";
 
 export const aiUserMessageText = (entry: AiStoredMessage): string => userVisibleTextFromMessage(entry.message, entry.meta?.quotes);
 
@@ -66,7 +65,7 @@ export const aiUserMessageSource = (
         <i class={`ai-message-source__icon ti ${wakeup?.cron ? "ti-repeat" : "ti-alarm"}`} data-kind="wakeup" aria-hidden="true" />
         <span>
           {origin.name} ·{" "}
-          {delayed ? aiWakeupWords.resolve([locale]).t.planned({ time }) : wakeup?.cron ? wakeup.rhythm : time}
+          {delayed ? aiChatMessages(locale).wakeupDelayed({ time }) : wakeup?.cron ? wakeup.rhythm : time}
         </span>
       </>
     );

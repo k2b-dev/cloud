@@ -939,6 +939,23 @@
   .k2b-ui .assistant-queue__actions > .k2b-icon-button::after { position: absolute; inset: -.4375rem -.25rem; content: ""; }
   .k2b-ui .assistant-queue__rows { max-block-size: calc(7.5 * 2.75rem); }
 }
+/* Alarm lines in the chat (Gustav alarms v1, 6): one quiet 13 px line without a box on the edge of the work line, sign
+   in plum, "Alarm · time · note". Pencil and cross keep a fixed place and show under the pointer, on touch always. */
+.k2b-ui .assistant-wakeup-line { display: flex; align-items: flex-start; gap: .5rem; min-block-size: 2rem; max-inline-size: 44rem; padding-block: .375rem; color: var(--k2b-text-muted); font-size: .8125rem; font-weight: 400; line-height: 1.25rem; }
+.k2b-ui .assistant-wakeup-line__sign { flex: none; inline-size: 1.125rem; color: var(--k2b-ai-accent); font-size: 1rem; line-height: 1.25rem; text-align: center; }
+.k2b-ui .assistant-wakeup-line__text { flex: 0 1 auto; min-inline-size: 0; overflow-wrap: anywhere; }
+.k2b-ui .assistant-wakeup-line b { color: var(--k2b-text); font-weight: 600; }
+.k2b-ui .assistant-wakeup-line__aside { color: var(--k2b-text-subtle); }
+.k2b-ui .assistant-wakeup-line__state { flex: none; color: var(--k2b-text-muted); }
+.k2b-ui .assistant-wakeup-line[data-struck] :is(.assistant-wakeup-line__text, b) { color: var(--k2b-text-subtle); font-weight: 400; text-decoration: line-through; }
+.k2b-ui .assistant-wakeup-line[data-struck] .assistant-wakeup-line__sign { color: var(--k2b-text-subtle); }
+.k2b-ui .assistant-wakeup-line[data-kind="notice"] .assistant-wakeup-line__sign { color: var(--k2b-warning-text); }
+.k2b-ui .assistant-wakeup-line[data-kind="failed"] .assistant-wakeup-line__sign { color: var(--k2b-danger-text); }
+.k2b-ui .assistant-wakeup-line__acts { display: inline-flex; flex: none; gap: .125rem; margin-block: -.25rem; margin-inline-start: auto; }
+.k2b-ui .assistant-wakeup-line[data-kind="notice"] .assistant-wakeup-line__text { flex: 1 1 16rem; }
+.k2b-ui .assistant-wakeup-line__link { flex: none; padding: 0; border: 0; color: var(--k2b-ai-accent); background: none; font: inherit; white-space: nowrap; cursor: pointer; }
+.k2b-ui .assistant-wakeup-line__link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.k2b-ui .assistant-wakeup-line__link:focus-visible { border-radius: .25rem; outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
 /* Gustav's alarms (Gustav alarms v1, F1 A): the same 32 px row in the free end above the field, with the next alarm,
    or the chip "Alarms · n" at the end of the row "Waiting for you" or "Queued" share. The list has the form of "Queued":
    time in a fixed column of 8.75 rem, the note behind it, two fixed places for pencil and cross. */

@@ -543,6 +543,5 @@ export {
   AiWakeupSchema,
 } from "./wakeup-contracts";
 export { type AiWakeupBudgetCheck, AiWakeupBudgetError } from "./wakeup-tick";
-export { aiWakeupDay, aiWakeupWhen } from "./wakeup-when";
 export { AiWakeupError, aiWakeups } from "./wakeups";
 export { readWebPageForPerson, type WebReaderResult, WebReaderResultSchema } from "./web-reader";

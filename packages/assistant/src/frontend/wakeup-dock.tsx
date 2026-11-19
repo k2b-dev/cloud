@@ -1,4 +1,5 @@
-import { aiWakeupWhen, aiWakeupWords } from "@k2b/cloud/ai/ui";
+import { aiWakeupWhen } from "../wakeup-when";
+import { aiWakeupWords } from "./wakeup-line";
 import { useLocale } from "@k2b/ui";
 import { createSignal, lazy, Show, Suspense } from "solid-js";
 import type { AssistantWakeupContext } from "./wakeups";
@@ -7,10 +8,10 @@ const WakeupList = lazy(() => import("./wakeups").then((module) => ({ default: m
 
 /**
  * Gustav's alarms above the field (Gustav alarms v1, F1 A): the 32 px row of "Queued" (v6) with the next alarm and
- * "+n", or the chip "Alarms · n" where the row shows "Waiting for you" or "Queued". The server's first frame shows it;
- * a press opens the list over the row, loaded then. Without alarms there is neither row nor chip.
+ * "+n", or the chip "Alarms · n" where the row shows "Waiting for you" or "Queued". It loads with the chat's first
+ * alarm, from the server's snapshot; a press opens the list over the row. Without alarms there is neither row nor chip.
  */
-export function AssistantWakeupDock(props: { context: AssistantWakeupContext; layout: "line" | "chip" }) {
+export default function AssistantWakeupDock(props: { context: AssistantWakeupContext; layout: "line" | "chip" }) {
   const locale = useLocale();
   const t = () => aiWakeupWords.resolve([locale()]).t;
   const [open, setOpen] = createSignal(false);

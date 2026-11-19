@@ -1,8 +1,8 @@
 import type { AiRoutes, AiWakeup, AiWakeupInput, AiWakeupPatch } from "@k2b/cloud/ai";
-import { aiWakeupWhen } from "@k2b/cloud/ai/browser";
+import { aiWakeupWhen } from "../wakeup-when";
 import { api } from "@k2b/cloud/browser";
 import { dates, i18n } from "@k2b/stdlib";
-import { Button, DatePicker, IconButton, LocaleProvider, prompts, Select, TextInput, TimeInput, toast } from "@k2b/ui";
+import { Button, DatePicker, IconButton, LocaleProvider, prompts, Select, TextInput, toast } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 
 /**
@@ -42,6 +42,7 @@ const words = i18n.define({
       weekly: ({ day }: { day: string }) => `Weekly on ${day}`,
       monthly: ({ day }: { day: number }) => `Monthly on day ${day}`,
       past: "This time has already passed. Choose a later time or another day.",
+      timeWrong: "Enter a time such as 16:00.",
       notSaved: ({ when }: { when: string }) => `Not saved. The alarm stays at ${when}.`,
       delete: "Delete",
       cancel: "Cancel",
@@ -78,6 +79,7 @@ const words = i18n.define({
       weekly: ({ day }: { day: string }) => `Wöchentlich am ${day}`,
       monthly: ({ day }: { day: number }) => `Monatlich am ${day}.`,
       past: "Diese Zeit ist schon vorbei. Wähle eine spätere Uhrzeit oder einen anderen Tag.",
+      timeWrong: "Gib eine Uhrzeit wie 16:00 ein.",
       notSaved: ({ when }: { when: string }) => `Nicht gespeichert. Der Wecker bleibt bei ${when}.`,
       delete: "Löschen",
       cancel: "Abbrechen",
@@ -182,6 +184,18 @@ export const retryWakeup = (ctx: AssistantWakeupContext, input: AiWakeupInput) =
     wakeupApi.create(chatId, again({ at: input.at ?? null, cron: input.cron ?? null, timezone: input.timezone, endsAt: input.endsAt ?? null, note: input.note })),
   );
 
+/** One action of a line or the box on an alarm the chat lists now. */
+export const actOnWakeup = async (
+  ctx: AssistantWakeupContext,
+  action: "edit" | "delete" | "renew" | "catch-up",
+  wakeup: AiWakeup,
+): Promise<void> => {
+  if (action === "edit") await editWakeup(ctx, wakeup);
+  else if (action === "delete") await deleteWakeup(ctx, wakeup);
+  else if (action === "renew") await renewWakeup(ctx, wakeup);
+  else await catchUpWakeup(ctx, wakeup);
+};
+
 /** A rhythm the dialog offers by name, or Gustav's own one, which it keeps as it is. */
 type Repeat = "never" | "daily" | "workdays" | "weekly" | "monthly" | "custom";
 const repeatOf = (cron: string | null): Repeat => {
@@ -219,7 +233,15 @@ function WakeupDialog(props: {
   const initialRepeat = repeatOf(props.wakeup.cron);
   const lastEnd = dates.instantToZonedInput(new Date(Date.now() + 30 * DAY_MS - 60_000), zone).slice(0, 10);
   const [date, setDate] = createSignal<string | null>(local.slice(0, 10));
-  const [time, setTime] = createSignal<string | null>(local.slice(11, 16));
+  const [time, setTime] = createSignal(local.slice(11, 16));
+  const [timeWrong, setTimeWrong] = createSignal(false);
+  /** "16:00", "16.00", "1600" and "9:30" read as a time of day; anything else asks for one. */
+  const clock = () => {
+    const match = /^(\d{1,2})[:.]?(\d{2})$/.exec(time().trim());
+    const hour = Number(match?.[1]);
+    const minute = Number(match?.[2]);
+    return match && hour < 24 && minute < 60 ? `${String(hour).padStart(2, "0")}:${match[2]}` : null;
+  };
   const [repeat, setRepeat] = createSignal<Repeat>(initialRepeat);
   const [end, setEnd] = createSignal<string | null>(
     props.wakeup.endsAt ? dates.instantToZonedInput(props.wakeup.endsAt, zone).slice(0, 10) : lastEnd,
@@ -252,21 +274,22 @@ function WakeupDialog(props: {
     );
   const atIso = () => {
     try {
-      return dates.zonedDateTimeToInstant(`${date()}T${time()}`, zone, { disambiguation: "later" });
+      return dates.zonedDateTimeToInstant(`${date()}T${clock()}`, zone, { disambiguation: "later" });
     } catch {
       return null;
     }
   };
   /** "What changes", over the foot, without a box: time and rhythm, before and after. */
   const changes = () => [
-    ...(time() !== local.slice(11, 16) ? [{ label: t().time, from: local.slice(11, 16), to: time() ?? "" }] : []),
+    ...(clock() && clock() !== local.slice(11, 16) ? [{ label: t().time, from: local.slice(11, 16), to: clock()! }] : []),
     ...(repeat() !== initialRepeat ? [{ label: t().repeat, from: repeatLabel(initialRepeat), to: repeatLabel(repeat()) }] : []),
   ];
   const save = async (event: Event) => {
     event.preventDefault();
-    const at = atIso();
+    const at = clock() && date() ? atIso() : null;
     if (!at || Date.parse(at) <= Date.now()) {
-      setPast(true);
+      setTimeWrong(!clock());
+      setPast(Boolean(clock()));
       timeField?.querySelector("input")?.focus();
       return;
     }
@@ -281,7 +304,7 @@ function WakeupDialog(props: {
           ),
         ).toISOString()
       : undefined;
-    const cron = repeat() === "custom" ? undefined : cronOf(repeat(), date()!, time()!);
+    const cron = repeat() === "custom" ? undefined : cronOf(repeat(), date()!, clock()!);
     setBusy(true);
     setFailed(null);
     try {
@@ -316,14 +339,18 @@ function WakeupDialog(props: {
             disabled={busy()}
           />
           <div ref={timeField}>
-            <TimeInput
+            <TextInput
               label={t().time}
-              value={time}
+              value={time()}
+              inputMode="numeric"
+              maxLength={5}
+              placeholder="16:00"
               onValueChange={(value) => {
                 setTime(value);
                 setPast(false);
+                setTimeWrong(false);
               }}
-              error={past() ? t().past : undefined}
+              error={past() ? t().past : timeWrong() ? t().timeWrong : undefined}
               disabled={busy()}
             />
           </div>
@@ -332,7 +359,7 @@ function WakeupDialog(props: {
           label={t().repeat}
           value={repeat()}
           options={options()}
-          onValueChange={(value) => setRepeat((value as Repeat | null) ?? "never")}
+          onValueChange={(value) => setRepeat(options().find((option) => option.id === value)?.id ?? "never")}
           disabled={busy()}
         />
         <Show when={repeat() !== "never"}>

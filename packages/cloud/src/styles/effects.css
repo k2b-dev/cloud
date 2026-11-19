@@ -2061,26 +2061,10 @@ dialog:has(.launchpad-panel)::backdrop {
   white-space: normal;
   mask-image: none;
 }
-/* Alarm lines (Gustav alarms v1, 6): one quiet 13 px line without a box on the edge of the work line, sign in plum,
-   "Alarm · time · note". Pencil and cross keep a fixed place and show under the pointer, on touch always. The row
-   lends only its place, as the Code decision line does. */
+/* A host's alarm line (Gustav alarms v1, 6): the host draws the whole line, the activity row lends only its place, as
+   for the Code decision line. */
 .k2b-ui .ai-wakeup-line-row .k2b-chat-activity__leading { display: none; }
 .k2b-ui .ai-wakeup-line-row > .k2b-chat-activity__row > .k2b-chat-activity__copy { grid-column: 1 / -1; min-width: 0; overflow: visible; white-space: normal; mask-image: none; }
-.k2b-ui .ai-wakeup-line { display: flex; align-items: flex-start; gap: .5rem; min-block-size: 2rem; max-inline-size: 44rem; padding-block: .375rem; color: var(--k2b-text-muted); font-size: .8125rem; font-weight: 400; line-height: 1.25rem; }
-.k2b-ui .ai-wakeup-line__sign { flex: none; inline-size: 1.125rem; color: var(--k2b-ai-accent); font-size: 1rem; line-height: 1.25rem; text-align: center; }
-.k2b-ui .ai-wakeup-line__text { flex: 0 1 auto; min-inline-size: 0; overflow-wrap: anywhere; }
-.k2b-ui .ai-wakeup-line b { color: var(--k2b-text); font-weight: 600; }
-.k2b-ui .ai-wakeup-line__aside { color: var(--k2b-text-subtle); }
-.k2b-ui .ai-wakeup-line__state { flex: none; color: var(--k2b-text-muted); }
-.k2b-ui .ai-wakeup-line[data-struck] :is(.ai-wakeup-line__text, b) { color: var(--k2b-text-subtle); font-weight: 400; text-decoration: line-through; }
-.k2b-ui .ai-wakeup-line[data-struck] .ai-wakeup-line__sign { color: var(--k2b-text-subtle); }
-.k2b-ui .ai-wakeup-line[data-kind="notice"] .ai-wakeup-line__sign { color: var(--k2b-warning-text); }
-.k2b-ui .ai-wakeup-line[data-kind="failed"] .ai-wakeup-line__sign { color: var(--k2b-danger-text); }
-.k2b-ui .ai-wakeup-line__acts { display: inline-flex; flex: none; gap: .125rem; margin-block: -.25rem; margin-inline-start: auto; }
-.k2b-ui .ai-wakeup-line[data-kind="notice"] .ai-wakeup-line__text { flex: 1 1 16rem; }
-.k2b-ui .ai-wakeup-line__link { flex: none; padding: 0; border: 0; color: var(--k2b-ai-accent); background: none; font: inherit; white-space: nowrap; cursor: pointer; }
-.k2b-ui .ai-wakeup-line__link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.k2b-ui .ai-wakeup-line__link:focus-visible { border-radius: .25rem; outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
 /* The source above a machine-written message: an automation's sign in text colour, another chat's ✦ in plum. */
 .k2b-ui .ai-message-source__icon { flex: none; color: var(--k2b-text); font-size: .875rem; }
 .k2b-ui .ai-message-source__icon[data-kind="chat"] { color: var(--k2b-ai-accent); }

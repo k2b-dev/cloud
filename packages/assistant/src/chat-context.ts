@@ -11,13 +11,13 @@ import {
   aiSkills,
   type AiWakeup,
   aiWakeups,
-  aiWakeupWhen,
   type CloudAiViewKind,
   cloudAiViewKindOfIcon,
   describeAiResourceTypeCounts,
   isAiViewPath,
   loadAiConversationFileOverview,
 } from "@k2b/cloud/ai";
+import { aiWakeupWhen } from "./wakeup-when";
 
 /** Snapshot limits: results and files come from people and stay small; sources and working files can grow. */
 const RESULT_LIMIT = 500;

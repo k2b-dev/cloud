@@ -256,5 +256,5 @@ export {
   sortCloudAiViewRows,
 } from "./view-block";
 
+export { collectAiWakeupLines } from "./chat/wakeup-plan";
 export type { AiWakeup, AiWakeupEvent, AiWakeupInput, AiWakeupNoteSource, AiWakeupPatch } from "./wakeup-contracts";
-export { aiWakeupDay, aiWakeupWhen } from "./wakeup-when";
