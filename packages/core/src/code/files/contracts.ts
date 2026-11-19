@@ -5,7 +5,7 @@ import { z } from "zod";
 const text = z
   .string()
   .max(CAPABILITY_MAX_REQUEST_BYTES)
-  .describe("Text field in the stdlib finance batch; format validation runs before serialization.");
+  .describe("Finance text; validated by stdlib.");
 const name = z
   .string()
   .min(1)
