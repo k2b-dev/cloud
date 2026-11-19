@@ -30,20 +30,20 @@
     }
   },
   "dependencies": {
-    "@babel/core": "7.29.7",
+    "@babel/core": "8.1.2",
     "@babel/preset-typescript": "7.29.7",
     "@types/babel__core": "7.20.5",
-    "babel-preset-solid": "1.9.16",
-    "seroval": "1.6.7"
+    "babel-preset-solid": "1.9.19",
+    "seroval": "1.8.1"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.14.5",
-    "@types/bun": "1.4.2",
-    "elysia": "1.4.31",
+    "@types/bun": "1.4.4",
+    "elysia": "1.4.32",
     "file-type": "21.3.4",
     "happy-dom": "20.14.5",
-    "hono": "4.13.17",
-    "solid-js": "1.9.18",
+    "hono": "4.13.18",
+    "solid-js": "1.9.19",
     "typescript": "7.0.2"
   },
   "license": "MIT",
