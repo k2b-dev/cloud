@@ -102,5 +102,5 @@ test.each(["en", "de"])("%s activity distinguishes people, services and automati
   expect(html).toContain("Import service");
   expect(html).not.toContain("Agent oder Dienstkonto:");
   expect(html).not.toContain("Agent or service account:");
-  expect(html).toContain(locale === "de" ? "automatisch" : "automatic");
+  expect(html).toContain(locale === "de" ? "Automatisch" : "Automatic");
 });

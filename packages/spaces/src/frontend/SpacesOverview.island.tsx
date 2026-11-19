@@ -240,7 +240,7 @@ export default function SpacesOverview(props: Props) {
 
   const activityHref = (entry: ActivityItem) =>
     entry.item ? `/app/spaces/${entry.space.id}?item=${entry.item.id}` : `/app/spaces/${entry.space.id}`;
-  // The sentence links to the Space or item; the actor and avatar start the sentence, "automatic" for the system.
+  // The sentence links to the Space or item; the actor and avatar start the sentence, "Automatic" for the system.
   const activityEntries = (): ActivityEntry[] =>
     activityItems().map(
       (entry): ActivityEntry => ({

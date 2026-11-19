@@ -45,7 +45,7 @@ const entry: ActivityEntry = {
   `system` shows a neutral gear for automatic events; `deleted` shows a neutral
   person-off glyph for deleted people. Without
   `avatar`, string actors get initials and JSX actors keep a neutral glyph. Without an actor, the row reads
-  "automatic" with a neutral system avatar. Within the last week the time
+  "Automatic" with a neutral system avatar. Within the last week the time
   names the hour alone, before that the day and hour.
 - **Surface:** timeline avatars align with the surrounding section title. The list
   overhangs the content edge by the row's 0.75rem padding on both sides. Feed

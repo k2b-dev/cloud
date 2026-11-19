@@ -88,8 +88,8 @@ test("renders the timeline with dashed dividers, avatars, time labels, and a bun
   expect(plain).toContain("Heute");
   expect(plain).toContain("Di., 10. Nov.");
   expect(plain).toContain("Vor über einer Woche");
-  // Meta: time · distance · person, "automatisch" without a person; older entries with day and time.
-  expect(plain).toContain("automatisch · Einladung unzustellbar");
+  // Meta: time · distance · person, "Automatisch" without a person; older entries with day and time.
+  expect(plain).toContain("Automatisch · Einladung unzustellbar");
   expect(html).toContain("vor 8 Std.");
   expect(html).not.toContain(" title=");
   expect(html).toContain("k2b-activity__avatar");

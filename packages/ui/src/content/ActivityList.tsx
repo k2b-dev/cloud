@@ -68,7 +68,7 @@ export type ActivityEntry = {
   bundle?: { key: string; text: (count: number, all: readonly ActivityEntry[]) => JSX.Element } | null;
   /** Only a result, the reason of a failure, a quote, or "before → now" (`ActivityList.Change`). */
   detail?: JSX.Element;
-  /** Who did it, shown before the sentence; without one the row reads "automatic". */
+  /** Who did it, shown before the sentence; without one the row reads "Automatic". */
   actor?: JSX.Element | null;
   avatar?: ActivityAvatar;
   action?: ActivityAction | null;
