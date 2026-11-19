@@ -580,6 +580,13 @@
   font-size: 1.25rem;
 }
 
+/* The viewer loads on demand: the tapped tile turns its type glyph into a spinner in the same box until it opens. */
+@media (prefers-reduced-motion: no-preference) {
+  .k2b-ui .mail-attachment-tile__open[aria-busy="true"] .mail-attachment-tile__icon i {
+    animation: k2b-spin var(--k2b-motion-spin) linear infinite;
+  }
+}
+
 .k2b-ui .mail-attachment-tile__text {
   display: flex;
   min-width: 0;

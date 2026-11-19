@@ -1,7 +1,7 @@
 import type { MailSearchExpression, MailSearchField } from "../../contracts";
 import { type MailFolderNamed, mailFolderNames } from "../../folder-names";
 import { type MailFolderTreeEntry, mailFolderPaths } from "../../folder-tree";
-import { mailRemainingMessages } from "./mail-remaining-messages";
+import { mailMailboxViewMessages } from "./mail-mailbox-view-messages";
 
 export type MailSearchNodePath = readonly number[];
 
@@ -235,7 +235,7 @@ export const summarizeMailSearchExpression = (
   locale = typeof document === "undefined" ? "en" : document.documentElement.lang,
   references: MailSearchSummaryReferences = {},
 ): string => {
-  const messages = mailRemainingMessages.resolve([locale]).t;
+  const messages = mailMailboxViewMessages.resolve([locale]).t;
   const folderPaths = references.folders ? mailFolderPaths(references.folders, mailFolderNames(locale)) : null;
   const tagNames = references.tags ? new Map(references.tags.map((tag) => [tag.id, tag.name])) : null;
   const summarize = (node: MailSearchExpression): string => {

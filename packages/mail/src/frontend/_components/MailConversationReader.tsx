@@ -11,7 +11,6 @@ import {
   ContextMenu,
   type DropdownAction,
   type DropdownItem,
-  Lightbox,
   NoticeCard,
   Placeholder,
   prefersReducedMotion,
@@ -44,11 +43,10 @@ import type { ConversationReminder } from "../../service/reminders";
 import type { MailDetailErrors, MailWorkspaceMessage } from "../../service/workspace";
 import { automationLogHref } from "../automation-log-href";
 import { readApiError } from "./api-response";
-import { openMailActivityDialog } from "./MailActivityDialog";
 import MailAutomationTrace from "./MailAutomationTrace";
 import MailConversationNote from "./MailConversationNote";
 import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
-import { attachmentLightboxItem } from "./MailMessageAttachments";
+import { AttachmentLightbox, attachmentLightboxItem, loadAttachmentLightbox } from "./MailMessageAttachments";
 import MailMessageCard from "./MailMessageCard";
 import MailReaderHead, { type MailReaderHint } from "./MailReaderHead";
 import MailReplyBox, { type MailReplyBoxApi } from "./MailReplyBox";
@@ -67,6 +65,7 @@ import { describeUnavailableMailDetails } from "./mail-detail-availability";
 import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
+import { quoteOriginalOf } from "./mail-quote-original";
 import { mailReaderMessages } from "./mail-reader-messages";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
 import { mailSummaryMessages } from "./mail-summary-messages";
@@ -296,9 +295,16 @@ export default function MailConversationReader(props: {
       ),
     ),
   );
+  const attachmentIndex = (messageId: string, attachmentId: string) =>
+    conversationAttachments().findIndex((entry) => entry.messageId === messageId && entry.attachment.id === attachmentId);
   const openAttachment = (messageId: string, attachmentId: string) => {
-    const index = conversationAttachments().findIndex((entry) => entry.messageId === messageId && entry.attachment.id === attachmentId);
-    if (index >= 0) setShownAttachment(index);
+    if (attachmentIndex(messageId, attachmentId) < 0) return Promise.resolve();
+    const selection = props.selectionKey;
+    return loadAttachmentLightbox().then((loaded) => {
+      // The viewer may arrive after the reader moved to another conversation: open only the attachment asked for.
+      const index = attachmentIndex(messageId, attachmentId);
+      if (loaded && selection === props.selectionKey && index >= 0) setShownAttachment(index);
+    });
   };
   const [messageSelections, setMessageSelections] = createSignal<Record<string, string>>({});
   const [pendingNewMessages, setPendingNewMessages] = createSignal(0);
@@ -1026,8 +1032,8 @@ export default function MailConversationReader(props: {
           })),
         ]
       : [];
-  const showActivity = () =>
-    void openMailActivityDialog({
+  const showActivity = async () =>
+    void (await importOnDemand(() => import("./MailActivityDialog")))?.openMailActivityDialog({
       activity: props.activity,
       unavailable: Boolean(props.detailErrors.activity),
       onRetry: () => void props.onReconcile(),
@@ -1237,12 +1243,10 @@ export default function MailConversationReader(props: {
           calendarIntegrationAvailable={props.calendarIntegrationAvailable}
           liveDictation={props.liveDictation ?? false}
           returnHref={props.requestUrl}
-          messageLabel={(messageId) => {
+          messageSource={(messageId) => {
             const message = props.messages.find((candidate) => candidate.id === messageId);
-            if (!message) return null;
-            const sender = message.from[0];
-            const name = sender?.name || sender?.address || "";
-            return `${name}, ${dates.formatDateTimeRelative(message.internalDate, props.dateConfig)}`;
+            // A message whose text has not arrived yet is loaded by the composer, so the card never shows it empty.
+            return message && message.hydrationStatus === "complete" ? quoteOriginalOf(message, props.dateConfig) : null;
           }}
           createNote={notes.create}
           onReconcile={props.onReconcileAfterWrite}
@@ -1523,7 +1527,7 @@ export default function MailConversationReader(props: {
             </Show>
           </div>
           <Show when={shownAttachment() !== null && lightboxItems().length > 0}>
-            <Lightbox
+            <AttachmentLightbox
               items={lightboxItems()}
               index={shownAttachment() ?? 0}
               onIndexChange={setShownAttachment}
