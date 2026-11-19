@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
-import { splitTopLevel } from "../styles/css-contract-test-helpers";
+import { cssDeclarations, readShippedCssRules, splitTopLevel } from "../styles/css-contract-test-helpers";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-surfaces-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -113,6 +113,22 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     const terminal = renderToString(() => createComponent(NoticeRow, { children: "Done.", reserve: false }));
     expect(terminal).not.toContain("data-reserve");
     expect(terminal).not.toContain("k2b-notice-card__actions");
+  });
+
+  test("a final NoticeRow with controls has no empty phone spacer, while transitions retain their reserve", () => {
+    const html = renderToString(() =>
+      createComponent(NoticeRow, { children: "Saved.", detail: "Version 2", reserve: false, actions: "Open" }),
+    );
+    expect(html).toContain('data-actions=""');
+    expect(html).not.toContain("data-reserve");
+    const rules = readShippedCssRules(stylesDir).filter((rule) => rule.context === "@container (max-width: 35rem)");
+    const declaration = (selector: string, property: string) =>
+      rules.filter((rule) => rule.selector === selector).flatMap((rule) => cssDeclarations(rule.body).get(property) ?? []);
+    const row = ".k2b-ui .k2b-notice-card[data-row][data-detail]";
+    expect(declaration(`${row}[data-actions]:not([data-reserve])`, "grid-template-rows")).toEqual(["auto auto auto"]);
+    expect(declaration(`${row}:not([data-reserve]) .k2b-notice-card__actions`, "grid-row")).toEqual(["3"]);
+    expect(declaration(row, "grid-template-rows")).toEqual(["auto auto minmax(.5rem, 1fr) auto"]);
+    expect(declaration(`${row} .k2b-notice-card__actions`, "grid-row")).toEqual(["4"]);
   });
 
   test("NoticeRow icon=true resolves each tone icon and inherits its screen-reader language", () => {

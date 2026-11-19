@@ -115,7 +115,8 @@ text. Below 35 rem of the row's own container, text wraps to at most two lines a
 height derives from two title lines, two quiet lines, the control height and
 spacing. Actions sit at the bottom with a buffer above them. Keep `reserve` enabled
 through loading and retry. A final receipt can set it to `false`, also with
-stable controls when it was already final at the first render. A row that
+stable controls when it was already final at the first render. Its controls
+follow the quiet line directly, without an empty spacer track. A row that
 becomes final in view keeps its reserve. For feedback that needs two quiet lines reserved on phones, pass
 `detailLines={2}`. The default reserves one line.
 

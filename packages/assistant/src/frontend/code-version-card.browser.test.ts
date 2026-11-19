@@ -353,11 +353,13 @@ describe("v10 approval card in Chromium", () => {
             const card = document.querySelector<HTMLElement>(".assistant-code-version-host .cloud-approval-frame")!;
             const box = card.getBoundingClientRect();
             const action = card.querySelector("[data-code-version-primary]")!.getBoundingClientRect();
+            const style = getComputedStyle(card);
             return {
               receipt: card.closest(".assistant-code-version-host")!.hasAttribute("data-receipt"),
               height: Math.round(box.height),
               below: Math.round(box.bottom - action.bottom),
-              padding: Math.round(Number.parseFloat(getComputedStyle(card).paddingBottom)),
+              padding: Math.round(Number.parseFloat(style.paddingBottom)),
+              tracks: style.gridTemplateRows.split(" ").length,
             };
           });
         const first = await measure();
@@ -366,6 +368,21 @@ describe("v10 approval card in Chromium", () => {
           // Only the card's own padding is left under "Zu Version 2"; live cards keep the shared row reserve.
           expect(first.below).toBeLessThanOrEqual(first.padding + 1);
           expect(first.height).toBeLessThan(168 - 40);
+          expect(first.tracks).toBe(3);
+          // Measure the previous four-track form in the same page, without a second build or browser run. Its
+          // transition-only 8px track and extra 2px gap were still present even though reserve was false.
+          const withSpacer = await h.page.evaluate(() => {
+            const card = document.querySelector<HTMLElement>(".assistant-code-version-host .cloud-approval-frame")!;
+            const actions = card.querySelector<HTMLElement>(".k2b-notice-card__actions")!;
+            card.style.gridTemplateRows = "auto auto minmax(.5rem, 1fr) auto";
+            actions.style.gridRow = "4";
+            const height = Math.round(card.getBoundingClientRect().height);
+            card.style.removeProperty("grid-template-rows");
+            actions.style.removeProperty("grid-row");
+            return height;
+          });
+          expect(withSpacer - first.height).toBe(10);
+          console.info(`Replaced receipt at ${width}px: four tracks ${withSpacer}px; reserve=false ${first.height}px`);
         } else expect(first.height).toBe(64);
         // The interaction controller replaces the server card without changing it.
         await h.page.waitForTimeout(300);
