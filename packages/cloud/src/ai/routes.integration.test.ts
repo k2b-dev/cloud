@@ -868,15 +868,18 @@ suite("global AI conversation boundaries", () => {
         },
       }),
     );
-    // A person's retry keeps writer, receipt and restriction, and becomes person-triggered.
+    // A person's retry keeps writer, receipt and restriction, and becomes person-triggered. An edited retry is the
+    // person's own message: the store writes the person as its writer, the receipt stays.
+    const automationWriter = { kind: "automation" as const, id: "c_report", runId: "run", resource: { type: "core.code", id: "c_report" } };
     const retained = {
-      writerOrigin: { kind: "person" as const, id: userId },
+      writerOrigin: edited ? { kind: "person" as const, id: userId } : automationWriter,
       turnTrigger: { kind: "automation" as const, id: "c_report" },
       send: { id: "11111111-1111-4111-8111-111111111112", accountId: userId, keyHash: "a".repeat(64), requestHash: "b".repeat(64) },
       sourceRestricted: true as const,
     };
     const provenance = {
       ...retained,
+      writerOrigin: automationWriter,
       codeOrigin: { codeId: "c_report", runId: "run", title: "Report", requestId: "request", label: "Started by Code Report" },
     };
     const selectedSkills = [{ name: "invoice", directory: "/original/.agents/skills/invoice", instructions: "Original selection." }];
@@ -911,7 +914,10 @@ suite("global AI conversation boundaries", () => {
       });
       expect(response.status).toBe(201);
       expect(submit).toHaveBeenCalledTimes(1);
-      expect(submit.mock.calls[0]?.[0]).toMatchObject({ ...retained, turnTrigger: { kind: "person", id: userId } });
+      const { writerOrigin: _stored, ...submitted } = retained;
+      expect(submit.mock.calls[0]?.[0]).toMatchObject({ ...submitted, turnTrigger: { kind: "person", id: userId } });
+      // The route hands on the original writer only to a plain retry; for an edit, the store names the person.
+      expect(submit.mock.calls[0]?.[0].writerOrigin).toEqual(edited ? undefined : automationWriter);
       expect(submit.mock.calls[0]?.[0].codeOrigin).toBeUndefined();
       const active = await aiConversations.getActiveTurn({ conversationId: chat.id });
       expect(active).not.toBeNull();

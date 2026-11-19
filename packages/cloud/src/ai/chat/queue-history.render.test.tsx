@@ -147,3 +147,43 @@ test("only the person's own message offers Edit and send again; one an automatio
     expect(foreign).not.toContain("ti-pencil");
   }
 });
+
+test("the source chip names when the message came, in the request's time zone, quietly after the source", () => {
+  const withZone = (timeZone: string | undefined) =>
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AiChatActionsProvider, {
+            actions: {},
+            get children() {
+              const timeline = createAiChatTimeline({
+                messages: () => [
+                  message(1, "user", "Briefing für Montag", {
+                    meta: { origin: { kind: "automation", id: "c_brief1", name: "Morgenbriefing", href: "/app/assistant/code/c_brief1" } },
+                    createdAt: "2026-11-09T06:00:00.000Z",
+                  }),
+                  message(2, "user", "Danke", { meta: { origin: { kind: "person", id: "u1", name: "Lena Vogt" } } }),
+                ],
+                activeTurn: () => null,
+                ...(timeZone ? { timeZone } : {}),
+              });
+              return createComponent(Chat.Timeline, {
+                get items() {
+                  return timeline();
+                },
+              });
+            },
+          });
+        },
+      }),
+    );
+  const [automation = "", own = ""] = articles(withZone("Europe/Berlin"));
+  // 06:00 UTC is 07:00 in Berlin; the server and the browser both use the request's zone, so both write the same time.
+  expect(automation).toContain('<time datetime="2026-11-09T06:00:00.000Z">07:00</time>');
+  expect(automation).toMatch(/<\/a><span class="ai-message-source__time"><span aria-hidden="true">·<\/span><time/);
+  expect(articles(withZone("America/New_York"))[0]).toContain(">01:00</time>");
+  // The person's own message has no chip, so no time either; without a known zone the chip names no time at all.
+  expect(own).not.toContain("ai-message-source__time");
+  expect(articles(withZone(undefined))[0]).not.toContain("ai-message-source__time");
+});
