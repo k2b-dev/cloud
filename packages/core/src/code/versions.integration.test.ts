@@ -207,8 +207,8 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await migratePolicy();
     await migrateApprovals();
     await migrateVersions();
-    // C5's NOWAIT population lock also conflicts with VACUUM/ANALYZE. Keep
-    // automatic maintenance out of this private fixture; test conflicts explicitly below.
+    // C5's population lock conflicts with VACUUM/ANALYZE. Keep automatic maintenance
+    // out of this private fixture; test conflicts explicitly below.
     await sql`ALTER TABLE auth.users SET (autovacuum_enabled=false)`;
     await sql`ALTER TABLE settings.entries SET (autovacuum_enabled=false)`;
     await sql`ALTER TABLE auth.ipa_user_effective_groups SET (autovacuum_enabled=false)`;
@@ -1249,6 +1249,89 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await expect(decideCodeVersion(next.binding, { outcome: "approved" }, signed)).rejects.toMatchObject({ code: "SELF_APPROVAL" });
     expect((await approvals.get(submission.approvalId!))?.soleAdmin).toBe(true);
   });
+  for (const conflict of ["analyze", "settings_writer"] as const) {
+    test(`sole-admin decision waits for ${conflict} with a bounded refusal`, async () => {
+      await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;
+      const code = await newCode();
+      const submission = await submitCodeVersion(input(code, "lock contention"), author);
+      const signIn = await createTestBrowserSignIn(authorId);
+      const signed: CodeContext = {
+        ...author,
+        authority: {
+          ...author.authority,
+          credentialProof: { kind: "session", userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+        },
+      };
+      const ready = Promise.withResolvers<{ pid: number; deadlockMs: number }>();
+      const release = Promise.withResolvers<void>();
+      const holder = sql.begin(async (tx) => {
+        // Explicit ANALYZE runs even when a fixture disables automatic maintenance.
+        if (conflict === "analyze") await tx`ANALYZE auth.users`;
+        else await tx`UPDATE settings.entries SET value=value WHERE key='freeipa.groups.admin'`;
+        const [backend] = await tx<{ pid: number; deadlockMs: number }[]>`SELECT pg_backend_pid() AS pid,
+          extract(epoch FROM current_setting('deadlock_timeout')::interval)::float8 * 1000 AS "deadlockMs"`;
+        ready.resolve(backend!);
+        await release.promise;
+      });
+      try {
+        const { pid, deadlockMs } = await Promise.race([
+          ready.promise,
+          holder.then(() => {
+            throw new Error("Holder never acquired its lock");
+          }),
+        ]);
+        const started = performance.now();
+        let finished = false;
+        const attempt = decideCodeVersion(submission.binding, { outcome: "approved" }, signed)
+          .then(
+            (value) => ({ value, error: null }),
+            (error: unknown) => ({ value: null, error }),
+          )
+          .finally(() => {
+            finished = true;
+          });
+        if (conflict === "analyze") {
+          expect(
+            await sql`SELECT mode FROM pg_locks WHERE pid=${pid}
+            AND relation='auth.users'::regclass AND granted AND mode='ShareUpdateExclusiveLock'`,
+          ).toHaveLength(1);
+          // Poll until the decision queues or finishes; submissionFor does not consume a polling cap.
+          // Retain ANALYZE past deadlock_timeout so a sub-second lock timeout cannot pass.
+          let waiting = false;
+          while (!finished) {
+            const locks = await sql`SELECT 1 FROM pg_locks WHERE relation='auth.users'::regclass
+              AND mode='ShareRowExclusiveLock' AND NOT granted`;
+            if (locks.length) {
+              waiting = true;
+              break;
+            }
+            await Bun.sleep(10);
+          }
+          if (waiting) await Bun.sleep(deadlockMs + 200);
+          release.resolve();
+          const result = await attempt;
+          expect(waiting).toBe(true);
+          expect(result.error).toBeNull();
+          expect(result.value?.decision).toMatchObject({ approved: true, soleAdmin: true });
+        } else {
+          const result = await attempt;
+          expect(performance.now() - started).toBeLessThan(3000);
+          expect(result.error).toMatchObject({ code: "BUSY" });
+          expect(await approvals.get(submission.approvalId!)).toMatchObject({ status: "pending" });
+          expect(await sql`SELECT version_id FROM code.version_decisions WHERE version_id=${submission.version.id}::uuid`).toHaveLength(0);
+          release.resolve();
+          await holder;
+          expect((await decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).decision).toMatchObject({
+            approved: true,
+            soleAdmin: true,
+          });
+        }
+      } finally {
+        release.resolve();
+        await holder;
+      }
+    });
+  }
   for (const end of ["commit", "rollback"] as const) {
     test(`sole-admin decisions recover after database maintenance ends by ${end}`, async () => {
       await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;

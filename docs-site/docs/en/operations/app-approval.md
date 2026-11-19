@@ -997,7 +997,15 @@ Review and demote or expire unused ordinary admin accounts when the installation
 no longer needs them; an unused active human admin still prevents self-approval.
 
 Self-approval can return `BUSY` (HTTP 503) during a running FreeIPA sync because
-the NOWAIT population lock includes `auth.user_ipa_data`; retry after the sync finishes.
+the population lock includes `auth.user_ipa_data`; retry after the sync finishes.
+Acquiring all four population table locks has one two-second statement deadline;
+conflicting author row locks refuse immediately, and lock timeout, statement
+cancellation, or a deadlock returns `BUSY` without saving a decision. Both local
+timeouts are restored afterward. Normal autovacuum can be cancelled after
+`deadlock_timeout` (one second by default). Anti-wraparound autovacuum and manual
+`VACUUM`/`ANALYZE` are not cancelled and still cause `BUSY` if they remain active
+through the deadline; an operator `statement_timeout` of about one second or
+less prevents the wait needed for normal autovacuum cancellation.
 
 The emergency admin still receives submitted-version and page-report notifications
 and may read Code decision events; locked FreeIPA accounts are excluded from
