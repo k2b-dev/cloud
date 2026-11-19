@@ -3718,7 +3718,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(await rows(page).count()).toBe(11);
             expect(await rows(page).locator(".k2b-activity__entry").count()).toBe(11);
             expect(await rows(page).locator("[title]").count()).toBe(0);
-            expect(await page.locator("[data-mail-events-person].k2b-filter-chip").count()).toBe(1);
+            expect(await page.locator(".mail-events__person.k2b-filter-chip").count()).toBe(1);
             const filterLooks = await page.locator("[data-mail-events-filters] .k2b-filter-chip").evaluateAll((chips) =>
               chips.map((chip) => {
                 const style = getComputedStyle(chip);
@@ -3810,14 +3810,14 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             await page.waitForURL(new URL(english, server.url).href);
             await settled(page);
             expect(await rows(page).count()).toBe(11);
-            await page.locator("[data-mail-events-person]").click();
+            await page.locator(".mail-events__person").click();
             const person = page.waitForResponse((response) => response.url().includes("/workspace-"));
             await page.getByRole("option", { name: "Mira Schulz", exact: true }).click();
             await person;
             await page.waitForURL(/eventActor=/);
             await page.reload();
             await ready(page);
-            expect(await page.locator("[data-mail-events-person]").textContent()).toContain("Mira Schulz");
+            expect(await page.locator(".mail-events__person").textContent()).toContain("Mira Schulz");
             expect(await rows(page).count()).toBeGreaterThan(0);
             expect(await filters.boundingBox()).toEqual(frame);
             expect(await page.locator(".mail-events__feed").boundingBox()).toEqual(feedFrame);

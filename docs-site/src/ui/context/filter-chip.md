@@ -56,6 +56,7 @@ Changes are emitted immediately. This makes the component suitable for URL-backe
 | `showValue` | `boolean` | `false` | An active chip names its first value instead of a count ("Tags: Customer"). Use it in `AppWorkspace.Head`. |
 | `only` | `boolean` | `false` | Each option of a `multiple` section offers **Only** at the end of its row. |
 | `swatches` | `boolean` | `false` | The trigger shows the colors of the first four chosen options in the place of its icon. |
+| `search` | `{ label: string; placeholder?: string }` | none | Puts a search field above the options, for a long list such as people; `label` names the field. |
 
 ## Sections and options
 
@@ -92,6 +93,13 @@ options keep the choice quick:
 With `swatches`, the trigger shows the colors of the first four chosen options
 in the place of its icon, as a quiet hint of what is in view; the label still
 names the filter, so color is never the only signal.
+
+For a list long enough that finding an option takes reading, such as the
+people in a history, pass `search={{ label: "Find person" }}`: a field above
+the options filters them by label, and focus starts in it. `label` names the
+field and is its placeholder unless `placeholder` is set. **Only** and **All**
+stay out of a searchable menu, because its field keeps the focus. Use it with
+`showValue` so the chosen person stays named on the chip.
 
 Use section labels when the dropdown combines different filter dimensions. Icons suit single-select status choices. Colors can identify tags or categories. A row section suits a short display choice that belongs with the filters, such as what a color shows, without a control of its own in the toolbar.
 

@@ -2,7 +2,6 @@ import type { DateContext } from "@k2b/stdlib";
 import {
   ActivityList,
   Button,
-  Dropdown,
   FilterChip,
   FilterToggle,
   Placeholder,
@@ -205,14 +204,17 @@ export function MailEventsFeed(props: {
       automation: t().kindAutomation,
     })[kind];
   const people = () => props.page?.people ?? [];
-  const actorName = () => {
+  // The chosen person keeps a name in the chip even when this page lists no event of theirs.
+  const personOptions = () => {
+    const options = people().map((person) => ({
+      value: person.id,
+      label: person.id === props.currentUserId ? `${person.displayName} (${t().you})` : person.displayName,
+      icon: person.type === "service_account" ? "ti ti-robot" : "ti ti-user",
+    }));
     const actorId = props.filter.actorId;
-    if (!actorId) return null;
-    return (
-      people().find((person) => person.id === actorId)?.displayName ??
-      pages()?.items.find((item) => item.actor.id === actorId)?.actor.displayName ??
-      t().person
-    );
+    if (!actorId || options.some((option) => option.value === actorId)) return options;
+    const label = pages()?.items.find((item) => item.actor.id === actorId)?.actor.displayName ?? t().person;
+    return [...options, { value: actorId, label, icon: "ti ti-user" }];
   };
 
   const open = (event: MouseEvent, row: PresentedMailEvent) => {
@@ -275,41 +277,16 @@ export function MailEventsFeed(props: {
             setFilter({ kind: isMailActivityKind(kind) ? kind : null });
           }}
         />
-        <Dropdown.Root
-          position="bottom-left"
-          width="18rem"
+        <FilterChip
           label={t().person}
+          icon="ti ti-user"
+          class="mail-events__person"
+          showValue
           search={{ label: t().findPerson }}
-          items={[
-            {
-              label: t().anyPerson,
-              icon: "ti ti-users",
-              choice: "radio" as const,
-              checked: props.filter.actorId === null,
-              action: () => setFilter({ actorId: null }),
-            },
-            ...people().map((person) => ({
-              label: person.id === props.currentUserId ? `${person.displayName} (${t().you})` : person.displayName,
-              icon: person.type === "service_account" ? "ti ti-robot" : "ti ti-user",
-              choice: "radio" as const,
-              checked: props.filter.actorId === person.id,
-              action: () => setFilter({ actorId: person.id }),
-            })),
-          ]}
-        >
-          <Dropdown.Trigger
-            appearance="plain"
-            class="k2b-filter-chip"
-            data-state={props.filter.actorId ? "active" : "idle"}
-            data-active={props.filter.actorId ? "true" : undefined}
-            label={actorName() ? t().personValue({ name: actorName()! }) : t().person}
-            data-mail-events-person
-          >
-            <i class="ti ti-user" aria-hidden="true" />
-            <span class="k2b-filter-chip__label">{actorName() ? t().personValue({ name: actorName()! }) : t().person}</span>
-            <i class="ti ti-chevron-down k2b-filter-chip__chevron" aria-hidden="true" />
-          </Dropdown.Trigger>
-        </Dropdown.Root>
+          options={[{ options: personOptions() }]}
+          value={props.filter.actorId ? [props.filter.actorId] : []}
+          onValueChange={(value) => setFilter({ actorId: value.at(-1) ?? null })}
+        />
         <FilterToggle
           label={t().concernsMe}
           icon="ti ti-at"
