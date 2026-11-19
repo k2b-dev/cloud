@@ -176,7 +176,7 @@ test("the owner reads the description of personal Code that writes to its own ch
   const dynamic = {
     ...names,
     target: (ref: { type: string; id: string | null }) =>
-      ref.id === null ? { name: "ein Chat", readable: false, unavailable: true } : names.target(ref),
+      ref.id === null ? { name: "ein Chat", readable: false, unavailable: true } : { name: "Space Logistik", readable: true },
   };
   const owner = present({
     personal: true,
