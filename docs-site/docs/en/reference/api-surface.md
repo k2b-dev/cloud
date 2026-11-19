@@ -587,6 +587,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/cli/account` | Platform-owned | Built-in account commands | — |
 | `@k2b/cloud/cli/apps` | Platform-owned | Built-in application commands | — |
 | `@k2b/cloud/cli/admin` | Platform-owned | Built-in administration commands | — |
+| `@k2b/cloud/contracts/code-runs` | Supported, browser and server | Browser-safe run-entry input and snapshot schemas | [Run entries](/en/docs/platform/code-runs#read-one-run-and-its-entries) |
 | `@k2b/cloud/contracts/notifications` | Supported | Browser-safe notification contracts | [Notifications](/en/docs/platform/notifications) |
 | `@k2b/cloud/contracts/geo-snapshot` | Supported, browser and server | Validate map snapshot manifests and image bounds | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/contracts/*` | Advanced | Named contract modules; prefer the barrel | — |
