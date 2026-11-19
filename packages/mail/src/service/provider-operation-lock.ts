@@ -432,8 +432,8 @@ let probeLeaseUntil = 0;
  * line takes it once no other mailbox's probe holds this process's probe. With `park`, a waiter
  * that finds the lease held parks instead of asking again: it keeps its place and priority, and
  * the release that makes it next in line wakes it (`onParkedProviderWaiterWake`). It does not park
- * while the breaker is open or this process's probe is taken, because no release ends those
- * waits. Release the lease with
+ * while the breaker is open or remembers a window, because then a probe or a closing breaker may
+ * end its wait, not a release. Release the lease with
  * `releaseProviderLease`, passing `next` when the job continues with another turn so it lines up
  * before letting go. The line, its last turn, and the breaker are ephemeral Valkey state: losing
  * them only loses the order and the pause, never the lease. With `keepPlace`, the waiter stays in
