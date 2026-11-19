@@ -56,7 +56,7 @@ const waitFor = async (condition: () => boolean, timeoutMs = 2_000) => {
     if (condition()) return;
     await Bun.sleep(10);
   }
-  throw new Error("Condition did not settle");
+  throw new Error(`Condition did not settle: ${condition}`);
 };
 
 const mount = (
@@ -456,22 +456,22 @@ test("twenty approvals plus a newer Code version remain reachable with the sideb
   expect(h.strip()!.querySelector(".assistant-waiting__more")?.getAttribute("aria-label")).toContain("21");
   sidebarRow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
   const cards = () => h.root.querySelectorAll(".assistant-waiting-page article.cloud-approval");
-  const more = () =>
-    [...h.root.querySelectorAll<HTMLButtonElement>(".assistant-waiting-page button")].find(
-      (button) => button.textContent === "Mehr laden" || button.textContent === "Erneut versuchen",
-    );
-  await waitFor(() => cards().length === 20 && more() !== undefined);
+  const more = () => h.root.querySelector<HTMLButtonElement>(".assistant-waiting-page > div.assistant-waiting-page__section > button");
+  await waitFor(() => cards().length === 20 && more() !== null);
   const first = cards()[0];
   expect(h.root.querySelector('[data-kind="code_activate"]')).toBeNull();
   more()!.click();
-  await waitFor(() => h.root.querySelector(".assistant-waiting-page [role='alert']") !== null);
+  // Other sections can already contain alerts; wait for this page's continuation to fail before retrying it.
+  await waitFor(() => Boolean(more()?.parentElement?.querySelector("[role='alert']")));
   expect(cards()[0]).toBe(first);
+  expect(more()!.textContent).toBe("Erneut versuchen");
+  expect(more()!.disabled).toBe(false);
   server.pageFails = false;
   more()!.click();
   await waitFor(() => h.root.querySelector('[data-kind="code_activate"]') !== null);
   expect(cards()[0]).toBe(first);
   expect(cards().length + h.root.querySelectorAll('[data-kind="code_activate"]').length).toBe(Number(counter()));
   expect(h.root.querySelector('[data-kind="code_activate"]')!.textContent).toContain("Version 2 einschalten");
-  expect(more()).toBeUndefined();
+  expect(more()).toBeNull();
   expect(h.root.querySelector(".assistant-waiting-page [aria-busy='true']")).toBeNull();
 });
