@@ -45,6 +45,8 @@ const words = i18n.define({
       timeWrong: "Enter a time such as 16:00.",
       noteWrong: "Write what Gustav should do then.",
       notSaved: ({ when }: { when: string }) => `Not saved. The alarm stays at ${when}.`,
+      changedMeanwhile: ({ when }: { when: string }) => `Not saved: the alarm was changed meanwhile and stays at ${when}.`,
+      reload: "Reload",
       delete: "Delete",
       cancel: "Cancel",
       save: "Save",
@@ -84,6 +86,8 @@ const words = i18n.define({
       timeWrong: "Gib eine Uhrzeit wie 16:00 ein.",
       noteWrong: "Schreib, was Gustav dann tun soll.",
       notSaved: ({ when }: { when: string }) => `Nicht gespeichert. Der Wecker bleibt bei ${when}.`,
+      changedMeanwhile: ({ when }: { when: string }) => `Nicht gespeichert: Der Wecker wurde inzwischen geändert und bleibt bei ${when}.`,
+      reload: "Neu laden",
       delete: "Löschen",
       cancel: "Abbrechen",
       save: "Speichern",
@@ -109,13 +113,21 @@ const DAY_MS = 86_400_000;
 const client = api.create<AiRoutes>({ baseUrl: "/api/ai" });
 const route = client.conversations[":conversationId"].wakeups;
 /** Cloud refused a change and said why in the person's language, such as a stale revision or the limit of five. */
-class WakeupRefused extends Error {}
+class WakeupRefused extends Error {
+  constructor(
+    message: string,
+    readonly code: string | null,
+  ) {
+    super(message);
+  }
+}
 const refused = async (response: Pick<Response, "json">): Promise<never> => {
   const body: unknown = await response.json().catch(() => null);
-  throw body && typeof body === "object" && "message" in body && typeof body.message === "string"
-    ? new WakeupRefused(body.message)
-    : new Error();
+  if (!body || typeof body !== "object" || !("message" in body) || typeof body.message !== "string") throw new Error();
+  throw new WakeupRefused(body.message, "code" in body && typeof body.code === "string" ? body.code : null);
 };
+/** Someone or something else changed the alarm meanwhile: the dialog reads it again before it saves. */
+const stale = (error: unknown) => error instanceof WakeupRefused && error.code === "wakeup_conflict";
 /** Cloud's sentence for a refusal; any other failure gets the chat's own words, never a technical message. */
 const reason = (error: unknown) => (error instanceof WakeupRefused ? error.message : null);
 const wakeupApi = {
@@ -227,7 +239,12 @@ const cronOf = (repeat: Repeat, date: string, time: string): string | null => {
 };
 
 /** "Change alarm": a small dialog on a computer, a sheet on a phone. Nothing applies before "Save". */
-function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; close: () => void; guard: (handler: () => void) => void }) {
+export function WakeupDialog(props: {
+  ctx: AssistantWakeupContext;
+  wakeup: AiWakeup;
+  close: () => void;
+  guard: (handler: () => void) => void;
+}) {
   const t = () => copy(props.ctx);
   // The alarm's own time zone: its rhythm and its times keep their meaning, whoever looks at them.
   const zone = props.wakeup.timezone;
@@ -261,7 +278,21 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
   const [noteWrong, setNoteWrong] = createSignal(false);
   const [past, setPast] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
-  const [failed, setFailed] = createSignal<string | null>(null);
+  /** Why the last save failed: Cloud's reason, or a change made meanwhile, which a reload settles. */
+  const [failed, setFailed] = createSignal<{ reason: string; stale: boolean } | null>(null);
+  const [reloading, setReloading] = createSignal(false);
+  /** Reads the alarm again and keeps every entry: the next save uses its new revision. */
+  const reload = async () => {
+    setReloading(true);
+    try {
+      await props.ctx.refresh();
+      setFailed(null);
+    } catch {
+      // The reason stays; "Reload" can be pressed again.
+    } finally {
+      setReloading(false);
+    }
+  };
   let timeField: HTMLDivElement | undefined;
   props.guard(() => {
     if (!busy()) props.close();
@@ -349,9 +380,7 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
       void props.ctx.refresh().catch(() => undefined);
       props.close();
     } catch (error) {
-      setFailed(reason(error) ?? "");
-      // A change elsewhere moved the revision on: the next try uses the newest one.
-      void props.ctx.refresh().catch(() => undefined);
+      setFailed({ reason: stale(error) ? "" : (reason(error) ?? ""), stale: stale(error) });
     } finally {
       setBusy(false);
     }
@@ -430,7 +459,9 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
             <p class="assistant-wakeup-dialog__error" role="alert">
               <i class="ti ti-alert-circle" aria-hidden="true" />
               <span>
-                {t().notSaved({ when: aiWakeupWhen(props.wakeup, { locale, timeZone: zone, lower: true }) })} {failed()}
+                {failed()?.stale
+                  ? t().changedMeanwhile({ when: aiWakeupWhen(latest(), { locale, timeZone: zone, lower: true }) })
+                  : `${t().notSaved({ when: aiWakeupWhen(latest(), { locale, timeZone: zone, lower: true }) })} ${failed()?.reason ?? ""}`}
               </span>
             </p>
           }
@@ -467,9 +498,18 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
           <Button variant="ghost" disabled={busy()} onClick={() => props.close()}>
             {t().cancel}
           </Button>
-          <Button type="submit" variant="primary" disabled={busy()} loading={busy()}>
-            {busy() ? t().saving : failed() === null ? t().save : t().retry}
-          </Button>
+          <Show
+            when={failed()?.stale}
+            fallback={
+              <Button type="submit" variant="primary" disabled={busy()} loading={busy()}>
+                {busy() ? t().saving : failed() === null ? t().save : t().retry}
+              </Button>
+            }
+          >
+            <Button type="button" variant="primary" disabled={reloading()} loading={reloading()} onClick={() => void reload()}>
+              {t().reload}
+            </Button>
+          </Show>
         </footer>
       </form>
     </LocaleProvider>
