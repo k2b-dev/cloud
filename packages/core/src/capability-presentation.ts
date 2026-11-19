@@ -421,7 +421,14 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.open_questions": {
           title: "Wartet auf dich lesen",
           description: "Liest deine offenen Fragen und nächsten Schritte zu Code mit aktuellen Rechten.",
-          input: { timeZone: "Zeitzone für angezeigte Daten.", kind: "Nur diese Art, in derselben Seitengröße." },
+          input: {
+            timeZone: "Zeitzone für angezeigte Daten.",
+            kind: "Nur diese Art, in derselben Seitengröße.",
+            cursor: "Seiten-Cursor aus nextCursor; unverändert übernehmen und denselben Art-Filter beibehalten.",
+            "cursor.createdAt": "Erstellungszeit des letzten Eintrags; UTC-Zeitpunkt mit Millisekundengenauigkeit aus nextCursor.",
+            "cursor.id":
+              "ID des letzten Eintrags; unverändert aus nextCursor übernehmen, ordnet gleiche Erstellungszeiten; höchstens 100 Zeichen.",
+          },
         },
         "ai.chat.read": {
           title: "KI-Chat lesen",

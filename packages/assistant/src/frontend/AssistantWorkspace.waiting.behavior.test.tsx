@@ -1,7 +1,8 @@
 import { afterEach, expect, mock, setSystemTime, test } from "bun:test";
 import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiTurnSnapshot } from "@k2b/cloud/ai";
 import type { LiveSubscriptionHandlers } from "@k2b/cloud/browser/live";
-import type { PendingApproval } from "@k2b/cloud/contracts/approvals";
+import { APPROVALS_PAGE_SIZE, type PendingApproval } from "@k2b/cloud/contracts/approvals";
+import { type AiOpenQuestionsCursor, aiOpenQuestionsPage, compareAiOpenQuestions } from "@k2b/cloud/contracts/open-questions";
 import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
@@ -56,11 +57,19 @@ const waitFor = async (condition: () => boolean, timeoutMs = 2_000) => {
     if (condition()) return;
     await Bun.sleep(10);
   }
-  throw new Error("Condition did not settle");
+  throw new Error(`Condition did not settle: ${condition}`);
 };
 
 const mount = (
-  server: { conversations: AiConversation[]; questions: AiOpenQuestions; approvals?: PendingApproval[] },
+  server: {
+    conversations: AiConversation[];
+    questions: AiOpenQuestions;
+    approvals?: PendingApproval[];
+    nextQuestions?: AiOpenQuestions;
+    allQuestions?: AiOpenQuestion[];
+    beforeQuestionPage?: () => Promise<void>;
+    pageFails?: boolean;
+  },
   here: AiConversation,
   activeTurn: AiTurnSnapshot | null = null,
 ) => {
@@ -74,9 +83,10 @@ const mount = (
   dom.document.body.append(shell);
   const sidebarLoads: string[] = [];
   let approvalLoads = 0;
+  const questionPageLoads: AiOpenQuestionsCursor[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(
-    async (input: RequestInfo | URL) => {
+    async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), "http://localhost");
       if (url.pathname === "/api/assistant/workspace/sidebar") {
         sidebarLoads.push(url.pathname);
@@ -85,14 +95,35 @@ const mount = (
       if (url.pathname === "/api/approvals") {
         approvalLoads++;
         const items = server.approvals ?? [];
-        return Response.json({ items, nextCursor: null, count: items.length, elsewhere: 0 });
+        const cursor = url.searchParams.get("cursor");
+        const offset = cursor ? items.findIndex((item) => item.id === cursor) + 1 : 0;
+        const page = items.slice(offset, offset + APPROVALS_PAGE_SIZE);
+        return Response.json({
+          items: page,
+          nextCursor: offset + page.length < items.length ? page.at(-1)!.id : null,
+          count: items.length,
+          elsewhere: 0,
+        });
       }
       if (/^\/api\/approvals\/[^/]+\/decision$/.test(url.pathname)) return Response.json({ status: "rejected" });
       // Core's open questions of one kind, the read the page's "Automations" section makes.
-      if (url.pathname === "/api/capabilities/v1/queries/core/ai.open_questions")
+      if (url.pathname === "/api/capabilities/v1/queries/core/ai.open_questions") {
+        const body = JSON.parse(String(init?.body)) as { input: { cursor?: AiOpenQuestionsCursor } };
+        if (body.input.cursor) {
+          questionPageLoads.push(body.input.cursor);
+          await server.beforeQuestionPage?.();
+          if (server.allQuestions) {
+            return Response.json({ data: questionPage(server.allQuestions, body.input.cursor) });
+          }
+          expect(body.input.cursor).toEqual(server.questions.nextCursor!);
+          return server.pageFails
+            ? Response.json({ message: "unavailable" }, { status: 503 })
+            : Response.json({ data: server.nextQuestions });
+        }
         return Response.json({
           data: { count: 0, items: server.questions.items.filter((question) => question.kind === "code_attention") },
         });
+      }
       if (url.pathname.endsWith("/stream")) return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
       return Response.json({ message: "unavailable" }, { status: 503 });
     },
@@ -169,6 +200,7 @@ const mount = (
     changed,
     sidebarLoads,
     approvalLoads: () => approvalLoads,
+    questionPageLoads,
     strip: () => dom.root.querySelector("nav.assistant-waiting"),
   };
 };
@@ -418,4 +450,204 @@ test("an approval decided on the page keeps its receipt; a new one elsewhere app
   await waitFor(() => cards().some((entry) => entry.textContent?.includes("Angebot 2")));
   expect(h.approvalLoads()).toBe(loads + 1);
   expect(h.root.querySelector(".assistant-waiting-page [aria-busy='true']")).toBeNull();
+});
+
+test("twenty approvals plus a newer Code version remain reachable with the sidebar count, including paging retry", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const approvals = Array.from({ length: 20 }, (_, index) =>
+    mailApproval(`00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, String(index)),
+  );
+  const last = approvals.at(-1)!.question;
+  const version = { ...codeEntries().activate, createdAt: "2026-11-20T12:00:00.000Z" };
+  const server = {
+    conversations: [here],
+    questions: { items: approvals.map((item) => item.question), count: 21, nextCursor: { createdAt: last.createdAt, id: last.id } },
+    approvals: approvals.map((item) => item.request),
+    nextQuestions: { count: 21, items: [version] },
+    pageFails: true,
+  };
+  const h = mount(server, here);
+  await waitFor(() => subscriptions.length > 0);
+  const sidebarRow = h.root.querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!;
+  const counter = () => sidebarRow.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent;
+  expect(counter()).toBe("21");
+  expect(h.strip()!.querySelector(".assistant-waiting__more")?.getAttribute("aria-label")).toContain("21");
+  sidebarRow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  const cards = () => h.root.querySelectorAll(".assistant-waiting-page article.cloud-approval");
+  const more = () => h.root.querySelector<HTMLButtonElement>(".assistant-waiting-page > .cloud-approvals__more > button");
+  await waitFor(() => cards().length === 20 && more() !== null);
+  const first = cards()[0];
+  expect(h.root.querySelector('[data-kind="code_activate"]')).toBeNull();
+  more()!.click();
+  // Other sections can already contain alerts; wait for this page's continuation to fail before retrying it.
+  await waitFor(() => Boolean(more()?.parentElement?.querySelector("[role='alert']")));
+  expect(cards()[0]).toBe(first);
+  expect(more()!.textContent).toBe("Erneut versuchen");
+  expect(more()!.disabled).toBe(false);
+  server.pageFails = false;
+  more()!.click();
+  await waitFor(() => h.root.querySelector('[data-kind="code_activate"]') !== null);
+  expect(cards()[0]).toBe(first);
+  expect(cards().length + h.root.querySelectorAll('[data-kind="code_activate"]').length).toBe(Number(counter()));
+  expect(h.root.querySelector('[data-kind="code_activate"]')!.textContent).toContain("Version 2 einschalten");
+  expect(more()).toBeNull();
+  expect(h.root.querySelector(".assistant-waiting-page [aria-busy='true']")).toBeNull();
+});
+
+const questionPage = (items: AiOpenQuestion[], cursor?: AiOpenQuestionsCursor) =>
+  aiOpenQuestionsPage(
+    items.filter((item) => !cursor || compareAiOpenQuestions(item, cursor) > 0),
+    items.length,
+  );
+
+const manyWaitingQuestions = () => {
+  const approvals = Array.from({ length: 45 }, (_, index) =>
+    mailApproval(`00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, String(index)),
+  );
+  const version = { ...codeEntries().activate, createdAt: "2026-11-20T12:00:00.000Z" };
+  const allQuestions = [...approvals.map((item) => item.question), version];
+  return { approvals, version, allQuestions };
+};
+
+const openWaitingPage = async (h: ReturnType<typeof mount>) => {
+  await waitFor(() => subscriptions.length > 0);
+  h.root
+    .querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!
+    .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  await waitFor(() => h.root.querySelector(".assistant-waiting-page article.cloud-approval") !== null);
+};
+const waitingMore = (h: ReturnType<typeof mount>) =>
+  h.root.querySelector<HTMLButtonElement>(".assistant-waiting-page > .cloud-approvals__more > button");
+
+test("one click crosses approval-only pages to reach a version beyond forty approvals and focuses its action", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const { approvals, version, allQuestions } = manyWaitingQuestions();
+  const server = {
+    conversations: [here],
+    questions: questionPage(allQuestions),
+    allQuestions,
+    approvals: approvals.map((item) => item.request),
+  };
+  const h = mount(server, here);
+  await openWaitingPage(h);
+  const more = waitingMore(h)!;
+  expect(more.dataset.size).toBe("sm");
+  expect(more.dataset.variant).toBe("link");
+  expect(more.querySelector(".ti-chevron-down")).not.toBeNull();
+  more.focus();
+  more.click();
+  await waitFor(() => h.root.querySelector('[data-kind="code_activate"]') !== null);
+  expect(h.questionPageLoads.map((cursor) => cursor.id)).toEqual([approvals[19]!.question.id, approvals[39]!.question.id]);
+  expect(h.root.querySelector('[data-kind="code_activate"]')!.textContent).toContain(version.short);
+  expect(waitingMore(h)).toBeNull();
+  const action = h.root.querySelector('[data-kind="code_activate"] button');
+  expect(h.document.activeElement).toBe(action);
+  expect(h.root.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent).toBe("46");
+});
+
+test("a live snapshot keeps loaded versions in place while reconciling overlaps and resolved entries", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const { approvals, version, allQuestions } = manyWaitingQuestions();
+  const server: Parameters<typeof mount>[0] = {
+    conversations: [here],
+    questions: questionPage(allQuestions),
+    allQuestions,
+    approvals: approvals.map((item) => item.request),
+  };
+  const h = mount(server, here);
+  await openWaitingPage(h);
+  waitingMore(h)!.click();
+  await waitFor(() => h.root.querySelector('[data-kind="code_activate"]') !== null);
+  const row = h.root.querySelector('[data-kind="code_activate"]')!;
+  const action = row.querySelector<HTMLButtonElement>("button")!;
+  action.focus();
+  let release = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  server.beforeQuestionPage = () => pending;
+  // A request on page one is answered: the next request moves into that page, while the version remains on page three.
+  server.allQuestions = allQuestions.slice(1);
+  server.approvals = server.approvals!.slice(1);
+  server.questions = questionPage(server.allQuestions);
+  await h.changed("Wart42");
+  await waitFor(() => h.questionPageLoads.length === 3);
+  expect(h.root.querySelector('[data-kind="code_activate"]') === row).toBe(true);
+  expect(h.document.activeElement).toBe(action);
+  release();
+  await waitFor(() => h.questionPageLoads.length === 4);
+  await waitFor(() => h.root.querySelector(".assistant-waiting-page [aria-busy='true']") === null);
+  expect(h.root.querySelector('[data-kind="code_activate"]') === row).toBe(true);
+  expect(h.document.activeElement).toBe(action);
+  expect(waitingMore(h)).toBeNull();
+  expect(h.root.querySelectorAll(`[data-waiting-question="${version.id}"]`)).toHaveLength(1);
+
+  // Completing that version elsewhere removes it only after the new read covers its former position.
+  server.beforeQuestionPage = undefined;
+  server.allQuestions = server.allQuestions.filter((item) => item.id !== version.id);
+  server.questions = questionPage(server.allQuestions);
+  await h.changed("Wart42");
+  await waitFor(() => h.root.querySelector('[data-kind="code_activate"]') === null);
+  expect(h.questionPageLoads).toHaveLength(6);
+  expect(h.root.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent).toBe("44");
+});
+
+test("a failed live reconciliation keeps loaded rows and offers retry even after the terminal page", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const { approvals, allQuestions } = manyWaitingQuestions();
+  let fail = false;
+  const server = {
+    conversations: [here],
+    questions: questionPage(allQuestions),
+    allQuestions,
+    approvals: approvals.map((item) => item.request),
+    beforeQuestionPage: async () => {
+      if (fail) throw new Error("Fixture offline");
+    },
+  };
+  const h = mount(server, here);
+  await openWaitingPage(h);
+  waitingMore(h)!.click();
+  await waitFor(() => h.root.querySelector('[data-kind="code_activate"]') !== null);
+  const row = h.root.querySelector('[data-kind="code_activate"]');
+  fail = true;
+  await h.changed("Wart42");
+  await waitFor(() => Boolean(waitingMore(h)?.parentElement?.querySelector(".cloud-approvals__more-error")));
+  expect(h.root.querySelector('[data-kind="code_activate"]') === row).toBe(true);
+  const retry = waitingMore(h)!;
+  expect(retry.disabled).toBe(false);
+  expect(retry.textContent).toBe("Erneut versuchen");
+  fail = false;
+  retry.click();
+  await waitFor(() => waitingMore(h) === null);
+  expect(h.root.querySelector('[data-kind="code_activate"]') === row).toBe(true);
+  expect(h.questionPageLoads).toHaveLength(5);
+});
+
+test("a loaded version moving onto the first page keeps one row and its focus", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const { approvals, version, allQuestions } = manyWaitingQuestions();
+  const server = {
+    conversations: [here],
+    questions: questionPage(allQuestions),
+    allQuestions,
+    approvals: approvals.map((item) => item.request),
+  };
+  const h = mount(server, here);
+  await openWaitingPage(h);
+  waitingMore(h)!.click();
+  await waitFor(() => h.root.querySelector('[data-kind="code_activate"]') !== null);
+  const row = h.root.querySelector('[data-kind="code_activate"]');
+  const action = row!.querySelector<HTMLButtonElement>("button")!;
+  action.focus();
+  server.allQuestions = [version];
+  server.questions = questionPage(server.allQuestions);
+  server.approvals = [];
+  await h.changed("Wart42");
+  await waitFor(() => h.root.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent === "1");
+  expect(h.root.querySelectorAll('[data-kind="code_activate"]')).toHaveLength(1);
+  expect(h.root.querySelector('[data-kind="code_activate"]') === row).toBe(true);
+  expect(h.document.activeElement).toBe(action);
+  expect(waitingMore(h)).toBeNull();
+  expect(h.questionPageLoads).toHaveLength(2);
 });
