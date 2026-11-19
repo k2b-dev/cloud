@@ -730,21 +730,24 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean; ke
       icon="ti ti-alert-circle"
       layout="card"
       class="ai-turn__notice"
-      title={t().turnInterrupted({ reason: t().turnErrorReason(props.error) })}
-      detail={props.kept ? t().keptSoFar : undefined}
+      title={t().turnErrorTitle}
+      detail={[t().turnErrorReason(props.error), props.kept ? t().keptSoFar : ""].filter(Boolean).join(" ")}
       actions={
-        <Show when={canContinue()}>
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={continuing()}
-            disabled={actions.actionDisabled?.()}
-            onClick={() => void continueTurn()}
-          >
-            <i class="ti ti-player-play" aria-hidden="true" />
-            {t().continueTurn}
-          </Button>
-        </Show>
+        <>
+          {actions.renderTurnErrorAction?.(props.error)}
+          <Show when={canContinue()}>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={continuing()}
+              disabled={actions.actionDisabled?.()}
+              onClick={() => void continueTurn()}
+            >
+              <i class="ti ti-player-play" aria-hidden="true" />
+              {t().continueTurn}
+            </Button>
+          </Show>
+        </>
       }
     />
   );

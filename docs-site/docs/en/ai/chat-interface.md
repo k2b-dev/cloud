@@ -600,7 +600,8 @@ the reading width.
 ### Failed turns
 
 A failed turn keeps its results and receipts in place and ends with a danger
-notice: "The answer was interrupted." and the reason in the reader's language,
+notice with the short title "The answer was interrupted." and the reason in
+the description, in the reader's language,
 such as "The model service did not answer. The results so far are kept." The
 reason comes from `meta.turnError` on the turn's last message, see
 [Failed turns](/en/docs/ai/chat-runtime-and-streaming#failed-turns); the
@@ -611,6 +612,12 @@ from another chat.
 A turn whose last step failed and that ends without an answer also fails and
 shows this notice.
 Screen readers hear the notice once when the turn they followed fails.
+
+A host can supply `AiChatActions.renderTurnErrorAction(error)` for a remedy
+specific to its own failure. Resolve its visibility from the current viewer's
+permissions. Assistant links Core's unpriced-model rejection to **Model
+management** for administrators only; other viewers receive the explanatory
+text without a link. The remedy loads when a failed turn needs it.
 
 When the failed turn is the chat's newest, no turn runs, and a new turn can
 finish the work, the notice offers **Continue**. Supply
