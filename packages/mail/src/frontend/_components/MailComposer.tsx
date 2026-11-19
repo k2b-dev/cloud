@@ -1133,11 +1133,14 @@ export default function MailComposer(props: {
   let lifecycleClosed = false;
   createEffect(() => {
     const transition = lifecycleTransition();
-    if (!transition || !closesOnLifecycle(transition) || ownSendCloses() || sharedState()?.recoveryDraft || lifecycleClosed) return;
+    if (!transition || sentHere() || !closesOnLifecycle(transition) || ownSendCloses() || sharedState()?.recoveryDraft || lifecycleClosed)
+      return;
     // Once: later state changes of the closed draft (its frozen text, the server's comparison) say nothing new.
     lifecycleClosed = true;
     untrack(() => {
       const current = transition.draft;
+      // A send of this composer failed, then the close came: the send went out after all.
+      if (leaveAsOwnSend(current)) return;
       const name = current.lastEditedByDisplayName;
       const lt = t();
       const [title, message] =
@@ -1159,6 +1162,37 @@ export default function MailComposer(props: {
     });
   });
   let lastDeliveryAttempt: PreparedDelivery | null = null;
+  /**
+   * The draft closed after a send of this composer failed or lost its answer, and this person closed it: that send
+   * went out. The composer leaves with the delivery toast, without Undo for want of its id, never with a toast that
+   * the person "started sending".
+   */
+  const leaveAsOwnSend = (closed: MailDraft): boolean => {
+    const attempt = lastDeliveryAttempt;
+    const editor = closed.lastEditedBy;
+    if (
+      !attempt ||
+      closed.state === "discarded" ||
+      editor.kind !== "user" ||
+      props.currentActor.kind !== "user" ||
+      editor.userId !== props.currentActor.id
+    )
+      return false;
+    lastDeliveryAttempt = null;
+    lifecycleClosed = true;
+    setSentHere(true);
+    dismissSendFailure();
+    setSendFailure(null);
+    const delivery = {
+      submissionId: null,
+      scheduledAt: closed.state === "scheduled" ? (attempt.scheduledAt ?? null) : null,
+      undoSeconds: attempt.request.undoSeconds,
+    };
+    if (props.host?.delivered) props.host.delivered(delivery);
+    else showDeliveryToast(delivery, { locale: locale(), dateConfig: props.dateConfig });
+    leaveBack("sent");
+    return true;
+  };
   /** The send that runs or failed last, so Try again repeats it, scheduled time included. */
   let currentDelivery: { scheduledAt?: string } = {};
   /**
@@ -1231,6 +1265,7 @@ export default function MailComposer(props: {
     },
     onSuccess: ({ command, attempt }) => {
       // The draft's close is this send: its live lifecycle needs no second word.
+      lifecycleClosed = true;
       setSentHere(true);
       lastDeliveryAttempt = null;
       setSendFailure(null);
@@ -1275,22 +1310,7 @@ export default function MailComposer(props: {
       // speaks for itself through the lifecycle, so no failure toast stands beside it.
       const closed = untrack(lifecycleTransition)?.draft;
       if (closed) {
-        const editor = closed.lastEditedBy;
-        const attempt = lastDeliveryAttempt;
-        if (
-          attempt &&
-          closed.state !== "discarded" &&
-          editor.kind === "user" &&
-          props.currentActor.kind === "user" &&
-          editor.userId === props.currentActor.id
-        ) {
-          setSentHere(true);
-          lastDeliveryAttempt = null;
-          const delivery = { submissionId: null, scheduledAt: attempt.scheduledAt ?? null, undoSeconds: attempt.request.undoSeconds };
-          if (props.host?.delivered) props.host.delivered(delivery);
-          else showDeliveryToast(delivery, { locale: locale(), dateConfig: props.dateConfig });
-          leaveBack("sent");
-        }
+        leaveAsOwnSend(closed);
         return;
       }
       const delivery = currentDelivery;

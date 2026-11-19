@@ -422,7 +422,8 @@ describe("MailComposer in a floating window", () => {
    * runs, so the close always arrives before the command's answer. Returns what the composer showed meanwhile.
    */
   const sendSharedClosedLive = async (options: {
-    command?: "ok" | "lost";
+    /** `failedFirst`: the command answers with an error, and the close arrives after that answer. */
+    command?: "ok" | "lost" | "failedFirst";
     closedBy?: "me" | "peer";
     rest?: "unchanged" | "failed";
     typeDuringSend?: boolean;
@@ -471,9 +472,15 @@ describe("MailComposer in a floating window", () => {
           const view = EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
           view.dispatch({ changes: { from: view.state.doc.length, insert: " P.S. Bring the invoice." }, userEvent: "input.type" });
         }
-        // The server closes the draft's generation and tells every open copy before the command answers.
+        const close = () =>
+          socket.message({ type: "error", payload: { code: "GENERATION_CLOSED", message: "Draft sent", docId: "Draft1", reopen: true } });
         sent = true;
-        socket.message({ type: "error", payload: { code: "GENERATION_CLOSED", message: "Draft sent", docId: "Draft1", reopen: true } });
+        if (options.command === "failedFirst") {
+          setTimeout(close, 40);
+          return Response.json({ code: "SEND_FAILED", message: "The connection broke." }, { status: 503 });
+        }
+        // The server closes the draft's generation and tells every open copy before the command answers.
+        close();
         await Bun.sleep(60);
         if (options.command === "lost" || options.closedBy === "peer") throw new TypeError("Failed to fetch");
         return serve(input, init);
@@ -504,7 +511,10 @@ describe("MailComposer in a floating window", () => {
       sendButton()!.click();
       await waitFor(() => leaves.length > 0 || (options.rest === "failed" && visible().length > 0));
       await Bun.sleep(150);
-      const toasts = [...dom.document.querySelectorAll(".k2b-toast")].map((toast) => toast.textContent?.trim() ?? "");
+      // A dismissed toast leaves with its exit motion; only toasts still standing count.
+      const toasts = [...dom.document.querySelectorAll<HTMLElement>(".k2b-toast")]
+        .filter((toast) => !toast.closest("[data-closing]"))
+        .map((toast) => toast.textContent?.trim() ?? "");
       return { seen: [...seen], now: visible(), toasts };
     } finally {
       observer.disconnect();
@@ -529,6 +539,14 @@ describe("MailComposer in a floating window", () => {
     expect(leaves).toEqual(["sent"]);
     expect(delivered).toEqual([{ submissionId: null, scheduledAt: null, undoSeconds: expect.any(Number) }]);
     expect(shown.seen).toEqual([]);
+    expect(shown.toasts.join(" ")).not.toContain("started sending");
+    expect(shown.toasts.join(" ")).not.toContain("Not sent");
+  });
+
+  test("an own send whose error answer came before the live close leaves with the delivery toast too", async () => {
+    const shown = await sendSharedClosedLive({ command: "failedFirst" });
+    expect(leaves).toEqual(["sent"]);
+    expect(delivered).toEqual([{ submissionId: null, scheduledAt: null, undoSeconds: expect.any(Number) }]);
     expect(shown.toasts.join(" ")).not.toContain("started sending");
     expect(shown.toasts.join(" ")).not.toContain("Not sent");
   });
