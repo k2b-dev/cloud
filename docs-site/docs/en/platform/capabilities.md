@@ -1106,6 +1106,11 @@ workspace; this list does not replace shared provider role contracts:
 
 All four declare `code: false`. The check exempts only those named fields on
 those operations; another ID field or removal of `code: false` fails it.
+
+`core.ai.chat.create` is also untargeted: its optional `project.id` selects
+readable context for a new personal chat and does not mutate the Project.
+Personal Code may use it. The check exempts only this field on this operation;
+another ID field still requires a target.
 The retired `code.access.` namespace remains reserved and unavailable to Code,
 including when an old catalog still advertises it.
 Shared provider contracts continue to use their published shapes. Do not
