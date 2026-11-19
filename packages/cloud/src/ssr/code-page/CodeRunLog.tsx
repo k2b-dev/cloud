@@ -21,6 +21,7 @@ const messages = i18n.define({
       retry: "Try again",
       reload: "Reload",
       hidden: "Only people who manage this Code can see its output.",
+      empty: "No output",
       lost: ({ count }: { count: number }) => `${count} output entries could not be retained.`,
       ended: "Run ended before this step finished.",
       skipped: "Run skipped",
@@ -33,6 +34,7 @@ const messages = i18n.define({
       retry: "Erneut versuchen",
       reload: "Neu laden",
       hidden: "Nur wer diesen Code verwaltet, sieht seine Ausgabe.",
+      empty: "Keine Ausgabe",
       lost: ({ count }: { count: number }) => `${count} Ausgabeeinträge konnten nicht aufbewahrt werden.`,
       ended: "Der Lauf endete, bevor dieser Schritt fertig war.",
       skipped: "Lauf übersprungen",
@@ -162,8 +164,10 @@ export function CodeRunLog(props: {
     ]
       .filter(Boolean)
       .join(" · ");
-  const output = createMemo(() => (props.manager && connection() !== "revoked" ? ("open" as const) : ("hidden" as const)));
-  const entries = (): RunEntry[] => (snapshot().output ? codeRunLogEntries(snapshot().output!, locale()) : []);
+  const entries = createMemo(() => (snapshot().output ? codeRunLogEntries(snapshot().output!, locale()) : []));
+  // RunLog also prints a started step as an output marker, even without log messages.
+  const hasOutput = () => entries().some((entry) => entry.kind === "log" || !!entry.startedAt);
+  const output = createMemo(() => (props.manager && connection() !== "revoked" && hasOutput() ? ("open" as const) : ("hidden" as const)));
   const actions = (): readonly RunLogAction[] => [
     ...(connection() === "unavailable" ? [{ icon: "ti ti-refresh", label: t().retry, onClick: connect }] : []),
     ...(connection() === "revoked" ? [{ icon: "ti ti-refresh", label: t().reload, onClick: () => window.location.reload() }] : []),
@@ -190,6 +194,11 @@ export function CodeRunLog(props: {
         />
       </Show>
       <Show when={connection() !== "revoked"}>
+        <Show when={props.manager && snapshot().state !== "skipped" && !hasOutput()}>
+          <Quiet icon="ti ti-notes" class="cloud-code__run-empty">
+            {t().empty}
+          </Quiet>
+        </Show>
         <Show when={!props.manager}>
           <Quiet icon="ti ti-lock" class="cloud-code__run-access">
             {t().hidden}
