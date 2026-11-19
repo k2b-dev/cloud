@@ -120,7 +120,6 @@ for (const width of [390, 1440])
       const page = await context.newPage();
       page.setDefaultTimeout(5000);
       const errors = pageErrors(page);
-      page.on("pageerror", (error) => console.error("Completion workspace failed:", error.message));
       const unknown: string[] = [];
       let completed = false;
       let draft: unknown[] = [];
@@ -228,7 +227,7 @@ for (const width of [390, 1440])
           };
           return route.fulfill({
             contentType: "text/html",
-            body: `<!doctype html><html lang="de" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;width:100%;height:100dvh"></div><script>window.harness=${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script src="/harness.js"></script></body></html>`,
+            body: `<!doctype html><html lang="de" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;width:100%;height:100dvh"></div><script>window.harness=${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script type="module" src="/harness.js"></script></body></html>`,
           });
         }
         if (path === "/api/assistant/workspace/sidebar")
@@ -308,6 +307,9 @@ for (const width of [390, 1440])
         await page.getByRole("link", { name: "Ergebnis ansehen" }).waitFor();
         expect(unknown).toEqual([]);
         expect(errors).toEqual([]);
+      } catch (error) {
+        console.error("Completion workspace errors:", errors);
+        throw error;
       } finally {
         await context.close();
       }
