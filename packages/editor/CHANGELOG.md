@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.12.0...npm-editor-v0.12.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **mail:** reduce date formatting work when changing folders ([#3672](https://github.com/k2b-dev/cloud/issues/3672)) ([c1a9b3e](https://github.com/k2b-dev/cloud/commit/c1a9b3e62d276c9aa2eeaa029627f2fb017fef87))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.60.0 to 0.61.0
+
 ## [0.12.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.11.6...npm-editor-v0.12.0) (2026-11-17)
 
 
