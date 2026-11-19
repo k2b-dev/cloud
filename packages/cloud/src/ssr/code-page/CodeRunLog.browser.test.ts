@@ -241,6 +241,28 @@ for (const theme of ["light", "dark"] as const)
           expect(await bounds(page)).toEqual(readerBounds);
           expect(await page.getByText("Lauf übersprungen", { exact: true }).count()).toBe(0);
         }
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+    test(`${theme} ${width}: empty output stays quiet and run rows stay compact`, async () => {
+      const context = await browser.newContext({
+        viewport: { width, height: width === 390 ? 780 : 900 },
+        reducedMotion: "reduce",
+        colorScheme: theme,
+        timezoneId: "America/New_York",
+      });
+      const page = await context.newPage();
+      const errors = pageErrors(page);
+      await page.addInitScript((at) => {
+        const RealDate = Date;
+        globalThis.Date = new Proxy(RealDate, {
+          construct: (target, args) => Reflect.construct(target, args.length ? args : [at]),
+          get: (target, key, receiver) => (key === "now" ? () => at : Reflect.get(target, key, receiver)),
+        });
+      }, Date.parse(RUN_LEDGER_NOW));
+      try {
         await page.goto(`${origin}/?theme=${theme}&empty=1`);
         await page.getByText("Keine Ausgabe", { exact: true }).waitFor();
         expect(await page.locator(".k2b-run-log__output-toggle").count()).toBe(0);
