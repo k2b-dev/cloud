@@ -12,6 +12,7 @@ export type FolderSyncTrigger =
   | "mailbox"
   | "continuation"
   | "busy"
+  | "woken"
   | "rate_limited";
 
 /**

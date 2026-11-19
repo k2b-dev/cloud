@@ -67,15 +67,18 @@ import {
   acquireProviderLease,
   MAIL_PROVIDER_JOB_CONCURRENCY,
   mailProviderOperationMutex,
+  onParkedProviderWaiterWake,
   type ProviderLeasePriority,
   providerBreakerOpenForMs,
   providerBusyRetryAfterMs,
   providerLeaseWaitedFor,
   providerLeaseWaitedForByOtherWork,
   providerLeaseWaiterCount,
+  providerLeaseWaiterWoken,
   recordProviderFailure,
   recordProviderReachable,
   releaseProviderLease,
+  wakeParkedProviderWaiter,
 } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
@@ -2679,7 +2682,7 @@ export const syncFolderBatch = async (
   folderId: string,
   jobHeartbeat: () => Promise<void>,
   priority: ProviderLeasePriority = "sync",
-  options: { remoteResourceId?: string } = {},
+  options: { remoteResourceId?: string; park?: (left: string | null) => string } = {},
 ): Promise<SyncBatchResult> => {
   // A job that knows its folder's remote mailbox asks for the lease before it reads the folder,
   // so a turn that finds the lease busy costs no database statement. The batch reads the folder
@@ -2694,8 +2697,9 @@ export const syncFolderBatch = async (
     waiter: `sync-folder:${folderId}`,
     priority,
     ttlMs: SYNC_LEASE_MS,
+    ...(options.park ? { park: options.park } : {}),
   });
-  if (!turn.lock) throw leaseUnavailable(turn, "Mail sync resource is busy");
+  if (!turn.lock) throw Object.assign(leaseUnavailable(turn, "Mail sync resource is busy"), { parked: turn.parked, left: turn.left });
   const { lock } = turn;
   await countServedFolderTurn(resource);
   let runId: string | null = null;
@@ -3015,6 +3019,33 @@ const markFolderDegraded = async (folderId: string): Promise<void> => {
  */
 type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string; pushed?: boolean };
 
+/** The input a parked folder job left, or `null` when it is not one. */
+const parkedFolderSyncInput = (left: string | null): SyncFolderJobInput | null => {
+  if (!left) return null;
+  try {
+    const input: unknown = JSON.parse(left);
+    return input && typeof input === "object" && typeof (input as SyncFolderJobInput).folderId === "string"
+      ? (input as SyncFolderJobInput)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Starts a parked folder job again with the input it left. A process that stops queues nothing,
+ * and the waiter parks again until another release or the scheduler wakes it.
+ */
+const wakeParkedFolderSync = async (waiter: string, left: string): Promise<void> => {
+  const input = waiter.startsWith("sync-folder:") ? parkedFolderSyncInput(left) : null;
+  if (!input) return;
+  const submitted = syncTasks.run(() => syncFolderJob().submit({ coalesce: true, key: `folder:${input.folderId}`, input }));
+  if (!submitted) throw new Error("Mail is stopping");
+  // A repeated wake of a job that is already queued or running starts nothing.
+  if (!(await submitted).duplicate) countFolderSyncTrigger("woken");
+};
+onParkedProviderWaiterWake(wakeParkedFolderSync);
+
 const syncFolderJob = lazySync((sync) =>
   sync.job<SyncFolderJobInput>({
     id: "mail:sync-folder",
@@ -3043,7 +3074,21 @@ const runSyncFolderJobOutcome = async (
       backfill = false;
       if ((await redis.send("GETDEL", [pushedSyncKey(folderId)])) != null) pushed = true;
     }
-    const data = await syncFolderBatch(folderId, () => ctx.heartbeat(), pushed ? "command" : backfill ? "background" : "sync", carried);
+    // A job that finds the lease held parks with its input, unless it does not know its remote
+    // mailbox: the release that makes it next in line starts it again (wakeParkedFolderSync).
+    // An input left by an earlier job of the folder that parked joins this one's.
+    const park = carried.remoteResourceId
+      ? (left: string | null): string => {
+          const earlier = parkedFolderSyncInput(left);
+          if (earlier?.pushed) pushed = true;
+          if (earlier && earlier.backfill !== true) backfill = false;
+          return JSON.stringify({ folderId, backfill, ...(pushed ? { pushed } : {}), ...carried } satisfies SyncFolderJobInput);
+        }
+      : undefined;
+    const data = await syncFolderBatch(folderId, () => ctx.heartbeat(), pushed ? "command" : backfill ? "background" : "sync", {
+      ...carried,
+      ...(park ? { park } : {}),
+    });
     countFolderBatch(data.unchanged ? "unchanged" : "committed");
     if (data.hasMore) {
       countFolderSyncTrigger("continuation");
@@ -3055,6 +3100,11 @@ const runSyncFolderJobOutcome = async (
     return data;
   } catch (error) {
     const code = normalizeSyncErrorCode(error);
+    // A turn that did not park may still have taken over what an earlier job of the folder left
+    // when it parked; its push and new-mail check go on with this job.
+    const left = parkedFolderSyncInput((error as { left?: string | null } | null)?.left ?? null);
+    if (left?.pushed) pushed = true;
+    if (left && left.backfill !== true) backfill = false;
     if (code === "MAILBOX_TRANSPORT_CHANGED") {
       countFolderBatch("deferred");
       return { deferred: code };
@@ -3076,11 +3126,15 @@ const runSyncFolderJobOutcome = async (
       if (pushed) ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill, pushed, ...carried } });
       return { deferred: code };
     }
-    // A sibling job holds the remote resource: routine contention, not a failed attempt.
+    // A sibling job holds the remote resource: routine contention, not a failed attempt. A job
+    // that parked ends; a wake that came while it still ran started no new job, so it goes on.
     if (code === "SYNC_BUSY") {
       countFolderBatch("deferred");
       countFolderSyncTrigger("busy");
-      ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill, ...(pushed ? { pushed } : {}), ...carried } });
+      const input = { folderId, backfill, ...(pushed ? { pushed } : {}), ...carried };
+      if (!(error as { parked?: boolean }).parked) ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input });
+      else if (carried.remoteResourceId && (await providerLeaseWaiterWoken(carried.remoteResourceId, `sync-folder:${folderId}`)))
+        ctx.resubmit({ delayMs: 0, input });
       return { deferred: code };
     }
     countFolderBatch("failed");
@@ -3101,10 +3155,13 @@ const runSyncFolderJobOutcome = async (
   }
 };
 
-/** Allows tests to drive the job's failure handling without its tracing wrapper. */
-export const runSyncFolderJob = async (ctx: Pick<JobContext<SyncFolderJobInput>, "input" | "heartbeat" | "resubmit">): Promise<void> => {
-  await runSyncFolderJobOutcome(ctx);
-};
+/**
+ * Allows tests to drive the job's failure handling without its tracing wrapper. A turn that found
+ * the lease busy and asked for no continuation parked (`acquireProviderLease`).
+ */
+export const runSyncFolderJob = (
+  ctx: Pick<JobContext<SyncFolderJobInput>, "input" | "heartbeat" | "resubmit">,
+): Promise<SyncBatchResult | { deferred: string }> => runSyncFolderJobOutcome(ctx);
 /** Classify every counted effect, including draft projections, before suppressing a run span. */
 export const summarizeSyncFolderOutcome = (result: SyncBatchResult | { deferred: string }) => {
   if ("deferred" in result) {
@@ -3738,7 +3795,14 @@ const startRediscoveryJob = async (): Promise<void> => {
 const RECENT_REQUEST_MS = 75_000;
 const recentRequestKey = (folderId: string): string => `mail:sync-recent:${folderId}`;
 
-const submitSyncFolderJob = async (folderId: string, trigger: FolderSyncTrigger, awaited = false, pushed = false): Promise<void> => {
+/** `remoteResourceId`, when the caller knows it, spares a new job its first database read. */
+const submitSyncFolderJob = async (
+  folderId: string,
+  trigger: FolderSyncTrigger,
+  awaited = false,
+  pushed = false,
+  remoteResourceId?: string,
+): Promise<void> => {
   countFolderSyncTrigger(trigger);
   // Recorded even while this process stops and queues nothing: another one's scheduled sync of the
   // folder then records the run the command waits for.
@@ -3747,7 +3811,11 @@ const submitSyncFolderJob = async (folderId: string, trigger: FolderSyncTrigger,
     // Before the request marker, so a job that reads the request also finds the push.
     if (pushed) await redis.send("SET", [pushedSyncKey(folderId), "1", "PX", String(FOLDER_SYNC_REQUEST_MS)]);
     await redis.send("SET", [syncRequestKey(folderId), "1", "PX", String(FOLDER_SYNC_REQUEST_MS)]);
-    await syncFolderJob().submit({ coalesce: true, key: `folder:${folderId}`, input: { folderId } });
+    await syncFolderJob().submit({
+      coalesce: true,
+      key: `folder:${folderId}`,
+      input: { folderId, ...(remoteResourceId ? { remoteResourceId } : {}) },
+    });
     // Only a submitted request stands in for the scheduled sync.
     if (trigger !== "scheduled") await redis.send("SET", [recentRequestKey(folderId), "1", "PX", String(RECENT_REQUEST_MS)]);
   }) ?? Promise.resolve());
@@ -3939,7 +4007,14 @@ export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Pr
   // Likewise only a run that reaches every eligible folder bounds a mailbox: within a page, its
   // turn would keep landing on the same folders.
   const due = folders.length < limit ? await boundDueFolders(reachable) : reachable;
-  for (const folder of due) await submitSyncFolderJob(folder.id, "scheduled");
+  for (const folder of due) await submitSyncFolderJob(folder.id, "scheduled", false, false, folder.remote_resource_id);
+  // A release wakes the parked folder job next in line. One that did not, because its process
+  // stopped or the lease ran out, is woken here: at most one turn per mailbox and run. A mailbox
+  // whose breaker is open is left alone; its jobs would only find the breaker.
+  for (const { remote_resource_id: resource } of await withoutUnreachableResources(
+    [...new Set(folders.map((folder) => folder.remote_resource_id))].map((remote_resource_id) => ({ remote_resource_id })),
+  ))
+    await wakeParkedProviderWaiter(resource);
   return due.map((folder) => folder.id);
 };
 

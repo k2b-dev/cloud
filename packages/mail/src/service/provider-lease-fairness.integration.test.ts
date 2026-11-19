@@ -34,6 +34,7 @@ import {
   MAIL_PROVIDER_JOB_CONCURRENCY,
   MAIL_PROVIDER_OPERATION_LEASE_MS,
   mailProviderOperationMutex,
+  onParkedProviderWaiterWake,
   type ProviderLeasePriority,
   type ProviderLeaseTurn,
   providerBreakerOpenForMs,
@@ -131,9 +132,34 @@ const waitFor = async (ready: () => Promise<boolean>, what: string, timeoutMs = 
 
 type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string; pushed?: boolean };
 
+// A folder job that finds the lease held parks, and a release wakes it by queueing it again. No
+// worker runs folder jobs here: each wake is kept by folder, the last one only, as coalescing
+// keeps one job per folder, and the helpers below run the woken job.
+const wakes = new Map<string, SyncFolderJobInput>();
+const wakeListeners = new Map<string, Array<(input: SyncFolderJobInput) => void>>();
+onParkedProviderWaiterWake(async (waiter, left) => {
+  if (!waiter.startsWith("sync-folder:")) return;
+  const input = JSON.parse(left) as SyncFolderJobInput;
+  const listeners = wakeListeners.get(input.folderId);
+  wakeListeners.delete(input.folderId);
+  if (listeners) for (const listener of listeners) listener(input);
+  else wakes.set(input.folderId, input);
+});
+/** The input of the folder's next wake. */
+const nextWake = (folderId: string): Promise<SyncFolderJobInput> => {
+  const woken = wakes.get(folderId);
+  wakes.delete(folderId);
+  if (woken) return Promise.resolve(woken);
+  return new Promise((resolve) => wakeListeners.set(folderId, [...(wakeListeners.get(folderId) ?? []), resolve]));
+};
+/** Whether a job turn that asked for no continuation parked. */
+const parkedTurn = (result: Awaited<ReturnType<typeof runSyncFolderJob>>, next: unknown): boolean =>
+  next === null && "deferred" in result && result.deferred === "SYNC_BUSY";
+
 /**
  * Runs one `mail:sync-folder` job the way its worker does: a resubmitted job runs again after its
- * delay, until it finishes, or with `oneBatch` until one batch got the provider lease. Returns
+ * delay, and a parked one when a release wakes it, until it finishes, or with `oneBatch` until one
+ * batch got the provider lease. Returns
  * how long that took, recording each attempt's times and outcome when `turns` is passed, and the
  * start of the first turn that got the lease when `timing` is passed.
  */
@@ -154,16 +180,20 @@ const runFolderSyncJob = async (
       },
     };
     const start = Math.round(performance.now() - startedAt);
-    await runSyncFolderJob(ctx);
-    if ((next === null || next === 0) && options.timing && options.timing.firstLeaseTurnMs === undefined) {
+    const parked = parkedTurn(await runSyncFolderJob(ctx), next);
+    if (!parked && (next === null || next === 0) && options.timing && options.timing.firstLeaseTurnMs === undefined) {
       options.timing.firstLeaseTurnMs = start;
     }
     if (options.turns) {
       const end = Math.round(performance.now() - startedAt);
-      const outcome = next === null ? "done" : next === 0 ? "batch" : `busy, again in ${next} ms`;
+      const outcome = parked ? "parked" : next === null ? "done" : next === 0 ? "batch" : `busy, again in ${next} ms`;
       options.turns.push(`${start}-${end} ms ${outcome}`);
     }
     // A batch that ran continues at once; one that found the provider lease busy waits for its turn.
+    if (parked) {
+      input = await nextWake(folderId);
+      continue;
+    }
     if (next === null || (options.oneBatch && next === 0)) return performance.now() - startedAt;
     await Bun.sleep(next);
   }
@@ -189,8 +219,9 @@ const syncFolderWorker = (places = MAIL_PROVIDER_JOB_CONCURRENCY) => {
       }
       const [job] = queue.splice(index, 1);
       let delayMs: number | null = null;
+      let parked = false;
       try {
-        await runSyncFolderJob({
+        const result = await runSyncFolderJob({
           input: job!.input,
           heartbeat: async () => undefined,
           resubmit: (resubmit) => {
@@ -198,10 +229,13 @@ const syncFolderWorker = (places = MAIL_PROVIDER_JOB_CONCURRENCY) => {
             if (resubmit?.input) job!.input = resubmit.input;
           },
         });
+        parked = parkedTurn(result, delayMs);
       } catch {
         delayMs = null;
       }
-      if (delayMs === null) job!.ended();
+      // A parked job is due again once a release wakes it.
+      if (parked) void nextWake(job!.input.folderId).then((input) => queue.push({ ...job!, input, dueAt: performance.now() }));
+      else if (delayMs === null) job!.ended();
       else queue.push({ ...job!, dueAt: performance.now() + delayMs });
     }
   };
@@ -229,7 +263,7 @@ const syncFolderTurn = async (
 ): Promise<{ delayMs: number; input: SyncFolderJobInput } | null> => {
   for (let turn = 0; turn < 50; turn += 1) {
     const turnResult: { next: { delayMs: number; input: SyncFolderJobInput } | null } = { next: null };
-    await runSyncFolderJob({
+    const result = await runSyncFolderJob({
       input,
       heartbeat: async () => undefined,
       resubmit: (resubmit) => {
@@ -237,6 +271,10 @@ const syncFolderTurn = async (
       },
     });
     const { next } = turnResult;
+    if (parkedTurn(result, next)) {
+      input = await nextWake(folderId);
+      continue;
+    }
     // A turn that found the lease busy, for example during body downloads, waits a few seconds.
     if (!next || next.delayMs === 0 || next.delayMs > 10_000) return next;
     await Bun.sleep(next.delayMs);
@@ -2170,17 +2208,17 @@ suite("mail provider lease fairness", () => {
     }
   }, 120_000);
 
-  /** Runs one `mail:sync-folder` job turn and returns the continuation it asked for. */
-  const oneFolderTurn = async (input: SyncFolderJobInput): Promise<SyncFolderJobInput | null> => {
+  /** Runs one `mail:sync-folder` job turn and returns the continuation it asked for, or "parked". */
+  const oneFolderTurn = async (input: SyncFolderJobInput): Promise<SyncFolderJobInput | "parked" | null> => {
     const turnResult: { next: SyncFolderJobInput | null } = { next: null };
-    await runSyncFolderJob({
+    const result = await runSyncFolderJob({
       input,
       heartbeat: async () => undefined,
       resubmit: (resubmit) => {
         turnResult.next = resubmit?.input ?? input;
       },
     });
-    return turnResult.next;
+    return parkedTurn(result, turnResult.next) ? "parked" : turnResult.next;
   };
 
   test("an Inbox sync the server pushed takes the next turn ahead of twenty waiting folder checks, and they go on after it", async () => {
@@ -2197,13 +2235,15 @@ suite("mail provider lease fairness", () => {
     const folderChecks = Array.from({ length: 20 }, (_, index) => `sync-folder:${index}`);
     try {
       for (const waiter of folderChecks) expect((await take(waiter, "sync")).lock).toBeNull();
-      // New mail arrives and IDLE reports it; the Inbox's job asks and finds the lease busy.
+      // New mail arrives and IDLE reports it; the Inbox's job asks, finds the lease held, and parks.
       const [newMail] = deliver(mailbox, 1, "pushed");
       await enqueueFolderSync(inbox, { trigger: "push", pushed: true });
-      const waiting = await oneFolderTurn({ folderId: inbox });
-      expect(waiting).toEqual({ folderId: inbox, backfill: false, pushed: true, remoteResourceId: resource });
+      expect(await oneFolderTurn({ folderId: inbox })).toBe("parked");
 
+      // The holder's release wakes it with what it left, push included.
       await releaseProviderLease(holder.lock);
+      const waiting = await nextWake(inbox);
+      expect(waiting).toEqual({ folderId: inbox, backfill: false, pushed: true, remoteResourceId: resource });
       // Every folder check asks first for the free lease, and none gets it: the pushed sync is next.
       // Before the fix it waited behind all of them, like any folder check.
       for (const waiter of folderChecks) {
@@ -2211,7 +2251,7 @@ suite("mail provider lease fairness", () => {
         if (turn.lock) await releaseProviderLease(turn.lock);
         expect({ waiter, lock: Boolean(turn.lock) }).toEqual({ waiter, lock: false });
       }
-      expect(await oneFolderTurn(waiting!)).toBeNull();
+      expect(await oneFolderTurn(waiting)).toBeNull();
       expect(await imported(mailbox, newMail!)).toBe(true);
       // The folder checks go on in their order right after it.
       const next = await take(folderChecks[0]!, "sync");
@@ -2252,14 +2292,16 @@ suite("mail provider lease fairness", () => {
         };
       };
       await enqueueFolderSync(inbox, { trigger: "push", pushed: true });
-      let inboxJob = await oneFolderTurn({ folderId: inbox });
+      expect(await oneFolderTurn({ folderId: inbox })).toBe("parked");
       await releaseProviderLease(holder.lock);
+      let inboxJob: SyncFolderJobInput | "parked" | null = await nextWake(inbox);
       const order: string[] = [];
       for (let round = 0; round < 3; round += 1) {
         // The pushed batch runs and keeps the turn for the push that came meanwhile.
         pushDuringStatus();
         try {
-          inboxJob = await oneFolderTurn(inboxJob!);
+          if (!inboxJob || inboxJob === "parked") throw new Error("The Inbox's job did not continue");
+          inboxJob = await oneFolderTurn(inboxJob);
         } finally {
           afterStatus = null;
         }
@@ -2283,6 +2325,70 @@ suite("mail provider lease fairness", () => {
       await redis.send(
         "DEL",
         ["places", "present", "priorities", "turn"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+      );
+    }
+  });
+
+  test("folder jobs of a mailbox whose lease is held ask once each, and each release wakes the next one", async () => {
+    const mailbox = await connect("parked-folders", { extraFolders: 30 });
+    const resource = mailbox.remoteResourceId;
+    const folders = Array.from({ length: 30 }, (_, index) => mailbox.folderId(`Folder-${index}`));
+    const holder = await acquireProviderLease({
+      resource,
+      waiter: `commands:${mailbox.mailboxId}`,
+      priority: "command",
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    if (!holder.lock) throw new Error("The test could not take the provider lease");
+    // The worker on a test clock: a job is due at a virtual time, again after the delay it asks
+    // for, and at once when a release wakes it. No turn waits in real time.
+    const due: Array<{ at: number; input: SyncFolderJobInput }> = folders.map((folderId) => ({ at: 0, input: { folderId } }));
+    let clock = 0;
+    let woken = 0;
+    const runUntil = async (end: number): Promise<{ busy: number; batches: number }> => {
+      const counts = { busy: 0, batches: 0 };
+      for (;;) {
+        for (const [folderId, input] of wakes) {
+          wakes.delete(folderId);
+          woken += 1;
+          due.push({ at: clock, input });
+        }
+        due.sort((left, right) => left.at - right.at);
+        const job = due[0];
+        if (!job || job.at > end) return counts;
+        due.shift();
+        clock = job.at;
+        const turn: { next: { delayMs?: number; input?: SyncFolderJobInput } | null } = { next: null };
+        const result = await runSyncFolderJob({
+          input: job.input,
+          heartbeat: async () => undefined,
+          resubmit: (resubmit) => {
+            turn.next = resubmit ?? {};
+          },
+        });
+        if ("deferred" in result && result.deferred === "SYNC_BUSY") counts.busy += 1;
+        else counts.batches += 1;
+        if (turn.next) due.push({ at: clock + (turn.next.delayMs ?? 0), input: turn.next.input ?? job.input });
+      }
+    };
+    try {
+      // A minute in which a command holds the lease: every folder job asks once and parks.
+      // Polling, each asked every few seconds, more than fifteen times a minute.
+      const held = await runUntil(60_000);
+      expect(held).toEqual({ busy: folders.length, batches: 0 });
+      expect(woken).toBe(0);
+
+      // Each release wakes the folder job next in line, and that one gets the lease at once.
+      await releaseProviderLease(holder.lock);
+      const drained = await runUntil(Number.POSITIVE_INFINITY);
+      expect(drained.busy).toBe(0);
+      expect(drained.batches).toBeGreaterThanOrEqual(folders.length);
+      expect(woken).toBe(folders.length);
+    } finally {
+      await releaseProviderLease(holder.lock);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn", "parked", "woken"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
       );
     }
   });

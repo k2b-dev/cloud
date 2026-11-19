@@ -19,9 +19,11 @@ import { createProviderConnection, replaceProviderConnection } from "./provider-
 import {
   acquireProviderLease,
   MAIL_PROVIDER_OPERATION_LEASE_MS,
+  onParkedProviderWaiterWake,
   providerBreakerOpenForMs,
   recordProviderReachable,
   releaseProviderLease,
+  wakeParkedProviderWaiter,
 } from "./provider-operation-lock";
 import { takeFolderSyncActivity } from "./sync-activity";
 import {
@@ -593,7 +595,7 @@ suite("mail sync recovery", () => {
     expect(binding?.last_error_code).toBeNull();
   });
 
-  test("a folder job's turn that finds the lease busy runs no database statement", async () => {
+  test("a folder job's turn that finds the lease held parks and runs no database statement", async () => {
     const fixture = await createSyncedMailbox("busy-turn");
     const holder = await acquireProviderLease({
       resource: fixture.resourceId,
@@ -602,6 +604,8 @@ suite("mail sync recovery", () => {
       ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
     });
     if (!holder.lock) throw new Error("The test could not take the provider lease");
+    const parked = `mail:provider-lease-line:{${fixture.resourceId}}:parked`;
+    const waiter = `sync-folder:${fixture.folderId}`;
     const counter = await countPostgresRoundTrips(connections().database.url);
     const originalUrl = connections().database.url;
     try {
@@ -613,14 +617,15 @@ suite("mail sync recovery", () => {
         await runSyncFolderJob({ input, heartbeat: async () => undefined, resubmit: (options) => (resubmitted = options) });
         return { statements: counter.count() - before, resubmitted };
       };
-      // The first turn reads the folder's remote mailbox once and carries it into its retry.
+      // The first turn reads the folder's remote mailbox once and parks with it, asking for no retry.
       const first = await turn({ folderId: fixture.folderId });
       expect(first.statements).toBe(1);
-      expect(first.resubmitted?.input).toMatchObject({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId });
-      // Every later turn that finds the lease busy asks the lease line only.
+      expect(first.resubmitted).toBeUndefined();
+      expect(JSON.parse(String(await redis.send("HGET", [parked, waiter])))).toMatchObject({ remoteResourceId: fixture.resourceId });
+      // A later job of the folder that finds the lease held asks the lease line only.
       const later = await turn({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId });
       expect(later.statements).toBe(0);
-      expect(later.resubmitted?.input).toMatchObject({ remoteResourceId: fixture.resourceId });
+      expect(later.resubmitted).toBeUndefined();
     } finally {
       process.env.DATABASE_URL = originalUrl;
       await initializeTestPlatform();
@@ -629,7 +634,7 @@ suite("mail sync recovery", () => {
     }
   });
 
-  test("a pushed folder job ranks its turns as a command and adds no database statement to them", async () => {
+  test("a pushed folder job parks as a command, keeps the push for the next job of the folder, and wakes without a statement", async () => {
     const fixture = await createSyncedMailbox("pushed-turn");
     const holder = await acquireProviderLease({
       resource: fixture.resourceId,
@@ -639,6 +644,10 @@ suite("mail sync recovery", () => {
     });
     if (!holder.lock) throw new Error("The test could not take the provider lease");
     const priorities = `mail:provider-lease-line:{${fixture.resourceId}}:priorities`;
+    const woken: string[] = [];
+    const productionWaker = onParkedProviderWaiterWake(async (_waiter, left) => {
+      woken.push(left);
+    });
     const meter = await meterSql();
     try {
       const turn = async (input: { folderId: string; remoteResourceId?: string; pushed?: boolean }) => {
@@ -652,22 +661,36 @@ suite("mail sync recovery", () => {
       for (const key of [`mail:sync-pushed:${fixture.folderId}`, `mail:sync-requested:${fixture.folderId}`]) {
         await redis.send("SET", [key, "1", "PX", "60000"]);
       }
-      // The first turn reads the folder's remote mailbox, as every first turn does, and nothing more.
-      const first = await turn({ folderId: fixture.folderId });
-      expect(first.statements).toHaveLength(1);
-      expect(first.priority).toBe("command");
-      expect(first.resubmitted?.input).toEqual({
+      const left = {
         folderId: fixture.folderId,
         backfill: false,
         pushed: true,
         remoteResourceId: fixture.resourceId,
-      });
-      // Its later turns that find the lease busy keep the push and ask the lease line only.
-      const later = await turn({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId, pushed: true });
+      };
+      // The first turn reads the folder's remote mailbox, as every first turn does, and parks.
+      const first = await turn({ folderId: fixture.folderId });
+      expect(first.statements).toHaveLength(1);
+      expect(first.priority).toBe("command");
+      expect(first.resubmitted).toBeUndefined();
+      // A scheduled job of the folder knows nothing of the push, yet keeps its rank and input.
+      const later = await turn({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId });
       expect(later.statements).toEqual([]);
       expect(later.priority).toBe("command");
-      expect(later.resubmitted?.input).toEqual(first.resubmitted?.input);
+      expect(later.resubmitted).toBeUndefined();
+      // The holder's release wakes the parked job with the push it left, without a statement.
+      expect(await meter.during(() => releaseProviderLease(holder.lock!))).toEqual([]);
+      expect(woken.map((entry) => JSON.parse(entry))).toEqual([left]);
+      // A wake whose job never ran, because its process stopped, leaves the waiter first in line
+      // past the next scheduler run, whose wake repeats it instead of leaving the free lease to
+      // nobody.
+      const presentUntil = Number(
+        await redis.send("ZSCORE", [`mail:provider-lease-line:{${fixture.resourceId}}:present`, `sync-folder:${fixture.folderId}`]),
+      );
+      expect(presentUntil - Date.now()).toBeGreaterThan(60_000);
+      await wakeParkedProviderWaiter(fixture.resourceId);
+      expect(woken.map((entry) => JSON.parse(entry))).toEqual([left, left]);
     } finally {
+      onParkedProviderWaiterWake(productionWaker);
       await meter.close();
       await releaseProviderLease(holder.lock);
       await redis.send("DEL", [`mail:sync-pushed:${fixture.folderId}`, `mail:sync-requested:${fixture.folderId}`]);
