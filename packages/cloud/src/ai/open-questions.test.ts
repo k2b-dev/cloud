@@ -69,6 +69,12 @@ for (const [locale, key, expected] of cases) {
   });
 }
 
+test("an app's German sentence keeps its words and shows its values in an English reader's formats", () => {
+  const block = actionFixtures("de").del!.block;
+  const short = reviewShortText(reviewOf(block), { ...readerOf("en"), app: { name: "Spaces", icon: "ti ti-calendar" } });
+  expect(short).toBe("Termin Retro am Oct 17, 2026 löschen");
+});
+
 for (const [locale, expected] of [
   ["de", "Mail Wartungsfenster Dienstag an Lea Berg senden"],
   ["en", "Send the email Maintenance window Tuesday to Lea Berg"],

@@ -166,7 +166,7 @@ describe("Approvals", () => {
     }
   }
 
-  test("a review in another language keeps that language in its outcome line too", async () => {
+  test("an English reader sees a German review's own sentence with Cloud's English detail", async () => {
     const { actionFixtures } = await import("../ai/chat/action-question.fixtures");
     const review = actionFixtures("de").mail!.block.review!;
     if (!("sentence" in review)) throw new Error("Expected a new review");
@@ -177,8 +177,9 @@ describe("Approvals", () => {
       row().querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer")[1]!.click();
       await waitFor(() => row().dataset.decided === "rejected", "the outcome");
       const line = row().querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent ?? "";
-      expect(line).toContain("Du hast abgelehnt.");
-      expect(line).not.toContain("You declined.");
+      // The app's stored sentence stays German; Cloud's words follow the reader, who reads English here.
+      expect(line).toContain("Mail Wartungsfenster Dienstag an Lea Berg nicht gesendet. You declined.");
+      expect(line).not.toContain("Du hast abgelehnt.");
     } finally {
       view.cleanup();
     }

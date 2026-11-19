@@ -1,5 +1,5 @@
 import { listCapabilities } from "../../_internal/registry";
-import { type AiStoredActionReview, storedActionReview } from "../../ai/action-review";
+import { type AiStoredActionReview, isLegacyActionReview, storedActionReview } from "../../ai/action-review";
 import type { ActionCard } from "../../ai/chat/action-card";
 import { approvalCard } from "../../approvals/approval-card";
 import {
@@ -54,19 +54,23 @@ export const pendingApprovalReview = (
   return row.storedReview ?? (parsed.success ? storedActionReview(parsed.data, policy) : null);
 };
 
-/** Resolve the recorded question in the language and time zone of its originating turn. */
+/**
+ * Resolve the recorded question in the language and time zone of its originating turn. A review in the current form
+ * carries that turn's language itself, also when the turn records none, such as an inter-chat message; Cloud Login,
+ * app approval inboxes, and notifications read it in that language. Pages render the card in their reader's language.
+ */
 export const pendingApprovalCard = (
   row: PendingApprovalRow,
   appName: (appId: string, locale: string) => string,
   policy?: ApprovalActionPolicy,
   fallbackLocale = DEFAULT_LOCALE,
 ): ActionCard => {
-  const locale = row.runConfig?.kind === "compact" ? fallbackLocale : (row.runConfig?.locale ?? fallbackLocale);
+  const runLocale = row.runConfig?.kind === "compact" ? fallbackLocale : (row.runConfig?.locale ?? fallbackLocale);
   const timeZone = row.runConfig?.kind === "compact" ? "UTC" : (row.runConfig?.timeZone ?? "UTC");
   const review = pendingApprovalReview(row, policy);
   return approvalCard(
-    { sentence: row.sentence, action: row.action, appName: appName(row.appId, locale), appIcon: null, review },
-    locale,
+    { sentence: row.sentence, action: row.action, appName: appName(row.appId, runLocale), appIcon: null, review },
+    review && !isLegacyActionReview(review) ? review.locale : runLocale,
     timeZone,
   );
 };

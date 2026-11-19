@@ -13,7 +13,7 @@ import { CATALOG_LOCALES, DEFAULT_LOCALE } from "../shared/locale";
  * literal, a message is a spread, computed, getter, or setter, a language is not one of `CATALOG_LOCALES`, or the base
  * locale is not the default one. Browser code that must read several languages marks its catalog with the comment
  * `ALL_LOCALES_MARKER` right before the definition object: `i18n.define(/* @i18n-all-locales *\/ { ... })`.
- * Upstream follow-up: this rewrite belongs to `@k2b/stdlib`, the owner of `i18n.define`.
+ * Upstream follow-up: this rewrite belongs to `@k2b/stdlib`, the owner of `i18n.define` (k2b-dev/stdlib#34).
  */
 
 /** Keeps a catalog whole in every language build, for browser code that compares text in several languages. */

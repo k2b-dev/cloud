@@ -138,9 +138,10 @@ for stored items that carry their own language, such as an approval card
 created in German and opened by an English reader: Cloud's words, formats, and
 `@k2b/ui` chrome follow the reader, and the stored text someone wrote stays as
 it is. Server output and the mounted island then match in every build.
-Notifications and email keep using the recipient's locale. When browser code must compare text in several
-languages, such as a stored value written in any language, keep that small
-catalog whole in every build with the `@i18n-all-locales` comment:
+Notifications, email, and Cloud Login keep the language of the chat turn that
+asked. When browser code must compare text in several languages, such as a
+stored value written in any language, keep that small catalog whole in every
+build with the `@i18n-all-locales` comment:
 
 ```ts
 export const presetDescriptionMessages = i18n.define(/* @i18n-all-locales */ {

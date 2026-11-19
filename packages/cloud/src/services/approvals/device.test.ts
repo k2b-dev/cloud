@@ -362,3 +362,17 @@ test("new-shape rows load policy even with their own reason or stored review; le
     capabilities.mockRestore();
   }
 });
+
+test("a turn without a language keeps its German review's language on the device and in the digest", async () => {
+  const input = { ...row, details: mailReview("de"), runConfig: null };
+  const card = pendingApprovalCard(input, options.appName);
+  expect(card.locale).toBe("de");
+  const rows = actionCardText(card).rows.map((entry) => entry.label);
+  expect(rows).toContain("An");
+  expect(rows).not.toContain("To");
+  const view = await appActionView(input, options);
+  expect(view.details.map((entry) => entry.label)).toContain("An");
+  // The same German view as a turn that records German, so the signed digest is the same.
+  const recorded = await appActionView({ ...input, runConfig: { kind: "chat" as const, input: "Senden", locale: "de" } }, options);
+  expect(view.digest).toBe(recorded.digest);
+});
