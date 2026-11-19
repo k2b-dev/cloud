@@ -103,6 +103,8 @@ test("an alarm chip names a delivery well after its planned time as delayed, and
     render([message(1, "user", "Prüfe die Anzahlung", { createdAt: "2026-11-18T15:42:00.000Z", meta: { origin } })], "de", "Europe/Berlin"),
   );
   expect(late[0]?.replace(/<[^>]*>/g, "")).toContain("Wecker · geplant 16:00, verspätet");
+  // An alarm's message is no message of the person's own: it offers no "Edit".
+  expect(late[0]).not.toContain("Bearbeiten und neu senden");
   // Alarm facts carry the alarm: a repeating one shows its rhythm in words, never cron, and the sign for repeating.
   const wakeup = {
     id: "alarm1",
