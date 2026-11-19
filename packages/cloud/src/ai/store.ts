@@ -1188,16 +1188,21 @@ export const settleAiToolCheck = (input: {
 
 /** The stored check of one call, or null. */
 export const readAiToolCheck = async (input: { conversationId: string; turnId: string; callId: string }): Promise<AiActionCheck | null> => {
-  for (const table of ["ai.messages"]) {
-    const [row] = await sql<{ check: AiActionCheck | null }[]>`
-      SELECT meta->'toolChecks'->${input.callId}::text AS check FROM ${sql(table)}
-      WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
-        AND role = 'assistant'
-        AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
-      LIMIT 1`;
-    if (row?.check) return row.check;
-  }
-  return null;
+  // Keep live-message precedence without a second database round trip for the archive.
+  const [row] = await sql<{ check: AiActionCheck }[]>`
+    SELECT meta->'toolChecks'->${input.callId}::text AS check
+    FROM (
+      SELECT meta, message, conversation_id, loop_id, role, 0 AS source FROM ai.messages
+      UNION ALL
+      SELECT meta, message, conversation_id, loop_id, role, 1 AS source FROM ai.task_messages
+    ) messages
+    WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
+      AND role = 'assistant'
+      AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
+      AND meta->'toolChecks'->${input.callId}::text <> 'null'::jsonb
+    ORDER BY source ASC
+    LIMIT 1`;
+  return row?.check ?? null;
 };
 
 /** Insert a message inside an open conversation-lock transaction and bump the conversation. */
@@ -3602,6 +3607,7 @@ export const aiConversations: AiConversationService = {
       LIMIT 1
     `;
     if (!rows[0]) return null;
+    // Routine turns are excluded above and cannot be reactivated; their archive is never live metadata.
     // The waits let a reconnecting client show work time without time spent waiting for the user.
     const [waits, metadata] = await Promise.all([
       activeTurnWaits(rows[0].id),
@@ -4276,7 +4282,11 @@ export const aiConversations: AiConversationService = {
     // Only the review metadata, never the messages themselves, which can carry large tool results.
     const rows = await sql<{ tool_reviews: Record<string, AiStoredActionReview> | null }[]>`
       SELECT ${compactReviewMapSql(sql`meta->'toolReviews'`)} AS tool_reviews
-      FROM ai.messages
+      FROM (
+        SELECT meta, seq, conversation_id, loop_id, role FROM ai.messages
+        UNION ALL
+        SELECT meta, seq, conversation_id, loop_id, role FROM ai.task_messages
+      ) messages
       WHERE conversation_id = ${input.conversationId}
         AND loop_id = ${input.turnId}
         AND role = 'assistant'
