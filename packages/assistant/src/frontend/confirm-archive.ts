@@ -10,8 +10,10 @@ export const confirmAssistantArchive = async (
 ) => {
   const copy = assistantCopyFor(locale);
   const text = (value: string) => copy.text({ value });
+  // The chat's alarms rest while it is archived; the dialog names them first (Gustav alarms v1, 12).
+  const alarms = await import("./wakeups").then((module) => module.restingWakeups(conversation.id, locale)).catch(() => "");
   return prompts.confirm(
-    [copy.archiveChat({ title: conversation.title }), copy.archiveQueuedMessages({ count: queuedMessageCount })]
+    [copy.archiveChat({ title: conversation.title }), copy.archiveQueuedMessages({ count: queuedMessageCount }), alarms]
       .filter(Boolean)
       .join("\n\n"),
     {

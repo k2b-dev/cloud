@@ -24,6 +24,16 @@ export type AiMessageTimelineItem =
   | { type: "summary"; id: string; entry: AiStoredMessage }
   | { type: "code-decision"; id: string; entry: AiStoredMessage }
   | { type: "code-review-start"; id: string; entry: AiStoredMessage }
+  /** A Cloud-authored alarm fact (`meta.wakeupEvent`), drawn as a line and never as an answer. */
+  | {
+      type: "wakeup";
+      id: string;
+      entry: AiStoredMessage;
+      /** The turn that wrote it; null when the person or Cloud did. */
+      loopId: string | null;
+      /** The turn it follows, which may still run. */
+      after: string | null;
+    }
   | AiAssistantTimelineItem;
 
 export const assistantVisibleTextFromMessage = (message: Message): string => {
@@ -62,7 +72,57 @@ const timestampMs = (value: string | undefined): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTimelineItem[] => {
+/** A message of an alarm tool call: the turn that holds it wrote its own alarm facts. */
+const callsWakeupTool = ({ message }: AiStoredMessage) =>
+  message.role === "tool_result"
+    ? message.name.startsWith("wakeup_")
+    : message.role === "assistant" && message.content.some((part) => part.type === "tool_call" && part.name.startsWith("wakeup_"));
+
+/**
+ * An alarm fact written while a turn runs is stored between that turn's messages, without its loop. It stands after
+ * the turn's last message, where the turn ends, and never splits the turn's answer; a fact after a turn ended stays
+ * where it is. `inLoop` names the turn that wrote a fact with its alarm tool; `after` the turn a fact follows.
+ */
+const placeWakeupFacts = (
+  messages: AiStoredMessage[],
+  inLoop: Map<AiStoredMessage, string>,
+  after: Map<AiStoredMessage, string>,
+): AiStoredMessage[] => {
+  const placed: AiStoredMessage[] = [];
+  let held: AiStoredMessage[] = [];
+  let loopId: string | null = null;
+  let toolTurn = false;
+  for (const entry of messages) {
+    if (entry.meta?.wakeupEvent) {
+      if (!loopId) placed.push(entry);
+      else {
+        held.push(entry);
+        after.set(entry, loopId);
+      }
+      continue;
+    }
+    const calls = callsWakeupTool(entry);
+    if (held.length) {
+      // The turn goes on after the fact: it moves to the turn's end, as the turn's own fact when it used the tool.
+      if (loopId && entry.loopId === loopId) {
+        if (toolTurn || calls) for (const fact of held) inLoop.set(fact, loopId);
+      } else {
+        placed.push(...held);
+        held = [];
+      }
+    }
+    placed.push(entry);
+    if (entry.loopId !== loopId) toolTurn = false;
+    loopId = entry.loopId;
+    if (calls) toolTurn = true;
+  }
+  return held.length ? [...placed, ...held] : placed;
+};
+
+export const buildAiMessageTimeline = (stored: AiStoredMessage[]): AiMessageTimelineItem[] => {
+  const inLoop = new Map<AiStoredMessage, string>();
+  const after = new Map<AiStoredMessage, string>();
+  const messages = stored.some((entry) => entry.meta?.wakeupEvent) ? placeWakeupFacts(stored, inLoop, after) : stored;
   const items: AiMessageTimelineItem[] = [];
   let lastUserEntry: AiStoredMessage | null = null;
   let pendingSteers: Array<{ loopId: string | null; steerId: string }> = [];
@@ -89,6 +149,13 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
       flushPendingSteers();
       if (entry.meta.codeReviewStart) lastUserEntry = entry;
       items.push({ type: entry.meta.codeDecision ? "code-decision" : "code-review-start", id: entry.id, entry });
+      index += 1;
+      continue;
+    }
+
+    if (entry.meta?.wakeupEvent) {
+      flushPendingSteers();
+      items.push({ type: "wakeup", id: entry.id, entry, loopId: inLoop.get(entry) ?? null, after: after.get(entry) ?? null });
       index += 1;
       continue;
     }
@@ -124,6 +191,7 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
       index < messages.length &&
       isAssistantPart(messages[index]!) &&
       !messages[index]!.meta?.codeDecision &&
+      !messages[index]!.meta?.wakeupEvent &&
       sameLoop(messages[index]!, loopId) &&
       (loopId !== null || sameBackgroundResult(messages[index]!, entry))
     ) {

@@ -1,6 +1,6 @@
 import type { AiDraftContentPart } from "@k2b/cloud/ai";
 import { prompts, useLocale } from "@k2b/ui";
-import type { Accessor, Setter } from "solid-js";
+import type { Accessor, JSX, Setter } from "solid-js";
 import { assistantApi } from "../api/client";
 import AssistantQueue, { type AssistantQueueEntry } from "./AssistantQueue";
 import { assistantMessages } from "./messages";
@@ -36,6 +36,7 @@ export default function AssistantQueueConnected(props: {
   entries: readonly AssistantQueueEntry[];
   layout: "line" | "chip";
   timeZone?: string;
+  end?: JSX.Element;
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
@@ -117,6 +118,7 @@ export default function AssistantQueueConnected(props: {
       onSendNow={(entry) => void sendNow(entry)}
       onEdit={(entry) => void edit(entry)}
       onRemove={(entry) => void remove(entry)}
+      end={props.end}
     />
   );
 }

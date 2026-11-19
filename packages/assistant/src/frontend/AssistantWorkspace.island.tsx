@@ -22,6 +22,7 @@ import {
   AiModelChooser,
   type AiModelChooserState,
   AiModelNote,
+  type AiWakeupLineInput,
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
@@ -68,7 +69,21 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createResource, createSignal, For, lazy, on, onCleanup, onMount, Show, Suspense } from "solid-js";
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  type JSX,
+  lazy,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Suspense,
+} from "solid-js";
 import { assistantApi } from "../api/client";
 import { revokeChatWebsite } from "../chat-code/approval-preferences";
 import { artifactMessages } from "../chat-code/messages";
@@ -182,6 +197,9 @@ import { quotaText } from "./quota-messages";
 import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
+import type { AssistantWakeupLineText } from "./wakeup-line";
+import { AssistantWakeupLine, type AssistantWakeupLineHost } from "./wakeup-line-view";
+import type { AssistantWakeupContext } from "./wakeups";
 
 type Status = AiPeopleModels & {
   ok: boolean;
@@ -238,6 +256,8 @@ type Props = {
   initialWorkspaceHref?: string;
   initialDetail: InitialDetail | null;
   initialContext: AssistantChatContextSnapshot | null;
+  /** The chat's alarm lines in words for the first frame, by row id. */
+  initialWakeupLines?: Record<string, AssistantWakeupLineText>;
   /** The open tabs of the initial chat as the person left them, from the server. */
   initialTabs?: { chatId: string; snapshot: ChatWorkspaceSnapshot } | null;
   /** The hint that tabs can be arranged was dismissed. */
@@ -280,6 +300,8 @@ const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) 
 const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
 /** Loaded once a chat has queued messages; most chats never need it. */
 const AssistantQueue = lazy(() => import("./AssistantQueueConnected"));
+// Like "Queued", the alarms' row loads on first use: it lies on the timeline's free end, so it comes without a shift.
+const AssistantWakeupDock = lazy(async () => (await importOnDemand(() => import("./wakeup-dock"))) ?? { default: () => null });
 const TurnErrorAction = lazy(() => import("./AssistantTurnErrorAction"));
 
 /** The usage of a chat that has sent nothing yet. */
@@ -1799,6 +1821,43 @@ export default function AssistantWorkspace(props: Props) {
     liveHub,
   );
   const workspaceContext = () => contextState.snapshot();
+  /** The chat's alarms from its context snapshot, so the server's first frame shows them; their actions load on use. */
+  const wakeupContext: AssistantWakeupContext = {
+    chatId: chat.activeConversationId,
+    items: () => contextState.snapshot()?.wakeups?.items ?? [],
+    limit: () => contextState.snapshot()?.wakeups?.limit ?? 5,
+    refresh: () => contextState.refresh(),
+    locale,
+    timeZone: props.timeZone,
+  };
+  /** Pencil, cross and the one way out of a line act on the chat's alarm as listed now; the actions load on use. */
+  const wakeupLineHost: AssistantWakeupLineHost = {
+    act: (action, id) => {
+      const wakeup = wakeupContext.items().find((item) => item.id === id);
+      return wakeup
+        ? importOnDemand(() => import("./wakeups")).then((module) => module?.actOnWakeup(wakeupContext, action, wakeup))
+        : undefined;
+    },
+    retry: (input) => importOnDemand(() => import("./wakeups")).then((module) => module?.retryWakeup(wakeupContext, input)),
+  };
+  /** The words of the alarm lines: the server's for the first frame, then this chat's own once they loaded. */
+  const [wakeupWords, setWakeupWords] = createSignal<typeof import("./wakeup-line") | null>(null);
+  let wakeupWordsLoading = false;
+  const wakeupLine = (line: AiWakeupLineInput, key: string): AssistantWakeupLineText | undefined => {
+    if (!wakeupWordsLoading && typeof window !== "undefined") {
+      wakeupWordsLoading = true;
+      void importOnDemand(() => import("./wakeup-line")).then((module) => module && setWakeupWords(() => module));
+    }
+    const words = wakeupWords();
+    return words
+      ? words.describeWakeupLine(line, {
+          locale: locale(),
+          timeZone: props.timeZone,
+          current: contextState.snapshot()?.wakeups?.items,
+        })
+      : props.initialWakeupLines?.[key];
+  };
+
   const sidebarCopy = () => chatSidebarMessages.resolve([locale()]).t;
   const sidebarActions = () =>
     assistantChatSidebarActions({
@@ -1825,7 +1884,9 @@ export default function AssistantWorkspace(props: Props) {
       if (target.kind === "file") actions.onOpenFile({ path: target.path, title: target.title });
       else if (target.kind === "app") return;
       else if (target.kind === "jump") actions.onJump(target.target);
-      else window.location.assign(target.href);
+      else if (target.kind === "wakeup") {
+        wakeupLineHost.act("edit", target.id);
+      } else window.location.assign(target.href);
     },
     onJump: (target) => void jumpTo(target),
     onOpenAll: () => openContextOverview("files", sidebarCopy().title),
@@ -2202,9 +2263,9 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
 
-  const QueuePart = (partProps: { layout: "line" | "chip" }) => (
+  const QueuePart = (partProps: { layout: "line" | "chip"; end?: JSX.Element }) => (
     <Suspense>
-      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} timeZone={props.timeZone} />
+      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} timeZone={props.timeZone} end={partProps.end} />
     </Suspense>
   );
   /**
@@ -2214,7 +2275,14 @@ export default function AssistantWorkspace(props: Props) {
    */
   const WaitingRow = (rowProps: { queue?: boolean }) => {
     const queued = () => Boolean(rowProps.queue) && queueEntries().length > 0;
+    // Alarms share the one row (Gustav alarms v1, F1 A): alone as their own line, else as the chip at its end.
+    const alarms = () => Boolean(rowProps.queue) && wakeupContext.items().length > 0;
     const waitingShown = () => waiting().total > 0 && !waitingFocus.quiet();
+    const AlarmChip = () => (
+      <Suspense>
+        <AssistantWakeupDock context={wakeupContext} layout="chip" />
+      </Suspense>
+    );
     return (
       <>
         <Show when={waiting().total > 0}>
@@ -2224,11 +2292,27 @@ export default function AssistantWorkspace(props: Props) {
             quiet={waitingFocus.quiet()}
             onJump={(question) => void jumpToQuestion(question)}
             onShowMore={openApprovals}
-            queue={queued() && waitingShown() ? <QueuePart layout="chip" /> : undefined}
+            queue={
+              (queued() || alarms()) && waitingShown() ? (
+                <>
+                  <Show when={queued()}>
+                    <QueuePart layout="chip" />
+                  </Show>
+                  <Show when={alarms()}>
+                    <AlarmChip />
+                  </Show>
+                </>
+              ) : undefined
+            }
           />
         </Show>
         <Show when={queued() && !waitingShown()}>
-          <QueuePart layout="line" />
+          <QueuePart layout="line" end={alarms() ? <AlarmChip /> : undefined} />
+        </Show>
+        <Show when={alarms() && !queued() && !waitingShown()}>
+          <Suspense>
+            <AssistantWakeupDock context={wakeupContext} layout="line" />
+          </Suspense>
         </Show>
       </>
     );
@@ -3399,6 +3483,9 @@ export default function AssistantWorkspace(props: Props) {
                               fallback={
                                 <AiChatActionsProvider
                                   actions={{
+                                    renderWakeupLine: (line, key) => (
+                                      <AssistantWakeupLine line={wakeupLine(line, key)} host={wakeupLineHost} />
+                                    ),
                                     renderTurnErrorAction: (error) =>
                                       props.canConfigureAi ? <TurnErrorAction error={error} canConfigure /> : undefined,
                                     onQuote: addQuote,

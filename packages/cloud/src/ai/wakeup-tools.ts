@@ -2,7 +2,7 @@ import { z } from "zod";
 import { defineAiTool } from "./tools";
 import type { AiChatTurnRunConfig, AiToolRuntime } from "./types";
 import { AiWakeupInputSchema, AiWakeupPatchSchema, AiWakeupSchema } from "./wakeup-contracts";
-import { type AiWakeupAuthority, aiWakeups } from "./wakeups";
+import { type AiWakeupAuthority, AiWakeupError, aiWakeups } from "./wakeups";
 
 /** Chat identity comes from execution, never tool arguments. Restricted conversations receive no alarm tools. */
 export function createAiWakeupTools(
@@ -37,7 +37,15 @@ export function createAiWakeupTools(
       inputSchema: AiWakeupInputSchema,
       outputSchema: AiWakeupSchema,
       approval: "never",
-    }).server((input) => aiWakeups.create(chatId, input, subject, locale)),
+    }).server(async (input) => {
+      try {
+        return await aiWakeups.create(chatId, input, subject, locale);
+      } catch (error) {
+        // The limit of five carries a stable code, so the chat names it instead of offering to try again.
+        if (error instanceof AiWakeupError && error.code === "limit") throw new Error(`LIMIT_REACHED: ${error.message}`);
+        throw error;
+      }
+    }),
     defineAiTool({
       name: "wakeup_list",
       description: "List this chat's current alarms, including missed and expired alarms, with their revisions.",

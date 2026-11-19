@@ -207,6 +207,8 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
     href: `/app/assistant?conversation=${encodeURIComponent(conversation.id)}`,
   };
 };
+
+export { collectAiWakeupLines } from "./chat/wakeup-plan";
 export {
   createLiveDictationSource,
   type DictationDevice,
@@ -255,5 +257,4 @@ export {
   parseCloudAiView,
   sortCloudAiViewRows,
 } from "./view-block";
-
 export type { AiWakeup, AiWakeupEvent, AiWakeupInput, AiWakeupNoteSource, AiWakeupPatch } from "./wakeup-contracts";

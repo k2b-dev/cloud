@@ -41,6 +41,7 @@ import {
   createAiUserMessageActions,
 } from "./user-message";
 import { CloudSurveyResultBlock } from "./visual-tools";
+import { collectAiWakeupLines } from "./wakeup-plan";
 
 export type AiChatTimelineSession = {
   messages: readonly AiStoredMessage[];
@@ -192,10 +193,23 @@ const storedItems = (
     if (item.type === "assistant") lastItemOfLoop.set(loopId, index);
   });
   const reviewLoops = new Set(messages.flatMap((entry) => (entry.meta?.codeReviewStart && entry.loopId ? [entry.loopId] : [])));
+  const wakeupLines = collectAiWakeupLines(timeline);
+  const alarms = new Map(
+    [...wakeupLines.values()].flatMap((line) => (line.plan ? [[line.plan.event.wakeup.id, line.plan.event.wakeup] as const] : [])),
+  );
+  /** Gustav could not set an alarm in this turn and did not set one either: the line with "Try again" ends the turn. */
+  const failedWakeup = (item: AiAssistantTimelineItem): ChatTimelineItem[] => {
+    const key = `${item.id}:wakeup-failed`;
+    const input = wakeupLines.get(key);
+    const line = input && actions.renderWakeupLine?.(input, key);
+    return line ? [{ kind: "activity", id: key, class: "ai-wakeup-line-row", label: line }] : [];
+  };
   const turnErrors = new Map<string, AiTurnError>();
   for (const message of messages) if (message.loopId && message.meta?.turnError) turnErrors.set(message.loopId, message.meta.turnError);
   // Only the chat's newest turn can be continued, and only while no other turn runs.
-  const newestLoop = idle ? (messages.at(-1)?.loopId ?? null) : null;
+  // An alarm fact the person or Cloud added afterwards never ends a turn's chance to continue.
+  const lastEntry = messages.findLast((entry) => !entry.meta?.wakeupEvent);
+  const newestLoop = idle ? (lastEntry?.loopId ?? null) : null;
   const segmentId = createSegmentIds();
   // The model never answered: the notice stands where the live turn showed its progress, under the same id.
   const unansweredNotice = (entry: AiStoredMessage, itemIndex: number): ChatTimelineItem[] => {
@@ -310,7 +324,12 @@ const storedItems = (
             ) : undefined}
           </>
         ) : undefined,
-        source: aiUserMessageSource(item.entry, locale, timeZone),
+        source: aiUserMessageSource(
+          item.entry,
+          locale,
+          timeZone,
+          item.entry.meta?.origin?.kind === "wakeup" ? alarms.get(item.entry.meta.origin.id) : undefined,
+        ),
         attachments: aiUserMessageAttachments(item.entry, actions),
         actions: createAiUserMessageActions(item.entry, actions, locale),
         actionDisplay: "inline",
@@ -350,6 +369,25 @@ const storedItems = (
       return item.type === "code-review-start" ? [activity, ...unansweredNotice(item.entry, itemIndex)] : activity;
     }
 
+    if (item.type === "wakeup") {
+      const input = wakeupLines.get(item.id);
+      // A fact of the turn that still runs stands at its end once it finished.
+      if (activeTurnId !== null && (item.loopId ?? item.after) === activeTurnId) return [];
+      // Without a host's line, every fact stands as Cloud stored it, quietly; a host draws only the lines it plans.
+      if (actions.renderWakeupLine && !input) return [];
+      const line = input && actions.renderWakeupLine?.(input, item.id);
+      return line
+        ? { kind: "activity", id: item.id, class: "ai-wakeup-line-row", anchorId: item.entry.seq, label: line }
+        : {
+            kind: "activity",
+            id: item.id,
+            anchorId: item.entry.seq,
+            label: textFromMessage(item.entry.message),
+            icon: "ti ti-alarm",
+            tone: "ai",
+          };
+    }
+
     if (item.type === "summary") {
       const count = item.entry.meta?.compactedCount;
       const date = new Date(item.entry.createdAt).toLocaleDateString(locale);
@@ -384,7 +422,7 @@ const storedItems = (
     prompt = null;
     let firstSegment = true;
     let opener = leadingSteerOpener(item.blocks) ?? "start";
-    return segments.flatMap((segment, index): ChatTimelineItem[] => {
+    const rendered = segments.flatMap((segment, index): ChatTimelineItem[] => {
       const turnId = item.loopId ?? item.id;
       if (segment.type === "survey") {
         opener = surveyOpener(segment.block.callId);
@@ -463,17 +501,18 @@ const storedItems = (
               actions.onRetryMessage
                 ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
                 : undefined,
-            superseded: (activeTurnId !== null && activeTurnId !== item.loopId) || lastMessage?.id !== messages.at(-1)?.id,
+            superseded: (activeTurnId !== null && activeTurnId !== item.loopId) || lastMessage?.id !== lastEntry?.id,
             continuable:
               idle &&
               !(item.loopId && reviewLoops.has(item.loopId)) &&
-              (item.loopId ? newestLoop === item.loopId : lastMessage?.id === messages.at(-1)?.id),
+              (item.loopId ? newestLoop === item.loopId : lastMessage?.id === lastEntry?.id),
           }),
           actions: messageActions,
           actionDisplay: "inline",
         },
       ];
     });
+    return item.loopId !== activeTurnId ? [...rendered, ...failedWakeup(item)] : rendered;
   });
 };
 

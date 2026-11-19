@@ -2,7 +2,7 @@ import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { userResourceContext } from "./projects.test-fixture";
 import type { AiChatTurnRunConfig } from "./types";
 import { createAiWakeupTools } from "./wakeup-tools";
-import { aiWakeups } from "./wakeups";
+import { AiWakeupError, aiWakeups } from "./wakeups";
 
 const identity = userResourceContext({ type: "user", userId: "5b000000-0000-4000-8000-000000000001" });
 const config: AiChatTurnRunConfig = {
@@ -60,4 +60,41 @@ test("the tool reaches the permission-aware service with runtime chat, actor and
     },
   );
   expect(list).toHaveBeenCalledWith("Ab3dEf", { ...identity, turnId }, "de");
+});
+
+test("at the limit of five, setting an alarm fails with the stable code LIMIT_REACHED and keeps the service's sentence", async () => {
+  spyOn(aiWakeups, "create").mockRejectedValue(
+    new AiWakeupError("limit", "This chat already has five alarms. Change or delete one first."),
+  );
+  const tool = createAiWakeupTools(config, "Ab3dEf", turnId, null).find((entry) => entry.def.name === "wakeup_create");
+  if (tool?.location !== "server") throw new Error("Create tool missing");
+  const run = tool.run(
+    { at: "2026-11-20T09:00:00.000Z", timezone: "Europe/Berlin", note: "Reisekosten" },
+    {
+      signal: new AbortController().signal,
+      callId: "call",
+      actor: identity.actor,
+      requestApproval: async () => false,
+      requestClientTool: async () => {
+        throw new Error("No client");
+      },
+    },
+  );
+  await expect(run).rejects.toThrow("LIMIT_REACHED: This chat already has five alarms. Change or delete one first.");
+  // Any other refusal keeps its own error.
+  spyOn(aiWakeups, "create").mockRejectedValue(new AiWakeupError("invalid", "Choose a future time."));
+  await expect(
+    tool.run(
+      { at: "2026-11-20T09:00:00.000Z", timezone: "Europe/Berlin", note: "Reisekosten" },
+      {
+        signal: new AbortController().signal,
+        callId: "call",
+        actor: identity.actor,
+        requestApproval: async () => false,
+        requestClientTool: async () => {
+          throw new Error("No client");
+        },
+      },
+    ),
+  ).rejects.toThrow(/^Choose a future time\.$/);
 });

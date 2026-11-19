@@ -31,7 +31,7 @@ const failureCode = (tool: ToolBlock): string | null => {
  * Why a failed call did not go through, as a kind the chat words itself; codes and messages never reach the person.
  * `unknown`: Cloud could not see whether it happened.
  */
-export type AiStepFailure = "denied" | "not_found" | "timeout" | "unknown" | "other";
+export type AiStepFailure = "denied" | "not_found" | "timeout" | "limit" | "unknown" | "other";
 
 export const stepFailure = (tool: ToolBlock): AiStepFailure | null => {
   if (!isFailedTool(tool)) return null;
@@ -40,6 +40,8 @@ export const stepFailure = (tool: ToolBlock): AiStepFailure | null => {
   if (/^(?:FORBIDDEN|UNAUTHORIZED|ACCESS_DENIED|PERMISSION_DENIED)$/.test(code)) return "denied";
   if (/^(?:NOT_FOUND|GONE)$/.test(code)) return "not_found";
   if (/TIMEOUT|DEADLINE/.test(code)) return "timeout";
+  // A limit the call ran into, such as five alarms in a chat: nothing to try again, the answer says what to do instead.
+  if (code === "LIMIT_REACHED") return "limit";
   return "other";
 };
 
@@ -249,13 +251,15 @@ export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: stri
   });
   const denied = failures.filter((kind) => kind === "denied").length;
   const unclear = failures.filter((kind) => kind === "unknown").length;
-  const failed = failures.filter((kind) => kind !== null).length - denied - unclear;
+  const limited = failures.filter((kind) => kind === "limit").length;
+  const failed = failures.filter((kind) => kind !== null).length - denied - unclear - limited;
   const rejected = calls.filter((tool) => tool.status === "rejected").length;
   return {
     count: t.steps({ count: steps + thoughts }),
     issues: [
       unclear ? { text: t.workUnclear({ count: unclear }), tone: "warning" as const } : null,
       denied ? { text: t.workNoAccess({ count: denied }), tone: "warning" as const } : null,
+      limited ? { text: t.workLimit, tone: "danger" as const } : null,
       failed ? { text: t.workFailed({ count: failed }), tone: "danger" as const } : null,
       rejected ? { text: t.workRejected({ count: rejected }), tone: "neutral" as const } : null,
     ].filter((issue) => issue !== null),

@@ -4,6 +4,7 @@ import { Chat, LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { AiStoredMessage } from "../types";
+import type { AiChatActions } from "./message-actions";
 
 const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
 
@@ -28,13 +29,13 @@ const message = (seq: number, role: "user" | "assistant", text: string, extra: P
   ...extra,
 });
 
-const render = (messages: AiStoredMessage[], locale = "de", timeZone = "UTC") =>
+const render = (messages: AiStoredMessage[], locale = "de", timeZone = "UTC", extra: Partial<AiChatActions> = {}) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
         return createComponent(AiChatActionsProvider, {
-          actions: { onContinueTurn: () => {}, onRetryMessage: () => {} },
+          actions: { onContinueTurn: () => {}, onRetryMessage: () => {}, ...extra },
           get children() {
             const timeline = createAiChatTimeline({ messages: () => messages, activeTurn: () => null, timeZone });
             return createComponent(Chat.Timeline, {
@@ -77,7 +78,7 @@ test.each([
   const html = render(
     [
       message(1, "user", "Prüfe die Anzahlung", {
-        createdAt: "2026-11-18T17:00:00.000Z",
+        createdAt: "2026-11-18T15:00:40.000Z",
         meta: { origin: { kind: "wakeup", id: "alarm1", name, scheduledAt: "2026-11-18T15:00:00.000Z" } },
       }),
     ],
@@ -90,11 +91,55 @@ test.each([
   expect(alarm).toContain("data-source");
   expect(alarm).toContain('class="ai-message-source__icon ti ti-alarm"');
   expect(alarm).toContain('data-kind="wakeup" aria-hidden="true"');
-  expect(text).toContain(`${name} 16:00`);
+  expect(text).toContain(`${name} · 16:00`);
   expect(text).not.toContain("18:00");
   expect(alarm).not.toContain("<a ");
   expect(alarm).not.toContain("Chat „");
   expect(alarm).not.toContain("Automation");
+});
+
+test("an alarm chip names a delivery well after its planned time as delayed, and a repeating alarm by its rhythm", () => {
+  const origin = { kind: "wakeup" as const, id: "alarm1", name: "Wecker", scheduledAt: "2026-11-18T15:00:00.000Z" };
+  const late = articles(
+    render([message(1, "user", "Prüfe die Anzahlung", { createdAt: "2026-11-18T15:42:00.000Z", meta: { origin } })], "de", "Europe/Berlin"),
+  );
+  expect(late[0]?.replace(/<[^>]*>/g, "")).toContain("Wecker · geplant 16:00, verspätet");
+  // An alarm's message is no message of the person's own: it offers no "Edit".
+  expect(late[0]).not.toContain("Bearbeiten und neu senden");
+  // Alarm facts carry the alarm: a repeating one shows its rhythm in words, never cron, and the sign for repeating.
+  const wakeup = {
+    id: "alarm1",
+    at: "2026-11-19T07:00:00.000Z",
+    cron: "0 8 * * 1-5",
+    timezone: "Europe/Berlin",
+    endsAt: "2026-12-16T10:00:00.000Z",
+    note: "Posteingang zusammenfassen",
+    noteSource: { kind: "person" as const, userId: "u1" },
+    snoozes: 0,
+    status: "active" as const,
+    missedReason: null,
+    revision: 0,
+    rhythm: "Mo–Fr 08:00",
+  };
+  const repeating = render(
+    [
+      message(1, "assistant", "Wecker gestellt", {
+        loopId: null,
+        meta: { wakeupEvent: { id: "e1", kind: "created", at: "2026-11-18T07:00:00.000Z", wakeup } },
+      }),
+      message(2, "user", "Posteingang zusammenfassen", {
+        createdAt: "2026-11-18T07:00:20.000Z",
+        meta: { origin: { ...origin, scheduledAt: "2026-11-18T07:00:00.000Z" } },
+      }),
+    ],
+    "de",
+    "Europe/Berlin",
+  );
+  expect(repeating.replace(/<[^>]*>/g, "")).toContain("Wecker · Mo–Fr 08:00");
+  expect(repeating).toContain('class="ai-message-source__icon ti ti-repeat"');
+  // Without a host that draws alarm lines, the fact stands quietly as Cloud stored it.
+  expect(repeating).toContain("Wecker gestellt");
+  expect(repeating).not.toContain("0 8 * * 1-5");
 });
 
 test("a turn that Send now interrupted says paused and offers neither answering again nor continuing", () => {
@@ -212,4 +257,39 @@ test("the source chip names when the message came, in the request's time zone, q
   // The person's own message has no chip, so no time either; without a known zone the chip names no time at all.
   expect(own).not.toContain("ai-message-source__time");
   expect(articles(withZone(undefined))[0]).not.toContain("ai-message-source__time");
+});
+
+test("an alarm Gustav could not set at the limit of five says Limit reached in its work line and offers no Try again", () => {
+  const turn = (seq: number, message: AiStoredMessage["message"]): AiStoredMessage => ({ ...message_(seq), message, loopId: "turn9" });
+  const message_ = (seq: number) => message(seq, "assistant", "");
+  const tried = { at: "2026-11-20T09:00:00.000Z", timezone: "Europe/Berlin", note: "Reisekosten" };
+  const history = (result: string) => [
+    { ...message(1, "user", "Erinnere mich Freitag um 10 an die Reisekosten."), loopId: "turn9" },
+    turn(2, { role: "assistant", content: [{ type: "tool_call", id: "call1", name: "wakeup_create", args: tried }] }),
+    turn(3, { role: "tool_result", callId: "call1", name: "wakeup_create", result, isError: true }),
+    turn(4, {
+      role: "assistant",
+      content: [{ type: "text", text: "In diesem Chat sind schon 5 Wecker gestellt. Soll ich einen ändern oder löschen?" }],
+    }),
+  ];
+  const drawn: string[] = [];
+  const host = {
+    renderWakeupLine: (line: Parameters<NonNullable<AiChatActions["renderWakeupLine"]>>[0]) => {
+      drawn.push(line.failed ? "failed" : "fact");
+      return createComponent(() => "Erneut versuchen", {});
+    },
+  };
+  const limit = render(
+    history("LIMIT_REACHED: This chat already has five alarms. Change or delete one first."),
+    "de",
+    "Europe/Berlin",
+    host,
+  );
+  expect(limit).toContain("Grenze erreicht");
+  expect(limit).not.toContain("fehlgeschlagen");
+  expect(drawn).toEqual([]);
+  // Any other failure keeps its quiet line with Try again.
+  const other = render(history("Choose a future time."), "de", "Europe/Berlin", host);
+  expect(other).toContain("1 fehlgeschlagen");
+  expect(drawn).toEqual(["failed"]);
 });

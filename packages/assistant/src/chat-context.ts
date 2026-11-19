@@ -6,15 +6,21 @@ import {
   type AiConversationWorkingGroup,
   type AiFileStat,
   type AiResourceContext,
+  type AiWakeup,
+  AiWakeupError,
   aiConversations,
   aiMemories,
   aiSkills,
+  aiWakeups,
   type CloudAiViewKind,
   cloudAiViewKindOfIcon,
   describeAiResourceTypeCounts,
   isAiViewPath,
   loadAiConversationFileOverview,
 } from "@k2b/cloud/ai";
+import { logger } from "@k2b/cloud/services";
+import { i18n } from "@k2b/stdlib";
+import { aiWakeupWhen } from "./wakeup-when";
 
 /** Snapshot limits: results and files come from people and stay small; sources and working files can grow. */
 const RESULT_LIMIT = 500;
@@ -56,6 +62,8 @@ export type AssistantChatContextGroup = {
   label: string;
   /** All entries; the box shows at most three, then "Show all". */
   count: number;
+  /** The rows after the first three unfold in place ("2 more") instead of opening the tab. */
+  unfold?: boolean;
   rows: Array<{
     key: string;
     icon: string;
@@ -72,6 +80,8 @@ export type AssistantChatContextGroup = {
     jump?: { messageSeq: number; callId: string | null };
     /** Without a jump, a click opens this Cloud address. */
     href?: string;
+    /** A click opens this alarm of the chat for changes. */
+    wakeup?: string;
     /** The one action shown while pointing at the row. */
     action?: { href: string; label: string; icon: string };
   }>;
@@ -101,13 +111,81 @@ export type AssistantChatContextSnapshot = {
   memories: Array<{ id: string; content: string }>;
   runCount: number;
   runs: Array<{ id: string; status: string; createdAt: string }>;
-  /** Further groups of the box, after the results; none yet. */
+  /** Further groups of the box, after the results: the chat's alarms. */
   groups?: AssistantChatContextGroup[];
+  /**
+   * The chat's alarms with their revisions, for the row above the field, its list and the dialog. Absent where the
+   * viewer cannot manage alarms here, such as a chat with limited tools or an app session.
+   */
+  wakeups?: { items: AiWakeup[]; limit: number; paused: boolean };
   /**
    * The Cloud items among `sources`, counted by type in the viewer's words ("3 Mails"), for types whose app names its
    * nouns; the rest count as items.
    */
   resourceCounts?: Array<{ type: string; count: number; label: string }>;
+};
+
+const wakeupWords = /* @__PURE__ */ i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: { label: "Alarms", missed: "Missed", expired: "Expired", edit: "Change alarm" },
+    de: { label: "Wecker", missed: "Verpasst", expired: "Abgelaufen", edit: "Wecker ändern" },
+  },
+});
+
+const log = logger("assistant:chat-context");
+
+type ChatWakeups = NonNullable<AssistantChatContextSnapshot["wakeups"]>;
+/**
+ * The chat's alarms for the snapshot. A chat whose viewer may not manage alarms here (app session, delegation, limited
+ * tools) has none, quietly; any other failure is logged and leaves the alarms out, so the box and the chat still load.
+ */
+export const loadChatWakeups = async (
+  chatId: string,
+  load: () => Promise<ChatWakeups>,
+  warn: (message: string, metadata: Record<string, unknown>) => void = (message, metadata) => log.warn(message, metadata),
+): Promise<ChatWakeups | undefined> => {
+  try {
+    return await load();
+  } catch (error) {
+    if (error instanceof AiWakeupError && (error.code === "forbidden" || error.code === "not_found")) return undefined;
+    warn("Could not list the chat's alarms for its context", {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+};
+
+/** The box's alarm group: note on the left, its time on the right ("16:00" today), in the order they ring. */
+const wakeupGroup = (
+  wakeups: NonNullable<AssistantChatContextSnapshot["wakeups"]>,
+  input: { locale: string; timeZone: string; now: string },
+): AssistantChatContextGroup[] => {
+  if (!wakeups.items.length) return [];
+  const words = wakeupWords.resolve([input.locale]).t;
+  return [
+    {
+      key: "wakeups",
+      label: words.label,
+      count: wakeups.items.length,
+      unfold: true,
+      rows: wakeups.items.map((wakeup) => {
+        const when = aiWakeupWhen(wakeup, input);
+        const state = wakeup.status === "missed" ? words.missed : wakeup.status === "expired" ? words.expired : null;
+        return {
+          key: `wakeup:${wakeup.id}`,
+          icon: wakeup.cron ? "ti ti-repeat" : "ti ti-alarm",
+          title: wakeup.note,
+          word: state ?? aiWakeupWhen(wakeup, { ...input, short: true }),
+          ...(state ? { tone: "warn" as const } : {}),
+          // The row opens the alarm's dialog, unlike the rows that jump into the chat: its tip says so.
+          tooltip: `${words.edit}: ${wakeup.note} · ${when}`,
+          wakeup: wakeup.id,
+        };
+      }),
+    },
+  ];
 };
 
 const readableSources = (sources: readonly AiConversationSource[]) =>
@@ -167,7 +245,7 @@ export const loadAssistantChatContextSnapshot = async (
   const conversation = await aiConversations.getConversationByShortId({ shortId: chatId, ownerUserId: userId });
   if (!conversation) return null;
   const now = new Date().toISOString();
-  const [delivered, sourcePage, overview, skills, memories] = await Promise.all([
+  const [delivered, sourcePage, overview, skills, memories, wakeups] = await Promise.all([
     resultSources(conversation.id),
     aiConversations.listConversationSources({
       conversationId: conversation.id,
@@ -182,6 +260,8 @@ export const loadAssistantChatContextSnapshot = async (
     }),
     aiSkills.listConversationUses(conversation.id),
     aiMemories.listFromConversation(userId, conversation.id),
+    // Only a chat whose owner may manage alarms here lists them; any refusal leaves the box and the field without.
+    loadChatWakeups(chatId, () => aiWakeups.list(chatId, identity, options.locale ?? "en")),
   ]);
   // An upload stays the person's file, also when the assistant hands it over with present.
   const uploads = new Set(overview.files.flatMap((file) => (file.origin === "user" ? [file.path] : [])));
@@ -246,6 +326,12 @@ export const loadAssistantChatContextSnapshot = async (
     sourceCount: sourcePage.total,
     ...(resourceCounts.length ? { resourceCounts } : {}),
     sourceCursor: sourcePage.nextCursor ?? null,
+    ...(wakeups
+      ? {
+          wakeups,
+          groups: wakeupGroup(wakeups, { locale: options.locale ?? "en", timeZone: options.timeZone, now }),
+        }
+      : {}),
     skills,
     memories: memories.map((memory) => ({ id: memory.shortId, content: memory.content })),
     runCount: count?.count ?? 0,

@@ -28,6 +28,7 @@ import {
 } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import type { AiSubmittedCodeVersion } from "./turn-layout";
+import type { AiWakeupLineInput } from "./wakeup-plan";
 
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
 export type AiTurnActionRequest = { turnId: string; callId: string; name: string };
@@ -48,6 +49,8 @@ type RetryMessageHandler = (entry: AiStoredMessage, input?: AiRetryMessageInput)
 type RetrySteerHandler = (block: Extract<AiTurnBlock, { kind: "steer_message" }>) => void | Promise<void>;
 
 export type AiChatActions = {
+  /** The host draws the chat's alarm lines with their actions; without it, a line names its fact quietly. */
+  renderWakeupLine?: (line: AiWakeupLineInput, key: string) => JSX.Element;
   /** The host supplies a remedy for its own turn failures, using the current viewer's permissions. */
   renderTurnErrorAction?: (error: AiTurnError) => JSX.Element;
   /** The host supplies the authorized card jump for a durable decision fact. */
