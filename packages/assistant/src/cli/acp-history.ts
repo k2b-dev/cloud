@@ -28,7 +28,7 @@ export const historyUpdates = (
   for (const item of buildAiMessageTimeline(state.messages)) {
     if (item.type === "summary") continue;
     if (options.turn ? item.type !== "assistant" || item.loopId !== options.turn : false) continue;
-    if (item.type === "code-decision" || item.type === "code-review-start") {
+    if (item.type === "code-decision" || item.type === "code-review-start" || item.type === "wakeup") {
       const message = item.entry.message;
       if (message.role !== "user" && message.role !== "assistant") continue;
       const said = message.content

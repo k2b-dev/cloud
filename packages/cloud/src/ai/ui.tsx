@@ -51,6 +51,8 @@ export {
   createAiChatTimeline,
 } from "./chat/presentation";
 export { CloudViewFile } from "./chat/view-block";
+export { type AiChatWakeupHost, aiWakeupWords } from "./chat/wakeup-line";
+export { aiWakeupDay, aiWakeupWhen } from "./wakeup-when";
 
 export const aiLatestUsage = latestUsage;
 export const aiLatestLoopUsage = latestLoopUsage;

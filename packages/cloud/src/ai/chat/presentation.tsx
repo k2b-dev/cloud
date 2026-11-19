@@ -29,6 +29,7 @@ import { type AiStopNotice, aiMessageStopNotice, stoppedByPerson } from "./stop-
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
+import { AiWakeupLine, planAiWakeupLines } from "./wakeup-line";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view";
 import {
@@ -191,6 +192,32 @@ const storedItems = (
     if (item.type === "assistant") lastItemOfLoop.set(loopId, index);
   });
   const reviewLoops = new Set(messages.flatMap((entry) => (entry.meta?.codeReviewStart && entry.loopId ? [entry.loopId] : [])));
+  const wakeupPlans = planAiWakeupLines(timeline);
+  const alarms = new Map([...wakeupPlans.values()].map((plan) => [plan.event.wakeup.id, plan.event.wakeup]));
+  /** Gustav could not set an alarm in this turn and did not set one either: the line with "Try again" ends the turn. */
+  const failedWakeup = (item: AiAssistantTimelineItem, itemIndex: number): ChatTimelineItem[] => {
+    let input: unknown;
+    for (const block of item.blocks)
+      if (block.kind === "tool" && block.name === "wakeup_create") {
+        if (block.status === "completed") return [];
+        if (block.status === "failed") input = block.args;
+      }
+    if (!isRecord(input) || typeof input.note !== "string" || typeof input.timezone !== "string") return [];
+    const tried = { note: input.note, timezone: input.timezone, ...input };
+    const retried = timeline
+      .slice(itemIndex + 1)
+      .some((later) => later.type === "wakeup" && later.entry.meta?.wakeupEvent?.wakeup.note === tried.note);
+    return [
+      {
+        kind: "activity",
+        id: `${item.id}:wakeup-failed`,
+        class: "ai-wakeup-line-row",
+        label: (
+          <AiWakeupLine failed={{ input: tried, retried }} host={actions.wakeups} locale={locale} timeZone={timeZone ?? "UTC"} />
+        ),
+      },
+    ];
+  };
   const turnErrors = new Map<string, AiTurnError>();
   for (const message of messages) if (message.loopId && message.meta?.turnError) turnErrors.set(message.loopId, message.meta.turnError);
   // Only the chat's newest turn can be continued, and only while no other turn runs.
@@ -309,7 +336,12 @@ const storedItems = (
             ) : undefined}
           </>
         ) : undefined,
-        source: aiUserMessageSource(item.entry, locale, timeZone),
+        source: aiUserMessageSource(
+          item.entry,
+          locale,
+          timeZone,
+          item.entry.meta?.origin?.kind === "wakeup" ? alarms.get(item.entry.meta.origin.id) : undefined,
+        ),
         attachments: aiUserMessageAttachments(item.entry, actions),
         actions: createAiUserMessageActions(item.entry, actions, locale),
         actionDisplay: "inline",
@@ -349,6 +381,19 @@ const storedItems = (
       return item.type === "code-review-start" ? [activity, ...unansweredNotice(item.entry, itemIndex)] : activity;
     }
 
+    if (item.type === "wakeup") {
+      const plan = wakeupPlans.get(item.id);
+      // A fact of the turn that still runs stands at its end once it finished.
+      if (!plan || (activeTurnId !== null && (item.loopId ?? item.after) === activeTurnId)) return [];
+      return {
+        kind: "activity",
+        id: item.id,
+        class: "ai-wakeup-line-row",
+        anchorId: item.entry.seq,
+        label: <AiWakeupLine plan={plan} host={actions.wakeups} locale={locale} timeZone={timeZone ?? "UTC"} />,
+      };
+    }
+
     if (item.type === "summary") {
       const count = item.entry.meta?.compactedCount;
       const date = new Date(item.entry.createdAt).toLocaleDateString(locale);
@@ -383,7 +428,7 @@ const storedItems = (
     prompt = null;
     let firstSegment = true;
     let opener = leadingSteerOpener(item.blocks) ?? "start";
-    return segments.flatMap((segment, index): ChatTimelineItem[] => {
+    const rendered = segments.flatMap((segment, index): ChatTimelineItem[] => {
       const turnId = item.loopId ?? item.id;
       if (segment.type === "survey") {
         opener = surveyOpener(segment.block.callId);
@@ -473,6 +518,7 @@ const storedItems = (
         },
       ];
     });
+    return lastOfLoop && item.loopId !== activeTurnId ? [...rendered, ...failedWakeup(item, itemIndex)] : rendered;
   });
 };
 

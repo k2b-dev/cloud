@@ -262,6 +262,23 @@
 .k2b-ui .assistant-context-box__main:disabled { cursor: default; }
 .k2b-ui .assistant-context-box__main:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: -2px; }
 .k2b-ui .assistant-context-box__icon { color: var(--k2b-text-secondary); font-size: 0.9375rem; text-align: center; }
+/* An alarm of the chat: its plain sign in plum (Gustav alarms v1, 6). */
+.k2b-ui .assistant-context-box__row[data-row^="wakeup:"] .assistant-context-box__icon { color: var(--k2b-ai-accent); }
+/* "2 more" unfolds the rest of a group in place, under its rows, aligned with their titles. */
+.k2b-ui .assistant-context-box__unfold {
+  justify-self: start;
+  height: 1.5rem;
+  margin-inline-start: 2.125rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k2b-ai-accent);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.k2b-ui .assistant-context-box__unfold:hover { text-decoration: underline; text-underline-offset: 2px; }
+.k2b-ui .assistant-context-box__unfold:focus-visible { border-radius: 0.25rem; outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
 .k2b-ui .assistant-context-box__tile {
   display: grid;
   width: 1.125rem;
@@ -780,7 +797,7 @@
 }
 .k2b-ui .assistant-waiting[data-quiet] { visibility: hidden; }
 /* The slash list opens over the row's place: the row steps back, keeping its place, until the list closes. */
-.k2b-ui .assistant-chat-composer__column:has(.k2b-chat-composer-accessory[data-commands]) > :is(.assistant-waiting, .assistant-queue) { visibility: hidden; }
+.k2b-ui .assistant-chat-composer__column:has(.k2b-chat-composer-accessory[data-commands]) > :is(.assistant-waiting, .assistant-queue, .assistant-wakeups) { visibility: hidden; }
 .k2b-ui .assistant-waiting__label { display: inline-flex; flex: none; align-items: center; gap: .3125rem; color: var(--k2b-text-secondary); font-size: .75rem; font-weight: 600; line-height: 1rem; white-space: nowrap; }
 .k2b-ui .assistant-waiting__label > i { color: var(--k2b-ai-accent); font-size: .875rem; }
 /* Chips shrink sideways; nothing is cut above or below, so focus rings and the touch areas of coarse pointers stay whole. */
@@ -922,6 +939,57 @@
   .k2b-ui .assistant-queue__actions > .k2b-icon-button::after { position: absolute; inset: -.4375rem -.25rem; content: ""; }
   .k2b-ui .assistant-queue__rows { max-block-size: calc(7.5 * 2.75rem); }
 }
+/* Gustav's alarms (Gustav alarms v1, F1 A): the same 32 px row in the free end above the field, with the next alarm,
+   or the chip "Alarms · n" at the end of the row "Waiting for you" or "Queued" share. The list has the form of "Queued":
+   time in a fixed column of 8.75 rem, the note behind it, two fixed places for pencil and cross. */
+.k2b-ui .assistant-chat-composer__column > .assistant-wakeups {
+  position: absolute;
+  z-index: 2;
+  inset-inline: 0;
+  inset-block-end: calc(100% + .375rem);
+}
+.k2b-ui .assistant-wakeups[data-layout="line"] {
+  block-size: 2rem;
+  padding: 0 .25rem 0 .625rem;
+  border-radius: .625rem;
+  background: var(--k2b-surface-muted);
+}
+.k2b-ui .assistant-wakeups { display: flex; align-items: center; gap: .5rem; min-inline-size: 0; color: var(--k2b-text-secondary); font-size: .8125rem; line-height: 1rem; }
+.k2b-ui .assistant-wakeups[data-layout="chip"] { flex: none; }
+.k2b-ui .assistant-wakeups .assistant-queue__head > i { color: var(--k2b-ai-accent); font-size: .875rem; }
+.k2b-ui .assistant-wakeups .assistant-queue__chip > .ti-alarm { color: var(--k2b-text-subtle); font-size: .875rem; }
+.k2b-ui .assistant-wakeups__when { flex: none; margin-inline-end: .5rem; color: var(--k2b-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k2b-ui .assistant-wakeups__state { display: inline-flex; flex: none; align-items: center; gap: .3125rem; color: var(--k2b-warning-text); font-size: .75rem; white-space: nowrap; }
+.k2b-ui .assistant-wakeups__state > i { font-size: .875rem; }
+.k2b-ui .assistant-queue__sign.assistant-wakeups__sign { color: var(--k2b-ai-accent); }
+.k2b-ui .assistant-wakeups__main { align-items: baseline; }
+.k2b-ui .assistant-wakeups__list .assistant-wakeups__when { inline-size: 8.75rem; margin: 0; }
+.k2b-ui .assistant-wakeups__main > .assistant-queue__text { max-inline-size: none; }
+/* Two 30 px places, pencil (or "Catch up now") and cross. */
+.k2b-ui .assistant-queue__actions.assistant-wakeups__actions { inline-size: 3.875rem; }
+/* Touch screens: the signs always show; time and note stand on two lines. */
+@media (hover: none) {
+  .k2b-ui .assistant-wakeups__main { flex-direction: column; align-items: flex-start; }
+  .k2b-ui .assistant-wakeups__list .assistant-wakeups__when { inline-size: auto; }
+  .k2b-ui .assistant-queue__actions.assistant-wakeups__actions { inline-size: auto; }
+}
+@media (max-width: 640px) {
+  .k2b-ui .assistant-wakeups__main { flex-direction: column; align-items: flex-start; }
+  .k2b-ui .assistant-wakeups__list .assistant-wakeups__when { inline-size: auto; }
+}
+/* "Change alarm": flat inside, fields with their own 2 px edge, "What changes" over the foot without a box. */
+.k2b-ui .assistant-wakeup-dialog { display: grid; gap: .875rem; }
+.k2b-ui .assistant-wakeup-dialog__pair { display: grid; grid-template-columns: minmax(0, 1fr) 7rem; gap: .625rem; align-items: start; }
+.k2b-ui .assistant-wakeup-dialog__hint { display: flex; justify-content: space-between; gap: .5rem; }
+.k2b-ui .assistant-wakeup-dialog__count { flex: none; font-variant-numeric: tabular-nums; }
+.k2b-ui .assistant-wakeup-dialog__changes,
+.k2b-ui .assistant-wakeup-dialog__error { display: flex; gap: .375rem; margin: 0; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.25rem; }
+.k2b-ui .assistant-wakeup-dialog__changes b { color: var(--k2b-text); font-weight: 600; }
+.k2b-ui .assistant-wakeup-dialog__error { color: var(--k2b-danger-text); }
+.k2b-ui .assistant-wakeup-dialog__error > i { flex: none; margin-block-start: .125rem; font-size: 1rem; }
+.k2b-ui .assistant-wakeup-dialog__foot { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.k2b-ui .assistant-wakeup-dialog__grow { flex: 1 1 0; }
+.k2b-ui .assistant-wakeup-dialog__delete { color: var(--k2b-danger-text); }
 /* Narrow, the row keeps the hour glass, the next entry's text and "+n". */
 @container assistant-waiting (max-width: 29.999rem) {
   .k2b-ui .assistant-queue__chip > span:not(.assistant-queue__count) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

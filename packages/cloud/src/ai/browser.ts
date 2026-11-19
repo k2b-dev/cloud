@@ -257,3 +257,4 @@ export {
 } from "./view-block";
 
 export type { AiWakeup, AiWakeupEvent, AiWakeupInput, AiWakeupNoteSource, AiWakeupPatch } from "./wakeup-contracts";
+export { aiWakeupDay, aiWakeupWhen } from "./wakeup-when";

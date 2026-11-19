@@ -18,6 +18,7 @@ import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { type AiQuoteDraft, aiQuoteVisibleTextOfHtml } from "../quote-markers";
 import type { AiCodeAuthoringStop, AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
+import type { AiChatWakeupHost } from "./wakeup-line";
 import {
   type AiForkMessageInput,
   type AiRetryMessageInput,
@@ -48,6 +49,8 @@ type RetryMessageHandler = (entry: AiStoredMessage, input?: AiRetryMessageInput)
 type RetrySteerHandler = (block: Extract<AiTurnBlock, { kind: "steer_message" }>) => void | Promise<void>;
 
 export type AiChatActions = {
+  /** The chat's alarms and their actions; without it, alarm lines are history only. */
+  wakeups?: AiChatWakeupHost;
   /** The host supplies the authorized card jump for a durable decision fact. */
   renderCodeDecision?: (entry: AiStoredMessage) => JSX.Element;
   /** Host-localized authoring budget notice. Superseded receipts can release their action space; consent uses onContinueTurn. */

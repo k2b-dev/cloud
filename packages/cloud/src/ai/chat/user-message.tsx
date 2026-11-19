@@ -5,6 +5,7 @@ import { importOnDemand } from "../../browser/reload";
 import type { AiTurnBlock } from "../protocol";
 import type { AiQuoteSource } from "../quote-markers";
 import type { AiStoredMessage } from "../types";
+import type { AiWakeup } from "../wakeup-contracts";
 import type { AiChatActions } from "./message-actions";
 import {
   copyTextFromMessage,
@@ -14,6 +15,7 @@ import {
   vfsAttachmentsFromMessage,
 } from "./message-utils";
 import { aiChatMessages } from "./messages";
+import { aiWakeupWords } from "./wakeup-line";
 
 export const aiUserMessageText = (entry: AiStoredMessage): string => userVisibleTextFromMessage(entry.message, entry.meta?.quotes);
 
@@ -41,21 +43,34 @@ export function AiUserMessageQuotes(props: { entry: AiStoredMessage }): JSX.Elem
  * Who wrote a message the person did not type: an automation, alarm or another chat. The server sets the origin from the
  * writer and links it only for a viewer who may open the source. The person's own messages carry none.
  */
-export const aiUserMessageSource = (entry: AiStoredMessage, locale: string, timeZone = "UTC"): JSX.Element | undefined => {
+/** An alarm message delivered this much later than planned names its planned time as delayed. */
+const WAKEUP_DELAYED_MS = 10 * 60_000;
+
+export const aiUserMessageSource = (
+  entry: AiStoredMessage,
+  locale: string,
+  timeZone = "UTC",
+  /** The alarm as the chat knows it: a repeating one names its rhythm instead of the time. */
+  wakeup?: Pick<AiWakeup, "cron" | "rhythm">,
+): JSX.Element | undefined => {
   // A turn Code started before writers carried their origin names its Code from the turn's own record, without a link.
   const code = entry.meta?.codeOrigin;
   const origin =
     entry.meta?.origin ?? (code ? { kind: "automation" as const, id: code.codeId, name: code.title, href: undefined } : undefined);
   if (!origin || origin.kind === "person") return undefined;
-  if (origin.kind === "wakeup")
+  if (origin.kind === "wakeup") {
+    const time = dates.formatTime(origin.scheduledAt, { locale, timeZone });
+    const delayed = Date.parse(entry.createdAt) - Date.parse(origin.scheduledAt) >= WAKEUP_DELAYED_MS;
     return (
       <>
-        <i class="ai-message-source__icon ti ti-alarm" data-kind="wakeup" aria-hidden="true" />
+        <i class={`ai-message-source__icon ti ${wakeup?.cron ? "ti-repeat" : "ti-alarm"}`} data-kind="wakeup" aria-hidden="true" />
         <span>
-          {origin.name} {dates.formatTime(origin.scheduledAt, { locale, timeZone })}
+          {origin.name} ·{" "}
+          {delayed ? aiWakeupWords.resolve([locale]).t.planned({ time }) : wakeup?.cron ? wakeup.rhythm : time}
         </span>
       </>
     );
+  }
   const t = aiChatMessages(locale);
   // An automation Cloud could not name for this viewer says only that it is one, never "Automation" as a name.
   const label =

@@ -32,6 +32,7 @@ import {
   aiLatestUsageSnapshot,
   aiModelBlocksSending,
   aiModelRequestFor,
+  type AiChatWakeupHost,
   createAiChatTimeline,
   createAiPastedTextFile,
   readAiComposerFiles,
@@ -68,7 +69,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createResource, createSignal, For, lazy, on, onCleanup, onMount, Show, Suspense } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, For, type JSX, lazy, on, onCleanup, onMount, Show, Suspense } from "solid-js";
 import { assistantApi } from "../api/client";
 import { revokeChatWebsite } from "../chat-code/approval-preferences";
 import { artifactMessages } from "../chat-code/messages";
@@ -106,6 +107,8 @@ import type { AssistantQueueHost } from "./AssistantQueueConnected";
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
+import { AssistantWakeupDock } from "./wakeup-dock";
+import type { AssistantWakeupContext } from "./wakeups";
 import { assistantArchiveBlocker } from "./archive-blocker";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
@@ -1799,6 +1802,25 @@ export default function AssistantWorkspace(props: Props) {
     liveHub,
   );
   const workspaceContext = () => contextState.snapshot();
+  /** The chat's alarms from its context snapshot, so the server's first frame shows them; their actions load on use. */
+  const wakeupContext: AssistantWakeupContext = {
+    chatId: chat.activeConversationId,
+    items: () => contextState.snapshot()?.wakeups?.items ?? [],
+    limit: () => contextState.snapshot()?.wakeups?.limit ?? 5,
+    refresh: () => contextState.refresh(),
+    locale,
+    timeZone: props.timeZone,
+  };
+  const withWakeups = <A,>(run: (module: typeof import("./wakeups"), arg: A) => unknown) => (arg: A) =>
+    void import("./wakeups").then((module) => run(module, arg));
+  const wakeupHost: AiChatWakeupHost = {
+    current: () => contextState.snapshot()?.wakeups?.items,
+    onEdit: withWakeups((module, wakeup) => module.editWakeup(wakeupContext, wakeup)),
+    onDelete: withWakeups((module, wakeup) => module.deleteWakeup(wakeupContext, wakeup)),
+    onCatchUp: withWakeups((module, wakeup) => module.catchUpWakeup(wakeupContext, wakeup)),
+    onRenew: withWakeups((module, wakeup) => module.renewWakeup(wakeupContext, wakeup)),
+    onRetry: withWakeups((module, input) => module.retryWakeup(wakeupContext, input)),
+  };
   const sidebarCopy = () => chatSidebarMessages.resolve([locale()]).t;
   const sidebarActions = () =>
     assistantChatSidebarActions({
@@ -1825,6 +1847,10 @@ export default function AssistantWorkspace(props: Props) {
       if (target.kind === "file") actions.onOpenFile({ path: target.path, title: target.title });
       else if (target.kind === "app") return;
       else if (target.kind === "jump") actions.onJump(target.target);
+      else if (target.kind === "wakeup") {
+        const wakeup = wakeupContext.items().find((item) => item.id === target.id);
+        if (wakeup) wakeupHost.onEdit(wakeup);
+      }
       else window.location.assign(target.href);
     },
     onJump: (target) => void jumpTo(target),
@@ -2202,9 +2228,9 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
 
-  const QueuePart = (partProps: { layout: "line" | "chip" }) => (
+  const QueuePart = (partProps: { layout: "line" | "chip"; end?: JSX.Element }) => (
     <Suspense>
-      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} timeZone={props.timeZone} />
+      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} timeZone={props.timeZone} end={partProps.end} />
     </Suspense>
   );
   /**
@@ -2214,7 +2240,10 @@ export default function AssistantWorkspace(props: Props) {
    */
   const WaitingRow = (rowProps: { queue?: boolean }) => {
     const queued = () => Boolean(rowProps.queue) && queueEntries().length > 0;
+    // Alarms share the one row (Gustav alarms v1, F1 A): alone as their own line, else as the chip at its end.
+    const alarms = () => Boolean(rowProps.queue) && wakeupContext.items().length > 0;
     const waitingShown = () => waiting().total > 0 && !waitingFocus.quiet();
+    const AlarmChip = () => <AssistantWakeupDock context={wakeupContext} layout="chip" />;
     return (
       <>
         <Show when={waiting().total > 0}>
@@ -2224,11 +2253,25 @@ export default function AssistantWorkspace(props: Props) {
             quiet={waitingFocus.quiet()}
             onJump={(question) => void jumpToQuestion(question)}
             onShowMore={openApprovals}
-            queue={queued() && waitingShown() ? <QueuePart layout="chip" /> : undefined}
+            queue={
+              (queued() || alarms()) && waitingShown() ? (
+                <>
+                  <Show when={queued()}>
+                    <QueuePart layout="chip" />
+                  </Show>
+                  <Show when={alarms()}>
+                    <AlarmChip />
+                  </Show>
+                </>
+              ) : undefined
+            }
           />
         </Show>
         <Show when={queued() && !waitingShown()}>
-          <QueuePart layout="line" />
+          <QueuePart layout="line" end={alarms() ? <AlarmChip /> : undefined} />
+        </Show>
+        <Show when={alarms() && !queued() && !waitingShown()}>
+          <AssistantWakeupDock context={wakeupContext} layout="line" />
         </Show>
       </>
     );
@@ -3398,6 +3441,7 @@ export default function AssistantWorkspace(props: Props) {
                               fallback={
                                 <AiChatActionsProvider
                                   actions={{
+                                    wakeups: wakeupHost,
                                     onQuote: addQuote,
                                     renderCodeAuthoringStop: (state, continuable, superseded) => (
                                       <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />

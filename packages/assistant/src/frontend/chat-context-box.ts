@@ -18,6 +18,7 @@ export type ContextBoxOpen =
   | { kind: "app"; id: string; title: string }
   | { kind: "jump"; target: ContextBoxJump }
   | { kind: "href"; href: string }
+  | { kind: "wakeup"; id: string }
   | { kind: "none" };
 
 /** The one action that shows while the pointer rests on a row. */
@@ -44,7 +45,15 @@ export type ContextBoxRow = {
   hover: ContextBoxHover;
 };
 
-export type ContextBoxGroup = { key: string; label: string; count: number; rows: ContextBoxRow[]; more: boolean };
+export type ContextBoxGroup = {
+  key: string;
+  label: string;
+  count: number;
+  rows: ContextBoxRow[];
+  more: boolean;
+  /** Rows that unfold in place below the first ones ("2 more"), instead of "Show all" opening the tab. */
+  rest?: ContextBoxRow[];
+};
 
 export type ContextBoxModel = {
   /** Nothing to show yet: the box says what will appear here. */
@@ -139,13 +148,20 @@ export const contextBoxResultRow = (
 const groupRow = (row: AssistantChatContextGroup["rows"][number]): ContextBoxRow => ({
   key: `${row.key}`,
   icon: row.icon,
-  tile: { accent: row.accent },
+  // An app's thing carries its tile; a thing of the chat itself, such as an alarm, its plain sign.
+  ...(row.accent ? { tile: { accent: row.accent } } : {}),
   title: row.title,
   trailing: row.word,
   tone: row.tone,
   attention: row.attention,
   tooltip: row.tooltip ?? `${row.title} · ${row.word}`,
-  open: row.jump ? { kind: "jump", target: row.jump } : row.href ? { kind: "href", href: row.href } : { kind: "none" },
+  open: row.wakeup
+    ? { kind: "wakeup", id: row.wakeup }
+    : row.jump
+      ? { kind: "jump", target: row.jump }
+      : row.href
+        ? { kind: "href", href: row.href }
+        : { kind: "none" },
   hover: row.action ? { kind: "href", href: row.action.href, label: row.action.label, icon: row.action.icon } : null,
 });
 
@@ -195,7 +211,17 @@ export const buildContextBoxModel = (
     if (budget <= 0) return [];
     const rows = group.rows.slice(0, Math.min(CONTEXT_BOX_GROUP_LIMIT, budget)).map(groupRow);
     budget -= Math.max(rows.length, 1);
-    return [{ key: group.key, label: group.label, count: group.count, rows, more: group.count > rows.length }];
+    const rest = group.unfold ? group.rows.slice(rows.length).map(groupRow) : [];
+    return [
+      {
+        key: group.key,
+        label: group.label,
+        count: group.count,
+        rows,
+        more: !rest.length && group.count > rows.length,
+        ...(rest.length ? { rest } : {}),
+      },
+    ];
   });
   return {
     empty: snapshot.results.length === 0 && groups.every((group) => group.count === 0) && !sources,

@@ -24,6 +24,16 @@ export type AiMessageTimelineItem =
   | { type: "summary"; id: string; entry: AiStoredMessage }
   | { type: "code-decision"; id: string; entry: AiStoredMessage }
   | { type: "code-review-start"; id: string; entry: AiStoredMessage }
+  /** A Cloud-authored alarm fact (`meta.wakeupEvent`), drawn as a line and never as an answer. */
+  | {
+      type: "wakeup";
+      id: string;
+      entry: AiStoredMessage;
+      /** The turn that wrote it; null when the person or Cloud did. */
+      loopId: string | null;
+      /** The turn it follows, which may still run. */
+      after: string | null;
+    }
   | AiAssistantTimelineItem;
 
 export const assistantVisibleTextFromMessage = (message: Message): string => {
@@ -62,7 +72,46 @@ const timestampMs = (value: string | undefined): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTimelineItem[] => {
+/**
+ * An alarm fact a running turn wrote (Gustav's tool) is stored between that turn's messages, without its loop. It
+ * stands after the turn's last message, where the turn ends, and never splits the turn's answer. A fact after a turn
+ * ended stays where it is. `inLoop` names the turn a fact belongs to; `after` the turn it follows.
+ */
+const placeWakeupFacts = (
+  messages: AiStoredMessage[],
+  inLoop: Map<AiStoredMessage, string>,
+  after: Map<AiStoredMessage, string>,
+): AiStoredMessage[] => {
+  const placed: AiStoredMessage[] = [];
+  let held: AiStoredMessage[] = [];
+  let loopId: string | null = null;
+  for (const entry of messages) {
+    if (entry.meta?.wakeupEvent) {
+      if (!loopId) placed.push(entry);
+      else {
+        held.push(entry);
+        after.set(entry, loopId);
+      }
+      continue;
+    }
+    if (held.length) {
+      // The turn goes on after the fact: it belongs to that turn and moves to its end.
+      if (loopId && entry.loopId === loopId) for (const fact of held) inLoop.set(fact, loopId);
+      else {
+        placed.push(...held);
+        held = [];
+      }
+    }
+    placed.push(entry);
+    loopId = entry.loopId;
+  }
+  return held.length ? [...placed, ...held] : placed;
+};
+
+export const buildAiMessageTimeline = (stored: AiStoredMessage[]): AiMessageTimelineItem[] => {
+  const inLoop = new Map<AiStoredMessage, string>();
+  const after = new Map<AiStoredMessage, string>();
+  const messages = stored.some((entry) => entry.meta?.wakeupEvent) ? placeWakeupFacts(stored, inLoop, after) : stored;
   const items: AiMessageTimelineItem[] = [];
   let lastUserEntry: AiStoredMessage | null = null;
   let pendingSteers: Array<{ loopId: string | null; steerId: string }> = [];
@@ -89,6 +138,13 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
       flushPendingSteers();
       if (entry.meta.codeReviewStart) lastUserEntry = entry;
       items.push({ type: entry.meta.codeDecision ? "code-decision" : "code-review-start", id: entry.id, entry });
+      index += 1;
+      continue;
+    }
+
+    if (entry.meta?.wakeupEvent) {
+      flushPendingSteers();
+      items.push({ type: "wakeup", id: entry.id, entry, loopId: inLoop.get(entry) ?? null, after: after.get(entry) ?? null });
       index += 1;
       continue;
     }
@@ -124,6 +180,7 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
       index < messages.length &&
       isAssistantPart(messages[index]!) &&
       !messages[index]!.meta?.codeDecision &&
+      !messages[index]!.meta?.wakeupEvent &&
       sameLoop(messages[index]!, loopId) &&
       (loopId !== null || sameBackgroundResult(messages[index]!, entry))
     ) {

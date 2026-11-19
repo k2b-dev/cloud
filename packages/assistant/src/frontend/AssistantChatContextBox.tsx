@@ -145,6 +145,7 @@ function BoxGroup(props: {
   onAll: () => void;
 }) {
   const copy = useCopy();
+  const [unfolded, setUnfolded] = createSignal(false);
   return (
     <section class="assistant-context-box__group" aria-label={props.group.label} data-group={props.group.key}>
       <h3 class="assistant-context-box__label">
@@ -165,8 +166,17 @@ function BoxGroup(props: {
       </h3>
       <Show when={props.group.rows.length} fallback={<p class="assistant-context-box__none">{copy().boxNone}</p>}>
         <ul class="assistant-context-box__rows">
-          <For each={props.group.rows}>{(row) => <BoxRow row={row} actions={props.actions} downloadHref={props.downloadHref} />}</For>
+          <For each={unfolded() ? [...props.group.rows, ...(props.group.rest ?? [])] : props.group.rows}>
+            {(row) => <BoxRow row={row} actions={props.actions} downloadHref={props.downloadHref} />}
+          </For>
         </ul>
+      </Show>
+      <Show when={!unfolded() && props.group.rest?.length}>
+        {(count) => (
+          <button type="button" class="assistant-context-box__unfold" onClick={() => setUnfolded(true)}>
+            {copy().boxMore({ count: count() })}
+          </button>
+        )}
       </Show>
     </section>
   );

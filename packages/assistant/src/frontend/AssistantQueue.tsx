@@ -1,7 +1,7 @@
 import type { AiMessageOrigin } from "@k2b/cloud/ai/browser";
 import { dates } from "@k2b/stdlib";
 import { IconButton, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { queueMessages } from "./queue-messages";
 
 /** Who wrote a queued message, as the server projects it for the viewer; `href` only where the viewer may open it. */
@@ -32,6 +32,8 @@ export type AssistantQueueProps = {
   onSendNow: (entry: AssistantQueueEntry) => void;
   onEdit: (entry: AssistantQueueEntry) => void;
   onRemove: (entry: AssistantQueueEntry) => void;
+  /** What else shares the row, at its end: the chip of the chat's alarms. */
+  end?: JSX.Element;
 };
 
 type EntryState = "pending" | "sending" | "failed";
@@ -229,6 +231,7 @@ export default function AssistantQueue(props: AssistantQueueProps) {
         )}
       </Show>
       <Toggle />
+      {props.end}
       <div class="assistant-queue__list" id={listId} role="group" aria-label={t().queuedMessages} hidden={!open()}>
         <div class="assistant-queue__list-head">
           <span>
