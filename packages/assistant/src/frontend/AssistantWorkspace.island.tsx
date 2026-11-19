@@ -82,6 +82,7 @@ import type { CodeVersionCardEntry } from "../code-version-cards";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
+import type { WaitingAutomation } from "../waiting-automations";
 import AssistantApprovalsView from "./AssistantApprovalsView";
 import AssistantAuthoringStop from "./AssistantAuthoringStop";
 import {
@@ -259,6 +260,8 @@ type Props = {
   };
   /** Code of a place that needs the person, when the page opened on Waiting for you; null when Core could not answer. */
   initialAttention?: CodeAttentionView | null;
+  /** The person's own Code that waits for them, when the page opened on Waiting for you; null when Core could not answer. */
+  initialAutomations?: WaitingAutomation[] | null;
   /** The panel's place and its Code at render time, for the "Code of …" block. */
   initialCodeBlock?: AssistantCodeBlockInitial | null;
   /** The person's open questions at render time, for "Waiting for you" above the composer. */
@@ -1621,20 +1624,24 @@ export default function AssistantWorkspace(props: Props) {
     chat.activeConversationId()
       ? (queuedMessages.data() ?? []).map((message) => ({
           ...message,
-          // The person's own words and attachments; a quote is no word of theirs and stays out of the line.
-          text: message.content
-            .flatMap((part) =>
-              part.type === "quote"
-                ? []
-                : [
-                    part.type === "text"
-                      ? part.text
-                      : part.type === "file" || part.type === "project-file"
-                        ? part.path
-                        : (part.title ?? part.ref.id),
-                  ],
-            )
-            .join(" · "),
+          // The person's own words and attachments; a quote is no word of theirs and stays out of the line. An entry an
+          // automation or another chat wrote shows the server's text: its instruction, without the data it brought.
+          text:
+            message.origin.kind !== "person"
+              ? message.text
+              : message.content
+                  .flatMap((part) =>
+                    part.type === "quote"
+                      ? []
+                      : [
+                          part.type === "text"
+                            ? part.text
+                            : part.type === "file" || part.type === "project-file"
+                              ? part.path
+                              : (part.title ?? part.ref.id),
+                        ],
+                  )
+                  .join(" · "),
         }))
       : [],
   );
@@ -3351,6 +3358,8 @@ export default function AssistantWorkspace(props: Props) {
                         <AssistantApprovalsView
                           initial={approvalsRendered() ? props.approvals.page : undefined}
                           initialAttention={approvalsRendered() ? props.initialAttention : undefined}
+                          initialAutomations={approvalsRendered() ? props.initialAutomations : undefined}
+                          timeZone={props.timeZone}
                         />
                       }
                     >

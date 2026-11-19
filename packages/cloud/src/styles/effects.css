@@ -2065,3 +2065,7 @@ dialog:has(.launchpad-panel)::backdrop {
 .k2b-ui .ai-message-source__icon { flex: none; color: var(--k2b-text); font-size: .875rem; }
 .k2b-ui .ai-message-source__icon[data-kind="chat"] { color: var(--k2b-ai-accent); }
 .k2b-ui .k2b-chat-message__source > a { display: inline-flex; align-items: center; gap: .3125rem; min-width: 0; }
+/* The data a machine-written message brought: a quiet meta line under its instruction, at most three lines. */
+.k2b-ui .ai-message-data { display: flex; align-items: flex-start; gap: .375rem; margin-top: .375rem; color: var(--k2b-text-muted); font-size: .75rem; line-height: 1rem; }
+.k2b-ui .ai-message-data > i { flex: none; font-size: .875rem; line-height: 1rem; }
+.k2b-ui .ai-message-data > span { display: -webkit-box; min-width: 0; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }

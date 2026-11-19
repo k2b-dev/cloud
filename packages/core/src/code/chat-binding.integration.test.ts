@@ -133,6 +133,7 @@ databaseSuite()("personal Code chat binding", () => {
     expect(await getCodeChatBinding({ codeId }, context())).toMatchObject({
       revision: 1,
       canChange: true,
+      used: false,
       chat: { state: "available", id: "Init433", title: "Chat Init433", project: null, href: "/app/assistant?conversation=Init433" },
     });
     expect(JSON.stringify(initialized)).not.toContain(conversationId);
@@ -154,6 +155,7 @@ databaseSuite()("personal Code chat binding", () => {
       codeId: item.id,
       revision: 1,
       canChange: false,
+      used: false,
       chat: { state: "hidden" },
     });
     await expect(setCodeChatBinding({ codeId: item.id, chatId: "Second433", revision: 1 }, context(editor))).rejects.toMatchObject({
@@ -412,6 +414,7 @@ databaseSuite()("personal Code chat binding", () => {
       codeId: item.id,
       revision: 1,
       canChange: false,
+      used: true,
       chat: { state: "hidden" },
     });
     expect(await resolveCodeChatDestination(await personalRun(item.id), sql)).toMatchObject({
@@ -436,6 +439,7 @@ databaseSuite()("personal Code chat binding", () => {
         kind: "code_attention",
         short: "Morning report braucht einen Chat",
         href: `/app/assistant/code/${item.id}`,
+        reason: "chat_missing",
       }),
     ]);
     await sql`UPDATE ai.conversations SET archived_at=NULL WHERE id=${destination}::uuid`;
@@ -494,6 +498,7 @@ databaseSuite()("personal Code chat binding", () => {
       codeId: fresh.id,
       revision: 0,
       canChange: true,
+      used: false,
       chat: null,
     });
   });

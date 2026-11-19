@@ -12,6 +12,7 @@ export const queueMessages = i18n.define({
       retrySendNow: "Send again",
       remove: "Remove",
       notSent: "Not sent",
+      retrying: "Retrying soon",
       dispatchRetrying: "Could not start. Retrying shortly.",
       dispatchFailed: "Could not start. Please retry or remove.",
       order: "In order.",
@@ -19,6 +20,7 @@ export const queueMessages = i18n.define({
       showAll: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: "Show the queued message", other: `Show all ${count} queued messages` }),
       fromAutomation: ({ name }: { name: string }) => `Automation “${name}”`,
+      fromUnnamedAutomation: "Automation",
       fromChat: ({ name }: { name: string }) => `Chat “${name}”`,
       announce: ({ text }: { text: string }) => `Queued: ${text}`,
       edit: "Edit",
@@ -32,6 +34,7 @@ export const queueMessages = i18n.define({
       retrySendNow: "Erneut senden",
       remove: "Entfernen",
       notSent: "Nicht gesendet",
+      retrying: "Neuer Versuch folgt",
       dispatchRetrying: "Start fehlgeschlagen. Neuer Versuch folgt.",
       dispatchFailed: "Start fehlgeschlagen. Bitte erneut versuchen oder entfernen.",
       order: "Der Reihe nach.",
@@ -39,6 +42,7 @@ export const queueMessages = i18n.define({
       showAll: ({ count }) =>
         i18n.plural(count, "de", { one: "Vorgemerkte Nachricht zeigen", other: `Alle ${count} vorgemerkten Nachrichten zeigen` }),
       fromAutomation: ({ name }) => `Automation „${name}“`,
+      fromUnnamedAutomation: "Automation",
       fromChat: ({ name }) => `Chat „${name}“`,
       announce: ({ text }) => `Vorgemerkt: ${text}`,
       edit: "Bearbeiten",

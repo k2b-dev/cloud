@@ -23,6 +23,7 @@ import { chatCodeVersionRefs, loadCodeVersionCards } from "../code-version-cards
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
+import { loadWaitingAutomations } from "../waiting-automations";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { readAssistantPlace } from "./assistant-place";
@@ -93,6 +94,7 @@ export default ssr<AuthContext>(async (c) => {
     codeBlockPage,
     codeDetail,
     attention,
+    automations,
     placeState,
   ] = await Promise.all([
     assistantAiSettingsState(subject),
@@ -115,6 +117,8 @@ export default ssr<AuthContext>(async (c) => {
       ? loadCodePage(c, { owner: { codeId: detailCodeId }, href: `/app/assistant/code/${detailCodeId}`, canManageOwner: false })
       : undefined,
     approvalsOpen ? loadCodeAttentionView(invokeCode, catalog).catch(() => null) : undefined,
+    // The person's own Code that waits for them, read apart so older questions never push it out of its section.
+    approvalsOpen ? loadWaitingAutomations(invokeCode, timeZone).catch(() => null) : undefined,
     // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
     panelScope ? loadPlaceAssistant(c, panelScope).catch(() => null) : null,
   ]);
@@ -257,6 +261,7 @@ export default ssr<AuthContext>(async (c) => {
         ...(codeDetail ? { detail: codeDetail } : {}),
       }}
       {...(attention !== undefined ? { initialAttention: attention } : {})}
+      {...(automations !== undefined ? { initialAutomations: automations } : {})}
       initialCodeBlock={panelScope && codeBlockPage !== undefined ? { ref: panelScope, page: codeBlockPage, place: codePlace } : null}
     />
   );

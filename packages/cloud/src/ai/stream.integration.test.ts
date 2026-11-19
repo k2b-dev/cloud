@@ -191,7 +191,9 @@ suite("AI conversation stream repair", () => {
     const assertAuthors = (messages: typeof initial.messages) => {
       const origins = messages.flatMap((message) => (message.meta?.origin ? [message.meta.origin] : []));
       expect(origins).toContainEqual(expect.objectContaining({ kind: "person", name: "AI Stream" }));
-      expect(origins).toContainEqual({ kind: "automation", id: "c_private", name: "Automation" });
+      // An automation origin without a resource (written before #3665) and without a service account has no name any
+      // reader may see: it is marked unnamed, so surfaces say "From an automation" instead of showing "Automation" as a name.
+      expect(origins).toContainEqual({ kind: "automation", id: "c_private", name: "Automation", named: false });
       expect(origins.find((origin) => origin.kind === "chat")?.href).toBeUndefined();
       expect(messages.find((message) => message.message.role === "assistant")?.meta?.toolPresentations?.run?.appName).toBe("Notizbücher");
     };

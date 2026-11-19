@@ -126,8 +126,10 @@ const messages = /* @__PURE__ */ i18n.define({
       workEndedPaused: "paused",
       workEndedInterrupted: "interrupted",
       messageFromAutomation: ({ name }: { name: string }) => `From automation “${name}”`,
+      messageFromUnnamedAutomation: "From an automation",
       messageFromChat: ({ name }: { name: string }) => `From the chat “${name}”`,
       openAutomation: "Open automation",
+      messageData: ({ text }: { text: string }) => `Data: ${text}`,
       openChat: "Open chat",
       stepThought: "Thought it over",
       attachImageNeedsModel: ({ name }: { name: string }) =>
@@ -578,8 +580,10 @@ const messages = /* @__PURE__ */ i18n.define({
       workEndedPaused: "angehalten",
       workEndedInterrupted: "abgebrochen",
       messageFromAutomation: ({ name }) => `Von Automation „${name}“`,
+      messageFromUnnamedAutomation: "Von einer Automation",
       messageFromChat: ({ name }) => `Aus dem Chat „${name}“`,
       openAutomation: "Automation öffnen",
+      messageData: ({ text }) => `Daten: ${text}`,
       openChat: "Chat öffnen",
       stepThought: "Nachgedacht",
       attachImageNeedsModel: ({ name }) =>

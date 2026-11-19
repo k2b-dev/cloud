@@ -2683,20 +2683,29 @@ test("Code-started turns show their localized origin beside the prompt", () => {
     createdAt: "2026-11-07T09:00:00Z",
     meta: null,
   };
-  for (const label of ["Started by Code Morning review", "Gestartet von Code Morgenübersicht"]) {
+  // The origin stands in the message's source chip (v6 F11), named from the turn's Code record when no writer origin was
+  // stored with it; the prompt stays the message's text.
+  for (const [title, label] of [
+    ["Morning review", "Started by Code Morning review"],
+    ["Morgenübersicht", "Gestartet von Code Morgenübersicht"],
+  ] as const) {
     const attributed = {
       ...entry,
-      meta: { codeOrigin: { codeId: "c_morning", title: "Morning review", runId: "run", requestId: "request", label } },
+      meta: { codeOrigin: { codeId: "c_morning", title, runId: "run", requestId: "request", label } },
     };
     const html = renderToString(() =>
       createComponent(AiChatActionsProvider, {
         actions: {},
         get children() {
-          return createAiChatTimeline({ messages: () => [attributed], activeTurn: () => null })().map((item) => item.content);
+          return createAiChatTimeline({ messages: () => [attributed], activeTurn: () => null })().map((item) =>
+            item.kind === "message" ? [item.source, item.content] : item.content,
+          );
         },
       }),
     );
-    expect(html).toContain(label);
+    expect(html).toContain(`From automation “${title}”`);
+    expect(html).toContain('data-kind="automation"');
+    expect(html).not.toContain("<a ");
     expect(html).toContain("Review my open work.");
   }
   renderToString(() =>

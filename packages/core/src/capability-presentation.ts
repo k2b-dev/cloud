@@ -421,7 +421,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.open_questions": {
           title: "Wartet auf dich lesen",
           description: "Liest deine offenen Fragen und nächsten Schritte zu Code mit aktuellen Rechten.",
-          input: { timeZone: "Zeitzone für angezeigte Daten." },
+          input: { timeZone: "Zeitzone für angezeigte Daten.", kind: "Nur diese Art, in derselben Seitengröße." },
         },
         "ai.chat.read": {
           title: "KI-Chat lesen",

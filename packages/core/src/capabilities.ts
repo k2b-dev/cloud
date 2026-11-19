@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import {
+  AI_OPEN_QUESTION_KINDS,
   AI_SHORT_ID_PATTERN,
   AI_SKILL_DESCRIPTION_MAX_CHARS,
   AI_SKILL_NAME_MAX_CHARS,
@@ -641,7 +642,12 @@ export const aiCapabilities = defineCapabilities({
     "ai.open_questions": {
       title: "Read what waits for you",
       description: "Read your current authorized questions and Code next steps in one bounded list. Resolved entries disappear.",
-      input: z.object({ timeZone: z.string().max(100).describe("Reader time zone for displayed dates.") }).strict(),
+      input: z
+        .object({
+          timeZone: z.string().max(100).describe("Reader time zone for displayed dates."),
+          kind: z.enum(AI_OPEN_QUESTION_KINDS).optional().describe("Only this kind, in the same page size."),
+        })
+        .strict(),
       data: AiOpenQuestionsSchema,
       openWorld: false,
       async run(input, context) {
@@ -653,6 +659,7 @@ export const aiCapabilities = defineCapabilities({
             ownerUserId: context.accessSubject.userId,
             locale: context.locale,
             timeZone: input.timeZone,
+            ...(input.kind ? { kind: input.kind } : {}),
             sources: [(request) => listCodeWaiting(request, context.signal)],
           }),
         });

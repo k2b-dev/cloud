@@ -44,7 +44,7 @@ test("only personal ownership permits changing the chat, independently of editor
 
 test("hidden and deleted bindings carry no chat identity or title", () => {
   for (const chat of [{ state: "hidden" }, { state: "unavailable", reason: "deleted" }] as const) {
-    const base = { codeId: "c_1234", revision: 1, canChange: false, chat };
+    const base = { codeId: "c_1234", revision: 1, canChange: false, used: true, chat };
     expect(CodeChatBindingSchema.parse(base)).toEqual(base);
     for (const field of [{ title: "Private chat" }, { id: "cHt234" }])
       expect(CodeChatBindingSchema.safeParse({ ...base, chat: { ...chat, ...field } }).success).toBe(false);
@@ -52,7 +52,7 @@ test("hidden and deleted bindings carry no chat identity or title", () => {
 });
 
 test("unavailable bindings require a reason and archived bindings may identify the restorable chat", () => {
-  const base = { codeId: "c_1234", revision: 1, canChange: true };
+  const base = { codeId: "c_1234", revision: 1, canChange: true, used: true };
   const archived = { state: "unavailable", reason: "archived", id: "cHt234", title: "Morning report" } as const;
   expect(CodeChatBindingSchema.parse({ ...base, chat: archived }).chat).toEqual(archived);
   expect(CodeChatBindingSchema.parse({ ...base, chat: { state: "unavailable", reason: "archived" } }).chat).toEqual({

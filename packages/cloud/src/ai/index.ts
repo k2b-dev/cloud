@@ -256,7 +256,9 @@ export {
 } from "./memory-tool";
 export { migrateCloudAi } from "./migrate";
 export {
+  AI_OPEN_QUESTION_KINDS,
   type AiOpenQuestion,
+  type AiOpenQuestionCodeReason,
   type AiOpenQuestionKind,
   type AiOpenQuestionSource,
   type AiOpenQuestions,

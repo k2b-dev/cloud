@@ -32,6 +32,8 @@ export const CodeChatBindingSchema = z.strictObject({
   codeId: CodeIdSchema,
   revision,
   canChange: z.boolean(),
+  /** Whether the running version, or the newest one before any runs, writes with `chat.send` to this chat. */
+  used: z.boolean(),
   chat: z
     .union([
       z.strictObject({
@@ -78,10 +80,13 @@ export function codeChatMissingCondition(chatSchemaAvailable: boolean, db: SQL =
     ? db`NOT EXISTS(SELECT 1 FROM ai.conversations chat WHERE chat.id=c.chat_conversation_id
         AND chat.created_by_user_id=c.owner_user_id AND chat.archived_at IS NULL)`
     : db`TRUE`;
-  const usesBoundChat = db`COALESCE((SELECT v.manifest->'permissions' FROM code.versions v WHERE v.code_id=c.id
+  return db`(c.owner_kind='person' AND ${codeUsesBoundChatCondition(db)} AND ${missing})`;
+}
+/** Whether Code c writes with `chat.send` to its bound chat: its running version, or its newest before one runs. */
+export function codeUsesBoundChatCondition(db: SQL = sql) {
+  return db`COALESCE((SELECT v.manifest->'permissions' FROM code.versions v WHERE v.code_id=c.id
     ORDER BY (v.id=c.active_version_id) IS TRUE DESC,v.number DESC LIMIT 1)
     @> '[{"operation":"core.ai.chat.send","target":{"type":"core.ai.chat","id":null}}]'::jsonb,false)`;
-  return db`(c.owner_kind='person' AND ${usesBoundChat} AND ${missing})`;
 }
 export async function codeChatMissing(codeId: string, db: SQL = sql): Promise<boolean> {
   const condition = codeChatMissingCondition(await codeChatSchemaAvailable(db), db);
@@ -157,7 +162,12 @@ export function requireCodeChatOwner(row: Pick<BindingRow, "owner_kind" | "owner
 }
 async function presentBinding(row: BindingRow, context: CodeContext, db: SQL, loadedChat?: BindingChat | null): Promise<CodeChatBinding> {
   const canChange = row.owner_kind === "person" && row.owner_user_id === codePerson(context).id;
-  const base = { codeId: row.id, revision: row.chat_binding_revision, canChange };
+  // Only personal Code has a chat; whether it writes there decides if a list may name the chat or say it is missing.
+  const [usage] =
+    row.owner_kind === "person"
+      ? await db<{ used: boolean }[]>`SELECT ${codeUsesBoundChatCondition(db)} AS used FROM code.codes c WHERE c.id=${row.id}`
+      : [];
+  const base = { codeId: row.id, revision: row.chat_binding_revision, canChange, used: usage?.used === true };
   if (!row.chat_conversation_id) return { ...base, chat: null };
   if (!canChange) return { ...base, chat: { state: "hidden" } };
   // Mutating callers already verified schema availability in this transaction; reads supply loadedChat.
