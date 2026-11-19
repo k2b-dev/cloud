@@ -132,6 +132,8 @@ try {
     naming: "server.js",
     target: "bun",
     minify: true,
+    // Only the island build's language rewrite parses source; the running server never loads the parser.
+    external: ["@babel/parser"],
     define: {
       __CLOUD_VERSION__: JSON.stringify(version),
       __CLOUD_RELEASE__: JSON.stringify(release),

@@ -109,6 +109,20 @@ export const local = i18n.define({ baseLocale: "en", messages: { en: { a: "A" },
         join(root, "probe.ts"),
         `import { i18n } from "@k2b/stdlib";
         import { pageErrorMessages } from ${JSON.stringify(errorMessages)};
+        import { reviewActionCard } from ${JSON.stringify(resolve(import.meta.dir, "../ai/chat/action-card.ts"))};
+        import { actionCardText } from ${JSON.stringify(resolve(import.meta.dir, "../ai/chat/action-text.ts"))};
+        // A review stored in German: its card follows the reader's language, its sentence stays German.
+        const review = {
+          locale: "de",
+          slots: {},
+          ask: "sends",
+          sentence: { action: "Nachricht senden", running: "Wird gesendet …", done: "Gesendet.", confirm: "Senden", decline: "Nicht senden" },
+          preview: { kind: "message", from: { name: "Team Ops", address: "ops@example.com" }, to: [{ name: "Lea Berg", address: "lea@example.com" }], subject: "Wartung", body: "Hallo", format: "plain" },
+        } as const;
+        const cardText = (locale: string) => {
+          const text = actionCardText(reviewActionCard(review, { locale, timeZone: "UTC", app: { name: "Mail", icon: "ti ti-mail" } }));
+          return [text.question, ...text.rows.map((row) => row.label + ": " + row.value)].join(" / ");
+        };
         const fixture = i18n.define({
           baseLocale: "en",
           messages: {
@@ -119,7 +133,7 @@ export const local = i18n.define({ baseLocale: "en", messages: { en: { a: "A" },
         export const probeText = (locale: string) => {
           const platform = pageErrorMessages.resolve([locale]).t;
           const own = fixture.resolve([locale]).t;
-          return [platform.notFound, own.hello, own.count({ n: 2 }), own.onlyEnglish].join(" | ");
+          return [platform.notFound, own.hello, own.count({ n: 2 }), own.onlyEnglish, cardText(locale)].join(" | ");
         };`,
       );
       writeFileSync(
@@ -177,8 +191,11 @@ export const local = i18n.define({ baseLocale: "en", messages: { en: { a: "A" },
         expect({ lang, status, stderr }).toEqual({ lang, status: 0, stderr: "" });
         expect([lang, JSON.parse(stdout)]).toEqual([lang, probeText(lang)]);
       }
-      expect(probeText("de")).toBe("Seite nicht gefunden | Hallo | 2 Einträge | Only English");
-      expect(probeText("fr")).toBe("Page not found | Hello | 2 items | Only English");
+      expect(probeText("de")).toStartWith("Seite nicht gefunden | Hallo | 2 Einträge | Only English | ");
+      expect(probeText("fr")).toStartWith("Page not found | Hello | 2 items | Only English | ");
+      expect(probeText("en")).toContain("Nachricht senden");
+      expect(probeText("en")).toContain(" / To: Lea Berg");
+      expect(probeText("de")).toContain(" / An: Lea Berg");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

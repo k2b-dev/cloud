@@ -143,7 +143,7 @@ function ApprovalCard(props: {
           remember={remember()}
           onConfirm={() => props.decide({ approved: true })}
           onDecline={() => props.decide({ approved: false })}
-          // The outcome lines join the card's sentence, so they speak the stored review's language.
+          // The outcome lines join the card's sentence, so they speak the card's language, the reader's.
           outcome={
             <ActionReceipt
               card={card()}
