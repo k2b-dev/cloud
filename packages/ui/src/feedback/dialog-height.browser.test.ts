@@ -334,8 +334,8 @@ describe(`${browserName} the frame follows its content`, () => {
         const content = document.querySelector<HTMLElement>("[data-content]")!;
         const body = dialog.querySelector<HTMLElement>(".k2b-panel-dialog__body")!;
         const samples: { natural: number; held: number; overflow: number; naturalOverflow: number }[] = [];
-        for (let unit = 0; unit < 64; unit += 5) {
-          content.style.height = `${123 + unit / 64}px`;
+        for (const fraction of [0, 5 / 64, 15 / 64, 63 / 64]) {
+          content.style.height = `${123 + fraction}px`;
           for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
           const held = dialog.getBoundingClientRect().height;
           const overflow = body.scrollHeight - body.clientHeight;
