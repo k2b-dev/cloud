@@ -139,6 +139,8 @@ export type MailInlineDraftControls = {
   changed: () => boolean;
   /** Appends text after a blank line as one undo step, through the editor, so it saves like typing. */
   appendText: (text: string) => void;
+  /** Appends a quoted selection as text; the whole original then stays out, so nothing goes along twice. */
+  quoteText: (text: string) => void;
   /** Saves what is typed and gives the edit lease back; the draft stays mounted and takes input again later. */
   release: () => Promise<void>;
   /** Forgets this device's copy of a draft that was never created on the server. */
@@ -1771,6 +1773,11 @@ export default function MailComposer(props: {
       if (editorActions) editorActions.appendText(text);
       else setBody((current) => `${current}${current.endsWith("\n") || !current ? "" : "\n\n"}${text}`);
     },
+    quoteText: (text) => {
+      setQuoteSource(null);
+      if (editorActions) editorActions.appendText(text);
+      else setBody((current) => `${current}${current.endsWith("\n") || !current ? "" : "\n\n"}${text}`);
+    },
     release: async () => {
       if (!untrack(draft)) return;
       if (untrack(hasUnsavedChanges) && !(await persist())) return;
@@ -2053,6 +2060,11 @@ export default function MailComposer(props: {
         void apiClient.mailboxes[":mailboxId"].messages[":messageId"]
           .$get({ param: { mailboxId: props.mailboxId, messageId: id } })
           .then(async (response) => {
+            // Gone or not visible here: the send renderer quotes nothing, so no card promises it.
+            if (response.status === 403 || response.status === 404) {
+              if (!disposed && untrack(quotedMessageId) === id) setLoadedOriginal({ id, state: { status: "missing" } });
+              return;
+            }
             if (!response.ok) throw new Error(String(response.status));
             const message = await response.json();
             if (disposed || untrack(quotedMessageId) !== id) return;
@@ -2074,7 +2086,8 @@ export default function MailComposer(props: {
     /** Nothing quotable (a message without text): the send renderer adds no quote, so no card stands here. */
     const showQuoteCard = () => {
       const state = quoteState();
-      return Boolean(state) && !(state!.status === "ready" && !hasQuotableText(state!.original.text));
+      if (!state || state.status === "missing") return false;
+      return !(state.status === "ready" && !hasQuotableText(state.original.text));
     };
     const quoteCard = () => (
       <Show when={!inlinePreview() && showQuoteCard()}>

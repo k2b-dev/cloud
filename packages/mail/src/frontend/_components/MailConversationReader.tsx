@@ -1240,7 +1240,8 @@ export default function MailConversationReader(props: {
           returnHref={props.requestUrl}
           messageSource={(messageId) => {
             const message = props.messages.find((candidate) => candidate.id === messageId);
-            return message ? quoteOriginalOf(message, props.dateConfig) : null;
+            // A message whose text has not arrived yet is loaded by the composer, so the card never shows it empty.
+            return message && message.hydrationStatus === "complete" ? quoteOriginalOf(message, props.dateConfig) : null;
           }}
           createNote={notes.create}
           onReconcile={props.onReconcileAfterWrite}

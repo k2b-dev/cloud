@@ -4,7 +4,12 @@ import { mailComposerMessages } from "./mail-composer-messages";
 
 /** The message a reply quotes, as the card shows it: who wrote it when, and the text that goes along. */
 export type MailQuoteOriginal = { name: string; date: string; text: string };
-export type MailQuoteOriginalState = { status: "loading" } | { status: "failed" } | { status: "ready"; original: MailQuoteOriginal };
+export type MailQuoteOriginalState =
+  | { status: "loading" }
+  | { status: "failed" }
+  /** Gone or not visible to this person: the send renderer adds no quote, so no card stands. */
+  | { status: "missing" }
+  | { status: "ready"; original: MailQuoteOriginal };
 
 /** Paragraphs as the sent mail shows them: blank lines part them. */
 const paragraphs = (text: string) =>
@@ -21,6 +26,15 @@ const firstLines = (text: string) => {
     all.findIndex((line) => line.trim().split(/\s+/).length > 3),
   );
   return all.slice(start, start + 2);
+};
+
+/**
+ * Whether the collapsed card hides anything: lines below the first two, a greeting above them, or a line too long to
+ * stand on one line on a phone.
+ */
+const hidesText = (text: string) => {
+  const shown = firstLines(text);
+  return shown.join("\n") !== lines(text).join("\n") || shown.some((line) => line.length > 60);
 };
 
 /** Whether a message has text that goes along as a quote; without it the send renderer adds none. */
@@ -43,12 +57,27 @@ export function MailQuoteCard(props: {
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const [open, setOpen] = createSignal(false);
   const textId = createUniqueId();
+  /** × and "add" swap places; the focus follows to the control that takes the place, never to the page. */
+  let focusNext: "add" | "remove" | null = null;
+  const remove = () => {
+    focusNext = "add";
+    props.onRemove();
+  };
+  const add = () => {
+    focusNext = "remove";
+    props.onAdd();
+  };
+  const focusIf = (which: "add" | "remove") => (element: HTMLElement) => {
+    if (focusNext !== which) return;
+    focusNext = null;
+    queueMicrotask(() => element.isConnected && element.focus());
+  };
   return (
     <Show
       when={props.quoting}
       fallback={
-        <button type="button" class="mail-quote-add" disabled={props.disabled} onClick={props.onAdd} data-mail-quote-add>
-          <i class="ti ti-arrow-back-up" aria-hidden="true" />
+        <button type="button" class="mail-quote-add" ref={focusIf("add")} disabled={props.disabled} onClick={add} data-mail-quote-add>
+          <i class="ti ti-plus" aria-hidden="true" />
           {t().quoteAdd}
         </button>
       }
@@ -74,7 +103,7 @@ export function MailQuoteCard(props: {
               <Button size="sm" variant="secondary" type="button" onClick={props.onRetry}>
                 {t().quoteRetry}
               </Button>
-              <Button size="sm" variant="ghost" type="button" disabled={props.disabled} onClick={props.onRemove}>
+              <Button size="sm" variant="ghost" type="button" disabled={props.disabled} onClick={remove}>
                 {t().quoteRemove}
               </Button>
             </div>
@@ -98,8 +127,9 @@ export function MailQuoteCard(props: {
                   type="button"
                   class="mail-quote-card-remove"
                   label={t().quoteRemove}
+                  ref={focusIf("remove")}
                   disabled={props.disabled}
-                  onClick={props.onRemove}
+                  onClick={remove}
                 >
                   <i class="ti ti-x" aria-hidden="true" />
                 </IconButton>
@@ -109,7 +139,7 @@ export function MailQuoteCard(props: {
                   <p>{line}</p>
                 ))}
               </div>
-              <Show when={lines(original().text).length > 2}>
+              <Show when={hidesText(original().text)}>
                 <button
                   type="button"
                   class="mail-quote-card-more"

@@ -128,6 +128,7 @@ describe("MailReplyBox", () => {
         text: () => typed,
         changed: () => typed !== "",
         appendText: spyOn({ fn: (_text: string) => undefined }, "fn"),
+        quoteText: spyOn({ fn: (_text: string) => undefined }, "fn"),
         release: spyOn({ fn: async () => undefined }, "fn"),
         forgetLocal: spyOn({ fn: () => undefined }, "fn"),
         settleMaterialization: async () => undefined,
@@ -281,6 +282,20 @@ describe("MailReplyBox", () => {
     await Bun.sleep(30);
     expect(posts("/draft-seeds")).toHaveLength(1);
     expect(noDraftWrites()).toEqual([]);
+  });
+
+  test("a reply quotes the message it answers by default; a quoted selection goes in the text instead, never both", async () => {
+    const { api } = await mount();
+    await waitFor(() => posts("/draft-seeds").length === 1);
+    expect(posts("/draft-seeds")[0]!.body).toMatchObject({
+      origin: { input: { quoteSource: { locale: "en", timeZone: "Europe/Berlin" } } },
+    });
+    api().open("reply", { message: { ...message, id: "Msg002" }, quote: "> The van only fits twelve chairs." });
+    await waitFor(() => posts("/draft-seeds").length === 2);
+    expect(posts("/draft-seeds")[1]!.body).toMatchObject({ origin: { input: { quoteSource: null } } });
+    await waitFor(() => mounts.length === 2 && (mounts[1]!.controls.quoteText as Mock<(text: string) => void>).mock.calls.length === 1);
+    expect(mounts[1]!.controls.quoteText).toHaveBeenCalledWith("> The van only fits twelve chairs.");
+    expect(mounts[1]!.controls.appendText).not.toHaveBeenCalled();
   });
 
   test("an existing reply draft opens in its mode; switching keeps its text through the mode API", async () => {

@@ -350,8 +350,26 @@ describe("MailComposer in a floating window", () => {
     const add = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-quote-add]");
     await waitFor(() => Boolean(add()));
     expect(card()).toBeNull();
+    // The focus follows to the control that takes the place, never to the page.
+    await waitFor(() => dom.document.activeElement === add());
     add()!.click();
     await waitFor(() => Boolean(card()));
+    await waitFor(() => dom.document.activeElement === card()!.querySelector('button[aria-label="Leave the original message out"]'));
+  });
+
+  test("an original that is gone or not visible here shows no card, as nothing goes along", async () => {
+    documentResponse = (path) => (path.endsWith("/messages/Msg001") ? Response.json({ message: "Not found" }, { status: 404 }) : null);
+    await mount({
+      draft: {
+        ...initialDraft,
+        intent: "reply",
+        conversationId: "Conv01",
+        sourceMessageId: "Msg001",
+        quoteSource: { locale: "en", timeZone: "UTC" },
+      },
+    });
+    await waitFor(() => !dom.root.querySelector("[data-mail-quote-card][data-loading]"));
+    expect(dom.root.querySelector("[data-mail-quote-card]")).toBeNull();
   });
 
   test("a message without text adds no quote and shows no card", async () => {
