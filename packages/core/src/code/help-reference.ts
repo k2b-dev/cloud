@@ -2,7 +2,7 @@ import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import type { CapabilityManifest } from "@k2b/cloud/contracts";
 import { logger } from "@k2b/cloud/services";
 import { type CodeContext, CodeDataError, codePerson } from "./access";
-import { codeChatSdkView } from "./chat-sdk";
+import { codeChatSdkIndex } from "./chat-sdk";
 import { effectiveCodePolicy } from "./policy";
 import type { CodePolicyRow, CodePolicyValue } from "./policy-contracts";
 
@@ -36,11 +36,10 @@ export function canAuthorCode(context: CodeContext): boolean {
  * manifest. One app's index does not depend on other apps, so only that app's declarations are generated.
  */
 export function codeHelpIndex(appId: string, manifests: readonly CapabilityManifest[]): CodeHelpIndex {
-  const index = codeChatSdkView(
+  const index = codeChatSdkIndex(
     manifests.filter((manifest) => manifest.appId === appId),
     { mode: "personal" },
   );
-  if (index.kind !== "index") throw new Error("code_sdk returned declarations instead of the index");
   const app = index.apps[0];
   return { export: app?.export ?? null, operations: app?.methods ?? [], events: index.events };
 }

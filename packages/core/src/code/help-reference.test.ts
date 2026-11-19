@@ -7,7 +7,7 @@ import type { RequestAuthority } from "@k2b/cloud/server";
 import * as logging from "@k2b/cloud/services/logging";
 import { declarationOf } from "../../../../scripts/checks/capability-presentation";
 import { packageIds } from "../../../../scripts/workspace";
-import { codeChatSdkView } from "./chat-sdk";
+import { codeChatSdkIndex } from "./chat-sdk";
 import { canAuthorCode, codeHelpIndex, loadCodeHelpReference, withCodePolicy } from "./help-reference";
 import * as policy from "./policy";
 import { CODE_POLICY_ROWS, type CodePolicyRow, type CodePolicyValue } from "./policy-contracts";
@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 test("each app's reference lists exactly the methods and events of the code_sdk index, with the reader's policy", () => {
-  const index = codeChatSdkView(manifests, { mode: "personal" });
+  const index = codeChatSdkIndex(manifests, { mode: "personal" });
   if (index.kind !== "index") throw new Error("expected the index");
   expect(index.apps.length).toBeGreaterThan(5);
   for (const app of index.apps) {

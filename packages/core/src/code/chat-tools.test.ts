@@ -122,3 +122,9 @@ test("a passing chat check leaves the checked bundle on the server; its hash sta
   expect(check.def.outputSchema.safeParse(answer(result)).success).toBe(true);
   expect(check.def.outputSchema.safeParse(answer({ ...result, bundle: "export {}" })).success).toBe(false);
 });
+
+test("SDK discovery exposes descriptions on demand without changing app selection", () => {
+  expect(schema("code_sdk").safeParse({ codeId: "c_1234", descriptions: true }).success).toBe(true);
+  expect(schema("code_sdk").safeParse({ codeId: "c_1234", apps: ["mail"] }).success).toBe(true);
+  expect(tools.find((tool) => tool.def.name === "code_sdk")!.def.description).toContain("descriptions:true");
+});

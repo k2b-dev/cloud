@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-15
+updated: 2026-11-19
 ---
 
 # Code SDK
@@ -23,7 +23,10 @@ a chat message retains its Action policy. The index, checker and runtime use
 the same inference classification.
 
 Read `code_sdk({codeId})` for the method index, then request the declarations
-for the apps you use. List Queries need their declared receiver too:
+for the apps you use. The index omits descriptions to leave room for new
+capabilities. Use `code_sdk({codeId, descriptions: true})` to read the same
+index with method and event descriptions; declarations keep all their types
+and field documentation. List Queries need their declared receiver too:
 `spaces.task.list({ spaceId, limit: 50, cursor })` and `spaces.event.list(...)`
 are app-level paginated Queries. Task changes use the Space handle, for
 example `spaces.space(spaceId).task.update(...)`; that handle has no
