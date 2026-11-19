@@ -1243,6 +1243,81 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await expect(decideCodeVersion(next.binding, { outcome: "approved" }, signed)).rejects.toMatchObject({ code: "SELF_APPROVAL" });
     expect((await approvals.get(submission.approvalId!))?.soleAdmin).toBe(true);
   });
+  for (const conflict of ["analyze", "settings_writer"] as const) {
+    test(`sole-admin decision waits for ${conflict} with a bounded refusal`, async () => {
+      await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;
+      const code = await newCode();
+      const submission = await submitCodeVersion(input(code, "lock contention"), author);
+      const signIn = await createTestBrowserSignIn(authorId);
+      const signed: CodeContext = {
+        ...author,
+        authority: {
+          ...author.authority,
+          credentialProof: { kind: "session", userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+        },
+      };
+      const ready = Promise.withResolvers<number>();
+      const release = Promise.withResolvers<void>();
+      const holder = sql.begin(async (tx) => {
+        // Explicit ANALYZE runs even when a fixture disables automatic maintenance.
+        if (conflict === "analyze") await tx`ANALYZE auth.users`;
+        else await tx`UPDATE settings.entries SET value=value WHERE key='freeipa.groups.admin'`;
+        const [backend] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        ready.resolve(backend!.pid);
+        await release.promise;
+      });
+      try {
+        const pid = await Promise.race([
+          ready.promise,
+          holder.then(() => {
+            throw new Error("Holder never acquired its lock");
+          }),
+        ]);
+        const started = performance.now();
+        const attempt = decideCodeVersion(submission.binding, { outcome: "approved" }, signed).then(
+          (value) => ({ value, error: null }),
+          (error: unknown) => ({ value: null, error }),
+        );
+        if (conflict === "analyze") {
+          expect(
+            await sql`SELECT mode FROM pg_locks WHERE pid=${pid}
+            AND relation='auth.users'::regclass AND granted AND mode='ShareUpdateExclusiveLock'`,
+          ).toHaveLength(1);
+          // Release only once the real decision is waiting behind ANALYZE, so NOWAIT cannot pass this test.
+          let waiting = false;
+          while (performance.now() - started < 1500) {
+            const locks = await sql`SELECT 1 FROM pg_locks WHERE relation='auth.users'::regclass
+              AND mode='ShareRowExclusiveLock' AND NOT granted`;
+            if (locks.length) {
+              waiting = true;
+              break;
+            }
+            await Bun.sleep(10);
+          }
+          release.resolve();
+          const result = await attempt;
+          expect(waiting).toBe(true);
+          expect(result.error).toBeNull();
+          expect(result.value?.decision).toMatchObject({ approved: true, soleAdmin: true });
+        } else {
+          const result = await attempt;
+          expect(performance.now() - started).toBeLessThan(3000);
+          expect(result.error).toMatchObject({ code: "BUSY" });
+          expect(await approvals.get(submission.approvalId!)).toMatchObject({ status: "pending" });
+          expect(await sql`SELECT version_id FROM code.version_decisions WHERE version_id=${submission.version.id}::uuid`).toHaveLength(0);
+          release.resolve();
+          await holder;
+          expect((await decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).decision).toMatchObject({
+            approved: true,
+            soleAdmin: true,
+          });
+        }
+      } finally {
+        release.resolve();
+        await holder;
+      }
+    });
+  }
   for (const other of ["emergency", "locked_ipa", "disabled_category"] as const) {
     test(`Code self-approval ignores an ineligible second admin (${other})`, async () => {
       if (other === "emergency") await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${reviewerId}::uuid`;

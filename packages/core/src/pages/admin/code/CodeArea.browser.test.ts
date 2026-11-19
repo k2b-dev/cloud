@@ -547,14 +547,34 @@ for (const locale of ["en", "de"] as const) {
     ["REAUTHENTICATE", "from the last ten minutes", "aus den letzten zehn Minuten"],
     ["REJECT_ONLY", "Open this version in Cloud in your browser", "Öffne diese Version in Cloud im Browser"],
     ["NOT_FOUND", "no longer available to this account", "für dieses Konto nicht mehr verfügbar"],
-    ["BUSY", "Cloud is handling another change", "Cloud verarbeitet gerade eine andere Änderung"],
+    ["BUSY", "Busy right now – try again in a moment", "Gerade beschäftigt – gleich nochmal versuchen"],
     ["UNAVAILABLE", "Cloud cannot handle version decisions right now", "Cloud kann Versionsentscheidungen gerade nicht verarbeiten"],
   ] as const) {
     test(`the approval explains ${code} in ${locale} and offers recovery`, async () => {
       const query = `${review}&decisionRefusal=${code}${code === "REAUTHENTICATE" ? "&state=sole" : ""}`;
       await goto(query, { width: 390, height: 844 }, locale);
+      await settled(page);
+      const frame = page.locator(".cloud-approval-frame:visible").first();
+      const before = await frame.boundingBox();
       await page.getByRole("button", { name: locale === "de" ? "Version 3 freigeben" : "Approve version 3" }).click();
       await page.getByText(locale === "de" ? german : english, { exact: false }).waitFor();
+      if (code === "BUSY") {
+        expect(await page.locator("#code-review-failure").count()).toBe(0);
+        expect(
+          await frame
+            .getByRole("alert")
+            .filter({ hasText: locale === "de" ? german : english })
+            .textContent(),
+        ).toContain(locale === "de" ? german : english);
+        expect(await frame.boundingBox()).toEqual(before);
+        const retry = frame.getByRole("button", { name: locale === "de" ? "Erneut versuchen" : "Try again", exact: true });
+        expect(await retry.isEnabled()).toBe(true);
+        await retry.click();
+        await page.getByText(locale === "de" ? german : english, { exact: false }).waitFor();
+        expect(fixture.requests.filter((request) => request.path === "decide")).toHaveLength(2);
+        expect(await frame.boundingBox()).toEqual(before);
+        return;
+      }
       await page.waitForFunction(() => document.activeElement?.id === "code-review-failure");
       expect(await page.locator("#code-review-failure").evaluate((element) => element.getBoundingClientRect().top >= 0)).toBe(true);
       expect(await page.getByText(code, { exact: false }).count()).toBe(0);

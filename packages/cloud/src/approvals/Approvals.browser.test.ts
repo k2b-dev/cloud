@@ -183,7 +183,7 @@ describe("Approvals layout", () => {
 
 describe("Approvals in a browser", () => {
   const origin = "https://cloud.example.test";
-  const live = async (width: number, items: PendingApproval[], decided: string[] = []) => {
+  const live = async (width: number, items: PendingApproval[], decided: string[] = [], locale = "en") => {
     const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 1, reducedMotion: "reduce" });
     const tab = await context.newPage();
     const time = new Date("2026-10-11T09:00:00.000Z");
@@ -195,7 +195,7 @@ describe("Approvals in a browser", () => {
         return route.fulfill({
           contentType: "text/html; charset=utf-8",
           body:
-            `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+            `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
             `<link rel="stylesheet" href="/tabler.css"><style>${css}</style></head>` +
             `<body class="k2b-ui"><div id="root" style="padding:16px;max-width:48rem"></div><script src="/harness.js"></script></body></html>`,
         });
@@ -246,6 +246,46 @@ describe("Approvals in a browser", () => {
       }
     });
   }
+
+  for (const locale of ["en", "de"])
+    for (const width of [1280, 390]) {
+      test(`${width} px: BUSY in ${locale} keeps the approval in place and retries`, async () => {
+        const request = item("1", {
+          sentence: "Approve Report?",
+          review: { ...page.items[0]!.review!, locale },
+          requester: { kind: "code_version", appId: "core", title: "Report", href: "/code/report/" },
+        });
+        const { tab, close } = await live(width, [request, item("2")], [], locale);
+        let attempts = 0;
+        await tab.route(`${origin}/api/approvals/*/decision`, (route) => {
+          attempts++;
+          return attempts === 1 ? route.fulfill({ status: 409, json: { code: "BUSY" } }) : route.fulfill({ json: { status: "approved" } });
+        });
+        try {
+          const row = tab.locator("article.cloud-approval").first();
+          await row.waitFor();
+          await tab.clock.runFor(600);
+          const before = await row.boundingBox();
+          const next = await tab.locator("article.cloud-approval").nth(1).boundingBox();
+          await row.locator('.k2b-notice-card__actions .k2b-button[data-variant="ai"]').click();
+          await row
+            .getByText(locale === "de" ? "Gerade beschäftigt – gleich nochmal versuchen" : "Busy right now – try again in a moment")
+            .waitFor();
+          expect(await row.getAttribute("data-decided")).toBeNull();
+          expect(await row.boundingBox()).toEqual(before);
+          expect(await tab.locator("article.cloud-approval").nth(1).boundingBox()).toEqual(next);
+          await row.getByRole("button", { name: locale === "de" ? "Erneut versuchen" : "Try again", exact: true }).click();
+          await tab.clock.runFor(32);
+          await row.locator('.k2b-notice-card__actions .k2b-button[data-variant="ai"]').click();
+          await row.locator('[data-state="decided"]').waitFor();
+          await row.getByText(locale === "de" ? "Freigegeben." : "Approved.", { exact: true }).waitFor();
+          expect(attempts).toBe(2);
+          expect(await row.boundingBox()).toEqual(before);
+        } finally {
+          await close();
+        }
+      });
+    }
 
   test("an empty list says you are all set", async () => {
     const { tab, close } = await live(1280, []);

@@ -19,7 +19,7 @@ import {
   registerApprovalDecisionHandler,
 } from ".";
 import { readApprovalContent } from "./content";
-import { hasOtherApprovalAdmin, listApprovalAdminRecipients } from "./policy";
+import { hasOtherApprovalAdmin, listApprovalAdminRecipients, lockCodeAdminPopulation } from "./policy";
 
 // Each suite receives an isolated test database from the shared infrastructure gate.
 databaseSuite()("independent Code-version approvals", () => {
@@ -342,9 +342,11 @@ databaseSuite()("independent Code-version approvals", () => {
               throw new Error("Promotion never acquired its lock");
             }),
           ]);
+          await tx`SET LOCAL lock_timeout = '7s'`;
           expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "BUSY" });
+          expect((await tx`SHOW lock_timeout`)[0]?.lock_timeout).toBe("7s");
           expect(await approvals.get(id, tx)).toMatchObject({ status: "pending" });
-          // A denied NOWAIT lock is contained in a savepoint, so this transaction remains usable.
+          // A lock timeout is contained in a savepoint, so this transaction remains usable.
           expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
         } finally {
           release();
@@ -353,6 +355,40 @@ databaseSuite()("independent Code-version approvals", () => {
       });
     });
   }
+
+  test("population lock restores the caller timeout on success and contains statement cancellation", async () => {
+    await withSoleAdmin(async (tx) => {
+      await tx`SET LOCAL lock_timeout = '7s'`;
+      expect(await lockCodeAdminPopulation(tx, author)).toBe("locked");
+      expect((await tx`SHOW lock_timeout`)[0]?.lock_timeout).toBe("7s");
+    });
+    // A plain row reader does not conflict with the table lock, only with FOR SHARE.
+    const ready = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const holder = sql.begin(async (tx) => {
+      await tx`SELECT id FROM auth.users WHERE id=${author}::uuid FOR UPDATE`;
+      ready.resolve();
+      await release.promise;
+    });
+    try {
+      await Promise.race([
+        ready.promise,
+        holder.then(() => {
+          throw new Error("Missing row lock");
+        }),
+      ]);
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout = '7s'`;
+        await tx`SET LOCAL statement_timeout = '100ms'`;
+        expect(await lockCodeAdminPopulation(tx, author)).toBe("busy");
+        expect((await tx`SHOW lock_timeout`)[0]?.lock_timeout).toBe("7s");
+        expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
+      });
+    } finally {
+      release.resolve();
+      await holder;
+    }
+  });
 
   test("an author row lock fails busy before a waiting writer can cause a lock upgrade deadlock", async () => {
     const { id } = await ask();

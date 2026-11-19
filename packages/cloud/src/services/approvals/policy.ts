@@ -33,21 +33,27 @@ export const hasOtherApprovalAdmin = async (db: SQL, authorUserId: string): Prom
 
 /**
  * Retain the sole-admin population through the decision. An in-flight account, category or IPA writer wins:
- * fail closed instead of waiting or approving against its previous state. The savepoint keeps a denied decision usable.
+ * wait briefly for maintenance, then fail closed rather than approve against a writer's previous state.
+ * The savepoint keeps a denied decision usable and restores its original timeout on failure.
  * Self-approvals serialize here as well, preventing handler lock upgrades from deadlocking each other.
  * Repeatable-read/serializable callers can retain a pre-lock population snapshot, so self-approval requires READ COMMITTED.
  */
 export const lockCodeAdminPopulation = async (tx: SQL, userId: string): Promise<"locked" | "busy" | "unsupported_isolation"> => {
-  const [isolation] = await tx<{ level: string }[]>`SELECT current_setting('transaction_isolation') AS level`;
+  const [isolation] = await tx<{ level: string; lockTimeout: string }[]>`SELECT
+    current_setting('transaction_isolation') AS level, current_setting('lock_timeout') AS "lockTimeout"`;
   if (isolation?.level !== "read committed") return "unsupported_isolation";
   await tx`SAVEPOINT approval_admin_population`;
   try {
-    await tx`LOCK TABLE auth.users, settings.entries, auth.ipa_user_effective_groups, auth.user_ipa_data IN SHARE ROW EXCLUSIVE MODE NOWAIT`;
-    await tx`SELECT id FROM auth.users WHERE id=${userId}::uuid FOR SHARE NOWAIT`;
+    // Above PostgreSQL's default deadlock_timeout (1 s), so it can cancel a blocking autovacuum.
+    // Account writers queue behind this request for at most 2 s; retain the locks only through this decision.
+    await tx`SET LOCAL lock_timeout = '2s'`;
+    await tx`LOCK TABLE auth.users, settings.entries, auth.ipa_user_effective_groups, auth.user_ipa_data IN SHARE ROW EXCLUSIVE MODE`;
+    await tx`SELECT id FROM auth.users WHERE id=${userId}::uuid FOR SHARE`;
+    await tx`SELECT set_config('lock_timeout', ${isolation.lockTimeout}, true)`;
     return "locked";
   } catch (error) {
     await tx`ROLLBACK TO SAVEPOINT approval_admin_population`;
-    if (error && typeof error === "object" && "errno" in error && error.errno === "55P03") return "busy";
+    if (error && typeof error === "object" && "errno" in error && (error.errno === "55P03" || error.errno === "57014")) return "busy";
     throw error;
   } finally {
     await tx`RELEASE SAVEPOINT approval_admin_population`;

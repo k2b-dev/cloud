@@ -112,6 +112,12 @@ const outcomeLines = (
   rejected: { tone: "off" as const, text: card.forms.rejected, detail: words.declinedHere },
   elsewhere: { tone: "off" as const, icon: "ti ti-info-circle", text: [{ kind: "text" as const, text: words.decidedElsewhere }] },
   gone: { tone: "off" as const, icon: "ti ti-clock-x", text: [{ kind: "text" as const, text: words.gone }] },
+  busy: {
+    tone: "warning" as const,
+    text: [{ kind: "text" as const, text: words.decisionBusy }],
+    detail: words.notApplied,
+    action: { label: words.retry, onSelect: reopen },
+  },
   failed: {
     tone: "warning" as const,
     icon: "ti ti-alert-triangle",
@@ -137,14 +143,14 @@ function Row(props: {
   editDraft?: (values: Record<string, string>) => Promise<boolean>;
   outcome?: Outcome;
   busy: boolean;
-  failed: boolean | "reauthenticate";
+  failed: boolean | "reauthenticate" | "busy";
   decide: (input: ApprovalDecisionInput) => void;
   reopen: () => void;
 }) {
   const t = useMessages();
   const locale = useLocale();
   const card = createMemo(() => approvalCard(cardInput(props.item), locale(), READER_TIME_ZONE));
-  const current = () => props.outcome ?? (props.failed ? "failed" : "sending");
+  const current = () => props.outcome ?? (props.failed === "busy" ? "busy" : props.failed ? "failed" : "sending");
   const state = () => (props.outcome || props.busy || props.failed ? "decided" : "open");
   // `confirm` asks every time, whatever the stored options say.
   const remember = () =>
@@ -197,7 +203,7 @@ export default function Approvals(props: ApprovalsProps) {
   const [items, setItems] = createSignal<PendingApproval[]>(props.initial?.items ?? []);
   const [outcomes, setOutcomes] = createSignal<ReadonlyMap<string, Outcome>>(new Map());
   const [busy, setBusy] = createSignal<ReadonlySet<string>>(new Set());
-  const [failed, setFailed] = createSignal<ReadonlyMap<string, true | "reauthenticate">>(new Map());
+  const [failed, setFailed] = createSignal<ReadonlyMap<string, true | "reauthenticate" | "busy">>(new Map());
   const [loadError, setLoadError] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
   // A failed next page keeps the rows already shown; the error sits next to the button that retries it.
@@ -266,6 +272,11 @@ export default function Approvals(props: ApprovalsProps) {
         param: { id: item.id },
         json: { ...input, ...(digest ? { digest } : {}) },
       });
+      const error: unknown = response.ok ? null : await response.json().catch(() => null);
+      if (error && typeof error === "object" && "code" in error && error.code === "BUSY") {
+        setFailed((current) => new Map(current).set(item.id, "busy"));
+        return;
+      }
       const outcome: Outcome | null = response.ok
         ? input.approved
           ? "approved"
@@ -276,7 +287,6 @@ export default function Approvals(props: ApprovalsProps) {
             ? "gone"
             : null;
       if (!outcome) {
-        const error: unknown = await response.json();
         if (
           error &&
           typeof error === "object" &&

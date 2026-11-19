@@ -244,7 +244,13 @@ An active ordinary account such as `dev-admin` counts as a human reviewer,
 even without a previous sign-in.
 The platform counts and locks the administrator population in the decision
 transaction. Adding a second administrator blocks new self-approvals immediately;
-an earlier approval stays valid.
+an earlier approval stays valid. Self-approval waits briefly for database
+maintenance or an in-flight change, with a two-second lock timeout. If the lock
+is still unavailable, the decision returns `BUSY` and the request stays pending.
+The approval card shows **Busy right now – try again in a moment** and
+**Try again**, in the same reserved space. In the approvals list, **Try again**
+returns to the question; in the Code review, it repeats the approval.
+The Assistant version card continues to link to that review while approval is pending.
 
 Core stores `sole_admin` in its durable decision and approved/rejected audit
 metadata. German version receipts label a self-approval

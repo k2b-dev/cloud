@@ -293,16 +293,17 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     try {
       await send("approved");
     } catch (error) {
-      // The button keeps its place; the reason shows above the approval with its way out.
+      // BUSY reuses the reserved reason line and button; other refusals keep their recovery notice.
       setFailureCode(error instanceof Error && "code" in error ? String(error.code ?? "") : undefined);
       setFailure(error instanceof Error ? error.message : t().dialogFailed);
-      queueMicrotask(() => document.getElementById(FAILURE_ID)?.focus());
+      if (failureCode() !== "BUSY") queueMicrotask(() => document.getElementById(FAILURE_ID)?.focus());
     }
   };
 
   const ask = async () => {
     if (busy() || unknown()) return;
     setFailure(null);
+    setFailureCode(undefined);
     await openCodeReviewDialog({
       number: props.number,
       recipient: props.recipient,
@@ -545,7 +546,11 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   };
   const answers = (): Pick<ApprovalFrameProps, "confirm" | "secondary" | "unavailable"> => ({
     secondary: { label: t().rejectOrChange, shortLabel: t().rejectOrChangeShort, onSelect: ask },
-    confirm: { label: t().approve({ n: props.number }), icon: "ti ti-check", onSelect: approve },
+    confirm: {
+      label: failureCode() === "BUSY" ? ta().decideRetry : t().approve({ n: props.number }),
+      icon: "ti ti-check",
+      onSelect: approve,
+    },
     unavailable:
       !mayDecide() || blocked()
         ? {
@@ -560,7 +565,8 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       state="open"
       source={{ name: t().source, icon: "ti ti-code" }}
       sentence={sentenceOf(t().question({ n: props.number, title: props.title }))}
-      reason={{ text: props.reason, icon: "ti ti-eye" }}
+      reason={{ text: failureCode() === "BUSY" ? failure() : props.reason, icon: "ti ti-eye" }}
+      quietAlert={failureCode() === "BUSY"}
       secondary={answers().secondary}
       confirm={answers().confirm}
       unavailable={answers().unavailable}
@@ -767,7 +773,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           />
         )}
       </For>
-      <Show when={failure()}>
+      <Show when={failureCode() !== "BUSY" && failure()}>
         {(message) => (
           <NoticeCard
             id={FAILURE_ID}

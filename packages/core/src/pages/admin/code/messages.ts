@@ -203,7 +203,8 @@ export const codeAdminMessages = i18n.define({
         "This connection can reject this version, but cannot approve it. Open this version in Cloud in your browser and approve it there.",
       decideNotFound:
         "This approval is no longer available to this account. Open the list of approvals to see what is still waiting. If needed, ask a Cloud admin to review it.",
-      decideBusy: "Cloud is handling another change. Wait a moment and try your decision again.",
+      decideRetry: "Try again",
+      decideBusy: "Busy right now – try again in a moment",
       decideUnavailable:
         "Cloud cannot handle version decisions right now. Try again later. If this continues, ask the operator to check Code approvals.",
       signInAgain: "Sign in again",
@@ -600,7 +601,8 @@ export const codeAdminMessages = i18n.define({
         "Diese Verbindung kann diese Version ablehnen, aber nicht freigeben. Öffne diese Version in Cloud im Browser und gib sie dort frei.",
       decideNotFound:
         "Diese Freigabe ist für dieses Konto nicht mehr verfügbar. Öffne die Liste der Freigaben, um zu sehen, was noch wartet. Bitte bei Bedarf einen Cloud-Admin um die Prüfung.",
-      decideBusy: "Cloud verarbeitet gerade eine andere Änderung. Warte einen Moment und versuche deine Entscheidung erneut.",
+      decideRetry: "Erneut versuchen",
+      decideBusy: "Gerade beschäftigt – gleich nochmal versuchen",
       decideUnavailable:
         "Cloud kann Versionsentscheidungen gerade nicht verarbeiten. Versuche es später erneut. Wenn das so bleibt, bitte den Betreiber, die Code-Freigaben zu prüfen.",
       signInAgain: "Erneut anmelden",
