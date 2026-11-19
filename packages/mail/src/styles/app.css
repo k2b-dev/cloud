@@ -2225,9 +2225,10 @@
 /* #3297: above the conversation, the placeholder and the loaded box share one reserved height, so a late draft,
    signature, or suggestion never moves the messages below. Text and signature fade out at that height (the signature
    first); interaction reveals overflowing content while retaining the reserved minimum height. Under the
-   conversation nothing sits below the box, so it keeps its natural height there. */
+   conversation nothing sits below the box, so it keeps its natural height there. The reserve holds the quoted original's
+   collapsed card under the signature too. */
 .k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame {
-  --mail-reply-box-reserved: 19rem;
+  --mail-reply-box-reserved: 21rem;
 }
 .k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-reply-box-pending,
 .k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-inline-draft.mail-reply-box {
