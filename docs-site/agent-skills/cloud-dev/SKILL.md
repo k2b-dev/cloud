@@ -137,9 +137,8 @@ SolidJS library remains independent of Cloud and application domains.
   and principals with `principalLabel()` (`@k2b/cloud/shared`), never IDs. `Layout`, `AdminLayout`, and
   `MinimalLayout` install the SSR locale provider. Use `MinimalLayout` for an app-styled standalone page with
   persisted locale and theme, no Cloud header or navigation, and a shared legal and preferences footer. A custom
-  root using none of these layouts must install one provider around its returned tree. UI renders stored items in
-  the reader's locale, never in a locale they carry; production islands ship only the page language's catalogs, and
-  `/* @i18n-all-locales */` before a catalog object keeps it whole for browser code that compares several languages.
+  root using none of these layouts must install one provider around its returned tree. Stored items render in the
+  reader's locale; islands ship only the page language's catalogs (`/* @i18n-all-locales */` keeps one whole).
 - Pass each page's `Layout` title array; the shell derives the way up from it (**Layout and navigation**).
   Build no back buttons for it; an app with its own header places `PageTrail` there.
 ## Ship CLI commands and Assistant Skills with the app

@@ -22,7 +22,9 @@ test("the server read and shared card wording load without a browser runtime", (
   expect(card.app.name).toBe("Cloud");
 });
 
-const context = { locale: "en", timeZone: "UTC" };
+// Each fixture is read by a reader of its own language; a card follows the reader's locale.
+const readerOf = (locale: "de" | "en") => ({ locale, timeZone: "UTC" });
+const context = readerOf("en");
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
 const row = (block: ToolBlock | null): Parameters<typeof openQuestionFromRow>[0] => ({
@@ -56,6 +58,7 @@ const cases = [
 
 for (const [locale, key, expected] of cases) {
   test(`${locale} ${key}: short text reads the card's chips`, () => {
+    const context = readerOf(locale);
     const block = actionFixtures(locale)[key]!.block;
     const review = reviewOf(block);
     const card = toolActionCard(block, { ...context, outcome: legacyOutcomeWords(block, context.locale, context.timeZone) });
@@ -71,6 +74,7 @@ for (const [locale, expected] of [
   ["en", "Send the email Maintenance window Tuesday to Lea Berg"],
 ] as const) {
   test(`${locale} mail without a short template falls back to the action's chips`, () => {
+    const context = readerOf(locale);
     const block = actionFixtures(locale).mail!.block;
     const review = reviewOf(block);
     const { short: _short, ...sentence } = review.sentence;

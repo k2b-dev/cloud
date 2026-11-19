@@ -117,7 +117,7 @@ export const local = i18n.define({ baseLocale: "en", messages: { en: { a: "A" },
           slots: {},
           ask: "sends",
           sentence: { action: "Nachricht senden", running: "Wird gesendet …", done: "Gesendet.", confirm: "Senden", decline: "Nicht senden" },
-          preview: { kind: "message", from: { name: "Team Ops", address: "ops@example.com" }, to: [{ name: "Lea Berg", address: "lea@example.com" }], subject: "Wartung", body: "Hallo", format: "plain" },
+          preview: { kind: "message", from: { name: "Team Ops", address: "ops@example.com" }, to: [{ name: "Lea Berg", address: "lea@example.com" }], subject: "Wartung", body: "Body text", format: "plain" },
         } as const;
         const cardText = (locale: string) => {
           const text = actionCardText(reviewActionCard(review, { locale, timeZone: "UTC", app: { name: "Mail", icon: "ti ti-mail" } }));
