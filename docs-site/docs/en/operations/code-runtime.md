@@ -300,3 +300,13 @@ handles return `NOT_FOUND` (404) for missing, archived or foreign chats.
 For a missing bound chat, restore it or have the personal Code owner choose
 another active chat through
 [`code.chat_binding.set`](/en/docs/platform/code-data-model#choose-a-personal-codes-chat).
+
+## Scheduled chat messages
+
+Core also registers the minute-based Gustav alarm scan with the existing AI
+maintenance scheduler. It requires the same Postgres, NATS and Valkey services
+as chat execution. No per-alarm scheduler stream or new operator setting is
+needed. Alarm turns share Code's per-source and per-owner daily reference
+limits; owner counters include both. Existing Code budget settings therefore
+also cap scheduled chat messages. See [Chat alarms](/en/docs/ai/chat-alarms) for
+limits, queue holds, archive behavior and recovery after downtime.

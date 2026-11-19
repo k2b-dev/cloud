@@ -20,6 +20,9 @@ Interactive submissions and retries enforce the caller's
 The model list and status return only permitted models. A denied explicit model
 selection returns HTTP 403 before a retry changes the conversation.
 
+[Scheduled chat messages](/en/docs/ai/chat-alarms) use this same queue and send
+receipt contract for one-off and recurring Gustav alarms.
+
 ## Queue follow-up messages
 
 Add a client-generated UUID `queueId` to `POST /api/ai/conversations/:id/turns`
@@ -202,7 +205,7 @@ A message an automation or another chat sent with `context` stores the
 instruction and the data in one text part for the model. Reads show them apart:
 the message's `text` is the instruction, and history messages carry the data
 as `meta.sourceContext`. A queue entry's `text` is its instruction alone.
-`origin.kind` is `person`, `automation`, or `chat`, with a stable ID and a
+`origin.kind` is `person`, `automation`, `chat`, or `wakeup`, with a stable ID and a
 resolved display name. Personal Code stores its automation origin with
 `resource: { type: "core.code", id }`; Code's own reader then names and links it
 for each viewer who may read it. Without a readable name the projection says

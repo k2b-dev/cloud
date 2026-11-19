@@ -196,6 +196,7 @@ test("only explicit automatic triggers use the automatic allocation; reviews kee
   expect(isAutomaticAiChatTurn({ turnTrigger: { kind: "person", id: "person" } })).toBe(false);
   expect(isAutomaticAiChatTurn({ turnTrigger: { kind: "automation", id: "code" } })).toBe(true);
   expect(isAutomaticAiChatTurn({ turnTrigger: { kind: "chat", id: "source" } })).toBe(true);
+  expect(isAutomaticAiChatTurn({ turnTrigger: { kind: "wakeup", id: "alarm" } })).toBe(true);
   expect(
     isAutomaticAiChatTurn({ turnTrigger: { kind: "automation", id: "code" }, codeReview: { codeId: "code", versionId: "version" } }),
   ).toBe(false);

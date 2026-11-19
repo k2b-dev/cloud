@@ -188,6 +188,7 @@ suiteFor(
       retrySourceTurnId: undefined,
       runConfig: {
         kind: "chat",
+        chatId: input.chatId,
         writerOrigin: input.writerOrigin,
         turnTrigger: input.turnTrigger,
         send: input.send,

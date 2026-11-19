@@ -139,6 +139,7 @@ import { aiToolPromptHints } from "./tools";
 import type { AiConversation, AiTurn } from "./types";
 import { isAiViewFile } from "./view-block";
 import { nameViewReferences } from "./view-names";
+import { aiWakeupRoutes } from "./wakeup-routes";
 
 const retryInstruction = (mode: "retry" | "details" | "concise"): string | null => {
   if (mode === "details") return "Answer the user's request again with more detail and specificity.";
@@ -381,6 +382,7 @@ export const aiRoutes = (() => {
       .use("*", auth.requireRole("authenticated"))
       .route("/places", placeAssistantRoutes)
       .route("/conversations", aiMapRoutes)
+      .route("/conversations", aiWakeupRoutes)
       .route(
         "/conversations",
         createAiChoiceRoutes({
