@@ -180,6 +180,7 @@ test("the owner reads the description of personal Code that writes to its own ch
   };
   const owner = present({
     personal: true,
+    viewerIsOwner: true,
     manifest: withChat,
     comparison: withChat,
     names: dynamic,
@@ -196,8 +197,22 @@ test("the owner reads the description of personal Code that writes to its own ch
   });
   expect(other.description.state).toBe("restricted");
   expect(JSON.stringify(other)).not.toContain("SECRET TARGET NAME");
-  // A place's Code never treats an open chat target as its own.
-  expect(present({ manifest: withChat, comparison: withChat, names: dynamic }).description.state).toBe("restricted");
+  // A place's Code never treats an open chat target as its own, even with the flag set.
+  expect(present({ viewerIsOwner: true, manifest: withChat, comparison: withChat, names: dynamic }).description.state).toBe("restricted");
+  // Safe by default: a caller that names no reader, as a version card shown to another person or an admin, gets no
+  // owner treatment, whether or not it says who the Code runs as.
+  for (const viewerIsOwner of [undefined, false]) {
+    const card = present({
+      personal: true,
+      ...(viewerIsOwner === undefined ? {} : { viewerIsOwner }),
+      manifest: withChat,
+      comparison: withChat,
+      names: dynamic,
+      explanation: "SECRET TARGET NAME",
+    });
+    expect(card.description.state).toBe("restricted");
+    expect(JSON.stringify(card)).not.toContain("SECRET TARGET NAME");
+  }
 });
 
 test("an explicit denial keeps its restriction even when another target is unavailable", () => {

@@ -97,6 +97,11 @@ function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, loca
 /** Only checked facts enter this projection. Model titles and explanations are deliberately absent from facts(). */
 export function presentCodeVersion(input: {
   personal: boolean;
+  /**
+   * Whether the reader is the owner of this personal Code, from comparing the owner's and the reader's ids. Missing
+   * means no: only the owner may treat the Code's own chat as a readable target.
+   */
+  viewerIsOwner?: boolean;
   /** Present only when someone else owns personal Code; null name preserves directory restrictions. */
   runsAs?: { name: string | null };
   versionId: string;
@@ -119,7 +124,7 @@ export function presentCodeVersion(input: {
   // chose it. For anyone else it stays unreadable, so the model's description stays hidden from them.
   const ownChat = (permission: CodeCheckedVersionManifest["permissions"][number]) =>
     input.personal &&
-    !input.runsAs &&
+    input.viewerIsOwner === true &&
     permission.operation === "core.ai.chat.send" &&
     permission.target?.type === "core.ai.chat" &&
     permission.target.id === null;
