@@ -366,6 +366,16 @@ The `clipboard`, `copyToClipboard`, `url`, and `isImageUrl` exports are utility
 helpers outside the documented typed-client contract. Do not choose them as
 application APIs unless a guide names them.
 
+The platform-owned alarm service `aiWakeups`, `AiWakeupError`,
+and `AiWakeupBudgetCheck` / `AiWakeupBudgetError` come
+from `@k2b/cloud/ai`. Its `AiWakeup*` schemas, types and `AI_WAKEUP_*` limits
+support the [scheduled chat message contract](/en/docs/ai/chat-alarms).
+`@k2b/cloud/ai/browser` exports the `AiWakeup`, `AiWakeupEvent`,
+`AiWakeupInput`, `AiWakeupNoteSource` and `AiWakeupPatch` types without server dependencies.
+`enqueueAiChatSend` from `@k2b/cloud/ai/runtime` is the shared transactional
+queue-and-receipt helper for platform send admission and the existing scheduler.
+`markAiWakeupMissed` is a host admission helper on `@k2b/cloud/ai/runtime`.
+
 ## Mixed barrels
 
 Some barrels serve more than one audience. Use this boundary instead of

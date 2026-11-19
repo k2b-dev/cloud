@@ -92,11 +92,11 @@ export async function beginAiCall(
         alive: boolean | null;
       }[]
     >`
-      SELECT t.id,t.run_config->'inferenceBudget' AS budget,t.run_config ? 'codeOrigin' AS code_origin,t.status,t.lease_expires_at>clock_timestamp() AS alive FROM ai.cost_config config
+      SELECT t.id,t.run_config->'inferenceBudget' AS budget,(t.run_config ? 'codeOrigin' OR t.run_config ? 'wakeup') AS code_origin,t.status,t.lease_expires_at>clock_timestamp() AS alive FROM ai.cost_config config
       LEFT JOIN ai.turns t ON t.id=${context.turnId ?? null}::uuid WHERE config.singleton FOR UPDATE OF config`;
     if (context.turnId && !turn?.id) throw new AiTurnFailure("not_allowed", "The source turn no longer exists.");
     const budget = turn?.budget;
-    if (turn?.code_origin && !budget) throw new AiTurnFailure("not_allowed", "Code turn cost admission is missing.");
+    if (turn?.code_origin && !budget) throw new AiTurnFailure("not_allowed", "Automatic turn cost admission is missing.");
     let outputCeiling = budget?.maxOutputTokens;
     if (budget) {
       if (turn?.status !== "running" || !turn.alive) throw new AiTurnFailure("not_allowed", "Turn inference lease is no longer active.");

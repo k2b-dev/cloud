@@ -1,3 +1,4 @@
+import { dates } from "@k2b/stdlib";
 import { type ChatAction, type ChatAttachment, MessageQuote, useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import { importOnDemand } from "../../browser/reload";
@@ -37,15 +38,24 @@ export function AiUserMessageQuotes(props: { entry: AiStoredMessage }): JSX.Elem
 }
 
 /**
- * Who wrote a message the person did not type: an automation or another chat. The server sets the origin from the
+ * Who wrote a message the person did not type: an automation, alarm or another chat. The server sets the origin from the
  * writer and links it only for a viewer who may open the source. The person's own messages carry none.
  */
-export const aiUserMessageSource = (entry: AiStoredMessage, locale: string): JSX.Element | undefined => {
+export const aiUserMessageSource = (entry: AiStoredMessage, locale: string, timeZone = "UTC"): JSX.Element | undefined => {
   // A turn Code started before writers carried their origin names its Code from the turn's own record, without a link.
   const code = entry.meta?.codeOrigin;
   const origin =
     entry.meta?.origin ?? (code ? { kind: "automation" as const, id: code.codeId, name: code.title, href: undefined } : undefined);
   if (!origin || origin.kind === "person") return undefined;
+  if (origin.kind === "wakeup")
+    return (
+      <>
+        <i class="ai-message-source__icon ti ti-alarm" data-kind="wakeup" aria-hidden="true" />
+        <span>
+          {origin.name} {dates.formatTime(origin.scheduledAt, { locale, timeZone })}
+        </span>
+      </>
+    );
   const t = aiChatMessages(locale);
   // An automation Cloud could not name for this viewer says only that it is one, never "Automation" as a name.
   const label =

@@ -6,6 +6,30 @@ import type { CapabilityActionCallReview } from "../contracts/capabilities";
 // call keeps Cloud's own words.
 const forms = {
   en: {
+    wakeup_create: {
+      action: "Set alarm",
+      running: "Setting alarm",
+      done: "Alarm set",
+      confirm: "Set alarm",
+      decline: "Cancel",
+      notRun: "Alarm not set",
+    },
+    wakeup_update: {
+      action: "Change alarm",
+      running: "Changing alarm",
+      done: "Alarm changed",
+      confirm: "Save",
+      decline: "Cancel",
+      notRun: "Alarm not changed",
+    },
+    wakeup_delete: {
+      action: "Delete alarm",
+      running: "Deleting alarm",
+      done: "Alarm deleted",
+      confirm: "Delete",
+      decline: "Cancel",
+      notRun: "Alarm not deleted",
+    },
     code_run: {
       action: "Run code",
       running: "Running code",
@@ -46,6 +70,30 @@ const forms = {
     },
   },
   de: {
+    wakeup_create: {
+      action: "Wecker stellen",
+      running: "Stellt den Wecker …",
+      done: "Wecker gestellt",
+      confirm: "Wecker stellen",
+      decline: "Abbrechen",
+      notRun: "Wecker nicht gestellt",
+    },
+    wakeup_update: {
+      action: "Wecker ändern",
+      running: "Ändert den Wecker …",
+      done: "Wecker geändert",
+      confirm: "Speichern",
+      decline: "Abbrechen",
+      notRun: "Wecker nicht geändert",
+    },
+    wakeup_delete: {
+      action: "Wecker löschen",
+      running: "Löscht den Wecker …",
+      done: "Wecker gelöscht",
+      confirm: "Löschen",
+      decline: "Abbrechen",
+      notRun: "Wecker nicht gelöscht",
+    },
     code_run: {
       action: "Code ausführen",
       running: "Code wird ausgeführt",
@@ -106,6 +154,8 @@ export const cloudToolReview = (name: string, args: unknown, locale: string): Ca
   const input = args;
   const sentence = forms[language];
   try {
+    if (name === "wakeup_create" || name === "wakeup_update" || name === "wakeup_delete")
+      return actionReview({ locale: language, sentence: sentence[name] }, {});
     if (name === "code_run") {
       return actionReview({ locale: language, sentence: sentence.code_run }, {});
     }

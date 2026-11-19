@@ -96,6 +96,24 @@ export const normalizeCronSchedule = (schedule: CronSchedule): CronSchedule => {
   return { cron: fields.join(" "), timezone: normalizedTimezone };
 };
 
+/** Calendar prefilter for the alarm's at-most-24-hour UTC slices. Endpoints and
+ * midpoint cover each local date, including a 23/25-hour daylight-saving day. */
+export function cronRangeHasCalendarMatch(schedule: CronSchedule, from: Date, to: Date): boolean {
+  const normalized = normalizeCronSchedule(schedule);
+  const fields = normalized.cron.split(" ").map((value, index) => validateCronField(value, CRON_FIELDS[index]!));
+  const format = new Intl.DateTimeFormat("en-US", { timeZone: normalized.timezone, day: "numeric", month: "numeric", weekday: "short" });
+  return [+from, (+from + +to) / 2, +to - 1].some((at) => {
+    const parts = new Map(format.formatToParts(at).map((part) => [part.type, part.value]));
+    const day = Number(parts.get("day")),
+      month = Number(parts.get("month"));
+    const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.get("weekday") ?? "");
+    const dom = fields[2]!,
+      dow = fields[4]!;
+    const dayMatches = dom.any ? dow.values.has(weekday) : dow.any ? dom.values.has(day) : dom.values.has(day) || dow.values.has(weekday);
+    return fields[3]!.values.has(month) && dayMatches;
+  });
+}
+
 /** Walk a bounded day's UTC minutes using the same parsed fields as validation.
  * Repeated local minutes during a DST rollback produce one slot, as the scheduler does.
  */

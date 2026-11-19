@@ -28,15 +28,15 @@ const message = (seq: number, role: "user" | "assistant", text: string, extra: P
   ...extra,
 });
 
-const render = (messages: AiStoredMessage[]) =>
+const render = (messages: AiStoredMessage[], locale = "de", timeZone = "UTC") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
-      locale: "de",
+      locale,
       get children() {
         return createComponent(AiChatActionsProvider, {
           actions: { onContinueTurn: () => {}, onRetryMessage: () => {} },
           get children() {
-            const timeline = createAiChatTimeline({ messages: () => messages, activeTurn: () => null });
+            const timeline = createAiChatTimeline({ messages: () => messages, activeTurn: () => null, timeZone });
             return createComponent(Chat.Timeline, {
               get items() {
                 return timeline();
@@ -68,6 +68,33 @@ test("a message from an automation or another chat carries its source chip; one'
   expect(chat).toContain("Aus dem Chat „Messe Köln“");
   expect(chat).not.toContain("<a ");
   expect(chat).toContain('data-kind="chat"');
+});
+
+test.each([
+  { locale: "de", name: "Wecker" },
+  { locale: "en", name: "Alarm" },
+])("an alarm message keeps its note and a quiet chip with its planned time in $locale", ({ locale, name }) => {
+  const html = render(
+    [
+      message(1, "user", "Prüfe die Anzahlung", {
+        createdAt: "2026-11-18T17:00:00.000Z",
+        meta: { origin: { kind: "wakeup", id: "alarm1", name, scheduledAt: "2026-11-18T15:00:00.000Z" } },
+      }),
+    ],
+    locale,
+    "Europe/Berlin",
+  );
+  const [alarm] = articles(html);
+  const text = alarm?.replace(/<[^>]*>/g, "");
+  expect(alarm).toContain("Prüfe die Anzahlung");
+  expect(alarm).toContain("data-source");
+  expect(alarm).toContain('class="ai-message-source__icon ti ti-alarm"');
+  expect(alarm).toContain('data-kind="wakeup" aria-hidden="true"');
+  expect(text).toContain(`${name} 16:00`);
+  expect(text).not.toContain("18:00");
+  expect(alarm).not.toContain("<a ");
+  expect(alarm).not.toContain("Chat „");
+  expect(alarm).not.toContain("Automation");
 });
 
 test("a turn that Send now interrupted says paused and offers neither answering again nor continuing", () => {

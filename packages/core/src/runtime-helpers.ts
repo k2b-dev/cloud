@@ -7,7 +7,7 @@ import { startAppCatalogMaintenance } from "@k2b/cloud/services/app-catalogs";
 import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
-import { settleCodeChatTurn, sweepCodeChatTurnBudgets } from "./ai-chat-budget";
+import { checkWakeupChatBudget, settleCodeChatTurn, sweepCodeChatTurnBudgets } from "./ai-chat-budget";
 import { validateQueuedChatStart } from "./ai-chat-queue";
 import { beforeCoreChatTurn } from "./ai-chat-turn";
 import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activation-maintenance";
@@ -277,7 +277,7 @@ export const startCoreServices = async (
             });
       },
     });
-    await aiMaintenanceJobs.start();
+    await aiMaintenanceJobs.start({ wakeupBudget: checkWakeupChatBudget });
     await startOutgoingMailRuntime();
     await outgoingMailBounceRuntime.start();
     await startNotificationRuntime();

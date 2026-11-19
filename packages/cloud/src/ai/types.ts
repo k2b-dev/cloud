@@ -398,6 +398,7 @@ export type AiStoredMessage = {
     writerOrigin?: import("./chat-origin").AiChatOrigin;
     /** Immutable initiator retained when messages are copied. */
     turnTrigger?: import("./chat-origin").AiChatTurnTrigger;
+    wakeupEvent?: import("./wakeup-contracts").AiWakeupEvent;
     scheduledTask?: {
       reason?: { code: string; at: string; action?: string };
       /** Historical marker; the original stored text remains the display source. */
@@ -753,6 +754,7 @@ type RetiredRoutineContext = {
 };
 
 export type AiChatTurnRunConfig = {
+  wakeup?: import("./wakeup-contracts").AiWakeupOccurrence;
   /** Platform-authorized subject, separate from an automation's actor identity. */
   accessSubject?: AccessSubject;
   /** Writer attribution, independent of the turn initiator and execution authority. */
