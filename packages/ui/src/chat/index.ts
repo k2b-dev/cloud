@@ -33,6 +33,8 @@ export type {
 } from "./ChatComposer";
 export { ChatComposerQuotes } from "./ChatComposerQuotes";
 export type { ChatDecisionProps, ChatOutcomeProps } from "./ChatDecision";
+// Not members of `Chat`: a page loads them only where a question asks for a value.
+export { ChatDecisionFacts, ChatDecisionField, type ChatDecisionFieldProps } from "./ChatDecisionField";
 export type {
   ChatActivityMetaTone,
   ChatActivityProps,

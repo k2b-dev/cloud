@@ -21,6 +21,12 @@ export type ChatDecisionAnswer = {
    * stays in place. A shimmer runs over the filled button and it takes no second press. Only `confirm` reads it.
    */
   busy?: boolean;
+  /**
+   * The other labels this answer can take while its question stays open, such as "Saving …" and "Try again" beside
+   * "Save". All of them share one cell, so the button keeps the width of the widest and a switch moves nothing. Read
+   * by the answers of `ChatDecisionField`.
+   */
+  alternates?: readonly { label: string; icon?: string }[];
   onSelect: () => void | Promise<void>;
 };
 

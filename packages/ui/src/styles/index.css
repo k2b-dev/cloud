@@ -3296,6 +3296,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: not-allowed;
 }
 
+/* The eye of a password field: on touch screens its box reaches 2.75rem
+   (44 px) wide and its hit area 44 px high, without reaching into the text. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-input-shell__reveal {
+    position: relative;
+    width: 2.75rem;
+  }
+
+  .k2b-ui .k2b-input-shell__reveal::after {
+    content: "";
+    position: absolute;
+    inset-block: min(0px, calc((100% - 2.75rem) / 2));
+    inset-inline: 0;
+  }
+}
+
 .k2b-ui .k2b-input-clear-action {
   color: var(--k2b-text-muted);
   background: transparent;
@@ -16213,6 +16229,131 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-chat-decision__details,
   .k2b-ui .k2b-chat-decision__answers {
     transition: none;
+  }
+}
+
+/* Facts with their icons inside the details, such as where a value goes. */
+.k2b-ui .k2b-chat-decision__facts {
+  display: grid;
+  gap: 0.375rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.k2b-ui .k2b-chat-decision__fact-line[data-tone="danger"] .k2b-chat-line__icon {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-chat-decision__fact-line[data-tone="warning"] .k2b-chat-line__icon {
+  color: var(--k2b-warning-text);
+}
+
+/* A question that asks for one value: the field and its line take the answer
+   row's place, the main answer beside the field, the quiet one beside the
+   line. Every line, and every label of an answer, shares one cell, so open,
+   typed, saving, error, locked, and back never move anything. The facts stay
+   apart from the island while the person types. */
+.k2b-ui .k2b-chat-decision:has(> .k2b-chat-decision__entry) {
+  padding-bottom: 0.75rem;
+}
+
+.k2b-ui .k2b-chat-decision:has(> .k2b-chat-decision__entry) .k2b-chat-decision__details {
+  gap: 0.375rem;
+  margin-top: 0.75rem;
+  padding: 0.625rem 0.875rem 0.75rem;
+}
+
+.k2b-ui .k2b-chat-decision[data-mode="edit"]:has(> .k2b-chat-decision__entry) .k2b-chat-decision__details {
+  background: var(--k2b-surface-canvas);
+}
+
+.k2b-ui .k2b-chat-decision__entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "field confirm"
+    "line decline";
+  align-items: center;
+  gap: 0.375rem 0.625rem;
+  margin-top: 0.75rem;
+}
+
+.k2b-ui .k2b-chat-decision__field {
+  grid-area: field;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-button.k2b-chat-decision__confirm {
+  grid-area: confirm;
+}
+
+.k2b-ui .k2b-button.k2b-chat-decision__decline {
+  grid-area: decline;
+  justify-self: end;
+}
+
+.k2b-ui .k2b-chat-decision__faces {
+  display: inline-grid;
+}
+
+.k2b-ui .k2b-chat-decision__face {
+  display: inline-flex;
+  grid-area: 1 / 1;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-chat-decision__face:not([data-current="true"]),
+.k2b-ui .k2b-chat-decision__line:not([data-current="true"]) {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-chat-decision__line-cell {
+  display: grid;
+  grid-area: line;
+  min-width: 0;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.k2b-ui .k2b-chat-decision__line {
+  grid-area: 1 / 1;
+}
+
+.k2b-ui .k2b-chat-decision__line[data-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-chat-decision__line[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-chat-decision__line:is([data-tone="danger"], [data-tone="warning"]) .k2b-chat-line__icon {
+  color: inherit;
+}
+
+/* Narrow: field and line take the full width, both answers share one row
+   in equal halves, without icons, each label on one line. */
+@container (max-width: 32.5rem) {
+  .k2b-ui .k2b-chat-decision__entry {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "field field"
+      "line line"
+      "decline confirm";
+    gap: 0.5rem;
+  }
+
+  .k2b-ui .k2b-button.k2b-chat-decision__decline {
+    justify-self: stretch;
+  }
+
+  .k2b-ui .k2b-chat-decision__entry .k2b-chat-decision__face > i {
+    display: none;
   }
 }
 
