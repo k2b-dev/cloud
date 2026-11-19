@@ -170,7 +170,7 @@ test.skipIf(isServer)("“Copy handle” in the menu copies the service account'
     expect(success).toHaveBeenCalledWith("Handle copied");
     refuse = true;
     await copy();
-    expect(failure).toHaveBeenCalledWith("The handle could not be copied.");
+    expect(failure).toHaveBeenCalledWith("The handle could not be copied.", { title: "Handle not copied" });
   } finally {
     page.dispose();
     success.mockRestore();
@@ -404,7 +404,7 @@ for (const refusal of ["paused", "approval", "conflict"] as const) {
         expect(notice.mock.calls[0]?.[1]?.action).toBeNull();
       } else if (refusal === "approval") {
         expect(page.control("Run now")).toBeDefined();
-        expect(notice.mock.calls[0]?.[0]).toBe("Not started: This version needs a new approval first.");
+        expect(notice.mock.calls[0]?.[0]).toBe("This version needs a new approval first.");
         expect(notice.mock.calls[0]?.[1]?.action).toMatchObject({ label: "View version", href: `${data.href}?tab=versions` });
       } else {
         expect(page.dom.root.querySelector(".cloud-code__state")?.textContent).not.toContain("Paused");
@@ -602,6 +602,7 @@ test.skipIf(isServer)("a refused identity snapshot leaves recovery and repeated 
     await tick();
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(error).toHaveBeenCalledWith("Run updates could not be assigned. Reload to see the current state.", {
+      title: "Run updates unavailable",
       duration: 0,
       action: { label: "Try again", onClick: expect.any(Function) },
     });

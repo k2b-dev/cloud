@@ -672,7 +672,7 @@ for (const theme of ["light", "dark"])
         } else {
           await page.getByRole("link", { name: "Version ansehen", exact: true }).waitFor();
           expect(await page.locator(".cloud-code__head").getByRole("button", { name: "Jetzt ausführen", exact: true }).count()).toBe(1);
-          await page.getByText("Nicht gestartet: Diese Version braucht erst eine neue Freigabe.", { exact: true }).waitFor();
+          await page.getByText("Diese Version braucht erst eine neue Freigabe.", { exact: true }).waitFor();
         }
         await settled(page);
         await shot(page, `rejected-${refusal}`, width);

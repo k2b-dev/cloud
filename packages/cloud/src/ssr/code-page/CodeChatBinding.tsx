@@ -65,10 +65,10 @@ export function CodeChatMissing(props: { codeId: string; binding: CodeChatBindin
     }).catch(() => null);
     setRestoring(false);
     if (!response?.ok) {
-      toast.error(t().chatRestoreFailed);
+      toast.error(t().chatRestoreFailed, { title: t().chatRestoreFailedTitle });
       return;
     }
-    if (title) toast.success(t().chatRestored({ title }));
+    if (title) toast.success(t().chatRestored({ title }), { title: t().chatRestoredTitle });
     refreshCurrentPath();
   };
   return (
