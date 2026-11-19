@@ -39,8 +39,8 @@ import { localizeMailError } from "../service/error-messages";
 import { enqueueMailInvalidation, mailLive } from "../service/live";
 import { createMailbox } from "../service/mailboxes";
 import { cancelScheduledSend } from "../service/scheduled-sends";
+import { respondDraftDocumentRead } from "./draft-document-read";
 import { stopMailDraftConnections, upgradeMailDraftDocumentSocket } from "./draft-document-socket";
-import api from "./index";
 import type { MailApiContext } from "./public-resource-boundary";
 
 // Bun accepts headers; lib.dom's global constructor omits Bun's options overload.
@@ -154,11 +154,9 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         await next();
       })
       .get("/mailboxes/:mailboxId/drafts/:draftId/document/socket", upgradeMailDraftDocumentSocket);
-    // Use the actual public GET validators and handler with this fixture identity.
-    for (const route of api.routes.filter(
-      (route) => route.method === "GET" && route.path === "/mailboxes/:mailboxId/drafts/:draftId/document",
-    ))
-      app.on("GET", route.path, route.handler);
+    app.get("/mailboxes/:mailboxId/drafts/:draftId/document", (c) =>
+      respondDraftDocumentRead(c, { context: requestContext, mailboxId, draftId: currentDraft.id, signal: c.req.raw.signal }),
+    );
     startServer();
     await draftDocumentSnapshots.start();
     stopLive = await startLiveOutbox("mail");
@@ -458,7 +456,8 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         error: { code: "DRAFT_DOCUMENT_INVALID_HISTORY", status: 409 },
       });
       const [stored] = await sql`SELECT revision, doc_history_complete FROM mail.drafts WHERE id=${target.id}::uuid`;
-      expect(stored).toMatchObject({ revision: base.revision, doc_history_complete: true });
+      expect(Number(stored?.revision)).toBe(base.revision);
+      expect(stored?.doc_history_complete).toBe(true);
     } finally {
       peer.destroy();
     }

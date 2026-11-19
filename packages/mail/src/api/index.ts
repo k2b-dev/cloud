@@ -204,7 +204,7 @@ import { resolveByteRange } from "../service/byte-range";
 import { requestContactDirectory } from "../service/contact-directory";
 import { conversationSummaryStateSchema } from "../service/conversation-summary-contract";
 import { generateConversationSummary, generateConversationSummarySchema } from "../service/conversation-summary-jobs";
-import { acceptDraftDocumentUpdate, readDraftDocument } from "../service/draft-documents";
+import { acceptDraftDocumentUpdate } from "../service/draft-documents";
 import { applyDraftTableAction } from "../service/draft-table-actions";
 import { localizeMailError } from "../service/error-messages";
 import { mailLive } from "../service/live";
@@ -219,6 +219,7 @@ import automationExportRoutes from "./automation-export";
 import automationLogRoutes from "./automation-log";
 import contactDirectoryRoutes from "./contact-directory";
 import { requireDraftDocumentAccount } from "./draft-document-identity";
+import { respondDraftDocumentRead } from "./draft-document-read";
 import { upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import {
   internalDraftSeedInput,
@@ -3208,21 +3209,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
     v("param", mailboxAndIdParamSchema("draftId")),
     async (c) => {
       const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; draftId: string };
-      const result = await readDraftDocument({ context: requestContext(c), ...params, signal: c.req.raw.signal });
-      if (!result.ok) return respondPublic(c, result);
-      const value = result.data;
-      return respond(
-        c,
-        ok({
-          generation: value.generation,
-          revision: value.revision,
-          lifecycle: value.lifecycle,
-          historyComplete: value.historyComplete,
-          fresh: { ...value.fresh, state: toBase64(value.fresh.state) },
-          durable: { ...value.durable, state: toBase64(value.durable.state) },
-          frozen: value.frozen ? { ...value.frozen, state: toBase64(value.frozen.state) } : null,
-        }),
-      );
+      return respondDraftDocumentRead(c, { context: requestContext(c), ...params, signal: c.req.raw.signal });
     },
   )
   .post(
