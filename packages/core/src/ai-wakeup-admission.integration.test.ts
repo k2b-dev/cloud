@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyO
 import { sql } from "@k2b/cloud";
 import * as publicAi from "@k2b/cloud/ai";
 import { aiConversations, aiWakeups } from "@k2b/cloud/ai";
-import { type AiChatTurnAdmission, enqueueAiChatSend, type QueuedChatSubmission } from "@k2b/cloud/ai/runtime";
+import { type AiChatTurnAdmission, enqueueAutomationChatMessage, type QueuedChatSubmission } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings } from "@k2b/cloud/services";
 import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import { aiModelFixture, aiSettingsFixture } from "../../../scripts/fixtures/code-platform";
@@ -58,7 +58,7 @@ suiteFor(
     await database?.drop();
   });
 
-  const fixture = async () => {
+  const fixture = async (receiptMismatch?: "owner" | "origin" | "hash") => {
     const user = await accounts.users.get({ id: owner });
     if (!user) throw new Error("Alarm owner missing");
     const subject = { actor: { kind: "user" as const, user }, accessSubject: { type: "user" as const, userId: owner } };
@@ -84,7 +84,19 @@ suiteFor(
         locale: "en",
       },
     };
-    await sql.begin((db) => enqueueAiChatSend(submission, [{ type: "text", text: alarm.note }], db));
+    await sql.begin(async (db) => {
+      await enqueueAutomationChatMessage(messageId, submission, [{ type: "text", text: alarm.note }], db);
+      // Receipts are immutable. Insert the mismatching evidence once, keeping the queue/message ID
+      // and every other field valid so both admission boundaries reach the receipt comparison.
+      const origin = {
+        ...submission.runConfig.writerOrigin,
+        ...(receiptMismatch === "origin" ? { scheduledAt: "2026-11-18T13:00:00.000Z" } : {}),
+      };
+      await db`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)
+        VALUES(${messageId}::uuid,${receiptMismatch === "owner" ? other : owner}::uuid,'ai.chat.send',${messageId},
+          ${receiptMismatch === "hash" ? "changed" : messageId},${chat.id}::uuid,${chat.shortId},
+          (${JSON.stringify(origin)}::text)::jsonb,(${JSON.stringify(submission.runConfig.turnTrigger)}::text)::jsonb,${messageId}::uuid)`;
+    });
     await sql`UPDATE ai.wakeups SET status='done',next_at=NULL,last_message_id=${messageId}::uuid WHERE id=${alarm.id}::uuid`;
     const { turn } = await aiConversations.submitChatTurn({ ...submission, queuedMessageId: messageId });
     await sql`UPDATE ai.turns SET status='running',lease_owner=${leaseOwner},lease_expires_at=clock_timestamp()+interval '1 minute' WHERE id=${turn.id}::uuid`;
@@ -125,11 +137,7 @@ suiteFor(
   });
 
   test.each(["owner", "origin", "hash"] as const)("a changed receipt %s is rejected at both admission boundaries", async (field) => {
-    const f = await fixture();
-    if (field === "owner") await sql`UPDATE ai.chat_send_receipts SET account_id=${other}::uuid WHERE id=${f.messageId}::uuid`;
-    if (field === "origin")
-      await sql`UPDATE ai.chat_send_receipts SET origin=jsonb_set(origin,'{scheduledAt}','"2026-11-18T13:00:00.000Z"') WHERE id=${f.messageId}::uuid`;
-    if (field === "hash") await sql`UPDATE ai.chat_send_receipts SET input_hash='changed' WHERE id=${f.messageId}::uuid`;
+    const f = await fixture(field);
     await expect(validate(f)).rejects.toMatchObject({ code: "source_restricted" });
     await expect(admitCodeChatTurn(f.worker)).rejects.toMatchObject({ code: "not_allowed" });
     expect(await sql`SELECT 1 FROM code.chat_turn_budgets WHERE turn_id=${f.worker.turnId}::uuid`).toHaveLength(0);
