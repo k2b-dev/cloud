@@ -243,8 +243,7 @@ const open = async (width: number, theme: string) => {
     if (path === "/api/approvals") return route.fulfill({ json: { items: [], nextCursor: null, count: 0, elsewhere: 0 } });
     if (path === "/api/capabilities/v1/queries/core/code.attention.list")
       return route.fulfill({ json: { data: { items: [], nextCursor: null } } });
-    if (path === "/api/capabilities/v1/catalog")
-      return route.fulfill({ json: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
+    if (path === "/api/capabilities/v1/catalog") return route.fulfill({ json: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
     if (path.endsWith("/tabs")) return route.fulfill({ json: { state: { tabs: [], layout: null, front: null }, revision: 0 } });
     const sidebar = /^\/api\/assistant\/workspace\/conversations\/(\w+)\/context$/.exec(path);
     if (sidebar) return route.fulfill({ json: emptySidebarSnapshot({ chatId: sidebar[1]! }) });
