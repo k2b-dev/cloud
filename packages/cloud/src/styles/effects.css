@@ -2061,10 +2061,10 @@ dialog:has(.launchpad-panel)::backdrop {
   white-space: normal;
   mask-image: none;
 }
-/* A host's alarm line (Gustav alarms v1, 6): the host draws the whole line, the activity row lends only its place, as
-   for the Code decision line. */
 .k2b-ui .ai-chat-done-line .k2b-chat-activity__copy > strong { color: var(--k2b-text); font-weight: normal; }
 .k2b-ui .ai-chat-done-line time { color: var(--k2b-text-muted); }
+/* A host's alarm line (Gustav alarms v1, 6): the host draws the whole line, the activity row lends only its place, as
+   for the Code decision line. */
 .k2b-ui .ai-wakeup-line-row .k2b-chat-activity__leading { display: none; }
 .k2b-ui .ai-wakeup-line-row > .k2b-chat-activity__row > .k2b-chat-activity__copy { grid-column: 1 / -1; min-width: 0; }
 .k2b-ui .ai-wakeup-line-row .k2b-chat-activity__copy,
