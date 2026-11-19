@@ -1811,7 +1811,8 @@ export default function MailComposer(props: {
 
   const composerIntent = () => draft()?.intent ?? initial.intent;
   const retryPreview = () => void previewQuery.refresh();
-  const IdentitySwitcher = () => {
+  /** `start`: the menu opens towards the end, for a trigger near the start edge such as in a window's head. */
+  const IdentitySwitcher = (switcher: { align?: "start" }) => {
     const label = () => selectedIdentity()?.label ?? t().chooseSender;
     const address = () => selectedIdentity()?.fromAddress ?? "";
     const Content = () => (
@@ -1832,7 +1833,7 @@ export default function MailComposer(props: {
           </span>
         }
       >
-        <Dropdown.Root position="bottom-right" width="18rem" items={identityMenuItems()}>
+        <Dropdown.Root position={switcher.align === "start" ? "bottom-left" : "bottom-right"} width="18rem" items={identityMenuItems()}>
           <Dropdown.Trigger
             appearance="plain"
             type="button"
@@ -2853,9 +2854,6 @@ export default function MailComposer(props: {
               {t().ccBcc}
             </Button>
           </Show>
-          <Show when={!windowSlots}>
-            <IdentitySwitcher />
-          </Show>
           <Show when={sharedPeers().length > 0}>
             <span class="mail-inline-draft-peers" data-mail-draft-peers>
               <For each={sharedPeers().slice(0, 3)}>
@@ -3219,7 +3217,7 @@ export default function MailComposer(props: {
                   <Portal mount={mount()}>
                     {/* The sender leads the window's head, before the save state, so the subject row starts with it. */}
                     <span class="mail-compose-window-sender" data-mail-compose-sender>
-                      <IdentitySwitcher />
+                      <IdentitySwitcher align="start" />
                     </span>
                     <span
                       class="mail-compose-window-status"
