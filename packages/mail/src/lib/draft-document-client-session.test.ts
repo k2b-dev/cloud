@@ -372,6 +372,100 @@ test("a busy server reconnects, sends pending input again and clears its error o
   }
 });
 
+test("saving during delayed replay waits for recovery instead of leaving a permanent connecting error", async () => {
+  const f = fixture();
+  try {
+    f.silence();
+    const client = await f.open();
+    expect(client.state()).toMatchObject({ connected: true, ready: false });
+    let settled = false;
+    const saving = client.save().finally(() => {
+      settled = true;
+    });
+    // Attach rejection handling before yielding: the old implementation rejects immediately.
+    const outcome = saving.then(
+      () => "saved",
+      () => "failed",
+    );
+    await Bun.sleep(0);
+    const settledBeforeReady = settled;
+    f.resume();
+    f.sockets.at(-1)!.receive("replayReady", { docId: "Draft1", generation: "1", cursor: "s6t.fixture.1", peerId: "peer2" });
+    const result = await outcome;
+    expect(client.state()).toMatchObject({ connected: true, ready: true, error: false, dirty: false });
+    expect(settledBeforeReady).toBe(false);
+    expect(result).toBe("saved");
+    expect(client.content().body).toBe(base.body);
+    expect(client.provider.hasUnsentChanges()).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("a replay timeout clears after automatic recovery without losing the reply", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    jest.useFakeTimers();
+    setSystemTime(new Date("2026-11-18T08:00:00Z"));
+    f.disconnect();
+    f.silence();
+    client.provider.reconnectNow();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    client.edit({ ...client.content(), body: "Reply after background interruption" });
+    const saving = client.save().then(
+      () => "saved",
+      () => "failed",
+    );
+    jest.advanceTimersByTime(sharedText.SHARED_TEXT_ACK_TIMEOUT_MS);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(await saving).toBe("failed");
+    expect(client.state()).toMatchObject({ connected: false, ready: false, dirty: true, error: true, saving: false });
+    expect(client.state().message).toContain("Synchronization timed out");
+    f.resume();
+    jest.advanceTimersByTime(1_000);
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(client.state()).toMatchObject({ connected: true, ready: true, dirty: false, error: false });
+    expect(client.provider.hasUnsentChanges()).toBe(false);
+    expect(client.content().body).toBe("Reply after background interruption");
+  } finally {
+    jest.useRealTimers();
+    await f.cleanup();
+  }
+});
+
+test("a BUSY retry on the same socket clears the transient error before a rejected proposal is discarded", async () => {
+  const f = fixture();
+  const random = spyOn(Math, "random").mockReturnValue(0.5);
+  try {
+    const client = await f.open();
+    jest.useFakeTimers();
+    setSystemTime(new Date("2026-11-18T08:00:00Z"));
+    f.silence();
+    client.edit({ ...client.content(), body: "Busy reply" });
+    f.sockets[0]!.receive("error", { docId: "Draft1", code: "BUSY", message: "Busy" });
+    f.resume();
+    jest.advanceTimersByTime(1_000);
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(f.sockets).toHaveLength(1);
+    expect(client.state()).toMatchObject({ connected: true, ready: true, dirty: false, error: false });
+    const clock = spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(1000);
+    try {
+      expect(() => client.edit({ ...client.content(), body: "Entirely different proposal" })).toThrow("applied safely");
+    } finally {
+      clock.mockRestore();
+    }
+    // Promote the rejected proposal's visible error through the ordinary save path.
+    await expect(client.save()).rejects.toThrow("applied safely");
+    client.discardRejectedEdit();
+    expect(client.state()).toMatchObject({ error: false, rejectedEdit: null });
+  } finally {
+    random.mockRestore();
+    jest.useRealTimers();
+    await f.cleanup();
+  }
+});
+
 test("retry after a rejected socket handshake requests sign-in through HTTP and retains unsaved input", async () => {
   const f = fixture();
   try {
@@ -743,6 +837,10 @@ test("a shared draft still opens with visible feedback when account metadata can
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: full });
   try {
     const client = await f.open("1", true);
+    expect(client.state()).toMatchObject({ ready: true, terminal: false, error: true, locallySaved: false });
+    expect(client.state().message).toContain("device could not save");
+    f.sockets[0]!.receive("error", { docId: "Draft1", code: "SYNC_TIMEOUT", message: "Connection timed out" });
+    f.sockets[0]!.receive("replayReady", { docId: "Draft1", generation: "1", cursor: "s6t.fixture.1", peerId: "peer2" });
     expect(client.state()).toMatchObject({ ready: true, terminal: false, error: true, locallySaved: false });
     expect(client.state().message).toContain("device could not save");
   } finally {

@@ -135,9 +135,14 @@ const buildHarness = async () => {
 };
 const harness = await buildHarness();
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", new URL("../../../../cloud/", import.meta.url).pathname))).default;
-const cssBuild = await Bun.build({ entrypoints: [new URL("../../../../../styles.css", import.meta.url).pathname], plugins: [tailwind] });
-if (!cssBuild.success) throw new AggregateError(cssBuild.logs, "Mail shared CSS failed");
-const css = await cssBuild.outputs[0]!.text();
+// The shared styles and Mail's own, so the hint under the text renders as in the app.
+const cssBuilds = await Promise.all(
+  [new URL("../../../../../styles.css", import.meta.url).pathname, new URL("../../styles/app.css", import.meta.url).pathname].map((entry) =>
+    Bun.build({ entrypoints: [entry], plugins: [tailwind] }),
+  ),
+);
+for (const build of cssBuilds) if (!build.success) throw new AggregateError(build.logs, "Mail shared CSS failed");
+const css = (await Promise.all(cssBuilds.map((build) => build.outputs[0]!.text()))).join("\n");
 const server = Bun.serve<{ document: boolean }>({
   hostname: "127.0.0.1",
   port: 0,
@@ -302,8 +307,9 @@ for (const width of [1440, 390])
       await page.keyboard.type("Local ");
       await page.waitForFunction(() => !window.mailSharedFixture.unsent());
       await waitStored(page, 1);
-      expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(0);
-      expect(await page.locator(".k2b-ste-status").innerText()).toContain("Speichert");
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.dirty)).toBe(true);
+      // The save state stands once, in the composer's head; the text area holds no status of its own.
+      expect(await page.locator(".k2b-ste-status").count()).toBe(0);
       const vector = Y.encodeStateVector(document);
       const before = readDraftDocument(document);
       writeLocalDraftHeaders(document, before, { ...before, subject: "Peer subject", bcc: [{ name: null, address: "peer@example.test" }] });
@@ -314,11 +320,12 @@ for (const width of [1440, 390])
       expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toContain("Peer footer");
       expect(await page.evaluate(() => window.mailSharedFixture.state()?.recipientsChanged)).toBe(true);
       // A peer's retained delta does not cover our cursorless local echo.
-      expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(0);
-      expect(await page.locator(".k2b-ste-status").innerText()).toContain("Speichert");
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.dirty)).toBe(true);
+      // The save state stands once, in the composer's head; the text area holds no status of its own.
+      expect(await page.locator(".k2b-ste-status").count()).toBe(0);
       holdAcknowledgements = false;
       for (const bytes of pendingAcknowledgements.splice(0)) publish(bytes);
-      await page.getByTitle("Auf dem Server gespeichert", { exact: true }).waitFor();
+      await page.waitForFunction(() => window.mailSharedFixture.state()?.dirty === false);
       await waitStored(page, 0);
       expect(revision).toBe(1); // Durable broker receipt precedes lazy SQL persistence.
       expect(requests.some((value) => value.endsWith("/snapshot"))).toBe(false);
@@ -362,7 +369,7 @@ for (const width of [1440, 390])
       await page.getByRole("button", { name: "Speichern", exact: true }).click();
       await page.waitForFunction(() => window.mailSharedFixture.savedRevision() === 2);
       await waitStored(page, 0);
-      expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(1);
+      expect(await page.evaluate(() => window.mailSharedFixture.state()?.dirty)).toBe(false);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -393,7 +400,19 @@ for (const width of [1440, 390])
           return notice.scrollWidth <= notice.clientWidth;
         }),
       ).toBe(true);
-      await page.getByRole("button", { name: "Entwurf kopieren", exact: true }).click();
+      // The hint's actions never overlap and each label fits its button, also as rows of two on a phone.
+      expect(
+        await page.locator("[data-mail-draft-hint] button").evaluateAll((buttons) => {
+          const boxes = buttons.map((button) => button.getBoundingClientRect());
+          const overlap = boxes.some((a, i) =>
+            boxes.some(
+              (b, j) => i < j && a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5,
+            ),
+          );
+          return { overlap, clipped: buttons.some((button) => button.scrollWidth > button.clientWidth + 1) };
+        }),
+      ).toEqual({ overlap: false, clipped: false });
+      await page.getByRole("button", { name: "Kopieren", exact: true }).click();
       await page.waitForFunction(() => (window.copiedTexts?.length ?? 0) > 0);
       expect((await page.evaluate(() => window.copiedTexts ?? [])).join("\n")).toContain(proposal);
       await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).click();
@@ -423,10 +442,10 @@ test("offline input survives cleanup/reload, then closes as one stable Rest requ
     await page.keyboard.press("Control+Home");
     await page.keyboard.type("Offline ");
     await page.waitForFunction(() => window.mailSharedFixture.state()?.locallySaved);
-    expect(await page.getByTitle("Offline · Auf diesem Gerät gesichert", { exact: true }).count()).toBe(1);
     await waitStored(page, 1);
-    expect(await page.locator(".k2b-ste-status").innerText()).toContain("Offline");
-    expect(await page.getByTitle("Auf dem Server gespeichert", { exact: true }).count()).toBe(0);
+    expect(await page.evaluate(() => window.mailSharedFixture.state()?.connected)).toBe(false);
+    // Offline on a remembered device is no problem to solve: no hint under the text, the head says it.
+    expect(await page.locator("[data-mail-draft-hint]").count()).toBe(0);
     // The sent boundary excludes the disconnected edit. Re-authorize on reload before reading device bytes.
     frozen = Y.encodeStateAsUpdate(document);
     durable = frozen;
@@ -461,7 +480,7 @@ test("permission loss preserves readable input; device opt-out prevents local pe
     await page.waitForFunction(() => window.mailSharedFixture.state()?.terminal);
     expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toContain("Keep Hello");
     expect(await editor.getAttribute("contenteditable")).toBe("false");
-    expect(await page.locator(".k2b-ste-status").innerText()).toContain("Zugriff entzogen");
+    expect(await page.locator("[data-mail-draft-hint]").innerText()).toContain("Zugriff entzogen");
     expect(errors).toEqual([]);
   } finally {
     await context.close();
@@ -479,11 +498,11 @@ test("a full stream keeps pending text on device and shows an error with a worki
     await page.waitForFunction(() => window.mailSharedFixture.state()?.terminal && window.mailSharedFixture.state()?.error);
     expect(await page.evaluate(() => window.mailSharedFixture.content().body)).toBe(`Unsent ${base.body}`);
     expect(await page.evaluate(() => window.mailSharedFixture.unsent())).toBe(true);
-    expect(await page.locator(".k2b-ste-status").innerText()).toContain("Entwurfsspeicher ist voll");
+    expect(await page.locator("[data-mail-draft-hint]").innerText()).toContain("Entwurfsspeicher ist voll");
     expect(readDraftDocument(document).body).toBe(base.body);
     await waitStored(page, 1);
     streamFull = false;
-    await page.getByRole("button", { name: "Speichern erneut versuchen", exact: true }).click();
+    await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
     await page.waitForFunction(() => window.mailSharedFixture.state()?.ready && !window.mailSharedFixture.unsent());
     expect(readDraftDocument(document).body).toBe(`Unsent ${base.body}`);
     await page.getByRole("button", { name: "Speichern", exact: true }).click();
@@ -494,3 +513,31 @@ test("a full stream keeps pending text on device and shows an error with a worki
     await context.close();
   }
 }, 30_000);
+
+// Review screenshots of the hint under the text, only on request: MAIL_DRAFT_SCREENSHOTS=<directory>.
+const screenshots = process.env.MAIL_DRAFT_SCREENSHOTS;
+if (screenshots)
+  test("hint review screenshots", async () => {
+    const { mkdirSync } = await import("node:fs");
+    const { join, resolve } = await import("node:path");
+    const directory = resolve(screenshots);
+    mkdirSync(directory, { recursive: true });
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390]) {
+        const { page, context } = await open(width);
+        try {
+          if (theme === "dark") await page.evaluate(() => (globalThis.document.documentElement.className = "dark"));
+          await page.evaluate(() => window.mailSharedFixture.remember(false));
+          await page.locator("[data-mail-draft-hint]").waitFor();
+          await settled(page);
+          await page.screenshot({ path: join(directory, `hint-not-remembered-${theme}-${width}.png`) });
+          await page.evaluate(() => window.mailSharedFixture.remember(true));
+          expect(await page.evaluate((body) => window.mailSharedFixture.rejectProposal(body), "Fictional proposal text")).toBe(true);
+          await page.getByRole("button", { name: "Vorschlag verwerfen", exact: true }).waitFor();
+          await settled(page);
+          await page.screenshot({ path: join(directory, `hint-proposal-${theme}-${width}.png`) });
+        } finally {
+          await context.close();
+        }
+      }
+  }, 120_000);

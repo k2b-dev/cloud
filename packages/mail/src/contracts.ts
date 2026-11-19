@@ -2882,7 +2882,17 @@ export const composeSignatureInputSchema = z
   .strict();
 export type ComposeSignatureInput = z.infer<typeof composeSignatureInputSchema>;
 
-export const composeSignatureSchema = z.object({ html: z.string().nullable(), text: z.string() }).strict();
+export const composeSignatureSchema = z
+  .object({
+    html: z.string().nullable(),
+    text: z.string(),
+    /**
+     * The signature as the sent HTML message shows it: the message wrapper with only the `.mail-signature` block,
+     * the mailbox design inlined and the logo as a data URL. Null for plain text and when no signature is chosen.
+     */
+    mailHtml: z.string().nullable(),
+  })
+  .strict();
 export type ComposeSignature = z.infer<typeof composeSignatureSchema>;
 
 export const composePreviewInputSchema = z

@@ -30,6 +30,7 @@ const main = async () => {
   const App = () => {
     const [content, setContent] = createSignal<DraftEditableContent>(draft);
     const [savedRevision, setSavedRevision] = createSignal<number | null>(null);
+    const [hintSlot, setHintSlot] = createSignal<HTMLElement>();
     const [saveError, setSaveError] = createSignal("");
     let disposed = false;
     onCleanup(() => {
@@ -95,10 +96,13 @@ const main = async () => {
                   editable={() => Boolean(session.shared() && !session.sharedState()?.terminal)}
                   completions={() => []}
                   onEditorReady={() => {}}
+                  hintMount={hintSlot}
                 />
               )}
             </For>
           </div>
+          {/* Like a composer: the hint stands right above the bar. */}
+          <div class="mail-draft-hint-slot" ref={setHintSlot} />
           <div class="flex shrink-0 items-center gap-2">
             <Button
               onClick={() => {

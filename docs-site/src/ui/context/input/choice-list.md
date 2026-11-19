@@ -2,7 +2,7 @@
 
 `ChoiceList` picks one value from a few choices that each need a sentence, such as how often something notifies you or who may see it. By default, each choice is a card with a radio, a label, an optional quiet marker, and one sentence on what the choice means. Use `variant="list"` for compact rows in one frame. The parent owns the value.
 
-With `variant="cards"` (the default), cards sit side by side while each gets 11rem, and stack on narrow surfaces such as a phone or a detail panel; cards in one row share their height. Each card has the field edge: 2 px grey at rest, a darker fill on hover, a strong blue edge on keyboard focus, and a light blue edge and fill when chosen, strong blue again when the chosen card has focus. A disabled list drops the edges. See [Controls stay platform blue](/en/ui/surfaces/color#controls-stay-platform-blue).
+With `variant="cards"` (the default), cards sit side by side while each gets 11rem, and stack on narrow surfaces such as a phone or a detail panel; cards in one row share their height. Each card has the field edge: 1 px grey at rest, a darker edge and fill on hover, a strong blue edge with the soft focus ring on keyboard focus, and a second blue line inside the edge (2 px in all) with a light blue fill when chosen. A disabled list shows light edges on a muted fill. See [Controls stay platform blue](/en/ui/surfaces/color#controls-stay-platform-blue).
 
 ## Use ChoiceList
 

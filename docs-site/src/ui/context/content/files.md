@@ -365,7 +365,7 @@ sorting, or row structure.
 
 Items follow the edge rule: hover darkens the fill, a selected item takes the
 row selection fill (`--k2b-row-selected`) also under the pointer, and focus
-draws the 2 px edge inside, so no state moves anything. In a picker, pass `checks={(row) => …}` to show a check
+draws a 2 px focus line inside, so no state moves anything. In a picker, pass `checks={(row) => …}` to show a check
 box before each item that can be chosen, or a circle when the selection takes
 one item. The check only mirrors the selection; items without one, such as
 folders, keep its slot, so names stay in line.

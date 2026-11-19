@@ -352,8 +352,15 @@ describe("@k2b/ui QrScanner in a browser", () => {
   }, 30_000);
 
   test("a detector error on one frame neither stops nor fails the camera; the worker reads on for the page", async () => {
-    const page = await open({ detector: "transient", camera: "code" });
+    // Begin with the blank camera; WebKit can stop presenting an unchanged canvas after its first picture.
+    const page = await open({ detector: "transient", camera: "turning" });
     try {
+      await page.waitForFunction(() => (globalThis as unknown as Probe).detects === 1, undefined, { timeout: 15_000 });
+      expect(await calls(page)).toEqual({ results: [], errors: [], stops: 0 });
+      // Deliver a changed picture after the detector error, so the worker gets its own frame to read.
+      await page.evaluate(() => {
+        (globalThis as unknown as Probe).codeVisible = true;
+      });
       await settled(page);
       expect(await calls(page)).toEqual({ results: [CODE], errors: [], stops: 0 });
       // The stub detector never returns the code: the worker read it, and the detector was not asked again.
