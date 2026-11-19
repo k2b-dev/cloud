@@ -28,6 +28,12 @@ export const safeErrorDetail = (text: string, secrets: readonly string[] = []): 
 };
 
 const genericGermanMessage = (error: HumanFacingError): string => {
+  if (error.code === "DRAFT_QUARANTINE_RECOVERY_CHANGED")
+    return "Der Entwurf hat sich während der Wiederherstellung geändert. Prüfe ihn vor einer Wiederholung mit recovery inspect.";
+  if (error.code === "DRAFT_QUARANTINE_RECOVERY_UNAVAILABLE")
+    return "Die Wiederherstellung konnte nicht bestätigt werden. Prüfe den Entwurf mit recovery inspect und wiederhole die Anfrage mit derselben Request-ID.";
+  if (error.code === "DRAFT_RECOVERY_SEND_PENDING")
+    return "Für diesen Entwurf steht noch ein Sendeauftrag aus. Kläre ihn vor der Wiederherstellung, damit die Nachricht nicht doppelt gesendet wird.";
   if (error.message === "Only a Cloud administrator can stop keeping a conversation")
     return "Nur eine Cloud-Administratorin oder ein Cloud-Administrator kann die Aufbewahrung aufheben.";
   if (

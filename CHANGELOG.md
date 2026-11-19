@@ -3,6 +3,38 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.82.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.81.0...cloud-v0.82.0) (2026-11-19)
+
+
+### Features
+
+* **mail:** a reply carries the original message as a card under the signature ([#3777](https://github.com/k2b-dev/cloud/issues/3777)) ([dda9e40](https://github.com/k2b-dev/cloud/commit/dda9e40432d08693c7a2ed81641e2f2683d2d4b3))
+* **mail:** detect JMAP on mailbox servers ([#3747](https://github.com/k2b-dev/cloud/issues/3747)) ([a60b8d9](https://github.com/k2b-dev/cloud/commit/a60b8d92d6db27bf425e5de80fd193505f4742dc))
+* **mail:** recover quarantined drafts with verified history ([#3768](https://github.com/k2b-dev/cloud/issues/3768)) ([26c1606](https://github.com/k2b-dev/cloud/commit/26c16061023267215ea7e2fa93db147346bc7a98)), closes [#3685](https://github.com/k2b-dev/cloud/issues/3685)
+* **ui:** make dialog content following opt-in ([#3633](https://github.com/k2b-dev/cloud/issues/3633)) ([617e386](https://github.com/k2b-dev/cloud/commit/617e386c1cf4cd06d461062c444d19f6fdc1723c))
+
+
+### Bug Fixes
+
+* **cloud:** live connections keep their periodic access check ([831d686](https://github.com/k2b-dev/cloud/commit/831d686ff815cce5781132352e6afc2c8fe4cfb5))
+* **cloud:** the privacy screen also covers windows and toasts ([#3733](https://github.com/k2b-dev/cloud/issues/3733)) ([831d686](https://github.com/k2b-dev/cloud/commit/831d686ff815cce5781132352e6afc2c8fe4cfb5))
+* **mail:** a shared draft sent from its window closes once with the Undo toast ([#3736](https://github.com/k2b-dev/cloud/issues/3736)) ([2ec97b6](https://github.com/k2b-dev/cloud/commit/2ec97b6e1dfe9629ad4ae7122f9f388dc3c25813))
+* **mail:** complete draft close across snapshot pruning ([#3759](https://github.com/k2b-dev/cloud/issues/3759)) ([628ee66](https://github.com/k2b-dev/cloud/commit/628ee666b12ae397faa671801196cdfb8e5492b5)), closes [#3757](https://github.com/k2b-dev/cloud/issues/3757)
+* **mail:** folder syncs wait for a busy mailbox lease without polling it ([#3743](https://github.com/k2b-dev/cloud/issues/3743)) ([b6c4cfc](https://github.com/k2b-dev/cloud/commit/b6c4cfce2e51532e209e29f861561bb710a1d183))
+* **mail:** isolate mailbox lease fairness wake counts ([#3776](https://github.com/k2b-dev/cloud/issues/3776)) ([41eeb79](https://github.com/k2b-dev/cloud/commit/41eeb794fcd54e68b5d9f26620e0f404d51051e3))
+* **mail:** new mail that IMAP push reports syncs ahead of folder checks ([#3735](https://github.com/k2b-dev/cloud/issues/3735)) ([36f3020](https://github.com/k2b-dev/cloud/commit/36f3020e2cfb35b6ca4551e890ad774557a5a627))
+* **mail:** parked folder syncs wake when the provider answers and never park while it may probe ([#3748](https://github.com/k2b-dev/cloud/issues/3748)) ([aec814b](https://github.com/k2b-dev/cloud/commit/aec814b536716d6fdddb5212929fabf4d2d5d30b))
+* **mail:** save draft edits after covered retention ([#3762](https://github.com/k2b-dev/cloud/issues/3762)) ([56c3fcd](https://github.com/k2b-dev/cloud/commit/56c3fcd12aefc2b6093c3e6818fdee359af718d9))
+* **mail:** stop knocking on unreachable mail servers and report them honestly ([#3740](https://github.com/k2b-dev/cloud/issues/3740)) ([2db2916](https://github.com/k2b-dev/cloud/commit/2db29162ff4b1f0edc2ad21549f9a77c61999fab))
+* **mail:** the compose window keeps Send on its bottom edge and names the sender in its head ([#3737](https://github.com/k2b-dev/cloud/issues/3737)) ([44772e2](https://github.com/k2b-dev/cloud/commit/44772e2ad9bdc9b18d9b44c4f2dedf45532dee85))
+* **mail:** the reply box's sender reads at the head's size ([#3773](https://github.com/k2b-dev/cloud/issues/3773)) ([4473387](https://github.com/k2b-dev/cloud/commit/447338786e9d0189e356c55d91c590c2d443db2f))
+* **ui:** activity rows read calmly, also in Mail events ([#3650](https://github.com/k2b-dev/cloud/issues/3650)) ([309c61c](https://github.com/k2b-dev/cloud/commit/309c61ccd6efe7d1f1df9a6089f7342a77cb87b5))
+
+
+### Performance Improvements
+
+* **mail:** load the composer, viewer and dialogs on demand ([#3769](https://github.com/k2b-dev/cloud/issues/3769)) ([4b93d3e](https://github.com/k2b-dev/cloud/commit/4b93d3e4aaa8782651514d44e1faea8f4144d42d))
+
 ## [0.81.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.80.0...cloud-v0.81.0) (2026-11-19)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "@k2b/cloud",
-  "version": "0.74.0",
+  "version": "0.74.1",
   "description": "Application platform library for independently deployed Hono and SolidJS services behind a dynamic gateway.",
   "license": "AGPL-3.0-or-later",
   "repository": {
@@ -154,7 +154,7 @@
     "@tailwindcss/typography": "0.5.20",
     "@k2b/nessi": "1.2.0",
     "@k2b/ssr": "0.22.0",
-    "@k2b/ui": "0.61.0",
+    "@k2b/ui": "0.62.0",
     "@k2b/stdlib": "0.34.1",
     "@k2b/sync": "7.1.1",
     "@nats-io/jetstream": "3.4.0",
@@ -186,7 +186,7 @@
     "hash-wasm": "4.13.0",
     "@types/sanitize-html": "2.16.2",
     "@types/web-push": "3.6.4",
-    "@k2b/editor": "0.12.1"
+    "@k2b/editor": "0.12.2"
   },
   "devDependencies": {
     "@babel/core": "8.1.0",

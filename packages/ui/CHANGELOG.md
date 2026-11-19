@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.62.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.61.0...npm-ui-v0.62.0) (2026-11-19)
+
+
+### Features
+
+* **ui:** make dialog content following opt-in ([#3633](https://github.com/k2b-dev/cloud/issues/3633)) ([617e386](https://github.com/k2b-dev/cloud/commit/617e386c1cf4cd06d461062c444d19f6fdc1723c))
+
+
+### Bug Fixes
+
+* **ui:** activity rows read calmly, also in Mail events ([#3650](https://github.com/k2b-dev/cloud/issues/3650)) ([309c61c](https://github.com/k2b-dev/cloud/commit/309c61ccd6efe7d1f1df9a6089f7342a77cb87b5))
+
+
+### Performance Improvements
+
+* **mail:** load the composer, viewer and dialogs on demand ([#3769](https://github.com/k2b-dev/cloud/issues/3769)) ([4b93d3e](https://github.com/k2b-dev/cloud/commit/4b93d3e4aaa8782651514d44e1faea8f4144d42d))
+
 ## [0.61.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.60.0...npm-ui-v0.61.0) (2026-11-19)
 
 
