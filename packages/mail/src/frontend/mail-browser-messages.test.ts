@@ -52,6 +52,17 @@ describe("Mail browser message catalogs", () => {
     expect(mailRemainingMessages.resolve(["fr"]).t.overview).toBe("Overview");
   });
 
+  test("messages in both the mailbox view and the remaining catalog read the same", () => {
+    // The view catalog carries the few messages the first script needs; a copy left in the larger catalog must not drift.
+    for (const locale of ["en", "de"]) {
+      const view: Record<string, unknown> = mailMailboxViewMessages.resolve([locale]).t;
+      const remaining: Record<string, unknown> = mailRemainingMessages.resolve([locale]).t;
+      const shared = Object.keys(view).filter((key) => key in remaining);
+      expect(shared.length).toBeGreaterThan(0);
+      for (const key of shared) expect([locale, key, String(remaining[key])]).toEqual([locale, key, String(view[key])]);
+    }
+  });
+
   test("keeps technical workflow terms exact", () => {
     const messages = mailAutomationPageMessages.resolve(["de"]).t;
     expect(messages.workflowsDescription).toContain("YAML");

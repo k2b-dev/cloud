@@ -1094,7 +1094,8 @@ function createMailboxController(props: MailboxControllerProps) {
       const idle = requestIdleCallback(preloadMailComposer, { timeout: 2000 });
       onCleanup(() => cancelIdleCallback(idle));
     } else {
-      const idle = setTimeout(preloadMailComposer, 0);
+      // Without idle callbacks (WebKit), wait past hydration as the Cloud panel does, rather than load during it.
+      const idle = setTimeout(preloadMailComposer, 200);
       onCleanup(() => clearTimeout(idle));
     }
   });

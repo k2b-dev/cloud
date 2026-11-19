@@ -146,7 +146,8 @@ export default function MailMessageAttachments(props: {
   /** The name of the ZIP with all attachments, such as the conversation's subject. */
   archiveName?: string;
   /** Opens a previewable attachment in the conversation's Lightbox; without it, the message's own Lightbox opens. */
-  onOpen?: (attachment: Attachment) => void;
+  /** Resolves once the attachment shows, so the tile can say it is opening meanwhile. */
+  onOpen?: (attachment: Attachment) => Promise<void>;
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
@@ -166,10 +167,20 @@ export default function MailMessageAttachments(props: {
     props.attachments.map((attachment) => attachmentLightboxItem(attachment, baseUrl(attachment), locale())),
   );
   /** A previewable attachment opens in the Lightbox; any other one downloads at once, as before. */
+  // The viewer loads on demand; until it is there, the tapped tile shows that it is opening (a first tap on a phone
+  // has no hover to load it ahead).
+  const [opening, setOpening] = createSignal<string | null>(null);
   const openAttachment = (attachment: Attachment) => {
     if (!canPreviewAttachment(attachment)) return downloadUrl(baseUrl(attachment), fileName(attachment));
-    if (props.onOpen) return props.onOpen(attachment);
-    void loadAttachmentLightbox().then((loaded) => loaded && setShown(Math.max(0, props.attachments.indexOf(attachment))));
+    if (opening()) return;
+    setOpening(attachment.id);
+    const opened = props.onOpen
+      ? props.onOpen(attachment)
+      : loadAttachmentLightbox().then((loaded) => {
+          const index = props.attachments.indexOf(attachment);
+          if (loaded && !disposed && index >= 0) setShown(index);
+        });
+    void opened.finally(() => setOpening(null));
   };
 
   const createLink = mutations.create<CreatedAttachmentLink, { attachment: Attachment; input: CreateAttachmentLinkInput }>({
@@ -262,13 +273,18 @@ export default function MailMessageAttachments(props: {
               <button
                 type="button"
                 class="mail-attachment-tile__open"
+                aria-busy={opening() === attachment.id ? "true" : undefined}
                 aria-label={`${reader().openAttachment({ name: fileName(attachment) })}, ${meta(attachment)}`}
                 onClick={() => openAttachment(attachment)}
                 onPointerEnter={() => canPreviewAttachment(attachment) && preloadAttachmentLightbox()}
                 onFocus={() => canPreviewAttachment(attachment) && preloadAttachmentLightbox()}
               >
                 <span class="mail-attachment-tile__icon" aria-hidden="true">
-                  <FileTypeIcon name={fileName(attachment)} mediaType={attachment.contentType} />
+                  <FileTypeIcon
+                    name={fileName(attachment)}
+                    mediaType={attachment.contentType}
+                    icon={opening() === attachment.id ? "ti-loader-2" : undefined}
+                  />
                 </span>
                 <span class="mail-attachment-tile__text">
                   <span class="mail-attachment-tile__name" title={fileName(attachment)}>

@@ -294,9 +294,16 @@ export default function MailConversationReader(props: {
       ),
     ),
   );
+  const attachmentIndex = (messageId: string, attachmentId: string) =>
+    conversationAttachments().findIndex((entry) => entry.messageId === messageId && entry.attachment.id === attachmentId);
   const openAttachment = (messageId: string, attachmentId: string) => {
-    const index = conversationAttachments().findIndex((entry) => entry.messageId === messageId && entry.attachment.id === attachmentId);
-    if (index >= 0) void loadAttachmentLightbox().then((loaded) => loaded && setShownAttachment(index));
+    if (attachmentIndex(messageId, attachmentId) < 0) return Promise.resolve();
+    const selection = props.selectionKey;
+    return loadAttachmentLightbox().then((loaded) => {
+      // The viewer may arrive after the reader moved to another conversation: open only the attachment asked for.
+      const index = attachmentIndex(messageId, attachmentId);
+      if (loaded && selection === props.selectionKey && index >= 0) setShownAttachment(index);
+    });
   };
   const [messageSelections, setMessageSelections] = createSignal<Record<string, string>>({});
   const [pendingNewMessages, setPendingNewMessages] = createSignal(0);
