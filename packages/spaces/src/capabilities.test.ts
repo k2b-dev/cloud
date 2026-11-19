@@ -3150,7 +3150,7 @@ for (const [locale, deadline, assignees, done] of [
       expect(view.blocks).toEqual([
         {
           kind: "Detail",
-          title: locale === "de" ? "Aufgabe" : "Task",
+          title: "Ship capability",
           items: [
             {
               label: "Status",
@@ -3168,6 +3168,16 @@ for (const [locale, deadline, assignees, done] of [
         },
       ]);
     }
+    // P4 Rundgang m01: a task without deadline or assignees leaves those facts out instead of a raw "None".
+    get.mockResolvedValue({ ...task, completedAt: createdAt });
+    const bare = await spacesCapabilities.queries["item.read"].run({ id: itemId }, { ...userContext, locale });
+    if (!bare.ok) throw new Error("Expected readable task");
+    const bareView = bindView(bare.data.view, bare.data.data);
+    validateBlocks(bareView.blocks, "preview", { appId: "spaces", appPrefixes: ["/app/spaces"], envelope: bare.data });
+    const detail = bareView.blocks[0] as { title: string; items: { label: string }[] };
+    expect(detail.title).toBe("Ship capability");
+    expect(detail.items.map((item) => item.label)).toEqual(["Status", "Space"]);
+    expect(JSON.stringify(bareView.blocks)).not.toMatch(/"(None|Keine|Task|Aufgabe)"/);
   });
 }
 
