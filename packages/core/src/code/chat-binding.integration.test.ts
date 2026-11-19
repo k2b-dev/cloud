@@ -307,6 +307,8 @@ databaseSuite()("personal Code chat binding", () => {
     expect((await waiting()).items).toContainEqual(
       expect.objectContaining({ id: `code-attention:${item.id}`, short: "Unbound briefing braucht einen Chat" }),
     );
+    // Without a chat there is nothing to restore.
+    expect((await waiting()).items.find((row) => row.id === `code-attention:${item.id}`)?.archivedChat).toBeUndefined();
     const meter = await meterSql();
     try {
       expect(await meter.during(words)).toHaveLength(3);
@@ -440,6 +442,8 @@ databaseSuite()("personal Code chat binding", () => {
         short: "Morning report braucht einen Chat",
         href: `/app/assistant/code/${item.id}`,
         reason: "chat_missing",
+        // The owner can restore the archived chat right from "Waiting for you".
+        archivedChat: { id: "Missing433", title: "Chat Missing433" },
       }),
     ]);
     await sql`UPDATE ai.conversations SET archived_at=NULL WHERE id=${destination}::uuid`;

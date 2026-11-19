@@ -332,6 +332,33 @@ describe("Waiting for you", () => {
     },
   );
 
+  // Automationen v5 section 7, P4 Rundgang m03: an archived chat is restored right here, as on the Code page.
+  test("an automation whose chat is archived offers to restore it beside choosing another, in German and English", () => {
+    const entry = {
+      ...fixtures.WAITING_AUTOMATIONS.find((item) => item.reason === "chat_missing")!,
+      archivedChat: { id: "Brief1", title: "Morgenbriefing" },
+    };
+    const section = (locale: Locale) =>
+      inLocale(locale, () => createComponent(WaitingAutomations, { entries: [entry], onRetry: () => {} }));
+    const de = section("de");
+    for (const part of [
+      "Morgenbriefing braucht einen Chat",
+      "Sie schreibt nichts, bis du einen Chat wählst oder diesen wiederherstellst.",
+      "Chat wählen …",
+      "Chat wiederherstellen",
+    ])
+      expect(visible(de)).toContain(part);
+    expect(de).toContain('aria-label="Chat wiederherstellen: Morgenbriefing braucht einen Chat"');
+    expect(visible(de).indexOf("Chat wählen …")).toBeLessThan(visible(de).indexOf("Chat wiederherstellen"));
+    for (const part of ["It writes nothing until you choose a chat or restore this one.", "Restore chat"])
+      expect(visible(section("en"))).toContain(part);
+    // A deleted chat cannot come back: only choosing one is offered.
+    const { archivedChat: _archived, ...deleted } = entry;
+    expect(visible(inLocale("de", () => createComponent(WaitingAutomations, { entries: [deleted], onRetry: () => {} })))).not.toContain(
+      "Chat wiederherstellen",
+    );
+  });
+
   test("an automations read Core could not answer says so and offers to try again", () => {
     let retried = 0;
     const html = inLocale("de", () => createComponent(WaitingAutomations, { entries: null, onRetry: () => retried++ }));

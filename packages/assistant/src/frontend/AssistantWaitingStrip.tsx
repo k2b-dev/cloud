@@ -39,8 +39,10 @@ type Entry = {
 export function AssistantWaitingStrip(props: {
   view: WaitingQuestionsView;
   conversationId: string | null;
-  /** The only open question waits in this chat and its answers are in view. */
+  /** Nothing waits but this chat's one entry, and its answers are in view: the row keeps its place, hidden. */
   quiet: boolean;
+  /** This chat's one entry whose answers are in view (its anchor): the row leaves it out and shows the rest. */
+  inView?: string | null;
   onJump: (question: AiOpenQuestion) => void;
   onShowMore: () => void;
   /**
@@ -60,18 +62,23 @@ export function AssistantWaitingStrip(props: {
   const queue = children(() => props.queue);
   const entryList = createMemo((): Entry[] => [
     ...props.view.attention.map((item) => ({ key: item.key, kind: item.kind, short: item.short, where: null, open: item.open })),
-    ...props.view.entries.map((question) => ({
-      key: question.id,
-      kind: question.kind,
-      short: question.short,
-      where:
-        question.conversationId === props.conversationId
-          ? null
-          : question.conversationTitle
-            ? t().waitingInChat({ title: question.conversationTitle })
-            : t().waitingInOtherChat,
-      open: () => props.onJump(question),
-    })),
+    ...props.view.entries
+      // A quiet row keeps its one entry, hidden, so it comes back as it was.
+      .filter(
+        (question) => props.quiet || !props.inView || question.conversationId !== props.conversationId || question.anchor !== props.inView,
+      )
+      .map((question) => ({
+        key: question.id,
+        kind: question.kind,
+        short: question.short,
+        where:
+          question.conversationId === props.conversationId
+            ? null
+            : question.conversationTitle
+              ? t().waitingInChat({ title: question.conversationTitle })
+              : t().waitingInOtherChat,
+        open: () => props.onJump(question),
+      })),
   ]);
   const entries = entryList;
   const byKey = createMemo(() => new Map(entries().map((entry) => [entry.key, entry])));
@@ -241,11 +248,11 @@ const landingTarget = (element: HTMLElement): HTMLElement | null =>
   element.querySelector<HTMLElement>("button:not(:disabled), a[href]");
 
 /**
- * What the strip needs from the timeline: whether it stays quiet, and the jump's landing.
+ * What the strip needs from the timeline: which entry it leaves out, and the jump's landing.
  *
- * `quiet`: with one open question, here, the strip shows only while that question's answers are out of view. A chat
- * opens at its end, where that question is, so the server and the first frame render the strip quiet; its place stays
- * reserved either way.
+ * `inView`: with one entry in this chat, the strip shows it only while that entry's answers are out of view (v12 3m);
+ * entries of other chats stay. A chat opens at its end, where that entry is, so the server and the first frame leave it
+ * out; the row's place stays reserved either way.
  *
  * `focus` scrolls a question into view and focuses its sentence, or its outcome once it was answered, waiting a few
  * frames for a chat that just opened. A question that is gone calls `gone`. `current` ends a jump that a newer one
@@ -253,17 +260,20 @@ const landingTarget = (element: HTMLElement): HTMLElement | null =>
  */
 export const createWaitingQuestionFocus = (input: {
   onlyHere: Accessor<string | null>;
+  /** The entry's card waits at the chat's end, where a chat opens: it starts in view. Any other starts out of view. */
+  atEnd?: Accessor<boolean>;
   viewport: Accessor<HTMLElement | undefined>;
   content: Accessor<HTMLElement | undefined>;
   scrollToAnchor: (anchor: string) => boolean;
   gone: () => void;
 }) => {
-  const [answersOutOfView, setAnswersOutOfView] = createSignal(false);
+  // The server renders before any effect runs: it starts from the same assumption as the first client frame.
+  const [answersOutOfView, setAnswersOutOfView] = createSignal(!(input.atEnd?.() ?? true));
   createEffect(() => {
     const anchor = input.onlyHere();
     const viewport = input.viewport();
     const content = input.content();
-    setAnswersOutOfView(false);
+    setAnswersOutOfView(!(input.atEnd?.() ?? true));
     if (!anchor || !viewport || !content || typeof IntersectionObserver === "undefined") return;
     let observed: Element | null = null;
     let frame: number | undefined;
@@ -332,5 +342,7 @@ export const createWaitingQuestionFocus = (input: {
     target.focus({ preventScroll: true });
   };
 
-  return { quiet: () => input.onlyHere() !== null && !answersOutOfView(), focus };
+  /** This chat's one entry while its answers are in view; null while they are out of view or there is none. */
+  const inView = () => (answersOutOfView() ? null : input.onlyHere());
+  return { inView, focus };
 };

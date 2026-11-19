@@ -1312,12 +1312,16 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .assistant-waiting-page__row-title { color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
 .assistant-waiting-page__row-sub { color: var(--k2b-text-subtle); font-size: 0.8125rem; }
 .assistant-waiting-page__open { flex: none; }
+.assistant-waiting-page__actions { display: flex; flex: none; flex-wrap: wrap; gap: 0.5rem; }
 .assistant-waiting-page__failed { color: var(--k2b-danger-text); font-size: 0.8125rem; }
 @container (max-width: 34rem) {
   .assistant-waiting-page__row { flex-wrap: wrap; }
   /* The row's words take the width beside the tile, so its action moves under them, on the words' edge. */
   .assistant-waiting-page__row-copy { flex-basis: calc(100% - 2.375rem); }
   .assistant-waiting-page__open { margin-left: 2.375rem; }
+  /* A row with two actions keeps both on the words' edge, side by side or wrapped. */
+  .assistant-waiting-page__actions { flex: 1 1 auto; margin-left: 2.375rem; }
+  .assistant-waiting-page__actions > .assistant-waiting-page__open { margin-left: 0; }
 }
 /* While loading, each approval holds the room of a card: sentence, reason, and its two answers. */
 .k2b-ui .assistant-waiting-page__skeleton { display: flex; flex-direction: column; gap: 0.625rem; min-height: 10.5rem; padding: 0.875rem 1rem; }

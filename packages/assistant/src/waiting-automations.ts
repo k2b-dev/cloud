@@ -13,6 +13,7 @@ const WaitingAutomationsSchema = z.object({
       href: z.string().optional(),
       short: z.string(),
       reason: z.enum(["chat_missing", "secret", "mandate", "access"]).optional(),
+      archivedChat: z.object({ id: z.string(), title: z.string() }).optional(),
     }),
   ),
 });
