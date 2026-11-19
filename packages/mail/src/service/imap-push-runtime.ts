@@ -537,10 +537,10 @@ export const applyImapPushHints = async (params: {
   const batch = coalesceImapHints(params.hints, uncertain ? await params.loadReconnectBudget(current) : UNSPENT_RECONNECT_BUDGET);
   if (!batch.folderChanged && !batch.rediscover) return "applied";
   await params.assertLeaseActive();
-  // A change the server announced may be new mail someone waits for, also next to a removal that
-  // needs reconciliation. The listener's own checks, polls, and an uncertain stream alone are no
-  // such announcement.
-  const pushed = params.announced === true && params.hints.some((hint) => hint.type === "folder_changed");
+  // New mail the server announced is what someone waits for, also next to a removal that needs
+  // reconciliation. Flag changes and removals alone, often echoes of the person's own commands, the
+  // listener's own checks, polls, and an uncertain stream rank like any folder check.
+  const pushed = params.announced === true && params.hints.some((hint) => hint.type === "folder_changed" && hint.cause === "exists");
   if (batch.reconcileFromUid != null) {
     await params.enqueueReconciliation(current.folderId, batch.reconcileFromUid, { pushed });
   } else if (batch.folderChanged) {

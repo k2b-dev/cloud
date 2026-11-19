@@ -239,7 +239,7 @@ describe("IMAP push runtime", () => {
     ).toEqual({ folderChanged: true, reconcileFromUid: 9_004, rediscover: true });
   });
 
-  test("a change the server announces ranks the folder's sync as pushed, an uncertain stream or own check does not", async () => {
+  test("new mail the server announces ranks the folder's sync as pushed, other changes and own checks do not", async () => {
     const synced = async (hints: ConnectorChangeHint[], announced = true) => {
       const calls: Array<{ folderId: string; pushed: boolean; fromUid?: number }> = [];
       await applyImapPushHints({
@@ -272,6 +272,13 @@ describe("IMAP push runtime", () => {
         { type: "folder_changed", cause: "vanished", folderPath: "INBOX", uid: 7_501, modseq: "44" },
       ]),
     ).toEqual([{ folderId: plan.folderId, pushed: true, fromUid: 7_501 }]);
+    // Flag changes and removals alone, often echoes of the person's own commands, are no new mail.
+    expect(await synced([{ type: "folder_changed", cause: "flags", folderPath: "INBOX", uid: 2, modseq: "43" }])).toEqual([
+      { folderId: plan.folderId, pushed: false },
+    ]);
+    expect(await synced([{ type: "folder_changed", cause: "vanished", folderPath: "INBOX", uid: 7_501, modseq: "44" }])).toEqual([
+      { folderId: plan.folderId, pushed: false, fromUid: 7_501 },
+    ]);
     // The listener's own check and a poll use the same hint, but no server announced it.
     expect(await synced([{ type: "folder_changed", cause: "exists", folderPath: "INBOX", uid: null, modseq: null }], false)).toEqual([
       { folderId: plan.folderId, pushed: false },

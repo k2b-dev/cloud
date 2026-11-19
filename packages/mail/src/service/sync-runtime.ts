@@ -2960,8 +2960,8 @@ const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
 // when the job would end. A request counts this long: it outlasts a long batch and a few retries.
 export const FOLDER_SYNC_REQUEST_MS = 10 * 60_000;
 const syncRequestKey = (folderId: string): string => `mail:sync-requested:${folderId}`;
-// The provider pushed a change of the folder, such as new mail in the Inbox, and a person may be
-// looking at it. Set with the request marker above, which the job reads on each turn; the job
+// The provider announced new mail in the folder, usually the Inbox, and a person may be waiting
+// for it. Set with the request marker above, which the job reads on each turn; the job
 // reads this one only when a request joined, so busy turns cost nothing more. The folder's next
 // batch then ranks as a command instead of waiting behind every folder check of the mailbox.
 // Folder syncs still get every other turn: the lease alternates commands with other work. Each
