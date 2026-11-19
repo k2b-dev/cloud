@@ -9,6 +9,7 @@ import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import type { MailComposerHost, MailInlineDraftControls } from "./MailComposer";
 import { preloadMailComposerEditor } from "./MailComposerEditor";
+import type { MailQuoteOriginal } from "./MailQuoteCard";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import { deriveReplyIdentityId, forwardMessageBody, forwardSubject, replySubject } from "./mail-compose-derivation";
 import { mailComposeWindowMessages } from "./mail-compose-window-messages";
@@ -123,7 +124,8 @@ export default function MailReplyBox(props: {
   calendarIntegrationAvailable: boolean;
   liveDictation: boolean;
   returnHref: string;
-  messageLabel: (messageId: string) => string | null;
+  /** The quoted message as the reply's card shows it, from the conversation the reader already holds. */
+  messageSource: (messageId: string) => MailQuoteOriginal | null;
   createNote: (body: string, failed: string) => Promise<ConversationComment>;
   onReconcile: () => Promise<void>;
   onExplainSenderUnavailable: () => void;
@@ -284,6 +286,8 @@ export default function MailReplyBox(props: {
             body: intent === "forward" && !withText ? forwardMessageBody(message, props.dateConfig, locale()) : "",
             conversationId: props.conversationId,
             intent,
+            // A reply quotes the message it answers, collapsed under the signature; × leaves it out.
+            quoteSource: intent === "forward" ? null : { locale: locale(), timeZone: props.dateConfig.timeZone ?? "UTC" },
             sourceMessageId: message.id,
             includeSourceAttachments: intent === "forward" && message.attachments.length > 0,
           },
@@ -859,7 +863,7 @@ export default function MailReplyBox(props: {
     toggleFullscreen: () => undefined,
     initialSelection: current.kind === "draft" ? current.selection : undefined,
     register: (next) => setControls(next),
-    messageLabel: props.messageLabel,
+    messageSource: props.messageSource,
     leave: (outcome) => {
       if (current.key !== untrack(mount)?.key) return;
       setControls(null);

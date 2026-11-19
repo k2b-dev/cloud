@@ -150,7 +150,7 @@ describe("MailComposer in a floating window", () => {
   let statusSlot: HTMLElement;
   let actionsSlot: HTMLElement;
   let setSheet: (value: boolean) => void;
-  let documentResponse: ((path: string) => Response | null) | null;
+  let documentResponse: ((path: string) => Response | Promise<Response> | null) | null;
 
   beforeEach(() => {
     dom = createDomTestHarness();
@@ -249,7 +249,7 @@ describe("MailComposer in a floating window", () => {
               toggleFullscreen: () => undefined,
               initialSelection: options.initialSelection,
               register: () => undefined,
-              messageLabel: () => null,
+              messageSource: () => null,
               leave: (outcome) => leaves.push(outcome),
               openDraft: () => undefined,
               window: { status: () => statusSlot, actions: () => actionsSlot, sheet },
@@ -306,6 +306,76 @@ describe("MailComposer in a floating window", () => {
     // To and Subject form one block that stays in view above the text.
     expect(row.parentElement?.matches("[data-mail-draft-fields]")).toBe(true);
     expect(dom.root.querySelector("[data-mail-draft-fields] > .mail-inline-draft-head")).not.toBeNull();
+  });
+
+  test("a reply's original stands under the signature as a card: it loads in place, fails with a way out, and × leaves it out", async () => {
+    const original = {
+      from: [{ name: "Lena Berger", address: "lena@example.test" }],
+      internalDate: now,
+      plainText:
+        "Hello,\n\ncould we move the pickup to Saturday at 11? The van only fits twelve chairs.\nIf hall A is still locked, call me at the gate.\n\nThanks, Lena",
+    };
+    let answer = Promise.withResolvers<Response>();
+    documentResponse = (path) => (path.endsWith("/messages/Msg001") ? answer.promise : null);
+    await mount({
+      draft: {
+        ...initialDraft,
+        intent: "reply",
+        conversationId: "Conv01",
+        sourceMessageId: "Msg001",
+        quoteSource: { locale: "en", timeZone: "UTC" },
+      },
+    });
+    const card = () => dom.root.querySelector<HTMLElement>("[data-mail-quote-card]");
+    // Loading holds the collapsed card's place under the signature.
+    expect(card()?.hasAttribute("data-loading")).toBe(true);
+    const signature = dom.root.querySelector(".mail-inline-draft-signature, [data-mail-draft-signature]");
+    if (signature) expect(signature.compareDocumentPosition(card()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    answer.resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+    await waitFor(() => card()?.hasAttribute("data-failed") === true);
+    expect(card()!.getAttribute("role")).toBe("alert");
+    expect(card()!.textContent).toContain("It still goes along below your signature.");
+    answer = Promise.withResolvers<Response>();
+    answer.resolve(Response.json(original));
+    [...card()!.querySelectorAll("button")].find((button) => button.textContent === "Try again")!.click();
+    await waitFor(() => card()?.getAttribute("aria-label") === "Original message from Lena Berger");
+    // Collapsed: the first two lines with content, not the greeting.
+    expect([...card()!.querySelectorAll(".mail-quote-card-text > p")].map((line) => line.textContent)).toEqual([
+      "could we move the pickup to Saturday at 11? The van only fits twelve chairs.",
+      "If hall A is still locked, call me at the gate.",
+    ]);
+    [...card()!.querySelectorAll("button")].find((button) => button.textContent === "Show all")!.click();
+    await waitFor(() => card()!.querySelectorAll(".mail-quote-card-text > p").length === 3);
+    card()!.querySelector<HTMLButtonElement>('button[aria-label="Leave the original message out"]')!.click();
+    const add = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-quote-add]");
+    await waitFor(() => Boolean(add()));
+    expect(card()).toBeNull();
+    add()!.click();
+    await waitFor(() => Boolean(card()));
+  });
+
+  test("a message without text adds no quote and shows no card", async () => {
+    documentResponse = (path) =>
+      path.endsWith("/messages/Msg001")
+        ? Response.json({
+            from: [{ name: "Lena Berger", address: "lena@example.test" }],
+            internalDate: now,
+            plainText: null,
+            forwardText: "",
+          })
+        : null;
+    await mount({
+      draft: {
+        ...initialDraft,
+        intent: "reply",
+        conversationId: "Conv01",
+        sourceMessageId: "Msg001",
+        quoteSource: { locale: "en", timeZone: "UTC" },
+      },
+    });
+    await waitFor(() => !dom.root.querySelector("[data-mail-quote-card][data-loading]"));
+    expect(dom.root.querySelector("[data-mail-quote-card]")).toBeNull();
+    expect(dom.root.querySelector("[data-mail-quote-add]")).toBeNull();
   });
 
   test("a send that fails keeps the window with its text; a toast names the reason and Send stays in place", async () => {

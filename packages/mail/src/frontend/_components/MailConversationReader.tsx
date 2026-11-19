@@ -67,6 +67,7 @@ import { describeUnavailableMailDetails } from "./mail-detail-availability";
 import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
+import { quoteOriginalOf } from "./mail-quote-original";
 import { mailReaderMessages } from "./mail-reader-messages";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
 import { mailSummaryMessages } from "./mail-summary-messages";
@@ -1237,12 +1238,9 @@ export default function MailConversationReader(props: {
           calendarIntegrationAvailable={props.calendarIntegrationAvailable}
           liveDictation={props.liveDictation ?? false}
           returnHref={props.requestUrl}
-          messageLabel={(messageId) => {
+          messageSource={(messageId) => {
             const message = props.messages.find((candidate) => candidate.id === messageId);
-            if (!message) return null;
-            const sender = message.from[0];
-            const name = sender?.name || sender?.address || "";
-            return `${name}, ${dates.formatDateTimeRelative(message.internalDate, props.dateConfig)}`;
+            return message ? quoteOriginalOf(message, props.dateConfig) : null;
           }}
           createNote={notes.create}
           onReconcile={props.onReconcileAfterWrite}

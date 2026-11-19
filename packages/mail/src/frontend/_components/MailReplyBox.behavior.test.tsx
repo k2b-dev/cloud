@@ -218,7 +218,7 @@ describe("MailReplyBox", () => {
             calendarIntegrationAvailable={false}
             liveDictation={false}
             returnHref="/app/mail/Box001"
-            messageLabel={() => null}
+            messageSource={() => null}
             createNote={async (text, failed) => {
               const response = await fetch(`/api/mail/mailboxes/Box001/conversations/Conv01/comments`, {
                 method: "POST",
@@ -572,7 +572,7 @@ describe("MailReplyBox", () => {
             calendarIntegrationAvailable={false}
             liveDictation={false}
             returnHref="/app/mail/Box001"
-            messageLabel={() => null}
+            messageSource={() => null}
             createNote={async () => {
               throw new Error("never");
             }}

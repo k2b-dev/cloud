@@ -4049,7 +4049,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 content: {
                   senderIdentityId: input.senderIdentityId,
                   signatureTemplateId: "Sig001",
-                  quoteSource: null,
+                  quoteSource: input.quoteSource ?? null,
                   // A reply goes to the sender, as the server derives it; a new message starts without recipients.
                   to: input.intent === "new" ? (input.to ?? []) : [{ name: "Example sender", address: "sender@example.test" }],
                   cc: [],
@@ -4246,7 +4246,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   draftBox(page).evaluate((element) => {
                     const box = element.getBoundingClientRect();
                     const send = element.querySelector("[data-mail-reply-send]")!.getBoundingClientRect();
-                    const quote = element.querySelector(".mail-inline-draft-quote")!.getBoundingClientRect();
+                    const quote = element.querySelector("[data-mail-quote-card]")!.getBoundingClientRect();
                     const signature = element.querySelector(".mail-inline-draft-signature")!.getBoundingClientRect();
                     return { height: box.height, sendTop: send.top, quoteTop: quote.top, signatureTop: signature.top };
                   });
@@ -4734,7 +4734,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
-      test("the signature follows the text as a fixed block, and the quote line attaches the quote with the person's locale", async () => {
+      test("the signature follows the text as a fixed block, and the original goes along as a card that × leaves out", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
           api = await draftApi(next);
@@ -4746,15 +4746,30 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.frameLocator("[data-mail-reply-box='mail'] [data-mail-signature-frame]").getByText("Ada Example").waitFor();
           // Fixed: the block is not part of the editable text.
           expect(await signature.evaluate((element) => element.closest(".cm-content"))).toBeNull();
-          const quote = page.locator("[data-mail-draft-quote]");
-          expect(await quote.textContent()).toContain("Attach quote: Example sender");
-          await quote.getByRole("button", { name: "Attach" }).click();
+          // A reply quotes the message it answers: the card under the signature names who wrote it and shows its text.
+          const card = page.locator("[data-mail-reply-box='mail'] [data-mail-quote-card]");
+          expect(await card.getAttribute("aria-label")).toBe("Original message from Example sender");
+          expect(await card.locator(".mail-quote-card-text").textContent()).toBe("Invented message for the browser suite.");
+          const below = await card.evaluate((element) => {
+            const signature = element.closest("[data-mail-reply-box='mail']")!.querySelector("[data-mail-draft-signature]")!;
+            return element.getBoundingClientRect().top >= signature.getBoundingClientRect().bottom;
+          });
+          expect(below).toBe(true);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("Saturday works.");
           await eventually(
             () => JSON.stringify(api.drafts.get("DrfNew")?.quoteSource ?? null),
             JSON.stringify({ locale: "en", timeZone: "UTC" }),
-            "quote saved with locale and time zone",
+            "the quote goes along with locale and time zone",
           );
-          expect(await quote.textContent()).toContain("Quote attached");
+          // × leaves it out; the same place offers it again, and the saved draft keeps the choice.
+          await card.getByRole("button", { name: "Leave the original message out" }).click();
+          const add = page.locator("[data-mail-reply-box='mail'] [data-mail-quote-add]");
+          await add.waitFor();
+          await eventually(() => api.drafts.get("DrfNew")?.quoteSource ?? null, null, "left out");
+          await add.click();
+          await card.waitFor();
+          await eventually(() => Boolean(api.drafts.get("DrfNew")?.quoteSource), true, "added again");
         } finally {
           await close(page);
         }
