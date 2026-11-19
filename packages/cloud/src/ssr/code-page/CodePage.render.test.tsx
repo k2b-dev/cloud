@@ -7,6 +7,8 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { codeSurfaceFindings } from "../../../../../scripts/checks/code-no-source";
 import { renderedText, withoutComments } from "../../../../../scripts/fixtures/rendered-markup";
+import { withoutRunLogLifecycle } from "../../../../../scripts/fixtures/run-log-lifecycle";
+import { describeRunFailure } from "../../../../core/src/code/read-model/run";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { currentLibrary } from "../../../test/future-capability-manifest";
 import * as capabilityProvider from "../../capabilities/server";
@@ -21,12 +23,13 @@ import { type CodePageData, type CodePageInvoke, VersionReadSchema } from "./dat
 import { headActionFixture } from "./head-action.fixture";
 import { codePageMessages } from "./messages";
 import { nameRecentResults } from "./recent-names";
+import { runLedgerFixture } from "./run-ledger.fixture";
 import { describeCodeSchedule } from "./schedule";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-code-page-render-"));
+process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 
-process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePage } = await import("./CodePage");
 const { catalogCache, describeOperations, describeTarget, loadCodePage, permissionRef, visiblePersonIds } = await import("./load");
 const capabilityServer = await import("../../capabilities/server");
@@ -221,6 +224,133 @@ describe("Code page: overview (Bild 19 to 21)", () => {
 });
 
 describe("Code page: runs (Bild 22)", () => {
+  test("v13 SSR combines state, planned steps and open output; readers keep only authorized summaries", () => {
+    const data = runLedgerFixture();
+    const markup = () =>
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      );
+    const initial = visibleText(markup());
+    for (const text of ["Lieferschein #4711", "Beleg lesen", "Positionen übernehmen", "Beleg ablegen", "14 Positionen erkannt", "Ausgabe"])
+      expect(initial).toContain(text);
+    expect(markup()).toMatch(/class="k2b-run-log__output-toggle"[^>]*aria-expanded="true"/);
+    expect(initial).not.toContain("Was passiert ist");
+    expect(initial).not.toContain("Verbindung wird hergestellt");
+    expect(initial).toContain("13:48:42");
+    if (data.state.kind !== "ready") throw new Error("Missing fixture");
+    data.state.permission = "reader";
+    const reader = visibleText(markup());
+    expect(reader).not.toContain("14 Positionen erkannt");
+    expect(reader).not.toContain("Beleg lesen");
+    expect(reader).toContain("Lieferschein gelesen · 1 bestätigt");
+    expect(markup()).not.toContain("k2b-run-log__output-toggle");
+    const summaryMarkup = markup().match(/<div class="cloud-code__run-summary">[\s\S]*?<\/div>/)?.[0];
+    expect(summaryMarkup).toBeDefined();
+    expect(summaryMarkup).not.toMatch(/<time|\d{2}:\d{2}/);
+    expect(markup()).toContain('class="cloud-code__quiet cloud-code__run-access"');
+    expect(markup().match(/class="k2b-run-log__meta"[\s\S]*?<\/span>/)?.[0] ?? "").not.toContain("Nur wer");
+  });
+  test("expiry names its cause and an omitted run never pretends it has not run yet", () => {
+    const data = runLedgerFixture();
+    if (data.state.kind !== "ready" || !data.state.run) throw new Error("Missing fixture");
+    const detail = data.state.run;
+    const markup = () =>
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      );
+    Object.assign(detail.run, { state: "failed", outcome: "wall_clock_limit", endedAt: data.dates.now });
+    expect(visibleText(markup())).toContain("Laufzeitlimit erreicht");
+    expect(visibleText(markup())).not.toContain("wall_clock_limit");
+    Object.assign(detail.run, { state: "skipped", outcome: "previous_schedule_running" });
+    expect(visibleText(markup())).toContain("Lauf übersprungen");
+    expect(visibleText(markup())).not.toContain("Noch nicht ausgeführt");
+  });
+  test("an aborted run with no steps or logs keeps its confirmed calls", () => {
+    const data = codePageFixture("run-failed");
+    if (data.state.kind !== "ready" || !data.state.run) throw new Error("Missing fixture");
+    data.state.run.consoleOutput = { generation: 1, seq: 0, entries: [], droppedLines: 0, droppedBytes: 0 };
+    data.state.run.run.outcome = "lease_lost";
+    // The list and selected snapshot describe the same aborted run.
+    const abortedId = data.state.run.run.id;
+    const listed = data.state.runs?.items.find((run) => run.id === abortedId);
+    if (listed) listed.outcome = "lease_lost";
+    data.state.words!.runs[data.state.run.run.id]!.reason = describeRunFailure("lease_lost", "de");
+    const page = visibleText(
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      ),
+    );
+    expect(page).toContain("Unterhaltungen lesen · 2 bestätigt");
+    expect(page).toContain("1 Aufruf abgelehnt");
+    expect(page).toContain("Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe");
+  });
+  test("failed readers keep the cause before the output restriction; loss does not hide it", () => {
+    const data = runLedgerFixture(true);
+    if (data.state.kind !== "ready" || !data.state.run) throw new Error("Missing fixture");
+    data.state.run.run.outcome = "wall_clock_limit";
+    data.state.words!.runs[data.state.run.run.id]!.reason = describeRunFailure("wall_clock_limit", "de");
+    data.state.run.consoleOutput!.droppedLines = 2;
+    const render = () =>
+      visibleText(
+        renderMarkup(() =>
+          createComponent(LocaleProvider, {
+            locale: "de",
+            get children() {
+              return createComponent(CodePage, { data });
+            },
+          }),
+        ),
+      );
+    expect(render()).toContain("Laufzeitlimit erreicht · 2 Ausgabeeinträge konnten nicht aufbewahrt werden.");
+    data.state.permission = "reader";
+    const reader = render();
+    const causeAt = reader.indexOf("Laufzeitlimit erreicht");
+    expect(causeAt).toBeGreaterThan(-1);
+    expect(reader.indexOf("Nur wer diesen Code verwaltet, sieht seine Ausgabe.")).toBeGreaterThan(causeAt);
+    expect(reader).not.toContain("14 Positionen erkannt");
+  });
+  test.each([
+    ["wall_clock_limit", "Laufzeitlimit erreicht"],
+    ["memory_limit", "Speicherlimit des Runners erreicht"],
+    ["stalled", "Runner antwortet nicht mehr"],
+    ["lease_lost", "Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe"],
+    ["failed", null],
+  ] as const)("stored outcome %s reaches the RunLog head through Core's read-model reason", (outcome, expected) => {
+    const data = runLedgerFixture(true);
+    if (data.state.kind !== "ready" || !data.state.run) throw new Error("Missing fixture");
+    data.state.run.run.outcome = outcome;
+    // Keep the actual Core projection populated: clearing it would only test the host's live fallback.
+    data.state.words!.runs[data.state.run.run.id]!.reason = describeRunFailure(data.state.run.run.outcome, "de");
+    const markup = renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    );
+    const head = markup.match(/<header class="k2b-run-log__head"[\s\S]*?<\/header>/)?.[0];
+    expect(head).toBeDefined();
+    expect(visibleText(head!)).toContain("Gescheitert nach 0:22");
+    if (expected) expect(visibleText(head!)).toContain(expected);
+    else expect(visibleText(head!)).not.toContain("Fehlgeschlagen");
+    expect(visibleText(head!)).not.toContain(outcome);
+  });
   test("filters with counts, runs in words without numbers or code names, the selected run on the right", () => {
     const page = text("runs");
     expect(page).toContain("Alle 30");
@@ -231,15 +361,18 @@ describe("Code page: runs (Bild 22)", () => {
     expect(page).toContain("Der vorige Lauf lief noch");
     expect(page).not.toContain("lieferungenEintragen");
     expect(page).not.toMatch(/#[0-9a-f]{6}/);
-    expect(page).toContain("nach Zeitplan „Alle 15 Minuten“ · Version 4 · 2 Sekunden");
-    expect(page).toContain("Was passiert ist");
+    expect(page).toContain("nach Zeitplan „Alle 15 Minuten“ · Version 4");
+    expect(page).toContain("Ausgabe");
+    expect(page).not.toContain("Was passiert ist");
+    expect(html("runs")).toContain('class="k2b-run-log');
     expect(html("runs")).toContain('data-phone="detail"');
     expect(html("runs-list")).toContain('data-phone="list"');
   });
 
-  test("a failed run: notice with what happened, check access and run again, and the sentence about running again", () => {
+  test("a failed run: RunLog with its reason, check access, repeat and the sentence about repeating", () => {
     const page = text("run-failed");
     expect(page).toContain("Fehlgeschlagen");
+    expect(page).toContain("Gescheitert nach");
     expect(page).toContain("Zugriff prüfen");
     expect(page).toContain("Lauf wiederholen …");
     expect(page).toContain("„Lauf wiederholen …“ startet einen neuen Lauf mit der Version, die dann eingeschaltet ist.");
@@ -352,14 +485,34 @@ for (const locale of ["de", "en"]) {
   describe(`${locale}: no state shows source, identifiers or an unqualified status word`, () => {
     test.each(CODE_PAGE_FIXTURE_STATES.filter((name) => name !== "code"))("%s", (state) => {
       const visible = renderedText(
-        new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale)),
+        withoutRunLogLifecycle(
+          new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale)),
+        ),
         "\n",
       );
       expect(codeSurfaceFindings(`${locale}/${state}`, visible)).toEqual([]);
-      for (const word of ["Passt", "Fertig", "Done", "OK"]) expect(visible.split(/\s+/)).not.toContain(word);
+      // v13 names the run state in RunLog's head ("Fertig nach …" / "Done in …").
+      // Other surfaces must continue to name the concrete result.
+      const outsideRunLog = renderedText(
+        withoutRunLogLifecycle(
+          new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale)),
+        ),
+        "\n",
+      );
+      for (const word of ["Passt", "Fertig", "Done", "OK"]) expect(outsideRunLog.split(/\s+/)).not.toContain(word);
     });
   });
 }
+
+test("only fixed lifecycle words are exempt; RunLog metadata and output stay checked", () => {
+  const markup =
+    '<section class="k2b-run-log"><header class="k2b-run-log__head"><span class="k2b-run-log__main">Fertig nach 0:12</span><span class="k2b-sr-only" role="status">Fertig</span><span class="k2b-run-log__meta">Done</span></header><p>source.ts</p></section>';
+  const remaining = renderedText(withoutRunLogLifecycle(markup));
+  expect(remaining).toContain("Done");
+  expect(remaining).toContain("source.ts");
+  expect(remaining).not.toContain("Fertig");
+  expect(() => withoutRunLogLifecycle(markup.replace("Fertig nach 0:12", "source.ts"))).toThrow("Unexpected RunLog lifecycle text");
+});
 
 test("English copy", () => {
   const page = text("overview", "en");

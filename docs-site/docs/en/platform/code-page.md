@@ -5,7 +5,7 @@ section: Platform services
 order: 967
 description: Mount the shared Code page at a resource so its administrators see automations, targets, refused calls, runs, versions and switch Code on.
 tags: [code, ssr, ui, permissions]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # Show a resource's Code page
@@ -48,7 +48,11 @@ their type ("a space you cannot see").
   situation. When the last run failed, a notice says what happened and what
   to check. Run updates arrive live; see [Follow run updates](#follow-run-updates).
 - **Runs:** a list with filters (all, failed, skipped) and a detail that says
-  in words what happened. A failed run explains its reason and offers **Run
+  in words what happened. One `RunLog` combines its state, planned steps and
+  output; the state appears in its head once. Output starts open for Code
+  managers and stays hidden from readers. SSR supplies the initial entries;
+  the island follows only the selected run and owns its clock and recovery.
+  A failed run explains its reason and offers **Run
   again …**, which first shows what the run already changed. No run number or
   function name appears.
 - **Secrets (editors only):** each secret, the address that may receive it,
@@ -359,6 +363,10 @@ The service rechecks editor or administrator permission and refuses a changed
 or in-use database with `409`. Repeating an accepted request is idempotent.
 
 ## Follow run updates
+
+For the selected run's steps and output, use
+[`followCodeRun`](/en/docs/platform/code-runs#read-one-run-and-its-entries).
+The shared page uses that binding independently of the display-only `RunLog`.
 
 An island can follow run hints from Core even when its page belongs to another
 application:

@@ -71,7 +71,7 @@ import { startCodeRun } from "./code/scheduling";
 import { codeSchedulingContracts } from "./code/scheduling-contracts";
 import { codeSecretContracts } from "./code/secret-contracts";
 import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
-import { countOwnCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { countOwnCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeRunEntries, readCodeVersion } from "./code/store";
 import { readCodeVersionCards } from "./code/version-cards";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
@@ -798,18 +798,24 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.run.list": {
       title: "List Code runs",
-      description: "List attempt metadata without run inputs, outputs or capability call contents.",
+      description: "List run metadata; no input, output or call data.",
       ...codeQueryContracts.runList,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeRunsWithEvents(input, ctx)),
     },
     "code.run.read": {
       title: "Read a Code run",
-      description:
-        "Read one attempt and ordered calls, one call per page. Editors read large JSON through content chunks and sanitized consoleOutput on cursor zero; readers receive contents:null.",
+      description: "Read run and calls, one per page. Managers get content chunks and first-page output; readers get contents:null.",
       ...codeQueryContracts.runRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),
+    },
+    "code.run.entries": {
+      title: "Read run entries",
+      description: "Read run state and bounded output; readers get output:null.",
+      ...codeQueryContracts.runEntries,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeRunEntries(input, ctx)),
     },
     "code.attention.list": {
       title: "List Code that needs you",

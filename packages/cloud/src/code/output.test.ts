@@ -1,8 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { LIVE_LIMITS } from "../events/live-engine";
 import {
-  appendCodeOutput,
-  applyCodeOutputEvent,
   CODE_OUTPUT_STEP_LIMITS,
   CodeOutputBatchSchema,
   type CodeOutputEvent,
@@ -13,10 +11,8 @@ import {
   codeOutputParts,
   codeOutputStepBytes,
   codeOutputStepsBudget,
-  emptyCodeOutput,
-  isCodeOutputLogEntry,
-  isCodeOutputStepEntry,
 } from "./output";
+import { appendCodeOutput, applyCodeOutputEvent, emptyCodeOutput, isCodeOutputLogEntry, isCodeOutputStepEntry } from "./output-window";
 
 const line = (text: string): Extract<CodeOutputKnownEntry, { kind: "log" }> => ({
   id: text,

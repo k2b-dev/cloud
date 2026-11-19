@@ -50,8 +50,6 @@ export { type CodeAiToolBinding, CodeAiToolBindingSchema, CodeFileRefSchema } fr
 export { generateCodeSdk } from "./generator";
 export { type CodeCallEvent, CodeCallEventSchema, codeDetailsKey } from "./live-events";
 export {
-  appendCodeOutput,
-  applyCodeOutputEvent,
   CODE_OUTPUT_INTERVAL_MS,
   CODE_OUTPUT_OPERATION,
   CODE_OUTPUT_STEP_LIMITS,
@@ -76,10 +74,8 @@ export {
   codeOutputParts,
   codeOutputStepBytes,
   codeOutputStepsBudget,
-  emptyCodeOutput,
-  isCodeOutputLogEntry,
-  isCodeOutputStepEntry,
 } from "./output";
+export { appendCodeOutput, applyCodeOutputEvent, emptyCodeOutput, isCodeOutputLogEntry, isCodeOutputStepEntry } from "./output-window";
 export {
   assertCodePageData,
   CODE_PAGE_LIMITS,
@@ -101,6 +97,14 @@ export {
   type CodeRouteResponse,
   CodeRouteResponseSchema,
 } from "./request-contract";
+export {
+  type CodeRunEntries,
+  CodeRunEntriesInputSchema,
+  CodeRunEntriesSchema,
+  type CodeRunLiveEvent,
+  CodeRunLiveEventSchema,
+  codeRunKey,
+} from "./run-ledger";
 export { codeSdkHash } from "./sdk-hash";
 export { codeSdkExportName } from "./sdk-names";
 export { createCodeTestBridge } from "./test-bridge";

@@ -5,6 +5,7 @@ import { registerSsrTestPlugin } from "../../packages/ui/test/ssr-test-plugin";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { renderedText } from "./rendered-markup";
+import { withoutRunLogLifecycle } from "./run-log-lifecycle";
 
 setSystemTime(new Date("2026-11-14T12:00:00.000Z"));
 registerSsrTestPlugin({ dev: true, rootDir: import.meta.dir });
@@ -47,7 +48,7 @@ function collect(file: string, name: string, locale: string, render: Parameters<
   const ordinary = new HTMLRewriter()
     .on('[data-code-source-region="admin-approval"], [data-code-source-region="code-tab"]', { element: (element) => element.remove() })
     .transform(html);
-  fixtures.push({ file, name: `${locale}/${name}`, text: renderedText(ordinary, "\n") });
+  fixtures.push({ file, name: `${locale}/${name}`, text: renderedText(withoutRunLogLifecycle(ordinary), "\n") });
 }
 const pageStates: Parameters<typeof codePageFixture>[0][] = [
   "overview",

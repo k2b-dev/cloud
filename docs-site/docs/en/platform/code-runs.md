@@ -5,7 +5,7 @@ section: Platform services
 order: 965
 description: Start Code, understand retry and schedule outcomes, and read the recorded calls.
 tags: [code, runs, schedules, runner]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # Code runs
@@ -270,11 +270,83 @@ transport request.
 
 ## Follow calls and console output
 
+### Read one run and its entries
+
+Use `core.code.run.list` for run metadata, with its existing cursor and
+`limit` (default 20, maximum 50). `core.code.run.entries` takes `{ codeId,
+runId }` and returns `{ state, outcome, startedAt, endedAt, output }`. Its `output` is
+the same sanitized, bounded window as `core.code.run.read`'s
+`contents.consoleOutput`; it loads no capability call or input payloads.
+Readers receive `output: null`. Only people who manage the Code, including
+administrators of its owning resource, receive entries. API, SSR and CLI
+queries use the same Code authority and output reader. Missing runs, runs of
+another Code and inaccessible Code return `NOT_FOUND`.
+
+The window has no older-entry pagination: discarded entries cannot be loaded
+again. Its size follows the run's pinned `core.code.payload_bytes` and the
+existing live-frame budget. Show `droppedLines` visibly instead of offering
+an unavailable history. The run list remains paginated independently.
+
+For a browser, import `readCodeRunEntries` and `followCodeRun` from
+`@k2b/cloud/browser/code-runs`. Supply the SSR snapshot as `initial`:
+
+```ts
+import { followCodeRun, readCodeRunEntries } from "@k2b/cloud/browser/code-runs";
+import type { CodeRunEntries } from "@k2b/cloud/code";
+
+function observeRun(codeId: string, runId: string, initial: CodeRunEntries) {
+  return followCodeRun({ codeId, runId }, {
+    initial,
+    snapshot: async (signal) => {
+      const result = await readCodeRunEntries({ codeId, runId }, signal);
+      if (!result.ok) throw new Error(result.error.message);
+      return result.data.data;
+    },
+    apply: (snapshot) => console.info(snapshot.state),
+    unavailable: (reason) => console.info("Show recovery:", reason),
+  });
+}
+// Dispose the returned stop function with the island. Replace console.info
+// with the page's state and a visible retry/reload notice.
+```
+
+The `codeRun` channel on the existing `/api/ai/live` socket accepts
+`{ codeId, runId }`. It admits Code managers for that exact run. Core checks
+rights at admission and on access changes; the existing reauthorization
+sweep covers owner rights outside Core. NATS distributes `code.output` and
+payload-free `code.run` events. Cancelled runs retain `state: "cancelled"` on
+both the Code-wide and selected-run channels, matching the server snapshot. Ordinary output delivery and local application
+issue zero SQL. Admission, a sequence or replay gap, and the terminal state load a
+covering snapshot. Reconnects replay from the existing live cursor or request
+that covering snapshot when the cursor is no longer retained. There is no
+per-output-event query or separate socket.
+`CodeRunEntriesInputSchema`, `CodeRunEntriesSchema`, `CodeRunLiveEventSchema`
+and their result/event types are exported from `@k2b/cloud/code`.
+Browser-only schema consumers can also import `CodeRunEntriesInputSchema`,
+`CodeRunEntriesSchema` and `CodeRunEntries` from `@k2b/cloud/contracts/code-runs`.
+
+`RunLog` from `@k2b/ui` remains presentational. Its host owns the clock,
+connection, duration, recovery and loading. Confirmed call summaries remain
+visible to readers as a quiet block after the run output, including runs with
+no logged steps or messages. These summaries carry no timestamp unless their
+read model supplies one. Readers see no output disclosure; a separate hint
+explains who can view the output. Gustav's **Runs** detail renders
+the server snapshot first and opens output for Code managers. A stopped
+connection retains the last visible snapshot with **Try again**; revoked
+access removes its output and offers **Reload**.
+After the terminal snapshot, the host closes its run subscription; a later
+connection loss does not change the completed run to **Updates stopped**.
+The page supplies its request timezone through RunLog's `timeZone` prop so
+server output and the first browser render show the same timestamps.
+
+### Follow all calls of a Code
+
 The `code` channel on `/api/ai/live` carries only run state. Readers receive
 no call hints or console output. The separate `codeDetails` channel accepts
 `{ codeId }` and authorizes Code editors, including administrators of the
 owning resource. Being a Cloud administrator alone does not grant access to
-these contents. Revocation and credential scopes apply to both channels.
+these contents. This Code-wide channel carries call hints only; output travels solely on
+the selected run’s `codeRun` channel. Revocation and credential scopes apply to all channels.
 
 After committing a call receipt, Core publishes a `code.call` hint with
 `runId`, `ordinal`, `operation` and `state`. Completion publishes another
@@ -402,12 +474,12 @@ them as pending. The display owns this distinction. At attempt closure, Core
 completes any remaining running step as `succeeded` when the run succeeds,
 or `failed` for failure, cancellation or expiry. That automatic failure sets
 `reason: "run_ended"` and an empty `message` array. The reason is separate from author-supplied completion text. Consumers
-accept an optional string `reason`; localized display text belongs to the
-upcoming RunLog presentation update. A forced termination may
+accept an optional string `reason`; the Cloud RunLog host renders its
+localized explanation. A forced termination may
 lose the last unflushed update, just like console output.
 
 Steps and logs share the existing output window and loss counters.
-`CODE_OUTPUT_STEP_LIMITS` derives a lifetime step count from the
+`CODE_OUTPUT_STEP_LIMITS` derives a lifetime step count of **25** from the
 canonical complete step, including string IDs, named secret parts, lifecycle
 timestamps and automatic completion, and `LIVE_LIMITS.frameBytes`. Its per-field
 encoded JSON byte limit divides the remaining raw bundle among label, icon, description
@@ -427,8 +499,11 @@ accepted text and completed steps cannot be rewritten. Step metadata shares
 the pinned output budget. Logs yield before steps when the window fills, so
 retained steps keep their creation order. Output batches remain subject to
 the same frame and cadence limits, so a busy run can lose updates. Buffered
-revisions only coalesce while adjacent to their own handle; completion text
-keeps its position after intervening logs or other steps.
+revisions without new text coalesce across intervening entries, including
+`running` and a completion without a message. Revisions with completion text
+keep their position after intervening logs or other steps. In-flight runs
+from an earlier deployment restore missing step reservations from their
+accepted step fields before accepting more metadata.
 Only authorized Code editors see steps, including through API, CLI and agents.
 
 The window contains `generation`, `seq`, `entries`, `droppedLines` and
@@ -445,13 +520,11 @@ Each raw bundle, including the runner's proof envelope, fits
 `LIVE_LIMITS.frameBytes`. The trusted supervisor joins submissions and waits at least the AI
 stream's existing snapshot interval between bundles; Core discards excess
 bundles and counts their lines and bytes. This cadence spans all attempts of
-the same run. Sanitized NATS deltas obey the same frame limit. `followCodeDetails` from `@k2b/cloud/ssr/code-live` requests a
-covering snapshot on admission, reconnect or a sequence gap. Apply deltas
-with `applyCodeOutputEvent` from `@k2b/cloud/code`; replace the window on a
-snapshot. The resync callback returns `CodeDetailPositions` for the currently
-observed active runs. Snapshot replacement and disposal remove old positions.
-Render only this bounded window, so the live, replayed and stored
-tails agree.
+the same run. Sanitized NATS deltas obey the same frame limit. `followCodeRun`
+requests a covering snapshot on admission, reconnect or a sequence gap.
+Apply deltas with `applyCodeOutputEvent` from `@k2b/cloud/code`; replace the
+window on a snapshot. Render only this bounded window, so the live, replayed
+and stored tails agree.
 
 Late arrivals replay the run's dedicated NATS topic. A shared cache repairs
 publication gaps or topic retention with a covering snapshot. Terminal

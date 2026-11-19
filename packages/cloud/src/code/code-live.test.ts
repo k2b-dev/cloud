@@ -16,7 +16,8 @@ afterEach(() => {
 
 test("Code run hints contain only a stable ID, state and timestamp", () => {
   expect(CodeRunEventSchema.parse(event)).toEqual(event);
-  for (const extra of [{ payload: "private" }, { name: "private" }, { state: "cancelled" }, { at: "today" }])
+  expect(CodeRunEventSchema.parse({ ...event, state: "cancelled" }).state).toBe("cancelled");
+  for (const extra of [{ payload: "private" }, { name: "private" }, { state: "paused" }, { at: "today" }])
     expect(CodeRunEventSchema.safeParse({ ...event, ...extra }).success).toBe(false);
 });
 
@@ -62,14 +63,16 @@ test("the cross-app helper follows Core, forwards hints, separates resync, and d
   expect(reloads).toBe(1);
   await deliver(event);
   expect(runs).toEqual([{ runId: event.runId, state: event.state, at: event.at }]);
+  await deliver({ ...event, state: "cancelled" });
+  expect(runs.at(-1)).toEqual({ runId: event.runId, state: "cancelled", at: event.at });
   await resync();
   expect(reloads).toBe(2);
   caughtUp(false);
   caughtUp(true);
   expect(reloads).toBe(2);
-  expect(runs).toHaveLength(1);
+  expect(runs).toHaveLength(2);
   stop();
   expect(closed).toBe(true);
   await deliver(event);
-  expect(runs).toHaveLength(1);
+  expect(runs).toHaveLength(2);
 });

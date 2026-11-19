@@ -5,10 +5,17 @@ section: Operations
 order: 1155
 description: Configure, scale, and stop the stateless workerd runner for Code.
 tags: [code, runner, scaling, shutdown]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # Scaling runners
+
+Core's `code-live` migration also routes run lifecycle hints to the `codeRun`
+channel for one run. Update Core before using the selected-run browser binding.
+It reuses the existing NATS live topic and transactional outbox; there is no
+new environment setting or per-run stream. Running attempts that cross an
+update restore missing step reservations when read. The derived lifetime
+limit remains 25 step handles per attempt; see [Code runs](/en/docs/platform/code-runs#report-steps-with-logger).
 
 Core's `code-live` migration adds transactional run and access hints
 to its existing live outbox. Update Core to install it before consuming the
