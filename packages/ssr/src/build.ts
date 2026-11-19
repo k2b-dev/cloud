@@ -416,7 +416,7 @@ export const buildIslands = async (options: {
     for (const name of variantNames) {
       ({ result, asset } = await bundle(join(outdir, name), name));
       if (!asset) break;
-      (manifest.variants ??= {})[name] = asset;
+      manifest.variants = { ...manifest.variants, [name]: asset };
     }
     if (result.success) await writeAssetManifest(outdir, manifest);
   }

@@ -34,9 +34,10 @@ export const spread = intl.define({ baseLocale: "en", messages: { en: { ...share
 export const getter = intl.define({ baseLocale: "en", messages: { en: { get a() { return "A"; } }, de: { a: "Ä" } } });
 const variable = { en: { a: "A" }, de: { a: "Ä" } };
 export const fromVariable = intl.define({ baseLocale: "en", messages: variable });
+export const marked = intl.define(/* @i18n-all-locales */ { baseLocale: "en", messages: { en: { a: "A" }, de: { a: "Ä" } } });
 `;
 const rewritten = ["full", "direct", "englishOnly"];
-const keptWhole = ["french", "germanBase", "regional", "spread", "getter", "fromVariable"];
+const keptWhole = ["french", "germanBase", "regional", "spread", "getter", "fromVariable", "marked"];
 
 type Catalog = { locales: string[]; resolve: (requested?: readonly string[]) => { locale: string; t: Record<string, unknown> } };
 

@@ -1518,18 +1518,20 @@ export const mailRemainingMessages = i18n.define({
 
 /**
  * A stored preset choice keeps the description of the language it was created in. The page shows it in the reader's
- * language, so it must recognize every language's text: `messages` is a variable, which keeps every language in each
- * language's island build.
+ * language, so it must recognize every language's text in every language's island build.
  */
-const presetDescriptions = {
-  en: {
-    importantDescription: "Needs personal attention or a timely response",
-    routineDescription: "Can be handled as routine mail",
+export const mailPresetDescriptionMessages = i18n.define(
+  /* @i18n-all-locales */ {
+    baseLocale: "en",
+    messages: {
+      en: {
+        importantDescription: "Needs personal attention or a timely response",
+        routineDescription: "Can be handled as routine mail",
+      },
+      de: {
+        importantDescription: "Erfordert persönliche Aufmerksamkeit oder eine zeitnahe Antwort",
+        routineDescription: "Kann als gewöhnliche E-Mail bearbeitet werden",
+      },
+    },
   },
-  de: {
-    importantDescription: "Erfordert persönliche Aufmerksamkeit oder eine zeitnahe Antwort",
-    routineDescription: "Kann als gewöhnliche E-Mail bearbeitet werden",
-  },
-};
-
-export const mailPresetDescriptionMessages = i18n.define({ baseLocale: "en", messages: presetDescriptions });
+);
