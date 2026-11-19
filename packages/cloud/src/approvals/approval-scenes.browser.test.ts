@@ -733,8 +733,14 @@ describe("Approval scenes", () => {
         });
         await shot(page, `07-auswahl-light-${width}`);
         expect(look.hull).toEqual(["0px", "rgba(0, 0, 0, 0)"]);
-        // Flat cards: the shared 2 px edge drawn inside, no outer border; the chosen one in the AI colour.
-        for (const edge of look.edges) expect(edge).toMatch(/^0px\|.* 0px 0px 0px 2px inset\|/);
+        // Main #3681: 1 px at rest, the chosen Jana Berger has 2 px inside; no outer border.
+        // Only the shared, fully transparent 3 px focus-ring layer may follow the inset edge.
+        for (const [index, edge] of look.edges.entries())
+          expect(edge).toMatch(
+            new RegExp(
+              String.raw`^0px\|(?:color|rgba?)\([^)]*\) 0px 0px 0px ${index === 0 ? 2 : 1}px inset(?:, rgba\(0, 0, 0, 0\) 0px 0px 0px 3px)?\|`,
+            ),
+          );
         expect(look.ai).toBe("ai");
         expect(look.chosen[0]).not.toBe(look.chosen[1]);
         expect(look.state).toBe("1 gewählt");

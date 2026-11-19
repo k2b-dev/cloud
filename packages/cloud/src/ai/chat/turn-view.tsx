@@ -49,7 +49,7 @@ import {
 } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 import type { AiWorkContextValue } from "./work-steps";
-import { type AiWorkIssue, workStepLine, workStepParts, workSummary } from "./work-summary";
+import { workStepLine, workStepParts, workSummary } from "./work-summary";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type Messages = ReturnType<typeof aiChatMessages>;
@@ -93,6 +93,8 @@ export type AiTurnSegment = {
   answerAgain?: () => void | Promise<void>;
   /** The person stopped this turn: it ends with the quiet stopped line and no notice. */
   stoppedByPerson?: boolean;
+  /** "Send now" interrupted this turn for a queued message: it ends with the status word "paused" alone. */
+  queueInterrupted?: boolean;
   stopNotice?: AiStopNotice | null;
   /** The turn is the chat's newest and nothing runs, so a new message can pick up its work. */
   continuable?: boolean;
@@ -233,7 +235,8 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
   const summary = createMemo(() => (isLive(segment().phase) ? "" : workSummary(layout().work, locale())));
   const ending = () => {
     const phase = segment().phase;
-    return phase === "stopped" ? "stopped" : phase === "failed" && !segment().error ? "failed" : null;
+    if (phase === "stopped") return segment().queueInterrupted ? "paused" : "stopped";
+    return phase === "failed" && !segment().error ? "failed" : null;
   };
   // Thinking between steps changes its word with time; each thinking phase gets its own round (Feinschliff v3, 1). A
   // phase lasts as long as the line says "Thinking", across blocks: a thinking block, a finished call, and the next
@@ -262,6 +265,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     // The time stands right in its own column (Feinschliff 4); without a confirmed outcome the sentence says only how the
     // turn ended. A failed turn with a stored reason says it in its notice; the line then reads like any finished turn.
     if (ending() === "stopped") return t().workedStopped({ duration: "" });
+    if (ending() === "paused") return t().workedPaused({ duration: "" });
     if (ending() === "failed") return t().workedInterrupted({ duration: "" });
     return t().worked;
   };
@@ -269,11 +273,10 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
   const stepParts = () => {
     if (isLive(segment().phase) || (!layout().steps && !summary())) return null;
     const parts = workStepParts(layout().work, layout().steps, locale());
-    const ended: AiWorkIssue[] =
-      summary() && ending()
-        ? [ending() === "stopped" ? { text: t().workEndedStopped, tone: "neutral" } : { text: t().workEndedInterrupted, tone: "neutral" }]
-        : [];
-    return { count: parts.count, issues: [...parts.issues, ...ended] };
+    const words = { stopped: t().workEndedStopped, paused: t().workEndedPaused, failed: t().workEndedInterrupted };
+    const end = ending();
+    const ended = summary() && end ? words[end] : "";
+    return { count: parts.count, issues: ended ? [...parts.issues, { text: ended, tone: "neutral" }] : parts.issues };
   };
   const ariaLabel = () => {
     if (isLive(segment().phase)) return undefined;
@@ -925,7 +928,8 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           <Show when={props.segment().scheduledTask}>
             <Chat.Activity icon="ti ti-calendar-time" label={aiChatMessages(locale()).backgroundRun} />
           </Show>
-          <Show when={layout().showWork}>
+          {/* Send now keeps its paused summary visible even without work steps. */}
+          <Show when={layout().showWork || (props.segment().queueInterrupted && !props.segment().earlier)}>
             {/* The live label and clock change every second; the conversation log must not read them out. */}
             <div class="ai-turn__work" aria-live="off">
               <AiWorkLine segment={props.segment} />

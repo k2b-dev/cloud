@@ -11,6 +11,7 @@ import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-panel-browser-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 setDefaultTimeout(30_000);
 const rail = await import("../services/rail-snapshot");

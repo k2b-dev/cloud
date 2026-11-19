@@ -223,7 +223,9 @@
 
 .k2b-ui .cloud-file-dialog__source:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus);
+  box-shadow:
+    inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-focus),
+    0 0 0 var(--k2b-edge-ring-width) color-mix(in srgb, var(--k2b-edge-focus) var(--k2b-edge-ring-share), transparent);
 }
 
 .k2b-ui .cloud-file-dialog__source:disabled {
@@ -653,7 +655,7 @@
     flex: none;
   }
 
-  /* Tabs carry the field edge: always 2 px, grey at rest, light app blue when chosen. */
+  /* Tabs carry the field edge: 1 px, grey at rest, app blue when chosen. */
   .k2b-ui .cloud-file-dialog__source {
     width: auto;
     height: 2.5rem;

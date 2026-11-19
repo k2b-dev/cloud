@@ -394,16 +394,17 @@ const ToastDemo = () => {
       description="A stack: the newest toast in front, up to two older edges behind it. It fans out under the pointer or with focus (Alt+T), and every timer waits meanwhile. Icon tile, title and message, one action beside them or two below, a link, and loading that turns into its result in place."
       code={`toast.success("Contact created");
 toast("1.2 GB of 50 GB free.", { title: "Storage almost full", variant: "warning" });
-toast.error("Could not save the draft. The server is not reachable.");
+toast.error("The server is not reachable.", { title: "Draft not saved" });
 toast.success("Budget 2027.xlsx · 48 KB", {
   title: "Export finished",
   action: { label: "Open", href: "/files/export" },
 });
-toast("3 notes moved to the trash", {
+toast.success("3 notes are in the trash.", {
+  title: "Moved to trash",
   action: { label: "Undo", onClick: restore, variant: "ghost" },
 });
-toast("Request for “Budget 2027”, role Edit.", {
-  title: "Mara Example wants to collaborate",
+toast("Mara Example asks to edit “Budget 2027”.", {
+  title: "Access requested",
   action: { label: "Share", onClick: share },
   secondaryAction: { label: "Later", onClick: later },
 });
@@ -441,7 +442,7 @@ exportToast.update("Archive ready", {
         <Button variant="secondary" onClick={() => toast("1.2 GB of 50 GB free.", { title: "Storage almost full", variant: "warning" })}>
           Warning
         </Button>
-        <Button variant="secondary" onClick={() => toast.error("Could not save the draft. The server is not reachable.")}>
+        <Button variant="secondary" onClick={() => toast.error("The server is not reachable.", { title: "Draft not saved" })}>
           Error
         </Button>
         <Button
@@ -464,7 +465,10 @@ exportToast.update("Archive ready", {
         <Button
           variant="secondary"
           onClick={() =>
-            toast("3 notes moved to the trash", { action: { label: "Undo", onClick: () => toast("Notes restored"), variant: "ghost" } })
+            toast.success("3 notes are in the trash.", {
+              title: "Moved to trash",
+              action: { label: "Undo", onClick: () => toast.success("Notes restored"), variant: "ghost" },
+            })
           }
         >
           Undo
@@ -472,8 +476,8 @@ exportToast.update("Archive ready", {
         <Button
           variant="secondary"
           onClick={() =>
-            toast("Request for “Budget 2027”, role Edit.", {
-              title: "Mara Example wants to collaborate",
+            toast("Mara Example asks to edit “Budget 2027”.", {
+              title: "Access requested",
               action: { label: "Share", onClick: () => toast.success("Shared with Mara Example") },
               secondaryAction: { label: "Later", onClick: () => {} },
             })

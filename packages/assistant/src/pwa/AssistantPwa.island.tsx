@@ -1031,9 +1031,6 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                       if (!(await chat.retryUserMessage(entry.id, { ...input, model: selectedModel() })))
                         throw new Error(chat.error() ?? t().retry);
                     },
-                    onRetrySteer: async (block) => {
-                      if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retry);
-                    },
                     onContinueTurn: async (message) => {
                       if (!(await send({ intent: "send", text: message, attachments: [] }, false))) throw new Error(t().retry);
                     },

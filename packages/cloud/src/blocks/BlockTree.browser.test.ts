@@ -166,11 +166,15 @@ describe("BlockTree", () => {
           expect(facts.textCards).toBe(0);
           expect(facts.brokenImages).toBe(0);
           // Options of a choice are controls: flat, never raised.
-          // A control's 2 px edge may be drawn as an inset ring; a blurred drop shadow would lift it.
+          // A control's edge may be drawn as an inset ring; a blurred drop shadow would lift it.
+          // Main #3681 reserves a transparent 3 px focus ring. Its spread is not blur or a raised island.
           for (const value of facts.optionShadows)
-            expect(value.split(/,(?![^(]*\))/).filter((layer) => !layer.includes("inset") && /-?\d+px -?\d+px [1-9]/.test(layer))).toEqual(
-              [],
-            );
+            expect(
+              value
+                .split(/,(?![^(]*\))/)
+                .filter((layer) => layer.trim() !== "rgba(0, 0, 0, 0) 0px 0px 0px 3px")
+                .filter((layer) => !layer.includes("inset") && /-?\d+px -?\d+px [1-9]/.test(layer)),
+            ).toEqual([]);
           if (scene.name === "03-reise-gewaehlt") expect(facts.selected).toEqual(["Trattoria Lucia"]);
           if (scene.name === "07-tabelle-grids") {
             // A row with a target leads there: one Open link per row, in the app, in the same tab.

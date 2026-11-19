@@ -13,6 +13,8 @@ export type ChatMessageItem = {
   role: ChatRole;
   content?: JSX.Element;
   label?: string;
+  /** Who wrote a message the person did not type here; see `ChatMessageProps.source`. */
+  source?: JSX.Element;
   createdAt?: string | Date;
   timeLabel?: string;
   status?: ChatMessageStatus;
@@ -375,6 +377,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
                     <ChatMessage
                       role={message()!.role}
                       label={message()!.label}
+                      source={message()!.source}
                       createdAt={message()!.createdAt}
                       timeLabel={message()!.timeLabel}
                       status={message()!.status}

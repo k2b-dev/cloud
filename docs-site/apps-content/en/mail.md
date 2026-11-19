@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-11-12
+updated: 2026-11-18
 ---
 
 # Mail
@@ -805,6 +805,11 @@ Mail cannot safely reverse the move, for example because it needs attention
 or current access or keep rules refuse the inverse. Each
 inverse is queued independently, so one refusal does not prevent the others.
 
+Reply and Reply all also open for messages addressed only to the mailbox's own
+verified identities. When no external recipient remains, the To field starts
+empty. You can save a draft without recipients and add them before sending.
+The reply box, API, CLI and Assistant use the same rule.
+
 `reply` and `forward` create a draft from a conversation's latest message, and
 `send` sends a draft:
 
@@ -812,6 +817,17 @@ inverse is queued independently, so one refusal does not prevent the others.
 cld mail reply <conversation-id> --body "Thanks, it is on its way." --json
 cld mail send <draft-id> --wait
 ```
+
+A successful `cld mail draft update` returns the saved revision; `cld mail send`
+reads that revision automatically. Recipient names are optional.
+If shared draft preparation returns `DRAFT_DOCUMENT_UNAVAILABLE` (503), nothing
+was queued. Editing can remain locked for up to a minute while the interrupted
+attempt expires. Reopen and review the current draft before sending again.
+Preparation may have saved edits already accepted from another editor.
+Pruning saved draft history does not change its content revision or invalidate the saved content.
+Known draft errors retain their codes and status. `DOCUMENT_FROZEN` (409) means
+another preparation holds the temporary lock; review the draft again after that
+attempt finishes or its lock expires within a minute.
 
 Administration, providers, identities, automations, and operator commands keep
 their group names, such as `cld mail admin` and `cld mail provider`. Run

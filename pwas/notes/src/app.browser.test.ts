@@ -458,9 +458,9 @@ describe("k2b notes · Produktions-SPA", () => {
       expect(look.innerBorder).toBe("0px");
       expect(look.innerOutline).toBe("none");
       expect(look.innerRadius).toBe("0px");
-      // The shell draws the 2 px focus edge as one border and nothing beside it: one shape.
-      expect(look.shellBorder).toBe("2px");
-      expect(look.shellRing).toBe("none");
+      // The shell draws the 1 px focus edge as one border and the flat focus ring outside it: one shape.
+      expect(look.shellBorder).toBe("1px");
+      expect(look.shellRing).toMatch(/ 0px 0px 0px 3px$/);
       expect(look.shellOutline).toBe("none");
     };
 

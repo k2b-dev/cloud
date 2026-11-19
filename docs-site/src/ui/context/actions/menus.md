@@ -157,8 +157,8 @@ through the row like through any items, and Left and Right cycle within it.
 
 A section with `layout: "tiles"` sets a few choices that a picture tells apart,
 such as the arrangements in the `Panes` Arrange menu, side by side as tiles:
-the icon above a short label, with the 2 px edge of every choice and the
-selection fill on the checked one. Give it a `sectionLabel` like a row. Keep
+the icon above a short label, with the 1 px edge of every choice and, on the
+checked one, a second line inside it and the selection fill. Give it a `sectionLabel` like a row. Keep
 it to four or five tiles; the keys work as in a row.
 
 A choice can carry a `secondary` action, `{ label, ariaLabel?, action }`, such
