@@ -1,4 +1,4 @@
-import { ButtonLink, ChangeList, Chat, type ChatDecisionState, LocaleProvider } from "@k2b/ui";
+import { ChangeList, type ChatDecisionState, LocaleProvider } from "@k2b/ui";
 import { createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import type { ActionCard, ActionText } from "../ai/chat/action-card";
@@ -14,6 +14,7 @@ import { CloudSurveyBlock } from "../ai/chat/visual-tools";
 import { cardToolResult, chartToolResult } from "../ai/gustav-views";
 import type { AiTurnBlock } from "../ai/protocol";
 import { capabilityResultView } from "../ai/result-view";
+import { cloudToolReview } from "../ai/tool-sentences";
 import type { ApprovalPage } from "../contracts/approvals";
 import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import { ApprovalCard } from "./ApprovalCard";
@@ -42,6 +43,9 @@ const cardOf = (key: string, review: CapabilityActionCallReview = reviewOf(key),
 const text = (value: string): ActionText => [{ kind: "text", text: value }];
 const expiresAt = new Date(Date.parse(FIXTURE_AT) + 9 * 60_000).toISOString();
 
+const sceneAnswers = { declined: 0, remembered: 0 };
+Object.assign(window, { approvalSceneAnswers: sceneAnswers });
+
 function Card(props: { card: ActionCard; state?: ChatDecisionState; line?: ActionLine; remember?: boolean; draft?: boolean }): JSX.Element {
   return (
     <ApprovalCard
@@ -49,10 +53,20 @@ function Card(props: { card: ActionCard; state?: ChatDecisionState; line?: Actio
       state={props.state ?? "open"}
       timeZone="Europe/Berlin"
       expiresAt={props.state && props.state !== "open" ? undefined : expiresAt}
-      remember={props.remember ? { onSelect: () => {} } : undefined}
+      remember={
+        props.remember
+          ? {
+              onSelect: () => {
+                sceneAnswers.remembered++;
+              },
+            }
+          : undefined
+      }
       onEditDraft={props.draft ? async () => true : undefined}
       onConfirm={() => {}}
-      onDecline={() => {}}
+      onDecline={() => {
+        sceneAnswers.declined++;
+      }}
       outcome={{ lines: props.line ? { now: props.line } : {}, current: "now" }}
     />
   );
@@ -129,6 +143,60 @@ const page: ApprovalPage = {
 const Label = (props: { children: string }) => <p class="scene-label">{props.children}</p>;
 
 const scenes: Record<string, () => JSX.Element> = {
+  "review-fixes": () => {
+    const mail = cardOf("mail");
+    const review = cloudToolReview("web_extract", { url: "https://example.com" }, "de");
+    if (!review) throw new Error("Missing website review");
+    const website = toolActionCard(
+      { ...fixtures.mail!.block, name: "web_extract", presentation: undefined, review: { ...review, ask: "sends" } },
+      { locale: "de", timeZone: "Europe/Berlin", outcome: legacyOutcomeWords(fixtures.mail!.block, "de", "Europe/Berlin") },
+    );
+    return (
+      <>
+        <Label>Website lesen</Label>
+        <Card card={website} />
+        <Label>Website gelesen</Label>
+        <Card card={website} state="decided" line={{ tone: "done", text: website.forms.done, time: "14:52" }} />
+        <Label>Mail wird gesendet</Label>
+        <Card card={mail} state="sending" line={{ tone: "running", text: mail.forms.running }} />
+        <Label>Mail zum Versand übernommen</Label>
+        <Card card={mail} state="decided" line={{ tone: "done", text: mail.forms.done, time: "14:52" }} />
+        <Label>Abgelaufen</Label>
+        <Card card={mail} state="expired" line={{ tone: "off", text: text("Die Frage ist abgelaufen."), time: "14:53" }} />
+        <Label>Ausgang unklar</Label>
+        <Card
+          card={mail}
+          state="decided"
+          line={{
+            tone: "warning",
+            text: mail.forms.unknown,
+            detail: "Prüf den Stand, bevor du es noch einmal versuchst",
+            action: { label: "Stand prüfen", onSelect: () => {} },
+          }}
+        />
+      </>
+    );
+  },
+  "review-error": () => (
+    <ApprovalFrame
+      locale="de"
+      state="open"
+      source={{ name: "Code", icon: "ti ti-code" }}
+      sentence="Version 5 wartet auf einen Admin."
+      reason={{ text: "Version 4 bleibt eingeschaltet" }}
+      details={{ label: "Details von Code", content: "Nur diese Version ist betroffen." }}
+      more={[
+        {
+          label: "Zurückziehen",
+          onSelect: async () => {
+            throw new Error("offline");
+          },
+        },
+      ]}
+      confirm={{ label: "Einschalten", onSelect: () => {} }}
+    />
+  ),
+  large: () => <Card card={cardOf("large")} />,
   states: () => {
     const mail = cardOf("mail");
     const del = cardOf("del");
@@ -480,7 +548,7 @@ const scenes: Record<string, () => JSX.Element> = {
       label: "Details von Code",
       context: "gegenüber Version 4",
       note: { text: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.", icon: "ti ti-info-circle" },
-      content: (
+      content: () => (
         <ChangeList
           label="Änderungen"
           items={[
@@ -549,23 +617,9 @@ const scenes: Record<string, () => JSX.Element> = {
           source={code}
           status={{ tone: "waiting", label: "Wartet auf Admin" }}
           reason={{ text: "In eurer Cloud gibt ein Admin jede Automation frei, die etwas tut, das andere sehen.", icon: "ti ti-eye" }}
-          outcome={
-            <Chat.Outcome
-              current="state"
-              lines={{
-                state: {
-                  tone: "waiting",
-                  text: "Version 5 wartet auf die Freigabe eines Admins.",
-                  detail: "Die Admins wissen Bescheid. Bis dahin bleibt Version 4 eingeschaltet.",
-                  actions: (
-                    <ButtonLink variant="text" href="/app/code/info">
-                      Alles ansehen
-                    </ButtonLink>
-                  ),
-                },
-              }}
-            />
-          }
+          sentence="Version 5 wartet auf die Freigabe eines Admins."
+          notes={[{ text: "Die Admins wissen Bescheid. Bis dahin bleibt Version 4 eingeschaltet." }]}
+          link={{ label: "Alles ansehen", href: "/app/code/info" }}
         />
         <Label>Lädt</Label>
         <ApprovalFrame locale="de" state="loading" source={code} reason={{ text: "" }} />

@@ -3,7 +3,7 @@ import { dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
 import { useUiMessages } from "../intl/messages";
 import type { IntentTone } from "../semantics";
 
-export type NoticeTone = Extract<IntentTone, "neutral" | "info" | "success" | "warning" | "danger">;
+export type NoticeTone = Extract<IntentTone, "neutral" | "info" | "success" | "warning" | "danger"> | "ai";
 
 type NoticeCardContentProps =
   | { title: JSX.Element; detail?: JSX.Element; meta?: JSX.Element; children?: JSX.Element }
@@ -47,7 +47,6 @@ export const NOTICE_CARD_CLASSES = {
 
 /** Whether resolved children render something; a Show whose condition is false, or a boolean, renders nothing. */
 const rendersSomething = (nodes: unknown[]) => nodes.some((node) => node != null && typeof node !== "boolean" && node !== "");
-
 function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
   const [local, articleProps] = splitProps(props, [
     "tone",
