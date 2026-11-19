@@ -9,6 +9,7 @@ import type { ConversationComment } from "../../service/collaboration";
 import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import type { MailComposerHost, MailInlineDraftControls } from "./MailComposer";
+import type { MailQuoteOriginal } from "./MailQuoteCard";
 import { deriveReplyIdentityId, forwardMessageBody, forwardSubject, replySubject } from "./mail-compose-derivation";
 import { mailComposeWindowMessages } from "./mail-compose-window-messages";
 import {
@@ -86,7 +87,7 @@ type Mount =
   | { key: number; kind: "seed"; seed: MailDraftSeed; parts: ComposerParts; autofocus: boolean };
 
 /** Work the box hands to the next mounted draft once it takes input. */
-type PendingAction = { kind: "append"; text: string } | { kind: "sendAt"; at: string } | { kind: "focus" };
+type PendingAction = { kind: "append" | "quote"; text: string } | { kind: "sendAt"; at: string } | { kind: "focus" };
 
 class NoVerifiedSender extends Error {}
 
@@ -122,7 +123,8 @@ export default function MailReplyBox(props: {
   calendarIntegrationAvailable: boolean;
   liveDictation: boolean;
   returnHref: string;
-  messageLabel: (messageId: string) => string | null;
+  /** The quoted message as the reply's card shows it, from the conversation the reader already holds. */
+  messageSource: (messageId: string) => MailQuoteOriginal | null;
   createNote: (body: string, failed: string) => Promise<ConversationComment>;
   onReconcile: () => Promise<void>;
   onExplainSenderUnavailable: () => void;
@@ -265,7 +267,12 @@ export default function MailReplyBox(props: {
     return (verified.find((identity) => identity.isDefault) ?? verified[0])?.id ?? null;
   };
 
-  const prepareSeed = async (intent: MailReplyMailMode, message: MailWorkspaceMessage, withText: boolean): Promise<MailDraftSeed> => {
+  const prepareSeed = async (
+    intent: MailReplyMailMode,
+    message: MailWorkspaceMessage,
+    withText: boolean,
+    quoted = false,
+  ): Promise<MailDraftSeed> => {
     const senderIdentityId = verifiedIdentity(message);
     if (!senderIdentityId) throw new NoVerifiedSender();
     const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post({
@@ -283,6 +290,9 @@ export default function MailReplyBox(props: {
             body: intent === "forward" && !withText ? forwardMessageBody(message, props.dateConfig, locale()) : "",
             conversationId: props.conversationId,
             intent,
+            // A reply quotes the message it answers, collapsed under the signature; × leaves it out. A reply that starts
+            // with a quoted selection carries that instead.
+            quoteSource: intent === "forward" || quoted ? null : { locale: locale(), timeZone: props.dateConfig.timeZone ?? "UTC" },
             sourceMessageId: message.id,
             includeSourceAttachments: intent === "forward" && message.attachments.length > 0,
           },
@@ -309,7 +319,14 @@ export default function MailReplyBox(props: {
   const load = async (
     target:
       | { kind: "draft"; id: string; known?: MailDraft }
-      | { kind: "seed"; intent: MailReplyMailMode; message: MailWorkspaceMessage; withText: boolean; prepared?: MailDraftSeed },
+      | {
+          kind: "seed";
+          intent: MailReplyMailMode;
+          message: MailWorkspaceMessage;
+          withText: boolean;
+          quoted?: boolean;
+          prepared?: MailDraftSeed;
+        },
     options: { autofocus?: boolean; selection?: DraftTextSelection } = {},
   ): Promise<boolean> => {
     const generation = ++loadGeneration;
@@ -352,7 +369,7 @@ export default function MailReplyBox(props: {
         }
         return true;
       }
-      const seed = target.prepared ?? (await prepareSeed(target.intent, target.message, target.withText));
+      const seed = target.prepared ?? (await prepareSeed(target.intent, target.message, target.withText, target.quoted));
       if (disposed || generation !== loadGeneration) return false;
       // Read before the composer mounts: text typed while an earlier send held the place.
       const buffered = storedText("pending");
@@ -413,8 +430,10 @@ export default function MailReplyBox(props: {
     if (!action || !current || !current.ready()) return;
     setPending(null);
     untrack(() => {
-      if (action.kind === "append") {
-        current.appendText(action.text);
+      if (action.kind === "append" || action.kind === "quote") {
+        // The reader's "Quote selection" quotes in the text; the whole original then stays out.
+        if (action.kind === "quote") current.quoteText(action.text);
+        else current.appendText(action.text);
         current.focusText();
       } else if (action.kind === "sendAt") current.sendAt(action.at);
       else current.focusText();
@@ -613,18 +632,20 @@ export default function MailReplyBox(props: {
       const message = options.message;
       // An untouched seed answers the message the person picked; a draft keeps its own source.
       if (current?.kind === "seed" && !draftId() && message && message.id !== current.seed.sourceMessageId && !controls()?.changed()) {
-        void load({ kind: "seed", intent, message, withText: Boolean(quote) }, { autofocus: true }).then((loaded) => {
-          if (loaded && quote) setPending({ kind: "append", text: quote });
-        });
+        void load({ kind: "seed", intent, message, withText: Boolean(quote), quoted: Boolean(quote) }, { autofocus: true }).then(
+          (loaded) => {
+            if (loaded && quote) setPending({ kind: "quote", text: quote });
+          },
+        );
         return;
       }
       if (intent !== mailMode()) {
         void switchMailMode(intent).then(() => {
-          if (quote) setPending({ kind: "append", text: quote });
+          if (quote) setPending({ kind: "quote", text: quote });
         });
         return;
       }
-      setPending(quote ? { kind: "append", text: quote } : { kind: "focus" });
+      setPending(quote ? { kind: "quote", text: quote } : { kind: "focus" });
       if (!current) settle({ autofocus: true });
     },
     openDraft,
@@ -859,7 +880,7 @@ export default function MailReplyBox(props: {
     toggleFullscreen: () => undefined,
     initialSelection: current.kind === "draft" ? current.selection : undefined,
     register: (next) => setControls(next),
-    messageLabel: props.messageLabel,
+    messageSource: props.messageSource,
     leave: (outcome) => {
       if (current.key !== untrack(mount)?.key) return;
       setControls(null);
