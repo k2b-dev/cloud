@@ -1834,7 +1834,9 @@ export default function AssistantWorkspace(props: Props) {
   const wakeupLineHost: AssistantWakeupLineHost = {
     act: (action, id) => {
       const wakeup = wakeupContext.items().find((item) => item.id === id);
-      return wakeup ? importOnDemand(() => import("./wakeups")).then((module) => module?.actOnWakeup(wakeupContext, action, wakeup)) : undefined;
+      return wakeup
+        ? importOnDemand(() => import("./wakeups")).then((module) => module?.actOnWakeup(wakeupContext, action, wakeup))
+        : undefined;
     },
     retry: (input) => importOnDemand(() => import("./wakeups")).then((module) => module?.retryWakeup(wakeupContext, input)),
   };

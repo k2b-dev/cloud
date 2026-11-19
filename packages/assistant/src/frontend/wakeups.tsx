@@ -112,7 +112,9 @@ const route = client.conversations[":conversationId"].wakeups;
 class WakeupRefused extends Error {}
 const refused = async (response: Pick<Response, "json">): Promise<never> => {
   const body: unknown = await response.json().catch(() => null);
-  throw body && typeof body === "object" && "message" in body && typeof body.message === "string" ? new WakeupRefused(body.message) : new Error();
+  throw body && typeof body === "object" && "message" in body && typeof body.message === "string"
+    ? new WakeupRefused(body.message)
+    : new Error();
 };
 /** Cloud's sentence for a refusal; any other failure gets the chat's own words, never a technical message. */
 const reason = (error: unknown) => (error instanceof WakeupRefused ? error.message : null);
@@ -291,7 +293,9 @@ function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; cl
   };
   /** "What changes", over the foot, without a box: time and rhythm, before and after. */
   const day = (key: string) =>
-    new Intl.DateTimeFormat(locale, { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(new Date(`${key}T12:00:00Z`));
+    new Intl.DateTimeFormat(locale, { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(
+      new Date(`${key}T12:00:00Z`),
+    );
   const changes = () => [
     ...(date() && date() !== local.slice(0, 10) ? [{ label: t().date, from: day(local.slice(0, 10)), to: day(date()!) }] : []),
     ...(clock() && clock() !== local.slice(11, 16) ? [{ label: t().time, from: local.slice(11, 16), to: clock()! }] : []),

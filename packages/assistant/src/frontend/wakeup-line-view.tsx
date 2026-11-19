@@ -21,7 +21,11 @@ export function AssistantWakeupLine(props: { line: AssistantWakeupLineText | und
     if (busy()) return;
     setBusy(true);
     void Promise.resolve(
-      link.input ? props.host.retry(link.input) : link.id ? props.host.act(link.action === "retry" ? "edit" : link.action, link.id) : undefined,
+      link.input
+        ? props.host.retry(link.input)
+        : link.id
+          ? props.host.act(link.action === "retry" ? "edit" : link.action, link.id)
+          : undefined,
     ).finally(() => setBusy(false));
   };
   return (
