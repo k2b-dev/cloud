@@ -152,18 +152,20 @@ describe("ActivityList", () => {
           dash: getComputedStyle(day.querySelector(".k2b-activity__day-line")!).borderTopStyle,
         };
       });
-      expect(geometry.rail.slice(0, 2)).toEqual(["2px", "23px"]);
-      expect(geometry.icon).toEqual([24, 12]);
+      // Embedded timelines bleed 0.5rem past the content edge: the rail sits at bleed + 11px, the avatar at the bleed.
+      expect(geometry.rail.slice(0, 2)).toEqual(["2px", "19px"]);
+      expect(geometry.icon).toEqual([24, 8]);
       expect(geometry.column).toBe(12);
       expect(geometry.avatarLeft).toBe(geometry.heading);
       expect(geometry.marker).toEqual(["12px", "2px"]);
-      expect(geometry.gap).toEqual(["0px", "8px", "32px", "2px", "23px", "rgba(0, 0, 0, 0)"]);
+      expect(geometry.gap).toEqual(["0px", "8px", "32px", "2px", "19px", "rgba(0, 0, 0, 0)"]);
       expect(geometry.fitted).toBeGreaterThan(200);
       expect(geometry.text).toEqual(["14px", "20px"]);
       expect(geometry.meta).toEqual(["13px", "20px"]);
       expect(geometry.day).toEqual(["13px", "24px"]);
       expect(geometry.radius).toBe(geometry.reference);
-      expect(geometry.padding).toBe(geometry.referencePadding);
+      // Vertical padding as FileGrid's list rows; inline padding is the embedded timeline's 0.5rem bleed.
+      expect(geometry.padding).toBe(`${geometry.referencePadding.split(" ")[0]} 8px`.replace(/^(\S+) \1$/, "$1"));
       expect(geometry.referenceInset).toBe("8px");
       // Timeline surface overhangs the section content; its avatar aligns with the heading.
       expect(geometry.inset).toEqual([0, 0]);

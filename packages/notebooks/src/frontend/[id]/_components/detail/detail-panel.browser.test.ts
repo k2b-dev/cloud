@@ -254,11 +254,7 @@ for (const width of [1440, 390]) {
       expect(edges.titles.filter((title) => Math.abs(title.x - edge) > 1).map((title) => title.label)).toEqual([]);
       // Presence, comments, tasks, contents, tags, links, attachments, references, access, properties, activity.
       expect(edges.bodies.length).toBeGreaterThanOrEqual(10);
-      expect(
-        edges.bodies
-          .filter((body) => Math.abs(body.x - edge - (body.label === "Aktivität" ? 20 : 0)) > 1)
-          .map((body) => `${body.label}: ${body.x - edge}`),
-      ).toEqual([]);
+      expect(edges.bodies.filter((body) => Math.abs(body.x - edge) > 1).map((body) => `${body.label}: ${body.x - edge}`)).toEqual([]);
       expect(edges.rows.length).toBeGreaterThan(30);
       expect(edges.rows.filter((row) => Math.abs(row.x - edge - row.inset) > 1).map((row) => `${row.label}: ${row.x - edge}`)).toEqual([]);
       // Activity avatars deliberately keep the shared list inset (8px surface + 12px row padding).

@@ -3722,7 +3722,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const filterLooks = await page.locator("[data-mail-events-filters] .k2b-filter-chip").evaluateAll((chips) =>
               chips.map((chip) => {
                 const style = getComputedStyle(chip);
-                return [style.borderTopWidth, style.minHeight, style.padding, style.borderRadius];
+                // FilterChip draws its 1px edge as an inset shadow (the control edge contract), not a border.
+                return [style.getPropertyValue("--k2b-edge-width").trim(), style.minHeight, style.padding, style.borderRadius];
               }),
             );
             expect(filterLooks[0]?.[0]).toBe("1px");
