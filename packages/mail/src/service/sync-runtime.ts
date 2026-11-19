@@ -2966,8 +2966,8 @@ const syncRequestKey = (folderId: string): string => `mail:sync-requested:${fold
 // batch then ranks as a command instead of waiting behind every folder check of the mailbox.
 // Folder syncs still get every other turn: the lease alternates commands with other work. Each
 // folder has one job, so a provider that pushes without pause takes at most every other turn, and
-// a person's command waits for at most one such batch. Only that first batch ranks so; its
-// continuations with older mail stay background work.
+// a person's command waits for at most one such batch and one further turn of other work. Only
+// that first batch ranks so; its continuations rank as before.
 const pushedSyncKey = (folderId: string): string => `mail:sync-pushed:${folderId}`;
 // A waiting sync settles on the folder checkpoint (requestedSyncProgress), so its next batch
 // commits a fresh checkpoint even when STATUS is unchanged; history still omits empty successes.
@@ -4037,7 +4037,8 @@ export const requestedSyncProgress = async (params: {
   );
 };
 
-export const enqueueFolderReconciliation = async (folderId: string, fromUid: number): Promise<void> => {
+/** `pushed`: as for `enqueueFolderSync`, the provider reported the change. */
+export const enqueueFolderReconciliation = async (folderId: string, fromUid: number, options: { pushed?: boolean } = {}): Promise<void> => {
   const windowStart = reconcileWindowStart(fromUid);
   // Only a cursor rewind: a running sync batch may hold the provider mutex, and
   // the request must survive that contention.
@@ -4061,7 +4062,7 @@ export const enqueueFolderReconciliation = async (folderId: string, fromUid: num
       AND sync_status <> 'excluded'
       AND envelope_cursor ->> 'version' = '1'
   `;
-  await submitSyncFolderJob(folderId, "reconcile");
+  await submitSyncFolderJob(folderId, "reconcile", false, options.pushed);
 };
 
 export const enqueueBindingRediscovery = async (bindingId: string, allowCredentialRevision = false): Promise<void> => {

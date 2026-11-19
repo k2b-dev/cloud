@@ -61,7 +61,7 @@ Inbox, the first batch of that folder's sync ranks with commands. It does not
 wait behind the scheduled checks of the mailbox's other folders. Commands and
 other provider work still alternate, so those folder checks keep at least every
 other turn while the Inbox receives mail without pause. The listener's own
-minute check ranks like any folder check.
+minute check and polling on a server without IDLE rank like any folder check.
 
 Inspect `cld mail sync runs --mailbox <mailbox> --state failed` and the mailbox
 sync status. A long batch may perform flag or UID reconciliation before its
