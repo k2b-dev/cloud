@@ -10,6 +10,8 @@ test("the Mail workspace island keeps its composer, viewer and dialogs outside i
   const size = await islandBundleSize([resolve(import.meta.dir, "MailWorkspace.island.tsx")]);
   console.info(`Mail workspace eager: ${size.eagerBrotliBytes}/${MAIL_WORKSPACE_EAGER_BROTLI_BUDGET} B Brotli`);
   expect(size.eagerBrotliBytes).toBeLessThanOrEqual(MAIL_WORKSPACE_EAGER_BROTLI_BUDGET);
+  // The sidebar's Code status needs only its own label, never the Code page's full catalog.
+  expect(size.eagerInputs.filter((input) => /\/code-page\/messages\.ts$/.test(input))).toEqual([]);
   for (const onDemand of [
     /\/MailComposer\.tsx$/,
     /\/MailComposerEditor\.tsx$/,
