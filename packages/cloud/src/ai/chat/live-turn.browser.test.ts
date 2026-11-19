@@ -531,7 +531,9 @@ for (const view of [
         expect(notice![1]!).toBeGreaterThanOrEqual(resultBefore![1]! + resultBefore![3]!);
         expect(notice![0]! + notice![2]!).toBeLessThanOrEqual(Math.ceil(view.width));
         const text = await page.locator(".ai-turn__notice").innerText();
-        expect(text).toContain(de ? "Die Antwort wurde unterbrochen:" : "The answer was interrupted:");
+        expect(await page.locator(".ai-turn__notice .k2b-notice-card__title").innerText()).toBe(
+          de ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.",
+        );
         expect(text).toContain(
           failedStep
             ? de

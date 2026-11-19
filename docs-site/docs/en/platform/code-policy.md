@@ -66,11 +66,12 @@ The checker, submitted manifest and SDK index classify `core.ai.chat.send` as
 
 The chat worker rechecks the current policy and the **executed model** before
 inference. Only a positive input or output reference price qualifies for
-`ai_chat_you`. A missing price or two zero prices require the ordinary `ai`
-rule and its version approval coverage. An automatic personal-chat rule alone
-cannot start such a model. Choose a priced model or obtain the ordinary AI
-authority through an `ai`-classified version or an automatic `ai` rule before retrying. A `send`-only version cannot request that fallback approval. Model names and requested model classes grant no
-exception.
+`ai_chat_you`. A missing price or two zero prices stop the turn before version
+approval: without a positive reference price, Code cannot enforce its daily
+budget. The chat reports `host_rejected` with a localized reason naming the
+automation and model. An administrator can configure the model's reference
+price; ordinary AI approval does not bypass this requirement. Model names and
+requested model classes grant no exception.
 
 A priced turn must have a known context window. At start, Cloud atomically
 reserves the turn's maximum against both the Code and owner's remaining daily

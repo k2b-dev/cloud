@@ -961,15 +961,15 @@ original initiator; missing trigger information never grants chaining authority.
 
 Only `ai.generate`, `ai.decide` and `ai.chat.send` count as Code AI operations.
 `send` qualifies for automatic `ai_chat_you` only with a positive reference price
-and a fully reserved turn maximum. Zero-priced and unpriced models still require
-ordinary `ai` authority. See [Code policy](/en/docs/platform/code-policy#ai-in-a-personal-chat).
+and a fully reserved turn maximum. Zero-priced and unpriced models stop with
+`host_rejected` and a localized explanation naming the automation and model.
+An administrator can configure the model's reference price.
+See [Code policy](/en/docs/platform/code-policy#ai-in-a-personal-chat).
 Chat reads use `read`. A priced Code-started turn uses `ai_chat_you` and
 reserves its whole maximum against the Code and owner daily limits at execution.
 The maximum includes 192,000 input tokens, one 32,000-token call for the last
 round's estimation margin, and 12,000 output tokens. Compaction shares the
-allowance. A missing context window refuses a priced turn. Unpriced or
-zero-priced models require the ordinary `ai` rule and approval coverage; a pure
-`send` version under the default policy should use a priced model. The Code
+allowance. A missing context window refuses a priced turn. The Code
 mandate never passes to the target chat's tools.
 
 ## Name an automation

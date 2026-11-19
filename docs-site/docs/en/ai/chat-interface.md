@@ -600,7 +600,8 @@ the reading width.
 ### Failed turns
 
 A failed turn keeps its results and receipts in place and ends with a danger
-notice: "The answer was interrupted." and the reason in the reader's language,
+notice with the short title "The answer was interrupted." and the reason in
+the description, in the reader's language,
 such as "The model service did not answer. The results so far are kept." The
 reason comes from `meta.turnError` on the turn's last message, see
 [Failed turns](/en/docs/ai/chat-runtime-and-streaming#failed-turns); the

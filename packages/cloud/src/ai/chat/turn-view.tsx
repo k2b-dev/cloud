@@ -730,8 +730,8 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean; ke
       icon="ti ti-alert-circle"
       layout="card"
       class="ai-turn__notice"
-      title={t().turnInterrupted({ reason: t().turnErrorReason(props.error) })}
-      detail={props.kept ? t().keptSoFar : undefined}
+      title={t().turnErrorTitle}
+      detail={[t().turnErrorReason(props.error), props.kept ? t().keptSoFar : ""].filter(Boolean).join(" ")}
       actions={
         <Show when={canContinue()}>
           <Button

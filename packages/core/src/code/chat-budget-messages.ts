@@ -4,6 +4,8 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      unpricedModel: ({ automation, model }: { automation: string; model: string }) =>
+        `“${automation}” cannot write to this chat: no price is configured for the model ${model}. Without a price, a daily budget cannot be enforced. An administrator can enter the price.`,
       reason: (code: string): string => {
         if (code === "code_ai_turn_exceeds_daily_budget")
           return "This model’s maximum turn cost exceeds the Code daily budget. Choose a less expensive model or ask your administrator to adjust the Code budget.";
@@ -18,6 +20,8 @@ const messages = i18n.define({
       },
     },
     de: {
+      unpricedModel: ({ automation, model }: { automation: string; model: string }) =>
+        `„${automation}“ kann nicht in diesen Chat schreiben: Für das Modell ${model} ist kein Preis hinterlegt. Ohne Preis gibt es kein Tagesbudget. Die Administration kann den Preis eintragen.`,
       reason: (code: string): string => {
         if (code === "code_ai_turn_exceeds_daily_budget")
           return "Der Höchstbetrag dieses Modells übersteigt das Code-Tagesbudget. Wähle ein günstigeres Modell oder bitte die Administration, das Code-Budget anzupassen.";
