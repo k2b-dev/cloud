@@ -54,15 +54,36 @@ describe("waitingQuestionsView", () => {
         local: [tool("tool-mail", "awaiting_approval")],
       }).onlyHere,
     ).toBe("tool-mail");
-    // One elsewhere, or a second one anywhere, always shows the strip.
+    // One elsewhere is never in view here; a second one here always shows both.
     expect(waitingQuestionsView({ questions: { items: [routine], count: 1 }, conversationId: "here01", local: [] }).onlyHere).toBeNull();
     expect(
       waitingQuestionsView({
-        questions: { items: [mail, routine], count: 2 },
+        questions: { items: [mail, retro], count: 2 },
         conversationId: "here01",
-        local: [tool("tool-mail", "awaiting_approval")],
+        local: [tool("tool-mail", "awaiting_approval"), tool("tool-retro", "awaiting_approval")],
       }).onlyHere,
     ).toBeNull();
+  });
+
+  // v12 3m, P4 Rundgang f02: "the only entry of this chat" – entries of other chats do not keep it in the row.
+  test("this chat's only entry leaves the row while in view, even when other chats wait", () => {
+    const view = waitingQuestionsView({
+      questions: { items: [mail, routine], count: 2 },
+      conversationId: "here01",
+      local: [tool("tool-mail", "awaiting_approval")],
+    });
+    expect(view).toMatchObject({ total: 2, onlyHere: "tool-mail", onlyHereAtEnd: true });
+  });
+
+  test("a version to switch on in this chat counts as its only entry once the chat is loaded", () => {
+    const version: AiOpenQuestion = { ...mail, kind: "code_activate", anchor: "code-version-v2", short: "Version 2 einschalten" };
+    const loaded = waitingQuestionsView({ questions: { items: [version, routine, newest], count: 3 }, conversationId: "here01", local: [] });
+    // Its card may stand anywhere in the chat: it leaves the row only once the chat shows it.
+    expect(loaded).toMatchObject({ total: 3, onlyHere: "code-version-v2", onlyHereAtEnd: false });
+    // Not yet loaded, the row shows it until the card does.
+    expect(waitingQuestionsView({ questions: { items: [version, routine], count: 2 }, conversationId: "here01", local: null }).onlyHere).toBeNull();
+    // Elsewhere it is never left out.
+    expect(waitingQuestionsView({ questions: { items: [version], count: 1 }, conversationId: "other1", local: [] }).onlyHere).toBeNull();
   });
 
   test("a question that just opened here keeps the strip's place before the read lists it", () => {
@@ -71,17 +92,17 @@ describe("waitingQuestionsView", () => {
       conversationId: "here01",
       local: [tool("tool-mail", "awaiting_approval")],
     });
-    expect(view).toEqual({ attention: [], entries: [], more: 0, total: 1, onlyHere: "tool-mail" });
+    expect(view).toEqual({ attention: [], entries: [], more: 0, total: 1, onlyHere: "tool-mail", onlyHereAtEnd: true });
   });
 
   test("while the chat is not loaded, the server's read decides, and the row shows until the card does", () => {
     const view = waitingQuestionsView({ questions: { items: [mail], count: 1 }, conversationId: "here01", local: null });
-    expect(view).toEqual({ attention: [], entries: [mail], more: 0, total: 1, onlyHere: null });
+    expect(view).toEqual({ attention: [], entries: [mail], more: 0, total: 1, onlyHere: null, onlyHereAtEnd: false });
   });
 
   test("a question this chat does not show, such as one without its card, keeps the row visible", () => {
     const view = waitingQuestionsView({ questions: { items: [mail], count: 1 }, conversationId: "here01", local: [] });
-    expect(view).toEqual({ attention: [], entries: [mail], more: 0, total: 1, onlyHere: null });
+    expect(view).toEqual({ attention: [], entries: [mail], more: 0, total: 1, onlyHere: null, onlyHereAtEnd: false });
   });
 
   test("questions beyond the bounded read are counted as more", () => {
@@ -126,11 +147,11 @@ describe("what stopped in this chat", () => {
       local: [tool("tool-mail", "awaiting_approval")],
       attention: [stopped],
     });
-    expect(view).toEqual({ attention: [stopped], entries: [mail], more: 0, total: 2, onlyHere: null });
+    expect(view).toEqual({ attention: [stopped], entries: [mail], more: 0, total: 2, onlyHere: null, onlyHereAtEnd: false });
   });
 
   test("belongs to an open chat only", () => {
     const view = waitingQuestionsView({ questions: { items: [], count: 0 }, conversationId: null, local: null, attention: [stopped] });
-    expect(view).toEqual({ attention: [], entries: [], more: 0, total: 0, onlyHere: null });
+    expect(view).toEqual({ attention: [], entries: [], more: 0, total: 0, onlyHere: null, onlyHereAtEnd: false });
   });
 });

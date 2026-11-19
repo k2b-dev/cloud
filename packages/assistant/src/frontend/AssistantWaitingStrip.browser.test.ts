@@ -632,11 +632,12 @@ describe("Waiting for you", () => {
               ["/app/assistant?conversation=Urlb42", null],
             ]);
 
-          // Two pending: the mail was answered elsewhere; the row and the field stay where they were.
+          // Two pending: the mail was answered elsewhere; the row and the field stay where they were. This chat's one
+          // question stands at its end with its answers in view, so the row shows only the other chat's (v12 3m).
           state.scenario = "two";
           await changed(page, "Wart42");
-          await until(page, async () => (await entries(page)).length === 2, "two entries");
-          expect(await entries(page)).toEqual([short("de", "del"), `${short("de", "routine")} in Team Ops Wochenplanung`]);
+          await until(page, async () => (await entries(page)).length === 1, "one entry");
+          expect(await entries(page)).toEqual([`${short("de", "routine")} in Team Ops Wochenplanung`]);
           expect(await rect(page, "nav.assistant-waiting")).toEqual(row);
           expect((await rect(page, ".k2b-chat-composer")).top).toBe(composerTop);
 

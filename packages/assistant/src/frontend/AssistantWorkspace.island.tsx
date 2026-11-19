@@ -1358,11 +1358,14 @@ export default function AssistantWorkspace(props: Props) {
   });
   const waitingFocus = createWaitingQuestionFocus({
     onlyHere: () => waiting().onlyHere,
+    atEnd: () => waiting().onlyHereAtEnd,
     viewport: timelineViewport,
     content: timelineContent,
     scrollToAnchor: (anchor) => scrollToMessageAnchor?.(anchor) ?? false,
     gone: focusComposer,
   });
+  // Quiet only while this chat's one entry is in view and nothing else waits; other chats' entries keep the row.
+  const waitingQuiet = () => waitingFocus.inView() !== null && waiting().total === 1;
   let questionJump = 0;
   /** Jumps to a question from "Waiting for you"; one in another chat opens that chat as a new history entry. */
   const jumpToQuestion = async (question: Pick<AiOpenQuestion, "conversationId" | "anchor" | "href">) => {
@@ -2277,7 +2280,7 @@ export default function AssistantWorkspace(props: Props) {
     const queued = () => Boolean(rowProps.queue) && queueEntries().length > 0;
     // Alarms share the one row (Gustav alarms v1, F1 A): alone as their own line, else as the chip at its end.
     const alarms = () => Boolean(rowProps.queue) && wakeupContext.items().length > 0;
-    const waitingShown = () => waiting().total > 0 && !waitingFocus.quiet();
+    const waitingShown = () => waiting().total > 0 && !waitingQuiet();
     const AlarmChip = () => (
       <Suspense>
         <AssistantWakeupDock context={wakeupContext} layout="chip" />
@@ -2289,7 +2292,8 @@ export default function AssistantWorkspace(props: Props) {
           <AssistantWaitingStrip
             view={waiting()}
             conversationId={waitingConversationId()}
-            quiet={waitingFocus.quiet()}
+            quiet={waitingQuiet()}
+            inView={waitingFocus.inView()}
             onJump={(question) => void jumpToQuestion(question)}
             onShowMore={openApprovals}
             queue={

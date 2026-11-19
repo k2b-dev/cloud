@@ -1140,8 +1140,9 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
           version: 1,
           blocks: [
             {
+              // The task's own name heads the block; a fact the task does not have is left out instead of reading "None".
               kind: "Detail",
-              title: t.task,
+              title: [...(data.title.replace(/\s+/g, " ").trim() || t.task)].slice(0, 160).join(""),
               items: [
                 {
                   label: t.previewStatus,
@@ -1152,24 +1153,29 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
                     done: { label: t.done, tone: "ok" },
                   },
                 },
-                {
-                  label: t.deadline,
-                  value: data.deadline
-                    ? isDateOnlyDeadline(data.deadline)
-                      ? dates.formatDate(data.deadline, { ...dateConfig, timeZone: "UTC" })
-                      : dates.formatDateTime(data.deadline, dateConfig)
-                    : t.none,
-                },
-                {
-                  label: t.assignees,
-                  // Use the same three-name preview as task summaries; all relations remain in data.
-                  value: data.assignees.length
-                    ? i18n.formatList(
-                        data.assignees.slice(0, 3).map((entry) => entry.displayName),
-                        context.locale,
-                      ) + (data.assignees.length > 3 ? t.previewMoreAssignees({ count: data.assignees.length - 3 }) : "")
-                    : t.none,
-                },
+                ...(data.deadline
+                  ? [
+                      {
+                        label: t.deadline,
+                        value: isDateOnlyDeadline(data.deadline)
+                          ? dates.formatDate(data.deadline, { ...dateConfig, timeZone: "UTC" })
+                          : dates.formatDateTime(data.deadline, dateConfig),
+                      },
+                    ]
+                  : []),
+                // Use the same three-name preview as task summaries; all relations remain in data.
+                ...(data.assignees.length
+                  ? [
+                      {
+                        label: t.assignees,
+                        value:
+                          i18n.formatList(
+                            data.assignees.slice(0, 3).map((entry) => entry.displayName),
+                            context.locale,
+                          ) + (data.assignees.length > 3 ? t.previewMoreAssignees({ count: data.assignees.length - 3 }) : ""),
+                      },
+                    ]
+                  : []),
                 { label: t.space, value: resolved.data.space.name },
               ],
             },

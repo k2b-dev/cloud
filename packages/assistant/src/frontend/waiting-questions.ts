@@ -16,8 +16,16 @@ export type WaitingQuestionsView = {
   more: number;
   /** All open questions of the person. The strip keeps its place while this is above zero. */
   total: number;
-  /** The anchor of the only open question when this chat shows its card: the strip then shows only while its answers are out of view. */
+  /**
+   * The anchor of this chat's only waiting entry while this chat shows its card (v12 3m): the strip leaves that entry out
+   * while its answers are in view, and is quiet when nothing else waits. Entries of other chats stay in the row.
+   */
   onlyHere: string | null;
+  /**
+   * Whether that entry's card waits in the chat's active turn, at its end: the server and the first frame then leave it
+   * out. Any other card, such as a version to switch on, leaves the row only once the chat shows its answers.
+   */
+  onlyHereAtEnd: boolean;
 };
 
 const byAsked = (a: AiOpenQuestion, b: AiOpenQuestion) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
@@ -52,13 +60,18 @@ export const waitingQuestionsView = (input: {
   const more = Math.max(0, questions.count - questions.items.length);
   const total = Math.max(0, questions.count - answeredHere) + unlistedHere;
   const hereAnchors = [...listedHere, ...(openHere ?? []).filter((anchor) => !listedHere.has(anchor))];
+  const only = attention.length === 0 && hereAnchors.length === 1 ? hereAnchors[0]! : null;
+  // An approval shows its card while its tool block waits; a version card is in the loaded chat's timeline.
+  const atEnd = only !== null && Boolean(openHere?.includes(only));
+  const shown =
+    atEnd || (only !== null && local !== null && entries.some((question) => here(question) && question.anchor === only && question.kind !== "approval"));
   return {
     attention,
     entries: [...entries.filter(here).sort(byAsked), ...entries.filter((question) => !here(question)).sort(byAsked)],
     more,
     total: total + attention.length,
-    // Only a card this chat shows can have its answers in view; without one, the row shows.
-    onlyHere:
-      total === 1 && attention.length === 0 && hereAnchors.length === 1 && openHere?.includes(hereAnchors[0]!) ? hereAnchors[0]! : null,
+    // Only a card this chat shows can have its answers in view; without one, the row shows it.
+    onlyHere: shown ? only : null,
+    onlyHereAtEnd: atEnd,
   };
 };

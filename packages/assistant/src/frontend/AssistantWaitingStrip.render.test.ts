@@ -100,7 +100,7 @@ test("Code waiting kinds keep their own sign in the shared chip row", async () =
         locale: "de",
         get children() {
           return createComponent(AssistantWaitingStrip, {
-            view: { attention: [], entries: [question], total: 1, more: 0, onlyHere: null },
+            view: { attention: [], entries: [question], total: 1, more: 0, onlyHere: null, onlyHereAtEnd: false },
             conversationId: question.conversationId,
             quiet: false,
             onJump: () => {},
@@ -131,7 +131,7 @@ test("a Code entry shows the sign of its kind and its own sentence, never the ap
       locale: "de",
       get children() {
         return createComponent(AssistantWaitingStrip, {
-          view: { attention: [], entries: [question] as never, more: 0, total: 1, onlyHere: null },
+          view: { attention: [], entries: [question] as never, more: 0, total: 1, onlyHere: null, onlyHereAtEnd: false },
           conversationId: base.id,
           quiet: false,
           onJump: () => undefined,
@@ -143,4 +143,42 @@ test("a Code entry shows the sign of its kind and its own sentence, never the ap
   expect(html).toContain("ti-power");
   expect(html).toContain("Version 5 einschalten");
   expect(html).not.toContain("Freigabe:");
+});
+
+// v12 3m, P4 Rundgang f02: while this chat's one entry (its version card) is in view, the row leaves it out and keeps
+// the entries of other chats; "+n" counts only what it does not show.
+test("this chat's entry in view leaves the row, other chats' entries stay", async () => {
+  const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");
+  const base = waitingFixture.conversations[0]!;
+  const version = {
+    id: "q-code",
+    kind: "code_activate" as const,
+    conversationId: base.id,
+    conversationTitle: base.title,
+    anchor: "code-version-66666666-6666-4666-8666-666666666666",
+    short: "Version 2 einschalten",
+    createdAt: WAITING_NOW,
+  };
+  const other = { ...version, id: "q-other", conversationId: "zz9999", conversationTitle: "Lieferavise", anchor: "x", short: "Lieferavise ansehen" };
+  const render = (inView: string | null) =>
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AssistantWaitingStrip, {
+            view: { attention: [], entries: [version, other] as never, more: 0, total: 2, onlyHere: version.anchor, onlyHereAtEnd: false },
+            conversationId: base.id,
+            quiet: false,
+            inView,
+            onJump: () => undefined,
+            onShowMore: () => undefined,
+          });
+        },
+      }),
+    );
+  const shown = render(version.anchor);
+  expect(shown).not.toContain("Version 2 einschalten");
+  expect(shown).toContain("Lieferavise ansehen");
+  expect(shown).not.toContain("data-quiet");
+  expect(render(null)).toContain("Version 2 einschalten");
 });

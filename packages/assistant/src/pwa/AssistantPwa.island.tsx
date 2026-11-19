@@ -668,12 +668,13 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       local: chat.activeConversationId() && !chat.loadingConversation() ? (chat.activeTurn()?.blocks ?? []) : null,
     }),
   );
-  // The strip stays quiet only while the one open question's answers are in view, as on the web.
+  // The strip leaves this chat's one entry out while its answers are in view, as on the web.
   const [timelineViewport, setTimelineViewport] = createSignal<HTMLElement>();
   const [timelineContent, setTimelineContent] = createSignal<HTMLElement>();
   let scrollToAnchor: (anchor: string) => boolean = () => false;
   const waitingFocus = createWaitingQuestionFocus({
     onlyHere: () => waiting().onlyHere,
+    atEnd: () => waiting().onlyHereAtEnd,
     viewport: timelineViewport,
     content: timelineContent,
     scrollToAnchor: (anchor) => scrollToAnchor(anchor),
@@ -788,7 +789,8 @@ export default function AssistantPwa(props: AssistantPwaProps) {
             <AssistantWaitingStrip
               view={waiting()}
               conversationId={chat.activeConversationId()}
-              quiet={waitingFocus.quiet()}
+              quiet={waitingFocus.inView() !== null && waiting().total === 1}
+              inView={waitingFocus.inView()}
               onJump={jump}
               onShowMore={showMoreQuestions}
               more={{ label: waitingMoreLabel(), always: false }}
