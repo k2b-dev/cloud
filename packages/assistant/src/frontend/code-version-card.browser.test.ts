@@ -192,7 +192,7 @@ describe("v10 approval card in Chromium", () => {
                 const b = (await actions.nth(1).boundingBox())!;
                 expect(Math.abs(a.width - b.width)).toBeLessThan(0.5);
                 expect(a.x).toBeLessThan(b.x);
-                expect(await actions.first().locator(".k2b-button").getAttribute("data-variant")).toBe("secondary");
+                expect(await actions.first().getAttribute("data-variant")).toBe("secondary");
               }
               expect(a.y).toBeGreaterThanOrEqual(measured.quiet.y + measured.quiet.height);
               expect(

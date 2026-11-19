@@ -1909,16 +1909,24 @@ describe("turn places in the reader's language", () => {
     const receipt = { ...mail({ summary: "Sent email" }), approved: true };
     for (const status of ["completed", "failed", "rejected"] as const) {
       const html = renderPlaces([{ ...receipt, status, at }], { locale, timeZone: "Europe/Berlin" });
-      expect(quietReceipt(html)).toContain(" · 12:23");
+      expect(quietReceipt(html)).toContain("12:23");
+      expect(quietReceipt(html)).not.toMatch(/^\s*·/);
       expect(html.match(/data-approval-frame=""/g)).toHaveLength(1);
     }
     // Outside a browser and without a reader time zone, the time stays in UTC.
-    expect(quietReceipt(renderPlaces([{ ...receipt, at }], { locale }))).toContain(" · 10:23");
+    expect(quietReceipt(renderPlaces([{ ...receipt, at }], { locale }))).toContain("10:23");
     expect(renderPlaces([receipt], { locale, timeZone: "Europe/Berlin" })).not.toContain("12:23");
     const running = renderPlaces([{ ...receipt, status: "running" }], { locale, phase: "running", timeZone: "Europe/Berlin" });
     expect(running).toContain(locale === "de" ? "Wird ausgeführt" : "Running");
     expect(quietReceipt(running)).not.toMatch(/\d{2}:\d{2}/);
   });
+  test.each(["en", "de"])("an expired chat approval names the reason once in %s", (locale) => {
+    const expired = locale === "de" ? "Die Frage ist abgelaufen." : "The question expired.";
+    const html = renderPlaces([{ ...mail({}), status: "running", approved: false }], { locale, phase: "completed" });
+    expect(html.split(expired)).toHaveLength(2);
+    expect(quietReceipt(html)).toBe("");
+  });
+
   test("server-rendered history shows the receipt time in the reader's time zone", () => {
     const stored = (seq: number, message: AiStoredMessage["message"], meta: AiStoredMessage["meta"] = null): AiStoredMessage => ({
       id: `stored-${seq}`,
@@ -1956,7 +1964,7 @@ describe("turn places in the reader's language", () => {
         },
       }),
     );
-    expect(quietReceipt(html)).toContain(" · 12:23");
+    expect(quietReceipt(html)).toContain("12:23");
   });
 
   test("labels receipt links without a title in the reader's language", () => {

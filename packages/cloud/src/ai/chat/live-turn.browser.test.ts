@@ -1235,7 +1235,7 @@ for (const view of [
       await settled(page, place);
       expect(await page.$eval(`${place} .assistant-markdown-block`, (node) => getComputedStyle(node).fontSize)).toBe("14px");
       expect(await page.locator(`${receipt} [role="status"]`).innerText()).toBe(sent);
-      expect(await page.locator(`${receipt} .k2b-notice-card__detail-text`).innerText()).toContain(" · 10:00");
+      expect(await page.locator(`${receipt} .k2b-notice-card__detail-text`).innerText()).toBe("10:00");
       expect(await viewportBox(page, place)).toEqual(before.text);
       expect(await viewportBox(page, receipt)).toEqual(before.receipt);
     } finally {

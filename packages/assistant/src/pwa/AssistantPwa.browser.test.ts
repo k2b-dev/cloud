@@ -109,7 +109,7 @@ describe("The Assistant part on a phone", () => {
         await page
           .locator(".cloud-approval-frame .k2b-notice-card__actions button")
           .evaluateAll((buttons) => buttons.map((button) => (button as HTMLButtonElement).disabled)),
-      ).toEqual([false, true]);
+      ).toEqual([true, true]);
       await page.getByRole("button", { name: "Alles ansehen", exact: true }).click();
       expect(await page.getByRole("dialog").getByRole("button", { name: "Behalten", exact: true }).isDisabled()).toBe(true);
       expect(await page.locator(".k2b-notice-card__description").textContent()).toContain("Offline. Antworten geht wieder mit Netz.");

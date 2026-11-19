@@ -963,7 +963,10 @@ describe("Gustav", () => {
           expect(await card.getAttribute("data-k2b-primary")).toBe("ai");
           const word = card.locator(".k2b-chat-decision__status");
           expect(await word.count()).toBe(0);
-          if (state.main) expect(await card.getByRole("button", { name: state.main, exact: true }).count()).toBe(1);
+          if (state.main) {
+            const label = state.name === "aenderungen" && view !== desktop ? "Überarbeiten lassen" : state.main;
+            expect(await card.getByRole("button", { name: label, exact: true }).count()).toBe(1);
+          }
           if (state.name === "aenderungen" && view === desktop) {
             await card.getByRole("button", { name: "Gustav überarbeiten lassen", exact: true }).click();
             expect(await h.page.evaluate(() => (window as unknown as { harnessAsked?: string[] }).harnessAsked)).toEqual([

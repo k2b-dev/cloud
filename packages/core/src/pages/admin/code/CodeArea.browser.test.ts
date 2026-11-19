@@ -164,7 +164,10 @@ test("a review shows both decision paths and the change list directly", async ()
     expect(await page.locator(".cloud-approval-frame").first().getByRole("button").count()).toBe(2);
     expect(await page.getByRole("button", { name: "Alles ansehen", exact: true }).count()).toBe(0);
     await page.getByRole("heading", { name: "Was sich gegenüber Version 2 ändert" }).waitFor();
-    await page.getByRole("button", { name: "Ablehnen oder ändern …", exact: true }).first().click();
+    await page
+      .getByRole("button", { name: viewport.width === 390 ? "Ablehnen / ändern" : "Ablehnen oder ändern …", exact: true })
+      .first()
+      .click();
     for (const name of ["Ablehnen …", "Änderungen anfordern …"])
       expect(await page.getByRole("dialog").getByRole("radio", { name, exact: true }).count()).toBe(1);
     await page.keyboard.press("Escape");
@@ -646,7 +649,10 @@ for (const theme of ["light", "dark"] as const)
         await page.screenshot({ path: resolve(directory, `admin-${state}-${theme}-${width}.png`), fullPage: true });
       };
       await goto(`${review}&state=dialogfail&theme=${theme}`, viewport);
-      await page.getByRole("button", { name: "Ablehnen oder ändern …", exact: true }).first().click();
+      await page
+        .getByRole("button", { name: width === 390 ? "Ablehnen / ändern" : "Ablehnen oder ändern …", exact: true })
+        .first()
+        .click();
       await capture("decision-dialog");
       await page.getByRole("dialog").getByRole("radio", { name: "Ablehnen …", exact: true }).click();
       const dialog = page.getByRole("dialog");
