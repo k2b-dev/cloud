@@ -487,7 +487,7 @@ const changed = (page: Page, conversationId: string | null) =>
 /** Scrolls the chat's timeline: the scrollable ancestor of its first message. */
 const scrollTimeline = (page: Page, to: "top" | "end") =>
   page
-    .locator(".k2b-chat-decision")
+    .locator(".cloud-approval-frame")
     .first()
     .evaluate((card, to) => {
       let scroller: HTMLElement | null = card.parentElement;
@@ -499,7 +499,7 @@ const scrollTimeline = (page: Page, to: "top" | "end") =>
 const focusedSentence = (page: Page) =>
   page.evaluate(() => {
     const active = document.activeElement;
-    return active?.classList.contains("k2b-chat-decision__sentence")
+    return active?.classList.contains("k2b-notice-card__title")
       ? (active.closest("[data-chat-anchor]")?.getAttribute("data-chat-anchor") ?? "")
       : null;
   });
@@ -658,7 +658,7 @@ describe("Waiting for you", () => {
     test(`one question here at ${view.name}: the row keeps its place hidden while its answers are in view`, async () => {
       const { page, errors, unrouted, close } = await open(view, { locale: "de", scenario: "one" });
       try {
-        await page.locator(".k2b-chat-decision__answers").first().waitFor();
+        await page.locator(".k2b-notice-card__actions").first().waitFor();
         await strip(page).waitFor({ state: "attached" });
         await settle(page);
         // The chat opens at its end, where the answers are.
@@ -703,7 +703,7 @@ describe("Waiting for you", () => {
         await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence of the other chat focused");
         await settled(page);
         // The sentence is in view, and the open chat's question now leads the row; the others name their chat.
-        const sentence = await rect(page, '[data-chat-anchor="tool-routine-1"] .k2b-chat-decision__sentence');
+        const sentence = await rect(page, '[data-chat-anchor="tool-routine-1"] .k2b-notice-card__title');
         expect(sentence.top).toBeGreaterThanOrEqual(0);
         expect(sentence.bottom).toBeLessThanOrEqual((await rect(page, "nav.assistant-waiting")).top);
         // Its question ends the chat, so the chat stays at its end and keeps following.
@@ -737,7 +737,7 @@ describe("Waiting for you", () => {
         await page.reload();
         await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "earlier sentence focused after reload");
         await settled(page);
-        const earlier = await rect(page, '[data-chat-anchor="tool-mail-1"] .k2b-chat-decision__sentence');
+        const earlier = await rect(page, '[data-chat-anchor="tool-mail-1"] .k2b-notice-card__title');
         expect(earlier.top).toBeGreaterThanOrEqual(0);
         expect(earlier.bottom).toBeLessThanOrEqual((await rect(page, "nav.assistant-waiting")).top);
 

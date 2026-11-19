@@ -76,7 +76,7 @@ import { pwaMessages } from "./messages";
 import { createOnline } from "./online";
 import { addressHref, allChatsHref, newChatHref, type PwaAddress, pwaAddress, startHref } from "./paths";
 import { ChatRows, SkeletonRows } from "./rows";
-import { type StoredChatFile, uploadChatFile } from "./upload";
+import type { StoredChatFile } from "./upload";
 
 /** How many chats the start lists; the rest are one step away. */
 const RECENT = 6;
@@ -445,19 +445,24 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       setUpload(record.id, { state: "waiting" });
       return;
     }
-    const done = uploadChatFile(conversationId, record.file, (progress) => {
-      const current = uploads()[record.id];
-      if (current?.state === "uploading") setUpload(record.id, { ...current, progress });
-    }).then(
-      (file) => {
-        if (uploads()[record.id]) setUpload(record.id, { state: "done", file });
-        return file;
-      },
-      () => {
-        if (uploads()[record.id]) setUpload(record.id, { state: navigator.onLine ? "failed" : "waiting" });
-        return null;
-      },
-    );
+    const done = importOnDemand(() => import("./upload"))
+      .then((upload) => {
+        if (!upload) throw new Error("upload_module_unavailable");
+        return upload.uploadChatFile(conversationId, record.file, (progress) => {
+          const current = uploads()[record.id];
+          if (current?.state === "uploading") setUpload(record.id, { ...current, progress });
+        });
+      })
+      .then(
+        (file) => {
+          if (uploads()[record.id]) setUpload(record.id, { state: "done", file });
+          return file;
+        },
+        () => {
+          if (uploads()[record.id]) setUpload(record.id, { state: navigator.onLine ? "failed" : "waiting" });
+          return null;
+        },
+      );
     setUpload(record.id, { state: "uploading", progress: 0, done });
   };
   onMount(() => {

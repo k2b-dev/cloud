@@ -15,6 +15,7 @@ import type { RequestAuthority } from "../server";
 import { toPgTextArray } from "../services/postgres";
 import type { AiMessageOrigin, AiStoredMessageOrigin } from "./queue-contracts";
 import { addCloudResourceHrefs } from "./resource-refs";
+import { aiWakeupMessages } from "./wakeup-messages";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -46,7 +47,10 @@ export const projectAiMessageOrigin = (
   origin: AiStoredMessageOrigin,
   row: { name: string; href: string | null } | undefined,
   resource: { name: string; href?: string } | null,
+  locale = "en",
 ): AiMessageOrigin => {
+  if (origin.kind === "wakeup")
+    return { kind: "wakeup", id: origin.id, name: aiWakeupMessages(locale).origin, scheduledAt: origin.scheduledAt };
   const name = resource?.name ?? row?.name;
   const href = origin.kind === "person" ? undefined : (resource?.href ?? row?.href ?? undefined);
   if (origin.kind === "automation")
@@ -142,6 +146,7 @@ export const loadAiMessageOrigins = async (
         origin,
         known.get(`${origin.kind}:${origin.id}`),
         origin.kind === "automation" ? await resolveAutomation(origin) : null,
+        viewer.locale ?? "en",
       ),
     ),
   );

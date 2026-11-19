@@ -141,11 +141,11 @@ const boxes = (page: Page) =>
     const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON() as Box;
     return {
       card: box(".assistant-authoring-stop"),
-      quiet: box(".assistant-authoring-stop__meta"),
+      quiet: box(".assistant-authoring-stop .k2b-notice-card__description"),
       button: document.querySelector(".assistant-authoring-stop button") ? box(".assistant-authoring-stop button") : null,
     };
   });
-const quiet = (page: Page) => page.locator(".assistant-authoring-stop__meta > [role]:not(:empty)");
+const quiet = (page: Page) => page.locator(".assistant-authoring-stop .k2b-notice-card__detail-text > [role]:not(:empty)");
 const count = (page: Page) => page.evaluate(() => (window as unknown as { continued: string[] }).continued.length);
 const busy = (page: Page, value: boolean) =>
   page.evaluate((next) => (window as unknown as { setBusy: (busy: boolean) => void }).setBusy(next), value);
@@ -188,7 +188,7 @@ describe("the v10 pause card", () => {
                 const layout = await page.evaluate(() => {
                   const card = document.querySelector<HTMLElement>(".assistant-authoring-stop")!;
                   const title = card.querySelector(".k2b-notice-card__title")!;
-                  const quiet = card.querySelector(".assistant-authoring-stop__meta")!;
+                  const quiet = card.querySelector(".assistant-authoring-stop .k2b-notice-card__description")!;
                   const button = card.querySelector("button")!;
                   const styles = [title, quiet].map((node) => {
                     const s = getComputedStyle(node);

@@ -8,6 +8,10 @@ const toolNames = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      wakeup_create: "Set alarm",
+      wakeup_list: "List alarms",
+      wakeup_update: "Change alarm",
+      wakeup_delete: "Delete alarm",
       calculate: "Calculate",
       card: "Card",
       map: "Places and maps",
@@ -94,6 +98,10 @@ const toolNames = i18n.define({
       code_remove: "Remove app file",
     },
     de: {
+      wakeup_create: "Wecker stellen",
+      wakeup_list: "Wecker auflisten",
+      wakeup_update: "Wecker ändern",
+      wakeup_delete: "Wecker löschen",
       calculate: "Rechnen",
       card: "Karte",
       map: "Orte und Karten",

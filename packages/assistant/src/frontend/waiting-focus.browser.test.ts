@@ -113,6 +113,20 @@ test("a card loaded on demand gets the focus once its module has loaded and its 
   }
 }, 30_000);
 
+test("a compact approval lands on its sentence without focusing See everything", async () => {
+  const page = await open();
+  try {
+    await addLater(
+      page,
+      '<article class="cloud-approval-frame" data-chat-anchor="tool-v10"><p class="k2b-notice-card__title">Termin Retro löschen?</p><button>Alles ansehen</button><button data-approval-primary>Retro löschen</button></article>',
+    );
+    await land(page, "tool-v10");
+    expect(await focused(page)).toEqual({ tag: "P", text: "Termin Retro löschen?" });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 test("a decision card keeps the focus on its sentence, and a card that never comes is reported gone", async () => {
   const page = await open();
   try {

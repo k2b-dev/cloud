@@ -1,4 +1,4 @@
-import { Button, ButtonLink, ChangeList, Chat, type ChatDecisionAnswer, type ChatDecisionFact, type ChatOutcomeTone } from "@k2b/ui";
+import { ChangeList, type ChatDecisionAnswer, type ChatDecisionFact } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";
 import type { ActionText } from "../../ai/chat/action-card";
 import { actionMessages } from "../../ai/chat/action-messages";
@@ -115,7 +115,6 @@ export function CodeVersionApproval(props: {
         : kind() === "rejected"
           ? { tone: "error", label: t().vRejected }
           : undefined;
-  const outcomeTone = (): ChatOutcomeTone => (kind() === "rejected" ? "error" : kind() === "changes" ? "warning" : "waiting");
   const outcomeText = () =>
     kind() === "waiting"
       ? t().approvalWaiting({ version: props.version.number })
@@ -146,22 +145,6 @@ export function CodeVersionApproval(props: {
       </>
     );
   };
-  const outcomeActions = () => (
-    <>
-      <Show when={!props.onPage}>
-        <ButtonLink variant="text" href={withQuery(props.data.href, { tab: "versions", version: props.version.id })}>
-          {t().seeAll}
-        </ButtonLink>
-      </Show>
-      <Show when={kind() !== "waiting" && panel()}>
-        {(editorPanel) => (
-          <Button variant="text" onClick={() => openPanel(editorPanel().provider)}>
-            {kind() === "changes" ? t().reworkWith({ name: editorPanel().label }) : t().rebuildWith({ name: editorPanel().label })}
-          </Button>
-        )}
-      </Show>
-    </>
-  );
   return (
     <div class="cloud-code__approval cloud-approval-slot" data-version={props.version.number}>
       <ApprovalFrame
@@ -169,28 +152,46 @@ export function CodeVersionApproval(props: {
         state={kind() === "ready" ? "open" : "decided"}
         source={{ name: t().approvalSource, icon: "ti ti-code" }}
         status={status()}
-        sentence={sentence()}
-        reason={{ text: props.words?.changes.text ?? t().approvalKeep({ running: running() }), icon: "ti ti-eye" }}
+        sentence={kind() === "ready" ? sentence() : outcomeText()}
+        reason={{
+          text:
+            kind() === "ready"
+              ? [t().approvalSource, ...facts().map((fact) => fact.text)].join(" · ")
+              : t().approvalKeep({ running: running() }),
+        }}
         details={{
           // As every approval: "Details from Code", then what it is compared with; under it what Cloud vouches for.
           label:
             running() !== null && props.words?.changes.state !== "first"
               ? `${actionMessages(props.text.locale()).detailsFrom({ app: t().approvalSource })} · ${t().changedAgainst({ version: running()! })}`
               : actionMessages(props.text.locale()).detailsFrom({ app: t().approvalSource }),
-          content: changes(),
+          content: () =>
+            kind() === "ready" ? (
+              <>
+                <p>{props.words?.changes.text}</p>
+                {changes()}
+              </>
+            ) : (
+              outcomeDetail()
+            ),
           ...(props.words ? { note: { text: props.words.changes.assurance, icon: "ti ti-info-circle" } } : {}),
         }}
         meta={facts()}
-        confirm={switchOn()}
+        confirm={
+          kind() === "ready"
+            ? switchOn()
+            : kind() !== "waiting" && panel()
+              ? {
+                  label: kind() === "changes" ? t().reworkWith({ name: panel()!.label }) : t().rebuildWith({ name: panel()!.label }),
+                  onSelect: () => {
+                    openPanel(panel()!.provider);
+                  },
+                }
+              : undefined
+        }
         unavailable={phone() && canSwitchOn() ? { text: t().phoneShort, icon: "ti ti-device-mobile-off", tone: "warning" } : undefined}
         link={
           props.onPage ? undefined : { label: t().seeAll, href: withQuery(props.data.href, { tab: "versions", version: props.version.id }) }
-        }
-        outcome={
-          <Chat.Outcome
-            current="state"
-            lines={{ state: { tone: outcomeTone(), text: outcomeText(), detail: outcomeDetail(), actions: outcomeActions() } }}
-          />
         }
       />
     </div>

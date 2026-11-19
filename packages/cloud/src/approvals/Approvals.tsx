@@ -103,7 +103,7 @@ const outcomeLines = (
   codeVersion: boolean,
   reauthenticate: boolean,
 ) => ({
-  sending: { tone: "running" as const, text: [{ kind: "text" as const, text: words.sending }] },
+  sending: { tone: "running" as const, text: [{ kind: "text" as const, text: words.sending }], detail: words.savingDecision },
   approved: {
     tone: "done" as const,
     text: [{ kind: "text" as const, text: words.approvedHere }],

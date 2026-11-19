@@ -45,7 +45,15 @@ export function schemaTypes(
           target = object(target)[decodeURIComponent(part).replaceAll("~1", "/").replaceAll("~0", "~")];
         }
         if (target === undefined) throw new Error(`${name}: unresolved JSON Schema ref ${ref}`);
-        declarations.push(`type ${alias} = ${render(target)};`);
+        const declarationStart = declarations.length;
+        const type = render(target);
+        // A recursive target can refer to this local alias through a pooled child declaration.
+        const recursive = type.includes(alias) || declarations.slice(declarationStart).join("\n").includes(alias);
+        const shared = recursive ? type : share(type, true);
+        if (!recursive && shapes?.names.has(shared)) {
+          alias = shared;
+          references.set(ref, alias);
+        } else declarations.push(`type ${alias} = ${type};`);
       }
       parts.push(alias);
     }
@@ -123,8 +131,13 @@ export function schemaTypes(
   // a literal can itself contain text that looks like a JSDoc comment.
   const structuralKey = (type: string) =>
     type.replace(/("(?:\\.|[^"\\])*")|\/\*\*[\s\S]*?\*\/\s*/g, (_match, literal: string | undefined) => literal ?? "");
-  const share = (type: string): string => {
-    if (!shapes || (!type.startsWith("{") && !type.startsWith("[")) || /\b(?:Input|Data|Event)\d+Ref\d+\b/.test(type)) return type;
+  const share = (type: string, referencedUnion = false): string => {
+    if (
+      !shapes ||
+      (!type.startsWith("{") && !type.startsWith("[") && !(referencedUnion && type.startsWith("("))) ||
+      /\b(?:Input|Data|Event)\d+Ref\d+\b/.test(type)
+    )
+      return type;
     const key = structuralKey(type);
     let alias = shapes.types.get(key);
     if (!alias) {
@@ -144,5 +157,6 @@ export function schemaTypes(
     if (existing) return { type: existing, declarations };
     namedRoot.types.set(type, namedRoot.name);
   }
-  return { type, declarations };
+  // An exported result can already have a pooled declaration as another operation's nested field.
+  return { type: (namedRoot && shapes?.types.get(structuralKey(type))) || type, declarations };
 }

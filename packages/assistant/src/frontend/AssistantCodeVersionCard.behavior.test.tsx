@@ -118,7 +118,7 @@ test("N cards share one mount batch and skip unrelated invalidations; all matchi
   expect(card.reads()).toHaveLength(1);
   await card.live.apply([event("c_other1"), event()]);
   expect(card.reads()).toHaveLength(2);
-  expect(card.dom.root.querySelectorAll(".assistant-code-version")).toHaveLength(3);
+  expect(card.dom.root.querySelectorAll("[data-approval-frame]")).toHaveLength(3);
   expect(card.calls.every((call) => !call.path.endsWith("/code.read"))).toBe(true);
 });
 test("the server snapshot is the initial card and mounting performs no read", async () => {
@@ -191,7 +191,7 @@ test("a confirmed activation with unavailable pages offers focused recovery inst
   expect(status(card.dom.root)).toBe("Version 1 is switched on.");
   expect(button(card.dom.root, "Open")).toBeUndefined();
   expect(document.activeElement).toBe(button(card.dom.root, "Try again")!);
-  expect(card.dom.root.querySelector('.assistant-code-version__quiet [role="alert"]')?.textContent).toMatch(/could not/i);
+  expect(card.dom.root.querySelector('.k2b-notice-card__description [role="alert"]')?.textContent).toMatch(/could not/i);
 });
 
 test("a lost activation response reconciles its durable identity and never offers a second activation", async () => {
@@ -226,7 +226,7 @@ test("a failed live/page read is visible with recovery and is not acknowledged; 
   });
   down = true;
   await expect(card.live.apply([event()])).rejects.toThrow();
-  expect(card.dom.root.querySelector('.assistant-code-version__quiet [role="alert"]')?.textContent).toMatch(/could not/i);
+  expect(card.dom.root.querySelector('.k2b-notice-card__description [role="alert"]')?.textContent).toMatch(/could not/i);
   expect(button(card.dom.root, "Try again")).toBeDefined();
   down = false;
   button(card.dom.root, "Try again")!.click();
@@ -292,7 +292,7 @@ test("withdrawal refreshes the receipt and a failed mutation stays visible and r
   });
   button(card.dom.root, "Withdraw")!.click();
   await tick();
-  expect(card.dom.root.querySelector('.assistant-code-version__quiet [role="alert"]')?.textContent).toMatch(/could not/i);
+  expect(card.dom.root.querySelector('.k2b-notice-card__description [role="alert"]')?.textContent).toMatch(/could not/i);
   fails = false;
   button(card.dom.root, "Withdraw")!.click();
   await tick();
@@ -318,5 +318,5 @@ test("a late revision stop names the actually submitted version", async () => {
   });
   button(card.dom.root, "Stop")!.click();
   await tick();
-  expect(card.dom.root.querySelector('.assistant-code-version__quiet [role="alert"]')?.textContent).toContain("2");
+  expect(card.dom.root.querySelector('.k2b-notice-card__description [role="alert"]')?.textContent).toContain("2");
 });

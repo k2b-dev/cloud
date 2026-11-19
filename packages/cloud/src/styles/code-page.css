@@ -270,6 +270,36 @@ a.cloud-code__row-main:focus-visible {
   line-height: 18px;
   overflow-wrap: anywhere;
 }
+/* Runs have no icon tile. Keep the result beside the title, also on phones; long text may wrap. */
+.cloud-code__run-rows .cloud-code__row-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.0625rem 0.75rem;
+}
+.cloud-code__run-rows .cloud-code__row-text {
+  display: contents;
+}
+.cloud-code__run-rows .cloud-code__row-title {
+  grid-column: 1;
+  grid-row: 1;
+}
+.cloud-code__run-rows .cloud-code__row-sub {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.cloud-code__run-rows .cloud-code__row-trail {
+  grid-column: 2;
+  grid-row: 1;
+  margin-left: 0;
+  padding-left: 0;
+}
+.cloud-code__run-rows .cloud-code__row-title,
+.cloud-code__run-rows .cloud-code__row-sub {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
 .cloud-code__row-sub a,
 .cloud-code__step-text a {
   color: var(--k2b-action);
@@ -673,8 +703,7 @@ a.cloud-code__row-main:focus-visible {
 /* The short approval card; the lead moves its frame onto ApprovalFrame. */
 .cloud-code__approval-message {
   margin-top: 0.5rem;
-  padding-left: 0.625rem;
-  border-left: 2px solid var(--cloud-code-line);
+  display: block;
 }
 .cloud-code__approval-from {
   color: var(--k2b-text-subtle);
@@ -684,18 +713,6 @@ a.cloud-code__row-main:focus-visible {
   margin: 0.125rem 0 0;
   font-size: 13px;
 }
-.cloud-code__approval-changes {
-  margin-top: 0.625rem;
-}
-.cloud-code__approval-foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.875rem;
-  margin: 0.625rem 0 0;
-  color: var(--k2b-text-subtle);
-  font-size: 12px;
-}
-
 /* Loading: placeholders at the heights of the lines they stand for (Bild 33). */
 .cloud-code__skeleton {
   min-width: 0;
