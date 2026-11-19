@@ -36,6 +36,12 @@ export type ChatMessageProps = {
   role: ChatRole;
   children?: JSX.Element;
   label?: string;
+  /**
+   * Who wrote a message the person did not type here, such as an automation or another chat: a short line above the
+   * bubble, a link only where the viewer may open the source. The bubble then takes the machine-written surface
+   * (`--k2b-chat-machine-surface`).
+   */
+  source?: JSX.Element;
   createdAt?: string | Date;
   timeLabel?: string;
   status?: ChatMessageStatus;
@@ -228,9 +234,12 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
       data-role={props.role}
       data-status={props.status ?? "complete"}
       data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
+      data-source={props.source ? "" : undefined}
       aria-busy={props.status === "pending" || props.status === "streaming" ? "true" : undefined}
     >
-      <span class="k2b-sr-only">{props.label ?? roleLabel(props.role, chatMessages())}: </span>
+      <Show when={props.source} fallback={<span class="k2b-sr-only">{props.label ?? roleLabel(props.role, chatMessages())}: </span>}>
+        {(source) => <div class="k2b-chat-message__source">{source()}</div>}
+      </Show>
       <Show when={(props.attachments?.length ?? 0) > 0}>
         <div class="k2b-chat-message__attachments" role="list" aria-label={chatMessages().attachments}>
           <For each={props.attachments}>

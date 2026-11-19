@@ -99,7 +99,9 @@ testFor("nats")(
         const failures = await sync.job(SNAPSHOT_JOB_CONFIG).deadLetters.list();
         expect(failures).toHaveLength(1);
         expect(failures[0]?.reason).toContain("Document history is incomplete");
-        expect(readState).toHaveBeenCalledTimes(1);
+        // Replay can race a committed pruning proof. Reload coverage before
+        // recovery mutates history; the initial snapshot cannot prove it stayed current.
+        expect(readState).toHaveBeenCalledTimes(2);
         // Distinct target cursors stay separately queued. The failed target can
         // be submitted again after its prior coalescing claim was released.
         await yjsSnapshotWorker.queueSnapshotSave({ noteId, targetCursor: second.cursor, reason: "unload" });

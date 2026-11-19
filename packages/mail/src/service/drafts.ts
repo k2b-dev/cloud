@@ -473,7 +473,7 @@ const resolveInitialReplyRecipients = async (params: {
     params.intent,
     identities.map((identity) => ({ fromAddress: identity.from_address, replyTo: identity.reply_to })),
   );
-  return recipients.to.length > 0 ? ok(recipients) : fail(err.badInput("The source message has no reply recipient"));
+  return ok(recipients);
 };
 
 /** Shared by creation and mode changes; source content owns the reply/forward subject. */

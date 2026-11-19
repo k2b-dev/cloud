@@ -100,7 +100,8 @@ import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmpt
 import AssistantPanelContext from "./AssistantPanelContext";
 import AssistantPlaceBar, { type AssistantPlaceBarState } from "./AssistantPlaceBar";
 import AssistantProjectView from "./AssistantProjectView";
-import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
+import type { AssistantQueueEntry } from "./AssistantQueue";
+import type { AssistantQueueHost } from "./AssistantQueueConnected";
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
@@ -275,6 +276,8 @@ const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) 
 // "Quote" at a selection loads with the first selection in the chat; a chunk an update replaced reloads the page
 // instead of breaking the chat. A draft's quote rows render from the first frame, so a saved draft never shifts.
 const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
+/** Loaded once a chat has queued messages; most chats never need it. */
+const AssistantQueue = lazy(() => import("./AssistantQueueConnected"));
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
@@ -512,7 +515,11 @@ export default function AssistantWorkspace(props: Props) {
     load: (conversationId, { abortSignal }) =>
       conversationId ? assistantApi.loadQueuedMessages(conversationId, abortSignal) : Promise.resolve([]),
   });
-  const [sendingQueuedId, setSendingQueuedId] = createSignal<string | null>(null);
+  /** "Send now" of one entry runs; the queue locks its other buttons meanwhile. */
+  const [queueSendingId, setQueueSendingId] = createSignal<string | null>(null);
+  /** Entries whose "Send now" was not sent on this device; their send sign reads "Send again". */
+  const [queueFailed, setQueueFailed] = createSignal<ReadonlySet<string>>(new Set());
+  const [queueBusy, setQueueBusy] = createSignal(false);
   const [composerSubmitting, setComposerSubmitting] = createSignal(false);
   // A picker or file selection inserts into, or gives back the `/…` of, the draft it came from; saving a new chat
   // meanwhile would move that draft to another key and lose the choice.
@@ -1609,16 +1616,11 @@ export default function AssistantWorkspace(props: Props) {
       navigate: (conversationId) => navigateTo(assistantConversationHref(window.location.href, conversationId)),
     });
   };
-  const steer = async (message: string) => {
-    if (!canUseComposer() || !chat.activeTurn()) return false;
-    return chat.steer(message);
-  };
-
-  const queuedMessagesFor = (conversationId: string): AssistantQueuedMessage[] =>
-    conversationId === chat.activeConversationId()
+  /** The active chat's queued messages, in the order the server received them. */
+  const queueEntries = createMemo((): AssistantQueueEntry[] =>
+    chat.activeConversationId()
       ? (queuedMessages.data() ?? []).map((message) => ({
           ...message,
-          editableText: aiComposerDraft(message.content).text,
           // The person's own words and attachments; a quote is no word of theirs and stays out of the line.
           text: message.content
             .flatMap((part) =>
@@ -1634,7 +1636,8 @@ export default function AssistantWorkspace(props: Props) {
             )
             .join(" · "),
         }))
-      : [];
+      : [],
+  );
   const queueMessage = async (input: AiComposerSendInput) => {
     const conversationId = chat.activeConversationId();
     if (!conversationId || composerSubmitting() || composerBusy()) return false;
@@ -1666,23 +1669,27 @@ export default function AssistantWorkspace(props: Props) {
       setComposerSubmitting(false);
     }
   };
-  const changeQueuedMessage = async (message: AssistantQueuedMessage, action: "cancel" | "retry" | "edit") => {
-    const conversationId = chat.activeConversationId();
-    if (!conversationId || sendingQueuedId()) return;
-    setSendingQueuedId(message.id);
-    try {
-      if (action === "edit") {
-        const text = await prompts.prompt(t().editQueued, message.editableText ?? message.text);
-        if (!text?.trim()) return;
-        await assistantApi.editQueuedMessage(conversationId, message.id, text.trim());
-      } else if (action === "cancel") await assistantApi.cancelQueuedMessage(conversationId, message.id);
-      else await assistantApi.retryQueuedMessage(conversationId, message.id);
-      await queuedMessages.refresh();
-    } catch (error) {
-      chat.setError(error instanceof Error ? error.message : t().chatActionFailed);
-    } finally {
-      setSendingQueuedId(null);
-    }
+  /** What the queue, loaded on first use, needs from the chat; its actions live in that module. */
+  const queueHost: AssistantQueueHost = {
+    conversationId: chat.activeConversationId,
+    content: (id) => queuedMessages.data()?.find((message) => message.id === id)?.content,
+    reload: () => queuedMessages.refresh(),
+    hasDraft: (id) => composerDraft(id).trim().length > 0 || composerAttachmentsFor(id).length > 0 || quotesFor(id).length > 0,
+    putIntoField: (id, content) => {
+      const restored = aiComposerDraft(content);
+      setComposerAttachmentsFor(id, restored.attachments);
+      setComposerDrafts((current) => ({ ...current, [id]: restored.text }));
+      setMentionsFor(id, restored.mentions);
+      setQuotesFor(id, restored.quotes);
+      setComposerFocusToken((token) => token + 1);
+    },
+    fail: chat.setError,
+    sendingId: queueSendingId,
+    setSendingId: setQueueSendingId,
+    failedIds: queueFailed,
+    setFailedIds: setQueueFailed,
+    busy: queueBusy,
+    setBusy: setQueueBusy,
   };
 
   const activeConversation = () =>
@@ -2188,18 +2195,37 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
 
-  /** "Waiting for you": over the chat's free end above the field, in flow on the start screen and in a project. */
-  const WaitingRow = () => (
-    <Show when={waiting().total > 0}>
-      <AssistantWaitingStrip
-        view={waiting()}
-        conversationId={waitingConversationId()}
-        quiet={waitingFocus.quiet()}
-        onJump={(question) => void jumpToQuestion(question)}
-        onShowMore={openApprovals}
-      />
-    </Show>
+  const QueuePart = (partProps: { layout: "line" | "chip" }) => (
+    <Suspense>
+      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} />
+    </Suspense>
   );
+  /**
+   * "Waiting for you": over the chat's free end above the field, in flow on the start screen and in a project. Over a
+   * chat with queued messages it shares its one row with "Queued · n"; without anything waiting, the row previews the
+   * next queued message instead.
+   */
+  const WaitingRow = (rowProps: { queue?: boolean }) => {
+    const queued = () => Boolean(rowProps.queue) && queueEntries().length > 0;
+    const waitingShown = () => waiting().total > 0 && !waitingFocus.quiet();
+    return (
+      <>
+        <Show when={waiting().total > 0}>
+          <AssistantWaitingStrip
+            view={waiting()}
+            conversationId={waitingConversationId()}
+            quiet={waitingFocus.quiet()}
+            onJump={(question) => void jumpToQuestion(question)}
+            onShowMore={openApprovals}
+            queue={queued() && waitingShown() ? <QueuePart layout="chip" /> : undefined}
+          />
+        </Show>
+        <Show when={queued() && !waitingShown()}>
+          <QueuePart layout="line" />
+        </Show>
+      </>
+    );
+  };
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
     const projectComposer = () => Boolean(composerProps.projectId);
@@ -2212,7 +2238,7 @@ export default function AssistantWorkspace(props: Props) {
         chat.running() ||
         Boolean(chat.activeTurn()) ||
         waiting().entries.some((question) => question.conversationId === chat.activeConversationId()) ||
-        queuedMessagesFor(chat.activeConversationId() ?? "").length > 0,
+        queueEntries().length > 0,
       dismiss: assistantApi.dismissNextMessage,
       onDismissFailed: (retry) =>
         toast.error(contextText("Failed to dismiss the suggestion"), {
@@ -2348,17 +2374,6 @@ export default function AssistantWorkspace(props: Props) {
     };
     return (
       <>
-        <Show when={!projectComposer() ? chat.activeConversationId() : null}>
-          {(conversationId) => (
-            <AssistantQueuedMessages
-              messages={queuedMessagesFor(conversationId())}
-              sendingId={sendingQueuedId()}
-              onRetry={(message) => void changeQueuedMessage(message, "retry")}
-              onDelete={(message) => void changeQueuedMessage(message, "cancel")}
-              onEdit={(message) => void changeQueuedMessage(message, "edit")}
-            />
-          )}
-        </Show>
         <Show
           when={
             props.embedded &&
@@ -2732,7 +2747,7 @@ export default function AssistantWorkspace(props: Props) {
           focusToken={projectComposer() || composerFocusToken() === 0 ? undefined : composerFocusToken()}
           suggestion={nextMessage()}
           submitDisabled={aiModelBlocksSending(modelState(), selectedModelRequest())}
-          runningSubmitIntent={!projectComposer() ? "queue" : undefined}
+          runningSubmitIntent="queue"
           placeholder={
             props.status.enabled && props.models.length === 0
               ? t().noModelsAvailable
@@ -2752,10 +2767,7 @@ export default function AssistantWorkspace(props: Props) {
               ? sendProjectMessage(composerProps.projectId, aiComposerSendInput(input))
               : input.intent === "queue" || (input.intent === "send" && Boolean(queuedMessages.data()?.length))
                 ? queueMessage(withQuotes(sessionKey(), aiComposerSendInput(input)))
-                : input.intent === "steer"
-                  ? // Steering is words only: the draft's quotes stay above the field for the next message.
-                    steer(input.text)
-                  : send(withQuotes(sessionKey(), aiComposerSendInput(input)))
+                : send(withQuotes(sessionKey(), aiComposerSendInput(input)))
           }
           onStop={
             !projectComposer() && chat.activeTurn()
@@ -3429,9 +3441,6 @@ export default function AssistantWorkspace(props: Props) {
                                         : await chat.clearMessageFeedback(entry.id);
                                       if (!saved) throw new Error(chat.error() ?? t().saveFeedbackFailed);
                                     },
-                                    onRetrySteer: async (block) => {
-                                      if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retrySteerFailed);
-                                    },
                                     onContinueTurn: async (message) => {
                                       const target = chat.activeConversationId();
                                       if (!target) throw new Error(t().authoringContinueFailed);
@@ -3496,7 +3505,7 @@ export default function AssistantWorkspace(props: Props) {
                               <div class="assistant-chat-composer__column mx-auto flex max-w-3xl flex-col gap-2">
                                 {/* Right above everything over the field, under the thumb on phones. It lies over the
                                     timeline's free end, so it comes and goes without moving the field or the chat. */}
-                                <WaitingRow />
+                                <WaitingRow queue />
                                 <ComposerNotices />
                                 {modelNote()}
                                 <AssistantComposer />

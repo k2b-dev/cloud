@@ -2061,3 +2061,7 @@ dialog:has(.launchpad-panel)::backdrop {
   white-space: normal;
   mask-image: none;
 }
+/* The source above a machine-written message: an automation's sign in text colour, another chat's ✦ in plum. */
+.k2b-ui .ai-message-source__icon { flex: none; color: var(--k2b-text); font-size: .875rem; }
+.k2b-ui .ai-message-source__icon[data-kind="chat"] { color: var(--k2b-ai-accent); }
+.k2b-ui .k2b-chat-message__source > a { display: inline-flex; align-items: center; gap: .3125rem; min-width: 0; }

@@ -1,0 +1,461 @@
+# Toasts that do not follow the @k2b/ui toast contract yet: short title, the message as description, the icon from the tone.
+# One occurrence per line: <file> | <title|untitled|tone-icon> | <expression>.
+# The rule never adds lines; `bun scripts/check.ts toast-copy --fix` removes resolved findings. This list only shrinks.
+packages/accounts/src/frontend/action-notice.tsx | untitled | messages.creationNoticeFailed
+packages/accounts/src/frontend/groups/detail/GroupActions.island.tsx | untitled | messages().groupDeletedFrom({ name: displayName(), provider: props.provider === "ipa" ? "FreeIPA" : messages().local })
+packages/assistant/src/chat-code/Workspace.tsx | untitled | error instanceof Error ? error.message : String(error)
+packages/assistant/src/chat-code/Workspace.tsx | untitled | error instanceof Error ? error.message : String(error)
+packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
+packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
+packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
+packages/assistant/src/frontend/AssistantConversationEditor.tsx | untitled | text("Chat archived")
+packages/assistant/src/frontend/AssistantConversationEditor.tsx | untitled | text("Chat saved")
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | untitled | copy().approvalAgain({ title: approval.title })
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | untitled | error instanceof Error ? error.message : text("Failed to save AI preferences")
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | untitled | text("Personalization added")
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | untitled | text("Personalization deleted")
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | untitled | text("Personalization settings saved")
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | untitled | text("Personalization updated")
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | untitled | text(memory.priority === "pinned" ? "Personalization unpinned" : "Personalization pinned")
+packages/assistant/src/frontend/AssistantProjectSettingsDialog.tsx | untitled | text("Project saved")
+packages/assistant/src/frontend/AssistantProjectView.tsx | untitled | error instanceof Error ? error.message : String(error)
+packages/assistant/src/frontend/AssistantProjectView.tsx | untitled | success
+packages/assistant/src/frontend/AssistantProjectsDialog.tsx | untitled | text("Project created")
+packages/assistant/src/frontend/AssistantSidebar.tsx | untitled | text("Could not update chat. Stop the response first or try again.")
+packages/assistant/src/frontend/AssistantSkillsSettings.tsx | untitled | text("Skill deleted")
+packages/assistant/src/frontend/AssistantSkillsSettings.tsx | untitled | text(enabled ? "Skill enabled for you" : "Skill disabled for you")
+packages/assistant/src/frontend/AssistantSkillsSettings.tsx | untitled | text(props.request.skillId ? "Skill saved" : "Skill created")
+packages/assistant/src/frontend/AssistantWorkspace.island.tsx | tone-icon | "ti ti-info-circle"
+packages/assistant/src/frontend/AssistantWorkspace.island.tsx | tone-icon | "ti ti-info-circle"
+packages/assistant/src/frontend/AssistantWorkspace.island.tsx | untitled | contextText("Failed to dismiss the suggestion")
+packages/assistant/src/frontend/AssistantWorkspace.island.tsx | untitled | placeT().startOverFailed
+packages/assistant/src/frontend/AssistantWorkspace.island.tsx | untitled | t().quoteCut
+packages/assistant/src/frontend/AssistantWorkspace.island.tsx | untitled | t().quotesFull
+packages/assistant/src/frontend/AssistantWorkspace.island.tsx | untitled | t().tabsNotSaved
+packages/assistant/src/frontend/ConversationSidebarPreview.tsx | untitled | text("Could not update pin.")
+packages/assistant/src/frontend/assistant-dictation.tsx | untitled | message
+packages/assistant/src/frontend/assistant-dictation.tsx | untitled | t().alreadyInserted
+packages/assistant/src/frontend/lazy-action.ts | untitled | t.partLoadFailed
+packages/chat/src/frontend/ChatConversation.tsx | tone-icon | "ti ti-alert-circle"
+packages/chat/src/frontend/ChatConversation.tsx | tone-icon | "ti ti-info-circle"
+packages/chat/src/frontend/ChatConversation.tsx | tone-icon | "ti ti-info-circle"
+packages/chat/src/frontend/ChatConversation.tsx | tone-icon | "ti ti-info-circle"
+packages/chat/src/frontend/ChatConversation.tsx | tone-icon | "ti ti-info-circle"
+packages/chat/src/frontend/ChatConversation.tsx | untitled | states.includes("failed") ? t().attachmentsFailed : t().attachmentsUploading
+packages/chat/src/frontend/ChatConversation.tsx | untitled | t().attachmentFileTooLarge({ name: file.name })
+packages/chat/src/frontend/ChatConversation.tsx | untitled | t().tooManyAttachments
+packages/chat/src/frontend/ChatConversation.tsx | untitled | t().tooManyResources({ count: MAX_MESSAGE_REFS })
+packages/chat/src/frontend/ChatDeviceNotice.tsx | untitled | errorMessage(failure, t().enableFailed)
+packages/chat/src/frontend/ChatDeviceNotice.tsx | untitled | t().endDoNotDisturbFailed
+packages/chat/src/frontend/ChatInfoPanel.tsx | untitled | errorMessage(failure, t().requestFailed)
+packages/chat/src/frontend/ChatInfoPanel.tsx | untitled | errorMessage(failure, t().requestFailed)
+packages/chat/src/frontend/ChatInfoPanel.tsx | untitled | t().removedKeptThroughGroup({ name: member.displayName })
+packages/chat/src/frontend/ChatWorkspace.island.tsx | tone-icon | "ti ti-info-circle"
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | archived ? t().archiveFailed : t().restoreFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | error instanceof ChatRequestError ? error.message : t().requestFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().copyFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().itemThreadFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().markedUnreadFrom({ name: from.authorName.split(" ")[0] ?? from.authorName })
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().openFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().openFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().quotedSendRejected
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().quotesReplaced
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().readStateFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().savingList
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().savingList
+packages/chat/src/frontend/ChatWorkspace.island.tsx | untitled | t().sendPreparing
+packages/chat/src/frontend/DiscoverChannels.tsx | untitled | t().requestFailed
+packages/chat/src/frontend/FollowToggle.tsx | untitled | errorMessage(failure, t().followFailed)
+packages/chat/src/frontend/LeaveChatDialog.tsx | untitled | t().leftKeptThroughGroup
+packages/chat/src/frontend/chat-quote-selection.tsx | tone-icon | "ti ti-info-circle"
+packages/chat/src/frontend/chat-quote-selection.tsx | untitled | notice
+packages/cloud/src/browser/app-access-recovery.ts | untitled | t.accessChanged
+packages/cloud/src/browser/choose-files.tsx | untitled | why
+packages/cloud/src/browser/cloud-id.ts | untitled | t().copyFailed
+packages/cloud/src/browser/commands.ts | untitled | error instanceof Error && error.message ? error.message : messages.commandFailed
+packages/cloud/src/browser/commands.ts | untitled | error instanceof Error && error.message ? error.message : messages.commandFailed
+packages/cloud/src/browser/commands.ts | untitled | messages.commandFailed
+packages/cloud/src/browser/commands.ts | untitled | messages.commandUnavailable
+packages/cloud/src/browser/maintenance-notice.ts | untitled | description
+packages/cloud/src/browser/reload.ts | untitled | t.codeUnavailable
+packages/cloud/src/browser/reload.ts | untitled | t.pageChanged
+packages/cloud/src/browser/save-files.tsx | untitled | saved.length === 1 && files.length === 1 ? t.savedOne({ name: first.name, app: first.app }) : t.savedMany({ count: saved.length, total: files.length, app: first.app })
+packages/cloud/src/browser/search.ts | untitled | resourceSearchMessages.resolve([document.documentElement.lang || "en"]).t.searchFailed
+packages/cloud/src/ssr/GlobalSearchDialog.tsx | untitled | error instanceof Error && error.message ? error.message : messages().commandFailed
+packages/cloud/src/ssr/GlobalSearchDialog.tsx | untitled | messages().commandUnavailable
+packages/cloud/src/ssr/LayoutHelp.tsx | untitled | message
+packages/cloud/src/ssr/LayoutHelp.tsx | untitled | t().articleCopied
+packages/cloud/src/ssr/LayoutHelp.tsx | untitled | t().copyFailed({ message: articleClipboard.error()?.message ?? t().copyFallback })
+packages/cloud/src/ssr/LayoutHelp.tsx | untitled | t().helpCopied
+packages/cloud/src/ssr/PwaRuntime.island.tsx | untitled | t().newVersion({ cloud: props.cloud })
+packages/cloud/src/ssr/PwaRuntime.island.tsx | untitled | t().otherAccount({ cloud: props.cloud, name: otherAccount.name })
+packages/cloud/src/ssr/RailEditor.tsx | untitled | t.failedClosed
+packages/cloud/src/ssr/code-page/CodeChatBinding.tsx | untitled | t().chatRestoreFailed
+packages/cloud/src/ssr/code-page/CodeChatBinding.tsx | untitled | t().chatRestored({ title })
+packages/cloud/src/ssr/code-page/CodeChatChooser.tsx | untitled | t().chatChanged({ title: chat.title })
+packages/cloud/src/ssr/code-page/CodeOverview.tsx | untitled | t().addressCopyFailed
+packages/cloud/src/ssr/code-page/CodePage.tsx | untitled | paused ? t().pauseFailed : t().resumeFailed
+packages/cloud/src/ssr/code-page/CodePage.tsx | untitled | t.commandCopyFailed
+packages/cloud/src/ssr/code-page/CodePage.tsx | untitled | t.linkCopyFailed
+packages/cloud/src/ssr/code-page/CodePage.tsx | untitled | text.t().runSnapshotFailed
+packages/cloud/src/ssr/code-page/CodeRefusalNotice.tsx | untitled | t.handleCopyFailed
+packages/cloud/src/ssr/code-page/CodeRuns.tsx | untitled | t().rerunFailed
+packages/cloud/src/ssr/code-page/CodeRuns.tsx | untitled | t().rerunNeedsInput
+packages/cloud/src/ssr/code-page/CodeRuns.tsx | untitled | t().rerunStarted
+packages/cloud/src/ssr/code-page/CodeSecrets.tsx | untitled | submitted.status === 409 ? t().secretSubmitConflict : t().secretSubmitFailed
+packages/cloud/src/ssr/code-page/CodeSecrets.tsx | untitled | t().secretDeleteFailed
+packages/cloud/src/ssr/code-page/code-live.ts | untitled | t.stopped
+packages/cloud/src/ssr/code-page/code-live.ts | untitled | t.stopped
+packages/cloud/src/ssr/code-page/run-action.ts | untitled | paused ? t().runPaused({ name: options.state().code.pausedBy?.name ?? null }) : approval ? t().runApproval : error instanceof StartFailure && error.status === 503 ? t().runNoConnection : t().runStartFailed
+packages/cloud/src/ssr/code-page/run-action.ts | untitled | reason ? t().runOwnFailedReason({ reason }) : t().runOwnFailed
+packages/cloud/src/ssr/code-page/run-action.ts | untitled | t().runOwnFailed
+packages/cloud/src/ssr/global-search-host.tsx | untitled | resourceSearchMessages.resolve([locale]).t.searchFailed
+packages/cloud/src/ssr/layout-help-panel-menu.tsx | untitled | message
+packages/cloud/src/ssr/layout-help-panel-menu.tsx | untitled | t().articleCopied
+packages/cloud/src/ssr/layout-help-panel-menu.tsx | untitled | t().copyFailed({ message: writer.error()?.message ?? t().copyFallback })
+packages/cloud/src/ssr/layout-help-panel-menu.tsx | untitled | t().helpCopied
+packages/cloud/src/ssr/profile-actions.ts | title | messages().markedTitle
+packages/cloud/src/ssr/profile-actions.ts | untitled | messages().failed
+packages/cloud/src/ssr/profile-actions.ts | untitled | messages().unmarked
+packages/cloud/src/ssr/profile-actions.ts | untitled | preferences.messages().signOutFailed
+packages/contacts/src/frontend/_components/AdminBookActions.island.tsx | untitled | error.message
+packages/contacts/src/frontend/_components/BookSettingsForm.tsx | untitled | successMessage
+packages/contacts/src/frontend/_components/BookSettingsForm.tsx | untitled | t().bookSettingsSaved
+packages/contacts/src/frontend/_components/ContactDetailPanel.actions.tsx | untitled | error instanceof Error ? error.message : t().moveContactFailed
+packages/contacts/src/frontend/_components/ContactDetailPanel.actions.tsx | untitled | error instanceof Error ? error.message : t().removeMemberFailed
+packages/contacts/src/frontend/_components/ContactDetailPanel.actions.tsx | untitled | error.message
+packages/contacts/src/frontend/_components/ContactFavoriteButton.tsx | untitled | error.message
+packages/contacts/src/frontend/_components/ContactNotesSection.tsx | untitled | err.message
+packages/contacts/src/frontend/_components/ContactNotesSection.tsx | untitled | t().commentSavedReloadFailed
+packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | untitled | error instanceof Error ? error.message : t().couldNotPrepareBulkAction
+packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | untitled | error.message
+packages/contacts/src/frontend/_components/ContactsLiveEvents.island.tsx | untitled | t().liveUpdatesStopped
+packages/core/src/code/PageTree.island.tsx | untitled | codePageFailure(t(), answer.code, t().refreshFailed)
+packages/core/src/code/PageTree.island.tsx | untitled | message
+packages/core/src/code/PageTree.island.tsx | untitled | t().newData
+packages/core/src/pages/admin/CacheNotice.tsx | untitled | t().cleared
+packages/core/src/pages/admin/ai/AiBudgetToggle.island.tsx | untitled | failure instanceof Error ? failure.message : t().saveFailed
+packages/core/src/pages/admin/apps/remove-dialog.tsx | untitled | t.removed({ name: app.name })
+packages/core/src/pages/admin/outgoing-mail/OutgoingMail.island.tsx | untitled | t().testSent({ recipient: recipient().trim() })
+packages/core/src/pages/admin/outgoing-mail/SendLog.tsx | untitled | cancelled === 0 ? t().cancelBatchEmpty : t().cancelBatchDone({ count: cancelled })
+packages/core/src/pages/admin/outgoing-mail/SendLog.tsx | untitled | error instanceof Error ? error.message : t().logFailed
+packages/core/src/pages/admin/rail/RailAdmin.island.tsx | untitled | t().cacheCleared
+packages/core/src/pages/admin/settings/_components/AccountOperations.island.tsx | untitled | operation.successText
+packages/core/src/pages/admin/settings/_components/AiAppSkillIssueActions.island.tsx | untitled | action === "adopt" ? t().appSkillAdopted : t().appSkillInstalled
+packages/core/src/pages/admin/settings/_components/AiSkillAdminActions.island.tsx | untitled | t().skillResetDone
+packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | error instanceof Error ? error.message : t().enrichmentFailed
+packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | summary ? t().enrichmentSummary(summary) : t().enrichmentDone
+packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | untitled | t().freeIpaReachable
+packages/core/src/pages/admin/settings/_components/LegacySettingsSection.tsx | untitled | t().legacyDeleted({ count: result.deleted.length })
+packages/core/src/pages/admin/settings/_components/LinuxIdentityPanel.island.tsx | untitled | t().preparedSuccess({ count: progress().done })
+packages/core/src/pages/admin/settings/_components/LinuxIdentityPanel.island.tsx | untitled | t().saved
+packages/core/src/pages/admin/signin/TestFreeIpaButton.island.tsx | untitled | t().freeIpaReachable
+packages/core/src/pages/admin/storage/StorageBucketDetail.island.tsx | untitled | created ? t().createdOk({ name }) : t().saved
+packages/core/src/pages/admin/storage/StorageBucketDetail.island.tsx | untitled | t().createdFailed({ name })
+packages/core/src/pages/app-approval/Devices.island.tsx | untitled | t().revokeCheckFailed
+packages/core/src/pages/app-approval/InstallApp.tsx | untitled | t().failure
+packages/core/src/pages/app-approval/Pairing.tsx | untitled | saved && !settled ? t().pairCancelFailed : t().failure
+packages/core/src/pages/app-approval/RevokeDevice.tsx | untitled | t().cancelFailed
+packages/core/src/pages/app-approval/RevokeDevice.tsx | untitled | t().cancelFailed
+packages/core/src/pages/me/AppDevices.island.tsx | untitled | t().pwaCopyFailed
+packages/core/src/pages/me/AppDevices.island.tsx | untitled | t().pwaFailed
+packages/core/src/pages/me/AppDevices.island.tsx | untitled | t().pwaFailed
+packages/core/src/pages/me/AppDevices.island.tsx | untitled | t().pwaFailed
+packages/core/src/pages/me/BrowserNotificationSetup.island.tsx | untitled | t().browserNotificationsDisabled
+packages/core/src/pages/me/BrowserNotificationSetup.island.tsx | untitled | t().browserNotificationsEnabled
+packages/core/src/pages/me/NotificationPreferences.island.tsx | untitled | t().notificationPreferenceSaved
+packages/core/src/pages/me/QuietTimeSettings.island.tsx | untitled | kind === "pause" ? t().pauseSaveFailed : t().quietHoursSaveFailed
+packages/core/src/pages/me/QuietTimeSettings.island.tsx | untitled | t().pauseInPast
+packages/core/src/pages/me/QuietTimeSettings.island.tsx | untitled | t().pauseTooFar
+packages/dashboard/src/frontend/dashboard-home.tsx | untitled | t().boardFull({ max: DASHBOARD_MAX_ITEMS })
+packages/dashboard/src/frontend/dashboard-home.tsx | untitled | t().saveFailed
+packages/dashboard/src/frontend/dashboard-home.tsx | untitled | t().shortcutsFull({ max: DASHBOARD_MAX_SHORTCUTS })
+packages/editor/src/markdown/mermaid-viewport.tsx | untitled | t().exportFailed
+packages/editor/src/markdown/notebook-charts.tsx | untitled | t().copyFailed
+packages/filesv2/src/frontend/AdminShares.tsx | untitled | error instanceof Error ? error.message : a().actionFailed
+packages/filesv2/src/frontend/AdminShares.tsx | untitled | error instanceof Error ? error.message : b().revokeFailed
+packages/filesv2/src/frontend/Browser.tsx | untitled | [b().opCreated(result.entry.name), operation.summary].filter(Boolean).join(" · ")
+packages/filesv2/src/frontend/Browser.tsx | untitled | b().cursorReset
+packages/filesv2/src/frontend/Browser.tsx | untitled | b().hiddenLeftOut(input.hidden)
+packages/filesv2/src/frontend/Browser.tsx | untitled | b().opUndone
+packages/filesv2/src/frontend/Browser.tsx | untitled | b().uploadUnavailable
+packages/filesv2/src/frontend/Browser.tsx | untitled | created.length === 1 ? b().folderCreated(first.path) : b().foldersCreated({ count: created.length, name: first.path })
+packages/filesv2/src/frontend/Browser.tsx | untitled | error instanceof Error ? error.message : t().unavailable
+packages/filesv2/src/frontend/Browser.tsx | untitled | error.message
+packages/filesv2/src/frontend/Browser.tsx | untitled | error.message
+packages/filesv2/src/frontend/Browser.tsx | untitled | failures.map((result) => `${result.path}: ${result.error ?? t().unavailable}`).join("\n")
+packages/filesv2/src/frontend/Browser.tsx | untitled | message
+packages/filesv2/src/frontend/Browser.tsx | untitled | message(succeeded)
+packages/filesv2/src/frontend/FavoritesPage.tsx | untitled | error instanceof Error && error.message ? error.message : h().actionFailed
+packages/filesv2/src/frontend/FileInspector.tsx | untitled | error instanceof Error ? error.message : f().downloadFailed
+packages/filesv2/src/frontend/FileInspector.tsx | untitled | error instanceof Error ? error.message : f().unavailable
+packages/filesv2/src/frontend/FileInspector.tsx | untitled | error instanceof Error ? error.message : f().unavailable
+packages/filesv2/src/frontend/FileInspector.tsx | untitled | h().versionsFailed
+packages/filesv2/src/frontend/PublicInbox.island.tsx | untitled | b().uploadTooLarge(tooLarge.map((file) => file.name))
+packages/filesv2/src/frontend/PublicInbox.island.tsx | untitled | error instanceof Error ? error.message : b().publicLinkUnavailableDescription
+packages/filesv2/src/frontend/PublicShare.island.tsx | untitled | error instanceof Error ? error.message : t().downloadFailed
+packages/filesv2/src/frontend/PublicShare.island.tsx | untitled | error instanceof Error ? error.message : t().downloadFailed
+packages/filesv2/src/frontend/ShareDialog.tsx | untitled | b().quotaInvalid
+packages/filesv2/src/frontend/ShareDialog.tsx | untitled | error instanceof Error ? error.message : b().shareCreateFailed
+packages/filesv2/src/frontend/SharesOverview.tsx | untitled | error instanceof Error ? error.message : b().revokeFailed
+packages/filesv2/src/frontend/SharesOverview.tsx | untitled | error instanceof Error ? error.message : b().revokeFailed
+packages/filesv2/src/frontend/Templates.tsx | untitled | error instanceof Error ? error.message : t().failed
+packages/filesv2/src/frontend/Templates.tsx | untitled | error instanceof Error ? error.message : t().failed
+packages/filesv2/src/frontend/TrashView.tsx | untitled | error instanceof Error ? error.message : t().unavailable
+packages/filesv2/src/frontend/Workspace.island.tsx | untitled | error instanceof Error && error.message ? error.message : h().actionFailed
+packages/filesv2/src/frontend/Workspace.island.tsx | untitled | error instanceof Error && error.message ? error.message : h().actionFailed
+packages/filesv2/src/frontend/Workspace.island.tsx | untitled | h().actionFailed
+packages/filesv2/src/frontend/file-lightbox.ts | untitled | t.failed
+packages/gateway-ops/src/observability/jobs/_components/JobsActionToast.island.tsx | untitled | url.searchParams.get(MESSAGE_PARAM) || t.scheduleRunAccepted
+packages/gateway-ops/src/observability/logs/_components/LogFilterBar.tsx | untitled | t.deletedLogEntries({ count: data.deleted })
+packages/gateway-ops/src/observability/sync/_components/DeadLetterActions.island.tsx | untitled | isTopic() ? t.syncReplayed : t.syncRequeued
+packages/gateway-ops/src/observability/workflows/_components/WorkflowRunActions.island.tsx | untitled | t.effectConfirmed
+packages/gateway-ops/src/observability/workflows/_components/WorkflowRunActions.island.tsx | untitled | t.effectConfirmedFailed
+packages/grids/src/frontend/_components/dialogs/FederatedTableDialog.tsx | untitled | t().combinedDraftSaved
+packages/grids/src/frontend/_components/dialogs/FederatedTableDialog.tsx | untitled | t().combinedPublished
+packages/grids/src/frontend/_components/dialogs/FederatedTableDialog.tsx | untitled | t().combinedValid
+packages/grids/src/frontend/_components/documents/DocumentArtifactPreview.tsx | untitled | t.textNotCopied
+packages/grids/src/frontend/_components/records-view/records-view-columns.ts | untitled | await errorMessage(res, failure)
+packages/grids/src/frontend/_components/records-view/records-view-columns.ts | untitled | failure
+packages/grids/src/frontend/_components/records-view/records-view-columns.ts | untitled | message
+packages/grids/src/frontend/_components/records/RecordComments.tsx | untitled | cause instanceof Error ? cause.message : t().commentDeleteFailed
+packages/grids/src/frontend/_components/records/RecordFileField.tsx | untitled | await errorMessage(res, t().removeAttachmentFailed)
+packages/grids/src/frontend/_components/records/RecordFileField.tsx | untitled | e instanceof Error ? e.message : t().uploadFailed
+packages/grids/src/frontend/_components/records/RecordFileField.tsx | untitled | error instanceof Error ? error.message : t().pickerFailed
+packages/grids/src/frontend/_components/records/RecordFileField.tsx | untitled | error instanceof Error ? error.message : t().pickerFailed
+packages/grids/src/frontend/_components/records/RecordFileField.tsx | untitled | error instanceof Error ? error.message : t().replaceFailed
+packages/grids/src/frontend/_components/settings/ControlledDestructionSection.tsx | untitled | messages().destructionStarted
+packages/grids/src/frontend/_components/utils/feedback.ts | title | options.title
+packages/grids/src/frontend/_components/workflows/WorkflowEditor.tsx | untitled | t().latestVersionLoaded
+packages/grids/src/frontend/_components/workflows/WorkflowRunDetailPanel.tsx | untitled | t().newRunStarted
+packages/grids/src/frontend/custom-app/RecordsTable.tsx | untitled | cause instanceof Error ? cause.message : messages().recordsLoadFailed
+packages/grids/src/frontend/custom-app/RecordsTable.tsx | untitled | cause instanceof Error ? cause.message : messages().workflowStartFailed
+packages/grids/src/frontend/custom-app/WorkflowActionRecovery.island.tsx | untitled | messages().workflowStatusUnavailable
+packages/grids/src/frontend/custom-app/document-preview.ts | untitled | reason
+packages/ipa-hosts/src/frontend/EditHost.island.tsx | untitled | t().hostAdded
+packages/ipa-hosts/src/frontend/EditHost.island.tsx | untitled | t().hostRemoved
+packages/ipa-hosts/src/frontend/HostSettings.island.tsx | untitled | t().scheduleUpdated
+packages/mail/src/frontend/MailWorkspace.island.tsx | title | report.conversationCount === 1 ? t().changeNotApplied : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount })
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | error instanceof Error ? error.message : t().updateConversationsFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | message
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | message
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | remainingText().bulkLaterFailed({ failed, total: items.length })
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | result.updatedConversationIds.length === 0 ? t().tagsAlreadyPresent : t().tagsAdded({ count: result.updatedConversationIds.length })
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().actionMoved({ actionId, count, messages: messageRows, folder })
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().changeListViewFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().closeConversationFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().healthRefreshFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().listWidthSaveFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().messageMoved
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().openConversationFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().openConversationFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().openViewFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().openViewFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().restoreViewFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().restoreViewFailed
+packages/mail/src/frontend/MailWorkspace.island.tsx | untitled | t().settingsRefreshFailed
+packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().downloadStarted
+packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().stopKeepingDone
+packages/mail/src/frontend/_components/MailAdminKeptTable.island.tsx | untitled | t().downloadStarted
+packages/mail/src/frontend/_components/MailCalendarInvitation.tsx | untitled | result.outcome === "created" ? messages().eventAdded : result.outcome === "unchanged" ? messages().eventUpToDate : messages().eventUpdated
+packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | messages().providerConnectedSendingPending
+packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | messages().readyToSend({ address: identity.fromAddress })
+packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | messages().verificationQueued
+packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | result.replaced ? messages().connectedAccountUpdated : result.senderCreated ? messages().providerAndIdentityConnected : messages().providerConnected
+packages/mail/src/frontend/_components/MailConnectionSettings.tsx | untitled | result.senderCreated ? messages().providerAndIdentityConnected : messages().providerConnected
+packages/mail/src/frontend/_components/MailConversationReader.tsx | untitled | t().referenceCopyFailed
+packages/mail/src/frontend/_components/MailDraftsView.tsx | untitled | code === LEASE_HELD ? t().draftInUse : code === "CONFLICT" ? t().draftChangedBeforeDelete : error.message
+packages/mail/src/frontend/_components/MailFocusNotice.tsx | untitled | error instanceof Error ? error.message : messages().failedCloseFocusNotice
+packages/mail/src/frontend/_components/MailFolderSettings.tsx | untitled | action === "delete" ? messages().folderDeleted : action === "dismiss" ? messages().unavailableFolderRemoved : messages().providerSubscriptionUpdated
+packages/mail/src/frontend/_components/MailIdentitySettings.tsx | untitled | messages().mailboxSmtpSelected
+packages/mail/src/frontend/_components/MailIdentitySettings.tsx | untitled | messages().smtpVerifiedAndSaved
+packages/mail/src/frontend/_components/MailIdentitySettings.tsx | untitled | messages().verificationQueued
+packages/mail/src/frontend/_components/MailMessageAttachments.tsx | untitled | messages.textNotCopied
+packages/mail/src/frontend/_components/MailMessageAttachments.tsx | untitled | reader().downloadAllFailed
+packages/mail/src/frontend/_components/MailMessageCard.tsx | untitled | error instanceof Error ? error.message : messages().bodyRequestFailed
+packages/mail/src/frontend/_components/MailMessageDeliveryControl.tsx | untitled | context?.state === "scheduled" ? t().scheduledCancelledDraft : t().sendUndone
+packages/mail/src/frontend/_components/MailOperationalSettings.tsx | untitled | lastCommand() === "sync_mailbox" ? messages().mailboxSyncQueued : lastCommand() === "verify_binding" ? messages().providerVerificationStarted : messages().folderDiscoveryStarted
+packages/mail/src/frontend/_components/MailOperationalSettings.tsx | untitled | messages().operatorActionQueued
+packages/mail/src/frontend/_components/MailRemoteContentRulesDialog.tsx | untitled | messages().remoteImagePreferenceSaved
+packages/mail/src/frontend/_components/MailResponsePolicySettings.tsx | untitled | messages().referenceSettingsSaved
+packages/mail/src/frontend/_components/MailScheduledView.tsx | untitled | disposition === "draft" ? t().cancelledDraftRestored : t().scheduledDiscarded
+packages/mail/src/frontend/_components/MailSearchBuilder.tsx | untitled | updated ? messages().savedViewUpdated : messages().savedViewCreated
+packages/mail/src/frontend/_components/MailSenderMessageActions.tsx | untitled | t().reportSubmitted
+packages/mail/src/frontend/_components/MailSidebar.tsx | untitled | overviewText().mailboxRestored
+packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | error instanceof Error ? error.message : messages().mailingListsRefreshFailed
+packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | error instanceof Error ? error.message : messages().mailingListsRefreshFailed
+packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | messages().unsubscribeRequestedFor({ name: item.name })
+packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | result.commandCount === 0 ? messages().noMessagesNeededMoving({ name: item.name }) : messages().messageMovesQueued({ count: result.commandCount })
+packages/mail/src/frontend/_components/MailboxMenu.tsx | untitled | messages().syncQueued
+packages/mail/src/frontend/_components/MailboxSettings.tsx | untitled | messages().mailboxSettingsSaved
+packages/mail/src/frontend/_components/MailboxSettings.tsx | untitled | outcome === "refused" ? messages().deleteFailedBody : messages().deleteUnknownBody
+packages/mail/src/frontend/_components/mail-cloud-id.tsx | untitled | copied
+packages/mail/src/frontend/_components/mail-cloud-id.tsx | untitled | copied
+packages/mail/src/frontend/_components/mail-cloud-id.tsx | untitled | t().copyFailed
+packages/mail/src/frontend/_components/mail-composer-attachment-manager.ts | untitled | t().publicLinkInserted
+packages/mail/src/frontend/_components/mail-conversation-links.ts | untitled | await readApiError(response, t().couldNotLinkSpaceItem)
+packages/mail/src/frontend/_components/mail-conversation-links.ts | untitled | await readApiError(response, t().couldNotUnlinkSpaceItem)
+packages/mail/src/frontend/_components/mail-conversation-links.ts | untitled | error instanceof Error ? error.message : t().couldNotLoadSpaces
+packages/mail/src/frontend/_components/mail-conversation-links.ts | untitled | error instanceof Error ? error.message : t().linkedSpacesRefreshFailed
+packages/mail/src/frontend/_components/mail-feedback.ts | title | options.title
+packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | error instanceof Error ? error.message : messages().failedSaveMailboxPreference
+packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | preference === "pinned" ? messages().pinLimitReached({ count }) : messages().hideLimitReached({ count })
+packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopied
+packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopyFailed
+packages/notebooks/src/frontend/[id]/_components/comments/CommentCard.tsx | untitled | t().actionFailed
+packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | error instanceof CommentRequestError ? error.message : options.t().actionFailed
+packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | options.t().actionFailed
+packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | options.t().undoFailed
+packages/notebooks/src/frontend/[id]/_components/detail/NoteCommentsSection.tsx | untitled | error.message
+packages/notebooks/src/frontend/[id]/_components/detail/NoteCommentsSection.tsx | untitled | t().commentSavedReloadFailed
+packages/notebooks/src/frontend/[id]/_components/detail/NotebookDetailPanel.island.tsx | untitled | t().contentCopied
+packages/notebooks/src/frontend/[id]/_components/detail/NotebookDetailPanel.island.tsx | untitled | t().contentCopyFailed
+packages/notebooks/src/frontend/[id]/_components/detail/NotebookDetailPanel.island.tsx | untitled | t().noteLinkCopyFailed
+packages/notebooks/src/frontend/[id]/_components/detail/duplicate-note.ts | untitled | err.message
+packages/notebooks/src/frontend/[id]/_components/detail/save-as-template.tsx | untitled | t().templateReplaced({ name: saved.name })
+packages/notebooks/src/frontend/[id]/_components/detail/save-as-template.tsx | untitled | t().templateSaved({ name: saved.name })
+packages/notebooks/src/frontend/[id]/_components/editor/NoteEditor.client.tsx | untitled | t().contentCopied
+packages/notebooks/src/frontend/[id]/_components/editor/NoteEditor.client.tsx | untitled | t().contentCopyFailed
+packages/notebooks/src/frontend/[id]/_components/editor/page-templates.ts | untitled | error instanceof Error ? error.message : messages(locale).failedApplyTemplate
+packages/notebooks/src/frontend/[id]/_components/editor/sync-ended.tsx | untitled | t().contentCopied
+packages/notebooks/src/frontend/[id]/_components/editor/sync-ended.tsx | untitled | t().contentCopyFailed
+packages/notebooks/src/frontend/[id]/_components/settings/DangerZone.tsx | untitled | t().nameMismatch
+packages/notebooks/src/frontend/[id]/_components/settings/TemplatesSection.tsx | untitled | error.message
+packages/notebooks/src/frontend/[id]/_components/settings/TemplatesSection.tsx | untitled | error.message
+packages/notebooks/src/frontend/[id]/_components/sidebar/NoteTree.tsx | untitled | err.message
+packages/notebooks/src/frontend/[id]/_components/sidebar/NoteTree.tsx | untitled | err.message
+packages/notebooks/src/frontend/[id]/_components/sidebar/NoteTree.tsx | untitled | err.message
+packages/notebooks/src/frontend/[id]/_components/sidebar/NoteTree.tsx | untitled | err.message
+packages/notebooks/src/frontend/[id]/_components/sidebar/NoteTree.tsx | untitled | err.message
+packages/notebooks/src/frontend/[id]/_components/sidebar/WorkspaceEventBridge.island.tsx | untitled | t().liveUpdatesStopped
+packages/notebooks/src/frontend/[id]/_components/sidebar/useFavoriteNotes.ts | untitled | t().favoriteUpdateFailed
+packages/notebooks/src/frontend/[id]/_components/versions/VersionHistory.island.tsx | untitled | error.message
+packages/notebooks/src/frontend/[id]/_components/versions/VersionHistory.island.tsx | untitled | error.message
+packages/notebooks/src/frontend/[id]/_components/versions/restore-notice.ts | untitled | error instanceof Error ? error.message : t.restoreFailed
+packages/notebooks/src/frontend/[id]/_components/versions/restore-notice.ts | untitled | t.restoreUndone
+packages/notebooks/src/frontend/_components/AdminNotebooksAppSettings.island.tsx | untitled | t().settingsSaved
+packages/notebooks/src/frontend/lib/attachment-preview.tsx | untitled | t.previewAttachmentFailed
+packages/oauth/src/frontend/_components/ClientActions.island.tsx | untitled | t().copyClientIdFailed
+packages/proxy-auth/src/frontend/_components/ProxyClientActions.island.tsx | untitled | t().deleted
+packages/proxy-auth/src/frontend/_components/ProxyClientActions.island.tsx | untitled | t().updated
+packages/proxy-auth/src/frontend/_components/ProxyClientActions.island.tsx | untitled | t().verifyUrlCopyFailed
+packages/pulse/src/frontend/PulseOverview.island.tsx | untitled | t().retryFailed
+packages/pulse/src/frontend/PulseOverview.island.tsx | untitled | t().retryStarted
+packages/pulse/src/frontend/PulseWorkspace.island.tsx | untitled | label
+packages/pulse/src/frontend/PulseWorkspace.island.tsx | untitled | t().copySetupFailed
+packages/pulse/src/frontend/admin/BasesAdmin.island.tsx | untitled | adminErrorText(props.t, codeOf(cause))
+packages/pulse/src/frontend/admin/BasesAdmin.island.tsx | untitled | adminErrorText(props.t, codeOf(cause))
+packages/pulse/src/frontend/admin/BasesAdmin.island.tsx | untitled | adminErrorText(t(), codeOf(cause))
+packages/pulse/src/frontend/admin/BasesAdmin.island.tsx | untitled | adminErrorText(t(), codeOf(cause))
+packages/pulse/src/frontend/admin/BasesAdmin.island.tsx | untitled | adminErrorText(t(), codeOf(cause))
+packages/pulse/src/frontend/admin/BasesAdmin.island.tsx | untitled | t().retryStarted
+packages/pulse/src/frontend/admin/TargetsAdmin.island.tsx | untitled | adminErrorText(t(), codeOf(cause))
+packages/pulse/src/frontend/admin/TargetsAdmin.island.tsx | untitled | adminErrorText(t(), codeOf(cause))
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | baseStoreMessages.resolve([locale()]).t.retryFailed
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | baseStoreMessages.resolve([locale()]).t.retryStarted
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | error instanceof Error ? error.message : t().clearDataFailed
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | error instanceof Error ? error.message : t().deleteBaseFailed
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | error instanceof Error ? error.message : t().openSettingsFailed
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | error instanceof Error ? error.message : t().settingsUpdateFailed
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | message
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | t().clearDataStarted
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | t().deleteBaseStarted
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | t().pulseNameRequired
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | t().rawRetentionRange
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | t().refreshBeforeChanges
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | t().rollupRetentionRange
+packages/pulse/src/frontend/workspace/base-controller.ts | untitled | t().sensitiveRetentionRange
+packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | untitled | t().accessChangedRefreshFailed
+packages/pulse/src/frontend/workspace/source-controller.ts | untitled | error instanceof Error ? error.message : t().scrapeFailed
+packages/pulse/src/frontend/workspace/source-controller.ts | untitled | error instanceof Error ? error.message : t().sourceAddFailed
+packages/pulse/src/frontend/workspace/source-controller.ts | untitled | error instanceof Error ? error.message : t().sourceRemoveFailed
+packages/pulse/src/frontend/workspace/source-controller.ts | untitled | error instanceof Error ? error.message : t().sourceUpdateFailed
+packages/pulse/src/frontend/workspace/source-controller.ts | untitled | input.kind === "http_ingest" ? t().httpIngestSourceCreated : t().metricsSourceCreated
+packages/pulse/src/frontend/workspace/source-controller.ts | untitled | message
+packages/pulse/src/frontend/workspace/source-controller.ts | untitled | t().refreshBeforeChanges
+packages/pulse/src/frontend/workspace/source-controller.ts | untitled | t().sourceAddedScrapeFailed({ detail: error instanceof Error ? error.message : undefined })
+packages/pulse/src/frontend/workspace/source-controller.ts | untitled | t().sourceAddedScraped({ counts: t().ingestCounts(counts) })
+packages/pulse/src/frontend/workspace/source-controller.ts | untitled | validationError
+packages/pwa/src/frontend/_components/PairingNotice.island.tsx | tone-icon | "ti ti-info-circle"
+packages/pwa/src/frontend/_components/PairingNotice.island.tsx | untitled | text
+packages/pwa/src/frontend/_components/PhoneSettings.island.tsx | untitled | answer.status === 0 ? t().offline : t().failed
+packages/pwa/src/frontend/_components/PhoneSettings.island.tsx | untitled | t().draftUnavailable
+packages/pwa/src/frontend/_components/SignOutButton.tsx | untitled | answer.status === 0 ? t().offline : t().failed
+packages/spaces/src/frontend/[id]/_components/calendar/TaskTray.tsx | untitled | error instanceof Error ? error.message : t.updateFailed
+packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | error instanceof Error ? error.message : String(error)
+packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | error instanceof Error ? error.message : t.eventTimeUpdateFailed
+packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | error instanceof Error ? error.message : t.updateFailed
+packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | t.taskScheduled({ title: item.title, when: `${day}, ${time(slot.start)}–${time(slot.end)}` })
+packages/spaces/src/frontend/[id]/_components/detail/CommentsSection.tsx | untitled | err.message
+packages/spaces/src/frontend/[id]/_components/detail/EventInvitations.tsx | untitled | props.method === "cancel" ? t.cancellationOpened : t.invitationOpened
+packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | err.message
+packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | err.message
+packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | err.message
+packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | err.message
+packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | message
+packages/spaces/src/frontend/[id]/_components/detail/ItemLinksSection.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/detail/ItemLinksSection.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/detail/TaskAttachmentsSection.tsx | untitled | error instanceof Error ? error.message : t.uploadMediaFilesFailed
+packages/spaces/src/frontend/[id]/_components/detail/TaskAttachmentsSection.tsx | untitled | t.addMediaFileFailed({ filename: firstFailure.filename, message: firstFailure.message })
+packages/spaces/src/frontend/[id]/_components/detail/TaskAttachmentsSection.tsx | untitled | t.addMediaFilesFailed({ count: failures.length })
+packages/spaces/src/frontend/[id]/_components/detail/TaskChecklistSection.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/detail/TaskChecklistSection.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/detail/TaskChecklistSection.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/edit/TemplateDialog.tsx | untitled | t.templateSaved({ name: template.name })
+packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | ctx.gatheredBy === "blocked" ? t.movedStaysBlocked({ status: ctx.targetLabel }) : t.movedStaysOverdue({ status: ctx.targetLabel })
+packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | message
+packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | t.alreadyAssignedToYou
+packages/spaces/src/frontend/[id]/_components/shared/completion.ts | untitled | error.message
+packages/spaces/src/frontend/[id]/_components/shared/completion.ts | untitled | t.listRefreshFailed
+packages/spaces/src/frontend/[id]/_components/shared/reactions/ItemReactions.tsx | untitled | t.reactionLimitReached({ count: MAX_ITEM_REACTION_EMOJI })
+packages/spaces/src/frontend/[id]/_components/sidebar/CreateItemButton.tsx | untitled | t.templateGone
+packages/spaces/src/frontend/[id]/_components/workspace/SpaceHeadActions.island.tsx | untitled | t.headCopyFailed
+packages/spaces/src/frontend/[id]/_components/workspace/SpaceLiveEvents.island.tsx | untitled | t.liveUpdatesUnavailable
+packages/spaces/src/frontend/lib/feedback.ts | untitled | message
+packages/spaces/src/pwa/SpacesPwa.island.tsx | untitled | t().createdHidden
+packages/spaces/src/pwa/SpacesPwa.island.tsx | untitled | t().linkCopyFailed
+packages/spaces/src/pwa/SpacesPwa.island.tsx | untitled | t().linkCopyFailed
+packages/spaces/src/pwa/TaskComment.tsx | untitled | response.status === 403 ? t().notAllowed({ space: props.task.spaceName }) : t().gone({ title: props.task.title })
+packages/spaces/src/pwa/TaskComment.tsx | untitled | t().commentChanged
+packages/spaces/src/pwa/TaskDetail.tsx | untitled | response.status === 403 ? t().notAllowed({ space: current.spaceName }) : t().gone({ title: current.title })
+packages/spaces/src/pwa/TaskFields.tsx | untitled | await readResponseError(response, t().assigneesFailed({ title: task.title }))
+packages/spaces/src/pwa/TaskFields.tsx | untitled | await readResponseError(response, t().dueFailed({ title: task.title }))
+packages/spaces/src/pwa/TaskFields.tsx | untitled | response && response.status < 500 ? await readResponseError(response, t().titleFailed) : t().titleFailed
+packages/spaces/src/pwa/TaskFields.tsx | untitled | t().movedTo({ title: task.title, status: next.name })
+packages/spaces/src/pwa/completion.ts | untitled | message
+packages/tools/src/frontend/tools/ImageConverter.island.tsx | title | t().copiedToClipboard
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | error.message
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | error?.message || t().endpointCreateFailed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | error?.message || t().endpointDeleteFailed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | error?.message || t().requestFailed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | t().endpointCreatedRefreshFailed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | t().endpointDeletedRefreshFailed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | t().enterEndpointName
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | t().requestSentRefreshFailed
+packages/ui/src/inputs/file-drop.ts | untitled | fileDropRejectionMessage(rejected, options, messages, entry.locale())
+packages/venue/src/frontend/_components/PublicFeedbackForm.tsx | untitled | t().feedbackThanksToast
+packages/venue/src/frontend/_components/VenueWorkspace.island.tsx | untitled | successMessage
+packages/venue/src/frontend/_components/venue-workspace/calendar-subscription.tsx | untitled | t().copyCalendarLinkFailed
+packages/venue/src/frontend/_components/venue-workspace/public-display.tsx | untitled | error instanceof Error ? error.message : t.copyPublicPageFailed
+packages/venue/src/frontend/_components/venue-workspace/public-display.tsx | untitled | error instanceof Error ? error.message : t.openPageOptionsFailed
+packages/venue/src/frontend/_components/venue-workspace/public-display.tsx | untitled | error instanceof Error ? error.message : t.openPublicPageFailed
+packages/venue/src/frontend/_components/venue-workspace/public-display.tsx | untitled | t.publicPageLinkCopied
+packages/venue/src/frontend/_components/venue-workspace/public-page-editor.tsx | untitled | error instanceof Error ? error.message : t().copyPublicPageFailed
+packages/venue/src/frontend/_components/venue-workspace/public-page-editor.tsx | untitled | kind === "monitor" ? t().monitorLinkCopied : t().publicPageLinkCopied
+packages/venue/src/frontend/_components/venue-workspace/settings.tsx | untitled | successMessage
+packages/venue/src/frontend/_components/venue-workspace/shift-actions.ts | untitled | t.noShiftsTaken
+packages/venue/src/frontend/_components/venue-workspace/signup.tsx | untitled | t().shiftLeft

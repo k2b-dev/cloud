@@ -19,7 +19,7 @@ row boundary as at a drawer's edge. A resizable boundary shows a neutral grip,
 shade, and keyboard focus turns the grip blue. A fixed boundary keeps its
 shade and has no grip. There is no line and no colour at a boundary.
 
-A selected tab has the app colour's selection fill and 2 px edge, and every
+A selected tab has the app colour's selection fill and no edge, and every
 tab keeps one weight, so selecting or hovering never changes a tab's width. A
 movable tab shows a grip before its icon: on the selected tab, on hover and
 focus, and always on a touch screen. Its place is always kept.
