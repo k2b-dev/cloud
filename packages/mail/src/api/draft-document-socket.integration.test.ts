@@ -24,6 +24,7 @@ import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { createActorCommand } from "../service/commands";
 import { reviewDraftComposeSafety } from "../service/compose-safety";
+import { pruneDraftDocumentLog } from "../service/draft-document-log";
 import { mailDraftRoom } from "../service/draft-document-room";
 import {
   draftDocumentSnapshotStore,
@@ -33,6 +34,7 @@ import {
 } from "../service/draft-document-snapshots";
 import * as draftDocumentService from "../service/draft-documents";
 import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
+import { getDraft } from "../service/drafts";
 import { enqueueMailInvalidation, mailLive } from "../service/live";
 import { createMailbox } from "../service/mailboxes";
 import { cancelScheduledSend } from "../service/scheduled-sends";
@@ -276,6 +278,60 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     client.send({ type: "syncPublish", payload: { docId: newShortId(), generation: "1", baseCursor: null, payload: "AAA=" } });
     await client.wait((packet) => packet.type === "error");
     expect((await read()).durable.content.body).toBe("Original");
+  });
+
+  test("rejoining an idle draft after covered pruning preserves its revision and allows subsequent edits", async () => {
+    const target = await draft();
+    const base = await read();
+    const first = await connect();
+    await first.ready();
+    first.socket.close();
+    await stopMailDraftConnections();
+
+    // Another document advances the GLOBAL stream. This draft has no missing
+    // input: its unchanged SQL snapshot plus the idle proof cover the prefix.
+    const other = await draft();
+    const otherBase = await read();
+    const topic = mailDraftDocumentLog.topic();
+    const activity = await topic.publish({
+      tenantId: other.id,
+      data: { kind: "sync", payload: "AAA=", restoreRevision: otherBase.generation, originNodeId: "fixture", originPeerId: null },
+    });
+    await flushDraftDocumentSnapshot(other.id);
+    await pruneDraftDocumentLog();
+    expect(await mailDraftDocumentLog.firstSequence()).toBeGreaterThan(topic.cursorSequence(base.durable.cursor!) + 1);
+    const [proof] = await sql`SELECT doc_idle_through FROM mail.drafts WHERE id=${target.id}::uuid`;
+    expect(Number(proof?.doc_idle_through)).toBeGreaterThanOrEqual(topic.cursorSequence(activity.cursor));
+
+    currentDraft = target;
+    const client = await connect();
+    client.send({
+      type: "replayRequest",
+      payload: { docId: target.short_id, generation: base.generation, fromCursor: base.durable.cursor },
+    });
+    const ready = await client.wait((packet) => packet.type === "replayReady");
+    if (ready.type !== "replayReady") throw new Error("Missing replay boundary");
+    expect(client.messages.filter((packet) => packet.type === "error")).toEqual([]);
+    expect(value(await getDraft(context, mailboxId, target.id)).revision).toBe(base.revision);
+    expect((await read()).historyComplete).toBe(true);
+
+    const pending = await createDraftRevisionUpdate(
+      base.fresh.state,
+      { ...base.fresh.content, body: "Edited after reconnect" },
+      { deadline: Date.now() + 5000 },
+    );
+    publish(client, { ...base, durable: { ...base.durable, cursor: ready.payload.cursor } }, pending);
+    await client.wait(
+      (packet) =>
+        packet.type === "syncPush" && !packet.payload.snapshot && packet.payload.updates.some((u) => u.payload === toBase64(pending)),
+    );
+    await flushDraftDocumentSnapshot(target.id);
+    expect(value(await getDraft(context, mailboxId, target.id))).toMatchObject({
+      body: "Edited after reconnect",
+      revision: base.revision + 1,
+    });
+    const [adopted] = await sql`SELECT adopted_at FROM mail.drafts WHERE id=${target.id}::uuid`;
+    expect(adopted?.adopted_at).not.toBeNull();
   });
 
   test("undo continues the same generation and admits an edit while the thaw marker is retained", async () => {
