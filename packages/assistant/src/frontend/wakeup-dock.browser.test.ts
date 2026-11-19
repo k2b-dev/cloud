@@ -48,7 +48,7 @@ render(
           <div class="assistant-chat-composer__column mx-auto flex max-w-3xl flex-col gap-2">
             <Show when={waiting()}>
               <AssistantWaitingStrip view={view()} conversationId="chat01" quiet={false} onJump={() => {}} onShowMore={() => {}}
-                queue={<>{queued() ? queue("chip") : null}{items().length ? chip() : null}</>} />
+                queue={queued() || items().length ? <>{queued() ? queue("chip") : null}{items().length ? chip() : null}</> : undefined} />
             </Show>
             <Show when={!waiting() && queued()}>{queue("line", items().length ? chip() : undefined)}</Show>
             <Show when={!waiting() && !queued() && items().length > 0}>
