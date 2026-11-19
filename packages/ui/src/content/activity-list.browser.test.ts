@@ -178,8 +178,10 @@ describe("ActivityList", () => {
         );
       const before = await bounds();
       await hoverInPlace(page.locator(".k2b-activity__entry").first());
+      await settled(page);
       expect(await bounds()).toEqual(before);
       await page.locator(".k2b-activity__entry").first().focus();
+      await settled(page);
       expect(await bounds()).toEqual(before);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
       expect(
@@ -336,8 +338,10 @@ describe("ActivityList", () => {
         const row = page.locator("#standalone .k2b-activity__entry");
         expect(await row.evaluate((element) => element.tagName)).toBe("DIV");
         await row.scrollIntoViewIfNeeded();
+        await settled(page);
         const before = await row.boundingBox();
         await hoverInPlace(row);
+        await settled(page);
         expect(await row.boundingBox()).toEqual(before);
         const paint = await row.evaluate((element) => {
           const text = element.querySelector(".k2b-activity__text")!;

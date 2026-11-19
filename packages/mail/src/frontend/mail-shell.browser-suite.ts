@@ -3713,6 +3713,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(rowGeometry.radius).toBe("8px");
             const beforeHover = await firstRow.boundingBox();
             await hoverInPlace(firstRow);
+            await settled(page);
             expect(await firstRow.boundingBox()).toEqual(beforeHover);
             const ink = await firstRow.evaluate((element) => [
               getComputedStyle(element.querySelector(".k2b-activity__text")!).color,
@@ -3744,8 +3745,10 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(await rows(page).first().locator("a").getAttribute("aria-current")).toBe("true");
               const selectedRow = rows(page).first().locator(".k2b-activity__entry");
               await page.mouse.move(0, 0);
+              await settled(page);
               const selectedFill = await selectedRow.evaluate((element) => getComputedStyle(element).backgroundColor);
               await hoverInPlace(selectedRow);
+              await settled(page);
               expect(await selectedRow.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(selectedFill);
               if (screenshots) await page.screenshot({ path: join(screenshots, "events-reader-light-1440.png") });
             }

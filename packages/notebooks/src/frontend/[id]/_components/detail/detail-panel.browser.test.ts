@@ -428,9 +428,11 @@ for (const width of [1440, 390]) {
         button.click();
       });
       await page.locator(".notebook-activity .k2b-activity__entry").first().scrollIntoViewIfNeeded();
+      await settled(page);
       const activityRow = page.locator(".notebook-activity .k2b-activity__entry").first();
       const rowBefore = await activityRow.boundingBox();
       await hoverInPlace(activityRow);
+      await settled(page);
       expect(await activityRow.boundingBox()).toEqual(rowBefore);
       expect(await page.locator(".notebook-activity [title]").count()).toBe(0);
       expect(
