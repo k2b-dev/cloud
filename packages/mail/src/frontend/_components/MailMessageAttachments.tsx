@@ -12,14 +12,13 @@ import {
   fileKindLabel,
   formatFileViewSize,
   getFileViewPreviewKind,
-  Lightbox,
   type LightboxAction,
   type LightboxItem,
   prompts,
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, lazy, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { CreateAttachmentLinkInput, CreatedAttachmentLink } from "../../contracts";
 import { readApiError } from "./api-response";
@@ -63,6 +62,14 @@ export const canPreviewAttachment = (attachment: Attachment): boolean => {
 
 /** Plain text, a table and JSON can show no code box with its own Copy, so Copy text sits in the action pill. */
 const COPY = new Set<FileViewPreviewKind>(["text", "delimited-text", "json"]);
+
+/**
+ * The Lightbox loads with the first opened attachment, or before it when a pointer or the focus reaches one, so it
+ * normally opens at once. A failed load shows the reload notice, and the next opening loads again.
+ */
+export const AttachmentLightbox = lazy(() => import("./mail-lightbox"));
+export const preloadAttachmentLightbox = () => void AttachmentLightbox.preload().catch(() => undefined);
+export const loadAttachmentLightbox = async () => (await importOnDemand(() => AttachmentLightbox.preload())) !== undefined;
 
 /**
  * An attachment in the Lightbox, with the actions of the former preview dialog: Copy text for text, Save to Files and
@@ -162,7 +169,7 @@ export default function MailMessageAttachments(props: {
   const openAttachment = (attachment: Attachment) => {
     if (!canPreviewAttachment(attachment)) return downloadUrl(baseUrl(attachment), fileName(attachment));
     if (props.onOpen) return props.onOpen(attachment);
-    setShown(Math.max(0, props.attachments.indexOf(attachment)));
+    void loadAttachmentLightbox().then((loaded) => loaded && setShown(Math.max(0, props.attachments.indexOf(attachment))));
   };
 
   const createLink = mutations.create<CreatedAttachmentLink, { attachment: Attachment; input: CreateAttachmentLinkInput }>({
@@ -257,6 +264,8 @@ export default function MailMessageAttachments(props: {
                 class="mail-attachment-tile__open"
                 aria-label={`${reader().openAttachment({ name: fileName(attachment) })}, ${meta(attachment)}`}
                 onClick={() => openAttachment(attachment)}
+                onPointerEnter={() => canPreviewAttachment(attachment) && preloadAttachmentLightbox()}
+                onFocus={() => canPreviewAttachment(attachment) && preloadAttachmentLightbox()}
               >
                 <span class="mail-attachment-tile__icon" aria-hidden="true">
                   <FileTypeIcon name={fileName(attachment)} mediaType={attachment.contentType} />
@@ -307,7 +316,7 @@ export default function MailMessageAttachments(props: {
         </Show>
       </ul>
       <Show when={shown() !== null && lightboxItems().length > 0}>
-        <Lightbox items={lightboxItems()} index={shown() ?? 0} onIndexChange={setShown} onClose={() => setShown(null)} />
+        <AttachmentLightbox items={lightboxItems()} index={shown() ?? 0} onIndexChange={setShown} onClose={() => setShown(null)} />
       </Show>
     </section>
   );

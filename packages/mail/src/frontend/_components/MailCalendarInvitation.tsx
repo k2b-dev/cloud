@@ -9,7 +9,7 @@ import { mailCommandMessages } from "../../command-messages";
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
 import { createRetryToasts } from "./mail-feedback";
-import { mailRemainingMessages } from "./mail-remaining-messages";
+import { mailMailboxViewMessages } from "./mail-mailbox-view-messages";
 
 export default function MailCalendarInvitation(props: {
   mailboxId: string;
@@ -19,7 +19,7 @@ export default function MailCalendarInvitation(props: {
   dateConfig: DateContext;
 }) {
   const locale = useLocale();
-  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const messages = createMemo(() => mailMailboxViewMessages.resolve([locale()]).t);
   const retryToast = createRetryToasts();
   const [selectedSpaceId, setSelectedSpaceId] = createSignal<string | null>(null);
   const [pendingResponse, setPendingResponse] = createSignal<"accepted" | "tentative" | "declined" | null>(null);

@@ -3,6 +3,7 @@ import { mailComposerMessages } from "./_components/mail-composer-messages";
 import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./_components/mail-conversation-ui-messages";
 import { mailMailboxDetailsMessages } from "./_components/mail-mailbox-details-messages";
+import { mailMailboxViewMessages } from "./_components/mail-mailbox-view-messages";
 import { mailMessageMessages } from "./_components/mail-message-messages";
 import { mailReaderMessages } from "./_components/mail-reader-messages";
 import { mailRemainingMessages } from "./_components/mail-remaining-messages";
@@ -25,6 +26,7 @@ const catalogs = [
   mailComposerMessages,
   mailSettingsMessages,
   mailRemainingMessages,
+  mailMailboxViewMessages,
 ];
 
 describe("Mail browser message catalogs", () => {

@@ -6,7 +6,7 @@ import type { MailDraft, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
 import type { MailComposerHost } from "./MailComposer";
 import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
-import { mailComposerMessages } from "./mail-composer-messages";
+import { mailComposeWindowMessages } from "./mail-compose-window-messages";
 import { createDefaultMailComposerPanesLayout, readMailComposerPanesFromCookieHeader } from "./mail-composer-panes";
 import type { MailComposerSignatures } from "./mail-composer-signature";
 
@@ -44,7 +44,7 @@ export default function MailInlineDraft(props: {
   onUnavailable?: () => void;
 }) {
   const locale = useLocale();
-  const t = () => mailComposerMessages.resolve([locale()]).t;
+  const t = () => mailComposeWindowMessages.resolve([locale()]).t;
   const load = async (draftId: string): Promise<InlineDraftData> => {
     const param = { mailboxId: props.mailboxId };
     // The composer and its contracts load with the draft, not with the mailbox: most visits never write.

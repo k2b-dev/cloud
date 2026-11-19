@@ -11,7 +11,6 @@ import {
   ContextMenu,
   type DropdownAction,
   type DropdownItem,
-  Lightbox,
   NoticeCard,
   Placeholder,
   prefersReducedMotion,
@@ -44,11 +43,10 @@ import type { ConversationReminder } from "../../service/reminders";
 import type { MailDetailErrors, MailWorkspaceMessage } from "../../service/workspace";
 import { automationLogHref } from "../automation-log-href";
 import { readApiError } from "./api-response";
-import { openMailActivityDialog } from "./MailActivityDialog";
 import MailAutomationTrace from "./MailAutomationTrace";
 import MailConversationNote from "./MailConversationNote";
 import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
-import { attachmentLightboxItem } from "./MailMessageAttachments";
+import { AttachmentLightbox, attachmentLightboxItem, loadAttachmentLightbox } from "./MailMessageAttachments";
 import MailMessageCard from "./MailMessageCard";
 import MailReaderHead, { type MailReaderHint } from "./MailReaderHead";
 import MailReplyBox, { type MailReplyBoxApi } from "./MailReplyBox";
@@ -298,7 +296,7 @@ export default function MailConversationReader(props: {
   );
   const openAttachment = (messageId: string, attachmentId: string) => {
     const index = conversationAttachments().findIndex((entry) => entry.messageId === messageId && entry.attachment.id === attachmentId);
-    if (index >= 0) setShownAttachment(index);
+    if (index >= 0) void loadAttachmentLightbox().then((loaded) => loaded && setShownAttachment(index));
   };
   const [messageSelections, setMessageSelections] = createSignal<Record<string, string>>({});
   const [pendingNewMessages, setPendingNewMessages] = createSignal(0);
@@ -1026,8 +1024,8 @@ export default function MailConversationReader(props: {
           })),
         ]
       : [];
-  const showActivity = () =>
-    void openMailActivityDialog({
+  const showActivity = async () =>
+    void (await importOnDemand(() => import("./MailActivityDialog")))?.openMailActivityDialog({
       activity: props.activity,
       unavailable: Boolean(props.detailErrors.activity),
       onRetry: () => void props.onReconcile(),
@@ -1523,7 +1521,7 @@ export default function MailConversationReader(props: {
             </Show>
           </div>
           <Show when={shownAttachment() !== null && lightboxItems().length > 0}>
-            <Lightbox
+            <AttachmentLightbox
               items={lightboxItems()}
               index={shownAttachment() ?? 0}
               onIndexChange={setShownAttachment}

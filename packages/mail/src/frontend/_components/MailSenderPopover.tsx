@@ -10,7 +10,7 @@ import type { SenderAction } from "./MailSenderMessageActions";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { createRetryToasts } from "./mail-feedback";
 import { mailReaderMessages } from "./mail-reader-messages";
-import { mailRemainingMessages } from "./mail-remaining-messages";
+import { mailMailboxViewMessages } from "./mail-mailbox-view-messages";
 
 const SENDER_ACTION_ORDER: readonly SenderAction["id"][] = ["find", "automation", "block", "block-domain", "unsubscribe"];
 
@@ -33,7 +33,7 @@ export default function MailSenderPopover(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailReaderMessages.resolve([locale()]).t);
-  const remaining = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const remaining = createMemo(() => mailMailboxViewMessages.resolve([locale()]).t);
   const directory = useMailContactDirectory();
   const retryToast = createRetryToasts();
   let mounted = true;

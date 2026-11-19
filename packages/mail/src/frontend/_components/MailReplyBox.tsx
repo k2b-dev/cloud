@@ -1,3 +1,4 @@
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { announce, Button, Dropdown, type DropdownItem, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
@@ -8,8 +9,6 @@ import type { ConversationComment } from "../../service/collaboration";
 import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import type { MailComposerHost, MailInlineDraftControls } from "./MailComposer";
-import { preloadMailComposerEditor } from "./MailComposerEditor";
-import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import { deriveReplyIdentityId, forwardMessageBody, forwardSubject, replySubject } from "./mail-compose-derivation";
 import { mailComposeWindowMessages } from "./mail-compose-window-messages";
 import {
@@ -50,7 +49,7 @@ const loadComposerParts = (mailboxId: string): Promise<ComposerParts> => {
     // The editor loads with the composer, so the text does not appear a moment after the box.
     const [composer, , templatesResponse, defaultsResponse] = await Promise.all([
       import("./MailComposer"),
-      preloadMailComposerEditor(),
+      import("./MailComposerEditor").then((editor) => editor.preloadMailComposerEditor()),
       apiClient.mailboxes[":mailboxId"]["compose-templates"].$get({ param }),
       apiClient.mailboxes[":mailboxId"]["compose-signature-defaults"].$get({ param }),
     ]);
@@ -742,7 +741,8 @@ export default function MailReplyBox(props: {
     }
   };
   const changeScheduledTime = async () => {
-    const at = await chooseScheduledSendTime(props.dateConfig);
+    const dialog = await importOnDemand(() => import("./MailScheduleDialog"));
+    const at = dialog && (await dialog.chooseScheduledSendTime(props.dateConfig));
     if (at && !disposed) await cancelScheduled({ at });
   };
 
