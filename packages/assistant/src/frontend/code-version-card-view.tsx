@@ -19,10 +19,25 @@ export function CodeVersionCardView(props: {
   const locale = useLocale();
   let host: HTMLDivElement | undefined;
   const [phone, setPhone] = createSignal(false);
+  // The phone form changes the buttons and with them the height of a receipt, which sizes to its content. So the form
+  // is read before the first paint, and a later resize applies it in the next frame: changing the observed box inside
+  // the observer's own callback is a resize loop.
+  const narrow = (width: number) => width <= 560;
   onMount(() => {
-    const observer = new ResizeObserver(([entry]) => setPhone((entry?.contentRect.width ?? 0) <= 560));
-    if (host) observer.observe(host);
-    onCleanup(() => observer.disconnect());
+    if (!host) return;
+    const width = host.getBoundingClientRect().width;
+    if (host.isConnected && width > 0) setPhone(narrow(width));
+    let frame = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      const next = narrow(entry?.contentRect.width ?? 0);
+      cancelAnimationFrame(frame);
+      if (next !== phone()) frame = requestAnimationFrame(() => setPhone(next));
+    });
+    observer.observe(host);
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    });
   });
   const c = () => codeVersionCardCopy.resolve([locale()]).t;
   const control = (action: CodeVersionCardAction, primary: boolean): JSX.Element => {
