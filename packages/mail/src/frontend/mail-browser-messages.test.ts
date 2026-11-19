@@ -60,5 +60,4 @@ describe("Mail browser message catalogs", () => {
       for (const key of shared) expect([locale, key, String(remaining[key])]).toEqual([locale, key, String(view[key])]);
     }
   });
-
 });
