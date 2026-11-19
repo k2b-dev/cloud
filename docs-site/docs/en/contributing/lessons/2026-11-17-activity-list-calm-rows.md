@@ -9,3 +9,11 @@ The Mail hydration guard also caught a classic-scrollbar width change in
 WebKit: VirtualFeed’s more specific SSR `overflow-y: hidden` rule overrode
 the shared always-present scroll track. The classic-scrollbar fallback now
 also matches the SSR viewport, keeping the same track before and after mount.
+
+An actor separator changes the grammar contract: each application must supply a
+standalone event phrase, not a predicate continuing the person's name. The
+cross-application render guard in `scripts/activity-sentences.render.test.tsx`
+checks the activity phrases of Mail, Spaces, Notebooks, Pulse, and Grids in both
+German and English. Compact names may ellipsize visually, but their complete
+text stays available to assistive technology. A timeline's avatar aligns with
+its section title; a virtual feed keeps its own inset and grouping.

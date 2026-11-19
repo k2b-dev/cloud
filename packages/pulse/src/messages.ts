@@ -289,7 +289,6 @@ export const pulseMessages = i18n.define({
       overviewActivitySourceCurrent: ({ name }: { name: string }) => `Source “${name}” is no longer marked stale`,
       overviewActivitySourceFreshness: ({ name }: { name: string }) => `Freshness of source “${name}” changed`,
       overviewActivityUnknown: ({ kind }: { kind: string }) => `Recorded change: ${kind}`,
-      overviewActorService: "Agent or service account:",
       overviewPin: "On overview",
       overviewPinSaving: "Saving…",
       overviewPinConflict: "The query changed or four queries are already pinned. Check the latest state before trying again.",
@@ -880,7 +879,6 @@ export const pulseMessages = i18n.define({
       overviewActivitySourceCurrent: ({ name }: { name: string }) => `Quelle „${name}“ ist nicht mehr als veraltet markiert`,
       overviewActivitySourceFreshness: ({ name }: { name: string }) => `Frische der Quelle „${name}“ geändert`,
       overviewActivityUnknown: ({ kind }: { kind: string }) => `Aufgezeichnete Änderung: ${kind}`,
-      overviewActorService: "Agent oder Dienstkonto:",
       overviewPin: "Auf Übersicht",
       overviewPinSaving: "Wird gespeichert …",
       overviewPinConflict:

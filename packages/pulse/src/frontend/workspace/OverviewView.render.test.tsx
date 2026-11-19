@@ -100,5 +100,7 @@ test.each(["en", "de"])("%s activity distinguishes people, services and automati
   expect(found).toEqual({ rows: 3, people: 1, services: 1, automatic: 1, titles: 0 });
   expect(html).toContain("Mira Lang");
   expect(html).toContain("Import service");
+  expect(html).not.toContain("Agent oder Dienstkonto:");
+  expect(html).not.toContain("Agent or service account:");
   expect(html).toContain(locale === "de" ? "automatisch" : "automatic");
 });

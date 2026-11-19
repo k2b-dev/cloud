@@ -7783,10 +7783,10 @@
 
 /* ActivityList: inset rows like the Mail list, using the shared control radius and row fills.
    44px is Mail's single-line row height; the content padding matches FileGrid's list rows.
-   Text is never clipped. Long sentences grow within their row, including on a phone. */
+   Embedded lists align the avatar with the surrounding heading. Sentences wrap; compact actor names ellipsize. */
 .k2b-ui .k2b-activity {
-  margin: 0;
-  padding: 0 0.5rem;
+  margin: 0 -0.75rem;
+  padding: 0;
   list-style: none;
 }
 .k2b-ui .k2b-activity > li { position: relative; }
@@ -7831,9 +7831,15 @@
   padding: 0.5rem 0.75rem;
   border-radius: var(--k2b-radius-control);
 }
-.k2b-ui .k2b-activity__entry:where(:hover) { background: var(--k2b-app-workspace-hover); }
+.k2b-ui .k2b-activity__entry:where(:hover) {
+  --k2b-activity-row-surface: var(--k2b-app-workspace-hover);
+  background: var(--k2b-app-workspace-hover);
+}
 .k2b-ui .k2b-activity__entry[data-clickable] { cursor: pointer; }
-.k2b-ui .k2b-activity__entry[data-selected] { background: var(--k2b-row-selected); }
+.k2b-ui .k2b-activity__entry[data-selected] {
+  --k2b-activity-row-surface: var(--k2b-row-selected);
+  background: var(--k2b-row-selected);
+}
 /* The rail pauses behind the avatar and its optional status mark, on every surface. */
 .k2b-ui .k2b-activity > li.k2b-activity__entry::before {
   bottom: auto;
@@ -7862,14 +7868,14 @@
 }
 .k2b-ui .k2b-activity__icon {
   position: absolute;
-  inset: auto -3px -3px auto;
+  inset: auto -6px -4px auto;
   display: grid;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   place-items: center;
   border-radius: 50%;
   color: var(--k2b-text-muted);
-  background: var(--k2b-surface);
+  outline: 2px solid var(--k2b-activity-row-surface, transparent);
   font-size: 12px;
   line-height: 1;
 }
@@ -7895,6 +7901,20 @@
   overflow-wrap: anywhere;
   white-space: pre-line;
 }
+.k2b-ui .k2b-activity__entry[data-tone="danger"] .k2b-activity__detail { color: var(--k2b-danger-text); }
+.k2b-ui .k2b-activity__entry[data-tone="warning"] .k2b-activity__detail { color: var(--k2b-warning-text); }
+.k2b-ui .k2b-activity[data-density="compact"] .k2b-activity__actor {
+  display: inline-flex;
+  max-width: 100%;
+  vertical-align: bottom;
+  white-space: pre;
+}
+.k2b-ui .k2b-activity[data-density="compact"] .k2b-activity__actor-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2b-ui .k2b-activity__actor > :last-child { flex: none; }
 .k2b-ui .k2b-activity__before { color: var(--k2b-text-muted); }
 .k2b-ui .k2b-activity__entry .k2b-activity__meta {
   padding-top: 2px;
@@ -8026,8 +8046,8 @@
   gap: 16px;
 }
 /* The ScrollArea owns the same two insets as a workspace list, including its scroll track. */
-.k2b-ui .k2b-activity-dialog__list { flex: 1 1 0; }
-.k2b-ui .k2b-activity-dialog__list > .k2b-activity { padding-inline: 0; }
+.k2b-ui .k2b-activity-dialog__list { flex: 1 1 0; margin-inline: -1.25rem; }
+.k2b-ui .k2b-activity-dialog__list > .k2b-activity { margin-inline: 0; padding-inline: 0; }
 .k2b-ui .k2b-activity-dialog__filters { flex: none; min-width: 0; }
 .k2b-ui .k2b-activity-dialog__subtitle {
   margin: 0;

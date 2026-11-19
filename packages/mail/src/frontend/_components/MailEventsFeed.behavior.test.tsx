@@ -126,7 +126,7 @@ test.skipIf(isServer)("lists events under their day, opens a conversation in pla
     expect(feed.text()).toContain("Heute");
     expect(feed.dom.root.querySelectorAll(".k2b-activity__entry")).toHaveLength(3);
     expect(feed.dom.root.querySelectorAll("[data-mail-event] [title]")).toHaveLength(0);
-    expect(feed.dom.root.querySelector("[data-mail-events-person]")?.classList.contains("k2b-filter-chip")).toBe(false);
+    expect(feed.dom.root.querySelector("[data-mail-events-person]")?.classList.contains("k2b-filter-chip")).toBe(true);
     expect(feed.rows().map((row) => row.dataset.tone)).toEqual(["error", "draft", "automation"]);
     expect(feed.rows()[0]?.querySelector("img")?.getAttribute("src")).toBe(`/api/accounts/users/${MIRA}/avatar?rev=fixture-picture`);
     expect(feed.rows()[0]?.textContent).toContain("Details in der Unterhaltung.");

@@ -3718,7 +3718,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(await rows(page).count()).toBe(11);
             expect(await rows(page).locator(".k2b-activity__entry").count()).toBe(11);
             expect(await rows(page).locator("[title]").count()).toBe(0);
-            expect(await page.locator("[data-mail-events-person].k2b-filter-chip").count()).toBe(0);
+            expect(await page.locator("[data-mail-events-person].k2b-filter-chip").count()).toBe(1);
+            const filterLooks = await page.locator("[data-mail-events-filters] .k2b-filter-chip").evaluateAll((chips) =>
+              chips.map((chip) => {
+                const style = getComputedStyle(chip);
+                return [style.borderTopWidth, style.minHeight, style.padding, style.borderRadius];
+              }),
+            );
+            expect(filterLooks[0]?.[0]).toBe("1px");
+            expect(filterLooks[1]).toEqual(filterLooks[0]);
+
             const firstRow = rows(page).first().locator(".k2b-activity__entry");
             const rowGeometry = await firstRow.evaluate((element) => {
               const surface = element.getBoundingClientRect();

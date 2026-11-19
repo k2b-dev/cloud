@@ -100,12 +100,7 @@ export const mailActivityIcon = (event: MailActivityEvent): string => {
   return "ti-history";
 };
 
-export const mailActivityActorLabel = (event: MailActivityEvent, locale = "en"): string => {
-  const t = mailConversationUiMessages.resolve([locale]).t;
-  return event.actor.kind === "workflow" && event.actor.displayName !== "Workflow"
-    ? t.workflowActor({ name: event.actor.displayName })
-    : event.actor.displayName;
-};
+export const mailActivityActorLabel = (event: MailActivityEvent): string => event.actor.displayName;
 
 /** One row of the activity timeline: the sentence, its icon, and who did it; the timeline bundles repeats of a day. */
 export const mailActivityEntry = (event: MailActivityEvent, locale = "en"): ActivityEntry => {
@@ -119,14 +114,16 @@ export const mailActivityEntry = (event: MailActivityEvent, locale = "en"): Acti
     // The red icon alone does not say it to a screen reader.
     iconLabel: failed ? t.activityFailed : undefined,
     text: label,
-    actor: mailActivityActorLabel(event, locale),
+    actor: mailActivityActorLabel(event),
     avatar: {
       name: event.actor.displayName,
       kind:
         event.actor.kind === "workflow" || event.actor.kind === "service_account"
           ? "service"
-          : event.actor.kind === "user" && event.actor.id
-            ? "person"
+          : event.actor.kind === "user"
+            ? event.actor.id
+              ? "person"
+              : "deleted"
             : "system",
       src:
         event.actor.kind === "user" && event.actor.id && event.actor.avatarHash

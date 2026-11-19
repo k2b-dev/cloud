@@ -37,10 +37,10 @@ export type ActivityAction = {
   data?: string;
 };
 
-/** Identity for the avatar; the actor text stays application-owned. Deleted identities use `system`. */
+/** Identity for the avatar; the actor text stays application-owned. Deleted people use `deleted`; system events keep their own glyph. */
 export type ActivityAvatar = {
   name: string;
-  kind: "person" | "service" | "system";
+  kind: "person" | "service" | "system" | "deleted";
   src?: string | null;
 };
 
@@ -358,6 +358,7 @@ function ActivityRowItem(props: {
       {...e().attrs}
       tabindex="-1"
       class={props.class ? `k2b-activity__entry ${props.class}` : "k2b-activity__entry"}
+      data-tone={TONES[e().tone ?? "neutral"]}
       data-selected={props.selected ? "" : undefined}
       data-first={props.first ? "" : undefined}
       data-end={props.end}
@@ -377,7 +378,15 @@ function ActivityRowItem(props: {
             size="xs"
             shape={avatar().kind === "service" ? "square" : "circle"}
             tone={avatar().kind === "person" ? "person" : "neutral"}
-            icon={avatar().kind === "service" ? "ti ti-robot" : avatar().kind === "system" ? "ti ti-settings" : undefined}
+            icon={
+              avatar().kind === "service"
+                ? "ti ti-robot"
+                : avatar().kind === "system"
+                  ? "ti ti-settings"
+                  : avatar().kind === "deleted"
+                    ? "ti ti-user-off"
+                    : undefined
+            }
           />
         </span>
         <Show when={marked()}>
@@ -394,9 +403,9 @@ function ActivityRowItem(props: {
       </span>
       <div class="k2b-activity__body">
         <div class="k2b-activity__text">
-          <span>
-            {actor()}
-            {" · "}
+          <span class="k2b-activity__actor">
+            <span class="k2b-activity__actor-name">{actor()}</span>
+            <span>{" · "}</span>
           </span>
           <Show when={clickable()} fallback={text()}>
             <Show

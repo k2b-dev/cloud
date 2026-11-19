@@ -125,7 +125,7 @@ export function RecordHistoryList(props: HistoryProps) {
         actor: entry.userDisplayName ?? (entry.userId === null ? t().systemActor : t().deletedUser),
         avatar: {
           name: entry.userDisplayName ?? "",
-          kind: entry.userId !== null && entry.userDisplayName ? "person" : "system",
+          kind: entry.userId === null ? "system" : entry.userDisplayName ? "person" : "deleted",
           src:
             entry.userId && entry.userAvatarHash
               ? `/api/accounts/users/${encodeURIComponent(entry.userId)}/avatar?rev=${encodeURIComponent(entry.userAvatarHash)}`

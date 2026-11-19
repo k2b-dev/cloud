@@ -1989,11 +1989,15 @@
 .mail-events__feed {
   flex: 1;
 }
-.mail-events__skeleton { padding-block-end: 0.5rem; }
+/* The embedded loading timeline aligns with VirtualFeed's 0.5rem inset plus the shared row's 0.75rem padding. */
+.mail-events__skeleton { padding: 0 1.25rem 0.5rem; }
 /* VirtualFeed owns scrolling. Each item supplies the message list's two half-rem insets. */
 [data-mail-event] { padding-inline: 0.5rem; }
 /* Keep exactly the Mail message-list hover token on the shared row. */
-.k2b-ui .mail-events__row:where(:hover) { background: var(--ui-hover); }
+.k2b-ui .mail-events__row:where(:hover) {
+  --k2b-activity-row-surface: var(--ui-hover);
+  background: var(--ui-hover);
+}
 
 /* The reply box (Mail v5): always open above the newest message or under the conversation, one reply draft, and the internal note. One flat
    surface with the 2 px field edge; every state keeps the same place and height, so nothing above or below moves. */

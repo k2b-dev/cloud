@@ -227,7 +227,14 @@ export default function NotebooksOverview(props: Props) {
       actor: item.actor.kind === "system" ? null : item.actor.displayName,
       avatar: {
         name: item.actor.displayName,
-        kind: item.actor.kind === "service_account" ? "service" : item.actor.kind === "user" && item.actor.id ? "person" : "system",
+        kind:
+          item.actor.kind === "service_account"
+            ? "service"
+            : item.actor.kind === "user"
+              ? item.actor.id
+                ? "person"
+                : "deleted"
+              : "system",
         src:
           item.actor.kind === "user" && item.actor.id && item.actor.avatarHash
             ? `/api/accounts/users/${encodeURIComponent(item.actor.id)}/avatar?rev=${encodeURIComponent(item.actor.avatarHash)}`

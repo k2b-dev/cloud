@@ -21,7 +21,7 @@ const link = (label) => { const a = document.createElement("a"); a.href = "#doc"
 const entries = () => [
   { at: "2026-11-12T08:31:00+01:00", icon: "ti ti-mail-x", tone: "danger", iconLabel: "fehlgeschlagen", text: "Einladung unzustellbar", detail: "team@stadtpark.example · Postfach voll",
     action: { icon: "ti ti-send", label: "Einladung erneut senden", data: "resend", onClick: () => { window.acted++; } }, kind: "mail" },
-  { at: "2026-11-12T08:30:00+01:00", icon: "ti ti-bell-ringing", tone: "warning", text: "Erinnerung gesendet", detail: ["Neue Frist 20.11. · ", link("Schreiben")], actor: "Mira Lang", kind: "mail" },
+  { at: "2026-11-12T08:30:00+01:00", icon: "ti ti-bell-ringing", tone: "warning", text: "Erinnerung gesendet", detail: ["Neue Frist 20.11. · ", link("Schreiben")], actor: "Alexandra-Christiane von Sonnenfeld-Lichtenberg", kind: "mail" },
   { at: "2026-11-10T14:05:00+01:00", icon: "ti ti-circle-check", tone: "success", text: "Freigegeben", actor: "Jonas Weber", kind: "change",
     detail: createComponent(ActivityList.Change, { term: "Stand", before: "In Prüfung", now: "Freigegeben" }) },
   { at: "2026-10-28T08:14:00+01:00", icon: "ti ti-eye", text: "Über den Link geöffnet", actor: "Gast", onOpen: () => { window.opened++; } },
@@ -53,7 +53,7 @@ const standalone = document.createElement("div");
 standalone.id = "standalone";
 standalone.style.background = "var(--k2b-surface-elevated)";
 document.body.append(standalone);
-render(() => createComponent(ActivityList.Row, { entry: { at: "2026-11-12T15:00:00Z", actor: "Alexandra-Christiane von Sonnenfeld-Lichtenberg", text: "hat die lange Unterhaltung zum Sommerfest im Stadtpark kommentiert", href: "#conversation", avatar: { name: "Alexandra-Christiane von Sonnenfeld-Lichtenberg", kind: "person", src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%23789'/%3E%3C/svg%3E" } }, now: "2026-11-12T15:31:00Z", onNavigate: (event) => { event.preventDefault(); window.opened++; } }), standalone);
+render(() => createComponent(ActivityList.Row, { entry: { at: "2026-11-12T15:00:00Z", actor: "Alexandra-Christiane von Sonnenfeld-Lichtenberg", text: "Unterhaltung zum Sommerfest im Stadtpark kommentiert", href: "#conversation", avatar: { name: "Alexandra-Christiane von Sonnenfeld-Lichtenberg", kind: "person", src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%23789'/%3E%3C/svg%3E" } }, now: "2026-11-12T15:31:00Z", onNavigate: (event) => { event.preventDefault(); window.opened++; } }), standalone);
 const states = document.createElement("div");
 states.id = "state-reference";
 document.body.append(states);
@@ -137,6 +137,12 @@ describe("ActivityList", () => {
           height: getComputedStyle(row).minHeight,
           // The rail pauses behind the icon (6 to 26 px) instead of a disc covering it, on any surface.
           gap: [rail.top, rail.height, below.top, below.width, below.left, getComputedStyle(iconElement).backgroundColor],
+          heading: document.querySelector(".k2b-section__header")!.getBoundingClientRect().left,
+          avatarLeft: icon.left,
+          marker: [
+            getComputedStyle(row.querySelector(".k2b-activity__icon")!).width,
+            getComputedStyle(row.querySelector(".k2b-activity__icon")!).outlineWidth,
+          ],
           fitted,
           icon: [icon.width, icon.left - list.left],
           column: body.left - icon.right,
@@ -147,8 +153,10 @@ describe("ActivityList", () => {
         };
       });
       expect(geometry.rail.slice(0, 2)).toEqual(["2px", "23px"]);
-      expect(geometry.icon).toEqual([24, 20]);
+      expect(geometry.icon).toEqual([24, 12]);
       expect(geometry.column).toBe(12);
+      expect(geometry.avatarLeft).toBe(geometry.heading);
+      expect(geometry.marker).toEqual(["12px", "2px"]);
       expect(geometry.gap).toEqual(["0px", "8px", "32px", "2px", "23px", "rgba(0, 0, 0, 0)"]);
       expect(geometry.fitted).toBeGreaterThan(200);
       expect(geometry.text).toEqual(["14px", "20px"]);
@@ -157,10 +165,30 @@ describe("ActivityList", () => {
       expect(geometry.radius).toBe(geometry.reference);
       expect(geometry.padding).toBe(geometry.referencePadding);
       expect(geometry.referenceInset).toBe("8px");
-      expect(geometry.inset).toEqual([8, 8]);
+      // Timeline surface overhangs the section content; its avatar aligns with the heading.
+      expect(geometry.inset).toEqual([0, 0]);
       expect(geometry.height).toBe("44px");
       expect(await page.locator(".k2b-activity [title]").count()).toBe(0);
       expect(geometry.dash).toBe("dashed");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("compact names ellipsize on one line while keeping their full accessible text", async () => {
+    const page = await load(390);
+    try {
+      const name = page
+        .locator('.k2b-activity[data-density="compact"] .k2b-activity__actor-name')
+        .filter({ hasText: "Alexandra-Christiane" });
+      expect(await name.textContent()).toBe("Alexandra-Christiane von Sonnenfeld-Lichtenberg");
+      const box = await name.evaluate((node) => ({
+        height: node.getBoundingClientRect().height,
+        clipped: node.scrollWidth > node.clientWidth,
+        ellipsis: getComputedStyle(node).textOverflow,
+      }));
+      expect(box).toEqual({ height: 20, clipped: true, ellipsis: "ellipsis" });
+      expect(await name.getAttribute("title")).toBeNull();
     } finally {
       await page.context().close();
     }

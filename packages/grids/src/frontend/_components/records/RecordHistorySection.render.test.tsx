@@ -76,7 +76,8 @@ describe("Record history", () => {
     expect(html).toContain("k2b-activity__avatar");
     expect(html).not.toContain(" title=");
     // Deleted and system actors use neutral glyphs, never coloured initials.
-    expect(html.match(/class="ti ti-settings"/g)).toHaveLength(2);
+    expect(html.match(/class="ti ti-settings"/g)).toHaveLength(1);
+    expect(html.match(/class="ti ti-user-off"/g)).toHaveLength(1);
     expect(html.match(/data-tint=/g)).toHaveLength(1);
     // The before and after of a field fold out from its row and are not rendered until then.
     expect(html).toMatch(/<button type="button" class="k2b-activity__text-button" aria-expanded="false"/);

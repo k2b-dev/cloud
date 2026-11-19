@@ -30,7 +30,7 @@ const present = (events: MailActivityEvent[], locale = "de") =>
   });
 
 const sentence = (row: { actorLabel: string; before: string; subject: string | null; after: string }) =>
-  `${row.actorLabel} ${row.before}${row.subject ?? ""}${row.after}`;
+  `${row.actorLabel} · ${row.before}${row.subject ?? ""}${row.after}`;
 
 describe("mailbox event presentation", () => {
   test("explains a system draft removal during F6 consolidation in both locales", () => {
@@ -81,13 +81,13 @@ describe("mailbox event presentation", () => {
       }),
     ]);
     expect(rows.map(sentence)).toEqual([
-      "Mira Schulz hat dich zu Invoice 4711 als zuständig hinzugefügt",
-      "Mira Schulz hat Invoice 4711 als erledigt markiert",
-      "Mira Schulz hat einen Entwurf begonnen",
-      "Mira Schulz – eine Nachricht wurde nicht gesendet in Invoice 4711",
-      "Mira Schulz hat eine Antwort gesendet in Invoice 4711",
-      "Workflow · Rechnungen hat Invoice 4711 mit Tag Rechnung versehen",
-      "Mail hat Invoice 4711 wieder geöffnet",
+      "Mira Schulz · Dir zugewiesen: Invoice 4711",
+      "Mira Schulz · Als erledigt markiert: Invoice 4711",
+      "Mira Schulz · Entwurf begonnen",
+      "Mira Schulz · Nachricht nicht gesendet in Invoice 4711",
+      "Mira Schulz · Antwort gesendet in Invoice 4711",
+      "Rechnungen · Tag Rechnung gesetzt in Invoice 4711",
+      "Mail · Wieder geöffnet: Invoice 4711",
     ]);
     expect(rows[0]?.detail).toBe("Zuständig: Mira Schulz und Du");
     expect(rows.map((row) => row.tone)).toEqual(["assign", "done", "draft", "error", "sent", "automation", "done"]);

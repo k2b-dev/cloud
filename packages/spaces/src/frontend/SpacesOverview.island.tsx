@@ -253,7 +253,14 @@ export default function SpacesOverview(props: Props) {
         actor: entry.actor.kind === "system" ? null : entry.actor.displayName,
         avatar: {
           name: entry.actor.displayName,
-          kind: entry.actor.kind === "service_account" ? "service" : entry.actor.kind === "user" && entry.actor.id ? "person" : "system",
+          kind:
+            entry.actor.kind === "service_account"
+              ? "service"
+              : entry.actor.kind === "user"
+                ? entry.actor.id
+                  ? "person"
+                  : "deleted"
+                : "system",
           src:
             entry.actor.kind === "user" && entry.actor.id && entry.actor.avatarHash
               ? `/api/accounts/users/${encodeURIComponent(entry.actor.id)}/avatar?rev=${encodeURIComponent(entry.actor.avatarHash)}`

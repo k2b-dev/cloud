@@ -164,8 +164,8 @@ const describe = (event: MailActivityEvent, context: MailEventContext): Sentence
       ? {
           icon: "ti ti-tag",
           tone: "automation",
-          before: t.taggedBefore,
-          after: t.taggedAfter({ tags: new Intl.ListFormat(context.locale, { type: "conjunction" }).format(tags) }),
+          before: t.taggedBefore({ tags: new Intl.ListFormat(context.locale, { type: "conjunction" }).format(tags) }),
+          after: t.taggedAfter,
           detail: null,
         }
       : { icon: "ti ti-tag", tone: "automation", before: t.tagsChangedBefore, after: t.tagsChangedAfter, detail: null };
@@ -176,8 +176,6 @@ const describe = (event: MailActivityEvent, context: MailEventContext): Sentence
 const actorLabel = (event: MailActivityEvent, context: MailEventContext): string => {
   const t = mailEventsMessages.resolve([context.locale]).t;
   if (event.actor.kind === "system") return t.system;
-  if (event.actor.kind === "workflow")
-    return event.actor.displayName === "Workflow" ? event.actor.displayName : t.workflow({ name: event.actor.displayName });
   return event.actor.displayName;
 };
 

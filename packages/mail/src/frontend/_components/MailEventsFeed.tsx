@@ -238,8 +238,10 @@ export function MailEventsFeed(props: {
           kind:
             row.automated || row.event.actor.kind === "service_account"
               ? "service"
-              : row.event.actor.kind === "user" && row.event.actor.id
-                ? "person"
+              : row.event.actor.kind === "user"
+                ? row.event.actor.id
+                  ? "person"
+                  : "deleted"
                 : "system",
           src: row.event.actor.kind === "user" ? cloudAvatarSource(row.event.actor.id, row.event.actor.avatarHash) : undefined,
         },
@@ -296,15 +298,16 @@ export function MailEventsFeed(props: {
           ]}
         >
           <Dropdown.Trigger
-            variant="ghost"
-            size="sm"
+            appearance="plain"
+            class="k2b-filter-chip"
+            data-state={props.filter.actorId ? "active" : "idle"}
             data-active={props.filter.actorId ? "true" : undefined}
             label={actorName() ? t().personValue({ name: actorName()! }) : t().person}
             data-mail-events-person
           >
             <i class="ti ti-user" aria-hidden="true" />
-            <span>{actorName() ? t().personValue({ name: actorName()! }) : t().person}</span>
-            <i class="ti ti-chevron-down" aria-hidden="true" />
+            <span class="k2b-filter-chip__label">{actorName() ? t().personValue({ name: actorName()! }) : t().person}</span>
+            <i class="ti ti-chevron-down k2b-filter-chip__chevron" aria-hidden="true" />
           </Dropdown.Trigger>
         </Dropdown.Root>
         <FilterToggle

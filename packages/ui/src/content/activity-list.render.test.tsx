@@ -226,7 +226,22 @@ test("the public row works in a feed and keeps identity kinds and pictures witho
   expect(service).toContain('class="ti ti-robot"');
   expect(service).toContain('data-shape="square"');
   expect(service).not.toContain("data-tint=");
-  const removed = row({ at: NOW, actor: "Gelöschter Benutzer", text: "Geändert", avatar: { name: "Gelöschter Benutzer", kind: "system" } });
-  expect(removed).toContain('class="ti ti-settings"');
+  const removed = row({
+    at: NOW,
+    actor: "Gelöschter Benutzer",
+    text: "Geändert",
+    avatar: { name: "Gelöschter Benutzer", kind: "deleted" },
+  });
+  expect(removed).toContain('class="ti ti-user-off"');
+  expect(removed).not.toContain('class="ti ti-settings"');
   expect(removed).not.toContain("data-tint=");
+});
+
+test("compact actor markup keeps the full accessible name and row tones for failure details", () => {
+  const name = "Alexandra-Christiane von Sonnenfeld-Lichtenberg";
+  const html = list({ entries: [{ at: NOW, actor: name, text: "Nachricht nicht gesendet", tone: "danger", detail: "Postfach voll" }] });
+  expect(html).toContain(`<span class="k2b-activity__actor-name">${name}</span>`);
+  expect(html).toMatch(/class="k2b-activity__entry\s*"[^>]*data-tone="danger"/);
+  expect(text(html)).toContain(`${name} · Nachricht nicht gesendet`);
+  expect(html).not.toContain(" title=");
 });

@@ -42,14 +42,16 @@ const entry: ActivityEntry = {
 - **One row:** a 24 px `Avatar`, the actor and sentence in 14 px, then the
   time in 13 px on the right. Pass `avatar: { name, kind, src? }` for identity: `person` keeps profile
   pictures or coloured initials, `service` shows a neutral square robot, and
-  `system` shows a neutral glyph for automatic or deleted identities. Without
+  `system` shows a neutral gear for automatic events; `deleted` shows a neutral
+  person-off glyph for deleted people. Without
   `avatar`, string actors get initials and JSX actors keep a neutral glyph. Without an actor, the row reads
   "automatic" with a neutral system avatar. Within the last week the time
   names the hour alone, before that the day and hour.
-- **Surface:** both sides keep the Mail list's 0.5rem inset. Rows use
+- **Surface:** timeline avatars align with the surrounding section title. The list
+  overhangs the content edge by the row's 0.75rem padding on both sides. Feed
+  owners keep the Mail list's 0.5rem surface inset. Rows use
   `--k2b-radius-control`, the FileGrid list's 0.5rem / 0.75rem padding, and
-  Mail's 2.75rem single-line minimum height. The avatar starts 1.25rem
-  inside the list viewport: 0.5rem surface inset plus 0.75rem row padding.
+  Mail's 2.75rem single-line minimum height.
   Hover uses the translucent `--k2b-app-workspace-hover`, so elevated and
   base surfaces both respond. Only `Row selected` uses `--k2b-row-selected`;
   expanding details leaves the surface unchanged.
@@ -57,8 +59,12 @@ const entry: ActivityEntry = {
 - **Icons:** ordinary kind and success icons are redundant with the sentence
   and stay hidden. Warning, danger, or an explicit `iconLabel` retain a
   small status mark at the avatar, outside the text axis. `icon` is optional;
-  warnings and failures without one use an alert glyph.
-- **Text:** sentences wrap in full, including on a phone. They have no
+  warnings and failures without one use a 12 px alert glyph outside the initials.
+  The marker's 2 px ring follows the row fill; warning and danger details use
+  `--k2b-warning-text` and `--k2b-danger-text`.
+- **Text:** write a standalone event phrase after the actor separator, for example
+  "Mira · Reply sent", never a predicate that continues the name ("Mira · has sent").
+  Sentences wrap in full, including on a phone. They have no
   tooltip or native `title`. Dates expose their full instant and distance
   as screen-reader text, without a hover hint.
 - **Rarely below:** one `detail` line (a result, the reason of a failure, a
@@ -102,7 +108,11 @@ leave modified clicks untouched so the browser can open another tab.
 </VirtualFeed>
 ```
 
-Use the same 0.5rem inset around each feed row as around the timeline.
+Mail's **Ereignisse** tab uses this row inside `VirtualFeed`. Its feed owns sticky
+day groups and pagination, so it intentionally has no timeline rail or dashed
+day headings. The row surface, identity, sentence, and accessible time stay shared.
+
+Use the Mail list's 0.5rem inset around each feed row.
 Keep application filters outside the row; a mailbox may filter on the server
 and preserve those filters in the URL.
 
@@ -111,8 +121,10 @@ and preserve those filters in the URL.
 - `density="compact"` (default) for a card or a side column.
 - `density="wide"` for a dialog or a page, at most 80rem wide.
 
-Both keep the avatar, sentence, and time in the same columns. Long sentences
-wrap beside the time; no content is clipped or hidden behind a tooltip.
+Both keep the avatar, sentence, and time in the same columns. In compact lists,
+the actor name stays on one line with an ellipsis; the complete name remains in
+the accessible text without a native tooltip. Wide lists wrap the full name.
+Long event sentences wrap beside the time.
 
 `limit` shows only the newest rows; the rail then fades out below them. Pass
 `more` when further pages follow, for example above a `LoadMore`.
