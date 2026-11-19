@@ -1,4 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
+import { type AddressInfo, connect, createServer } from "node:net";
+import { connect as tlsConnect } from "node:tls";
 import { EMPTY_NETWORK_ALLOWLIST, isUnsafeNetworkAddress, parseNetworkAllowlist } from "../shared/network-address";
 import {
   isNetworkTargetBlocked,
@@ -125,6 +127,45 @@ describe("fail-closed network resolution and pinned sockets", () => {
     });
     pinnedNetworkLookup([addresses[0]!])("never-resolve.test", { family: 6 }, (error) => expect(error?.code).toBe("ENOTFOUND"));
     pinnedNetworkLookup([])("never-resolve.test", { all: true }, (error) => expect(error?.code).toBe("ENOTFOUND"));
+  });
+
+  // A host with several vetted addresses, the first of which drops every connection attempt (a
+  // documentation address that is never routed), must still be reached through the next one, well
+  // within a client's connection timeout. Mail's IMAP and SMTP clients connect this way, plain and
+  // with TLS.
+  test.each(["plain", "tls"] as const)("a %s socket tries every vetted address, not only the first", async (transport) => {
+    const accepted: string[] = [];
+    const server = createServer((socket) => {
+      accepted.push(socket.localAddress ?? "");
+      socket.destroy();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const addresses: PublicNetworkAddress[] = [
+      { address: "192.0.2.1", family: 4 },
+      { address: "127.0.0.1", family: 4 },
+    ];
+    const started = performance.now();
+    try {
+      await new Promise<void>((resolve) => {
+        const options = { host: "imap.example.test", port, lookup: pinnedNetworkLookup(addresses) };
+        const socket =
+          transport === "tls" ? tlsConnect({ ...options, servername: "imap.example.test", rejectUnauthorized: true }) : connect(options);
+        const done = (): void => {
+          clearTimeout(timer);
+          socket.destroy();
+          resolve();
+        };
+        const timer = setTimeout(done, 5_000);
+        // The server closes every connection it accepts; the TLS handshake then fails, which is fine here.
+        socket.once("close", done);
+        socket.once("error", done);
+      });
+    } finally {
+      server.close();
+    }
+    expect(accepted).toEqual(["127.0.0.1"]);
+    expect(performance.now() - started).toBeLessThan(5_000);
   });
 });
 

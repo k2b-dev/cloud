@@ -9,7 +9,7 @@ import { safeErrorDetail } from "./error-messages";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { providerErrorCode, providerErrorMessage } from "./provider-errors";
-import { recordProviderReachable } from "./provider-operation-lock";
+import { providerBreakerOpenForMs, recordProviderFailure, recordProviderReachable } from "./provider-operation-lock";
 import { enqueueBindingRediscovery, enqueueFolderReconciliation, enqueueFolderSync } from "./sync-runtime";
 
 const log = logger("mail:imap-push");
@@ -178,6 +178,10 @@ type ImapPushRuntimeDependencies = {
   loadReconnectBudget(plan: ImapPushBindingPlan): Promise<ImapReconnectBudget>;
   /** The provider answered: closes the remote mailbox's provider breaker, so its waiting syncs run now. */
   recordProviderReachable(remoteResourceId: string): Promise<void>;
+  /** A connection attempt failed: a timeout opens the breaker or reopens it for longer; returns how long, or `null`. */
+  recordProviderFailure(remoteResourceId: string, error: unknown): Promise<number | null>;
+  /** How long the remote mailbox's provider breaker stays open, or 0. */
+  providerBreakerOpenForMs(remoteResourceId: string): Promise<number>;
   leaderMutex: Mutex;
   permits: PermitPool;
   sleep(ms: number, signal: AbortSignal): Promise<void>;
@@ -880,6 +884,18 @@ export const runImapPushBinding = async (
             continue;
           }
 
+          // The mail server did not answer recent connection attempts. Push does not try it either
+          // until the breaker's window ends; it looks again at least every longest reconnect delay,
+          // so a breaker that a manual sync or a sync that reached the provider closed early lets
+          // it connect soon.
+          const unreachableForMs = await dependencies.providerBreakerOpenForMs(plan.remoteResourceId);
+          if (unreachableForMs > 0) {
+            activeHealthState = "reconnecting";
+            await writeHealth({ state: "reconnecting", mode: "none", reconnectAttempt });
+            await dependencies.sleep(Math.min(unreachableForMs, MAX_RECONNECT_DELAY_MS), signal);
+            continue;
+          }
+
           if (!(await acquireActivePermit(plan))) {
             reconnectAttempt += 1;
             activeHealthState = "reconnecting";
@@ -964,7 +980,19 @@ export const runImapPushBinding = async (
             }
           } catch (error) {
             if (signal.aborted) return;
+            // A connection attempt the server let run into its timeout opens the breaker, as one of a
+            // folder sync does, so push, folder checks, and rediscovery all wait for its window.
+            const unreachable = connectedAt === null && (await dependencies.recordProviderFailure(plan.remoteResourceId, error)) !== null;
             reconnectAttempt = connectedAt !== null && Date.now() - connectedAt >= STABLE_CONNECTION_MS ? 1 : reconnectAttempt + 1;
+            // Every failed connection or lost listener leaves a log line, not only the health row: a
+            // listener that keeps failing must be visible in the logs. Backoff and the breaker bound
+            // how often this runs.
+            log.warn(connectedAt === null ? "IMAP push could not connect" : "IMAP push listener lost its connection", {
+              bindingId: plan.bindingId,
+              reconnectAttempt,
+              unreachable,
+              ...imapPushFailureFields(error),
+            });
             activeHealthState = "reconnecting";
             await writeHealth({
               state: "reconnecting",
@@ -972,7 +1000,10 @@ export const runImapPushBinding = async (
               reconnectAttempt,
               error,
             });
-            if (!(error && typeof error === "object" && "effectsApplied" in error && error.effectsApplied === true)) {
+            // A server that did not answer has no changes to report: queuing a folder sync and a
+            // rediscovery would only ask it again. The first connection that reaches it again checks
+            // the folder (applyImapReconciliationHint).
+            if (!unreachable && !(error && typeof error === "object" && "effectsApplied" in error && error.effectsApplied === true)) {
               const applied = await applyImapPushHints({
                 expected: plan,
                 hints: [{ type: "disconnected", folderPath: plan.folderPath, reason: "error" }],
@@ -1026,6 +1057,27 @@ export const runImapPushBinding = async (
   }
 };
 
+/**
+ * A connection attempt of IMAP push that the server let run into its timeout opens the breaker, as
+ * one of a folder sync does. While the breaker is open, folder checks do not try the server, so
+ * push may be the only one that finds it unreachable: an active mailbox then says so too, with the
+ * timeout as its reason. The next sync that reaches the server makes it active again.
+ */
+const recordPushConnectFailure = async (remoteResourceId: string, error: unknown): Promise<number | null> => {
+  const openForMs = await recordProviderFailure(remoteResourceId, error);
+  if (openForMs === null) return null;
+  await sql`
+    UPDATE mail.mailboxes mailbox
+    SET health = 'degraded', health_reason = ${providerErrorMessage(error, "The mail server did not answer in time")}
+    FROM mail.remote_resources resource
+    WHERE resource.id = ${remoteResourceId}::uuid
+      AND mailbox.id = resource.mailbox_id
+      AND mailbox.health = 'active'
+      AND mailbox.sync_enabled = true
+  `.catch((cause) => log.warn("IMAP push could not record an unreachable mail server", { remoteResourceId, error: errorDetail(cause) }));
+  return openForMs;
+};
+
 const defaultDependencies: ImapPushRuntimeDependencies = {
   listPlans,
   loadPlan: loadImapPushPlan,
@@ -1038,6 +1090,8 @@ const defaultDependencies: ImapPushRuntimeDependencies = {
   enqueueRediscovery: enqueueBindingRediscovery,
   loadReconnectBudget,
   recordProviderReachable,
+  recordProviderFailure: recordPushConnectFailure,
+  providerBreakerOpenForMs,
   get leaderMutex() {
     return listenerLeaderMutex();
   },

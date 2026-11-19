@@ -9,7 +9,10 @@ type MailboxHealthPresentation = {
   actionLabel: string | null;
 };
 
-/** A degraded mailbox whose latest synchronization timed out; the saved account is still valid and Mail retries on its own. */
+/**
+ * A degraded mailbox whose mail server did not answer the latest connection attempt; the saved account
+ * is still valid and Mail tries again at growing intervals.
+ */
 export const mailboxSyncTimedOut = (reason: string | null): boolean =>
   reason?.toLowerCase().includes("failed to establish connection in required time") === true;
 
@@ -20,8 +23,9 @@ const healthMessages = i18n.define({
       pausedTitle: "Mail sync is paused",
       pausedMessage: "New mail will not appear until synchronization is resumed.",
       resumeSync: "Resume sync",
-      timeoutTitle: "Mail is taking longer to connect",
-      timeoutMessage: "The saved account is valid, but the latest synchronization timed out. Mail will retry automatically.",
+      timeoutTitle: "Mail server not reachable",
+      timeoutMessage:
+        "Mail cannot reach your provider's mail server and tries again at growing intervals. The saved account stays connected. If this lasts, ask your mail provider whether it blocks connections.",
       degradedTitle: "Mail could not synchronize",
       degradedMessage: "The saved account is still connected. Review the connection status for details and recovery actions.",
       viewStatus: "View status",
@@ -60,9 +64,9 @@ const healthMessages = i18n.define({
       pausedTitle: "E-Mail-Synchronisierung ist pausiert",
       pausedMessage: "Neue E-Mails erscheinen erst, wenn die Synchronisierung fortgesetzt wird.",
       resumeSync: "Synchronisierung fortsetzen",
-      timeoutTitle: "Die Verbindung dauert länger als erwartet",
+      timeoutTitle: "Mailserver nicht erreichbar",
       timeoutMessage:
-        "Das gespeicherte Konto ist gültig, aber die letzte Synchronisierung ist abgelaufen. Mail versucht es automatisch erneut.",
+        "Mail erreicht den Mailserver deines Anbieters nicht und versucht es in wachsenden Abständen erneut. Das gespeicherte Konto bleibt verbunden. Hält das an, frag deinen Anbieter, ob er Verbindungen sperrt.",
       degradedTitle: "E-Mails konnten nicht synchronisiert werden",
       degradedMessage: "Das gespeicherte Konto ist weiterhin verbunden. Prüfe den Verbindungsstatus für Details und mögliche Maßnahmen.",
       viewStatus: "Status anzeigen",

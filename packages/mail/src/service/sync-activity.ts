@@ -15,8 +15,11 @@ export type FolderSyncTrigger =
   | "woken"
   | "rate_limited";
 
-/** How a folder batch ended: it committed a change, found the folder unchanged, waited, or failed. */
-export type FolderBatchOutcome = "committed" | "unchanged" | "deferred" | "failed";
+/**
+ * How a folder batch ended: it committed a change, found the folder unchanged, waited, found the
+ * mail server unreachable without trying it again, or failed.
+ */
+export type FolderBatchOutcome = "committed" | "unchanged" | "deferred" | "unreachable" | "failed";
 
 const REPORT_INTERVAL_MS = 10 * 60_000;
 

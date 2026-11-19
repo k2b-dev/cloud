@@ -66,9 +66,16 @@ removals alone rank like any folder check.
 
 A folder sync that finds the mailbox's provider lease held does not ask again
 every few seconds. It parks with its place and rank in the line, and the release
-that makes it next wakes it. When a wake is lost, for example because a Mail
-process stopped, the minute scheduler wakes the line. In the folder sync activity
-log, `busy` then counts one turn per waiting folder, and `woken` counts the wakes.
+that makes it next wakes it. A woken folder keeps the free lease for its job for
+up to two minutes, and each scheduler run renews that while the job has not
+started. When no release wakes a parked folder, for example because a Mail
+process stopped or the waiter ahead of it never came back, the scheduler wakes
+the line when it next reaches the mailbox, usually within a minute; on an
+installation with more than 500 eligible folders that can take a few runs. A
+waiter that is not woken within five minutes leaves the line, and its folder
+returns with its next scheduled sync. In the folder sync activity log, `busy` counts the turns that
+found the lease held, which is about once per waiting folder and scheduler run
+instead of every few seconds, and `woken` counts the wakes that started a job.
 
 Inspect `cld mail sync runs --mailbox <mailbox> --state failed` and the mailbox
 sync status. A long batch may perform flag or UID reconciliation before its
