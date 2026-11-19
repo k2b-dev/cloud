@@ -360,10 +360,10 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
           let resized = false;
           const initial = firstDelivery;
           firstDelivery = false;
-          for (const {
-            target,
-            contentRect: { width, height },
-          } of entries) {
+          for (const { target, borderBoxSize, contentRect } of entries) {
+            const box = borderBoxSize?.[0];
+            const width = box?.inlineSize ?? contentRect.width;
+            const height = box?.blockSize ?? contentRect.height;
             const previous = measured.get(target);
             measured.set(target, { width, height });
             const changedSize =
@@ -392,11 +392,10 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       return;
     if (!watched.has(element)) {
       watched.add(element);
-      // Capture the content box before registering any roots: an intrinsic change between follow() and the first
-      // delivery must not become an invisible baseline. Computed dimensions round CSS pixels to decimal text;
-      // the delivery comparison ignores only that sub-hundredth-pixel serialization difference.
+      // Intrinsic padding and borders change the height the frame needs even when the content box stays put.
+      // Match the observer's border box before its first delivery, preserving fractional layout dimensions.
       const inset = (axis: "width" | "height") =>
-        style.boxSizing !== "border-box"
+        style.boxSizing === "border-box"
           ? 0
           : axis === "width"
             ? Number.parseFloat(style.paddingLeft) +
@@ -408,8 +407,8 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
               Number.parseFloat(style.borderTopWidth) +
               Number.parseFloat(style.borderBottomWidth);
       measured.set(element, {
-        width: Number.parseFloat(style.width) - inset("width"),
-        height: Number.parseFloat(style.height) - inset("height"),
+        width: Number.parseFloat(style.width) + inset("width"),
+        height: Number.parseFloat(style.height) + inset("height"),
       });
       pending.push(element);
     }
@@ -427,7 +426,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
         observeContent(child, pending, grows || crossStretch || /grid|contents/.test(style.display));
       }
     }
-    if (element === level) for (const target of pending) sizes?.observe(target);
+    if (element === level) for (const target of pending) sizes?.observe(target, { box: "border-box" });
   };
   const changes =
     typeof MutationObserver === "function"
@@ -458,7 +457,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
                   if (inFlow && record.target instanceof Element && shells.has(record.target)) {
                     // Registration has no layout read. The first report schedules structural discovery in a frame.
                     watched.add(node);
-                    sizes?.observe(node);
+                    sizes?.observe(node, { box: "border-box" });
                     refreshShells = true;
                   }
                 }

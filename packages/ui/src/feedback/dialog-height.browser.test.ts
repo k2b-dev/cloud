@@ -320,6 +320,38 @@ describe(`${browserName} the frame follows its content`, () => {
       }
     });
 
+  for (const theme of ["light", "dark"])
+    test(`fractional content edges in the ${theme} theme keep the held body free of overflow`, async () => {
+      const page = await (await browser.newContext({ ...desktop, reducedMotion: "reduce" })).newPage();
+      try {
+        await page.setContent(`<html class="${theme}"><head><style>${css}</style></head><body class="k2b-ui"></body></html>`);
+        await page.addScriptTag({ content: script });
+        await page.evaluate(() => (window as unknown as HeightWindow).openForm(false, false, undefined, true));
+        await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
+        await settled(page);
+        const sizes = await page.evaluate(async () => {
+          const dialog = document.querySelector("dialog")!;
+          const content = document.querySelector<HTMLElement>("[data-content]")!;
+          const body = dialog.querySelector<HTMLElement>(".k2b-panel-dialog__body")!;
+          // Content-box height remains 123.375 px; only its border box grows. No attribute observer measures it.
+          content.style.boxSizing = "content-box";
+          content.style.paddingBottom = "0.984375px";
+          // settled: let the content border-box report and its queued frame measurement run.
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          const held = dialog.getBoundingClientRect().height;
+          const overflow = body.scrollHeight - body.clientHeight;
+          dialog.style.removeProperty("height");
+          return { held, natural: dialog.getBoundingClientRect().height, overflow, naturalOverflow: body.scrollHeight - body.clientHeight };
+        });
+        expect(sizes.held).toBeGreaterThanOrEqual(sizes.natural);
+        expect(sizes.held - sizes.natural).toBeLessThan(1 / 64);
+        expect(sizes.naturalOverflow).toBe(0);
+        expect(sizes.overflow).toBe(0);
+      } finally {
+        await page.context().close();
+      }
+    });
+
   test("holding fractional content never introduces body scroll overflow", async () => {
     const page = await (await browser.newContext({ ...desktop, reducedMotion: "reduce" })).newPage();
     try {
@@ -336,6 +368,7 @@ describe(`${browserName} the frame follows its content`, () => {
         const samples: { natural: number; held: number; overflow: number; naturalOverflow: number }[] = [];
         for (const fraction of [0, 5 / 64, 15 / 64, 63 / 64]) {
           content.style.height = `${123 + fraction}px`;
+          // settled: let the content border-box report and its queued frame measurement run.
           for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
           const held = dialog.getBoundingClientRect().height;
           const overflow = body.scrollHeight - body.clientHeight;
