@@ -36,6 +36,8 @@ export type AiOpenQuestion = {
   app: { name: string; icon: string; accent?: string };
   /** Why the person's own Code waits (`code_attention` only); "Waiting for you" names the way out by it. */
   reason?: AiOpenQuestionCodeReason;
+  /** The archived chat personal Code still writes to (`chat_missing` only); its owner can restore it in place. */
+  archivedChat?: { id: string; title: string };
   createdAt: string;
 };
 
@@ -62,6 +64,7 @@ export const AiOpenQuestionsSchema = z.object({
         short: z.string(),
         app: z.object({ name: z.string(), icon: z.string(), accent: z.string().optional() }),
         reason: z.enum(AI_OPEN_QUESTION_CODE_REASONS).optional(),
+        archivedChat: z.object({ id: z.string(), title: z.string() }).optional(),
         createdAt: z.iso.datetime(),
       }),
     )

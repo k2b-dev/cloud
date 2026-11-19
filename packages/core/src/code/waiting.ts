@@ -104,7 +104,13 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
   const items: AiOpenQuestion[] = [];
   let count = 0,
     after = "";
-  const missingChat = codeChatMissingCondition(await codeChatSchemaAvailable());
+  const chatSchema = await codeChatSchemaAvailable();
+  const missingChat = codeChatMissingCondition(chatSchema);
+  // The owner's archived chat, which "Waiting for you" offers to restore; without the chat schema there is none.
+  const archivedChat = chatSchema
+    ? sql`LEFT JOIN LATERAL (SELECT chat.short_id AS archived_chat_id,chat.title AS archived_chat_title FROM ai.conversations chat
+        WHERE chat.id=c.chat_conversation_id AND chat.created_by_user_id=c.owner_user_id AND chat.archived_at IS NOT NULL) ac ON true`
+    : sql`LEFT JOIN LATERAL (SELECT NULL::text AS archived_chat_id,NULL::text AS archived_chat_title) ac ON true`;
   const principal = buildAccessPrincipalCondition({
     subject: { type: "user", userId: input.ownerUserId },
     columns: {
@@ -122,6 +128,8 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
         created_at: Date;
         failure_code: string | null;
         reason: "secret" | "mandate" | "access" | "chat_missing";
+        archived_chat_id: string | null;
+        archived_chat_title: string | null;
       })[]
     >`WITH candidates AS (
       SELECT c.*, COALESCE(c.active_version_id,a.version_id) AS version_id,a.state AS activation_state,a.failure,
@@ -137,7 +145,7 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
             WHERE j.app_id=c.owner_app_id AND a.permission='admin' AND ${principal})))
     ), problems AS (
       SELECT c.id AS code_id,c.version_id,${input.ownerUserId}::uuid AS user_id,c.owner_kind,c.owner_user_id,c.owner_app_id,c.owner_type,c.owner_id,c.title,
-        COALESCE(c.activation_at,c.created_at) AS created_at,c.failure->>'code' AS failure_code,
+        COALESCE(c.activation_at,c.created_at) AS created_at,c.failure->>'code' AS failure_code,ac.archived_chat_id,ac.archived_chat_title,
         CASE
           WHEN ${missingChat} AND c.owner_user_id=${input.ownerUserId}::uuid THEN 'chat_missing'
           WHEN EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(v.manifest->'secrets','[]'::jsonb)) b
@@ -149,6 +157,7 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
       FROM candidates c LEFT JOIN code.versions v ON v.id=c.version_id LEFT JOIN LATERAL
         (SELECT id,state,expires_at,confirmed_at FROM auth.mandates WHERE owner_app_id IN ('core','runner') AND workload_type='code.version'
           AND workload_id=c.active_version_id::text ORDER BY created_at DESC,id DESC LIMIT 1) m ON true
+        ${archivedChat}
     ) SELECT * FROM problems WHERE reason IS NOT NULL ORDER BY code_id LIMIT 50`;
     if (!rows.length) break;
     // An unavailable owner cannot break unrelated Assistant surfaces. Direct grants remain usable;
@@ -187,6 +196,9 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
         short: [...short].slice(0, 160).join(""),
         app: { name: "Code", icon: "ti ti-code" },
         reason: row.reason,
+        ...(row.reason === "chat_missing" && row.archived_chat_id
+          ? { archivedChat: { id: row.archived_chat_id, title: [...(row.archived_chat_title ?? "")].slice(0, 200).join("") } }
+          : {}),
         createdAt: row.created_at.toISOString(),
         href: `/app/assistant/code/${row.code_id}${row.reason === "secret" ? "?tab=secrets" : ""}`,
       });

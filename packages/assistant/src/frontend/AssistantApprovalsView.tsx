@@ -239,7 +239,11 @@ export default function AssistantApprovalsView(props: {
                   </section>
                 </Show>
                 <Show when={automationsShow()}>
-                  <AssistantWaitingAutomations entries={automations() ?? null} onRetry={() => void loadAutomations()} />
+                  <AssistantWaitingAutomations
+                    entries={automations() ?? null}
+                    onRetry={() => void loadAutomations()}
+                    onChanged={() => void readAutomations().then(setAutomations, () => {})}
+                  />
                 </Show>
               </Show>
             )}

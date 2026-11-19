@@ -1317,6 +1317,8 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
   /* The row's words take the width beside the tile, so its action moves under them, on the words' edge. */
   .assistant-waiting-page__row-copy { flex-basis: calc(100% - 2.375rem); }
   .assistant-waiting-page__open { margin-left: 2.375rem; }
+  /* A second action ("Restore chat") stands beside the first, not under it. */
+  .assistant-waiting-page__open + .assistant-waiting-page__open { margin-left: 0; }
 }
 /* While loading, each approval holds the room of a card: sentence, reason, and its two answers. */
 .k2b-ui .assistant-waiting-page__skeleton { display: flex; flex-direction: column; gap: 0.625rem; min-height: 10.5rem; padding: 0.875rem 1rem; }
