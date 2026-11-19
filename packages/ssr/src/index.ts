@@ -75,7 +75,7 @@ export type IslandVariants<T extends object = object> = {
    * Solid transform. Return the source unchanged for modules it does not concern. Server rendering never runs it, so a
    * page and its islands agree only when the variant's code renders what the full module renders for that page.
    */
-  transform: (source: string, path: string, variant: string) => string;
+  transform: (source: string, path: string, variant: string) => string | Promise<string>;
 };
 
 export type SsrConfig = {

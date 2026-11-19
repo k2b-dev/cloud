@@ -196,6 +196,29 @@ const writeAssetManifest = async (outdir: string, manifest: AssetManifest): Prom
 };
 
 /**
+ * The source of every JavaScript and TypeScript module the browser entries reach, statically or on demand. Bun parses
+ * the JSX itself here, without the Solid transform, which only the import graph needs: about 1.5 s for 315 islands.
+ */
+const browserSources = async (entrypoints: string[], external?: string[]): Promise<Map<string, string>> => {
+  const discovery = await Bun.build({
+    entrypoints,
+    target: "browser",
+    conditions: ["browser", "production"],
+    external: [...(external ?? []), "solid-js/jsx-runtime", "solid-js/jsx-dev-runtime"],
+    jsx: { runtime: "automatic", importSource: "solid-js" },
+    metafile: true,
+  });
+  if (!discovery.success || !discovery.metafile)
+    throw new AggregateError(discovery.logs, "[ssr] Could not list the island modules for variant builds.");
+  const sources = new Map<string, string>();
+  for (const input of Object.keys(discovery.metafile.inputs)) {
+    const path = resolve(process.cwd(), input);
+    if (/\.[cm]?[jt]sx?$/.test(path) && existsSync(path)) sources.set(path, await Bun.file(path).text());
+  }
+  return sources;
+};
+
+/**
  * Production island builds per variant, for example one per language. The
  * first name is the default build in `outdir`; every other name builds into
  * `outdir/<name>`. `transform` rewrites each browser source module of a
@@ -203,7 +226,7 @@ const writeAssetManifest = async (outdir: string, manifest: AssetManifest): Prom
  */
 export type IslandBuildVariants = {
   names: readonly string[];
-  transform: (source: string, path: string, variant: string) => string;
+  transform: (source: string, path: string, variant: string) => string | Promise<string>;
 };
 
 export const buildIslands = async (options: {
@@ -296,9 +319,18 @@ export const buildIslands = async (options: {
   const transformTimings = verbose ? new Map<string, number>() : undefined;
   const bundleStart = performance.now();
   const [defaultName, ...variantNames] = variants?.names ?? [];
+  const sources = variants ? await browserSources(components.map((c) => c.path).concat(errorFallback ?? []), external) : undefined;
   const bundle = async (variantOutdir: string, variant?: string): Promise<{ result: Bun.BuildOutput; asset?: AssetBuild }> => {
-    const rewrite = variant && variants ? (source: string, path: string) => variants.transform(source, path, variant) : undefined;
+    // A variant passes its rewritten modules as in-memory files. Unlike a plugin `onLoad`, which Bun also calls for
+    // `with { type: "file" }` imports, the files keep each import's loader. Solid source still goes through `onLoad`.
+    const rewritten = new Map<string, string>();
+    if (variant && variants && sources)
+      for (const [path, source] of sources) {
+        const contents = await variants.transform(source, path, variant);
+        if (contents !== source) rewritten.set(path, contents);
+      }
     const result = await Bun.build({
+      files: Object.fromEntries([...rewritten].filter(([path]) => !/\.(tsx|jsx)$/.test(path))),
       entrypoints: components.map((c) => c.id),
       outdir: variantOutdir,
       naming: { entry: "[name].js", chunk: "chunk-[hash].js" },
@@ -349,21 +381,13 @@ export const buildIslands = async (options: {
               const contents = await import(`${path}?`, {
                 with: { type: "text" },
               });
-              const source: string = contents.default;
               const result = {
-                contents: await transform(rewrite ? rewrite(source, path) : source, path, "dom"),
+                contents: await transform(rewritten.get(path) ?? contents.default, path, "dom"),
                 loader: "js" as const,
               };
               transformTimings?.set(path, performance.now() - t0);
               return result;
             });
-
-            // A variant also rewrites plain modules, including packages; Bun loads them itself otherwise.
-            if (rewrite)
-              build.onLoad({ filter: /\.(?:[cm]?[jt]s)$/ }, async ({ path }) => ({
-                contents: rewrite(await Bun.file(path).text(), path),
-                loader: /\.[cm]?ts$/.test(path) ? "ts" : "js",
-              }));
           },
         },
       ],
