@@ -417,6 +417,82 @@ describe("MailComposer in a floating window", () => {
     }
   });
 
+  test("a shared draft sent from the large window closes once with one toast, also when its own send arrives first live", async () => {
+    const offline = await import("@k2b/cloud/browser/shared-text");
+    const generations = spyOn(offline, "listSharedTextOfflineGenerations").mockResolvedValue([]);
+    const base = draftEditableContentInputSchema.strip().parse(initialDraft);
+    const document = createDraftDocument(base);
+    const state = encoding.toBase64(Y.encodeStateAsUpdate(document));
+    const cursor = "s6t.fixture.1";
+    const snapshot = { state, cursor, content: base };
+    let sent = false;
+    documentResponse = (path) => {
+      if (path.endsWith("/document"))
+        return Response.json({
+          generation: "1",
+          revision: 1,
+          lifecycle: sent ? "sending" : "draft",
+          historyComplete: true,
+          fresh: snapshot,
+          durable: snapshot,
+          frozen: sent ? { state, cursor, generation: "1", revision: 1 } : null,
+        });
+      if (path.endsWith("/document/snapshot")) return Response.json({ generation: "1", status: "saved", revision: 1, durable: snapshot });
+      if (path.endsWith("/document/rest")) return Response.json({ status: "unchanged", durableSourceState: state });
+      if (path.endsWith("/drafts/Draft1"))
+        return Response.json({ ...initialDraft, editMode: "shared", generation: "1", state: sent ? "sending" : "draft" });
+      return null;
+    };
+    const send = globalThis.fetch;
+    let socket!: OfflineWebSocket;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        if (!new URL(request.url).pathname.endsWith("/commands")) return send(input, init);
+        // The server closes the draft's generation and tells every open copy before the command answers.
+        sent = true;
+        socket.message({ type: "error", payload: { code: "GENERATION_CLOSED", message: "Draft sent", docId: "Draft1", reopen: true } });
+        await Bun.sleep(60);
+        return send(input, init);
+      },
+      { preconnect: send.preconnect },
+    );
+    localStorage.setItem("cloud:mail:shared:Usr001:Draft1:1:remember", "no");
+    // Everything the composer shows while it sends: no notice and no lifecycle box may appear, not even for a frame.
+    const seen = new Set<string>();
+    const observer = new MutationObserver(() => {
+      for (const element of dom.document.querySelectorAll(".mail-inline-draft-notice, .mail-draft-hint[data-tone], .k2b-notice-card"))
+        if (!element.closest("[hidden]")) seen.add(element.textContent?.trim() ?? "");
+    });
+    try {
+      await mount({ draft: { ...initialDraft, editMode: "shared", generation: "1" }, ready: false, fullscreen: () => true });
+      await waitFor(() =>
+        OfflineWebSocket.instances.some((candidate) => candidate.url && new URL(candidate.url).pathname.endsWith("/document/socket")),
+      );
+      socket = OfflineWebSocket.instances.find(
+        (candidate) => candidate.url && new URL(candidate.url).pathname.endsWith("/document/socket"),
+      )!;
+      socket.open();
+      socket.message({ type: "replayReady", payload: { docId: "Draft1", generation: "1", cursor, peerId: "peer1" } });
+      await waitFor(() => Boolean(sendButton() && !sendButton()!.disabled));
+      seen.clear();
+      observer.observe(dom.document.body, { childList: true, subtree: true, characterData: true });
+      sendButton()!.click();
+      await waitFor(() => leaves.length > 0);
+      await Bun.sleep(100);
+      expect(leaves).toEqual(["sent"]);
+      expect(delivered).toHaveLength(1);
+      expect([...seen]).toEqual([]);
+      // One toast, from the host's delivery: the composer's own send is not someone else's.
+      expect(dom.document.body.textContent).not.toContain("started sending this message");
+      expect(requests.filter((request) => request === "POST /api/mail/mailboxes/Box001/commands")).toHaveLength(1);
+    } finally {
+      observer.disconnect();
+      generations.mockRestore();
+      document.destroy();
+    }
+  });
+
   test("Write large moves the same draft into panes beside the preview and back, keeping its text and caret", async () => {
     const previews: string[] = [];
     documentResponse = (path) => {
