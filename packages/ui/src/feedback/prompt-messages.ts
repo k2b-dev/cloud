@@ -30,7 +30,7 @@ const promptMessages = i18n.define({
       confirm: "Bestätigen",
       discard: "Verwerfen",
       form: "Formular",
-      formUnavailable: "Das Formular konnte nicht laden. Prüfe die Verbindung und versuche es erneut.",
+      formUnavailable: "Das Formular konnte nicht geladen werden. Prüfe die Verbindung und versuche es erneut.",
       discardUnsavedChanges: "Ungespeicherte Änderungen verwerfen?",
       unsavedChangesTitle: "Ungespeicherte Änderungen",
     },

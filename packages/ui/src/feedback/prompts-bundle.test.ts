@@ -41,6 +41,9 @@ test("a confirmation prompt keeps the form fields out of its first script and lo
     /\/inputs\/FileInputs\.js$/,
     /\/inputs\/TextInput\.js$/,
     /\/inputs\/markdown\/MarkdownEditor\.js$/,
+    /\/inputs\/Select\.js$/,
+    /\/inputs\/Checkbox\.js$/,
+    /\/inputs\/ChoiceInputs\.js$/,
   ]) {
     expect(eager.filter((input) => field.test(input))).toEqual([]);
     expect(reachable.some((input) => field.test(input))).toBe(true);

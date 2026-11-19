@@ -86,6 +86,8 @@ export const promptFormUnavailable = async (signal?: AbortSignal): Promise<void>
 
 const openConfirm = (content: PromptContent, options: ConfirmOptions | undefined, phraseInput?: typeof TextInput) => {
   const confirmationPhrase = options?.confirmationPhrase;
+  // A confirmation that asks for a phrase never opens without the field to type it.
+  if (confirmationPhrase && !phraseInput) throw new Error("A confirmationPhrase needs its text field");
   let confirmationInput: HTMLInputElement | undefined;
 
   return openPrompt<boolean>(

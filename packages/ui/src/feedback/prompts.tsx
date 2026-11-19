@@ -554,7 +554,7 @@ const openAlert = (content: PromptContent, options?: DialogOptions, celebrate?: 
 // half-drawn frame. WebKit has no requestIdleCallback.
 if (typeof window !== "undefined") {
   const preload = () => void loadPromptForm().catch(() => {});
-  if (typeof requestIdleCallback === "function") requestIdleCallback(preload);
+  if (typeof requestIdleCallback === "function") requestIdleCallback(preload, { timeout: 2000 });
   else setTimeout(preload, 200);
 }
 

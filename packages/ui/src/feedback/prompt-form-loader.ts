@@ -15,6 +15,8 @@ export const loadPromptForm = (): Promise<PromptForm> =>
     (module) => (promptForm = module),
     (error: unknown) => {
       promptFormLoading = undefined;
+      // The person sees a message; the cause stays findable for whoever looks into it.
+      console.error("@k2b/ui: the form fields could not load", error);
       throw error;
     },
   ));
