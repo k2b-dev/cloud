@@ -2339,9 +2339,10 @@ suite("mail provider lease fairness", () => {
     }
   });
 
-  // The virtual minute is instant, but draining thirty folders still performs real SQL/provider round trips.
   test("folder jobs of a mailbox whose lease is held ask once each, and each release wakes the next one", async () => {
-    const mailbox = await connect("parked-folders", { extraFolders: 30 });
+    // Three folders exercise repeated park/wake handoffs without thirty real SQL/provider batches.
+    const folderCount = 3;
+    const mailbox = await connect("parked-folders", { extraFolders: folderCount });
     // A different mailbox may leave a wake while this test's virtual worker
     // runs. Its free lease must not contribute a batch to our mailbox's counts.
     const other = await connect("parked-folders-other");
@@ -2361,7 +2362,7 @@ suite("mail provider lease fairness", () => {
     const otherWake = wakes.get(otherFolder);
     expect(otherWake).toBeDefined();
     const resource = mailbox.remoteResourceId;
-    const folders = Array.from({ length: 30 }, (_, index) => mailbox.folderId(`Folder-${index}`));
+    const folders = Array.from({ length: folderCount }, (_, index) => mailbox.folderId(`Folder-${index}`));
     const holder = await acquireProviderLease({
       resource,
       waiter: `commands:${mailbox.mailboxId}`,
@@ -2425,7 +2426,7 @@ suite("mail provider lease fairness", () => {
         ),
       );
     }
-  }, 30_000);
+  });
 
   test("a folder check keeps no IMAP connection while a send waits for the mailbox, and the send goes next", async () => {
     const mailbox = await connect("check-before-send");
@@ -2435,6 +2436,8 @@ suite("mail provider lease fairness", () => {
     let sendArrives = false;
     const send = { waiter: `outbox:${randomUUID()}`, priority: "command" as const };
     const session = spyOn(imapSmtpConnector, "withSession").mockImplementation(async (config, fn, options) => {
+      // Other mailboxes may still have background work; only observe this check.
+      if (config.username !== mailbox.account) return fn(config);
       const result = await fn(config);
       // A send lines up while the check still holds the mailbox's lease.
       if (sendArrives) {
