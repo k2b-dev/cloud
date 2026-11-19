@@ -122,6 +122,8 @@ await deleteProject("atlas");
 
 Fields share `label`, `description`, `placeholder`, `required`, `default`, and a `validate` function where applicable. Form-state validation checks required values, text-length and tag-count constraints, and the custom validator. Errors appear when the form is first submitted and follow each change after that. A required boolean field must be checked. Number bounds and PIN length configure their controls but do not create additional form-state error messages. The built-in messages follow the document locale ("At least 3 characters" / "Mindestens 3 Zeichen"); a `validate` result is shown as returned, so the app localizes it.
 
+The field components of `prompts.form`, `prompts.prompt`, `prompts.promptNumber`, and a `confirmationPhrase` confirmation load on demand, so an island that only confirms or alerts does not carry them in its first script. The browser loads them when it is idle after the page starts, and a prompt opened earlier opens as soon as they arrive, fully drawn. If they cannot load, an error dialog says so and the prompt resolves like a cancel: `null` for a form, `false` for a confirmation. The next open requests them again.
+
 ```tsx
 const values = await prompts.form({
   title: "Add member",
