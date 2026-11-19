@@ -194,7 +194,7 @@ const loadMailboxOperations = async (
       COUNT(*) FILTER (WHERE binding.state = 'active')::int AS active,
       COUNT(*) FILTER (WHERE binding.state = 'degraded')::int AS degraded,
       jsonb_build_object(
-        'jmap', COUNT(*) FILTER (WHERE binding.state = 'active' AND connection.capabilities ->> 'jmap' = 'true'),
+        'jmap', COUNT(*) FILTER (WHERE binding.state = 'active' AND connection.jmap_detected IS TRUE),
         'idle', COUNT(*) FILTER (WHERE binding.state = 'active' AND binding.capabilities ->> 'idle' = 'true'),
         'condstore', COUNT(*) FILTER (WHERE binding.state = 'active' AND binding.capabilities ->> 'condstore' = 'true'),
         'qresync', COUNT(*) FILTER (WHERE binding.state = 'active' AND binding.capabilities ->> 'qresync' = 'true'),
@@ -526,7 +526,7 @@ export const getPlatformMailOperations = async (
           cursor_created_at: string;
           health: MailboxHealth;
           sync_enabled: boolean;
-          jmap_detected: boolean;
+          jmap_detected: boolean | null;
           last_sync_at: Date | string | null;
           lag_seconds: number | string | null;
           messages: number | string;
@@ -565,11 +565,15 @@ export const getPlatformMailOperations = async (
           to_char(mailbox.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at,
           mailbox.health,
           mailbox.sync_enabled,
-          EXISTS (
-            SELECT 1 FROM mail.provider_connections connection
+          (
+            SELECT CASE
+              WHEN bool_or(connection.jmap_detected) THEN true
+              WHEN count(*) = count(connection.jmap_detected) AND count(*) > 0 THEN false
+              ELSE NULL
+            END
+            FROM mail.provider_connections connection
             WHERE connection.owner_mailbox_id = mailbox.id
               AND connection.status <> 'revoked'
-              AND connection.capabilities ->> 'jmap' = 'true'
           ) AS jmap_detected,
           sync.last_sync_at,
           CASE WHEN sync.last_sync_at IS NULL THEN NULL

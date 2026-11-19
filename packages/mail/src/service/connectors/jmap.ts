@@ -54,6 +54,18 @@ export function mapJmapRights(rights: JmapMailboxRights): string[] {
   ];
 }
 
+// Mail folder names in contracts.ts are at most 1,000 characters. Allow up to
+// four UTF-8 bytes each locally; RFC 8621 maxSizeMailboxName can narrow this further.
+const LOCAL_MAILBOX_NAME_BYTES = 4_000;
+// IMAP discovery has no account folder-count cap. Bound each query walk to 1,024
+// pages: even a server returning one object per page can expose 1,000 folders,
+// but a stable, fabricated total cannot keep discovery running indefinitely.
+// The subsequent get phase has at most as many pages (2,048 responses overall).
+export const JMAP_DISCOVERY_PAGES = 1_024;
+const RESPONSE_FRAME_BYTES = 4_096;
+const MAILBOX_OVERHEAD_BYTES = 2_048; // Two 255-byte IDs, role, nine rights, keys and JSON framing.
+const mailboxProperties = ["id", "name", "parentId", "role", "isSubscribed", "myRights"];
+
 const mailboxSchema = z.object({
   id: jmapIdSchema,
   name: z.string().min(1),
@@ -74,14 +86,19 @@ export type JmapRemoteFolder = RemoteFolder & { mailboxId: string };
 
 export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransportDependencies = {}): Promise<JmapRemoteFolder[]> {
   const session = await fetchJmapSession(input, deps);
-  const { accountId } = primaryMailAccount(session);
-  // Bound the entire discovery, not just each response: a server cannot force an endless query walk.
-  let bytes = 0;
-  const method = async (name: string, args: Record<string, unknown>) => {
+  const { accountId, account } = primaryMailAccount(session);
+  const advertisedNameBytes = z.number().int().positive().safeParse(account.accountCapabilities[JMAP_MAIL]?.maxSizeMailboxName);
+  const nameBytes = Math.min(advertisedNameBytes.success ? advertisedNameBytes.data : LOCAL_MAILBOX_NAME_BYTES, LOCAL_MAILBOX_NAME_BYTES);
+  // JSON can escape each name byte as six ASCII bytes. Limit object count locally
+  // using the existing metadata budget / per-object overhead, independently of server limits.
+  const objectBytes = 6 * nameBytes + MAILBOX_OVERHEAD_BYTES;
+  const batchSize = Math.min(session.core.maxObjectsInGet, Math.floor(JMAP_JSON_BYTES / MAILBOX_OVERHEAD_BYTES));
+  const method = async (name: string, args: Record<string, unknown>, maxBytes: number) => {
     input.signal.throwIfAborted();
     const response = await callJmap(
       {
         session,
+        maxBytes,
         authorization: input.authorization,
         signal: input.signal,
         using: [JMAP_CORE, JMAP_MAIL],
@@ -89,8 +106,6 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
       },
       deps,
     );
-    bytes += Buffer.byteLength(JSON.stringify(response));
-    if (bytes > JMAP_JSON_BYTES) throw new JmapError("JMAP_DISCOVERY_LIMIT");
     const result = response.methodResponses[0];
     if (response.methodResponses.length !== 1 || !result || result[0] !== name || result[2] !== "folders")
       throw new JmapError("JMAP_INVALID_RESPONSE");
@@ -100,9 +115,15 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
   const seen = new Set<string>();
   let queryState: string | undefined;
   let total: number | undefined;
+  let pages = 0;
   do {
+    if (++pages > JMAP_DISCOVERY_PAGES) throw new JmapError("JMAP_DISCOVERY_LIMIT");
     const parsed = querySchema.safeParse(
-      await method("Mailbox/query", { position: ids.length, limit: session.core.maxObjectsInGet, calculateTotal: true }),
+      await method(
+        "Mailbox/query",
+        { position: ids.length, limit: batchSize, calculateTotal: true },
+        RESPONSE_FRAME_BYTES + batchSize * 258,
+      ),
     );
     if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
     const page = parsed.data;
@@ -111,7 +132,7 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
       page.position !== ids.length ||
       (queryState !== undefined && page.queryState !== queryState) ||
       (total !== undefined && page.total !== total) ||
-      page.ids.length > session.core.maxObjectsInGet
+      page.ids.length > batchSize
     )
       throw new JmapError("JMAP_INVALID_RESPONSE");
     queryState = page.queryState;
@@ -127,9 +148,11 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
 
   const mailboxes = new Map<string, z.infer<typeof mailboxSchema>>();
   let state: string | undefined;
-  for (let offset = 0; offset < ids.length; offset += session.core.maxObjectsInGet) {
-    const batch = ids.slice(offset, offset + session.core.maxObjectsInGet);
-    const parsed = getSchema.safeParse(await method("Mailbox/get", { ids: batch }));
+  for (let offset = 0; offset < ids.length; offset += batchSize) {
+    const batch = ids.slice(offset, offset + batchSize);
+    const parsed = getSchema.safeParse(
+      await method("Mailbox/get", { ids: batch, properties: mailboxProperties }, RESPONSE_FRAME_BYTES + batch.length * objectBytes),
+    );
     if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
     const page = parsed.data;
     if (
@@ -141,6 +164,7 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
       throw new JmapError("JMAP_INVALID_RESPONSE");
     state = page.state;
     for (const mailbox of page.list) {
+      if (Buffer.byteLength(mailbox.name) > nameBytes) throw new JmapError("JMAP_DISCOVERY_LIMIT");
       if (!batch.includes(mailbox.id) || mailboxes.has(mailbox.id)) throw new JmapError("JMAP_INVALID_RESPONSE");
       mailboxes.set(mailbox.id, mailbox);
     }
@@ -164,8 +188,6 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
       const entry = chain.pop()!;
       const parent = entry.parentId ? paths.get(entry.parentId) : undefined;
       const path = parent === undefined ? entry.name : `${parent}/${entry.name}`;
-      bytes += Buffer.byteLength(path);
-      if (bytes > JMAP_JSON_BYTES) throw new JmapError("JMAP_DISCOVERY_LIMIT");
       if (usedPaths.has(path)) throw new JmapError("JMAP_FOLDER_TREE");
       paths.set(entry.id, path);
       usedPaths.add(path);

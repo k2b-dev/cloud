@@ -22,9 +22,9 @@ for (const status of [200, 401, 301, 302, 307, 308, 403, 404, 429, 500]) {
   test(`credential-free probe handles HTTP ${status}`, async () => {
     const f = fixture();
     f.controls.status = status;
-    expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe([200, 401, 301, 302, 307, 308].includes(status));
-    expect(f.requests).toHaveLength(1);
-    expect(f.requests[0]!.authorization).toBeNull();
+    expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe(status === 401 ? "detected" : "absent");
+    expect(f.requests).toHaveLength([301, 302, 307, 308].includes(status) ? 2 : 1);
+    expect(f.requests.every((request) => request.authorization === null)).toBe(true);
     expect(f.requests[0]!.path).toBe("/.well-known/jmap");
   });
 }
@@ -32,15 +32,15 @@ for (const status of [200, 401, 301, 302, 307, 308, 403, 404, 429, 500]) {
 test("probe rejects malformed JSON, cross-origin redirects, failures and cancellation", async () => {
   const f = fixture();
   f.controls.handle = () => new Response("not json");
-  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe(false);
+  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe("absent");
   f.controls.handle = undefined;
   f.controls.redirect = "https://other.example.invalid/session";
-  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe(false);
+  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe("absent");
   const controller = new AbortController();
   controller.abort();
-  expect(await probeJmap("mail.example.invalid", controller.signal, f.dependencies)).toBe(false);
+  expect(await probeJmap("mail.example.invalid", controller.signal, f.dependencies)).toBe("unknown");
   f.controls.abort = true;
-  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe(false);
+  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe("unknown");
 });
 
 test("probe only accepts a hostname at port 443", async () => {
@@ -52,9 +52,28 @@ test("probe only accepts a hostname at port 443", async () => {
     "mail.example.invalid/path",
     "mail.example.invalid?query",
   ]) {
-    expect(await probeJmap(host, signal(), f.dependencies)).toBe(false);
+    expect(await probeJmap(host, signal(), f.dependencies)).toBe("unknown");
   }
   expect(f.requests).toHaveLength(0);
+});
+
+test("probe follows one redirect and inspects its result without credentials", async () => {
+  const f = fixture();
+  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe("detected");
+  f.controls.redirect = "/jmap/session";
+  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe("detected");
+  f.controls.handle = (req) => (new URL(req.url).pathname === "/jmap/session" ? new Response("Sign in", { status: 401 }) : undefined);
+  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe("detected");
+  f.controls.handle = (req) => (new URL(req.url).pathname === "/jmap/session" ? new Response("<html>Webmail</html>") : undefined);
+  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe("absent");
+  expect(f.requests.every((request) => request.authorization === null)).toBe(true);
+});
+
+test("probe reports budget exhaustion and blocked endpoints as unknown", async () => {
+  const f = fixture();
+  f.controls.oversized = true;
+  expect(await probeJmap("mail.example.invalid", signal(), f.dependencies)).toBe("unknown");
+  expect(await probeJmap("127.0.0.1", signal())).toBe("unknown");
 });
 
 test("one relative redirect and relative session templates preserve origin and placeholders", async () => {
@@ -177,6 +196,6 @@ test("checks request limits before sending and validates response envelopes", as
 
 test("probe accepts normalized international hostnames without changing the port", async () => {
   const f = fixture();
-  expect(await probeJmap("münchen.example.invalid", signal(), f.dependencies)).toBe(true);
+  expect(await probeJmap("münchen.example.invalid", signal(), f.dependencies)).toBe("detected");
   expect(f.requests[0]!.authorization).toBeNull();
 });

@@ -47,7 +47,7 @@ export function createJmapFixture() {
         name: "Example mailbox",
         isPersonal: true,
         isReadOnly: false,
-        accountCapabilities: { [JMAP_MAIL]: {}, [JMAP_SUBMISSION]: {} },
+        accountCapabilities: { [JMAP_MAIL]: { maxSizeMailboxName: 1_000 }, [JMAP_SUBMISSION]: {} },
       },
     },
     primaryAccounts: { [JMAP_MAIL]: "d333333" },

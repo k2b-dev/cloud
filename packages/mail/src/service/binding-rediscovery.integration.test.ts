@@ -6,6 +6,7 @@ import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
 import { imapSmtpConnector } from "./connectors";
+import * as jmapClient from "./connectors/jmap-client";
 import { createMailbox } from "./mailboxes";
 import { createProviderConnection } from "./provider-connections";
 import { providerErrorCode } from "./provider-errors";
@@ -189,6 +190,29 @@ suite("mail binding rediscovery", () => {
       for (const { access_id } of access) await sql`DELETE FROM auth.access WHERE id = ${access_id}::uuid`;
     }
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+  });
+
+  test("rediscovery neither probes JMAP nor overwrites its separate observation", async () => {
+    const bound = await createBoundMailbox("jmap");
+    await sql`UPDATE mail.provider_connections SET jmap_detected = true
+      WHERE id = (SELECT connection_id FROM mail.provider_bindings WHERE id = ${bound.bindingId}::uuid)`;
+    const probe = spyOn(jmapClient, "probeJmap").mockResolvedValue("absent");
+    const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification(bound.account));
+    const discover = spyOn(imapSmtpConnector, "discoverFolders").mockResolvedValue([inbox()]);
+    try {
+      await rediscoverProviderBinding({ bindingId: bound.bindingId });
+      expect(probe).not.toHaveBeenCalled();
+      const [row] = await sql<{ jmap_detected: boolean | null }[]>`
+        SELECT connection.jmap_detected FROM mail.provider_connections connection
+        JOIN mail.provider_bindings binding ON binding.connection_id = connection.id
+        WHERE binding.id = ${bound.bindingId}::uuid
+      `;
+      expect(row?.jmap_detected).toBe(true);
+    } finally {
+      discover.mockRestore();
+      verify.mockRestore();
+      probe.mockRestore();
+    }
   });
 
   test("a provider that never answers cannot keep rediscovery from other mailboxes", async () => {

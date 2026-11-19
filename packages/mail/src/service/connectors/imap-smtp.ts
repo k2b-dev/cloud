@@ -31,7 +31,6 @@ import type {
 } from "../../contracts";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS, extractMessageProtocolFacts } from "../message-protocol";
 import { isTemporaryLoginFailure, providerErrorDetail } from "../provider-errors";
-import { withJmapDetection } from "./connection-verification";
 import type {
   ConnectorAddress,
   ConnectorChangeListener,
@@ -1005,9 +1004,8 @@ export const selectUidBatch = async (params: {
 };
 
 const verify = async (config: ProviderConnectionInput, signal?: AbortSignal): Promise<ConnectorVerification> => {
-  // Binding rediscovery writes these capabilities back to the connection too.
-  const { result, jmap } = await withJmapDetection(config.imap.host, () => verifyImapSmtpTransports(config, signal), undefined, signal);
-  if (result.verification) return { ...result.verification, capabilities: { ...result.verification.capabilities, jmap } };
+  const result = await verifyImapSmtpTransports(config, signal);
+  if (result.verification) return result.verification;
   const summary = `IMAP: ${result.diagnostics.imap.message}; SMTP: ${result.diagnostics.smtp.message}`;
   // The original failures let callers tell a provider that is down from one that rejects the account,
   // and the IMAP failure one whose mailbox server does not answer from one whose SMTP server does not.

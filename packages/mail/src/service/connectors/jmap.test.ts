@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
-import { discoverJmapFolders, type JmapMailboxRights, mapJmapRights, verifyJmap } from "./jmap";
-import { JMAP_MAIL, JMAP_SUBMISSION } from "./jmap-client";
+import { discoverJmapFolders, JMAP_DISCOVERY_PAGES, type JmapMailboxRights, mapJmapRights, verifyJmap } from "./jmap";
+import { JMAP_CORE, JMAP_MAIL, JMAP_SUBMISSION } from "./jmap-client";
 import { createJmapFixture, fixtureMailbox, fixtureRights } from "./jmap-fixture";
 
 const fixtures: ReturnType<typeof createJmapFixture>[] = [];
@@ -139,4 +139,54 @@ test("rejects repeated query IDs rather than continuing indefinitely", async () 
       : undefined;
   await expect(discoverJmapFolders(access(f), f.dependencies)).rejects.toMatchObject({ code: "JMAP_INVALID_RESPONSE" });
   expect(f.requests).toHaveLength(2);
+});
+
+test("reads 1,000 folders in batches with only the required properties", async () => {
+  const f = fixture();
+  f.session.capabilities[JMAP_CORE].maxObjectsInGet = 100;
+  f.session.accounts.d333333.accountCapabilities[JMAP_MAIL]!.maxSizeMailboxName = 4_000;
+  f.mailboxes.splice(
+    0,
+    f.mailboxes.length,
+    ...Array.from({ length: 1_000 }, (_, i) => fixtureMailbox(`f${i}`, `${"界".repeat(990)} ${i}`)),
+  );
+  expect(await discoverJmapFolders(access(f), f.dependencies)).toHaveLength(1_000);
+  // Each batch exceeds the ordinary 256 KiB budget; the object-derived budget admits it.
+  expect(Buffer.byteLength(JSON.stringify(f.mailboxes.slice(0, 100)))).toBeGreaterThan(256 * 1024);
+  const gets = f.requests.flatMap((request) => request.calls ?? []).filter(([name]) => name === "Mailbox/get");
+  expect(gets).toHaveLength(10);
+  for (const [, args] of gets) expect(args.properties).toEqual(["id", "name", "parentId", "role", "isSubscribed", "myRights"]);
+});
+
+test("bounds even a progressing query with an endless fabricated total", async () => {
+  const f = fixture();
+  let pages = 0;
+  f.controls.handle = (request) =>
+    request.method === "POST"
+      ? Response.json({
+          methodResponses: [
+            [
+              "Mailbox/query",
+              {
+                accountId: "d333333",
+                queryState: "s",
+                position: pages,
+                total: 1_000_000,
+                ids: [`f${pages++}`],
+              },
+              "folders",
+            ],
+          ],
+          sessionState: "s",
+        })
+      : undefined;
+  await expect(discoverJmapFolders(access(f), f.dependencies)).rejects.toMatchObject({ code: "JMAP_DISCOVERY_LIMIT" });
+  expect(pages).toBe(JMAP_DISCOVERY_PAGES);
+});
+
+test("uses the advertised mailbox name size with a local ceiling", async () => {
+  const f = fixture();
+  f.session.accounts.d333333.accountCapabilities[JMAP_MAIL]!.maxSizeMailboxName = 8;
+  f.mailboxes[0]!.name = "x".repeat(9);
+  await expect(discoverJmapFolders(access(f), f.dependencies)).rejects.toMatchObject({ code: "JMAP_DISCOVERY_LIMIT" });
 });

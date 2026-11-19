@@ -5,8 +5,8 @@ import { type JmapResponse, type JmapTransportDependencies, requestJmap } from "
 export const JMAP_CORE = "urn:ietf:params:jmap:core";
 export const JMAP_MAIL = "urn:ietf:params:jmap:mail";
 export const JMAP_SUBMISSION = "urn:ietf:params:jmap:submission";
-// Local metadata budget, matching MAX_AUTOCONFIG_BYTES in onboarding-discovery.ts.
-// Server request limits never enlarge this response budget (RFC 8620 limits requests, not responses).
+// Default metadata budget, matching MAX_AUTOCONFIG_BYTES in onboarding-discovery.ts.
+// Object-list callers supply a bounded budget derived from the requested properties and count.
 export const JMAP_JSON_BYTES = 256 * 1024;
 // Stalwart 1.0 sessions measured 1.5–4 KiB; 64 KiB allows 16 times that upper
 // observation for capabilities/accounts, while bounding even the first unauthenticated response.
@@ -158,20 +158,32 @@ function checkHttp(response: JmapResponse): void {
 }
 
 /** Credential-free hint only: this never authorizes use of the discovered origin. */
-export async function probeJmap(host: string, signal: AbortSignal, deps: JmapTransportDependencies = {}): Promise<boolean> {
+export type JmapDetection = "detected" | "absent" | "unknown";
+export async function probeJmap(host: string, signal: AbortSignal, deps: JmapTransportDependencies = {}): Promise<JmapDetection> {
   try {
-    if (!host || /[\s/@\\?#]/.test(host) || (host.includes(":") && !(host.startsWith("[") && host.endsWith("]")))) return false;
-    const url = httpsUrl(`https://${host}/.well-known/jmap`);
-    if (url.port) return false;
-    const response = await requestJmap({ url, method: "GET", maxBytes: JMAP_SESSION_BYTES, signal }, deps);
-    if (response.status === 401) return true;
+    if (!host || /[\s/@\\?#]/.test(host) || (host.includes(":") && !(host.startsWith("[") && host.endsWith("]")))) return "unknown";
+    let url = httpsUrl(`https://${host}/.well-known/jmap`);
+    if (url.port) return "unknown";
+    const get = () => requestJmap({ url, method: "GET", maxBytes: JMAP_SESSION_BYTES, signal }, deps);
+    let response = await get();
     if (redirects.has(response.status)) {
-      redirectUrl(response, url);
-      return true;
+      try {
+        url = redirectUrl(response, url);
+      } catch {
+        return "absent";
+      }
+      response = await get();
     }
-    return response.status === 200 && json(response.body) !== undefined;
+    if (response.status === 401) return "detected";
+    if (response.status !== 200) return "absent";
+    try {
+      const parsed = z.object({ capabilities: z.record(z.string(), z.unknown()) }).safeParse(json(response.body));
+      return parsed.success && Object.hasOwn(parsed.data.capabilities, JMAP_CORE) ? "detected" : "absent";
+    } catch {
+      return "absent";
+    }
   } catch {
-    return false;
+    return "unknown";
   }
 }
 
@@ -216,7 +228,14 @@ export async function fetchJmapSession(input: JmapAccess, deps: JmapTransportDep
 }
 
 export async function callJmap(
-  input: { session: JmapSession; authorization: string; using: string[]; methodCalls: JmapInvocation[]; signal: AbortSignal },
+  input: {
+    session: JmapSession;
+    authorization: string;
+    using: string[];
+    methodCalls: JmapInvocation[];
+    signal: AbortSignal;
+    maxBytes?: number;
+  },
   deps: JmapTransportDependencies = {},
 ) {
   if (input.methodCalls.length > input.session.core.maxCallsInRequest) throw new JmapError("JMAP_CALL_LIMIT");
@@ -224,13 +243,15 @@ export async function callJmap(
   const body = JSON.stringify({ using: input.using, methodCalls: input.methodCalls });
   if (Buffer.byteLength(body) > input.session.core.maxSizeRequest) throw new JmapError("JMAP_REQUEST_LIMIT");
   const response = await requestJmap(
-    { url, method: "POST", authorization: input.authorization, body, maxBytes: JMAP_JSON_BYTES, signal: input.signal },
+    { url, method: "POST", authorization: input.authorization, body, maxBytes: input.maxBytes ?? JMAP_JSON_BYTES, signal: input.signal },
     deps,
   );
   if (response.status >= 300 && response.status < 400) throw new JmapError("JMAP_REDIRECT");
   checkHttp(response);
   const parsed = responseSchema.safeParse(json(response.body));
   if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
+  // Current callers submit one method. Future multi-method callers need each result independently,
+  // including successful responses alongside method errors; this currently throws on the first error.
   for (const [name, args] of parsed.data.methodResponses) {
     if (name === "error") {
       const known = [

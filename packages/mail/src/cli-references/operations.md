@@ -38,14 +38,14 @@ cld --json mail admin operations
 ```
 
 These views intentionally omit provider secrets and message content.
-`admin operations` prints `JMAP possible` or `JMAP not detected` per mailbox;
-structured output carries the `jmap` boolean on each mailbox. A positive hint
-means a non-revoked connection's IMAP hostname offered JMAP over HTTPS during
-connection verification or a limit refresh. The probe never sends credentials and never delays
-IMAP verification. A timeout, an unfinished probe or an older connection without
-a probe result appears as not detected. All mailboxes still use IMAP and SMTP.
-`operator status --json` includes the number of active bindings whose connection
-has this hint in `connectors.capabilities.jmap`.
+`admin operations` shows `JMAP possible`, `JMAP not detected` or `JMAP unknown`
+(`jmap: true | false | null` in JSON). Mail checks without credentials when you
+add or change a connection or refresh its limits, never during background
+rediscovery. A failed or unfinished check preserves the previous result for the
+same IMAP host; a new host starts unknown. Limit refresh waits up to five seconds
+for detection. With multiple connections, a positive result takes precedence,
+then unknown. `operator status --json` counts positive hints in
+`connectors.capabilities.jmap`. Every mailbox still uses IMAP and SMTP.
 
 ## Recover mailbox access as a Cloud administrator
 

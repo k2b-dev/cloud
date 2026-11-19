@@ -4283,7 +4283,7 @@ const specialistCommands = {
             `${mailbox.mailboxName} (${mailbox.mailboxId}): ${mailbox.health}; admins ${mailbox.access.administrators}; lag ${
               mailbox.sync.lagSeconds ?? "never"
             }s; search ${mailbox.coverage.search.covered}/${mailbox.coverage.search.total}; attention ${mailbox.attentionCount}; JMAP ${
-              mailbox.jmap === true ? "possible" : "not detected"
+              mailbox.jmap === true ? "possible" : mailbox.jmap === false ? "not detected" : "unknown"
             }`,
           );
         }
