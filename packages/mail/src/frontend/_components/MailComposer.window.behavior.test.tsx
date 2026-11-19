@@ -303,6 +303,9 @@ describe("MailComposer in a floating window", () => {
     expect(dom.root.querySelector('button[aria-label^="Change sender identity"]')).toBeNull();
     const row = dom.root.querySelector<HTMLElement>(".mail-inline-draft-meta")!;
     expect(row.textContent?.trim().startsWith("Subject")).toBe(true);
+    // To and Subject form one block that stays in view above the text.
+    expect(row.parentElement?.matches("[data-mail-draft-fields]")).toBe(true);
+    expect(dom.root.querySelector("[data-mail-draft-fields] > .mail-inline-draft-head")).not.toBeNull();
   });
 
   test("a send that fails keeps the window with its text; a toast names the reason and Send stays in place", async () => {

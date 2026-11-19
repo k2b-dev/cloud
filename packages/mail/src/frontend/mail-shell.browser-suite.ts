@@ -4888,6 +4888,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await settled(page);
           expect(await barGap(".mail-large-panes .mail-draft-block")).toBe(0);
           expect(await fieldGap()).toBeGreaterThanOrEqual(4);
+          // At the end of a long text, To and Subject still stand at the top: only the text scrolled.
+          const fieldsAtTop = (scroller: string) =>
+            composeWindow(page).evaluate((window, selector) => {
+              const element = window.querySelector<HTMLElement>(selector)!;
+              element.scrollTop = element.scrollHeight;
+              const top = element.getBoundingClientRect().top;
+              const to = window.querySelector(".mail-recipient-control")!.getBoundingClientRect();
+              const subject = window.querySelector(".mail-inline-draft-subject .k2b-input-shell")!.getBoundingClientRect();
+              return element.scrollTop > 0 && to.top >= top && subject.bottom <= top + 120;
+            }, scroller);
+          expect(await fieldsAtTop(".mail-large-panes .mail-draft-block")).toBe(true);
           expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
           await composeWindow(page).getByRole("button", { name: "Restore size" }).click();
           await composeWindow(page).locator(".mail-inline-draft:not([data-large]) > .mail-draft-block-place > .mail-draft-block").waitFor();

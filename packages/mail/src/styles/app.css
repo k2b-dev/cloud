@@ -1543,11 +1543,26 @@
   min-height: 2rem;
   font-weight: 400;
 }
-/* The head scrolls with the text in a window, large too: a sticky head let the subject row slide under To. */
+/* In a window, normal or large, To, Cc/Bcc and Subject stay in view as one block while only the text scrolls below
+   them. The rows are single-line fields that scroll their chips sideways, so many recipients never push the text
+   away. Alone, the head was sticky and the subject row slid under it. */
+.k2b-ui .mail-draft-fields {
+  display: contents;
+}
+.k2b-ui .mail-compose-window .mail-draft-fields {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  background: var(--k2b-surface-elevated);
+}
 .k2b-ui .mail-compose-window .mail-inline-draft-head,
 .k2b-ui .mail-compose-window .mail-inline-draft[data-fullscreen] .mail-inline-draft-head {
   position: static;
   padding-block-start: 0.25rem;
+  background: none;
 }
 /* Room between the To and the Subject row, so a focus ring never touches the other field. */
 .k2b-ui .mail-compose-window .mail-inline-draft-meta {
