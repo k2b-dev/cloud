@@ -132,7 +132,13 @@ A catalog ships every language when its result could differ: `messages` or a
 language is not an inline object literal, a message is a spread, computed key,
 getter, or setter, a language is neither `en` nor `de`, or `baseLocale` is not
 `en`. Browser code that resolves a catalog in a language other than the page's
-gets the page's language. When browser code must compare text in several
+gets the page's language, and so does a `LocaleProvider locale={…}` subtree
+with another locale. UI therefore renders in the reader's request locale, also
+for stored items that carry their own language, such as an approval card
+created in German and opened by an English reader: Cloud's words, formats, and
+`@k2b/ui` chrome follow the reader, and the stored text someone wrote stays as
+it is. Server output and the mounted island then match in every build.
+Notifications and email keep using the recipient's locale. When browser code must compare text in several
 languages, such as a stored value written in any language, keep that small
 catalog whole in every build with the `@i18n-all-locales` comment:
 
