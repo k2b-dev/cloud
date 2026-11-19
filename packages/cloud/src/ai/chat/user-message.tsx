@@ -41,7 +41,10 @@ export function AiUserMessageQuotes(props: { entry: AiStoredMessage }): JSX.Elem
  * writer and links it only for a viewer who may open the source. The person's own messages carry none.
  */
 export const aiUserMessageSource = (entry: AiStoredMessage, locale: string): JSX.Element | undefined => {
-  const origin = entry.meta?.origin;
+  // A turn Code started before writers carried their origin names its Code from the turn's own record, without a link.
+  const code = entry.meta?.codeOrigin;
+  const origin =
+    entry.meta?.origin ?? (code ? { kind: "automation" as const, id: code.codeId, name: code.title, href: undefined } : undefined);
   if (!origin || origin.kind === "person") return undefined;
   const t = aiChatMessages(locale);
   // An automation Cloud could not name for this viewer says only that it is one, never "Automation" as a name.
