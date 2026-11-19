@@ -298,16 +298,16 @@ link text stays body ink, and only its underline takes the app ink. See
 [Colors and selection](/en/ui/surfaces/color).
 The accent also reaches dialogs and sheets opened from the app's pages,
 with no application code.
-Plum is reserved for AI surfaces, so keep the accent and background colors
-clearly apart from it; see
+Plum is reserved for AI surfaces, so keep the accent, icon, and background
+colors clearly apart from it; see
 [Colors and selection](/en/ui/surfaces/color#app-color-in-cloud).
 
 ### Color only the app icon
 
 `iconColor` colors only the app's icon: its tile in the app grid, its icon in
-the app bar and the app bar editor, its tile on the "Access denied" page, and
-its icon on the page the gateway shows while the app is updating or
-unavailable. Selection, accent text, the page background, buttons, and focus
+the app bar and the app bar editor, its tile on the "Access denied" page and
+in the administrators' app list, and its icon on the page the gateway shows
+while the app is updating or unavailable. Selection, accent text, the page background, buttons, and focus
 keep their colors:
 
 ```ts

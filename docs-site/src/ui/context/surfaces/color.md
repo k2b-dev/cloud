@@ -312,8 +312,8 @@ black. The tones keep their places, so an app keeps its tone when one changes.
 
 Plum means AI. `--k2b-ai-accent` (`#8e1b6f` light, `#f0abdc` dark) and
 `--k2b-ai-surface` mark AI surfaces, which also carry ✦ or the
-word "KI", so no app color may look like it: keep the accent and every
-background stop at least 20° of OKLCH hue away from both AI accents. Near-gray
+word "KI", so no app color may look like it: keep the accent, the icon color,
+and every background stop at least 20° of OKLCH hue away from both AI accents. Near-gray
 colors carry no hue and are fine. Only the Assistant, the AI app itself, may
 use plum. In the Cloud repository the `ai-color` check enforces this for every
 built-in app and, stricter, for the palette: no tone from violet to plum

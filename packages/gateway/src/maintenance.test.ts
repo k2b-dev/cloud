@@ -302,7 +302,7 @@ test("the unavailable page's icon takes the app's icon colour, then its accent; 
   const app = (appearance: AppRegistryEntry["appearance"]) => ({ ...entry("mail", "http://a.test", ["/api/mail"]), appearance });
   expect(appIconColor(app({ accent: "#3366ff", iconColor: "#c2410c" }))).toBe("#c2410c");
   expect(appIconColor(app({ iconColor: "#c2410c" }))).toBe("#c2410c");
-  expect(appIconColor(app({ accent: "#3366ff", iconColor: "red" }))).toBe("#3366ff");
+  expect(appIconColor(app({ accent: "#3366ff", iconColor: "#fff" }))).toBe("#3366ff");
   expect(appIconColor(app({ iconColor: "#c2410c;}*{x:y" }))).toBeUndefined();
   expect(appIconColor(app(undefined))).toBeUndefined();
   const availability = createAvailability({ now: () => NOW });

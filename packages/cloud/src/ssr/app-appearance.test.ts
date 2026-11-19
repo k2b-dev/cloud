@@ -186,10 +186,9 @@ test("an app's icon takes its iconColor, then its accent, then its palette tone;
   expect(declaredIconColor({ accent: "#0284c7", iconColor: "#c2410c" })).toBe("#c2410c");
   expect(declaredIconColor({ iconColor: "#c2410c" })).toBe("#c2410c");
   expect(declaredIconColor({ accent: "#0284c7" })).toBe("#0284c7");
-  // @ts-expect-error Exercise unvalidated runtime input from a registry entry.
-  for (const invalid of ["red", "#fff", "#12345g", "#123456;color:red"])
+  // Registry entries are unvalidated runtime input: a hex-shaped but invalid value counts as unset too.
+  for (const invalid of ["#fff", "#12345g", "#123456;color:red"] as const)
     expect(declaredIconColor({ accent: "#0284c7", iconColor: invalid })).toBe("#0284c7");
-  // @ts-expect-error Exercise unvalidated runtime input from a registry entry.
   expect(declaredIconColor({ iconColor: "#123456;color:red" })).toBeUndefined();
   expect(declaredIconColor(undefined)).toBeUndefined();
   expect(appIconTone({ id: "warenfluss", iconColor: declaredIconColor({ accent: "#0284c7", iconColor: "#c2410c" }) })).toBe("#c2410c");
