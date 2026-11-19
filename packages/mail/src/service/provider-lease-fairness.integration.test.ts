@@ -2339,6 +2339,7 @@ suite("mail provider lease fairness", () => {
     }
   });
 
+  // The virtual minute is instant, but draining thirty folders still performs real SQL/provider round trips.
   test("folder jobs of a mailbox whose lease is held ask once each, and each release wakes the next one", async () => {
     const mailbox = await connect("parked-folders", { extraFolders: 30 });
     // A different mailbox may leave a wake while this test's virtual worker
@@ -2424,7 +2425,7 @@ suite("mail provider lease fairness", () => {
         ),
       );
     }
-  });
+  }, 30_000);
 
   test("a folder check keeps no IMAP connection while a send waits for the mailbox, and the send goes next", async () => {
     const mailbox = await connect("check-before-send");
