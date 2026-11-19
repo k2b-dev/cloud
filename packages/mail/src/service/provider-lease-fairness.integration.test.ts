@@ -2340,9 +2340,7 @@ suite("mail provider lease fairness", () => {
   });
 
   test("folder jobs of a mailbox whose lease is held ask once each, and each release wakes the next one", async () => {
-    // Three folders exercise repeated park/wake handoffs without thirty real SQL/provider batches.
-    const folderCount = 3;
-    const mailbox = await connect("parked-folders", { extraFolders: folderCount });
+    const mailbox = await connect("parked-folders", { extraFolders: 30 });
     // A different mailbox may leave a wake while this test's virtual worker
     // runs. Its free lease must not contribute a batch to our mailbox's counts.
     const other = await connect("parked-folders-other");
@@ -2362,7 +2360,7 @@ suite("mail provider lease fairness", () => {
     const otherWake = wakes.get(otherFolder);
     expect(otherWake).toBeDefined();
     const resource = mailbox.remoteResourceId;
-    const folders = Array.from({ length: folderCount }, (_, index) => mailbox.folderId(`Folder-${index}`));
+    const folders = Array.from({ length: 30 }, (_, index) => mailbox.folderId(`Folder-${index}`));
     const holder = await acquireProviderLease({
       resource,
       waiter: `commands:${mailbox.mailboxId}`,
