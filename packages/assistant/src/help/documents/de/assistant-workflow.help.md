@@ -2,8 +2,8 @@
 id: assistant-workflow
 title: Chats und Aktionen
 icon: ti ti-messages
-description: Chats finden, Metadaten verwalten, Anfragen wiederholen, in neuen Chats fortsetzen, Kontext kürzen, Antworten beenden und Aktionen bearbeiten.
-updated: 2026-10-19
+description: Chats finden, Metadaten verwalten, Anfragen wiederholen, in neuen Chats fortsetzen, Kontext kürzen, Antworten beenden, Wecker stellen und Aktionen bearbeiten.
+updated: 2026-11-19
 order: 110
 ---
 
@@ -94,6 +94,34 @@ Aktion. Ohne Ergebnisprüfung gibt es keine Schaltfläche zum Wiederholen.
 Gustav kann seine verfügbaren Capabilities verwenden, wenn deine Anfrage vom Chatverlauf abhängt. Er kann den aktuellen Chat durchsuchen, einen anderen eigenen Chat finden und lesen sowie strukturierte Cloud-Ressourcen suchen, die in einem der beiden Bereiche verwendet wurden.
 
 Wenn du Gustav ausdrücklich bittest, einer anderen Unterhaltung einen genauen Text mitzuteilen, sie danach zu fragen, sie zu benachrichtigen oder Text weiterzuleiten oder zu senden, kann er die Aktion `core.ai.chat.send` anfordern. Vor dem Einreihen zeigt die Freigabeaufforderung das Ziel und den genauen Text. Zugestellte Nachrichten erscheinen mit ihrem Quell-Chat im Zielverlauf. Sie werden nicht als von dir verfasste Nachrichten dargestellt.
+
+## Wecker {icon="alarm"}
+
+Bitte Gustav um etwas zu einer späteren Zeit, und er stellt einen Wecker in
+diesem Chat. Zum Beispiel: „Schick Lena Vogt das Angebot und schau um 16:00, ob
+sie geantwortet hat.“ Ein Wecker klingelt einmal oder wiederholt sich, etwa
+werktags um 8:00. Gustav bestätigt Zeit und Notiz in einem Satz. Er stellt einen
+Wecker nur, wenn du darum bittest.
+
+Zur geplanten Zeit kommt die Notiz als Nachricht mit der Herkunft **Wecker** und
+der geplanten Zeit in diesen Chat. Gustav arbeitet sie dann mit deinem aktuellen
+Zugriff ab. Aktionen fragen wie gewohnt nach deiner Freigabe. Arbeitet Gustav in
+dem Moment, wartet der Wecker in der Warteschlange.
+
+Um Wecker zu sehen, zu verschieben oder zu löschen, bitte Gustav im Chat darum,
+zum Beispiel: „Verschieb das auf 17 Uhr“ oder „Lösch den Wecker für Lena.“
+Verschieben ändert denselben Wecker. Löschen entfernt auch seine wartende
+Nachricht.
+
+:::reference
+- **Grenzen:** Ein Chat hat höchstens fünf Wecker. Ein wiederkehrender Wecker klingelt höchstens alle 15 Minuten und endet nach 30 Tagen; du kannst ihn um 30 Tage verlängern. Ein einmaliger Wecker liegt höchstens ein Jahr voraus.
+- **Verschieben:** Ist das Erwartete noch nicht passiert, kann Gustav denselben Wecker auf später verschieben, höchstens dreimal. Aus einem Wecker heraus stellt er keinen neuen.
+- **Verpasst:** Hast du zur geplanten Zeit keinen Zugriff auf Gustav oder ist dein Budget aufgebraucht, arbeitet Gustav den Wecker nicht ab. Eine Zeile im Chat sagt es dir. Ein verpasster einmaliger Wecker bleibt sieben Tage bestehen; bitte Gustav, ihm eine neue Zeit zu geben. Ein wiederkehrender Wecker klingelt zum nächsten Termin.
+- **Ausfall:** Nach einer Wartung oder einem Ausfall klingelt jeder fällige Wecker einmal. Seine Herkunft zeigt die geplante Zeit.
+- **Archivierter oder gelöschter Chat:** Archivierst du einen Chat, ruhen seine Wecker, bis du ihn zurückholst. Löschst du einen Chat, enden seine Wecker mit ihm.
+- **Wecker oder Automation:** Ein Wecker gehört dir und diesem Chat, wird nur von einer Uhrzeit ausgelöst und trägt eine kurze Notiz. Für Arbeit, die auf neue Mails reagiert, ohne Ende läuft, etwa ein Morgenbriefing, oder für andere Personen handelt, schlägt Gustav eine Automation vor.
+- **Wo:** Wecker gibt es in deinen eigenen Gustav-Chats. In Chats, die eine andere App mit begrenzten Werkzeugen geöffnet hat, gibt es sie nicht.
+:::
 
 ## Audio und Diktieren {icon="microphone"}
 

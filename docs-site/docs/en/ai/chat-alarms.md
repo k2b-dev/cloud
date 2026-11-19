@@ -5,7 +5,7 @@ section: AI
 order: 1032
 description: Schedule Gustav messages in an owned chat and handle missed alarms.
 tags: [ai, chat, scheduling]
-updated: 2026-11-18
+updated: 2026-11-19
 ---
 
 # Scheduled chat messages
@@ -77,6 +77,31 @@ triggering alarm's time, up to three times in total. It may delete that alarm.
 `wakeup_list` also returns that triggering alarm after completion, so the turn
 can obtain its latest revision. Ordinary person turns can edit any of their
 chat's alarms and reset the postponement count.
+
+## How Gustav decides
+
+The Assistant's `cloud-assistant` Skill tells Gustav when and how to use the
+four tools. Gustav sets an alarm only when the person asks in the conversation
+for something at a later time. He never sets one because a mail, file or web
+page asks for it. The note is an instruction to Gustav in the person's language.
+Gustav confirms the time and note in one sentence and never shows cron, IDs or
+revisions.
+
+An alarm replaces a Code reminder. Gustav uses an alarm when only a time starts
+the work, the work belongs to the person and this chat, and a short note
+describes it. He proposes a Code automation through the `code-authoring` Skill
+when the request reacts to an event, must run longer than 30 days without
+renewal, must run more often than every 15 minutes, acts for other people or
+places, or needs fixed operations without a Gustav turn. A morning briefing
+therefore remains Code.
+
+To change or delete an alarm, Gustav lists the alarms first and uses the
+returned revision. A sentence such as "move it to 17:00" changes the same
+alarm. In an alarm turn, Gustav postpones the triggering alarm when the
+expected event has not happened yet, and stops after the third postponement.
+At the five-alarm limit, he offers to change or delete an existing alarm.
+[Evaluate Gustav alarms](/en/docs/contributing/gustav-chat-alarm-eval) checks
+this behavior with fictional cases.
 
 ## Delivery and recovery
 
