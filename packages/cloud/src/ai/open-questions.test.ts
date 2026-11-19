@@ -1,9 +1,16 @@
 import { expect, test } from "bun:test";
 import { type CapabilityActionCallReview, CapabilityActionCallReviewSchema } from "../contracts/capabilities";
+import { AiOpenQuestionsCursorSchema } from "../contracts/open-questions";
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";
 import { actionFixtures, FIXTURE_AT } from "./chat/action-question.fixtures";
 import { legacyOutcomeWords } from "./chat/tool-action-words";
-import { countAiOpenQuestions, listAiOpenQuestions, openQuestionFromRow } from "./open-questions";
+import {
+  aiOpenQuestionsPage,
+  compareAiOpenQuestions,
+  countAiOpenQuestions,
+  listAiOpenQuestions,
+  openQuestionFromRow,
+} from "./open-questions";
 import type { AiTurnBlock } from "./protocol";
 
 test("the server read and shared card wording load without a browser runtime", () => {
@@ -170,7 +177,9 @@ test("a separately deployed app reads the shared list and badge through Core wit
     const input = { ownerUserId: "11111111-1111-4111-8111-111111111111", locale: "de", timeZone: "Europe/Berlin", caller };
     expect(await listAiOpenQuestions(input)).toEqual(questions);
     expect(await countAiOpenQuestions(input.ownerUserId, { caller })).toBe(2);
-    expect(requests).toHaveLength(2);
+    const cursor = { createdAt: questions.items[0]!.createdAt, id: questions.items[0]!.id };
+    expect(await listAiOpenQuestions({ ...input, cursor })).toEqual(questions);
+    expect(requests).toHaveLength(3);
     for (const request of requests) {
       expect(new URL(request.url).pathname).toBe("/api/capabilities/v1/queries/core/ai.open_questions");
       expect(request.headers.get("authorization")).toBe("Bearer waiting-fixture");
@@ -179,6 +188,7 @@ test("a separately deployed app reads the shared list and badge through Core wit
       expect(request.method).toBe("POST");
     }
     expect(await requests[0]!.json()).toEqual({ input: { timeZone: "Europe/Berlin" } });
+    expect(await requests[2]!.json()).toEqual({ input: { timeZone: "Europe/Berlin", cursor } });
   } finally {
     if (previousOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     else process.env.CLOUD_CORE_INTERNAL_ORIGIN = previousOrigin;
@@ -221,4 +231,58 @@ test("a reader asking for one kind gets it even behind twenty older questions, w
   const only = await listAiOpenQuestions({ ownerUserId: "u1", ...context, kind: "code_attention", sources: [source] });
   expect(only.items).toEqual([automation]);
   expect(asked).toEqual(["code_activate", "code_attention"]);
+});
+
+test("pages source questions with stable timestamp ties, total counts and a terminal page", async () => {
+  const items = Array.from({ length: 43 }, (_, index) => ({
+    ...openQuestionFromRow(row(null), context),
+    id: `code:${String(index).padStart(3, "0")}`,
+    kind: "code_activate" as const,
+  }));
+  const source: import("./open-questions").AiOpenQuestionSource = async (input) =>
+    aiOpenQuestionsPage(
+      items.filter((item) => !input.cursor || compareAiOpenQuestions(item, input.cursor) > 0),
+      items.length,
+    );
+  const input = { ownerUserId: "u1", ...context, kind: "code_activate" as const, sources: [source] };
+  const first = await listAiOpenQuestions(input);
+  const second = await listAiOpenQuestions({ ...input, cursor: first.nextCursor });
+  const third = await listAiOpenQuestions({ ...input, cursor: second.nextCursor });
+  expect([first.items.length, second.items.length, third.items.length]).toEqual([20, 20, 3]);
+  expect([first.count, second.count, third.count]).toEqual([43, 43, 43]);
+  expect([...first.items, ...second.items, ...third.items]).toEqual(items);
+  expect(first.nextCursor).toEqual({ createdAt: items[19]!.createdAt, id: items[19]!.id });
+  expect(third.nextCursor).toBeUndefined();
+  // Cursors describe a position, not a row that must still exist.
+  items.splice(19, 1);
+  expect((await listAiOpenQuestions({ ...input, cursor: first.nextCursor })).items).toEqual(second.items);
+});
+
+test("preserves source lookahead when exactly one full page is merged", async () => {
+  const items = Array.from({ length: 21 }, (_, index) => ({
+    ...openQuestionFromRow(row(null), context),
+    id: `code:${String(index).padStart(3, "0")}`,
+    kind: "code_activate" as const,
+  }));
+  const page = await listAiOpenQuestions({
+    ownerUserId: "u1",
+    ...context,
+    kind: "code_activate",
+    sources: [async () => aiOpenQuestionsPage(items, 21)],
+  });
+  expect(page.items).toHaveLength(20);
+  expect(page.nextCursor?.id).toBe(items[19]!.id);
+});
+
+test("cursor IDs are bounded and timestamp ties follow PostgreSQL C code-point ordering", () => {
+  const createdAt = new Date(FIXTURE_AT).toISOString();
+  expect(AiOpenQuestionsCursorSchema.safeParse({ createdAt, id: "x".repeat(100) }).success).toBe(true);
+  expect(AiOpenQuestionsCursorSchema.safeParse({ createdAt, id: "x".repeat(101) }).success).toBe(false);
+  const ids = ["😀", "é", "a", "_", "Z", "-", "aa", "\uE000"];
+  const sorted = ids
+    .map((id) => ({ createdAt, id }))
+    .sort(compareAiOpenQuestions)
+    .map((item) => item.id);
+  expect(sorted).toEqual(["-", "Z", "_", "a", "aa", "é", "\uE000", "😀"]);
+  expect(compareAiOpenQuestions({ createdAt: "2026-10-01T00:00:00.000Z", id: "z" }, { createdAt, id: "a" })).toBeLessThan(0);
 });

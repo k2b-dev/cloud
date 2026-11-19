@@ -78,3 +78,20 @@ export const waitingQuestionsView = (input: {
     onlyHereAtEnd: atEnd,
   };
 };
+
+/** Preserve a row across reads only while all of its data, including its jump target, stays the same. */
+export const sameWaitingQuestion = (a: AiOpenQuestion, b: AiOpenQuestion): boolean =>
+  a.id === b.id &&
+  a.kind === b.kind &&
+  a.href === b.href &&
+  a.conversationId === b.conversationId &&
+  a.conversationTitle === b.conversationTitle &&
+  a.anchor === b.anchor &&
+  a.short === b.short &&
+  a.createdAt === b.createdAt &&
+  a.reason === b.reason &&
+  a.app.name === b.app.name &&
+  a.app.icon === b.app.icon &&
+  a.app.accent === b.app.accent &&
+  a.archivedChat?.id === b.archivedChat?.id &&
+  a.archivedChat?.title === b.archivedChat?.title;

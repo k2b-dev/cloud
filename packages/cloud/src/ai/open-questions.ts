@@ -2,6 +2,16 @@ import { z } from "zod";
 import { type CapabilityCaller, invokeCapabilityWithDataSchema } from "../capabilities/server";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import { CapabilityActionReviewPresentationSchema, CapabilitySemanticLinkSchema } from "../contracts/capabilities";
+import {
+  type AiOpenQuestion,
+  type AiOpenQuestionKind,
+  type AiOpenQuestions,
+  type AiOpenQuestionsCursor,
+  AiOpenQuestionsCursorSchema,
+  AiOpenQuestionsSchema,
+  aiOpenQuestionsPage,
+  compareAiOpenQuestions,
+} from "../contracts/open-questions";
 import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server";
 import { openRequests } from "../services/approvals/content";
@@ -11,71 +21,27 @@ import { aiToolIcon } from "./chat/message-utils";
 import { legacyOutcomeWords } from "./chat/tool-action-words";
 import { type AiTurnBlock, toolBlockId } from "./protocol";
 
-/**
- * What waits for the person, by kind: each kind has its sign in "Waiting for you" and its own way to the thing. Cloud
- * lists approvals; Code adds its entries with kinds of its own (Bauplan 3m).
- */
-export const AI_OPEN_QUESTION_KINDS = ["approval", "code_activate", "code_changes", "code_expired", "code_attention"] as const;
-export type AiOpenQuestionKind = (typeof AI_OPEN_QUESTION_KINDS)[number];
+export {
+  AI_OPEN_QUESTION_CODE_REASONS,
+  AI_OPEN_QUESTION_KINDS,
+  type AiOpenQuestion,
+  type AiOpenQuestionCodeReason,
+  type AiOpenQuestionKind,
+  type AiOpenQuestions,
+  type AiOpenQuestionsCursor,
+  AiOpenQuestionsCursorSchema,
+  AiOpenQuestionsSchema,
+  aiOpenQuestionsPage,
+  compareAiOpenQuestions,
+} from "../contracts/open-questions";
 
-export type AiOpenQuestion = {
-  kind: AiOpenQuestionKind;
-  /** An entry without a chat opens its authorized source page. */
-  href?: string;
-  /** The approval request id (approvals.requests.id). */
-  id: string;
-  /** Short id of the chat the question waits in. */
-  conversationId: string;
-  /** The chat's current title, at most 200 code points; chat content, never Cloud's words. */
-  conversationTitle: string | null;
-  /** The question's data-chat-anchor: the id of the tool block the chat renders it in. */
-  anchor: string;
-  /** The question's short form, plain text, at most 160 code points. */
-  short: string;
-  /** The app the question is about, as the card shows it. */
-  app: { name: string; icon: string; accent?: string };
-  /** Why the person's own Code waits (`code_attention` only); "Waiting for you" names the way out by it. */
-  reason?: AiOpenQuestionCodeReason;
-  /** The archived chat personal Code still writes to (`chat_missing` only); its owner can restore it in place. */
-  archivedChat?: { id: string; title: string };
-  createdAt: string;
-};
-
-export const AI_OPEN_QUESTION_CODE_REASONS = ["chat_missing", "secret", "mandate", "access"] as const;
-export type AiOpenQuestionCodeReason = (typeof AI_OPEN_QUESTION_CODE_REASONS)[number];
-
-export type AiOpenQuestions = {
-  items: AiOpenQuestion[];
-  /** All open questions of the person, across pages. */
-  count: number;
-};
-
-export const AiOpenQuestionsSchema = z.object({
-  count: z.number().int().nonnegative(),
-  items: z
-    .array(
-      z.object({
-        id: z.string(),
-        kind: z.enum(AI_OPEN_QUESTION_KINDS),
-        href: z.string().startsWith("/").optional(),
-        conversationId: z.string(),
-        conversationTitle: z.string().nullable(),
-        anchor: z.string(),
-        short: z.string(),
-        app: z.object({ name: z.string(), icon: z.string(), accent: z.string().optional() }),
-        reason: z.enum(AI_OPEN_QUESTION_CODE_REASONS).optional(),
-        archivedChat: z.object({ id: z.string(), title: z.string() }).optional(),
-        createdAt: z.iso.datetime(),
-      }),
-    )
-    .max(APPROVALS_PAGE_SIZE),
-});
-/** A source answers for one `kind` alone when the reader asks for it, with the same page size. */
+/** Sources count every matching question, but return only one page after `cursor`, with a continuation if needed. */
 export type AiOpenQuestionSource = (input: {
   ownerUserId: string;
   locale: string;
   timeZone: string;
   kind?: AiOpenQuestionKind;
+  cursor?: AiOpenQuestionsCursor;
 }) => Promise<AiOpenQuestions>;
 
 type QuestionRow = {
@@ -133,7 +99,9 @@ export const listAiOpenQuestions = async (input: {
   sources?: readonly AiOpenQuestionSource[];
   /** Only this kind, in the same page size: a page section that lists one kind never loses it behind older questions. */
   kind?: AiOpenQuestionKind;
+  cursor?: AiOpenQuestionsCursor;
 }): Promise<AiOpenQuestions> => {
+  if (input.cursor) AiOpenQuestionsCursorSchema.parse(input.cursor);
   const caller = input.caller ?? (input.authority ? { authority: input.authority, locale: input.locale } : undefined);
   if (caller) {
     const authority = caller.authority;
@@ -144,7 +112,7 @@ export const listAiOpenQuestions = async (input: {
         appId: "core",
         capabilityId: "ai.open_questions",
         kind: "query",
-        input: { timeZone: input.timeZone, ...(input.kind ? { kind: input.kind } : {}) },
+        input: { timeZone: input.timeZone, ...(input.kind ? { kind: input.kind } : {}), ...(input.cursor ? { cursor: input.cursor } : {}) },
       },
       AiOpenQuestionsSchema,
       caller,
@@ -159,7 +127,8 @@ export const listAiOpenQuestions = async (input: {
     : await sql<QuestionRow[]>`
     WITH page AS (
       SELECT * FROM (${ownedRequests(input.ownerUserId)}) r
-      ORDER BY r.created_at ASC, r.id ASC LIMIT ${APPROVALS_PAGE_SIZE}
+      WHERE ${input.cursor ? sql`(date_trunc('milliseconds', r.created_at), r.id::text COLLATE "C") > (${input.cursor.createdAt}::timestamptz, ${input.cursor.id}::text COLLATE "C")` : sql`TRUE`}
+      ORDER BY date_trunc('milliseconds', r.created_at) ASC, r.id ASC LIMIT ${APPROVALS_PAGE_SIZE + 1}
     )
     SELECT r.id, r.app_id AS "appId", r.sentence, r.created_at AS "createdAt",
       question.short_id AS "conversationId", question.title AS "conversationTitle",
@@ -179,16 +148,16 @@ export const listAiOpenQuestions = async (input: {
         AND c.created_by_user_id=${input.ownerUserId}::uuid
       ORDER BY p.created_at DESC, p.id DESC LIMIT 1
     ) question ON true
-    ORDER BY r.created_at ASC, r.id ASC`;
+    ORDER BY date_trunc('milliseconds', r.created_at) ASC, r.id ASC`;
 
   const sources = await Promise.all((input.sources ?? []).map((source) => source(input)));
-  return {
-    count: count + sources.reduce((sum, source) => sum + source.count, 0),
-    items: [...rows.map((row) => openQuestionFromRow(row, input)), ...sources.flatMap((source) => source.items)]
-      .filter((item) => !input.kind || item.kind === input.kind)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
-      .slice(0, APPROVALS_PAGE_SIZE),
-  };
+  return aiOpenQuestionsPage(
+    [...rows.map((row) => openQuestionFromRow(row, input)), ...sources.flatMap((source) => source.items)].filter(
+      (item) => (!input.kind || item.kind === input.kind) && (!input.cursor || compareAiOpenQuestions(item, input.cursor) > 0),
+    ),
+    count + sources.reduce((sum, source) => sum + source.count, 0),
+    sources.some((source) => source.nextCursor !== undefined),
+  );
 };
 
 /** Stop at the payload bound without splitting a Unicode code point or copying the rest of a legacy message. */

@@ -1,5 +1,12 @@
 import { sql } from "@k2b/cloud";
-import type { AiOpenQuestion, AiOpenQuestions } from "@k2b/cloud/ai";
+import {
+  type AiOpenQuestion,
+  type AiOpenQuestions,
+  type AiOpenQuestionsCursor,
+  aiOpenQuestionsPage,
+  compareAiOpenQuestions,
+} from "@k2b/cloud/ai";
+import { APPROVALS_PAGE_SIZE } from "@k2b/cloud/contracts/approvals";
 import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
 import { CodeDataError } from "./access";
 import { codeChatMissingCondition, codeChatSchemaAvailable } from "./chat-binding";
@@ -10,7 +17,14 @@ import { findCode } from "./store";
 
 /** One domain source for the shared waiting list. The same read supplies badges, page and notification targets. */
 export async function listCodeWaiting(
-  input: { ownerUserId: string; locale: string; timeZone: string; versionId?: string; kind?: AiOpenQuestion["kind"] },
+  input: {
+    ownerUserId: string;
+    locale: string;
+    timeZone: string;
+    versionId?: string;
+    kind?: AiOpenQuestion["kind"];
+    cursor?: AiOpenQuestionsCursor;
+  },
   signal: AbortSignal,
 ): Promise<AiOpenQuestions> {
   // A reader asking for one kind gets only that kind, with the same page size.
@@ -76,7 +90,7 @@ export async function listCodeWaiting(
               : `Switch on version ${row.number}`;
       const origin = CodeSubmissionOriginSchema.parse(row.origin);
       count++;
-      items.push({
+      const item: AiOpenQuestion = {
         id: `code:${row.version_id}`,
         kind,
         conversationId: row.chat_id,
@@ -85,22 +99,24 @@ export async function listCodeWaiting(
         short: [...short].slice(0, 160).join(""),
         app: { name: "Code", icon: kind === "code_activate" ? "ti ti-player-play" : "ti ti-code" },
         createdAt: row.created_at.toISOString(),
-      });
-      items.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-      items.splice(20);
+      };
+      if (!input.cursor || compareAiOpenQuestions(item, input.cursor) > 0) items.push(item);
+      items.sort(compareAiOpenQuestions);
+      items.splice(APPROVALS_PAGE_SIZE + 1);
     }
     after = rows.at(-1)!.version_id;
     if (rows.length < 50) break;
   }
-  const attention = input.versionId || input.kind ? { count: 0, items: [] } : await listCodeAttentionWaiting(input, signal);
-  return {
-    count: count + attention.count,
-    items: [...items, ...attention.items].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).slice(0, 20),
-  };
+  const attention: AiOpenQuestions =
+    input.versionId || input.kind ? { count: 0, items: [] } : await listCodeAttentionWaiting(input, signal);
+  return aiOpenQuestionsPage([...items, ...attention.items], count + attention.count, attention.nextCursor !== undefined);
 }
 
 /** Operational problems are actionable on the Code page, including Code created outside a chat. */
-async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: string }, signal: AbortSignal): Promise<AiOpenQuestions> {
+async function listCodeAttentionWaiting(
+  input: { ownerUserId: string; locale: string; cursor?: AiOpenQuestionsCursor },
+  signal: AbortSignal,
+): Promise<AiOpenQuestions> {
   const items: AiOpenQuestion[] = [];
   let count = 0,
     after = "";
@@ -187,7 +203,7 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
         ? `${row.title} ${row.reason === "chat_missing" ? "braucht einen Chat" : row.reason === "secret" ? "braucht ein Secret" : row.reason === "mandate" ? "braucht deine Bestätigung" : "braucht Zugriff"}`
         : `${row.title} ${row.reason === "chat_missing" ? "needs a chat" : row.reason === "secret" ? "needs a secret" : row.reason === "mandate" ? "needs your confirmation" : "needs access"}`;
       count++;
-      items.push({
+      const item: AiOpenQuestion = {
         id: `code-attention:${row.code_id}`,
         kind: "code_attention",
         conversationId: "",
@@ -201,12 +217,13 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
           : {}),
         createdAt: row.created_at.toISOString(),
         href: `/app/assistant/code/${row.code_id}${row.reason === "secret" ? "?tab=secrets" : ""}`,
-      });
-      items.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-      items.splice(20);
+      };
+      if (!input.cursor || compareAiOpenQuestions(item, input.cursor) > 0) items.push(item);
+      items.sort(compareAiOpenQuestions);
+      items.splice(APPROVALS_PAGE_SIZE + 1);
     }
     after = rows.at(-1)!.code_id;
     if (rows.length < 50) break;
   }
-  return { count, items };
+  return aiOpenQuestionsPage(items, count);
 }

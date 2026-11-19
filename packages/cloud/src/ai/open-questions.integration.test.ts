@@ -6,7 +6,7 @@ import { sql } from "../runtime/clients";
 import { approvals } from "../services/approvals";
 import { AiInvalidationSchema } from "./live-events";
 import { migrateCloudAi } from "./migrate";
-import { countAiOpenQuestions, listAiOpenQuestions } from "./open-questions";
+import { type AiOpenQuestionsCursor, countAiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 import type { AiTurnBlock } from "./protocol";
 import { aiConversations } from "./store";
 
@@ -101,7 +101,8 @@ databaseSuite()("open questions", () => {
           WHERE id=${turn.id}::uuid`;
       return { id: request.id, callId };
     };
-    const read = () => listAiOpenQuestions({ ownerUserId: userId, locale: "en", timeZone: "Europe/Berlin" });
+    const read = (cursor?: AiOpenQuestionsCursor) =>
+      listAiOpenQuestions({ ownerUserId: userId, locale: "en", timeZone: "Europe/Berlin", cursor });
     return { userId, chat, turn, ask, read };
   };
 
@@ -143,9 +144,19 @@ databaseSuite()("open questions", () => {
     const page = await f.read();
     expect(page.items.map((item) => item.id)).toEqual(ids.slice(0, APPROVALS_PAGE_SIZE));
     expect(page.count).toBe(21);
+    expect((await f.read(page.nextCursor)).items.map((item) => item.id)).toEqual(ids.slice(APPROVALS_PAGE_SIZE));
+    expect((await f.read(page.nextCursor)).nextCursor).toBeUndefined();
     expect(page.items[0]?.createdAt).toMatch(/^2026-10-17T12:/);
     await sql`UPDATE approvals.requests SET created_at=${now}::timestamptz WHERE approver_user_id=${f.userId}::uuid`;
-    expect((await f.read()).items.map((item) => item.id)).toEqual([...ids].sort().slice(0, APPROVALS_PAGE_SIZE));
+    // Different PostgreSQL microseconds within one JS millisecond must not duplicate or lose entries.
+    await sql`UPDATE approvals.requests SET created_at=created_at + interval '123 microseconds' WHERE approver_user_id=${f.userId}::uuid`;
+    const tied = await f.read();
+    expect(tied.items.map((item) => item.id)).toEqual([...ids].sort().slice(0, APPROVALS_PAGE_SIZE));
+    await approvals.cancel([tied.items.at(-1)!.id]);
+    const rest = await f.read(tied.nextCursor);
+    expect(rest.items.map((item) => item.id)).toEqual([...ids].sort().slice(APPROVALS_PAGE_SIZE));
+    expect(rest.count).toBe(20);
+    expect(rest.nextCursor).toBeUndefined();
   });
 
   test("uses the chat's tool block and card anchor for standard and custom approvals, the card's words and app, and the current chat title", async () => {

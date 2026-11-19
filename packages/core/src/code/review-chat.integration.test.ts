@@ -76,6 +76,8 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
     approvalId?: string,
     resource = false,
     withPages = false,
+    submittedAt?: string,
+    withBoundChat = false,
   ) {
     const codeId = `c_async${String(++ordinal).padStart(3, "0")}`;
     const chat = await aiConversations.createConversation({ ownerUserId: owner, title: "Fictional review chat" });
@@ -90,12 +92,20 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
     if (shared)
       await sql`WITH a AS (INSERT INTO auth.access(user_id,permission) VALUES(${owner}::uuid,'write') RETURNING id)
       INSERT INTO code.shares(code_id,access_id) SELECT ${codeId},id FROM a`;
+    const manifest = withPages
+      ? chatPageManifest
+      : {
+          entrypoints: [],
+          secrets: [],
+          ...(withBoundChat ? { permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null } }] } : {}),
+        };
     await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
-      VALUES(${versionId}::uuid,${codeId},5,'{"code.ts":"fixture"}','fixture',${"a".repeat(64)},${"b".repeat(64)},${JSON.stringify(withPages ? chatPageManifest : { entrypoints: [], secrets: [] })}::text::jsonb,7,7,${owner}::uuid)`;
+      VALUES(${versionId}::uuid,${codeId},5,'{"code.ts":"fixture"}','fixture',${"a".repeat(64)},${"b".repeat(64)},${JSON.stringify(manifest)}::text::jsonb,7,7,${owner}::uuid)`;
     const origin = cli
       ? { kind: "cli" }
       : { kind: "ai_chat", conversationId: chat.id, automaticAfterReview: automatic, cardAnchor: "tool-submit" };
-    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding,origin,locale,approval_id) VALUES(${versionId}::uuid,${codeId},'{}',${JSON.stringify(origin)}::text::jsonb,'de',${approvalId ?? null}::uuid)`;
+    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding,origin,locale,approval_id,created_at)
+      VALUES(${versionId}::uuid,${codeId},'{}',${JSON.stringify(origin)}::text::jsonb,'de',${approvalId ?? null}::uuid,COALESCE(${submittedAt ?? null}::timestamptz,now()))`;
     if (outcome)
       await sql.begin(async (tx) => {
         await tx`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch,outcome,comment)
@@ -664,6 +674,34 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
     } finally {
       prepare.mockRestore();
     }
+  });
+  test("Code waiting pages reach versions and attention beyond twenty, keeping authorized totals", async () => {
+    await sql`UPDATE code.codes SET state='deleting'`;
+    const ids: string[] = [];
+    for (let index = 0; index < 21; index++) {
+      const f = await fixture("approved", false, false, false, undefined, false, false, now.toISOString(), true);
+      ids.push(`code:${f.versionId}`);
+    }
+    const input = { ownerUserId: owner, locale: "de", timeZone: "UTC", kind: "code_activate" as const };
+    const first = await listCodeWaiting(input, signal());
+    const second = await listCodeWaiting({ ...input, cursor: first.nextCursor }, signal());
+    expect(first.count).toBe(21);
+    expect(first.items).toHaveLength(20);
+    expect(first.nextCursor).toBeDefined();
+    expect(second.count).toBe(21);
+    expect(second.items).toHaveLength(1);
+    expect(second.nextCursor).toBeUndefined();
+    expect([...first.items, ...second.items].map((item) => item.id)).toEqual(ids.sort());
+    // Every fixture lacks its personal chat binding; this is a separately paged source.
+    const attention = { ...input, kind: "code_attention" as const };
+    const a = await listCodeWaiting(attention, signal());
+    const b = await listCodeWaiting({ ...attention, cursor: a.nextCursor }, signal());
+    expect(a.count).toBe(21);
+    expect(a.items).toHaveLength(20);
+    expect(a.nextCursor).toBeDefined();
+    expect(b.items).toHaveLength(1);
+    expect(b.nextCursor).toBeUndefined();
+    expect(new Set([...a.items, ...b.items].map((item) => item.id)).size).toBe(21);
   });
   test("waiting items disappear after activation, withdrawal, expiry renewal and repaired secrets or mandates", async () => {
     await sql`UPDATE code.codes SET state='deleting'`;

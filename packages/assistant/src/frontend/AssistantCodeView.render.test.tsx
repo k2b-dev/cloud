@@ -404,3 +404,17 @@ test("no surface shows a forbidden status word or an identifier", () => {
       }
     }
 });
+
+test("SSR includes the continuation control with the first waiting page", () => {
+  const first = fixtures.waitingFixture("normal");
+  const last = first.questions().at(-1)!;
+  const html = inLocale("de", () =>
+    createComponent(ApprovalsView, {
+      ...first,
+      questionsPage: () => ({ items: first.questions(), count: 21, nextCursor: { createdAt: last.createdAt, id: last.id } }),
+    }),
+  );
+  expect(visible(html)).toContain("Mehr laden");
+  expect(html).not.toContain('aria-busy="true"');
+  expect(count(html, 'class="cloud-approval"')).toBe(2);
+});
