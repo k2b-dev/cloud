@@ -8,7 +8,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
+import type { EstimateSuggestionResult, SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
 import { checkFixtureSessionOrigin } from "../../../../../../../scripts/fixtures/session-origin";
 import { browserName, hoverInPlace, keptThrough, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
@@ -122,7 +122,13 @@ const detail = (item: SpaceItem, attachments: SpaceItemAttachment[] = []): Space
   ],
 });
 
-type Scenario = { locale: "en" | "de"; canWrite?: boolean; item?: SpaceItem; attachments?: SpaceItemAttachment[] };
+type Scenario = {
+  locale: "en" | "de";
+  canWrite?: boolean;
+  item?: SpaceItem;
+  attachments?: SpaceItemAttachment[];
+  estimateSuggestions?: boolean;
+};
 const serverBody = (scenario: Scenario) =>
   renderToString(() =>
     createComponent(DetailFixture, {
@@ -138,6 +144,7 @@ const serverBody = (scenario: Scenario) =>
       canWrite: scenario.canWrite ?? true,
       accessVisible: false,
       mailIntegrationAvailable: false,
+      estimateSuggestions: scenario.estimateSuggestions ?? false,
     }),
   );
 
@@ -145,6 +152,8 @@ let css = "";
 let server: ReturnType<typeof Bun.serve>;
 const pages = new Map<string, string>();
 const writes: Array<{ method: string; path: string; body: unknown }> = [];
+/** The assistant's estimate for the edit form; each request waits until a test answers it. */
+let estimateRequests: Array<(result: EstimateSuggestionResult) => void> = [];
 /** Wakes each wait for a write: the server records one, so a test waits for the save itself, not a fixed time (#2204). */
 const writeWaiters = new Set<() => void>();
 /** What the server holds: saved properties come back with the next detail snapshot, as from the real route. */
@@ -154,6 +163,7 @@ let browser: Browser;
 beforeEach(() => {
   stored = structuredClone(task);
   writes.length = 0;
+  estimateRequests = [];
 });
 
 beforeAll(async () => {
@@ -181,6 +191,8 @@ beforeAll(async () => {
           totalPages: 1,
         });
       if (url.pathname === `/api/spaces/${spaceId}/items/Item01/detail`) return Response.json(detail(stored));
+      if (url.pathname === `/api/spaces/${spaceId}/items/Item01/estimate-suggestion` && request.method === "POST")
+        return Response.json(await new Promise<EstimateSuggestionResult>((answer) => estimateRequests.push(answer)));
       if (url.pathname === `/api/spaces/${spaceId}/items/Item01/comments/page`) return Response.json(detail(stored).comments);
       const content = /^\/api\/spaces\/Space1\/items\/Item01\/attachments\/(\w+)\/content$/.exec(url.pathname);
       const file = content ? media[content[1] as keyof typeof media] : undefined;
@@ -1052,4 +1064,145 @@ describe("Spaces item detail in a browser", () => {
         await page.context().close();
       }
     }, 30_000);
+
+  /** Where the edit form's fields, the assistant's line, and the footer sit; the status text inside may change. */
+  const formBoxes = (page: Page) =>
+    page.evaluate(() => {
+      const form = window.document.querySelector(".spaces-item-form")!;
+      const box = (element: Element, full = true) => {
+        const rect = element.getBoundingClientRect();
+        return (full ? [rect.x, rect.y, rect.width, rect.height] : [rect.y, rect.height]).map((value) => value.toFixed(1)).join(" ");
+      };
+      return [
+        ...[
+          ...form.querySelectorAll(
+            ".k2b-ai-suggestion-group__bar, .k2b-field, input, textarea, button[type=submit], .k2b-panel-dialog__footer",
+          ),
+        ].map((element) => `${element.tagName}.${element.className.toString().split(" ")[0]} ${box(element)}`),
+        ...[...form.querySelectorAll(".k2b-ai-suggestion")].map((element) => `status ${box(element, false)}`),
+      ];
+    });
+  const estimateInput = (page: Page) => page.getByRole("dialog").getByLabel("Geschätzte Dauer", { exact: true });
+  const openEditForm = async (page: Page) => {
+    await page.getByRole("button", { name: "Eintrag bearbeiten", exact: true }).click();
+    await page.locator(".spaces-item-form .k2b-ai-suggestion-group__bar").waitFor();
+    while (estimateRequests.length === 0) await Bun.sleep(10);
+    await settled(page);
+  };
+  const answerEstimate = async (page: Page, result: EstimateSuggestionResult, title: string) => {
+    estimateRequests.shift()!(result);
+    await page.locator(".k2b-ai-suggestion-group__title", { hasText: title }).waitFor();
+    await settled(page);
+  };
+  const formShot = (page: Page, name: string) =>
+    page.locator(".spaces-item-form").screenshot({ path: `/tmp/spaces-estimate-${browserName}-${name}.png`, animations: "disabled" });
+  const unestimated = { ...task, estimatedDurationMinutes: null };
+
+  for (const [name, view] of [
+    ["1440", desktop],
+    ["390", phone],
+  ] as const)
+    for (const theme of ["light", "dark"] as const)
+      test(`${name} ${theme}: Gustav's estimate arrives, is accepted, and saved without moving the form`, async () => {
+        const page = await open(view, { locale: "de", item: unestimated, estimateSuggestions: true }, theme);
+        try {
+          await openEditForm(page);
+          const input = estimateInput(page);
+          expect(await input.getAttribute("placeholder")).not.toBe("90");
+          const loading = await formBoxes(page);
+          await formShot(page, `${name}-${theme}-loading`);
+
+          await answerEstimate(
+            page,
+            { state: "ready", suggestion: { id: "estimate:1", minutes: 90, confidence: "high", reason: null } },
+            "Gustav hat die Dauer aus dieser Aufgabe geschätzt",
+          );
+          expect(await input.getAttribute("placeholder")).toBe("90");
+          expect(await input.inputValue()).toBe("");
+          await expect(
+            page.getByText("Der Vorschlag ist noch offen und wird nicht gespeichert.", { exact: true }).isVisible(),
+          ).resolves.toBe(true);
+          expect(await formBoxes(page)).toEqual(loading);
+          await formShot(page, `${name}-${theme}-open`);
+
+          // Keyboard: Accept is the next stop after the label row, and focus continues in the field.
+          const accept = page.getByRole("button", { name: "Vorschlag für Geschätzte Dauer übernehmen", exact: true });
+          await accept.focus();
+          await page.keyboard.press("Enter");
+          await page.waitForFunction(() => (window.document.activeElement as HTMLInputElement | null)?.value === "90");
+          await settled(page);
+          expect(await formBoxes(page)).toEqual(loading);
+          await formShot(page, `${name}-${theme}-accepted`);
+
+          await page.getByRole("button", { name: "Speichern", exact: true }).click();
+          await writesReach(1);
+          expect(writes[0]).toMatchObject({ method: "PATCH", body: { estimatedDurationMinutes: 90 } });
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
+
+  test("an unsure estimate stays open with its reason and is not saved", async () => {
+    const page = await open(desktop, { locale: "de", item: unestimated, estimateSuggestions: true });
+    try {
+      await openEditForm(page);
+      const loading = await formBoxes(page);
+      await answerEstimate(
+        page,
+        {
+          state: "ready",
+          suggestion: { id: "estimate:2", minutes: 240, confidence: "low", reason: "Wie viele Räume es sind, steht nicht in der Aufgabe." },
+        },
+        "Gustav hat die Dauer aus dieser Aufgabe geschätzt",
+      );
+      expect(await formBoxes(page)).toEqual(loading);
+      expect(await page.locator(".k2b-ai-suggestion-group__accept").getAttribute("aria-disabled")).toBe("true");
+      await page.locator(".k2b-ai-suggestion", { hasText: "unsicher" }).hover();
+      await page.getByText("Wie viele Räume es sind, steht nicht in der Aufgabe.", { exact: true }).waitFor();
+      await formShot(page, "1440-light-unsure");
+      await page.getByRole("button", { name: "Speichern", exact: true }).click();
+      await writesReach(1);
+      expect(writes[0]).toMatchObject({ method: "PATCH", body: { estimatedDurationMinutes: null } });
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("a failed estimate says so, retries in place, and an own estimate stays", async () => {
+    const page = await open(phone, { locale: "de", item: { ...task, estimatedDurationMinutes: 30 }, estimateSuggestions: true });
+    try {
+      await openEditForm(page);
+      const loading = await formBoxes(page);
+      await answerEstimate(page, { state: "failed", reason: "error" }, "Gustav konnte die Dauer nicht schätzen");
+      expect(await formBoxes(page)).toEqual(loading);
+      await formShot(page, "390-light-error");
+      await page.getByRole("button", { name: "Erneut", exact: true }).click();
+      while (estimateRequests.length === 0) await Bun.sleep(10);
+      await answerEstimate(
+        page,
+        { state: "ready", suggestion: { id: "estimate:3", minutes: 60, confidence: "high", reason: null } },
+        "Gustav hat die Dauer aus dieser Aufgabe geschätzt",
+      );
+      expect(await estimateInput(page).inputValue()).toBe("30");
+      await page.locator(".k2b-ai-suggestion", { hasText: "Gustav: 60" }).waitFor();
+      expect(await formBoxes(page)).toEqual(loading);
+      await formShot(page, "390-light-own");
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("without Gustav the edit form asks nothing and shows no assistant line", async () => {
+    const page = await open(desktop, { locale: "de", item: unestimated, estimateSuggestions: false });
+    try {
+      await page.getByRole("button", { name: "Eintrag bearbeiten", exact: true }).click();
+      await page.locator(".spaces-item-form").waitFor();
+      await settled(page);
+      expect(await page.locator(".spaces-item-form .k2b-ai-suggestion-group, .spaces-item-form .k2b-ai-suggestion").count()).toBe(0);
+      expect(estimateRequests).toHaveLength(0);
+      await formShot(page, "1440-light-without");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 });
