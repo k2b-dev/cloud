@@ -444,6 +444,156 @@ describe("MailComposer in a floating window", () => {
     }
   });
 
+  /**
+   * A shared draft in the large window whose generation the server closes live while this composer's send command
+   * runs, so the close always arrives before the command's answer. Returns what the composer showed meanwhile.
+   */
+  const sendSharedClosedLive = async (options: {
+    /** `failedFirst`: the command answers with an error, and the close arrives after that answer. */
+    command?: "ok" | "lost" | "failedFirst";
+    closedBy?: "me" | "peer";
+    rest?: "unchanged" | "failed";
+    typeDuringSend?: boolean;
+  }) => {
+    const offline = await import("@k2b/cloud/browser/shared-text");
+    const { EditorView } = await import("@codemirror/view");
+    const generations = spyOn(offline, "listSharedTextOfflineGenerations").mockResolvedValue([]);
+    const base = draftEditableContentInputSchema.strip().parse(initialDraft);
+    const document = createDraftDocument(base);
+    const state = encoding.toBase64(Y.encodeStateAsUpdate(document));
+    const cursor = "s6t.fixture.1";
+    const snapshot = { state, cursor, content: base };
+    const editor =
+      options.closedBy === "peer"
+        ? { lastEditedBy: { kind: "user" as const, userId: "Usr002" }, lastEditedByDisplayName: "Tom" }
+        : { lastEditedBy: { kind: "user" as const, userId: "Usr001" }, lastEditedByDisplayName: "Ada" };
+    let sent = false;
+    documentResponse = (path) => {
+      if (path.endsWith("/document"))
+        return Response.json({
+          generation: "1",
+          revision: 1,
+          lifecycle: sent ? "sending" : "draft",
+          historyComplete: true,
+          fresh: snapshot,
+          durable: snapshot,
+          frozen: sent ? { state, cursor, generation: "1", revision: 1 } : null,
+        });
+      if (path.endsWith("/document/snapshot")) return Response.json({ generation: "1", status: "saved", revision: 1, durable: snapshot });
+      if (path.endsWith("/document/rest"))
+        return options.rest === "failed"
+          ? Response.json({ message: "The comparison is not available." }, { status: 503 })
+          : Response.json({ status: "unchanged", durableSourceState: state });
+      if (path.endsWith("/drafts/Draft1"))
+        return Response.json({ ...initialDraft, ...editor, editMode: "shared", generation: "1", state: sent ? "sending" : "draft" });
+      return null;
+    };
+    const serve = globalThis.fetch;
+    let socket!: OfflineWebSocket;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        if (!new URL(request.url).pathname.endsWith("/commands")) return serve(input, init);
+        // Typed after Send: real input the sent message does not hold.
+        if (options.typeDuringSend) {
+          const view = EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
+          view.dispatch({ changes: { from: view.state.doc.length, insert: " P.S. Bring the invoice." }, userEvent: "input.type" });
+        }
+        const close = () =>
+          socket.message({ type: "error", payload: { code: "GENERATION_CLOSED", message: "Draft sent", docId: "Draft1", reopen: true } });
+        sent = true;
+        if (options.command === "failedFirst") {
+          setTimeout(close, 40);
+          return Response.json({ code: "SEND_FAILED", message: "The connection broke." }, { status: 503 });
+        }
+        // The server closes the draft's generation and tells every open copy before the command answers.
+        close();
+        await Bun.sleep(60);
+        if (options.command === "lost" || options.closedBy === "peer") throw new TypeError("Failed to fetch");
+        return serve(input, init);
+      },
+      { preconnect: serve.preconnect },
+    );
+    localStorage.setItem("cloud:mail:shared:Usr001:Draft1:1:remember", "no");
+    const seen = new Set<string>();
+    const visible = () =>
+      [...dom.document.querySelectorAll(".mail-inline-draft-notice, .mail-draft-hint[data-tone], .k2b-notice-card")]
+        .filter((element) => !element.closest("[hidden]"))
+        .map((element) => element.textContent?.trim() ?? "");
+    const observer = new MutationObserver(() => {
+      for (const text of visible()) seen.add(text);
+    });
+    try {
+      await mount({ draft: { ...initialDraft, editMode: "shared", generation: "1" }, ready: false, fullscreen: () => true });
+      await waitFor(() =>
+        OfflineWebSocket.instances.some((candidate) => candidate.url && new URL(candidate.url).pathname.endsWith("/document/socket")),
+      );
+      socket = OfflineWebSocket.instances.find(
+        (candidate) => candidate.url && new URL(candidate.url).pathname.endsWith("/document/socket"),
+      )!;
+      socket.open();
+      socket.message({ type: "replayReady", payload: { docId: "Draft1", generation: "1", cursor, peerId: "peer1" } });
+      await waitFor(() => Boolean(sendButton() && !sendButton()!.disabled));
+      observer.observe(dom.document.body, { childList: true, subtree: true, characterData: true });
+      sendButton()!.click();
+      await waitFor(() => leaves.length > 0 || (options.rest === "failed" && visible().length > 0));
+      await Bun.sleep(150);
+      // A dismissed toast leaves with its exit motion; only toasts still standing count.
+      const toasts = [...dom.document.querySelectorAll<HTMLElement>(".k2b-toast")]
+        .filter((toast) => !toast.closest("[data-closing]"))
+        .map((toast) => toast.textContent?.trim() ?? "");
+      return { seen: [...seen], now: visible(), toasts };
+    } finally {
+      observer.disconnect();
+      generations.mockRestore();
+      document.destroy();
+    }
+  };
+  const commands = () => requests.filter((request) => request === "POST /api/mail/mailboxes/Box001/commands");
+
+  test("a shared draft sent from the large window closes once with one toast, also when its own send arrives first live", async () => {
+    const shown = await sendSharedClosedLive({});
+    expect(leaves).toEqual(["sent"]);
+    expect(delivered).toEqual([{ submissionId: "Dlv001", scheduledAt: null, undoSeconds: expect.any(Number) }]);
+    // No notice, hint or lifecycle box, not even for a frame, and no toast that someone started sending.
+    expect(shown.seen).toEqual([]);
+    expect(shown.toasts.join(" ")).not.toContain("started sending");
+    expect(commands()).toHaveLength(1);
+  });
+
+  test("an own send whose answer got lost after the live close leaves with the delivery toast, without Undo", async () => {
+    const shown = await sendSharedClosedLive({ command: "lost" });
+    expect(leaves).toEqual(["sent"]);
+    expect(delivered).toEqual([{ submissionId: null, scheduledAt: null, undoSeconds: expect.any(Number) }]);
+    expect(shown.seen).toEqual([]);
+    expect(shown.toasts.join(" ")).not.toContain("started sending");
+    expect(shown.toasts.join(" ")).not.toContain("Not sent");
+  });
+
+  test("an own send whose error answer came before the live close leaves with the delivery toast too", async () => {
+    const shown = await sendSharedClosedLive({ command: "failedFirst" });
+    expect(leaves).toEqual(["sent"]);
+    expect(delivered).toEqual([{ submissionId: null, scheduledAt: null, undoSeconds: expect.any(Number) }]);
+    expect(shown.toasts.join(" ")).not.toContain("started sending");
+    expect(shown.toasts.join(" ")).not.toContain("Not sent");
+  });
+
+  test("when someone else sent first, the failed own send shows no failure; the lifecycle says who sent", async () => {
+    const shown = await sendSharedClosedLive({ closedBy: "peer" });
+    expect(delivered).toEqual([]);
+    expect(leaves).toEqual(["sent"]);
+    expect(shown.toasts.join(" ")).toContain("Tom started sending this message.");
+    expect(shown.toasts.join(" ")).not.toContain("Not sent");
+  });
+
+  test("input typed during the send stays visible with its rescue when the comparison with the sent draft fails", async () => {
+    const shown = await sendSharedClosedLive({ typeDuringSend: true, rest: "failed" });
+    expect(leaves).toEqual([]);
+    // The failure names itself with Try again and Copy; nothing hides that the input is not safe yet.
+    expect(shown.now.join(" ")).toContain("The comparison is not available.");
+    expect(dom.root.querySelector(".mail-draft-hint-slot")?.hasAttribute("hidden")).toBe(false);
+  });
+
   test("Write large moves the same draft into panes beside the preview and back, keeping its text and caret", async () => {
     const previews: string[] = [];
     documentResponse = (path) => {
