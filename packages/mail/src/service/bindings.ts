@@ -851,11 +851,13 @@ export const rediscoverProviderBinding = async (params: {
     if (snapshot.secretRevision !== current.secret_revision) {
       throw Object.assign(new Error("Provider credentials changed during rediscovery"), { code: "CREDENTIAL_REVISION_CHANGED" });
     }
+    // One IMAP connection serves both steps, and folder discovery runs only after the verification
+    // reached the provider: a server that does not answer costs one connection attempt, not two.
     const [verification, folders] = await settleOnAbort(
-      Promise.all([
-        imapSmtpConnector.verify(snapshot.runtime, params.signal),
-        imapSmtpConnector.discoverFolders(snapshot.runtime, params.signal),
-      ]),
+      imapSmtpConnector.withSession(snapshot.runtime, async (runtime) => {
+        const verified = await imapSmtpConnector.verify(runtime, params.signal);
+        return [verified, await imapSmtpConnector.discoverFolders(runtime, params.signal)] as const;
+      }),
       params.signal,
     );
     if (folders.length === 0)

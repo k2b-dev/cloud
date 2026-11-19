@@ -612,11 +612,9 @@ const runSmoke = async (fixture: Fixture) => {
     ok("mailbox tools consolidate sync and automation navigation on desktop and mobile");
 
     const healthNotice = page.locator('[data-mailbox-health="degraded"]');
-    await healthNotice.getByText("Mail is taking longer to connect", { exact: true }).waitFor();
+    await healthNotice.getByText("Mail server not reachable", { exact: true }).waitFor();
     await healthNotice
-      .getByText("The saved account is valid, but the latest synchronization timed out. Mail will retry automatically.", {
-        exact: true,
-      })
+      .getByText("Mail cannot reach your provider's mail server and tries again at growing intervals.", { exact: false })
       .waitFor();
     if (await healthNotice.getByText("Check its provider settings.", { exact: false }).isVisible()) {
       fail("degraded mailbox health still points users at valid provider settings");
@@ -624,13 +622,13 @@ const runSmoke = async (fixture: Fixture) => {
     await healthNotice.getByRole("button", { name: "View status", exact: true }).click();
     const healthDialog = page.getByRole("dialog").filter({ hasText: "Mailbox health" });
     // Diagnostics explain the timeout in the reader's language instead of showing the provider's raw reason.
-    await healthDialog.getByText("The saved account is valid, but the latest synchronization timed out.", { exact: false }).waitFor();
+    await healthDialog.getByText("Mail cannot reach your provider's mail server", { exact: false }).waitFor();
     await healthDialog.getByRole("button", { name: "close dialog", exact: true }).click();
     await clickHydratedDropdownTrigger(page, mailboxOptions());
     await page.locator('[role="menu"]:popover-open').getByText("Settings", { exact: true }).click();
     const settings = page.getByRole("region", { name: "Mailbox settings" });
     await settings.getByRole("tab", { name: "Accounts & identities", exact: true }).click();
-    await settings.getByText("The saved account is valid, but the latest synchronization timed out.", { exact: false }).waitFor();
+    await settings.getByText("Mail cannot reach your provider's mail server", { exact: false }).waitFor();
     await settings.getByRole("button", { name: "Close settings", exact: true }).click();
     ok("mailbox health explains the runtime problem in the workspace, diagnostics, and settings");
 

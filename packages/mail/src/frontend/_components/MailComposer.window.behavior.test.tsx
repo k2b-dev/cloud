@@ -219,6 +219,7 @@ describe("MailComposer in a floating window", () => {
       fullscreen?: () => boolean;
       initialSelection?: { anchor: number; head: number };
       panes?: PanesLayout;
+      identities?: SenderIdentity[];
     } = {},
   ) => {
     const [{ default: MailComposer }, { LocaleProvider }] = await Promise.all([import("./MailComposer"), import("@k2b/ui")]);
@@ -235,7 +236,7 @@ describe("MailComposer in a floating window", () => {
           <MailComposer
             mailboxId="Box001"
             currentActor={{ kind: "user", id: "Usr001" }}
-            identities={[identity]}
+            identities={options.identities ?? [identity]}
             signatures={{ templates: [], personalDefaults: [] }}
             initialDraft={options.draft ?? initialDraft}
             unfinishedUploads={options.uploads}
@@ -263,7 +264,7 @@ describe("MailComposer in a floating window", () => {
   };
   // The Send split button carries the composer's class on the whole control; Send is its main segment.
   const sendButton = () => dom.document.querySelector<HTMLButtonElement>(".mail-compose-action .k2b-split-button__primary");
-  const status = () => statusSlot.textContent?.trim() ?? "";
+  const status = () => statusSlot.querySelector(".mail-compose-window-status")?.textContent?.trim() ?? "";
   const foot = () => dom.root.querySelector<HTMLElement>(".mail-compose-window-foot")!;
 
   test("the window's head carries the save status; the bar starts with Send and ends with the trash", async () => {
@@ -279,6 +280,32 @@ describe("MailComposer in a floating window", () => {
     expect(controls[0]).toBe(sendButton()!);
     expect(controls.at(-1)?.getAttribute("aria-label")).toBe("Discard draft");
     expect(foot().querySelector('[aria-label="Draft actions"]')).not.toBeNull();
+  });
+
+  test("the sender leads the window's head with a chevron to change it; the subject row starts with Subject", async () => {
+    const info: SenderIdentity = {
+      ...identity,
+      id: "Send02",
+      label: "Info",
+      displayName: "Info",
+      fromAddress: "info@example.test",
+      isDefault: false,
+    };
+    await mount({ identities: [identity, info] });
+    await waitFor(() => status() === "Saved");
+    const trigger = statusSlot.querySelector<HTMLButtonElement>("[data-mail-compose-sender] button");
+    expect(trigger?.getAttribute("aria-label")).toBe("Change sender identity. Current sender: Support, support@example.test");
+    expect(trigger?.textContent).toBe("fromSupport");
+    expect(trigger?.querySelector(".ti-chevron-down")).not.toBeNull();
+    // The sender stands before the save state, and nowhere in the draft itself.
+    const sender = statusSlot.querySelector("[data-mail-compose-sender]")!;
+    expect(sender.compareDocumentPosition(statusSlot.querySelector(".mail-compose-window-status")!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(dom.root.querySelector('button[aria-label^="Change sender identity"]')).toBeNull();
+    const row = dom.root.querySelector<HTMLElement>(".mail-inline-draft-meta")!;
+    expect(row.textContent?.trim().startsWith("Subject")).toBe(true);
+    // To and Subject form one block that stays in view above the text.
+    expect(row.parentElement?.matches("[data-mail-draft-fields]")).toBe(true);
+    expect(dom.root.querySelector("[data-mail-draft-fields] > .mail-inline-draft-head")).not.toBeNull();
   });
 
   test("a send that fails keeps the window with its text; a toast names the reason and Send stays in place", async () => {

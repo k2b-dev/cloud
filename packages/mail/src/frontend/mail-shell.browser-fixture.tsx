@@ -536,7 +536,22 @@ export function mailboxData(url: URL, stored?: Partial<MailWorkspacePreference>,
     access: { scope: variant === "assigned-only" ? "assigned" : "mailbox", permission },
     initialLiveCursor: "s6t.mail.4",
     folders,
-    identities: url.searchParams.has("identity") ? [fixtureIdentity(selectedMailbox.name)] : [],
+    // `?identity=2` adds a second sender, so the composer offers its sender menu.
+    identities: url.searchParams.has("identity")
+      ? [
+          fixtureIdentity(selectedMailbox.name),
+          ...(url.searchParams.get("identity") === "2"
+            ? [
+                {
+                  ...fixtureIdentity("Info"),
+                  id: "00000000-0000-4000-8000-0000000000a2",
+                  fromAddress: "info@example.test",
+                  isDefault: false,
+                },
+              ]
+            : []),
+        ]
+      : [],
     scheduledMode,
     scheduledCount: 2,
     scheduledPage: scheduledMode ? { items: [], nextCursor: null, total: 0 } : null,
