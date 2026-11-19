@@ -6,6 +6,7 @@ import { parseProviderLimitSnapshot, providerSecretSchema } from "../contracts";
 import { requireMailboxPermission } from "./access";
 import { auditActorFromRequest, type MailRequestContext, permissionFromScopes } from "./auth";
 import { imapSmtpConnector } from "./connectors";
+import { withJmapDetection } from "./connectors/connection-verification";
 import { EndpointPolicyError } from "./connectors/endpoint-policy";
 import { logDatabaseFailure } from "./database-errors";
 import { enqueueMailInvalidation, mailLive } from "./live";
@@ -297,7 +298,9 @@ export const refreshProviderConnectionLimits = async (params: {
     const barrier = await withMailboxProviderOperationBarrier(params.mailboxId, resourceIds, async (assertLeaseActive) => {
       const runtime = await loadProviderConnectionRuntimeSnapshot(params.connectionId);
       await assertLeaseActive();
-      const limits = await imapSmtpConnector.discoverLimits(runtime.runtime);
+      const { result: limits, jmap } = await withJmapDetection(runtime.runtime.imap.host, () =>
+        imapSmtpConnector.discoverLimits(runtime.runtime),
+      );
       await assertLeaseActive();
 
       return sql.begin(async (tx) => {
@@ -312,7 +315,9 @@ export const refreshProviderConnectionLimits = async (params: {
         }
         const [updated] = await tx<DbProviderConnection[]>`
             UPDATE mail.provider_connections pc
-            SET limit_snapshot = ${limits}::jsonb, updated_at = now()
+            SET limit_snapshot = ${limits}::jsonb,
+              capabilities = pc.capabilities || ${{ jmap }}::jsonb,
+              updated_at = now()
             WHERE pc.id = ${params.connectionId}::uuid
             RETURNING ${connectionColumns()}
           `;

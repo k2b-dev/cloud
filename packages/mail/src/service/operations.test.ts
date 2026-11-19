@@ -57,6 +57,15 @@ const platformSummary = {
 };
 
 describe("Mail operator read model contract", () => {
+  test("exposes only a JMAP discovery flag and preserves old capability records", () => {
+    expect(platformMailboxOperationSummarySchema.parse({ ...platformSummary, jmap: true }).jmap).toBe(true);
+    expect(platformMailboxOperationSummarySchema.parse(platformSummary).jmap).toBeUndefined();
+    expect(
+      mailboxOperatorOperationsSchema.parse({ ...snapshot, connectors: { ...snapshot.connectors, capabilities: { jmap: 1 } } }).connectors
+        .capabilities.jmap,
+    ).toBe(1);
+  });
+
   test("accepts aggregate state without content-bearing fields", () => {
     expect(mailboxOperatorOperationsSchema.parse(snapshot)).toEqual(snapshot);
   });
