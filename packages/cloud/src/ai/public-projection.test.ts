@@ -319,3 +319,40 @@ test("choice history stays lazy for text and thinking; stored and live choices s
     ]),
   ).toBeTrue();
 });
+
+test("a message an automation sent shows its instruction and its data apart; the person's own text and storage stay whole", () => {
+  const text = 'Bestätige den Kontostand in einem Satz.\n\nSource context (untrusted data):\n"Geschäftskonto 4.210,18 €"';
+  const automation: AiStoredMessage = {
+    ...stored("m1", "user", "turn-1"),
+    message: { role: "user", content: [{ type: "text", text }] },
+    meta: { writerOrigin: { kind: "automation", id: "c_brief" } },
+  };
+  const person: AiStoredMessage = {
+    ...stored("m2", "user", "turn-2"),
+    message: { role: "user", content: [{ type: "text", text }] },
+    meta: { writerOrigin: { kind: "person", id: "u1" } },
+  };
+  const [sent, typed] = projectPublicAiStoredMessages([automation, person], "chat", new Map());
+  expect(sent?.message).toEqual({ role: "user", content: [{ type: "text", text: "Bestätige den Kontostand in einem Satz." }] });
+  expect(sent?.meta?.sourceContext).toBe("Geschäftskonto 4.210,18 €");
+  expect(typed?.message).toEqual(person.message);
+  expect(typed?.meta?.sourceContext).toBeUndefined();
+  expect(automation.message).toEqual({ role: "user", content: [{ type: "text", text }] });
+});
+
+test.each([
+  ["a text part", (text: string) => ({ type: "text" as const, text })],
+  ["a plain string part", (text: string) => text],
+])("an automation's message as %s shows its instruction; empty data adds no data line", (_name, part) => {
+  const build = (context: string) =>
+    ({
+      ...stored("m3", "user", "turn-3"),
+      message: { role: "user", content: [part(`Bestätige kurz.\n\nSource context (untrusted data):\n${JSON.stringify(context)}`)] },
+      meta: { writerOrigin: { kind: "automation", id: "c_brief" } },
+    }) as AiStoredMessage;
+  const [withData, empty] = projectPublicAiStoredMessages([build("4.210,18 €"), build("")], "chat", new Map());
+  expect(withData?.message).toEqual({ role: "user", content: [{ type: "text", text: "Bestätige kurz." }] });
+  expect(withData?.meta?.sourceContext).toBe("4.210,18 €");
+  expect(empty?.message).toEqual({ role: "user", content: [{ type: "text", text: "Bestätige kurz." }] });
+  expect(empty?.meta?.sourceContext).toBeUndefined();
+});

@@ -104,6 +104,7 @@ same Code.
   codeId: string;
   revision: number;
   canChange: boolean;
+  used: boolean;
   chat: null
     | { state: "available"; id: string; title: string;
         project: { id: string; title: string } | null; href: string }
@@ -124,6 +125,9 @@ Project metadata appears only while the caller can read that Project;
 otherwise `project` is `null` even for the chat owner.
 Only the personal owner has `canChange: true`; shared editors and Cloud
 administrators receive no ownership through their grants.
+`used` is `true` when the running version, or the newest version before one
+runs, writes to the bound chat with `chat.send`. A list such as “My apps &
+automations” names the chat, or says that it is missing, only then.
 
 The resource Action `core.code.chat_binding.set` targets
 `{ type: "core.code", id: codeId }` and accepts `{ chatId, revision }`, plus the
@@ -150,8 +154,8 @@ before activation, uses `chat.send`. A missing, archived or deleted bound chat
 then supplies `chat_missing` through Code attention for its owner.
 The version read model includes a blocking notice with `code: "chat_missing"`
 and a localized recovery sentence. The existing `ai.open_questions` feed carries
-one `kind: "code_attention"` item with “<title> needs a chat” and an `href` to the
-Code page. Consumers use this existing feed for Waiting for you, including Code
+one `kind: "code_attention"` item with “<title> needs a chat”, `reason: "chat_missing"`
+and an `href` to the Code page. Consumers use this existing feed for Waiting for you, including Code
 without a submitted version; they do not synthesize a second waiting item.
 An unused binding supplies no chat notice or waiting item.
 

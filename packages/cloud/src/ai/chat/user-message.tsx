@@ -112,7 +112,13 @@ export const aiUserMessageSource = (entry: AiStoredMessage, locale: string): JSX
   const origin = entry.meta?.origin;
   if (!origin || origin.kind === "person") return undefined;
   const t = aiChatMessages(locale);
-  const label = origin.kind === "automation" ? t.messageFromAutomation({ name: origin.name }) : t.messageFromChat({ name: origin.name });
+  // An automation Cloud could not name for this viewer says only that it is one, never "Automation" as a name.
+  const label =
+    origin.kind === "automation"
+      ? origin.named === false
+        ? t.messageFromUnnamedAutomation
+        : t.messageFromAutomation({ name: origin.name })
+      : t.messageFromChat({ name: origin.name });
   const content = (
     <>
       <i

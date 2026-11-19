@@ -15,7 +15,8 @@ import { type AiTurnBlock, toolBlockId } from "./protocol";
  * What waits for the person, by kind: each kind has its sign in "Waiting for you" and its own way to the thing. Cloud
  * lists approvals; Code adds its entries with kinds of its own (Bauplan 3m).
  */
-export type AiOpenQuestionKind = "approval" | "code_activate" | "code_changes" | "code_expired" | "code_attention";
+export const AI_OPEN_QUESTION_KINDS = ["approval", "code_activate", "code_changes", "code_expired", "code_attention"] as const;
+export type AiOpenQuestionKind = (typeof AI_OPEN_QUESTION_KINDS)[number];
 
 export type AiOpenQuestion = {
   kind: AiOpenQuestionKind;
@@ -33,8 +34,13 @@ export type AiOpenQuestion = {
   short: string;
   /** The app the question is about, as the card shows it. */
   app: { name: string; icon: string; accent?: string };
+  /** Why the person's own Code waits (`code_attention` only); "Waiting for you" names the way out by it. */
+  reason?: AiOpenQuestionCodeReason;
   createdAt: string;
 };
+
+export const AI_OPEN_QUESTION_CODE_REASONS = ["chat_missing", "secret", "mandate", "access"] as const;
+export type AiOpenQuestionCodeReason = (typeof AI_OPEN_QUESTION_CODE_REASONS)[number];
 
 export type AiOpenQuestions = {
   items: AiOpenQuestion[];
@@ -48,19 +54,26 @@ export const AiOpenQuestionsSchema = z.object({
     .array(
       z.object({
         id: z.string(),
-        kind: z.enum(["approval", "code_activate", "code_changes", "code_expired", "code_attention"]),
+        kind: z.enum(AI_OPEN_QUESTION_KINDS),
         href: z.string().startsWith("/").optional(),
         conversationId: z.string(),
         conversationTitle: z.string().nullable(),
         anchor: z.string(),
         short: z.string(),
         app: z.object({ name: z.string(), icon: z.string(), accent: z.string().optional() }),
+        reason: z.enum(AI_OPEN_QUESTION_CODE_REASONS).optional(),
         createdAt: z.iso.datetime(),
       }),
     )
     .max(APPROVALS_PAGE_SIZE),
 });
-export type AiOpenQuestionSource = (input: { ownerUserId: string; locale: string; timeZone: string }) => Promise<AiOpenQuestions>;
+/** A source answers for one `kind` alone when the reader asks for it, with the same page size. */
+export type AiOpenQuestionSource = (input: {
+  ownerUserId: string;
+  locale: string;
+  timeZone: string;
+  kind?: AiOpenQuestionKind;
+}) => Promise<AiOpenQuestions>;
 
 type QuestionRow = {
   id: string;
@@ -115,6 +128,8 @@ export const listAiOpenQuestions = async (input: {
   /** An app outside Core forwards the person's own credentials; `authority` dispatches in the Core process only. */
   caller?: CapabilityCaller;
   sources?: readonly AiOpenQuestionSource[];
+  /** Only this kind, in the same page size: a page section that lists one kind never loses it behind older questions. */
+  kind?: AiOpenQuestionKind;
 }): Promise<AiOpenQuestions> => {
   const caller = input.caller ?? (input.authority ? { authority: input.authority, locale: input.locale } : undefined);
   if (caller) {
@@ -122,15 +137,23 @@ export const listAiOpenQuestions = async (input: {
     if (authority && (authority.accessSubject.type !== "user" || authority.accessSubject.userId !== input.ownerUserId))
       throw new Error("Question owner and authority disagree");
     const result = await invokeCapabilityWithDataSchema(
-      { appId: "core", capabilityId: "ai.open_questions", kind: "query", input: { timeZone: input.timeZone } },
+      {
+        appId: "core",
+        capabilityId: "ai.open_questions",
+        kind: "query",
+        input: { timeZone: input.timeZone, ...(input.kind ? { kind: input.kind } : {}) },
+      },
       AiOpenQuestionsSchema,
       caller,
     );
     if (!result.ok) throw new Error(`Open questions unavailable: ${result.error.code}`);
     return result.data.data;
   }
-  const count = await countApprovalQuestions(input.ownerUserId);
-  const rows = await sql<QuestionRow[]>`
+  const approvals = !input.kind || input.kind === "approval";
+  const count = approvals ? await countApprovalQuestions(input.ownerUserId) : 0;
+  const rows = !approvals
+    ? []
+    : await sql<QuestionRow[]>`
     WITH page AS (
       SELECT * FROM (${ownedRequests(input.ownerUserId)}) r
       ORDER BY r.created_at ASC, r.id ASC LIMIT ${APPROVALS_PAGE_SIZE}
@@ -159,6 +182,7 @@ export const listAiOpenQuestions = async (input: {
   return {
     count: count + sources.reduce((sum, source) => sum + source.count, 0),
     items: [...rows.map((row) => openQuestionFromRow(row, input)), ...sources.flatMap((source) => source.items)]
+      .filter((item) => !input.kind || item.kind === input.kind)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
       .slice(0, APPROVALS_PAGE_SIZE),
   };

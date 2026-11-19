@@ -58,9 +58,21 @@ const cardInput = (item: PendingApproval) => ({
 function Origin(props: { item: PendingApproval }) {
   const t = useMessages();
   const locale = useLocale();
+  const automation = () => props.item.requester.automation;
   return (
     <p class="cloud-approval__origin">
-      <i class={props.item.requester.kind === "code_version" ? "ti ti-code" : "ti ti-message-circle"} aria-hidden="true" />
+      <Show
+        when={automation()}
+        fallback={<i class={props.item.requester.kind === "code_version" ? "ti ti-code" : "ti ti-message-circle"} aria-hidden="true" />}
+      >
+        {(source) => (
+          <>
+            <FeatCodeMark variant="glyph" tone="current" decorative />
+            <a href={source().href}>{t().fromAutomation({ title: source().title })}</a>
+            <span aria-hidden="true"> · </span>
+          </>
+        )}
+      </Show>
       <a href={props.item.requester.href}>
         <Show when={props.item.requester.kind === "code_version"}>
           <FeatCodeMark variant="glyph" decorative class="cloud-approval__origin-mark" />
@@ -69,9 +81,13 @@ function Origin(props: { item: PendingApproval }) {
           ? props.item.requester.title
             ? t().fromCode({ title: props.item.requester.title })
             : t().fromUntitledCode
-          : props.item.requester.title
-            ? t().fromChat({ title: props.item.requester.title })
-            : t().fromUntitledChat}
+          : automation()
+            ? props.item.requester.title
+              ? t().inChat({ title: props.item.requester.title })
+              : t().inUntitledChat
+            : props.item.requester.title
+              ? t().fromChat({ title: props.item.requester.title })
+              : t().fromUntitledChat}
       </a>
       <span aria-hidden="true"> · </span>
       <time dateTime={props.item.createdAt}>{dates.formatDateTimeRelative(props.item.createdAt, { locale: locale() })}</time>

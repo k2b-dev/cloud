@@ -3,7 +3,10 @@ import { coreClient } from "@k2b/cloud/clients/core";
 import { type ApprovalPage, ApprovalPageSchema } from "@k2b/cloud/contracts/approvals";
 import { Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
+import { loadWaitingAutomations, type WaitingAutomation } from "../code-summary";
 import AssistantCodeAttention, { type CodeAttentionView, loadCodeAttentionView } from "./AssistantCodeAttention";
+import AssistantWaitingAutomations from "./AssistantWaitingAutomations";
+import { browserCodeInvoke } from "./code-client";
 import { assistantMessages } from "./messages";
 
 const loadApprovalPage = async (): Promise<ApprovalPage> => {
@@ -21,11 +24,16 @@ export default function AssistantApprovalsView(props: {
   /** The server's first page; null when it could not be read. */
   initial?: ApprovalPage | null;
   initialAttention?: CodeAttentionView | null;
+  /** The person's own Code that waits for them (Core's `code_attention` questions); null when it could not be read. */
+  initialAutomations?: readonly WaitingAutomation[] | null;
+  /** The reader's time zone, which Core's open questions take. */
+  timeZone: string;
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const [approvals, setApprovals] = createSignal<ApprovalPage | null | undefined>(props.initial);
   const [attention, setAttention] = createSignal<CodeAttentionView | null | undefined>(props.initialAttention);
+  const [automations, setAutomations] = createSignal<readonly WaitingAutomation[] | null | undefined>(props.initialAutomations);
   const [more, setMore] = createSignal<"idle" | "loading" | "failed">("idle");
   const loadApprovals = async () => {
     setApprovals(undefined);
@@ -41,6 +49,14 @@ export default function AssistantApprovalsView(props: {
       setAttention(await loadCodeAttentionView());
     } catch {
       setAttention(null);
+    }
+  };
+  const loadAutomations = async () => {
+    setAutomations(undefined);
+    try {
+      setAutomations(await loadWaitingAutomations(browserCodeInvoke, props.timeZone));
+    } catch {
+      setAutomations(null);
     }
   };
   // Core checks Code in bounded windows; the person continues where the last check stopped.
@@ -59,18 +75,22 @@ export default function AssistantApprovalsView(props: {
   onMount(() => {
     if (props.initial === undefined) void loadApprovals();
     if (props.initialAttention === undefined) void loadAttention();
+    if (props.initialAutomations === undefined) void loadAutomations();
   });
   const retry = () => {
     void loadApprovals();
     if (attention() === null) void loadAttention();
+    if (automations() === null) void loadAutomations();
   };
 
-  const loading = () => approvals() === undefined || attention() === undefined;
+  const loading = () => approvals() === undefined || attention() === undefined || automations() === undefined;
   const attentionShows = () => {
     const view = attention();
     return view === null || Boolean(view && (view.items.length > 0 || view.nextCursor));
   };
-  const empty = () => (approvals()?.count ?? 0) === 0 && approvals() !== null && !attentionShows();
+  // A failed read shows its row with "Try again"; an empty one shows no section.
+  const automationsShow = () => automations() === null || (automations()?.length ?? 0) > 0;
+  const empty = () => (approvals()?.count ?? 0) === 0 && approvals() !== null && !attentionShows() && !automationsShow();
 
   return (
     <ScrollArea class="min-h-0 flex-1">
@@ -131,6 +151,9 @@ export default function AssistantApprovalsView(props: {
                     </h2>
                     <Approvals app="assistant" initial={page()} />
                   </section>
+                </Show>
+                <Show when={automationsShow()}>
+                  <AssistantWaitingAutomations entries={automations() ?? null} onRetry={() => void loadAutomations()} />
                 </Show>
                 <Show when={attentionShows()}>
                   <AssistantCodeAttention
