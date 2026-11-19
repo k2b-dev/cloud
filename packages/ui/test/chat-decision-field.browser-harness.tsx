@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { Chat, ChatDecisionFacts, ChatDecisionField, type ChatDecisionFieldProps, type ChatDecisionState } from "../src/index";
+import { Chat, ChatDecisionField, type ChatDecisionFieldProps, type ChatDecisionState } from "../src/index";
 
 // A question that asks for one value, in every state it can take while it stays open. Fictional data.
 export type FieldState = "open" | "typed" | "saving" | "empty" | "chars" | "failed" | "unknown" | "held" | "conflict";
@@ -62,18 +62,12 @@ function Fixture() {
             Add <strong>Parcel_API</strong>?
           </>
         }
-        details={{
-          content: (
-            <ChatDecisionFacts
-              lines={[
-                { text: "Stays only for you in this chat until you remove it", icon: "ti ti-message-circle" },
-                { text: "Goes only to api.parcel.example; every request with it asks you first", icon: "ti ti-world" },
-              ]}
-            />
-          ),
-        }}
         entry={
           <ChatDecisionField
+            facts={[
+              { text: "Stays only for you in this chat until you remove it", icon: "ti ti-message-circle" },
+              { text: "Goes only to api.parcel.example; every request with it asks you first", icon: "ti ti-world" },
+            ]}
             label="Value for Parcel_API"
             value={value()}
             onValueChange={setValue}

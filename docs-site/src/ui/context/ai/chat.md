@@ -171,10 +171,8 @@ raised island instead of the tint, a ghost decline ("Discard"), and a secondary
 changes only ground, edge, and shadow in 200 ms, without a transition under
 `prefers-reduced-motion`.
 
-`source`, `reason`, and the `details` label are optional: without `source` the
-head names only the `kind`. Facts alone in the details, such as where a value
-goes, need no label: pass `ChatDecisionFacts` with `lines`, each a
-`ChatDecisionReason` with its icon, as `details.content`.
+`source` and `reason` are optional: without `source` the head names only the
+`kind`.
 
 ### A question that asks for one value
 
@@ -182,8 +180,10 @@ Pass `entry={<ChatDecisionField … />}` when the answer is one value the person
 types, such as a key. `entry` takes the answer row's place, so the question's
 own `meta`, `back`, `more`, `link`, `remember`, `confirm`, and `decline` are not
 shown; `ChatDecisionField` brings its `confirm` and `decline`. It is a named
-export of `@k2b/ui`, like `ChatDecisionFacts`, not a member of `Chat`, so a
-page loads them only where such a question appears. The field sits with the filled `confirm` beside it, one line
+export of `@k2b/ui`, not a member of `Chat`, so a page loads it only where such
+a question appears. Its `facts`, each a `ChatDecisionReason` with its icon,
+such as where the value goes, lie on the surface colour like `details`, without
+a label. Under them sits the field with the filled `confirm` beside it, one line
 under the field with a quiet `decline` in the AI colour beside that. The field
 is a password field: its eye has one fixed name (`revealLabel`, such as "Show
 value") and `aria-pressed` says whether the value shows; on touch screens the
@@ -369,6 +369,7 @@ type ChatDecisionAnswer = {
   onSelect: () => void | Promise<void>;
 };
 type ChatDecisionFieldProps = {
+  facts?: readonly ChatDecisionReason[];
   label: string; value: string; onValueChange: (value: string) => void;
   placeholder?: string; revealLabel?: string;
   lines: Readonly<Record<string, ChatDecisionReason>>; current: string;
@@ -383,7 +384,7 @@ type ChatDecisionProps = {
   kind: { label: string; icon: string }; source?: { name: string; icon: string; accent?: string };
   status?: { label: string; icon: string; tone: ChatOutcomeTone };
   sentence: JSX.Element; reason?: ChatDecisionReason;
-  details?: { label?: string; content: JSX.Element };
+  details?: { label: string; content: JSX.Element };
   entry?: JSX.Element;
   meta?: readonly { text: string; icon: string }[];
   confirm: ChatDecisionAnswer; decline: ChatDecisionAnswer; back?: ChatDecisionAnswer;
@@ -407,7 +408,6 @@ type ChatOutcomeProps = {
 | --- | --- |
 | `Chat.Decision` | `ChatDecisionProps`; confirm is the filled `ai` answer (`secondary` in `edit` mode), decline and `more` are `secondary` on the tint (decline is quiet `text` in `edit` mode), `back` and `link` are quiet `text`, remember is a checkbox. Reason defaults to `neutral` and an info icon. With an `entry`, the entry brings its own answers. |
 | `ChatDecisionField` | `ChatDecisionFieldProps`; a named export, passed as a decision's `entry`. Confirm is always the filled `ai` answer, decline quiet `text`. |
-| `ChatDecisionFacts` | `{ lines: readonly ChatDecisionReason[] }`; a named export, passed as `details.content`: facts with their icons, no label. |
 | `Chat.Outcome` | `ChatOutcomeProps`; tone chooses the default icon, `icon` overrides it. The root accepts programmatic focus with `tabindex=-1`. |
 
 ### Commands and file selection

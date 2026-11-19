@@ -109,6 +109,7 @@ for (const [name, context] of [
 test("1440 px: the field and the main answer share a row, the line and the quiet answer the next", async () => {
   const page = await open(desktop);
   try {
+    await settled(page);
     const [, , field, confirm, line, decline] = await geometry(page);
     expect(Math.abs(field!.y + field!.height / 2 - (confirm!.y + confirm!.height / 2))).toBeLessThan(1);
     expect(decline!.y).toBeGreaterThan(field!.y + field!.height);
@@ -149,6 +150,7 @@ test("390 px: both answers in one row, each label on one line, without icons", a
 test("touch: the eye's box is 44 px wide and its hit area 44 px high, without reaching into the text", async () => {
   const page = await open(phone);
   try {
+    await settled(page);
     const hits = await page.evaluate(() => {
       const eye = document.querySelector<HTMLButtonElement>(".k2b-input-shell__reveal")!;
       const input = document.querySelector<HTMLInputElement>(".k2b-chat-decision__field input")!;

@@ -13,7 +13,7 @@ const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-decision-field-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Chat, ChatDecisionFacts, ChatDecisionField } = await import("../index");
+const { Chat, ChatDecisionField } = await import("../index");
 const window = new Window();
 const render = (content: () => JSX.Element) => {
   const body = window.document.createElement("div");
@@ -33,18 +33,12 @@ const decision = (field: Partial<ChatDecisionFieldProps> = {}, extra: Partial<Ch
     state: "open",
     kind: { label: "Secret", icon: "ti ti-key" },
     sentence: "Add Parcel_API?",
-    details: {
-      get content() {
-        return createComponent(ChatDecisionFacts, {
-          lines: [
-            { text: "Only for you in this chat", icon: "ti ti-message-circle" },
-            { text: "Goes only to api.parcel.example", icon: "ti ti-world" },
-          ],
-        });
-      },
-    },
     get entry() {
       return createComponent(ChatDecisionField, {
+        facts: [
+          { text: "Only for you in this chat", icon: "ti ti-message-circle" },
+          { text: "Goes only to api.parcel.example", icon: "ti ti-world" },
+        ],
         label: "Value for Parcel_API",
         value: "",
         onValueChange: noop,

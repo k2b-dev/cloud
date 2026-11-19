@@ -1,10 +1,12 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, Show, useContext } from "solid-js";
 import { Button } from "../actions/Button";
 import { TextInput } from "../inputs/TextInput";
-import { DecisionEntry, spokenText } from "./ChatDecision";
+import { DecisionScope, spokenText } from "./ChatDecision";
 import type { ChatDecisionAnswer, ChatDecisionReason } from "./types";
 
 export type ChatDecisionFieldProps = {
+  /** Facts with their icons on the surface colour above the field, such as where the value goes; no label needed. */
+  facts?: readonly ChatDecisionReason[];
   /** The field's name for screen readers, such as "Value for Parcel_API"; the sentence already names it visibly. */
   label: string;
   /** The value stays with the caller; the field never keeps, logs, or writes it into an attribute. */
@@ -35,22 +37,6 @@ export type ChatDecisionFieldProps = {
   decline?: ChatDecisionAnswer;
 };
 
-/** Facts with their icons on the surface colour of a decision's details, such as where a value goes; no label needed. */
-export function ChatDecisionFacts(props: { lines: readonly ChatDecisionReason[] }): JSX.Element {
-  return (
-    <div class="k2b-chat-decision__facts">
-      <For each={props.lines}>
-        {(line) => (
-          <p class="k2b-chat-line k2b-chat-decision__fact-line" data-tone={line.tone ?? "neutral"}>
-            <i class={`k2b-chat-line__icon ${line.icon ?? "ti ti-info-circle"}`} aria-hidden="true" />
-            <span class="k2b-chat-line__text">{line.text}</span>
-          </p>
-        )}
-      </For>
-    </div>
-  );
-}
-
 /** An answer's label with every other label it can take in the same cell; only the current one is seen and named. */
 const faces = (choice: ChatDecisionAnswer) => (
   <span class="k2b-chat-decision__faces">
@@ -76,12 +62,11 @@ const faces = (choice: ChatDecisionAnswer) => (
  * for good.
  */
 export function ChatDecisionField(props: ChatDecisionFieldProps): JSX.Element {
-  const question = useContext(DecisionEntry);
+  const question = useContext(DecisionScope);
   const id = createUniqueId();
   const locked = () => Boolean(props.disabled);
-  const waiting = () => question?.waiting() ?? false;
-  const confirmOff = () => waiting() || (question?.unavailable() ?? false) || locked();
-  const declineOff = () => waiting() || locked();
+  const confirmOff = () => Boolean(question?.off()) || locked();
+  const declineOff = () => question?.off() === "all" || locked();
   const keys = createMemo(() => {
     const all = Object.keys(props.lines);
     return all.includes(props.current) ? all : [props.current, ...all];
@@ -122,7 +107,8 @@ export function ChatDecisionField(props: ChatDecisionFieldProps): JSX.Element {
       (invalid) => {
         if (!invalid) return;
         const active = document.activeElement;
-        if (!active || active === document.body || question?.root()?.contains(active)) input?.focus({ preventScroll: true });
+        if (!active || active === document.body || input?.closest(".k2b-chat-decision")?.contains(active))
+          input?.focus({ preventScroll: true });
       },
       { defer: true },
     ),
@@ -139,74 +125,90 @@ export function ChatDecisionField(props: ChatDecisionFieldProps): JSX.Element {
   };
 
   return (
-    <div class="k2b-chat-decision__entry">
-      <div class="k2b-chat-decision__field" onFocusIn={() => question?.edit()}>
-        <TextInput
-          aria-label={props.label}
-          password
-          revealLabel={props.revealLabel}
-          value={props.value}
-          onValueChange={(value) => props.onValueChange(value)}
-          onSubmit={confirm}
-          placeholder={props.placeholder}
-          disabled={locked()}
-          error={props.invalid ? props.lines[props.current]?.text : undefined}
-          externalErrorId={props.invalid ? lineId(props.current) : undefined}
-          aria-describedby={props.invalid ? undefined : lineId(props.current)}
-          autocomplete="off"
-          spellcheck={false}
-          ref={(element: HTMLInputElement) => {
-            input = element;
-            props.inputRef?.(element);
-          }}
-        />
-      </div>
-      <Button
-        class="k2b-chat-decision__answer k2b-chat-decision__confirm"
-        variant="ai"
-        disabled={confirmOff()}
-        aria-disabled={props.confirm.busy ? "true" : undefined}
-        aria-busy={props.confirm.busy ? "true" : undefined}
-        data-busy={props.confirm.busy ? "" : undefined}
-        onClick={confirm}
-      >
-        {faces(props.confirm)}
-      </Button>
-      <p ref={cell} class="k2b-chat-decision__line-cell">
-        <For each={keys()}>
-          {(key) => (
-            <Show when={props.lines[key]}>
+    <>
+      <Show when={(props.facts?.length ?? 0) > 0}>
+        <div class="k2b-chat-decision__details">
+          <div class="k2b-chat-decision__facts">
+            <For each={props.facts}>
               {(line) => (
-                <span
-                  id={lineId(key)}
-                  class="k2b-chat-line k2b-chat-decision__line"
-                  data-tone={line().tone ?? "neutral"}
-                  data-current={key === props.current ? "true" : undefined}
-                  aria-hidden={key === props.current ? undefined : "true"}
-                >
-                  <i class={`k2b-chat-line__icon ${line().icon ?? "ti ti-info-circle"}`} aria-hidden="true" />
-                  <span class="k2b-chat-line__text">{line().text}</span>
-                </span>
+                <p class="k2b-chat-line k2b-chat-decision__fact-line" data-tone={line.tone ?? "neutral"}>
+                  <i class={`k2b-chat-line__icon ${line.icon ?? "ti ti-info-circle"}`} aria-hidden="true" />
+                  <span class="k2b-chat-line__text">{line.text}</span>
+                </p>
               )}
-            </Show>
-          )}
-        </For>
-      </p>
-      <Show when={props.decline}>
-        {(choice) => (
-          <Button
-            class="k2b-chat-decision__answer k2b-chat-decision__decline"
-            variant="text"
-            disabled={declineOff()}
-            onClick={() => decline(choice())}
-          >
-            {faces(choice())}
-          </Button>
-        )}
+            </For>
+          </div>
+        </div>
       </Show>
-      <span class="k2b-sr-only" role="status" aria-live="polite">
-        {live()}
-      </span>
-    </div>
+      <div class="k2b-chat-decision__entry">
+        <div class="k2b-chat-decision__field" onFocusIn={() => question?.edit()}>
+          <TextInput
+            aria-label={props.label}
+            password
+            revealLabel={props.revealLabel}
+            value={props.value}
+            onValueChange={(value) => props.onValueChange(value)}
+            onSubmit={confirm}
+            placeholder={props.placeholder}
+            disabled={locked()}
+            error={props.invalid ? props.lines[props.current]?.text : undefined}
+            externalErrorId={props.invalid ? lineId(props.current) : undefined}
+            aria-describedby={props.invalid ? undefined : lineId(props.current)}
+            autocomplete="off"
+            spellcheck={false}
+            ref={(element: HTMLInputElement) => {
+              input = element;
+              props.inputRef?.(element);
+            }}
+          />
+        </div>
+        <Button
+          class="k2b-chat-decision__answer k2b-chat-decision__confirm"
+          variant="ai"
+          disabled={confirmOff()}
+          aria-disabled={props.confirm.busy ? "true" : undefined}
+          aria-busy={props.confirm.busy ? "true" : undefined}
+          data-busy={props.confirm.busy ? "" : undefined}
+          onClick={confirm}
+        >
+          {faces(props.confirm)}
+        </Button>
+        <p ref={cell} class="k2b-chat-decision__line-cell">
+          <For each={keys()}>
+            {(key) => (
+              <Show when={props.lines[key]}>
+                {(line) => (
+                  <span
+                    id={lineId(key)}
+                    class="k2b-chat-line k2b-chat-decision__line"
+                    data-tone={line().tone ?? "neutral"}
+                    data-current={key === props.current ? "true" : undefined}
+                    aria-hidden={key === props.current ? undefined : "true"}
+                  >
+                    <i class={`k2b-chat-line__icon ${line().icon ?? "ti ti-info-circle"}`} aria-hidden="true" />
+                    <span class="k2b-chat-line__text">{line().text}</span>
+                  </span>
+                )}
+              </Show>
+            )}
+          </For>
+        </p>
+        <Show when={props.decline}>
+          {(choice) => (
+            <Button
+              class="k2b-chat-decision__answer k2b-chat-decision__decline"
+              variant="text"
+              disabled={declineOff()}
+              onClick={() => decline(choice())}
+            >
+              {faces(choice())}
+            </Button>
+          )}
+        </Show>
+        <span class="k2b-sr-only" role="status" aria-live="polite">
+          {live()}
+        </span>
+      </div>
+    </>
   );
 }

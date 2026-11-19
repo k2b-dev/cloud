@@ -2,7 +2,6 @@ import type { ChatCommand, ChatDictationState, ChatMention, ChatTask } from "@k2
 import {
   Button,
   Chat,
-  ChatDecisionFacts,
   ChatDecisionField,
   type ChatDecisionState,
   type ChatTimelineItem,
@@ -706,11 +705,11 @@ const DecisionFieldDemo = () => {
   state={state()}
   kind={{ label: "Secret", icon: "ti ti-key" }}
   sentence={<>Add <strong>Parcel_API</strong>?</>}
-  details={{ content: <ChatDecisionFacts lines={[
-    { text: "Stays only for you in this chat until you remove it", icon: "ti ti-message-circle" },
-    { text: "Goes only to api.parcel.example", icon: "ti ti-world" },
-  ]} /> }}
   entry={<ChatDecisionField
+    facts={[
+      { text: "Stays only for you in this chat until you remove it", icon: "ti ti-message-circle" },
+      { text: "Goes only to api.parcel.example", icon: "ti ti-world" },
+    ]}
     label="Value for Parcel_API" value={value()} onValueChange={setValue}
     placeholder="Paste the key" revealLabel="Show value"
     lines={{ safe: { text: "Not in the chat history …", icon: "ti ti-shield-lock" }, empty: { … } }}
@@ -738,18 +737,12 @@ const DecisionFieldDemo = () => {
             Add <strong>Parcel_API</strong>?
           </>
         }
-        details={{
-          content: (
-            <ChatDecisionFacts
-              lines={[
-                { text: "Stays only for you in this chat until you remove it", icon: "ti ti-message-circle" },
-                { text: "Goes only to api.parcel.example; every request with it asks you first", icon: "ti ti-world" },
-              ]}
-            />
-          ),
-        }}
         entry={
           <ChatDecisionField
+            facts={[
+              { text: "Stays only for you in this chat until you remove it", icon: "ti ti-message-circle" },
+              { text: "Goes only to api.parcel.example; every request with it asks you first", icon: "ti ti-world" },
+            ]}
             label="Value for Parcel_API"
             value={value()}
             onValueChange={(next) => {

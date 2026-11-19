@@ -56,10 +56,9 @@ export type ChatDecisionProps = {
    */
   /**
    * The thing itself under its label, such as "Details from Code"; `context` is a quiet addition after it, such as
-   * "compared with version 4", and `note` one quiet line under the details. Facts alone, such as `ChatDecisionFacts`,
-   * need no label.
+   * "compared with version 4", and `note` one quiet line under the details.
    */
-  details?: { label?: string; context?: string; content: JSX.Element; note?: { text: string; icon?: string } };
+  details?: { label: string; context?: string; content: JSX.Element; note?: { text: string; icon?: string } };
   /** Lines after the details, each with its icon, such as what happens now and what holds until then. */
   notes?: readonly ChatDecisionReason[];
   /** Quiet facts at the start of the answer row, such as when the question expires. */
@@ -104,20 +103,21 @@ export type ChatDecisionProps = {
   class?: string;
 };
 
-/** What an outcome inside a question needs from it: whether it was just answered here, and a link press inside it. */
-const DecisionScope = createContext<{ answered: () => boolean; pressed: () => void; released: () => void }>();
-
-/** What an `entry` needs from its question: to answer it, whether answers are off, its box, and the island. */
-export type DecisionEntryScope = {
+/**
+ * What an outcome inside a question needs from it: whether it was just answered here, and a link press inside it. An
+ * `entry` also answers through it, reads which answers are off, and turns the question into the island.
+ */
+export const DecisionScope = createContext<{
+  answered: () => boolean;
+  pressed: () => void;
+  released: () => void;
   /** Answers like the question's own buttons; `hold` keeps it answered here until the answer's promise settles. */
   answer: (choice: ChatDecisionAnswer, enabled: boolean, hold?: boolean) => void;
-  waiting: () => boolean;
-  unavailable: () => boolean;
-  root: () => HTMLElement | undefined;
+  /** `all` while `waiting`, `confirm` while `unavailable`. */
+  off: () => "all" | "confirm" | undefined;
   /** Turns the question into the raised island of `edit` for good. */
   edit: () => void;
-};
-export const DecisionEntry = createContext<DecisionEntryScope>();
+}>();
 
 const reasonIcon = (reason: ChatDecisionReason) => reason.icon ?? "ti ti-info-circle";
 
@@ -150,16 +150,6 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
     window.addEventListener("blur", windowLeft);
     onCleanup(() => window.removeEventListener("blur", windowLeft));
   });
-  // A press counts only while its action runs: a reopen from elsewhere later must not take the focus.
-  const scope = {
-    answered: answeredHere,
-    pressed: () => {
-      reopenedHere = true;
-    },
-    released: () => {
-      reopenedHere = false;
-    },
-  };
 
   // Read once: an object literal from the host builds its JSX again on every read.
   const reason = createMemo(() => props.waiting ?? props.unavailable ?? props.reason);
@@ -186,13 +176,19 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
     else queueMicrotask(release);
   };
   const [entryEditing, setEntryEditing] = createSignal(false);
-  const entryScope: DecisionEntryScope = {
+  // A press counts only while its action runs: a reopen from elsewhere later must not take the focus.
+  const scope = {
+    answered: answeredHere,
+    pressed: () => {
+      reopenedHere = true;
+    },
+    released: () => {
+      reopenedHere = false;
+    },
     answer,
-    waiting: () => Boolean(props.waiting),
-    unavailable: () => Boolean(props.unavailable),
-    root: () => root,
+    off: () => (props.waiting ? "all" : props.unavailable ? "confirm" : undefined),
     edit: () => setEntryEditing(true),
-  };
+  } as const;
 
   createEffect(
     on(
@@ -277,91 +273,83 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
           )}
         </Show>
       </div>
-      <Show when={open()} fallback={<DecisionScope.Provider value={scope}>{props.outcome}</DecisionScope.Provider>}>
-        <>
-          <p
-            ref={sentence}
-            id={sentenceId}
-            class="k2b-chat-decision__sentence"
-            tabindex="-1"
-            data-arrive={arrive() ? "true" : undefined}
-            onPointerDown={() => {
-              sentencePressed = true;
-            }}
-            onPointerUp={() => {
-              sentencePressed = false;
-            }}
-            onPointerCancel={() => {
-              sentencePressed = false;
-            }}
-            onFocus={() => {
-              if (!sentencePressed && !sentenceHeldAcrossWindow) setArrive(true);
-              sentencePressed = false;
-              sentenceHeldAcrossWindow = false;
-            }}
-            onAnimationEnd={() => setArrive(false)}
-          >
-            {props.sentence}
-          </p>
-          <Show when={reason()}>
-            {(shown) => (
-              <p id={reasonId} class="k2b-chat-line k2b-chat-decision__reason" data-tone={shown().tone ?? "neutral"}>
-                <i class={`k2b-chat-line__icon ${reasonIcon(shown())}`} aria-hidden="true" />
-                <span class="k2b-chat-line__text">{shown().text}</span>
-              </p>
-            )}
-          </Show>
-          <Show when={props.details}>
-            {(details) => (
-              <div class="k2b-chat-decision__details">
-                <Show when={details().label}>
-                  {(label) => (
-                    <p class="k2b-chat-decision__details-label">
-                      <Show when={props.source}>
-                        {(source) => (
-                          <span
-                            class="k2b-chat-decision__tile k2b-icon-tile"
-                            style={source().accent ? { color: source().accent } : undefined}
-                          >
-                            <i class={source().icon} aria-hidden="true" />
-                          </span>
-                        )}
+      <DecisionScope.Provider value={scope}>
+        <Show when={open()} fallback={props.outcome}>
+          <>
+            <p
+              ref={sentence}
+              id={sentenceId}
+              class="k2b-chat-decision__sentence"
+              tabindex="-1"
+              data-arrive={arrive() ? "true" : undefined}
+              onPointerDown={() => {
+                sentencePressed = true;
+              }}
+              onPointerUp={() => {
+                sentencePressed = false;
+              }}
+              onPointerCancel={() => {
+                sentencePressed = false;
+              }}
+              onFocus={() => {
+                if (!sentencePressed && !sentenceHeldAcrossWindow) setArrive(true);
+                sentencePressed = false;
+                sentenceHeldAcrossWindow = false;
+              }}
+              onAnimationEnd={() => setArrive(false)}
+            >
+              {props.sentence}
+            </p>
+            <Show when={reason()}>
+              {(shown) => (
+                <p id={reasonId} class="k2b-chat-line k2b-chat-decision__reason" data-tone={shown().tone ?? "neutral"}>
+                  <i class={`k2b-chat-line__icon ${reasonIcon(shown())}`} aria-hidden="true" />
+                  <span class="k2b-chat-line__text">{shown().text}</span>
+                </p>
+              )}
+            </Show>
+            <Show when={props.details}>
+              {(details) => (
+                <div class="k2b-chat-decision__details">
+                  <p class="k2b-chat-decision__details-label">
+                    <span
+                      class="k2b-chat-decision__tile k2b-icon-tile"
+                      style={props.source?.accent ? { color: props.source.accent } : undefined}
+                    >
+                      <i class={props.source?.icon} aria-hidden="true" />
+                    </span>
+                    <span>
+                      <strong>{details().label}</strong>
+                      <Show when={details().context}>
+                        {(context) => <span class="k2b-chat-decision__details-context"> · {context()}</span>}
                       </Show>
-                      <span>
-                        <strong>{label()}</strong>
-                        <Show when={details().context}>
-                          {(context) => <span class="k2b-chat-decision__details-context"> · {context()}</span>}
-                        </Show>
-                      </span>
-                    </p>
-                  )}
-                </Show>
-                {details().content}
-                <Show when={details().note}>
-                  {(note) => (
-                    <p class="k2b-chat-decision__details-note">
-                      <i class={note().icon ?? "ti ti-info-circle"} aria-hidden="true" />
-                      {note().text}
-                    </p>
-                  )}
-                </Show>
-              </div>
-            )}
-          </Show>
-          <Show when={(props.notes?.length ?? 0) > 0}>
-            <div class="k2b-chat-decision__notes">
-              <For each={props.notes}>
-                {(note) => (
-                  <p class="k2b-chat-line k2b-chat-decision__note" data-tone={note.tone ?? "neutral"}>
-                    <i class={`k2b-chat-line__icon ${reasonIcon(note)}`} aria-hidden="true" />
-                    <span class="k2b-chat-line__text">{note.text}</span>
+                    </span>
                   </p>
-                )}
-              </For>
-            </div>
-          </Show>
-          {/* The entry is read inside the provider only: reading it creates it, and it needs its question. */}
-          <DecisionEntry.Provider value={entryScope}>
+                  {details().content}
+                  <Show when={details().note}>
+                    {(note) => (
+                      <p class="k2b-chat-decision__details-note">
+                        <i class={note().icon ?? "ti ti-info-circle"} aria-hidden="true" />
+                        {note().text}
+                      </p>
+                    )}
+                  </Show>
+                </div>
+              )}
+            </Show>
+            <Show when={(props.notes?.length ?? 0) > 0}>
+              <div class="k2b-chat-decision__notes">
+                <For each={props.notes}>
+                  {(note) => (
+                    <p class="k2b-chat-line k2b-chat-decision__note" data-tone={note.tone ?? "neutral"}>
+                      <i class={`k2b-chat-line__icon ${reasonIcon(note)}`} aria-hidden="true" />
+                      <span class="k2b-chat-line__text">{note.text}</span>
+                    </p>
+                  )}
+                </For>
+              </div>
+            </Show>
+            {/* The entry is read inside the provider only: reading it creates it, and it needs its question. */}
             <Show
               when={props.entry}
               fallback={
@@ -468,9 +456,9 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
             >
               {(entry) => entry()}
             </Show>
-          </DecisionEntry.Provider>
-        </>
-      </Show>
+          </>
+        </Show>
+      </DecisionScope.Provider>
     </section>
   );
 }
