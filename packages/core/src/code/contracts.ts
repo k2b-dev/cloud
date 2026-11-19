@@ -4,9 +4,8 @@ import {
   CODE_BRIDGE_REFUSAL_KINDS,
   CodeOutputWindowSchema,
   CodePageLinksSchema,
-  CodeRunEntriesInputSchema,
-  CodeRunEntriesSchema,
 } from "@k2b/cloud/contracts";
+import { CodeRunEntriesInputSchema, CodeRunEntriesSchema } from "@k2b/cloud/contracts/code-runs";
 import { z } from "zod";
 
 export const CodeEventDeliverySchema = z

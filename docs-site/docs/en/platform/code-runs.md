@@ -323,7 +323,7 @@ per-output-event query or separate socket.
 `CodeRunEntriesInputSchema`, `CodeRunEntriesSchema`, `CodeRunLiveEventSchema`
 and their result/event types are exported from `@k2b/cloud/code`.
 Browser-only schema consumers can also import `CodeRunEntriesInputSchema`,
-`CodeRunEntriesSchema` and `CodeRunEntries` from `@k2b/cloud/contracts`.
+`CodeRunEntriesSchema` and `CodeRunEntries` from `@k2b/cloud/contracts/code-runs`.
 
 `RunLog` from `@k2b/ui` remains presentational. Its host owns the clock,
 connection, duration, recovery and loading. Confirmed call summaries remain

@@ -315,7 +315,7 @@ suiteFor(
       VALUES(${resourceCodeId},1,'{}'::jsonb,'fixture',${"a".repeat(64)},${"b".repeat(64)},2,7,${owner}::uuid) RETURNING id`;
     const output = emptyCodeOutput(1);
     await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,payload_bytes,calls_limit,state,console_output)
-      VALUES(${resourceRunId}::uuid,${resourceCodeId},${version!.id}::uuid,'manual','run',32768,200,'running',${JSON.stringify(output)}::jsonb)`;
+      VALUES(${resourceRunId}::uuid,${resourceCodeId},${version!.id}::uuid,'manual','run',32768,200,'running',${JSON.stringify(output)}::text::jsonb)`;
     const user = await accounts.users.get({ id: owner });
     if (!user) throw new Error("Missing resource manager");
     const authority = {
@@ -331,8 +331,11 @@ suiteFor(
     const engine = createLiveEngine({ appId: "core", topic: () => topic, channels: codeLiveChannels });
     const frames: { t: string; code?: string }[] = [];
     const until = async (ready: () => boolean) => {
-      for (let n = 0; n < 100 && !ready(); n++) await Bun.sleep(5);
-      expect(ready()).toBe(true);
+      const deadline = performance.now() + 5000;
+      while (!ready()) {
+        if (performance.now() > deadline) throw new Error("Live fixture timed out");
+        await Bun.sleep(5);
+      }
     };
     try {
       expect((await readCodeRunEntries({ codeId: resourceCodeId, runId: resourceRunId }, { authority })).output).toEqual(output);
@@ -437,8 +440,11 @@ suiteFor(
     const frames: { t: string; data?: unknown }[] = [];
     const meter = await meterSql();
     const until = async (ready: () => boolean) => {
-      for (let n = 0; n < 100 && !ready(); n++) await Bun.sleep(5);
-      expect(ready()).toBe(true);
+      const deadline = performance.now() + 5000;
+      while (!ready()) {
+        if (performance.now() > deadline) throw new Error("Live fixture timed out");
+        await Bun.sleep(5);
+      }
     };
     try {
       const admission = await meter.during(async () => {

@@ -823,7 +823,7 @@ For [Code run snapshots and live entries](/en/docs/platform/code-runs#read-one-r
 `@k2b/cloud/code` exports `CodeRunEntriesInputSchema`, `CodeRunEntriesSchema`,
 `CodeRunLiveEventSchema`, `CodeRunEntries`, `CodeRunLiveEvent` and `codeRunKey` for
 the selected run's snapshot and live channel.
-The browser-safe `@k2b/cloud/contracts` entry point also exports
+The browser-safe `@k2b/cloud/contracts/code-runs` entry point also exports
 `CodeRunEntriesInputSchema`, `CodeRunEntriesSchema` and `CodeRunEntries`.
 `@k2b/cloud/code` exports `CodeCallEventSchema`, `codeDetailsKey`, the
 `CodeOutput*` schemas/types (`CodeOutputWindowSchema` and its type are also
