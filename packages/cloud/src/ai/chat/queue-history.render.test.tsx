@@ -127,3 +127,23 @@ test("an automation Cloud could not name for this reader says only that an autom
   expect(automation).not.toContain("„Automation“");
   expect(automation).not.toContain("<a ");
 });
+
+test("only the person's own message offers Edit and send again; one an automation or another chat wrote does not", () => {
+  const html = render([
+    message(1, "user", "Was steht heute an?", { meta: { origin: { kind: "person", id: "u1", name: "Lena Vogt" } } }),
+    message(2, "user", "Briefing für Montag", {
+      meta: { origin: { kind: "automation", id: "c_brief1", name: "Morgenbriefing", href: "/app/assistant/code/c_brief1" } },
+    }),
+    message(3, "user", "Bitte prüfe die Anzahlung", { meta: { origin: { kind: "chat", id: "c1", name: "Messe Köln" } } }),
+    message(4, "user", "Review my open work.", {
+      meta: { codeOrigin: { codeId: "c_morning", title: "Morning review", runId: "run", requestId: "request", label: "Started by Code" } },
+    }),
+  ]);
+  const [own = "", automation = "", chat = "", code = ""] = articles(html);
+  expect(own).toContain("Bearbeiten und neu senden");
+  expect(own).toContain("ti-pencil");
+  for (const foreign of [automation, chat, code]) {
+    expect(foreign).not.toContain("Bearbeiten und neu senden");
+    expect(foreign).not.toContain("ti-pencil");
+  }
+});

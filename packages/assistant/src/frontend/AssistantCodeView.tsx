@@ -127,6 +127,8 @@ const cardSchedule = (item: CodeOverviewItem, t: Messages, locale: string) => {
   // A draft that runs nothing yet: when its newest version would run, in Core's words.
   const proposed = item.proposedTiming ?? [];
   if (proposed.length > 1) return t.codeAutomationCount({ count: proposed.length });
+  // A draft without any version yet has no schedule; it says so instead of only "Automation".
+  if (item.state === "draft" && item.proposedTiming?.length === 0) return t.appsNoScheduleYet;
   return proposed[0] ?? t.codeKind;
 };
 

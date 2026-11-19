@@ -205,6 +205,34 @@ describe("My apps & automations: a Code that writes to its own chat (Automatione
   });
 });
 
+describe("My apps & automations: a Code Gustav still writes", () => {
+  test("a draft without a version says it has no schedule yet, beside its state, instead of only Automation", () => {
+    const draft = {
+      id: "c_brief1",
+      title: "Morgenbriefing",
+      state: "draft" as const,
+      lastRun: null,
+      automations: [],
+      removedTargets: [],
+      proposedTiming: [],
+      extras: { runs: [], activity: null, failure: null },
+    };
+    const render = (locale: Locale) =>
+      inLocale(locale, () =>
+        createComponent(CodeView, {
+          userId: "fixture",
+          timeZone: fixtures.FIXTURE_TIME_ZONE,
+          initial: { items: [draft], nextCursor: null },
+          onCreateInChat: () => {},
+        }),
+      );
+    const text = visible(render("de"));
+    expect(text).toContain("Noch ohne Zeitplan");
+    expect(text).toContain("Noch nicht eingeschaltet");
+    expect(visible(render("en"))).toContain("No schedule yet");
+  });
+});
+
 describe("Waiting for you", () => {
   test("normal lists approvals with their chat and Code you administer as rows", () => {
     const html = waiting("normal", "de");

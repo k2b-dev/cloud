@@ -65,7 +65,10 @@ export type CodeSummary = z.infer<typeof CodeItemSchema> & {
   automations?: CodeAutomation[];
   /** Targets that removed access, also when no automation could be named for them. */
   removedTargets?: CodeAutomationTarget[];
-  /** A draft's timing in Core's words, one per automation of its newest version; absent when unknown. */
+  /**
+   * A draft's timing in Core's words, one per automation of its newest version; empty while it has no version yet (Gustav
+   * still writes it), absent when Core could not say.
+   */
   proposedTiming?: string[];
 };
 /** One page of Code the person may see for an owner. `nextCursor` continues the list; null means it is complete. */
@@ -87,8 +90,10 @@ const VersionWordsSchema = z.object({ timing: z.object({ items: z.array(z.object
 const loadProposedTiming = async (invoke: CodeQueryInvoke, codeId: string): Promise<string[] | undefined> => {
   try {
     const versions = await invoke(query("code.version.list", { codeId, limit: 1 }), VersionListSchema);
-    const versionId = versions.ok ? versions.data.data.items[0]?.version.id : undefined;
-    if (!versionId) return undefined;
+    if (!versions.ok) return undefined;
+    const versionId = versions.data.data.items[0]?.version.id;
+    // No version yet: there is no schedule to name, which is a fact, not an unknown.
+    if (!versionId) return [];
     const words = await invoke(query("code.version.words", { codeId, versionId }), VersionWordsSchema);
     return words.ok ? words.data.data.timing.items.map((item) => item.text) : undefined;
   } catch {
