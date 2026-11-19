@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { discoverJmapFolders, JMAP_DISCOVERY_PAGES, type JmapMailboxRights, mapJmapRights, verifyJmap } from "./jmap";
+import { discoverJmapFolders, JMAP_DISCOVERY_PAGES, type JmapMailboxRights, jmapMailboxRightsSchema, mapJmapRights, verifyJmap } from "./jmap";
 import { JMAP_CORE, JMAP_MAIL, JMAP_SUBMISSION } from "./jmap-client";
 import { createJmapFixture, fixtureMailbox, fixtureRights } from "./jmap-fixture";
 
@@ -112,13 +112,11 @@ test("empty account returns an empty folder list", async () => {
   expect(await discoverJmapFolders(access(f), f.dependencies)).toEqual([]);
 });
 
-for (const shape of ["cycle", "missing-parent", "slash", "duplicate-path", "invalid-id"] as const) {
+for (const shape of ["cycle", "missing-parent", "invalid-id"] as const) {
   test(`rejects invalid folder data: ${shape}`, async () => {
     const f = fixture();
     if (shape === "cycle") f.mailboxes[1]!.parentId = "c";
     if (shape === "missing-parent") f.mailboxes[1]!.parentId = "absent";
-    if (shape === "slash") f.mailboxes[1]!.name = "a/b";
-    if (shape === "duplicate-path") f.mailboxes[1]!.name = "Inbox";
     if (shape === "invalid-id") f.mailboxes[1]!.id = "bad/id";
     await expect(discoverJmapFolders(access(f), f.dependencies)).rejects.toMatchObject({
       code: shape === "invalid-id" ? "JMAP_INVALID_RESPONSE" : "JMAP_FOLDER_TREE",
@@ -189,4 +187,40 @@ test("uses the advertised mailbox name size with a local ceiling", async () => {
   f.session.accounts.d333333.accountCapabilities[JMAP_MAIL]!.maxSizeMailboxName = 8;
   f.mailboxes[0]!.name = "x".repeat(9);
   await expect(discoverJmapFolders(access(f), f.dependencies)).rejects.toMatchObject({ code: "JMAP_DISCOVERY_LIMIT" });
+});
+
+test("keeps mailbox identity and parent IDs when slash names produce duplicate display paths", async () => {
+  const f = fixture();
+  f.mailboxes.splice(0, f.mailboxes.length,
+    fixtureMailbox("root", "a"), fixtureMailbox("child", "b", "root"),
+    fixtureMailbox("slash", "a/b"), fixtureMailbox("duplicate", "a/b"));
+  const folders = await discoverJmapFolders(access(f), f.dependencies);
+  expect(folders.map(({ path, parentMailboxId }) => ({ path, parentMailboxId }))).toEqual([
+    { path: "a", parentMailboxId: null }, { path: "a/b", parentMailboxId: "root" },
+    { path: "a/b", parentMailboxId: null }, { path: "a/b", parentMailboxId: null },
+  ]);
+  expect(new Set(folders.map((folder) => folder.stableKey)).size).toBe(4);
+  const child = f.mailboxes.find((mailbox) => mailbox.id === "child");
+  if (!child) throw new Error("rename: child missing");
+  child.name = "renamed";
+  child.parentId = "slash";
+  const changed = await discoverJmapFolders(access(f), f.dependencies);
+  expect(changed.map((folder) => folder.stableKey)).toEqual(folders.map((folder) => folder.stableKey));
+  expect(changed.find((folder) => folder.mailboxId === "child")).toMatchObject({ parentMailboxId: "slash", path: "a/b/renamed" });
+});
+
+test("truncates long display paths without losing mailbox or parent identity", async () => {
+  const f = fixture();
+  f.mailboxes.splice(0, f.mailboxes.length, ...Array.from({ length: 6 }, (_, i) =>
+    fixtureMailbox(`long${i}`, "x".repeat(1_000), i === 0 ? null : `long${i - 1}`)));
+  const folders = await discoverJmapFolders(access(f), f.dependencies);
+  expect(folders.map((folder) => folder.path.length)).toEqual([1_000, 2_001, 3_002, 4_000, 4_000, 4_000]);
+  expect(folders.at(-1)).toMatchObject({ mailboxId: "long5", parentMailboxId: "long4" });
+  expect(new Set(folders.map((folder) => folder.stableKey)).size).toBe(6);
+});
+
+test("ignores unknown rights and never grants a folder right for maySubmit", () => {
+  const parsed = jmapMailboxRightsSchema.parse({ ...rights({ maySubmit: true }), mayShare: true, mayAdmin: true });
+  expect(mapJmapRights(parsed)).toEqual([]);
+  expect(Object.keys(parsed)).not.toContain("mayShare");
 });

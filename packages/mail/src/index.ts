@@ -11,6 +11,7 @@ import {
   buildBackfillActivityIndex,
   buildCommandTargetIndex,
   buildDraftRemoteIdIndex,
+  buildFolderIdentityIndexes,
   buildOpenConversationIndex,
   buildOptionalSearchIndex,
   buildProviderMessageIndex,
@@ -67,6 +68,7 @@ const result = await app.start({
         if ((await buildCommandTargetIndex()) === "busy") return;
         if ((await buildProviderMessageIndex()) === "busy") return;
         if ((await buildRemoteMessageIdIndex()) === "busy") return;
+        if ((await buildFolderIdentityIndexes()) === "busy") return;
         if ((await buildDraftRemoteIdIndex()) === "busy") return;
         if ((await buildOpenConversationIndex()) === "busy") return;
         if ((await buildActivityFeedIndex()) === "busy") return;
