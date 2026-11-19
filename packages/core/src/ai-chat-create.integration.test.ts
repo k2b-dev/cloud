@@ -101,7 +101,7 @@ suiteFor(
     const context = { ...person(), idempotencyKey: "concurrent-creation" };
     const [first, second] = await Promise.all([created(context), created(context)]);
     expect(second).toEqual(first);
-    const chat = await aiConversations.getConversationByShortId({ chatId: first.chat.id, ownerUserId: owner });
+    const chat = await aiConversations.getConversationByShortId({ shortId: first.chat.id, ownerUserId: owner });
     expect(chat).toMatchObject({ title: "Weekly briefing", createdByUserId: owner, projectId: null, draft: { content: [] } });
     expect(await aiConversations.getLatestTurn({ conversationId: chat!.id })).toBeNull();
     expect(await invoke(context, "Different title")).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT" } });
@@ -205,7 +205,7 @@ suiteFor(
     const response = await aiChatCreateAction.run(input, context);
     expect(response.ok).toBe(true);
     if (!response.ok) throw new Error(response.error.message);
-    const chat = await aiConversations.getConversationByShortId({ chatId: response.data.data.chat.id, ownerUserId: owner });
+    const chat = await aiConversations.getConversationByShortId({ shortId: response.data.data.chat.id, ownerUserId: owner });
     expect(chat?.projectId).toBe(project.id);
     await sql`DELETE FROM ai.project_access WHERE project_id=${project.id}::uuid`;
     expect(await aiChatCreateAction.run(input, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
