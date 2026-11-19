@@ -1,6 +1,6 @@
 import type { ApprovalPage, PendingApproval } from "@k2b/cloud/contracts/approvals";
 import type { CodeActivityReadModel } from "@k2b/cloud/contracts/code-read-model";
-import type { WaitingAutomation } from "../code-summary";
+import type { WaitingAutomation } from "../waiting-automations";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import type { CodeCardRun, CodeOverviewItem, CodeOverviewPage } from "./code-overview";
 

@@ -237,27 +237,3 @@ export const loadCodeAttention = async (invoke: CodeQueryInvoke, cursor?: string
   }
   return { items, nextCursor: next };
 };
-
-/** The person's own Code that waits for them: the few fields "Waiting for you" shows from Core's open questions. */
-const WaitingAutomationsSchema = z.object({
-  items: z.array(
-    z.object({
-      id: z.string(),
-      kind: z.literal("code_attention"),
-      href: z.string().optional(),
-      short: z.string(),
-      reason: z.enum(["chat_missing", "secret", "mandate", "access"]).optional(),
-    }),
-  ),
-});
-export type WaitingAutomation = z.infer<typeof WaitingAutomationsSchema>["items"][number];
-
-/**
- * Only the `code_attention` kind, in the feed's own page size: older questions never push the person's automations
- * out of the section. The server's first render and the browser read the same.
- */
-export const loadWaitingAutomations = async (invoke: CodeQueryInvoke, timeZone: string): Promise<WaitingAutomation[]> => {
-  const result = await invoke(query("ai.open_questions", { timeZone, kind: "code_attention" }), WaitingAutomationsSchema);
-  if (!result.ok) throw new CodeSummaryError(result.error.message);
-  return result.data.data.items;
-};

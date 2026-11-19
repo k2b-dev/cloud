@@ -18,18 +18,12 @@ import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { loadAssistantChatWorkspace } from "../chat-workspace-service";
 import { catalogPerApp, loadCodePlace } from "../code-place";
-import {
-  type CodePlace,
-  type CodeQueryInvoke,
-  hasPersonalCode,
-  loadCodeAttention,
-  loadCodeSummaries,
-  loadWaitingAutomations,
-} from "../code-summary";
+import { type CodePlace, type CodeQueryInvoke, hasPersonalCode, loadCodeAttention, loadCodeSummaries } from "../code-summary";
 import { chatCodeVersionRefs, loadCodeVersionCards } from "../code-version-cards";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
+import { loadWaitingAutomations } from "../waiting-automations";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { readAssistantPlace } from "./assistant-place";

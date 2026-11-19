@@ -2,7 +2,7 @@ import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { i18n } from "@k2b/stdlib";
 import { Button, ButtonLink, Paper, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
-import type { WaitingAutomation } from "../code-summary";
+import type { WaitingAutomation } from "../waiting-automations";
 
 /** Texts of the section; only the Waiting for you page carries them. */
 const automationMessages = i18n.define({

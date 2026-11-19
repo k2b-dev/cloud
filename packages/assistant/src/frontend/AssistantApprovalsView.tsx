@@ -3,7 +3,7 @@ import { coreClient } from "@k2b/cloud/clients/core";
 import { type ApprovalPage, ApprovalPageSchema } from "@k2b/cloud/contracts/approvals";
 import { Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
-import { loadWaitingAutomations, type WaitingAutomation } from "../code-summary";
+import type { WaitingAutomation } from "../waiting-automations";
 import AssistantCodeAttention, { type CodeAttentionView, loadCodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWaitingAutomations from "./AssistantWaitingAutomations";
 import { browserCodeInvoke } from "./code-client";
@@ -54,6 +54,8 @@ export default function AssistantApprovalsView(props: {
   const loadAutomations = async () => {
     setAutomations(undefined);
     try {
+      // Only a page without the server's read needs the loader; it stays out of the chat's own bundle.
+      const { loadWaitingAutomations } = await import("../waiting-automations");
       setAutomations(await loadWaitingAutomations(browserCodeInvoke, props.timeZone));
     } catch {
       setAutomations(null);
