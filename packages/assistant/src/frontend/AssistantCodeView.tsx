@@ -104,6 +104,7 @@ const runWord = (state: CodeCardRun["state"], t: Messages) =>
 const STATUS: Record<CodeCardStatus, { tone: string; icon: string; word: (t: Messages) => string }> = {
   on: { tone: "success", icon: "ti ti-circle-check", word: (t) => t.appsStateOn },
   running: { tone: "ai", icon: "ti ti-loader-2", word: (t) => t.appsStateRunning },
+  chat_missing: { tone: "danger", icon: "ti ti-alert-circle", word: (t) => t.appsStateChatMissing },
   failed: { tone: "danger", icon: "ti ti-alert-circle", word: (t) => t.appsStateFailed },
   access_missing: { tone: "warning", icon: "ti ti-lock", word: (t) => t.appsStateAccess },
   paused: { tone: "warning", icon: "ti ti-player-pause", word: (t) => t.appsStatePaused },
@@ -111,7 +112,14 @@ const STATUS: Record<CodeCardStatus, { tone: string; icon: string; word: (t: Mes
   deleting: { tone: "neutral", icon: "ti ti-trash", word: (t) => t.appsStateDeleting },
 };
 
-/** The card's line under the name: when its automation runs, or how many it has. */
+/** The card's line under the name: when its automation runs, or how many it has, and the chat it writes to. */
+const cardDescription = (item: CodeOverviewItem, t: Messages, locale: string) => {
+  const schedule = cardSchedule(item, t, locale);
+  const chat = item.extras?.chat;
+  if (!chat) return schedule;
+  return `${schedule} · ${chat.state === "bound" ? t.appsInChat({ title: chat.title }) : t.appsChatMissing}`;
+};
+
 const cardSchedule = (item: CodeOverviewItem, t: Messages, locale: string) => {
   const automations = item.automations ?? [];
   if (automations.length > 1) return t.codeAutomationCount({ count: automations.length });
@@ -125,6 +133,8 @@ const cardSchedule = (item: CodeOverviewItem, t: Messages, locale: string) => {
 /** "Last: …": why the last run failed, else its newest confirmed effect, else the newest run itself. */
 const cardLast = (item: CodeOverviewItem, status: CodeCardStatus, t: Messages, locale: string, timeZone: string, now: Date) => {
   const extras = item.extras;
+  if (extras?.chat?.state === "missing")
+    return t.appsLast({ text: extras.chat.archivedTitle ? t.appsChatArchived({ title: extras.chat.archivedTitle }) : t.appsChatGone });
   if (status === "failed" && extras?.failure) return t.appsLast({ text: extras.failure });
   const effect = extras?.activity?.recent[0];
   if (effect) return t.appsLast({ text: effect.text });
@@ -142,7 +152,8 @@ const cardWhen = (item: CodeOverviewItem, status: CodeCardStatus, t: Messages, l
   if (status === "running" && running)
     return t.appsSince({ when: runningFor(running.startedAt ?? running.createdAt, locale, timeZone, now) });
   const newest = running ?? item.lastRun ?? null;
-  if (status === "failed" && newest) return dayOrTime(newest.endedAt ?? newest.createdAt, t, locale, timeZone, now);
+  if ((status === "failed" || status === "chat_missing") && newest)
+    return dayOrTime(newest.endedAt ?? newest.createdAt, t, locale, timeZone, now);
   // "since 29.10.": the day alone, as Bild 27 shows it.
   if (status === "paused" && item.pausedAt)
     return t.appsSince({
@@ -172,7 +183,7 @@ function CodeCard(props: { item: CodeOverviewItem; timeZone: string; now: Date }
     <LinkCard
       href={codeHref(props.item.id)}
       title={props.item.title}
-      description={cardSchedule(props.item, t(), locale())}
+      description={cardDescription(props.item, t(), locale())}
       media={
         <span class="assistant-apps__tile" aria-hidden="true">
           <FeatCodeMark variant="glyph" tone="current" size={16} decorative />

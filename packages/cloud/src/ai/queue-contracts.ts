@@ -12,7 +12,16 @@ export const AI_MESSAGE_QUEUE_LIMIT = 20;
 export const AiMessageOriginSchema = /* @__PURE__ */ (() =>
   z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("person"), id: z.string(), name: z.string() }).strict(),
-    z.object({ kind: z.literal("automation"), id: z.string(), name: z.string(), href: z.string().optional() }).strict(),
+    z
+      .object({
+        kind: z.literal("automation"),
+        id: z.string(),
+        name: z.string(),
+        href: z.string().optional(),
+        /** false: Cloud could not name the automation for this viewer; `name` is then only the word "Automation". */
+        named: z.literal(false).optional(),
+      })
+      .strict(),
     z.object({ kind: z.literal("wakeup"), id: z.string(), name: z.string(), scheduledAt: z.iso.datetime() }).strict(),
     z.object({ kind: z.literal("chat"), id: z.string(), name: z.string(), href: z.string().optional() }).strict(),
   ]))();
@@ -34,6 +43,10 @@ export const AiQueuedMessageSchema = /* @__PURE__ */ (() =>
     state: z.enum(["pending", "sending", "failed"]),
     createdAt: z.iso.datetime(),
     authorIsViewer: z.boolean(),
+    /** Why Cloud could not start or send the entry, as a stable code (e.g. `dispatch_failed`); null while nothing failed. */
+    error: z.string().nullable(),
+    /** Cloud could not start the entry and tries again by itself; `state` then still reads `failed`. */
+    retrying: z.boolean(),
   }))();
 export type AiQueuedMessage = z.infer<typeof AiQueuedMessageSchema> & { content: AiDraftContentPart[] };
 

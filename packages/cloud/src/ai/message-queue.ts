@@ -20,6 +20,7 @@ import { AI_QUEUE_RETRYABLE_ERRORS, AI_QUEUE_SWEEP_INTERVAL_MS, AI_QUEUED_START_
 import { AiQuotaError, aiQuotas } from "./quotas";
 import { aiNeutralizeQuoteMarkers } from "./quote-markers";
 import { readAiSettingsState } from "./settings";
+import { splitAiSourceContext } from "./source-context";
 import { aiConversations } from "./store";
 import type { AiConversationService, AiDraftContentPart, AiSettingsState } from "./types";
 import { isAiSettingsError } from "./validate";
@@ -193,10 +194,7 @@ export const listQueuedMessages = async (
   return rows.map((row, index) => ({
     id: row.id,
     content: row.content,
-    text: row.content
-      .filter((part) => part.type === "text")
-      .map((part) => part.text)
-      .join("\n"),
+    text: queuedText(row),
     origin: origins[index]!,
     state: row.send_requested_at ? "sending" : row.error ? "failed" : "pending",
     createdAt: new Date(row.created_at).toISOString(),
@@ -205,6 +203,15 @@ export const listQueuedMessages = async (
     error: row.error,
     retrying: row.status === "pending" && row.error === "dispatch_failed",
   }));
+};
+
+/** What a queued entry says; one an automation or another chat wrote shows its instruction without its source data. */
+const queuedText = (row: { content: AiDraftContentPart[]; origin: AiStoredMessageOrigin }) => {
+  const text = row.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  return row.origin.kind === "person" ? text : splitAiSourceContext(text).text;
 };
 
 /** Durable receipt survives promotion and cancellation; absence from the queue is never proof of failure. */

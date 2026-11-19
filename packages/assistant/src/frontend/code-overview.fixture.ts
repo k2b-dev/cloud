@@ -1,5 +1,6 @@
 import type { ApprovalPage, PendingApproval } from "@k2b/cloud/contracts/approvals";
 import type { CodeActivityReadModel } from "@k2b/cloud/contracts/code-read-model";
+import type { WaitingAutomation } from "../waiting-automations";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import type { CodeCardRun, CodeOverviewItem, CodeOverviewPage } from "./code-overview";
 
@@ -13,8 +14,9 @@ export const FIXTURE_TIME_ZONE = "Europe/Berlin";
 /** The person's day in Berlin: 14.11.2026, 00:00 to 24:00 local time. */
 const DAY = { from: "2026-11-13T23:00:00.000Z", to: "2026-11-14T23:00:00.000Z" };
 
-export type AppsState = "normal" | "leer" | "laedt" | "fehler" | "lang";
-export type WaitingState = "normal" | "leer" | "laedt" | "fehler" | "lang";
+/** `chat` and `chat-fehlt`: concept "Automationen als Code" v5, scene `a-apps`; `automation`: scene `a-wartet`. */
+export type AppsState = "normal" | "leer" | "laedt" | "fehler" | "lang" | "chat" | "chat-fehlt";
+export type WaitingState = "normal" | "leer" | "laedt" | "fehler" | "lang" | "automation";
 
 const now = Date.parse(FIXTURE_NOW);
 const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -141,11 +143,34 @@ const MANY = (): CodeOverviewItem[] => {
   return kinds.map((item, index) => ({ ...item, id: `c_lang${String(index).padStart(2, "0")}`, title: `${item.title} ${index + 1}` }));
 };
 
+/** The morning briefing writes to its own chat every weekday at 07:00; `missing` archived that chat this morning. */
+const BRIEFING = (missing: boolean): CodeOverviewItem => {
+  const brief = runs(9, missing ? "ooooooof" : "oooooooo", local("07:00"));
+  return {
+    id: "c_brief1",
+    title: "Morgenbriefing",
+    state: "active",
+    lastRun: brief[0]!,
+    automations: [automation("schedule", "0 7 * * 1-5", "2026-11-15T06:00:00.000Z")],
+    removedTargets: [],
+    extras: {
+      runs: brief,
+      activity: activity(missing ? null : "Briefing mit 2 Terminen, 2 Angeboten und 2 Kundenmails", [
+        mark("07:00", missing ? "failed" : "succeeded", brief[0]!.id),
+      ]),
+      failure: missing ? "Der Chat ist nicht verfügbar" : null,
+      chat: missing ? { state: "missing", archivedTitle: "Morgenbriefing" } : { state: "bound", title: "Morgenbriefing" },
+    },
+  };
+};
+
 /** Props for `AssistantCodeView` in one state; `initial` undefined renders "loading" until the browser read answers. */
 export const myAppsFixture = (state: AppsState): { initial: CodeOverviewPage | null | undefined } => {
   if (state === "laedt") return { initial: undefined };
   if (state === "fehler") return { initial: null };
   if (state === "leer") return { initial: { items: [], nextCursor: null } };
+  if (state === "chat" || state === "chat-fehlt")
+    return { initial: { items: [BRIEFING(state === "chat-fehlt"), ...CARDS()], nextCursor: null } };
   return { initial: { items: state === "lang" ? MANY() : CARDS(), nextCursor: null } };
 };
 
@@ -176,10 +201,78 @@ const ATTENTION: CodeAttentionView = {
   ],
 };
 
+/** Gustav drafted a reminder for the morning briefing; sending it waits for the person. */
+const BRIEFING_APPROVAL: PendingApproval = {
+  ...approval("Polsterei Weber", 4, 0),
+  sentence: "Mail: Erinnerung an Polsterei Weber senden",
+  requester: {
+    kind: "chat",
+    appId: "assistant",
+    title: "Morgenbriefing",
+    href: "/app/assistant?conversation=Brief1",
+    automation: { title: "Morgenbriefing", href: "/app/assistant/code/c_brief1" },
+  },
+  createdAt: local("07:01"),
+};
+/** What Core answers for the briefing whose chat is archived, and for the other reasons Code waits for its owner. */
+export const WAITING_AUTOMATIONS: WaitingAutomation[] = [
+  {
+    id: "code-attention:c_brief1",
+    kind: "code_attention",
+    short: "Morgenbriefing braucht einen Chat",
+    reason: "chat_missing",
+    href: "/app/assistant/code/c_brief1",
+  },
+  {
+    id: "code-attention:c_konto1",
+    kind: "code_attention",
+    short: "Kontostand braucht ein Secret",
+    reason: "secret",
+    href: "/app/assistant/code/c_konto1?tab=secrets",
+  },
+  {
+    id: "code-attention:c_rueck1",
+    kind: "code_attention",
+    short: "Rückfragen sammeln braucht deine Bestätigung",
+    reason: "mandate",
+    href: "/app/assistant/code/c_rueck1",
+  },
+  {
+    id: "code-attention:c_stoff1",
+    kind: "code_attention",
+    short: "Stoffpreise prüfen braucht Zugriff",
+    reason: "access",
+    href: "/app/assistant/code/c_stoff1",
+  },
+];
+
 /** Props for `AssistantApprovalsView` in one state; `initial` null is a list Core could not read. */
 export const waitingFixture = (
   state: WaitingState,
-): { initial: ApprovalPage | null | undefined; initialAttention: CodeAttentionView | null | undefined } => {
+): {
+  initial: ApprovalPage | null | undefined;
+  initialAttention: CodeAttentionView | null | undefined;
+  initialAutomations: WaitingAutomation[] | null | undefined;
+  timeZone: string;
+} => ({
+  timeZone: FIXTURE_TIME_ZONE,
+  initialAutomations: state === "laedt" ? undefined : [],
+  ...waitingParts(state),
+});
+
+const waitingParts = (
+  state: WaitingState,
+): {
+  initial: ApprovalPage | null | undefined;
+  initialAttention: CodeAttentionView | null | undefined;
+  initialAutomations?: WaitingAutomation[] | null;
+} => {
+  if (state === "automation")
+    return {
+      initial: { items: [BRIEFING_APPROVAL], nextCursor: null, count: 1, elsewhere: 0 },
+      initialAttention: { items: [], nextCursor: null },
+      initialAutomations: WAITING_AUTOMATIONS.slice(0, 1),
+    };
   if (state === "laedt") return { initial: undefined, initialAttention: undefined };
   if (state === "fehler") return { initial: null, initialAttention: ATTENTION };
   if (state === "leer")

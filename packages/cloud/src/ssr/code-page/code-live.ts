@@ -1,10 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 import { toast } from "@k2b/ui";
-import { z } from "zod";
 import { liveConnection } from "../../browser/live";
 import { reloadOnce } from "../../browser/reload";
-import { CodeCallEventSchema, CodeRunEventSchema } from "../../code/live-events";
-import { CodeOutputEventSchema, type CodeOutputWindow } from "../../code/output";
+import { CodeRunEventSchema } from "../../code/live-events";
 
 const messages = i18n.define({
   baseLocale: "en",
@@ -17,7 +15,7 @@ const messages = i18n.define({
 /** Subscribe before loading the initial run snapshot. Return the disposer to the island's cleanup. */
 export function followCodeRuns(
   codeId: string,
-  onRun: (event: { runId: string; state: "queued" | "running" | "succeeded" | "failed" | "skipped"; at: string }) => void,
+  onRun: (event: { runId: string; state: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "skipped"; at: string }) => void,
   onResync?: () => void | Promise<void>,
   /** The live position the page's snapshot belongs to; without it the page refreshes once after admission. */
   cursor: string | null = null,
@@ -59,83 +57,6 @@ export function followCodeRuns(
   );
   return () => {
     stopped = true;
-    subscription.close();
-  };
-}
-
-const detailEvent = z.discriminatedUnion("type", [CodeCallEventSchema, CodeOutputEventSchema]);
-export type CodeDetailEvent = z.infer<typeof detailEvent>;
-export type CodeDetailPositions = Readonly<Record<string, Pick<CodeOutputWindow, "generation" | "seq">>>;
-
-/** Editors only. Subscribe before reading a covering code.run.read snapshot; resync returns the positions of the currently observed, active runs. A replacement snapshot or disposal removes old positions.
- * Output deltas are bounded by frameBytes. A sequence gap (including discarded batches) requests the shared tail.
- * Render text parts as text nodes and secret parts by name; never inject HTML or interpret terminal escapes.
- */
-export function followCodeDetails(
-  codeId: string,
-  onEvent: (event: CodeDetailEvent) => void,
-  resync: () => Promise<CodeDetailPositions>,
-  initial: CodeDetailPositions = {},
-  onUnavailable?: () => void,
-): () => void {
-  const positions = new Map(Object.entries(initial));
-  let stopped = false;
-  let revision = 0;
-  const refresh = async () => {
-    const current = ++revision;
-    const snapshot = await resync();
-    if (stopped || current !== revision) return;
-    positions.clear();
-    if (!stopped) for (const [runId, position] of Object.entries(snapshot)) positions.set(runId, position);
-  };
-  let admitted = false;
-  const recover = () => {
-    stopped = true;
-    positions.clear();
-    if (onUnavailable) return onUnavailable();
-    if (reloadOnce(`code:details:${codeId}`)) return;
-    const t = messages.resolve([document.documentElement.lang || "en"]).t;
-    toast(t.stopped, { duration: 0, action: { label: t.reload, onClick: () => window.location.reload() } });
-  };
-  const subscription = liveConnection("/api/ai/live").subscribe(
-    "codeDetails",
-    { codeId },
-    {
-      cursor: null,
-      parse: (data) => detailEvent.parse(data),
-      apply: async (events) => {
-        for (const { data } of events) {
-          if (stopped || !positions.has(data.runId)) continue;
-          if (data.type === "code.output") {
-            const previous = positions.get(data.runId);
-            if (
-              previous &&
-              (data.generation < previous.generation || (data.generation === previous.generation && data.seq <= previous.seq))
-            )
-              continue;
-            if (!previous || data.generation !== previous.generation || data.seq !== previous.seq + 1) {
-              await refresh();
-              // The covering snapshot owns this event, including a run that ended while loading.
-              continue;
-            }
-            positions.set(data.runId, { generation: data.generation, seq: data.seq });
-          }
-          onEvent(data);
-        }
-      },
-      resync: refresh,
-      caughtUp: (caughtUp) => {
-        if (!caughtUp || admitted) return;
-        admitted = true;
-        void refresh().catch(recover);
-      },
-      revoked: recover,
-      unavailable: recover,
-    },
-  );
-  return () => {
-    stopped = true;
-    positions.clear();
     subscription.close();
   };
 }

@@ -446,6 +446,10 @@ Each item contains `id`, `app` (`id`, localized `name`, nullable `icon`),
 (`chat`, `always`, `website` booleans), `createdAt`, and `expiresAt`.
 Code-version items also include `canApprove` and, for eligible sole-admin
 self-approval, `soleAdminNotice`.
+A chat request whose turn the person's own Code started adds
+`requester.automation` (`title` as the Code was named when it wrote, `href` to
+its Code page). Waiting for you then reads “From the automation … · in the
+chat …”.
 The timestamps use ISO strings. `apps` maps app IDs to positive open counts.
 An approval can count for both its effect owner and requester app.
 `total` counts each request once.

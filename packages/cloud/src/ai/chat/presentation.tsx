@@ -287,9 +287,9 @@ const storedItems = (
               )}
             </For>
           </div>
-        ) : text || item.entry.meta?.codeOrigin || item.entry.meta?.quotes?.length ? (
+        ) : text || item.entry.meta?.quotes?.length ? (
           <>
-            <Show when={item.entry.meta?.codeOrigin}>{(origin) => <p class="text-xs text-dimmed">{origin().label}</p>}</Show>
+            {/* Who wrote a message the person did not type stands in its source chip (v6 F11), never as a second line. */}
             <AiUserMessageQuotes entry={item.entry} />
             {/* The person's own words are a passage to quote; a message an automation wrote is none. */}
             {text ? (
@@ -298,6 +298,13 @@ const storedItems = (
                 data-quote-source={item.entry.meta?.codeOrigin ? undefined : item.entry.shortId}
               >
                 {text}
+              </p>
+            ) : undefined}
+            {/* The data an automation or another chat sent along: a quiet line under its instruction, never its words. */}
+            {item.entry.meta?.sourceContext ? (
+              <p class="ai-message-data" title={item.entry.meta.sourceContext}>
+                <i class="ti ti-database" aria-hidden="true" />
+                <span>{aiChatMessages(locale).messageData({ text: item.entry.meta.sourceContext })}</span>
               </p>
             ) : undefined}
           </>

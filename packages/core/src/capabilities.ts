@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import {
+  AI_OPEN_QUESTION_KINDS,
   AI_SHORT_ID_PATTERN,
   AI_SKILL_DESCRIPTION_MAX_CHARS,
   AI_SKILL_NAME_MAX_CHARS,
@@ -71,7 +72,7 @@ import { startCodeRun } from "./code/scheduling";
 import { codeSchedulingContracts } from "./code/scheduling-contracts";
 import { codeSecretContracts } from "./code/secret-contracts";
 import { deleteCodeSecret, listCodeSecrets, reviewCodeSecretDeletion, setCodeSecret } from "./code/secrets";
-import { countOwnCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeVersion } from "./code/store";
+import { countOwnCodeRuns, listCodes, lockCodeForEdit, readCode, readCodeRun, readCodeRunEntries, readCodeVersion } from "./code/store";
 import { readCodeVersionCards } from "./code/version-cards";
 import { codeVersionContracts } from "./code/version-contracts";
 import {
@@ -641,7 +642,12 @@ export const aiCapabilities = defineCapabilities({
     "ai.open_questions": {
       title: "Read what waits for you",
       description: "Read your current authorized questions and Code next steps in one bounded list. Resolved entries disappear.",
-      input: z.object({ timeZone: z.string().max(100).describe("Reader time zone for displayed dates.") }).strict(),
+      input: z
+        .object({
+          timeZone: z.string().max(100).describe("Reader time zone for displayed dates."),
+          kind: z.enum(AI_OPEN_QUESTION_KINDS).optional().describe("Only this kind, in the same page size."),
+        })
+        .strict(),
       data: AiOpenQuestionsSchema,
       openWorld: false,
       async run(input, context) {
@@ -653,6 +659,7 @@ export const aiCapabilities = defineCapabilities({
             ownerUserId: context.accessSubject.userId,
             locale: context.locale,
             timeZone: input.timeZone,
+            ...(input.kind ? { kind: input.kind } : {}),
             sources: [(request) => listCodeWaiting(request, context.signal)],
           }),
         });
@@ -798,18 +805,24 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.run.list": {
       title: "List Code runs",
-      description: "List attempt metadata without run inputs, outputs or capability call contents.",
+      description: "List run metadata; no input, output or call data.",
       ...codeQueryContracts.runList,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeRunsWithEvents(input, ctx)),
     },
     "code.run.read": {
       title: "Read a Code run",
-      description:
-        "Read one attempt and ordered calls, one call per page. Editors read large JSON through content chunks and sanitized consoleOutput on cursor zero; readers receive contents:null.",
+      description: "Read run and calls, one per page. Managers get content chunks and first-page output; readers get contents:null.",
       ...codeQueryContracts.runRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeRun(input, ctx)),
+    },
+    "code.run.entries": {
+      title: "Read run entries",
+      description: "Read run state and bounded output; readers get output:null.",
+      ...codeQueryContracts.runEntries,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeRunEntries(input, ctx)),
     },
     "code.attention.list": {
       title: "List Code that needs you",

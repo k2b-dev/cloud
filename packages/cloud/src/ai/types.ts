@@ -358,6 +358,11 @@ export type AiStoredMessage = {
     codeAuthoringStop?: AiCodeAuthoringStop;
     automationTurnStop?: AiAutomationTurnStop;
     codeOrigin?: AiCodeOrigin;
+    /**
+     * Read projection only: the source data an automation or another chat sent with this message, apart from its
+     * instruction. Data, never instructions; the stored message keeps both for the model.
+     */
+    sourceContext?: string;
     /** Passages this user message quotes, checked by the server against their messages; the only source of quotes. */
     quotes?: import("./quote-markers").AiMessageQuote[];
     /** Cloud's visible start of its one scoped automatic revision. */

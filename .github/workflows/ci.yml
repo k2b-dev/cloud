@@ -185,10 +185,10 @@ jobs:
       # longest first; unknown suites use the median. Choose the smallest count
       # with a predicted slowest shard <= 15 min for unit/integration;
       # WebKit reserves more headroom as described below.
-      # Unit maxima from runs 43849229359, 43854924561, 43853498094,
-      # 43845780501, 43839564075 and 43839560795 (#3536), with @k2b/ui rest and
-      # Mail split into test:part:* suites: 10 shards need 15.6 min, 11 need
-      # 14.2 min, 12 need 13.8 min (@k2b/cloud rest alone; the rest 12.9 min).
+      # Unit timings from run 44443688140 (#3715), with @k2b/cloud SSR and AI
+      # split into test:part:* suites. Their weights include measured file-group
+      # times plus the old process overhead for each new part. Twelve shards
+      # need at most 14.11 min (@k2b/cloud rest alone; the others <= 12.85 min).
       # 12 leave room for growth below the 15-min target.
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
       # setup and GitHub finalization, which counts against timeout-minutes and

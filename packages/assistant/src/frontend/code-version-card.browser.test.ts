@@ -336,6 +336,42 @@ describe("v10 approval card in Chromium", () => {
       await h.close();
     }
   }, 60_000);
+  test("a version already replaced when the chat draws it ends under its action, also after the controller takes over", async () => {
+    for (const width of [390, 1440]) {
+      const h = await open(width, "light", "de", "receipt");
+      try {
+        const card = h.page.locator(".assistant-code-version[data-state=replaced]");
+        await card.waitFor();
+        const measure = () =>
+          h.page.evaluate(() => {
+            const card = document.querySelector<HTMLElement>(".assistant-code-version")!;
+            const box = card.getBoundingClientRect();
+            const action = card.querySelector("[data-code-version-primary]")!.getBoundingClientRect();
+            return {
+              receipt: card.hasAttribute("data-receipt"),
+              height: Math.round(box.height),
+              below: Math.round(box.bottom - action.bottom),
+              padding: Math.round(Number.parseFloat(getComputedStyle(card).paddingBottom)),
+            };
+          });
+        const first = await measure();
+        expect(first.receipt).toBe(true);
+        if (width === 390) {
+          // Only the card's own padding is left under "Zu Version 2"; a live card keeps 168 px.
+          expect(first.below).toBeLessThanOrEqual(first.padding + 1);
+          expect(first.height).toBeLessThan(168 - 40);
+        } else expect(first.height).toBe(64);
+        // The interaction controller replaces the server card without changing it.
+        await h.page.waitForTimeout(300);
+        expect(await measure()).toEqual(first);
+        await screenshot(h.page, "receipt-replaced", "light", width);
+        expect(h.errors).toEqual([]);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 60_000);
+
   test("server output and first browser card agree, including openable pages, without a mount read", async () => {
     for (const width of [1440, 390]) {
       const h = await open(width, "light", "de", "snapshot");

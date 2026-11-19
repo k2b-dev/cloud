@@ -10,9 +10,12 @@ import { findCode } from "./store";
 
 /** One domain source for the shared waiting list. The same read supplies badges, page and notification targets. */
 export async function listCodeWaiting(
-  input: { ownerUserId: string; locale: string; timeZone: string; versionId?: string },
+  input: { ownerUserId: string; locale: string; timeZone: string; versionId?: string; kind?: AiOpenQuestion["kind"] },
   signal: AbortSignal,
 ): Promise<AiOpenQuestions> {
+  // A reader asking for one kind gets only that kind, with the same page size.
+  if (input.kind === "approval") return { count: 0, items: [] };
+  if (input.kind === "code_attention") return input.versionId ? { count: 0, items: [] } : listCodeAttentionWaiting(input, signal);
   const items: AiOpenQuestion[] = [];
   let count = 0,
     after = "00000000-0000-0000-0000-000000000000";
@@ -58,6 +61,7 @@ export async function listCodeWaiting(
       if (!allowed.has(row.version_id)) continue;
       const de = input.locale.startsWith("de");
       const kind = row.expired && !row.outcome ? "code_expired" : row.outcome === "changes_requested" ? "code_changes" : "code_activate";
+      if (input.kind && kind !== input.kind) continue;
       const short =
         kind === "code_expired"
           ? de
@@ -88,7 +92,7 @@ export async function listCodeWaiting(
     after = rows.at(-1)!.version_id;
     if (rows.length < 50) break;
   }
-  const attention = input.versionId ? { count: 0, items: [] } : await listCodeAttentionWaiting(input, signal);
+  const attention = input.versionId || input.kind ? { count: 0, items: [] } : await listCodeAttentionWaiting(input, signal);
   return {
     count: count + attention.count,
     items: [...items, ...attention.items].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).slice(0, 20),
@@ -182,6 +186,7 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
         anchor: "",
         short: [...short].slice(0, 160).join(""),
         app: { name: "Code", icon: "ti ti-code" },
+        reason: row.reason,
         createdAt: row.created_at.toISOString(),
         href: `/app/assistant/code/${row.code_id}${row.reason === "secret" ? "?tab=secrets" : ""}`,
       });

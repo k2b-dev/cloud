@@ -120,7 +120,9 @@ The owner-authorized queue API provides:
 
 - `GET /conversations/:id/queue`: ordered pending and failed entries, including
   `id`, `text`, `content`, `origin`, `state`, `createdAt`, and `authorIsViewer`,
-  plus `error` and `retrying` for visible infrastructure retries.
+  plus `error` (a stable code such as `dispatch_failed`, or `null`) and
+  `retrying` (`true` while Cloud starts the entry again by itself; `state` then
+  reads `failed`). `AiQueuedMessageSchema` parses all of these fields.
   The display states are `pending`, `sending`, and `failed`; storage keeps its
   existing `pending`, `failed`, `submitted`, and `cancelled` statuses.
 - `PATCH /conversations/:id/queue/:messageId` with `{ text }`: edit the person's
@@ -199,8 +201,16 @@ old work. It must check an uncertain effect before repeating it.
 ### Preserve writer identity and live state
 
 Queue entries and history messages carry server-authored provenance.
+A message an automation or another chat sent with `context` stores the
+instruction and the data in one text part for the model. Reads show them apart:
+the message's `text` is the instruction, and history messages carry the data
+as `meta.sourceContext`. A queue entry's `text` is its instruction alone.
 `origin.kind` is `person`, `automation`, `chat`, or `wakeup`, with a stable ID and a
-resolved display name. Chat and automation links appear only when the viewer
+resolved display name. Personal Code stores its automation origin with
+`resource: { type: "core.code", id }`; Code's own reader then names and links it
+for each viewer who may read it. Without a readable name the projection says
+`named: false` and `name` is only “Automation”, so surfaces read “From an
+automation” instead of naming it. Chat and automation links appear only when the viewer
 can open the target. Durable provenance stores IDs, never translated names or
 display links. The existing inter-chat delivery path also records its source
 chat. Its delivery lifecycle is unchanged.
@@ -837,8 +847,9 @@ the others from loading.
 Kinds are `approval`, `code_activate`, `code_changes`, `code_expired` and
 `code_attention`. A Code change appears only when no automatic revision is
 queued or running; withdrawn, replaced or activated versions leave the list.
-Operational attention names a missing Secret, access or mandate and carries an
-`href` to the Code page. Entries without a chat use an empty `conversationId`
+Operational attention names a missing Secret, access, mandate or chat and
+carries an `href` to the Code page, plus `reason` (`secret`, `access`,
+`mandate` or `chat_missing`) so the page can name the way out. Entries without a chat use an empty `conversationId`
 and `anchor`. Use this same snapshot for the page, sidebar and badge. Domain
 notification senders reuse the source's text and target.
 

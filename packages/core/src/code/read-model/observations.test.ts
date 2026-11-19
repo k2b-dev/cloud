@@ -7,7 +7,24 @@ import { boundTimeline } from "./activity";
 import { describeCalls } from "./describe-calls";
 import { codeNoticeCodes, describeCodeNotices } from "./notices";
 import { describeExpectedValue } from "./present";
-import { presentRunObservations } from "./run";
+import { describeRunFailure, presentRunObservations } from "./run";
+
+test("persisted runner outcomes name their cause in de/en without repeating a generic failure", () => {
+  for (const [outcome, de, en] of [
+    ["wall_clock_limit", "Laufzeitlimit erreicht", "Run time limit reached"],
+    ["memory_limit", "Speicherlimit des Runners erreicht", "Runner memory limit reached"],
+    ["stalled", "Runner antwortet nicht mehr", "Runner stopped responding"],
+    [
+      "lease_lost",
+      "Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe vor der erneuten Ausführung.",
+      "Runner disconnected. Review the recorded calls before running again.",
+    ],
+    ["failed", null, null],
+  ] as const) {
+    expect(describeRunFailure(outcome, "de")).toBe(de);
+    expect(describeRunFailure(outcome, "en")).toBe(en);
+  }
+});
 
 test("observed successes, replay, refusal and unknown outcomes stay distinct", () => {
   const calls: Pick<CodeTestCall, "operation" | "result" | "replayed">[] = [

@@ -352,6 +352,16 @@ a.cloud-code__row-main:focus-visible {
 .cloud-code__quiet > i {
   margin-top: 0.125rem;
 }
+.cloud-code__run-summary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.cloud-code__run-summary,
+.cloud-code__run-access {
+  overflow-wrap: anywhere;
+}
 .cloud-code__quiet code,
 .cloud-code__command code {
   font-family: var(--k2b-font-mono, ui-monospace, monospace);

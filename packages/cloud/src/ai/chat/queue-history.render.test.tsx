@@ -121,3 +121,36 @@ test("a turn that Send now interrupted says paused and offers neither answering 
   expect(stopped).toContain("ai-turn__stopped");
   expect(stopped).not.toContain("Angehalten");
 });
+
+test("the data an automation sent stands as a quiet line under its instruction, inside its machine-written bubble", () => {
+  const html = render([
+    message(1, "user", "Bestätige den Kontostand aus den Daten in einem Satz.", {
+      meta: {
+        origin: { kind: "automation", id: "a2", name: "Kontostand", href: "/app/assistant/code/a2" },
+        sourceContext: "Geschäftskonto 4.210,18 € · Stand heute, 08:00",
+      },
+    }),
+    message(2, "assistant", "Kontostand heute um 08:00: 4.210,18 €."),
+    message(3, "user", "Danke", { meta: { origin: { kind: "person", id: "u1", name: "Lena Vogt" } } }),
+  ]);
+  const [automation = "", , own = ""] = articles(html);
+  expect(automation).toContain("data-source");
+  expect(automation).toContain("Bestätige den Kontostand aus den Daten in einem Satz.");
+  expect(automation).toMatch(
+    /class="ai-message-data"[^>]*><i class="ti ti-database" aria-hidden="true"><\/i><span>Daten: Geschäftskonto 4\.210,18 € · Stand heute, 08:00<\/span>/,
+  );
+  expect(automation.indexOf("ai-message-data")).toBeGreaterThan(automation.indexOf("Bestätige den Kontostand"));
+  expect(own).not.toContain("ai-message-data");
+});
+
+test("an automation Cloud could not name for this reader says only that an automation wrote, without a link", () => {
+  const html = render([
+    message(1, "user", "Briefing für Montag", {
+      meta: { origin: { kind: "automation", id: "c_brief1", name: "Automation", named: false } },
+    }),
+  ]);
+  const [automation = ""] = articles(html);
+  expect(automation).toContain("Von einer Automation");
+  expect(automation).not.toContain("„Automation“");
+  expect(automation).not.toContain("<a ");
+});

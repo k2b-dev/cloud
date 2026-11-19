@@ -154,6 +154,9 @@ export const presentPendingApproval = (
         : storedActionReview(originalReview, policy)
       : originalReview;
   const codeVersion = row.kind === "code_version";
+  // A turn the person's own Code started in their own chat: the request names that automation as its origin.
+  const code = row.runConfig && row.runConfig.kind !== "compact" ? row.runConfig.codeOrigin : undefined;
+  const automation = code ? { title: code.title, href: `/app/assistant/code/${encodeURIComponent(code.codeId)}` } : null;
   const remember = !codeVersion && row.assurance === "standard" && aiTurnAllowsRememberedApprovals(row.runConfig);
   return {
     id: row.id,
@@ -177,6 +180,7 @@ export const presentPendingApproval = (
           appId: row.requesterAppId,
           title: row.conversationTitle,
           href: `/app/assistant?conversation=${encodeURIComponent(row.conversationShortId ?? "")}`,
+          ...(automation ? { automation } : {}),
         },
     remember: {
       chat: remember && (row.allowChat ?? row.allowAlways),

@@ -688,6 +688,8 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
       state: "pending",
       createdAt: NOW,
       authorIsViewer: true,
+      error: null,
+      retrying: false,
     }));
     return json(queued);
   }

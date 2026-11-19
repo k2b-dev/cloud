@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AI_LIVE_SNAPSHOT_INTERVAL_MS } from "../ai/live-interval";
 import { LIVE_LIMITS } from "../events/live-limits";
+import { codeOutputJsonBytes as bytes } from "./output-size";
 
 /** Reuse the AI stream's one-second bundling cadence; no separate output throughput policy. */
 export const CODE_OUTPUT_INTERVAL_MS = AI_LIVE_SNAPSHOT_INTERVAL_MS;
@@ -37,16 +38,6 @@ const stepEnvelope = {
   startedAt: "2030-01-02T00:00:00.000Z",
   endedAt: "2030-01-02T00:00:00.000Z",
   message: "",
-};
-// This contract also loads in minimal script VMs without Web Encoding globals.
-// Count the JSON wire representation in UTF-8; iteration keeps surrogate pairs together.
-const bytes = (value: unknown) => {
-  let size = 0;
-  for (const character of JSON.stringify(value) ?? "") {
-    const code = character.charCodeAt(0);
-    size += character.length === 2 ? 4 : code < 0x80 ? 1 : code < 0x800 ? 2 : 3;
-  }
-  return size;
 };
 // Reserve the canonical map form, including the largest safe generation/ID,
 // named secret parts, optional fields and automatic completion. Short fields may
@@ -174,12 +165,6 @@ export const CodeOutputEntrySchema = z.union([
   z.object({ kind: z.string().refine((kind) => !knownKinds.has(kind)) }).passthrough(),
 ]);
 export type CodeOutputEntry = z.infer<typeof CodeOutputEntrySchema>;
-export function isCodeOutputLogEntry(entry: CodeOutputEntry): entry is Extract<CodeOutputKnownEntry, { kind: "log" }> {
-  return entry.kind === "log";
-}
-export function isCodeOutputStepEntry(entry: CodeOutputEntry): entry is Extract<CodeOutputKnownEntry, { kind: "step" }> {
-  return entry.kind === "step";
-}
 /** An entry counts once regardless of how many fields a step carries. */
 export const codeOutputEntryLines = (entry: CodeOutputBatch["entries"][number]) =>
   entry.kind === "log" ? entry.text.split(/\r\n|\n|\r/).length : 1;
@@ -193,13 +178,6 @@ export const CodeOutputWindowSchema = z
   })
   .strict();
 export type CodeOutputWindow = z.infer<typeof CodeOutputWindowSchema>;
-export const emptyCodeOutput = (generation = 0): CodeOutputWindow => ({
-  generation,
-  seq: 0,
-  entries: [],
-  droppedLines: 0,
-  droppedBytes: 0,
-});
 export const CodeOutputEventSchema = CodeOutputWindowSchema.omit({ entries: true })
   .extend({
     type: z.literal("code.output"),
@@ -210,59 +188,6 @@ export const CodeOutputEventSchema = CodeOutputWindowSchema.omit({ entries: true
   })
   .strict();
 export type CodeOutputEvent = z.infer<typeof CodeOutputEventSchema>;
-const sum = (a: number, b: number) => Math.min(Number.MAX_SAFE_INTEGER, a + b);
-/** Same tail window on Core, replay and browser, including opaque future kinds. Counters are fixed-size metadata. */
-export function appendCodeOutput(
-  window: CodeOutputWindow,
-  entries: readonly CodeOutputEntry[],
-  budget: number,
-  dropped: { lines: number; bytes: number } = { lines: 0, bytes: 0 },
-): CodeOutputWindow {
-  const merged = [...window.entries];
-  const positions = new Map(merged.flatMap((entry, index) => (isCodeOutputStepEntry(entry) ? [[entry.id, index] as const] : [])));
-  for (const entry of entries) {
-    const position = isCodeOutputStepEntry(entry) ? positions.get(entry.id) : undefined;
-    if (position === undefined) {
-      if (isCodeOutputStepEntry(entry)) positions.set(entry.id, merged.length);
-      merged.push(entry);
-    } else merged[position] = entry;
-  }
-  const next = {
-    ...window,
-    entries: merged,
-    droppedLines: sum(window.droppedLines, dropped.lines),
-    droppedBytes: sum(window.droppedBytes, dropped.bytes),
-  };
-  const sizes = next.entries.map(bytes);
-  let size = bytes([]) + sizes.reduce((total, size) => total + size, 0) + Math.max(0, sizes.length - 1);
-  const removed = new Set<number>();
-  // Preserve step creation order: logs and opaque entries yield first. Core and
-  // the runner bound retained step metadata with the existing output budget.
-  for (const steps of [false, true]) {
-    for (let index = 0; index < sizes.length && size > budget; index++) {
-      if (isCodeOutputStepEntry(next.entries[index]!) !== steps) continue;
-      const entryBytes = sizes[index]!;
-      size -= entryBytes + (sizes.length - removed.size > 1 ? 1 : 0);
-      next.droppedLines = sum(next.droppedLines, 1);
-      next.droppedBytes = sum(next.droppedBytes, entryBytes);
-      removed.add(index);
-    }
-  }
-  next.entries = next.entries.filter((_, index) => !removed.has(index));
-  return next;
-}
-/** Replayed and out-of-order events never duplicate output or regress a newer attempt. */
-export function applyCodeOutputEvent(window: CodeOutputWindow, event: CodeOutputEvent): CodeOutputWindow {
-  if (event.generation < window.generation || (event.generation === window.generation && event.seq <= window.seq)) return window;
-  const base = event.generation === window.generation ? window : emptyCodeOutput(event.generation);
-  const next = appendCodeOutput({ ...base, seq: event.seq }, event.entries, event.budget);
-  return {
-    ...next,
-    droppedLines: Math.max(next.droppedLines, event.droppedLines),
-    droppedBytes: Math.max(next.droppedBytes, event.droppedBytes),
-  };
-}
-
 /** ANSI CSI/OSC/DCS sequences, controls and direction/format marks are never rendered. Newlines split lines upstream. */
 export function cleanCodeOutput(text: string): string {
   const kept: string[] = [];

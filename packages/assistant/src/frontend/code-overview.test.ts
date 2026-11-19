@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { CodeActivityReadModel } from "@k2b/cloud/contracts/code-read-model";
 import type { CodeQueryInvoke } from "../code-summary";
 import { automationTiming } from "./automation-timing";
-import { type CodeOverviewItem, cardStatus, dayLine, loadCodeCardExtras, localDay } from "./code-overview";
+import { type CodeOverviewItem, cardStatus, dayLine, loadCodeCardExtras, localDay, needsPerson } from "./code-overview";
 
 const DAY = { from: "2026-11-13T23:00:00.000Z", to: "2026-11-14T23:00:00.000Z" };
 const activity = (marks: CodeActivityReadModel["timeline"]["marks"]): CodeActivityReadModel => ({
@@ -129,7 +129,7 @@ test("a card reads its runs and day, and asks why only after a failed run", asyn
   }) as CodeQueryInvoke;
   const extras = await loadCodeCardExtras(invoke, "c_aaaa", { day: "2026-11-14", timeZone: "Europe/Berlin" });
   expect(extras.failure).toBe("Preisliste nicht erreichbar");
-  expect(calls.sort()).toEqual(["code.activity.words", "code.run.list", "code.run.words"]);
+  expect(calls.sort()).toEqual(["code.activity.words", "code.chat_binding.read", "code.run.list", "code.run.words"]);
   // A refused read leaves only that part out.
   const refused = (async (invocation, schema) =>
     invocation.capabilityId === "code.activity.words"
@@ -139,7 +139,49 @@ test("a card reads its runs and day, and asks why only after a failed run", asyn
     runs: [],
     activity: null,
     failure: null,
+    chat: null,
   });
+});
+
+test("a card names the chat its Code writes to, says when it is missing, and leaves out a chat its Code never uses", async () => {
+  const withBinding = (binding: unknown) =>
+    (async (invocation, schema) =>
+      invocation.capabilityId === "code.chat_binding.read"
+        ? { ok: true, data: { data: schema.parse(binding) } }
+        : invocation.capabilityId === "code.activity.words"
+          ? { ok: true, data: { data: schema.parse(activity([])) } }
+          : { ok: true, data: { data: schema.parse({ items: [] }) } }) as CodeQueryInvoke;
+  const chat = async (binding: unknown) =>
+    (await loadCodeCardExtras(withBinding(binding), "c_brief", { day: "2026-11-14", timeZone: "UTC" })).chat;
+  const base = { codeId: "c_brief", revision: 1, canChange: true };
+  const available = {
+    state: "available",
+    id: "Brief1",
+    title: "Morgenbriefing",
+    project: null,
+    href: "/app/assistant?conversation=Brief1",
+  };
+  expect(await chat({ ...base, used: true, chat: available })).toEqual({ state: "bound", title: "Morgenbriefing" });
+  expect(await chat({ ...base, used: false, chat: available })).toBeNull();
+  expect(
+    await chat({ ...base, used: true, chat: { state: "unavailable", reason: "archived", id: "Brief1", title: "Morgenbriefing" } }),
+  ).toEqual({
+    state: "missing",
+    archivedTitle: "Morgenbriefing",
+  });
+  expect(await chat({ ...base, used: true, chat: { state: "unavailable", reason: "deleted" } })).toEqual({
+    state: "missing",
+    archivedTitle: null,
+  });
+  expect(await chat({ ...base, used: true, chat: null })).toEqual({ state: "missing", archivedTitle: null });
+  // An older Core without `used` names no chat rather than guessing.
+  expect(await chat({ ...base, chat: available })).toBeNull();
+
+  const missing = { runs: [run("succeeded")], activity: null, failure: null, chat: { state: "missing" as const, archivedTitle: null } };
+  expect(cardStatus(item("c_brief", { extras: missing }))).toBe("chat_missing");
+  expect(needsPerson(cardStatus(item("c_brief", { extras: missing })))).toBe(true);
+  // A run that is going on right now still says so first.
+  expect(cardStatus(item("c_brief", { extras: { ...missing, runs: [run("running")] } }))).toBe("running");
 });
 
 test("the person's day is their local date", () => {

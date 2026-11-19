@@ -29,6 +29,23 @@ const CardRunsSchema = z.object({
 });
 export type CodeCardRun = z.infer<typeof CardRunsSchema>["items"][number];
 
+/** The few fields of Core's `code.chat_binding.read` a card shows; Core's contract stays the authority. */
+const CardChatSchema = z.object({
+  used: z.boolean().optional(),
+  chat: z
+    .union([
+      z.object({ state: z.literal("available"), title: z.string() }),
+      z.object({ state: z.literal("unavailable"), reason: z.enum(["archived", "deleted"]), title: z.string().optional() }),
+      z.object({ state: z.literal("hidden") }),
+    ])
+    .nullable(),
+});
+/**
+ * The chat personal Code writes to with `chat.send`: named while it is there, missing once it is archived, deleted or
+ * never chosen. Code that does not write to its chat has none on its card.
+ */
+export type CodeCardChat = { state: "bound"; title: string } | { state: "missing"; archivedTitle: string | null };
+
 /**
  * What a card adds to a Code's summary. Each part is null when Core could not answer it; the card then leaves that
  * part out and the rest stays.
@@ -39,6 +56,8 @@ export type CodeCardExtras = {
   activity: CodeActivityReadModel | null;
   /** Why the newest run failed, in Core's words; null when it did not fail or Core could not say. */
   failure: string | null;
+  /** Null or absent when the Code does not write to a chat of its own, or Core could not say. */
+  chat?: CodeCardChat | null;
 };
 export type CodeOverviewItem = CodeSummary & { extras?: CodeCardExtras };
 /** A Code list page whose items may already carry their card extras (from the server); the rest load in the browser. */
@@ -61,12 +80,15 @@ export const loadCodeCardExtras = async (
   codeId: string,
   day: { day: string; timeZone: string },
 ): Promise<CodeCardExtras> => {
-  const [runs, activity] = await Promise.all([
+  const [runs, activity, chat] = await Promise.all([
     invoke(query("code.run.list", { codeId, limit: CODE_CARD_RUNS }), CardRunsSchema)
       .then((result) => (result.ok ? result.data.data.items : null))
       .catch(() => null),
     invoke(query("code.activity.words", { codeId, day: day.day, timeZone: day.timeZone }), CodeActivityReadModelSchema)
       .then((result) => (result.ok ? result.data.data : null))
+      .catch(() => null),
+    invoke(query("code.chat_binding.read", { codeId }), CardChatSchema)
+      .then((result) => (result.ok ? cardChat(result.data.data) : null))
       .catch(() => null),
   ]);
   const newest = runs?.[0];
@@ -76,7 +98,16 @@ export const loadCodeCardExtras = async (
           .then((result) => (result.ok ? result.data.data.reason : null))
           .catch(() => null)
       : null;
-  return { runs, activity, failure };
+  return { runs, activity, failure, chat };
+};
+
+/** Only Code that writes to its chat names it; its owner sees the title, and a missing chat is said either way. */
+const cardChat = (binding: z.infer<typeof CardChatSchema>): CodeCardChat | null => {
+  if (!binding.used) return null;
+  const chat = binding.chat;
+  if (chat?.state === "available") return { state: "bound", title: chat.title };
+  if (chat?.state === "hidden") return null;
+  return { state: "missing", archivedTitle: chat?.state === "unavailable" && chat.reason === "archived" ? (chat.title ?? null) : null };
 };
 
 /** Adds card extras to every item that has none yet, all in parallel; the page bounds how many there are. */
@@ -99,7 +130,7 @@ export const loadCodeOverview = async (
 };
 
 /** What a card's status says, in the order that needs attention first. */
-export type CodeCardStatus = "running" | "failed" | "access_missing" | "paused" | "draft" | "deleting" | "on";
+export type CodeCardStatus = "running" | "chat_missing" | "failed" | "access_missing" | "paused" | "draft" | "deleting" | "on";
 
 export const cardStatus = (item: CodeOverviewItem): CodeCardStatus => {
   if (item.state === "paused") return "paused";
@@ -107,14 +138,15 @@ export const cardStatus = (item: CodeOverviewItem): CodeCardStatus => {
   if (item.state === "deleting") return "deleting";
   const newest = item.extras?.runs?.[0];
   if (newest && (newest.state === "running" || newest.state === "queued")) return "running";
+  if (item.extras?.chat?.state === "missing") return "chat_missing";
   if ((item.removedTargets?.length ?? 0) > 0) return "access_missing";
   const last = newest ?? item.lastRun;
   if (last && (last.state === "failed" || last.state === "cancelled")) return "failed";
   return "on";
 };
 
-/** Code that needs the person: a failed run or missing access. */
-export const needsPerson = (status: CodeCardStatus) => status === "failed" || status === "access_missing";
+/** Code that needs the person: a failed run, missing access or a missing chat. */
+export const needsPerson = (status: CodeCardStatus) => status === "failed" || status === "access_missing" || status === "chat_missing";
 
 export type DayMarkState = "succeeded" | "failed" | "planned" | "running" | "skipped" | "group";
 /** One mark on the day line; `at` is its place on the day from 0 to 1. */

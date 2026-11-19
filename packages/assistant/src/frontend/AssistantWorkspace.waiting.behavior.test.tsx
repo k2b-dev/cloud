@@ -1,5 +1,5 @@
 import { afterEach, expect, mock, setSystemTime, test } from "bun:test";
-import type { AiConversation, AiOpenQuestions, AiTurnSnapshot } from "@k2b/cloud/ai";
+import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiTurnSnapshot } from "@k2b/cloud/ai";
 import type { LiveSubscriptionHandlers } from "@k2b/cloud/browser/live";
 import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
@@ -245,5 +245,48 @@ test("a run that starts in the open chat and in another marks both rows without 
   expect(h.root.querySelector("div.assistant-chat-sidebar-item--unread a")?.getAttribute("href")).toBe(
     "/app/assistant?conversation=Tops42",
   );
+  expect(h.sidebarLoads).toHaveLength(2);
+});
+
+test("the sidebar counts exactly what the waiting row lists, also entries that are not approvals, and follows it live", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const other = chat("Tops42", "Team Ops Wochenplanung", "idle");
+  // The tour's case: Code entries wait, no approval does, so the approvals count would say 0.
+  const code = (kind: AiOpenQuestion["kind"], id: string, short: string, conversationId: string, title: string): AiOpenQuestion => ({
+    kind,
+    id,
+    conversationId,
+    conversationTitle: title,
+    anchor: `code-version-${id}`,
+    short,
+    app: { name: "Automationen", icon: "ti ti-stack-2" },
+    createdAt: now,
+  });
+  const activate = code("code_activate", "code:v2", "Version 2 einschalten", "Wart42", "Wartung Oktober");
+  const secret = code("code_attention", "code:a1", "Lieferavise sortieren braucht ein Secret", "Tops42", "Team Ops Wochenplanung");
+  const server = { conversations: [here, other], questions: { items: [activate, secret], count: 2 } as AiOpenQuestions };
+  const h = mount(server, here);
+  /** The sidebar's "Waiting for you" count, and the number of entries the row above the field lists. */
+  const counts = () => {
+    const row = h.root.querySelector('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]');
+    const strip = h.strip();
+    return {
+      sidebar: row?.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent ?? null,
+      row: strip ? (waitingStripSummary(strip.outerHTML)?.entries.length ?? 0) : 0,
+    };
+  };
+  await waitFor(() => subscriptions.length > 0);
+  expect(counts()).toEqual({ sidebar: "2", row: 2 });
+
+  // One is done elsewhere: both drop together after one load.
+  server.questions = { items: [activate], count: 1 };
+  await h.changed("Tops42");
+  await waitFor(() => counts().row === 1);
+  expect(counts()).toEqual({ sidebar: "1", row: 1 });
+
+  server.questions = { items: [], count: 0 };
+  await h.changed("Wart42");
+  await waitFor(() => h.strip() === null);
+  expect(counts()).toEqual({ sidebar: "0", row: 0 });
   expect(h.sidebarLoads).toHaveLength(2);
 });

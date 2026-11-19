@@ -3,6 +3,8 @@ import { CAPABILITY_DISCOVERY_TIMEOUT_MS } from "../_internal/capability-timeout
 import { listCapabilities } from "../_internal/registry";
 import { dispatchCapability } from "../api/capabilities";
 import {
+  type CapabilityResult,
+  CloudResourceReaderViewSchema,
   capabilityResultSchema,
   cloudResourceRefAppId,
   LinkedCloudResourceReferenceSchema,
@@ -18,6 +20,50 @@ import { aiWakeupMessages } from "./wakeup-messages";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type AiOriginViewer = { userId?: string | null; authority?: RequestAuthority | null; locale?: string };
+
+/**
+ * A reader's answer names its resource: the result's own reference with its title, or the canonical reader view
+ * (`{ view: { title } }`) with its `open` link. Anything else names nothing.
+ */
+export const readerResourceName = (
+  result: CapabilityResult<unknown>,
+  ref: { type: string; id: string },
+): { name: string; href?: string } | null => {
+  const own = result.refs?.find((entry) => entry.type === ref.type && entry.id === ref.id);
+  const projected = own && LinkedCloudResourceReferenceSchema.parse(own);
+  if (projected?.title) return { name: projected.title, ...(projected.href ? { href: projected.href } : {}) };
+  const view = ReaderViewResultSchema.safeParse(result.data);
+  if (!view.success) return null;
+  const href = result.links?.find((link) => link.rel === "open")?.href;
+  return { name: view.data.view.title, ...(href ? { href } : {}) };
+};
+const ReaderViewResultSchema = z.object({ view: CloudResourceReaderViewSchema });
+
+/**
+ * One origin as its viewer reads it: the automation's own reader decides its name and link, then the stored name;
+ * without either, an automation says only that it is one (`named: false`), so no surface shows "Automation" as a name.
+ */
+export const projectAiMessageOrigin = (
+  origin: AiStoredMessageOrigin,
+  row: { name: string; href: string | null } | undefined,
+  resource: { name: string; href?: string } | null,
+  locale = "en",
+): AiMessageOrigin => {
+  if (origin.kind === "wakeup")
+    return { kind: "wakeup", id: origin.id, name: aiWakeupMessages(locale).origin, scheduledAt: origin.scheduledAt };
+  const name = resource?.name ?? row?.name;
+  const href = origin.kind === "person" ? undefined : (resource?.href ?? row?.href ?? undefined);
+  if (origin.kind === "automation")
+    return {
+      kind: "automation",
+      id: origin.id,
+      name: name ?? "Automation",
+      ...(href ? { href } : {}),
+      ...(name ? {} : { named: false as const }),
+    };
+  if (origin.kind === "person") return { kind: "person", id: origin.id, name: name ?? "Person" };
+  return { kind: "chat", id: origin.id, name: name ?? "Chat", ...(href ? { href } : {}) };
+};
 
 /** Origins of a message snapshot, projected for one viewer. */
 export const projectAiMessageOrigins = async (
@@ -86,28 +132,23 @@ export const loadAiMessageOrigins = async (
         locale: viewer.locale ?? "en",
       });
       if (!response.ok) return null;
-      const result = capabilityResultSchema(z.unknown(), { consumer: true }).parse(addCloudResourceHrefs(await response.json(), apps));
-      const own = result.refs?.find((entry) => entry.type === ref.type && entry.id === ref.id);
-      const projected = own && LinkedCloudResourceReferenceSchema.parse(own);
-      return projected?.title ? { name: projected.title, ...(projected.href ? { href: projected.href } : {}) } : null;
+      return readerResourceName(
+        capabilityResultSchema(z.unknown(), { consumer: true }).parse(addCloudResourceHrefs(await response.json(), apps)),
+        ref,
+      );
     })().catch(() => null);
     resources.set(key, read);
     return read;
   };
   const projectedOrigins = await Promise.all(
-    origins.map(async (origin): Promise<AiMessageOrigin> => {
-      if (origin.kind === "wakeup")
-        return { kind: "wakeup", id: origin.id, name: aiWakeupMessages(viewer.locale ?? "en").origin, scheduledAt: origin.scheduledAt };
-      const row = known.get(`${origin.kind}:${origin.id}`);
-      const fallback = origin.kind === "person" ? "Person" : origin.kind === "chat" ? "Chat" : "Automation";
-      const resource = origin.kind === "automation" ? await resolveAutomation(origin) : null;
-      return {
-        kind: origin.kind,
-        id: origin.id,
-        name: resource?.name ?? row?.name ?? fallback,
-        ...(origin.kind !== "person" && (resource?.href ?? row?.href) ? { href: resource?.href ?? row?.href ?? undefined } : {}),
-      };
-    }),
+    origins.map(async (origin) =>
+      projectAiMessageOrigin(
+        origin,
+        known.get(`${origin.kind}:${origin.id}`),
+        origin.kind === "automation" ? await resolveAutomation(origin) : null,
+        viewer.locale ?? "en",
+      ),
+    ),
   );
   return { origins: projectedOrigins, turnShortIds };
 };

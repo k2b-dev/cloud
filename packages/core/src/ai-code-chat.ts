@@ -69,7 +69,13 @@ export const chatWriteAuthority = async (context: CapabilityExecutionContext, db
         AND code.active_version_id=run.version_id AND run.state='running'`;
     return code
       ? ok({
-          origin: { kind: "automation", id: code.id, runId: run.runId } satisfies AiChatOrigin,
+          origin: {
+            kind: "automation",
+            id: code.id,
+            runId: run.runId,
+            // Server-checked Code: its reader names and links it for every viewer who may read it.
+            resource: { type: "core.code", id: code.id },
+          } satisfies AiChatOrigin,
           turnTrigger: { kind: "automation", id: code.id } satisfies AiChatTurnTrigger,
           code: { ...code, ...run },
         })

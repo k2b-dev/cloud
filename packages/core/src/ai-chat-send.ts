@@ -11,7 +11,13 @@ import {
   selectAiModelProfile,
   selectAssistantAiModel,
 } from "@k2b/cloud/ai";
-import { AiMessageQueueConflict, enqueueAiChatSend, prepareAiChatTurn, wakeAiMessageQueue } from "@k2b/cloud/ai/runtime";
+import {
+  AiMessageQueueConflict,
+  enqueueAiChatSend,
+  prepareAiChatTurn,
+  wakeAiMessageQueue,
+  withAiSourceContext,
+} from "@k2b/cloud/ai/runtime";
 import { CAPABILITY_CLAIM_RETENTION_HOURS } from "@k2b/cloud/capabilities/store";
 import { type CapabilityExecutionContext, CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { accounts, coreSettings } from "@k2b/cloud/services";
@@ -200,10 +206,7 @@ export const aiChatSendAction = {
     if (chat.project_id && !project) return fail(err.forbidden("Current Project access is unavailable"));
     const t = messages.resolve([context.locale]).t;
     const code = source.data.code;
-    const text =
-      parsed.data.context === undefined
-        ? parsed.data.text
-        : `${parsed.data.text}\n\nSource context (untrusted data):\n${JSON.stringify(parsed.data.context)}`;
+    const text = withAiSourceContext(parsed.data.text, parsed.data.context);
     try {
       const prepared = await prepareAiChatTurn({
         assistantChat: true,
