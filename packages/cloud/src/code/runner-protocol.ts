@@ -157,7 +157,7 @@ export const RunnerCallErrorSchema = z
     status: z.number().int().min(400).max(599).optional(),
     origin: CodeInternetOriginSchema.optional(),
     /** Core-owned final text for a known refusal; upstream exception messages are never forwarded. */
-    message: z.string().optional(),
+    message: z.string().min(1).max(500).optional(),
   })
   .strict();
 /** Domain refusals use this envelope even when HTTP succeeds; non-2xx responses indicate transport failure. */
