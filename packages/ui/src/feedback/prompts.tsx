@@ -6,20 +6,14 @@ import { KeyedFor } from "../internal/keyed-for";
 import { optionDescription } from "../internal/option-description";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
-import {
-  DialogHeader,
-  openError,
-  type PromptContent,
-  promptButtonVariant,
-  promptFormUnavailable,
-  promptTone,
-  sharedPrompts,
-} from "./prompt-confirm";
+import { openError, type PromptContent, promptFormUnavailable, sharedPrompts } from "./prompt-confirm";
 import { loadedPromptForm, loadPromptForm } from "./prompt-form-loader";
+import { DialogHeader, promptButtonVariant, promptTone } from "./prompt-header";
 import { resolvePromptMessages } from "./prompt-messages";
 import { openPrompt } from "./prompt-sheet";
 
-export { DialogHeader } from "./prompt-confirm";
+export { createFormState } from "./prompt-form-state";
+export { DialogHeader } from "./prompt-header";
 
 export interface DialogOptions {
   signal?: AbortSignal;
@@ -190,71 +184,6 @@ export type PromptFormOptions<T extends Record<string, FieldSchema>> = {
   variant?: "danger" | "primary" | "success" | "warning";
   size?: DialogOptions["size"];
   cancelBehavior?: DialogOptions["cancelBehavior"];
-};
-
-const isEmpty = (value: unknown): boolean =>
-  value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0);
-
-export const createFormState = <T extends Record<string, FieldSchema>>(schema: T) => {
-  const messages = resolveUiMessages();
-  const promptMessages = resolvePromptMessages();
-  const [values, setValues] = createStore<Record<string, PromptFormValue>>({});
-  const [errors, setErrors] = createStore<Record<string, string | undefined>>({});
-  // Errors appear with the first submit and then follow every change. Before that, a check that fails mid-input,
-  // such as a URL still being typed, would interrupt the user with an alert on the first character.
-  let submitted = false;
-
-  for (const [key, field] of Object.entries(schema)) {
-    if (field.type !== "info" && "default" in field) setValues(key, field.default as PromptFormValue);
-  }
-
-  const validateField = (key: string, value: PromptFormValue): string | null => {
-    const field = schema[key];
-    if (!field || field.type === "info") return null;
-    if (field.type === "boolean" && field.required && value !== true) return messages.required;
-    if (field.required && isEmpty(value)) return messages.required;
-    if ("validate" in field && field.validate) {
-      const customError = (field.validate as (next: never) => string | null)(value as never);
-      if (customError) return customError;
-    }
-    if (field.type === "text" && typeof value === "string" && value.length > 0) {
-      if (field.minLength !== undefined && value.length < field.minLength) return promptMessages.minCharacters({ count: field.minLength });
-      if (field.maxLength !== undefined && value.length > field.maxLength) return promptMessages.maxCharacters({ count: field.maxLength });
-    }
-    if (field.type === "tags" && Array.isArray(value) && value.length > 0) {
-      if (field.minTags !== undefined && value.length < field.minTags) return promptMessages.minTags({ count: field.minTags });
-      if (field.maxTags !== undefined && value.length > field.maxTags) return promptMessages.maxTags({ count: field.maxTags });
-    }
-    return null;
-  };
-
-  const updateField = (key: string, value: PromptFormValue) => {
-    setValues(key, value);
-    if (submitted) setErrors(key, validateField(key, value) ?? undefined);
-  };
-
-  const validateAll = (): boolean => {
-    submitted = true;
-    let valid = true;
-    for (const [key, field] of Object.entries(schema)) {
-      if (field.type === "info") continue;
-      const error = validateField(key, values[key]);
-      setErrors(key, error ?? undefined);
-      if (error) valid = false;
-    }
-    return valid;
-  };
-
-  const reset = () => {
-    submitted = false;
-    for (const [key, field] of Object.entries(schema)) {
-      if (field.type === "info") continue;
-      setValues(key, "default" in field ? (field.default as PromptFormValue) : undefined);
-      setErrors(key, undefined);
-    }
-  };
-
-  return { values, errors, updateField, validateAll, reset };
 };
 
 // Results without an ID keep today's behavior: each object is its own identity, so a new answer replaces the row.
@@ -551,11 +480,19 @@ const openAlert = (content: PromptContent, options?: DialogOptions, celebrate?: 
   );
 
 // The browser loads the form when it is idle after the island starts, so the first form opens at once and without a
-// half-drawn frame. WebKit has no requestIdleCallback.
+// half-drawn frame. Without idle callbacks (WebKit), the first press or key does it, before the click it starts. No
+// timer starts at import: an app's test that steps through its own timers must not meet one of the library's.
 if (typeof window !== "undefined") {
   const preload = () => void loadPromptForm().catch(() => {});
   if (typeof requestIdleCallback === "function") requestIdleCallback(preload, { timeout: 2000 });
-  else setTimeout(preload, 200);
+  else {
+    const intents = ["pointerdown", "keydown", "focusin"] as const;
+    const onIntent = () => {
+      for (const type of intents) window.removeEventListener(type, onIntent, true);
+      preload();
+    };
+    for (const type of intents) window.addEventListener(type, onIntent, true);
+  }
 }
 
 // The same object as `sharedPrompts`, which `PanelDialog` uses for its discard question: replacing `prompts.confirm`

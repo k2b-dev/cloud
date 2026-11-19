@@ -8,8 +8,9 @@ import { Select } from "../inputs/Select";
 import { TagsInput } from "../inputs/TagsInput";
 import { TextInput } from "../inputs/TextInput";
 import { resolveUiMessages } from "../intl/messages";
-import { DialogHeader, promptButtonVariant, promptTone } from "./prompt-confirm";
-import { createFormState, type FieldSchema, type InferFormValues, type PromptFormOptions, type PromptFormValue } from "./prompts";
+import { createFormState } from "./prompt-form-state";
+import { DialogHeader, promptButtonVariant, promptTone } from "./prompt-header";
+import type { FieldSchema, InferFormValues, PromptFormOptions, PromptFormValue } from "./prompts";
 
 /**
  * The form of `prompts.form`, `prompts.prompt` and `prompts.promptNumber` with its field components. It loads on demand,
