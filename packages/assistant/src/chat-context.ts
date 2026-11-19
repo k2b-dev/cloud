@@ -140,12 +140,16 @@ type ChatWakeups = NonNullable<AssistantChatContextSnapshot["wakeups"]>;
  * The chat's alarms for the snapshot. A chat whose viewer may not manage alarms here (app session, delegation, limited
  * tools) has none, quietly; any other failure is logged and leaves the alarms out, so the box and the chat still load.
  */
-export const loadChatWakeups = async (chatId: string, load: () => Promise<ChatWakeups>): Promise<ChatWakeups | undefined> => {
+export const loadChatWakeups = async (
+  chatId: string,
+  load: () => Promise<ChatWakeups>,
+  warn: (message: string, metadata: Record<string, unknown>) => void = (message, metadata) => log.warn(message, metadata),
+): Promise<ChatWakeups | undefined> => {
   try {
     return await load();
   } catch (error) {
     if (error instanceof AiWakeupError && (error.code === "forbidden" || error.code === "not_found")) return undefined;
-    log.warn("Could not list the chat's alarms for its context", {
+    warn("Could not list the chat's alarms for its context", {
       chatId,
       error: error instanceof Error ? error.message : String(error),
     });
