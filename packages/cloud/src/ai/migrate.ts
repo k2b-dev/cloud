@@ -367,6 +367,11 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS loop_aggregate JSONB`.simple();
   await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS loop_done_reason TEXT`.simple();
   await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS meta JSONB`.simple();
+  await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS delegated_source_turn_id uuid,
+    ADD COLUMN IF NOT EXISTS delegated_target_turn_id uuid`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_messages_delegated_done_key
+    ON ai.messages(delegated_source_turn_id,delegated_target_turn_id)
+    WHERE delegated_source_turn_id IS NOT NULL`.simple();
   await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS feedback_rating SMALLINT`.simple();
   await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS feedback_reasons TEXT[] NOT NULL DEFAULT '{}'`.simple();
   await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS feedback_comment TEXT`.simple();
@@ -520,6 +525,10 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS run_config JSONB`.simple();
+  await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS delegated_done_at timestamptz`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS ai_turns_delegated_done_sweep ON ai.turns(completed_at,id)
+    WHERE status IN ('completed','failed','aborted') AND run_config#>>'{writerOrigin,kind}'='chat'
+      AND run_config#>>'{send,id}' IS NOT NULL AND delegated_done_at IS NULL`.simple();
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS run_budget_ms DOUBLE PRECISION`.simple();
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS attempt INTEGER NOT NULL DEFAULT 0`.simple();
   await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS live_blocks JSONB`.simple();

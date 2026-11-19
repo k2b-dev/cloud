@@ -111,6 +111,9 @@ export const migrateAiQueuedMessagesTable = async () => {
     created_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_chat_send_receipts_key ON ai.chat_send_receipts(account_id,operation,key_hash,created_at DESC)`.simple();
+  // Immutable internal coordinates: deleting and later reusing a public short ID never redirects a completion.
+  await sql`ALTER TABLE ai.chat_send_receipts ADD COLUMN IF NOT EXISTS source_conversation_id uuid,
+    ADD COLUMN IF NOT EXISTS source_turn_id uuid`.simple();
   await sql`CREATE OR REPLACE FUNCTION ai.chat_send_receipt_immutable() RETURNS trigger AS $$
     BEGIN RAISE EXCEPTION 'Chat send receipts are immutable'; END;
     $$ LANGUAGE plpgsql`.simple();

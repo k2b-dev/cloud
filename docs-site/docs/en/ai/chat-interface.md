@@ -1051,6 +1051,19 @@ Studio apps, HTML checks and presentations, machine execution, and the direct
 `cld assistant code` commands are retired. See [Studio retirement](/en/docs/operations/studio-retirement).
 
 
+### Delegated work finishes in its source chat
+
+When Gustav writes to another chat with `ai.chat.send`, the source chat gets a
+permanent activity when that target turn completes, fails or is stopped. It uses
+`Chat.Activity`, with **View result** opening the target answer through its
+`conversation` and `message` URL parameters. Assistant loads older history when
+needed and focuses the answer. Reload and Back preserve that destination.
+
+This activity starts no turn, leaves the person's draft and focus alone, and is
+excluded from model context. It does not split an answer already being written.
+The target message keeps its existing **From chat …** source chip. A target the
+viewer can no longer open has no title or result link in the activity.
+
 ### Historical routine results
 
 Old routine messages remain readable in the chat. They have no run, resume or repair control. Run logs are retained as an operator-readable archive; see [Routines became Code](/en/docs/operations/routines-to-code).

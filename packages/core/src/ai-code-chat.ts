@@ -141,6 +141,7 @@ export const chatWriteAuthority = async (context: CapabilityExecutionContext, db
       status: 403 as const,
     });
   return ok({
+    source: { conversationId: chat.id, turnId: turn.id },
     origin: { kind: "chat", id: chat.shortId, turnId: turn.shortId } satisfies AiChatOrigin,
     turnTrigger: { kind: "chat", id: chat.shortId } satisfies AiChatTurnTrigger,
     code: null,

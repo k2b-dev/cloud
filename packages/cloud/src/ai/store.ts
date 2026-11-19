@@ -10,6 +10,7 @@ import { logger } from "../services/logging";
 import { isUniqueViolation, toPgTextArray } from "../services/postgres";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
 import { AiChoiceConflict, resolveAiChoice } from "./choices";
+import { appendAiChatDone } from "./chat-done";
 import { aiCodeDecisionContext } from "./code-review-turn";
 import { AiMapSchema } from "./map-contracts";
 import { assertInteractiveChatTurn } from "./retired-routines";
@@ -630,12 +631,13 @@ const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_obj
   'writerOrigin', ${todoMetaJson()}->'writerOrigin',
   'automationTurnStop', ${todoMetaJson()}->'automationTurnStop',
   'wakeupEvent', ${todoMetaJson()}->'wakeupEvent',
+  'chatDone', ${todoMetaJson()}->'chatDone',
   'turnTrigger', ${todoMetaJson()}->'turnTrigger'
 )), '{}'::jsonb)`;
 
 // A background result arriving during an interactive turn becomes context on the next turn.
 const visibleToTurn = (turnId?: string) => sql`(
-  NOT COALESCE(${todoMetaJson()} ? 'wakeupEvent', false) AND (
+  NOT COALESCE(${todoMetaJson()} ?| ARRAY['wakeupEvent','chatDone'], false) AND (
   ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ?| ARRAY['scheduledTask','codeDecision'], false) OR seq < ALL (
     SELECT input_message.seq FROM ai.messages input_message
     WHERE input_message.loop_id = ${turnId ?? null} AND input_message.role = 'user'
@@ -2969,7 +2971,7 @@ export const aiConversations: AiConversationService = {
       FROM ai.messages
       WHERE conversation_id = ${input.conversationId}
         AND compacted_at IS NULL
-        AND NOT COALESCE(${todoMetaJson()} ? 'wakeupEvent', false)
+        AND NOT COALESCE(${todoMetaJson()} ?| ARRAY['wakeupEvent','chatDone'], false)
       ORDER BY seq ASC
     `;
     return projectAiMaps(rows.map(rowToMessage).map(aiCodeDecisionContext));
@@ -3172,6 +3174,7 @@ export const aiConversations: AiConversationService = {
         WHERE conversation_id = ${input.conversationId}
           AND compacted_at IS NULL
           AND seq >= ${fromSeq}
+          AND NOT COALESCE(meta ? 'chatDone', false)
       `;
       await tx`UPDATE ai.conversations SET updated_at = now() WHERE id = ${input.conversationId}`;
     });
@@ -3401,6 +3404,7 @@ export const aiConversations: AiConversationService = {
           WHERE conversation_id = ${input.conversationId}
             AND compacted_at IS NULL
             AND seq >= ${Math.floor(input.truncateFromSeq)}
+            AND NOT COALESCE(meta ? 'chatDone', false)
         `;
       }
       const turnRows = await withAiShortIdForDb(
@@ -3806,8 +3810,8 @@ export const aiConversations: AiConversationService = {
   completeTurn: async (input) => {
     return sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id=${input.conversationId}::uuid FOR NO KEY UPDATE`;
-      const turnRows = await tx<{ id: string; cancellation_reason: string | null }[]>`
-        SELECT id,cancellation_reason
+      const turnRows = await tx<{ id: string; cancellation_reason: string | null; delegated: boolean }[]>`
+        SELECT id,cancellation_reason,run_config#>>'{writerOrigin,kind}'='chat' AND run_config#>>'{send,id}' IS NOT NULL AS delegated
         FROM ai.turns
         WHERE id = ${input.turnId}
           AND conversation_id = ${input.conversationId}
@@ -3938,6 +3942,7 @@ export const aiConversations: AiConversationService = {
             AND status = 'pending'
         `;
       }
+      if (turnRows[0].delegated) await appendAiChatDone(input.turnId, tx);
       return turnRows[0].cancellation_reason === "queue_interrupt" && input.turnError?.code !== "time_limit"
         ? ("interrupted" as const)
         : ("completed" as const);

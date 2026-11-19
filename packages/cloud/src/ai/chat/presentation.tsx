@@ -22,6 +22,7 @@ import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } fro
 import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timeline";
 import type { AiConversationTimelineEntry, AiStoredMessage, AiTurnError } from "../types";
 import { AiReaderTimeZoneProvider } from "./action-sentences";
+import { aiChatDoneItem } from "./chat-done-line";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
@@ -183,7 +184,7 @@ const storedItems = (
   const lastEntryOfLoop = new Map<string, number>();
   timeline.forEach((item, index) => {
     const loopId =
-      item.type === "summary" || item.type === "code-decision"
+      item.type === "summary" || item.type === "code-decision" || item.type === "chat-done"
         ? null
         : item.type === "user" || item.type === "code-review-start"
           ? item.entry.loopId
@@ -208,7 +209,7 @@ const storedItems = (
   for (const message of messages) if (message.loopId && message.meta?.turnError) turnErrors.set(message.loopId, message.meta.turnError);
   // Only the chat's newest turn can be continued, and only while no other turn runs.
   // An alarm fact the person or Cloud added afterwards never ends a turn's chance to continue.
-  const lastEntry = messages.findLast((entry) => !entry.meta?.wakeupEvent);
+  const lastEntry = messages.findLast((entry) => !entry.meta?.wakeupEvent && !entry.meta?.chatDone);
   const newestLoop = idle ? (lastEntry?.loopId ?? null) : null;
   const segmentId = createSegmentIds();
   // The model never answered: the notice stands where the live turn showed its progress, under the same id.
@@ -356,6 +357,11 @@ const storedItems = (
           ]
         : [];
       return [...replacementItem, userItem, ...unansweredNotice(item.entry, itemIndex)];
+    }
+
+    if (item.type === "chat-done") {
+      if (activeTurnId !== null && item.after === activeTurnId) return [];
+      return aiChatDoneItem(item.entry, locale, timeZone);
     }
 
     if (item.type === "code-decision" || item.type === "code-review-start") {

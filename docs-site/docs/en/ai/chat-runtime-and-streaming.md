@@ -1459,6 +1459,22 @@ author field.
 The optional host-owned `runConfig.codeOrigin` is copied to the user message
 and turn record for attribution; it grants no tool authority.
 
+### Durable delegated completion
+
+The normal terminal-turn transaction writes a `meta.chatDone` activity into the
+source chat, keyed by the original source and target turn UUIDs. Its immutable
+send receipt records the verified source coordinates. Public short-ID reuse
+cannot redirect delivery. Success, failure and abort each retain their status;
+deleted or archived sources receive no activity. Receipts accepted before this
+source snapshot existed are not reconstructed from public identifiers.
+
+The runtime's bounded sweep repairs missed activities after terminal events have
+been published. Concurrent repairs share the unique key. A busy source is
+deferred rather than blocking the target's completion. The activity and its
+recovery marker commit together. Existing live invalidations deliver the new
+history; no per-event lookup or extra turn is needed. Normal retries preserve
+the activity, and model context excludes it.
+
 ## Host admission and terminal bookkeeping
 
 The first `startAiRuntime` call from `@k2b/cloud/ai/runtime` can register

@@ -44,6 +44,16 @@ and database grants are not transferred; export them before upgrading.
 See [Code SDK](/en/docs/platform/code-sdk) and
 [Code runtime operations](/en/docs/operations/code-runtime).
 
+## Delegated chat completion after upgrading
+
+New chat-to-chat `ai.chat.send` calls record the original source chat and turn
+in their immutable receipt. When the target turn ends, the source gets one
+completion activity with its result link, including failure or cancellation.
+No model turn starts there. Startup migrations add the receipt coordinates,
+completion key and indexed recovery marker; the runtime sweep repairs missed
+activities. Older receipts without a verified source snapshot receive no
+retrospective activity. Deleted and archived sources are skipped.
+
 ## Read existing history
 
 Messages already delivered into a chat remain readable, including their original

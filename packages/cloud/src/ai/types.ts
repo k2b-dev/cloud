@@ -399,6 +399,7 @@ export type AiStoredMessage = {
     /** Immutable initiator retained when messages are copied. */
     turnTrigger?: import("./chat-origin").AiChatTurnTrigger;
     wakeupEvent?: import("./wakeup-contracts").AiWakeupEvent;
+    chatDone?: import("./chat-done").AiChatDone;
     scheduledTask?: {
       reason?: { code: string; at: string; action?: string };
       /** Historical marker; the original stored text remains the display source. */

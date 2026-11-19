@@ -19,6 +19,7 @@ import {
   rememberAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModel } from "./assistant-models";
+import { sweepAiChatDone } from "./chat-done";
 import { waitingAiApprovals } from "./conversation-watchers";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
@@ -668,7 +669,8 @@ const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: stri
 export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>): Promise<void> => {
   await aiQuotas.prune().catch(() => log.warn("Quota retention failed", { code: "quota_retention_failed" }));
   await drainQueuedMessages(enqueueAiTurn, undefined, running?.validateQueuedChatStart);
-  const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS });
+  const limit = 200; // The existing runtime sweep batch, shared with delegated-completion repair.
+  const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS, limit });
   await Promise.all([
     ...sweep.requeued.map((job) =>
       enqueueAiTurn(job).catch(() => log.warn("AI recovery enqueue failed", { code: "recovery_enqueue_failed", ...job })),
@@ -689,6 +691,7 @@ export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEv
   if (sweep.requeued.length || sweep.failed.length || sweep.aborted.length) {
     log.info("AI runtime sweep", { requeued: sweep.requeued.length, failed: sweep.failed.length, aborted: sweep.aborted.length });
   }
+  await sweepAiChatDone(limit);
 };
 
 type AiRuntimeState = {

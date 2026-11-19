@@ -28,6 +28,13 @@ export const historyUpdates = (
   for (const item of buildAiMessageTimeline(state.messages)) {
     if (item.type === "summary") continue;
     if (options.turn ? item.type !== "assistant" || item.loopId !== options.turn : false) continue;
+    if (item.type === "chat-done") {
+      const done = item.entry.meta?.chatDone;
+      if (done) updates.push({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: text(
+        `${done.name ?? "Delegated work"} ${done.status === "completed" ? "is done" : done.status === "failed" ? "failed" : "was stopped"}.${done.href ? ` View result: ${done.href}` : ""}\n\n`,
+      ) } });
+      continue;
+    }
     if (item.type === "code-decision" || item.type === "code-review-start" || item.type === "wakeup") {
       const message = item.entry.message;
       if (message.role !== "user" && message.role !== "assistant") continue;
