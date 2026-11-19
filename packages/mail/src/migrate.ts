@@ -468,6 +468,30 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       WHERE state <> 'completed'
     `.simple();
   }
+  await tx`ALTER TABLE mail.remote_message_refs ADD COLUMN IF NOT EXISTS remote_id text`.simple();
+  await tx`ALTER TABLE mail.draft_provider_snapshots ADD COLUMN IF NOT EXISTS remote_id text`.simple();
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'mail.remote_message_refs'::regclass AND conname = 'remote_message_refs_address_shape') THEN
+      ALTER TABLE mail.remote_message_refs ADD CONSTRAINT remote_message_refs_address_shape CHECK (
+        (remote_id IS NULL AND uid_validity IS NOT NULL AND uid IS NOT NULL)
+        OR (remote_id IS NOT NULL AND uid_validity IS NULL AND uid IS NULL)
+      ) NOT VALID;
+    END IF;
+  END $$`.simple();
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'mail.draft_provider_snapshots'::regclass AND conname = 'draft_provider_snapshots_address_shape') THEN
+      ALTER TABLE mail.draft_provider_snapshots ADD CONSTRAINT draft_provider_snapshots_address_shape CHECK (
+        (remote_id IS NULL AND uid_validity IS NULL AND uid IS NULL)
+        OR (folder_id IS NOT NULL AND remote_id IS NULL AND uid_validity IS NOT NULL AND uid IS NOT NULL)
+        OR (folder_id IS NOT NULL AND remote_id IS NOT NULL AND uid_validity IS NULL AND uid IS NULL)
+      ) NOT VALID;
+    END IF;
+  END $$`.simple();
+  await tx`ALTER TABLE mail.draft_provider_snapshots DROP CONSTRAINT IF EXISTS draft_provider_snapshots_remote_shape`.simple();
+  await tx`ALTER TABLE mail.remote_message_refs
+    ALTER COLUMN uid_validity DROP NOT NULL, ALTER COLUMN uid DROP NOT NULL`.simple();
 };
 
 /** List-only membership keeps its provenance across copies, hydration and restarts. */
@@ -801,6 +825,21 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
         await migrateWorkspacePreferences(tx);
         await migrateWorkflowAi(tx);
       });
+      // Release the metadata transaction's ACCESS EXCLUSIVE locks before scanning existing rows.
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout = '10s'`;
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
+        await tx`DO $$ BEGIN
+          IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.remote_message_refs'::regclass
+            AND conname = 'remote_message_refs_address_shape' AND NOT convalidated) THEN
+            ALTER TABLE mail.remote_message_refs VALIDATE CONSTRAINT remote_message_refs_address_shape;
+          END IF;
+          IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.draft_provider_snapshots'::regclass
+            AND conname = 'draft_provider_snapshots_address_shape' AND NOT convalidated) THEN
+            ALTER TABLE mail.draft_provider_snapshots VALIDATE CONSTRAINT draft_provider_snapshots_address_shape;
+          END IF;
+        END $$`.simple();
+      });
       await migrateRoomAccessIndexes();
       return await migrateReplyDrafts();
     } catch (error) {
@@ -955,6 +994,26 @@ const buildBackgroundIndex = async (index: BackgroundIndex, pool: SqlClient): Pr
 
 export const buildBackfillActivityIndex = (pool: SqlClient = sql) => buildBackgroundIndex(backfillActivityIndex, pool);
 export const buildCommandTargetIndex = (pool: SqlClient = sql) => buildBackgroundIndex(commandTargetIndex, pool);
+export const buildRemoteMessageIdIndex = (pool: SqlClient = sql) =>
+  buildBackgroundIndex(
+    {
+      name: "mail.remote_message_refs_remote_id_idx",
+      table: "mail.remote_message_refs",
+      ddl: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS remote_message_refs_remote_id_idx
+    ON mail.remote_message_refs (folder_id, remote_id) WHERE remote_id IS NOT NULL`,
+    },
+    pool,
+  );
+export const buildDraftRemoteIdIndex = (pool: SqlClient = sql) =>
+  buildBackgroundIndex(
+    {
+      name: "mail.draft_provider_snapshots_remote_id_idx",
+      table: "mail.draft_provider_snapshots",
+      ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS draft_provider_snapshots_remote_id_idx
+    ON mail.draft_provider_snapshots (folder_id, remote_id, created_at DESC) WHERE remote_id IS NOT NULL`,
+    },
+    pool,
+  );
 export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
 export const buildOpenConversationIndex = (pool: SqlClient = sql) => buildBackgroundIndex(openConversationIndex, pool);
 export const buildActivityFeedIndex = (pool: SqlClient = sql) => buildBackgroundIndex(activityFeedIndex, pool);

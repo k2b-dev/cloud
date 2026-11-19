@@ -8,6 +8,7 @@ import { mailingListMetadata } from "./list-subscriptions";
 import { getStoredBlob, readStoredBlobPrefix } from "./message-blobs";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import type { AttachmentDownload } from "./messages";
+import { decodeRemoteMessageAddress } from "./remote-message-ref";
 
 export const MESSAGE_HEADER_LIMIT_BYTES = 2 * 1024 * 1024;
 export const MESSAGE_HEADER_FIELD_LIMIT = 10_000;
@@ -18,7 +19,13 @@ export const MESSAGE_SOURCE_PREVIEW_LIMIT_BYTES = 256 * 1024;
 
 const internalMessageInspectorSchema = messageInspectorSchema.extend({
   id: z.string().uuid(),
-  placements: messageInspectorSchema.shape.placements.element.extend({ folderId: z.string().uuid() }).array().max(1000),
+  placements: z
+    .union([
+      messageInspectorSchema.shape.placements.element.options[0].extend({ folderId: z.string().uuid() }),
+      messageInspectorSchema.shape.placements.element.options[1].extend({ folderId: z.string().uuid() }),
+    ])
+    .array()
+    .max(1000),
   attachments: messageInspectorSchema.shape.attachments.element.extend({ id: z.string().uuid() }).array().max(10_000),
 });
 const internalMessageSourcePreviewSchema = messageSourcePreviewSchema.extend({ messageId: z.string().uuid() });
@@ -47,8 +54,10 @@ type PlacementRow = {
   folder_id: string;
   folder_name: string;
   remote_path: string | null;
-  uid_validity: string | number | bigint;
-  uid: string | number | bigint;
+  folder_stable_key: string;
+  remote_id: string | null;
+  uid_validity: string | number | bigint | null;
+  uid: string | number | bigint | null;
   modseq: string | number | bigint | null;
   flags: string[];
   keywords: string[];
@@ -227,6 +236,8 @@ export const inspectMessage = async (params: {
       SELECT
         folder.id AS folder_id,
         folder.name AS folder_name,
+        folder.stable_key AS folder_stable_key,
+        remote_ref.remote_id,
         folder_ref.remote_path,
         remote_ref.uid_validity,
         remote_ref.uid,
@@ -245,7 +256,7 @@ export const inspectMessage = async (params: {
       ) folder_ref ON true
       WHERE placement.message_id = ${params.messageId}::uuid
         AND placement.deleted_at IS NULL
-      ORDER BY folder.name, remote_ref.uid
+      ORDER BY folder.name, remote_ref.uid, remote_ref.remote_id, remote_ref.id
       LIMIT ${MESSAGE_INSPECTOR_PLACEMENT_LIMIT + 1}
     `,
     sql<PartRow[]>`
@@ -352,16 +363,19 @@ export const inspectMessage = async (params: {
     headers: parsedHeaders.headers,
     rawHeaders: parsedHeaders.rawHeaders,
     headersComplete: parsedHeaders.complete,
-    placements: placements.slice(0, MESSAGE_INSPECTOR_PLACEMENT_LIMIT).map((placement) => ({
-      folderId: placement.folder_id,
-      folderName: placement.folder_name,
-      remotePath: placement.remote_path ?? placement.folder_name,
-      uidValidity: String(placement.uid_validity),
-      uid: String(placement.uid),
-      modseq: placement.modseq === null ? null : String(placement.modseq),
-      flags: placement.flags,
-      keywords: placement.keywords,
-    })),
+    placements: placements.slice(0, MESSAGE_INSPECTOR_PLACEMENT_LIMIT).map((placement) => {
+      const address = decodeRemoteMessageAddress(placement);
+      const common = {
+        folderId: placement.folder_id,
+        folderName: placement.folder_name,
+        remotePath: placement.remote_path ?? placement.folder_name,
+        flags: placement.flags,
+        keywords: placement.keywords,
+      };
+      return address.kind === "jmap"
+        ? { ...common, remoteId: address.emailId }
+        : { ...common, uidValidity: address.uidValidity, uid: address.uid, modseq: address.modseq };
+    }),
     parts: parts.slice(0, MESSAGE_INSPECTOR_PART_LIMIT).map((part) => ({
       partPath: part.part_path,
       contentType: part.content_type,

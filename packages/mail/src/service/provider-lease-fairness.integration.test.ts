@@ -399,7 +399,7 @@ suite("mail provider lease fairness", () => {
     const folder = folderOf(account, path);
     const message = folder.entries.get(uid)!;
     return {
-      remoteRef: { folderStableKey, uidValidity: folder.uidValidity, uid: String(uid), modseq: null },
+      remoteRef: { kind: "imap", folderStableKey, uidValidity: folder.uidValidity, uid: String(uid), modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId: message.messageId,

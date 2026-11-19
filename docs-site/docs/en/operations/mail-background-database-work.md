@@ -5,7 +5,7 @@ section: Operations
 order: 1162
 description: Check Mail sync history growth, background cleanup and disk reuse.
 tags: [mail, operations, database]
-updated: 2026-11-11
+updated: 2026-11-19
 ---
 
 # Mail background database work
@@ -62,6 +62,12 @@ ORDER BY hour, folder_id, run.state;
 ```
 
 ## Cleanup and upgrades
+
+On the first start with this version, Mail validates a new address rule on
+`mail.remote_message_refs` and `mail.draft_provider_snapshots` and builds two
+indexes in the background.
+The validation scans and index builds do not block writes, so IMAP continues
+while they run.
 
 `mail:runtime-history-cleanup` runs every minute while the Mail scheduler
 worker runs. Each pass gives successful runs, other terminal runs, automation

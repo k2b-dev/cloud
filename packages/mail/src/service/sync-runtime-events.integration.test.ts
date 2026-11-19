@@ -50,7 +50,7 @@ suite("Mail receipt events at the sync and event-service seams", () => {
   });
 
   const envelope = (uid: number, from = "sender@example.test"): ConnectorEnvelope => ({
-    remoteRef: { folderStableKey: "fixture", uidValidity: "1", uid: String(uid), modseq: "1" },
+    remoteRef: { kind: "imap", folderStableKey: "fixture", uidValidity: "1", uid: String(uid), modseq: "1" },
     providerMessageId: `receipt-${uid}`,
     providerThreadId: null,
     messageId: `<receipt-${uid}@example.test>`,
