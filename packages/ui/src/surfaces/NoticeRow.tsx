@@ -79,12 +79,23 @@ export function NoticeRow(props: NoticeRowProps): JSX.Element {
   let host: HTMLDivElement | undefined;
   const [narrow, setNarrow] = createSignal(false);
   onMount(() => {
+    if (!host) return;
+    const isNarrow = (width: number) => width <= 35 * Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+    // Receipts size to their content: choose the controls before the first paint. Later changes must not resize the
+    // observed box inside the observer's callback, which would create a resize loop.
+    const width = host.getBoundingClientRect().width;
+    if (host.isConnected && width > 0) setNarrow(isNarrow(width));
+    let frame = 0;
     const observer = new ResizeObserver(([entry]) => {
-      const breakpoint = 35 * Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
-      setNarrow((entry?.contentRect.width ?? 0) <= breakpoint);
+      const next = isNarrow(entry?.contentRect.width ?? 0);
+      cancelAnimationFrame(frame);
+      if (next !== narrow()) frame = requestAnimationFrame(() => setNarrow(next));
     });
-    if (host) observer.observe(host);
-    onCleanup(() => observer.disconnect());
+    observer.observe(host);
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    });
   });
   return (
     <div class="k2b-notice-card-container" ref={host} style={{ "--k2b-notice-tile-color": local.tileColor }}>

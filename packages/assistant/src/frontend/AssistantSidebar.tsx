@@ -1,5 +1,4 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
-import ApprovalsNavStatus, { approvalNavCount } from "@k2b/cloud/approvals/navigation";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
@@ -74,8 +73,11 @@ type AssistantSidebarProps = {
   queuedMessageCount?: (conversation: AiConversation) => number | undefined;
   onConversationUpdated?: (conversation: AiConversation) => void;
   onConversationArchived?: (conversation: AiConversation) => void;
-  /** Open approvals the page rendered with; the Approvals row shows while this or the live count is above zero. */
-  pendingApprovals?: number;
+  /**
+   * How many things wait for the person: the same count as the "Waiting for you" row above the field, from the same
+   * list and corrected the same way, so the two never disagree. The row stays in place at 0.
+   */
+  waitingCount?: Accessor<number>;
   /** Opens the approvals view in place; without it, the row is a link to the view. */
   onOpenApprovals?: () => void;
   /** Whether the person owns Code; only then the sidebar lists "My apps & automations". */
@@ -372,6 +374,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   // "Waiting for you" always keeps its place, so nothing in the footer moves under the pointer. "My apps &
   // automations" exists only for a person with Code; the page renders it from the first paint.
   const approvalsActive = () => activeView() === "approvals";
+  const waitingCount = () => props.waitingCount?.() ?? 0;
   const codeActive = () => activeView() === "code";
   const codeShown = () => Boolean(props.hasPersonalCode?.()) || codeActive();
   // Like a chat row: modified and middle clicks keep the link's own behavior, such as opening a new tab.
@@ -387,7 +390,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       href={`${props.basePath ?? "/app/assistant"}?approvals=1`}
       active={approvalsActive()}
       onClick={openInPlace(props.onOpenApprovals)}
-      meta={<ApprovalsNavStatus app="assistant" initial={props.pendingApprovals ?? 0} />}
+      meta={<AppWorkspace.SidebarItemStatus waiting={{ count: waitingCount(), label: t().waitingStatus({ count: waitingCount() }) }} />}
     >
       {t().waitingForYou}
     </AppWorkspace.SidebarItem>
@@ -631,7 +634,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         href: `${props.basePath ?? "/app/assistant"}?approvals=1`,
         label: t().waitingForYou,
         icon: "ti ti-hand-stop",
-        badge: approvalNavCount("assistant", props.pendingApprovals ?? 0),
+        badge: waitingCount(),
         active: approvalsActive(),
       },
       ...(codeShown()

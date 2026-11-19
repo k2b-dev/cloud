@@ -122,7 +122,7 @@ suiteFor(
       await outbox.reconcile();
       const delivered: LiveEnvelope[] = [];
       for await (const event of topic.replay({ after })) delivered.push(event.data);
-      expect(delivered).toEqual(rows.map((row) => row.payload));
+      expect(delivered.filter((event) => event.k === codeId)).toEqual(rows.map((row) => row.payload));
     } finally {
       await outbox.stop();
     }

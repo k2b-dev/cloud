@@ -42,6 +42,12 @@
       "import": "./dist/ssr/hover-card.js",
       "default": "./dist/ssr/hover-card.js"
     },
+    "./run-log": {
+      "types": "./dist/types/run-log.d.ts",
+      "browser": "./dist/browser/run-log.js",
+      "import": "./dist/ssr/run-log.js",
+      "default": "./dist/ssr/run-log.js"
+    },
     "./country-map": {
       "types": "./dist/types/country-map.d.ts",
       "browser": "./dist/browser/country-map.js",

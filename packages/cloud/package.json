@@ -59,6 +59,7 @@
     "./browser/app-approval": "./src/browser/app-approval.ts",
     "./browser/app-badges": "./src/browser/app-badges.ts",
     "./browser/live": "./src/browser/live.ts",
+    "./browser/code-runs": "./src/browser/code-runs.ts",
     "./browser/mermaid": "./src/browser/mermaid.ts",
     "./browser/hints": "./src/browser/hints.ts",
     "./browser/pwa-drafts": "./src/browser/pwa-drafts.ts",
@@ -138,6 +139,7 @@
     "./config": "./src/config/index.ts",
     "./config/*": "./src/config/*",
     "./contracts": "./src/contracts/index.ts",
+    "./contracts/code-runs": "./src/contracts/code-runs.ts",
     "./contracts/geo-snapshot": "./src/contracts/geo-snapshot.ts",
     "./contracts/notifications": "./src/contracts/notification-types.ts",
     "./contracts/*": "./src/contracts/*",
@@ -163,7 +165,8 @@
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
-    "test:part:ssr-ai": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/ssr src/ai",
+    "test:part:ssr": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/ssr",
+    "test:part:ai": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/ai",
     "test:part:rest": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/ssr/**' --path-ignore-patterns 'src/ai/**'",
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },

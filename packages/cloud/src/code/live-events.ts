@@ -5,7 +5,7 @@ export const CodeRunEventSchema = z
   .object({
     type: z.literal("code.run"),
     runId: z.uuid(),
-    state: z.enum(["queued", "running", "succeeded", "failed", "skipped"]),
+    state: z.enum(["queued", "running", "succeeded", "failed", "cancelled", "skipped"]),
     at: z.string().datetime(),
   })
   .strict();

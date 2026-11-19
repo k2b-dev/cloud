@@ -80,7 +80,8 @@ with its own data. The frame knows no Capability:
   confirmation while leaving rejection and the proposal reachable.
 - `link` makes **See everything** navigate to the full page. When additional
   decisions need a detail dialog, that dialog also exposes the link.
-- `reserve: false` makes an actionless terminal receipt compact on phones.
+- `reserve: false` makes a terminal receipt compact on phones, also with
+  stable controls when it was already final at the first render.
   Loading always reserves its space. `alert` and `quietAlert` announce errors
   separately from the ordinary status sentence.
 
@@ -109,7 +110,8 @@ with a neutral frame, the main one on the right. A single action fills the
 row. Public buttons use `size="md"`. The sentence and quiet line each show up
 to two lines. The transition reserve derives from those four text lines,
 the control height and spacing. Controls stay at the bottom with a buffer
-above; only actionless terminal receipts become compact. The card and the
+above. Final receipts can be compact when already final at the first render;
+cards that become final in view keep their reserve. The card and the
 following content stay in place through sending, failure, retry and loading.
 
 Answers arm half a second after a request appears in the list, so a click meant

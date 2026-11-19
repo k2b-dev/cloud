@@ -114,8 +114,9 @@ it may truncate. `detailAction` keeps a quiet text action visible beside that
 text. Below 35 rem of the row's own container, text wraps to at most two lines and actions fill an equal-width row below it. The reserved
 height derives from two title lines, two quiet lines, the control height and
 spacing. Actions sit at the bottom with a buffer above them. Keep `reserve` enabled
-through loading and retry. Only an actionless final receipt sets it to
-`false`. For feedback that needs two quiet lines reserved on phones, pass
+through loading and retry. A final receipt can set it to `false`, also with
+stable controls when it was already final at the first render. A row that
+becomes final in view keeps its reserve. For feedback that needs two quiet lines reserved on phones, pass
 `detailLines={2}`. The default reserves one line.
 
 The one- or two-line form is chosen at mount; keep it stable while the state changes.

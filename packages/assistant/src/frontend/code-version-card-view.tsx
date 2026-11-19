@@ -3,7 +3,7 @@ import { documentNavigate } from "@k2b/ssr/nav";
 import { Button, ButtonLink, type ButtonVariant, SplitButton, useLocale } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";
 import { codeVersionCardCopy } from "./code-version-card-copy";
-import type { CodeVersionCardAction, CodeVersionCardModel } from "./code-version-card-state";
+import { type CodeVersionCardAction, type CodeVersionCardModel, isCodeVersionReceipt } from "./code-version-card-state";
 
 /** The one v10 surface. Buttons keep their public appearance, loading, focus and menu contracts. */
 export function CodeVersionCardView(props: {
@@ -11,8 +11,11 @@ export function CodeVersionCardView(props: {
   ref?: (element: HTMLDivElement) => void;
   anchorId: string;
   onAction: (action: CodeVersionCardAction["id"]) => void;
+  /** Already final in the initial snapshot; a card that becomes final in view keeps its reserve. */
+  receipt?: boolean;
 }) {
   const locale = useLocale();
+  const receipt = () => props.receipt && isCodeVersionReceipt(props.model);
   const c = () => codeVersionCardCopy.resolve([locale()]).t;
   const control = (action: CodeVersionCardAction, primary: boolean, narrow: boolean): JSX.Element => {
     const common = {
@@ -60,7 +63,7 @@ export function CodeVersionCardView(props: {
     );
   };
   return (
-    <div class="assistant-code-version-host" ref={props.ref} data-state={props.model.kind}>
+    <div class="assistant-code-version-host" ref={props.ref} data-state={props.model.kind} data-receipt={receipt() ? "" : undefined}>
       <ApprovalFrame
         locale={locale()}
         state={props.model.kind === "loading" ? "loading" : props.model.busy ? "sending" : "decided"}
@@ -70,7 +73,9 @@ export function CodeVersionCardView(props: {
         reason={{ text: props.model.quiet }}
         alert={props.model.alert}
         quietAlert={props.model.quietAlert}
-        reserve={!(["denied", "replaced", "withdrawn"].includes(props.model.kind) && !props.model.primary && !props.model.secondary)}
+        reserve={
+          !receipt() && !(["denied", "replaced", "withdrawn"].includes(props.model.kind) && !props.model.primary && !props.model.secondary)
+        }
         actions={({ narrow }) => (
           <>
             <Show keyed when={props.model.secondary}>

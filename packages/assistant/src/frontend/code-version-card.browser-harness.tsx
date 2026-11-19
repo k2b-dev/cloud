@@ -67,7 +67,7 @@ let finish: ((ok: boolean) => void) | undefined;
 let active = mode === "snapshot";
 let reads = 0;
 let finishCardRead: ((state: "failed" | "ready") => void) | undefined;
-if (mode === "interactive" || mode === "snapshot" || mode === "load-retry") {
+if (mode === "interactive" || mode === "snapshot" || mode === "load-retry" || mode === "receipt") {
   window.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
       const path = String(input);
@@ -88,7 +88,7 @@ if (mode === "interactive" || mode === "snapshot" || mode === "load-retry") {
                   codeId: "c_info01",
                   versionId: approvalVersionId,
                   state: "available",
-                  snapshot: approvalSnapshot(active ? "on" : "ready", locale),
+                  snapshot: approvalSnapshot(mode === "receipt" ? "replaced" : active ? "on" : "ready", locale),
                 },
           ],
         };
@@ -104,8 +104,14 @@ if (mode === "interactive" || mode === "snapshot" || mode === "load-retry") {
     { preconnect: window.fetch.preconnect },
   );
 }
+// "receipt": a version that was already replaced when the chat drew it, as in a chat opened later.
 const initial = [
-  { codeId: "c_info01", versionId: approvalVersionId, state: "available" as const, snapshot: approvalSnapshot("on", locale) },
+  {
+    codeId: "c_info01",
+    versionId: approvalVersionId,
+    state: "available" as const,
+    snapshot: approvalSnapshot(mode === "receipt" ? "replaced" : "on", locale),
+  },
 ];
 const snapshotBefore =
   mode === "snapshot"
@@ -171,6 +177,11 @@ render(
   () =>
     mode === "snapshot" ? (
       <ApprovalSnapshotView initial={initial} locale={locale} />
+    ) : mode === "receipt" ? (
+      <>
+        <ApprovalSnapshotView initial={initial} locale={locale} />
+        <p id="following">Danach geht das Gespräch weiter.</p>
+      </>
     ) : (
       <LocaleProvider locale={locale}>
         <AssistantLiveProvider value={createAssistantLiveHub()}>

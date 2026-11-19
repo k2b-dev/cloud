@@ -58,7 +58,7 @@ export type ApprovalFrameProps = {
   waiting?: ChatDecisionReason;
   onAnswerError?: (error: unknown) => void;
   anchorId?: string | number;
-  /** Only terminal receipts without controls opt out of the phone reserve. Loading always keeps it. */
+  /** Terminal receipts can opt out of the phone reserve, also with stable controls. Loading always keeps it. */
   reserve?: boolean;
   alert?: boolean;
   quietAlert?: boolean;
