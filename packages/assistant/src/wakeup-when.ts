@@ -1,5 +1,5 @@
-import { dates } from "@k2b/stdlib";
 import type { AiWakeup } from "@k2b/cloud/ai";
+import { dates } from "@k2b/stdlib";
 
 const day = (at: Date, timeZone: string) =>
   new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
@@ -11,7 +11,7 @@ const de = (locale: string) => locale.startsWith("de");
  */
 export const aiWakeupWhen = (
   wakeup: Pick<AiWakeup, "at" | "cron" | "rhythm">,
-  input: { locale: string; timeZone: string; now?: Date | string; lower?: boolean; /** Today as the time alone. */ short?: boolean },
+  input: { locale: string; timeZone: string; now?: Date | string; lower?: boolean /** Today as the time alone. */; short?: boolean },
 ): string => {
   // Words keep their own case in a line; only the start of a row gets a capital ("Mo–Fr" stays, "montags" begins one).
   const first = (text: string) => (input.lower ? text : text.charAt(0).toUpperCase() + text.slice(1));
@@ -21,8 +21,7 @@ export const aiWakeupWhen = (
   const time = dates.formatTime(at, { locale: input.locale, timeZone: input.timeZone });
   const days = Math.round((Date.parse(day(at, input.timeZone)) - Date.parse(day(now, input.timeZone))) / 86_400_000);
   if (days === 0 && input.short) return time;
-  if (days === 0 || days === 1)
-    return first(`${de(input.locale) ? (days ? "morgen" : "heute") : days ? "tomorrow" : "today"} ${time}`);
+  if (days === 0 || days === 1) return first(`${de(input.locale) ? (days ? "morgen" : "heute") : days ? "tomorrow" : "today"} ${time}`);
   const date = new Intl.DateTimeFormat(input.locale, {
     timeZone: input.timeZone,
     weekday: "short",

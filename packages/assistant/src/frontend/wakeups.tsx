@@ -1,9 +1,9 @@
 import type { AiRoutes, AiWakeup, AiWakeupInput, AiWakeupPatch } from "@k2b/cloud/ai";
-import { aiWakeupWhen } from "../wakeup-when";
 import { api } from "@k2b/cloud/browser";
 import { dates, i18n } from "@k2b/stdlib";
 import { Button, DatePicker, IconButton, LocaleProvider, prompts, Select, TextInput, toast } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { aiWakeupWhen } from "../wakeup-when";
 
 /**
  * Gustav's alarms in a chat (Gustav alarms v1, 6): the list over the row above the field, the dialog that changes one,
@@ -107,9 +107,7 @@ const route = (chatId: string) => client.conversations[":conversationId"].wakeup
 /** The server's own sentence for a refused change, such as a stale revision or the limit of five. */
 const refused = async (response: Pick<Response, "json">, fallback: string) => {
   const body: unknown = await response.json().catch(() => null);
-  throw new Error(
-    body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback,
-  );
+  throw new Error(body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback);
 };
 const wakeupApi = {
   create: async (chatId: string, input: AiWakeupInput) => {
@@ -169,8 +167,7 @@ export const deleteWakeup = async (ctx: AssistantWakeupContext, wakeup: AiWakeup
     action: { label: t.undo, variant: "ghost", onClick: () => void change(ctx, (chatId) => wakeupApi.create(chatId, again(wakeup))) },
   });
 };
-export const catchUpWakeup = (ctx: AssistantWakeupContext, wakeup: AiWakeup) =>
-  change(ctx, (chatId) => wakeupApi.catchUp(chatId, wakeup));
+export const catchUpWakeup = (ctx: AssistantWakeupContext, wakeup: AiWakeup) => change(ctx, (chatId) => wakeupApi.catchUp(chatId, wakeup));
 /** A repeating alarm that ran out runs for another 30 days; a minute's margin keeps it within the server's bound. */
 export const renewWakeup = (ctx: AssistantWakeupContext, wakeup: AiWakeup) =>
   change(ctx, (chatId) =>
@@ -181,7 +178,10 @@ export const renewWakeup = (ctx: AssistantWakeupContext, wakeup: AiWakeup) =>
   );
 export const retryWakeup = (ctx: AssistantWakeupContext, input: AiWakeupInput) =>
   change(ctx, (chatId) =>
-    wakeupApi.create(chatId, again({ at: input.at ?? null, cron: input.cron ?? null, timezone: input.timezone, endsAt: input.endsAt ?? null, note: input.note })),
+    wakeupApi.create(
+      chatId,
+      again({ at: input.at ?? null, cron: input.cron ?? null, timezone: input.timezone, endsAt: input.endsAt ?? null, note: input.note }),
+    ),
   );
 
 /** One action of a line or the box on an alarm the chat lists now. */
@@ -219,12 +219,7 @@ const cronOf = (repeat: Repeat, date: string, time: string): string | null => {
 };
 
 /** "Change alarm": a small dialog on a computer, a sheet on a phone. Nothing applies before "Save". */
-function WakeupDialog(props: {
-  ctx: AssistantWakeupContext;
-  wakeup: AiWakeup;
-  close: () => void;
-  guard: (handler: () => void) => void;
-}) {
+function WakeupDialog(props: { ctx: AssistantWakeupContext; wakeup: AiWakeup; close: () => void; guard: (handler: () => void) => void }) {
   const t = () => copy(props.ctx);
   const zone = props.ctx.timeZone;
   const locale = props.ctx.locale();
@@ -453,7 +448,12 @@ export const editWakeup = (ctx: AssistantWakeupContext, wakeup: AiWakeup) =>
  * pencil and cross on the row under the pointer or with focus; on phones always, with time and note on two lines. A
  * missed one-off offers "Catch up now" in the pencil's place.
  */
-export function WakeupList(props: { id: string; ctx: AssistantWakeupContext; root: () => HTMLElement | undefined; onClose: (focus: boolean) => void }) {
+export function WakeupList(props: {
+  id: string;
+  ctx: AssistantWakeupContext;
+  root: () => HTMLElement | undefined;
+  onClose: (focus: boolean) => void;
+}) {
   const t = () => copy(props.ctx);
   const zone = { locale: props.ctx.locale(), timeZone: props.ctx.timeZone };
   createEffect(() => {
@@ -490,7 +490,10 @@ export function WakeupList(props: { id: string; ctx: AssistantWakeupContext; roo
         <For each={props.ctx.items()}>
           {(wakeup) => (
             <li class="assistant-queue__row assistant-wakeups__row k2b-progressive-row" data-entry={wakeup.id}>
-              <i class={`assistant-queue__sign assistant-wakeups__sign ${wakeup.cron ? "ti ti-repeat" : "ti ti-alarm"}`} aria-hidden="true" />
+              <i
+                class={`assistant-queue__sign assistant-wakeups__sign ${wakeup.cron ? "ti ti-repeat" : "ti ti-alarm"}`}
+                aria-hidden="true"
+              />
               <span class="assistant-queue__main assistant-wakeups__main">
                 <span class="assistant-wakeups__when">{aiWakeupWhen(wakeup, zone)}</span>
                 <span class="assistant-queue__text" title={wakeup.note}>
@@ -535,7 +538,10 @@ export const restingWakeups = async (chatId: string, locale: string) => {
   const { items } = await response.json();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return items.length
-    ? [words.resolve([locale]).t.resting({ count: items.length }), ...items.map((item) => `${aiWakeupWhen(item, { locale, timeZone })} · ${item.note}`)].join("\n")
+    ? [
+        words.resolve([locale]).t.resting({ count: items.length }),
+        ...items.map((item) => `${aiWakeupWhen(item, { locale, timeZone })} · ${item.note}`),
+      ].join("\n")
     : "";
 };
 

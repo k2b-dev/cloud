@@ -29,9 +29,9 @@ import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { readAssistantPlace } from "./assistant-place";
 import { ASSISTANT_PANES_HINT_COOKIE } from "./chat-sidebar-layout";
-import { describeWakeupLine } from "./wakeup-line";
 import { loadCodeOverview } from "./code-overview";
 import { assistantMessages } from "./messages";
+import { describeWakeupLine } from "./wakeup-line";
 
 /** Code that waits for the person, each with its place's name and link, read through the place's own reader. */
 const loadCodeAttentionView = async (invoke: CodeQueryInvoke, catalog: ReturnType<typeof catalogPerApp>): Promise<CodeAttentionView> => {

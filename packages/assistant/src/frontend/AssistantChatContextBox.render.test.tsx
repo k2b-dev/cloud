@@ -129,7 +129,9 @@ describe('Box "In this chat", server render', () => {
     expect(html).toContain(">2 weitere anzeigen<");
     expect(html).not.toContain(">Alle anzeigen<");
     expect(html).toMatch(/data-row="wakeup:w0"[\s\S]*?class="assistant-context-box__icon ti ti-alarm"/);
-    expect(renderBox(sidebarSnapshot({ groups: [{ ...wakeups, count: 2, rows: wakeups.rows.slice(0, 2) }] }))).not.toContain("weitere anzeigen");
+    expect(renderBox(sidebarSnapshot({ groups: [{ ...wakeups, count: 2, rows: wakeups.rows.slice(0, 2) }] }))).not.toContain(
+      "weitere anzeigen",
+    );
   });
 
   test("never draws more than ten rows", () => {

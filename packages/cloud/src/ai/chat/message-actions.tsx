@@ -18,7 +18,6 @@ import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { type AiQuoteDraft, aiQuoteVisibleTextOfHtml } from "../quote-markers";
 import type { AiCodeAuthoringStop, AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
-import type { AiWakeupLineInput } from "./wakeup-plan";
 import {
   type AiForkMessageInput,
   type AiRetryMessageInput,
@@ -29,6 +28,7 @@ import {
 } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import type { AiSubmittedCodeVersion } from "./turn-layout";
+import type { AiWakeupLineInput } from "./wakeup-plan";
 
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
 export type AiTurnActionRequest = { turnId: string; callId: string; name: string };

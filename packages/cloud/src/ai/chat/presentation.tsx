@@ -29,7 +29,6 @@ import { type AiStopNotice, aiMessageStopNotice, stoppedByPerson } from "./stop-
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
-import { collectAiWakeupLines } from "./wakeup-plan";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view";
 import {
@@ -42,6 +41,7 @@ import {
   createAiUserMessageActions,
 } from "./user-message";
 import { CloudSurveyResultBlock } from "./visual-tools";
+import { collectAiWakeupLines } from "./wakeup-plan";
 
 export type AiChatTimelineSession = {
   messages: readonly AiStoredMessage[];
@@ -374,7 +374,14 @@ const storedItems = (
       // Without a host's line, the fact stands as Cloud stored it, quietly.
       return line
         ? { kind: "activity", id: item.id, class: "ai-wakeup-line-row", anchorId: item.entry.seq, label: line }
-        : { kind: "activity", id: item.id, anchorId: item.entry.seq, label: textFromMessage(item.entry.message), icon: "ti ti-alarm", tone: "ai" };
+        : {
+            kind: "activity",
+            id: item.id,
+            anchorId: item.entry.seq,
+            label: textFromMessage(item.entry.message),
+            icon: "ti ti-alarm",
+            tone: "ai",
+          };
     }
 
     if (item.type === "summary") {

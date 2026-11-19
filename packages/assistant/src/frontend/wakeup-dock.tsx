@@ -1,7 +1,7 @@
-import { aiWakeupWhen } from "../wakeup-when";
-import { aiWakeupWords } from "./wakeup-line";
 import { useLocale } from "@k2b/ui";
 import { createSignal, lazy, Show, Suspense } from "solid-js";
+import { aiWakeupWhen } from "../wakeup-when";
+import { aiWakeupWords } from "./wakeup-line";
 import type { AssistantWakeupContext } from "./wakeups";
 
 const WakeupList = lazy(() => import("./wakeups").then((module) => ({ default: module.WakeupList })));
@@ -82,4 +82,3 @@ export default function AssistantWakeupDock(props: { context: AssistantWakeupCon
     </div>
   );
 }
-

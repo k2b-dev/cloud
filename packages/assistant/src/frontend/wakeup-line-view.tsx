@@ -18,11 +18,7 @@ export function AssistantWakeupLine(props: { line: AssistantWakeupLineText | und
   const run = (link: NonNullable<AssistantWakeupLineText["link"]>) =>
     link.input ? props.host.retry(link.input) : link.id && props.host.act(link.action === "retry" ? "edit" : link.action, link.id);
   return (
-    <span
-      class="assistant-wakeup-line k2b-progressive-row"
-      data-kind={props.line?.kind}
-      data-struck={props.line?.struck ? "" : undefined}
-    >
+    <span class="assistant-wakeup-line k2b-progressive-row" data-kind={props.line?.kind} data-struck={props.line?.struck ? "" : undefined}>
       <Show when={props.line}>
         {(line) => (
           <>

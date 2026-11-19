@@ -22,6 +22,7 @@ import {
   AiModelChooser,
   type AiModelChooserState,
   AiModelNote,
+  type AiWakeupLineInput,
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
@@ -32,7 +33,6 @@ import {
   aiLatestUsageSnapshot,
   aiModelBlocksSending,
   aiModelRequestFor,
-  type AiWakeupLineInput,
   createAiChatTimeline,
   createAiPastedTextFile,
   readAiComposerFiles,
@@ -69,7 +69,21 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createResource, createSignal, For, type JSX, lazy, on, onCleanup, onMount, Show, Suspense } from "solid-js";
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  type JSX,
+  lazy,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Suspense,
+} from "solid-js";
 import { assistantApi } from "../api/client";
 import { revokeChatWebsite } from "../chat-code/approval-preferences";
 import { artifactMessages } from "../chat-code/messages";
@@ -107,9 +121,6 @@ import type { AssistantQueueHost } from "./AssistantQueueConnected";
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
-import type { AssistantWakeupLineText } from "./wakeup-line";
-import { AssistantWakeupLine, type AssistantWakeupLineHost } from "./wakeup-line-view";
-import type { AssistantWakeupContext } from "./wakeups";
 import { assistantArchiveBlocker } from "./archive-blocker";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
@@ -187,6 +198,9 @@ import { quotaText } from "./quota-messages";
 import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
+import type { AssistantWakeupLineText } from "./wakeup-line";
+import { AssistantWakeupLine, type AssistantWakeupLineHost } from "./wakeup-line-view";
+import type { AssistantWakeupContext } from "./wakeups";
 
 type Status = AiPeopleModels & {
   ok: boolean;
@@ -1870,8 +1884,7 @@ export default function AssistantWorkspace(props: Props) {
       else if (target.kind === "jump") actions.onJump(target.target);
       else if (target.kind === "wakeup") {
         wakeupLineHost.act("edit", target.id);
-      }
-      else window.location.assign(target.href);
+      } else window.location.assign(target.href);
     },
     onJump: (target) => void jumpTo(target),
     onOpenAll: () => openContextOverview("files", sidebarCopy().title),

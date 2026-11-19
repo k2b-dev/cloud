@@ -99,7 +99,9 @@ test.each([
 
 test("an alarm chip names a delivery well after its planned time as delayed, and a repeating alarm by its rhythm", () => {
   const origin = { kind: "wakeup" as const, id: "alarm1", name: "Wecker", scheduledAt: "2026-11-18T15:00:00.000Z" };
-  const late = articles(render([message(1, "user", "Prüfe die Anzahlung", { createdAt: "2026-11-18T15:42:00.000Z", meta: { origin } })], "de", "Europe/Berlin"));
+  const late = articles(
+    render([message(1, "user", "Prüfe die Anzahlung", { createdAt: "2026-11-18T15:42:00.000Z", meta: { origin } })], "de", "Europe/Berlin"),
+  );
   expect(late[0]?.replace(/<[^>]*>/g, "")).toContain("Wecker · geplant 16:00, verspätet");
   // Alarm facts carry the alarm: a repeating one shows its rhythm in words, never cron, and the sign for repeating.
   const wakeup = {
@@ -118,8 +120,14 @@ test("an alarm chip names a delivery well after its planned time as delayed, and
   };
   const repeating = render(
     [
-      message(1, "assistant", "Wecker gestellt", { loopId: null, meta: { wakeupEvent: { id: "e1", kind: "created", at: "2026-11-18T07:00:00.000Z", wakeup } } }),
-      message(2, "user", "Posteingang zusammenfassen", { createdAt: "2026-11-18T07:00:20.000Z", meta: { origin: { ...origin, scheduledAt: "2026-11-18T07:00:00.000Z" } } }),
+      message(1, "assistant", "Wecker gestellt", {
+        loopId: null,
+        meta: { wakeupEvent: { id: "e1", kind: "created", at: "2026-11-18T07:00:00.000Z", wakeup } },
+      }),
+      message(2, "user", "Posteingang zusammenfassen", {
+        createdAt: "2026-11-18T07:00:20.000Z",
+        meta: { origin: { ...origin, scheduledAt: "2026-11-18T07:00:00.000Z" } },
+      }),
     ],
     "de",
     "Europe/Berlin",

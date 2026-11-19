@@ -6,7 +6,13 @@ import type { AiWakeup, AiWakeupEvent } from "../wakeup-contracts";
 import { collectAiWakeupLines } from "./wakeup-plan";
 
 const AT = "2026-11-16T15:00:00.000Z";
-const stored = (id: string, seq: number, message: Message, loopId: string | null, meta: AiStoredMessage["meta"] = null): AiStoredMessage => ({
+const stored = (
+  id: string,
+  seq: number,
+  message: Message,
+  loopId: string | null,
+  meta: AiStoredMessage["meta"] = null,
+): AiStoredMessage => ({
   id,
   shortId: id,
   conversationId: "conversation-1",
@@ -76,7 +82,12 @@ describe("alarm lines", () => {
   test("only the newest line of an alarm is current, and it knows the alarm before it", () => {
     const later = alarm({ at: "2026-11-16T16:00:00.000Z", revision: 1 });
     const lines = collectAiWakeupLines(
-      buildAiMessageTimeline([fact("created", 1, "created"), user("move", 2, "turn-2"), answer("moved", 3, "turn-2"), fact("updated", 4, "updated", later)]),
+      buildAiMessageTimeline([
+        fact("created", 1, "created"),
+        user("move", 2, "turn-2"),
+        answer("moved", 3, "turn-2"),
+        fact("updated", 4, "updated", later),
+      ]),
     );
     expect(lines.get("created")?.plan?.latest).toBe(false);
     expect(lines.get("updated")?.plan).toMatchObject({ latest: true, previous: { at: AT } });

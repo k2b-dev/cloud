@@ -25,10 +25,15 @@ const alarm = (patch: Partial<AiWakeup> = {}): AiWakeup => ({
   ...patch,
 });
 const weekdays = alarm({ cron: "0 8 * * 1-5", rhythm: "Mo–Fr 08:00", endsAt: "2026-12-16T10:00:00.000Z", at: "2026-11-17T07:00:00.000Z" });
-const line = (kind: "created" | "updated" | "deleted" | "missed" | "expired", wakeup: AiWakeup, extra: Partial<NonNullable<AiWakeupLineInput["plan"]>> = {}): AiWakeupLineInput => ({
+const line = (
+  kind: "created" | "updated" | "deleted" | "missed" | "expired",
+  wakeup: AiWakeup,
+  extra: Partial<NonNullable<AiWakeupLineInput["plan"]>> = {},
+): AiWakeupLineInput => ({
   plan: { event: { id: "e", kind, at: "2026-11-16T09:00:00.000Z", wakeup }, latest: true, deleted: false, ...extra },
 });
-const text = (value: ReturnType<typeof describeWakeupLine>) => `${value.verb}${value.body}${value.aside ?? ""}${value.state ? ` ${value.state}` : ""}`;
+const text = (value: ReturnType<typeof describeWakeupLine>) =>
+  `${value.verb}${value.body}${value.aside ?? ""}${value.state ? ` ${value.state}` : ""}`;
 
 describe("alarm times in words", () => {
   test("today and tomorrow by name, later days by date, a repeating alarm by its rhythm, never cron", () => {
@@ -80,7 +85,9 @@ describe("alarm lines", () => {
   test("missed and expired say why in one sentence with one way out, which only the current alarm offers", () => {
     const missed = alarm({ status: "missed", missedReason: "budget" });
     const budget = describeWakeupLine(line("missed", missed), { ...zone, current: [missed] });
-    expect(text(budget)).toBe("Wecker heute 16:00 nicht gelaufen. Das Tageslimit für Züge ohne dich ist erreicht. Der Wecker bleibt stehen.");
+    expect(text(budget)).toBe(
+      "Wecker heute 16:00 nicht gelaufen. Das Tageslimit für Züge ohne dich ist erreicht. Der Wecker bleibt stehen.",
+    );
     expect(budget.link).toEqual({ label: "Jetzt nachholen", action: "catch-up", id: missed.id });
     expect(describeWakeupLine(line("missed", missed), { ...zone, current: [alarm()] }).link).toBeUndefined();
 

@@ -64,8 +64,7 @@ export const aiUserMessageSource = (
       <>
         <i class={`ai-message-source__icon ti ${wakeup?.cron ? "ti-repeat" : "ti-alarm"}`} data-kind="wakeup" aria-hidden="true" />
         <span>
-          {origin.name} ·{" "}
-          {delayed ? aiChatMessages(locale).wakeupDelayed({ time }) : wakeup?.cron ? wakeup.rhythm : time}
+          {origin.name} · {delayed ? aiChatMessages(locale).wakeupDelayed({ time }) : wakeup?.cron ? wakeup.rhythm : time}
         </span>
       </>
     );

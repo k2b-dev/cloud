@@ -52,11 +52,13 @@ export const planAiWakeupLines = (items: readonly AiMessageTimelineItem[]): Map<
   return plans;
 };
 
-
-/** One alarm line a host draws: a fact of the chat, or an alarm Gustav tried and could not set. */
+/**
+ * One alarm line a host draws: a fact of the chat, or an alarm Gustav tried and could not set (`retried` once an alarm
+ * with that note exists).
+ */
 export type AiWakeupLineInput =
   | { plan: AiWakeupLinePlan; failed?: undefined }
-  | { plan?: undefined; failed: { input: AiWakeupInput; /** A later alarm with this note exists. */ retried: boolean } };
+  | { plan?: undefined; failed: { input: AiWakeupInput; retried: boolean } };
 
 /** The alarm Gustav tried to set in these blocks and could not, unless he set one after all. */
 const failedWakeupInput = (blocks: readonly AiTurnBlock[]): AiWakeupInput | null => {
