@@ -194,7 +194,7 @@ export function CodeRunLog(props: {
         />
       </Show>
       <Show when={connection() !== "revoked"}>
-        <Show when={props.manager && snapshot().state !== "skipped" && !hasOutput()}>
+        <Show when={props.manager && ["succeeded", "failed", "cancelled"].includes(snapshot().state) && !hasOutput()}>
           <Quiet icon="ti ti-notes" class="cloud-code__run-empty">
             {t().empty}
           </Quiet>

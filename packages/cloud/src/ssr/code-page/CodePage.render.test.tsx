@@ -228,7 +228,7 @@ describe("Code page: runs (Bild 22)", () => {
     const data = runLedgerFixture();
     if (data.state.kind !== "ready" || !data.state.run) throw new Error("Missing fixture");
     data.state.run.consoleOutput = { generation: 1, seq: 0, entries: [], droppedLines: 0, droppedBytes: 0 };
-    for (const state of ["running", "succeeded"] as const) {
+    for (const state of ["succeeded", "failed", "cancelled"] as const) {
       data.state.run.run.state = state;
       const markup = renderMarkup(() =>
         createComponent(LocaleProvider, {
@@ -244,6 +244,31 @@ describe("Code page: runs (Bild 22)", () => {
       expect(markup).toContain('class="cloud-code__quiet cloud-code__run-empty"');
       expect(visibleText(markup)).toContain("Lieferschein gelesen · 1 bestätigt");
     }
+  });
+  test.each([
+    ["de", "running"],
+    ["en", "running"],
+    ["de", "queued"],
+    ["en", "queued"],
+  ] as const)("%s: active runs without output keep only their lifecycle head (%s)", (locale, state) => {
+    const data = runLedgerFixture();
+    if (data.state.kind !== "ready" || !data.state.run) throw new Error("Missing fixture");
+    data.state.run.consoleOutput = { generation: 1, seq: 0, entries: [], droppedLines: 0, droppedBytes: 0 };
+    data.state.run.run.state = state;
+    const markup = renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    );
+    expect(visibleText(markup)).not.toContain(locale === "de" ? "Keine Ausgabe" : "No output");
+    expect(markup).not.toContain("cloud-code__run-empty");
+    expect(markup).not.toContain('class="k2b-run-log__output-toggle"');
+    expect(markup).not.toContain('class="k2b-run-log__output"');
+    expect(markup).toContain('class="k2b-run-log__main"');
+    expect(visibleText(markup)).toContain("Lieferschein gelesen · 1 bestätigt");
   });
   test("v13 SSR combines state, planned steps and open output; readers keep only authorized summaries", () => {
     const data = runLedgerFixture();

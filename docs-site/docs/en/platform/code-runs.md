@@ -331,9 +331,10 @@ visible to readers as a quiet block after the run output, including runs with
 no logged steps or messages. These summaries carry no timestamp unless their
 read model supplies one. Readers see no output disclosure; a separate hint
 explains who can view the output. Gustav's **Runs** detail renders
-the server snapshot first and opens available output for Code managers. Without
-log lines or started-step markers, it shows **No output** as a quiet sentence
-and omits the empty output disclosure and scroll area. Run rows keep their
+the server snapshot first and opens available output for Code managers. Completed
+runs without log lines or started-step markers show **No output** as a quiet
+sentence. Waiting and running runs keep their lifecycle head without this
+sentence. Empty output has no disclosure or scroll area. Run rows keep their
 result beside the title on phones; long titles and metadata wrap. A stopped
 connection retains the last visible snapshot with **Try again**; revoked
 access removes its output and offers **Reload**.
