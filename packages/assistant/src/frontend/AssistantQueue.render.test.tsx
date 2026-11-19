@@ -70,6 +70,31 @@ const places = (markup: string) =>
 const visibleText = (markup: string) => markup.replace(/<span[^>]*role="tooltip"[^>]*>[^<]*<\/span>/g, "").replace(/<[^>]+>/g, " ");
 
 describe("queued messages", () => {
+  test.each([
+    { locale: "de", name: "Wecker" },
+    { locale: "en", name: "Alarm" },
+  ])("an alarm keeps its own sign and planned time in $locale", ({ locale, name }) => {
+    const markup = html(
+      {
+        timeZone: "Europe/Berlin",
+        entries: [
+          {
+            id: "alarm-message",
+            text: "Prüfe die Anzahlung",
+            origin: { kind: "wakeup", id: "alarm1", name, scheduledAt: "2026-11-18T15:00:00.000Z" },
+            state: "pending",
+            authorIsViewer: false,
+          },
+        ],
+      },
+      locale,
+    );
+    expect(visibleText(markup)).toContain(`${name} 16:00`);
+    expect(markup).toContain("assistant-queue__sign ti ti-alarm");
+    expect(markup).toContain('data-kind="wakeup"');
+    expect(places(markup)[0]).toEqual(["slot", locale === "de" ? "Jetzt senden" : "Send now", locale === "de" ? "Entfernen" : "Remove"]);
+  });
+
   // QU replaces AssistantQueuedMessages; keep feat/code's distinct infrastructure failure states in its successor.
   test("a pending infrastructure failure names the automatic retry and keeps removal available", () => {
     const markup = html({ entries: [{ ...ENTRIES[0]!, state: "failed", error: "dispatch_failed", retrying: true }] }, "en");

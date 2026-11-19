@@ -1,12 +1,11 @@
+import type { AiMessageOrigin } from "@k2b/cloud/ai/browser";
+import { dates } from "@k2b/stdlib";
 import { IconButton, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { queueMessages } from "./queue-messages";
 
 /** Who wrote a queued message, as the server projects it for the viewer; `href` only where the viewer may open it. */
-export type AssistantQueueOrigin =
-  | { kind: "person"; id: string; name: string }
-  | { kind: "automation"; id: string; name: string; href?: string }
-  | { kind: "chat"; id: string; name: string; href?: string };
+export type AssistantQueueOrigin = AiMessageOrigin;
 
 /** One queued message, in the order the server received it. */
 export type AssistantQueueEntry = {
@@ -23,6 +22,7 @@ export type AssistantQueueProps = {
   entries: readonly AssistantQueueEntry[];
   /** `line`: the row above the field shows the next entry; `chip`: it shares the row with "Waiting for you". */
   layout: "line" | "chip";
+  timeZone?: string;
   /** The entry whose "Send now" runs on this device. */
   sendingId: string | null;
   /** Entries whose "Send now" failed, or ended unclear and was not sent, on this device. */
@@ -40,6 +40,7 @@ const ORIGIN_ICON: Record<AssistantQueueOrigin["kind"] | "own", string> = {
   own: "ti ti-corner-down-right",
   person: "ti ti-user",
   automation: "ti ti-feat-code",
+  wakeup: "ti ti-alarm",
   chat: "ti ti-sparkles",
 };
 
@@ -68,6 +69,8 @@ export default function AssistantQueue(props: AssistantQueueProps) {
   const origin = (entry: AssistantQueueEntry): string | null => {
     if (entry.authorIsViewer) return null;
     const source = entry.origin;
+    if (source.kind === "wakeup")
+      return `${source.name} ${dates.formatTime(source.scheduledAt, { locale: locale(), timeZone: props.timeZone ?? "UTC" })}`;
     return source.kind === "automation"
       ? t().fromAutomation({ name: source.name })
       : source.kind === "chat"

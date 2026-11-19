@@ -60,6 +60,11 @@ alarm by setting `endsAt` within the next 30 days. Set `cron: null` and a new
 Editing or deleting cancels its pending occurrence. A running turn keeps the normal Stop
 control. Deleted alarms cannot be updated; create a new alarm to schedule another reminder.
 
+Alarm messages keep their note in the message bubble. Their source chip shows an
+alarm icon and the planned time in the reader's time zone, including after delayed
+delivery. Queue and history origins expose this instant as `origin.scheduledAt`
+alongside the localized `origin.name`; alarm origins have no source link.
+
 ## Use alarms from a chat turn
 
 The runtime offers `wakeup_create`, `wakeup_list`, `wakeup_update` and

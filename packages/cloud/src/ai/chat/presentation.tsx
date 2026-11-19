@@ -172,6 +172,7 @@ const storedItems = (
   views: TurnViews,
   locale: string,
   activeTurnId: string | null,
+  timeZone?: string,
 ): ChatTimelineItem[] => {
   const idle = activeTurnId === null;
   const timeline = buildAiMessageTimeline([...messages]);
@@ -301,7 +302,7 @@ const storedItems = (
             ) : undefined}
           </>
         ) : undefined,
-        source: aiUserMessageSource(item.entry, locale),
+        source: aiUserMessageSource(item.entry, locale, timeZone),
         attachments: aiUserMessageAttachments(item.entry, actions),
         actions: createAiUserMessageActions(item.entry, actions, locale),
         actionDisplay: "inline",
@@ -644,7 +645,7 @@ export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<rea
   const reconnecting = createMemo(() => source.activeTurn()?.providerRetry === true || source.reconnecting?.() === true);
   const clock = createActiveTurnClock(source, reconnecting);
   const activeTurnId = createMemo(() => source.activeTurn()?.turnId ?? null);
-  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale(), activeTurnId()));
+  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale(), activeTurnId(), source.timeZone));
   const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock, reconnecting(), locale()));
   return createMemo(() => {
     const items = [...stored(), ...active()];

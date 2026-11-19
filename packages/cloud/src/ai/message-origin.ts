@@ -96,15 +96,10 @@ export const loadAiMessageOrigins = async (
   };
   const projectedOrigins = await Promise.all(
     origins.map(async (origin): Promise<AiMessageOrigin> => {
+      if (origin.kind === "wakeup")
+        return { kind: "wakeup", id: origin.id, name: aiWakeupMessages(viewer.locale ?? "en").origin, scheduledAt: origin.scheduledAt };
       const row = known.get(`${origin.kind}:${origin.id}`);
-      const fallback =
-        origin.kind === "wakeup"
-          ? aiWakeupMessages(viewer.locale ?? "en").origin
-          : origin.kind === "person"
-            ? "Person"
-            : origin.kind === "chat"
-              ? "Chat"
-              : "Automation";
+      const fallback = origin.kind === "person" ? "Person" : origin.kind === "chat" ? "Chat" : "Automation";
       const resource = origin.kind === "automation" ? await resolveAutomation(origin) : null;
       return {
         kind: origin.kind,

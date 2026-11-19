@@ -2197,7 +2197,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const QueuePart = (partProps: { layout: "line" | "chip" }) => (
     <Suspense>
-      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} />
+      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} timeZone={props.timeZone} />
     </Suspense>
   );
   /**

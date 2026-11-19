@@ -1,3 +1,4 @@
+import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -105,12 +106,21 @@ export function AiUserMessageQuotes(props: { entry: AiStoredMessage }): JSX.Elem
 }
 
 /**
- * Who wrote a message the person did not type: an automation or another chat. The server sets the origin from the
+ * Who wrote a message the person did not type: an automation, alarm or another chat. The server sets the origin from the
  * writer and links it only for a viewer who may open the source. The person's own messages carry none.
  */
-export const aiUserMessageSource = (entry: AiStoredMessage, locale: string): JSX.Element | undefined => {
+export const aiUserMessageSource = (entry: AiStoredMessage, locale: string, timeZone = "UTC"): JSX.Element | undefined => {
   const origin = entry.meta?.origin;
   if (!origin || origin.kind === "person") return undefined;
+  if (origin.kind === "wakeup")
+    return (
+      <>
+        <i class="ai-message-source__icon ti ti-alarm" data-kind="wakeup" aria-hidden="true" />
+        <span>
+          {origin.name} {dates.formatTime(origin.scheduledAt, { locale, timeZone })}
+        </span>
+      </>
+    );
   const t = aiChatMessages(locale);
   const label = origin.kind === "automation" ? t.messageFromAutomation({ name: origin.name }) : t.messageFromChat({ name: origin.name });
   const content = (

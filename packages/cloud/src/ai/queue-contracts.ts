@@ -11,7 +11,7 @@ export const AI_MESSAGE_QUEUE_LIMIT = 20;
 export const AiMessageOriginSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("person"), id: z.string(), name: z.string() }).strict(),
   z.object({ kind: z.literal("automation"), id: z.string(), name: z.string(), href: z.string().optional() }).strict(),
-  z.object({ kind: z.literal("wakeup"), id: z.string(), name: z.string() }).strict(),
+  z.object({ kind: z.literal("wakeup"), id: z.string(), name: z.string(), scheduledAt: z.iso.datetime() }).strict(),
   z.object({ kind: z.literal("chat"), id: z.string(), name: z.string(), href: z.string().optional() }).strict(),
 ]);
 export type AiMessageOrigin = z.infer<typeof AiMessageOriginSchema>;
