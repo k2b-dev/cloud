@@ -29,10 +29,3 @@ result for the same IMAP host. A changed host cannot inherit that result.
 `cld --json mail operator status` counts active bindings with positive hints
 in `connectors.capabilities.jmap`. These hints do not verify account access
 or change the mailbox's protocol.
-
-Integration tests can project JMAP Email IDs into Mail's shared message store.
-Within one remote resource, an Email ID keeps one message across folders;
-different Email IDs keep separate contents. An own sent copy can reuse local
-content only through an unambiguous outbox record with no other JMAP Email ID
-attached in that resource. This test coverage does not enable JMAP synchronization,
-body downloads, or message changes on a running mailbox.
