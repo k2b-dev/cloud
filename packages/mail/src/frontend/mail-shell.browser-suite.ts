@@ -3465,41 +3465,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("with two senders the reply box's sender reads at the head's size and leaves the recipients their placeholder", async () => {
-          const page = await open(`${boxPath}?conversation=Conv01&identity=2`, 1440);
-          try {
-            await page.locator("[data-mail-reply-sender] button").waitFor();
-            const head = await page.locator("[data-mail-reply-box-frame]").evaluate((frame) => {
-              const trigger = frame.querySelector<HTMLElement>("[data-mail-reply-sender] button")!;
-              const cc = frame.querySelector<HTMLElement>(".mail-reply-box-cc button")!;
-              const input = frame.querySelector<HTMLInputElement>(".mail-reply-box-recipients input")!;
-              const style = getComputedStyle(input);
-              const context = document.createElement("canvas").getContext("2d")!;
-              context.font = style.font;
-              // The input keeps a minimum width inside a control that scrolls sideways: measure what is visible of it.
-              const control = input.closest<HTMLElement>(".mail-recipient-control")!.getBoundingClientRect();
-              const shown = input.getBoundingClientRect();
-              const room =
-                Math.min(shown.right, control.right) -
-                shown.left -
-                Number.parseFloat(style.paddingLeft) -
-                Number.parseFloat(style.paddingRight);
-              return {
-                trigger: getComputedStyle(trigger).fontSize,
-                cc: getComputedStyle(cc).fontSize,
-                placeholder: input.placeholder,
-                fits: context.measureText(input.placeholder).width <= room,
-              };
-            });
-            // "from Support ⌄" is a quiet label like Cc and Bcc beside it, not body text.
-            expect(head.trigger).toBe(head.cc);
-            expect(head.placeholder.length).toBeGreaterThan(0);
-            expect(head.fits).toBe(true);
-          } finally {
-            await close(page);
-          }
-        });
-
         test("the head marks done and archives; the … menu keeps the row's order", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`);
           try {
@@ -4227,6 +4192,45 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await Bun.sleep(50);
         }
       };
+
+      test("with two senders the reply box's sender reads at the head's size and leaves the recipients their placeholder", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01&identity=2`, 1440, undefined, "reduce", async (next) => {
+          await draftApi(next);
+        });
+        try {
+          await readyDraft(page);
+          const sender = '.mail-reply-box-head button[aria-haspopup="menu"][aria-label^="Change sender identity"]';
+          await page.locator(sender).waitFor();
+          const head = await page.locator("[data-mail-reply-box-frame]").evaluate((frame, sender) => {
+            const trigger = frame.querySelector<HTMLElement>(sender)!;
+            const cc = frame.querySelector<HTMLElement>(".mail-reply-box-cc button")!;
+            const input = frame.querySelector<HTMLInputElement>(".mail-reply-box-recipients input")!;
+            const style = getComputedStyle(input);
+            const context = document.createElement("canvas").getContext("2d")!;
+            context.font = style.font;
+            // The input keeps a minimum width inside a control that scrolls sideways: measure what is visible of it.
+            const control = input.closest<HTMLElement>(".mail-recipient-control")!.getBoundingClientRect();
+            const shown = input.getBoundingClientRect();
+            const room =
+              Math.min(shown.right, control.right) -
+              shown.left -
+              Number.parseFloat(style.paddingLeft) -
+              Number.parseFloat(style.paddingRight);
+            return {
+              trigger: getComputedStyle(trigger).fontSize,
+              cc: getComputedStyle(cc).fontSize,
+              placeholder: input.placeholder,
+              fits: context.measureText(input.placeholder).width <= room,
+            };
+          }, sender);
+          // "from Support ⌄" is a quiet label like Cc and Bcc beside it, not body text.
+          expect(head.trigger).toBe(head.cc);
+          expect(head.placeholder.length).toBeGreaterThan(0);
+          expect(head.fits).toBe(true);
+        } finally {
+          await close(page);
+        }
+      });
 
       for (const width of [1440, 390])
         test(`${width}: the reply box stands open above the newest message; opening creates no draft, the first typing does`, async () => {

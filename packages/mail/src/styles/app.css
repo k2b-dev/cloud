@@ -2204,6 +2204,18 @@
   min-width: 0;
   flex: 1 1 auto;
 }
+/* The sender is a quiet label of the head, as in the compose window: "from Support ⌄" in the head's 0.75 rem, and
+   it gives way before the recipients field does, so the field keeps its placeholder. */
+.k2b-ui .mail-reply-box-sender {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 100 auto;
+}
+.k2b-ui .mail-reply-box-sender .k2b-dropdown__trigger {
+  min-width: 0;
+  padding-block: 0.125rem;
+  font-size: 0.75rem;
+}
 .k2b-ui .mail-reply-box-cc {
   display: inline-flex;
   flex: none;
