@@ -122,6 +122,27 @@ object, so `useLocale()` falls back to `document.documentElement.lang` in the
 browser. Cloud keeps that value equal to the SSR locale. No locale prop plumbing
 or browser provider is required.
 
+A production page loads the island build of its catalog language: `en` or `de`,
+picked from the request locale (`de-CH` loads `de`, `fr` loads `en`). In that
+build, every inline `i18n.define({ baseLocale: "en", messages: { ... } })`
+catalog keeps only the messages that `resolve()` returns for the build's
+language, including base-locale fallbacks for missing keys. The browser then
+downloads no other language, and server and browser render the same text.
+A catalog ships every language when its result could differ: `messages` or a
+language is not an inline object literal, a message is a spread, computed key,
+getter, or setter, a language is neither `en` nor `de`, or `baseLocale` is not
+`en`. Browser code that resolves a catalog in a language other than the page's
+gets the page's language. When browser code must compare text in several
+languages, such as a stored value written in any language, define that small
+catalog from a variable:
+
+```ts
+const presetDescriptions = { en: { routine: "Routine mail" }, de: { routine: "Gewöhnliche E-Mail" } };
+export const presetDescriptionMessages = i18n.define({ baseLocale: "en", messages: presetDescriptions });
+```
+
+Development builds keep every language.
+
 Generic `@k2b/ui` chrome such as input placeholders, pagination, menus, loading
 states, and accessibility labels follows the inherited locale. Explicit labels,
 empty text, and descriptions passed by an application are application-owned and
