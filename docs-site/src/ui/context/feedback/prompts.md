@@ -59,6 +59,7 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 | `surface` | Uses the standard panel or a caller-owned `bare` surface. |
 | `header` | Set to `false` when a custom dialog owns its header. |
 | `cancelBehavior` | `prompts.alert` can use `"ignore"` to keep Escape and backdrop clicks from closing it. |
+| `followContent` | Holds and animates content height changes after first rest. Defaults to `true` for `form`, `prompt`, and `promptNumber`; `false` for other prompts. |
 | `history` | Back closes the prompt like Cancel instead of leaving the page; see [Close dialogs with Back](#close-dialogs-with-back). `prompts.form` does not take it. |
 
 Use `surface: "bare"` with `header: false` only when the custom content supplies complete visible panel structure and a close control.
@@ -226,7 +227,11 @@ Dialogs never lie on top of each other. A dialog, prompt, or confirmation opened
 
 ## The frame follows its content
 
-A dialog takes the height of its content and reserves no room for messages. Once its entrance has finished and it has first come to rest, a notice, extra fields, or growing text folds the frame from the height you see to the new one in `--k2b-motion-fold` with `--k2b-ease-glide`. New content fades in over `--k2b-motion-fast` from 40 % of that time. Moved content and content containing or inside the focus stay visible. After first rest, while a text input (text, search, email, URL, phone, password or number), textarea, or editable text region in the level has focus, the frame may grow but does not animate a shrink; it folds to its natural height when focus leaves those fields. Checkboxes and switches do not hold height. Focusing a text field during a shrink stops it at the visible height. If a pointer is pressed inside the dialog, a running content fold stops at its visible height and further content folds wait until release or cancellation and the next frame, so a footer click lands before the footer moves. A lost release does not hold the frame indefinitely: window blur, lost pointer capture, a hidden document, or a later pointer event with no buttons pressed releases the hold. Between changes the frame holds its height; a natural size change during a fold retargets it from where the frame is, before its previous target is reached. A running child height or grid-row animation finishes before the frame folds once to its final height; paused animations do not block following or viewport and anchor corrections.
+A dialog takes the height of its content and reserves no room for messages. Content following is opt-in: pass `followContent: true` to `dialogCore.open` or a prompt's options for forms whose notices or fields come and go. `prompts.form`, `prompts.prompt`, and `prompts.promptNumber` enable it by default; pass `followContent: false` to disable it. General `panelDialogOptions` and `panelDialogWideOptions` keep it off; there is no separate PanelDialog form opener. For a custom form, use `{ ...panelDialogOptions, followContent: true }`.
+
+Without opt-in, content changes use their natural layout immediately: the core neither holds the frame height nor observes content for folding. Use that default for viewers, pickers, and dialogs that read layout immediately after changing content. The morph between dialog levels works independently of this option.
+
+For an opted-in dialog, once its entrance has finished and it has first come to rest, a notice, extra fields, or growing text folds the frame from the height you see to the new one in `--k2b-motion-fold` with `--k2b-ease-glide`. New content fades in over `--k2b-motion-fast` from 40 % of that time. Moved content and content containing or inside the focus stay visible. After first rest, while a text input (text, search, email, URL, phone, password or number), textarea, or editable text region in the level has focus, the frame may grow but does not animate a shrink; it folds to its natural height when focus leaves those fields. Checkboxes and switches do not hold height. Focusing a text field during a shrink stops it at the visible height. If a pointer is pressed inside the dialog, a running content fold stops at its visible height and further content folds wait until release or cancellation and the next frame, so a footer click lands before the footer moves. A lost release does not hold the frame indefinitely: window blur, lost pointer capture, a hidden document, or a later pointer event with no buttons pressed releases the hold. Between changes the frame holds its height; a natural size change during a fold retargets it from where the frame is, before its previous target is reached. A running child height or grid-row animation finishes before the frame folds once to its final height; paused animations do not block following or viewport and anchor corrections.
 
 The top edge stays, so the field under the pointer stays put. If the new height would put the footer below the view, the top and height animate together from their visible positions, moving up only as far as needed. Both the first and last bottom edges stay in view. A sheet grows from its bottom edge. At its largest height the body scrolls, the footer stays, and the frame stands still. The page behind never moves.
 
@@ -263,7 +268,7 @@ interface DialogOptions {
   signal?: AbortSignal; title?: string; ariaLabel?: string; icon?: string; confirmText?: string;
   cancelText?: string | false; variant?: "danger" | "primary" | "success" | "warning";
   size?: "small" | "medium" | "large" | "wide" | "full"; surface?: "default" | "bare"; header?: false;
-  cancelBehavior?: OpenDialogOptions["cancelBehavior"]; history?: boolean;
+  cancelBehavior?: OpenDialogOptions["cancelBehavior"]; history?: boolean; followContent?: boolean;
 }
 
 interface ConfirmOptions extends DialogOptions {
@@ -351,7 +356,7 @@ type FieldSchema =
 type PromptFormOptions<T extends Record<string, FieldSchema>> = {
   signal?: AbortSignal; title?: string; ariaLabel?: string; icon?: string; fields: T; confirmText?: string;
   cancelText?: string | false; variant?: "danger" | "primary" | "success" | "warning"; size?: DialogOptions["size"];
-  cancelBehavior?: DialogOptions["cancelBehavior"];
+  cancelBehavior?: DialogOptions["cancelBehavior"]; followContent?: boolean;
 };
 ```
 
@@ -371,7 +376,7 @@ type DialogClose<T> = (result?: T) => void;
 
 type OpenDialogOptions = {
   primary?: "blue" | "ai";
-  signal?: AbortSignal; panelClassName?: string; contentClassName?: string;
+  signal?: AbortSignal; panelClassName?: string; contentClassName?: string; followContent?: boolean;
   initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
   cancelBehavior?: "resolve-undefined" | "ignore"; ariaLabel?: string;
   history?: boolean; role?: "dialog" | "alertdialog"; ariaDescribedBy?: string;
@@ -428,7 +433,7 @@ restore the parent's mode when closed.
 `setPosition({ x, y })` uses viewport coordinates and fixed positioning;
 `setPosition(null)` restores the panel stylesheet's positioning. Mode and
 position belong to each stack entry. The caller owns dragging, responsive
-limits, persistence, and modeless stacking styles. Automatic positioning that depends on the frame size must react to `k2b-frame-resize`, not to every size report: skip intermediate reports while the dialog has `data-k2b-frame-motion`, then clamp against the final size when that event fires. A changed explicit `setPosition` still takes effect during a fold. Frame heights use the fractional layout border box; CSS zoom and transforms affect its visible rectangle, not the CSS height held or animated. Do not call the native
+limits, persistence, and modeless stacking styles. `data-k2b-follow-content` marks a frame with content following enabled. With `followContent: true`, automatic positioning that depends on the frame size must react to `k2b-frame-resize`, not to every size report: skip intermediate reports while the dialog has `data-k2b-frame-motion`, then clamp against the final size when that event fires. A changed explicit `setPosition` still takes effect during a fold. Frame heights use the fractional layout border box; CSS zoom and transforms affect its visible rectangle, not the CSS height held or animated. Do not call the native
 `show()`, `showModal()`, or `close()` methods to switch modes.
 
 ### Close dialogs with Back

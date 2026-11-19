@@ -16,6 +16,8 @@ export type OpenDialogOptions = {
   primary?: "blue" | "ai";
   /** Close only this dialog when its owning operation is cancelled. */
   signal?: AbortSignal;
+  /** Hold and animate content height changes after first rest. Defaults to false; level morphs are independent. */
+  followContent?: boolean;
   panelClassName?: string;
   contentClassName?: string;
   initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
@@ -78,6 +80,7 @@ type DialogStackEntry = {
   role: "dialog" | "alertdialog";
   dismissHandler?: () => void | Promise<void>;
   dismissPending?: boolean;
+  follow?: boolean;
   modal: boolean;
   position?: { x: number; y: number } | null;
   /** The marker of this dialog's history entry, for dialogs opened with `history`. */
@@ -431,8 +434,6 @@ export const createDialogCore = () => {
     // Each stack level carries its own palette, independently of the first opener.
     getK2bPortalRoot(undefined, document.body).appendChild(element);
     state.element = element;
-    // The frame follows its content's height as soon as the module is there; a dialog that opened before follows then.
-    loadFrameMotion(state);
     return element;
   };
 
@@ -562,7 +563,7 @@ export const createDialogCore = () => {
       applyPresentation(previous);
       applyAccessibleName(dialog, previous);
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
-      if (motion) motion.arrive(previous.container, discard);
+      if (motion) motion.arrive(previous.container, discard, previous.follow);
       else discard();
       loadFrameMotion(state, previous);
       schedule(() => {
@@ -690,6 +691,7 @@ export const createDialogCore = () => {
       ariaDescribedBy: options.ariaDescribedBy,
       role: options.role ?? "dialog",
       modal: true,
+      follow: options.followContent,
     };
 
     return new Promise((resolve, reject) => {
@@ -738,10 +740,7 @@ export const createDialogCore = () => {
                   },
                   setPosition: (position) => {
                     if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) return;
-                    if (entry.position?.x === position?.x && entry.position?.y === position?.y) return;
-                    if (state.stack[state.stack.length - 1] === entry) {
-                      state.motion?.position();
-                    }
+                    if (state.stack[state.stack.length - 1] === entry && state.motion?.position(entry.position, position) === false) return;
                     entry.position = position ? { ...position } : null;
                     applyPresentation(entry);
                   },
@@ -766,7 +765,7 @@ export const createDialogCore = () => {
           const hide = () => {
             previousTop.container.style.display = "none";
           };
-          if (state.motion) state.motion.arrive(container, hide);
+          if (state.motion) state.motion.arrive(container, hide, entry.follow);
           else hide();
           loadFrameMotion(state, entry);
         }
@@ -786,8 +785,8 @@ export const createDialogCore = () => {
             else dialog.show();
           } else dialog.setAttribute("open", "");
           observeConnection();
-          // From now on the frame follows its content's height; the first open itself does not animate.
-          state.motion?.follow(container);
+          // Only opted-in levels follow content; the first open itself does not animate.
+          loadFrameMotion(state);
         }
         options.signal?.addEventListener("abort", abort, { once: true });
         if (options.signal?.aborted) abort();

@@ -70,7 +70,7 @@ const scrollerIn = (target: Element | null, panel: HTMLElement): HTMLElement | n
 
 /**
  * Moves a bottom sheet with transform and opacity only. Its layout height is the content's height, which the dialog
- * core folds when the content changes, or the full height with detents, which never animates; the sheet slides by `--k2b-sheet-y`, the footer stays on the
+ * core folds on content changes when `followContent` is enabled, or the full height with detents, which never animates; the sheet slides by `--k2b-sheet-y`, the footer stays on the
  * screen's edge between half and full height by `--k2b-sheet-footer-y`, and the backdrop dims by `--k2b-sheet-dim`.
  * A glide is a Web Animation that ends on exactly those values, so it lands on its detent without a settle. A drag on
  * the handle or the header follows the pointer; a finger anywhere follows too, except where a list still scrolls.

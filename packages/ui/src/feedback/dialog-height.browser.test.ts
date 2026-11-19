@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { browserName, launchBrowser, settled } from "../../test/browser";
 
-// An open dialog follows its content's height: the frame folds from the height the eye sees to the new one, its top
+// An opted-in dialog follows its content's height: the frame folds from the height the eye sees to the new one, its top
 // edge stays, and new content fades in. Heights over time need a real engine.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -18,6 +18,12 @@ window.holdMotion = () => {
   Element.prototype.animate = function (...args) { const animation = animate.apply(this, args); animation.pause(); return animation; };
 };
 window.openPicker = () => {
+  // This guard exercises following with the real picker content; ordinary pickers keep the core default.
+  const open = dialogCore.open;
+  dialogCore.open = (view, options) => {
+    dialogCore.open = open;
+    return open(view, { ...options, followContent: true });
+  };
   const host = document.createElement("div"); document.body.append(host);
   return render(() => createComponent(RichSelect, { label: "Many targets", value: null, onValueChange: () => {},
     items: Array.from({ length: 20 }, (_, index) => ({ value: String(index), label: "Target " + index })) }), host);
@@ -30,8 +36,8 @@ window.openSheet = (adaptive = false, detents = false) => void dialogCore.open((
     body.textContent = "Status";
     return body;
   } }),
-]; } }), adaptive ? bottomSheetAdaptiveOptions : bottomSheetOptions);
-window.openForm = (fixed = false, top = false, previewMode, fractional = false) => void dialogCore.open((close, context) => {
+]; } }), { ...(adaptive ? bottomSheetAdaptiveOptions : bottomSheetOptions), followContent: true });
+window.openForm = (fixed = false, top = false, previewMode, fractional = false, followContent = true) => void dialogCore.open((close, context) => {
   window.closeForm = () => close();
   window.placeAt = (x, y) => context.setPosition(typeof x === "object" ? x : { x, y });
   window.setModal = context.setModal;
@@ -56,7 +62,7 @@ window.openForm = (fixed = false, top = false, previewMode, fractional = false) 
     return createComponent(Button, { get loading() { return saving(); }, children: "Save", onClick: () => { window.saved = (window.saved || 0) + 1; } });
   } }),
 ]; } });
-}, fixed ? panelDialogFixedOptions : { ...panelDialogOptions, initialFocus: "none", panelClassName: panelDialogOptions.panelClassName + (top ? " top-anchored" : "") });
+}, { ...(fixed ? panelDialogFixedOptions : { ...panelDialogOptions, initialFocus: "none", panelClassName: panelDialogOptions.panelClassName + (top ? " top-anchored" : "") }), ...(followContent === "default" ? {} : { followContent }) });
 /** A notice of this many lines below the field, as a failed save adds one. */
 window.addNotice = (lines = 3) => {
   const notice = document.createElement("p");
@@ -90,7 +96,13 @@ type HeightWindow = Window & {
   toggleTasks: () => void;
   saved?: number;
   openPicker: () => void;
-  openForm: (fixed?: boolean, top?: boolean, previewMode?: "flow" | "overlay", fractional?: boolean) => void;
+  openForm: (
+    fixed?: boolean,
+    top?: boolean,
+    previewMode?: "flow" | "overlay",
+    fractional?: boolean,
+    followContent?: boolean | "default",
+  ) => void;
   openSheet: (adaptive?: boolean, detents?: boolean) => void;
   placeAt: (x: number | null | { x: number; y: number }, y?: number) => void;
   setModal: (modal: boolean) => void;
@@ -115,6 +127,7 @@ const load = async (
   fixed = false,
   sheet = false,
   previewMode?: "flow" | "overlay",
+  followContent: boolean | "default" = true,
 ): Promise<Page> => {
   const page = await (await browser.newContext(options)).newPage();
   page.setDefaultTimeout(10_000);
@@ -123,12 +136,12 @@ const load = async (
   );
   await page.addScriptTag({ content: script });
   await page.evaluate(
-    ({ fixed, sheet, previewMode }) => {
+    ({ fixed, sheet, previewMode, followContent }) => {
       const motion = window as unknown as HeightWindow;
       if (sheet) motion.openSheet();
-      else motion.openForm(fixed, false, previewMode);
+      else motion.openForm(fixed, false, previewMode, false, followContent);
     },
-    { fixed, sheet, previewMode },
+    { fixed, sheet, previewMode, followContent },
   );
   await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -217,6 +230,62 @@ const watch = (page: Page, change: "add" | "remove" | "failed-save", lines = 3) 
   );
 
 describe(`${browserName} the frame follows its content`, () => {
+  test("without opt-in content keeps its immediate natural layout, without held height or a frame fold", async () => {
+    for (const followContent of ["default", false] as const) {
+      const page = await load(desktop, false, false, undefined, followContent);
+      try {
+        // settled: immediate natural layout and the absence of a held intermediate frame are the subject.
+        const result = await page.evaluate(async () => {
+          const dialog = document.querySelector("dialog")!;
+          const before = dialog.getBoundingClientRect().height;
+          let folds = 0;
+          const animate = dialog.animate.bind(dialog);
+          dialog.animate = (...args) => {
+            folds++;
+            return animate(...args);
+          };
+          (window as unknown as HeightWindow).addNotice();
+          const immediate = dialog.getBoundingClientRect().height;
+          const inlineHeights = [dialog.style.height];
+          for (let i = 0; i < 6; i++) {
+            await new Promise(requestAnimationFrame);
+            inlineHeights.push(dialog.style.height);
+          }
+          return {
+            growth: immediate - before,
+            inlineHeights,
+            folds,
+            bodyBasis: getComputedStyle(dialog.querySelector(".k2b-panel-dialog__body")!).flexBasis,
+            moving: dialog.hasAttribute("data-k2b-frame-motion"),
+          };
+        });
+        expect(result.growth).toBeCloseTo(60, 0);
+        expect(result.inlineHeights.every((height) => height === "")).toBe(true);
+        expect(result.folds).toBe(0);
+        expect(result.bodyBasis).toBe("0%");
+        expect(result.moving).toBe(false);
+      } finally {
+        await page.context().close();
+      }
+    }
+  });
+
+  test("each level keeps its own opt-in across the forward and backward morph", async () => {
+    for (const lower of [false, true]) {
+      const page = await load(desktop, false, false, undefined, lower);
+      try {
+        await page.evaluate((upper) => (window as unknown as HeightWindow).openForm(false, false, undefined, false, upper), !lower);
+        await settled(page);
+        expect(await page.locator("dialog").evaluate((dialog: HTMLDialogElement) => Boolean(dialog.style.height))).toBe(!lower);
+        await page.evaluate(() => (window as unknown as HeightWindow).closeForm());
+        await settled(page);
+        expect(await page.locator("dialog").evaluate((dialog: HTMLDialogElement) => Boolean(dialog.style.height))).toBe(lower);
+      } finally {
+        await page.context().close();
+      }
+    }
+  });
+
   test("holding a fractional natural height preserves the exact top and height", async () => {
     const page = await (await browser.newContext({ ...desktop, reducedMotion: "reduce" })).newPage();
     try {

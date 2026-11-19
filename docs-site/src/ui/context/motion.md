@@ -50,7 +50,12 @@ exceptions, and nothing beside them moves: a folding list such as
 the frame of a dialog, which stands alone above the page. When one dialog
 replaces another, the dialog core morphs the frame's width and height with
 `--k2b-motion-morph` and `--k2b-ease-morph` while the contents stand at their
-own sizes and the frame clips them. When an open dialog's content changes
+own sizes and the frame clips them. Content following is separate and opt-in:
+`dialogCore.open` and ordinary prompts default to `followContent: false`;
+`prompts.form`, `prompts.prompt`, and `prompts.promptNumber` default to `true`
+and accept `false` to opt out. Use it for forms whose notices or fields change.
+Without opt-in, content changes take their natural layout immediately, without
+a held height, content observers, or a fold. When an opted-in dialog's content changes
 height, the frame folds to the new height with `--k2b-motion-fold` and
 `--k2b-ease-glide`, its top edge staying put. If growth needs more room below,
 the top and height animate together from their visible positions so the footer

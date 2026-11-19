@@ -21,7 +21,7 @@ const build = await Bun.build({
         queueMicrotask(() => { cleanup = attachSpotlightPosition(host, context, () => ({ homeHint: "Back to center", releaseHint: "Release to center" })); });
         onCleanup(() => cleanup?.());
         return host;
-      }, { panelClassName: "k2b-dialog cloud-search-dialog", initialFocus: "none" });
+      }, { panelClassName: "k2b-dialog cloud-search-dialog", initialFocus: "none", followContent: true });
     `,
   },
   target: "browser",

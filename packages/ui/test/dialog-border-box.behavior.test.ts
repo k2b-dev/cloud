@@ -68,7 +68,7 @@ for (const theme of ["light", "dark"])
     };
     const motion = createFrameMotion(dialog);
     try {
-      motion.follow(level);
+      motion.follow(level, true);
       flush();
       report();
       flush();

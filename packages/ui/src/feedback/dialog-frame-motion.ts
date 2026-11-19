@@ -5,7 +5,7 @@
  * first frame so it never rewraps; the frame clips meanwhile. Anything that interrupts a change turns around from the
  * values the eye sees; the endings of the interrupted change are dropped, not run. Reduced motion swaps in one frame.
  *
- * The frame also follows its content's height while it is open: when a notice comes or goes, fields appear, or text
+ * An opted-in frame also follows its content's height while it is open: when a notice comes or goes, fields appear, or text
  * grows, the frame goes from the height the eye sees to the new one over `--k2b-motion-fold` with `--k2b-ease-glide`,
  * and new content fades in over `--k2b-motion-fast` from 40 % of that time. Its top edge stays where it is: it grows
  * downwards and moves up together with growth only when the room below runs out; a sheet grows from the bottom edge. Frames with a size of
@@ -31,6 +31,7 @@ const ARRIVE_DELAY_SHARE = 110 / 280;
 const ARRIVE_SHARE = 140 / 280;
 
 type Anchor = "center" | "bottom" | "fixed";
+type Position = { x: number; y: number } | null | undefined;
 type Fade = { animation: Animation; to: 0 | 1; done: () => void };
 
 export type FrameMotion = {
@@ -49,13 +50,13 @@ export type FrameMotion = {
    * After `arriving` is shown and its frame presentation applied: morphs the frame to its size and fades the contents.
    * `left` runs once `leaving` has faded out (hide a lower level, or dispose a closed one).
    */
-  arrive: (arriving: HTMLElement, left: () => void) => void;
-  /** Follows the height of the level that shows now; `arrive` follows the arriving level by itself. */
-  follow: (level: HTMLElement) => void;
+  arrive: (arriving: HTMLElement, left: () => void, followContent?: boolean) => void;
+  /** Follows only opted-in levels; `arrive` passes the arriving level's choice. */
+  follow: (level: HTMLElement, enabled?: boolean) => void;
   /** Ends every motion now and runs the pending endings, for a frame that leaves the document. */
   stop: () => void;
-  /** An explicit position wins over a fold, including its pending completion. */
-  position: () => void;
+  /** A changed explicit position wins over a fold; returns false for an unchanged position. */
+  position: (previous: Position, next: Position) => boolean;
   /**
    * For a frame that closes and fades out: keeps the size, place and contents exactly as the eye sees them now, and
    * returns the pending endings to run once the frame has left.
@@ -354,7 +355,8 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   const watched = new Set<Element>();
   const shells = new WeakSet<Element>();
   let refreshShells = false;
-  const sizes =
+  let sizes: ResizeObserver | undefined;
+  const createSizes = () =>
     typeof ResizeObserver === "function"
       ? new ResizeObserver((entries) => {
           let resized = false;
@@ -428,7 +430,8 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     }
     if (element === level) for (const target of pending) sizes?.observe(target, { box: "border-box" });
   };
-  const changes =
+  let changes: MutationObserver | undefined;
+  const createChanges = () =>
     typeof MutationObserver === "function"
       ? new MutationObserver((records) => {
           // Once per batch, keep only live observation targets. Losing an observed root (including the last
@@ -552,7 +555,11 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     if (window.visualViewport?.scale === 1) onResize();
   };
 
-  const follow: FrameMotion["follow"] = (next) => {
+  const follow: FrameMotion["follow"] = (next, enabled = false) => {
+    dialog.toggleAttribute("data-k2b-follow-content", enabled);
+    if (!enabled) return;
+    sizes ??= createSizes();
+    changes ??= createChanges();
     sizes?.disconnect();
     watched.clear();
     changes?.disconnect();
@@ -672,10 +679,11 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     requestAnimationFrame(() => (fresh ? requestAnimationFrame(say) : say()));
   };
 
-  const arrive: FrameMotion["arrive"] = (arriving, left) => {
+  const arrive: FrameMotion["arrive"] = (arriving, left, followContent = false) => {
     const change = started;
     started = undefined;
     if (!change) return;
+    dialog.toggleAttribute("data-k2b-follow-content", followContent);
     const { from, leaving } = change;
     unhold(arriving);
     // Only this change's two contents share the frame: one that still fades out from an earlier change is gone now
@@ -697,7 +705,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       delete dialog.dataset.k2bFrameMotion;
       fade(leaving, 0, 0, 0, leave);
       fade(arriving, 1, 0, 0, () => {});
-      follow(arriving);
+      follow(arriving, followContent);
       return;
     }
     const to = seen();
@@ -725,11 +733,13 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       // A sheet measures its rests again at the size the morph reached.
       dialog.dispatchEvent(new Event("k2b-frame-resize"));
       // Content that changed during the morph gets a fold from the size the morph reached.
-      holdHeight(to.height);
-      firstRest = true;
-      changed();
+      if (followContent) {
+        holdHeight(to.height);
+        firstRest = true;
+        changed();
+      }
     };
-    follow(arriving);
+    follow(arriving, followContent);
     rested = to.height;
     fade(leaving, 0, duration * LEAVE_SHARE, 0, leave);
     fade(arriving, 1, duration * ARRIVE_SHARE, duration * ARRIVE_DELAY_SHARE, () => {});
@@ -767,7 +777,8 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     };
   };
 
-  const position = () => {
+  const position: FrameMotion["position"] = (previous, next) => {
+    if (previous?.x === next?.x && previous?.y === next?.y) return false;
     if (frameKind === "fold") {
       holdHeight(seen().height);
       endFrame();
@@ -775,6 +786,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     dialog.style.inset = "";
     placed = false;
     followingAnchor = undefined;
+    return true;
   };
 
   return { begin, arrive, announce, follow, stop, freeze, position };
@@ -785,7 +797,7 @@ export const connectFrameMotion = (
   state: {
     element?: HTMLDialogElement;
     motion?: FrameMotion;
-    stack: readonly { container: HTMLElement; role: "dialog" | "alertdialog" }[];
+    stack: readonly { container: HTMLElement; role: "dialog" | "alertdialog"; follow?: boolean }[];
   },
   announced?: (typeof state.stack)[number],
 ) => {
@@ -793,7 +805,7 @@ export const connectFrameMotion = (
   const top = state.stack.at(-1);
   if (!state.motion) {
     state.motion = createFrameMotion(state.element);
-    if (top) state.motion.follow(top.container);
+    if (top) state.motion.follow(top.container, top.follow);
   }
   if (top && top === announced) state.motion.announce(top.role);
 };
