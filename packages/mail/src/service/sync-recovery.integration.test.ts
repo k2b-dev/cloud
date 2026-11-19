@@ -577,7 +577,12 @@ suite("mail sync recovery", () => {
       const first = await turn({ folderId: fixture.folderId });
       expect(first.statements).toHaveLength(1);
       expect(first.priority).toBe("command");
-      expect(first.resubmitted?.input).toEqual({ folderId: fixture.folderId, backfill: false, pushed: true, remoteResourceId: fixture.resourceId });
+      expect(first.resubmitted?.input).toEqual({
+        folderId: fixture.folderId,
+        backfill: false,
+        pushed: true,
+        remoteResourceId: fixture.resourceId,
+      });
       // Its later turns that find the lease busy keep the push and ask the lease line only.
       const later = await turn({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId, pushed: true });
       expect(later.statements).toEqual([]);
