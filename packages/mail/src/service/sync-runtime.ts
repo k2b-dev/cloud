@@ -68,6 +68,7 @@ import {
   MAIL_PROVIDER_JOB_CONCURRENCY,
   mailProviderOperationMutex,
   type ProviderLeasePriority,
+  providerBreakerOpenForMs,
   providerBusyRetryAfterMs,
   providerLeaseWaitedFor,
   providerLeaseWaitedForByOtherWork,
@@ -2688,13 +2689,14 @@ export const syncFolderBatch = async (
   if (!resource) return emptyBatch();
   let mailboxId: string | null = null;
 
-  const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
+  const turn = await acquireProviderLease({
     resource,
     waiter: `sync-folder:${folderId}`,
     priority,
     ttlMs: SYNC_LEASE_MS,
   });
-  if (!lock) throw Object.assign(new Error("Mail sync resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
+  if (!turn.lock) throw leaseUnavailable(turn, "Mail sync resource is busy");
+  const { lock } = turn;
   await countServedFolderTurn(resource);
   let runId: string | null = null;
   let selectedBindingId: string | null = null;
@@ -2946,6 +2948,19 @@ export const syncFolderBatch = async (
   return batch;
 };
 
+/**
+ * The error of a turn that did not get the provider lease: `PROVIDER_UNREACHABLE` while the
+ * mailbox's provider breaker is open, which ends the job's turn without counting as done, and
+ * otherwise `SYNC_BUSY`, routine contention that retries soon.
+ */
+const leaseUnavailable = (turn: { retryAfterMs: number; unreachableForMs: number | null }, busyMessage: string): Error =>
+  turn.unreachableForMs !== null
+    ? Object.assign(new Error("The mail server did not answer recent connection attempts; Mail tries again later"), {
+        code: "PROVIDER_UNREACHABLE",
+        retryAfterMs: turn.unreachableForMs,
+      })
+    : Object.assign(new Error(busyMessage), { code: "SYNC_BUSY", retryAfterMs: turn.retryAfterMs });
+
 const normalizeSyncErrorCode = (error: unknown): string => {
   return providerErrorCode(error, "MAIL_SYNC_FAILED");
 };
@@ -2983,7 +2998,7 @@ const markFolderDegraded = async (folderId: string): Promise<void> => {
   try {
     // Database time, like the request time it is compared with.
     const [folder] = await sql<{ gave_up_at: Date }[]>`
-      UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${folderId}::uuid RETURNING now() AS gave_up_at
+      UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${folderId}::uuid AND sync_status <> 'excluded' RETURNING now() AS gave_up_at
     `;
     if (!folder) return;
     await redis.send("SET", [syncGaveUpKey(folderId), String(folder.gave_up_at.getTime()), "PX", String(FOLDER_SYNC_REQUEST_MS)]);
@@ -3048,6 +3063,17 @@ const runSyncFolderJobOutcome = async (
       countFolderBatch("deferred");
       countFolderSyncTrigger("rate_limited");
       ctx.resubmit({ delayMs: retryAfterMs(error, 5_000), input: { folderId, backfill, ...(pushed ? { pushed } : {}), ...carried } });
+      return { deferred: code };
+    }
+    // The mail server did not answer recent connection attempts, and its breaker keeps the job from
+    // trying again yet. The turn is neither done nor a failed attempt: the folder shows that its
+    // sync gave up, so a sync someone waits for ends, and the scheduler queues the folder again once
+    // the breaker's window ends. Retrying here would only ask the breaker again. A push the job took
+    // up keeps its rank as for a busy lease: the job comes back once, when the window ends.
+    if (code === "PROVIDER_UNREACHABLE") {
+      countFolderBatch("unreachable");
+      await markFolderDegraded(folderId);
+      if (pushed) ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill, pushed, ...carried } });
       return { deferred: code };
     }
     // A sibling job holds the remote resource: routine contention, not a failed attempt.
@@ -3628,13 +3654,14 @@ export const executeBindingRediscovery = async (
   `;
   if (!binding) throw Object.assign(new Error("Provider binding is unavailable for rediscovery"), { code: "BINDING_UNAVAILABLE" });
   // Rediscovery decides which folders sync at all, so it ranks with folder syncs.
-  const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
+  const turn = await acquireProviderLease({
     resource: binding.remote_resource_id,
     waiter: `rediscover:${bindingId}`,
     priority: "sync",
     ttlMs: SYNC_LEASE_MS,
   });
-  if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
+  if (!turn.lock) throw leaseUnavailable(turn, "Mail remote resource is busy");
+  const { lock } = turn;
   let result: BindingRediscoveryResult;
   try {
     result = await withLeaseHeartbeat({
@@ -3674,6 +3701,16 @@ const startRediscoveryJob = async (): Promise<void> => {
     } catch (error) {
       const code = normalizeSyncErrorCode(error);
       if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+      // The binding's provider did not answer recent connection attempts. The rediscovery ends
+      // without trying it: the scheduler queues it again once the breaker's window ends, and a
+      // person's rediscovery ends the window first.
+      if (code === "PROVIDER_UNREACHABLE") {
+        log.debug("Mail provider rediscovery skipped while the provider is unreachable", {
+          bindingId: ctx.input.bindingId,
+          retryAfterMs: retryAfterMs(error, 0),
+        });
+        return;
+      }
       if (code === "MAIL_RATE_LIMITED") {
         ctx.resubmit({ delayMs: retryAfterMs(error, 15_000) });
         return;
@@ -3847,6 +3884,17 @@ const boundDueFolders = async <F extends { id: string; remote_resource_id: strin
 };
 
 /**
+ * The rows whose remote mailbox's provider breaker is closed. One Valkey call per mailbox, sent
+ * together so the client pipelines them.
+ */
+const withoutUnreachableResources = async <F extends { remote_resource_id: string }>(rows: F[]): Promise<F[]> => {
+  const resources = [...new Set(rows.map((row) => row.remote_resource_id))];
+  const openFor = await Promise.all(resources.map((resource) => providerBreakerOpenForMs(resource)));
+  const unreachable = new Set(resources.filter((_resource, index) => openFor[index]! > 0));
+  return unreachable.size === 0 ? rows : rows.filter((row) => !unreachable.has(row.remote_resource_id));
+};
+
+/**
  * Queues every eligible Inbox, then the next eligible folders after the one the previous run
  * stopped at, wrapping around to the first folder. Returns the queued folder ids in that order.
  */
@@ -3885,9 +3933,12 @@ export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Pr
       ? await redis.mget(...folders.map((folder) => recentRequestKey(folder.id))).catch(() => [])
       : [];
   const unrequested = folders.filter((_folder, index) => recent[index] == null);
+  // A mailbox whose mail server did not answer recent connection attempts gets no check until its
+  // provider breaker's window ends: each check would only find the breaker open.
+  const reachable = await withoutUnreachableResources(unrequested);
   // Likewise only a run that reaches every eligible folder bounds a mailbox: within a page, its
   // turn would keep landing on the same folders.
-  const due = folders.length < limit ? await boundDueFolders(unrequested) : unrequested;
+  const due = folders.length < limit ? await boundDueFolders(reachable) : reachable;
   for (const folder of due) await submitSyncFolderJob(folder.id, "scheduled");
   return due.map((folder) => folder.id);
 };
@@ -3899,8 +3950,8 @@ const submitDueWork = async (): Promise<{
   draftExports: number;
   draftImports: number;
 }> => {
-  const bindings = await sql<{ id: string }[]>`
-    SELECT binding.id
+  const dueBindings = await sql<{ id: string; remote_resource_id: string }[]>`
+    SELECT binding.id, binding.remote_resource_id
     FROM mail.provider_bindings binding
     JOIN mail.remote_resources resource ON resource.id = binding.remote_resource_id
     JOIN mail.mailboxes mailbox ON mailbox.id = resource.mailbox_id
@@ -3921,6 +3972,9 @@ const submitDueWork = async (): Promise<{
     ORDER BY binding.last_verified_at NULLS FIRST, binding.id
     LIMIT 100
   `;
+  // A binding whose mail server did not answer recent connection attempts is verified once its
+  // provider breaker's window ends; a rediscovery queued earlier would only find the breaker open.
+  const bindings = await withoutUnreachableResources(dueBindings);
   for (const binding of bindings) {
     await submitRediscoveryJob(binding.id, false);
   }
