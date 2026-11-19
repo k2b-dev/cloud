@@ -17,6 +17,9 @@ an operational table with source and metadata.
 import { RunLog, type RunEntry, type RunLogProps } from "@k2b/ui";
 ```
 
+For an on-demand view, import the same component and types from
+`@k2b/ui/run-log` to keep the run view out of other islands' shared root imports.
+
 ## Data and state
 
 `state` is `idle`, `starting`, `running`, `succeeded`, or `failed`.

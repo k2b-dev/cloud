@@ -1,5 +1,6 @@
 import { i18n } from "@k2b/stdlib";
-import { NoticeCard, type RunEntry, RunLog, type RunLogAction, type RunLogState, useLocale } from "@k2b/ui";
+import { NoticeCard, useLocale } from "@k2b/ui";
+import { type RunEntry, RunLog, type RunLogAction, type RunLogState } from "@k2b/ui/run-log";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { followCodeRun, readCodeRunEntries } from "../../browser/code-runs";
 import {
