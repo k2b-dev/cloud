@@ -147,6 +147,13 @@ Human-adoption checks use the same committed pruning coverage as snapshots.
 After a covered reconnect, the next edit can be saved without replaying the
 removed prefix. Reconnecting alone does not create a content revision.
 
+Document reads distinguish unavailable history (`DRAFT_DOCUMENT_HISTORY_UNAVAILABLE`)
+from malformed history (`DRAFT_DOCUMENT_INVALID_HISTORY`), both with status 409.
+Keep device text and ask a mailbox administrator to follow the recovery steps
+below. Unexpected read failures return `DRAFT_DOCUMENT_READ_UNAVAILABLE` (500);
+retain device text and retry. Mail logs the underlying exception with the draft
+and request identifiers. Existing typed rejections retain their code and status.
+
 ### Recover a draft that keeps returning 409
 
 Upgrade every Mail instance before recovering drafts affected by the 0.78
@@ -165,8 +172,11 @@ draft separately:
    history flag, snapshot cursor, idle coverage and the first retained stream
    sequence. Keep document bytes out of logs and issue reports.
 3. Establish whether the missing prefix was covered **before** recovery marked
-   the history incomplete. Current coverage at or beyond `firstSequence - 1`
-   is necessary for replay, but a later idle proof cannot establish that no
+   the history incomplete. Start with the cursor of the preceding revision in
+   `mail.draft_document_revisions`: recovery advances the current snapshot
+   cursor, and later pruning can also advance its idle coverage. Those current
+   values are not historical evidence. Current coverage at or beyond
+   `firstSequence - 1` is necessary for replay, but a later idle proof cannot establish that no
    input was lost earlier. In 0.78, pruning could skip a locked row without
    saving its proof. `updated_at` also changes when pruning writes coverage;
    it does not record when history became incomplete.

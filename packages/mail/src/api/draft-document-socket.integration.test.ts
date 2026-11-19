@@ -5,7 +5,7 @@ import { startLiveOutbox } from "@k2b/cloud/events/testing";
 import { auth } from "@k2b/cloud/server";
 import { fromBase64, MalformedSharedTextEventError, toBase64 } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
-import { RetentionGapError, StoreFullError, type TopicConfig } from "@k2b/sync";
+import { ConflictError, CursorMismatchError, RetentionGapError, StoreFullError, type TopicConfig } from "@k2b/sync";
 import type { Server } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
@@ -35,10 +35,12 @@ import {
 import * as draftDocumentService from "../service/draft-documents";
 import { acceptDraftDocumentUpdate, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
 import { getDraft } from "../service/drafts";
+import { localizeMailError } from "../service/error-messages";
 import { enqueueMailInvalidation, mailLive } from "../service/live";
 import { createMailbox } from "../service/mailboxes";
 import { cancelScheduledSend } from "../service/scheduled-sends";
 import { stopMailDraftConnections, upgradeMailDraftDocumentSocket } from "./draft-document-socket";
+import api from "./index";
 import type { MailApiContext } from "./public-resource-boundary";
 
 // Bun accepts headers; lib.dom's global constructor omits Bun's options overload.
@@ -152,6 +154,11 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
         await next();
       })
       .get("/mailboxes/:mailboxId/drafts/:draftId/document/socket", upgradeMailDraftDocumentSocket);
+    // Use the actual public GET validators and handler with this fixture identity.
+    for (const route of api.routes.filter(
+      (route) => route.method === "GET" && route.path === "/mailboxes/:mailboxId/drafts/:draftId/document",
+    ))
+      app.on("GET", route.path, route.handler);
     startServer();
     await draftDocumentSnapshots.start();
     stopLive = await startLiveOutbox("mail");
@@ -332,6 +339,129 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
     });
     const [adopted] = await sql`SELECT adopted_at FROM mail.drafts WHERE id=${target.id}::uuid`;
     expect(adopted?.adopted_at).not.toBeNull();
+  });
+
+  test.each([
+    ["retention gap", new RetentionGapError("s6t.fixture.1", "s6t.fixture.3"), "DRAFT_DOCUMENT_HISTORY_UNAVAILABLE", 409],
+    ["foreign cursor", new CursorMismatchError("fixture"), "DRAFT_DOCUMENT_HISTORY_UNAVAILABLE", 409],
+    [
+      "invalid event",
+      new MalformedSharedTextEventError("fixture", "s6t.fixture.2", "Invalid fixture event"),
+      "DRAFT_DOCUMENT_INVALID_HISTORY",
+      409,
+    ],
+    ["content contention", new ConflictError("Fixture concurrency"), "CONFLICT", 409],
+    [
+      "typed rejection",
+      { code: "FIXTURE_DRAFT_REJECTION", status: 403, message: "Known fixture rejection" },
+      "FIXTURE_DRAFT_REJECTION",
+      403,
+    ],
+    ["transport failure", new Error("Fixture broker disconnected"), "DRAFT_DOCUMENT_READ_UNAVAILABLE", 500],
+  ] as const)("document read classifies %s and leaves the draft unchanged", async (_reason, failure, code, status) => {
+    const target = await draft();
+    const base = await read();
+    const topic = mailDraftDocumentLog.topic();
+    const unavailable = spyOn(mailDraftDocumentLog, "topic").mockImplementation(
+      () =>
+        new Proxy(topic, {
+          get(handle, property) {
+            if (property === "latestCursor")
+              return async () => {
+                throw failure;
+              };
+            const member: unknown = Reflect.get(handle, property, handle);
+            return typeof member === "function" ? member.bind(handle) : member;
+          },
+        }),
+    );
+    try {
+      const result = await readDraftDocument({ context, mailboxId, draftId: target.id });
+      expect(result).toMatchObject({ ok: false, error: { code, status } });
+      if (result.ok) throw new Error("Read unexpectedly succeeded");
+      if (code === "FIXTURE_DRAFT_REJECTION") {
+        expect(result.error === failure).toBe(true);
+      }
+      if (code.startsWith("DRAFT_DOCUMENT_") || code === "CONFLICT") {
+        expect(result.error.message).toContain("device");
+        expect(localizeMailError(result.error, "de").message).toContain("Sichere den Text");
+        expect(localizeMailError(result.error, "de").message).not.toContain("Stand hat sich geändert");
+        const [mailbox] = await sql`SELECT short_id FROM mail.mailboxes WHERE id=${mailboxId}::uuid`;
+        const response = await app.request(`/mailboxes/${mailbox!.short_id}/drafts/${target.short_id}/document`, {
+          headers: { "x-cloud-locale": "de" },
+        });
+        expect(response.status).toBe(status);
+        expect(await response.json()).toMatchObject({ code, message: localizeMailError(result.error, "de").message });
+      }
+    } finally {
+      unavailable.mockRestore();
+    }
+    expect(await read()).toEqual(base);
+    expect((await mailDraftDocumentLog.lifecycle!.get(target.id))?.value.state ?? "open").toBe("open");
+    expect(await sql`SELECT 1 FROM mail.commands WHERE target->>'draftId'=${target.id}`).toHaveLength(0);
+  });
+
+  test("document read rolls back its first SQL seed after a history failure", async () => {
+    const target = await draft();
+    const before = await sql`SELECT * FROM mail.drafts WHERE id=${target.id}::uuid`;
+    const topic = mailDraftDocumentLog.topic();
+    let reads = 0;
+    const unavailable = spyOn(mailDraftDocumentLog, "topic").mockImplementation(
+      () =>
+        new Proxy(topic, {
+          get(handle, property) {
+            if (property === "latestCursor")
+              return async () => {
+                if (++reads === 2) throw new RetentionGapError("s6t.fixture.1", "s6t.fixture.3");
+                return handle.latestCursor({ tenantId: target.id });
+              };
+            const member: unknown = Reflect.get(handle, property, handle);
+            return typeof member === "function" ? member.bind(handle) : member;
+          },
+        }),
+    );
+    try {
+      expect(await readDraftDocument({ context, mailboxId, draftId: target.id })).toMatchObject({
+        ok: false,
+        error: { code: "DRAFT_DOCUMENT_HISTORY_UNAVAILABLE", status: 409 },
+      });
+    } finally {
+      unavailable.mockRestore();
+    }
+    expect(reads).toBe(2);
+    expect(await sql`SELECT * FROM mail.drafts WHERE id=${target.id}::uuid`).toEqual(before);
+    expect(await sql`SELECT 1 FROM mail.draft_document_revisions WHERE draft_id=${target.id}::uuid`).toHaveLength(0);
+    expect((await read()).historyComplete).toBe(true);
+  });
+
+  test("document read rejects unresolved Yjs dependencies with recovery guidance", async () => {
+    const target = await draft();
+    const base = await read();
+    const peer = new Y.Doc();
+    try {
+      peer.getText("codemirror").insert(0, "missing");
+      const vector = Y.encodeStateVector(peer);
+      peer.getText("codemirror").insert(7, " dependent");
+      const update = Y.encodeStateAsUpdate(peer, vector);
+      await mailDraftDocumentLog.topic().publish({
+        tenantId: target.id,
+        data: {
+          kind: "sync",
+          payload: toBase64(update),
+          restoreRevision: base.generation,
+          originNodeId: "fixture",
+          originPeerId: null,
+        },
+      });
+      expect(await readDraftDocument({ context, mailboxId, draftId: target.id })).toMatchObject({
+        ok: false,
+        error: { code: "DRAFT_DOCUMENT_INVALID_HISTORY", status: 409 },
+      });
+      const [stored] = await sql`SELECT revision, doc_history_complete FROM mail.drafts WHERE id=${target.id}::uuid`;
+      expect(stored).toMatchObject({ revision: base.revision, doc_history_complete: true });
+    } finally {
+      peer.destroy();
+    }
   });
 
   test("undo continues the same generation and admits an edit while the thaw marker is retained", async () => {

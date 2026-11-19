@@ -30,6 +30,17 @@ export const safeErrorDetail = (text: string, secrets: readonly string[] = []): 
 const genericGermanMessage = (error: HumanFacingError): string => {
   if (error.message === "Only a Cloud administrator can stop keeping a conversation")
     return "Nur eine Cloud-Administratorin oder ein Cloud-Administrator kann die Aufbewahrung aufheben.";
+  if (
+    error.message === "The draft's editing state changed. Keep any text on this device and reopen the draft before editing." ||
+    error.message === "The draft changed while loading. Keep any text on this device and reopen it."
+  )
+    return "Der Entwurf hat sich beim Laden geändert. Sichere den Text auf diesem Gerät und öffne den Entwurf erneut.";
+  if (error.code === "DRAFT_DOCUMENT_HISTORY_UNAVAILABLE")
+    return "Die Bearbeitungshistorie dieses Entwurfs ist nicht verfügbar. Sichere den Text auf diesem Gerät und bitte die Postfach-Administration, den Entwurf vor dem Senden wiederherzustellen.";
+  if (error.code === "DRAFT_DOCUMENT_INVALID_HISTORY")
+    return "Die Bearbeitungshistorie dieses Entwurfs konnte nicht sicher gelesen werden. Sichere den Text auf diesem Gerät und bitte die Postfach-Administration, den Entwurf vor dem Senden wiederherzustellen.";
+  if (error.code === "DRAFT_DOCUMENT_READ_UNAVAILABLE")
+    return "Der Entwurf konnte nicht geladen werden. Sichere den Text auf diesem Gerät und versuche es gleich erneut. Bleibt das Problem bestehen, bitte die Postfach-Administration um Wiederherstellung.";
   if (error.code === "DRAFT_DOCUMENT_UNAVAILABLE")
     return "Der Entwurf konnte nicht zum Senden vorbereitet werden. Es wurde nichts eingereiht. Die Bearbeitung kann noch bis zu einer Minute gesperrt sein. Öffne und prüfe den aktuellen Entwurf vor einem erneuten Sendeversuch.";
   if (error.code === "DOCUMENT_FROZEN")

@@ -3209,7 +3209,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
     async (c) => {
       const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; draftId: string };
       const result = await readDraftDocument({ context: requestContext(c), ...params, signal: c.req.raw.signal });
-      if (!result.ok) return respond(c, result);
+      if (!result.ok) return respondPublic(c, result);
       const value = result.data;
       return respond(
         c,
