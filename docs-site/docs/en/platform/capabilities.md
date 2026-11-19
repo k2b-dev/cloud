@@ -1111,6 +1111,7 @@ those operations; another ID field or removal of `code: false` fails it.
 readable context for a new personal chat and does not mutate the Project.
 Personal Code may use it. The check exempts only this field on this operation;
 another ID field still requires a target.
+
 The retired `code.access.` namespace remains reserved and unavailable to Code,
 including when an old catalog still advertises it.
 Shared provider contracts continue to use their published shapes. Do not
