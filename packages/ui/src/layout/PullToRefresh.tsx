@@ -6,14 +6,18 @@ import { useRefreshMessages } from "./refresh-messages";
 const THRESHOLD = 64;
 const MAX_DISTANCE = 96;
 const RESISTANCE = 0.5;
-/** A trackpad has no release event, so an idle gap ends the wheel gesture. */
+/** A trackpad has no release event, so an idle gap ends the wheel gesture, including its momentum. */
 const WHEEL_IDLE_MS = 300;
+/** Matches the indicator's slide-out in CSS; a new pull starts only once it has left. */
+const LEAVE_MS = 200;
+/** How long a failed refresh keeps its mark and message in view. */
+const ERROR_MS = 2600;
 const LINE_HEIGHT = 16;
 
-export type PullToRefreshState = "idle" | "pulling" | "ready" | "refreshing";
+export type PullToRefreshState = "idle" | "pulling" | "ready" | "refreshing" | "error";
 
 export type PullToRefreshProps = {
-  /** Reloads the wrapped content. The indicator stays busy until the promise settles. */
+  /** Reloads the wrapped content. The indicator stays busy until the promise settles; a rejection shows a short failure mark. */
   onRefresh: () => Promise<void>;
   disabled?: boolean;
   /** Status text announced while refreshing. Defaults to the shared "Refreshing" message. */
@@ -38,7 +42,12 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
   const [distance, setDistance] = createSignal(0);
   let root!: HTMLDivElement;
 
-  const active = () => !props.disabled && state() !== "refreshing";
+  /** True from a refresh's start until the indicator has left again: no input starts anything. */
+  const [settling, setSettling] = createSignal(false);
+  /** Set while a failure shows and until the indicator has left, so its hint slides out with it. */
+  const [failed, setFailed] = createSignal(false);
+  let disposed = false;
+  const active = () => !props.disabled && !settling();
   const atTop = (target: EventTarget | null) => {
     for (let node = target instanceof Element ? target : null; node && node !== root; node = node.parentElement)
       if (node.scrollTop > 0) return false;
@@ -61,39 +70,74 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     setDistance(next);
     setState(next >= THRESHOLD ? "ready" : next > 0 ? "pulling" : "idle");
   };
+  let leaveTimer: ReturnType<typeof setTimeout> | undefined;
+  let errorTimer: ReturnType<typeof setTimeout> | undefined;
+  let wheelTravel = 0;
+  let wheelArmed = true;
+  let wheelTimer: ReturnType<typeof setTimeout> | undefined;
   const refresh = async () => {
-    if (state() === "refreshing") return;
+    if (settling()) return;
+    setSettling(true);
+    // A wheel gesture still in flight, such as the one that started this refresh, is spent.
+    if (wheelTimer !== undefined) wheelArmed = false;
     setState("refreshing");
     setDistance(THRESHOLD);
+    const leave = () => {
+      if (disposed) return;
+      reset();
+      leaveTimer = setTimeout(() => {
+        setFailed(false);
+        setSettling(false);
+      }, LEAVE_MS);
+    };
     try {
       await props.onRefresh();
-    } finally {
-      reset();
+    } catch {
+      if (disposed) return;
+      // The view reports its own error; the indicator only marks the failed refresh in place.
+      setState("error");
+      setFailed(true);
+      errorTimer = setTimeout(leave, ERROR_MS);
+      return;
     }
+    leave();
   };
   const release = () => {
     if (state() === "ready") void refresh();
-    else if (state() !== "refreshing") reset();
+    else if (!settling()) reset();
   };
   const abort = () => {
-    if (state() !== "refreshing") reset();
+    if (!settling()) reset();
   };
 
-  let wheelTravel = 0;
-  let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+  // Wheel overscroll never moves the indicator: it only adds up travel, and
+  // reaching the threshold starts the refresh, which slides the indicator in
+  // once. Trackpad momentum keeps sending wheel events long after the fingers
+  // left, so a wheel gesture that started a refresh stays spent until it has
+  // been quiet for WHEEL_IDLE_MS, however long it outlasts the refresh. A
+  // gesture that began while the list was still scrolled is spent as well: its
+  // momentum reaching the top is not a pull.
   const endWheel = () => {
+    wheelTimer = undefined;
     wheelTravel = 0;
-    abort();
+    wheelArmed = true;
   };
   const onWheel = (event: WheelEvent) => {
-    if (!active()) return;
     clearTimeout(wheelTimer);
     wheelTimer = setTimeout(endWheel, WHEEL_IDLE_MS);
-    if (event.deltaY >= 0 || !atTop(event.target)) return endWheel();
+    if (!wheelArmed || !active()) return;
+    if (!atTop(event.target)) {
+      wheelTravel = 0;
+      wheelArmed = false;
+      return;
+    }
+    if (event.deltaY >= 0) {
+      wheelTravel = 0;
+      return;
+    }
     const scale = event.deltaMode === 1 ? LINE_HEIGHT : event.deltaMode === 2 ? root.clientHeight : 1;
     wheelTravel -= event.deltaY * scale;
-    pull(wheelTravel);
-    if (state() === "ready") {
+    if (wheelTravel * RESISTANCE >= THRESHOLD) {
       wheelTravel = 0;
       void refresh();
     }
@@ -171,7 +215,10 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     root.addEventListener("touchend", onTouchEnd);
     root.addEventListener("touchcancel", onTouchCancel);
     onCleanup(() => {
+      disposed = true;
       clearTimeout(wheelTimer);
+      clearTimeout(leaveTimer);
+      clearTimeout(errorTimer);
       root.removeEventListener("wheel", onWheel);
       root.removeEventListener("pointerdown", onPointerDown);
       root.removeEventListener("pointermove", onPointerMove);
@@ -186,6 +233,10 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
 
   const className = () => (props.class?.trim() ? `k2b-pull-to-refresh ${props.class.trim()}` : "k2b-pull-to-refresh");
   const progress = () => Math.min(1, distance() / THRESHOLD);
+  const icon = () =>
+    state() === "refreshing" ? "ti ti-loader-2 k2b-spin" : state() === "error" ? "ti ti-exclamation-mark" : "ti ti-refresh";
+  const announcement = () =>
+    state() === "refreshing" ? (props.label ?? refreshMessages().refreshing) : state() === "error" ? refreshMessages().refreshFailed : "";
 
   return (
     <div
@@ -196,9 +247,12 @@ export function PullToRefresh(props: PullToRefreshProps): JSX.Element {
     >
       <div class="k2b-pull-to-refresh__indicator" role="status" aria-live="polite">
         <span class="k2b-pull-to-refresh__icon" aria-hidden="true">
-          <i class={state() === "refreshing" ? "ti ti-loader-2 k2b-spin" : "ti ti-refresh"} />
+          <i class={icon()} />
         </span>
-        <span class="k2b-sr-only">{state() === "refreshing" ? (props.label ?? refreshMessages().refreshing) : ""}</span>
+        <span class="k2b-sr-only">{announcement()}</span>
+        <span class="k2b-pull-to-refresh__message" aria-hidden="true">
+          {failed() ? refreshMessages().refreshFailed : ""}
+        </span>
       </div>
       {props.children}
     </div>

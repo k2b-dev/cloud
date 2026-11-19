@@ -12,3 +12,14 @@ export const captureMailWorkspaceRefreshError = async (refresh: () => Promise<vo
     return error instanceof Error ? error : new Error(String(error));
   }
 };
+
+/**
+ * Reports a failed refresh and still rejects, for callers that mark the failure
+ * in place themselves, such as the list's pull to refresh.
+ */
+export const reportMailWorkspaceRefresh = async (refresh: () => Promise<void>, report: (message: string) => void): Promise<void> => {
+  const error = await captureMailWorkspaceRefreshError(refresh);
+  if (!error) return;
+  report(error.message);
+  throw error;
+};

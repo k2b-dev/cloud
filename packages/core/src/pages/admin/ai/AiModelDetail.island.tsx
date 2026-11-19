@@ -554,6 +554,19 @@ export default function AiModelDetail(props: {
               </div>
               <p class="text-xs text-(--k2b-text-muted)">{example()}</p>
             </Show>
+            <Show
+              when={
+                draft().kind === "chat" &&
+                (!draft().priced ||
+                  draft().inputPerMillion === null ||
+                  draft().outputPerMillion === null ||
+                  !((draft().inputPerMillion ?? 0) > 0 || (draft().outputPerMillion ?? 0) > 0))
+              }
+            >
+              <NoticeCard tone="neutral" icon="ti ti-info-circle">
+                <p>{t().automationPriceRequired}</p>
+              </NoticeCard>
+            </Show>
           </Show>
         </Section>
 

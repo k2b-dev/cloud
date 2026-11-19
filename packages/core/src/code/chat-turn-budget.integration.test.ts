@@ -283,7 +283,7 @@ suiteFor(
     }
   });
 
-  test("actual-model admission fences owner, version, state and worker lease; zero price requires ordinary AI approval", async () => {
+  test("actual-model admission fences authority and reports unpriced models as localized host failures", async () => {
     await reset();
     const user = await accounts.users.get({ id: owner });
     if (!user) throw new Error("Missing fixture owner");
@@ -322,9 +322,17 @@ suiteFor(
     await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
     await expect(admitCodeChatTurn(input)).rejects.toThrow("authority");
     await sql`UPDATE code.codes SET state='active' WHERE id=${codeId}`;
-    await expect(
-      admitCodeChatTurn({ ...input, profile: { ...profile, pricing: { inputPerMillion: 0, outputPerMillion: 0 } } }),
-    ).rejects.toThrow("code_approval_required");
+    for (const locale of ["de", "en"]) {
+      for (const pricing of [undefined, { inputPerMillion: 0, outputPerMillion: 0 }]) {
+        await expect(
+          admitCodeChatTurn({ ...input, runConfig: { ...runConfig, locale }, profile: { ...profile, pricing } }),
+        ).rejects.toMatchObject({
+          code: "host_rejected",
+          userMessage: expect.stringContaining(locale === "de" ? "Preis" : "price"),
+        });
+      }
+    }
+    expect(await sql`SELECT 1 FROM code.chat_turn_budgets WHERE turn_id=${entry.turnId}::uuid`).toHaveLength(0);
     await admitCodeChatTurn(input);
     await expect(
       admitCodeChatTurn({ ...input, runConfig: { ...runConfig, locale: "de" }, profile: { ...profile, maxOutputTokens: 2000 } }),

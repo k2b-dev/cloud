@@ -3,6 +3,7 @@ import { type AiWakeupBudgetCheck, AiWakeupBudgetError } from "@k2b/cloud/ai";
 import { type AiChatTurnAdmission, AiTurnFailure, markAiWakeupMissed } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings, isAccountAllowed, logger } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
+import { hasBillableAiPricing } from "@k2b/cloud/shared";
 import { aiWakeupMessages } from "./ai-wakeup-messages";
 import { codeChatBudgetMessages } from "./code/chat-budget-messages";
 import {
@@ -48,6 +49,15 @@ export const admitCodeChatTurn: AiChatTurnAdmission = async (input) => {
       const fence = await db`SELECT id FROM ai.turns WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid
         AND status='running' AND lease_owner=${input.leaseOwner} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
       if (!fence.length) throw new AiTurnFailure("not_allowed", "Code chat worker lease was lost.");
+      if (!hasBillableAiPricing(input.profile.pricing))
+        throw new AiTurnFailure(
+          "host_rejected",
+          "Code chat requires a model with a positive reference price.",
+          codeChatBudgetMessages(input.runConfig.locale ?? (await coreSettings.get<string>("app.locale", db)) ?? "en").unpricedModel({
+            automation: code.title,
+            model: input.profile.label,
+          }),
+        );
       await requireCodeVersionApproval(code, run.version_id, db, [codeChatModelPolicyRow(input.profile)]);
       await reserveCodeChatTurnBudget(
         { turnId: input.turnId, codeId: code.id, ownerUserId: code.owner.userId, profile: input.profile },
