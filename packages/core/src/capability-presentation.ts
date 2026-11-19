@@ -394,6 +394,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             length: "Gewünschte Anzahl an UTF-16-Codeeinheiten, höchstens 16.384; ein einzelnes Surrogatpaar kann zwei Einheiten belegen.",
           },
         },
+        "code.run.entries": {
+          title: "Code-Laufeinträge lesen",
+          description:
+            "Liest Zustand, Schritte und die begrenzte bereinigte Ausgabe eines Laufs. Nur Verwaltende sehen die Ausgabe; Leser erhalten output:null.",
+          input: { codeId: "Code-ID.", runId: "UUID eines Laufs dieses Codes." },
+        },
         ...geoCapabilityPresentation,
         "entities.search": {
           title: "Empfänger für Zugriffsrechte suchen",
