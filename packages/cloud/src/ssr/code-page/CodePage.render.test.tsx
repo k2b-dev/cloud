@@ -240,6 +240,7 @@ describe("Code page: runs (Bild 22)", () => {
     expect(markup()).toMatch(/class="k2b-run-log__output-toggle"[^>]*aria-expanded="true"/);
     expect(initial).not.toContain("Was passiert ist");
     expect(initial).not.toContain("Verbindung wird hergestellt");
+    expect(initial).toContain("13:48:42");
     if (data.state.kind !== "ready") throw new Error("Missing fixture");
     data.state.permission = "reader";
     const reader = visibleText(markup());

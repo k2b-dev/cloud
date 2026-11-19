@@ -331,6 +331,8 @@ visible as quiet output lines, including runs with no logged steps or messages. 
 the server snapshot first and opens output for Code managers. A stopped
 connection retains the last visible snapshot with **Try again**; revoked
 access removes its output and offers **Reload**.
+The page supplies its request timezone through RunLog's `timeZone` prop so
+server output and the first browser render show the same timestamps.
 
 ### Follow all calls of a Code
 

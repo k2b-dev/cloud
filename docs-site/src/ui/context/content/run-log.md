@@ -43,9 +43,9 @@ known run and entries visible.
 Later records for the same step id update its original row. Unknown kinds
 are ignored. A pending step after a successful run displays as skipped; after
 a failed run it stays pending. Output timestamps use the inherited locale and
-the runtime's local timezone through `Intl.DateTimeFormat`; an already
-formatted time string is displayed unchanged. SSR hosts use the same timezone
-as their browser rendering, or supply already formatted timestamps. No clock
+the optional `timeZone` through `Intl.DateTimeFormat`, defaulting to the runtime's
+local zone. Pass the request's zone for SSR so the first browser render shows the
+same times. An already formatted time string is displayed unchanged. No clock
 runs in the component. Supply `duration` in milliseconds to update the run's clock.
 
 ## Layout and disclosures

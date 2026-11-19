@@ -72,6 +72,7 @@ export function CodeRunLog(props: {
   codeId: string;
   detail: CodePageRunDetail;
   now: string;
+  timeZone?: string;
   manager: boolean;
   reason?: string | null;
   actions?: readonly RunLogAction[];
@@ -201,6 +202,7 @@ export function CodeRunLog(props: {
         state={state()}
         entries={entries()}
         duration={duration()}
+        timeZone={props.timeZone ?? "UTC"}
         output={output()}
         meta={
           <span role="status" title={meta() ?? undefined}>

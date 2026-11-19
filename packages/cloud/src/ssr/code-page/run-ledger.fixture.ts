@@ -6,6 +6,7 @@ export function runLedgerFixture(failed = false) {
   const data = codePageFixture("runs");
   if (data.state.kind !== "ready" || !data.state.run || !data.state.runs) throw new Error("Missing run fixture");
   data.dates.now = RUN_LEDGER_NOW;
+  data.dates.timeZone = "Europe/Berlin";
   data.state.code.title = "Belege erfassen";
   data.state.runs.items = data.state.runs.items.slice(0, 4);
   data.state.runs.nextCursor = null;

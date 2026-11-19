@@ -108,6 +108,7 @@ for (const theme of ["light", "dark"] as const)
         viewport: { width, height: width === 390 ? 780 : 900 },
         reducedMotion: "reduce",
         colorScheme: theme,
+        timezoneId: "America/New_York",
       });
       const page = await context.newPage();
       const errors = pageErrors(page);
@@ -150,6 +151,7 @@ for (const theme of ["light", "dark"] as const)
           await document.fonts.ready;
         });
         await page.getByText("14 Positionen erkannt", { exact: true }).waitFor();
+        expect(await page.locator(".k2b-run-log__output").textContent()).toContain("13:48:42");
         await page.waitForFunction(() => !document.body.textContent?.includes("Verbindung wird hergestellt"));
         expect(reads).toBe(1);
         expect(await page.locator(".k2b-run-log__output-toggle").getAttribute("aria-expanded")).toBe("true");

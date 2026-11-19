@@ -209,6 +209,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
         codeId={props.state.code.id}
         detail={{ ...props.detail, run: run() }}
         now={props.data.dates.now}
+        timeZone={props.data.dates.timeZone}
         manager={props.state.permission === "editor"}
         confirmed={words()?.untilThen}
         reason={budget() ?? words()?.reason}
