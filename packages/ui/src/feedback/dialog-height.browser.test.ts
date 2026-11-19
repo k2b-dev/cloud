@@ -253,14 +253,12 @@ describe(`${browserName} the frame follows its content`, () => {
 
   for (const scaling of ["zoom:1.25", "transform:translate(-50%,-50%) scale(.98)!important"])
     test(`fractional holding and folding keep layout dimensions under ${scaling}`, async () => {
-      const page = await (await browser.newContext({ ...desktop, reducedMotion: "no-preference" })).newPage();
+      const page = await (await browser.newContext({ ...desktop, reducedMotion: "reduce" })).newPage();
       try {
-        await page.setContent(
-          `<html><head><style>${css} dialog{${scaling};animation:none!important}</style></head><body class="k2b-ui"></body></html>`,
-        );
+        await page.setContent(`<html><head><style>${css} dialog{${scaling}}</style></head><body class="k2b-ui"></body></html>`);
         await page.addScriptTag({ content: script });
-        // settled: compare natural geometry with the first held rectangle before exercising a paused fold.
-        const result = await page.evaluate(async () => {
+        // settled: reduced motion isolates initial holding from the stylesheet's starting-style translate.
+        const initial = await page.evaluate(async () => {
           let natural = { top: 0, height: 0 };
           const show = HTMLDialogElement.prototype.showModal;
           HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
@@ -271,48 +269,95 @@ describe(`${browserName} the frame follows its content`, () => {
           try {
             (window as unknown as HeightWindow).openForm(false, false, undefined, true);
             while (!document.querySelector("[data-k2b-dialog-live]")) await new Promise(requestAnimationFrame);
-            for (let i = 0; i < 6; i++) await new Promise(requestAnimationFrame);
+            for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
             const dialog = document.querySelector("dialog")!;
             const { top, height } = dialog.getBoundingClientRect();
-            const before = Number.parseFloat(getComputedStyle(dialog).height);
-            const folds: Animation[] = [];
-            const animate = dialog.animate.bind(dialog);
-            dialog.animate = (...args) => {
-              const animation = animate(...args);
-              animation.pause();
-              folds.push(animation);
-              return animation;
-            };
-            document.querySelector<HTMLElement>("[data-content]")!.style.height = "183.375px";
-            for (let i = 0; i < 6; i++) await new Promise(requestAnimationFrame);
-            const fold = folds[0]!;
-            const effect = fold.effect;
-            if (!(effect instanceof KeyframeEffect)) throw new Error("Expected frame height keyframes");
-            const keyframes = effect.getKeyframes();
-            fold.finish();
-            for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
-            return {
-              natural,
-              held: { top, height },
-              before,
-              from: Number.parseFloat(String(keyframes[0]!.height)),
-              to: Number.parseFloat(String(keyframes[1]!.height)),
-              after: Number.parseFloat(getComputedStyle(dialog).height),
-            };
+            return { natural, held: { top, height }, before: Number.parseFloat(getComputedStyle(dialog).height) };
           } finally {
             HTMLDialogElement.prototype.showModal = show;
           }
         });
-        expect(result.natural.height / result.before).toBeCloseTo(scaling.startsWith("zoom") ? 1.25 : 0.98, 2);
-        expect(result.held).toEqual(result.natural);
-        expect(result.from).toBeCloseTo(result.before, 2);
-        expect(result.to - result.before).toBeCloseTo(60, 2);
-        expect(result.after - result.before).toBeCloseTo(60, 2);
+        expect(initial.natural.height / initial.before).toBeCloseTo(scaling.startsWith("zoom") ? 1.25 : 0.98, 2);
+        expect(initial.held).toEqual(initial.natural);
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+        await settled(page);
+        await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        await page.evaluate(() => {
+          const dialog = document.querySelector("dialog")!;
+          const animate = dialog.animate.bind(dialog);
+          dialog.animate = (...args) => {
+            const animation = animate(...args);
+            animation.pause();
+            return animation;
+          };
+          document.querySelector<HTMLElement>("[data-content]")!.style.height = "183.375px";
+        });
+        await page.waitForFunction(() => document.querySelector("dialog")?.hasAttribute("data-k2b-frame-motion"));
+        const fold = await page.evaluate(async () => {
+          const dialog = document.querySelector("dialog")!;
+          const animation = dialog
+            .getAnimations()
+            .find(
+              (animation) =>
+                animation.effect instanceof KeyframeEffect && animation.effect.getKeyframes().some((keyframe) => "height" in keyframe),
+            );
+          if (!(animation?.effect instanceof KeyframeEffect)) throw new Error("Expected frame height keyframes");
+          const keyframes = animation.effect.getKeyframes();
+          animation.finish();
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          return {
+            from: Number.parseFloat(String(keyframes[0]!.height)),
+            to: Number.parseFloat(String(keyframes[1]!.height)),
+            after: Number.parseFloat(getComputedStyle(dialog).height),
+          };
+        });
+        expect(fold.from).toBeCloseTo(initial.before, 2);
+        expect(fold.to - initial.before).toBeCloseTo(60, 2);
+        expect(fold.after - initial.before).toBeCloseTo(60, 2);
         await settled(page);
       } finally {
         await page.context().close();
       }
     });
+
+  test("holding fractional content never introduces body scroll overflow", async () => {
+    const page = await (await browser.newContext({ ...desktop, reducedMotion: "reduce" })).newPage();
+    try {
+      await page.setContent(`<html><head><style>${css}</style></head><body class="k2b-ui"></body></html>`);
+      await page.addScriptTag({ content: script });
+      await page.evaluate(() => (window as unknown as HeightWindow).openForm(false, false, undefined, true));
+      await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
+      await settled(page);
+      // settled: sweep layout-unit fractions across the rounding boundary, sampling natural and held sizes in one task.
+      const samples = await page.evaluate(async () => {
+        const dialog = document.querySelector("dialog")!;
+        const content = document.querySelector<HTMLElement>("[data-content]")!;
+        const body = dialog.querySelector<HTMLElement>(".k2b-panel-dialog__body")!;
+        const samples: { natural: number; held: number; overflow: number; naturalOverflow: number }[] = [];
+        for (let unit = 0; unit < 64; unit += 5) {
+          content.style.height = `${123 + unit / 64}px`;
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          const held = dialog.getBoundingClientRect().height;
+          const overflow = body.scrollHeight - body.clientHeight;
+          const height = dialog.style.height;
+          dialog.style.removeProperty("height");
+          const natural = dialog.getBoundingClientRect().height;
+          const naturalOverflow = body.scrollHeight - body.clientHeight;
+          dialog.style.height = height;
+          samples.push({ natural, held, overflow, naturalOverflow });
+        }
+        return samples;
+      });
+      for (const sample of samples) {
+        expect(sample.held).toBeGreaterThanOrEqual(sample.natural);
+        expect(sample.held - sample.natural).toBeLessThan(1 / 64);
+        expect(sample.naturalOverflow).toBe(0);
+        expect(sample.overflow).toBe(0);
+      }
+    } finally {
+      await page.context().close();
+    }
+  });
 
   for (const previewMode of ["flow", "overlay"] as const)
     test(`500 replaced ${previewMode} preview nodes with unchanged height cause no frame measurements or observer churn`, async () => {

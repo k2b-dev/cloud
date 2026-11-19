@@ -217,7 +217,10 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     return Math.max((viewport?.offsetTop ?? 0) + margin, Math.min(shown.top - shown.height / 2, bottom - margin - height));
   };
   const holdHeight = (height: number) => {
-    dialog.style.height = `${height}px`;
+    // CSSOM decimal serialization can fall just below the actual layout unit (e.g. 284.984 instead of
+    // 284.984375). Writing it back verbatim loses a unit and can give a flex body a 1 px scroll overflow.
+    // A thousandth of a pixel restores that unit without rounding the frame to a whole CSS pixel.
+    dialog.style.height = `${height + 0.001}px`;
     rested = height;
   };
   const changed = () => {
@@ -770,9 +773,28 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       holdHeight(seen().height);
       endFrame();
     }
+    dialog.style.inset = "";
     placed = false;
     followingAnchor = undefined;
   };
 
   return { begin, arrive, announce, follow, stop, freeze, position };
+};
+
+/** Every successful import, including retries, joins the current frame once and follows its current level. */
+export const connectFrameMotion = (
+  state: {
+    element?: HTMLDialogElement;
+    motion?: FrameMotion;
+    stack: readonly { container: HTMLElement; role: "dialog" | "alertdialog" }[];
+  },
+  announced?: (typeof state.stack)[number],
+) => {
+  if (!state.element?.isConnected) return;
+  const top = state.stack.at(-1);
+  if (!state.motion) {
+    state.motion = createFrameMotion(state.element);
+    if (top) state.motion.follow(top.container);
+  }
+  if (top && top === announced) state.motion.announce(top.role);
 };

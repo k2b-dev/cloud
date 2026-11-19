@@ -157,8 +157,10 @@ const applyAccessibleName = (dialog: HTMLDialogElement, entry: DialogStackEntry)
  */
 let frameMotion: typeof import("./dialog-frame-motion") | undefined;
 let frameMotionLoading: Promise<void> | undefined;
-const loadFrameMotion = (): Promise<void> =>
-  (frameMotionLoading ??= import("./dialog-frame-motion").then(
+const loadFrameMotion = (state: DialogState, announced?: DialogStackEntry): void => {
+  const arrived = () => frameMotion?.connectFrameMotion(state, announced);
+  if (frameMotion) return arrived();
+  frameMotionLoading ??= import("./dialog-frame-motion").then(
     (module) => {
       frameMotion = module;
     },
@@ -166,7 +168,9 @@ const loadFrameMotion = (): Promise<void> =>
       // A failed chunk request may succeed on the next open.
       frameMotionLoading = undefined;
     },
-  ));
+  );
+  void frameMotionLoading.then(arrived);
+};
 
 const schedule = (callback: () => void): void => {
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(callback);
@@ -406,15 +410,6 @@ export const createDialogCore = () => {
     }
   };
 
-  /** Every successful load, including a retry for an existing dialog, joins the same idempotent step. */
-  const moduleArrived = () => {
-    const element = state.element;
-    if (!element?.isConnected || state.motion || !frameMotion) return;
-    state.motion = frameMotion.createFrameMotion(element);
-    const top = state.stack.at(-1);
-    if (top) state.motion.follow(top.container);
-  };
-
   const ensureDialogElement = () => {
     // A frame that is still fading out ends now; the new dialog gets a frame of its own.
     endLeaving();
@@ -437,8 +432,7 @@ export const createDialogCore = () => {
     getK2bPortalRoot(undefined, document.body).appendChild(element);
     state.element = element;
     // The frame follows its content's height as soon as the module is there; a dialog that opened before follows then.
-    if (frameMotion) moduleArrived();
-    else void loadFrameMotion().then(moduleArrived);
+    loadFrameMotion(state);
     return element;
   };
 
@@ -466,10 +460,8 @@ export const createDialogCore = () => {
     if (dialog.className !== entry.panelClassName) dialog.className = entry.panelClassName;
     applyUiScope(dialog, entry.uiScope);
     const position = entry.position;
-    const wasPositioned = dialog.style.position === "fixed";
+    if (position || dialog.style.position) dialog.style.inset = position ? `${position.y}px auto auto ${position.x}px` : "";
     dialog.style.position = position ? "fixed" : "";
-    if (position) dialog.style.inset = `${position.y}px auto auto ${position.x}px`;
-    else if (wasPositioned) dialog.style.inset = "";
     dialog.style.margin = position ? "0" : "";
     dialog.style.transform = position ? "none" : "";
     dialog.dataset.modeless = String(!entry.modal);
@@ -545,14 +537,6 @@ export const createDialogCore = () => {
     }
   };
 
-  /** A level that replaces another says its name; before the module has loaded, as soon as it has, if it still shows. */
-  const announceLevel = (entry: DialogStackEntry) => {
-    void loadFrameMotion().then(() => {
-      moduleArrived();
-      if (state.stack.at(-1) === entry) state.motion?.announce(entry.role);
-    });
-  };
-
   /** Closes the shown level. `below` are the levels under it that close with it (lowest last): they leave with the frame. */
   const popTop = (result?: unknown, below: DialogStackEntry[] = []) => {
     const top = state.stack.pop();
@@ -580,7 +564,7 @@ export const createDialogCore = () => {
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
       if (motion) motion.arrive(previous.container, discard);
       else discard();
-      announceLevel(previous);
+      loadFrameMotion(state, previous);
       schedule(() => {
         if (!focusUnclaimed(dialog)) return;
         if (top.opener?.isConnected) returnFocus(top.opener, top.openerRing);
@@ -757,7 +741,6 @@ export const createDialogCore = () => {
                     if (entry.position?.x === position?.x && entry.position?.y === position?.y) return;
                     if (state.stack[state.stack.length - 1] === entry) {
                       state.motion?.position();
-                      dialog.style.inset = "";
                     }
                     entry.position = position ? { ...position } : null;
                     applyPresentation(entry);
@@ -785,7 +768,7 @@ export const createDialogCore = () => {
           };
           if (state.motion) state.motion.arrive(container, hide);
           else hide();
-          announceLevel(entry);
+          loadFrameMotion(state, entry);
         }
 
         if (state.stack.length === 1) {
