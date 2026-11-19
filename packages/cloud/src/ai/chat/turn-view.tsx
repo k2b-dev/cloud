@@ -232,7 +232,8 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const duration = segment().duration();
     return !segment().earlier && duration && duration.workedMs > 0 ? duration.workedMs : null;
   };
-  const summary = createMemo(() => (isLive(segment().phase) ? "" : workSummary(layout().work, locale())));
+  const readerTimeZone = useReaderTimeZone();
+  const summary = createMemo(() => (isLive(segment().phase) ? "" : workSummary(layout().work, locale(), readerTimeZone)));
   const ending = () => {
     const phase = segment().phase;
     if (phase === "stopped") return segment().queueInterrupted ? "paused" : "stopped";

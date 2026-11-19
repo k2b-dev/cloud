@@ -286,3 +286,15 @@ test("an outcome Cloud could not see counts as unclear in warning, until a check
   expect(workStepParts([unclear("done")], 1, "de").issues).toEqual([]);
   expect(workStepParts([unclear("not_done")], 1, "en").issues).toEqual([{ text: "1 failed", tone: "danger" }]);
 });
+
+test("an alarm Gustav set names itself with its time or rhythm in the reader's words, never cron", () => {
+  const once = tool("wakeup_create", { at: "2026-11-19T13:23:00.000Z", cron: null }, {});
+  expect(workSummary([once], "de", "Europe/Berlin")).toBe("Wecker gestellt · 14:23");
+  expect(workSummary([once], "en", "Europe/Berlin")).toBe("Alarm set · 14:23");
+  const weekly = tool("wakeup_create", { at: "2026-11-23T07:00:00.000Z", cron: "0 8 * * 1" }, {});
+  expect(workSummary([weekly], "de", "Europe/Berlin")).toBe("Wecker gestellt · montags 08:00");
+  const custom = tool("wakeup_create", { at: "2026-11-19T14:00:00.000Z", cron: "0 */2 * * *" }, {});
+  expect(workSummary([custom], "de", "Europe/Berlin")).toBe("Wecker gestellt");
+  // A refused alarm is no outcome of the turn.
+  expect(workSummary([{ ...once, status: "failed", isError: true, result: "LIMIT_REACHED: five" }], "de", "Europe/Berlin")).toBe("");
+});

@@ -270,6 +270,38 @@ describe("alarms above the field", () => {
     }
   });
 
+  test("a chip that joins Waiting for you moves nothing in that row and gives it no back", async () => {
+    const { page, errors, close } = await open(desktop, []);
+    try {
+      await dock(page, { waiting: true });
+      await settled(page);
+      const row = () =>
+        page.locator("nav.assistant-waiting").evaluate((nav) => {
+          const label = nav.querySelector(".assistant-waiting__label")!.getBoundingClientRect();
+          const first = nav.querySelector(".assistant-waiting__entry")!.getBoundingClientRect();
+          const box = nav.getBoundingClientRect();
+          return {
+            label: [Math.round(label.left), Math.round(label.top)],
+            first: [Math.round(first.left), Math.round(first.top)],
+            box: [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)],
+            back: getComputedStyle(nav).backgroundColor,
+          };
+        });
+      const alone = await row();
+      expect(alone.box[3]).toBe(32);
+      await dock(page, { items: ALARMS.slice(0, 2) });
+      await settled(page);
+      expect(await page.locator("nav.assistant-waiting .assistant-wakeups .assistant-queue__chip").count()).toBe(1);
+      expect(await row()).toEqual(alone);
+      await dock(page, { queued: true });
+      await settled(page);
+      expect(await row()).toEqual(alone);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
   test("the list floats over the row at its full width, counts against the limit, and Escape gives the focus back", async () => {
     const { page, errors, close } = await open(desktop, ALARMS);
     try {

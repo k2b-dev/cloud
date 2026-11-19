@@ -83,7 +83,9 @@ chat's alarms and reset the postponement count.
 The Assistant's `cloud-assistant` Skill tells Gustav when and how to use the
 four tools. Gustav sets an alarm only when the person asks in the conversation
 for something at a later time. He never sets one because a mail, file or web
-page asks for it. The note is an instruction to Gustav in the person's language.
+page asks for it. The note is a short task in the imperative in the person's
+language, such as "Lena Vogt wegen der Messe Köln anrufen"; it never names the
+person or speaks about them.
 Gustav confirms the time and note in one sentence and never shows cron, IDs or
 revisions.
 

@@ -104,6 +104,8 @@ const messages = /* @__PURE__ */ i18n.define({
       workLookedIn: ({ apps }: { apps: string }) => `looked in ${apps}`,
       workChangedIn: ({ apps }: { apps: string }) => `made changes in ${apps}`,
       workSearchedWeb: "searched the web",
+      /** An alarm Gustav set, with its first time or rhythm in the reader's words. */
+      workAlarmSet: ({ when }: { when: string }) => `alarm set · ${when}`,
       workReadFiles: "read files",
       workCreatedFiles: "stored files",
       workStoredFiles: ({ count }: { count: number }) => (count === 1 ? "stored 1 file" : `stored ${count} files`),
@@ -564,6 +566,7 @@ const messages = /* @__PURE__ */ i18n.define({
       workLookedIn: ({ apps }) => `in ${apps} nachgesehen`,
       workChangedIn: ({ apps }) => `in ${apps} geändert`,
       workSearchedWeb: "im Web gesucht",
+      workAlarmSet: ({ when }) => `Wecker gestellt · ${when}`,
       workReadFiles: "Dateien gelesen",
       workCreatedFiles: "Dateien abgelegt",
       workStoredFiles: ({ count }) => (count === 1 ? "1 Datei abgelegt" : `${count} Dateien abgelegt`),

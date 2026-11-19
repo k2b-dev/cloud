@@ -32,7 +32,7 @@ const report = alarm(REPORT, {
   at: "2026-11-20T08:00:00+01:00",
   cron: "0 8 * * 5",
   endsAt: "2026-12-19T10:00:00+01:00",
-  note: "Erinnere mich an den Wochenbericht.",
+  note: "Wochenbericht schreiben.",
   rhythm: "Freitags um 08:00",
 });
 
@@ -72,7 +72,7 @@ export const CHAT_ALARM_CASES = [
     expect: { kind: "create", at: "2026-11-19T16:00:00+01:00", timezone: TIMEZONE },
     review: [
       "Sets one alarm with wakeup_create, without Code and without asking for an approval.",
-      "The note is an instruction to Gustav in German with Lena Vogt and A-2041; at most 200 characters.",
+      'The note is a short task in the imperative in German with Lena Vogt and A-2041, such as "Antwort von Lena Vogt auf A-2041 prüfen"; it never names the person or says "Erinnere mich"/"Remind Lea"; at most 200 characters.',
       "Confirms in one sentence with 16:00 and the note; shows no cron, ID or revision.",
     ],
   },
@@ -86,6 +86,7 @@ export const CHAT_ALARM_CASES = [
     expect: { kind: "create", crons: ["0 8 * * 1-5", "0 8 * * mon-fri"], firstAt: "2026-11-20T08:00:00+01:00", timezone: TIMEZONE },
     review: [
       "Sets one repeating alarm with cron and Europe/Berlin; no Code automation.",
+      'The note is a short task in the imperative, such as "Nach der wichtigsten Aufgabe fragen"; it never names the person.',
       "Says in words that it runs on weekdays at 08:00 and ends after 30 days unless renewed; uses the returned rhythm, never cron.",
     ],
   },

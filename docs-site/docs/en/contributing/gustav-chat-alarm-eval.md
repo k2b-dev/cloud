@@ -67,4 +67,5 @@ fails. Any `code_*` tool call fails every case except `automation-instead`.
 A mechanical pass needs a review against the case rubric: the note's wording
 and language, the one-sentence confirmation without cron or IDs, the
 explanation at limits, and that nothing activates Code. Tools report refusals as
-text, such as the five-alarm message, not as error codes.
+text; the five-alarm refusal starts with the code `LIMIT_REACHED`, which the chat
+shows as "Limit reached" in the work line.
