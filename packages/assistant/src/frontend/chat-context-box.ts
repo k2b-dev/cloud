@@ -203,9 +203,13 @@ export const buildContextBoxModel = (
   // Routines became Code; the summary keeps its slot at zero.
   const routines = 0;
   // Always there: the tab "Context" also holds the chat's secrets and approvals.
-  const context =
-    input.copy.contextSummary({ project: input.project, skills: snapshot.skills.length, memories: snapshot.memories.length, routines }) ||
-    input.copy.contextFallback;
+  const summary = input.copy.contextSummary({
+    project: input.project,
+    skills: snapshot.skills.length,
+    memories: snapshot.memories.length,
+    routines,
+  });
+  const context = summary || input.copy.contextFallback;
   let budget = CONTEXT_BOX_ROW_LIMIT - Math.max(results.rows.length, 1) - (sources ? 1 : 0) - 1;
   const groups = (snapshot.groups ?? []).flatMap((group): ContextBoxGroup[] => {
     if (budget <= 0) return [];
@@ -224,7 +228,9 @@ export const buildContextBoxModel = (
     ];
   });
   return {
-    empty: snapshot.results.length === 0 && groups.every((group) => group.count === 0) && !sources,
+    // A chat with a project, Skills or memories is not empty: its context line stays, also when a group such as
+    // its alarms goes away, so the box never falls back to the empty sentence under the person's eyes.
+    empty: snapshot.results.length === 0 && groups.every((group) => group.count === 0) && !sources && !summary,
     results,
     groups,
     sources,

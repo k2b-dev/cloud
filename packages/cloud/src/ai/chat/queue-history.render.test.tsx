@@ -119,7 +119,8 @@ test("an alarm chip names a delivery well after its planned time as delayed, and
     status: "active" as const,
     missedReason: null,
     revision: 0,
-    rhythm: "Mo–Fr 08:00",
+    // The turn that set it wrote English words; the German reader still reads German.
+    rhythm: "Mon–Fri 08:00",
   };
   const repeating = render(
     [
