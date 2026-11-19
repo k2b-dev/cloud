@@ -611,6 +611,51 @@ suite("mail sync recovery", () => {
     }
   });
 
+  test("a pushed folder job ranks its turns as a command and adds no database statement to them", async () => {
+    const fixture = await createSyncedMailbox("pushed-turn");
+    const holder = await acquireProviderLease({
+      resource: fixture.resourceId,
+      waiter: `outbox:${crypto.randomUUID()}`,
+      priority: "command",
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    if (!holder.lock) throw new Error("The test could not take the provider lease");
+    const priorities = `mail:provider-lease-line:{${fixture.resourceId}}:priorities`;
+    const meter = await meterSql();
+    try {
+      const turn = async (input: { folderId: string; remoteResourceId?: string; pushed?: boolean }) => {
+        let resubmitted: { delayMs?: number; input?: unknown } | undefined;
+        const statements = await meter.during(() =>
+          runSyncFolderJob({ input, heartbeat: async () => undefined, resubmit: (options) => (resubmitted = options) }),
+        );
+        return { statements, resubmitted, priority: await redis.send("HGET", [priorities, `sync-folder:${fixture.folderId}`]) };
+      };
+      // A push as IMAP IDLE leaves it for the folder's job (enqueueFolderSync with `pushed`).
+      for (const key of [`mail:sync-pushed:${fixture.folderId}`, `mail:sync-requested:${fixture.folderId}`]) {
+        await redis.send("SET", [key, "1", "PX", "60000"]);
+      }
+      // The first turn reads the folder's remote mailbox, as every first turn does, and nothing more.
+      const first = await turn({ folderId: fixture.folderId });
+      expect(first.statements).toHaveLength(1);
+      expect(first.priority).toBe("command");
+      expect(first.resubmitted?.input).toEqual({
+        folderId: fixture.folderId,
+        backfill: false,
+        pushed: true,
+        remoteResourceId: fixture.resourceId,
+      });
+      // Its later turns that find the lease busy keep the push and ask the lease line only.
+      const later = await turn({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId, pushed: true });
+      expect(later.statements).toEqual([]);
+      expect(later.priority).toBe("command");
+      expect(later.resubmitted?.input).toEqual(first.resubmitted?.input);
+    } finally {
+      await meter.close();
+      await releaseProviderLease(holder.lock);
+      await redis.send("DEL", [`mail:sync-pushed:${fixture.folderId}`, `mail:sync-requested:${fixture.folderId}`]);
+    }
+  });
+
   test("a folder job whose folder is gone leaves the provider breaker as it is", async () => {
     const fixture = await createSyncedMailbox("gone-folder");
     // The breaker's window ended: the next job probes the provider.
