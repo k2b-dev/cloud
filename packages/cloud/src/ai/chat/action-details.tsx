@@ -5,12 +5,13 @@ import type { Block } from "../../blocks/schema";
 import { readCapabilityReviewContent } from "../../capabilities/client";
 import type { CapabilityReviewContentRef } from "../../contracts/capabilities";
 import type { ActionCard } from "./action-card";
+import { actionDetailsMessages } from "./action-details-messages";
 import { actionMessages } from "./action-messages";
 import { ActionTextView } from "./action-sentence";
 
 /** A view that is not inline: it loads once, and the approval waits until it is shown complete. */
 function CompleteView(props: { source: CapabilityReviewContentRef; card: ActionCard; draft?: BlockDraftState; onLoaded: () => void }) {
-  const t = () => actionMessages(props.card.locale);
+  const t = () => actionDetailsMessages.resolve([props.card.locale]).t;
   const [blocks, setBlocks] = createSignal<Block[]>();
   const [failed, setFailed] = createSignal(false);
   let request: AbortController | undefined;
@@ -38,7 +39,7 @@ function CompleteView(props: { source: CapabilityReviewContentRef; card: ActionC
         <Show when={failed()} fallback={<Placeholder state="loading" title={t().fullReviewLoading} variant="inline" />}>
           <Placeholder
             state="error"
-            title={t().fullReviewFailed}
+            title={actionMessages(props.card.locale).fullReviewFailed}
             variant="inline"
             action={
               <Button variant="secondary" size="sm" onClick={() => void load()}>
@@ -59,7 +60,7 @@ function CompleteView(props: { source: CapabilityReviewContentRef; card: ActionC
  * editing the draft in its app. A view too large to travel inline loads first; `onContentLoaded` says when it is shown.
  */
 export function ActionDetails(props: { card: ActionCard; draft?: BlockDraftState; onContentLoaded?: (key: string) => void }): JSX.Element {
-  const t = () => actionMessages(props.card.locale);
+  const t = () => actionDetailsMessages.resolve([props.card.locale]).t;
   return (
     <div class="cloud-action-details">
       <Show when={(props.card.consequences ?? []).length > 0}>
@@ -106,7 +107,7 @@ export function ActionDetails(props: { card: ActionCard; draft?: BlockDraftState
           <Show when={props.card.readMore}>
             {(href) => (
               <a href={href()} target="_blank" rel="noopener noreferrer" title={t().readMoreTitle}>
-                {t().openIn({ app: props.card.app.name })}
+                {actionMessages(props.card.locale).openIn({ app: props.card.app.name })}
               </a>
             )}
           </Show>

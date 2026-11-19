@@ -60,15 +60,10 @@ const messages = i18n.define({
       unavailable: "You can't answer this question here.",
       stopping: "The response is stopping.",
       offline: "Offline. You can answer again once connected.",
-      fullReviewLoading: "Loading the complete proposal …",
       fullReviewFailed: "The complete proposal could not be loaded. Try again before approving.",
       fullReviewRequired: "Read the complete proposal before approving.",
-      fullReviewRetry: "Try again",
-      // Preview
       /** The last item of a list that the list format joins with "and". */
       moreCount: ({ count }: { count: number }) => `${count.toLocaleString("en")} more`,
-      readMoreTitle: "Opens exactly this version",
-      changes: "What changes",
     },
     de: {
       declined: "Du hast abgelehnt.",
@@ -108,13 +103,9 @@ const messages = i18n.define({
       unavailable: "Diese Frage kannst du hier nicht beantworten.",
       stopping: "Die Antwort wird angehalten.",
       offline: "Offline. Antworten geht wieder mit Netz.",
-      fullReviewLoading: "Der vollständige Vorschlag wird geladen …",
       fullReviewFailed: "Der vollständige Vorschlag konnte nicht geladen werden. Versuche es vor der Freigabe noch einmal.",
       fullReviewRequired: "Lies vor der Freigabe den vollständigen Vorschlag.",
-      fullReviewRetry: "Noch einmal versuchen",
       moreCount: ({ count }) => `${count.toLocaleString("de")} weitere`,
-      readMoreTitle: "Öffnet genau diese Fassung",
-      changes: "Was sich ändert",
     },
   },
 });
