@@ -66,6 +66,7 @@ import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import ShellRuntime from "./ShellRuntime.island";
 import { readShellData } from "./shell-data";
+import { mountOverlays } from "./privacy-screen.overlays-fixture";
 // The real runtime with the timer the server rendered; the harness hydrates no island. "?popout" runs it as a page
 // without the command menu, as a pop-out editor does.
 const timerSeconds = readShellData()?.privacyTimerSeconds ?? 0;
@@ -78,6 +79,9 @@ render(
     }),
   document.createElement("div"),
 );
+// "?overlays" opens every overlay layer of @k2b/ui over the page, "?overlays=modal" with a modal dialog on top.
+const overlays = new URLSearchParams(location.search).get("overlays");
+if (overlays !== null) mountOverlays(overlays === "modal");
 `,
     },
     target: "browser",
@@ -565,6 +569,50 @@ describe("privacy screen", () => {
       });
       await page.evaluate(() => (document.getElementById("late-popover") as HTMLElement).showPopover());
       await page.waitForFunction(() => document.getElementById("late-popover")?.hasAttribute("data-cloud-privacy-covered"));
+    } finally {
+      await context.close();
+    }
+  });
+
+  test.each([
+    ["", ["#overlay-maximized", "#overlay-window", "#overlay-modeless", ".k2b-toast"]],
+    ["modal", ["#overlay-maximized", "#overlay-window", "#overlay-modeless", "#overlay-dialog", ".k2b-toast"]],
+  ])("every overlay layer covers: maximized and normal windows, dialogs, and toasts (%s)", async (variant, probes) => {
+    timer = 0;
+    const { context, page, errors } = await open({ search: `?overlays=${variant}` });
+    try {
+      await ready(page);
+      for (const probe of probes) await page.locator(probe).waitFor({ state: "attached" });
+      await shortcut(page);
+      expect(await covered(page)).toBe(true);
+      // A layer is covered when a blurred cover with a box of its own lies between its content and the top layer it
+      // renders in: a top-layer element escapes the filter of every ancestor outside it, and an element without a box
+      // (`display: contents`, such as the portal root) paints no filter at all.
+      // settled: transitions are off and the fake clock holds animation frames; the filter applies with the attribute.
+      const blurred = await page.evaluate(
+        (selectors) =>
+          selectors.map((selector) => {
+            const topLayer = (element: Element) => {
+              try {
+                return element.matches(":modal, :popover-open");
+              } catch {
+                return false;
+              }
+            };
+            for (let node: Element | null = document.querySelector(selector); node; node = node.parentElement) {
+              const style = getComputedStyle(node);
+              if (node.hasAttribute("data-cloud-privacy-covered") && style.display !== "contents" && style.filter.includes("blur"))
+                return [selector, true];
+              if (topLayer(node)) break;
+            }
+            return [selector, false];
+          }),
+        probes,
+      );
+      expect(Object.fromEntries(blurred)).toEqual(Object.fromEntries(probes.map((probe) => [probe, true])));
+      await page.keyboard.press("x");
+      expect(await covered(page)).toBe(false);
+      expect(errors).toEqual([]);
     } finally {
       await context.close();
     }

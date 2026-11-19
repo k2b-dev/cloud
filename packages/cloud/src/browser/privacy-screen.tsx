@@ -198,10 +198,15 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   /** Text of its own beside an island cannot blur alone, so such a container covers whole, the island with it. */
   const hasOwnText = (element: Element) =>
     Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && Boolean(node.textContent?.trim()));
+  /**
+   * An element without a box of its own, such as the `@k2b/ui` portal root (`display: contents`), paints no filter or
+   * opacity: blurring it would leave every window, toast, and panel portaled into it sharp. Its children cover instead.
+   */
+  const boxless = (element: Element) => getComputedStyle(element).display === "contents";
   const cover = (container: Element) => {
     for (const child of Array.from(container.children)) {
       if (SKIPPED.has(child.tagName) || isIsland(child)) continue;
-      if (holdsIsland(child) && !hasOwnText(child)) cover(child);
+      if ((holdsIsland(child) && !hasOwnText(child)) || boxless(child)) cover(child);
       else mark(child, "");
     }
   };
