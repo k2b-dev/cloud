@@ -1,6 +1,7 @@
 import { afterEach, expect, mock, setSystemTime, test } from "bun:test";
 import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiTurnSnapshot } from "@k2b/cloud/ai";
 import type { LiveSubscriptionHandlers } from "@k2b/cloud/browser/live";
+import type { PendingApproval } from "@k2b/cloud/contracts/approvals";
 import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
@@ -59,7 +60,7 @@ const waitFor = async (condition: () => boolean, timeoutMs = 2_000) => {
 };
 
 const mount = (
-  server: { conversations: AiConversation[]; questions: AiOpenQuestions },
+  server: { conversations: AiConversation[]; questions: AiOpenQuestions; approvals?: PendingApproval[] },
   here: AiConversation,
   activeTurn: AiTurnSnapshot | null = null,
 ) => {
@@ -72,6 +73,7 @@ const mount = (
   shell.textContent = JSON.stringify({ apps: [], appId: "assistant" });
   dom.document.body.append(shell);
   const sidebarLoads: string[] = [];
+  let approvalLoads = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
@@ -80,7 +82,17 @@ const mount = (
         sidebarLoads.push(url.pathname);
         return Response.json({ conversations: server.conversations, projects: [], doneCount: 0, questions: server.questions });
       }
-      if (url.pathname === "/api/approvals") return Response.json({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
+      if (url.pathname === "/api/approvals") {
+        approvalLoads++;
+        const items = server.approvals ?? [];
+        return Response.json({ items, nextCursor: null, count: items.length, elsewhere: 0 });
+      }
+      if (/^\/api\/approvals\/[^/]+\/decision$/.test(url.pathname)) return Response.json({ status: "rejected" });
+      // Core's open questions of one kind, the read the page's "Automations" section makes.
+      if (url.pathname === "/api/capabilities/v1/queries/core/ai.open_questions")
+        return Response.json({
+          data: { count: 0, items: server.questions.items.filter((question) => question.kind === "code_attention") },
+        });
       if (url.pathname.endsWith("/stream")) return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
       return Response.json({ message: "unavailable" }, { status: 503 });
     },
@@ -151,7 +163,14 @@ const mount = (
       },
     ]);
   };
-  return { ...dom, dotted, changed, sidebarLoads, strip: () => dom.root.querySelector("nav.assistant-waiting") };
+  return {
+    ...dom,
+    dotted,
+    changed,
+    sidebarLoads,
+    approvalLoads: () => approvalLoads,
+    strip: () => dom.root.querySelector("nav.assistant-waiting"),
+  };
 };
 
 test("the dot and the waiting row follow a question that opens and is decided in another chat, one load per change", async () => {
@@ -248,10 +267,8 @@ test("a run that starts in the open chat and in another marks both rows without 
   expect(h.sidebarLoads).toHaveLength(2);
 });
 
-test("the sidebar counts exactly what the waiting row lists, also entries that are not approvals, and follows it live", async () => {
-  const here = chat("Wart42", "Wartung Oktober", "idle");
-  const other = chat("Tops42", "Team Ops Wochenplanung", "idle");
-  // The tour's case: Code entries wait, no approval does, so the approvals count would say 0.
+/** Code entries that wait without any approval: a version to switch on and an automation that needs a secret. */
+const codeEntries = () => {
   const code = (kind: AiOpenQuestion["kind"], id: string, short: string, conversationId: string, title: string): AiOpenQuestion => ({
     kind,
     id,
@@ -262,8 +279,17 @@ test("the sidebar counts exactly what the waiting row lists, also entries that a
     app: { name: "Automationen", icon: "ti ti-stack-2" },
     createdAt: now,
   });
-  const activate = code("code_activate", "code:v2", "Version 2 einschalten", "Wart42", "Wartung Oktober");
-  const secret = code("code_attention", "code:a1", "Lieferavise sortieren braucht ein Secret", "Tops42", "Team Ops Wochenplanung");
+  return {
+    activate: code("code_activate", "code:v2", "Version 2 einschalten", "Wart42", "Wartung Oktober"),
+    secret: code("code_attention", "code:a1", "Lieferavise sortieren braucht ein Secret", "Tops42", "Team Ops Wochenplanung"),
+  };
+};
+
+test("the sidebar counts exactly what the waiting row lists, also entries that are not approvals, and follows it live", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const other = chat("Tops42", "Team Ops Wochenplanung", "idle");
+  // The tour's case: Code entries wait, no approval does, so the approvals count would say 0.
+  const { activate, secret } = codeEntries();
   const server = { conversations: [here, other], questions: { items: [activate, secret], count: 2 } as AiOpenQuestions };
   const h = mount(server, here);
   /** The sidebar's "Waiting for you" count, and the number of entries the row above the field lists. */
@@ -289,4 +315,107 @@ test("the sidebar counts exactly what the waiting row lists, also entries that a
   await waitFor(() => h.strip() === null);
   expect(counts()).toEqual({ sidebar: "0", row: 0 });
   expect(h.sidebarLoads).toHaveLength(2);
+});
+
+test("the page Waiting for you lists the same entries as the row and the sidebar count", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const other = chat("Tops42", "Team Ops Wochenplanung", "idle");
+  const { activate, secret } = codeEntries();
+  const server = { conversations: [here, other], questions: { items: [activate, secret], count: 2 } as AiOpenQuestions };
+  const h = mount(server, here);
+  await waitFor(() => subscriptions.length > 0);
+  const row = waitingStripSummary(h.strip()!.outerHTML)!
+    .entries.map((entry) => entry.replace(/ in .*$/, ""))
+    .sort();
+  const sidebarRow = () =>
+    h.root.querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!;
+  const sidebar = () => sidebarRow().querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent;
+  expect(sidebar()).toBe("2");
+
+  sidebarRow().dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  const page = () =>
+    [...h.root.querySelectorAll(".assistant-waiting-page .assistant-waiting-page__row-title")]
+      .map((title) => title.textContent ?? "")
+      .sort();
+  await waitFor(() => page().length === 2);
+  expect(page()).toEqual(row);
+  expect(page()).toEqual(["Lieferavise sortieren braucht ein Secret", "Version 2 einschalten"]);
+  expect(sidebar()).toBe(String(page().length));
+
+  // While the page is open, an automation starts to wait and the secret is set elsewhere: page and count follow.
+  const briefing = { ...secret, id: "code:a2", short: "Morgenbriefing braucht einen Chat" };
+  server.questions = { items: [activate, briefing], count: 2 };
+  await h.changed("Tops42");
+  await waitFor(() => page().includes("Morgenbriefing braucht einen Chat"));
+  expect(page()).toEqual(["Morgenbriefing braucht einen Chat", "Version 2 einschalten"]);
+  expect(sidebar()).toBe("2");
+  // Nothing on the page shows a loading state for it.
+  expect(h.root.querySelector(".assistant-waiting-page [aria-busy='true']")).toBeNull();
+});
+
+/** A request Mail asks about, as the approvals list returns it, and the same request in the row's list. */
+const mailApproval = (id: string, offer: string): { request: PendingApproval; question: AiOpenQuestion } => ({
+  request: {
+    id,
+    app: { id: "mail", name: "Mail", icon: "ti ti-mail" },
+    action: "draft.send",
+    assurance: "confirm",
+    sentence: `Mail: Angebot ${offer} senden`,
+    review: null,
+    requester: { kind: "chat", appId: "assistant", title: "Wartung Oktober", href: "/app/assistant?conversation=Wart42" },
+    remember: { chat: false, always: false, website: false },
+    createdAt: now,
+    expiresAt: new Date(Date.parse(now) + 23 * 3_600_000).toISOString(),
+  },
+  question: {
+    id,
+    kind: "approval",
+    conversationId: "Wart42",
+    conversationTitle: "Wartung Oktober",
+    anchor: `tool-${id}`,
+    short: `Mail: Angebot ${offer} senden`,
+    app: { name: "Mail", icon: "ti ti-mail" },
+    createdAt: now,
+  },
+});
+
+test("an approval decided on the page keeps its receipt; a new one elsewhere appears", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const first = mailApproval("00000000-0000-4000-8000-0000000000a1", "1");
+  const second = mailApproval("00000000-0000-4000-8000-0000000000a2", "2");
+  const server = {
+    conversations: [here],
+    questions: { items: [first.question], count: 1 } as AiOpenQuestions,
+    approvals: [first.request],
+  };
+  const h = mount(server, here);
+  await waitFor(() => subscriptions.length > 0);
+  h.root
+    .querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!
+    .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  const cards = () => [...h.root.querySelectorAll<HTMLElement>(".assistant-waiting-page article.cloud-approval")];
+  await waitFor(() => cards().length === 1);
+  const loads = h.approvalLoads();
+
+  // (a) The person declines here; the request leaves the row's list. Its card stays as the receipt and is not read again.
+  await Bun.sleep(550);
+  const card = cards()[0]!;
+  [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Nicht ausführen")!.click();
+  await waitFor(() => card.dataset.decided === "rejected");
+  server.questions = { items: [], count: 0 };
+  server.approvals = [];
+  await h.changed("Wart42");
+  await waitFor(() => h.sidebarLoads.length === 1);
+  await Bun.sleep(50);
+  expect(cards()).toEqual([card]);
+  expect(card.dataset.decided).toBe("rejected");
+  expect(h.approvalLoads()).toBe(loads);
+
+  // (b) A new request arrives from another chat: the page reads its approvals again and shows it.
+  server.questions = { items: [second.question], count: 1 };
+  server.approvals = [second.request];
+  await h.changed("Wart42");
+  await waitFor(() => cards().some((entry) => entry.textContent?.includes("Angebot 2")));
+  expect(h.approvalLoads()).toBe(loads + 1);
+  expect(h.root.querySelector(".assistant-waiting-page [aria-busy='true']")).toBeNull();
 });

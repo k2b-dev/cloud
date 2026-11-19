@@ -234,7 +234,7 @@ describe("My apps & automations: a Code Gustav still writes", () => {
 });
 
 describe("Waiting for you", () => {
-  test("normal lists approvals with their chat and Code you administer as rows", () => {
+  test("normal lists approvals with their chat and versions from the row's own list", () => {
     const html = waiting("normal", "de");
     const text = visible(html);
     for (const part of [
@@ -242,15 +242,17 @@ describe("Waiting for you", () => {
       "Nichts davon passiert, bevor du zustimmst.",
       "Freigaben 2",
       "Angebot an Jana Probe",
-      "Code, den du verwaltest 1",
-      "Code von info@moebel-beispiel.de: letzter Lauf fehlgeschlagen, Zugriff fehlt",
-      "„Lieferungen eintragen“ · du verwaltest info@moebel-beispiel.de",
+      "Versionen 1",
+      "Version 2 einschalten",
+      "in Lieferungen eintragen",
       "Ansehen",
     ])
       expect(text).toContain(part);
     // The shared approval card, not a copy of it.
     expect(count(html, 'class="cloud-approval"')).toBe(2);
-    expect(html).toContain('href="/app/mail/m/info"');
+    expect(html).toContain('aria-label="Ansehen: Version 2 einschalten"');
+    // Only what the row lists: Code of places is no "waiting for you" entry.
+    expect(text).not.toContain("du verwaltest");
     expect(visible(waiting("normal", "en"))).toContain("None of it happens before you agree.");
   });
 

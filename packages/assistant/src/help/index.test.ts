@@ -19,6 +19,9 @@ describe("assistantHelp", () => {
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("**Always approve** is no longer offered");
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("**Check again** checks only the outcome");
     expect(assistantHelp.getMarkdown("assistant-workflow", "de")).toContain("wiederholt nie die");
+    // Gustav alarms v1 (F3 A): the help states the same limits as the alarm service.
+    expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("A chat has at most five alarms");
+    expect(assistantHelp.getMarkdown("assistant-workflow", "de")).toContain("Ein Chat hat höchstens fünf Wecker");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Gustav works best when the request states");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Gustav settings > Skills");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Create a Skill that loads at the right time");

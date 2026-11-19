@@ -40,15 +40,19 @@ export default app;
 
 ## Once at a chosen time
 
+A reminder for the person in their own chat is an alarm, not Code: use
+`wakeup_create` from the `cloud-assistant` Skill. Use a Code schedule when
+the work needs Code, other people or places, or more than the alarm limits.
+
 <!-- check: personal -->
 ```ts
 import { app, core } from "@sdk";
 
-app.schedule({ at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin", name: "yearly-report-reminder", title: "Yearly report reminder" }, async () => {
+app.schedule({ at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin", name: "yearly-report", title: "Yearly report" }, async () => {
   // Fictional chat ID; discover the owner's chat first.
   await core.ai.chat("Chat23").send({
-    text: "Reminder: the yearly report is due today.",
-    idempotencyKey: "yearly-report-reminder",
+    text: "Prepare the yearly report summary from this year's figures.",
+    idempotencyKey: "yearly-report-2026",
   });
 });
 export default app;

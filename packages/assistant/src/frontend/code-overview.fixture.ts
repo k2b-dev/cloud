@@ -1,7 +1,7 @@
+import type { AiOpenQuestion } from "@k2b/cloud/ai";
 import type { ApprovalPage, PendingApproval } from "@k2b/cloud/contracts/approvals";
 import type { CodeActivityReadModel } from "@k2b/cloud/contracts/code-read-model";
 import type { WaitingAutomation } from "../waiting-automations";
-import type { CodeAttentionView } from "./AssistantCodeAttention";
 import type { CodeCardRun, CodeOverviewItem, CodeOverviewPage } from "./code-overview";
 
 /**
@@ -187,19 +187,19 @@ const approval = (who: string, number: number, minutesAgo: number): PendingAppro
   expiresAt: new Date(now + 23 * 3_600_000).toISOString(),
 });
 
-const ATTENTION: CodeAttentionView = {
-  nextCursor: null,
-  items: [
-    {
-      codeId: "c_info02",
-      title: "Lieferungen eintragen",
-      owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
-      reasons: ["run_failed", "access_missing"],
-      lastRunAt: ago(20),
-      place: { name: "info@moebel-beispiel.de", type: "Postfach", href: "/app/mail/m/info" },
-    },
-  ],
-};
+/** A version of the person's own Code that waits for them, as the row above the field lists it. */
+export const WAITING_VERSIONS: AiOpenQuestion[] = [
+  {
+    id: "code:v_info02",
+    kind: "code_activate",
+    conversationId: "Chat07",
+    conversationTitle: "Lieferungen eintragen",
+    anchor: "code-version-v_info02",
+    short: "Version 2 einschalten",
+    app: { name: "Code", icon: "ti ti-player-play" },
+    createdAt: ago(20),
+  },
+];
 
 /** Gustav drafted a reminder for the morning briefing; sending it waits for the person. */
 const BRIEFING_APPROVAL: PendingApproval = {
@@ -251,32 +251,37 @@ export const waitingFixture = (
   state: WaitingState,
 ): {
   initial: ApprovalPage | null | undefined;
-  initialAttention: CodeAttentionView | null | undefined;
+  questions: () => AiOpenQuestion[];
+  onJump: (question: AiOpenQuestion) => void;
   initialAutomations: WaitingAutomation[] | null | undefined;
   timeZone: string;
-} => ({
-  timeZone: FIXTURE_TIME_ZONE,
-  initialAutomations: state === "laedt" ? undefined : [],
-  ...waitingParts(state),
-});
+} => {
+  const parts = waitingParts(state);
+  return {
+    timeZone: FIXTURE_TIME_ZONE,
+    initialAutomations: state === "laedt" ? undefined : [],
+    onJump: () => {},
+    ...parts,
+    questions: () => parts.questions,
+  };
+};
 
 const waitingParts = (
   state: WaitingState,
 ): {
   initial: ApprovalPage | null | undefined;
-  initialAttention: CodeAttentionView | null | undefined;
+  questions: AiOpenQuestion[];
   initialAutomations?: WaitingAutomation[] | null;
 } => {
   if (state === "automation")
     return {
       initial: { items: [BRIEFING_APPROVAL], nextCursor: null, count: 1, elsewhere: 0 },
-      initialAttention: { items: [], nextCursor: null },
+      questions: [],
       initialAutomations: WAITING_AUTOMATIONS.slice(0, 1),
     };
-  if (state === "laedt") return { initial: undefined, initialAttention: undefined };
-  if (state === "fehler") return { initial: null, initialAttention: ATTENTION };
-  if (state === "leer")
-    return { initial: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, initialAttention: { items: [], nextCursor: null } };
+  if (state === "laedt") return { initial: undefined, questions: WAITING_VERSIONS };
+  if (state === "fehler") return { initial: null, questions: WAITING_VERSIONS };
+  if (state === "leer") return { initial: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, questions: [] };
   if (state === "lang")
     return {
       initial: {
@@ -285,10 +290,10 @@ const waitingParts = (
         count: 9,
         elsewhere: 0,
       },
-      initialAttention: ATTENTION,
+      questions: WAITING_VERSIONS,
     };
   return {
     initial: { items: [approval("Jana Probe", 1, 60), approval("Lea Muster", 2, 3)], nextCursor: null, count: 2, elsewhere: 0 },
-    initialAttention: ATTENTION,
+    questions: WAITING_VERSIONS,
   };
 };
