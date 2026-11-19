@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.74.1](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.74.0...npm-cloud-v0.74.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **cloud:** live connections keep their periodic access check ([831d686](https://github.com/k2b-dev/cloud/commit/831d686ff815cce5781132352e6afc2c8fe4cfb5))
+* **cloud:** the privacy screen also covers windows and toasts ([#3733](https://github.com/k2b-dev/cloud/issues/3733)) ([831d686](https://github.com/k2b-dev/cloud/commit/831d686ff815cce5781132352e6afc2c8fe4cfb5))
+* **mail:** complete draft close across snapshot pruning ([#3759](https://github.com/k2b-dev/cloud/issues/3759)) ([628ee66](https://github.com/k2b-dev/cloud/commit/628ee666b12ae397faa671801196cdfb8e5492b5)), closes [#3757](https://github.com/k2b-dev/cloud/issues/3757)
+* **mail:** stop knocking on unreachable mail servers and report them honestly ([#3740](https://github.com/k2b-dev/cloud/issues/3740)) ([2db2916](https://github.com/k2b-dev/cloud/commit/2db29162ff4b1f0edc2ad21549f9a77c61999fab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.61.0 to 0.62.0
+    * @k2b/editor bumped from 0.12.1 to 0.12.2
+
 ## [0.74.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.73.0...npm-cloud-v0.74.0) (2026-11-19)
 
 
