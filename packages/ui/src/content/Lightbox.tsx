@@ -87,6 +87,8 @@ const PULL_CLOSE = 110;
 /** Seconds the arrows seek in a video or audio file, as `VideoPlayer`'s own keys do. */
 const MEDIA_SEEK = 5;
 const SPREADSHEET = /\.(xlsx?|ods|csv)$/i;
+/** The boxes around a file that fills the stage; a press on them is a press beside the file. */
+const BESIDE = ".k2b-lightbox__content, .k2b-lightbox__pdf, .k2b-pdf-viewer__document, .k2b-pdf-viewer__pages, .k2b-pdf-viewer__stack";
 
 const kindOf = (item: LightboxItem): Kind => {
   if (item.preview) return "office";
@@ -113,11 +115,13 @@ const bytes = (content: FileViewContent) =>
  * shown through its preview PDF, and for anything else its icon, facts and Download. It loads the file itself and
  * shows every state: a placeholder after a short wait, a failure with "Try again", and "Preview not possible".
  *
- * The name sits in a pill at the top left; Open (when the caller gives a target), the caller's commands, Download
- * and Close in a pill at the top right. Large round buttons at the screen edges step between files, as do ← and →
- * and the film strip from two files on; there is no "2 / 8" counter. The only pill at the bottom holds zoom and the
- * page. Escape, Close, a press beside the file or a swipe down close it, and focus returns to the opener. On a phone
- * it fills the screen and a swipe steps between files.
+ * The file has the whole screen: a PDF or document fills its width up to its natural size and scrolls under the
+ * controls, a picture shows whole on the full screen, and zoomed in either pans across the full screen. The controls
+ * float above it: the name in a pill at the top left; Open (when the caller gives a target), the caller's commands,
+ * Download and Close in a pill at the top right. Large round buttons at the screen edges step between files, as do
+ * ← and → and the film strip from two files on; there is no "2 / 8" counter. The only pill at the bottom holds zoom
+ * and the page. Escape, Close, a press beside the file or a swipe down from the top close it, and focus returns to
+ * the opener. On a phone a swipe steps between files.
  */
 export default function Lightbox(props: LightboxProps): JSX.Element {
   const t = useLightboxMessages();
@@ -224,16 +228,22 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
   };
 
   // Touch: a sideways swipe steps, a pull down closes. A zoomed picture keeps its own drag.
-  let touch: { x: number; y: number } | null = null;
+  let touch: { x: number; y: number; top: boolean } | null = null;
+  /** Nothing under the finger is scrolled down, such as a PDF's pages; otherwise a pull down scrolls back up. */
+  const atTop = (target: EventTarget | null) => {
+    for (let node = target instanceof Element ? target : null; node && node !== dialog; node = node.parentElement)
+      if (node.scrollTop > 0) return false;
+    return true;
+  };
   const touchStart = (event: TouchEvent) => {
     const first = event.touches.length === 1 ? event.touches[0] : undefined;
-    touch = first && zoom() === 1 ? { x: first.clientX, y: first.clientY } : null;
+    touch = first && zoom() === 1 ? { x: first.clientX, y: first.clientY, top: atTop(event.target) } : null;
   };
   const touchMove = (event: TouchEvent) => {
     const first = event.touches[0];
     if (!touch || !first) return;
     const dy = first.clientY - touch.y;
-    setPull(dy > 0 && dy > Math.abs(first.clientX - touch.x) && stage.scrollTop <= 0 ? dy : 0);
+    setPull(dy > 0 && dy > Math.abs(first.clientX - touch.x) && touch.top ? dy : 0);
   };
   const touchEnd = (event: TouchEvent) => {
     const last = event.changedTouches[0];
@@ -246,9 +256,20 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
     const dx = last.clientX - start.x;
     if (Math.abs(dx) > SWIPE && Math.abs(dx) > Math.abs(last.clientY - start.y)) step(dx < 0 ? 1 : -1);
   };
-  // A press on the stage beside the file closes, like a press beside a dialog.
+  /*
+   * A press beside the file closes, like a press beside a dialog. The file fills the whole stage, so beside it is the
+   * stage, the file's own box, or a PDF's ground beside its pages, but never the gap between two pages, where a text
+   * selection may start, nor a scroll bar of that ground.
+   */
   const stagePress = (event: MouseEvent) => {
-    if (event.target === stage || event.target === dialog) close();
+    const target = event.target;
+    if (target === stage || target === dialog) return close();
+    if (!(target instanceof HTMLElement) || !target.matches(BESIDE)) return;
+    const box = target.getBoundingClientRect();
+    if (event.clientX - box.left >= target.clientWidth || event.clientY - box.top >= target.clientHeight) return;
+    const column = target.querySelector("[data-pdf-page]")?.getBoundingClientRect();
+    if (column && event.clientX >= column.left && event.clientX <= column.right) return;
+    close();
   };
 
   // Registration and teardown both live in onMount: onCleanup also runs when an SSR render is disposed.
@@ -397,7 +418,7 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
       </div>
       <Show when={props.items.length > 1}>
         <ThumbnailStrip
-          class="k2b-lightbox__strip"
+          class="k2b-lightbox__strip k2b-overlay-surface"
           label={t().files}
           items={props.items.map((entry, position) => ({
             id: String(position),
@@ -570,7 +591,6 @@ function LightboxStage(props: {
                 data={data()}
                 title={props.item.name}
                 zoom={false}
-                fit="page"
                 scale={props.zoom()}
                 onReady={(drawn) => {
                   props.onPages(drawn.pages);

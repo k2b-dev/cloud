@@ -5004,8 +5004,9 @@
 
 /* Lightbox */
 
-/* The page stays visible behind a veil: light in the light theme, dark in the dark theme. Pills keep 7 px from every
-   edge; the stage keeps 84 px beside the file for the round edge buttons, so they never cover it. */
+/* The page stays visible behind a veil: light in the light theme, dark in the dark theme. The file has the whole
+   screen; the pills float above it, 7 px from every edge. `--k2b-lightbox-top` and `--k2b-lightbox-bottom` are the
+   room the head and the pills at the bottom take, so a document starts and ends clear of them and scrolls under them. */
 .k2b-ui .k2b-lightbox {
   position: fixed;
   inset: 0;
@@ -5021,6 +5022,18 @@
   background: transparent;
   outline: none;
   --k2b-lightbox-pull: 0;
+  --k2b-lightbox-top: 3.5rem;
+  --k2b-lightbox-bottom: 3.5rem;
+}
+/* The film strip adds its 44 px and 7 px below the zoom pill. */
+.k2b-ui .k2b-lightbox:has(> .k2b-lightbox__strip) {
+  --k2b-lightbox-bottom: 6.75rem;
+}
+/* Over a document's text the floating pills are solid; glass stays for pictures and video. */
+.k2b-ui .k2b-lightbox:is([data-kind="pdf"], [data-kind="office"], [data-kind="text"]) .k2b-overlay-surface {
+  background: var(--k2b-overlay-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .k2b-ui .k2b-lightbox[open] {
   display: flex;
@@ -5106,11 +5119,11 @@
   display: none;
 }
 .k2b-ui .k2b-lightbox__main {
-  position: relative;
-  display: flex;
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
 }
+/* Text, video and notices sit between the pills, 84 px from the sides for the edge buttons, and scroll under them.
+   A picture and a PDF take the whole stage. */
 .k2b-ui .k2b-lightbox__stage {
   container-type: size;
   position: absolute;
@@ -5119,13 +5132,20 @@
   overflow: auto;
   box-sizing: border-box;
   place-items: center;
-  padding: 3.5rem 84px 0.75rem;
+  padding: var(--k2b-lightbox-top) 84px var(--k2b-lightbox-bottom);
   outline: none;
+}
+.k2b-ui .k2b-lightbox:is([data-kind="image"], [data-kind="pdf"], [data-kind="office"]) .k2b-lightbox__stage {
+  padding: 0;
+}
+/* A zoomed picture pans by its drag, never by scroll bars. */
+.k2b-ui .k2b-lightbox[data-kind="image"] .k2b-lightbox__stage {
+  overflow: hidden;
 }
 .k2b-ui .k2b-lightbox__edge {
   position: absolute;
   z-index: 2;
-  top: calc(50% + 22px);
+  top: 50%;
   display: grid;
   width: 3rem;
   height: 3rem;
@@ -5147,10 +5167,17 @@
 .k2b-ui .k2b-lightbox__edge[data-direction="next"] {
   right: 12px;
 }
+/* The pills at the bottom float above the file; only the pills themselves take a press. */
 .k2b-ui .k2b-lightbox__bar {
+  position: relative;
+  z-index: 3;
   display: flex;
   justify-content: center;
-  margin: 0 7px 7px;
+  margin: auto 7px 7px;
+  pointer-events: none;
+}
+.k2b-ui .k2b-lightbox__bar > * {
+  pointer-events: auto;
 }
 .k2b-ui .k2b-lightbox__tools {
   font-variant-numeric: tabular-nums;
@@ -5164,18 +5191,27 @@
   justify-content: center;
 }
 .k2b-ui .k2b-lightbox__strip {
+  position: relative;
+  z-index: 3;
   align-self: center;
   max-width: calc(100% - 3rem);
   margin: 0 0 7px;
 }
-/* Every file sits in the same box, so a placeholder, a failure and the file share one place and nothing moves. */
+/* Every file sits in the same box, so a placeholder, a failure and the file share one place and nothing moves. The
+   one cell is exactly the box: a placeholder taller than the screen never stretches it, nor the file in it. */
 .k2b-ui .k2b-lightbox__content {
   position: relative;
   display: grid;
   width: 100%;
   height: 100%;
   min-height: 0;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
+}
+/* A document scrolls inside its viewer; its page-sized placeholder runs past the screen's bottom without making the
+   stage scroll, so no scroll bar comes and goes while it loads. */
+.k2b-ui .k2b-lightbox:is([data-kind="pdf"], [data-kind="office"]) .k2b-lightbox__content {
+  overflow: hidden;
 }
 .k2b-ui .k2b-lightbox__content[data-state="loading"] > :not(.k2b-lightbox__placeholder) {
   visibility: hidden;
@@ -5183,19 +5219,38 @@
 .k2b-ui .k2b-lightbox__content > * {
   grid-area: 1 / 1;
 }
+/* A document's placeholder is its first A4 page where that page will be: as wide as the area up to its natural
+   793 px, 12 px from the sides, below the head (`.k2b-pdf-viewer__stack` in the Lightbox). Text starts at the top. */
 .k2b-ui .k2b-lightbox__placeholder {
   display: grid;
-  width: min(100%, 38rem, calc((100cqh - 5rem) / 1.4142));
+  align-self: start;
+  width: min(calc(100% - 24px), 793px);
   aspect-ratio: 1 / 1.4142;
   place-items: end center;
   padding-bottom: 1rem;
-  border-radius: var(--k2b-radius-control);
+  border-radius: 2px;
+}
+.k2b-ui .k2b-lightbox__placeholder:is([data-kind="pdf"], [data-kind="office"]) {
+  margin-top: var(--k2b-lightbox-top);
+}
+/* With a mouse the pages keep the shared 0.5rem scroll track at their end (`.k2b-pdf-viewer__pages`), so the page
+   stands that much narrower and half of it further left. */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-lightbox__placeholder:is([data-kind="pdf"], [data-kind="office"]) {
+      width: min(calc(100% - 24px - 0.5rem), 793px);
+      translate: -0.25rem 0;
+    }
+  }
 }
 .k2b-ui .k2b-lightbox__placeholder:is([data-kind="image"], [data-kind="video"]) {
-  width: min(100%, 60rem, calc((100cqh - 5rem) * 4 / 3));
+  align-self: center;
+  width: min(100%, 60rem, calc(100cqh * 4 / 3));
   aspect-ratio: 4 / 3;
+  border-radius: var(--k2b-radius-control);
 }
 .k2b-ui .k2b-lightbox__placeholder[data-kind="audio"] {
+  align-self: center;
   width: min(100%, 28rem);
   aspect-ratio: 4 / 1;
 }
@@ -5206,26 +5261,32 @@
 .k2b-ui .k2b-lightbox__image {
   display: block;
   max-width: 100%;
-  max-height: calc(100cqh - 4.25rem);
-  border-radius: var(--k2b-radius-control);
+  max-height: 100cqh;
   object-fit: contain;
   transition: transform 120ms ease;
   user-select: none;
 }
 .k2b-ui .k2b-lightbox__stage[data-zoomed] .k2b-lightbox__image {
   cursor: grab;
+  touch-action: none;
 }
 .k2b-ui .k2b-lightbox__image[data-dragging] {
   cursor: grabbing;
   transition: none;
 }
+/* The pages scroll across the whole screen, on the veil; they start below the head and end above the pills. */
 .k2b-ui .k2b-lightbox__pdf {
-  width: min(100%, 56rem);
+  width: 100%;
   height: 100%;
+  border-radius: 0;
+  background: transparent;
 }
-/* The player keeps its 16:9 frame inside the stage's height. */
+.k2b-ui .k2b-lightbox__pdf .k2b-pdf-viewer__stack {
+  padding-block: var(--k2b-lightbox-top) var(--k2b-lightbox-bottom);
+}
+/* The player keeps its 16:9 frame between the pills, so its own controls stay free. */
 .k2b-ui .k2b-lightbox__video {
-  width: min(100%, calc((100cqh - 4.25rem) * 16 / 9));
+  width: min(100%, calc(100cqh * 16 / 9));
 }
 .k2b-ui .k2b-lightbox__audio {
   display: grid;
@@ -5275,7 +5336,7 @@
 /* A phone shows the file across the whole screen; a swipe steps, so the edge buttons step back. */
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-lightbox__stage {
-    padding: 3.5rem 0 0.5rem;
+    padding-inline: 0;
   }
   .k2b-ui .k2b-lightbox__edge {
     display: none;
