@@ -215,6 +215,7 @@ export default ssr<AuthContext>(async (c) => {
       initialPlacesFilter={url.searchParams.get("places") === "1" || (!embedded && Boolean(activeConversation?.place))}
       initialQuotas={initialQuotas}
       userId={user.id}
+      canConfigureAi={user.roles.includes("admin")}
       cloudUrl={publicCloudOrigin(appUrl)}
       status={status}
       models={status.options}
