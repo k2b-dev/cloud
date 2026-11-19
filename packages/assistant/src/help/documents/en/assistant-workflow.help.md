@@ -2,8 +2,8 @@
 id: assistant-workflow
 title: Chats & Actions
 icon: ti ti-messages
-description: Find chats, manage metadata, retry, continue in a new chat, compact, stop, and handle actions.
-updated: 2026-10-19
+description: Find chats, manage metadata, retry, continue in a new chat, compact, stop, set alarms, and handle actions.
+updated: 2026-11-19
 order: 110
 ---
 
@@ -97,6 +97,33 @@ text to another chat, it can request the `core.ai.chat.send` Action. The approva
 prompt shows the target and exact text before anything is queued. Delivered
 messages appear in the target history with their source chat; they are not
 shown as messages authored by you.
+
+## Alarms {icon="alarm"}
+
+Ask Gustav for something at a later time, and he sets an alarm in this chat.
+For example: "Send Lena Vogt the offer and check at 16:00 whether she replied."
+An alarm can run once or repeat, for example every weekday at 8:00. Gustav
+confirms the time and the note in one sentence. He sets an alarm only when you
+ask for one.
+
+At the planned time, the note arrives in this chat as a message with the source
+**Alarm** and the planned time. Gustav then works on it with your current
+access. Actions still ask for your approval as usual. If Gustav is working at
+that moment, the alarm waits in the queue.
+
+To see, move or delete alarms, ask Gustav in the chat, for example: "Move that to
+17:00" or "Delete the alarm for Lena." Moving changes the same alarm. Deleting
+also removes its waiting message.
+
+:::reference
+- **Limits:** A chat has at most five alarms. A repeating alarm runs at most every 15 minutes and ends after 30 days; you can renew it for another 30 days. A one-time alarm can be at most one year ahead.
+- **Postponing:** If the awaited thing has not happened yet, Gustav can move the same alarm to a later time, at most three times. He cannot set a new alarm from an alarm.
+- **Missed:** If you have no access to Gustav at the planned time or your budget is used up, Gustav does not work on the alarm. A line in the chat tells you. A missed one-time alarm remains for seven days; ask Gustav to give it a new time. A repeating alarm continues at its next time.
+- **Downtime:** After maintenance or downtime, each due alarm runs once. Its source shows the planned time.
+- **Archived or deleted chat:** Archiving a chat pauses its alarms until you restore it. Deleting a chat deletes its alarms.
+- **Alarm or automation:** An alarm is for you and this chat, starts only at a time and holds a short note. For work that reacts to new mail, runs without end, such as a morning briefing, or acts for other people, Gustav suggests an automation instead.
+- **Where:** Alarms work in your own Gustav chats. They are not available in chats opened by another app with limited tools.
+:::
 
 ## Audio and dictation {icon="microphone"}
 

@@ -678,7 +678,11 @@ const renderTimeline = async (
       messages: history,
     });
     await tick();
-    expect(dom.root.querySelector(".ai-turn__notice")?.textContent).toContain("Die Antwort wurde unterbrochen");
+    const notice = dom.root.querySelector(".ai-turn__notice");
+    expect(notice?.querySelector(".k2b-notice-card__title")?.textContent).toBe("Die Antwort wurde abgebrochen.");
+    expect(notice?.querySelector(".k2b-notice-card__description")?.textContent).toContain(
+      "Die Freigabe oder Antwort kam nicht rechtzeitig.",
+    );
     expect(card()?.textContent).toContain("Neue Aufgabe: Inventur");
     expect(card()?.textContent).toContain("Nicht beantwortet.");
     // What was not answered stays readable.
@@ -819,6 +823,34 @@ const renderFailedTurnTimeline = async (
   );
 };
 
+(isServer ? test.skip : test).each(["de", "en"])("a host rejection keeps its localized reason out of the title (%s)", async (locale) => {
+  const dom = createDomTestHarness();
+  const reason =
+    locale === "de"
+      ? "Für das Modell Test Model ist kein Preis hinterlegt. Die Administration kann den Preis eintragen."
+      : "No price is configured for Test Model. An administrator can enter the price.";
+  const history = [
+    storedMessage(
+      10,
+      { role: "user", content: [{ type: "text", text: "Morning briefing" }] },
+      { meta: { turnError: { code: "host_rejected", message: reason } } },
+    ),
+  ];
+  const dispose = await renderFailedTurnTimeline(dom, { messages: () => history, activeTurn: () => null }, locale, () => {});
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const notice = dom.root.querySelector(".ai-turn__notice");
+    expect(notice?.querySelector(".k2b-notice-card__title")?.textContent).toBe(
+      locale === "de" ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.",
+    );
+    expect(notice?.querySelector(".k2b-notice-card__description")?.textContent).toBe(reason);
+    expect(notice?.querySelector("button")).toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 (isServer ? test.skip : test).each([
   { code: "model_unavailable", rounds: 3, locale: "en" },
   { code: "tool_failed", rounds: 1, locale: "en" },
@@ -897,7 +929,10 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(turn);
     const notice = dom.root.querySelector(".ai-turn__notice");
     const noticeText = notice?.textContent;
-    expect(noticeText).toContain(locale === "de" ? "Die Antwort wurde unterbrochen:" : "The answer was interrupted:");
+    expect(notice?.querySelector(".k2b-notice-card__title")?.textContent).toBe(
+      locale === "de" ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.",
+    );
+    expect(notice?.querySelector(".k2b-notice-card__description")?.textContent).toContain(reason);
     expect(noticeText).toContain(reason);
     expect(noticeText).toContain(locale === "de" ? "Weiterarbeiten" : "Continue");
     expect(outsideWork()).not.toContain(progress);
@@ -964,7 +999,7 @@ const renderFailedTurnTimeline = async (
     // Screen readers hear why the answer broke off, never that it is ready (announcements land after 100 ms).
     await new Promise((resolve) => setTimeout(resolve, 500));
     const heard = document.querySelector("[data-k2b-live]")?.textContent ?? "";
-    expect(heard).toContain("Die Antwort wurde unterbrochen: Der KI-Dienst hat nicht geantwortet. Was bis hier steht, bleibt erhalten.");
+    expect(heard).toContain("Die Antwort wurde abgebrochen: Der KI-Dienst hat nicht geantwortet. Was bis hier steht, bleibt erhalten.");
     expect(heard).not.toContain("Antwort fertig");
   } finally {
     dispose();
@@ -1081,8 +1116,10 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(turn);
     expect(dom.root.textContent).not.toContain("Jetzt lese ich die Daten.");
     const notice = dom.root.querySelector(".ai-turn__notice");
-    expect(notice?.textContent).toContain("Die Antwort wurde unterbrochen: Der KI-Dienst hat nicht geantwortet.");
-    expect(notice?.textContent).toContain("Was bis hier steht, bleibt erhalten.");
+    expect(notice?.querySelector(".k2b-notice-card__title")?.textContent).toBe("Die Antwort wurde abgebrochen.");
+    expect(notice?.querySelector(".k2b-notice-card__description")?.textContent).toBe(
+      "Der KI-Dienst hat nicht geantwortet. Was bis hier steht, bleibt erhalten.",
+    );
     expect(dom.root.querySelector(".ai-turn > :last-child")).toBe(notice);
     // The notice says why; the work line reads like any finished turn.
     expect(dom.root.querySelector(".ai-turn-work")?.textContent).not.toContain("abgebrochen");
@@ -1158,7 +1195,7 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(progress);
     expect(dom.root.querySelector(".ai-turn-work")).toBeNull();
     const notice = dom.root.querySelector(".ai-turn__notice");
-    expect(notice?.textContent).toContain("The answer was interrupted:");
+    expect(notice?.querySelector(".k2b-notice-card__title")?.textContent).toBe("The answer was interrupted.");
     expect(notice?.textContent).toContain("You can continue once it resets.");
     // Another turn would meet the same limit, so the notice offers no Continue.
     expect(notice?.querySelector("button")).toBeNull();
@@ -1222,7 +1259,7 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(progress);
     const notice = dom.root.querySelector(".ai-turn__notice");
     expect(notice?.textContent).toContain("The model service did not answer.");
-    expect(dom.root.textContent?.indexOf("150 EUR")).toBeLessThan(dom.root.textContent?.indexOf("The answer was interrupted:") ?? -1);
+    expect(dom.root.textContent?.indexOf("150 EUR")).toBeLessThan(dom.root.textContent?.indexOf("The answer was interrupted.") ?? -1);
   } finally {
     dispose();
     dom.cleanup();

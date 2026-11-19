@@ -109,7 +109,6 @@ import {
 } from "./AssistantChatContext";
 import { AssistantChatContextPlaces, type ContextBoxActions } from "./AssistantChatContextBox";
 import type { ChatSidebarJump } from "./AssistantChatSidebar";
-import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantCodeBlock, { type AssistantCodeBlockInitial } from "./AssistantCodeBlock";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
@@ -238,6 +237,8 @@ type Props = {
   initialPlacesFilter?: boolean;
   initialQuotas?: import("@k2b/cloud/shared").AiChatQuotaSnapshot | null;
   userId: string;
+  /** Current viewer may open AI administration; resolved by the server. */
+  canConfigureAi?: boolean;
   cloudUrl: string;
   status: Status;
   models: AiPeopleModels["options"];
@@ -278,8 +279,6 @@ type Props = {
     /** One personal Code, at /app/assistant/code/<codeId>, rendered with the shared Code page. */
     detail?: CodePageData;
   };
-  /** Code of a place that needs the person, when the page opened on Waiting for you; null when Core could not answer. */
-  initialAttention?: CodeAttentionView | null;
   /** The person's own Code that waits for them, when the page opened on Waiting for you; null when Core could not answer. */
   initialAutomations?: WaitingAutomation[] | null;
   /** The panel's place and its Code at render time, for the "Code of …" block. */
@@ -303,6 +302,7 @@ const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./as
 const AssistantQueue = lazy(() => import("./AssistantQueueConnected"));
 // Like "Queued", the alarms' row loads on first use: it lies on the timeline's free end, so it comes without a shift.
 const AssistantWakeupDock = lazy(async () => (await importOnDemand(() => import("./wakeup-dock"))) ?? { default: () => null });
+const TurnErrorAction = lazy(() => import("./AssistantTurnErrorAction"));
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
@@ -3441,7 +3441,8 @@ export default function AssistantWorkspace(props: Props) {
                       fallback={
                         <AssistantApprovalsView
                           initial={approvalsRendered() ? props.approvals.page : undefined}
-                          initialAttention={approvalsRendered() ? props.initialAttention : undefined}
+                          questions={() => waiting().entries}
+                          onJump={(question) => void jumpToQuestion(question)}
                           initialAutomations={approvalsRendered() ? props.initialAutomations : undefined}
                           timeZone={props.timeZone}
                         />
@@ -3485,6 +3486,8 @@ export default function AssistantWorkspace(props: Props) {
                                     renderWakeupLine: (line, key) => (
                                       <AssistantWakeupLine line={wakeupLine(line, key)} host={wakeupLineHost} />
                                     ),
+                                    renderTurnErrorAction: (error) =>
+                                      props.canConfigureAi ? <TurnErrorAction error={error} canConfigure /> : undefined,
                                     onQuote: addQuote,
                                     renderCodeAuthoringStop: (state, continuable, superseded) => (
                                       <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />

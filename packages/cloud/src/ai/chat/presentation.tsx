@@ -173,7 +173,8 @@ const storedItems = (
   views: TurnViews,
   locale: string,
   activeTurnId: string | null,
-  timeZone?: string,
+  /** The request's time zone; server and browser name the same clock time with it. */
+  timeZone: string | undefined,
 ): ChatTimelineItem[] => {
   const idle = activeTurnId === null;
   const timeline = buildAiMessageTimeline([...messages]);

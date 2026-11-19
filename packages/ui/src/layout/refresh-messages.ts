@@ -6,9 +6,11 @@ const refreshMessages = i18n.define({
   messages: {
     en: {
       refreshing: "Refreshing",
+      refreshFailed: "Refresh failed",
     },
     de: {
       refreshing: "Wird aktualisiert",
+      refreshFailed: "Neu laden fehlgeschlagen",
     },
   },
 });

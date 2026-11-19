@@ -363,8 +363,10 @@ test("a stopped answer ends with a quiet line and Answer again; a failed one say
       expect(await failed.page.locator(".ai-turn__text").innerText()).toContain("Jana Berger fragt zwei Dinge");
       const notice = failed.page.locator(".ai-turn__notice");
       const said = await notice.innerText();
-      expect(said).toContain("Die Antwort wurde unterbrochen: Der KI-Dienst hat nicht geantwortet.");
-      expect(said).toContain("Was bis hier steht, bleibt erhalten.");
+      expect(await notice.locator(".k2b-notice-card__title").innerText()).toBe("Die Antwort wurde abgebrochen.");
+      expect(await notice.locator(".k2b-notice-card__description").innerText()).toBe(
+        "Der KI-Dienst hat nicht geantwortet. Was bis hier steht, bleibt erhalten.",
+      );
       // Said once: the reason does not repeat what stays.
       expect(said).not.toContain("Die bisherigen Ergebnisse bleiben erhalten.");
       expect(await notice.locator(".ti-alert-circle").count()).toBe(1);

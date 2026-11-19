@@ -19,37 +19,18 @@ import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { loadAssistantChatWorkspace } from "../chat-workspace-service";
 import { catalogPerApp, loadCodePlace } from "../code-place";
-import { type CodePlace, type CodeQueryInvoke, hasPersonalCode, loadCodeAttention, loadCodeSummaries } from "../code-summary";
+import { type CodeQueryInvoke, hasPersonalCode, loadCodeSummaries } from "../code-summary";
 import { chatCodeVersionRefs, loadCodeVersionCards } from "../code-version-cards";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
 import { loadWaitingAutomations } from "../waiting-automations";
-import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { readAssistantPlace } from "./assistant-place";
 import { ASSISTANT_PANES_HINT_COOKIE } from "./chat-sidebar-layout";
 import { loadCodeOverview } from "./code-overview";
 import { assistantMessages } from "./messages";
 import { describeWakeupLine } from "./wakeup-line";
-
-/** Code that waits for the person, each with its place's name and link, read through the place's own reader. */
-const loadCodeAttentionView = async (invoke: CodeQueryInvoke, catalog: ReturnType<typeof catalogPerApp>): Promise<CodeAttentionView> => {
-  const page = await loadCodeAttention(invoke);
-  const placeOf = async (owner: (typeof page.items)[number]["owner"]): Promise<CodePlace> => {
-    if (owner?.kind === "resource") return loadCodePlace(owner.ref, invoke, catalog);
-    // Code of an app as a whole: the app's name, without a page to open.
-    if (owner?.kind === "app") {
-      const app = await catalog(owner.appId).catch(() => null);
-      return app?.ok && app.data ? { name: app.data.appName } : {};
-    }
-    return {};
-  };
-  return {
-    nextCursor: page.nextCursor,
-    items: await Promise.all(page.items.map(async (item) => ({ ...item, place: await placeOf(item.owner) }))),
-  };
-};
 
 export default ssr<AuthContext>(async (c) => {
   const embedded = c.req.path === "/app/assistant/panel";
@@ -95,7 +76,6 @@ export default ssr<AuthContext>(async (c) => {
     codeExists,
     codeBlockPage,
     codeDetail,
-    attention,
     automations,
     placeState,
   ] = await Promise.all([
@@ -118,7 +98,6 @@ export default ssr<AuthContext>(async (c) => {
     detailCodeId
       ? loadCodePage(c, { owner: { codeId: detailCodeId }, href: `/app/assistant/code/${detailCodeId}`, canManageOwner: false })
       : undefined,
-    approvalsOpen ? loadCodeAttentionView(invokeCode, catalog).catch(() => null) : undefined,
     // The person's own Code that waits for them, read apart so older questions never push it out of its section.
     approvalsOpen ? loadWaitingAutomations(invokeCode, timeZone).catch(() => null) : undefined,
     // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
@@ -227,6 +206,7 @@ export default ssr<AuthContext>(async (c) => {
       initialPlacesFilter={url.searchParams.get("places") === "1" || (!embedded && Boolean(activeConversation?.place))}
       initialQuotas={initialQuotas}
       userId={user.id}
+      canConfigureAi={user.roles.includes("admin")}
       cloudUrl={publicCloudOrigin(appUrl)}
       status={status}
       models={status.options}
@@ -273,7 +253,6 @@ export default ssr<AuthContext>(async (c) => {
         ...(codeList !== undefined ? { page: codeList } : {}),
         ...(codeDetail ? { detail: codeDetail } : {}),
       }}
-      {...(attention !== undefined ? { initialAttention: attention } : {})}
       {...(automations !== undefined ? { initialAutomations: automations } : {})}
       initialCodeBlock={panelScope && codeBlockPage !== undefined ? { ref: panelScope, page: codeBlockPage, place: codePlace } : null}
     />

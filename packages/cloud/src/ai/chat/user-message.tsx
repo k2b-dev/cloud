@@ -48,7 +48,7 @@ const WAKEUP_DELAYED_MS = 10 * 60_000;
 export const aiUserMessageSource = (
   entry: AiStoredMessage,
   locale: string,
-  timeZone = "UTC",
+  timeZone?: string,
   /** The alarm as the chat knows it: a repeating one names its rhythm instead of the time. */
   wakeup?: Pick<AiWakeup, "cron" | "rhythm">,
 ): JSX.Element | undefined => {
@@ -58,7 +58,8 @@ export const aiUserMessageSource = (
     entry.meta?.origin ?? (code ? { kind: "automation" as const, id: code.codeId, name: code.title, href: undefined } : undefined);
   if (!origin || origin.kind === "person") return undefined;
   if (origin.kind === "wakeup") {
-    const time = dates.formatTime(origin.scheduledAt, { locale, timeZone });
+    // The alarm names its own planned time, not when the message was written.
+    const time = dates.formatTime(origin.scheduledAt, { locale, timeZone: timeZone ?? "UTC" });
     const delayed = Date.parse(entry.createdAt) - Date.parse(origin.scheduledAt) >= WAKEUP_DELAYED_MS;
     return (
       <>
@@ -87,12 +88,24 @@ export const aiUserMessageSource = (
       <span>{label}</span>
     </>
   );
-  return origin.href ? (
-    <a href={origin.href} title={origin.kind === "automation" ? t.openAutomation : t.openChat}>
-      {content}
-    </a>
-  ) : (
-    content
+  // When it was written, quietly after the source, in the request's time zone: server and browser show the same time.
+  const time = timeZone ? dates.formatTime(entry.createdAt, { locale, timeZone }) : null;
+  return (
+    <>
+      {origin.href ? (
+        <a href={origin.href} title={origin.kind === "automation" ? t.openAutomation : t.openChat}>
+          {content}
+        </a>
+      ) : (
+        content
+      )}
+      {/* One element: its separator is drawn by CSS, so screen readers read only the time. */}
+      {time ? (
+        <time class="ai-message-source__time" dateTime={entry.createdAt}>
+          {time}
+        </time>
+      ) : undefined}
+    </>
   );
 };
 
