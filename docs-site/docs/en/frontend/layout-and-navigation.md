@@ -153,8 +153,8 @@ privacy screen.
 While it is on:
 
 - The whole screen blurs and becomes `inert`: the app bar with its icons,
-  counts, search, help and avatar, the navigation, the content, dialogs and
-  toasts. Only the hint and the islands below stay sharp. Nothing moves: positions, scroll, focus, caret and unsaved input stay, because the
+  counts, search, help and avatar, the navigation, the content, floating
+  windows (normal and maximized), dialogs and toasts. Only the hint and the islands below stay sharp. Nothing moves: positions, scroll, focus, caret and unsaved input stay, because the
   page is never rebuilt. The tab shows only the installation's name.
 - A primary click anywhere or a key shows the content again. That click or key
   never reaches the page: the pointer sequence and the key until its release
@@ -197,7 +197,12 @@ again. Keep islands small: everything inside one stays readable. A `blur` part
 also leaves the accessibility tree, so put a live region that names content
 inside it. An element with text of its own beside an island covers whole,
 the island included, because loose text cannot blur alone. Open dialogs and
-popovers cover too, also in pop-out pages without the app bar.
+popovers cover too, also in pop-out pages without the app bar. A container
+without a box of its own (`display: contents`), such as the `@k2b/ui` portal
+root, cannot blur, and a blurred container would become the frame of the
+fixed windows inside it and move them; such containers cover through their
+children. Loose text directly in a `display: contents` element stays sharp,
+so wrap it in an element.
 
 ## Render the application layout
 
