@@ -62,3 +62,6 @@ Assign public application hostnames and configure their TLS ingress with
 
 See [Privacy screen](/en/docs/operations/privacy-screen) for what the privacy
 screen stores and what it does not cover.
+
+See [Mail connectors](/en/docs/operations/mail-connectors) for the protocols Mail
+uses and its credential-free JMAP discovery hint.

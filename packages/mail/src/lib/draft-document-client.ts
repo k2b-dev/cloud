@@ -181,6 +181,8 @@ export type MailSharedDraftState = {
   recipientsChanged: boolean;
   recoveryDraft: MailDraft | null;
   restUnchanged: boolean;
+  /** The comparison with the closed draft failed: the device's input is not known to be safe yet. */
+  restFailed: boolean;
   /** A refused external proposal, independent of incoming document projections. */
   rejectedEdit: DraftEditableContent | null;
 };
@@ -365,6 +367,7 @@ export async function openMailDraftDocumentClient(options: {
       recipientsChanged: draftRecipientConfirmation(projection) !== draftRecipientConfirmation(recipientBaseline),
       recoveryDraft: null,
       restUnchanged: false,
+      restFailed: false,
       rejectedEdit: null,
     };
     let disposed = false;
@@ -767,6 +770,7 @@ export async function openMailDraftDocumentClient(options: {
     const recover = () => {
       if (recovering) return recovering;
       recovering = (async () => {
+        state.restFailed = false;
         if (state.rejectedEdit) throw new Error(t().bodyEditFailed);
         // Re-authorize before requesting recovery; permission failure leaves local bytes untouched.
         const current = await authorize(options.signal);
@@ -787,9 +791,15 @@ export async function openMailDraftDocumentClient(options: {
         state.error = false;
         emit();
         return result;
-      })().finally(() => {
-        recovering = null;
-      });
+      })()
+        .catch((error: unknown) => {
+          state.restFailed = true;
+          emit();
+          throw error;
+        })
+        .finally(() => {
+          recovering = null;
+        });
       return recovering;
     };
     options.onContent(projection);
