@@ -94,7 +94,7 @@ export default ssr<AuthContext>(async (c) => {
   const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };
   const [initialDetail, initialTimeline, initialContext, initialTabs] = activeConversation
     ? await Promise.all([
-        loadAiStreamState(activeConversation, c.get("actor").kind === "user" ? user.id : null, locale),
+        loadAiStreamState(activeConversation, c.get("actor").kind === "user" ? user.id : null, { locale }),
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
         loadAssistantChatContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, activeConversation.shortId, {
           timeZone,

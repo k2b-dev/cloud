@@ -1418,7 +1418,9 @@ suite("AI chat tasks", () => {
       const task = (await create())!;
       const manual = (await create())!;
       await aiChatTasks.setState({ userId: user!.id, taskId: manual.shortId, state: "paused" });
-      expect(await aiConversations.archiveConversation({ conversationId: conversation.id, ownerUserId: user!.id })).toBe(true);
+      expect(await aiConversations.archiveConversation({ conversationId: conversation.id, ownerUserId: user!.id })).toEqual({
+        discardedQueuedMessages: 0,
+      });
       // The AI routes run this after the store archived the chat; the route test covers that wiring.
       await aiChatTasks.pauseForArchivedChat({ conversationId: conversation.id, userId: user!.id });
       expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toMatchObject({
@@ -1603,7 +1605,9 @@ suite("AI chat tasks", () => {
       const stopped = (await create("Stopped elsewhere"))!;
       await sql`UPDATE auth.mandates SET state = 'paused', revision = revision + 1 WHERE id = ${stopped.mandateId}::uuid`;
       const changed = (await create("Changed while archived"))!;
-      expect(await aiConversations.archiveConversation({ conversationId: conversation.id, ownerUserId: user!.id })).toBe(true);
+      expect(await aiConversations.archiveConversation({ conversationId: conversation.id, ownerUserId: user!.id })).toEqual({
+        discardedQueuedMessages: 0,
+      });
       // The AI routes run this after the store archived the chat; the route test covers that wiring.
       await aiChatTasks.pauseForArchivedChat({ conversationId: conversation.id, userId: user!.id });
       expect(await aiChatTasks.get({ userId: user!.id, taskId: stopped.shortId })).toMatchObject({ state: "paused", reasonCode: "paused" });

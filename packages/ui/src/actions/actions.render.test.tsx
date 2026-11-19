@@ -2,14 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import type { DropdownItem as PublicDropdownItem } from "../index";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-actions-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const {
@@ -207,7 +207,7 @@ describe("@k2b/ui complete action migrations", () => {
     expect(rule('.k2b-ui .k2b-button[data-size="xs"]')).toContain("min-height: 1.5rem");
     // Subtle and secondary share one look: white with a light 1 px border.
     const quiet = rule('.k2b-ui .k2b-button:is([data-variant="secondary"], [data-variant="subtle"])');
-    expect(quiet).toContain("border-color: var(--k2b-control-border-soft)");
+    expect(quiet).toContain("border-color: var(--k2b-edge)");
     expect(quiet).toContain("background: var(--k2b-surface)");
     const warningRule = rule('.k2b-ui .k2b-button[data-variant="warning"]');
     expect(warningRule).toContain("color: #422006");
@@ -237,7 +237,9 @@ describe("@k2b/ui complete action migrations", () => {
     expect(inputRule).toContain("min-height: 2.25rem");
     expect(inputRule).toContain("background: var(--k2b-surface)");
     expect(inputRule).toContain("border-width: var(--k2b-edge-width)");
-    expect(inputRule).not.toContain("box-shadow");
+    // The only shadow is the flat focus ring outside the border, transparent at rest.
+    expect(inputRule).toContain("--k2b-edge-ring: transparent");
+    expect(inputRule).toContain("box-shadow: 0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring)");
     expect(rule('.k2b-ui .k2b-icon-button[data-variant="input"]')).toContain("width: 2.25rem");
   });
 
@@ -994,7 +996,9 @@ describe("@k2b/ui action geometry parity", () => {
     expect(option).toContain("flex-1");
     expect(option).toContain("min-height: 1.875rem");
     expect(option).toContain("padding: 0.25rem 0.5rem");
-    expect(option).toContain("box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color)");
+    expect(option).toMatch(
+      /box-shadow:\s*inset 0 0 0 var\(--k2b-edge-width\) var\(--k2b-edge-color\),\s*0 0 0 var\(--k2b-edge-ring-width\) var\(--k2b-edge-ring\)/,
+    );
     // Selection never adds weight.
     expect(option).not.toContain("font-weight");
     expect(actionsCss).toMatch(/\.k2b-segmented-control__option:not\([^)]*\):hover/);
@@ -1024,7 +1028,9 @@ describe("@k2b/ui action geometry parity", () => {
     expect(chip).not.toContain("999px");
     expect(chip).toContain("border: 0");
     expect(chip).toContain("background: var(--k2b-surface)");
-    expect(chip).toContain("box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color)");
+    expect(chip).toMatch(
+      /box-shadow:\s*inset 0 0 0 var\(--k2b-edge-width\) var\(--k2b-edge-color\),\s*0 0 0 var\(--k2b-edge-ring-width\) var\(--k2b-edge-ring\)/,
+    );
     expect(iconOnly).toContain("width: 2.25rem");
     expect(actionsCss).toContain(".k2b-ui .k2b-filter-chip:hover");
   });

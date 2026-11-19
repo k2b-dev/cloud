@@ -110,9 +110,10 @@ export const createSourceController = (deps: SourceControllerDeps) => {
 
   const scrapeCreatedMetricsSource = async (baseId: string, sourceId: string): Promise<boolean> => {
     try {
-      await scrapeMutation.mutate({ baseId, sourceId });
+      const outcome = await scrapeMutation.mutate({ baseId, sourceId });
       if (disposed) return false;
-      if (scrapeMutation.error()) throw scrapeMutation.error();
+      if (outcome === "error") throw scrapeMutation.error();
+      if (outcome !== "success") return false;
       const counts = scrapeMutation.data()!;
       if (!(await reconcile([deps.refreshBaseData], t().sourceCreatedScrapedRefreshFailed))) return false;
       toast.success(t().sourceAddedScraped({ counts: t().ingestCounts(counts) }));
@@ -136,9 +137,10 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     }
     deps.setLoading(true);
     try {
-      await createMutation.mutate({ baseId, input: { ...input } });
+      const outcome = await createMutation.mutate({ baseId, input: { ...input } });
       if (disposed) return false;
-      if (createMutation.error()) throw createMutation.error();
+      if (outcome === "error") throw createMutation.error();
+      if (outcome !== "success") return false;
       const source = createMutation.data()!;
       if (input.kind === "metrics") {
         if (!(await scrapeCreatedMetricsSource(baseId, source.id))) return true;
@@ -182,9 +184,10 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     if (!baseId) return;
     deps.setLoading(true);
     try {
-      await scrapeMutation.mutate({ baseId, sourceId: source.id });
+      const outcome = await scrapeMutation.mutate({ baseId, sourceId: source.id });
       if (disposed) return;
-      if (scrapeMutation.error()) throw scrapeMutation.error();
+      if (outcome === "error") throw scrapeMutation.error();
+      if (outcome !== "success") return;
       const counts = scrapeMutation.data()!;
       if (!(await reconcile([deps.refreshBaseData, deps.refreshSourceDetail], t().sourceChangedRefreshFailed))) return;
       toast.success(t().metricsScraped({ counts: t().ingestCounts(counts) }));
@@ -201,9 +204,10 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     if (!baseId) return;
     deps.setLoading(true);
     try {
-      await toggleMutation.mutate({ baseId, sourceId: source.id, enabled: !source.enabled });
+      const outcome = await toggleMutation.mutate({ baseId, sourceId: source.id, enabled: !source.enabled });
       if (disposed) return;
-      if (toggleMutation.error()) throw toggleMutation.error();
+      if (outcome === "error") throw toggleMutation.error();
+      if (outcome !== "success") return;
       const updated = toggleMutation.data()!;
       if (!(await reconcile([deps.refreshBaseData], t().sourceChangedRefreshFailed))) return;
       toast.success(updated.enabled ? t().sourceResumed : t().sourcePaused);
@@ -225,9 +229,10 @@ export const createSourceController = (deps: SourceControllerDeps) => {
         if (disposed || !requireWritable()) throw new SourceEditError("uncertain", t().refreshBeforeChanges);
         deps.setLoading(true);
         try {
-          await editMutation.mutate({ baseId, sourceId: source.id, patch });
+          const outcome = await editMutation.mutate({ baseId, sourceId: source.id, patch });
           if (disposed) throw new SourceEditError("uncertain", t().sourceEditUncertain);
-          if (editMutation.error()) throw editMutation.error();
+          if (outcome === "error") throw editMutation.error();
+          if (outcome !== "success") throw new SourceEditError("uncertain", t().sourceEditUncertain);
           if (!(await reconcile([deps.refreshBaseData], t().sourceUpdatedRefreshFailed)))
             throw new SourceEditError("uncertain", t().sourceEditUncertain);
           toast.success(t().sourceUpdated);
@@ -253,9 +258,10 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     if (disposed || !confirmed || !requireWritable()) return;
     deps.setLoading(true);
     try {
-      await removeMutation.mutate({ baseId, sourceId: source.id });
+      const outcome = await removeMutation.mutate({ baseId, sourceId: source.id });
       if (disposed) return;
-      if (removeMutation.error()) throw removeMutation.error();
+      if (outcome === "error") throw removeMutation.error();
+      if (outcome !== "success") return;
       if (!(await reconcile([deps.refreshBaseData], t().sourceRemovedRefreshFailed))) return;
       if (deps.selectedSourceId() === source.id) deps.navigate({ view: "sources" });
       toast.success(t().sourceRemoved);
@@ -270,9 +276,10 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     if (deps.writeBlocked()) throw new Error(t().refreshBeforeChanges);
     const baseId = deps.selectedBaseId();
     if (!baseId) throw new Error(t().noBaseSelected);
-    await createApiKeyMutation.mutate({ baseId, sourceId: source.id, input: { ...input } });
+    const outcome = await createApiKeyMutation.mutate({ baseId, sourceId: source.id, input: { ...input } });
     if (disposed) throw new DOMException("Source owner was disposed", "AbortError");
-    if (createApiKeyMutation.error()) throw createApiKeyMutation.error();
+    if (outcome === "error") throw createApiKeyMutation.error();
+    if (outcome !== "success") throw new DOMException("API key creation did not run", "AbortError");
     const created = createApiKeyMutation.data()!;
     await reconcile([deps.refreshSourceDetail], t().apiKeyCreatedRefreshFailed);
     if (disposed) throw new DOMException("Source owner was disposed", "AbortError");
@@ -283,9 +290,10 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     if (deps.writeBlocked()) throw new Error(t().refreshBeforeChanges);
     const baseId = deps.selectedBaseId();
     if (!baseId) throw new Error(t().noBaseSelected);
-    await revokeApiKeyMutation.mutate({ baseId, sourceId: source.id, credentialId });
+    const outcome = await revokeApiKeyMutation.mutate({ baseId, sourceId: source.id, credentialId });
     if (disposed) throw new DOMException("Source owner was disposed", "AbortError");
-    if (revokeApiKeyMutation.error()) throw revokeApiKeyMutation.error();
+    if (outcome === "error") throw revokeApiKeyMutation.error();
+    if (outcome !== "success") throw new DOMException("API key revoke did not run", "AbortError");
     await reconcile([deps.refreshSourceDetail], t().apiKeyRevokedRefreshFailed);
     if (disposed) throw new DOMException("Source owner was disposed", "AbortError");
   };

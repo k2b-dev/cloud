@@ -170,6 +170,15 @@ export function installPanelSlot(): () => void {
   // A save that failed or timed out has an unknown outcome on the server: nothing is shared until the person answers again.
   const allowed = () =>
     !provider.consent || (consentPending === 0 && !answersStale && !errors.has(provider.id) && answers.get(provider.id) === true);
+  const readMenuState = (): PanelState => ({
+    provider: provider.id,
+    appName: provider.appName,
+    consent: provider.consent,
+    allowed: allowed(),
+    saving: saving.has(provider.id),
+    open: isOpen(),
+  });
+  const [menuState, setMenuState] = createSignal(readMenuState());
   // Whether the current frame has seen a context, in its URL or by message; only such a frame needs a clearing null.
   let disclosed = !!frame && new URL(frame.src, location.origin).searchParams.has(PANEL_CONTEXT_PARAM);
   // The frame may have navigated on its own; only the selected provider's page below its panel path may receive context.
@@ -179,7 +188,7 @@ export function installPanelSlot(): () => void {
       const scope = new URL(provider.href, location.origin).pathname.replace(/\/$/, "");
       return (
         !!shown &&
-        (!requireReady || frame?.contentDocument?.documentElement.dataset.cloudPanelReady === provider.id) &&
+        (!requireReady || frame?.contentDocument?.documentElement?.dataset.cloudPanelReady === provider.id) &&
         (shown.pathname === scope || shown.pathname.startsWith(`${scope}/`))
       );
     } catch {
@@ -380,10 +389,13 @@ export function installPanelSlot(): () => void {
       tab.setAttribute("aria-selected", String(selected));
       tab.tabIndex = selected ? 0 : -1;
     }
-    slot.dataset.appName = provider.appName;
-    slot.dataset.providerConsent = String(provider.consent);
-    slot.dataset.contextAllowed = String(allowed());
-    slot.dataset.consentSaving = String(saving.has(provider.id));
+    const state = readMenuState();
+    slot.dataset.appName = state.appName;
+    slot.dataset.providerConsent = String(state.consent);
+    slot.dataset.contextAllowed = String(state.allowed);
+    slot.dataset.consentSaving = String(state.saving);
+    // The menu shares this update, even before document listeners receive the notification below.
+    setMenuState(state);
     const ask =
       isOpen() && provider.consent && ((answers.has(provider.id) && answers.get(provider.id) === null) || errors.has(provider.id));
     if (ask) slot.dataset.consent = "ask";
@@ -402,14 +414,7 @@ export function installPanelSlot(): () => void {
     }
     window.dispatchEvent(
       new CustomEvent<PanelState>("cloud.panel.state", {
-        detail: {
-          provider: provider.id,
-          appName: provider.appName,
-          consent: provider.consent,
-          allowed: allowed(),
-          saving: saving.has(provider.id),
-          open: isOpen(),
-        },
+        detail: state,
       }),
     );
     const description = slot.querySelector<HTMLElement>(".k2b-placeholder__description");
@@ -850,9 +855,10 @@ export function installPanelSlot(): () => void {
   window.addEventListener("resize", seedWidth);
   // An SSR iframe can have posted its one-shot ready before this lazy module
   // arrived. Its runtime also marks its own same-origin document, so read that
-  // once the listener is in place instead of loading the provider again.
+  // once the listener is in place instead of loading the provider again. A
+  // navigating iframe can expose a document before it has a documentElement.
   if (isOpen() && frame) {
-    if (frame.contentDocument?.documentElement.dataset.cloudPanelReady === provider.id) markReady();
+    if (frame.contentDocument?.documentElement?.dataset.cloudPanelReady === provider.id) markReady();
     else loading();
   } else if (isOpen()) load();
   else unload();
@@ -861,20 +867,12 @@ export function installPanelSlot(): () => void {
   let disposeMenu = () => {};
   if (menuHost) {
     menuHost.replaceChildren();
-    const initial: PanelState = {
-      provider: provider.id,
-      appName: provider.appName,
-      consent: provider.consent,
-      allowed: allowed(),
-      saving: saving.has(provider.id),
-      open: isOpen(),
-    };
     disposeMenu = render(
       () =>
         createComponent(LocaleProvider, {
           locale: lang,
           get children() {
-            return createComponent(PanelMenu, { initial, locale: lang });
+            return createComponent(PanelMenu, { state: menuState, locale: lang });
           },
         }),
       menuHost,

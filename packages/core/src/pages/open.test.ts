@@ -9,12 +9,12 @@ import { session } from "@k2b/cloud/services";
 import * as railSnapshot from "@k2b/cloud/services/rail-snapshot";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
 import type { RuntimeContext } from "@k2b/cloud/ssr";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "core-resource-links-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 const { createResourceOpenRoutes } = await import("./open");
 const tokenSpy = spyOn(session, "getToken").mockReturnValue(null);
 const railSpy = spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue({

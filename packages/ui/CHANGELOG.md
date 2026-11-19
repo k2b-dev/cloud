@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.60.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.59.0...npm-ui-v0.60.0) (2026-11-17)
+
+
+### Features
+
+* **chat:** quote parts of a message in a reply ([#3502](https://github.com/k2b-dev/cloud/issues/3502)) ([6efa3b7](https://github.com/k2b-dev/cloud/commit/6efa3b7aa1f2f9418d4425ca87a0e937e0b8ef8b))
+* **chat:** the panel follows a place shared after it loaded, and Discover channels stays visible beside Channels ([#3529](https://github.com/k2b-dev/cloud/issues/3529)) ([4ce2d6f](https://github.com/k2b-dev/cloud/commit/4ce2d6f0d0cf114d96c31502a27637b482e6c6c3))
+* **cloud:** conflicts read the sentence they were given, on @k2b/stdlib 0.33.0 ([#3576](https://github.com/k2b-dev/cloud/issues/3576)) ([84b3ed1](https://github.com/k2b-dev/cloud/commit/84b3ed115927be23e0bc703ec9d8d384ea48db20))
+* **cloud:** Gustav's steps are one-line rows on one grid, with their details behind an ⓘ ([#3559](https://github.com/k2b-dev/cloud/issues/3559)) ([d0b8e2c](https://github.com/k2b-dev/cloud/commit/d0b8e2c28bb8da78473bc8bff94a236791538fe8))
+* **cloud:** Gustav's thinking line changes its word with time, one word at a time ([#3477](https://github.com/k2b-dev/cloud/issues/3477)) ([38f6371](https://github.com/k2b-dev/cloud/commit/38f637186d009f63561167cf6c77c396feddb3cb))
+* **ui:** a dialog replaces another with a morph ([#3614](https://github.com/k2b-dev/cloud/issues/3614)) ([edc6377](https://github.com/k2b-dev/cloud/commit/edc6377c2a3667d59b736cec7f992350bc34d435))
+* **ui:** activity list ([#3505](https://github.com/k2b-dev/cloud/issues/3505)) ([dd963e0](https://github.com/k2b-dev/cloud/commit/dd963e085999f81ef698d7e754112a58be9b4557))
+* **ui:** choice list as a framed list of single-line rows ([#3639](https://github.com/k2b-dev/cloud/issues/3639)) ([b4a5ed6](https://github.com/k2b-dev/cloud/commit/b4a5ed6fd4cad2e27836415386a127d2822eff1d))
+* **ui:** dialogs rise in and fade out ([#3520](https://github.com/k2b-dev/cloud/issues/3520)) ([1b50cd1](https://github.com/k2b-dev/cloud/commit/1b50cd1058f44e8da4bd82d27f2f90c2303d07df))
+* **ui:** longer conversation text takes the whole field, its tools a row of their own below it ([#3481](https://github.com/k2b-dev/cloud/issues/3481)) ([6c68d21](https://github.com/k2b-dev/cloud/commit/6c68d217ca347855bd05cd8194886af0241b699b))
+* **ui:** option lists show a visual in place of the description ([#3552](https://github.com/k2b-dev/cloud/issues/3552)) ([6175095](https://github.com/k2b-dev/cloud/commit/6175095352d3832958617fd0cdcab879d6203f09))
+* **ui:** period picker steps through periods ([#3611](https://github.com/k2b-dev/cloud/issues/3611)) ([a2f5a5e](https://github.com/k2b-dev/cloud/commit/a2f5a5e2bf33d378a18f368741265c92f536e443))
+* **ui:** stat grid without tiles ([#3605](https://github.com/k2b-dev/cloud/issues/3605)) ([3edeb04](https://github.com/k2b-dev/cloud/commit/3edeb043c3bbfe1b7cfb22df9446978e5ef0c43f))
+* **ui:** the suggestion's Tab pill follows the text inline and wraps only as a whole ([#3473](https://github.com/k2b-dev/cloud/issues/3473)) ([2f7224a](https://github.com/k2b-dev/cloud/commit/2f7224a562b7e264ea892bedd3c4cde03c2e3b38))
+* **ui:** time input ([#3548](https://github.com/k2b-dev/cloud/issues/3548)) ([1c53acb](https://github.com/k2b-dev/cloud/commit/1c53acbb4b4fb435755a32ba8703807890b4f620))
+
+
+### Bug Fixes
+
+* **chat:** a calmer chat list with a filter menu, aligned section chevrons and channel discovery beside its section ([#3482](https://github.com/k2b-dev/cloud/issues/3482)) ([06dcc32](https://github.com/k2b-dev/cloud/commit/06dcc3268658c6a414cb05c9265ebd810db2e5b6))
+* **ci:** every unit shard keeps headroom below its 20-minute budget ([#3540](https://github.com/k2b-dev/cloud/issues/3540)) ([1aa701b](https://github.com/k2b-dev/cloud/commit/1aa701b652a6e9daf40dee612100cb4170f88efa))
+* **cloud:** keep the sign-out warning background blurred during countdown ([#3625](https://github.com/k2b-dev/cloud/issues/3625)) ([51adc93](https://github.com/k2b-dev/cloud/commit/51adc931c0ab8cd234d37b02b935c8bdd5c01f4f))
+* **deps:** mutations ignore a second call while one runs ([#3602](https://github.com/k2b-dev/cloud/issues/3602)) ([3745df6](https://github.com/k2b-dev/cloud/commit/3745df635929ba3d0a4a42cf80404b9032ac61b5))
+* **editor:** a line over dates starts its axis at its first value ([#3454](https://github.com/k2b-dev/cloud/issues/3454)) ([d3742d2](https://github.com/k2b-dev/cloud/commit/d3742d233b86504b5eb86cc1cf158959dc86c81b))
+* **ssr:** keep text typed before an island renders, so the first chat message is sent; name untitled chats in the caller's language ([#3544](https://github.com/k2b-dev/cloud/issues/3544)) ([38ec07f](https://github.com/k2b-dev/cloud/commit/38ec07f502642dbc42d973a2deb434789bb4cb02))
+* **test:** a browser runner too slow for 5 s tests stops at the warm-up instead of failing tests as hangs ([#3541](https://github.com/k2b-dev/cloud/issues/3541)) ([aef9936](https://github.com/k2b-dev/cloud/commit/aef9936ff5babc4825c5e093d2dfe70a55344860))
+* **ui:** a paused plan's progress ring turns grey, so it never reads as running work ([#3573](https://github.com/k2b-dev/cloud/issues/3573)) ([7328a18](https://github.com/k2b-dev/cloud/commit/7328a18cb5e64088effdaa13f510a5169f52bab4))
+* **ui:** a swapped page's workspace sidebar keeps its current item in view and remembers its offset ([#3471](https://github.com/k2b-dev/cloud/issues/3471)) ([b948ddb](https://github.com/k2b-dev/cloud/commit/b948ddb4d7b84b5c2a014efbf0b2d18d9e25bc3c))
+* **ui:** a table search can point at the heading that describes it (cherry-pick of [#3569](https://github.com/k2b-dev/cloud/issues/3569)) ([#3590](https://github.com/k2b-dev/cloud/issues/3590)) ([7238d78](https://github.com/k2b-dev/cloud/commit/7238d78573eb4a8c544275ebc5d75e718da940c7))
+* **ui:** accept @k2b/ssr 0.22 as a peer ([#3643](https://github.com/k2b-dev/cloud/issues/3643)) ([6a88fb5](https://github.com/k2b-dev/cloud/commit/6a88fb5f14fe6bb76dd3b039130fc492f2decd28))
+* **ui:** stacked link cards wrap their title and description instead of cutting them (cherry-pick of [#3565](https://github.com/k2b-dev/cloud/issues/3565)) ([#3570](https://github.com/k2b-dev/cloud/issues/3570)) ([1a77c5e](https://github.com/k2b-dev/cloud/commit/1a77c5ee0544cec5c7c8a5e26a2284a0103b15d5))
+* **ui:** the phone app menu follows the page swap instead of loading the whole document ([#3506](https://github.com/k2b-dev/cloud/issues/3506)) ([f532070](https://github.com/k2b-dev/cloud/commit/f5320702be5224d73c129e76f9bd552deb4a3509))
+* **ui:** thinking words keep changing when their row appears under a resting pointer ([#3567](https://github.com/k2b-dev/cloud/issues/3567)) ([74ecc12](https://github.com/k2b-dev/cloud/commit/74ecc125543a73cfbd6f4846bcecf51cbb997be7))
+* **ui:** wait for map history traversal after reload ([#3366](https://github.com/k2b-dev/cloud/issues/3366)) ([f341015](https://github.com/k2b-dev/cloud/commit/f3410155bc625555188c951c73acfab9630df254)), closes [#3363](https://github.com/k2b-dev/cloud/issues/3363)
+
+
+### Performance Improvements
+
+* **ui:** phone sheet code loads only on phones, with the in-page menu as fallback ([#3461](https://github.com/k2b-dev/cloud/issues/3461)) ([d403b55](https://github.com/k2b-dev/cloud/commit/d403b55a028a81dfd2b02f513af1eea7558ab13b))
+* **ui:** the people list, rich select and phone help load their sheet only on phones ([#3551](https://github.com/k2b-dev/cloud/issues/3551)) ([d95523e](https://github.com/k2b-dev/cloud/commit/d95523e1783085b4e0762b5d504a51a685e2b595))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.21.3 to 0.22.0
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 || ^0.21.0 || ^0.22.0 to ^0.22.0
+
 ## [0.59.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.58.0...npm-ui-v0.59.0) (2026-11-15)
 
 

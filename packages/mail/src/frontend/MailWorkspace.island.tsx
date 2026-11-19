@@ -133,6 +133,7 @@ import {
 import {
   captureMailWorkspaceRefreshError,
   type MailWorkspaceRefreshResult,
+  reportMailWorkspaceRefresh,
   requireMailWorkspaceRefresh,
 } from "./_components/mail-workspace-refresh";
 import { createMailboxSearch } from "./_components/mailbox-search";
@@ -1620,6 +1621,9 @@ function createMailboxController(props: MailboxControllerProps) {
   const reconcileWorkspace = async (): Promise<void> => {
     await reconcileWorkspaceForActions();
   };
+  /** The list's pull to refresh marks a failure in place, so it also receives the rejection; the toast stays. */
+  const refreshList = () =>
+    reportMailWorkspaceRefresh(requireWorkspaceReconcile, (message) => toast.error(message, { title: t().refreshMailboxFailedTitle }));
 
   /**
    * The change was saved, only this view is stale: say so, and let Try again reload what the workspace shows now. It
@@ -1961,9 +1965,9 @@ function createMailboxController(props: MailboxControllerProps) {
         title: t().conversationUnchanged,
       }),
   });
-  const mergeConversation = (source: { conversationId: string; revision: number; subject: string }) => {
-    if (!canWrite() || structurePending() || disposed) return Promise.resolve();
-    return mergeConversationMutation.mutate(source);
+  const mergeConversation = async (source: { conversationId: string; revision: number; subject: string }) => {
+    if (!canWrite() || structurePending() || disposed) return;
+    await mergeConversationMutation.mutate(source);
   };
 
   const mergeSelectedConversation = () => {
@@ -2018,11 +2022,11 @@ function createMailboxController(props: MailboxControllerProps) {
     },
     onError: (error) => prompts.error(error.message, { title: t().messageNotMoved }),
   });
-  const reassignMessage = (messageId: string) => {
+  const reassignMessage = async (messageId: string) => {
     const sourceConversationId = data.selectedConversationId;
     const sourceRevision = selectedConversationRevision();
-    if (!canWrite() || structurePending() || !sourceConversationId || !sourceRevision) return Promise.resolve();
-    return reassignMessageMutation.mutate({ messageId, sourceConversationId, sourceRevision });
+    if (!canWrite() || structurePending() || !sourceConversationId || !sourceRevision) return;
+    await reassignMessageMutation.mutate({ messageId, sourceConversationId, sourceRevision });
   };
 
   const splitMessageMutation = mutation.create<
@@ -2066,7 +2070,7 @@ function createMailboxController(props: MailboxControllerProps) {
     },
     onError: (error) => prompts.error(error.message, { title: t().conversationUnchanged }),
   });
-  const splitMessage = (messageId: string) => {
+  const splitMessage = async (messageId: string) => {
     const conversationId = data.selectedConversationId;
     const revision = selectedConversationRevision();
     if (
@@ -2076,8 +2080,8 @@ function createMailboxController(props: MailboxControllerProps) {
       !revision ||
       (selectedListItem()?.messageCount ?? data.detailMessages.length) <= 1
     )
-      return Promise.resolve();
-    return splitMessageMutation.mutate({ messageId, conversationId, revision });
+      return;
+    await splitMessageMutation.mutate({ messageId, conversationId, revision });
   };
 
   // Keeping is conversation state in Cloud, not a provider change: save it, then reload the canonical view.
@@ -2132,10 +2136,10 @@ function createMailboxController(props: MailboxControllerProps) {
         title: context?.keep === false ? conversationText().stopKeepingFailed : conversationText().keepFailed,
       }),
   });
-  const setConversationKept = (keep: boolean) => {
+  const setConversationKept = async (keep: boolean) => {
     const conversationId = data.selectedConversationId;
-    if (!conversationId || disposed || structurePending() || (keep ? !canWrite() : !data.keep?.canLift)) return Promise.resolve();
-    return keepMutation.mutate({ conversationId, keep });
+    if (!conversationId || disposed || structurePending() || (keep ? !canWrite() : !data.keep?.canLift)) return;
+    await keepMutation.mutate({ conversationId, keep });
   };
 
   // A queued action runs later. Follow its commands so a change the mail server did not make still
@@ -2604,10 +2608,10 @@ function createMailboxController(props: MailboxControllerProps) {
     },
     onError: (error) => toast.error(error.message),
   });
-  const addTagsToSelection = () => {
+  const addTagsToSelection = async () => {
     const conversationIds = [...selectedConversationIds()];
-    if (!canWrite() || structurePending() || conversationIds.length === 0) return Promise.resolve();
-    return addTagsMutation.mutate(conversationIds);
+    if (!canWrite() || structurePending() || conversationIds.length === 0) return;
+    await addTagsMutation.mutate(conversationIds);
   };
 
   const manageConversationTagsMutation = mutation.create<void, MailListItem>({
@@ -2637,9 +2641,9 @@ function createMailboxController(props: MailboxControllerProps) {
         });
     },
   });
-  const manageConversationTags = (item: MailListItem) => {
-    if (!canWrite() || structurePending() || !item.conversationId) return Promise.resolve();
-    return manageConversationTagsMutation.mutate(item);
+  const manageConversationTags = async (item: MailListItem) => {
+    if (!canWrite() || structurePending() || !item.conversationId) return;
+    await manageConversationTagsMutation.mutate(item);
   };
 
   const assignSelectionMutation = mutation.create<void, string[]>({
@@ -2729,10 +2733,10 @@ function createMailboxController(props: MailboxControllerProps) {
       toast.error(error.message);
     },
   });
-  const assignOpenConversation = () => {
+  const assignOpenConversation = async () => {
     const conversationId = data.selectedConversationId;
-    if (!canWrite() || structurePending() || !conversationId) return Promise.resolve();
-    return assignSelectionMutation.mutate([conversationId]);
+    if (!canWrite() || structurePending() || !conversationId) return;
+    await assignSelectionMutation.mutate([conversationId]);
   };
   const assignToMe = mutation.create<void, string>({
     mutation: async (conversationId) => {
@@ -2842,8 +2846,7 @@ function createMailboxController(props: MailboxControllerProps) {
   const completeSelection = async () => {
     const conversationIds = [...selectedConversationIds()];
     if (!canWrite() || structurePending() || completion.loading() || conversationIds.length === 0) return;
-    await completion.mutate({ conversationIds, completion: "done" });
-    if (!completion.error()) {
+    if ((await completion.mutate({ conversationIds, completion: "done" })) === "success") {
       setConversationSelection(emptyMailConversationSelection());
       setSelectionMode(false);
     }
@@ -2885,10 +2888,10 @@ function createMailboxController(props: MailboxControllerProps) {
       setLaterPending(false);
     }
   };
-  const assignSelection = () => {
+  const assignSelection = async () => {
     const conversationIds = [...selectedConversationIds()];
-    if (!canWrite() || structurePending() || conversationIds.length === 0) return Promise.resolve();
-    return assignSelectionMutation.mutate(conversationIds);
+    if (!canWrite() || structurePending() || conversationIds.length === 0) return;
+    await assignSelectionMutation.mutate(conversationIds);
   };
 
   structureMutationLoading = () =>
@@ -3158,6 +3161,7 @@ function createMailboxController(props: MailboxControllerProps) {
     retryPresence: () => retryPresence(),
     reassignMessage,
     reconcileWorkspace,
+    refreshList,
     requestPath,
     requireWorkspaceReconcile,
     routeLoading,
@@ -3293,7 +3297,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       onOpenHref={controller().openWorkspaceHref}
       onNavigationStart={props.onNavigationStart}
       onLoadMore={controller().loadMoreConversations}
-      onRefresh={controller().reconcileWorkspace}
+      onRefresh={controller().refreshList}
       assignees={controller().sharedMailbox() ? controller().rowAssignees : undefined}
       assignedGroups={controller().listCounts().assignedGroups}
       hiddenDone={(() => {
@@ -3603,7 +3607,9 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
                         conversationSummary={controller().data.conversationSummary}
                         conversationDrafts={controller().data.conversationDrafts}
                         automationTrace={controller().data.automationTrace}
-                        onUndoAutomation={(item) => controller().automationUndo.mutate(item)}
+                        onUndoAutomation={async (item) => {
+                          await controller().automationUndo.mutate(item);
+                        }}
                         onAssignConversation={controller().assignOpenConversation}
                         onAssignConversationToMe={controller().assignOpenConversationToMe}
                         automationPending={controller().automationUndo.loading() || controller().assignToMe.loading()}

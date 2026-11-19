@@ -3,11 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { AppMeta, CloudRuntime, RuntimeAppMeta } from "../contracts/app";
 import type { AccessEntry, User } from "../contracts/shared";
 import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
@@ -188,7 +188,7 @@ const discoveryApps: RuntimeAppMeta[] = [
 export async function appAccessBrowserFixture() {
   const root = mkdtempSync(join(tmpdir(), "cloud-app-access-browser-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-  Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
   const [{ default: AppAccessEditor }, { AppAccessDeniedContent, AppAccessDeniedFrame }, { default: Layout }, { default: AdminLayout }] =
     await Promise.all([
       import("./AppAccessEditor"),

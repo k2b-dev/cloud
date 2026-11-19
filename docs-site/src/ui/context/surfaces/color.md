@@ -45,34 +45,46 @@ Selection keeps its fill independently of unread emphasis.
 
 ## Field edge
 
-Every control a person fills in shares one edge: text fields, number fields,
-selects, comboboxes, tag and date fields, colour fields, input buttons, the
-Markdown editor, and the signature pad. The field is white, and its edge is
-always `--k2b-edge-width` (2 px) wide, drawn inside the box as one border and
-nothing else. A second source beside it, such as an inset shadow or an
-outline, leaves a lighter seam at fractional zoom. Parts inside the field, such
-as number steppers, fill up to that border and part from the value with one
-1 px line in `--k2b-edge`. A state changes only the colour or the fill, so the
-box and the text never move:
+Everything a person fills in or chooses shares one thin edge: text fields,
+number fields, selects, comboboxes, tag and date fields, colour fields, input
+buttons, the Markdown editor, the signature pad, choice cards, filter chips,
+segments, and secondary buttons. The field is white, and its edge is always
+`--k2b-edge-width` (1 px) wide, drawn inside the box as one border. A second
+source inside it, such as an inset shadow, leaves a lighter seam at
+fractional zoom. Parts inside the field, such as number steppers, fill up to
+that border and part from the value with one 1 px line in `--k2b-edge`.
 
-| State | Edge | Fill |
-| --- | --- | --- |
-| Rest | `--k2b-edge` (light grey, the strong border) | `--k2b-surface` |
-| Hover | unchanged | `--k2b-edge-hover-bg`, slightly darker |
-| Focus | `--k2b-edge-focus` (strong blue) | `--k2b-surface` |
-| Error | `--k2b-edge-danger` | unchanged |
-| Error with focus | `--k2b-edge-focus`; the error message stays | unchanged |
-| Disabled | none | `--k2b-surface-muted` |
+Focus and errors add a soft ring outside the edge:
+`0 0 0 var(--k2b-edge-ring-width)` (3 px) in `--k2b-edge-ring-share` (18 %,
+24 % in the dark theme) of the edge colour. The ring is a state mark, not
+depth: a flat band without blur that never takes room, so the box and the text
+never move:
 
-The focus blue keeps 3:1 against the grey edge it replaces, so focus shows
-without a second width. No field casts a shadow, with one approved exception:
-the assistant prompt of `Chat.Composer` takes the AI colour, a light plum edge
-at rest and the full plum edge with a soft glow outside (`--k2b-ai-glow`) on
-focus. The glow lies outside the box, so nothing moves, and the plum focus
-edge keeps 3:1 against the rest edge. Do not extend the glow to other
-controls. A control with its own edge reads `--k2b-edge-color`, the colour of
-the current state. In forced-colors mode the border takes the system colour
-and focus adds the system outline.
+| State | Edge | Ring | Fill |
+| --- | --- | --- | --- |
+| Rest | `--k2b-edge` (light grey, the strong border) | none | `--k2b-surface` |
+| Hover | `--k2b-edge-hover`, one step darker | none | `--k2b-edge-hover-bg`, slightly darker |
+| Focus | `--k2b-edge-focus` (strong blue) | blue | `--k2b-surface` |
+| Error | `--k2b-edge-danger` | red | unchanged |
+| Error with focus | `--k2b-edge-focus`; the error message stays | blue | unchanged |
+| Disabled | `--k2b-edge-disabled` (light) | none | `--k2b-surface-muted` |
+
+A control with its own edge reads `--k2b-edge-color`, the colour of the
+current state, and draws the ring from `--k2b-edge-ring`. It rests with
+`--k2b-edge-ring: transparent`, and a state sets
+`--k2b-edge-ring: color-mix(in srgb, var(--k2b-edge-color) var(--k2b-edge-ring-share), transparent)`,
+so the ring follows the edge colour in every primary scope. No control casts a
+depth shadow (see [Elevation](/en/ui/surfaces/elevation)). In forced-colors
+mode the border takes the system colour and focus adds the system outline.
+
+Large writing surfaces with their own frame are not fields and keep a 2 px
+frame (`--k2b-frame-width`): the assistant prompt of `Chat.Composer`, which
+takes the AI colour with a soft glow outside (`--k2b-ai-glow`) on focus, a
+mail draft in the reader, and a toned dialog frame. Editor surfaces such as
+the Notebooks and CodeMirror composers keep their own frames too. Do not
+extend the glow or the frame width to other controls. The `field-edges` rule
+rejects a 2 px line in a field-edge colour and any width token set outside
+`@k2b/ui`.
 
 ### Filters, buttons, and clickable cards
 
@@ -81,13 +93,24 @@ control casts a shadow.
 
 | Control | Edge | Hover | Active | Focus |
 | --- | --- | --- | --- | --- |
-| `FilterChip`, `FilterToggle` | the field edge, as a 2 px inset | `--k2b-edge-hover-bg` | selected edge and fill in the app ink | `--k2b-edge-focus` edge |
-| `SegmentedControl` option, `Tabs` tab, `ViewTabs` view | none until selected; segments sit on `--k2b-tray` | light tint | selected edge and fill in the app ink | `--k2b-edge-focus` edge |
-| Secondary and subtle `Button` | 1 px `--k2b-control-border-soft`, never darker | `--k2b-edge-hover-bg` | | focus ring |
+| `FilterChip`, `FilterToggle` | the field edge, as a 1 px inset | `--k2b-edge-hover` edge, `--k2b-edge-hover-bg` | selected edge and fill in the app ink | `--k2b-edge-focus` edge and ring |
+| `SegmentedControl` option | none until selected; options sit on `--k2b-tray` | light tint | 1 px selected edge and fill in the app ink | `--k2b-edge-focus` edge and ring |
+| `Tabs` tab, `ViewTabs` view | none | light tint | selected fill in the app ink, no edge | `--k2b-edge-focus` edge, the band inside (the strip clips) |
+| Secondary and subtle `Button` | 1 px `--k2b-edge` (the field edge) | `--k2b-edge-hover` edge, `--k2b-edge-hover-bg` | | focus ring with a gap |
 | Interactive `Paper` | 1 px `--k2b-border-strong`, never darker | `--k2b-edge-hover-bg` | | focus ring |
 
-The selected edge mixes `--k2b-edge-selected-share` of the app ink into the
-surface; the fill mixes `--k2b-edge-selected-fill`, and on hover
+A chosen control (an active chip, the selected segment, a chosen card or
+tile) already carries the strong edge, so focus on it takes the shared focus
+ring with a gap instead of the soft ring.
+
+A drop place (`Dropzone`) has a thin dashed edge in `--k2b-edge-hover`.
+
+Check boxes and radio marks have a 1.5 px mid-grey edge
+(`--k2b-edge-mark-width`, `--k2b-edge-mark`) of at least 3:1, so an open box
+reads as a control.
+
+The selected edge mixes `--k2b-edge-selected-share` (all of it) of the app
+ink into the surface; the fill mixes `--k2b-edge-selected-fill`, and on hover
 `--k2b-edge-selected-hover-fill`. All of them are white on a tinted section
 group as well.
 
@@ -127,20 +150,21 @@ sidebar row also turns semibold; its label reserves that width in advance.
 
 ### Selected tabs, segments, and filters
 
-A selected tab, view tab, or segment and an active filter are selection
-states and carry the app ink like the selected navigation row. They draw it as
-the selected edge with a light fill instead of the navigation fill, so they
-read as controls (see
+A selected segment and an active filter are selection states and carry the
+app ink like the selected navigation row. They draw it as the 1 px selected
+edge with a light fill instead of the navigation fill, so they read as
+controls (see
 [Filters, buttons, and clickable cards](#filters-buttons-and-clickable-cards)).
 
 | State | Primitive | Class |
 | --- | --- | --- |
-| Selected tab | `Tabs` | `k2b-tabs` |
-| Current view | `ViewTabs` | `k2b-view-tabs` |
 | Selected segment | `SegmentedControl` | `k2b-segmented-control` |
 | Active filter | `FilterChip`, `FilterToggle` | `k2b-filter-chip` |
 | Selected choice in a menu's segment row or tiles | `Dropdown` | `k2b-dropdown` |
-| Active tab of a pane group | `Panes` | `k2b-panes` |
+
+A selected tab (`Tabs`), the current view (`ViewTabs`), and the active tab of a
+pane group (`Panes`) show the choice with the same light fill and app ink
+only, without an edge.
 
 Do not draw a chosen view, range, or filter as a filled primary button such
 as `variant={chosen ? "primary" : "secondary"}`. That makes a choice look like
@@ -174,7 +198,7 @@ and checked cards.
 | Keyboard-active or selected option | `Select`, `Combobox`, `MultiSelectInput` | `k2b-choice-option` |
 | Checked choice chip in a field or picker filter | `ChoiceChips`, `Select` | `k2b-choice-groups` |
 | Chosen tile with a preview | `ChoiceTiles` | `k2b-choice-tiles` |
-| Chosen card with its sentence | `ChoiceList` | `k2b-choice-list` |
+| Chosen card or compact framed row | `ChoiceList` | `k2b-choice-list` |
 | Chosen icon of a few | `IconChoices` | `k2b-icon-choices` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
@@ -189,13 +213,19 @@ and checked cards.
 | Enabled table header | `TextEditor` | `k2b-ste-header-choice` |
 
 Choice cards (`ChoiceList` and `CheckboxCard`) are cards on the field edge:
-a 2 px grey edge at rest, `--k2b-edge-hover-bg` on hover, and a strong blue
-`--k2b-edge-focus` edge on focus, also when chosen. A chosen or checked card
-mixes `--k2b-edge-selected-share` of `--k2b-action` into its edge and
-`--k2b-edge-selected-fill` into its fill (`--k2b-edge-selected-hover-fill` on
-hover), in platform blue like the radio or checkbox inside it. An invalid
-checkbox card has the `--k2b-edge-danger` edge; a disabled card has no edge on
-`--k2b-surface-muted`. Only colours change, so no card or text moves.
+a 1 px grey edge at rest, the `--k2b-edge-hover` edge and
+`--k2b-edge-hover-bg` on hover, and a strong blue `--k2b-edge-focus` edge with
+the focus ring on focus; a chosen card shows the shared focus ring with a gap. A chosen or checked card draws a
+second line inside its edge, 2 px in all (`--k2b-edge-selected-width`), in
+`--k2b-action` over `--k2b-edge-selected-fill` (`--k2b-edge-selected-hover-fill`
+on hover), in platform blue like the radio or checkbox inside it. An invalid
+checkbox card has the `--k2b-edge-danger` edge and the red ring; a disabled
+card has the light `--k2b-edge-disabled` edge on `--k2b-surface-muted`. The
+second line lies inside, so no card or text moves.
+
+`ChoiceList variant="list"` joins rows inside one fine neutral frame. A chosen
+row uses `--k2b-selected` and a semibold label; focus is an inset
+`--k2b-edge-focus` ring. The radio keeps the platform action ink.
 
 `TextEditor` and `TableSizePicker` use the optional `@k2b/ui/text-editor`
 entry point. The header switch is a checked menu control; it is not a drop
@@ -280,6 +310,14 @@ background stop at least 20° of OKLCH hue away from both AI accents. Near-gray
 colors carry no hue and are fine. Only the Assistant, the AI app itself, may
 use plum. In the Cloud repository the `ai-color` check enforces this for every
 built-in app and for the launchpad's fallback tile colors.
+
+One named case widens this to "plum means machine-written": a chat message
+that an automation or another chat wrote for the person sits on
+`--k2b-chat-machine-surface`, the AI accent mixed into `--k2b-surface-muted`
+at 8 % in light and 10 % in dark mode. Text on it keeps 15.9:1 in light and
+12.0:1 in dark mode. The token is set on chat messages, the only place it may
+be spent; the `ai-color` check reports a stronger token and any other place
+that mixes the two by hand.
 
 ## Import
 

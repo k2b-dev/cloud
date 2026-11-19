@@ -13,6 +13,7 @@ import {
 } from "solid-js";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
+import { StepRowContent } from "../internal/step-row";
 import { Format } from "../intl/Format";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -35,6 +36,12 @@ export type ChatMessageProps = {
   role: ChatRole;
   children?: JSX.Element;
   label?: string;
+  /**
+   * Who wrote a message the person did not type here, such as an automation or another chat: a short line above the
+   * bubble, a link only where the viewer may open the source. The bubble then takes the machine-written surface
+   * (`--k2b-chat-machine-surface`).
+   */
+  source?: JSX.Element;
   createdAt?: string | Date;
   timeLabel?: string;
   status?: ChatMessageStatus;
@@ -227,9 +234,12 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
       data-role={props.role}
       data-status={props.status ?? "complete"}
       data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
+      data-source={props.source ? "" : undefined}
       aria-busy={props.status === "pending" || props.status === "streaming" ? "true" : undefined}
     >
-      <span class="k2b-sr-only">{props.label ?? roleLabel(props.role, chatMessages())}: </span>
+      <Show when={props.source} fallback={<span class="k2b-sr-only">{props.label ?? roleLabel(props.role, chatMessages())}: </span>}>
+        {(source) => <div class="k2b-chat-message__source">{source()}</div>}
+      </Show>
       <Show when={(props.attachments?.length ?? 0) > 0}>
         <div class="k2b-chat-message__attachments" role="list" aria-label={chatMessages().attachments}>
           <For each={props.attachments}>
@@ -370,33 +380,45 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
  * missing one shifts nothing, and the right columns end on the same edge in every row.
  */
 const ActivityContent = (props: ChatActivityProps & { label: JSX.Element; disclosure?: boolean; expandable?: boolean }) => (
-  <>
-    <span class="k2b-chat-activity__leading" aria-hidden="true">
+  <StepRowContent
+    classes={{
+      leading: "k2b-chat-activity__leading",
+      label: "k2b-chat-activity__copy k2b-truncate-fade",
+      meta: "k2b-chat-activity__meta k2b-truncate-fade",
+      duration: "k2b-chat-activity__duration",
+    }}
+    leading={
       <Show when={props.leading} fallback={<i class={props.icon ?? "ti ti-sparkles"} />}>
         {props.leading}
       </Show>
-    </span>
-    <span class="k2b-chat-activity__copy k2b-truncate-fade">
-      <strong title={typeof props.label === "string" ? props.label : undefined}>{props.label}</strong>
-      <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
-    </span>
-    {(props.meta || props.trailing) && (
-      <span class="k2b-chat-activity__meta k2b-truncate-fade" data-tone={props.metaTone}>
-        {props.meta}
-        {props.trailing && <span class="k2b-chat-activity__trailing">{props.trailing}</span>}
-      </span>
-    )}
-    {props.duration && (
-      // A running row's clock ticks silently; the row says once what it does.
-      <span class="k2b-chat-activity__duration" title={props.durationTitle} aria-hidden={props.busy ? "true" : undefined}>
-        {props.duration}
-      </span>
-    )}
-    <Show when={props.disclosure}>
-      <i class="ti ti-chevron-right k2b-chat-activity__chevron" aria-hidden="true" />
-    </Show>
-    {!props.expandable && props.end}
-  </>
+    }
+    label={
+      <>
+        <strong title={typeof props.label === "string" ? props.label : undefined}>{props.label}</strong>
+        <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
+      </>
+    }
+    meta={
+      (props.meta || props.trailing) && (
+        <>
+          {props.meta}
+          {props.trailing && <span class="k2b-chat-activity__trailing">{props.trailing}</span>}
+        </>
+      )
+    }
+    metaTone={props.metaTone}
+    duration={props.duration}
+    durationTitle={props.durationTitle}
+    silentDuration={props.busy}
+    end={
+      <>
+        <Show when={props.disclosure}>
+          <i class="ti ti-chevron-right k2b-chat-activity__chevron" aria-hidden="true" />
+        </Show>
+        {!props.expandable && props.end}
+      </>
+    }
+  />
 );
 
 type ActivityDisclosure = {

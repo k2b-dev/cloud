@@ -2,20 +2,20 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
 import { browserName, launchBrowser } from "../../test/browser";
 import { headOverlaps } from "../../test/head-overlap";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { workspaceCss, workspaceFrames } from "../../test/workspace-host-fixture";
 
 // Error class: head controls overflow their row at intermediate widths and draw over each other. This sweep is its
 // guard: heads shaped like the apps' (invented content) at every 8 px from 1920 to 600 and on a phone.
 setDefaultTimeout(120_000);
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-workspace-head-overlap-"));
-const { plugin } = createConfig({ dev: true, rootDir: directory });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: directory });
+
 process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const { AppWorkspace, ViewTabs, FilterChip, IconButton, PageTrailProvider, LocaleProvider } = await import("../index");
 const css = workspaceCss();

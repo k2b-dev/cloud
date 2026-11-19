@@ -7,9 +7,9 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
-import { createConfig } from "@k2b/ssr";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { MAIL_CONTACT_DIRECTORY_DEFAULTS, resolveMailContactDirectory } from "../contact-directory-settings";
 import * as access from "../service/access";
 import * as automationLog from "../service/automation-log";
@@ -18,8 +18,8 @@ import * as contactDirectory from "../service/contact-directory";
 import * as publicResources from "../service/public-resources";
 
 const root = mkdtempSync(join(tmpdir(), "mail-automation-pages-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 // The real Mail page router, so a missing route registration fails here.
 const { default: mailPages } = await import("./index");

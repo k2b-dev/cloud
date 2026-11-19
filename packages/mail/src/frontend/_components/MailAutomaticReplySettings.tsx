@@ -406,6 +406,8 @@ function AutomaticReplyEditor(props: {
     !needsInlineReferenceConfiguration() || (props.canConfigureReference && referenceDraft().pattern.trim().length > 0);
 
   const loadPreview = mutation.create<AutomaticReplyPreview, void>({
+    // A new preview request aborts and replaces the one in flight.
+    concurrency: "replace",
     mutation: async (_input, { abortSignal }) => {
       const response = await apiClient.mailboxes[":mailboxId"]["automatic-replies"].preview.$post(
         {

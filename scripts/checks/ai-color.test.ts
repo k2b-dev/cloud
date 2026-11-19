@@ -47,3 +47,36 @@ test("reports a plum launchpad fallback color", async () => {
     }),
   ).toEqual(["packages/cloud/src/ssr/AppLaunchpadPanel.tsx:3 A launchpad fallback color #c026d3"]);
 });
+
+test("accepts the named machine-written surface and reports plum mixed into the bubble grey elsewhere", async () => {
+  const named =
+    ":root {\n  --k2b-ai-accent: #8e1b6f;\n  --k2b-chat-machine-surface: color-mix(in srgb, var(--k2b-ai-accent) 8%, var(--k2b-surface-muted));\n}\n" +
+    ".dark {\n  --k2b-ai-accent: #f0abdc;\n  --k2b-chat-machine-surface: color-mix(in srgb, var(--k2b-ai-accent) 10%, var(--k2b-surface-muted));\n}\n";
+  expect(
+    await findings({
+      "packages/ui/src/styles/index.css": named,
+      "packages/ui/src/styles/chat.css": ".bubble { background: var(--k2b-chat-machine-surface); }\n",
+      "packages/assistant/src/styles/app.css":
+        ".hover { background: color-mix(in srgb, var(--k2b-ai-accent) 14%, var(--k2b-surface)); }\n" +
+        ".bubble { background: color-mix(in srgb, var(--k2b-ai-accent) 8%, var(--k2b-surface-muted)); }\n",
+      "packages/chat/src/frontend/Row.tsx":
+        'const style = { background: "color-mix(in srgb, var(--k2b-surface-muted), var(--k2b-ai-accent) 9%)" };\n',
+    }),
+  ).toEqual([
+    "packages/assistant/src/styles/app.css:2 Plum mixed into the bubble grey is the named machine-written case; use var(--k2b-chat-machine-surface) instead of mixing it here.",
+    "packages/chat/src/frontend/Row.tsx:1 Plum mixed into the bubble grey is the named machine-written case; use var(--k2b-chat-machine-surface) instead of mixing it here.",
+  ]);
+});
+
+test("reports a machine-written surface that is stronger or not derived from the AI accent", async () => {
+  expect(
+    await findings({
+      "packages/ui/src/styles/index.css":
+        ":root {\n  --k2b-ai-accent: #8e1b6f;\n  --k2b-chat-machine-surface: color-mix(in srgb, var(--k2b-ai-accent) 20%, var(--k2b-surface-muted));\n}\n" +
+        ".dark {\n  --k2b-ai-accent: #f0abdc;\n  --k2b-chat-machine-surface: #3a0f2e;\n}\n",
+    }),
+  ).toEqual([
+    "packages/ui/src/styles/index.css:3 --k2b-chat-machine-surface must mix var(--k2b-ai-accent) at most 10% into var(--k2b-surface-muted); it is the one named machine-written plum.",
+    "packages/ui/src/styles/index.css:7 --k2b-chat-machine-surface must mix var(--k2b-ai-accent) at most 10% into var(--k2b-surface-muted); it is the one named machine-written plum.",
+  ]);
+});

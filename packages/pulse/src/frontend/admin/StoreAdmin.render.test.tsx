@@ -2,15 +2,15 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import type { StoreConfig } from "../../store/contracts";
 import { storeMessages } from "./messages";
 
 const root = mkdtempSync(join(tmpdir(), "pulse-store-render-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: StoreAdmin } = await import("./StoreAdmin.island");
 const render = (initial: StoreConfig, locale = "en") =>

@@ -2,18 +2,18 @@ import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { markHintSeen as markHintSeenInBrowser } from "../browser/hints";
 import type { AuthContext } from "../server/middleware/auth";
 import { hintOpen, markHintSeen } from "./hints";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-hints-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { MovedHint } = await import("@k2b/ui");
 const { person } = await import("../_internal/define-app.test-fixture");

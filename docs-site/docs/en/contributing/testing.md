@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-11-16
+updated: 2026-11-17
 ---
 
 # Testing
@@ -821,6 +821,23 @@ that module first, the replacement never takes effect. Even a skipped
 integration suite evaluates its static imports, so it can trigger this failure.
 The `module-mocks` check also rejects these import-time spies in shared suites.
 
+### Keep the test compiler consistent
+
+Server-rendering tests register their compiler with `registerSsrTestPlugin`
+from `packages/ui/test/ssr-test-plugin.ts`, passing the same `createConfig`
+options as their fixture, or passing its existing SSR configuration. This
+helper preserves the framework's island wrappers. Use the runner's
+`solid-dom-preload.ts` for browser behavior tests. DOM suites must not import
+the SSR helper or SSR preload. For server fragments without framework islands
+whose browser assets are built separately, pass `componentRoots: []`; other
+fixtures discover only their own island roots.
+
+The `test-solid-plugins` check rejects direct process-wide plugin registration
+in tests and test helpers. A different compiler can silently change components
+loaded by later files, even with `--isolate`. Compilers for a fixture bundle
+belong in that build's `Bun.build({ plugins: [...] })`; plugins in a script
+executed in a separate process stay in that process.
+
 ## Run integration tests
 
 Disposable PostgreSQL containers in CI, nightly, release smoke checks, and the local
@@ -955,6 +972,14 @@ database-wide listing with a limit, such as
 the oldest candidates of a background job, runs in a private database from
 `useMigratedDatabase()` in `scripts/fixtures/test-infra`. Call `drop()` in
 `afterAll` or `finally`.
+
+Suites whose fixtures leave outbox work after cleanup use a private migrated database.
+Deleting fixture records can enqueue more rows through triggers, even after
+the suite has cleaned its application outbox. Those rows otherwise remain for
+later suites and delay their dispatchers. Select the private database before
+importing `authorization-preload` or a fixture that imports it, then register
+`drop()` in `afterAll` immediately. When checking isolation, count shared outbox
+rows after all cleanup hooks have finished.
 
 The bootstrap also prepares an immutable PostgreSQL template with Core and
 **every application's migrations**, using the same migration entry point as
@@ -1250,6 +1275,12 @@ index breaking load ties. Integration keeps the Grids exclusion;
 Grids certification runs in its own path-filtered job. Every integration shard
 gets fresh service containers, and `gate` requires the whole matrix to succeed.
 
+The path-filtered `ui` job builds and typechecks `@k2b/ui` and its standalone
+fixture. UI tests run in the existing unfiltered `unit` shards, including the
+package's test parts, behavior suite, standalone fixture render test, and
+packed-consumer check. The `ui` job does not repeat them. `gate` requires both
+`unit` and, when `changes.outputs.ui` is true, `ui`.
+
 The unit, WebKit, integration, and Grids jobs run on the runner that the
 repository variable `CI_HEAVY_RUNNER` names, and on `ubuntu-24.04` when it is
 unset. Maintainers set it to a larger GitHub-hosted runner when standard runner
@@ -1292,7 +1323,11 @@ leaving actual times far apart.
 The runner tests check that every unit, WebKit, and integration suite is
 assigned exactly once and each predicted shard fits its target. WebKit must
 fit 55% of its 20-minute execution budget. They also cover deterministic
-assignment and distributing unmeasured new files. These
+assignment and distributing unmeasured new files. A UI coverage guard derives
+its expected files from `listTestFiles(packages/ui)` and expands the actual
+`unit` matrix's package parts and behavior commands. Every UI test file must
+run exactly once; adding a file outside the selected paths fails the guard.
+The packed-consumer check must also run once. These
 checks validate the measured plan rather than a future runner's speed.
 Importer tests cover failed jobs, unexecuted suites, and replacing old weights
 when the selected runs are faster. Actual times still depend on the runner: a whole

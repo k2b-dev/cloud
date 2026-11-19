@@ -8,19 +8,19 @@ import { defaultRailPreferences } from "@k2b/cloud/contracts/rail-preferences";
 import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { railPreferences } from "@k2b/cloud/services/rail-preferences";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { launchBrowser } from "../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { accountMessages } from "./messages";
 
 // `/me/app` must read like the other account tabs: one frame, flat sections, one type scale, no overflow on a phone.
 const root = mkdtempSync(join(tmpdir(), "core-account-app-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 const cloudSsr = await import("@k2b/cloud/ssr");
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 

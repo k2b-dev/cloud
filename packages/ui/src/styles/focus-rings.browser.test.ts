@@ -2,17 +2,17 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 // Whether a ring is clipped depends on layout, overflow, and paint, which
 // happy-dom does not model, so a real engine renders the shipped stylesheet.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-focus-rings-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Button, IconButton } = await import("../actions/Button");
@@ -806,8 +806,9 @@ for (const viewport of ["desktop", "phone"] as const)
             };
           });
           expect(normal.edge).toBe(normal.expected);
-          expect(normal.edgeWidth).toBe("2px");
-          expect(normal.shadow).toBe("none");
+          expect(normal.edgeWidth).toBe("1px");
+          // The flat focus ring outside the edge: spread only, no offset or blur.
+          expect(normal.shadow).toMatch(/ 0px 0px 0px 3px$/);
           expect(normal.height).toBe(26);
           await target.emulateMedia({ forcedColors: "active" });
           await settled(target);

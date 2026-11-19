@@ -127,9 +127,13 @@ describe("Assistant frontend contracts", () => {
   test("queues complete follow-up messages durably and presents one minimal connection notice", async () => {
     const workspace = await read("./AssistantWorkspace.island.tsx");
 
-    expect(workspace).toContain('runningSubmitIntent={!projectComposer() ? "queue" : undefined}');
+    // Sending while Gustav works queues the message; "Send now" in the queue replaced steering the running turn.
+    expect(workspace).toContain('runningSubmitIntent="queue"');
     expect(workspace).toContain('input.intent === "queue"');
-    expect(workspace).toContain("<AssistantQueuedMessages");
+    expect(workspace).not.toContain('input.intent === "steer"');
+    expect(workspace).not.toContain("chat.steer(");
+    expect(workspace).not.toContain("onRetrySteer");
+    expect(workspace).toContain('lazy(() => import("./AssistantQueueConnected"))');
     expect(workspace).toContain("chat.queueMessage");
     expect(workspace).not.toContain("queueMicrotask(() => void sendQueuedMessage");
     expect(workspace).toContain("message: t().reconnecting");

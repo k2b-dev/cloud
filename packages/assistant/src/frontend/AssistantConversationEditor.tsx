@@ -15,10 +15,12 @@ import {
   type StatusTone,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
-import { useAssistantCopy, useAssistantText } from "./ui-copy";
+import { confirmAssistantArchive } from "./confirm-archive";
+import { useAssistantText } from "./ui-copy";
 
 type EditConversationResult = { action: "save"; conversation: AiConversation } | { action: "archive"; conversation: AiConversation };
 
@@ -26,10 +28,11 @@ type EditConversationFormProps = {
   conversation: AiConversation;
   archiveDisabled?: boolean;
   archiveDisabledReason?: string;
+  queuedMessageCount?: () => number | undefined;
   close: (result?: EditConversationResult) => void;
 };
 
-type EditConversationOptions = Pick<EditConversationFormProps, "archiveDisabled" | "archiveDisabledReason">;
+type EditConversationOptions = Pick<EditConversationFormProps, "archiveDisabled" | "archiveDisabledReason" | "queuedMessageCount">;
 
 const formatRunTime = (iso: string): string =>
   new Date(iso).toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -65,6 +68,8 @@ function SearchIndexSection(props: { conversationId: string }) {
   onCleanup(stopPolling);
 
   const load = mutation.create<{ status: AiEnrichmentStatus | null; runs: AiEnrichmentRun[] }, void>({
+    // A reload after reindexing must not be dropped by a poll in flight.
+    concurrency: "replace",
     mutation: async () => assistantApi.getEnrichment(props.conversationId),
     onSuccess: (result) => {
       setStatus(result.status);
@@ -182,7 +187,7 @@ function SearchIndexSection(props: { conversationId: string }) {
 
 function EditConversationForm(props: EditConversationFormProps) {
   const text = useAssistantText();
-  const copy = useAssistantCopy();
+  const locale = useLocale();
   const [title, setTitle] = createSignal(props.conversation.title);
   const [description, setDescription] = createSignal(props.conversation.description);
   const [pinned, setPinned] = createSignal(Boolean(props.conversation.pinnedAt));
@@ -218,20 +223,7 @@ function EditConversationForm(props: EditConversationFormProps) {
       if (props.archiveDisabled) return false;
       // Archiving pauses the chat's running routines, so the question names them before anything changes.
       // Without the list the question still says so; archiving itself does not depend on it.
-      const routines = await assistantApi.listChatTasks({ chatId: props.conversation.id, state: "active", limit: 100 }).catch(() => null);
-      const confirmed = await prompts.confirm(
-        routines === null
-          ? copy().archiveChatAnyRoutines
-          : routines.length
-            ? copy().archiveChatRoutines({ names: routines.map((routine) => routine.name) })
-            : copy().archiveChat({ title: props.conversation.title }),
-        {
-          title: routines?.length !== 0 ? copy().archiveChat({ title: props.conversation.title }) : text("Archive chat"),
-          icon: "ti ti-archive",
-          confirmText: text(routines?.length ? "Archive anyway" : "Archive"),
-          cancelText: text("Cancel"),
-        },
-      );
+      const confirmed = await confirmAssistantArchive(props.conversation, locale(), props.queuedMessageCount?.());
       if (!confirmed) return false;
 
       await assistantApi.archiveConversation(props.conversation.id);

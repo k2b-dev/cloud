@@ -283,12 +283,13 @@ export const WebhookEditor = (props: {
       scopeAppIds: [...current.scopeAppIds],
       sendOn: [...current.sendOn],
     };
-    await save.mutate(input);
+    const outcome = await save.mutate(input);
     if (disposed) return;
-    if (save.error()) {
+    if (outcome === "error") {
       void prompts.error(save.error()!.message);
       return;
     }
+    if (outcome !== "success") return;
     setPersisted(true);
     await reconcile();
   };

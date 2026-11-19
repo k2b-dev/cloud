@@ -39,6 +39,12 @@ test("the gate fails on every other result and names the jobs", async () => {
   }
 });
 
+test("the UI build job does not repeat the unit shards' tests", () => {
+  const commands = workflow.jobs.ui?.steps.map((step) => step.run ?? "");
+  expect(commands).toBeDefined();
+  expect(commands?.some((command) => /\bbun (?:run .*\btest\b|test\b)/.test(command))).toBeFalse();
+});
+
 test("the gate fails when a job that must always run was skipped", async () => {
   // setup failed, so check, unit, and integration were skipped behind it.
   expect(await gate({ setup: "failure", check: "skipped", unit: "skipped", integration: "skipped" })).toEqual({

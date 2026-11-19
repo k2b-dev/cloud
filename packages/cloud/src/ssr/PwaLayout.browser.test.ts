@@ -2,13 +2,13 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { RuntimeAppMeta } from "../contracts/app";
 import { PWA_CANVAS_COLORS } from "../contracts/pwa";
 import type { User } from "../contracts/shared";
@@ -19,8 +19,8 @@ import { session } from "../services/session";
 // The status bar takes its colour from `theme-color` and the top layer, and only a real engine computes the
 // cascade of the shared stylesheets, so the complete app document renders in a real browser at phone size.
 const root = mkdtempSync(join(tmpdir(), "cloud-pwa-layout-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { defineApp } = await import("../_internal/define-app");
 const { default: PwaLayout } = await import("./PwaLayout");

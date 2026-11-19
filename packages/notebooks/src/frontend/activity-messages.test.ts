@@ -2,7 +2,13 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isNotebookActivityAction, NOTEBOOK_ACTIVITY_ACTIONS } from "../lib/activity-actions";
-import { describeNoteActivity, describeOverviewActivity } from "./activity-messages";
+import {
+  describeNoteActivity,
+  describeNoteActivityEntry,
+  describeOverviewActivity,
+  noteActivitySentences,
+  notebookActivityIcon,
+} from "./activity-messages";
 
 const locales = ["de", "en"] as const;
 test("every activity written by a service has translated named, self and overview labels", () => {
@@ -33,8 +39,13 @@ test("every activity written by a service has translated named, self and overvie
       const label = describeOverviewActivity(action, { locale, target: "Plan", notebook: "Team" });
       expect(label.trim().length).toBeGreaterThan(0);
       expect(label).not.toBe(action);
+      const sentence = describeNoteActivityEntry(action, locale);
+      expect(sentence.trim().length).toBeGreaterThan(0);
+      expect(sentence).not.toBe(action);
     }
+    expect(notebookActivityIcon(action)).not.toBe("ti ti-activity");
   }
+  expect(noteActivitySentences.check()).toEqual([]);
 });
 
 test("unknown actions use localized neutral fallbacks without leaking keys", () => {
@@ -47,6 +58,7 @@ test("unknown actions use localized neutral fallbacks without leaking keys", () 
     }
     const label = describeOverviewActivity("note.moved", { locale, target: "Plan", notebook: "Team" });
     expect(label).toBe(locale === "en" ? "Changed a note in Team" : "Eine Notiz in Team geändert");
+    expect(describeNoteActivityEntry("note.moved", locale)).toBe(locale === "en" ? "Note changed" : "Notiz geändert");
     expect(label).not.toContain("note.moved");
     expect(label).not.toContain("note moved");
   }

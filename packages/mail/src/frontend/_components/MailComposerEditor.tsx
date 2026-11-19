@@ -23,6 +23,8 @@ export const preloadMailComposerEditor = async (): Promise<void> => {
 export default function MailComposerEditor(props: {
   shared?: Accessor<MailDraftDocumentClient | null>;
   sharedState?: Accessor<MailSharedDraftState | null>;
+  /** Where a shared draft's hint stands, such as right above the composer's bar; without it, under the text. */
+  hintMount?: Accessor<HTMLElement | undefined>;
   onTableCheck?: (needsCheck: boolean) => void;
   format: Accessor<"plain" | "markdown">;
   body: Accessor<string>;
@@ -92,6 +94,7 @@ export default function MailComposerEditor(props: {
               <Editor
                 shared={binding ?? undefined}
                 sharedState={props.sharedState}
+                hintMount={props.hintMount}
                 onTableCheck={props.onTableCheck}
                 format={props.format}
                 body={props.body}

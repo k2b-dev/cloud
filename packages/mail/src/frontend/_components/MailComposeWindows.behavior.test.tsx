@@ -178,7 +178,7 @@ describe.skipIf(isServer)("Mail draft windows", () => {
     expect(document.activeElement).toBe(trigger);
     expect(changes).toBe(1);
     expect(stored()).toEqual([]);
-    await waitFor(() => toastText().includes("Draft is in “Drafts”"));
+    await waitFor(() => toastText().includes("Draft saved") && toastText().includes("It is in “Drafts”."));
     toastAction("Open")!.click();
     await waitFor(() => frames().length === 1);
     expect(frame("Drf001")).not.toBeNull();
@@ -212,7 +212,9 @@ describe.skipIf(isServer)("Mail draft windows", () => {
     hosts.get("Drf001")!.delivered!({ submissionId: "Dlv001", scheduledAt: null, undoSeconds: 18 });
     hosts.get("Drf001")!.leave("sent");
     await waitFor(() => frames().length === 0);
-    await waitFor(() => toastText().includes("Sending in 18 s"));
+    // A short title for the outcome, what happens next as the description, Undo while it can still be taken back.
+    await waitFor(() => toastText().includes("Sending") && toastText().includes("The message goes out in 18 s."));
+    expect(document.querySelector(".k2b-toast__title")?.textContent).toBe("Sending");
     toastAction("Undo")!.click();
     await waitFor(() => frames().length === 1);
     expect(cancels).toEqual(['POST /api/mail/mailboxes/Box001/scheduled-sends/Dlv001/cancel {"disposition":"draft"}']);
@@ -229,7 +231,8 @@ describe.skipIf(isServer)("Mail draft windows", () => {
     await waitFor(() => frames().length === 1);
     hosts.get("Drf001")!.delivered!({ submissionId: "Dlv001", scheduledAt: "2026-11-13T07:00:00.000Z", undoSeconds: 0 });
     hosts.get("Drf001")!.leave("sent");
-    await waitFor(() => toastText().includes("Scheduled for"));
+    await waitFor(() => toastText().includes("Scheduled") && toastText().includes("It goes out on"));
+    expect(document.querySelector(".k2b-toast__title")?.textContent).toBe("Scheduled");
     toastAction("Change")!.click();
     await waitFor(() => frames().length === 1);
   });

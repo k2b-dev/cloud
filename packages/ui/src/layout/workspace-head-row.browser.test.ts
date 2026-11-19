@@ -2,11 +2,11 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
 import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { type FixtureOptions, uiDirectory, workspaceCss, workspaceDist, workspaceTree } from "../../test/workspace-host-fixture";
 
 declare global {
@@ -19,8 +19,8 @@ declare global {
 
 setDefaultTimeout(30_000);
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-workspace-head-"));
-const { plugin } = createConfig({ dev: true, rootDir: directory });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: directory });
+
 process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const { AppWorkspace, ViewTabs, FilterChip, IconButton, PageTrailProvider, Tabs, SegmentedControl } = await import("../index");
 const components = { AppWorkspace, ViewTabs, FilterChip, IconButton, PageTrailProvider, createComponent, createSignal, Dynamic };
@@ -657,8 +657,15 @@ for (const theme of ["light", "dark"])
         expect(list.shadow).toBe("none");
         expect(list.borders).toEqual(["0px", "0px", "0px", "0px"]);
       }
-      // Edges are drawn inside: an inset shadow, never a drop shadow or a baseline.
-      const insetOnly = (shadow: string) => shadow === "none" || shadow.split(/,(?![^(]*\))/).every((part) => part.includes("inset"));
+      // Edges are drawn inside: an inset shadow, never a drop shadow or a baseline. The only outer layer is the flat
+      // focus ring (spread only, no offset or blur), transparent at rest.
+      const insetOnly = (shadow: string) =>
+        shadow === "none" ||
+        shadow.split(/,(?![^(]*\))/).every((part) => {
+          if (part.includes("inset")) return true;
+          const [x = 0, y = 0, blur = 0] = [...part.matchAll(/(-?[\d.]+)px/g)].map((match) => Number(match[1]));
+          return x === 0 && y === 0 && blur === 0;
+        });
       for (const tab of styles.tabs) {
         expect(insetOnly(tab.shadow), tab.shadow).toBe(true);
         expect(tab.borders[2]).toBe("0px");

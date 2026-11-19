@@ -2,14 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { Window } from "happy-dom";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-period-picker-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { LocaleProvider, PeriodPicker, periodPresets } = await import("../index");
@@ -55,6 +55,16 @@ describe("PeriodPicker on the server", () => {
     expect(html).toContain('aria-label="Zeitraum: Dieser Monat · 1.–30. Nov."');
     expect(html).toContain('aria-haspopup="dialog"');
     expect(html).toContain('aria-expanded="false"');
+  });
+
+  test("stepping names calendar periods the same way for presets and explicit days on the first render", () => {
+    expect(visible(render({ steps: true }))).toBe("November 2026");
+    expect(visible(render({ steps: true, value: { start: "2026-11-01", end: "2026-11-30" } }))).toBe("November 2026");
+    expect(visible(render({ steps: true, value: { preset: "this-week" } }))).toBe("2.–8. Nov. 2026");
+    expect(
+      visible(render({ steps: true, value: { preset: "this-week" }, dateConfig: { timeZone: "Europe/Berlin", weekStartsOn: 0 } })),
+    ).toBe("1.–7. Nov. 2026");
+    expect(visible(render({ steps: true, value: { preset: "all" } }))).toBe("Gesamt · seit 14.03.2019");
   });
 
   test("shows explicit days with their count", () => {

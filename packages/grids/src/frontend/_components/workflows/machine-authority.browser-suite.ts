@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import {
   type WorkflowMachineAuthorityChange,
   WorkflowMachineAuthorityChangeSchema,
@@ -16,13 +16,13 @@ import {
 const cache = resolve(import.meta.dir, "../../../../node_modules/.cache");
 mkdirSync(cache, { recursive: true });
 const root = mkdtempSync(join(cache, "grids-machine-authority-"));
-const { plugin } = createConfig({
+registerSsrTestPlugin({
   dev: false,
   verbose: false,
   rootDir: root,
   componentRoots: [resolve(import.meta.dir, "../../../../test/fixtures/machine-authority")],
 });
-Bun.plugin(plugin());
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Fixture } = await import("../../../../test/fixtures/machine-authority/page");
 let browser: Browser;

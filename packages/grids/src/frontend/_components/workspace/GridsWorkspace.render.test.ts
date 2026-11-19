@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "../ssr-test-plugin";
@@ -59,6 +59,18 @@ describe("GridsWorkspace", () => {
     expect(routeClientState(state).catalog.documentTemplateLevels).toEqual(state.catalog.documentTemplateLevels);
     expect(routeClientState(state).catalog.documentTemplateLevels.MISSING).toBeUndefined();
   });
+  test("serializes the server clock for the route island's first history render", () => {
+    const now = "2026-11-12T23:59:00.000Z";
+    setSystemTime(new Date(now));
+    try {
+      const html = renderToString(() => createComponent(GridsWorkspace, { state: workspaceState() }));
+      expect(html).toContain(now);
+      expect(html).toContain("&quot;now&quot;");
+    } finally {
+      setSystemTime();
+    }
+  });
+
   test("owns one content shell outside the interactive route island", () => {
     const html = renderToString(() =>
       createComponent(GridsWorkspace, {

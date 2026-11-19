@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-11-07
+updated: 2026-11-18
 ---
 
 # Build and deploy
@@ -18,6 +18,24 @@ optional application-specific build output.
 The build and development preload scripts preserve every `color-mix()` value
 in application CSS, including multiple variable-based mixes in one rule.
 See [Mix semantic colors](/en/docs/frontend/styling-and-accessibility#mix-semantic-colors).
+
+## Use subscription connection status
+
+Rebuild and deploy applications adopting the optional `connected` live
+subscription handler with the updated Cloud package. Existing `caughtUp`
+handlers keep their behavior; no server protocol or database change is needed.
+See [Realtime UI](/en/docs/frontend/realtime-ui).
+
+## Roll out chat queue holds
+
+Rebuild and restart applications that use the AI chat runtime with the updated
+Cloud package together. The additive startup migration creates
+`ai.conversations.queue_held_at`. Older workers do not enforce this hold and
+must not remain running alongside updated workers. No manual backfill is needed.
+
+The hold survives restarts. After a person stops a response, queued messages
+wait until the person sends one explicitly or sends a new message. See
+[Chat runtime and streaming](/en/docs/ai/chat-runtime-and-streaming).
 
 ## Enable an application's AI primary colour
 

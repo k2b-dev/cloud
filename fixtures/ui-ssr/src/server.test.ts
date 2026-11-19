@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { plugin } from "./config";
+import { registerSsrTestPlugin } from "../../../packages/ui/test/ssr-test-plugin";
+import * as ssr from "./config";
 
-Bun.plugin(plugin());
+registerSsrTestPlugin(ssr);
 
 const { app } = await import("./server");
 

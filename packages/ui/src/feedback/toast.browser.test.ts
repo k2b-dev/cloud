@@ -243,12 +243,13 @@ test("a loading toast turns into its result in place, without changing its size"
   }
 }, 30_000);
 
-test("a message alone reads calmly in the regular weight, only a title is semibold, and neither moves the stack", async () => {
+test("the first line has one type: a title or a short message alone is semibold, a description is muted, and neither moves the stack", async () => {
   const page = await open();
   try {
     await page.evaluate(() => {
       const { toast } = window as unknown as ToastWindow;
-      toast.success("This browser now signs out after 10 minutes without input and when it closes, so nobody else sees your data.", {
+      toast.success("Link copied", { duration: 0 });
+      toast.success("This browser now signs out after 10 minutes without input and when it closes.", {
         duration: 0,
         link: { label: "Open settings", href: "https://cloud.example/me" },
       });
@@ -275,10 +276,11 @@ test("a message alone reads calmly in the regular weight, only a title is semibo
       );
     const folded = await read();
     expect(folded.map(({ title, message, link }) => ({ title, message, link: link?.fontWeight ?? null }))).toEqual([
-      // Alone, however long, the message is body text: regular weight in the text colour, never a headline. Its link
-      // keeps that weight and differs only by colour and underline.
+      // A short message alone reads in the title's type: semibold in the text colour.
+      { title: null, message: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false }, link: null },
+      // A longer one without a title stays calm body text; its link keeps that weight and differs only by colour.
       { title: null, message: { fontWeight: "400", fontSize: "14px", lineHeight: "20px", muted: false }, link: "400" },
-      // With a title, only the title is semibold; the message is the smaller, muted line under it.
+      // With a title, the message is the description: the smaller, muted line under it.
       {
         title: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false },
         message: { fontWeight: "400", fontSize: "13px", lineHeight: "18px", muted: true },
@@ -293,7 +295,7 @@ test("a message alone reads calmly in the regular weight, only a title is semibo
     await settled(page);
     const fanned = await read();
     expect(fanned.map(({ title, message }) => ({ title, message }))).toEqual(folded.map(({ title, message }) => ({ title, message })));
-    expect(fanned[1]!.height).toBe(folded[1]!.height);
+    expect(fanned[2]!.height).toBe(folded[2]!.height);
   } finally {
     await page.context().close();
   }
