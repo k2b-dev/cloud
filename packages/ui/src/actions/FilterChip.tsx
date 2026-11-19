@@ -50,6 +50,12 @@ export type FilterChipProps = {
   only?: boolean;
   /** The trigger shows the colors of the first four chosen options before its label, as a quiet hint of what is in view. */
   swatches?: boolean;
+  /**
+   * Puts a search field above the options, for a list long enough that finding an option takes reading, such as
+   * people. `label` names the field and is its placeholder unless `placeholder` is set. "Only" and "All" stay out of a
+   * searchable menu, whose field keeps the focus.
+   */
+  search?: { label: string; placeholder?: string };
   disabled?: boolean;
   class?: string;
 };
@@ -185,6 +191,7 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
       position={props.position ?? "bottom-left"}
       menuClass="k2b-filter-chip__menu"
       label={props.label}
+      search={props.search}
     >
       <Dropdown.Trigger
         appearance={props.variant ? "button" : "plain"}

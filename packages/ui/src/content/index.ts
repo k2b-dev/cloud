@@ -1,6 +1,7 @@
 export type { ChartDateFormat, ChartDatum, ChartDatumRole, ChartFormat, ChartNumberFormat } from "../charts/core";
 export {
   type ActivityAction,
+  type ActivityAvatar,
   ActivityCard,
   type ActivityCardProps,
   type ActivityDensity,
@@ -9,6 +10,7 @@ export {
   type ActivityKind,
   ActivityList,
   type ActivityListProps,
+  type ActivityRowProps,
   type ActivityTone,
   openActivityDialog,
 } from "./ActivityList";

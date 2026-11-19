@@ -5,7 +5,7 @@ import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
 import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, pageErrors as collectPageErrors, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import { browserName, pageErrors as collectPageErrors, hoverInPlace, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { MailSearchExpression, MailWorkspacePreference } from "../contracts";
 import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
@@ -105,7 +105,7 @@ const measurements = [
   ".mail-reading-column",
   ".k2b-app-workspace__detail",
   // The Events feed's rows: the server renders the first ones in the flow, the browser places the same ones.
-  ".mail-event",
+  ".mail-events__row",
 ].join(",");
 // Rows below the fold render lazily (content-visibility); only what the person sees must hold still.
 const geometrySource = `() => Array.from(document.querySelectorAll(${JSON.stringify(measurements)})).map((e,i)=>{const r=e.getBoundingClientRect();const part=String(e.className).split(" ").filter(Boolean).join(" ");return r.bottom<=0||r.top>=innerHeight?{part,index:i,x:0,y:-1,width:0,height:0}:{part,index:i,x:r.x,y:r.y,width:r.width,height:r.height}})`;
@@ -3716,10 +3716,41 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(await page.locator(".mail-events .k2b-virtual-feed__sticky").getAttribute("aria-hidden")).toBe("true");
             expect(await page.locator(".mail-events .k2b-virtual-feed__sticky").textContent()).toBe("Heute");
             expect(await rows(page).count()).toBe(11);
+            expect(await rows(page).locator(".k2b-activity__entry").count()).toBe(11);
+            expect(await rows(page).locator("[title]").count()).toBe(0);
+            expect(await page.locator(".mail-events__person.k2b-filter-chip").count()).toBe(1);
+            const filterLooks = await page.locator("[data-mail-events-filters] .k2b-filter-chip").evaluateAll((chips) =>
+              chips.map((chip) => {
+                const style = getComputedStyle(chip);
+                // FilterChip draws its 1px edge as an inset shadow (the control edge contract), not a border.
+                return [style.getPropertyValue("--k2b-edge-width").trim(), style.minHeight, style.padding, style.borderRadius];
+              }),
+            );
+            expect(filterLooks[0]?.[0]).toBe("1px");
+            expect(filterLooks[1]).toEqual(filterLooks[0]);
+
+            const firstRow = rows(page).first().locator(".k2b-activity__entry");
+            const rowGeometry = await firstRow.evaluate((element) => {
+              const surface = element.getBoundingClientRect();
+              const item = element.parentElement!.getBoundingClientRect();
+              const css = getComputedStyle(element);
+              return { left: surface.left - item.left, right: item.right - surface.right, radius: css.borderRadius };
+            });
+            expect([rowGeometry.left, rowGeometry.right]).toEqual([8, 8]);
+            expect(rowGeometry.radius).toBe("8px");
+            const beforeHover = await firstRow.boundingBox();
+            await hoverInPlace(firstRow);
+            await settled(page);
+            expect(await firstRow.boundingBox()).toEqual(beforeHover);
+            const ink = await firstRow.evaluate((element) => [
+              getComputedStyle(element.querySelector(".k2b-activity__text")!).color,
+              getComputedStyle(element.querySelector("a")!).color,
+            ]);
+            expect(ink[0]).toBe(ink[1]);
             const failed = page.locator('[data-mail-event="6"]');
             expect(await failed.getAttribute("data-tone")).toBe("error");
             expect(await failed.textContent()).toContain("Details in der Unterhaltung.");
-            expect(await page.locator('[data-mail-event="10"] .mail-event__robot').count()).toBe(1);
+            expect(await page.locator('[data-mail-event="10"] .k2b-activity__avatar .ti-robot').count()).toBe(1);
             // Search, selection and the view menu belong to conversation lists.
             expect(await page.locator("[data-mail-selection-trigger]").count()).toBe(0);
             expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
@@ -3728,7 +3759,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await page.screenshot({ path: join(screenshots, `events-light-${width}.png`) });
             }
             const response = page.waitForResponse((response) => response.url().includes("/workspace-"));
-            await rows(page).first().locator("a").click();
+            await rows(page).first().locator("a").focus();
+            await page.keyboard.press("Enter");
             await response;
             // Every other parameter stays, so the feed stays as it is beside the reader.
             await page.waitForURL(new URL(`${events}&conversation=Conv01`, server.url).href);
@@ -3738,6 +3770,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               // The feed moves beside the reader and keeps its rows; the open conversation's event is marked.
               expect(await rows(page).count()).toBe(11);
               expect(await rows(page).first().locator("a").getAttribute("aria-current")).toBe("true");
+              const selectedRow = rows(page).first().locator(".k2b-activity__entry");
+              await page.mouse.move(0, 0);
+              await settled(page);
+              const selectedFill = await selectedRow.evaluate((element) => getComputedStyle(element).backgroundColor);
+              await hoverInPlace(selectedRow);
+              await settled(page);
+              expect(await selectedRow.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(selectedFill);
               if (screenshots) await page.screenshot({ path: join(screenshots, "events-reader-light-1440.png") });
             }
           } finally {
@@ -3745,61 +3784,85 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-      test("events filters put the kind in the URL, survive a reload, reset, and show the empty and error states", async () => {
-        const english = `${boxPath}?view=events`;
-        const page = await open(english);
-        try {
-          await page.locator("[data-mail-events-filters] .k2b-filter-chip").first().click();
-          const response = page.waitForResponse((response) => response.url().includes("/workspace-"));
-          await page.getByRole("menuitemradio", { name: "Comments" }).click();
-          await response;
-          await page.waitForURL(/eventKind=comment/);
-          await settled(page);
-          expect(await rows(page).count()).toBe(1);
-          expect(await page.locator("[data-mail-events-filters]").textContent()).toContain("Kind: Comments");
-          await page.reload();
-          await ready(page);
-          expect(await rows(page).count()).toBe(1);
-          const reset = page.waitForResponse((response) => response.url().includes("/workspace-"));
-          await page.getByRole("button", { name: "Reset" }).click();
-          await reset;
-          await page.waitForURL(new URL(english, server.url).href);
-          await settled(page);
-          expect(await rows(page).count()).toBe(11);
+      for (const width of [1440, 390])
+        test(`events filters ${width}: kind, person and concerns-me survive a reload without moving the feed`, async () => {
+          const english = `${boxPath}?view=events`;
+          const page = await open(english, width, width === 390 ? 844 : 900);
+          try {
+            const filters = page.locator("[data-mail-events-filters]");
+            const frame = await filters.boundingBox();
+            const feedFrame = await page.locator(".mail-events__feed").boundingBox();
+            await page.locator("[data-mail-events-filters] .k2b-filter-chip").first().click();
+            const response = page.waitForResponse((response) => response.url().includes("/workspace-"));
+            await page.getByRole("menuitemradio", { name: "Comments" }).click();
+            await response;
+            await page.waitForURL(/eventKind=comment/);
+            await settled(page);
+            expect(await rows(page).count()).toBe(1);
+            expect(await page.locator("[data-mail-events-filters]").textContent()).toContain("Kind: Comments");
+            expect(await filters.boundingBox()).toEqual(frame);
+            expect(await page.locator(".mail-events__feed").boundingBox()).toEqual(feedFrame);
+            await page.reload();
+            await ready(page);
+            expect(await rows(page).count()).toBe(1);
+            const reset = page.waitForResponse((response) => response.url().includes("/workspace-"));
+            await page.getByRole("button", { name: "Reset" }).click();
+            await reset;
+            await page.waitForURL(new URL(english, server.url).href);
+            await settled(page);
+            expect(await rows(page).count()).toBe(11);
+            await page.locator(".mail-events__person").click();
+            const person = page.waitForResponse((response) => response.url().includes("/workspace-"));
+            await page.getByRole("option", { name: "Mira Schulz", exact: true }).click();
+            await person;
+            await page.waitForURL(/eventActor=/);
+            await page.reload();
+            await ready(page);
+            expect(await page.locator(".mail-events__person").textContent()).toContain("Mira Schulz");
+            expect(await rows(page).count()).toBeGreaterThan(0);
+            expect(await filters.boundingBox()).toEqual(frame);
+            expect(await page.locator(".mail-events__feed").boundingBox()).toEqual(feedFrame);
+            const clearPerson = page.waitForResponse((response) => response.url().includes("/workspace-"));
+            await page.getByRole("button", { name: "Reset", exact: true }).click();
+            await clearPerson;
+            await settled(page);
 
-          const mine = page.waitForResponse((response) => response.url().includes("/workspace-"));
-          await page.locator("[data-mail-events-filters]").getByText("Concerns me").click();
-          await mine;
-          await settled(page);
-          expect(await rows(page).count()).toBe(3);
-        } finally {
-          await close(page);
-        }
-        const empty = await open(`${english}&events=empty`);
-        try {
-          expect(await empty.locator(".mail-events .k2b-placeholder__title").textContent()).toBe("No events yet");
-        } finally {
-          await close(empty);
-        }
-        const filteredEmpty = await open(`${english}&events=empty&eventKind=sent`);
-        try {
-          expect(await filteredEmpty.locator(".mail-events .k2b-placeholder__title").textContent()).toBe("No events for this filter");
-          expect(await filteredEmpty.getByRole("button", { name: "Reset filter" }).isVisible()).toBe(true);
-        } finally {
-          await close(filteredEmpty);
-        }
-        const failed = await open(`${english}&events=error`);
-        try {
-          expect(await failed.locator(".mail-events [role='alert']").textContent()).toContain("Events could not be loaded.");
-          const retry = failed.waitForResponse((response) => response.url().includes("/workspace-"));
-          await failed.getByRole("button", { name: "Try again" }).click();
-          await retry;
-          // The chips stay usable while the feed cannot load.
-          expect(await failed.locator("[data-mail-events-filters] .k2b-filter-chip").count()).toBeGreaterThan(0);
-        } finally {
-          await close(failed);
-        }
-      });
+            const mine = page.waitForResponse((response) => response.url().includes("/workspace-"));
+            await page.locator("[data-mail-events-filters]").getByText("Concerns me").click();
+            await mine;
+            await settled(page);
+            expect(await rows(page).count()).toBe(3);
+            expect(await filters.boundingBox()).toEqual(frame);
+            expect(await page.locator(".mail-events__feed").boundingBox()).toEqual(feedFrame);
+            expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+          } finally {
+            await close(page);
+          }
+          const empty = await open(`${english}&events=empty`, width, width === 390 ? 844 : 900);
+          try {
+            expect(await empty.locator(".mail-events .k2b-placeholder__title").textContent()).toBe("No events yet");
+          } finally {
+            await close(empty);
+          }
+          const filteredEmpty = await open(`${english}&events=empty&eventKind=sent`, width, width === 390 ? 844 : 900);
+          try {
+            expect(await filteredEmpty.locator(".mail-events .k2b-placeholder__title").textContent()).toBe("No events for this filter");
+            expect(await filteredEmpty.getByRole("button", { name: "Reset filter" }).isVisible()).toBe(true);
+          } finally {
+            await close(filteredEmpty);
+          }
+          const failed = await open(`${english}&events=error`, width, width === 390 ? 844 : 900);
+          try {
+            expect(await failed.locator(".mail-events [role='alert']").textContent()).toContain("Events could not be loaded.");
+            const retry = failed.waitForResponse((response) => response.url().includes("/workspace-"));
+            await failed.getByRole("button", { name: "Try again" }).click();
+            await retry;
+            // The chips stay usable while the feed cannot load.
+            expect(await failed.locator("[data-mail-events-filters] .k2b-filter-chip").count()).toBeGreaterThan(0);
+          } finally {
+            await close(failed);
+          }
+        });
 
       test("events load older pages below the feed and show the loading state while a filter loads", async () => {
         const page = await open(`${events}&events=more`);

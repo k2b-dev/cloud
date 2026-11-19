@@ -1103,10 +1103,22 @@ const ActivityWideDemo = () => (
   <DemoCard
     id="activity-list-wide"
     chip={{ kind: "component", name: "ActivityList", from: "@k2b/ui" }}
-    description="The wide density of the dialog: the meta line on the right of the first line, at most 80rem wide. Narrower than 34rem it goes under the sentence again."
+    description="The wide density of the dialog: avatars and full sentences beside the time, at most 80rem wide. Long sentences wrap in their own column on a phone."
     code={`<ActivityList entries={entries()} density="wide" now={data.now} timeZone="Europe/Berlin" />`}
   >
     <ActivityList entries={activityEntries()} density="wide" now={ACTIVITY_NOW} timeZone="Europe/Berlin" />
+    <div style={{ padding: "0.5rem", "margin-top": "1rem" }}>
+      <ActivityList.Row
+        now={ACTIVITY_NOW}
+        timeZone="Europe/Berlin"
+        entry={{
+          at: ACTIVITY_NOW,
+          actor: "Import service",
+          avatar: { name: "Import service", kind: "service" },
+          text: "Imported the latest records",
+        }}
+      />
+    </div>
   </DemoCard>
 );
 
