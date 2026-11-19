@@ -2064,7 +2064,9 @@ dialog:has(.launchpad-panel)::backdrop {
 /* A host's alarm line (Gustav alarms v1, 6): the host draws the whole line, the activity row lends only its place, as
    for the Code decision line. */
 .k2b-ui .ai-wakeup-line-row .k2b-chat-activity__leading { display: none; }
-.k2b-ui .ai-wakeup-line-row > .k2b-chat-activity__row > .k2b-chat-activity__copy { grid-column: 1 / -1; min-width: 0; overflow: visible; white-space: normal; mask-image: none; }
+.k2b-ui .ai-wakeup-line-row > .k2b-chat-activity__row > .k2b-chat-activity__copy { grid-column: 1 / -1; min-width: 0; }
+.k2b-ui .ai-wakeup-line-row .k2b-chat-activity__copy,
+.k2b-ui .ai-wakeup-line-row .k2b-chat-activity__copy > strong { flex: 1; min-width: 0; overflow: visible; color: inherit; font-weight: inherit; white-space: normal; mask-image: none; }
 /* The source above a machine-written message: an automation's sign in text colour, another chat's ✦ in plum. */
 .k2b-ui .ai-message-source__icon { flex: none; color: var(--k2b-text); font-size: .875rem; }
 .k2b-ui .ai-message-source__icon[data-kind="chat"] { color: var(--k2b-ai-accent); }

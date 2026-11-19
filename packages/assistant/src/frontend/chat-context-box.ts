@@ -148,8 +148,8 @@ export const contextBoxResultRow = (
 const groupRow = (row: AssistantChatContextGroup["rows"][number]): ContextBoxRow => ({
   key: `${row.key}`,
   icon: row.icon,
-  // An app's thing carries its tile; a thing of the chat itself, such as an alarm, its plain sign.
-  ...(row.accent ? { tile: { accent: row.accent } } : {}),
+  // An app's thing carries its tile; an alarm of the chat itself its plain sign.
+  ...(row.wakeup ? {} : { tile: { accent: row.accent } }),
   title: row.title,
   trailing: row.word,
   tone: row.tone,
