@@ -9,6 +9,7 @@ export const codeVersionCardCopy = i18n.define({
   messages: {
     en: {
       label: "Approval",
+      reworkShort: "Revise it",
       waiting: ({ version }: V) => `Version ${version} is waiting for an admin. You will be notified.`,
       waitingYou: ({ version }: V) => `Version ${version} is waiting for your approval.`,
       changes: ({ version, name }: Who) => `${name} requests changes to version ${version}.`,
@@ -56,6 +57,7 @@ export const codeVersionCardCopy = i18n.define({
     },
     de: {
       label: "Freigabe",
+      reworkShort: "Überarbeiten lassen",
       waiting: ({ version }) => `Version ${version} wartet auf einen Admin. Du bekommst Bescheid.`,
       waitingYou: ({ version }) => `Version ${version} wartet auf deine Freigabe.`,
       changes: ({ version, name }) => `${name} wünscht Änderungen an Version ${version}.`,

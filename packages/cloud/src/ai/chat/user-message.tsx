@@ -126,8 +126,10 @@ export const createAiUserMessageActions = (entry: AiStoredMessage, actions: AiCh
       onSelect: () => actions.onQuote!({ messageId: entry.shortId, from: "user", text: ownText }),
     });
   }
-  // Answering again and its variants sit under the answer; here the message can be edited and sent again.
-  if (!entry.compactedAt && actions.onRetryMessage) {
+  // Answering again and its variants sit under the answer; here the person's own message can be edited and sent again.
+  // A message an automation or another chat wrote is not theirs to rewrite (Feinschliff v6, F12).
+  const ownMessage = !entry.meta?.codeOrigin && (!entry.meta?.origin || entry.meta.origin.kind === "person");
+  if (ownMessage && !entry.compactedAt && actions.onRetryMessage) {
     result.push({
       id: "edit",
       label: t.actionEditPrompt,

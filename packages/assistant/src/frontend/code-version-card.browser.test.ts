@@ -132,9 +132,9 @@ const boxes = (page: Page) =>
       return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
     };
     return {
-      card: box(".assistant-code-version"),
-      main: box(".k2b-notice-card__head"),
-      quiet: box(".k2b-notice-card__body"),
+      card: box(".assistant-code-version-host .cloud-approval-frame"),
+      main: box(".k2b-notice-card__title"),
+      quiet: box(".k2b-notice-card__description"),
       next: box("#following"),
     };
   });
@@ -174,29 +174,33 @@ describe("v10 approval card in Chromium", () => {
             expect(measured.quiet.y - measured.main.y - measured.main.height).toBeLessThanOrEqual(4);
             expect(measured.quiet.y - measured.main.y - measured.main.height).toBeGreaterThanOrEqual(0);
             if (width === 1440) expect(measured.card.height).toBe(64);
-            expect(await h.page.locator(".assistant-code-version__quiet").getAttribute("title")).toBe(
-              await h.page.locator(".assistant-code-version__quiet").textContent(),
+            expect(await h.page.locator(".assistant-code-version-host .k2b-notice-card__detail-text").getAttribute("title")).toBe(
+              await h.page.locator(".assistant-code-version-host .k2b-notice-card__detail-text").textContent(),
             );
-            const card = h.page.locator(".assistant-code-version");
+            const card = h.page.locator(".assistant-code-version-host .cloud-approval-frame");
             expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
             expect(await card.locator(".k2b-notice-card__icon").count()).toBe(1);
             expect(await card.locator(".k2b-chat-decision__details").count()).toBe(0);
-            const actions = card.locator(".assistant-code-version__action");
+            const actions = card.locator(".k2b-notice-card__actions > *");
             const count = await actions.count();
             expect(count).toBeLessThanOrEqual(2);
             if (width === 390 && count) {
-              const row = (await card.locator(".assistant-code-version__actions").boundingBox())!;
+              const row = (await card.locator(".k2b-notice-card__actions").boundingBox())!;
               const a = (await actions.first().boundingBox())!;
               if (count === 1) expect(Math.abs(a.width - row.width)).toBeLessThan(0.5);
               else {
                 const b = (await actions.nth(1).boundingBox())!;
                 expect(Math.abs(a.width - b.width)).toBeLessThan(0.5);
                 expect(a.x).toBeLessThan(b.x);
-                expect(await actions.first().locator(".k2b-button").getAttribute("data-variant")).toBe("secondary");
+                expect(await actions.first().getAttribute("data-variant")).toBe("secondary");
               }
               expect(a.y).toBeGreaterThanOrEqual(measured.quiet.y + measured.quiet.height);
-              expect(a.y - measured.quiet.y - measured.quiet.height).toBeLessThanOrEqual(4);
-              const quietStyle = await card.locator(".assistant-code-version__quiet").evaluate((element) => {
+              expect(
+                a.y - measured.quiet.y - measured.quiet.height,
+                `${state}: a buffer separates the text and decisions`,
+              ).toBeGreaterThanOrEqual(12);
+              expect(measured.card.y + measured.card.height - a.y - a.height).toBeCloseTo(11, 0);
+              const quietStyle = await card.locator(".k2b-notice-card__detail-text").evaluate((element) => {
                 const style = getComputedStyle(element);
                 return {
                   whiteSpace: style.whiteSpace,
@@ -240,20 +244,20 @@ describe("v10 approval card in Chromium", () => {
       const h = await open(390, theme, "de", "load-retry");
       try {
         await h.page.waitForFunction(() => (window as unknown as { cardReadCount(): number }).cardReadCount() === 1);
-        await h.page.locator(".assistant-code-version[data-state=loading]").waitFor();
+        await h.page.locator(".assistant-code-version-host[data-state=loading] .cloud-approval-frame").waitFor();
         const first = await stableBoxes(h.page);
-        expect(first.card.height).toBe(168);
+        expect(first.card.height).toBe(156);
         await screenshot(h.page, "loading", theme, 390);
         await h.page.evaluate(() => (window as unknown as { finishCardRead(state: string): void }).finishCardRead("failed"));
-        await h.page.locator(".assistant-code-version[data-state=load-failed]").waitFor();
+        await h.page.locator(".assistant-code-version-host[data-state=load-failed] .cloud-approval-frame").waitFor();
         expect(await stableBoxes(h.page)).toEqual(first);
         await h.page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
         await h.page.waitForFunction(() => (window as unknown as { cardReadCount(): number }).cardReadCount() === 2);
         // The real store retains the failed snapshot while its retry is pending; it never clears it to loading.
-        expect(await h.page.locator(".assistant-code-version").getAttribute("data-state")).toBe("load-failed");
+        expect(await h.page.locator(".assistant-code-version-host").getAttribute("data-state")).toBe("load-failed");
         expect(await stableBoxes(h.page)).toEqual(first);
         await h.page.evaluate(() => (window as unknown as { finishCardRead(state: string): void }).finishCardRead("ready"));
-        await h.page.locator(".assistant-code-version[data-state=ready]").waitFor();
+        await h.page.locator(".assistant-code-version-host[data-state=ready] .cloud-approval-frame").waitFor();
         expect(await stableBoxes(h.page)).toEqual(first);
         expect(h.errors).toEqual([]);
       } finally {
@@ -282,7 +286,7 @@ describe("v10 approval card in Chromium", () => {
         if (width === 390) expect(await h.page.locator(".k2b-gesture-menu__sheet-menu").count()).toBeGreaterThan(0);
         else {
           const bounds = await h.page.getByRole("menu").boundingBox();
-          const cardBounds = await h.page.locator(".assistant-code-version").boundingBox();
+          const cardBounds = await h.page.locator(".assistant-code-version-host .cloud-approval-frame").boundingBox();
           expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(cardBounds!.x + cardBounds!.width);
           expect(await h.page.getByRole("menu").getByText("Weitere Seiten", { exact: true }).count()).toBe(0);
         }
@@ -302,12 +306,12 @@ describe("v10 approval card in Chromium", () => {
       for (const theme of ["light", "dark"]) {
         const h = await open(width, theme, "de", "interactive");
         try {
-          await h.page.locator(".assistant-code-version[data-state=ready]").waitFor();
+          await h.page.locator(".assistant-code-version-host[data-state=ready] .cloud-approval-frame").waitFor();
           const first = await boxes(h.page);
           const primary = h.page.locator("[data-code-version-primary]");
           await primary.focus();
           await h.page.keyboard.press("Enter");
-          await h.page.locator(".assistant-code-version[data-state=switching]").waitFor();
+          await h.page.locator(".assistant-code-version-host[data-state=switching] .cloud-approval-frame").waitFor();
           expect(await stableBoxes(h.page)).toEqual({ card: first.card, next: first.next });
           await h.page.evaluate(() => (window as unknown as { finishActivation(ok: boolean): void }).finishActivation(false));
           await h.page.getByRole("alert").filter({ hasText: "Einschalten hat nicht geklappt." }).waitFor();
@@ -327,9 +331,11 @@ describe("v10 approval card in Chromium", () => {
     try {
       for (const state of approvalStates) {
         await setState(h.page, state);
-        expect(await h.page.locator(".assistant-code-version").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
-          true,
-        );
+        expect(
+          await h.page
+            .locator(".assistant-code-version-host .cloud-approval-frame")
+            .evaluate((element) => element.scrollWidth <= element.clientWidth),
+        ).toBe(true);
       }
       expect(h.errors).toEqual([]);
     } finally {
@@ -340,26 +346,43 @@ describe("v10 approval card in Chromium", () => {
     for (const width of [390, 1440]) {
       const h = await open(width, "light", "de", "receipt");
       try {
-        const card = h.page.locator(".assistant-code-version[data-state=replaced]");
+        const card = h.page.locator(".assistant-code-version-host[data-state=replaced] .cloud-approval-frame");
         await card.waitFor();
         const measure = () =>
           h.page.evaluate(() => {
-            const card = document.querySelector<HTMLElement>(".assistant-code-version")!;
+            const card = document.querySelector<HTMLElement>(".assistant-code-version-host .cloud-approval-frame")!;
             const box = card.getBoundingClientRect();
             const action = card.querySelector("[data-code-version-primary]")!.getBoundingClientRect();
+            const style = getComputedStyle(card);
             return {
-              receipt: card.hasAttribute("data-receipt"),
+              receipt: card.closest(".assistant-code-version-host")!.hasAttribute("data-receipt"),
               height: Math.round(box.height),
               below: Math.round(box.bottom - action.bottom),
-              padding: Math.round(Number.parseFloat(getComputedStyle(card).paddingBottom)),
+              padding: Math.round(Number.parseFloat(style.paddingBottom)),
+              tracks: style.gridTemplateRows.split(" ").length,
             };
           });
         const first = await measure();
         expect(first.receipt).toBe(true);
         if (width === 390) {
-          // Only the card's own padding is left under "Zu Version 2"; a live card keeps 168 px.
+          // Only the card's own padding is left under "Zu Version 2"; live cards keep the shared row reserve.
           expect(first.below).toBeLessThanOrEqual(first.padding + 1);
           expect(first.height).toBeLessThan(168 - 40);
+          expect(first.tracks).toBe(3);
+          // Measure the previous four-track form in the same page, without a second build or browser run. Its
+          // transition-only 8px track and extra 2px gap were still present even though reserve was false.
+          const withSpacer = await h.page.evaluate(() => {
+            const card = document.querySelector<HTMLElement>(".assistant-code-version-host .cloud-approval-frame")!;
+            const actions = card.querySelector<HTMLElement>(".k2b-notice-card__actions")!;
+            card.style.gridTemplateRows = "auto auto minmax(.5rem, 1fr) auto";
+            actions.style.gridRow = "4";
+            const height = Math.round(card.getBoundingClientRect().height);
+            card.style.removeProperty("grid-template-rows");
+            actions.style.removeProperty("grid-row");
+            return height;
+          });
+          expect(withSpacer - first.height).toBe(10);
+          console.info(`Replaced receipt at ${width}px: four tracks ${withSpacer}px; reserve=false ${first.height}px`);
         } else expect(first.height).toBe(64);
         // The interaction controller replaces the server card without changing it.
         await h.page.waitForTimeout(300);
@@ -382,7 +405,7 @@ describe("v10 approval card in Chromium", () => {
             before: w.snapshotBefore,
             after: {
               text: (document.querySelector("#snapshot-root") as HTMLElement).innerText,
-              rect: document.querySelector(".assistant-code-version")!.getBoundingClientRect().toJSON(),
+              rect: document.querySelector(".assistant-code-version-host .cloud-approval-frame")!.getBoundingClientRect().toJSON(),
             },
             reads: w.cardReadCount(),
           };
@@ -403,16 +426,16 @@ describe("v10 approval card in Chromium", () => {
       for (const move of [false, true]) {
         const h = await open(width, "light", "de", "interactive");
         try {
-          await h.page.locator(".assistant-code-version[data-state=ready]").waitFor();
+          await h.page.locator(".assistant-code-version-host[data-state=ready] .cloud-approval-frame").waitFor();
           const first = await stableBoxes(h.page);
           const primary = h.page.locator("[data-code-version-primary]");
           await primary.focus();
           const before = await h.page.screenshot();
           await h.page.keyboard.press("Enter");
-          await h.page.locator(".assistant-code-version[data-state=switching]").waitFor();
+          await h.page.locator(".assistant-code-version-host[data-state=switching] .cloud-approval-frame").waitFor();
           if (move) await h.page.getByRole("button", { name: "Zur Karte", exact: true }).focus();
           await h.page.evaluate(() => (window as unknown as { finishActivation(ok: boolean): void }).finishActivation(true));
-          await h.page.locator(".assistant-code-version[data-state=on]").waitFor();
+          await h.page.locator(".assistant-code-version-host[data-state=on] .cloud-approval-frame").waitFor();
           await settled(h.page);
           expect(await h.page.evaluate(() => document.activeElement?.textContent)).toBe(move ? "Zur Karte" : "Öffnen");
           expect(await stableBoxes(h.page)).toEqual(first);
@@ -457,23 +480,23 @@ describe("v10 approval card in Chromium", () => {
       const h = await open(width, "light", "de", "comparison");
       try {
         const pause = h.page.locator(".assistant-authoring-stop");
-        const card = h.page.locator(".assistant-code-version");
+        const card = h.page.locator(".assistant-code-version-host .cloud-approval-frame");
         const before = await pause.boundingBox();
         const approval = (await card.boundingBox())!;
         expect(before!.height).toBe(approval.height);
         expect(before!.x).toBe(approval.x);
         expect(before!.width).toBe(approval.width);
         const edges = await h.page.evaluate(() =>
-          [".assistant-authoring-stop", ".assistant-code-version"].map((selector) => {
+          [".assistant-authoring-stop", ".assistant-code-version-host .cloud-approval-frame"].map((selector) => {
             const card = document.querySelector(selector)!;
-            const content = card.querySelector(".k2b-notice-card__content")!;
+            const content = card.querySelector(".k2b-notice-card__title")!;
             const icon = card.querySelector(".k2b-notice-card__icon")!;
             return {
               contentX: content.getBoundingClientRect().x,
               iconX: icon.getBoundingClientRect().x,
               iconFont: getComputedStyle(icon).fontSize,
               iconWidth: icon.getBoundingClientRect().width,
-              columns: getComputedStyle(card).gridTemplateColumns,
+              columns: getComputedStyle(card).gridTemplateColumns.split(" ")[0],
               gap: getComputedStyle(card).columnGap,
               padding: getComputedStyle(card).paddingInlineStart,
             };
@@ -481,7 +504,10 @@ describe("v10 approval card in Chromium", () => {
         );
         expect(edges[0]).toEqual(edges[1]);
         if (width === 390) {
-          for (const selector of [".assistant-authoring-stop__meta", ".assistant-code-version__quiet"]) {
+          for (const selector of [
+            ".assistant-authoring-stop .k2b-notice-card__detail-text",
+            ".assistant-code-version-host .k2b-notice-card__detail-text",
+          ]) {
             expect(await h.page.locator(selector).evaluate((element) => getComputedStyle(element).webkitLineClamp)).toBe("2");
           }
         }
@@ -503,13 +529,13 @@ describe("v10 approval card in Chromium", () => {
   test("real chat insets leave every phone action inside the card, including long labels", async () => {
     const h = await open(390, "light", "de", "comparison");
     try {
-      const card = h.page.locator(".assistant-code-version");
+      const card = h.page.locator(".assistant-code-version-host .cloud-approval-frame");
       const first = (await card.boundingBox())!;
       for (const state of approvalStates) {
         await setState(h.page, state);
         const bounds = (await card.boundingBox())!;
         expect(bounds).toEqual(first);
-        for (const action of await card.locator(".assistant-code-version__action .k2b-button").all()) {
+        for (const action of await card.locator(".k2b-notice-card__actions > * .k2b-button").all()) {
           const control = (await action.boundingBox())!;
           expect(control.y + control.height).toBeLessThanOrEqual(bounds.y + bounds.height);
         }
