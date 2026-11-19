@@ -39,7 +39,8 @@ const report = alarm(REPORT, {
 /** What a fully passing trace must show. Everything else is the person's rubric review. */
 type AlarmExpectation =
   | { kind: "create"; at: string; cron?: never; timezone: string }
-  | { kind: "create"; cron: string; at?: never; timezone: string }
+  /** Accepted spellings of the same repeat; `firstAt` is the first occurrence Gustav may pass as `at`. */
+  | { kind: "create"; crons: readonly string[]; firstAt: string; at?: never; timezone: string }
   | { kind: "postpone"; id: string; at?: string }
   | { kind: "delete"; id: string }
   | { kind: "no-change" };
@@ -82,7 +83,7 @@ export const CHAT_ALARM_CASES = [
     trigger: "person",
     alarms: [],
     request: "Frag mich jeden Werktag um 8 Uhr nach meiner wichtigsten Aufgabe.",
-    expect: { kind: "create", cron: "0 8 * * 1-5", timezone: TIMEZONE },
+    expect: { kind: "create", crons: ["0 8 * * 1-5", "0 8 * * mon-fri"], firstAt: "2026-11-20T08:00:00+01:00", timezone: TIMEZONE },
     review: [
       "Sets one repeating alarm with cron and Europe/Berlin; no Code automation.",
       "Says in words that it runs on weekdays at 08:00 and ends after 30 days unless renewed; uses the returned rhythm, never cron.",
@@ -197,9 +198,8 @@ const DeleteSchema = z.strictObject({ id: z.uuid(), revision: z.number().int().n
 export function scoreChatAlarm(item: AlarmCase, trace: ChatAlarmTrace) {
   const failures: string[] = [];
   const now = Date.parse(item.now);
-  if (!item.codeAllowed && trace.calls.some((call) => /^code_(write|check|test|simulate|submit)$/.test(call.name)))
-    failures.push("Wrote Code instead of using an alarm.");
-  if (trace.calls.some((call) => call.name === "code_activate")) failures.push("Activated Code.");
+  if (!item.codeAllowed && trace.calls.some((call) => call.name.startsWith("code_")))
+    failures.push("Started Code authoring instead of an alarm.");
   if (item.trigger === "wakeup" && trace.calls.some((call) => call.name === "wakeup_create"))
     failures.push("Tried to create an alarm in an alarm turn.");
   const changes = trace.calls.flatMap((call, index) => (MUTATIONS.has(call.name) && succeeded(call) ? [{ call, index }] : []));
@@ -224,8 +224,12 @@ export function scoreChatAlarm(item: AlarmCase, trace: ChatAlarmTrace) {
         (input.data.at === undefined || Date.parse(input.data.at) !== Date.parse(expected.at) || input.data.cron)
       )
         failures.push(`Set one time at ${expected.at}.`);
-      if (expected.cron !== undefined && (input.data.cron?.replace(/\s+/g, " ") !== expected.cron || input.data.at !== undefined))
-        failures.push(`Repeat with cron ${expected.cron}.`);
+      if (
+        expected.crons !== undefined &&
+        (!expected.crons.includes(input.data.cron?.trim().replace(/\s+/g, " ").toLowerCase() ?? "") ||
+          (input.data.at !== undefined && Date.parse(input.data.at) !== Date.parse(expected.firstAt)))
+      )
+        failures.push(`Repeat with cron ${expected.crons[0]}.`);
     }
     return { mechanicalPassed: failures.length === 0, failures, semanticReviewRequired: true };
   }

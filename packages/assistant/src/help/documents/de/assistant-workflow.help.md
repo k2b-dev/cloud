@@ -116,10 +116,10 @@ Nachricht.
 :::reference
 - **Grenzen:** Ein Chat hat höchstens fünf Wecker. Ein wiederkehrender Wecker klingelt höchstens alle 15 Minuten und endet nach 30 Tagen; du kannst ihn um 30 Tage verlängern. Ein einmaliger Wecker liegt höchstens ein Jahr voraus.
 - **Verschieben:** Ist das Erwartete noch nicht passiert, kann Gustav denselben Wecker auf später verschieben, höchstens dreimal. Aus einem Wecker heraus stellt er keinen neuen.
-- **Verpasst:** Hattest du keinen Zugriff auf Gustav oder war dein Budget aufgebraucht, arbeitet Gustav zu dieser Zeit nicht. Eine Zeile im Chat sagt es dir. Einen verpassten einmaligen Wecker kannst du innerhalb von sieben Tagen nachholen. Ein wiederkehrender Wecker klingelt zum nächsten Termin.
+- **Verpasst:** Hast du zur geplanten Zeit keinen Zugriff auf Gustav oder ist dein Budget aufgebraucht, arbeitet Gustav den Wecker nicht ab. Eine Zeile im Chat sagt es dir. Ein verpasster einmaliger Wecker bleibt sieben Tage bestehen; bitte Gustav, ihm eine neue Zeit zu geben. Ein wiederkehrender Wecker klingelt zum nächsten Termin.
 - **Ausfall:** Nach einer Wartung oder einem Ausfall klingelt jeder fällige Wecker einmal. Seine Herkunft zeigt die geplante Zeit.
 - **Archivierter oder gelöschter Chat:** Archivierst du einen Chat, ruhen seine Wecker, bis du ihn zurückholst. Löschst du einen Chat, enden seine Wecker mit ihm.
-- **Wecker oder Automation:** Ein Wecker gehört dir und diesem Chat, startet nur zu einer Zeit und trägt eine kurze Notiz. Für Arbeit, die auf neue Mails reagiert, ohne Ende läuft, etwa ein Morgenbriefing, oder für andere Personen handelt, schlägt Gustav eine Automation vor.
+- **Wecker oder Automation:** Ein Wecker gehört dir und diesem Chat, wird nur von einer Uhrzeit ausgelöst und trägt eine kurze Notiz. Für Arbeit, die auf neue Mails reagiert, ohne Ende läuft, etwa ein Morgenbriefing, oder für andere Personen handelt, schlägt Gustav eine Automation vor.
 - **Wo:** Wecker gibt es in deinen eigenen Gustav-Chats. In Chats, die eine andere App mit begrenzten Werkzeugen geöffnet hat, gibt es sie nicht.
 :::
 

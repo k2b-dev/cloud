@@ -118,7 +118,7 @@ also removes its waiting message.
 :::reference
 - **Limits:** A chat has at most five alarms. A repeating alarm runs at most every 15 minutes and ends after 30 days; you can renew it for another 30 days. A one-time alarm can be at most one year ahead.
 - **Postponing:** If the awaited thing has not happened yet, Gustav can move the same alarm to a later time, at most three times. He cannot set a new alarm from an alarm.
-- **Missed:** If you had no access to Gustav or your budget was used up, Gustav does not work at that time. A line in the chat tells you. You can catch up a missed one-time alarm within seven days. A repeating alarm continues at its next time.
+- **Missed:** If you have no access to Gustav at the planned time or your budget is used up, Gustav does not work on the alarm. A line in the chat tells you. A missed one-time alarm remains for seven days; ask Gustav to give it a new time. A repeating alarm continues at its next time.
 - **Downtime:** After maintenance or downtime, each due alarm runs once. Its source shows the planned time.
 - **Archived or deleted chat:** Archiving a chat pauses its alarms until you restore it. Deleting a chat deletes its alarms.
 - **Alarm or automation:** An alarm is for you and this chat, starts only at a time and holds a short note. For work that reacts to new mail, runs without end, such as a morning briefing, or acts for other people, Gustav suggests an automation instead.

@@ -76,6 +76,24 @@ test("accepts a repeating alarm, a move by sentence and a delete with the listed
       ]),
     ),
   );
+  // The backend accepts the first occurrence as `at` beside cron, and named weekdays.
+  passing(
+    scoreChatAlarm(
+      byName("set-repeating"),
+      done([
+        {
+          name: "wakeup_create",
+          args: { cron: "0 8 * * MON-FRI", at: "2026-11-20T07:00:00Z", timezone: "Europe/Berlin", note: "Frag nach der Aufgabe." },
+          result: {},
+        },
+      ]),
+    ),
+  );
+  for (const args of [
+    { cron: "0 8 * * *", timezone: "Europe/Berlin", note: "Täglich" },
+    { cron: "0 8 * * 1-5", at: "2026-11-23T08:00:00+01:00", timezone: "Europe/Berlin", note: "Später" },
+  ])
+    expect(scoreChatAlarm(byName("set-repeating"), done([{ name: "wakeup_create", args, result: {} }])).mechanicalPassed).toBeFalse();
   const lena = byName("move-by-sentence").alarms[0]!;
   passing(
     scoreChatAlarm(
@@ -127,9 +145,18 @@ test("an alarm turn creates nothing, changes only the time, and stops after thre
   for (const calls of [
     [list("postpone-in-alarm-turn"), { name: "wakeup_update", args: { id, revision: 2, at: later, note: "Neu" }, result: {} }],
     [list("postpone-in-alarm-turn"), { name: "wakeup_update", args: { id, revision: 2, at: "2026-11-19T15:00:00+01:00" }, result: {} }],
-    [{ name: "wakeup_create", args: { at: later, timezone: "Europe/Berlin", note: "Lena?" }, result: { error: "forbidden" } }],
   ])
     expect(scoreChatAlarm(turn, done(calls)).mechanicalPassed).toBeFalse();
+  // A valid postponement still fails when the turn also tried to create an alarm, even a refused one.
+  const valid = [list("postpone-in-alarm-turn"), { name: "wakeup_update", args: { id, revision: 2, at: later }, result: {} }];
+  passing(scoreChatAlarm(turn, done(valid)));
+  const refused = {
+    name: "wakeup_create",
+    args: { at: later, timezone: "Europe/Berlin", note: "Lena?" },
+    result: "An alarm turn cannot create another alarm.",
+    isError: true,
+  };
+  expect(scoreChatAlarm(turn, done([...valid, refused])).failures).toEqual(["Tried to create an alarm in an alarm turn."]);
   const limit = byName("postpone-limit");
   passing(scoreChatAlarm(limit, done([list("postpone-limit")])));
   expect(
@@ -141,8 +168,16 @@ test("an alarm turn creates nothing, changes only the time, and stops after thre
 test("a refused create at the limit passes; Code for a reminder fails; an event request may lead to Code", () => {
   const full = byName("limit-reached");
   const tomorrow = { at: "2026-11-20T14:00:00+01:00", timezone: "Europe/Berlin", note: "Zahnarzt." };
-  passing(scoreChatAlarm(full, done([{ name: "wakeup_create", args: tomorrow, result: { error: "wakeup_limit" }, isError: true }])));
-  expect(scoreChatAlarm(full, done([{ name: "code_write", args: {}, result: {} }])).mechanicalPassed).toBeFalse();
+  passing(
+    scoreChatAlarm(
+      full,
+      done([
+        { name: "wakeup_create", args: tomorrow, result: "This chat already has five alarms. Change or delete one first.", isError: true },
+      ]),
+    ),
+  );
+  for (const name of ["code_init", "code_pull", "code_write"])
+    expect(scoreChatAlarm(full, done([{ name, args: {}, result: {} }])).failures).toEqual(["Started Code authoring instead of an alarm."]);
   const event = byName("automation-instead");
   passing(
     scoreChatAlarm(
@@ -154,5 +189,4 @@ test("a refused create at the limit passes; Code for a reminder fails; an event 
     ),
   );
   expect(scoreChatAlarm(event, done([{ name: "wakeup_create", args: tomorrow, result: {} }])).mechanicalPassed).toBeFalse();
-  expect(scoreChatAlarm(event, done([{ name: "code_activate", args: {}, result: {} }])).mechanicalPassed).toBeFalse();
 });
