@@ -50,8 +50,6 @@ export { type CodeAiToolBinding, CodeAiToolBindingSchema, CodeFileRefSchema } fr
 export { generateCodeSdk } from "./generator";
 export { type CodeCallEvent, CodeCallEventSchema, codeDetailsKey } from "./live-events";
 export {
-  appendCodeOutput,
-  applyCodeOutputEvent,
   CODE_OUTPUT_INTERVAL_MS,
   CODE_OUTPUT_OPERATION,
   CODE_OUTPUT_STEP_LIMITS,
@@ -76,10 +74,8 @@ export {
   codeOutputParts,
   codeOutputStepBytes,
   codeOutputStepsBudget,
-  emptyCodeOutput,
-  isCodeOutputLogEntry,
-  isCodeOutputStepEntry,
 } from "./output";
+export { appendCodeOutput, applyCodeOutputEvent, emptyCodeOutput, isCodeOutputLogEntry, isCodeOutputStepEntry } from "./output-window";
 export {
   assertCodePageData,
   CODE_PAGE_LIMITS,

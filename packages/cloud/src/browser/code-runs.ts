@@ -1,5 +1,6 @@
 import { invokeCapabilityWithDataSchema } from "../capabilities/client";
-import { applyCodeOutputEvent, type CodeOutputWindow } from "../code/output";
+import type { CodeOutputWindow } from "../code/output";
+import { applyCodeOutputEvent } from "../code/output-window";
 import { type CodeRunEntries, CodeRunEntriesInputSchema, CodeRunEntriesSchema, CodeRunLiveEventSchema } from "../code/run-ledger";
 import { liveConnection } from "./live";
 

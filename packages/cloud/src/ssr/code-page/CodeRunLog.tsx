@@ -3,13 +3,8 @@ import { NoticeCard, useLocale } from "@k2b/ui";
 import { type RunEntry, RunLog, type RunLogAction, type RunLogState } from "@k2b/ui/run-log";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { followCodeRun, readCodeRunEntries } from "../../browser/code-runs";
-import {
-  type CodeOutputText,
-  type CodeOutputWindow,
-  emptyCodeOutput,
-  isCodeOutputLogEntry,
-  isCodeOutputStepEntry,
-} from "../../code/output";
+import type { CodeOutputText, CodeOutputWindow } from "../../code/output";
+import { emptyCodeOutput, isCodeOutputLogEntry, isCodeOutputStepEntry } from "../../code/output-window";
 import type { CodeRunEntries } from "../../code/run-ledger";
 import type { CodeRunReadModel } from "../../contracts/code-read-model";
 import type { CodePageRunDetail } from "./data";

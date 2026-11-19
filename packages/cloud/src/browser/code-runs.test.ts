@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { emptyCodeOutput } from "../code/output";
+import { emptyCodeOutput } from "../code/output-window";
 import type { CodeRunEntries } from "../code/run-ledger";
 import { followCodeRun } from "./code-runs";
 import type { LiveSubscriptionHandlers } from "./live";
