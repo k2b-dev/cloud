@@ -306,7 +306,7 @@ export function ToolActionView(props: {
         return time() ? { rejected } : { rejected, rejectedTimed: { ...rejected, time: reservedTime() } };
       }
       case "expired":
-        return { expired: { tone: "off", icon: "ti ti-clock-x", text: c.forms.notRun, detail: words.expired, action: askAgain() } };
+        return { expired: { tone: "off", icon: "ti ti-clock-x", text: [{ kind: "text", text: words.expired }], action: askAgain() } };
       case "stopped":
         return { stopped: { tone: "off", text: c.forms.notRun, detail: words.stopped } };
       case "error":

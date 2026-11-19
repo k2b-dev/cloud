@@ -9,6 +9,7 @@ import { migrateAiNextMessages } from "./next-message-store";
 import { migrateAiQuotas } from "./quotas-migrate";
 import { retireChatRoutines } from "./retired-routines-migrate";
 import { withAiShortId } from "./short-id";
+import { migrateAiWakeups } from "./wakeup-store";
 
 const backfillAiShortIds = async (
   constraint: string,
@@ -2416,6 +2417,7 @@ export const migrateCloudAi = async (): Promise<void> => {
 
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS background_received_at TIMESTAMPTZ`.simple();
   await migrateAiMessageQueue();
+  await migrateAiWakeups();
 
   // Canonically equivalent Unicode names (macOS uploads decompose umlauts)
   // address one file, so stored paths become NFC. A row keeps its legacy form

@@ -9,12 +9,12 @@ import { FIXTURE_AT } from "../ai/chat/action-question.fixtures";
 
 // The approval in each of its states and places, painted by a real layout engine at desktop and phone width.
 const ui = resolve(import.meta.dir, "../../../ui");
-const buildHarness = async (): Promise<string> => {
+const buildHarness = async (entrypoint = resolve(import.meta.dir, "approval-scenes.browser-harness.tsx")): Promise<string> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, "approval-scenes.browser-harness.tsx")],
+    entrypoints: [entrypoint],
     target: "browser",
     format: "esm",
     conditions: ["browser"],
@@ -25,6 +25,8 @@ const buildHarness = async (): Promise<string> => {
       {
         name: "solid-approval-scenes-test",
         setup(builder) {
+          // Root fixtures have no application package scope; use the public browser distribution.
+          builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "dist/browser/index.js") }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
             const result = await transformAsync(await Bun.file(path).text(), {
               filename: path,
@@ -44,16 +46,21 @@ const buildHarness = async (): Promise<string> => {
 
 let browser: Browser;
 let harness = "";
+let adminHarness = "";
 let css = "";
 let icons: { css: string; font: string };
 beforeAll(async () => {
-  const [bundle, styles] = await Promise.all([
+  const [bundle, adminBundle, styles, coreStyles] = await Promise.all([
     buildHarness(),
+    buildHarness(resolve(import.meta.dir, "../../../../tests/approval-review-admin.browser-harness.tsx")),
     Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] }),
+    Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../core/src/styles/app.css")], plugins: [tailwind] }),
   ]);
   if (!styles.success) throw new AggregateError(styles.logs, "Could not compile the global stylesheet.");
-  css = await styles.outputs[0]!.text();
+  if (!coreStyles.success) throw new AggregateError(coreStyles.logs, "Could not compile Core styles.");
+  css = `${await styles.outputs[0]!.text()}\n${await coreStyles.outputs[0]!.text()}`;
   harness = bundle;
+  adminHarness = adminBundle;
   const iconCss = fileURLToPath(import.meta.resolve("@k2b/ui/icons/tabler.css"));
   const source = await Bun.file(iconCss).text();
   const font = source.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
@@ -94,17 +101,19 @@ const open = async (scene: string, width: number, theme: "light" | "dark" = "lig
   await page.route(`${origin}/**`, (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/harness.js") return route.fulfill({ contentType: "text/javascript", body: harness });
+    if (path === "/admin-harness.js") return route.fulfill({ contentType: "text/javascript", body: adminHarness });
     if (path === "/tabler.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (path === "/tabler.woff2") return route.fulfill({ path: icons.font });
     if (path === "/api/approvals/counts") return route.fulfill({ json: { total: 1, apps: { spaces: 1 } } });
     if (path !== "/") return route.fulfill({ status: 404 });
+    const script = new URL(route.request().url()).searchParams.get("scene") === "review-admin" ? "/admin-harness.js" : "/harness.js";
     return route.fulfill({
       contentType: "text/html",
-      body: `<!doctype html><html lang="de" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><style>${css}</style><style>${SCENE_CSS}</style></head><body class="k2b-ui${theme === "dark" ? " k2b-dark dark" : ""}"><script type="module" src="/harness.js"></script></body></html>`,
+      body: `<!doctype html><html lang="de" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><style>${css}</style><style>${SCENE_CSS}</style></head><body class="k2b-ui${theme === "dark" ? " k2b-dark dark" : ""}"><script type="module" src="${script}"></script></body></html>`,
     });
   });
   await page.goto(`${origin}/?scene=${scene}`);
-  await page.locator(".k2b-chat-decision, .cloud-blocks__choice, .cloud-capability-view").first().waitFor();
+  await page.locator(".cloud-approval-frame, .cloud-blocks__choice, .cloud-capability-view").first().waitFor();
   await settled(page);
   return page;
 };
@@ -153,6 +162,138 @@ const shot = async (page: Page, name: string) => {
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 describe("Approval scenes", () => {
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [1440, 390])
+      test(`review fixes: honest receipts, attached details, admin decisions and stable error at ${width}px in ${theme}`, async () => {
+        const page = await open("review-fixes", width, theme);
+        try {
+          const frames = page.locator(".cloud-approval-frame");
+          await frames.first().getByRole("button", { name: "Seite lesen", exact: true }).waitFor();
+          expect(await frames.first().getByRole("button", { name: "Nicht lesen", exact: true }).count()).toBe(1);
+          expect(await frames.nth(1).locator(".k2b-notice-card__detail-text").textContent()).toBe("14:52");
+          expect(await frames.nth(3).locator(".k2b-notice-card__detail-text").textContent()).toBe("14:52");
+          expect(await frames.nth(4).locator(".k2b-notice-card__detail-text").textContent()).toBe("14:53");
+          expect(await page.getByText("Die Nachricht wurde gesendet", { exact: false }).count()).toBe(0);
+          expect(await page.getByText("Der Stand wird geprüft.", { exact: true }).count()).toBe(0);
+          const attached = await frames
+            .first()
+            .locator(".k2b-notice-card__description")
+            .evaluate((node) => {
+              const text = node.querySelector(".k2b-notice-card__detail-text")!.getBoundingClientRect();
+              const link = node.querySelector(".k2b-notice-card__detail-action")!.getBoundingClientRect();
+              return { gap: link.left - text.right, looseSeparator: [...node.children].some((child) => child.textContent?.trim() === "·") };
+            });
+          expect(attached.gap).toBeLessThanOrEqual(6);
+          expect(attached.looseSeparator).toBe(false);
+          expect(await noOverflow(page)).toBe(0);
+          await shot(page, `review-facts-${theme}-${width}`);
+          await page.goto("https://cloud.example.test/?scene=review-admin");
+          const admin = page.locator(".cloud-approval-frame");
+          const secondary = admin.getByRole("button", {
+            name: width === 390 ? "Ablehnen / ändern" : "Ablehnen oder ändern …",
+            exact: true,
+          });
+          await secondary.waitFor();
+          if (width === 390) {
+            const singleLine = await secondary.locator(".k2b-button__label").evaluate((label) => ({
+              height: label.getBoundingClientRect().height,
+              line: Number.parseFloat(getComputedStyle(label).lineHeight),
+            }));
+            expect(singleLine.height).toBeLessThanOrEqual(singleLine.line + 1);
+          }
+          expect(await noOverflow(page)).toBe(0);
+          await shot(page, `review-admin-${theme}-${width}`);
+          await secondary.click();
+          await page.getByRole("dialog").waitFor();
+          expect(await admin.locator("[data-approval-primary]").getAttribute("aria-busy")).toBeNull();
+          expect(await admin.locator("[data-approval-primary]").isDisabled()).toBe(true);
+          await shot(page, `review-admin-decision-${theme}-${width}`);
+          await page.keyboard.press("Escape");
+          await page.getByRole("dialog").waitFor({ state: "detached" });
+          await page.goto("https://cloud.example.test/?scene=review-error");
+          await page.getByRole("button", { name: "Alles ansehen", exact: true }).click();
+          const dialog = page.getByRole("dialog");
+          const error = dialog.locator('.cloud-approval-details > [role="alert"]');
+          await error.waitFor({ state: "attached" });
+          const before = await dialog.boundingBox();
+          const errorBefore = await error.boundingBox();
+          await shot(page, `review-error-before-${theme}-${width}`);
+          await dialog.getByRole("button", { name: "Zurückziehen", exact: true }).click();
+          await error.getByText("Deine Antwort konnte nicht gespeichert werden. Versuch es noch einmal.", { exact: true }).waitFor();
+          const after = await dialog.boundingBox();
+          expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(1);
+          expect(Math.abs((await error.boundingBox())!.height - errorBefore!.height)).toBeLessThanOrEqual(1);
+          await shot(page, `review-error-after-${theme}-${width}`);
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
+
+  test("declining from the card never requires a proposal; remembering remains in its dialog", async () => {
+    const page = await open("large", 390);
+    let reads = 0;
+    try {
+      await page.route("**/api/approvals/*/content?*", (route) => {
+        reads++;
+        return route.fulfill({ status: 503 });
+      });
+      const frame = page.locator(".cloud-approval-frame");
+      expect(await frame.locator("[data-approval-primary]").isDisabled()).toBe(true);
+      await frame.getByRole("button", { name: "Nicht senden", exact: true }).click();
+      expect(await page.getByRole("dialog").count()).toBe(0);
+      expect(reads).toBe(0);
+      expect(
+        await page.evaluate(() => (window as unknown as { approvalSceneAnswers: { declined: number } }).approvalSceneAnswers.declined),
+      ).toBe(1);
+      await page.goto("https://cloud.example.test/?scene=states");
+      await settled(page);
+      const remembered = page.locator(".cloud-approval-frame").first();
+      expect(await remembered.getByRole("checkbox").count()).toBe(0);
+      await remembered.getByRole("button", { name: "Alles ansehen", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("checkbox", { name: "In diesem Chat nicht mehr fragen" }).check();
+      await dialog.locator('.k2b-button[data-variant="ai"]').click();
+      expect(
+        await page.evaluate(() => (window as unknown as { approvalSceneAnswers: { remembered: number } }).approvalSceneAnswers.remembered),
+      ).toBe(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [1440, 390])
+      test(`the complete proposal loads only in details, recovers after a read failure, and then permits approval at ${width}px in ${theme}`, async () => {
+        const page = await open("large", width, theme);
+        let reads = 0;
+        try {
+          await page.route("**/api/approvals/*/content?*", (route) => {
+            reads++;
+            return reads === 1
+              ? route.fulfill({ status: 503 })
+              : route.fulfill({ json: { version: 1, blocks: [{ kind: "Text", text: "Wartungsfenster: Dienstag von 20 bis 21 Uhr." }] } });
+          });
+          const frame = page.locator(".cloud-approval-frame");
+          expect(reads).toBe(0);
+          expect(await frame.locator("[data-approval-primary]").isDisabled()).toBe(true);
+          await frame.getByRole("button", { name: "Alles ansehen" }).click();
+          const dialog = page.getByRole("dialog");
+          await dialog.getByText("Der vollständige Vorschlag konnte nicht geladen werden.", { exact: false }).waitFor();
+          expect(reads).toBe(1);
+          await shot(page, `preview-failed-${theme}-${width}`);
+          await dialog.getByRole("button", { name: "Noch einmal versuchen" }).click();
+          await dialog.getByText("Wartungsfenster: Dienstag von 20 bis 21 Uhr.", { exact: true }).waitFor();
+          expect(reads).toBe(2);
+          expect(await dialog.locator('.k2b-button[data-variant="ai"]').isEnabled()).toBe(true);
+          await shot(page, `preview-ready-${theme}-${width}`);
+          await page.keyboard.press("Escape");
+          await dialog.waitFor({ state: "detached" });
+          expect(await frame.locator("[data-approval-primary]").isEnabled()).toBe(true);
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
+
   for (const width of [1440, 390])
     test(`Gustav's chart at ${width} px is an island with its own head: title, Copy and Maximize, no origin line`, async () => {
       const page = await open("gustav", width);
@@ -610,96 +751,37 @@ describe("Approval scenes", () => {
     });
 
   for (const width of [1440, 390])
-    test(`the approval frame a Code version fills at ${width} px draws the same card from data`, async () => {
+    test(`the approval frame a Code version fills at ${width} px draws the same compact card from data`, async () => {
       const page = await open("frame", width);
       try {
         expect(await noOverflow(page)).toBe(0);
-        const frames = await page.locator(".k2b-chat-decision").evaluateAll((nodes) =>
-          nodes.map((node) => {
-            const style = getComputedStyle(node);
-            const answers = node.querySelector<HTMLElement>(".k2b-chat-decision__answers");
-            return {
-              primary: node.getAttribute("data-k2b-primary"),
-              radius: style.borderTopLeftRadius,
-              shadow: style.boxShadow,
-              sentence: node.querySelector(".k2b-chat-decision__sentence")
-                ? getComputedStyle(node.querySelector(".k2b-chat-decision__sentence")!).fontSize
-                : null,
-              note: node.querySelector(".k2b-chat-decision__details-note")?.textContent ?? null,
-              notes: node.querySelectorAll(".k2b-chat-decision__note").length,
-              facts: [...node.querySelectorAll(".k2b-chat-decision__fact")].map((fact) => fact.getAttribute("data-tone")),
-              answers: [...node.querySelectorAll(".k2b-chat-decision__buttons > *")].map((answer) => [
-                answer.textContent?.trim(),
-                answer.getAttribute("data-variant"),
-              ]),
-              sticky: answers ? getComputedStyle(answers).position : null,
-              status: node.querySelector(".k2b-chat-decision__status")?.textContent ?? null,
-              // A text action reads the same wherever the card shows it: among the answers or under a decided outcome.
-              textAction: (() => {
-                const action = node.querySelector<HTMLElement>(
-                  '.k2b-chat-decision__buttons > [data-variant="text"], .k2b-chat-outcome__actions > *',
-                );
-                if (!action) return null;
-                const style = getComputedStyle(action);
-                return { text: action.textContent?.trim(), color: style.color, weight: style.fontWeight, fill: style.backgroundColor };
-              })(),
-              busy: node.querySelector("[aria-busy='true']") !== null,
-              origin: node.querySelector(".k2b-chat-decision__details-label strong")
-                ? getComputedStyle(node.querySelector(".k2b-chat-decision__details-label strong")!).fontWeight
-                : null,
-              edges: [...node.querySelectorAll<HTMLElement>('.k2b-chat-decision__buttons [data-variant="secondary"]')].map(
-                (button) => getComputedStyle(button).borderTopColor,
-              ),
-              // Facts and answers share one line when they fit: the first fact's middle lies within the buttons' line.
-              oneLine: (() => {
-                const fact = node.querySelector(".k2b-chat-decision__fact")?.getBoundingClientRect();
-                const button = node.querySelector(".k2b-chat-decision__buttons > *")?.getBoundingClientRect();
-                return fact && button ? Math.abs(fact.top + fact.height / 2 - (button.top + button.height / 2)) < 4 : null;
-              })(),
-            };
-          }),
+        const frames = page.locator(".cloud-approval-frame");
+        expect(await frames.count()).toBe(5);
+        const looks = await frames.evaluateAll((nodes) =>
+          nodes.map((node) => ({
+            height: node.getBoundingClientRect().height,
+            radius: getComputedStyle(node).borderTopLeftRadius,
+            shadow: getComputedStyle(node).boxShadow,
+            sentence: getComputedStyle(node.querySelector(".k2b-notice-card__title")!).fontSize,
+            actions: node.querySelectorAll(".k2b-notice-card__actions .k2b-button").length,
+            boxes: node.querySelectorAll(".k2b-chat-decision__details").length,
+          })),
         );
+        for (const look of looks) {
+          expect(look).toMatchObject({ height: width === 390 ? 156 : 64, radius: "12px", shadow: "none", sentence: "14px", boxes: 0 });
+          expect(look.actions).toBeLessThanOrEqual(2);
+        }
+        expect(await frames.first().getByRole("link", { name: "Alles ansehen" }).getAttribute("href")).toBe("/app/code/info");
+        // The full facts and assurance are still available, behind the same details control.
+        await frames.nth(2).getByRole("button", { name: "Alles ansehen" }).click();
+        const details = page.getByRole("dialog");
+        await details.waitFor();
+        expect(await details.textContent()).toContain("Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.");
+        expect(await details.textContent()).toContain("Keine Beispiele: Niemand hat ausprobiert, was sie tut");
+        expect(await details.getByRole("button", { name: "Erst Beispiele ausprobieren" }).count()).toBe(1);
+        await page.keyboard.press("Escape");
+        await details.waitFor({ state: "detached" });
         await shot(page, `40-freigabe-rahmen-light-${width}`);
-        expect(frames.map((frame) => [frame.primary, frame.radius, frame.shadow])).toEqual(
-          Array.from({ length: 5 }, () => ["ai", "12px", "none"]),
-        );
-        // The answers come first and "See everything" last; side answers are white without an edge.
-        expect(frames[0]).toMatchObject({
-          sentence: "18px",
-          note: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
-          origin: "600",
-          facts: ["success", "neutral"],
-          answers: [
-            ["Version 5 einschalten", "ai"],
-            ["Alles ansehen", "text"],
-          ],
-          sticky: "sticky",
-        });
-        expect(frames[1]).toMatchObject({
-          notes: 2,
-          facts: ["success"],
-          answers: [
-            ["Zurückziehen", "secondary"],
-            ["Ohne Dateien ablegen bauen", "secondary"],
-            ["Alles ansehen", "text"],
-          ],
-          edges: ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"],
-        });
-        expect(frames[2]).toMatchObject({
-          facts: ["warning", "neutral"],
-          answers: [
-            ["Erst Beispiele ausprobieren", "secondary"],
-            ["Trotzdem einschalten", "ai"],
-          ],
-        });
-        // On a wide card the short fact stands left in the answer row, not on a line of its own.
-        if (width === 1440) expect(frames[1]!.oneLine).toBe(true);
-        // On the Code page a waiting version's "See everything" sits under its outcome: the same text action in the
-        // place's colour as among the answers, not black text.
-        expect(frames[3]!.status).toBe("Wartet auf Admin");
-        expect(frames[3]!.textAction).toEqual(frames[0]!.textAction);
-        expect(frames[0]!.textAction).toMatchObject({ text: "Alles ansehen", weight: "600", fill: "rgba(0, 0, 0, 0)" });
-        expect(frames[4]).toMatchObject({ status: "Lädt", busy: true, sentence: null });
       } finally {
         await page.context().close();
       }
@@ -710,82 +792,96 @@ describe("Approval scenes", () => {
       const page = await open("states", width);
       try {
         expect(await noOverflow(page)).toBe(0);
-        const cards = await page.locator(".k2b-chat-decision").evaluateAll((nodes) =>
+        const cards = await page.locator(".cloud-approval-frame").evaluateAll((nodes) =>
           nodes.map((node) => ({
             ground: getComputedStyle(node).backgroundColor,
-            head: node.querySelector(".k2b-chat-decision__kind")?.textContent,
-            status: node.querySelector(".k2b-chat-decision__status")?.textContent ?? null,
+            sentence: node.querySelector(".k2b-notice-card__title")?.textContent,
+            status: node.getAttribute("data-outcome-tone"),
+            icons: node.querySelectorAll(".k2b-notice-card__icon").length,
           })),
         );
-        expect(cards.map((card) => card.status)).toEqual([
-          null,
-          "Läuft",
-          "Erledigt",
-          "Abgelehnt",
-          "Abgelaufen",
-          "Fehlgeschlagen",
-          "Unklar",
-        ]);
+        expect(cards.map((card) => card.status)).toEqual([null, "running", "done", "off", "expired", "error", "warning"]);
         expect(new Set(cards.map((card) => card.ground)).size).toBe(1);
-        expect(new Set(cards.map((card) => card.head))).toEqual(new Set(["Freigabe"]));
+        expect(cards.every((card) => card.sentence && card.icons === 1)).toBe(true);
         await shot(page, `08-zustaende-alle-light-${width}`);
       } finally {
         await page.context().close();
       }
     }, 60_000);
 
-  for (const width of [1440, 390])
-    test(`a mail draft at ${width} px turns into its approval in place`, async () => {
-      const page = await open("mail", width);
-      try {
-        const card = page.locator(".k2b-chat-decision").first();
-        expect(await card.getAttribute("data-mode")).toBe("edit");
-        expect(await card.locator(".k2b-chat-decision__kind").textContent()).toBe("Entwurf");
-        await shot(page, `05-mail-entwurf-light-${width}`);
-        await card.locator(".k2b-chat-decision__answer").last().click();
-        await page.waitForFunction(() => document.querySelector(".k2b-chat-decision")?.getAttribute("data-mode") === "approve");
-        await settled(page);
-        expect(await card.locator(".k2b-chat-decision__kind").textContent()).toBe("Freigabe");
-        expect(await card.locator("textarea").evaluate((field) => (field as HTMLTextAreaElement).readOnly)).toBe(true);
-        expect(await noOverflow(page)).toBe(0);
-        await shot(page, `06-mail-freigabe-light-${width}`);
-      } finally {
-        await page.context().close();
-      }
-    }, 60_000);
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [1440, 390])
+      test(`a mail draft at ${width} px in ${theme} turns into its approval in place`, async () => {
+        const page = await open("mail", width, theme);
+        try {
+          const card = page.locator(".cloud-approval-frame").first();
+          expect(await card.getAttribute("data-mode")).toBe("edit");
+          expect(await card.locator("textarea").count()).toBe(0);
+          await shot(page, `05-mail-entwurf-${theme}-${width}`);
+          await card.getByRole("button", { name: "Alles ansehen" }).click();
+          const dialog = page.getByRole("dialog");
+          await dialog.locator("textarea").waitFor();
+          expect(await dialog.locator("textarea").evaluate((field) => (field as HTMLTextAreaElement).readOnly)).toBe(false);
+          await shot(page, `mail-edit-details-${theme}-${width}`);
+          await dialog.getByRole("button", { name: /An Lea Berg senden/ }).click();
+          await page.waitForFunction(() => document.querySelector(".cloud-approval-frame")?.getAttribute("data-mode") === "approve");
+          await settled(page);
+          expect(await card.locator("textarea").count()).toBe(0);
+          expect(await dialog.locator("textarea").evaluate((field) => (field as HTMLTextAreaElement).readOnly)).toBe(true);
+          expect(await noOverflow(page)).toBe(0);
+          await shot(page, `06-mail-freigabe-${theme}-${width}`);
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
 
-  for (const width of [1440, 390])
-    test(`drafts of three apps at ${width} px share one form with labels above the fields`, async () => {
-      const page = await open("drafts", width);
-      try {
-        const labels = await page.locator(".cloud-blocks__field").evaluateAll((fields) =>
-          fields.map((field) => {
-            const label = field.querySelector("label")?.getBoundingClientRect();
-            const input = field.querySelector("input, textarea")?.getBoundingClientRect();
-            return label && input ? label.bottom <= input.top + 1 : false;
-          }),
-        );
-        expect(labels.length).toBe(7);
-        expect(labels.every(Boolean)).toBe(true);
-        expect(await noOverflow(page)).toBe(0);
-        await shot(page, `21-entwuerfe-light-${width}`);
-      } finally {
-        await page.context().close();
-      }
-    }, 60_000);
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [1440, 390])
+      test(`drafts of three apps at ${width} px in ${theme} share one form with labels above the fields`, async () => {
+        const page = await open("drafts", width, theme);
+        try {
+          const labels: boolean[] = [];
+          let draftNumber = 0;
+          for (const card of await page.locator(".cloud-approval-frame").all()) {
+            await card.getByRole("button", { name: "Alles ansehen" }).click();
+            const dialog = page.getByRole("dialog");
+            await dialog.locator(".cloud-blocks__field").first().waitFor();
+            await shot(page, `draft-${++draftNumber}-details-${theme}-${width}`);
+            await settled(page);
+            labels.push(
+              ...(await dialog.locator(".cloud-blocks__field").evaluateAll((fields) =>
+                fields.map((field) => {
+                  const label = field.querySelector("label")?.getBoundingClientRect();
+                  const input = field.querySelector("input, textarea")?.getBoundingClientRect();
+                  return label && input ? label.bottom <= input.top + 1 : false;
+                }),
+              )),
+            );
+            await page.keyboard.press("Escape");
+            await dialog.waitFor({ state: "detached" });
+          }
+          expect(labels.length).toBe(7);
+          expect(labels.every(Boolean)).toBe(true);
+          expect(await noOverflow(page)).toBe(0);
+          await shot(page, `21-entwuerfe-${theme}-${width}`);
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
 
   for (const [width, theme] of [
     [1440, "light"],
     [390, "light"],
     [1440, "dark"],
+    [390, "dark"],
   ] as const)
     test(`one approval looks the same in the chat, a flat panel and the approvals page (${width} px, ${theme})`, async () => {
       const page = await open("everywhere", width, theme);
       try {
-        const looks = await page.locator(".k2b-chat-decision").evaluateAll((nodes) =>
+        const looks = await page.locator(".cloud-approval-frame").evaluateAll((nodes) =>
           nodes.map((node) => {
             const css = getComputedStyle(node);
-            const approve = node.querySelector<HTMLElement>('.k2b-chat-decision__answer[data-variant="ai"]');
+            const approve = node.querySelector<HTMLElement>("[data-approval-primary]");
             return [
               css.backgroundColor,
               css.borderRadius,

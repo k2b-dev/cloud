@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
+import { z } from "zod";
 import { AiChatOriginSchema } from "./chat-origin";
-import { projectAiMessageOrigin, readerResourceName } from "./message-origin";
+import { projectAiMessageOrigin, projectAiMessageOrigins, readerResourceName } from "./message-origin";
+import { AiMessageOriginSchema, AiQueuedMessageSchema } from "./queue-contracts";
 
 // Fictitious personal Code "Morgenbriefing" that writes to its own chat (Automationen als Code v5, #3665).
 const code = { type: "core.code", id: "c_brief1" };
@@ -54,4 +56,52 @@ test("an automation origin carries its resource, while origins written before it
     runId: "r1",
   });
   expect(AiChatOriginSchema.safeParse({ kind: "automation", id: "c_brief1", resource: { type: "core.code" } }).success).toBe(false);
+});
+
+test("history and receipt origins share a JSON Schema definition without changing their validation", () => {
+  const schema = z.toJSONSchema(z.strictObject({ message: AiChatOriginSchema, receipt: AiChatOriginSchema }));
+  expect(schema.$defs?.AiChatOrigin).toBeDefined();
+  const transport = z.fromJSONSchema(schema);
+  const alarm = { kind: "wakeup", id: "11111111-1111-4111-8111-111111111111", scheduledAt: "2026-11-18T12:00:00.000Z" };
+  for (const origin of [
+    { kind: "person", id: "u1" },
+    { kind: "automation", id: "c_brief1", resource: code },
+    { kind: "chat", id: "chat1", turnId: "turn1" },
+    alarm,
+  ]) {
+    expect(transport.parse({ message: origin, receipt: origin })).toEqual({ message: origin, receipt: origin });
+  }
+  for (const origin of [
+    { ...alarm, id: "invalid" },
+    { ...alarm, scheduledAt: "invalid" },
+    { ...alarm, href: "/unexpected" },
+  ]) {
+    expect(AiChatOriginSchema.safeParse(origin).success).toBe(false);
+    expect(transport.safeParse({ message: origin, receipt: origin }).success).toBe(false);
+  }
+});
+
+test.each([
+  { locale: "de", name: "Wecker" },
+  { locale: "en", name: "Alarm" },
+])("alarm provenance survives queue projection in $locale", async ({ locale, name }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const [origin] = await projectAiMessageOrigins([{ kind: "wakeup", id, scheduledAt: "2026-11-18T12:00:00.000Z" }], { locale });
+  const projected = AiMessageOriginSchema.parse(origin);
+  expect(projected).toEqual({ kind: "wakeup", id, name, scheduledAt: "2026-11-18T12:00:00.000Z" });
+  expect(projectAiMessageOrigin({ kind: "wakeup", id, scheduledAt: "2026-11-18T12:00:00.000Z" }, undefined, null, locale)).toEqual(
+    projected,
+  );
+  expect(
+    AiQueuedMessageSchema.parse({
+      id,
+      text: "Check the payment",
+      origin: projected,
+      state: "failed",
+      createdAt: "2026-11-18T12:00:00.000Z",
+      authorIsViewer: false,
+      error: "dispatch_failed",
+      retrying: true,
+    }),
+  ).toMatchObject({ origin: projected, error: "dispatch_failed", retrying: true });
 });

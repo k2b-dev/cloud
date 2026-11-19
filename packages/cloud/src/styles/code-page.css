@@ -703,8 +703,7 @@ a.cloud-code__row-main:focus-visible {
 /* The short approval card; the lead moves its frame onto ApprovalFrame. */
 .cloud-code__approval-message {
   margin-top: 0.5rem;
-  padding-left: 0.625rem;
-  border-left: 2px solid var(--cloud-code-line);
+  display: block;
 }
 .cloud-code__approval-from {
   color: var(--k2b-text-subtle);
@@ -714,18 +713,6 @@ a.cloud-code__row-main:focus-visible {
   margin: 0.125rem 0 0;
   font-size: 13px;
 }
-.cloud-code__approval-changes {
-  margin-top: 0.625rem;
-}
-.cloud-code__approval-foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.875rem;
-  margin: 0.625rem 0 0;
-  color: var(--k2b-text-subtle);
-  font-size: 12px;
-}
-
 /* Loading: placeholders at the heights of the lines they stand for (Bild 33). */
 .cloud-code__skeleton {
   min-width: 0;

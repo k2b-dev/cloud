@@ -161,8 +161,8 @@ describe("Code page: overview (Bild 19 to 21)", () => {
     const page = text("new-version");
     expect(page).toContain("Version 5 von info@moebel-beispiel.de einschalten?");
     expect(page).toContain("Bis dahin bleibt Version 4 eingeschaltet.");
-    expect(page).toContain("Läuft zusätzlich Mo–Fr um 08:00");
-    expect(page).toContain("5 weitere bleiben gleich.");
+    expect(page).toContain("Mo–Fr um 08:00");
+    expect(page).not.toContain("5 weitere bleiben gleich.");
     expect(page).toContain("3 von 3 Beispielen erfolgreich");
     expect(page).toContain("Version 5 einschalten");
     expect(page).toContain("ab Version 5, noch aus");
@@ -173,9 +173,9 @@ describe("Code page: overview (Bild 19 to 21)", () => {
   test("changes requested: the administrator's message and Gustav's rework", () => {
     const page = text("changes-requested");
     expect(page).toContain("Version 5 braucht noch Änderungen.");
-    expect(page).toContain("Jana Probe hat sie geprüft und noch nicht freigegeben. Version 4 bleibt eingeschaltet.");
-    expect(page).toContain("Nachricht von Jana Probe");
-    expect(page).toContain("Bitte so ändern, dass nur PDF-Anhänge im Ordner landen.");
+    expect(page).not.toContain("Jana Probe hat sie geprüft und noch nicht freigegeben. Version 4 bleibt eingeschaltet.");
+    expect(page).not.toContain("Nachricht von Jana Probe");
+    expect(page).not.toContain("Bitte so ändern, dass nur PDF-Anhänge im Ordner landen.");
     expect(page).toContain("Gustav überarbeiten lassen");
     expect(page).not.toContain("Version 5 einschalten");
   });
@@ -476,10 +476,10 @@ describe("Code page: versions (Bilder 23, 24)", () => {
 
   test("the running version, behaviour only, changes requested, rejected, first, error and long", () => {
     expect(text("versions-active")).toContain("Was sich an Zugriffen und Auslösern geändert hat");
-    expect(text("versions-behavior")).toContain("Zugriffe gleich, Verhalten anders");
-    expect(text("versions-changes")).toContain("Nachricht von Jana Probe");
+    expect(text("versions-behavior")).toContain("Alles ansehen");
+    expect(text("versions-changes")).toContain("Alles ansehen");
     expect(text("versions-rejected")).toContain("Version 2 wurde abgelehnt.");
-    expect(text("versions-rejected")).toContain("Begründung von Jana Probe");
+    expect(text("versions-rejected")).toContain("Alles ansehen");
     expect(text("versions-first")).toContain("Die erste Version. Es gibt nichts zu vergleichen.");
     expect(text("versions-list")).toContain("Wähle eine Version. Hier steht dann, was sie geändert hat.");
     expect(text("versions-error")).toContain("Diese Version konnte nicht geladen werden.");
@@ -1497,7 +1497,7 @@ test("the approval's text actions are shared buttons, not bare links", () => {
       },
     }),
   );
-  expect(markup).toMatch(/<a[^>]*class="[^"]*k2b-button[^"]*"[^>]*data-variant="text"[^>]*>[\s\S]*?Alles ansehen/);
+  expect(markup).toMatch(/<a[^>]*class="[^"]*k2b-button[^"]*"[^>]*data-variant="link"[^>]*>[\s\S]*?Alles ansehen/);
 });
 
 // #80: a result links only its name, and only when Core's sentence frames the name exactly once.

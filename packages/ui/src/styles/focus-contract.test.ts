@@ -224,7 +224,7 @@ describe("@k2b/ui focus and color contract", () => {
   test("keeps AI theme tokens inside AI components and the explicit primary scope", () => {
     // The AI palette may only be spent where a selector says it is an AI
     // surface: the `.k2b-ai-*` / `.k2b-chat-*` families, a component class
-    // whose own name opts in with an `-ai` suffix, an AI button, a section
+    // whose own name opts in with an `-ai` suffix, an AI button, a section or notice card
     // whose content the AI delivered (`tone="ai"`), or the explicit primary
     // scope. The latter opts a whole subtree in; ordinary UI roots must keep
     // their blue defaults.
@@ -233,7 +233,7 @@ describe("@k2b/ui focus and color contract", () => {
       .filter((rule) => !rule.selector.includes('[data-k2b-primary="ai"]'))
       .filter(
         (rule) =>
-          !/\.k2b-(?:ai|chat)-|\.k2b-[\w-]*-ai(?![\w-])|\.k2b-button\[data-variant=["']ai["']\]|\.k2b-section\[data-tone=["']ai["']\]/.test(
+          !/\.k2b-(?:ai|chat)-|\.k2b-[\w-]*-ai(?![\w-])|\.k2b-button\[data-variant=["']ai["']\]|\.k2b-(?:section|notice-card)\[data-tone=["']ai["']\]/.test(
             rule.selector,
           ),
       )

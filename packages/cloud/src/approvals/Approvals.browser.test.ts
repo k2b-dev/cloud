@@ -143,11 +143,12 @@ describe("Approvals layout", () => {
         await settled(tab);
         const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(overflow).toBe(0);
-        expect(await tab.locator("article.cloud-approval .k2b-chat-decision").count()).toBe(2);
+        expect(await tab.locator("article.cloud-approval .cloud-approval-frame").count()).toBe(2);
         // The shared card keeps its tinted surface and normal-size answers at every width.
-        const answer = (await tab.locator("article.cloud-approval .k2b-chat-decision__answer").first().boundingBox())!;
+        const answer = (await tab.locator("article.cloud-approval .k2b-notice-card__actions .k2b-button").first().boundingBox())!;
+        // This fixture is server-only; responsive button sizing starts after mounting.
         expect(answer.height).toBe(32);
-        const card = tab.locator("article.cloud-approval .k2b-chat-decision").first();
+        const card = tab.locator("article.cloud-approval .cloud-approval-frame").first();
         expect(await card.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
         expect(await tab.locator("article.cloud-approval .cloud-approval__icon").count()).toBe(0);
       } finally {
@@ -162,11 +163,11 @@ describe("Approvals layout", () => {
       await settled(tab);
       const widths = await tab.evaluate(() => {
         const row = document.querySelector<HTMLElement>("article.cloud-approval")!;
-        const answers = Array.from(row.querySelectorAll<HTMLElement>(".k2b-chat-decision__answer")).map((node) =>
+        const answers = Array.from(row.querySelectorAll<HTMLElement>(".k2b-notice-card__actions .k2b-button")).map((node) =>
           node.getBoundingClientRect(),
         );
         return {
-          row: row.querySelector(".k2b-chat-decision__answers")!.getBoundingClientRect().width,
+          row: row.querySelector(".k2b-notice-card__actions")!.getBoundingClientRect().width,
           answers: answers.map((box) => box.width),
           top: answers.map((box) => box.top),
         };
@@ -222,8 +223,11 @@ describe("Approvals in a browser", () => {
       try {
         const first = tab.locator("article.cloud-approval").first();
         await first.waitFor();
-        const top = (await first.boundingBox())!.y;
-        const confirm = first.locator('.k2b-chat-decision__answer[data-variant="ai"]');
+        const before = await first.boundingBox();
+        const top = before!.y;
+        const confirm = first.locator('.k2b-notice-card__actions .k2b-button[data-variant="ai"]');
+        await tab.clock.runFor(32);
+        expect((await confirm.boundingBox())!.height).toBe(width === 390 ? 36 : 32);
         // The answers arm after half a second; a click before that does nothing.
         await confirm.click({ force: true });
         expect(decided).toEqual([]);
@@ -232,10 +236,11 @@ describe("Approvals in a browser", () => {
         await tab.locator("article.cloud-approval[data-decided]").waitFor();
         expect(decided).toEqual([page.items[0]!.id]);
         expect(await first.locator(".k2b-chat-decision__details").count()).toBe(0);
-        expect(await first.locator('.k2b-chat-outcome__text[data-current="true"]').textContent()).toContain("Approved.");
-        expect(await tab.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
-        // The row keeps its place; only what follows moves up, by the answer the person gave.
+        expect(await first.locator(".k2b-notice-card__content").textContent()).toContain("Approved.");
+        expect(await tab.evaluate(() => document.activeElement?.classList.contains("cloud-approval-frame"))).toBe(true);
+        // The row keeps its place; the following card also stays in place through the decision.
         expect((await first.boundingBox())!.y).toBe(top);
+        expect((await first.boundingBox())!.height).toBe(before!.height);
       } finally {
         await close();
       }

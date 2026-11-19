@@ -11,7 +11,8 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "notice-card.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { Button, NoticeCard } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { createSignal } from "solid-js";
+import { Button, NoticeCard, NoticeRow } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const button = (variant, children) => createComponent(Button, { variant, size: "sm", children });
 const notices = [
@@ -26,6 +27,19 @@ const notices = [
   },
   { tone: "danger", icon: true, title: "Source unavailable", detail: "Retrying in the background.", actions: button("danger", "Retry now") },
 ];
+const [state, setState] = createSignal("ready");
+window.noticeRow = setState;
+render(() => createComponent(NoticeRow, {
+  tone: "ai", icon: "ti ti-shield-check",
+  get reserve() { return state() !== "terminal"; },
+  get children() { return state() === "long" ? "This newer version is ready to enable after you review the changes." : state() === "failed" ? "This version could not be enabled." : state() === "loading" ? "This version is loading …" : "This version is ready to enable."; },
+  get detail() { return state() === "loading" ? "Checking the current status" : "Mailbox · reads mail · daily at 8:00 · keeps the current version until you enable this one"; },
+  detailTitle: "Mailbox · reads mail · daily at 8:00 · keeps the current version until you enable this one",
+  actions: ({ narrow }) => state() === "loading" || state() === "terminal" ? undefined : [
+    ...(state() === "single" ? [] : [createComponent(Button, { variant: narrow ? "secondary" : "link", size: narrow ? "md" : "sm", children: "See everything" })]),
+    createComponent(Button, { variant: "ai", size: narrow ? "md" : "sm", children: "Enable", onClick: () => setState("loading") }),
+  ],
+}), document.getElementById("summary"));
 const grid = document.getElementById("grid");
 render(
   () => createComponent(NoticeCard.Grid, { items: notices, children: (notice) => createComponent(NoticeCard, { ...notice, layout: "card" }) }),
@@ -57,13 +71,19 @@ const load = async (width: number, theme: "light" | "dark" = "light") => {
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
       `<body class="k2b-ui" data-theme="${theme}" style="margin:0"><main style="display:grid;gap:12px;padding:16px;max-width:1200px">` +
-      `<div id="grid"></div><div id="line"></div><div id="plain"></div></main></body></html>`,
+      `<div id="summary"></div><p id="following">After the notice</p><div id="grid"></div><div id="line"></div><div id="plain"></div></main></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator("#plain .k2b-notice-card").waitFor();
   await settled(page);
   return page;
 };
+
+declare global {
+  interface Window {
+    noticeRow: (state: string) => void;
+  }
+}
 
 type Page = Awaited<ReturnType<typeof load>>;
 
@@ -188,3 +208,49 @@ describe("@k2b/ui NoticeCard with an icon and actions", () => {
     });
   }
 });
+
+for (const width of [1440, 390])
+  for (const theme of ["light", "dark"] as const) {
+    test(`row layout owns compact height, quiet line, actions and focus at ${width}px in ${theme}`, async () => {
+      const page = await load(width, theme);
+      try {
+        const card = page.locator("#summary .k2b-notice-card");
+        const measure = () =>
+          page.evaluate(() => {
+            const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON();
+            return { card: box("#summary .k2b-notice-card"), next: box("#following") };
+          });
+        const first = await measure();
+        expect(first.card.height).toBe(width === 390 ? 156 : 64);
+        for (const state of ["failed", "loading", "ready", "long", "single"]) {
+          await page.evaluate((value) => window.noticeRow(value), state);
+          await settled(page);
+          expect(await measure()).toEqual(first);
+          if (state === "loading") continue;
+          const actions = card.locator(".k2b-notice-card__actions");
+          const controls = actions.locator(":scope > *");
+          expect(await controls.count()).toBe(state === "single" ? 1 : 2);
+          const boxes = await controls.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()));
+          if (width === 390) {
+            if (boxes.length === 2) expect(Math.abs(boxes[0]!.width - boxes[1]!.width)).toBeLessThan(0.5);
+            else expect(boxes[0]!.width).toBe((await actions.boundingBox())!.width);
+            const quiet = (await card.locator(".k2b-notice-card__description").boundingBox())!;
+            expect(boxes[0]!.y - quiet.y - quiet.height).toBeGreaterThanOrEqual(12);
+            const root = (await card.boundingBox())!;
+            expect(root.y + root.height - boxes[0]!.y - boxes[0]!.height).toBeCloseTo(11, 0);
+          }
+        }
+        const primary = card.getByRole("button", { name: "Enable", exact: true });
+        await primary.focus();
+        expect(await primary.evaluate((element) => element === document.activeElement)).toBe(true);
+        await primary.press("Enter");
+        await settled(page);
+        expect(await measure()).toEqual(first);
+        await page.evaluate(() => window.noticeRow("terminal"));
+        await settled(page);
+        if (width === 390) expect((await measure()).card.height).toBeLessThan(first.card.height);
+      } finally {
+        await page.close();
+      }
+    });
+  }
