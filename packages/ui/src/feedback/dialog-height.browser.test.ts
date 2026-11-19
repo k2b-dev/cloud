@@ -814,23 +814,37 @@ describe(`${browserName} the frame follows its content`, () => {
               (animation) =>
                 animation.effect instanceof KeyframeEffect && animation.effect.getKeyframes().some((frame) => "height" in frame),
             )!;
+          const target = Number.parseFloat(String((animation.effect as KeyframeEffect).getKeyframes().at(-1)?.height));
           animation.currentTime = Number(animation.effect?.getComputedTiming().endTime) / 2;
           const stale = animation.onfinish;
           (window as unknown as HeightWindow).placeAt(reset ? null : 90, 120);
           const before = dialog.getBoundingClientRect().top;
+          const held = dialog.getBoundingClientRect().height;
           stale?.call(animation, new Event("finish") as AnimationPlaybackEvent);
+          const after = dialog.getBoundingClientRect().top;
+          const inline = dialog.style.top;
+          const fixed = dialog.style.position;
+          // The stopped fold resumes from the new place: the frame does not stay at the height it had mid-fold.
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+          );
           return {
             state: animation.playState,
             before,
-            after: dialog.getBoundingClientRect().top,
-            inline: dialog.style.top,
-            fixed: dialog.style.position,
+            after,
+            inline,
+            fixed,
+            held,
+            target,
+            resumed: Number.parseFloat(dialog.style.height),
           };
         }, reset);
         expect(result.state).toBe("idle");
         expect(result.after).toBe(result.before);
         expect(result.inline).toBe(reset ? "" : "120px");
         expect(result.fixed).toBe(reset ? "" : "fixed");
+        expect(result.held).toBeLessThan(result.target - 1);
+        expect(result.resumed).toBeCloseTo(result.target, 2);
       } finally {
         await page.context().close();
       }

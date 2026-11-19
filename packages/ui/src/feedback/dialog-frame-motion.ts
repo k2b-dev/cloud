@@ -95,14 +95,17 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   /** Where the frame stays put while it changes size: centred by the stylesheet, a sheet on the bottom edge, or placed. */
   const anchor = (): Anchor => {
     if (dialog.style.position === "fixed") return "fixed";
-    if (!dialog.classList.contains("k2b-bottom-sheet-frame")) {
-      // A caller's stylesheet may anchor the top edge (translateX only), just as setPosition does inline.
-      const transform = getComputedStyle(dialog).transform;
-      return !transform || transform === "none" || new DOMMatrixReadOnly(transform).m42 === 0 ? "fixed" : "center";
-    }
+    if (!dialog.classList.contains("k2b-bottom-sheet-frame")) return "center";
     const asDialog =
       dialog.classList.contains("is-adaptive") && typeof matchMedia === "function" && matchMedia("(min-width: 48rem)").matches;
     return asDialog ? "center" : "bottom";
+  };
+  /** Following content also respects a caller's stylesheet that anchors the top edge (translateX only), as setPosition does inline. */
+  const followAnchor = (): Anchor => {
+    const where = anchor();
+    if (where !== "center" || dialog.classList.contains("k2b-bottom-sheet-frame")) return where;
+    const transform = getComputedStyle(dialog).transform;
+    return !transform || transform === "none" || new DOMMatrixReadOnly(transform).m42 === 0 ? "fixed" : "center";
   };
   /** Frames use border-box sizing. Read their fractional CSS dimensions, before zoom or transforms are applied. */
   const seen = () => {
@@ -235,7 +238,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   const fold = () => {
     if (!level || started || frameKind === "morph") return;
     const loading = busy || loadingChange || isBusy();
-    const where = anchor();
+    const where = followAnchor();
     const anchorChanged = followingAnchor !== where;
     // A pressed control stays under the pointer even when a size report, rather than focusout, starts the fold.
     // Viewport/anchor corrections and loading still take their natural size immediately.
@@ -505,7 +508,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     const shown = seen();
     if (rested >= shown.height) return;
     holdHeight(shown.height);
-    if (anchor() === "center") place(shown.top - window.innerHeight / 2);
+    if (followAnchor() === "center") place(shown.top - window.innerHeight / 2);
     endFrame();
   };
   const onPointerDown = (event: PointerEvent) => {
@@ -513,7 +516,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     if (frameKind !== "fold") return;
     const shown = seen();
     holdHeight(shown.height);
-    if (anchor() === "center") place(shown.top - window.innerHeight / 2);
+    if (followAnchor() === "center") place(shown.top - window.innerHeight / 2);
     endFrame();
     deferredFold = true;
   };
@@ -569,7 +572,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     firstDelivery = true;
     followingMorph = frameKind === "morph";
     initialMeasure = false;
-    followingAnchor = anchor();
+    followingAnchor = followAnchor();
     viewportHeight = window.innerHeight;
     arrived = new Set();
     busy = isBusy();
@@ -779,13 +782,16 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
 
   const position: FrameMotion["position"] = (previous, next) => {
     if (previous?.x === next?.x && previous?.y === next?.y) return false;
-    if (frameKind === "fold") {
+    const folding = frameKind === "fold";
+    if (folding) {
       holdHeight(seen().height);
       endFrame();
     }
     dialog.style.inset = "";
     placed = false;
     followingAnchor = undefined;
+    // A fold stopped by the move resumes from the held height once the new place applies.
+    if (folding) changed();
     return true;
   };
 

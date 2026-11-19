@@ -1,6 +1,0 @@
-### A dialog's height observer fed its own animation back into layout
-
-- **What happened:** Dialogs started folding after loading, some frames never stopped moving, and WebKit reported ResizeObserver loop errors. Large growth could put the footer below the view.
-- **Root cause:** The resize callback measured the natural height and immediately animated the frame back to its old height. Content stretched by the frame changed the observed size again during the same observer delivery. Loading and the first rest were not separate from ordinary edits. The position calculation also treated frames anchored at their top edge as vertically centered frames.
-- **Error class:** Observer-driven layout feedback.
-- **Guard:** `packages/ui/src/feedback/dialog-height.browser.test.ts` checks held height before the next frame, window error events, busy changes including busy removal, first rest, interrupted folds, footer visibility, and frames whose stylesheet anchors their top edge in Chromium and WebKit. The busy and window-error guards fail on the previous implementation. `packages/ui/test/browser.browser.test.ts` checks that `settled()` includes motion scheduled for the next frame while still rejecting recurring animations.
