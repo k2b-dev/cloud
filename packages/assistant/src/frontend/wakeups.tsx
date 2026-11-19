@@ -481,7 +481,7 @@ export const editWakeup = (ctx: AssistantWakeupContext, wakeup: AiWakeup) =>
     (close, context) => (
       <WakeupDialog ctx={ctx} wakeup={wakeup} close={() => close()} guard={(handler) => context.setDismissHandler(handler)} />
     ),
-    { title: copy(ctx).title, size: "small", history: true },
+    { title: copy(ctx).title, size: "medium", history: true },
   );
 
 /**

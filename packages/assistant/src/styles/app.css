@@ -954,16 +954,14 @@
 .k2b-ui .assistant-wakeup-line[data-kind="failed"] .assistant-wakeup-line__sign { color: var(--k2b-danger-text); }
 .k2b-ui .assistant-wakeup-line__acts { display: inline-flex; flex: none; gap: .125rem; margin-block: -.25rem; margin-inline-start: auto; }
 .k2b-ui .assistant-wakeup-line:is([data-kind="missed"], [data-kind="expired"]) .assistant-wakeup-line__text { flex: 1 1 16rem; }
-.k2b-ui .assistant-wakeup-line__link:disabled { cursor: default; opacity: .6; }
 /* Touch: pencil and cross take taps in 44 px without moving the line. */
 @media (any-pointer: coarse) {
   .k2b-ui .assistant-wakeup-line__acts { gap: .5rem; }
   .k2b-ui .assistant-wakeup-line__acts > .k2b-icon-button { position: relative; }
   .k2b-ui .assistant-wakeup-line__acts > .k2b-icon-button::after { position: absolute; inset: -.625rem -.25rem; content: ""; }
 }
-.k2b-ui .assistant-wakeup-line__link { flex: none; padding: 0; border: 0; color: var(--k2b-ai-accent); background: none; font: inherit; white-space: nowrap; cursor: pointer; }
-.k2b-ui .assistant-wakeup-line__link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.k2b-ui .assistant-wakeup-line__link:focus-visible { border-radius: .25rem; outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
+/* The one way out is the library's link button (Gustav's plum inside Gustav); it keeps the 20 px line. */
+.k2b-ui .assistant-wakeup-line__link { flex: none; margin-block: -.25rem; white-space: nowrap; }
 /* Gustav's alarms (Gustav alarms v1, F1 A): the same 32 px row in the free end above the field, with the next alarm,
    or the chip "Alarms · n" at the end of the row "Waiting for you" or "Queued" share. The list has the form of "Queued":
    time in a fixed column of 8.75 rem, the note behind it, two fixed places for pencil and cross. */

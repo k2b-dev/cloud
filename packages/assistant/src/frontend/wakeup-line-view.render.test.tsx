@@ -68,3 +68,19 @@ test("until its words load, a line keeps its place without text", () => {
   expect(html).toContain('class="assistant-wakeup-line k2b-progressive-row"');
   expect(html).not.toContain("Wecker");
 });
+
+test("the way out is the library's link button, so the activity row's bare-button reset never greys it", () => {
+  const missed = { ...wakeup, status: "missed" as const, missedReason: "budget" as const };
+  const html = renderToString(() =>
+    createComponent(AssistantWakeupLine, {
+      host,
+      line: describeWakeupLine(
+        { plan: { event: { id: "e", kind: "missed", at: "2026-11-16T09:00:00.000Z", wakeup: missed }, latest: true, deleted: false } },
+        { locale: "de", timeZone: "Europe/Berlin", current: [missed] },
+      ),
+    }),
+  );
+  expect(html).toMatch(/class="[^"]*k2b-button[^"]*assistant-wakeup-line__link|assistant-wakeup-line__link[^"]*k2b-button/);
+  expect(html).toContain('data-variant="link"');
+  expect(html).toContain("Jetzt nachholen");
+});

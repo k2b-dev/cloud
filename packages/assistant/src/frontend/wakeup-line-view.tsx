@@ -1,5 +1,5 @@
 import type { AiWakeupInput } from "@k2b/cloud/ai/browser";
-import { IconButton } from "@k2b/ui";
+import { Button, IconButton } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import type { AssistantWakeupLineText } from "./wakeup-line";
 
@@ -44,15 +44,16 @@ export function AssistantWakeupLine(props: { line: AssistantWakeupLineText | und
             </Show>
             <Show when={line().link}>
               {(link) => (
-                <button
-                  type="button"
+                <Button
+                  variant="link"
+                  size="sm"
                   class="assistant-wakeup-line__link"
                   disabled={busy()}
                   aria-busy={busy() ? "true" : undefined}
                   onClick={() => run(link())}
                 >
                   {link().label}
-                </button>
+                </Button>
               )}
             </Show>
             <Show when={line().acts}>
