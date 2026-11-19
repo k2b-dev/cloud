@@ -106,12 +106,17 @@ export {
   type FileViewProps,
   type FileViewRenderer,
   type FileViewRendererProps,
-  formatFileViewSize,
 } from "./FileView";
 export { FlowAmount, type FlowAmountDirection, type FlowAmountProps, flowDirection } from "./FlowAmount";
-// Choosing a renderer needs no renderer: these come from their own small module, so an app that only asks which kind
-// a file is never loads FileView and its PDF, video and code dependencies.
-export { canPreviewFile, type FileViewFile, type FileViewPreviewKind, getFileViewPreviewKind } from "./file-view-preview";
+// Choosing a renderer or labelling a size needs no renderer: these come from their own small module, so an app that only
+// asks which kind a file is, or how large, never loads FileView and its PDF, video and code dependencies.
+export {
+  canPreviewFile,
+  type FileViewFile,
+  type FileViewPreviewKind,
+  formatFileViewSize,
+  getFileViewPreviewKind,
+} from "./file-view-preview";
 export type { KbdProps } from "./Kbd";
 export { Kbd } from "./Kbd";
 export type { LabelChipProps } from "./LabelChip";
