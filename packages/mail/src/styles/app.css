@@ -2204,15 +2204,24 @@
   min-width: 0;
   flex: 1 1 auto;
 }
-/* The sender is a quiet label of the head, as in the compose window: "from Support ⌄" in the head's 0.75 rem, and
-   it gives way before the recipients field does, so the field keeps its placeholder. */
+/* The sender is a quiet label of the head, as in the compose window: "from Support ⌄" in the head's 0.75 rem. It
+   keeps its full name while there is room; in a narrow head its name ends in an ellipsis down to "from ⌄", never
+   under Cc, and the recipients field keeps a usable width. */
+.k2b-ui .mail-reply-box-head:has(.mail-reply-box-sender) .mail-reply-box-recipients {
+  min-width: 6rem;
+  flex-basis: 0;
+}
 .k2b-ui .mail-reply-box-sender {
   display: inline-flex;
-  min-width: 0;
-  flex: 0 100 auto;
+  min-width: 3.5rem;
+  flex: 0 1 auto;
 }
+.k2b-ui .mail-reply-box-sender > *,
 .k2b-ui .mail-reply-box-sender .k2b-dropdown__trigger {
   min-width: 0;
+}
+.k2b-ui .mail-reply-box-sender .k2b-dropdown__trigger {
+  max-width: 100%;
   padding-block: 0.125rem;
   font-size: 0.75rem;
 }
