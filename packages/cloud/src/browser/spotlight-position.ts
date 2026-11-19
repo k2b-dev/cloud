@@ -208,12 +208,17 @@ export const attachSpotlightPosition = (
   const frame = requestAnimationFrame(layout);
   const observer = new MutationObserver(layout);
   observer.observe(dialog, { attributes: true, attributeFilter: ["class"] });
-  const sizeObserver = new ResizeObserver(renderPosition);
+  // Automatic clamping must use the final frame size. Explicit dragging still calls renderPosition immediately.
+  const sizeObserver = new ResizeObserver(() => {
+    if (!dialog.hasAttribute("data-k2b-frame-motion")) renderPosition();
+  });
   sizeObserver.observe(dialog);
+  dialog.addEventListener("k2b-frame-resize", renderPosition);
   return () => {
     cancelAnimationFrame(frame);
     observer.disconnect();
     sizeObserver.disconnect();
+    dialog.removeEventListener("k2b-frame-resize", renderPosition);
     home.remove();
     chip.remove();
     finish();

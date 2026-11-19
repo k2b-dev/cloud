@@ -103,10 +103,14 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       dialog.classList.contains("is-adaptive") && typeof matchMedia === "function" && matchMedia("(min-width: 48rem)").matches;
     return asDialog ? "center" : "bottom";
   };
-  /** What the eye sees now, including a size or place that is still moving. */
+  /** Frames use border-box sizing. Read their fractional CSS dimensions, before zoom or transforms are applied. */
   const seen = () => {
-    const { width, height } = dialog.getBoundingClientRect();
-    return { width, height, top: Number.parseFloat(getComputedStyle(dialog).top) || 0 };
+    const style = getComputedStyle(dialog);
+    return {
+      width: Number.parseFloat(style.width) || 0,
+      height: Number.parseFloat(style.height) || 0,
+      top: Number.parseFloat(style.top) || 0,
+    };
   };
 
   /** Its exact laid-out size: `offsetWidth` rounds, and a content a fraction narrower can wrap differently. */
@@ -285,10 +289,10 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     // All measurement and layout writes run here, in a frame, never inside an observer delivery.
     dialog.style.removeProperty("height");
     if (ownSize()) {
-      rested = dialog.getBoundingClientRect().height;
+      rested = seen().height;
       return;
     }
-    const natural = dialog.getBoundingClientRect().height;
+    const natural = seen().height;
     const canFold = firstRest && !initialMeasure && !loading;
     const height = canFold && !wasResize && textFocused() ? Math.max(natural, shown.height) : natural;
     const from = interrupted ? shown.height : rested;
@@ -509,8 +513,34 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     deferredFold = true;
   };
   const onPointerEnd = (event: PointerEvent) => {
+    if (event.buttons === 0) {
+      releasePointers();
+      return;
+    }
     pointers.delete(event.pointerId);
     if (!pointers.size && deferredFold) changed();
+  };
+  // A release in an iframe or outside this window need not deliver pointerup here. Recover on the next
+  // trustworthy signal, without a timeout that could move a control underneath a real held press.
+  const releasePointers = () => {
+    if (!pointers.size) return;
+    pointers.clear();
+    changed();
+  };
+  const onPointer = (event: PointerEvent) => {
+    if (event.buttons === 0) releasePointers();
+  };
+  const pointerEvents = [
+    "pointerdown",
+    "pointermove",
+    "pointerover",
+    "pointerout",
+    "pointerenter",
+    "pointerleave",
+    "gotpointercapture",
+  ] as const;
+  const onVisibility = () => {
+    if (document.visibilityState === "hidden") releasePointers();
   };
   const onResize = () => {
     resized = true;
@@ -537,7 +567,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     loadingChange = busy;
     // A morph's pinned content has its final size already. Its observer begins measuring after the morph releases it.
     if (frameKind !== "morph") {
-      rested = dialog.getBoundingClientRect().height;
+      rested = seen().height;
       if (!ownSize()) holdHeight(rested);
     }
     known.add(next);
@@ -555,6 +585,10 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     dialog.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("pointerup", onPointerEnd, true);
     window.addEventListener("pointercancel", onPointerEnd, true);
+    for (const type of pointerEvents) window.addEventListener(type, onPointer, true);
+    window.addEventListener("lostpointercapture", releasePointers, true);
+    window.addEventListener("blur", releasePointers);
+    document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("resize", onResize);
     window.visualViewport?.addEventListener("resize", onVisualResize);
     if (!firstRest) {
@@ -584,6 +618,10 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     dialog.removeEventListener("pointerdown", onPointerDown, true);
     window.removeEventListener("pointerup", onPointerEnd, true);
     window.removeEventListener("pointercancel", onPointerEnd, true);
+    for (const type of pointerEvents) window.removeEventListener(type, onPointer, true);
+    window.removeEventListener("lostpointercapture", releasePointers, true);
+    window.removeEventListener("blur", releasePointers);
+    document.removeEventListener("visibilitychange", onVisibility);
     pointers.clear();
     deferredFold = false;
     if (arrivalFrame) cancelAnimationFrame(arrivalFrame);

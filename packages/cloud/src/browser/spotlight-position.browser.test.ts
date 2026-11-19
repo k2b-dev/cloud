@@ -93,3 +93,81 @@ test("Spotlight's real position observer preserves a normal content fold through
     await page.close();
   }
 });
+
+test("a modeless Spotlight at the bottom finishes its natural growth before clamping once", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "no-preference" });
+  try {
+    await page.setContent(`<html><head><style>${css}
+      .cloud-global-search__home,.cloud-global-search__chip{position:absolute;pointer-events:none}
+    </style></head><body class="k2b-ui"></body></html>`);
+    await page.addScriptTag({ content: script });
+    await page.evaluate(() => {
+      // setContent has an opaque origin. Supply a stored preferred point through the real consumer's storage seam.
+      Object.defineProperty(window, "localStorage", {
+        configurable: true,
+        value: {
+          getItem: () => JSON.stringify({ x: 0.2, y: 1 }),
+          setItem: () => {},
+          removeItem: () => {},
+        },
+      });
+      Reflect.get(window, "openSearch")();
+    });
+    await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
+    await settled(page);
+    // settled: advance a paused fold across real ResizeObserver deliveries, including its last intermediate size.
+    const result = await page.evaluate(async () => {
+      const dialog = document.querySelector("dialog")!;
+      const before = dialog.getBoundingClientRect();
+      const folds: Animation[] = [];
+      const animate = dialog.animate.bind(dialog);
+      dialog.animate = (...args) => {
+        const animation = animate(...args);
+        animation.pause();
+        folds.push(animation);
+        return animation;
+      };
+      const frames = async () => {
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+      };
+      document.querySelector<HTMLElement>("[data-results]")!.style.height = "240px";
+      await frames();
+      const fold = folds[0]!;
+      const states: AnimationPlayState[] = [];
+      for (const share of [0.2, 0.5, 0.9]) {
+        fold.currentTime = Number(fold.effect!.getComputedTiming().endTime) * share;
+        await frames();
+        states.push(fold.playState);
+      }
+      // Count distinct final position changes, rather than all style writes made by the frame's holding logic.
+      const positions: number[] = [];
+      const finalObserver = new MutationObserver(() => {
+        const y = dialog.getBoundingClientRect().top;
+        if (y !== (positions.at(-1) ?? before.top)) positions.push(y);
+      });
+      finalObserver.observe(dialog, { attributes: true, attributeFilter: ["style"] });
+      if (fold.playState !== "idle") fold.finish();
+      await frames();
+      finalObserver.disconnect();
+      const after = dialog.getBoundingClientRect();
+      return {
+        states,
+        folds: folds.length,
+        before: before.height,
+        height: after.height,
+        bottom: after.bottom,
+        positions,
+        modeless: !dialog.matches(":modal"),
+      };
+    });
+    expect(result.modeless).toBe(true);
+    expect(result.states).toEqual(["paused", "paused", "paused"]);
+    expect(result.folds).toBe(1);
+    expect(result.height - result.before).toBeCloseTo(180, 0);
+    expect(result.bottom).toBeCloseTo(788, 0);
+    expect(result.positions).toHaveLength(1);
+    await settled(page);
+  } finally {
+    await page.close();
+  }
+});

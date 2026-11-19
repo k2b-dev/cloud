@@ -251,6 +251,69 @@ describe(`${browserName} the frame follows its content`, () => {
     }
   });
 
+  for (const scaling of ["zoom:1.25", "transform:translate(-50%,-50%) scale(.98)!important"])
+    test(`fractional holding and folding keep layout dimensions under ${scaling}`, async () => {
+      const page = await (await browser.newContext({ ...desktop, reducedMotion: "no-preference" })).newPage();
+      try {
+        await page.setContent(
+          `<html><head><style>${css} dialog{${scaling};animation:none!important}</style></head><body class="k2b-ui"></body></html>`,
+        );
+        await page.addScriptTag({ content: script });
+        // settled: compare natural geometry with the first held rectangle before exercising a paused fold.
+        const result = await page.evaluate(async () => {
+          let natural = { top: 0, height: 0 };
+          const show = HTMLDialogElement.prototype.showModal;
+          HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+            show.call(this);
+            const { top, height } = this.getBoundingClientRect();
+            natural = { top, height };
+          };
+          try {
+            (window as unknown as HeightWindow).openForm(false, false, undefined, true);
+            while (!document.querySelector("[data-k2b-dialog-live]")) await new Promise(requestAnimationFrame);
+            for (let i = 0; i < 6; i++) await new Promise(requestAnimationFrame);
+            const dialog = document.querySelector("dialog")!;
+            const { top, height } = dialog.getBoundingClientRect();
+            const before = Number.parseFloat(getComputedStyle(dialog).height);
+            const folds: Animation[] = [];
+            const animate = dialog.animate.bind(dialog);
+            dialog.animate = (...args) => {
+              const animation = animate(...args);
+              animation.pause();
+              folds.push(animation);
+              return animation;
+            };
+            document.querySelector<HTMLElement>("[data-content]")!.style.height = "183.375px";
+            for (let i = 0; i < 6; i++) await new Promise(requestAnimationFrame);
+            const fold = folds[0]!;
+            const effect = fold.effect;
+            if (!(effect instanceof KeyframeEffect)) throw new Error("Expected frame height keyframes");
+            const keyframes = effect.getKeyframes();
+            fold.finish();
+            for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+            return {
+              natural,
+              held: { top, height },
+              before,
+              from: Number.parseFloat(String(keyframes[0]!.height)),
+              to: Number.parseFloat(String(keyframes[1]!.height)),
+              after: Number.parseFloat(getComputedStyle(dialog).height),
+            };
+          } finally {
+            HTMLDialogElement.prototype.showModal = show;
+          }
+        });
+        expect(result.natural.height / result.before).toBeCloseTo(scaling.startsWith("zoom") ? 1.25 : 0.98, 2);
+        expect(result.held).toEqual(result.natural);
+        expect(result.from).toBeCloseTo(result.before, 2);
+        expect(result.to - result.before).toBeCloseTo(60, 2);
+        expect(result.after - result.before).toBeCloseTo(60, 2);
+        await settled(page);
+      } finally {
+        await page.context().close();
+      }
+    });
+
   for (const previewMode of ["flow", "overlay"] as const)
     test(`500 replaced ${previewMode} preview nodes with unchanged height cause no frame measurements or observer churn`, async () => {
       const page = await load(desktop, false, false, previewMode);
@@ -1606,6 +1669,55 @@ describe(`${browserName} the frame follows its content`, () => {
       await page.context().close();
     }
   });
+
+  for (const recovery of ["blur", "lostpointercapture", "hidden", "pointermove", "pointerover", "pointerout", "pointerup"] as const)
+    test(`a press with no matching release stops blocking folds after ${recovery}`, async () => {
+      const page = await load();
+      try {
+        // settled: the synthetic orphaned press must first hold a real size change across observer frames.
+        const result = await page.evaluate(async (recovery) => {
+          const dialog = document.querySelector("dialog")!;
+          const motion = window as unknown as HeightWindow;
+          const before = dialog.getBoundingClientRect().height;
+          const frames = async () => {
+            for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          };
+          dialog.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 7, buttons: 1, bubbles: true }));
+          motion.addNotice(3);
+          await frames();
+          const held = dialog.getBoundingClientRect().height;
+          if (recovery === "hidden") {
+            Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+            document.dispatchEvent(new Event("visibilitychange"));
+            Reflect.deleteProperty(document, "visibilityState");
+          } else if (recovery === "blur") window.dispatchEvent(new Event("blur"));
+          else if (recovery === "lostpointercapture") dialog.dispatchEvent(new PointerEvent(recovery, { pointerId: 7, bubbles: true }));
+          // A different pointer ID proves that buttons===0 reconciles a lost end rather than matching its ID.
+          else window.dispatchEvent(new PointerEvent(recovery, { pointerId: 99, buttons: 0 }));
+          motion.holdMotion();
+          motion.addNotice(2);
+          await frames();
+          const fold = dialog
+            .getAnimations()
+            .find(
+              (animation) =>
+                animation.effect instanceof KeyframeEffect && animation.effect.getKeyframes().some((keyframe) => "height" in keyframe),
+            );
+          const folding = Boolean(fold);
+          fold?.finish();
+          await frames();
+          for (const animation of dialog.getAnimations({ subtree: true })) if (animation.playState === "paused") animation.finish();
+          await frames();
+          return { before, held, folding, after: dialog.getBoundingClientRect().height };
+        }, recovery);
+        expect(result.held).toBe(result.before);
+        expect(result.folding).toBe(true);
+        expect(result.after - result.before).toBeCloseTo(100, 0);
+        await settled(page);
+      } finally {
+        await page.context().close();
+      }
+    });
 
   test("an anchor change is not blocked by a running child's size motion", async () => {
     const page = await load();

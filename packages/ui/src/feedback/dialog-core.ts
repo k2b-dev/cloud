@@ -406,6 +406,15 @@ export const createDialogCore = () => {
     }
   };
 
+  /** Every successful load, including a retry for an existing dialog, joins the same idempotent step. */
+  const moduleArrived = () => {
+    const element = state.element;
+    if (!element?.isConnected || state.motion || !frameMotion) return;
+    state.motion = frameMotion.createFrameMotion(element);
+    const top = state.stack.at(-1);
+    if (top) state.motion.follow(top.container);
+  };
+
   const ensureDialogElement = () => {
     // A frame that is still fading out ends now; the new dialog gets a frame of its own.
     endLeaving();
@@ -428,14 +437,8 @@ export const createDialogCore = () => {
     getK2bPortalRoot(undefined, document.body).appendChild(element);
     state.element = element;
     // The frame follows its content's height as soon as the module is there; a dialog that opened before follows then.
-    if (frameMotion) state.motion = frameMotion.createFrameMotion(element);
-    else
-      void loadFrameMotion().then(() => {
-        const top = state.stack.at(-1);
-        if (state.element !== element || !frameMotion) return;
-        state.motion = frameMotion.createFrameMotion(element);
-        if (top) state.motion.follow(top.container);
-      });
+    if (frameMotion) moduleArrived();
+    else void loadFrameMotion().then(moduleArrived);
     return element;
   };
 
@@ -544,8 +547,8 @@ export const createDialogCore = () => {
 
   /** A level that replaces another says its name; before the module has loaded, as soon as it has, if it still shows. */
   const announceLevel = (entry: DialogStackEntry) => {
-    // ensureDialogElement registered creation first on this same module promise.
     void loadFrameMotion().then(() => {
+      moduleArrived();
       if (state.stack.at(-1) === entry) state.motion?.announce(entry.role);
     });
   };
