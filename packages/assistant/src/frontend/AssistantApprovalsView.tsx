@@ -1,10 +1,12 @@
 import type { AiOpenQuestion, AiOpenQuestions } from "@k2b/cloud/ai";
 import Approvals from "@k2b/cloud/approvals/list";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { type ApprovalPage, ApprovalPageSchema } from "@k2b/cloud/contracts/approvals";
 import { Button, Paper, Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import type { WaitingAutomation } from "../waiting-automations";
+import type { WaitingQuestionsPagingState } from "../waiting-questions-page";
 import AssistantWaitingAutomations from "./AssistantWaitingAutomations";
 import { WAITING_KIND_ICON } from "./AssistantWaitingStrip";
 import { browserCodeInvoke } from "./code-client";
@@ -42,50 +44,30 @@ export default function AssistantApprovalsView(props: {
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
-  const [extraQuestions, setExtraQuestions] = createSignal<AiOpenQuestion[]>([]);
-  const [cursor, setCursor] = createSignal(props.questionsPage?.().nextCursor);
-  const [paging, setPaging] = createSignal(false);
-  const [pagingFailed, setPagingFailed] = createSignal(false);
-  let pageRequest = 0;
-  let pageController: AbortController | undefined;
-  onCleanup(() => {
-    pageController?.abort();
-    pageRequest++;
-  });
+  const [paging, setPaging] = createSignal<WaitingQuestionsPagingState>({ items: [], cursor: props.questionsPage?.().nextCursor });
+  const extraQuestions = createMemo(() => paging().items);
+  let pageController = new AbortController();
+  onCleanup(() => pageController.abort());
   createEffect(
     on(
       () => props.questionsPage?.(),
       (page) => {
-        pageController?.abort();
-        pageRequest++;
-        setExtraQuestions([]);
-        setCursor(page?.nextCursor);
-        setPaging(false);
-        setPagingFailed(false);
+        pageController.abort();
+        pageController = new AbortController();
+        setPaging({ items: [], cursor: page?.nextCursor });
       },
       { defer: true },
     ),
   );
   const loadMore = async () => {
-    const after = cursor();
-    if (!after || paging()) return;
-    const request = ++pageRequest;
-    const controller = new AbortController();
-    pageController = controller;
-    setPaging(true);
-    setPagingFailed(false);
-    try {
-      // The response schema and reader load only when the person asks for another page.
-      const { loadWaitingQuestionsPage } = await import("../waiting-questions-page");
-      const page = await loadWaitingQuestionsPage(browserCodeInvoke, props.timeZone, after, controller.signal);
-      if (request !== pageRequest) return;
-      setExtraQuestions((previous) => [...new Map([...previous, ...page.items].map((item) => [item.id, item])).values()]);
-      setCursor(page.nextCursor);
-    } catch {
-      if (request === pageRequest) setPagingFailed(true);
-    } finally {
-      if (request === pageRequest) setPaging(false);
-    }
+    const current = paging();
+    if (!current.cursor || current.loading) return;
+    const signal = pageController.signal;
+    setPaging({ ...current, loading: true, failed: false });
+    const module = await importOnDemand(() => import("../waiting-questions-page"));
+    if (signal.aborted) return;
+    if (module) await module.loadMoreWaitingQuestions(current, setPaging, props.timeZone, signal);
+    else setPaging({ ...current, failed: true });
   };
   const allQuestions = createMemo(() => [...new Map([...props.questions(), ...extraQuestions()].map((item) => [item.id, item])).values()]);
   const [approvals, setApprovals] = createSignal<ApprovalPage | null | undefined>(props.initial);
@@ -199,7 +181,8 @@ export default function AssistantApprovalsView(props: {
         ],
   );
   const automationsShow = () => shownAutomations() === null || (shownAutomations()?.length ?? 0) > 0;
-  const empty = () => (approvals()?.count ?? 0) === 0 && approvals() !== null && versions().length === 0 && !automationsShow() && !cursor();
+  const empty = () =>
+    (approvals()?.count ?? 0) === 0 && approvals() !== null && versions().length === 0 && !automationsShow() && !paging().cursor;
 
   return (
     <ScrollArea class="min-h-0 flex-1">
@@ -317,13 +300,13 @@ export default function AssistantApprovalsView(props: {
             )}
           </Show>
         </Show>
-        <Show when={cursor()}>
+        <Show when={paging().cursor}>
           <div class="assistant-waiting-page__section">
-            <Show when={pagingFailed()}>
+            <Show when={paging().failed}>
               <p role="alert">{t().waitingFailed}</p>
             </Show>
-            <Button type="button" variant="secondary" loading={paging()} onClick={() => void loadMore()}>
-              {pagingFailed() ? t().codeViewRetry : t().waitingLoadMore}
+            <Button type="button" variant="secondary" loading={paging().loading} onClick={() => void loadMore()}>
+              {paging().failed ? t().codeViewRetry : t().waitingLoadMore}
             </Button>
           </div>
         </Show>
