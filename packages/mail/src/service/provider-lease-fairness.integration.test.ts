@@ -3207,6 +3207,16 @@ suite("mail provider lease fairness", () => {
     } finally {
       for (const mailbox of onDeadHost) unreachable.delete(mailbox.account);
       await worker.stop();
+      // The stopped worker's jobs have ended, as in a process that stopped: they no longer wait in
+      // their mailboxes' lines. Their breakers stay as they are.
+      for (const mailbox of onDeadHost) {
+        await redis.send(
+          "DEL",
+          ["places", "present", "priorities", "turn", "parked", "woken", "entered"].map(
+            (key) => `mail:provider-lease-line:{${mailbox.remoteResourceId}}:${key}`,
+          ),
+        );
+      }
     }
 
     // IMAP push reaches the host again during a pause: it closes the breaker, and the sync it
