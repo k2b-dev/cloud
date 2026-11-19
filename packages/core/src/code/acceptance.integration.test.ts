@@ -362,6 +362,25 @@ suiteFor(
       `Acceptance run did not reach a visible terminal state (last state: ${lastState}; runner codes: ${fleet.logs.join(",")})`,
     );
   }
+  test("Core refuses undeclared Space owners without persisting Code or its account", async () => {
+    const owner = { kind: "resource" as const, ref: { type: "spaces.space", id: spaceId } };
+    expect(spaces.manifest.code?.owners ?? []).not.toContain("space");
+    const before = await sql<{ codes: number; accounts: number }[]>`SELECT
+      (SELECT count(*)::int FROM code.codes) AS codes,
+      (SELECT count(*)::int FROM auth.service_accounts) AS accounts`;
+    for (const actor of [manager, context(reviewer)]) {
+      await expect(code.init({ title: "Lieferschein", owner }, actor)).rejects.toMatchObject({
+        code: "BAD_INPUT",
+        message: "Für diesen Ort kann kein Code angelegt werden.",
+      });
+    }
+    expect(
+      await sql<{ codes: number; accounts: number }[]>`SELECT
+      (SELECT count(*)::int FROM code.codes) AS codes,
+      (SELECT count(*)::int FROM auth.service_accounts) AS accounts`,
+    ).toEqual(before);
+  });
+
   test("Lea checks, Ben activates, both runners execute, the manager revokes and Mail deletion cleans up", async () => {
     const initialized = await code.init({ title: "Rechnungen", owner: { kind: "resource", ref: mailboxRef } }, manager);
     const codeId = initialized.config.codeId;

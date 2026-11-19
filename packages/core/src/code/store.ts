@@ -1,10 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import { aiLive } from "@k2b/cloud/ai/live";
+import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import { type CodeOutputWindow, CodeOutputWindowSchema, type CodeRunEntries, emptyCodeOutput } from "@k2b/cloud/code";
 import {
   CodeAutomationTitleSchema,
   CodeCheckedVersionManifestSchema,
+  cloudResourceRefAppId,
   type NormalizedCapabilityCall,
   NormalizedCapabilityCallSchema,
 } from "@k2b/cloud/contracts";
@@ -276,6 +278,14 @@ export const createCode = async (
   if (owner.kind === "person") {
     if (owner.userId !== user.id) throw new CodeDataError("FORBIDDEN", "Personal Code must be created by its owner.");
   } else {
+    if (owner.kind === "resource") {
+      const appId = cloudResourceRefAppId(owner.ref);
+      const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority);
+      if (!catalog.ok) throw new CodeOwnerUnavailableError("Code owner provider unavailable");
+      if (!catalog.data) throw new CodeDataError("NOT_FOUND", "Code owner not found.");
+      if (!catalog.data.manifest.code?.owners.includes(owner.ref.type.slice(appId.length + 1)))
+        throw new CodeDataError("BAD_INPUT", codeVersionMessages.resolve(context.locale ? [context.locale] : []).t.unsupportedOwner);
+    }
     const presentation = await readCodeOwner(owner, context);
     if (!presentation) throw new CodeDataError("NOT_FOUND", "Code owner not found.");
     if (!presentation.admin) throw new CodeDataError("FORBIDDEN", "Owner administration required.");

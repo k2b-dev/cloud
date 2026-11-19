@@ -4,6 +4,7 @@ export const codeVersionMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      unsupportedOwner: "Code cannot be created for this place.",
       guestsCannotAuthor: "Guests cannot create Code or submit versions. Please ask a Cloud member to help.",
       submitAction: "Save a checked version of {code}",
       submitRunning: "Saving a checked version of {code}",
@@ -60,6 +61,7 @@ export const codeVersionMessages = i18n.define({
       content: "Complete Code difference and permissions",
     },
     de: {
+      unsupportedOwner: "Für diesen Ort kann kein Code angelegt werden.",
       guestsCannotAuthor: "Gäste können keinen Code erstellen oder Versionen einreichen. Bitte wende dich an ein Cloud-Mitglied.",
       submitAction: "Geprüfte Version von {code} speichern",
       submitRunning: "Geprüfte Version von {code} wird gespeichert",

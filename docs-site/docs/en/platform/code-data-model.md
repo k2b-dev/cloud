@@ -38,6 +38,12 @@ including for Cloud administrators. A resource or an application can own at most
 one. Resource identity uses `CloudResourceRef`; Core does not interpret the
 owning application's domain IDs.
 
+For resource Code, the owning application must register the local resource type
+in `manifest.code.owners`. Core checks that declaration before creating Code
+or its account. An ordinary resource reader alone does not enable Code.
+Unsupported types are refused with `BAD_INPUT` and a localized explanation,
+including for Cloud administrators.
+
 The personal owner is an editor. For resource and application Code, the
 owner's current administrators are editors. Resource administrators come from
 the canonical reader; application administrators come from application access

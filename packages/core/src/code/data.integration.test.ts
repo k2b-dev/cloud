@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import * as cloudRuntime from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import * as catalog from "@k2b/cloud/capabilities/server";
@@ -21,6 +21,7 @@ import { readCodeAdminVersionSource } from "./admin";
 import { clearCodeAttentionCache, readCodeAttention } from "./attention";
 import { codeAuthoringServices } from "./authoring";
 import { type Code, codeQueryContracts } from "./contracts";
+import { codeOwnerCatalogFixture } from "./owner-registration.fixture";
 import { loadCodeActivityReadModel, readCodeActivityData } from "./read-model/activity";
 import { codeReadModelFixtureManifest } from "./read-model/fixtures";
 import { loadCodeRunReadModel } from "./read-model/run";
@@ -101,6 +102,11 @@ databaseSuite()("Core Code data and Query authorization", () => {
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   const ownerState = new Map<string, { title: string; admin: boolean }>();
   let ownerSpy: ReturnType<typeof spyOn<typeof access, "readCodeOwner">>;
+  let catalogSpy: ReturnType<typeof spyOn<typeof catalog, "getCapabilityCatalogApp">>;
+  const originalCatalog = catalog.getCapabilityCatalogApp;
+  const ownerCatalog = codeOwnerCatalogFixture("example", "mailbox");
+  const fixtureCatalog: typeof catalog.getCapabilityCatalogApp = async (appId, ...rest) =>
+    appId === "example" ? { ok: true, data: ownerCatalog } : originalCatalog(appId, ...rest);
   beforeAll(async () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code");
@@ -123,6 +129,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
       return definition.default;
     });
     ownerState.set(ids.admin, { title: "Mailbox today", admin: true });
+    catalogSpy = spyOn(catalog, "getCapabilityCatalogApp").mockImplementation(fixtureCatalog);
     ownerSpy = spyOn(access, "readCodeOwner").mockImplementation(async (owner, context) => {
       if (owner.kind === "person")
         return owner.userId === (context.authority.accessSubject.type === "user" ? context.authority.accessSubject.userId : null)
@@ -164,8 +171,13 @@ databaseSuite()("Core Code data and Query authorization", () => {
       await finishCodeCall({ runId, ordinal: second, state: "failed", result: { error: "refused" }, endedAt: fixed }, tx);
     });
   });
+  beforeEach(() => {
+    // One spy owns this export for the suite; temporary catalogs only replace its implementation.
+    catalogSpy.mockImplementation(fixtureCatalog);
+  });
   afterAll(async () => {
     ownerSpy?.mockRestore();
+    catalogSpy?.mockRestore();
     settingsSpy?.mockRestore();
     await database?.drop();
     setSystemTime();
@@ -243,8 +255,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
     );
     await sql`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
     const timeZone = spyOn(coreSettings, "get").mockResolvedValue("UTC");
-    const original = catalog.getCapabilityCatalogApp;
-    const provider = spyOn(catalog, "getCapabilityCatalogApp").mockImplementation(async (app, ...rest) =>
+    catalogSpy.mockImplementation(async (app, ...rest) =>
       app === "fictional"
         ? {
             ok: true as const,
@@ -286,7 +297,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
               },
             },
           }
-        : original(app, ...rest),
+        : fixtureCatalog(app, ...rest),
     );
     const reader = spyOn(catalog, "invokeCapabilityWithDataSchema").mockImplementation(async (_invocation, schema, caller) => {
       const subject = caller.authority?.accessSubject;
@@ -333,9 +344,13 @@ databaseSuite()("Core Code data and Query authorization", () => {
     } finally {
       timeZone.mockRestore();
       reader.mockRestore();
-      provider.mockRestore();
+      catalogSpy.mockImplementation(fixtureCatalog);
       await sql`DELETE FROM code.runs WHERE id=${id}::uuid`;
     }
+  });
+
+  test("temporary effect catalogs retain the registered Code owner fixture", async () => {
+    expect(await catalog.getCapabilityCatalogApp("example", "en", authority(ids.admin, true))).toEqual({ ok: true, data: ownerCatalog });
   });
 
   test("counter wording comes only from succeeded effects in the counted run week", async () => {
