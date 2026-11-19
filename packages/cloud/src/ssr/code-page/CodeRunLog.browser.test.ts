@@ -206,7 +206,7 @@ for (const theme of ["light", "dark"] as const)
         expect(await page.getByText("14 Positionen erkannt", { exact: true }).count()).toBe(0);
         if (width === 390 && theme === "light") {
           await page.goto(`${origin}/?theme=${theme}&failed=1`);
-          await page.getByText("Lieferschein #4711", { exact: true }).waitFor();
+          await page.getByRole("heading", { name: "Lieferschein #4711", exact: true }).waitFor();
           await shot(page, "kopf-aktionen", theme, width);
           expect(await page.locator(".k2b-run-log__actions").count()).toBe(1);
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

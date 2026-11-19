@@ -1,4 +1,5 @@
 export { type CodeOutputWindow, CodeOutputWindowSchema } from "../code/output";
+export { type CodeRunEntries, CodeRunEntriesInputSchema, CodeRunEntriesSchema } from "../code/run-ledger";
 export * from "./account-categories";
 export * from "./announcements";
 export * from "./app";

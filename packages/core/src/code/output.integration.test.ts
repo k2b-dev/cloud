@@ -239,7 +239,10 @@ suiteFor(
       expect(result.contents === null).toBe(id === reader);
       const entries = await readCodeRunEntries({ codeId, runId }, context);
       expect(entries.output === null).toBe(id === reader);
-      if (id === owner) expect(entries.output).toEqual(result.contents?.consoleOutput);
+      if (id === owner) {
+        if (!result.contents) throw new Error("Missing owner output");
+        expect(entries.output).toEqual(result.contents.consoleOutput);
+      }
       for (const origin of ["http", "assistant", "mcp"] as const) {
         const capability = await aiCapabilities.queries["code.run.read"].run(
           { codeId, runId, cursor: 0, offset: 0, length: 16_384 },
@@ -285,7 +288,7 @@ suiteFor(
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${guestId}::uuid,'output-guest','local','guest')`;
     const guest = await accounts.users.get({ id: guestId });
     if (!guest) throw new Error("Missing guest");
-    for (const user of [guest, { ...guest, profile: "user" as const, roles: ["user"] }]) {
+    for (const user of [guest, { ...guest, profile: "user" as const, roles: ["user" as const] }]) {
       const context = {
         authority: {
           actor: { kind: "user" as const, user },

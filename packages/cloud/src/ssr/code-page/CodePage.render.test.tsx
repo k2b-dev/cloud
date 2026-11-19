@@ -272,7 +272,8 @@ describe("Code page: runs (Bild 22)", () => {
     data.state.run.consoleOutput = { generation: 1, seq: 0, entries: [], droppedLines: 0, droppedBytes: 0 };
     data.state.run.run.outcome = "lease_lost";
     // The list and selected snapshot describe the same aborted run.
-    const listed = data.state.runs?.items.find((run) => run.id === data.state.run!.run.id);
+    const abortedId = data.state.run.run.id;
+    const listed = data.state.runs?.items.find((run) => run.id === abortedId);
     if (listed) listed.outcome = "lease_lost";
     data.state.words!.runs[data.state.run.run.id]!.reason = null;
     const page = visibleText(

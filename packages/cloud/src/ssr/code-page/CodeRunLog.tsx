@@ -194,7 +194,7 @@ export function CodeRunLog(props: {
   return (
     <Show
       when={snapshot().state !== "skipped"}
-      fallback={<NoticeCard tone="muted" icon="ti ti-player-skip-forward" title={t().skipped} detail={reason() ?? undefined} />}
+      fallback={<NoticeCard tone="neutral" icon="ti ti-player-skip-forward" title={t().skipped} detail={reason() ?? undefined} />}
     >
       <RunLog
         state={state()}

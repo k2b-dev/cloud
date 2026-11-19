@@ -5,8 +5,11 @@ import { CodeOutputEventSchema, CodeOutputWindowSchema } from "./output";
 /** Output uses the existing bounded run tail, not a second history store. */
 export const CodeRunEntriesInputSchema = z
   .object({
-    codeId: z.string().regex(/^c_[a-z0-9]{4,16}$/),
-    runId: z.uuid(),
+    codeId: z
+      .string()
+      .regex(/^c_[a-z0-9]{4,16}$/)
+      .describe("Code ID from code.list/read."),
+    runId: z.uuid().describe("Run UUID from code.run.list."),
   })
   .strict();
 export const CodeRunEntriesSchema = z

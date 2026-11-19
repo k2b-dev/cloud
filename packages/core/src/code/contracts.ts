@@ -1,10 +1,11 @@
-import { CodeRunEntriesInputSchema, CodeRunEntriesSchema } from "@k2b/cloud/code";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CloudResourceRefSchema,
   CODE_BRIDGE_REFUSAL_KINDS,
   CodeOutputWindowSchema,
   CodePageLinksSchema,
+  CodeRunEntriesInputSchema,
+  CodeRunEntriesSchema,
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
