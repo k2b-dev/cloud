@@ -52,7 +52,7 @@ const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, de
 const open = async (context: BrowserContextOptions) => {
   const page = await browser.newPage(context);
   await page.setContent(
-    `<!doctype html><html><head><style>${css}
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}
       html { font-size:16px; } body { margin:0; font-family:Arial,sans-serif; }
       main { max-width:764px; margin:24px auto; padding:0 14px; }
     </style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
@@ -113,8 +113,8 @@ test("1440 px: the field and the main answer share a row, the line and the quiet
     expect(Math.abs(field!.y + field!.height / 2 - (confirm!.y + confirm!.height / 2))).toBeLessThan(1);
     expect(decline!.y).toBeGreaterThan(field!.y + field!.height);
     expect(Math.abs(line!.y - decline!.y)).toBeLessThan(decline!.height);
-    // The main answer keeps the width of its widest label, so a switch moves nothing.
-    expect(await page.locator(".k2b-chat-decision__confirm i.ti-lock").isVisible()).toBe(true);
+    // Wide, the answers keep their icons (the test page loads no icon font, so the icon has no size of its own).
+    expect(await page.locator(".k2b-chat-decision__confirm i.ti-lock").evaluate((icon) => getComputedStyle(icon).display)).not.toBe("none");
   } finally {
     await page.close();
   }

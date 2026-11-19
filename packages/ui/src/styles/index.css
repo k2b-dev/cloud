@@ -3297,8 +3297,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* The eye of a password field: on touch screens its box reaches 2.75rem
-   (44 px) wide and its hit area 44 px high, without reaching into the text. */
+   (44 px) wide and its hit area 44 px high, past the field's edge, without
+   reaching into the text. */
 @media (any-pointer: coarse) {
+  /* The shell clips its content to its corners; around the eye it lets the hit area out. */
+  .k2b-ui .k2b-input-shell:has(> .k2b-input-shell__reveal) {
+    overflow: visible;
+  }
+
   .k2b-ui .k2b-input-shell__reveal {
     position: relative;
     width: 2.75rem;
