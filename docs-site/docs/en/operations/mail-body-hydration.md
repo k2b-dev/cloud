@@ -68,7 +68,9 @@ A folder sync that finds the mailbox's provider lease held does not ask again
 every few seconds. It parks with its place and rank in the line, and the release
 that makes it next wakes it. A woken folder keeps the free lease for its job for
 up to two minutes, and each scheduler run renews that while the job has not
-started. When no release wakes a parked folder, for example because a Mail
+started. A provider that answers again after its breaker opened wakes the line
+too. While the breaker is open or remembers its window, folder syncs ask again
+instead of parking. When no release wakes a parked folder, for example because a Mail
 process stopped or the waiter ahead of it never came back, the scheduler wakes
 the line when it next reaches the mailbox, usually within a minute; on an
 installation with more than 500 eligible folders that can take a few runs. A

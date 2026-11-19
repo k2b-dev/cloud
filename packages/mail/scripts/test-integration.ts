@@ -6,7 +6,11 @@ const workspaceRoot = resolve(mailRoot, "../..");
 
 // These existing suites have explicit opt-ins rather than the shared infrastructure gate.
 // Keep them in the integration entry point; their own guards decide whether to run.
-const optInSuites = ["src/service/performance.integration.test.ts", "src/service/connectors/connector-conformance.integration.test.ts"];
+const optInSuites = [
+  "src/service/performance.integration.test.ts",
+  "src/service/connectors/connector-conformance.integration.test.ts",
+  "src/service/connectors/jmap-conformance.integration.test.ts",
+];
 
 /** Every selected file, or only the given ones; a file outside the selection is an error rather than a silent extra run. */
 export const mailIntegrationCommand = async (only: string[] = []): Promise<string[]> => {
