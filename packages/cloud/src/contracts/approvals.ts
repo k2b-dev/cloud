@@ -53,7 +53,14 @@ export const PendingApprovalSchema = z
     review: CapabilityActionReviewPresentationSchema.nullable(),
     /** Where the request waits. The title is chat content, written by a person or a model, never Cloud's own words. */
     requester: z
-      .object({ kind: z.enum(["chat", "code_version"]), appId: z.string(), title: z.string().nullable(), href: z.string() })
+      .object({
+        kind: z.enum(["chat", "code_version"]),
+        appId: z.string(),
+        title: z.string().nullable(),
+        href: z.string(),
+        /** The person's own automation whose message started the chat's turn; its title as it was when it wrote. */
+        automation: z.object({ title: z.string(), href: z.string() }).strict().optional(),
+      })
       .strict(),
     /** Ways the person may remember this approval, the same the chat card offers. */
     remember: z.object({ chat: z.boolean(), always: z.boolean(), website: z.boolean() }).strict(),

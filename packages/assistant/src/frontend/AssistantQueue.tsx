@@ -5,7 +5,7 @@ import { queueMessages } from "./queue-messages";
 /** Who wrote a queued message, as the server projects it for the viewer; `href` only where the viewer may open it. */
 export type AssistantQueueOrigin =
   | { kind: "person"; id: string; name: string }
-  | { kind: "automation"; id: string; name: string; href?: string }
+  | { kind: "automation"; id: string; name: string; href?: string; named?: false }
   | { kind: "chat"; id: string; name: string; href?: string };
 
 /** One queued message, in the order the server received it. */
@@ -69,7 +69,9 @@ export default function AssistantQueue(props: AssistantQueueProps) {
     if (entry.authorIsViewer) return null;
     const source = entry.origin;
     return source.kind === "automation"
-      ? t().fromAutomation({ name: source.name })
+      ? source.named === false
+        ? t().fromUnnamedAutomation
+        : t().fromAutomation({ name: source.name })
       : source.kind === "chat"
         ? t().fromChat({ name: source.name })
         : source.name;
@@ -145,19 +147,36 @@ export default function AssistantQueue(props: AssistantQueueProps) {
   const Sign = (signProps: { entry: AssistantQueueEntry }) => (
     <i class={`assistant-queue__sign ${ORIGIN_ICON[icon(signProps.entry)]}`} data-kind={icon(signProps.entry)} aria-hidden="true" />
   );
+  /** An entry Cloud could not start and restarts by itself is no failure of the person's: it waits, quietly. */
+  const retrying = (entry: AssistantQueueEntry) =>
+    stateOf(entry) === "failed" && entry.error === "dispatch_failed" && entry.retrying === true;
+  /** The row keeps one short word; a longer explanation stays in the tooltip and for screen readers. */
+  const stateWords = (entry: AssistantQueueEntry): { short: string; long?: string } =>
+    stateOf(entry) === "sending"
+      ? { short: t().sending }
+      : retrying(entry)
+        ? { short: t().retrying, long: t().dispatchRetrying }
+        : entry.error === "dispatch_failed"
+          ? { short: t().notSent, long: t().dispatchFailed }
+          : { short: t().notSent };
   const StateWord = (stateProps: { entry: AssistantQueueEntry }) => (
     <Show when={stateOf(stateProps.entry) !== "pending"}>
-      <span class="assistant-queue__state" data-state={stateOf(stateProps.entry)}>
+      <span
+        class="assistant-queue__state"
+        data-state={retrying(stateProps.entry) ? "retrying" : stateOf(stateProps.entry)}
+        title={stateWords(stateProps.entry).long}
+      >
         <Show when={stateOf(stateProps.entry) === "failed"}>
-          <i class="ti ti-alert-circle" aria-hidden="true" />
+          <i class={retrying(stateProps.entry) ? "ti ti-refresh" : "ti ti-alert-circle"} aria-hidden="true" />
         </Show>
-        {stateOf(stateProps.entry) === "sending"
-          ? t().sending
-          : stateProps.entry.error === "dispatch_failed"
-            ? stateProps.entry.retrying
-              ? t().dispatchRetrying
-              : t().dispatchFailed
-            : t().notSent}
+        <Show when={stateWords(stateProps.entry).long} fallback={stateWords(stateProps.entry).short}>
+          {(long) => (
+            <>
+              <span aria-hidden="true">{stateWords(stateProps.entry).short}</span>
+              <span class="k2b-sr-only">{long()}</span>
+            </>
+          )}
+        </Show>
       </span>
     </Show>
   );

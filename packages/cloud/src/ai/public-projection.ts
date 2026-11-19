@@ -9,6 +9,7 @@ import type { AiTurnBlock, AiWireEvent } from "./protocol";
 import { publicAiToolInput, publicAiToolResult } from "./public-tool-input";
 import type { AiStoredMessageOrigin } from "./queue-contracts";
 import { capabilityResultView } from "./result-view";
+import { splitAiSourceContext } from "./source-context";
 import { aiConversations } from "./store";
 import type { AiConversation, AiStoredMessage } from "./types";
 
@@ -68,6 +69,18 @@ export const messagesNeedChoiceContext = (messages: readonly AiStoredMessage[], 
     (block) => block.kind === "tool" && (viewHasChoice(block.view) || viewHasChoice(Reflect.get(Object(block.result), "view"))),
   );
 
+/** The user message without the source data Send appended to its text, and that data; without data it stays unchanged. */
+const withoutSourceContext = (message: Extract<Message, { role: "user" }>): { message: Message; context: string | null } => {
+  const textOf = (part: (typeof message.content)[number]) => (typeof part === "string" ? part : part.type === "text" ? part.text : null);
+  const index = message.content.findIndex((part) => textOf(part) !== null);
+  const text = index < 0 ? null : textOf(message.content[index]!);
+  if (text === null) return { message, context: null };
+  const split = splitAiSourceContext(text);
+  if (split.context === null) return { message, context: null };
+  const content = message.content.map((part, at) => (at === index ? { type: "text" as const, text: split.text } : part));
+  return { message: { ...message, content }, context: split.context };
+};
+
 export const projectPublicAiStoredMessages = (
   messages: readonly AiStoredMessage[],
   conversationId: string,
@@ -81,11 +94,15 @@ export const projectPublicAiStoredMessages = (
         : [],
     );
     const view = message.message.role === "tool_result" && !message.message.isError ? capabilityResultView(message.message.result) : null;
-    const { writerOrigin: _writerOrigin, ...meta } = message.meta ?? {};
+    const { writerOrigin, ...meta } = message.meta ?? {};
+    // A message the person did not type shows its instruction; the data it brought stands apart (Send, `context`).
+    const sourced =
+      message.message.role === "user" && writerOrigin && writerOrigin.kind !== "person" ? withoutSourceContext(message.message) : null;
     return {
       ...message,
-      message:
-        message.message.role === "assistant"
+      message: sourced
+        ? sourced.message
+        : message.message.role === "assistant"
           ? publicAiMessageContent({
               ...message.message,
               content: message.message.content.map((block) =>
@@ -110,6 +127,7 @@ export const projectPublicAiStoredMessages = (
                   }
                 : {}),
               ...(view ? { resultView: view } : {}),
+              ...(sourced?.context ? { sourceContext: sourced.context } : {}),
               ...(message.meta?.choice
                 ? { choice: { ...message.meta.choice, turnId: turnShortIds.get(message.meta.choice.turnId) ?? message.meta.choice.turnId } }
                 : {}),

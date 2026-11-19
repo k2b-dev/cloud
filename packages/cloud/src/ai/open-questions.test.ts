@@ -184,3 +184,41 @@ test("a separately deployed app reads the shared list and badge through Core wit
     else process.env.CLOUD_CORE_INTERNAL_ORIGIN = previousOrigin;
   }
 });
+
+test("a reader asking for one kind gets it even behind twenty older questions, with the feed's page size and no approval read", async () => {
+  const at = (minute: number) => new Date(Date.UTC(2026, 10, 14, 6, minute)).toISOString();
+  const older = Array.from({ length: 20 }, (_, index) => ({
+    id: `code:older-${index}`,
+    kind: "code_activate" as const,
+    conversationId: "Chat42",
+    conversationTitle: "Messe Köln",
+    anchor: `code-${index}`,
+    short: `Version ${index + 1} einschalten`,
+    app: { name: "Code", icon: "ti ti-player-play" },
+    createdAt: at(index),
+  }));
+  const automation = {
+    id: "code-attention:c_brief1",
+    kind: "code_attention" as const,
+    conversationId: "",
+    conversationTitle: null,
+    anchor: "",
+    short: "Morgenbriefing braucht einen Chat",
+    app: { name: "Code", icon: "ti ti-code" },
+    reason: "chat_missing" as const,
+    href: "/app/assistant/code/c_brief1",
+    createdAt: at(59),
+  };
+  const asked: (string | undefined)[] = [];
+  // A source that ignores the kind still cannot hide it: the feed keeps only the asked kind before it cuts the page.
+  const source = async (input: { kind?: string }) => {
+    asked.push(input.kind);
+    return { count: 21, items: [...older, automation] };
+  };
+  const all = await listAiOpenQuestions({ ownerUserId: "u1", ...context, kind: "code_activate", sources: [source] });
+  expect(all.items).toHaveLength(20);
+  expect(all.items.map((item) => item.id)).not.toContain(automation.id);
+  const only = await listAiOpenQuestions({ ownerUserId: "u1", ...context, kind: "code_attention", sources: [source] });
+  expect(only.items).toEqual([automation]);
+  expect(asked).toEqual(["code_activate", "code_attention"]);
+});

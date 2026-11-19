@@ -18,9 +18,10 @@ afterAll(() => {
   setSystemTime();
   rmSync(root, { recursive: true, force: true });
 });
-const [{ default: CodeView }, { default: ApprovalsView }, { LocaleProvider }] = await Promise.all([
+const [{ default: CodeView }, { default: ApprovalsView }, { default: WaitingAutomations }, { LocaleProvider }] = await Promise.all([
   import("./AssistantCodeView"),
   import("./AssistantApprovalsView"),
+  import("./AssistantWaitingAutomations"),
   import("@k2b/ui"),
 ]);
 
@@ -59,6 +60,7 @@ const visible = (html: string) =>
 const count = (html: string, needle: string) => html.split(needle).length - 1;
 
 const STATES = ["normal", "leer", "laedt", "fehler", "lang"] as const;
+const V5_APPS = ["chat", "chat-fehlt"] as const;
 
 describe("My apps & automations", () => {
   test("normal shows head, the day line, four cards and the footer in this order (picture 27)", () => {
@@ -183,6 +185,26 @@ describe("My apps & automations", () => {
   });
 });
 
+describe("My apps & automations: a Code that writes to its own chat (Automationen als Code v5, a-apps)", () => {
+  test("the card names its chat after its schedule; a missing chat needs the person, in German and English", () => {
+    const bound = apps("chat", "de");
+    const card = (html: string) => html.slice(html.indexOf(">Morgenbriefing<") - 600, html.indexOf(">Wochenbericht Vertrieb<"));
+    expect(visible(card(bound))).toContain("Mo–Fr um 07:00 · in „Morgenbriefing“");
+    // "in" stays with the chat's name: a line never breaks between them.
+    expect(card(bound)).toContain("in\u00a0„Morgenbriefing“");
+    expect(visible(card(bound))).toContain("Zuletzt: Briefing mit 2 Terminen, 2 Angeboten und 2 Kundenmails");
+    expect(visible(card(bound))).toContain("Eingeschaltet");
+    const missing = apps("chat-fehlt", "de");
+    for (const part of ["Mo–Fr um 07:00 · Chat fehlt", "Zuletzt: Der Chat „Morgenbriefing“ ist archiviert", "Braucht dich", "heute, 07:00"])
+      expect(visible(card(missing))).toContain(part);
+    expect(card(missing)).toMatch(/class="assistant-apps__state" data-tone="danger"><i class="ti ti-alert-circle"/);
+    expect(missing).toContain('href="/app/assistant/code/c_brief1"');
+    const english = visible(card(apps("chat-fehlt", "en")));
+    for (const part of ["· Chat missing", "Last: The chat “Morgenbriefing” is archived", "Needs you"]) expect(english).toContain(part);
+    expect(visible(card(apps("chat", "en")))).toContain("· in “Morgenbriefing”");
+  });
+});
+
 describe("Waiting for you", () => {
   test("normal lists approvals with their chat and Code you administer as rows", () => {
     const html = waiting("normal", "de");
@@ -202,6 +224,91 @@ describe("Waiting for you", () => {
     expect(count(html, 'class="cloud-approval"')).toBe(2);
     expect(html).toContain('href="/app/mail/m/info"');
     expect(visible(waiting("normal", "en"))).toContain("None of it happens before you agree.");
+  });
+
+  test("an approval from an automation names it and its chat; the automation that needs a chat has a row with the way out", () => {
+    const html = waiting("automation", "de");
+    const text = visible(html);
+    expect(text).toContain("Freigaben 1");
+    expect(text).toContain("Aus der Automation „Morgenbriefing“ · im Chat „Morgenbriefing“ ·");
+    expect(html).toContain('<a href="/app/assistant/code/c_brief1">Aus der Automation „Morgenbriefing“</a>');
+    expect(html).toContain('<a href="/app/assistant?conversation=Brief1">im Chat „Morgenbriefing“</a>');
+    // The server renders the section with the page, after the approvals, so nothing appears later and moves.
+    for (const part of [
+      "Automationen 1",
+      "Morgenbriefing braucht einen Chat",
+      "Sie schreibt nichts, bis du einen Chat wählst.",
+      "Chat wählen …",
+    ])
+      expect(text).toContain(part);
+    expect(html.indexOf("assistant-waiting-automations")).toBeGreaterThan(html.indexOf('class="cloud-approval"'));
+    expect(visible(waiting("automation", "en"))).toContain("From the automation “Morgenbriefing” · in the chat “Morgenbriefing”");
+    // Nothing else waits: the page is not empty while an automation needs the person.
+    const onlyAutomation = visible(
+      inLocale("de", () =>
+        createComponent(ApprovalsView, {
+          ...fixtures.waitingFixture("automation"),
+          initial: { items: [], nextCursor: null, count: 0, elsewhere: 0 },
+        }),
+      ),
+    );
+    expect(onlyAutomation).toContain("Morgenbriefing braucht einen Chat");
+    expect(onlyAutomation).not.toContain("Nichts wartet auf dich.");
+  });
+
+  test.each([
+    [
+      "chat_missing",
+      "Morgenbriefing braucht einen Chat",
+      "Sie schreibt nichts, bis du einen Chat wählst.",
+      "Chat wählen …",
+      "It writes nothing until you choose a chat.",
+      "Choose a chat …",
+    ],
+    [
+      "secret",
+      "Kontostand braucht ein Secret",
+      "Sie läuft erst wieder, wenn ihr Secret gesetzt ist.",
+      "Ansehen",
+      "It runs again once its secret is set.",
+      "View",
+    ],
+    [
+      "mandate",
+      "Rückfragen sammeln braucht deine Bestätigung",
+      "Sie läuft erst wieder, wenn du sie bestätigst.",
+      "Ansehen",
+      "It runs again once you confirm it.",
+      "View",
+    ],
+    [
+      "access",
+      "Stoffpreise prüfen braucht Zugriff",
+      "Ihr fehlt Zugriff auf eines ihrer Ziele.",
+      "Ansehen",
+      "It lacks access to one of its targets.",
+      "View",
+    ],
+  ] as const)(
+    "the automations section says what %s means and names its way out, in German and English",
+    (reason, short, meaning, action, english, englishAction) => {
+      const entry = fixtures.WAITING_AUTOMATIONS.find((item) => item.reason === reason)!;
+      const section = (locale: Locale) =>
+        inLocale(locale, () => createComponent(WaitingAutomations, { entries: [entry], onRetry: () => {} }));
+      const html = section("de");
+      for (const part of ["Automationen 1", short, meaning, action]) expect(visible(html)).toContain(part);
+      expect(html).toContain(`<a aria-label="${action}: ${short}" href="${entry.href!.replace(/&/g, "&amp;")}"`);
+      for (const part of ["Automations 1", english, englishAction]) expect(visible(section("en"))).toContain(part);
+    },
+  );
+
+  test("an automations read Core could not answer says so and offers to try again", () => {
+    let retried = 0;
+    const html = inLocale("de", () => createComponent(WaitingAutomations, { entries: null, onRetry: () => retried++ }));
+    expect(visible(html)).toContain("Automationen, die dich brauchen, konnten nicht geladen werden.");
+    expect(visible(html)).toContain("Erneut versuchen");
+    expect(html).toContain('role="alert"');
+    expect(retried).toBe(0);
   });
 
   test("empty, loading, error and long", () => {
@@ -228,7 +335,12 @@ test("no surface shows a forbidden status word or an identifier", () => {
   const technical = /\bc_[a-z0-9]{4,}\b|[0-9a-f]{8}-[0-9a-f]{4}-|\bcron\b|\*\/\d|code\.ts|entrypoint/;
   for (const locale of ["de", "en"] as const)
     for (const state of STATES) {
-      for (const html of [apps(state, locale), waiting(state, locale)]) {
+      for (const html of [
+        apps(state, locale),
+        waiting(state, locale),
+        ...V5_APPS.map((v5) => apps(v5, locale)),
+        waiting("automation", locale),
+      ]) {
         const text = visible(html);
         expect(text).not.toMatch(forbidden);
         expect(text).not.toMatch(technical);

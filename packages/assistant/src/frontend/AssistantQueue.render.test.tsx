@@ -132,4 +132,9 @@ describe("queued messages", () => {
     expect(markup).not.toContain('class="assistant-queue__head"');
     expect(visibleText(markup).replace(/\s+/g, " ")).toContain("Vorgemerkt · 3");
   });
+
+  test("the list's head says that the entries go in order, in German and English", () => {
+    expect(html()).toContain('<span class="assistant-queue__hint">Der Reihe nach.</span>');
+    expect(html({}, "en")).toContain('<span class="assistant-queue__hint">In order.</span>');
+  });
 });
