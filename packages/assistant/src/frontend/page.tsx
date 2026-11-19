@@ -104,8 +104,8 @@ export default ssr<AuthContext>(async (c) => {
     ),
     coreSettings.get<string>("app.url"),
     getAiChatQuotas(subject).catch(() => null),
-    // Also without the view: the sidebar shows its Approvals row from the first paint, so it never shifts the workspace.
-    loadPendingApprovals(c, { app: "assistant" }),
+    // Only for the view; the sidebar counts what waits from the open questions, like the row above the field.
+    approvalsOpen ? loadPendingApprovals(c, { app: "assistant" }) : undefined,
     // The list's first page when the page opens on it; otherwise only whether the person has any Code. Null: unknown.
     codeOpen && !detailCodeId ? loadCodeOverview(invokeCode, owner, { timeZone, now: new Date() }).catch(() => null) : undefined,
     codeOpen && !detailCodeId ? undefined : hasPersonalCode(invokeCode, owner.userId).catch(() => null),
@@ -249,7 +249,7 @@ export default ssr<AuthContext>(async (c) => {
           : null
       }
       initialProjectContext={projectContext}
-      approvals={{ page: approvals, open: approvalsOpen }}
+      approvals={{ ...(approvals !== undefined ? { page: approvals } : {}), open: approvalsOpen }}
       code={{
         has: hasCode,
         open: codeOpen,

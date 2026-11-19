@@ -32,6 +32,8 @@ export default function AssistantCodeVersionCard(props: {
   initialAction?: CodeVersionCardAction["id"];
   onActivated?: () => void;
   onAsk?: (text: string) => void;
+  /** Set by the deferred card: the version was already a fixed receipt when the chat first drew it. */
+  receipt?: boolean;
 }) {
   const locale = useLocale();
   const live = useAssistantLive();
@@ -253,6 +255,7 @@ export default function AssistantCodeVersionCard(props: {
       model={model()}
       anchorId={codeVersionCardAnchor(props.versionId)}
       onAction={onAction}
+      receipt={props.receipt}
     />
   );
 }

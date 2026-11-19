@@ -2,7 +2,7 @@ import { documentNavigate } from "@k2b/ssr/nav";
 import { Button, ButtonLink, type ButtonVariant, NoticeCard, SplitButton, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { codeVersionCardCopy } from "./code-version-card-copy";
-import type { CodeVersionCardAction, CodeVersionCardModel } from "./code-version-card-state";
+import { type CodeVersionCardAction, type CodeVersionCardModel, isCodeVersionReceipt } from "./code-version-card-state";
 
 /** The one v10 surface. Buttons keep their public appearance, loading, focus and menu contracts. */
 export function CodeVersionCardView(props: {
@@ -10,6 +10,11 @@ export function CodeVersionCardView(props: {
   ref?: (element: HTMLDivElement) => void;
   anchorId: string;
   onAction: (action: CodeVersionCardAction["id"]) => void;
+  /**
+   * The card was already a fixed receipt when the chat first drew it, so its height can never change and it needs no
+   * reserve. A card that becomes one while in view keeps its reserve, so nothing below it moves.
+   */
+  receipt?: boolean;
 }) {
   const locale = useLocale();
   let host: HTMLDivElement | undefined;
@@ -89,6 +94,7 @@ export function CodeVersionCardView(props: {
         data-chat-anchor={props.anchorId}
         data-state={props.model.kind}
         data-has-actions={props.model.primary || props.model.secondary ? "" : undefined}
+        data-receipt={props.receipt && isCodeVersionReceipt(props.model) ? "" : undefined}
         aria-busy={props.model.busy || undefined}
         tabIndex={-1}
         title={
