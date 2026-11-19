@@ -6,6 +6,7 @@ import { parseProviderLimitSnapshot, providerSecretSchema } from "../contracts";
 import { requireMailboxPermission } from "./access";
 import { auditActorFromRequest, type MailRequestContext, permissionFromScopes } from "./auth";
 import { imapSmtpConnector } from "./connectors";
+import { storedJmapDetection, withJmapDetection } from "./connectors/connection-verification";
 import { EndpointPolicyError } from "./connectors/endpoint-policy";
 import { logDatabaseFailure } from "./database-errors";
 import { enqueueMailInvalidation, mailLive } from "./live";
@@ -35,6 +36,7 @@ type DbProviderConnection = {
   status: "active" | "degraded" | "revoked";
   authenticated_principal: string | null;
   limit_snapshot: unknown;
+  jmap_detected: boolean | null;
   last_verified_at: Date | string | null;
   last_error_code: string | null;
   last_error_message: string | null;
@@ -61,6 +63,7 @@ const connectionColumns = () => sql`
   pc.status,
   pc.authenticated_principal,
   pc.limit_snapshot,
+  pc.jmap_detected,
   pc.last_verified_at,
   pc.last_error_code,
   pc.last_error_message,
@@ -172,7 +175,7 @@ export const createProviderConnection = async (params: {
       const currentAccess = await authorizeMailbox(params.context, params.mailboxId);
       if (!currentAccess.ok) return currentAccess;
       await assertLeaseActive();
-      const verification = await verifyProviderConnection(params.input);
+      const { result: verification, jmap } = await withJmapDetection(params.input.imap.host, () => verifyProviderConnection(params.input));
       if (!verification.ok) return verification;
       await assertLeaseActive();
 
@@ -202,6 +205,7 @@ export const createProviderConnection = async (params: {
           status,
           authenticated_principal,
           capabilities,
+          jmap_detected,
           server_identity,
           limit_snapshot,
           last_verified_at
@@ -223,6 +227,7 @@ export const createProviderConnection = async (params: {
           'active',
           ${verification.data.authenticatedPrincipal},
           ${verification.data.capabilities}::jsonb,
+          ${storedJmapDetection(jmap)},
           ${verification.data.serverIdentity}::jsonb,
           ${verification.data.limits}::jsonb,
           now()
@@ -297,7 +302,11 @@ export const refreshProviderConnectionLimits = async (params: {
     const barrier = await withMailboxProviderOperationBarrier(params.mailboxId, resourceIds, async (assertLeaseActive) => {
       const runtime = await loadProviderConnectionRuntimeSnapshot(params.connectionId);
       await assertLeaseActive();
-      const limits = await imapSmtpConnector.discoverLimits(runtime.runtime);
+      const { result: limits, jmap } = await withJmapDetection(
+        runtime.runtime.imap.host,
+        () => imapSmtpConnector.discoverLimits(runtime.runtime),
+        { waitForProbe: true },
+      );
       await assertLeaseActive();
 
       return sql.begin(async (tx) => {
@@ -312,7 +321,9 @@ export const refreshProviderConnectionLimits = async (params: {
         }
         const [updated] = await tx<DbProviderConnection[]>`
             UPDATE mail.provider_connections pc
-            SET limit_snapshot = ${limits}::jsonb, updated_at = now()
+            SET limit_snapshot = ${limits}::jsonb,
+              jmap_detected = ${storedJmapDetection(jmap, locked.jmap_detected)},
+              updated_at = now()
             WHERE pc.id = ${params.connectionId}::uuid
             RETURNING ${connectionColumns()}
           `;
@@ -449,7 +460,7 @@ export const replaceProviderConnection = async (params: {
         return fail(err.conflict("Provider bindings changed before credential verification; retry the operation"));
       }
       await assertLeaseActive();
-      const verification = await verifyProviderConnection(params.input);
+      const { result: verification, jmap } = await withJmapDetection(params.input.imap.host, () => verifyProviderConnection(params.input));
       if (!verification.ok) return verification;
       await assertLeaseActive();
 
@@ -484,6 +495,7 @@ export const replaceProviderConnection = async (params: {
           status = 'active',
           authenticated_principal = ${verification.data.authenticatedPrincipal},
           capabilities = ${verification.data.capabilities}::jsonb,
+          jmap_detected = ${storedJmapDetection(jmap, locked.jmap_detected, locked.imap_host !== params.input.imap.host.trim().toLowerCase())},
           server_identity = ${verification.data.serverIdentity}::jsonb,
           limit_snapshot = ${verification.data.limits}::jsonb,
           last_verified_at = now(),

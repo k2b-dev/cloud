@@ -1737,6 +1737,8 @@ export const platformMailboxOperationSummarySchema = z
     mailboxName: z.string(),
     health: mailboxHealthSchema,
     syncEnabled: z.boolean(),
+    /** Credential-free discovery hint; no mailbox uses JMAP yet. */
+    jmap: z.boolean().nullable().optional(),
     sync: z.object({
       lastAt: z.string().datetime().nullable(),
       lagSeconds: z.number().int().nonnegative().nullable(),
