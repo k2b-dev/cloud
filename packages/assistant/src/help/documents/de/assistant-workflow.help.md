@@ -104,8 +104,8 @@ werktags um 8:00. Gustav bestätigt Zeit und Notiz in einem Satz. Er stellt eine
 Wecker nur, wenn du darum bittest.
 
 Zur geplanten Zeit kommt die Notiz als Nachricht mit der Herkunft **Wecker** und
-der geplanten Zeit in diesen Chat. Gustav arbeitet sie dann mit deinen aktuellen
-Rechten ab. Aktionen fragen wie gewohnt nach deiner Freigabe. Arbeitet Gustav in
+der geplanten Zeit in diesen Chat. Gustav arbeitet sie dann mit deinem aktuellen
+Zugriff ab. Aktionen fragen wie gewohnt nach deiner Freigabe. Arbeitet Gustav in
 dem Moment, wartet der Wecker in der Warteschlange.
 
 Um Wecker zu sehen, zu verschieben oder zu löschen, bitte Gustav im Chat darum,
