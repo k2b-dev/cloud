@@ -6,7 +6,16 @@ import { KeyedFor } from "../internal/keyed-for";
 import { optionDescription } from "../internal/option-description";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
-import { DialogHeader, type PromptContent, promptButtonVariant, promptTone, sharedPrompts } from "./prompt-confirm";
+import {
+  DialogHeader,
+  openError,
+  type PromptContent,
+  promptButtonVariant,
+  promptFormUnavailable,
+  promptTone,
+  sharedPrompts,
+} from "./prompt-confirm";
+import { loadedPromptForm, loadPromptForm } from "./prompt-form-loader";
 import { resolvePromptMessages } from "./prompt-messages";
 import { openPrompt } from "./prompt-sheet";
 
@@ -541,23 +550,6 @@ const openAlert = (content: PromptContent, options?: DialogOptions, celebrate?: 
     resolveUiMessages().info,
   );
 
-type PromptForm = typeof import("./prompt-form");
-let promptForm: PromptForm | undefined;
-let promptFormLoading: Promise<PromptForm> | undefined;
-/**
- * The form and its field components load on demand, so an island that only confirms or alerts does not carry the date
- * picker, the Markdown editor and the other fields in its first script. A failed chunk request may succeed on the next
- * open.
- */
-const loadPromptForm = (): Promise<PromptForm> =>
-  (promptFormLoading ??= import("./prompt-form").then(
-    (module) => (promptForm = module),
-    (error: unknown) => {
-      promptFormLoading = undefined;
-      throw error;
-    },
-  ));
-
 // The browser loads the form when it is idle after the island starts, so the first form opens at once and without a
 // half-drawn frame. WebKit has no requestIdleCallback.
 if (typeof window !== "undefined") {
@@ -565,24 +557,6 @@ if (typeof window !== "undefined") {
   if (typeof requestIdleCallback === "function") requestIdleCallback(preload);
   else setTimeout(preload, 200);
 }
-
-const openError = (content: string | HTMLElement, options?: DialogOptions, sheet?: boolean) =>
-  openPrompt(
-    (close) => (
-      <div class="k2b-dialog__panel">
-        <DialogHeader title={options?.title ?? resolveUiMessages().error} icon={options?.icon} tone="danger" close={close} />
-        <div class="k2b-dialog__body">{content}</div>
-        <footer class="k2b-dialog__actions">
-          <button type="button" class="k2b-button" onClick={() => close()}>
-            {options?.confirmText || resolveUiMessages().close}
-          </button>
-        </footer>
-      </div>
-    ),
-    { ...options, variant: "danger" },
-    resolveUiMessages().error,
-    sheet,
-  );
 
 // The same object as `sharedPrompts`, which `PanelDialog` uses for its discard question: replacing `prompts.confirm`
 // (for example in a test) therefore reaches every confirmation.
@@ -599,9 +573,9 @@ export const prompts = Object.assign(sharedPrompts, {
 
   form: async <T extends Record<string, FieldSchema>>(config: PromptFormOptions<T>): Promise<InferFormValues<T> | null> => {
     // Once the fields are there, the form opens in the same task as the call, like every other prompt.
-    const form = promptForm ?? (await loadPromptForm().catch(() => undefined));
+    const form = loadedPromptForm() ?? (await loadPromptForm().catch(() => undefined));
     if (!form) {
-      if (!config.signal?.aborted) await openError(resolvePromptMessages().formUnavailable, { signal: config.signal }, false);
+      await promptFormUnavailable(config.signal);
       return null;
     }
     const { PromptFormDialog } = form;

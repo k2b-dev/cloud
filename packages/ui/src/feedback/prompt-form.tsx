@@ -13,8 +13,11 @@ import { createFormState, type FieldSchema, type InferFormValues, type PromptFor
 
 /**
  * The form of `prompts.form`, `prompts.prompt` and `prompts.promptNumber` with its field components. It loads on demand,
- * so an island that only confirms does not carry the date picker, the Markdown editor and the other fields.
+ * so an island that only confirms does not carry the date picker, the Markdown editor and the other fields. The typed
+ * confirmation phrase of `prompts.confirm` takes its `TextInput` from here too.
  */
+export { TextInput };
+
 const renderInfo = (content: Extract<FieldSchema, { type: "info" }>["content"]): JSX.Element => {
   if (typeof content === "string") return <p>{content}</p>;
   if (typeof content === "function") return content();
