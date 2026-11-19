@@ -17,14 +17,23 @@ const AppNameSchema = z.string().min(1).max(100);
 export const CodeChatSdkInputSchema = z
   .object({
     codeId: CodeIdSchema,
-    descriptions: z.boolean().optional().describe("Include one-line method and event descriptions in the index on demand."),
+    descriptions: z
+      .boolean()
+      .optional()
+      .describe("Return one-line method and event descriptions only for apps (required, at most two), instead of declarations."),
     apps: z
       .array(AppNameSchema)
       .max(CODE_CHAT_SDK_APPS)
       .optional()
-      .describe("App IDs or export names from the index. Omit for the index; [] returns only the shared declarations."),
+      .describe(
+        "App IDs or export names from the index. Omit for the compact index; [] returns shared declarations, or no rows when descriptions is true.",
+      ),
   })
-  .strict();
+  .strict()
+  .refine((input) => !input.descriptions || input.apps !== undefined, {
+    path: ["descriptions"],
+    message: `descriptions: true requires apps (at most ${CODE_CHAT_SDK_APPS} app IDs or export names).`,
+  });
 
 const IndexSchema = z
   .object({
@@ -65,6 +74,13 @@ const oneLine = (text: string): string => {
   const sentence = /^.*?[.!?](?=\s|$)/.exec(first)?.[0] ?? first;
   return sentence.length > 160 ? `${sentence.slice(0, 159)}…` : sentence;
 };
+
+/** Keep generated JSON-quoted literals and documentation intact; omit only spacing around type punctuation. */
+const compactDeclarations = (source: string) =>
+  source.replace(
+    /("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*(?:\r?\n|$))|\s*([{}\[\];:,|&])\s*/g,
+    (match, literalOrComment: string | undefined, punctuation: string | undefined) => literalOrComment ?? punctuation ?? match,
+  );
 
 /** The described index shared by on-demand chat discovery and the app Help reference. */
 export function codeChatSdkIndex(manifests: readonly CapabilityManifest[], options: CodeSdkOptions) {
@@ -112,6 +128,7 @@ export function codeChatSdkView(
   manifests: readonly CapabilityManifest[],
   options: CodeSdkOptions,
   apps?: readonly string[],
+  descriptions = false,
 ): CodeChatSdkData {
   if (apps === undefined) {
     const index = codeChatSdkIndex(manifests, options);
@@ -130,6 +147,14 @@ export function codeChatSdkView(
     if (!app) throw new CodeDataError("BAD_INPUT", `Unknown app ${name}. Use an appId or export from the code_sdk index.`);
     wanted.add(app.appId);
   }
+  if (descriptions) {
+    const index = codeChatSdkIndex(manifests, options);
+    return {
+      ...index,
+      apps: index.apps.filter((app) => wanted.has(app.appId)),
+      events: index.events.filter((event) => wanted.has(event.type.split(".")[0]!)),
+    };
+  }
   // A resource or app owner's handle type lives in its app; without that app the owner export has no type.
   const owner = options.owner;
   if (owner) wanted.add(owner.kind === "app" ? owner.appId : owner.ref.type.slice(0, owner.ref.type.indexOf(".")));
@@ -137,12 +162,15 @@ export function codeChatSdkView(
     manifests.filter((manifest) => wanted.has(manifest.appId)),
     options,
   );
-  return { version: 1, kind: "declarations", apps: selected.manifest.apps.map((app) => app.appId), declarations: selected.declarations };
+  return {
+    version: 1,
+    kind: "declarations",
+    apps: selected.manifest.apps.map((app) => app.appId),
+    declarations: compactDeclarations(selected.declarations),
+  };
 }
 
 export async function readCodeChatSdk(input: z.output<typeof CodeChatSdkInputSchema>, context: CodeContext): Promise<CodeChatSdkData> {
   const { manifests, options } = await loadCodeSdkCatalog(input.codeId, context);
-  return input.apps === undefined && input.descriptions
-    ? codeChatSdkIndex(manifests, options)
-    : codeChatSdkView(manifests, options, input.apps);
+  return codeChatSdkView(manifests, options, input.apps, input.descriptions);
 }

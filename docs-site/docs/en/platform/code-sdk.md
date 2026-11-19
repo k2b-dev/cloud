@@ -24,9 +24,12 @@ the same inference classification.
 
 Read `code_sdk({codeId})` for the method index, then request the declarations
 for the apps you use. The index omits descriptions to leave room for new
-capabilities. Use `code_sdk({codeId, descriptions: true})` to read the same
-index with method and event descriptions; declarations keep all their types
-and field documentation. List Queries need their declared receiver too:
+capabilities. Use `code_sdk({codeId, apps: ["mail"], descriptions: true})`
+to read only the selected apps' method and event descriptions, then omit
+`descriptions` to read their declarations. Both calls accept at most two apps;
+`descriptions: true` without `apps` is rejected. Chat declarations omit spacing
+around type punctuation while preserving types, string literals and field
+documentation. List Queries need their declared receiver too:
 `spaces.task.list({ spaceId, limit: 50, cursor })` and `spaces.event.list(...)`
 are app-level paginated Queries. Task changes use the Space handle, for
 example `spaces.space(spaceId).task.update(...)`; that handle has no

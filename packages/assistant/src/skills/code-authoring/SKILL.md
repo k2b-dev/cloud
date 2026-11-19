@@ -36,8 +36,9 @@ in your reply.
    to the latest saved version and clears fixtures.
 2. **Read the SDK in two steps.** `code_sdk({codeId})` returns an index: every
    app export with its method paths and policy row, plus every automation event.
-   For method and event descriptions, read `code_sdk({codeId, descriptions:true})`
-   on demand. Pick the apps you need, then `code_sdk({codeId, apps:["mail"]})`
+   Pick at most two apps. For their method and event descriptions, read
+   `code_sdk({codeId, apps:["mail"], descriptions:true})` on demand;
+   `descriptions:true` requires `apps`. Then `code_sdk({codeId, apps:["mail"]})`
    (at most two per call) returns their `sdk.d.ts` declarations together with
    `app`, page, `db`, `http` and event types. The complete SDK is too large for
    one result. Use only operations, inputs, results and events that the

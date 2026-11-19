@@ -26,7 +26,7 @@ background tasks cannot use these tools to edit lasting Code.
 | --- | --- |
 | `code_init` | Creates Code, returns its initial editable project and initializes this chat's draft. Omit `owner` for personal Code. |
 | `code_pull` or `code_read({codeId})` | Returns the latest submitted files and `code.json` metadata, including `baseVersionId`, and resets this chat's draft. |
-| `code_sdk` | Without `apps`, returns an index of every app export, method path, policy row and automation event. Add `descriptions: true` to read their one-line descriptions on demand. With `apps` (at most two per call), returns the generated `@sdk` declarations of those apps and of the shared `app`, page, `db`, `http` and event types. |
+| `code_sdk` | Without `apps`, returns an index of every app export, method path, policy row and automation event. With `apps` and `descriptions: true`, returns only those apps' one-line method and event descriptions; `descriptions: true` requires `apps`. With `apps` alone (at most two per call), returns the generated `@sdk` declarations of those apps and of the shared `app`, page, `db`, `http` and event types. |
 | `code_write({codeId,path,content})` | Replaces one draft file and returns a compact summary of paths, byte counts, entry, base version and expiry. Use `{codeId,path,delete:true}` to remove a file or `{codeId,path,renameTo}` to rename it. |
 | `code_check({codeId})` | Checks the draft and lists permissions with source file and line. The checked bundle stays on the server; its hash is in `manifest.hashes.bundle`. |
 | `code_test({codeId})` | Checks the draft and runs its `test/NAME.json` fixtures against fake data. Write fixtures through `code_write`. |

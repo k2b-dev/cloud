@@ -60,7 +60,7 @@ test("the complete SDK does not fit one chat tool result, which is why the chat 
   expect(sdk.declarations.length + sdk.runtime.length + size(sdk.manifest)).toBeGreaterThan(budget);
 });
 
-test("the index names every app export, method and automation event with its policy and one line", () => {
+test("the described index preserves every app export, method policy, event and bounded one-line description", () => {
   const sdk = generateCodeSdk(manifests, { mode: "personal" });
   const index = codeChatSdkIndex(manifests, { mode: "personal" });
   expect(CodeChatSdkDataSchema.safeParse(index).success).toBe(true);
@@ -93,7 +93,23 @@ test("the compact index keeps every call and event detail except descriptions, w
     const input = { codeId: "c_1234" };
     const context = { authority: { ...testIdentity("u1"), scopes: [] } };
     expect(await readCodeChatSdk(CodeChatSdkInputSchema.parse(input), context)).toEqual(index);
-    expect(await readCodeChatSdk(CodeChatSdkInputSchema.parse({ ...input, descriptions: true }), context)).toEqual(described);
+    const missingApps = CodeChatSdkInputSchema.safeParse({ ...input, descriptions: true });
+    expect(missingApps.success).toBe(false);
+    if (!missingApps.success) expect(missingApps.error.issues[0]?.message).toContain("descriptions: true requires apps");
+    const selected = await readCodeChatSdk(CodeChatSdkInputSchema.parse({ ...input, apps: ["mail"], descriptions: true }), context);
+    expect(selected).toEqual({
+      ...described,
+      apps: described.apps.filter((app) => app.appId === "mail"),
+      events: described.events.filter((event) => event.type.startsWith("mail.")),
+    });
+    expect(await readCodeChatSdk(CodeChatSdkInputSchema.parse({ ...input, apps: [], descriptions: true }), context)).toEqual({
+      version: 1,
+      kind: "index",
+      apps: [],
+      events: [],
+    });
+    const declarations = await readCodeChatSdk(CodeChatSdkInputSchema.parse({ ...input, apps: ["mail"] }), context);
+    expect(declarations.kind).toBe("declarations");
     expect(await readCodeChatSdk(CodeChatSdkInputSchema.parse({ ...input, descriptions: false }), context)).toEqual(index);
   } finally {
     load.mockRestore();
@@ -113,8 +129,7 @@ test(`the index plus the declarations of any ${CODE_CHAT_SDK_APPS} apps fit the 
   const shared = size(codeChatSdkView(manifests, { mode: "personal" }, []));
   // Each further app adds its own declarations on top of the shared ones.
   const largest = shared + largestApps.reduce((sum, value) => sum + value.size - shared, 0);
-  console.log("SDK parts", { index: size(index), shared, largestApps });
-  console.log("SDK tool result budget", size(index) + largest, "/", budget);
+  console.log("SDK tool result budget", size(index) + largest, "/", budget, { index: size(index), shared, largestApps });
   expect(size(index) + largest).toBeLessThanOrEqual(budget);
   expect(size(index) + largest).toBeLessThanOrEqual(budget * 0.9);
   const combined = codeChatSdkView(
@@ -125,6 +140,21 @@ test(`the index plus the declarations of any ${CODE_CHAT_SDK_APPS} apps fit the 
   console.log("SDK combined tool result budget", size(index) + size(combined), "/", budget);
   expect(size(index) + size(combined)).toBeLessThanOrEqual(budget);
   expect(size(index) + size(combined)).toBeLessThanOrEqual(budget * 0.9);
+  const described = codeChatSdkView(
+    manifests,
+    { mode: "personal" },
+    largestApps.map((app) => app.appId),
+    true,
+  );
+  const withDescriptions = size(index) + size(described) + size(combined);
+  console.log("SDK described tool result budget", withDescriptions, "/", budget, {
+    descriptions: size(described),
+    conservative: size(index) + size(described) + largest,
+  });
+  expect(withDescriptions).toBeLessThanOrEqual(budget * 0.9);
+  expect(size(index) + size(described) + largest).toBeLessThanOrEqual(budget * 0.9);
+  if (combined.kind !== "declarations") throw new Error("expected declarations");
+  expect(() => new Bun.Transpiler({ loader: "ts" }).transformSync(combined.declarations)).not.toThrow();
 });
 
 test("declarations cover the requested apps, the shared app, page and event types, and accept export names", () => {
@@ -134,7 +164,7 @@ test("declarations cover the requested apps, the shared app, page and event type
   if (view.kind !== "declarations") throw new Error("expected declarations");
   expect(view.apps).toEqual(["mail"]);
   expect(view.declarations).toContain("export declare const mail:");
-  expect(view.declarations).toContain("export declare const app: CodeApp;");
+  expect(view.declarations).toContain("export declare const app:CodeApp;");
   expect(view.declarations).toContain("export type CodeEvents");
   expect(view.declarations).not.toContain("export declare const spaces:");
   const hyphenated = manifests.find((manifest) => manifest.appId.includes("-"));
@@ -144,6 +174,37 @@ test("declarations cover the requested apps, the shared app, page and event type
   }
   expect(() => codeChatSdkView(manifests, { mode: "personal" }, ["nope"])).toThrow("Unknown app nope");
   expect(CodeChatSdkInputSchema.safeParse({ codeId: "c_1234", apps: ["a", "b", "c"] }).success).toBe(false);
+});
+
+test("chat declaration compaction preserves quoted punctuation and field documentation", () => {
+  const app = manifests.find((manifest) => manifest.appId === "mail")!;
+  const query = app.queries[0]!;
+  const marker = 'text ; : { } [ ] , | & \" \\ /** literal */ // literal';
+  const fixture: CapabilityManifest = {
+    ...app,
+    queries: [
+      {
+        ...query,
+        dataSchema: {
+          type: "object",
+          properties: { marker: { const: marker, description: "Keep ; : { } | & in field documentation." } },
+          required: ["marker"],
+          additionalProperties: false,
+        },
+      },
+    ],
+    actions: [],
+  };
+  const view = codeChatSdkView([fixture], { mode: "personal" }, [app.appId]);
+  if (view.kind !== "declarations") throw new Error("expected declarations");
+  const sdk = generateCodeSdk([fixture], { mode: "personal" });
+  expect(view.declarations.length).toBeLessThan(sdk.declarations.length);
+  expect(view.declarations).toContain(JSON.stringify(marker));
+  for (const token of sdk.declarations.matchAll(
+    /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|(\/\*[\s\S]*?\*\/|\/\/[^\r\n]*(?:\r?\n|$))/g,
+  ))
+    if (token[1]) expect(view.declarations).toContain(token[1]);
+  expect(() => new Bun.Transpiler({ loader: "ts" }).transformSync(view.declarations)).not.toThrow();
 });
 
 test("a resource Code's declarations always carry its owner's app, so the owner export has a type", () => {
@@ -158,6 +219,13 @@ test("a resource Code's declarations always carry its owner's app, so the owner 
   if (view.kind !== "declarations") throw new Error("expected declarations");
   expect(view.apps).toEqual(["mail", "spaces"]);
   expect(view.declarations).toContain("export declare const owner:");
+  const described = codeChatSdkView(
+    manifests,
+    { mode: "resource", owner: { kind: "resource", ref: { type: `spaces.${type.localId}`, id: "s1" } } },
+    ["mail"],
+    true,
+  );
+  expect(described.kind === "index" && described.apps.map((app) => app.appId)).toEqual(["mail"]);
 });
 
 test("the SDK index classifies inference queries as AI and keeps non-inference queries read", () => {
@@ -187,5 +255,7 @@ test("declaration selection resolves custom and reserved export names without ge
     const result = codeChatSdkView([custom, reserved], { mode: "personal" }, [name]);
     expect(result.kind === "declarations" && result.apps).toEqual([appId]);
     expect(result.kind === "declarations" && result.declarations).toContain(`export declare const ${name}:`);
+    const described = codeChatSdkView([custom, reserved], { mode: "personal" }, [name], true);
+    expect(described.kind === "index" && described.apps.map((app) => app.appId)).toEqual([appId]);
   }
 });
