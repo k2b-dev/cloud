@@ -12,8 +12,8 @@ import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-st
 import { mailTagSearch } from "../search-url";
 import { renderComposeContent, renderComposeSignatureBlock } from "../service/compose-renderer";
 import { readMailHeadFilters } from "./_components/mail-head-filters";
-import { measureGeometry, measurements, measureStrip, tabsSelector } from "./mail-shell-metrics.browser-source";
 import { buildMessageDocument } from "./_components/mail-message-document";
+import { measureGeometry, measurements, measureStrip, tabsSelector } from "./mail-shell-metrics.browser-source";
 
 setDefaultTimeout(20_000);
 /**
