@@ -26,7 +26,6 @@ export function aiChatDoneItem(entry: AiStoredMessage, locale: string, timeZone?
     anchorId: entry.seq,
     class: "ai-chat-done-line",
     tone: "ai",
-    wrap: true,
     icon: done.status === "completed" ? "ti ti-circle-check" : done.status === "failed" ? "ti ti-alert-circle" : "ti ti-circle-minus",
     label: (
       <>
