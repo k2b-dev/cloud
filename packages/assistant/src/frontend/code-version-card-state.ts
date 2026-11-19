@@ -42,6 +42,10 @@ export type CodeVersionCardModel = {
   pages?: CodePageLinks["pages"];
 };
 
+/** States a version never leaves: a newer version replaced it, or it was withdrawn. Its card is a fixed receipt. */
+export const isCodeVersionReceipt = (model: Pick<CodeVersionCardModel, "kind">): boolean =>
+  model.kind === "replaced" || model.kind === "withdrawn";
+
 /** One presentation for all version states; details and source never enter the card. */
 export function describeCodeVersionCard(input: {
   value: CodeVersionCardLoaded | "failed" | "denied" | null;
