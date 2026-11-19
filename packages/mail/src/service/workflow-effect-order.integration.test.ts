@@ -154,7 +154,7 @@ suite("Durable Mail workflow effect order", () => {
         folderId: inboxFolderId,
         captureWorkflowTriggers,
         message: {
-          remoteRef: { folderStableKey: inboxStableKey, uidValidity: "1", uid: String(uid), modseq: "1" },
+          remoteRef: { kind: "imap", folderStableKey: inboxStableKey, uidValidity: "1", uid: String(uid), modseq: "1" },
           providerMessageId: `placement-${uid}-${suffix}`,
           providerThreadId: null,
           messageId,

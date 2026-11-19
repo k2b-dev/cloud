@@ -60,7 +60,13 @@ suite("mail message identity and threading on generic IMAP", () => {
   }): ConnectorEnvelope => {
     nextUid += 1;
     return {
-      remoteRef: { folderStableKey: `${params.folder}-${suffix}`, uidValidity: "1", uid: String(nextUid), modseq: String(nextUid) },
+      remoteRef: {
+        kind: "imap",
+        folderStableKey: `${params.folder}-${suffix}`,
+        uidValidity: "1",
+        uid: String(nextUid),
+        modseq: String(nextUid),
+      },
       providerMessageId: null,
       providerThreadId: null,
       messageId: params.messageId,

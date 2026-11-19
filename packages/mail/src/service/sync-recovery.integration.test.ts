@@ -340,7 +340,7 @@ suite("mail sync recovery", () => {
     const envelopes = spyOn(imapSmtpConnector, "fetchEnvelopeBatch").mockResolvedValue({
       messages: [
         {
-          remoteRef: { folderStableKey: "INBOX:10", uidValidity: "10", uid: "1", modseq: "1" },
+          remoteRef: { kind: "imap", folderStableKey: "INBOX:10", uidValidity: "10", uid: "1", modseq: "1" },
           providerMessageId: null,
           providerThreadId: null,
           messageId: `<changed-${suffix}@example.test>`,
@@ -446,7 +446,7 @@ suite("mail sync recovery", () => {
   test("a batch the database rejects fails once and waits instead of retrying", async () => {
     const fixture = await createSyncedMailbox("rejected");
     const envelope = (subject: string): ConnectorEnvelope => ({
-      remoteRef: { folderStableKey: "INBOX:10", uidValidity: "10", uid: "1", modseq: null },
+      remoteRef: { kind: "imap", folderStableKey: "INBOX:10", uidValidity: "10", uid: "1", modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId: `<rejected-${suffix}@example.test>`,

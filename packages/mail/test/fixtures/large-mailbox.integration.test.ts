@@ -203,7 +203,7 @@ suite("large mailbox fixture persistence", () => {
         folderId: boundary.inboxId,
         captureWorkflowTriggers: false,
         message: {
-          remoteRef: { folderStableKey: "perf-folder-0", uidValidity: "1", uid: "900000", modseq: "1" },
+          remoteRef: { kind: "imap", folderStableKey: "perf-folder-0", uidValidity: "1", uid: "900000", modseq: "1" },
           providerMessageId: null,
           providerThreadId: null,
           messageId: messageHeader,

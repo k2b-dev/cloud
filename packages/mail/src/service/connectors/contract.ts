@@ -1,12 +1,12 @@
 import type { Readable } from "node:stream";
 import type {
   ConnectorVerification,
+  ImapRemoteMessageRef,
   MailEndpoint,
   ProviderConnectionInput,
   ProviderLimitSnapshot,
   ProviderSecret,
   RemoteFolder,
-  RemoteMessageRef,
   SmtpTransportCapabilities,
 } from "../../contracts";
 import type { MessageProtocolFacts } from "../message-protocol";
@@ -19,7 +19,7 @@ export type ConnectorAddress = {
 export type ConnectorProtocolFacts = MessageProtocolFacts;
 
 export type ConnectorEnvelope = {
-  remoteRef: RemoteMessageRef;
+  remoteRef: ImapRemoteMessageRef;
   providerMessageId: string | null;
   providerThreadId: string | null;
   messageId: string | null;

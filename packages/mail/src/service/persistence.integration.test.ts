@@ -335,7 +335,7 @@ const draftModeTests = (draftEditMode: "shared" | "lock") => {
     await sql`UPDATE mail.provider_connections SET secret_revision = 1 WHERE id = ${connection!.id}::uuid`;
 
     const orderingEnvelope = (params: { uid: number; messageId: string; internalDate: Date; outbound: boolean }): ConnectorEnvelope => ({
-      remoteRef: { folderStableKey: folder!.id, uidValidity: "1", uid: String(params.uid), modseq: null },
+      remoteRef: { kind: "imap", folderStableKey: folder!.id, uidValidity: "1", uid: String(params.uid), modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId: params.messageId,
@@ -447,7 +447,7 @@ const draftModeTests = (draftEditMode: "shared" | "lock") => {
       folderId: copyFolder!.id,
       message: {
         ...orderingEnvelope({ uid: 1, messageId: "<ordering-inbound@example.com>", internalDate: latestInboundAt, outbound: false }),
-        remoteRef: { folderStableKey: copyFolder!.id, uidValidity: "1", uid: "1", modseq: "2" },
+        remoteRef: { kind: "imap", folderStableKey: copyFolder!.id, uidValidity: "1", uid: "1", modseq: "2" },
       },
     });
     expect(copiedMessageId).toBe(latestInboundId);
@@ -2709,7 +2709,7 @@ const draftModeTests = (draftEditMode: "shared" | "lock") => {
       RETURNING id
     `;
     const projectedEnvelope: ConnectorEnvelope = {
-      remoteRef: { folderStableKey: folder!.id, uidValidity: "11", uid: "7", modseq: "2" },
+      remoteRef: { kind: "imap", folderStableKey: folder!.id, uidValidity: "11", uid: "7", modseq: "2" },
       providerMessageId: null,
       providerThreadId: null,
       messageId: projectedMessageId,
