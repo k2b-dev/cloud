@@ -47,9 +47,13 @@ const entry: ActivityEntry = {
   `avatar`, string actors get initials and JSX actors keep a neutral glyph. Without an actor, the row reads
   "Automatic" with a neutral system avatar. Within the last week the time
   names the hour alone, before that the day and hour.
-- **Surface:** timeline avatars align with the surrounding section title. The list
-  overhangs the content edge by the row's 0.75rem padding on both sides. Feed
-  owners keep the Mail list's 0.5rem surface inset. Rows use
+- **Surface:** timeline avatars align with the surrounding section title. One
+  bleed, `--k2b-activity-bleed`, sets how far the row surface reaches past the
+  content edge on both sides: the list's outer margin, the row's inline
+  padding, the rail, and the day line follow it. Timelines in a section, a
+  panel, or a dialog bleed 0.5rem, so the surface keeps at least 6 px from a
+  framed section's edge. A feed row outside a list, as in Mail, keeps 0.75rem,
+  and feed owners keep the Mail list's 0.5rem surface inset. Rows use
   `--k2b-radius-control`, the FileGrid list's 0.5rem / 0.75rem padding, and
   Mail's 2.75rem single-line minimum height.
   Hover uses the translucent `--k2b-app-workspace-hover`, so elevated and
