@@ -185,7 +185,7 @@ async function admitWakeupChatTurn(input: Parameters<AiChatTurnAdmission>[0]) {
         await markAiWakeupMissed(
           input.conversationId,
           send.id,
-          error instanceof CodeChatBudgetError ? "budget" : "access",
+          error instanceof CodeChatBudgetError ? error.code : "access",
           input.runConfig.locale ?? "en",
           db,
         );

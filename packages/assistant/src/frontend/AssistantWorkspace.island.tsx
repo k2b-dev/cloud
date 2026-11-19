@@ -1851,6 +1851,7 @@ export default function AssistantWorkspace(props: Props) {
     const words = wakeupWords();
     return words
       ? words.describeWakeupLine(line, {
+          canConfigureAi: props.canConfigureAi,
           locale: locale(),
           timeZone: props.timeZone,
           current: contextState.snapshot()?.wakeups?.items,

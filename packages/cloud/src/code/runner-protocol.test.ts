@@ -1,6 +1,13 @@
 import { expect, test } from "bun:test";
 import { RunnerCallError, RunnerCallResponseSchema } from "./runner-protocol";
 
+test("trusted translated refusal text survives the runner envelope and Error", () => {
+  const message = "Für das Modell fehlen Kontext- oder Ausgabegrenzen. Bitte die Administration um Hilfe.";
+  const error = { code: "code_ai_budget_unknown", status: 409, message };
+  expect(RunnerCallResponseSchema.parse({ ok: false, error })).toEqual({ ok: false, error });
+  expect(new RunnerCallError(error.code, undefined, error.status, message).message).toBe(message);
+});
+
 test("an undeclared-origin refusal names only the canonical origin through the runner error", () => {
   const error = { code: "code_http_origin_undeclared", origin: "https://api.example:8443" };
   expect(RunnerCallResponseSchema.parse({ ok: false, error })).toEqual({ ok: false, error });

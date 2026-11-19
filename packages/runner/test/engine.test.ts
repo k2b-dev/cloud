@@ -291,18 +291,25 @@ test("stable Core refusal codes survive the sandbox bridge without exception det
     await engine.load(
       run,
       `export async function main(input, cloud) {
-      try { await cloud.call('denied', null); } catch (error) { await cloud.call('report', { code: error.code, status: error.status }); }
+      for (const operation of ['denied', 'budget']) {
+        try { await cloud.call(operation, null); } catch (error) { await cloud.call('report', { code: error.code, status: error.status, message: error.message }); }
+      }
     }`,
       config,
       async (operation, input) => {
         if (operation === "denied") throw new RunnerCallError("code_access_removed", undefined, 403);
+        if (operation === "budget")
+          throw new RunnerCallError("code_ai_budget_unknown", undefined, 409, "Für das Modell fehlen Kontext- oder Ausgabegrenzen.");
         reported.push(input);
         return null;
       },
       signal,
     );
     expect(await engine.run(run, signal)).toBe("succeeded");
-    expect(reported).toEqual([{ code: "code_access_removed", status: 403 }]);
+    expect(reported).toEqual([
+      { code: "code_access_removed", status: 403, message: "The Code call was refused." },
+      { code: "code_ai_budget_unknown", status: 409, message: "Für das Modell fehlen Kontext- oder Ausgabegrenzen." },
+    ]);
   } finally {
     await engine.close();
   }

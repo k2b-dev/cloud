@@ -168,7 +168,7 @@ invocation includes `workload_run`, the approved version and entry revision;
 API keys or scopes cannot replace this chain.
 
 Responses use `RunnerCallResponse`: `{ ok: true, data }` or
-`{ ok: false, error: { code, status?, origin? } }`. For a failed capability call,
+`{ ok: false, error: { code, status?, origin?, message? } }`. For a failed capability call,
 `error.status` preserves the capability dispatch HTTP status (400–599) in the
 stored call result. This includes Core refusals and failures returned by Cloud
 before the target application runs. Supervisor failures and older stored calls
@@ -193,7 +193,9 @@ for the permission-aware read contract.
 
 Malformed sandbox calls return `code_invalid_call` in this envelope. Only
 domain data, stable error codes, refusal HTTP statuses and a validated refused
-HTTPS origin enter the sandbox. The SDK exposes `CodeError` with lowercase
+HTTPS origin enter the sandbox. For known `ai.chat.send` budget refusals, Core
+adds its own translated `message` in the owner's saved locale, with the cause
+and recovery step. The SDK exposes `CodeError` with lowercase
 snake_case `code`, `status`, a safe `message` and `details`. The status also
 stays in the stored call result. Provider error messages,
 exception text and transport credentials do not. Stale generations and lost leases return HTTP 409 so the supervisor

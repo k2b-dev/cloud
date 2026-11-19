@@ -43,6 +43,7 @@ import { aiChatSendAction, lockOwnerCodeChats } from "./ai-chat-send";
 import { aiCapabilities } from "./capabilities";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "./code/ai-budget";
 import { setCodeChatBinding } from "./code/chat-binding";
+import { codeChatBudgetMessages } from "./code/chat-budget-messages";
 import { reserveCodeChatTurnBudget } from "./code/chat-turn-budget";
 import { codeSettings } from "./code/settings";
 import { codeBundleHash, codeSourceHash } from "./code/store";
@@ -212,6 +213,28 @@ suiteFor(
   };
 
   const personContext = (): CapabilityExecutionContext => ({ ...ctx(), actor: { kind: "user", user } });
+  test.each(["de", "en"])("%s: priced Code chat without a context window reports the actual reason and remedy", async (locale) => {
+    const { readSettings } = await setup();
+    await sql`UPDATE auth.users SET notification_locale=${locale} WHERE id=${owner}::uuid`;
+    readSettings.mockResolvedValue(
+      aiSettingsFixture({
+        profiles: [
+          aiModelFixture({
+            id: "fixture",
+            pricing: { inputPerMillion: 2.5, outputPerMillion: 10 },
+            contextWindow: undefined,
+            maxOutputTokens: 4096,
+          }),
+        ],
+      }),
+    );
+    const refused = await invoke(chat.shortId, { ...ctx(), locale: locale === "de" ? "en" : "de" });
+    expect(refused).toMatchObject({
+      ok: false,
+      error: { code: "code_ai_budget_unknown", message: codeChatBudgetMessages(locale).reason("code_ai_budget_unknown") },
+    });
+    expect(await sql`SELECT 1 FROM ai.chat_send_receipts WHERE conversation_id=${chat.id}::uuid`).toHaveLength(0);
+  });
   test("a person sends directly with full session authority", async () => {
     await setup();
     const sent = await start(personContext());

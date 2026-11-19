@@ -149,13 +149,15 @@ export const RunnerCallRequestSchema = RunnerLeaseProofSchema.extend({ operation
 export type RunnerCallRequest = z.infer<typeof RunnerCallRequestSchema>;
 export const RunnerOutputRequestSchema = RunnerLeaseProofSchema.extend({ batch: CodeOutputBatchSchema }).strict();
 export type RunnerOutputRequest = z.infer<typeof RunnerOutputRequestSchema>;
-/** Stable codes plus a validated refused HTTPS origin; raw exception messages never enter the sandbox. */
+/** Stable codes and validated metadata; Core may add its own translated refusal, never raw exception text. */
 export const RunnerCallErrorSchema = z
   .object({
     code: z.string().regex(/^[a-z][a-z0-9_]{0,127}$/),
     /** Capability or Core refusal status; supervisor failures and older stored calls may omit it. */
     status: z.number().int().min(400).max(599).optional(),
     origin: CodeInternetOriginSchema.optional(),
+    /** Core-owned final text for a known refusal; upstream exception messages are never forwarded. */
+    message: z.string().optional(),
   })
   .strict();
 /** Domain refusals use this envelope even when HTTP succeeds; non-2xx responses indicate transport failure. */
@@ -170,15 +172,16 @@ export class RunnerLeaseLostError extends Error {
     super("runner_lease_lost");
   }
 }
-/** A validated, payload-free Core refusal, preserved as the sandbox Error.message. */
+/** A validated Core refusal, including its optional trusted display text. */
 export class RunnerCallError extends Error {
   constructor(
     readonly code: string,
     readonly origin?: string,
     readonly status?: number,
+    readonly displayMessage?: string,
   ) {
-    const error = RunnerCallErrorSchema.parse({ code, origin, status });
-    super(error.origin ? `${error.code}: ${error.origin}` : error.code);
+    const error = RunnerCallErrorSchema.parse({ code, origin, status, message: displayMessage });
+    super(error.message ?? (error.origin ? `${error.code}: ${error.origin}` : error.code));
   }
 }
 /** Transport-neutral seam used by C13 and the C14/C17 mock bridge. No database or queue client belongs here. */

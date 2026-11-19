@@ -27,6 +27,16 @@ export const aiWakeupWords = /* @__PURE__ */ i18n.define({
       after30: "after 30 days",
       access: "You had no access to Gustav.",
       budget: "The daily limit for turns without you is reached.",
+      code_ai_budget_unknown: (admin: boolean) =>
+        `The model's context or output limits are missing. ${admin ? "Enter the limits in model management." : "Ask your administrator to enter the limits in model management."}`,
+      code_ai_turn_exceeds_daily_budget:
+        "This model's maximum turn cost exceeds the daily automation budget. Choose a less expensive model or ask your administrator to adjust the budget.",
+      code_ai_daily_budget_limit:
+        "The daily automation budget is spent or reserved by running work. Try again after the work finishes or the budget resets.",
+      code_ai_owner_daily_budget_limit:
+        "Your daily automation budget is spent or reserved by running work. Try again after the work finishes or the budget resets.",
+      code_ai_budget_changed: "The model or its price changed. Try again with the current model settings.",
+      code_ai_budget_settled: "This alarm response has already ended. Set another time if needed.",
       queue_full: "Too many messages were already waiting in this chat.",
       delivery: "Cloud could not deliver it.",
       stays: "The alarm stays.",
@@ -57,6 +67,16 @@ export const aiWakeupWords = /* @__PURE__ */ i18n.define({
       after30: "nach 30 Tagen",
       access: "Du hattest keinen Zugriff auf Gustav.",
       budget: "Das Tageslimit für Züge ohne dich ist erreicht.",
+      code_ai_budget_unknown: (admin: boolean) =>
+        `Für das Modell fehlen Kontext- oder Ausgabegrenzen. ${admin ? "Trage die Grenzen in der Modellverwaltung ein." : "Bitte die Administration, die Grenzen in der Modellverwaltung einzutragen."}`,
+      code_ai_turn_exceeds_daily_budget:
+        "Der Höchstbetrag dieses Modells übersteigt das Tagesbudget für Automationen. Wähle ein günstigeres Modell oder bitte die Administration, das Budget anzupassen.",
+      code_ai_daily_budget_limit:
+        "Das Tagesbudget für Automationen ist verbraucht oder durch laufende Arbeit reserviert. Versuche es nach deren Abschluss oder mit dem nächsten Tagesbudget erneut.",
+      code_ai_owner_daily_budget_limit:
+        "Dein Tagesbudget für Automationen ist verbraucht oder durch laufende Arbeit reserviert. Versuche es nach deren Abschluss oder mit dem nächsten Tagesbudget erneut.",
+      code_ai_budget_changed: "Das Modell oder sein Preis hat sich geändert. Versuche es mit den aktuellen Modelleinstellungen erneut.",
+      code_ai_budget_settled: "Diese Wecker-Antwort ist bereits beendet. Stelle bei Bedarf eine neue Zeit ein.",
       queue_full: "In diesem Chat warteten schon zu viele Nachrichten.",
       delivery: "Cloud konnte ihn nicht zustellen.",
       stays: "Der Wecker bleibt stehen.",
@@ -92,7 +112,7 @@ export type AssistantWakeupLineText = {
 /** Writes one line; `current` are the chat's alarms now, without which the line is history only. */
 export const describeWakeupLine = (
   line: AiWakeupLineInput,
-  input: { locale: string; timeZone: string; current: readonly AiWakeup[] | undefined },
+  input: { locale: string; timeZone: string; current: readonly AiWakeup[] | undefined; canConfigureAi?: boolean },
 ): AssistantWakeupLineText => {
   const t = aiWakeupWords.resolve([input.locale]).t;
   const zone = { locale: input.locale, timeZone: input.timeZone, lower: true };
@@ -121,6 +141,8 @@ export const describeWakeupLine = (
           ? { label: t.catchUp, action: "catch-up" as const, id: live.id }
           : undefined;
     const reason = w.missedReason;
+    const explanation =
+      reason === "code_ai_budget_unknown" ? t.code_ai_budget_unknown(input.canConfigureAi ?? false) : reason ? t[reason] : "";
     return {
       kind,
       sign: "ti-alarm-off",
@@ -128,7 +150,7 @@ export const describeWakeupLine = (
         ? { verb: t.expired, body: ` ${w.cron ? `${t.after30} · ` : ""}${when} · ${w.note}` }
         : {
             verb: t.missedOne({ when }),
-            body: ` ${reason ? `${t[reason]} ` : ""}${w.cron ? t.next : t.stays}`,
+            body: ` ${explanation ? `${explanation} ` : ""}${w.cron ? t.next : t.stays}`,
           }),
       ...(link ? { link } : {}),
     };

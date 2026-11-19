@@ -4,6 +4,7 @@ import { aiCostDecimal, aiCostUnits, aiDecimalUnits } from "@k2b/cloud/shared";
 import { codeAiBudgetRemainder } from "./ai-budget";
 import { codeChatBudgetMessages } from "./chat-budget-messages";
 import { assertCodeChatTurnFits, codeChatCallOutputTokens, codeChatTurnMaximum } from "./chat-turn-budget";
+import { CODE_AI_DEFAULT_DAILY_BUDGET_USD } from "./settings";
 
 const briefingModel = { pricing: { inputPerMillion: 2.5, outputPerMillion: 10 }, contextWindow: 128_000 };
 
@@ -39,12 +40,27 @@ test.each(["de", "en"])("the unpriced-model reason names the automation, model a
 
 test("priced models without an authoritative context limit cannot prove the maximum", () => {
   expect(codeChatTurnMaximum({ pricing: { inputPerMillion: 1, outputPerMillion: 1 } })).toBeNull();
+  expect(() =>
+    assertCodeChatTurnFits(
+      { pricing: briefingModel.pricing },
+      { code: CODE_AI_DEFAULT_DAILY_BUDGET_USD, owner: CODE_AI_DEFAULT_DAILY_BUDGET_USD },
+    ),
+  ).toThrow("code_ai_budget_unknown");
+});
+
+test.each(["de", "en"])("unknown model limits name the cause and administrative remedy in %s", (locale) => {
+  const message = codeChatBudgetMessages(locale).reason("code_ai_budget_unknown");
+  expect(message).toContain(locale === "de" ? "Kontext- oder Ausgabegrenzen" : "context or output limits");
+  expect(message).toContain(locale === "de" ? "Modellverwaltung" : "model management");
+  expect(message).not.toContain(locale === "de" ? "verbraucht" : "spent");
 });
 
 test("a briefing at 2.50/10 USD with a 128k window fits a 1 USD day, and a second turn still fits after it", () => {
   const maximum = codeChatTurnMaximum(briefingModel);
   expect(maximum).toBe("0.680000000000");
-  expect(() => assertCodeChatTurnFits(briefingModel, { code: 1, owner: 1 })).not.toThrow();
+  expect(() =>
+    assertCodeChatTurnFits(briefingModel, { code: CODE_AI_DEFAULT_DAILY_BUDGET_USD, owner: CODE_AI_DEFAULT_DAILY_BUDGET_USD }),
+  ).not.toThrow();
   // Median measured briefing (16.11.2026): 101,434 input and 2,804 output tokens.
   const briefing = aiCostDecimal(aiCostUnits(briefingModel.pricing, 101_434, 2_804));
   expect(codeAiBudgetRemainder(1, briefing)).toBeGreaterThanOrEqual(aiDecimalUnits(maximum!));

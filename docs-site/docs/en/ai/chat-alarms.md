@@ -134,6 +134,10 @@ frames the note as a previously stored reminder, with this source.
 Account, model access and budget refusals before the turn starts create a stored
 `meta.wakeupEvent` without a model call. Repeated refusals for the same reason add a fact only on the first transition.
 A one-off becomes `missed`; a repeating alarm advances to its next occurrence.
+Budget refusals retain their specific code in `missedReason`, including
+`code_ai_budget_unknown` for missing model limits. The chat line names the
+cause and tells administrators to complete the model's limits in model
+management; other people are asked to contact their administrator.
 Model access is checked again before execution; a worker model refusal remains
 visible through the ordinary failed-turn state. The owner can catch up a missed one-off
 once within seven days. Catch-up is a message of the person, so ordinary send
