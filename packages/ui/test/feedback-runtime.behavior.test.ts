@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { createComponent, createSignal, onCleanup } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
@@ -22,6 +22,30 @@ describe("@k2b/ui feedback runtime", () => {
     dialogCore.close();
     toast.dismissAll();
     await Bun.sleep(220);
+  });
+
+  test("form helpers follow content by default and forward an explicit opt-out", async () => {
+    const dom = createDomTestHarness();
+    const { dialogCore } = await import("../src/feedback/dialog-core");
+    const { prompts } = await import("../src/feedback/prompts");
+    const open = spyOn(dialogCore, "open").mockResolvedValue(undefined);
+    try {
+      await prompts.form({ fields: {} });
+      expect(open.mock.calls.at(-1)?.[1]?.followContent).toBe(true);
+      await prompts.form({ fields: {}, followContent: false });
+      expect(open.mock.calls.at(-1)?.[1]?.followContent).toBe(false);
+      await prompts.prompt("Name");
+      expect(open.mock.calls.at(-1)?.[1]?.followContent).toBe(true);
+      await prompts.promptNumber("Count", 1, { followContent: false });
+      expect(open.mock.calls.at(-1)?.[1]?.followContent).toBe(false);
+      await prompts.dialog(() => document.createElement("p"), { followContent: true });
+      expect(open.mock.calls.at(-1)?.[1]?.followContent).toBe(true);
+      await prompts.alert("Ready");
+      expect(open.mock.calls.at(-1)?.[1]?.followContent).toBeUndefined();
+    } finally {
+      open.mockRestore();
+      dom.cleanup();
+    }
   });
 
   test("repositioning an open dialog does not notify class observers", async () => {

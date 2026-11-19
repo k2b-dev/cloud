@@ -203,9 +203,11 @@ an animation frame after the scroll event.
 
 A live region that a component fills after a timer is read with a bounded
 wait, such as `waitForFunction` on its text, never once after `settled()`.
-`settled()` waits for fonts, animations, and frames, not for timers. The
-outcome line of `ChatOutcome` in `@k2b/ui` empties its `role="status"` region
-and fills it 40 ms later, so that the same words spoken again are announced.
+`settled()` waits for fonts, the first resize-observer delivery, and the frame
+scheduled from that delivery. It then waits for running finite animations and
+two quiet frames. It still rejects a page that keeps starting animations and
+never waits for timers. The outcome line of `ChatOutcome` in `@k2b/ui` empties
+its `role="status"` region and fills it 40 ms later, so that the same words spoken again are announced.
 The answering case in `action-question.browser.test.ts` holds the fixture's
 answer, waits until the status names the pending line, and only then releases
 the answer ([#1572](https://github.com/k2b-dev/cloud/issues/1572)).
@@ -293,8 +295,9 @@ is meant for one step, not for a page load, a mount, and a flow.
 
 Before a test reads styles or geometry after an action, it awaits
 `settled(page)` from `packages/ui/test/browser.ts` or waits for its own
-condition. `settled()` waits for fonts, for the running finite animations on
-the document timeline, and then for two frames. It does not wait for infinite,
+condition. `settled()` waits for fonts, the first resize-observer delivery and
+its scheduled frame, then for running finite animations on the document
+timeline, and finally for two frames. It does not wait for infinite,
 scroll-driven, or paused animations, because they never finish. When the page
 starts new finite animations in that time, `settled()` throws and names them:
 a page that keeps animating is not settled, and the test must wait for its own
@@ -857,6 +860,7 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_VALKEY_URL` | `redis://127.0.0.1:6380` (no database index) |
 | `CLOUD_TEST_FILEGATE_URL` | `http://127.0.0.1:4000` |
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
+| `CLOUD_TEST_JMAP_URL` | `http://admin:cloud_jmap_test@127.0.0.1:8080` (dedicated test server) |
 | `CLOUD_TEST_CLICKHOUSE_URL` | `http://cloud_ci:cloud_ci@127.0.0.1:8123` (test admin URL) |
 | `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
 | `CLOUD_TEST_S3_ENDPOINT` | `http://127.0.0.1:3900` |
@@ -891,6 +895,37 @@ removed, because unset is the off switch for those clients. `DATABASE_URL` and
 and `redis` handles would otherwise dial `localhost`, so an ungated test that
 reaches for them fails with a connection error instead of touching the stack
 configured in `.env`.
+
+`CLOUD_TEST_JMAP_URL` includes URL-encoded Basic Auth credentials in the form
+`http://admin:<password>@127.0.0.1:<port>`. It has no runtime alias. The gate
+checks `/jmap/session` within three seconds; an unset target skips JMAP suites,
+and a configured but unusable target fails. Use a dedicated test server: the
+fixture imports and deletes mail.
+
+Start the same Stalwart 1.0.0 server locally with:
+
+```bash
+docker run --detach --name cloud-test-stalwart --publish 127.0.0.1:8080:8080 \
+  --env STALWART_RECOVERY_ADMIN=admin:cloud_jmap_test \
+  stalwartlabs/stalwart:v1.0.0@sha256:baafeacd6cbde77acdd94af49972d41c6709e54a376df48e18a9fe3f445eb3d5
+```
+
+Without a configuration file, Stalwart starts in setup mode. The recovery admin
+can read and write mail immediately, and data lives in memory. Sending mail
+needs a configured domain and account and is not covered here. Only HTTP on
+port 8080 listens. Startup can take 60 seconds while the web admin download
+times out; wait until `curl --silent --output /dev/null --write-out '%{http_code}'
+http://127.0.0.1:8080/jmap/session` returns `200`, then run:
+
+```bash
+CLOUD_TEST_JMAP_URL=http://admin:cloud_jmap_test@127.0.0.1:8080 \
+  bun run test --integration --filter stalwart
+```
+
+The fixture checks the authenticated session and Inbox, uploads and imports a
+fictional message, finds it through `Email/changes`, then deletes it. Stop the
+server and remove its anonymous volumes with
+`docker rm --force --volumes cloud-test-stalwart`.
 
 `CLOUD_TEST_CLICKHOUSE_URL` is an **admin URL**, including URL-encoded userinfo,
 for example `http://cloud_ci:cloud_ci@127.0.0.1:8123` for the throwaway CI service.
@@ -1269,9 +1304,10 @@ through their own runner with disposable containers. See
 ## What CI runs
 
 The pull request `gate` runs `bun run check`, `bun run test`, and the
-integration suites against PostgreSQL 17, NATS JetStream, Valkey, and
-Gotenberg. Path-filtered jobs, such as the Grids certification, the WebKit
-browser tests, the documentation checks, and the image boot smoke, run when
+integration suites against PostgreSQL 17, NATS JetStream, Valkey,
+Gotenberg, and Stalwart 1.0.0 for JMAP. Path-filtered jobs, such as the Grids
+certification, the WebKit browser tests, the documentation checks, and the image
+boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
@@ -1284,6 +1320,11 @@ name to order suites; the least-loaded shard wins, with suite count and shard
 index breaking load ties. Integration keeps the Grids exclusion;
 Grids certification runs in its own path-filtered job. Every integration shard
 gets fresh service containers, and `gate` requires the whole matrix to succeed.
+Stalwart starts on every integration shard because suite assignment changes with
+the weights and file set. Its startup overlaps installation; immediately before
+the tests, CI waits up to 90 seconds for `/jmap/session` to return `200` (the
+measured 60-second startup plus 30 seconds of reserve). Nightly uses the same
+server and readiness check in each Postgres matrix entry.
 
 The path-filtered `ui` job builds and typechecks `@k2b/ui` and its standalone
 fixture. UI tests run in the existing unfiltered `unit` shards, including the

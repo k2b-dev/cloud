@@ -1,6 +1,13 @@
-import { applySharedTextEvent, type SharedTextStore, sharedTextNodeId } from "@k2b/cloud/shared-text";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { ConflictError } from "@k2b/sync";
+import { logger } from "@k2b/cloud/services";
+import {
+  applySharedTextEvent,
+  MalformedSharedTextEventError,
+  SharedTextBoundaryError,
+  type SharedTextStore,
+  sharedTextNodeId,
+} from "@k2b/cloud/shared-text";
+import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
+import { ConflictError, CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import { inspectTableStructure } from "@k2b/ui/text-editor/model";
 import type { sql } from "bun";
 import * as Y from "yjs";
@@ -35,6 +42,7 @@ export { isDraftDocumentStreamFull, mailDraftDocumentLog } from "./draft-documen
 export { sharedDraftsSupported } from "./draft-document-log-policy";
 
 type Db = typeof sql;
+const log = logger("mail:draft-documents");
 type DraftRow = {
   id: string;
   state: string;
@@ -335,8 +343,9 @@ export const lockDraftDocumentInTransaction = async (
       const current = await loadRow();
       if (!current || current.edit_mode !== "shared") return null;
       row = current;
-      if (String(row.doc_generation) !== generation) throw new Error("Draft document generation changed");
-      if (!row.doc_state) throw new Error("Draft document snapshot is missing");
+      if (String(row.doc_generation) !== generation) throw new ConflictError("Draft document generation changed");
+      if (!row.doc_state)
+        throw new MalformedSharedTextEventError(draftId, row.doc_cursor ?? "unknown", "Draft document snapshot is missing");
       // Return a replayed load to the public shared-text binding. The SQL row
       // remains the only durable snapshot; replay never acknowledges local input.
       const topic = mailDraftDocumentLog.topic();
@@ -355,7 +364,8 @@ export const lockDraftDocumentInTransaction = async (
           signal: options.signal,
         }))
           applySharedTextEvent(doc, event, draftId, generation);
-        if (doc.store.pendingStructs || doc.store.pendingDs) throw new Error("Draft document has unresolved dependencies");
+        if (doc.store.pendingStructs || doc.store.pendingDs)
+          throw new MalformedSharedTextEventError(draftId, head, "Draft document has unresolved dependencies");
         return {
           state: Y.encodeStateAsUpdate(doc),
           cursor: head,
@@ -712,8 +722,47 @@ export const readDraftDocument = async (params: Target): Promise<Result<DraftDoc
       const locked = await lockDraftDocumentInTransaction({ ...params, db, permission: "read" });
       return locked.ok ? locked.data.read() : locked;
     });
-  } catch {
-    return fail(err.conflict("Draft document cannot be read completely; retry or recover pending content"));
+  } catch (error) {
+    if (params.signal?.aborted) return fail(err.conflict("The draft changed while loading. Keep any text on this device and reopen it."));
+    if (isServiceError(error)) return fail(error);
+    if (error instanceof ConflictError)
+      return fail(err.conflict("The draft changed while loading. Keep any text on this device and reopen it."));
+    log.error("Shared draft read failed", {
+      mailboxId: params.mailboxId,
+      draftId: params.draftId,
+      requestId: params.context.requestId,
+      error,
+      errorName: error instanceof Error ? error.name : undefined,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+    });
+    if (isDraftDocumentStreamFull(error)) return draftDocumentStreamFull();
+    if (error instanceof RetentionGapError || error instanceof CursorMismatchError)
+      return fail({
+        code: "DRAFT_DOCUMENT_HISTORY_UNAVAILABLE",
+        status: 409,
+        message:
+          "The draft's editing history is unavailable. Keep any text on this device and ask a mailbox administrator to recover the draft before sending.",
+      });
+    if (error instanceof MalformedSharedTextEventError)
+      return fail({
+        code: "DRAFT_DOCUMENT_INVALID_HISTORY",
+        status: 409,
+        message:
+          "The draft's editing history could not be read safely. Keep any text on this device and ask a mailbox administrator to recover the draft before sending.",
+      });
+    if (error instanceof SharedTextBoundaryError)
+      return fail({
+        code: error.code,
+        status: 409,
+        message: "The draft's editing state changed. Keep any text on this device and reopen the draft before editing.",
+      });
+    return fail({
+      code: "DRAFT_DOCUMENT_READ_UNAVAILABLE",
+      status: 500,
+      message:
+        "The draft could not be loaded. Keep any text on this device and retry shortly. If this continues, ask a mailbox administrator to recover the draft.",
+    });
   }
 };
 

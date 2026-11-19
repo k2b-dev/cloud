@@ -113,6 +113,46 @@ describe("Mail attachment preview", () => {
     }
   });
 
+  test("a tapped tile shows that it is opening in the same box until the viewer arrives, and ignores a second tap", async () => {
+    const dom = createDomTestHarness();
+    const opened = Promise.withResolvers<void>();
+    const asked: string[] = [];
+    const { default: MailMessageAttachments } = await import("./MailMessageAttachments");
+    const { render } = await import("solid-js/web");
+    const dispose = render(
+      () =>
+        createComponent(MailMessageAttachments, {
+          mailboxId: "Box001",
+          messageId: "Msg001",
+          attachments,
+          onOpen: (attachment) => {
+            asked.push(attachment.id);
+            return opened.promise;
+          },
+        }),
+      dom.root,
+    );
+    const tile = () => dom.root.querySelectorAll<HTMLButtonElement>(".mail-attachment-tile__open")[0]!;
+    const glyph = () => tile().querySelector(".mail-attachment-tile__icon i")?.className ?? "";
+    try {
+      const resting = glyph();
+      expect(resting).not.toContain("ti-loader-2");
+      tile().click();
+      tile().click();
+      await Promise.resolve();
+      expect(asked).toEqual(["Att001"]);
+      expect(tile().getAttribute("aria-busy")).toBe("true");
+      expect(glyph()).toContain("ti-loader-2");
+      opened.resolve();
+      await settle();
+      expect(tile().hasAttribute("aria-busy")).toBe(false);
+      expect(glyph()).toBe(resting);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("offers each attachment and all of them to an app that stores files, reading them from their download route", async () => {
     const dom = createDomTestHarness();
     const requested: string[] = [];

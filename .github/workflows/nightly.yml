@@ -74,6 +74,7 @@ jobs:
         ports: ["3001:3000"]
     env:
       CLOUD_TEST_CLICKHOUSE_URL: http://cloud_ci:cloud_ci@127.0.0.1:8123
+      CLOUD_TEST_JMAP_URL: http://admin:cloud_jmap_test@127.0.0.1:8080
       CLOUD_TEST_DATABASE_URL: postgres://cloud:cloud@127.0.0.1:5432/cloud_nightly_test
       CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222
       CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
@@ -104,8 +105,9 @@ jobs:
       - run: |
           set -euo pipefail
           # The Files Filegate suites, the Notebooks shared-log suite and the Assistant artifact suite start their own containers from these images.
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.1.0 dxflrs/garage:v2.3.0
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.1.0 dxflrs/garage:v2.3.0 stalwartlabs/stalwart:v1.0.0
           docker run --detach --name nightly-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
+          docker run --detach --name nightly-stalwart --publish 127.0.0.1:8080:8080 --env STALWART_RECOVERY_ADMIN=admin:cloud_jmap_test stalwartlabs/stalwart:v1.0.0
           docker compose -f compose.test-s3.yml up -d --wait
           "$GITHUB_WORKSPACE/.github/poppler.sh" install
       - uses: ./.github/actions/install
@@ -113,9 +115,29 @@ jobs:
       - name: Install the Playwright browser used by the Assistant code host and Mail tests
         run: ./packages/assistant/node_modules/.bin/playwright install chromium
       # Grids certification has its own job below.
+      - name: Wait for the Stalwart JMAP session
+        run: |
+          set -euo pipefail
+          # Setup mode can spend 60 s downloading its web admin before opening HTTP.
+          # Allow 30 s reserve; startup overlaps dependency and browser installation.
+          deadline=$((SECONDS + 90))
+          status=000
+          while (( SECONDS < deadline )); do
+            remaining=$((deadline - SECONDS))
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time "$remaining" http://127.0.0.1:8080/jmap/session) || status=000
+            if [[ "$status" == 200 ]]; then exit 0; fi
+            sleep 1
+          done
+          echo "Stalwart JMAP session did not return 200 within 90 s (last HTTP status: $status)" >&2
+          docker logs nightly-stalwart || true
+          exit 1
       - run: bun run test --integration --exclude grids
       - if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
         run: |
+          if [[ "$JOB_STATUS" != success ]]; then docker logs nightly-stalwart || true; fi
+          docker rm --force --volumes nightly-stalwart || true
           docker compose -f compose.test-s3.yml logs
           docker compose -f compose.test-s3.yml down --volumes
           docker rm --force nightly-nats

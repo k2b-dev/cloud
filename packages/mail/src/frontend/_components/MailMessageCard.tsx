@@ -82,7 +82,7 @@ type MailMessageCardActions = {
   /** Undo send and cancel return the message as a draft; the conversation opens it in its place. */
   openDraft?: (draftId: string) => void;
   /** Opens an attachment in the conversation's Lightbox, which steps through every attachment of the conversation. */
-  openAttachment?: (messageId: string, attachmentId: string) => void;
+  openAttachment?: (messageId: string, attachmentId: string) => Promise<void>;
 };
 
 export default function MailMessageCard(props: {
@@ -648,7 +648,9 @@ export default function MailMessageCard(props: {
                 canShare={props.context.canAdmin}
                 archiveName={props.context.subject}
                 onOpen={
-                  props.actions.openAttachment ? (attachment) => props.actions.openAttachment?.(props.message.id, attachment.id) : undefined
+                  props.actions.openAttachment
+                    ? (attachment) => props.actions.openAttachment?.(props.message.id, attachment.id) ?? Promise.resolve()
+                    : undefined
                 }
               />
             </Show>

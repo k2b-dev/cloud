@@ -30,7 +30,7 @@ const present = (events: MailActivityEvent[], locale = "de") =>
   });
 
 const sentence = (row: { actorLabel: string; before: string; subject: string | null; after: string }) =>
-  `${row.actorLabel} ${row.before}${row.subject ?? ""}${row.after}`;
+  `${row.actorLabel} · ${row.before}${row.subject ?? ""}${row.after}`;
 
 describe("mailbox event presentation", () => {
   test("explains a system draft removal during F6 consolidation in both locales", () => {
@@ -81,15 +81,16 @@ describe("mailbox event presentation", () => {
       }),
     ]);
     expect(rows.map(sentence)).toEqual([
-      "Mira Schulz hat dich zu Invoice 4711 als zuständig hinzugefügt",
-      "Mira Schulz hat Invoice 4711 als erledigt markiert",
-      "Mira Schulz hat einen Entwurf begonnen",
-      "Mira Schulz – eine Nachricht wurde nicht gesendet in Invoice 4711",
-      "Mira Schulz hat eine Antwort gesendet in Invoice 4711",
-      "Workflow · Rechnungen hat Invoice 4711 mit Tag Rechnung versehen",
-      "Mail hat Invoice 4711 wieder geöffnet",
+      "Mira Schulz · Dir zugewiesen: Invoice 4711",
+      "Mira Schulz · Als erledigt markiert: Invoice 4711",
+      "Mira Schulz · Entwurf begonnen",
+      "Mira Schulz · Nachricht nicht gesendet in Invoice 4711",
+      "Mira Schulz · Antwort gesendet in Invoice 4711",
+      "Rechnungen · Tag Rechnung gesetzt in Invoice 4711",
+      "Mail · Wieder geöffnet: Invoice 4711",
     ]);
-    expect(rows[0]?.detail).toBe("Zuständig: Mira Schulz und Du");
+    // The sentence names you; the line below names only the other assignee, as an addition.
+    expect(rows[0]?.detail).toBe("Ebenfalls zuständig: Mira Schulz");
     expect(rows.map((row) => row.tone)).toEqual(["assign", "done", "draft", "error", "sent", "automation", "done"]);
     // The failure names its reason and points to the conversation without asking to send again.
     expect(rows[3]?.detail).toBe("Die Nachricht wurde nicht zugestellt. Details in der Unterhaltung.");
@@ -97,6 +98,35 @@ describe("mailbox event presentation", () => {
     expect(rows[5]?.automated).toBe(true);
     expect(rows.map((row) => row.day)).toEqual(["Heute", "Heute", "Heute", "Heute", "Heute", "Heute", "Gestern"]);
     expect(rows[6]?.detail).toBe("Eine neue Nachricht ist eingegangen.");
+  });
+
+  test("names a new assignee once and lists only further assignees below", () => {
+    const NORA = "33333333-3333-4333-8333-333333333333";
+    const nora = { id: NORA, displayName: "Nora Berg", avatarHash: null };
+    const mira = { id: MIRA, displayName: "Mira Schulz", avatarHash: null };
+    const assign = (before: (typeof nora)[], after: (typeof nora)[]) =>
+      event({
+        id: "1",
+        action: "conversation.collaboration_updated",
+        actor: { kind: "user", id: ME, displayName: "Lea Brandt", avatarHash: null },
+        metadata: { before: { assigneeUserIds: before.map((p) => p.id) }, after: { assigneeUserIds: after.map((p) => p.id) } },
+        assignees: { before, after },
+      });
+    const [alone] = present([assign([], [mira])]);
+    expect(sentence(alone!)).toBe("Lea Brandt · Zugewiesen an Mira Schulz: Invoice 4711");
+    expect(alone?.detail).toBeNull();
+    const [joined] = present([assign([nora], [nora, mira])], "en");
+    expect(sentence(joined!)).toBe("Lea Brandt · Assigned to Mira Schulz: Invoice 4711");
+    expect(joined?.detail).toBe("Also assigned: Nora Berg");
+    // "Zuständig" without "also" stays only where the sentence names nobody.
+    const [removed] = present([assign([nora, mira], [nora])]);
+    expect(sentence(removed!)).toBe("Lea Brandt · Zuweisung für Mira Schulz aufgehoben in Invoice 4711");
+    expect(removed?.detail).toBe("Zuständig: Nora Berg");
+    const [self] = present([
+      { ...assign([nora], [nora, mira]), actor: { kind: "user", id: MIRA, displayName: "Mira Schulz", avatarHash: null } },
+    ]);
+    expect(sentence(self!)).toBe("Mira Schulz · Selbst zugewiesen: Invoice 4711");
+    expect(self?.detail).toBe("Ebenfalls zuständig: Nora Berg");
   });
 
   test("names why a send failed as the reader does", () => {

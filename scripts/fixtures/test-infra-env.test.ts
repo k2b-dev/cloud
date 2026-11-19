@@ -247,6 +247,43 @@ describe("ClickHouse test gate", () => {
   });
 });
 
+describe("JMAP test gate", () => {
+  test("uses an explicit account URL without inventing a runtime alias", () => {
+    expect(infraMappings.jmap).toEqual({ test: "CLOUD_TEST_JMAP_URL", runtime: [] });
+    expect(readTestTarget({}, "jmap")).toBeUndefined();
+    expect(readTestTarget({ CLOUD_TEST_JMAP_URL: " " }, "jmap")).toBeUndefined();
+    expect(readTestTarget({ CLOUD_TEST_JMAP_URL: " http://admin:fake@127.0.0.1:8080 " }, "jmap")).toBe("http://admin:fake@127.0.0.1:8080");
+    expect(testRuntimeEnv({ CLOUD_TEST_JMAP_URL: "http://admin:fake@127.0.0.1:8080" })).not.toHaveProperty("JMAP_URL");
+  });
+  const run = (source: string, target?: string) =>
+    Bun.spawnSync([process.execPath, "--no-env-file", "-e", source], {
+      cwd: workspaceRoot,
+      env: { PATH: process.env.PATH, BUN_OPTIONS: "--no-env-file", ...(target ? { CLOUD_TEST_JMAP_URL: target } : {}) },
+    });
+  test("unset target skips the suite", () => {
+    const result = run(
+      'import { suiteFor } from "./scripts/fixtures/test-infra.ts"; import { describe } from "bun:test"; console.log(suiteFor("jmap") === describe.skip)',
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString().trim()).toBe("true");
+  });
+  test("unreachable target fails loudly without printing the password", () => {
+    const result = run(
+      'import { requireInfra } from "./scripts/fixtures/test-infra.ts"; try { await requireInfra("jmap") } catch (e) { console.error(e.message); process.exit(1) }',
+      "http://admin:obviously-fake-jmap-password@127.0.0.1:1",
+    );
+    expect(result.exitCode).toBe(1);
+    const output = result.stdout.toString() + result.stderr.toString();
+    expect(output).toContain("CLOUD_TEST_JMAP_URL=http://admin:REDACTED@127.0.0.1:1/");
+    expect(output).toContain("set but not usable");
+    expect(output).not.toContain("obviously-fake-jmap-password");
+  });
+  test("the integration runner discovers the standalone server fixture", async () => {
+    const { listIntegrationFiles } = await import("../run-tests");
+    expect(await listIntegrationFiles(join(workspaceRoot, "scripts"))).toContain("fixtures/stalwart.integration.test.ts");
+  });
+});
+
 describe("S3 test configuration", () => {
   test("keeps test S3 targets explicit without production environment aliases", () => {
     const env = testRuntimeEnv({ CLOUD_TEST_S3_ENDPOINT: "http://127.0.0.1:3900", CLOUD_TEST_S3_BUCKET: "cloud-test" });
