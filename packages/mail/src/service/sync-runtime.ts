@@ -3068,10 +3068,12 @@ const runSyncFolderJobOutcome = async (
     // The mail server did not answer recent connection attempts, and its breaker keeps the job from
     // trying again yet. The turn is neither done nor a failed attempt: the folder shows that its
     // sync gave up, so a sync someone waits for ends, and the scheduler queues the folder again once
-    // the breaker's window ends. Retrying or resubmitting here would only ask the breaker again.
+    // the breaker's window ends. Retrying here would only ask the breaker again. A push the job took
+    // up keeps its rank as for a busy lease: the job comes back once, when the window ends.
     if (code === "PROVIDER_UNREACHABLE") {
       countFolderBatch("unreachable");
       await markFolderDegraded(folderId);
+      if (pushed) ctx.resubmit({ delayMs: retryAfterMs(error, 15_000), input: { folderId, backfill, pushed, ...carried } });
       return { deferred: code };
     }
     // A sibling job holds the remote resource: routine contention, not a failed attempt.

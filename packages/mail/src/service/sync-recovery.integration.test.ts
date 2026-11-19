@@ -296,6 +296,21 @@ suite("mail sync recovery", () => {
     expect(status).not.toHaveBeenCalled();
     expect(resubmit).not.toHaveBeenCalled();
     expect(takeFolderSyncActivity().batches).toEqual({ unreachable: 1 });
+    // A pushed change keeps its rank: its job comes back once, when the breaker's window ends.
+    await runSyncFolderJob({
+      input: { folderId: fixture.folderId, remoteResourceId: fixture.resourceId, pushed: true },
+      heartbeat: async () => undefined,
+      resubmit,
+    });
+    expect(resubmit).toHaveBeenCalledTimes(1);
+    expect(resubmit.mock.calls[0]![0]).toMatchObject({
+      delayMs: expect.any(Number),
+      input: { folderId: fixture.folderId, remoteResourceId: fixture.resourceId, pushed: true },
+    });
+    expect(resubmit.mock.calls[0]![0].delayMs).toBeGreaterThan(5_000);
+    expect(status).not.toHaveBeenCalled();
+    resubmit.mockClear();
+    takeFolderSyncActivity();
     expect(await folderSyncStatus(fixture)).toBe("degraded");
     // The scheduler queues no check of the mailbox while its window is open.
     expect(await submitDueFolderSyncs(100_000)).not.toContain(fixture.folderId);

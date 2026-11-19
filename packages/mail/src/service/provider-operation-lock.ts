@@ -55,7 +55,8 @@ const LEASE_PLACE_TTL_MS = 5 * 60_000;
 // it is open, nobody gets the lease and nobody connects; the turn says how long the breaker stays
 // open (`unreachableForMs`). Folder syncs and rediscoveries end without using an attempt and do not
 // count as done: they record the mailbox as unreachable, and the scheduler queues them again once
-// the window ends or a person asks for a sync. Other jobs, such as commands and body downloads,
+// the window ends or a person asks for a sync; a folder sync the provider's push asked for comes
+// back once, when the window ends, to keep its rank. Other jobs, such as commands and body downloads,
 // wait as for a busy lease: they keep their place and ask again within the line's longest retry,
 // so when the breaker closes early, for example because IMAP push reached the provider again, the
 // job next in line takes the lease within seconds.
