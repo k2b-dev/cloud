@@ -58,8 +58,8 @@ const LEASE_PLACE_TTL_MS = 5 * 60_000;
 // the window ends or a person asks for a sync; a folder sync the provider's push asked for comes
 // back once, when the window ends, to keep its rank. Other jobs, such as commands and body downloads,
 // wait as for a busy lease: they keep their place and ask again within the line's longest retry,
-// so when the breaker closes early, for example because IMAP push reached the provider again, the
-// job next in line takes the lease within seconds.
+// so when the breaker closes early, for example after a person's manual sync reached the provider,
+// the job next in line takes the lease within seconds.
 //
 // After the window, the breaker remembers it until provider work of the mailbox succeeds, and the
 // job next in line probes the provider. Each Mail process probes one such mailbox at a time, so
@@ -79,9 +79,9 @@ const LEASE_PLACE_TTL_MS = 5 * 60_000;
 // (submitDueWork in sync-runtime): a provider that keeps dropping connection attempts, such as a
 // host that blocks this installation's address, is asked no more often than that, instead of every
 // minute by each folder check, rediscovery, and IMAP push reconnect. The scheduler queues no
-// folder check and IMAP push does not connect while the window is open. A provider that answers
-// again resets the window as soon as IMAP push or a person's manual sync reaches it, and otherwise
-// at the next probe, at most one longest window later. Up to a quarter of the window is added at
+// folder check and IMAP push does not connect while the window is open. A person's manual sync
+// ends the window at once; a provider that answers again is found at the next probe after the
+// window, by a scheduled check or IMAP push, at most one longest window later. Up to a quarter of the window is added at
 // random, so mailboxes of one host that failed together do not all ask to probe at the same
 // moment. A breaker that no job asks about for one longest window after its window ended forgets
 // it.
@@ -467,11 +467,20 @@ export const recordProviderReachable = async (resource: string): Promise<void> =
   await redis.send("DEL", [leaseLineKeys(resource)[2]]).catch(() => undefined);
 };
 
+// KEYS: the mailbox's breaker. Ends an open window and keeps its length, so the next job probes.
+const endBreakerWindowScript = `
+  if redis.call("EXISTS", KEYS[1]) == 1 then redis.call("HSET", KEYS[1], "until", 0) end
+`;
+
 /**
  * A person asked to sync or check the mailbox now: the next job tries the provider at once
- * instead of waiting for the breaker's window, and a timeout starts again at the first window.
+ * instead of waiting for the breaker's window. The breaker keeps the window's length, so a provider
+ * that still does not answer waits the doubled window again, not the first one; a probe that
+ * reaches it closes the breaker. Valkey errors are ignored, as for `recordProviderReachable`.
  */
-export const resetProviderBreaker = recordProviderReachable;
+export const resetProviderBreaker = async (resource: string): Promise<void> => {
+  await redis.send("EVAL", [endBreakerWindowScript, "1", leaseLineKeys(resource)[2]]).catch(() => undefined);
+};
 
 // KEYS: the mailbox's breaker. Returns how long it stays open, or 0.
 const breakerOpenForScript = `

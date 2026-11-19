@@ -242,7 +242,7 @@ suite("mail sync recovery", () => {
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
     try {
       // The timeout opened the mailbox's provider breaker: the next sync does not connect and says
-      // so, until the breaker's window ends or, as here, IMAP push reaches the provider again.
+      // so, until the breaker's window ends and a sync or IMAP push reaches the provider again, as here.
       await expect(syncFolderBatch(fixture.folderId, async () => undefined)).rejects.toMatchObject({ code: "PROVIDER_UNREACHABLE" });
       expect(status).not.toHaveBeenCalled();
       await recordProviderReachable(fixture.resourceId);
@@ -317,6 +317,10 @@ suite("mail sync recovery", () => {
     // A person's sync tries the server at once: it closes the breaker before it queues the sync.
     expect(await requestFolderSync(fixture, "unreachable-sync")).toEqual({ folderId: fixture.folderId, queued: true });
     expect(await providerBreakerOpenForMs(fixture.resourceId)).toBe(0);
+    // It keeps the window's length: a server that still does not answer waits the doubled window.
+    expect(await breakerWindow()).toBe(15_000);
+    // The sync runtime is not started here, so the manual sync queued no job and recorded no recent
+    // request that would let the scheduler skip the folder.
     expect(await submitDueFolderSyncs(100_000)).toContain(fixture.folderId);
     try {
       await runSyncFolderJob({ input: { folderId: fixture.folderId }, heartbeat: async () => undefined, resubmit });

@@ -1048,6 +1048,27 @@ export const runImapPushBinding = async (
   }
 };
 
+/**
+ * A connection attempt of IMAP push that the server let run into its timeout opens the breaker, as
+ * one of a folder sync does. While the breaker is open, folder checks do not try the server, so
+ * push may be the only one that finds it unreachable: an active mailbox then says so too, with the
+ * timeout as its reason. The next sync that reaches the server makes it active again.
+ */
+const recordPushConnectFailure = async (remoteResourceId: string, error: unknown): Promise<number | null> => {
+  const openForMs = await recordProviderFailure(remoteResourceId, error);
+  if (openForMs === null) return null;
+  await sql`
+    UPDATE mail.mailboxes mailbox
+    SET health = 'degraded', health_reason = ${providerErrorMessage(error, "The mail server did not answer in time")}
+    FROM mail.remote_resources resource
+    WHERE resource.id = ${remoteResourceId}::uuid
+      AND mailbox.id = resource.mailbox_id
+      AND mailbox.health = 'active'
+      AND mailbox.sync_enabled = true
+  `.catch((cause) => log.warn("IMAP push could not record an unreachable mail server", { remoteResourceId, error: errorDetail(cause) }));
+  return openForMs;
+};
+
 const defaultDependencies: ImapPushRuntimeDependencies = {
   listPlans,
   loadPlan: loadImapPushPlan,
@@ -1060,7 +1081,7 @@ const defaultDependencies: ImapPushRuntimeDependencies = {
   enqueueRediscovery: enqueueBindingRediscovery,
   loadReconnectBudget,
   recordProviderReachable,
-  recordProviderFailure,
+  recordProviderFailure: recordPushConnectFailure,
   providerBreakerOpenForMs,
   get leaderMutex() {
     return listenerLeaderMutex();

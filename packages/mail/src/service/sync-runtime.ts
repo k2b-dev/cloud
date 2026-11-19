@@ -2998,7 +2998,7 @@ const markFolderDegraded = async (folderId: string): Promise<void> => {
   try {
     // Database time, like the request time it is compared with.
     const [folder] = await sql<{ gave_up_at: Date }[]>`
-      UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${folderId}::uuid RETURNING now() AS gave_up_at
+      UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${folderId}::uuid AND sync_status <> 'excluded' RETURNING now() AS gave_up_at
     `;
     if (!folder) return;
     await redis.send("SET", [syncGaveUpKey(folderId), String(folder.gave_up_at.getTime()), "PX", String(FOLDER_SYNC_REQUEST_MS)]);
@@ -3702,10 +3702,10 @@ const startRediscoveryJob = async (): Promise<void> => {
       const code = normalizeSyncErrorCode(error);
       if (code === "MAILBOX_TRANSPORT_CHANGED") return;
       // The binding's provider did not answer recent connection attempts. The rediscovery ends
-      // without trying it: the scheduler asks again at its next verification, and a person's
-      // rediscovery resets the breaker first.
+      // without trying it: the scheduler queues it again once the breaker's window ends, and a
+      // person's rediscovery ends the window first.
       if (code === "PROVIDER_UNREACHABLE") {
-        log.info("Mail provider rediscovery skipped while the provider is unreachable", {
+        log.debug("Mail provider rediscovery skipped while the provider is unreachable", {
           bindingId: ctx.input.bindingId,
           retryAfterMs: retryAfterMs(error, 0),
         });
@@ -3883,13 +3883,15 @@ const boundDueFolders = async <F extends { id: string; remote_resource_id: strin
   return folders.filter((folder) => !left.has(folder.id));
 };
 
-/** The folders whose remote mailbox's provider breaker is closed; one Valkey call per mailbox. */
-const withoutUnreachableResources = async <F extends { remote_resource_id: string }>(folders: F[]): Promise<F[]> => {
-  const unreachable = new Set<string>();
-  for (const resource of new Set(folders.map((folder) => folder.remote_resource_id))) {
-    if ((await providerBreakerOpenForMs(resource)) > 0) unreachable.add(resource);
-  }
-  return unreachable.size === 0 ? folders : folders.filter((folder) => !unreachable.has(folder.remote_resource_id));
+/**
+ * The rows whose remote mailbox's provider breaker is closed. One Valkey call per mailbox, sent
+ * together so the client pipelines them.
+ */
+const withoutUnreachableResources = async <F extends { remote_resource_id: string }>(rows: F[]): Promise<F[]> => {
+  const resources = [...new Set(rows.map((row) => row.remote_resource_id))];
+  const openFor = await Promise.all(resources.map((resource) => providerBreakerOpenForMs(resource)));
+  const unreachable = new Set(resources.filter((_resource, index) => openFor[index]! > 0));
+  return unreachable.size === 0 ? rows : rows.filter((row) => !unreachable.has(row.remote_resource_id));
 };
 
 /**
@@ -3948,8 +3950,8 @@ const submitDueWork = async (): Promise<{
   draftExports: number;
   draftImports: number;
 }> => {
-  const bindings = await sql<{ id: string }[]>`
-    SELECT binding.id
+  const dueBindings = await sql<{ id: string; remote_resource_id: string }[]>`
+    SELECT binding.id, binding.remote_resource_id
     FROM mail.provider_bindings binding
     JOIN mail.remote_resources resource ON resource.id = binding.remote_resource_id
     JOIN mail.mailboxes mailbox ON mailbox.id = resource.mailbox_id
@@ -3970,6 +3972,9 @@ const submitDueWork = async (): Promise<{
     ORDER BY binding.last_verified_at NULLS FIRST, binding.id
     LIMIT 100
   `;
+  // A binding whose mail server did not answer recent connection attempts is verified once its
+  // provider breaker's window ends; a rediscovery queued earlier would only find the breaker open.
+  const bindings = await withoutUnreachableResources(dueBindings);
   for (const binding of bindings) {
     await submitRediscoveryJob(binding.id, false);
   }

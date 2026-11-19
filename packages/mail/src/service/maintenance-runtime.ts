@@ -273,7 +273,9 @@ const executeMaintenanceWork = async (
     const reason = await syncUnavailable(command.mailbox_id, folderId);
     if (reason) return folderId ? { folderId, queued: false, reason } : { queuedFolders: 0, reason };
   }
-  if (enqueueWork && (command.kind === "sync_mailbox" || command.kind === "sync_folder")) await tryProviderNow(command.mailbox_id);
+  if (enqueueWork && (command.kind === "sync_mailbox" || command.kind === "sync_folder" || command.kind === "rebuild_folder")) {
+    await tryProviderNow(command.mailbox_id);
+  }
   if (command.kind === "sync_mailbox") {
     if (enqueueWork) return { queuedFolders: await enqueueMailboxSync(command.mailbox_id, { trigger: "maintenance", awaited: true }) };
     const [folders] = await sql<{ count: number }[]>`
