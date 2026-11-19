@@ -155,7 +155,9 @@ then supplies `chat_missing` through Code attention for its owner.
 The version read model includes a blocking notice with `code: "chat_missing"`
 and a localized recovery sentence. The existing `ai.open_questions` feed carries
 one `kind: "code_attention"` item with “<title> needs a chat”, `reason: "chat_missing"`
-and an `href` to the Code page. Consumers use this existing feed for Waiting for you, including Code
+and an `href` to the Code page. When the owner's bound chat is archived, the item
+also carries `archivedChat` (`id`, `title`), so Waiting for you offers **Restore
+chat** beside **Choose a chat …**. Consumers use this existing feed for Waiting for you, including Code
 without a submitted version; they do not synthesize a second waiting item.
 An unused binding supplies no chat notice or waiting item.
 
@@ -263,7 +265,10 @@ allow" answers are untouched.
   (`code_activate`, `code_changes`, `code_expired`) come from the same open
   questions as the row (`ai.open_questions`); each leads to its card in the
   chat. **Automations** that need the person (`code_attention`, such as a
-  missing secret or chat) are read with `kind: "code_attention"`. Code of a
+  missing secret or chat) are read with `kind: "code_attention"`; an archived
+  chat can be restored in the row. This chat's only entry leaves the row above
+  the field while its card's answers are in view; entries of other chats stay.
+  Code of a
   place that is paused or whose last run failed is no entry here; it shows on
   the place's Code page, in the panel's **Code of …** block and as the
   attention dot in the place app's navigation.
