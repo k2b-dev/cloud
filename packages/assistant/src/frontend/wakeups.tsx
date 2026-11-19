@@ -105,7 +105,7 @@ const copy = (ctx: AssistantWakeupContext) => words.resolve([ctx.locale()]).t;
 
 const DAY_MS = 86_400_000;
 const client = api.create<AiRoutes>({ baseUrl: "/api/ai" });
-const route = (chatId: string) => client.conversations[":conversationId"].wakeups;
+const route = client.conversations[":conversationId"].wakeups;
 /** The server's own sentence for a refused change, such as a stale revision or the limit of five. */
 const refused = async (response: Pick<Response, "json">, fallback: string) => {
   const body: unknown = await response.json().catch(() => null);
@@ -113,22 +113,22 @@ const refused = async (response: Pick<Response, "json">, fallback: string) => {
 };
 const wakeupApi = {
   create: async (chatId: string, input: AiWakeupInput) => {
-    const response = await route(chatId).$post({ param: { conversationId: chatId }, json: input });
+    const response = await route.$post({ param: { conversationId: chatId }, json: input });
     if (!response.ok) await refused(response, "Could not set the alarm.");
   },
   update: async (chatId: string, id: string, patch: AiWakeupPatch) => {
-    const response = await route(chatId)[":wakeupId"].$patch({ param: { conversationId: chatId, wakeupId: id }, json: patch });
+    const response = await route[":wakeupId"].$patch({ param: { conversationId: chatId, wakeupId: id }, json: patch });
     if (!response.ok) await refused(response, "Could not change the alarm.");
   },
   remove: async (chatId: string, wakeup: AiWakeup) => {
-    const response = await route(chatId)[":wakeupId"].$delete({
+    const response = await route[":wakeupId"].$delete({
       param: { conversationId: chatId, wakeupId: wakeup.id },
       json: { revision: wakeup.revision },
     });
     if (!response.ok) await refused(response, "Could not delete the alarm.");
   },
   catchUp: async (chatId: string, wakeup: AiWakeup) => {
-    const response = await route(chatId)[":wakeupId"]["catch-up"].$post({
+    const response = await route[":wakeupId"]["catch-up"].$post({
       param: { conversationId: chatId, wakeupId: wakeup.id },
       json: { revision: wakeup.revision },
     });
@@ -535,7 +535,7 @@ export function WakeupList(props: {
 
 /** For the archive dialog: the chat's alarms, which rest while it is archived, one per line; empty without any. */
 export const restingWakeups = async (chatId: string, locale: string) => {
-  const response = await route(chatId).$get({ param: { conversationId: chatId } });
+  const response = await route.$get({ param: { conversationId: chatId } });
   if (!response.ok) return "";
   const { items } = await response.json();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
