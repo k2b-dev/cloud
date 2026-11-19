@@ -1895,6 +1895,7 @@ CREATE TABLE mail.provider_connections (
     status text DEFAULT 'active'::text NOT NULL,
     authenticated_principal text,
     capabilities jsonb DEFAULT '{}'::jsonb NOT NULL,
+    jmap_detected boolean,
     server_identity jsonb DEFAULT '{}'::jsonb NOT NULL,
     last_verified_at timestamp with time zone,
     last_error_code text,

@@ -50,7 +50,31 @@ exceptions, and nothing beside them moves: a folding list such as
 the frame of a dialog, which stands alone above the page. When one dialog
 replaces another, the dialog core morphs the frame's width and height with
 `--k2b-motion-morph` and `--k2b-ease-morph` while the contents stand at their
-own sizes and the frame clips them.
+own sizes and the frame clips them. Content following is separate and opt-in:
+`dialogCore.open` and ordinary prompts default to `followContent: false`;
+`prompts.form`, `prompts.prompt`, and `prompts.promptNumber` default to `true`
+and accept `false` to opt out. Use it for forms whose notices or fields change.
+Without opt-in, content changes take their natural layout immediately, without
+a held height, content observers, or a fold. When an opted-in dialog's content changes
+height, the frame folds to the new height with `--k2b-motion-fold` and
+`--k2b-ease-glide`, its top edge staying put. If growth needs more room below,
+the top and height animate together from their visible positions so the footer
+stays in view throughout. Between folds it holds its height. Non-control loading
+regions marked `aria-busy="true"`, the change that clears busy, and changes
+before the entrance has finished and the first rest take their new height
+without a fold; centred frames stay centred before first rest. Loading buttons do
+not suppress a notice fold. After first rest, a focused text input (including search, email, URL, phone,
+password and number), textarea or editable text region prevents animated
+shrinking until focus leaves those fields. Checkboxes and switches do not.
+Loading and pre-rest changes still take their natural height. Focusing a text
+field during a shrink stops it at its visible height. A pressed pointer defers
+the focusout fold until release or cancellation and the next frame, so footer
+clicks land before the footer moves. Natural changes during a fold retarget it
+from the visible size. Running child height or grid-row animations finish
+before the frame folds to their final size; paused children do not block it.
+A viewport resize keeps the top edge and only clamps into the visible area;
+during a fold it retargets the motion. Viewport and anchor corrections take
+precedence over child animations. Pinch-zoom viewport changes are ignored.
 
 Choose the duration by what changes. Use the standard curve for ordinary
 entry motion. A large surface that grows, shrinks, or moves uses the morph

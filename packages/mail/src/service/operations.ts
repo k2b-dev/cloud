@@ -194,6 +194,7 @@ const loadMailboxOperations = async (
       COUNT(*) FILTER (WHERE binding.state = 'active')::int AS active,
       COUNT(*) FILTER (WHERE binding.state = 'degraded')::int AS degraded,
       jsonb_build_object(
+        'jmap', COUNT(*) FILTER (WHERE binding.state = 'active' AND connection.jmap_detected IS TRUE),
         'idle', COUNT(*) FILTER (WHERE binding.state = 'active' AND binding.capabilities ->> 'idle' = 'true'),
         'condstore', COUNT(*) FILTER (WHERE binding.state = 'active' AND binding.capabilities ->> 'condstore' = 'true'),
         'qresync', COUNT(*) FILTER (WHERE binding.state = 'active' AND binding.capabilities ->> 'qresync' = 'true'),
@@ -208,6 +209,7 @@ const loadMailboxOperations = async (
         'gmailExtensions', COUNT(*) FILTER (WHERE binding.state = 'active' AND binding.capabilities ->> 'gmailExtensions' = 'true')
       ) AS capabilities
     FROM mail.provider_bindings binding
+    JOIN mail.provider_connections connection ON connection.id = binding.connection_id
     JOIN mail.remote_resources resource ON resource.id = binding.remote_resource_id
     WHERE resource.mailbox_id = ${mailboxId}::uuid
   `;
@@ -524,6 +526,7 @@ export const getPlatformMailOperations = async (
           cursor_created_at: string;
           health: MailboxHealth;
           sync_enabled: boolean;
+          jmap_detected: boolean | null;
           last_sync_at: Date | string | null;
           lag_seconds: number | string | null;
           messages: number | string;
@@ -562,6 +565,12 @@ export const getPlatformMailOperations = async (
           to_char(mailbox.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at,
           mailbox.health,
           mailbox.sync_enabled,
+          (
+            SELECT connection.jmap_detected
+            FROM mail.provider_connections connection
+            WHERE connection.owner_mailbox_id = mailbox.id
+              AND connection.status <> 'revoked'
+          ) AS jmap_detected,
           sync.last_sync_at,
           CASE WHEN sync.last_sync_at IS NULL THEN NULL
             ELSE GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - sync.last_sync_at))))::bigint
@@ -626,6 +635,7 @@ export const getPlatformMailOperations = async (
       mailboxName: mailbox.name,
       health: mailbox.health,
       syncEnabled: mailbox.sync_enabled,
+      jmap: mailbox.jmap_detected,
       sync: {
         lastAt: toIso(mailbox.last_sync_at),
         lagSeconds: mailbox.lag_seconds == null ? null : Number(mailbox.lag_seconds),

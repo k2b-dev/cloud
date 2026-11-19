@@ -57,6 +57,18 @@ const platformSummary = {
 };
 
 describe("Mail operator read model contract", () => {
+  test("exposes the single connection's JMAP observation, or null when none is known", () => {
+    for (const jmap of [true, false, null]) {
+      expect(platformMailboxOperationSummarySchema.parse({ ...platformSummary, jmap }).jmap).toBe(jmap);
+    }
+    // Older responses can omit the field; no connection is represented by null in current responses.
+    expect(platformMailboxOperationSummarySchema.parse(platformSummary).jmap).toBeUndefined();
+    expect(
+      mailboxOperatorOperationsSchema.parse({ ...snapshot, connectors: { ...snapshot.connectors, capabilities: { jmap: 1 } } }).connectors
+        .capabilities.jmap,
+    ).toBe(1);
+  });
+
   test("accepts aggregate state without content-bearing fields", () => {
     expect(mailboxOperatorOperationsSchema.parse(snapshot)).toEqual(snapshot);
   });

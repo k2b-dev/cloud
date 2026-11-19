@@ -203,9 +203,11 @@ an animation frame after the scroll event.
 
 A live region that a component fills after a timer is read with a bounded
 wait, such as `waitForFunction` on its text, never once after `settled()`.
-`settled()` waits for fonts, animations, and frames, not for timers. The
-outcome line of `ChatOutcome` in `@k2b/ui` empties its `role="status"` region
-and fills it 40 ms later, so that the same words spoken again are announced.
+`settled()` waits for fonts, the first resize-observer delivery, and the frame
+scheduled from that delivery. It then waits for running finite animations and
+two quiet frames. It still rejects a page that keeps starting animations and
+never waits for timers. The outcome line of `ChatOutcome` in `@k2b/ui` empties
+its `role="status"` region and fills it 40 ms later, so that the same words spoken again are announced.
 The answering case in `action-question.browser.test.ts` holds the fixture's
 answer, waits until the status names the pending line, and only then releases
 the answer ([#1572](https://github.com/k2b-dev/cloud/issues/1572)).
@@ -293,8 +295,9 @@ is meant for one step, not for a page load, a mount, and a flow.
 
 Before a test reads styles or geometry after an action, it awaits
 `settled(page)` from `packages/ui/test/browser.ts` or waits for its own
-condition. `settled()` waits for fonts, for the running finite animations on
-the document timeline, and then for two frames. It does not wait for infinite,
+condition. `settled()` waits for fonts, the first resize-observer delivery and
+its scheduled frame, then for running finite animations on the document
+timeline, and finally for two frames. It does not wait for infinite,
 scroll-driven, or paused animations, because they never finish. When the page
 starts new finite animations in that time, `settled()` throws and names them:
 a page that keeps animating is not settled, and the test must wait for its own
@@ -1134,6 +1137,21 @@ selection without starting infrastructure with
 `bun run --cwd packages/mail test:integration:list`; run one file with
 `bun run --cwd packages/mail test:integration src/service/sent-projection.integration.test.ts`.
 The root runner runs Mail this way, one file per suite.
+
+Mail also has a read-only JMAP conformance suite at
+`packages/mail/src/service/connectors/jmap-conformance.integration.test.ts`.
+It is skipped unless `MAIL_JMAP_CONFORMANCE_CONFIG` points to a private JSON
+file with `origin` (a public HTTPS origin), `username` and `password`.
+It verifies the primary Mail account and reads all folders, including their
+roles and rights. It does not create, change or send messages. Keep the file
+outside Git and restrict its permissions. Run the suite explicitly against a
+test account; normal tests use an in-process server and no real credentials.
+
+```bash
+MAIL_JMAP_CONFORMANCE_CONFIG=/path/to/private-jmap-config.json \
+  bun run --cwd packages/mail test:integration src/service/connectors/jmap-conformance.integration.test.ts
+```
+
 
 ### Sync namespaces on the test broker
 

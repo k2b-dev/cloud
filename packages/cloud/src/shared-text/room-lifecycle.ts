@@ -3,7 +3,7 @@ import * as Y from "yjs";
 import { checkSharedTextBoundary, SHARED_TEXT_FREEZE_SAFETY_MS, SharedTextBoundaryError } from "./boundary";
 import { createDoc } from "./documents";
 import { SHARED_TEXT_NAME, sharedTextNodeId } from "./events";
-import { checkLifecycleAdmission } from "./lifecycle-store";
+import { checkLifecycleAdmission, type SharedTextLifecycleEntry } from "./lifecycle-store";
 import type { sharedText } from "./log";
 import { SharedTextSnapshotSaveError } from "./snapshots";
 import type { SharedTextStoredState, SharedTextSyncEvent } from "./types";
@@ -28,6 +28,35 @@ export const createRoomLifecycle = (config: {
       throw new Error("Room lifecycle requires a non-expiring document log with whenFull: reject");
     if (!config.log.lifecycle) throw new Error("Room lifecycle requires sharedText.define({ lifecycle: { maxBytes } })");
     return config.log.lifecycle;
+  };
+  const publishMarker = async (
+    docId: string,
+    target: string | null,
+    data: SharedTextSyncEvent,
+    entry: SharedTextLifecycleEntry,
+    signal: AbortSignal,
+  ) => {
+    const topic = config.log.topic();
+    try {
+      return await topic.publish({ tenantId: docId, expectedAfter: target, data });
+    } catch (error) {
+      // A covering snapshot may prune the captured tenant head even while we
+      // own admission. Retry only that definite rejection, once; a newer head
+      // or an uncertain broker outcome must remain a conflict/failure.
+      if (!(error instanceof ConflictError) || target === null) throw error;
+      try {
+        signal.throwIfAborted();
+        if ((await topic.latestCursor({ tenantId: docId })) !== null) throw error;
+        const current = await requireRetention().get(docId);
+        if (current?.revision !== entry.revision) throw error;
+        signal.throwIfAborted();
+      } catch {
+        // No retry was published. Preserve the definite rejection so freeze
+        // can release its preparation even if the coverage/ownership probe failed.
+        throw error;
+      }
+      return topic.publish({ tenantId: docId, expectedAfter: null, data });
+    }
   };
   const inspect = async (docId: string, signal: AbortSignal) => {
     const stored = await config.load(docId);
@@ -94,7 +123,7 @@ export const createRoomLifecycle = (config: {
                 current ? { ...current, restoreRevision: current.stored.restoreRevision } : null,
               );
       if (!current) return null;
-      const { topic, target, restoreRevision } = current;
+      const { target, restoreRevision } = current;
       if ("tail" in current && current.tail?.restoreRevision !== undefined && current.tail.restoreRevision !== restoreRevision)
         throw new SharedTextBoundaryError("GENERATION_CHANGED");
       signal.throwIfAborted();
@@ -108,10 +137,10 @@ export const createRoomLifecycle = (config: {
           : { state: "open", thaw: { freezeCursor: options.freezeCursor!, cursor: null, restoreRevision } },
       );
       signal.throwIfAborted();
-      const marker = await topic.publish({
-        tenantId: docId,
-        expectedAfter: target,
-        data: {
+      const marker = await publishMarker(
+        docId,
+        target,
+        {
           kind: "freeze",
           payload: "",
           restoreRevision,
@@ -119,7 +148,9 @@ export const createRoomLifecycle = (config: {
           originPeerId: null,
           room: { state },
         },
-      });
+        entry,
+        signal,
+      );
       if (state === "closed")
         await authority.put(docId, entry, {
           state: "closed",
@@ -143,7 +174,7 @@ export const createRoomLifecycle = (config: {
       const drained = await config.log.admit(docId, signal, async (signal) => {
         const current = await inspect(docId, signal);
         if (!current) return null;
-        const { stored, topic, target, tail } = current;
+        const { stored, target, tail } = current;
         await checkLifecycleAdmission(authority, docId);
         checkSharedTextBoundary(tail, stored.restoreRevision);
         const doc = createDoc(stored);
@@ -168,10 +199,10 @@ export const createRoomLifecycle = (config: {
             try {
               signal.throwIfAborted();
               attempted = true;
-              return await topic.publish({
-                tenantId: docId,
-                expectedAfter: target,
-                data: {
+              return await publishMarker(
+                docId,
+                target,
+                {
                   kind: "freeze",
                   payload: "",
                   restoreRevision: stored.restoreRevision,
@@ -179,7 +210,9 @@ export const createRoomLifecycle = (config: {
                   originPeerId: null,
                   room: { state: "frozen", expiresAt: leaseExpiresAt },
                 },
-              });
+                preparing,
+                signal,
+              );
             } catch (error) {
               // Explicit rejections guarantee no marker. A timeout/disconnect
               // might have committed, so keep those unknown outcomes fenced.

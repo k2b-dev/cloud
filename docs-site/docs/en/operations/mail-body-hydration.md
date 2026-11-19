@@ -56,6 +56,29 @@ provider's `internal_date` is a message date, not proof of when Cloud could
 first fetch the message. Delivery delay, provider visibility, push reconnects,
 and folder sync duration require separate evidence.
 
+When the IMAP server announces new mail in the listened folder, usually the
+Inbox, the first batch of that folder's sync ranks with commands. It does not
+wait behind the scheduled checks of the mailbox's other folders. Commands and
+other provider work still alternate, so those folder checks keep at least every
+other turn while the Inbox receives mail without pause. The listener's own
+minute check, polling on a server without IDLE, and announced flag changes or
+removals alone rank like any folder check.
+
+A folder sync that finds the mailbox's provider lease held does not ask again
+every few seconds. It parks with its place and rank in the line, and the release
+that makes it next wakes it. A woken folder keeps the free lease for its job for
+up to two minutes, and each scheduler run renews that while the job has not
+started. A provider that answers again after its breaker opened wakes the line
+too. While the breaker is open or remembers its window, folder syncs ask again
+instead of parking. When no release wakes a parked folder, for example because a Mail
+process stopped or the waiter ahead of it never came back, the scheduler wakes
+the line when it next reaches the mailbox, usually within a minute; on an
+installation with more than 500 eligible folders that can take a few runs. A
+waiter that is not woken within five minutes leaves the line, and its folder
+returns with its next scheduled sync. In the folder sync activity log, `busy` counts the turns that
+found the lease held, which is about once per waiting folder and scheduler run
+instead of every few seconds, and `woken` counts the wakes that started a job.
+
 Inspect `cld mail sync runs --mailbox <mailbox> --state failed` and the mailbox
 sync status. A long batch may perform flag or UID reconciliation before its
 envelopes commit. Body timings start after the envelope commit and cannot

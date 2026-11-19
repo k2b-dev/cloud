@@ -89,6 +89,8 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  // Nullable metadata-only addition: no default, backfill or table scan.
+  await tx`ALTER TABLE mail.provider_connections ADD COLUMN IF NOT EXISTS jmap_detected boolean`.simple();
   await tx`ALTER TABLE mail.schema_migrations ADD COLUMN IF NOT EXISTS details jsonb NOT NULL DEFAULT '{}'`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS consolidated_count integer NOT NULL DEFAULT 0`.simple();
   // Avoid validating a new CHECK while the column-addition transaction holds ACCESS EXCLUSIVE.
