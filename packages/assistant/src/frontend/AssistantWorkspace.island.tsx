@@ -94,7 +94,6 @@ import {
 } from "./AssistantChatContext";
 import { AssistantChatContextPlaces, type ContextBoxActions } from "./AssistantChatContextBox";
 import type { ChatSidebarJump } from "./AssistantChatSidebar";
-import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantCodeBlock, { type AssistantCodeBlockInitial } from "./AssistantCodeBlock";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
@@ -260,8 +259,6 @@ type Props = {
     /** One personal Code, at /app/assistant/code/<codeId>, rendered with the shared Code page. */
     detail?: CodePageData;
   };
-  /** Code of a place that needs the person, when the page opened on Waiting for you; null when Core could not answer. */
-  initialAttention?: CodeAttentionView | null;
   /** The person's own Code that waits for them, when the page opened on Waiting for you; null when Core could not answer. */
   initialAutomations?: WaitingAutomation[] | null;
   /** The panel's place and its Code at render time, for the "Code of …" block. */
@@ -3360,7 +3357,8 @@ export default function AssistantWorkspace(props: Props) {
                       fallback={
                         <AssistantApprovalsView
                           initial={approvalsRendered() ? props.approvals.page : undefined}
-                          initialAttention={approvalsRendered() ? props.initialAttention : undefined}
+                          questions={() => waiting().entries}
+                          onJump={(question) => void jumpToQuestion(question)}
                           initialAutomations={approvalsRendered() ? props.initialAutomations : undefined}
                           timeZone={props.timeZone}
                         />
