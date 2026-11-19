@@ -1,22 +1,14 @@
 import type { AiOpenQuestion, AiOpenQuestions } from "@k2b/cloud/ai";
 import Approvals from "@k2b/cloud/approvals/list";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
-import { coreClient } from "@k2b/cloud/clients/core";
-import { type ApprovalPage, ApprovalPageSchema } from "@k2b/cloud/contracts/approvals";
+import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
 import { Button, Paper, Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { type Accessor, createMemo, createSignal, For, getOwner, onCleanup, onMount, runWithOwner, Show, untrack } from "solid-js";
 import type { WaitingAutomation } from "../waiting-automations";
-import type { WaitingQuestionsPagingState } from "../waiting-questions-page";
+import type { WaitingQuestionsController, WaitingQuestionsPagingState } from "../waiting-questions-page";
 import AssistantWaitingAutomations from "./AssistantWaitingAutomations";
 import { WAITING_KIND_ICON } from "./AssistantWaitingStrip";
-import { browserCodeInvoke } from "./code-client";
 import { assistantMessages } from "./messages";
-
-const loadApprovalPage = async (): Promise<ApprovalPage> => {
-  const response = await coreClient.approvals.$get({ query: { app: "assistant" } });
-  if (!response.ok) throw new Error(`Approvals answered ${response.status}`);
-  return ApprovalPageSchema.parse(await response.json());
-};
 
 /** Kinds of the person's open questions that are versions of their own Code, such as "Switch on version 2". */
 const VERSION_KINDS: ReadonlySet<AiOpenQuestion["kind"]> = new Set(["code_activate", "code_changes", "code_expired"]);
@@ -28,7 +20,7 @@ const VERSION_KINDS: ReadonlySet<AiOpenQuestion["kind"]> = new Set(["code_activa
  * show the same entries and change together. The server seeds every list; without a seed, approvals and automations
  * load when the page opens. Nothing on this page decides anything by itself.
  */
-export default function AssistantApprovalsView(props: {
+export type AssistantApprovalsViewProps = {
   /** The server's first page; null when it could not be read. */
   initial?: ApprovalPage | null;
   /** The person's open questions as the row above the field shows them (`waitingQuestionsView`). */
@@ -41,127 +33,66 @@ export default function AssistantApprovalsView(props: {
   initialAutomations?: readonly WaitingAutomation[] | null;
   /** The reader's time zone, which Core's open questions take. */
   timeZone: string;
-}) {
+};
+
+export default function AssistantApprovalsView(props: AssistantApprovalsViewProps) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const [paging, setPaging] = createSignal<WaitingQuestionsPagingState>({ items: [], cursor: props.questionsPage?.().nextCursor });
   const extraQuestions = createMemo(() => paging().items);
-  let pageController = new AbortController();
-  onCleanup(() => pageController.abort());
-  createEffect(
-    on(
-      () => props.questionsPage?.(),
-      (page) => {
-        pageController.abort();
-        pageController = new AbortController();
-        setPaging({ items: [], cursor: page?.nextCursor });
-      },
-      { defer: true },
-    ),
+  const [approvals, setApprovals] = createSignal<ApprovalPage | null | undefined>(props.initial);
+  const [automations, setAutomations] = createSignal<readonly WaitingAutomation[] | null | undefined>(props.initialAutomations);
+  const owner = getOwner();
+  const initialQuestions = untrack(props.questions);
+  const initialPage = props.questionsPage?.();
+  let active = true;
+  let pending: Promise<WaitingQuestionsController | undefined> | undefined;
+  onCleanup(() => {
+    active = false;
+  });
+  const controller = () =>
+    (pending ??= importOnDemand(async () => {
+      const module = await import("../waiting-questions-page");
+      if (!active) return;
+      return runWithOwner(owner, () =>
+        module.connectWaitingQuestions(
+          props,
+          {
+            approvals,
+            setApprovals,
+            automations,
+            setAutomations,
+            paging,
+            setPaging,
+          },
+          initialQuestions,
+          initialPage,
+        ),
+      );
+    }).then((loaded) => {
+      if (!loaded) pending = undefined;
+      return loaded;
+    }));
+  onMount(
+    () =>
+      void controller().then((loaded) => {
+        if (!loaded && active) {
+          if (approvals() === undefined) setApprovals(null);
+          if (automations() === undefined) setAutomations(null);
+        }
+      }),
   );
   const loadMore = async () => {
     const current = paging();
     if (!current.cursor || current.loading) return;
-    const signal = pageController.signal;
     setPaging({ ...current, loading: true, failed: false });
-    const module = await importOnDemand(() => import("../waiting-questions-page"));
-    if (signal.aborted) return;
-    if (module) await module.loadMoreWaitingQuestions(current, setPaging, props.timeZone, signal);
+    const loaded = await controller();
+    if (!active) return;
+    if (loaded) await loaded.loadMore();
     else setPaging({ ...current, failed: true });
   };
   const allQuestions = createMemo(() => [...new Map([...props.questions(), ...extraQuestions()].map((item) => [item.id, item])).values()]);
-  const [approvals, setApprovals] = createSignal<ApprovalPage | null | undefined>(props.initial);
-  const [automations, setAutomations] = createSignal<readonly WaitingAutomation[] | null | undefined>(props.initialAutomations);
-  const loadApprovals = async () => {
-    setApprovals(undefined);
-    try {
-      showApprovals(await loadApprovalPage());
-    } catch {
-      setApprovals(null);
-    }
-  };
-  // Only a page without the server's read needs the loader; it stays out of the chat's own bundle.
-  const readAutomations = async () => (await import("../waiting-automations")).loadWaitingAutomations(browserCodeInvoke, props.timeZone);
-  const loadAutomations = async () => {
-    setAutomations(undefined);
-    try {
-      setAutomations(await readAutomations());
-    } catch {
-      setAutomations(null);
-    }
-  };
-  // Approvals and automations have reads of their own; the row's list says when theirs changed. Both read again in
-  // place, without a loading state, and a failed read keeps what the page shows.
-  // Approvals read again only for a request the page has not seen yet. A request that leaves the list, such as one
-  // decided here, keeps its card as a receipt until the next real load, so nothing moves under the person's click.
-  const seenApprovals = new Set<string>();
-  const showApprovals = (page: ApprovalPage | null | undefined) => {
-    for (const item of page?.items ?? []) seenApprovals.add(item.id);
-    setApprovals(page);
-  };
-  const approvalIds = createMemo(
-    () =>
-      props
-        .questions()
-        .filter((question) => question.kind === "approval")
-        .map((question) => question.id),
-    [],
-    { equals: (a, b) => a.length === b.length && a.every((id, index) => id === b[index]) },
-  );
-  for (const id of untrack(approvalIds)) seenApprovals.add(id);
-  for (const item of props.initial?.items ?? []) seenApprovals.add(item.id);
-  let approvalRead = 0;
-  createEffect(
-    on(
-      approvalIds,
-      (ids) => {
-        const fresh = ids.filter((id) => !seenApprovals.has(id));
-        if (fresh.length === 0) return;
-        for (const id of fresh) seenApprovals.add(id);
-        const request = ++approvalRead;
-        loadApprovalPage().then(
-          (page) => {
-            if (request === approvalRead && approvals() !== undefined) showApprovals(page);
-          },
-          () => {},
-        );
-      },
-      { defer: true },
-    ),
-  );
-  // Automations read again on any change of theirs: their rows carry no decision of their own.
-  const automationKey = createMemo(() =>
-    props
-      .questions()
-      .filter((question) => question.kind === "code_attention")
-      .map((question) => question.id)
-      .sort()
-      .join(" "),
-  );
-  let automationRead = 0;
-  createEffect(
-    on(
-      automationKey,
-      () => {
-        const request = ++automationRead;
-        readAutomations().then(
-          (list) => {
-            if (request === automationRead && automations() !== undefined) setAutomations(list);
-          },
-          () => {},
-        );
-      },
-      { defer: true },
-    ),
-  );
-  onMount(() => {
-    if (props.initial === undefined) void loadApprovals();
-    if (props.initialAutomations === undefined) void loadAutomations();
-  });
-  const retry = () => {
-    void loadApprovals();
-    if (automations() === null) void loadAutomations();
-  };
+  const retry = () => void controller().then((loaded) => loaded?.retry());
 
   const loading = () => approvals() === undefined || automations() === undefined;
   const versions = createMemo(() => allQuestions().filter((question) => VERSION_KINDS.has(question.kind)));
@@ -286,14 +217,11 @@ export default function AssistantApprovalsView(props: {
                 <Show when={automationsShow()}>
                   <AssistantWaitingAutomations
                     entries={shownAutomations() ?? null}
-                    onRetry={() => void loadAutomations()}
+                    onRetry={() => void controller().then((loaded) => loaded?.loadAutomations())}
                     // A read that fails after the restore shows the section's error with "Try again", never silence.
-                    onChanged={() =>
-                      readAutomations().then(
-                        (list) => void setAutomations(list),
-                        () => void setAutomations(null),
-                      )
-                    }
+                    onChanged={async () => {
+                      await (await controller())?.refreshAutomations();
+                    }}
                   />
                 </Show>
               </Show>
