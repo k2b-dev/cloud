@@ -272,7 +272,9 @@ function MailMessageInspectorDialog(props: {
                           <thead>
                             <tr>
                               <th>{messages().folder}</th>
-                              <th>UID</th>
+                              <th>
+                                {current().placements.some((placement) => "remoteId" in placement) ? messages().remoteMessageId : "UID"}
+                              </th>
                               <th>{messages().uidValidity}</th>
                               <th>{messages().flags}</th>
                               <th>{messages().providerKeywords}</th>
@@ -283,8 +285,8 @@ function MailMessageInspectorDialog(props: {
                               {(placement) => (
                                 <tr>
                                   <td title={placement.remotePath}>{placement.folderName}</td>
-                                  <td class="font-mono">{placement.uid}</td>
-                                  <td class="font-mono">{placement.uidValidity}</td>
+                                  <td class="font-mono">{"remoteId" in placement ? placement.remoteId : placement.uid}</td>
+                                  <td class="font-mono">{"remoteId" in placement ? messages().notApplicable : placement.uidValidity}</td>
                                   <td>{placement.flags.join(", ") || messages().none}</td>
                                   <td>{placement.keywords.join(", ") || messages().none}</td>
                                 </tr>

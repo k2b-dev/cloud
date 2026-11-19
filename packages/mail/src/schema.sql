@@ -997,6 +997,7 @@ CREATE TABLE mail.draft_provider_snapshots (
     folder_id uuid,
     uid_validity numeric(20,0),
     uid numeric(20,0),
+    remote_id text,
     modseq numeric(20,0),
     transport_generation bigint,
     secret_revision integer,
@@ -1018,7 +1019,10 @@ CREATE TABLE mail.draft_provider_snapshots (
     CONSTRAINT draft_provider_snapshots_last_error_code_check CHECK (((last_error_code IS NULL) OR (char_length(last_error_code) <= 80))),
     CONSTRAINT draft_provider_snapshots_last_error_message_check CHECK (((last_error_message IS NULL) OR (char_length(last_error_message) <= 1000))),
     CONSTRAINT draft_provider_snapshots_modseq_check CHECK (((modseq IS NULL) OR (modseq >= (0)::numeric))),
-    CONSTRAINT draft_provider_snapshots_remote_shape CHECK ((((uid_validity IS NULL) AND (uid IS NULL)) OR ((folder_id IS NOT NULL) AND (uid_validity IS NOT NULL) AND (uid IS NOT NULL)))),
+    CONSTRAINT draft_provider_snapshots_address_shape CHECK (
+      (remote_id IS NULL AND uid_validity IS NULL AND uid IS NULL)
+      OR (folder_id IS NOT NULL AND remote_id IS NULL AND uid_validity IS NOT NULL AND uid IS NOT NULL)
+      OR (folder_id IS NOT NULL AND remote_id IS NOT NULL AND uid_validity IS NULL AND uid IS NULL)),
     CONSTRAINT draft_provider_snapshots_secret_revision_check CHECK (((secret_revision IS NULL) OR (secret_revision > 0))),
     CONSTRAINT draft_provider_snapshots_stable_message_id_check CHECK (((stable_message_id = btrim(stable_message_id)) AND ((char_length(stable_message_id) >= 3) AND (char_length(stable_message_id) <= 998)))),
     CONSTRAINT draft_provider_snapshots_state_check CHECK ((state = ANY (ARRAY['prepared'::text, 'appending'::text, 'active'::text, 'retiring'::text, 'retired'::text, 'external'::text, 'importing'::text, 'conflict'::text, 'ambiguous'::text, 'needs_attention'::text]))),
@@ -1043,6 +1047,8 @@ CREATE INDEX draft_provider_snapshots_pending_idx ON mail.draft_provider_snapsho
 CREATE INDEX draft_provider_snapshots_remote_identity_idx ON mail.draft_provider_snapshots USING btree (folder_id, uid_validity, uid, created_at DESC) WHERE ((folder_id IS NOT NULL) AND (uid_validity IS NOT NULL) AND (uid IS NOT NULL));
 
 CREATE TRIGGER draft_provider_snapshots_touch_updated_at BEFORE UPDATE ON mail.draft_provider_snapshots FOR EACH ROW EXECUTE FUNCTION mail.touch_updated_at();
+
+CREATE INDEX draft_provider_snapshots_remote_id_idx ON mail.draft_provider_snapshots (folder_id, remote_id, created_at DESC) WHERE remote_id IS NOT NULL;
 
 -- mail.draft_recovery_attachments -----------------------------------------
 
@@ -1984,13 +1990,17 @@ CREATE TABLE mail.remote_message_refs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     folder_id uuid NOT NULL,
     message_id uuid NOT NULL,
-    uid_validity numeric(20,0) NOT NULL,
-    uid numeric(20,0) NOT NULL,
+    uid_validity numeric(20,0),
+    uid numeric(20,0),
+    remote_id text,
     modseq numeric(20,0),
     connector_ref jsonb DEFAULT '{}'::jsonb NOT NULL,
     first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     stale_at timestamp with time zone,
+    CONSTRAINT remote_message_refs_address_shape CHECK (
+      (remote_id IS NULL AND uid_validity IS NOT NULL AND uid IS NOT NULL)
+      OR (remote_id IS NOT NULL AND uid_validity IS NULL AND uid IS NULL)),
     CONSTRAINT remote_message_refs_connector_ref_check CHECK ((jsonb_typeof(connector_ref) = 'object'::text)),
     CONSTRAINT remote_message_refs_modseq_check CHECK (((modseq IS NULL) OR (modseq >= (0)::numeric))),
     CONSTRAINT remote_message_refs_uid_check CHECK ((uid > (0)::numeric)),
@@ -2006,6 +2016,8 @@ ALTER TABLE ONLY mail.remote_message_refs
 CREATE INDEX remote_message_refs_folder_scan_idx ON mail.remote_message_refs USING btree (folder_id, uid_validity, uid DESC) WHERE (stale_at IS NULL);
 
 CREATE INDEX remote_message_refs_message_idx ON mail.remote_message_refs USING btree (message_id, folder_id);
+
+CREATE UNIQUE INDEX remote_message_refs_remote_id_idx ON mail.remote_message_refs (folder_id, remote_id) WHERE remote_id IS NOT NULL;
 
 -- mail.remote_namespaces --------------------------------------------------
 

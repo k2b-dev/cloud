@@ -2470,6 +2470,7 @@ export const commitSyncBatch = async (params: {
           UPDATE mail.remote_message_refs
           SET stale_at = now()
           WHERE folder_id = ${params.folderId}::uuid AND stale_at IS NULL
+            AND uid_validity IS NOT NULL
           RETURNING id
         )
         UPDATE mail.message_placements mp
@@ -3302,9 +3303,9 @@ type HydrationTarget = {
 
 type HydrationBatch = { hydrated: boolean; settled: number; stopped: boolean; missingFromUid: number | null; targetError: unknown };
 
-const requestedHydrationTarget = async (messageId: string): Promise<HydrationTarget | null> => {
-  const [target] = await sql<HydrationTarget[]>`
-    SELECT mc.id, mc.hydration_attempt, mc.mailbox_id, rmr.folder_id, f.remote_resource_id
+const requestedHydrationTarget = async (messageId: string): Promise<HydrationTarget | "unsupported" | null> => {
+  const [target] = await sql<(HydrationTarget & { remote_id: string | null })[]>`
+    SELECT mc.id, mc.hydration_attempt, mc.mailbox_id, rmr.folder_id, f.remote_resource_id, rmr.remote_id
     FROM mail.message_contents mc
     JOIN mail.remote_message_refs rmr ON rmr.message_id = mc.id AND rmr.stale_at IS NULL
     JOIN mail.folders f
@@ -3319,10 +3320,10 @@ const requestedHydrationTarget = async (messageId: string): Promise<HydrationTar
     WHERE mc.id = ${messageId}::uuid
       AND mc.hydration_status <> 'complete'
       AND mc.hydration_attempt < 5
-    ORDER BY f.role = 'inbox' DESC, rmr.last_seen_at DESC
+    ORDER BY (rmr.uid_validity IS NOT NULL) DESC, f.role = 'inbox' DESC, rmr.last_seen_at DESC
     LIMIT 1
   `;
-  return target ?? null;
+  return target?.remote_id != null ? "unsupported" : (target ?? null);
 };
 
 /**
@@ -3404,6 +3405,21 @@ export const hydrateMessageBatch = async (
         "mailboxId" in ctx.input
           ? await nextMailboxHydrationTarget(ctx.input.mailboxId, ctx.input.retryBodies !== false)
           : await requestedHydrationTarget(ctx.input.messageId);
+      if (message === "unsupported") {
+        if ("messageId" in ctx.input) {
+          await sql`
+            UPDATE mail.message_contents message
+            SET hydration_status = 'failed', hydration_error_code = 'REMOTE_MESSAGE_PROTOCOL_UNSUPPORTED'
+            WHERE message.id = ${ctx.input.messageId}::uuid
+              AND message.hydration_status IN ('envelope', 'headers', 'failed')
+              AND EXISTS (SELECT 1 FROM mail.remote_message_refs ref
+                WHERE ref.message_id = message.id AND ref.stale_at IS NULL AND ref.remote_id IS NOT NULL)
+              AND NOT EXISTS (SELECT 1 FROM mail.remote_message_refs ref
+                WHERE ref.message_id = message.id AND ref.stale_at IS NULL AND ref.uid_validity IS NOT NULL)
+          `;
+        }
+        return { hydrated: false };
+      }
       if (!message) return { hydrated: false };
       // Only the first batch of a completed incremental arrival shares sync priority.
       // Backfill, later body batches and retries retain background rank, so importing old
@@ -3713,7 +3729,10 @@ export const enqueueMessageHydration = async (messageId: string): Promise<void> 
 };
 
 /** Whether a job queued for this message's body can fetch it: a live copy in a synced folder of a synced mailbox. */
-export const canHydrateMessage = async (messageId: string): Promise<boolean> => (await requestedHydrationTarget(messageId)) !== null;
+export const canHydrateMessage = async (messageId: string): Promise<boolean> => {
+  const target = await requestedHydrationTarget(messageId);
+  return target !== null && target !== "unsupported";
+};
 
 /** Hydrates every pending body of the mailbox, one batch per turn of the shared worker. */
 export const enqueueMailboxHydration = async (mailboxId: string): Promise<void> => {
@@ -3908,6 +3927,7 @@ export const submitDueHydrationWork = async (): Promise<number> => {
             FROM mail.remote_message_refs remote_ref
             WHERE remote_ref.message_id = mc.id
               AND remote_ref.stale_at IS NULL
+              AND remote_ref.uid_validity IS NOT NULL
           )
       )
     ORDER BY mailbox.id
