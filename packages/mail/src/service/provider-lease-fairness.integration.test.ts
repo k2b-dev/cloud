@@ -3062,15 +3062,17 @@ suite("mail provider lease fairness", () => {
       );
       const timedOutAt = performance.now();
 
-      // The next scheduled syncs queue all their folders again, and while the mailboxes pause, none connects.
+      // Syncs queued while the mailboxes pause, such as a push's, end at once without connecting
+      // and without holding a place.
       const attemptsBefore = unreachableAttempts.length;
-      for (const folderId of deadFolders) void worker.submit(folderId);
+      await Promise.all(deadFolders.map((folderId) => worker.submit(folderId)));
       await syncHealthy("during-pause");
       expect(unreachableAttempts.length).toBe(attemptsBefore);
 
-      // After their pauses, the waiting syncs try the host again, one mailbox at a time.
+      // After their pauses, the next scheduled syncs try the host again, one mailbox at a time.
       mostUnreachableWaiting = 0;
       await Bun.sleep(Math.max(0, LONGEST_FIRST_PAUSE_MS - (performance.now() - timedOutAt)));
+      for (const folderId of deadFolders) void worker.submit(folderId);
       await waitFor(
         async () => unreachableAttempts.length > attemptsBefore,
         "a sync to try the dead host again",
@@ -3088,19 +3090,18 @@ suite("mail provider lease fairness", () => {
       await worker.stop();
     }
 
-    // IMAP push reaches the host again while a sync job waits out a pause: the job, which a sync
-    // requested meanwhile would join, runs within seconds instead of after the pause.
+    // IMAP push reaches the host again during a pause: it closes the breaker, and the sync it
+    // queues runs at once instead of after the pause.
     const recovered = onDeadHost[0]!;
     expect(await recordProviderFailure(recovered.remoteResourceId, connectTimeout())).toBeGreaterThanOrEqual(15_000);
     const [afterOutage] = deliver(recovered, 1, "after-outage");
     const recovery = syncFolderWorker();
     try {
-      const synced = recovery.submit(recovered.folderId(INBOX));
-      await Bun.sleep(500);
+      await recovery.submit(recovered.folderId(INBOX));
       expect(await imported(recovered, afterOutage!)).toBe(false);
       await recordProviderReachable(recovered.remoteResourceId);
       const reachableAt = performance.now();
-      await synced;
+      await recovery.submit(recovered.folderId(INBOX));
       expect(performance.now() - reachableAt).toBeLessThan(6_000);
       expect(await imported(recovered, afterOutage!)).toBe(true);
     } finally {

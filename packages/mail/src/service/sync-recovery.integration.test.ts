@@ -303,11 +303,10 @@ suite("mail sync recovery", () => {
       resubmit,
     });
     expect(resubmit).toHaveBeenCalledTimes(1);
-    expect(resubmit.mock.calls[0]![0]).toMatchObject({
-      delayMs: expect.any(Number),
-      input: { folderId: fixture.folderId, remoteResourceId: fixture.resourceId, pushed: true },
-    });
-    expect(resubmit.mock.calls[0]![0].delayMs).toBeGreaterThan(5_000);
+    const [comeback] = resubmit.mock.calls[0] as [{ delayMs: number; input: Record<string, unknown> }];
+    expect(comeback.input).toEqual({ folderId: fixture.folderId, backfill: false, remoteResourceId: fixture.resourceId, pushed: true });
+    // When the breaker's window ends, not every few seconds.
+    expect(comeback.delayMs).toBeGreaterThan(5_000);
     expect(status).not.toHaveBeenCalled();
     resubmit.mockClear();
     takeFolderSyncActivity();

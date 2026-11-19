@@ -3073,7 +3073,7 @@ const runSyncFolderJobOutcome = async (
     if (code === "PROVIDER_UNREACHABLE") {
       countFolderBatch("unreachable");
       await markFolderDegraded(folderId);
-      if (pushed) ctx.resubmit({ delayMs: retryAfterMs(error, 15_000), input: { folderId, backfill, pushed, ...carried } });
+      if (pushed) ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill, pushed, ...carried } });
       return { deferred: code };
     }
     // A sibling job holds the remote resource: routine contention, not a failed attempt.
