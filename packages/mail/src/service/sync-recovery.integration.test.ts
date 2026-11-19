@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, jest, spyOn, test } from "bun:test";
 import { connections, createSql, redis, sql } from "@k2b/cloud";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { initializeTestPlatform, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, type ProviderConnectionInput, unavailableProviderLimitSnapshot } from "../contracts";
@@ -18,11 +19,20 @@ import { createProviderConnection, replaceProviderConnection } from "./provider-
 import {
   acquireProviderLease,
   MAIL_PROVIDER_OPERATION_LEASE_MS,
+  providerBreakerOpenForMs,
   recordProviderReachable,
   releaseProviderLease,
 } from "./provider-operation-lock";
 import { takeFolderSyncActivity } from "./sync-activity";
-import { claimFence, commitSyncBatch, enqueueFolderSync, requestedSyncProgress, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
+import {
+  claimFence,
+  commitSyncBatch,
+  enqueueFolderSync,
+  requestedSyncProgress,
+  runSyncFolderJob,
+  submitDueFolderSyncs,
+  syncFolderBatch,
+} from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -159,6 +169,11 @@ suite("mail sync recovery", () => {
     return typeof stored?.result === "string" ? JSON.parse(stored.result) : (stored?.result ?? {});
   };
 
+  const folderSyncStatus = async (fixture: SyncFixture): Promise<string | undefined> => {
+    const [folder] = await sql<{ sync_status: string }[]>`SELECT sync_status FROM mail.folders WHERE id = ${fixture.folderId}::uuid`;
+    return folder?.sync_status;
+  };
+
   const degradeWithTimeout = async (fixture: SyncFixture): Promise<void> => {
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockRejectedValue(connectTimeout());
     try {
@@ -221,15 +236,14 @@ suite("mail sync recovery", () => {
     const before = await transportState(fixture);
     await degradeWithTimeout(fixture);
 
-    // The binding and its credential revision are still valid: push keeps listening and a manual sync queues real work.
+    // The binding and its credential revision are still valid: push keeps listening.
     expect(await loadImapPushPlan(fixture.bindingId)).toMatchObject({ bindingId: fixture.bindingId, folderId: fixture.folderId });
-    expect(await requestFolderSync(fixture, "degraded-sync")).toEqual({ folderId: fixture.folderId, queued: true });
 
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
     try {
-      // The timeout opened the mailbox's provider breaker: the next sync waits instead of connecting,
-      // until the breaker's window ends or, as here, IMAP push reaches the provider again.
-      await expect(syncFolderBatch(fixture.folderId, async () => undefined)).rejects.toMatchObject({ code: "SYNC_BUSY" });
+      // The timeout opened the mailbox's provider breaker: the next sync does not connect and says
+      // so, until the breaker's window ends and a sync or IMAP push reaches the provider again, as here.
+      await expect(syncFolderBatch(fixture.folderId, async () => undefined)).rejects.toMatchObject({ code: "PROVIDER_UNREACHABLE" });
       expect(status).not.toHaveBeenCalled();
       await recordProviderReachable(fixture.resourceId);
       await expect(syncFolderBatch(fixture.folderId, async () => undefined)).resolves.toMatchObject({ hasMore: false });
@@ -250,6 +264,72 @@ suite("mail sync recovery", () => {
       { state: "failed", error_code: "CONNECT_TIMEOUT" },
       { state: "completed", error_code: null },
     ]);
+  });
+
+  test("a folder job that finds the mail server unreachable neither counts as done nor retries, and a manual sync tries it at once", async () => {
+    const fixture = await createSyncedMailbox("unreachable");
+    await degradeWithTimeout(fixture);
+    const breakerWindow = async () =>
+      Number(await redis.send("HGET", [`mail:provider-lease-line:{${fixture.resourceId}}:breaker`, "window"]));
+    expect(await breakerWindow()).toBe(15_000);
+    expect(await providerBreakerOpenForMs(fixture.resourceId)).toBeGreaterThan(0);
+    takeFolderSyncActivity();
+
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
+    const resubmit = jest.fn();
+    const meter = await meterSql();
+    try {
+      // Before, this turn found the lease "busy", resubmitted itself every few seconds, and settled
+      // as a successful run 30 to 250 ms after a timeout, while nothing synchronized.
+      const statements = await meter.during(() =>
+        runSyncFolderJob({
+          input: { folderId: fixture.folderId, remoteResourceId: fixture.resourceId },
+          heartbeat: async () => undefined,
+          resubmit,
+        }),
+      );
+      // One statement: the folder records that its sync gave up, so a waiting sync request ends.
+      expect(statements).toEqual([expect.stringContaining("UPDATE mail.folders SET sync_status = 'degraded'")]);
+    } finally {
+      await meter.close();
+    }
+    expect(status).not.toHaveBeenCalled();
+    expect(resubmit).not.toHaveBeenCalled();
+    expect(takeFolderSyncActivity().batches).toEqual({ unreachable: 1 });
+    // A pushed change keeps its rank: its job comes back once, when the breaker's window ends.
+    await runSyncFolderJob({
+      input: { folderId: fixture.folderId, remoteResourceId: fixture.resourceId, pushed: true },
+      heartbeat: async () => undefined,
+      resubmit,
+    });
+    expect(resubmit).toHaveBeenCalledTimes(1);
+    const [comeback] = resubmit.mock.calls[0] as [{ delayMs: number; input: Record<string, unknown> }];
+    expect(comeback.input).toEqual({ folderId: fixture.folderId, backfill: false, remoteResourceId: fixture.resourceId, pushed: true });
+    // When the breaker's window ends, not every few seconds.
+    expect(comeback.delayMs).toBeGreaterThan(5_000);
+    expect(status).not.toHaveBeenCalled();
+    resubmit.mockClear();
+    takeFolderSyncActivity();
+    expect(await folderSyncStatus(fixture)).toBe("degraded");
+    // The scheduler queues no check of the mailbox while its window is open.
+    expect(await submitDueFolderSyncs(100_000)).not.toContain(fixture.folderId);
+
+    // A person's sync tries the server at once: it closes the breaker before it queues the sync.
+    expect(await requestFolderSync(fixture, "unreachable-sync")).toEqual({ folderId: fixture.folderId, queued: true });
+    expect(await providerBreakerOpenForMs(fixture.resourceId)).toBe(0);
+    // It keeps the window's length: a server that still does not answer waits the doubled window.
+    expect(await breakerWindow()).toBe(15_000);
+    // The sync runtime is not started here, so the manual sync queued no job and recorded no recent
+    // request that would let the scheduler skip the folder.
+    expect(await submitDueFolderSyncs(100_000)).toContain(fixture.folderId);
+    try {
+      await runSyncFolderJob({ input: { folderId: fixture.folderId }, heartbeat: async () => undefined, resubmit });
+      expect(status).toHaveBeenCalledTimes(1);
+    } finally {
+      status.mockRestore();
+    }
+    expect(await transportState(fixture)).toMatchObject({ resource_status: "active", health: "active", health_reason: null });
+    expect(await folderSyncStatus(fixture)).toBe("current");
   });
 
   test("a non-empty successful batch retains its completed history", async () => {
@@ -546,6 +626,51 @@ suite("mail sync recovery", () => {
       await initializeTestPlatform();
       await counter.close();
       await releaseProviderLease(holder.lock);
+    }
+  });
+
+  test("a pushed folder job ranks its turns as a command and adds no database statement to them", async () => {
+    const fixture = await createSyncedMailbox("pushed-turn");
+    const holder = await acquireProviderLease({
+      resource: fixture.resourceId,
+      waiter: `outbox:${crypto.randomUUID()}`,
+      priority: "command",
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    if (!holder.lock) throw new Error("The test could not take the provider lease");
+    const priorities = `mail:provider-lease-line:{${fixture.resourceId}}:priorities`;
+    const meter = await meterSql();
+    try {
+      const turn = async (input: { folderId: string; remoteResourceId?: string; pushed?: boolean }) => {
+        let resubmitted: { delayMs?: number; input?: unknown } | undefined;
+        const statements = await meter.during(() =>
+          runSyncFolderJob({ input, heartbeat: async () => undefined, resubmit: (options) => (resubmitted = options) }),
+        );
+        return { statements, resubmitted, priority: await redis.send("HGET", [priorities, `sync-folder:${fixture.folderId}`]) };
+      };
+      // A push as IMAP IDLE leaves it for the folder's job (enqueueFolderSync with `pushed`).
+      for (const key of [`mail:sync-pushed:${fixture.folderId}`, `mail:sync-requested:${fixture.folderId}`]) {
+        await redis.send("SET", [key, "1", "PX", "60000"]);
+      }
+      // The first turn reads the folder's remote mailbox, as every first turn does, and nothing more.
+      const first = await turn({ folderId: fixture.folderId });
+      expect(first.statements).toHaveLength(1);
+      expect(first.priority).toBe("command");
+      expect(first.resubmitted?.input).toEqual({
+        folderId: fixture.folderId,
+        backfill: false,
+        pushed: true,
+        remoteResourceId: fixture.resourceId,
+      });
+      // Its later turns that find the lease busy keep the push and ask the lease line only.
+      const later = await turn({ folderId: fixture.folderId, remoteResourceId: fixture.resourceId, pushed: true });
+      expect(later.statements).toEqual([]);
+      expect(later.priority).toBe("command");
+      expect(later.resubmitted?.input).toEqual(first.resubmitted?.input);
+    } finally {
+      await meter.close();
+      await releaseProviderLease(holder.lock);
+      await redis.send("DEL", [`mail:sync-pushed:${fixture.folderId}`, `mail:sync-requested:${fixture.folderId}`]);
     }
   });
 

@@ -233,11 +233,11 @@ describe("Mail folder maintenance", () => {
     );
     const text = () => dom.document.body.textContent ?? "";
     try {
-      expect(text()).toContain("The saved account is valid, but the latest synchronization timed out. Mail will retry automatically.");
+      expect(text()).toContain("Mail cannot reach your provider's mail server and tries again at growing intervals.");
       expect(text()).not.toContain("The saved account is still connected.");
       setReason("IMAP folder listing failed");
       expect(text()).toContain("The saved account is still connected. Review the connection status for details and recovery actions.");
-      expect(text()).not.toContain("the latest synchronization timed out");
+      expect(text()).not.toContain("cannot reach your provider's mail server");
     } finally {
       dispose();
       dom.cleanup();

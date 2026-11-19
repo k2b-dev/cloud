@@ -11,7 +11,7 @@ import { resolveMailExecution } from "./execution";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { REQUESTS_PER_MINUTE as PRIORITY_BODY_REQUESTS_PER_MINUTE } from "./message-body-request";
 import { executeOperatorAction, OPERATOR_MAINTENANCE_KINDS } from "./operator-actions";
-import { providerBusyRetryAfterMs } from "./provider-operation-lock";
+import { providerBusyRetryAfterMs, resetProviderBreaker } from "./provider-operation-lock";
 import { executeQueuedSenderVerification } from "./sender-verification";
 import {
   enqueueFolderSync,
@@ -247,6 +247,15 @@ const executeHydrationRetry = async (mailboxId: string, enqueueWork: boolean): P
   return { reset: reset.length, queued: enqueueWork ? queued.length : 0 };
 };
 
+/**
+ * A person asked to sync or check the mailbox now: its mail server is tried at once, even while
+ * the provider breaker waits after connection attempts it did not answer.
+ */
+const tryProviderNow = async (mailboxId: string): Promise<void> => {
+  const [resource] = await sql<{ id: string }[]>`SELECT id FROM mail.remote_resources WHERE mailbox_id = ${mailboxId}::uuid`;
+  if (resource) await resetProviderBreaker(resource.id);
+};
+
 const executeMaintenanceWork = async (
   command: DbMaintenanceCommand,
   heartbeat: () => Promise<void>,
@@ -263,6 +272,9 @@ const executeMaintenanceWork = async (
     // mailbox's recorded reason with a generic failure.
     const reason = await syncUnavailable(command.mailbox_id, folderId);
     if (reason) return folderId ? { folderId, queued: false, reason } : { queuedFolders: 0, reason };
+  }
+  if (enqueueWork && (command.kind === "sync_mailbox" || command.kind === "sync_folder" || command.kind === "rebuild_folder")) {
+    await tryProviderNow(command.mailbox_id);
   }
   if (command.kind === "sync_mailbox") {
     if (enqueueWork) return { queuedFolders: await enqueueMailboxSync(command.mailbox_id, { trigger: "maintenance", awaited: true }) };
@@ -313,6 +325,7 @@ const executeMaintenanceWork = async (
       ).map((binding) => binding.id);
   if (bindingIds.length === 0)
     throw Object.assign(new Error("Mailbox has no binding available for rediscovery"), { code: "BINDING_UNAVAILABLE" });
+  await tryProviderNow(command.mailbox_id);
   const discoveries = [];
   for (const currentBindingId of bindingIds) {
     discoveries.push(await executeBindingRediscovery(currentBindingId, command.kind === "verify_binding", heartbeat));

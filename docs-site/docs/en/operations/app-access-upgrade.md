@@ -196,12 +196,13 @@ The adapter must preserve resource eligibility, group semantics and bound-key
 limits and cancel its query when the probe aborts.
 
 Revocation takes effect on the next request; there is no cache across
-requests. Open live connections retain the one-minute revalidation bound by
-default. The explicit `eventOnly` SSE/socket guard option removes polling only
-for decisions fully covered by access events and local expiry timers.
-Resource-derived entry rules retain periodic checks. AI conversation streams
-opt in using Identity-Access events and conversation archive, owner and deletion
-events; no operator setting is needed.
+requests. Every protected live connection retains the periodic app-access
+check, including SSE and socket guards declaring `eventOnly`. Event-driven
+revalidation runs alongside the same 50-second interval and ten-second check
+deadline, giving a nominal maximum of 60 seconds under normal runtime scheduling.
+Known credential and account deadlines also use local timers. AI conversation
+streams observe Identity-Access events and conversation archive, owner and
+deletion events; no operator setting is needed.
 Verify grant, last-right removal, group removal, guest and service-account
 entry, and matching search and CLI visibility before adopting the rule.
 

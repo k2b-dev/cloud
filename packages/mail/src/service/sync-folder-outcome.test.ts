@@ -34,6 +34,11 @@ for (const deferred of ["SYNC_BUSY", "MAIL_RATE_LIMITED", "MAILBOX_TRANSPORT_CHA
   });
 }
 
+test("folder sync keeps a turn that found the mail server unreachable visible, unlike routine contention", () => {
+  const result = { deferred: "PROVIDER_UNREACHABLE" };
+  expect(summarizeSyncFolderOutcome(result)).toEqual(result);
+});
+
 test("folder sync keeps a rejected-data deferral visible", () => {
   const result = { deferred: "23514" };
   expect(summarizeSyncFolderOutcome(result)).toEqual(result);
