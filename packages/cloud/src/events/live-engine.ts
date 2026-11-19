@@ -54,7 +54,7 @@ export type LiveChannel<Scope extends z.ZodType = z.ZodType> = {
   keys(scope: z.output<Scope>, viewer: LiveViewer): Promise<readonly string[] | null>;
   /** IDs of the viewers allowed to read `key`. Called with at most 500 viewers. */
   authorize(key: string, viewers: readonly LiveViewer[], context?: { identityChanged: boolean }): Promise<ReadonlySet<string>>;
-  /** Explicit opt-in: every decision input must have an access event. Defaults retain 2/10/60-second checks. */
+  /** Every channel decision input needs an access event; skips its 2/10/60-second checks. The app entry guard still checks periodically. */
   eventOnly?: true;
   /** Canonical access key for related delivery keys, e.g. mailbox:principal -> mailbox. */
   accessKey?: (key: string) => string;

@@ -299,8 +299,8 @@ seconds, and collection keys refresh every sixty seconds. These bounds remain
 available for channels whose decision inputs do not all publish events.
 
 A channel declaring `eventOnly: true` retains its admitted keys until an access
-event. Its ordinary deliveries and progress frames run no SQL, regardless of
-how long the subscription has been open:
+event. Its ordinary deliveries and progress frames run no SQL; the app entry
+guard separately performs its periodic check:
 
 - Domain changes publish `access: true` in the transaction that changes access.
   Every replica rechecks the affected key and its `accessKey` mappings before
@@ -310,9 +310,11 @@ how long the subscription has been open:
   every connection. Group changes, ended sessions, and account changes use
   Core's existing outbox and NATS follower.
 - Known account and credential expiry times close sockets with local timers.
-  Polling is disabled only for explicitly opted-in channels. The socket's app
-  entry guard opts out only when all its channels do, and resource-derived
-  app entry rules retain periodic checks.
+  Channel polling is disabled only for explicitly opted-in channels. Every
+  protected socket retains the app entry guard's periodic check, including
+  sockets whose channels all declare `eventOnly: true`. Its 50-second interval
+  and ten-second check deadline provide a nominal maximum of 60 seconds under
+  normal runtime scheduling.
 
 Every mutable input of an event-only decision needs an access event from its
 owner. A time-to-live cache cannot supply that guarantee. Keep a channel
