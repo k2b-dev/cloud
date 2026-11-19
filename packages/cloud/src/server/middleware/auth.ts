@@ -119,7 +119,7 @@ export type AuthContext = {
     credentialProof?: RequestCredentialProof;
     /** OAuth scopes for bearer-token requests. Absent for sessions and API credentials. */
     oauthScopes?: string[];
-    /** SSE app guard: opt out of polling only when every access input has an event. */
+    /** @deprecated Kept for compatibility; no effect. All protected SSE connections revalidate on events and periodically. */
     appAccessGuard?: { eventOnly: true };
   };
 };

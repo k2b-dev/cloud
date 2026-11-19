@@ -411,19 +411,19 @@ the application ID, and a recovery message. Cross-app calls check access both
 before issuing an invocation and when the target receives it. Permission
 lookup errors deny access.
 
-Changes take effect on the next request. Open live connections must revalidate
-when access changes and, by default, at least once per minute, including current
-account, role, group, and credential state. Failed revalidation closes the connection.
+Changes take effect on the next request. Every protected live connection
+revalidates when access changes and periodically, including current account,
+role, group, and credential state. The 50-second interval and ten-second check
+deadline provide a nominal maximum of 60 seconds under normal runtime scheduling.
+Failed revalidation closes the connection.
 
-An SSE route may declare `c.set("appAccessGuard", { eventOnly: true })` to disable
-the app guard's periodic check. A custom socket may pass `{ eventOnly: true }`
-to `guardAppAccessSocket`. Admission still rechecks credentials after subscribing,
-and known credential and account deadlines use local timers. Use this option
-only when every input to the decision has an access event. The owning transport
-must observe domain changes too. `appAccess.resources()` always retains its
-periodic check: its application-owned `hasAnyRight` query has no general domain
-invalidation contract. The built-in AI conversation stream declares this option;
-its conversation trigger publishes archive, owner and deletion changes.
+The SSE context option `appAccessGuard` and the `eventOnly` option of
+`guardAppAccessSocket` are deprecated: kept for compatibility, with no effect.
+Every protected connection revalidates on access events and periodically.
+Admission rechecks credentials after subscribing, and known credential and
+account deadlines use local timers. The owning
+transport must observe domain changes too. The built-in AI conversation stream
+uses Identity-Access events and conversation archive, owner and deletion events.
 
 ## Check access inside a service
 

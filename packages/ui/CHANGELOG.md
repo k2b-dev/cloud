@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.61.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.60.0...npm-ui-v0.61.0) (2026-11-19)
+
+
+### Features
+
+* **assistant:** queued messages wait in one row above the field, with a list and Send now ([#3684](https://github.com/k2b-dev/cloud/issues/3684)) ([a5920d8](https://github.com/k2b-dev/cloud/commit/a5920d8f26829614a34426fc05a121b062553662))
+* **mail:** the composer closes after send, and toasts carry a short title ([#3678](https://github.com/k2b-dev/cloud/issues/3678)) ([92abba6](https://github.com/k2b-dev/cloud/commit/92abba648dc1d5c7cb61cacdf3f58b3486d173bb))
+* **ui:** inputs use thin edges with a soft focus ring ([#3681](https://github.com/k2b-dev/cloud/issues/3681)) ([3c08671](https://github.com/k2b-dev/cloud/commit/3c0867140751e9aeb63e7c8c361a2c4cf78aeb53))
+* **ui:** show run steps and output in RunLog ([#3649](https://github.com/k2b-dev/cloud/issues/3649)) ([c2fb92c](https://github.com/k2b-dev/cloud/commit/c2fb92c0497585109d203e3272ee0566bb00eb68))
+
+
+### Bug Fixes
+
+* **ci:** ui job drops its duplicate test run covered by unit shards ([#3655](https://github.com/k2b-dev/cloud/issues/3655)) ([d6580f9](https://github.com/k2b-dev/cloud/commit/d6580f98781a705e4d0b4137d04a8afd8ee58548))
+* **cloud:** finish panel setup when its frame has no document root ([#3701](https://github.com/k2b-dev/cloud/issues/3701)) ([c8475d5](https://github.com/k2b-dev/cloud/commit/c8475d5123f8ea6678c1b6724689cce220751339))
+* **mail:** keep reply composer height on focus ([#3642](https://github.com/k2b-dev/cloud/issues/3642)) ([6508558](https://github.com/k2b-dev/cloud/commit/6508558569d7dba468aa62f2318107e82e2de16e))
+* **mail:** reduce date formatting work when changing folders ([#3672](https://github.com/k2b-dev/cloud/issues/3672)) ([c1a9b3e](https://github.com/k2b-dev/cloud/commit/c1a9b3e62d276c9aa2eeaa029627f2fb017fef87))
+* **mail:** reduce folder switch style work ([#3668](https://github.com/k2b-dev/cloud/issues/3668)) ([c8bda24](https://github.com/k2b-dev/cloud/commit/c8bda245ae55282fbb2fd8bf377f12411f501263))
+* **ui:** previews fill the whole screen with floating controls ([#3708](https://github.com/k2b-dev/cloud/issues/3708)) ([c80ecbf](https://github.com/k2b-dev/cloud/commit/c80ecbffbe59acf8d8d9ce2f4a5c3d9e7e6a0beb))
+* **ui:** pull to refresh starts once and stays calm while it loads ([#3695](https://github.com/k2b-dev/cloud/issues/3695)) ([c791648](https://github.com/k2b-dev/cloud/commit/c7916484262cbef1ff63b0d59981551d53732cfc))
+
 ## [0.60.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.59.0...npm-ui-v0.60.0) (2026-11-17)
 
 
