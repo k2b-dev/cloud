@@ -7845,6 +7845,15 @@
   --k2b-activity-row-surface: var(--k2b-row-selected);
   background: var(--k2b-row-selected);
 }
+/* Neighbouring selected rows read as one surface, without notches at the shared edge. */
+.k2b-ui .k2b-activity__entry[data-selected] + .k2b-activity__entry[data-selected] {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+.k2b-ui .k2b-activity__entry[data-selected]:has(+ .k2b-activity__entry[data-selected]) {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
 /* The rail pauses behind the avatar and its optional status mark, on every surface. */
 .k2b-ui .k2b-activity > li.k2b-activity__entry::before {
   bottom: auto;

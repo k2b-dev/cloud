@@ -53,3 +53,10 @@ test("only compact names clip, without removing the complete actor from the acce
   expect(body('.k2b-ui .k2b-activity[data-density="compact"] .k2b-activity__actor-name')).toContain("text-overflow: ellipsis");
   expect(body(".k2b-ui .k2b-activity__text")).not.toContain("overflow: hidden");
 });
+
+test("neighbouring selected rows join into one surface without notches at the shared edge", () => {
+  const lower = body(".k2b-ui .k2b-activity__entry[data-selected] + .k2b-activity__entry[data-selected]");
+  const upper = body(".k2b-ui .k2b-activity__entry[data-selected]:has(+ .k2b-activity__entry[data-selected])");
+  for (const corner of ["start-start", "start-end"]) expect(lower).toContain(`border-${corner}-radius: 0`);
+  for (const corner of ["end-start", "end-end"]) expect(upper).toContain(`border-${corner}-radius: 0`);
+});

@@ -191,6 +191,24 @@ export function MailEventsFeed(props: {
     return presented;
   });
 
+  // Neighbouring rows of the selected conversation join into one surface: the shared edge loses its corners. A day
+  // heading between them keeps them apart.
+  const selectedJoins = createMemo(() => {
+    const joins = new Map<string, "above" | "below" | "both">();
+    const list = rows();
+    const selected = (row: PresentedMailEvent | undefined) =>
+      row !== undefined && row.event.conversationId !== null && row.event.conversationId === props.selectedConversationId;
+    list.forEach((row, index) => {
+      if (!selected(row)) return;
+      const previous = list[index - 1];
+      const next = list[index + 1];
+      const above = selected(previous) && previous!.day === row.day;
+      const below = selected(next) && next!.day === row.day;
+      if (above || below) joins.set(row.event.id, above && below ? "both" : above ? "above" : "below");
+    });
+    return joins;
+  });
+
   const filterHref = (filter: MailEventsFilter) => mailEventsHref(props.requestPath, { filter });
   const eventHref = (conversationId: string) => mailEventsHref(props.requestPath, { conversationId });
   const setFilter = (change: Partial<MailEventsFilter>) => props.onOpenHref(filterHref({ ...props.filter, ...change }));
@@ -364,7 +382,7 @@ export function MailEventsFeed(props: {
           controller={resume}
         >
           {(row) => (
-            <div data-mail-event={row.event.id} data-tone={row.tone}>
+            <div data-mail-event={row.event.id} data-tone={row.tone} data-selected-join={selectedJoins().get(row.event.id)}>
               {activityRow(row)}
             </div>
           )}

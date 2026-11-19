@@ -1993,6 +1993,15 @@
 .mail-events__skeleton { padding: 0 1.25rem 0.5rem; }
 /* VirtualFeed owns scrolling. Each item supplies the message list's two half-rem insets. */
 [data-mail-event] { padding-inline: 0.5rem; }
+/* Neighbouring selected rows read as one surface, without notches at the shared edge. */
+.k2b-ui [data-mail-event]:is([data-selected-join="above"], [data-selected-join="both"]) > .mail-events__row {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+.k2b-ui [data-mail-event]:is([data-selected-join="below"], [data-selected-join="both"]) > .mail-events__row {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
 /* Keep exactly the Mail message-list hover token on the shared row. */
 .k2b-ui .mail-events__row:where(:hover) {
   --k2b-activity-row-surface: var(--ui-hover);
