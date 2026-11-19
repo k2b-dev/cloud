@@ -84,10 +84,10 @@ const LEASE_PLACE_TTL_MS = 5 * 60_000;
 // minute by each folder check, rediscovery, and IMAP push reconnect. The scheduler queues no
 // folder check and IMAP push does not connect while the window is open. A person's manual sync
 // ends the window at once; a provider that answers again is found at the next probe after the
-// window, by a scheduled check or IMAP push, at most one longest window later. Up to a quarter of the window is added at
-// random, so mailboxes of one host that failed together do not all ask to probe at the same
-// moment. A breaker that no job asks about for one longest window after its window ended forgets
-// it.
+// window, by a scheduled check or IMAP push, at most one longest window later. Up to a quarter of
+// the window is added at random, so mailboxes of one host that failed together do not all ask to
+// probe at the same moment. A breaker that no job asks about for one longest window after its
+// window ended forgets it.
 const BREAKER_FIRST_WINDOW_MS = 15_000;
 const BREAKER_MAX_WINDOW_MS = 15 * 60_000;
 const BREAKER_JITTER_FRACTION = 0.25;
