@@ -482,9 +482,10 @@
     "workspace root scripts unreadable-admin.browser.test.ts": 42.1
   },
   "unit": {
+    "@k2b/cloud ai": 425.3,
     "@k2b/cloud behavior": 74.8,
     "@k2b/cloud rest": 846.6,
-    "@k2b/cloud ssr-ai": 981.8,
+    "@k2b/cloud ssr": 557.8,
     "@k2b/cloud-app-accounts": 69.7,
     "@k2b/cloud-app-accounts behavior": 9,
     "@k2b/cloud-app-api-docs": 1.1,
