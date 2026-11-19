@@ -299,7 +299,7 @@ for (const width of [390, 1440])
         const anchor = page.locator('[data-chat-anchor="1"]');
         await page.waitForFunction(() => document.activeElement?.getAttribute("data-chat-anchor") === "1");
         expect(await anchor.textContent()).toContain("Vergleiche drei Hotels");
-        expect(await page.locator("article").last().textContent()).toContain("Drei Hotels nahe der Messe");
+        expect(await page.locator('article[data-role="assistant"]').first().textContent()).toContain("Drei Hotels nahe der Messe");
         expect(await page.locator("[data-source]").first().textContent()).toContain("Aus dem Chat „Reise nach Lyon“");
         await page.reload();
         await page.waitForFunction(() => document.activeElement?.getAttribute("data-chat-anchor") === "1");
