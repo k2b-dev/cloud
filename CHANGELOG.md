@@ -3,6 +3,37 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.81.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.80.0...cloud-v0.81.0) (2026-11-19)
+
+
+### Features
+
+* **ai:** queued messages show who wrote them and can be sent now without starting new effects ([#3513](https://github.com/k2b-dev/cloud/issues/3513)) ([e871331](https://github.com/k2b-dev/cloud/commit/e87133108df6cb3ea8edd370b1068d273f57b13a))
+* **ai:** stopped chats keep queued messages waiting ([#3658](https://github.com/k2b-dev/cloud/issues/3658)) ([97b5f89](https://github.com/k2b-dev/cloud/commit/97b5f89ed49377ddf57011b6a49efbeb9517e8a2))
+* **assistant:** queued messages wait in one row above the field, with a list and Send now ([#3684](https://github.com/k2b-dev/cloud/issues/3684)) ([a5920d8](https://github.com/k2b-dev/cloud/commit/a5920d8f26829614a34426fc05a121b062553662))
+* **cloud:** report live subscription connectivity independently ([#3699](https://github.com/k2b-dev/cloud/issues/3699)) ([2cdd998](https://github.com/k2b-dev/cloud/commit/2cdd99812f072e9979bb1ae43fd28afaaf5c28ea))
+* **mail:** the composer closes after send, and toasts carry a short title ([#3678](https://github.com/k2b-dev/cloud/issues/3678)) ([92abba6](https://github.com/k2b-dev/cloud/commit/92abba648dc1d5c7cb61cacdf3f58b3486d173bb))
+* **ui:** inputs use thin edges with a soft focus ring ([#3681](https://github.com/k2b-dev/cloud/issues/3681)) ([3c08671](https://github.com/k2b-dev/cloud/commit/3c0867140751e9aeb63e7c8c361a2c4cf78aeb53))
+* **ui:** show run steps and output in RunLog ([#3649](https://github.com/k2b-dev/cloud/issues/3649)) ([c2fb92c](https://github.com/k2b-dev/cloud/commit/c2fb92c0497585109d203e3272ee0566bb00eb68))
+
+
+### Bug Fixes
+
+* **ci:** ui job drops its duplicate test run covered by unit shards ([#3655](https://github.com/k2b-dev/cloud/issues/3655)) ([d6580f9](https://github.com/k2b-dev/cloud/commit/d6580f98781a705e4d0b4137d04a8afd8ee58548))
+* **cloud:** finish panel setup when its frame has no document root ([#3701](https://github.com/k2b-dev/cloud/issues/3701)) ([c8475d5](https://github.com/k2b-dev/cloud/commit/c8475d5123f8ea6678c1b6724689cce220751339))
+* **cloud:** recover stalled shared draft connections ([#3670](https://github.com/k2b-dev/cloud/issues/3670)) ([55fa7da](https://github.com/k2b-dev/cloud/commit/55fa7da5a59c0cc040932dee78680bca58705525))
+* **mail:** classify shared draft send preparation failures ([#3687](https://github.com/k2b-dev/cloud/issues/3687)) ([664fd49](https://github.com/k2b-dev/cloud/commit/664fd49739d7c04411f90f325e922c52ba4c6911))
+* **mail:** isolate draft session cleanup between tests ([#3682](https://github.com/k2b-dev/cloud/issues/3682)) ([ceb3e3e](https://github.com/k2b-dev/cloud/commit/ceb3e3e7814c733023073e049b9716de0789c910)), closes [#3675](https://github.com/k2b-dev/cloud/issues/3675)
+* **mail:** keep reply composer height on focus ([#3642](https://github.com/k2b-dev/cloud/issues/3642)) ([6508558](https://github.com/k2b-dev/cloud/commit/6508558569d7dba468aa62f2318107e82e2de16e))
+* **mail:** keep self-addressed replies editable ([#3676](https://github.com/k2b-dev/cloud/issues/3676)) ([b7ee766](https://github.com/k2b-dev/cloud/commit/b7ee766cf1139fb1c5ed36cf3bb208f0046e6bfa))
+* **mail:** maximizing a new message window keeps its draft without a page error ([#3691](https://github.com/k2b-dev/cloud/issues/3691)) ([8623157](https://github.com/k2b-dev/cloud/commit/8623157cab848f5a7cfbd1ae2eccdb396de17751))
+* **mail:** preserve draft snapshot coverage across pruning ([#3696](https://github.com/k2b-dev/cloud/issues/3696)) ([23d02b7](https://github.com/k2b-dev/cloud/commit/23d02b77feef066131a9f3f06b10b1972c3a053c))
+* **mail:** reduce date formatting work when changing folders ([#3672](https://github.com/k2b-dev/cloud/issues/3672)) ([c1a9b3e](https://github.com/k2b-dev/cloud/commit/c1a9b3e62d276c9aa2eeaa029627f2fb017fef87))
+* **mail:** reduce folder switch style work ([#3668](https://github.com/k2b-dev/cloud/issues/3668)) ([c8bda24](https://github.com/k2b-dev/cloud/commit/c8bda245ae55282fbb2fd8bf377f12411f501263))
+* **mail:** the composer shows the signature exactly as it is sent ([#3680](https://github.com/k2b-dev/cloud/issues/3680)) ([e640c71](https://github.com/k2b-dev/cloud/commit/e640c71f854079346345bdab560380c8eb0567cc))
+* **ui:** previews fill the whole screen with floating controls ([#3708](https://github.com/k2b-dev/cloud/issues/3708)) ([c80ecbf](https://github.com/k2b-dev/cloud/commit/c80ecbffbe59acf8d8d9ce2f4a5c3d9e7e6a0beb))
+* **ui:** pull to refresh starts once and stays calm while it loads ([#3695](https://github.com/k2b-dev/cloud/issues/3695)) ([c791648](https://github.com/k2b-dev/cloud/commit/c7916484262cbef1ff63b0d59981551d53732cfc))
+
 ## [0.80.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.79.0...cloud-v0.80.0) (2026-11-17)
 
 
