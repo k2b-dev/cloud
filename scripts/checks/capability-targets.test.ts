@@ -165,7 +165,10 @@ test("untargeted personal chat creation exempts only its optional Project contex
     description: "Create an empty personal chat, optionally in a readable Project.",
     input: z.strictObject({
       title: z.string().describe("Chat title."),
-      project: z.strictObject({ type: z.literal("core.ai.project"), id: z.string().describe("Project ID.") }).optional(),
+      project: z
+        .strictObject({ type: z.literal("core.ai.project").describe("Project type."), id: z.string().describe("Project ID.") })
+        .optional()
+        .describe("Optional readable Project."),
     }),
     data: z.strictObject({}),
     destructive: false,
@@ -173,10 +176,7 @@ test("untargeted personal chat creation exempts only its optional Project contex
     idempotency: "required" as const,
     run: () => ({ ok: true as const, data: { data: {} } }),
   };
-  const manifest = compileCapabilities(
-    "core",
-    defineCapabilities({ protocolVersion: 2, actions: { "ai.chat.create": action } }),
-  ).manifest;
+  const manifest = compileCapabilities("core", defineCapabilities({ protocolVersion: 2, actions: { "ai.chat.create": action } })).manifest;
   expect(capabilityTargetGaps(manifest)).toEqual([]);
   expect(capabilityTargetGaps({ ...manifest, appId: "other" })).toEqual(["other.ai.chat.create: project.id"]);
   const extra = compileCapabilities(

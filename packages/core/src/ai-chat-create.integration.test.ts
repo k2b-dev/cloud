@@ -124,7 +124,9 @@ suiteFor(
       SELECT ${secondVersionId}::uuid,${secondCodeId},1,source_files,bundle,source_hash,bundle_hash,source_bytes,bundle_bytes
       FROM code.versions WHERE id=${versionId}::uuid`;
     await sql`UPDATE code.codes SET state='active',active_version_id=${secondVersionId}::uuid WHERE id=${secondCodeId}`;
-    const [otherRun] = await sql<{ id: string }[]>`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
+    const [otherRun] = await sql<
+      { id: string }[]
+    >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
       VALUES(${secondCodeId},${secondVersionId}::uuid,'schedule','fixture','running',32768,10) RETURNING id`;
     expect(
       await created({
