@@ -149,7 +149,9 @@ export function describeCodeVersionCard(input: {
     result = {
       kind: "replaced",
       main: latest > version ? c.replaced({ version, latest }) : c.superseded({ version }),
-      quiet: join(preview.title, latest > version ? c.replacedQuiet({ latest }) : c.noSummary),
+      // The card cannot know where the newer version waits (further down, another chat, the CLI, or nowhere when it
+      // needs no approval): it says only what replaced it, and the button leads there (P5 Rundgang f03).
+      quiet: join(preview.title, latest > version ? null : c.noSummary),
       primary: base
         ? {
             id: "page",

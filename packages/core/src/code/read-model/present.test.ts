@@ -165,8 +165,39 @@ test("changed Internet, public-page and AI accesses retain one localized approva
 test("unavailable readers hide free text without asserting that the reader lacks permission", () => {
   const model = present({ names: { ...names, target: () => ({ name: "ein Space", readable: false, unavailable: true }) } });
   expect(model.description.state).toBe("restricted");
-  expect(model.description.text).toBe("Die Beschreibung bleibt verborgen, weil Cloud nicht für alle Ziele Leserechte feststellen kann");
+  expect(model.description.text).toBe("Cloud zeigt die Beschreibung nicht, weil es nicht prüfen kann, ob du alle Ziele sehen darfst.");
   expect(JSON.stringify(model)).not.toMatch(/SECRET TARGET NAME|nicht sehen darfst/);
+});
+
+// P5 Rundgang m02: personal Code's own chat (chat.send to the bound chat, id null) hid its description from its owner.
+test("the owner reads the description of personal Code that writes to its own chat; anyone else does not", () => {
+  const chatSend = { operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null }, file: "code.ts", line: 1 };
+  const withChat = { ...manifest, permissions: [...manifest.permissions, chatSend] };
+  const dynamic = {
+    ...names,
+    target: (ref: { type: string; id: string | null }) =>
+      ref.id === null ? { name: "ein Chat", readable: false, unavailable: true } : names.target(ref),
+  };
+  const owner = present({
+    personal: true,
+    manifest: withChat,
+    comparison: withChat,
+    names: dynamic,
+    explanation: "Fasst die Aufgaben zusammen.",
+  });
+  expect(owner.description).toMatchObject({ state: "visible", text: "Fasst die Aufgaben zusammen." });
+  const other = present({
+    personal: true,
+    runsAs: { name: "Lea Muster" },
+    manifest: withChat,
+    comparison: withChat,
+    names: dynamic,
+    explanation: "SECRET TARGET NAME",
+  });
+  expect(other.description.state).toBe("restricted");
+  expect(JSON.stringify(other)).not.toContain("SECRET TARGET NAME");
+  // A place's Code never treats an open chat target as its own.
+  expect(present({ manifest: withChat, comparison: withChat, names: dynamic }).description.state).toBe("restricted");
 });
 
 test("an explicit denial keeps its restriction even when another target is unavailable", () => {

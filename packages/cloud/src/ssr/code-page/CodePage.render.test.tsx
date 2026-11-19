@@ -107,7 +107,7 @@ describe("Code page: overview (Bild 19 to 21)", () => {
     expect(page).toContain("Nächster Lauf");
     expect(page).toContain("in 11 Min.");
     expect(page).toContain("Zuletzt");
-    expect(page).toContain("Letzte 30 Läufe · heute 30, davon 1 fehlgeschlagen");
+    expect(page).toContain("Letzte 30 Läufe · alle heute, davon 1 fehlgeschlagen");
     expect(page).toContain("Alle Läufe");
     expect(markup).toContain('data-variant="bar"');
     // Each of the 30 bars opens its run.

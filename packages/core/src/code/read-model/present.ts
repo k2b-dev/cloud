@@ -115,9 +115,18 @@ export function presentCodeVersion(input: {
 }): CodeVersionReadModel {
   const { t, locale } = codeReadModelMessages.resolve([input.locale]);
   const { manifest, names } = input;
-  const allReadable = canReadVersionText(manifest, names);
+  // Personal Code's own chat (`chat.send` to the bound chat, id null) is no unknown target for its owner: the owner
+  // chose it. For anyone else it stays unreadable, so the model's description stays hidden from them.
+  const ownChat = (permission: CodeCheckedVersionManifest["permissions"][number]) =>
+    input.personal &&
+    !input.runsAs &&
+    permission.operation === "core.ai.chat.send" &&
+    permission.target?.type === "core.ai.chat" &&
+    permission.target.id === null;
+  const checked = { ...manifest, permissions: manifest.permissions.filter((permission) => !ownChat(permission)) };
+  const allReadable = canReadVersionText(checked, names);
   const targets = [
-    ...manifest.permissions.map(({ operation, target }) => target ?? { type: "app", id: operation.split(".")[0]! }),
+    ...checked.permissions.map(({ operation, target }) => target ?? { type: "app", id: operation.split(".")[0]! }),
     ...manifest.entrypoints.flatMap((entry) => (entry.event ? [entry.event.place] : [])),
   ];
   const denied = targets.some((ref) => {

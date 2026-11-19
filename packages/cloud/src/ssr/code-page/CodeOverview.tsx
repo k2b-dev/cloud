@@ -321,7 +321,11 @@ function MayDo(props: { data: CodePageData; state: CodePageReady; text: PageText
             {(row) => {
               const parts = splitRow(row.text);
               // The place as quiet text, never a link (v12 picture 19): its kind and its name, "Postfach info@…".
-              const place = () => placeText(row, parts.rest, props.state, props.data.owner.title);
+              // A grant on the whole app names the app as its place ("Spaces · Spaces"): the app alone says it once.
+              const place = () => {
+                const text = placeText(row, parts.rest, props.state, props.data.owner.title);
+                return row.app && text.localeCompare(row.app, props.text.locale(), { sensitivity: "base" }) === 0 ? "" : text;
+              };
               // Personal Code's chat: Core names it for the owner and says how it answers; the owner may choose another.
               // Only personal Code reads a binding (`undefined` otherwise); `null` means Core could not answer.
               const chatRow = () => row.target?.ref.type === "core.ai.chat" && props.state.chatBinding !== undefined;
