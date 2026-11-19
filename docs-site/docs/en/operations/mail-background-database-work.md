@@ -63,11 +63,11 @@ ORDER BY hour, folder_id, run.state;
 
 ## Cleanup and upgrades
 
-On the first start with this version, Mail validates a new address rule on
-`mail.remote_message_refs` and `mail.draft_provider_snapshots` and builds two
-indexes in the background.
-The validation scans and index builds do not block writes, so IMAP continues
-while they run.
+The first start after the upgrade that adds message address forms validates
+a new rule on `mail.remote_message_refs` and `mail.draft_provider_snapshots`.
+Mail reads both tables once before it finishes starting, then builds two
+indexes in the background. Neither step blocks writes, so an older Mail
+instance keeps synchronizing over IMAP while they run. Later starts skip both.
 
 `mail:runtime-history-cleanup` runs every minute while the Mail scheduler
 worker runs. Each pass gives successful runs, other terminal runs, automation

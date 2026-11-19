@@ -54,7 +54,6 @@ type PlacementRow = {
   folder_id: string;
   folder_name: string;
   remote_path: string | null;
-  folder_stable_key: string;
   remote_id: string | null;
   uid_validity: string | number | bigint | null;
   uid: string | number | bigint | null;
@@ -236,7 +235,6 @@ export const inspectMessage = async (params: {
       SELECT
         folder.id AS folder_id,
         folder.name AS folder_name,
-        folder.stable_key AS folder_stable_key,
         remote_ref.remote_id,
         folder_ref.remote_path,
         remote_ref.uid_validity,
