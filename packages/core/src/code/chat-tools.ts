@@ -190,7 +190,7 @@ export function createCodeAuthoringChatTools() {
       "sdk",
       { input: CodeChatSdkInputSchema, data: CodeChatSdkDataSchema },
       readCodeChatSdk,
-      `Read this Code's @sdk from the live authorized catalog in two steps. Without apps: an index of every app export, method path, policy row and automation event, one line each. Then with apps (at most ${CODE_CHAT_SDK_APPS} per call, [] for only the shared types): the TypeScript declarations of those apps plus app, page, db, http and event types. Resource handles accept dynamic IDs; review records their type, and each call checks current access.`,
+      `Read this Code's @sdk from the live authorized catalog in two steps. Without apps: an index of every app export, method path, policy row and automation event. With apps plus descriptions:true (at most two apps), read only those apps' one-line method and event descriptions; descriptions:true requires apps. Then with apps (at most ${CODE_CHAT_SDK_APPS} per call, [] for only the shared types): the TypeScript declarations of those apps plus app, page, db, http and event types. Resource handles accept dynamic IDs; review records their type, and each call checks current access.`,
     ),
     tool(
       "test",

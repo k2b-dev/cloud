@@ -122,3 +122,11 @@ test("a passing chat check leaves the checked bundle on the server; its hash sta
   expect(check.def.outputSchema.safeParse(answer(result)).success).toBe(true);
   expect(check.def.outputSchema.safeParse(answer({ ...result, bundle: "export {}" })).success).toBe(false);
 });
+
+test("SDK descriptions require at most two selected apps in the provider object schema", () => {
+  expect(schema("code_sdk").safeParse({ codeId: "c_1234", descriptions: true }).success).toBe(false);
+  expect(schema("code_sdk").safeParse({ codeId: "c_1234", descriptions: true, apps: ["core", "mail"] }).success).toBe(true);
+  expect(schema("code_sdk").safeParse({ codeId: "c_1234", descriptions: true, apps: ["core", "mail", "spaces"] }).success).toBe(false);
+  expect(schema("code_sdk").safeParse({ codeId: "c_1234", apps: ["mail"] }).success).toBe(true);
+  expect(tools.find((tool) => tool.def.name === "code_sdk")!.def.description).toContain("descriptions:true");
+});

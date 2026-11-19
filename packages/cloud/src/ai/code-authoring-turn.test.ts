@@ -8,6 +8,7 @@ import { codeChatSdkView } from "../../../core/src/code/chat-sdk";
 import { createCodeAuthoringChatTools } from "../../../core/src/code/chat-tools";
 import { describeCodeTestWords } from "../../../core/src/code/read-model/chat-words";
 import { capabilityToolInputSchema } from "../capabilities/calls";
+import { generateCodeSdk } from "../code/generator";
 import type { CodeTestResult } from "../code/test-contract";
 import type { CapabilityDefinitions } from "../contracts/capabilities";
 import { aiCapabilityInputSchema } from "./capabilities";
@@ -369,7 +370,8 @@ test("a representative authoring loop pins per-step context and releases SDK evi
     }),
   ).toBeLessThan(16_000);
   expect(before - estimates[0]!).toBeGreaterThan(20_000);
-  expect(JSON.stringify(sdk).length).toBeGreaterThan(90_000);
+  // #3716 compacts chat declarations; measure fixture size at the uncompressed source instead.
+  expect(generateCodeSdk([manifest], { mode: "personal" }).declarations.length).toBeGreaterThan(90_000);
 });
 
 test("a batch cannot execute more identical failing checks than the retry budget, and executor notifications count once", async () => {

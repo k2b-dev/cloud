@@ -17,13 +17,23 @@ const AppNameSchema = z.string().min(1).max(100);
 export const CodeChatSdkInputSchema = z
   .object({
     codeId: CodeIdSchema,
+    descriptions: z
+      .boolean()
+      .optional()
+      .describe("Return one-line method and event descriptions only for apps (required, at most two), instead of declarations."),
     apps: z
       .array(AppNameSchema)
       .max(CODE_CHAT_SDK_APPS)
       .optional()
-      .describe("App IDs or export names from the index. Omit for the index; [] returns only the shared declarations."),
+      .describe(
+        "App IDs or export names from the index. Omit for the compact index; [] returns shared declarations, or no rows when descriptions is true.",
+      ),
   })
-  .strict();
+  .strict()
+  .refine((input) => !input.descriptions || input.apps !== undefined, {
+    path: ["descriptions"],
+    message: `descriptions: true requires apps (at most ${CODE_CHAT_SDK_APPS} app IDs or export names).`,
+  });
 
 const IndexSchema = z
   .object({
@@ -36,13 +46,20 @@ const IndexSchema = z
           export: z.string(),
           methods: z.array(
             z
-              .object({ path: z.string(), kind: z.enum(["query", "action"]), policy: CodePolicyRowSchema, description: z.string() })
+              .object({
+                path: z.string(),
+                kind: z.enum(["query", "action"]),
+                policy: CodePolicyRowSchema,
+                description: z.string().optional(),
+              })
               .strict(),
           ),
         })
         .strict(),
     ),
-    events: z.array(z.object({ type: z.string(), subject: z.string(), place: z.string().nullable(), description: z.string() }).strict()),
+    events: z.array(
+      z.object({ type: z.string(), subject: z.string(), place: z.string().nullable(), description: z.string().optional() }).strict(),
+    ),
   })
   .strict();
 const DeclarationsSchema = z
@@ -58,49 +75,70 @@ const oneLine = (text: string): string => {
   return sentence.length > 160 ? `${sentence.slice(0, 159)}…` : sentence;
 };
 
+/** Keep quoted and template literals and documentation intact; omit only spacing around type punctuation. */
+export const compactDeclarations = (source: string) =>
+  source.replace(
+    /("(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*(?:\r?\n|$))|\s*([{}\[\];:,|&])\s*/g,
+    (match, literalOrComment: string | undefined, punctuation: string | undefined) => literalOrComment ?? punctuation ?? match,
+  );
+
+/** The described index shared by on-demand chat discovery and the app Help reference. */
+export function codeChatSdkIndex(manifests: readonly CapabilityManifest[], options: CodeSdkOptions) {
+  const sdk = generateCodeSdk(manifests, options);
+  const byApp = new Map(manifests.map((manifest) => [manifest.appId, manifest]));
+  const factories = new Map(sdk.manifest.handles.map((handle) => [handle.type, handle.factoryPath]));
+  return {
+    version: 1 as const,
+    kind: "index" as const,
+    apps: sdk.manifest.apps.map((app) => {
+      const manifest = byApp.get(app.appId)!;
+      return {
+        appId: app.appId,
+        export: app.exportName,
+        methods: sdk.manifest.operations
+          .filter((operation) => operation.appId === app.appId)
+          .map((operation) => {
+            const factory = operation.target ? `.${factories.get(operation.target)!.join(".")}(id)` : "";
+            const entries = operation.kind === "query" ? manifest.queries : manifest.actions;
+            const description = entries.find((entry) => entry.localId === operation.localId)?.description ?? "";
+            return {
+              path: `${app.exportName}${factory}.${operation.methodPath.join(".")}`,
+              kind: operation.kind,
+              policy: codeOperationPolicyRow(operation.capability, operation.kind, capabilityActionPolicy(manifest, operation.localId)),
+              description: oneLine(description),
+            };
+          }),
+      };
+    }),
+    events: sdk.manifest.events.map((event) => {
+      const [appId] = event.type.split(".");
+      const localId = event.type.slice(appId!.length + 1);
+      const description = byApp.get(appId!)?.events?.find((entry) => entry.localId === localId)?.description ?? "";
+      return { type: event.type, subject: event.subject, place: event.place, description: oneLine(description) };
+    }),
+  };
+}
+
 /**
  * The chat's view of the generated SDK. The checker still receives the complete SDK; the chat reads an index of every
- * method first and then the TypeScript declarations of the apps it uses. Paths, events and policy rows come from the
- * same generated manifest and classification the check uses, so the index cannot drift from the checker.
+ * method first, with descriptions on demand, and then the TypeScript declarations of the apps it uses. Paths, events
+ * and policy rows come from the same generated manifest and classification the check uses, so the index cannot drift.
  */
 export function codeChatSdkView(
   manifests: readonly CapabilityManifest[],
   options: CodeSdkOptions,
   apps?: readonly string[],
+  descriptions = false,
 ): CodeChatSdkData {
   if (apps === undefined) {
-    const sdk = generateCodeSdk(manifests, options);
-    const byApp = new Map(manifests.map((manifest) => [manifest.appId, manifest]));
-    const factories = new Map(sdk.manifest.handles.map((handle) => [handle.type, handle.factoryPath]));
+    const index = codeChatSdkIndex(manifests, options);
     return {
-      version: 1,
-      kind: "index",
-      apps: sdk.manifest.apps.map((app) => {
-        const manifest = byApp.get(app.appId)!;
-        return {
-          appId: app.appId,
-          export: app.exportName,
-          methods: sdk.manifest.operations
-            .filter((operation) => operation.appId === app.appId)
-            .map((operation) => {
-              const factory = operation.target ? `.${factories.get(operation.target)!.join(".")}(id)` : "";
-              const entries = operation.kind === "query" ? manifest.queries : manifest.actions;
-              const description = entries.find((entry) => entry.localId === operation.localId)?.description ?? "";
-              return {
-                path: `${app.exportName}${factory}.${operation.methodPath.join(".")}`,
-                kind: operation.kind,
-                policy: codeOperationPolicyRow(operation.capability, operation.kind, capabilityActionPolicy(manifest, operation.localId)),
-                description: oneLine(description),
-              };
-            }),
-        };
-      }),
-      events: sdk.manifest.events.map((event) => {
-        const [appId] = event.type.split(".");
-        const localId = event.type.slice(appId!.length + 1);
-        const description = byApp.get(appId!)?.events?.find((entry) => entry.localId === localId)?.description ?? "";
-        return { type: event.type, subject: event.subject, place: event.place, description: oneLine(description) };
-      }),
+      ...index,
+      apps: index.apps.map((app) => ({
+        ...app,
+        methods: app.methods.map(({ description: _description, ...method }) => method),
+      })),
+      events: index.events.map(({ description: _description, ...event }) => event),
     };
   }
   const wanted = new Set<string>();
@@ -109,6 +147,14 @@ export function codeChatSdkView(
     if (!app) throw new CodeDataError("BAD_INPUT", `Unknown app ${name}. Use an appId or export from the code_sdk index.`);
     wanted.add(app.appId);
   }
+  if (descriptions) {
+    const index = codeChatSdkIndex(manifests, options);
+    return {
+      ...index,
+      apps: index.apps.filter((app) => wanted.has(app.appId)),
+      events: index.events.filter((event) => wanted.has(event.type.split(".")[0]!)),
+    };
+  }
   // A resource or app owner's handle type lives in its app; without that app the owner export has no type.
   const owner = options.owner;
   if (owner) wanted.add(owner.kind === "app" ? owner.appId : owner.ref.type.slice(0, owner.ref.type.indexOf(".")));
@@ -116,10 +162,15 @@ export function codeChatSdkView(
     manifests.filter((manifest) => wanted.has(manifest.appId)),
     options,
   );
-  return { version: 1, kind: "declarations", apps: selected.manifest.apps.map((app) => app.appId), declarations: selected.declarations };
+  return {
+    version: 1,
+    kind: "declarations",
+    apps: selected.manifest.apps.map((app) => app.appId),
+    declarations: compactDeclarations(selected.declarations),
+  };
 }
 
 export async function readCodeChatSdk(input: z.output<typeof CodeChatSdkInputSchema>, context: CodeContext): Promise<CodeChatSdkData> {
   const { manifests, options } = await loadCodeSdkCatalog(input.codeId, context);
-  return codeChatSdkView(manifests, options, input.apps);
+  return codeChatSdkView(manifests, options, input.apps, input.descriptions);
 }
