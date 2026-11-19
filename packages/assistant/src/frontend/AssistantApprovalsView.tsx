@@ -242,7 +242,8 @@ export default function AssistantApprovalsView(props: {
                   <AssistantWaitingAutomations
                     entries={automations() ?? null}
                     onRetry={() => void loadAutomations()}
-                    onChanged={() => void readAutomations().then(setAutomations, () => {})}
+                    // A read that fails after the restore shows the section's error with "Try again", never silence.
+                    onChanged={() => readAutomations().then(setAutomations, () => setAutomations(null))}
                   />
                 </Show>
               </Show>

@@ -56,7 +56,8 @@ const automationMessages = i18n.define({
 export default function AssistantWaitingAutomations(props: {
   entries: readonly WaitingAutomation[] | null;
   onRetry: () => void;
-  onChanged?: () => void;
+  /** Reads the section again without its loading state; the restore keeps its button busy until it settles. */
+  onChanged?: () => Promise<void>;
 }) {
   const locale = useLocale();
   const t = () => automationMessages.resolve([locale()]).t;
@@ -69,13 +70,15 @@ export default function AssistantWaitingAutomations(props: {
       method: "POST",
       credentials: "same-origin",
     }).catch(() => null);
-    setRestoring(null);
     if (!response?.ok) {
+      setRestoring(null);
       toast.error(t().restoreFailed, { title: t().restoreFailedTitle });
       return;
     }
     toast.success(t().restored({ title: chat.title }), { title: t().restoredTitle });
-    props.onChanged?.();
+    // The row leaves with the new read; until then its button stays busy, so a second press cannot fail.
+    await props.onChanged?.();
+    setRestoring(null);
   };
   return (
     <section class="assistant-waiting-page__section" aria-labelledby="assistant-waiting-automations">
@@ -117,34 +120,37 @@ export default function AssistantWaitingAutomations(props: {
                         )}
                       </Show>
                     </span>
-                    <Show when={entry.href}>
-                      {(href) => (
-                        <ButtonLink
-                          href={href()}
-                          size="sm"
-                          variant="secondary"
-                          class="assistant-waiting-page__open"
-                          aria-label={t().label({ action: action(entry), title: entry.short })}
-                        >
-                          {action(entry)}
-                        </ButtonLink>
-                      )}
-                    </Show>
-                    <Show when={entry.archivedChat}>
-                      {(chat) => (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          class="assistant-waiting-page__open"
-                          loading={restoring() === chat().id}
-                          aria-label={t().label({ action: t().restoreChat, title: entry.short })}
-                          onClick={() => void restore(chat())}
-                        >
-                          {t().restoreChat}
-                        </Button>
-                      )}
-                    </Show>
+                    <span class="assistant-waiting-page__actions">
+                      <Show when={entry.href}>
+                        {(href) => (
+                          <ButtonLink
+                            href={href()}
+                            size="sm"
+                            variant="secondary"
+                            class="assistant-waiting-page__open"
+                            aria-label={t().label({ action: action(entry), title: entry.short })}
+                          >
+                            {action(entry)}
+                          </ButtonLink>
+                        )}
+                      </Show>
+                      <Show when={entry.archivedChat}>
+                        {(chat) => (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            class="assistant-waiting-page__open"
+                            loading={restoring() === chat().id}
+                            disabled={restoring() !== null && restoring() !== chat().id}
+                            aria-label={t().label({ action: t().restoreChat, title: entry.short })}
+                            onClick={() => void restore(chat())}
+                          >
+                            {t().restoreChat}
+                          </Button>
+                        )}
+                      </Show>
+                    </span>
                   </li>
                 )}
               </For>
