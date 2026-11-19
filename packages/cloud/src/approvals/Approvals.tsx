@@ -100,6 +100,7 @@ const outcomeLines = (
   card: ActionCard,
   words: ReturnType<typeof approvalMessages.resolve>["t"],
   reopen: () => void,
+  retry: () => void,
   codeVersion: boolean,
   reauthenticate: boolean,
 ) => ({
@@ -114,9 +115,10 @@ const outcomeLines = (
   gone: { tone: "off" as const, icon: "ti ti-clock-x", text: [{ kind: "text" as const, text: words.gone }] },
   busy: {
     tone: "warning" as const,
+    icon: "ti ti-alert-triangle",
     text: [{ kind: "text" as const, text: words.decisionBusy }],
     detail: words.notApplied,
-    action: { label: words.retry, onSelect: reopen },
+    action: { label: words.retry, onSelect: retry },
   },
   failed: {
     tone: "warning" as const,
@@ -146,6 +148,7 @@ function Row(props: {
   failed: boolean | "reauthenticate" | "busy";
   decide: (input: ApprovalDecisionInput) => void;
   reopen: () => void;
+  retry: () => void;
 }) {
   const t = useMessages();
   const locale = useLocale();
@@ -177,6 +180,7 @@ function Row(props: {
               card(),
               approvalMessages.resolve([card().locale]).t,
               props.reopen,
+              props.retry,
               props.item.requester.kind === "code_version",
               props.failed === "reauthenticate",
             ),
@@ -204,6 +208,7 @@ export default function Approvals(props: ApprovalsProps) {
   const [outcomes, setOutcomes] = createSignal<ReadonlyMap<string, Outcome>>(new Map());
   const [busy, setBusy] = createSignal<ReadonlySet<string>>(new Set());
   const [failed, setFailed] = createSignal<ReadonlyMap<string, true | "reauthenticate" | "busy">>(new Map());
+  const retryInputs = new Map<string, ApprovalDecisionInput>();
   const [loadError, setLoadError] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
   // A failed next page keeps the rows already shown; the error sits next to the button that retries it.
@@ -259,6 +264,7 @@ export default function Approvals(props: ApprovalsProps) {
   };
   const decide = async (item: PendingApproval, input: ApprovalDecisionInput): Promise<void> => {
     if (busy().has(item.id) || outcomes().has(item.id)) return;
+    retryInputs.delete(item.id);
     setBusy((current) => toggle(current, item.id, true));
     setFailed((current) => {
       const next = new Map(current);
@@ -274,6 +280,7 @@ export default function Approvals(props: ApprovalsProps) {
       });
       const error: unknown = response.ok ? null : await response.json().catch(() => null);
       if (error && typeof error === "object" && "code" in error && error.code === "BUSY") {
+        retryInputs.set(item.id, input);
         setFailed((current) => new Map(current).set(item.id, "busy"));
         return;
       }
@@ -357,6 +364,10 @@ export default function Approvals(props: ApprovalsProps) {
           busy={busy().has(item.id)}
           failed={failed().get(item.id) ?? false}
           decide={(input) => void decide(item, input)}
+          retry={() => {
+            const input = retryInputs.get(item.id);
+            if (input) void decide(item, input);
+          }}
           reopen={() =>
             setFailed((current) => {
               const next = new Map(current);

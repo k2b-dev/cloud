@@ -245,11 +245,14 @@ even without a previous sign-in.
 The platform counts and locks the administrator population in the decision
 transaction. Adding a second administrator blocks new self-approvals immediately;
 an earlier approval stays valid. Self-approval waits briefly for database
-maintenance or an in-flight change, with a two-second lock timeout. If the lock
-is still unavailable, the decision returns `BUSY` and the request stays pending.
+maintenance or an in-flight change. Acquiring all four population table locks
+has one two-second statement deadline; a conflicting author row lock refuses
+immediately. Lock timeout, statement cancellation, or a deadlock returns `BUSY`
+and the request stays pending.
 The approval card shows **Busy right now – try again in a moment** and
-**Try again**, in the same reserved space. In the approvals list, **Try again**
-returns to the question; in the Code review, it repeats the approval.
+a retry control in the same reserved space. In the approvals list, **Try again**
+repeats the same decision; in the Code review, **Approve version N** repeats
+the approval without changing the button’s width or accessible name.
 The Assistant version card continues to link to that review while approval is pending.
 
 Core stores `sole_admin` in its durable decision and approved/rejected audit

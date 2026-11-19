@@ -556,7 +556,9 @@ for (const locale of ["en", "de"] as const) {
       await settled(page);
       const frame = page.locator(".cloud-approval-frame:visible").first();
       const before = await frame.boundingBox();
-      await page.getByRole("button", { name: locale === "de" ? "Version 3 freigeben" : "Approve version 3" }).click();
+      const confirm = frame.getByRole("button", { name: locale === "de" ? "Version 3 freigeben" : "Approve version 3", exact: true });
+      const buttonBefore = await confirm.boundingBox();
+      await confirm.click();
       await page.getByText(locale === "de" ? german : english, { exact: false }).waitFor();
       if (code === "BUSY") {
         expect(await page.locator("#code-review-failure").count()).toBe(0);
@@ -567,7 +569,8 @@ for (const locale of ["en", "de"] as const) {
             .textContent(),
         ).toContain(locale === "de" ? german : english);
         expect(await frame.boundingBox()).toEqual(before);
-        const retry = frame.getByRole("button", { name: locale === "de" ? "Erneut versuchen" : "Try again", exact: true });
+        const retry = frame.getByRole("button", { name: locale === "de" ? "Version 3 freigeben" : "Approve version 3", exact: true });
+        expect(await retry.boundingBox()).toEqual(buttonBefore);
         expect(await retry.isEnabled()).toBe(true);
         await retry.click();
         await page.getByText(locale === "de" ? german : english, { exact: false }).waitFor();

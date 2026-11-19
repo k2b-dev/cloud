@@ -1256,36 +1256,43 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
           credentialProof: { kind: "session", userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
         },
       };
-      const ready = Promise.withResolvers<number>();
+      const ready = Promise.withResolvers<{ pid: number; deadlockMs: number }>();
       const release = Promise.withResolvers<void>();
       const holder = sql.begin(async (tx) => {
         // Explicit ANALYZE runs even when a fixture disables automatic maintenance.
         if (conflict === "analyze") await tx`ANALYZE auth.users`;
         else await tx`UPDATE settings.entries SET value=value WHERE key='freeipa.groups.admin'`;
-        const [backend] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-        ready.resolve(backend!.pid);
+        const [backend] = await tx<{ pid: number; deadlockMs: number }[]>`SELECT pg_backend_pid() AS pid,
+          extract(epoch FROM current_setting('deadlock_timeout')::interval)::float8 * 1000 AS "deadlockMs"`;
+        ready.resolve(backend!);
         await release.promise;
       });
       try {
-        const pid = await Promise.race([
+        const { pid, deadlockMs } = await Promise.race([
           ready.promise,
           holder.then(() => {
             throw new Error("Holder never acquired its lock");
           }),
         ]);
         const started = performance.now();
-        const attempt = decideCodeVersion(submission.binding, { outcome: "approved" }, signed).then(
-          (value) => ({ value, error: null }),
-          (error: unknown) => ({ value: null, error }),
-        );
+        let finished = false;
+        const attempt = decideCodeVersion(submission.binding, { outcome: "approved" }, signed)
+          .then(
+            (value) => ({ value, error: null }),
+            (error: unknown) => ({ value: null, error }),
+          )
+          .finally(() => {
+            finished = true;
+          });
         if (conflict === "analyze") {
           expect(
             await sql`SELECT mode FROM pg_locks WHERE pid=${pid}
             AND relation='auth.users'::regclass AND granted AND mode='ShareUpdateExclusiveLock'`,
           ).toHaveLength(1);
-          // Release only once the real decision is waiting behind ANALYZE, so NOWAIT cannot pass this test.
+          // Poll until the decision queues or finishes; submissionFor does not consume a polling cap.
+          // Retain ANALYZE past deadlock_timeout so a sub-second lock timeout cannot pass.
           let waiting = false;
-          while (performance.now() - started < 1500) {
+          while (!finished) {
             const locks = await sql`SELECT 1 FROM pg_locks WHERE relation='auth.users'::regclass
               AND mode='ShareRowExclusiveLock' AND NOT granted`;
             if (locks.length) {
@@ -1294,6 +1301,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
             }
             await Bun.sleep(10);
           }
+          if (waiting) await Bun.sleep(deadlockMs + 200);
           release.resolve();
           const result = await attempt;
           expect(waiting).toBe(true);

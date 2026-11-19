@@ -547,7 +547,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const answers = (): Pick<ApprovalFrameProps, "confirm" | "secondary" | "unavailable"> => ({
     secondary: { label: t().rejectOrChange, shortLabel: t().rejectOrChangeShort, onSelect: ask },
     confirm: {
-      label: failureCode() === "BUSY" ? ta().decideRetry : t().approve({ n: props.number }),
+      label: t().approve({ n: props.number }),
       icon: "ti ti-check",
       onSelect: approve,
     },
@@ -565,7 +565,10 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       state="open"
       source={{ name: t().source, icon: "ti ti-code" }}
       sentence={sentenceOf(t().question({ n: props.number, title: props.title }))}
-      reason={{ text: failureCode() === "BUSY" ? failure() : props.reason, icon: "ti ti-eye" }}
+      reason={{
+        text: failureCode() === "BUSY" ? failure() : props.reason,
+        icon: failureCode() === "BUSY" ? "ti ti-alert-triangle" : "ti ti-eye",
+      }}
       quietAlert={failureCode() === "BUSY"}
       secondary={answers().secondary}
       confirm={answers().confirm}

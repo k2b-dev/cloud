@@ -257,9 +257,11 @@ describe("Approvals in a browser", () => {
         });
         const { tab, close } = await live(width, [request, item("2")], [], locale);
         let attempts = 0;
+        const decisions: unknown[] = [];
         await tab.route(`${origin}/api/approvals/*/decision`, (route) => {
           attempts++;
-          return attempts === 1 ? route.fulfill({ status: 409, json: { code: "BUSY" } }) : route.fulfill({ json: { status: "approved" } });
+          decisions.push(route.request().postDataJSON());
+          return attempts === 1 ? route.fulfill({ status: 503, json: { code: "BUSY" } }) : route.fulfill({ json: { status: "approved" } });
         });
         try {
           const row = tab.locator("article.cloud-approval").first();
@@ -275,11 +277,10 @@ describe("Approvals in a browser", () => {
           expect(await row.boundingBox()).toEqual(before);
           expect(await tab.locator("article.cloud-approval").nth(1).boundingBox()).toEqual(next);
           await row.getByRole("button", { name: locale === "de" ? "Erneut versuchen" : "Try again", exact: true }).click();
-          await tab.clock.runFor(32);
-          await row.locator('.k2b-notice-card__actions .k2b-button[data-variant="ai"]').click();
           await row.locator('[data-state="decided"]').waitFor();
           await row.getByText(locale === "de" ? "Freigegeben." : "Approved.", { exact: true }).waitFor();
           expect(attempts).toBe(2);
+          expect(decisions[1]).toEqual(decisions[0]);
           expect(await row.boundingBox()).toEqual(before);
         } finally {
           await close();

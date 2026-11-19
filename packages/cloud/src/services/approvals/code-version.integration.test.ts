@@ -356,17 +356,19 @@ databaseSuite()("independent Code-version approvals", () => {
     });
   }
 
-  test("population lock restores the caller timeout on success and contains statement cancellation", async () => {
+  test("population lock restores both caller timeouts on success and contains statement cancellation", async () => {
     await withSoleAdmin(async (tx) => {
       await tx`SET LOCAL lock_timeout = '7s'`;
+      await tx`SET LOCAL statement_timeout = '9s'`;
       expect(await lockCodeAdminPopulation(tx, author)).toBe("locked");
       expect((await tx`SHOW lock_timeout`)[0]?.lock_timeout).toBe("7s");
+      expect((await tx`SHOW statement_timeout`)[0]?.statement_timeout).toBe("9s");
     });
-    // A plain row reader does not conflict with the table lock, only with FOR SHARE.
+    // Preserve a stricter caller deadline while waiting for the table lock.
     const ready = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     const holder = sql.begin(async (tx) => {
-      await tx`SELECT id FROM auth.users WHERE id=${author}::uuid FOR UPDATE`;
+      await tx`LOCK TABLE settings.entries IN ROW EXCLUSIVE MODE`;
       ready.resolve();
       await release.promise;
     });
@@ -382,6 +384,7 @@ databaseSuite()("independent Code-version approvals", () => {
         await tx`SET LOCAL statement_timeout = '100ms'`;
         expect(await lockCodeAdminPopulation(tx, author)).toBe("busy");
         expect((await tx`SHOW lock_timeout`)[0]?.lock_timeout).toBe("7s");
+        expect((await tx`SHOW statement_timeout`)[0]?.statement_timeout).toBe("100ms");
         expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
       });
     } finally {
@@ -393,40 +396,98 @@ databaseSuite()("independent Code-version approvals", () => {
   test("an author row lock fails busy before a waiting writer can cause a lock upgrade deadlock", async () => {
     const { id } = await ask();
     const authority = await authorityFor(author);
-    await withSoleAdmin(async (tx) => {
-      let locked!: () => void, release!: () => void;
-      const ready = new Promise<void>((resolve) => {
-        locked = resolve;
-      });
-      const released = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const rollback = new Error("row writer rollback");
-      const writer = sql
-        .begin(async (connection) => {
-          await connection`SELECT id FROM auth.users WHERE id=${author}::uuid FOR UPDATE`;
-          locked();
-          await released;
-          await connection`UPDATE auth.users SET display_name='row-writer' WHERE id=${author}::uuid`;
-          throw rollback;
-        })
-        .catch((error: unknown) => {
-          if (error !== rollback) throw error;
-        });
-      try {
-        await Promise.race([
-          ready,
-          writer.then(() => {
-            throw new Error("Writer never acquired its row lock");
-          }),
-        ]);
-        expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "BUSY" });
-        expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
-      } finally {
-        release();
-        await writer;
-      }
+    const ready = Promise.withResolvers<number>();
+    const update = Promise.withResolvers<void>();
+    const writer = sql.begin(async (connection) => {
+      await connection`SELECT id FROM auth.users WHERE id=${author}::uuid FOR UPDATE`;
+      const [backend] = await connection<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      ready.resolve(backend!.pid);
+      await update.promise;
+      return connection`UPDATE auth.users SET display_name='row-writer' WHERE id=${author}::uuid RETURNING display_name`;
     });
+    try {
+      const pid = await ready.promise;
+      await withSoleAdmin(async (tx) => {
+        // Recreate the granted population lock before the row-lock attempt. The account
+        // writer now queues its UPDATE while retaining FOR UPDATE on the author's row.
+        await tx`LOCK TABLE auth.users IN SHARE ROW EXCLUSIVE MODE`;
+        update.resolve();
+        const started = performance.now();
+        let waiting = false;
+        while (performance.now() - started < 1500) {
+          if (
+            (
+              await sql`SELECT 1 FROM pg_locks WHERE pid=${pid} AND relation='auth.users'::regclass
+            AND mode='RowExclusiveLock' AND NOT granted`
+            ).length
+          ) {
+            waiting = true;
+            break;
+          }
+          await Bun.sleep(10);
+        }
+        expect(waiting).toBe(true);
+        expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "BUSY" });
+        expect(await approvals.get(id, tx)).toMatchObject({ status: "pending" });
+        expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
+      });
+      expect((await writer)[0]?.display_name).toBe("row-writer");
+    } finally {
+      update.resolve();
+      await writer;
+    }
+  });
+
+  test("the whole population lock statement has one deadline across sequential table waits", async () => {
+    const firstReady = Promise.withResolvers<void>();
+    const nextReady = Promise.withResolvers<void>();
+    const releaseFirst = Promise.withResolvers<void>();
+    const releaseNext = Promise.withResolvers<void>();
+    const first = sql.begin(async (tx) => {
+      await tx`LOCK TABLE auth.users IN SHARE UPDATE EXCLUSIVE MODE`;
+      firstReady.resolve();
+      await releaseFirst.promise;
+    });
+    const next = sql.begin(async (tx) => {
+      await tx`LOCK TABLE settings.entries IN ROW EXCLUSIVE MODE`;
+      nextReady.resolve();
+      await releaseNext.promise;
+    });
+    try {
+      await Promise.all([firstReady.promise, nextReady.promise]);
+      const started = performance.now();
+      const attempt = sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout = '7s'`;
+        await tx`SET LOCAL statement_timeout = '9s'`;
+        const result = await lockCodeAdminPopulation(tx, author);
+        expect((await tx`SHOW lock_timeout`)[0]?.lock_timeout).toBe("7s");
+        expect((await tx`SHOW statement_timeout`)[0]?.statement_timeout).toBe("9s");
+        return result;
+      });
+      let waiting = false;
+      while (performance.now() - started < 1500) {
+        if (
+          (
+            await sql`SELECT 1 FROM pg_locks WHERE relation='auth.users'::regclass
+          AND mode='ShareRowExclusiveLock' AND NOT granted`
+          ).length
+        ) {
+          waiting = true;
+          break;
+        }
+        await Bun.sleep(10);
+      }
+      // fixed wait: Spend most of the statement's budget on the first table; the second stays blocked.
+      await Bun.sleep(1200);
+      releaseFirst.resolve();
+      expect(await attempt).toBe("busy");
+      expect(waiting).toBe(true);
+      expect(performance.now() - started).toBeLessThan(3000);
+    } finally {
+      releaseFirst.resolve();
+      releaseNext.resolve();
+      await Promise.all([first, next]);
+    }
   });
 
   // These conflict tests need committed population fixtures: an uncommitted fixture UPDATE would itself cause BUSY.
