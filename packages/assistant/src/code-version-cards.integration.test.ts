@@ -117,6 +117,21 @@ databaseSuite()("the real approval card's SSR and invalidation SQL budget", () =
     await database?.drop();
     setSystemTime();
   });
+  test("submitted chat origins with internal anchors do not fail the card batch", async () => {
+    const version = refs[0]!;
+    await sql`INSERT INTO code.version_submissions(version_id,code_id,binding,origin)
+      VALUES(${version.versionId}::uuid,${version.codeId},'{}',${JSON.stringify({ kind: "ai_chat", conversationId: userId, automaticAfterReview: false, cardAnchor: "tool-submit" })}::text::jsonb)`;
+    try {
+      const items = await loadCodeVersionCards(invoke, refs);
+      expect(items.every((item) => item.state === "available")).toBe(true);
+      const submitted = items.find((item) => item.versionId === version.versionId);
+      if (submitted?.state !== "available") throw new Error("Submitted card did not load");
+      expect(submitted.snapshot.review?.origin).toEqual({ kind: "ai_chat", conversationId: userId, automaticAfterReview: false });
+      expect(JSON.stringify(submitted)).not.toContain("cardAnchor");
+    } finally {
+      await sql`DELETE FROM code.version_submissions WHERE version_id=${version.versionId}::uuid`;
+    }
+  });
   test("N server-rendered cards cost two reads; a covering invalidation also costs two", async () => {
     const { ApprovalSnapshotView } = await import("./frontend/code-version-card-ssr.test-fixture");
     const meter = await meterSql();

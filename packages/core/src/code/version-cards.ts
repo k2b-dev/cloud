@@ -7,10 +7,12 @@ import type { z } from "zod";
 import { type CodeContext, CodeDataError, CodeOwnerUnavailableError, codePerson, readCodeOwner, requireCodePermission } from "./access";
 import { describeCodePages } from "./page-links";
 import { readCodePolicyGroups, readCodePolicySnapshot } from "./policy";
+import { parseCodeQueryOutput } from "./queries";
 import { readModelNames } from "./read-model/names";
 import { presentCodeVersion } from "./read-model/present";
-import { CodeReviewRevisionSchema, CodeSubmissionOriginSchema } from "./review-contracts";
+import { CodeReviewRevisionSchema } from "./review-contracts";
 import { type CodeRow, mapCode } from "./store";
+import { cardOrigin } from "./version-card-origin";
 import { fillCodeVersionCardPage } from "./version-card-page";
 import {
   assertCodeVersionApprovalEvidence,
@@ -222,7 +224,6 @@ export async function readCodeVersionCards(
           : { state: "approval_pending" as const };
       }
     })();
-    const origin = CodeSubmissionOriginSchema.safeParse(row.origin);
     const revision = CodeReviewRevisionSchema.safeParse(row.revision);
     const words = presentCodeVersion({
       personal: code.owner.kind === "person",
@@ -271,7 +272,7 @@ export async function readCodeVersionCards(
                 : row.approval_status === "cancelled"
                   ? "superseded"
                   : "expired")),
-        origin: canManage && origin.success ? origin.data : { kind: "cli" },
+        origin: cardOrigin(canManage ? row.origin : null),
         decidedBy: canManage && row.outcome ? { id: row.decided_by, name: row.name, avatarHash: row.avatar_hash } : null,
         message: canManage ? row.comment : null,
         commentCount: canManage ? row.comment_count : 0,
@@ -295,5 +296,5 @@ export async function readCodeVersionCards(
     };
     items.push({ ...ref, state: "available", snapshot });
   }
-  return codeVersionCardsContract.data.parse(fillCodeVersionCardPage(requested, items));
+  return parseCodeQueryOutput("code.version.cards", codeVersionCardsContract.data, fillCodeVersionCardPage(requested, items));
 }
