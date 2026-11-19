@@ -1706,7 +1706,8 @@ describe(`${browserName} the frame follows its content`, () => {
           const folding = Boolean(fold);
           fold?.finish();
           await frames();
-          for (const animation of dialog.getAnimations({ subtree: true })) if (animation.playState === "paused") animation.finish();
+          for (const animation of dialog.getAnimations({ subtree: true }))
+            if (animation.timeline === document.timeline && animation.playState === "paused") animation.finish();
           await frames();
           return { before, held, folding, after: dialog.getBoundingClientRect().height };
         }, recovery);
