@@ -64,6 +64,7 @@ import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkT
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
+import { preloadMailComposer } from "./_components/mail-composer-preload";
 import { openDraftWindow } from "./_components/mail-compose-windows";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
@@ -1031,6 +1032,7 @@ function createMailboxController(props: MailboxControllerProps) {
     const identity = selectComposeSenderIdentity(data.identities, readMailSenderPreference(localStorage, mailboxId), true);
     if (!identity) return options.fallback();
     setComposeStarting(true);
+    preloadMailComposer();
     const request = new AbortController();
     composeRequest = request;
     if (options.progressToast)
@@ -1086,6 +1088,15 @@ function createMailboxController(props: MailboxControllerProps) {
     };
     window.addEventListener("pageshow", restored);
     onCleanup(() => window.removeEventListener("pageshow", restored));
+    // The composer is outside the first script; it loads while the mailbox is idle, so New message and Reply open with it.
+    if (!canWrite()) return;
+    if (typeof requestIdleCallback === "function") {
+      const idle = requestIdleCallback(preloadMailComposer, { timeout: 2000 });
+      onCleanup(() => cancelIdleCallback(idle));
+    } else {
+      const idle = setTimeout(preloadMailComposer, 0);
+      onCleanup(() => clearTimeout(idle));
+    }
   });
   onCleanup(() => {
     composeRequest?.abort();
