@@ -257,13 +257,20 @@ allow" answers are untouched.
   error with a retry when Core cannot list it. A place whose type is a declared Code owner
   (`code.owners`) but has no Code says so and offers to start with Gustav; any
   other place shows nothing.
-- **Waiting for you** lists, below the questions from chats, Code of a place
-  the person administers when it needs them (`core.code.attention.list`,
-  following up to four candidate pages, then "Check more"). Each row leads to
-  that place, where the Code is managed.
+- **Waiting for you** shows the same entries as the "Waiting for you" row
+  above the chat field and its count in the sidebar, grouped by kind. Approvals
+  come with the shared approval card. **Versions** of the person's own Code
+  (`code_activate`, `code_changes`, `code_expired`) come from the same open
+  questions as the row (`ai.open_questions`); each leads to its card in the
+  chat. **Automations** that need the person (`code_attention`, such as a
+  missing secret or chat) are read with `kind: "code_attention"`. Code of a
+  place that is paused or whose last run failed is no entry here; it shows on
+  the place's Code page, in the panel's **Code of …** block and as the
+  attention dot in the place app's navigation.
 
-All of these read only through the public `core.code.*` Queries with the
-person's own credentials, the same Queries any application can call.
+All of these read only through public Core Queries (`core.code.*` and
+`ai.open_questions`) with the person's own credentials, the same Queries
+any application can call.
 
 ## Storage limits and retention
 

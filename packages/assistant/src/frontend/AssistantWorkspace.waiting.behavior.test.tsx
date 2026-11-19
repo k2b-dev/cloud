@@ -307,7 +307,8 @@ test("the page Waiting for you lists the same entries as the row and the sidebar
   const here = chat("Wart42", "Wartung Oktober", "idle");
   const other = chat("Tops42", "Team Ops Wochenplanung", "idle");
   const { activate, secret } = codeEntries();
-  const h = mount({ conversations: [here, other], questions: { items: [activate, secret], count: 2 } }, here);
+  const server = { conversations: [here, other], questions: { items: [activate, secret], count: 2 } as AiOpenQuestions };
+  const h = mount(server, here);
   await waitFor(() => subscriptions.length > 0);
   const row = waitingStripSummary(h.strip()!.outerHTML)!
     .entries.map((entry) => entry.replace(/ in .*$/, ""))
@@ -326,4 +327,14 @@ test("the page Waiting for you lists the same entries as the row and the sidebar
   expect(page()).toEqual(row);
   expect(page()).toEqual(["Lieferavise sortieren braucht ein Secret", "Version 2 einschalten"]);
   expect(sidebar()).toBe(String(page().length));
+
+  // While the page is open, an automation starts to wait and the secret is set elsewhere: page and count follow.
+  const briefing = { ...secret, id: "code:a2", short: "Morgenbriefing braucht einen Chat" };
+  server.questions = { items: [activate, briefing], count: 2 };
+  await h.changed("Tops42");
+  await waitFor(() => page().includes("Morgenbriefing braucht einen Chat"));
+  expect(page()).toEqual(["Morgenbriefing braucht einen Chat", "Version 2 einschalten"]);
+  expect(sidebar()).toBe("2");
+  // Nothing on the page shows a loading state for it.
+  expect(h.root.querySelector(".assistant-waiting-page [aria-busy='true']")).toBeNull();
 });

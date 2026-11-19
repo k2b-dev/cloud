@@ -3,7 +3,7 @@ import { Approvals } from "@k2b/cloud/approvals/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { type ApprovalPage, ApprovalPageSchema } from "@k2b/cloud/contracts/approvals";
 import { Button, Paper, Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
-import { type Accessor, createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, on, onMount, Show } from "solid-js";
 import type { WaitingAutomation } from "../waiting-automations";
 import AssistantWaitingAutomations from "./AssistantWaitingAutomations";
 import { WAITING_KIND_ICON } from "./AssistantWaitingStrip";
@@ -50,16 +50,42 @@ export default function AssistantApprovalsView(props: {
       setApprovals(null);
     }
   };
+  // Only a page without the server's read needs the loader; it stays out of the chat's own bundle.
+  const readAutomations = async () => (await import("../waiting-automations")).loadWaitingAutomations(browserCodeInvoke, props.timeZone);
   const loadAutomations = async () => {
     setAutomations(undefined);
     try {
-      // Only a page without the server's read needs the loader; it stays out of the chat's own bundle.
-      const { loadWaitingAutomations } = await import("../waiting-automations");
-      setAutomations(await loadWaitingAutomations(browserCodeInvoke, props.timeZone));
+      setAutomations(await readAutomations());
     } catch {
       setAutomations(null);
     }
   };
+  // Approvals and automations have reads of their own. When the row's list says that theirs changed, such as an
+  // approval decided elsewhere or a secret set, both read again in place: no loading state, and a failed read keeps
+  // what the page shows. Versions follow the list directly.
+  const others = createMemo(() =>
+    props
+      .questions()
+      .filter((question) => !VERSION_KINDS.has(question.kind))
+      .map((question) => `${question.kind}:${question.id}`)
+      .sort()
+      .join(" "),
+  );
+  let reread = 0;
+  createEffect(
+    on(
+      others,
+      () => {
+        const request = ++reread;
+        void Promise.allSettled([loadApprovalPage(), readAutomations()]).then(([page, list]) => {
+          if (request !== reread) return;
+          if (page.status === "fulfilled" && approvals() !== undefined) setApprovals(page.value);
+          if (list.status === "fulfilled" && automations() !== undefined) setAutomations(list.value);
+        });
+      },
+      { defer: true },
+    ),
+  );
   onMount(() => {
     if (props.initial === undefined) void loadApprovals();
     if (props.initialAutomations === undefined) void loadAutomations();
@@ -132,7 +158,10 @@ export default function AssistantApprovalsView(props: {
                     <h2 id="assistant-waiting-approvals" class="assistant-waiting-page__heading">
                       {t().waitingApprovals} <span class="assistant-waiting-page__count">{page().count}</span>
                     </h2>
-                    <Approvals app="assistant" initial={page()} />
+                    {/* Keyed by the page read: a new read shows the current requests. */}
+                    <Show when={page()} keyed>
+                      {(current) => <Approvals app="assistant" initial={current} />}
+                    </Show>
                   </section>
                 </Show>
                 <Show when={versions().length > 0}>

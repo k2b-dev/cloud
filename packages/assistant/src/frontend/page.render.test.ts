@@ -705,39 +705,57 @@ test("the Code list loads today's timeline for each card on the server, for the 
   expect(codeInvoke.mock.calls.some(([invocation]) => invocation.capabilityId === "code.run.count")).toBe(false);
 });
 
-test("Waiting for you lists Code of a place the person administers when it needs them", async () => {
-  quietSidebar();
-  spies.push(mailCatalog(["mailbox"]));
+test("Waiting for you renders the row's own list: versions from the shared questions, automations by kind, no Code of places", async () => {
+  const version = {
+    id: "code:v_info02",
+    kind: "code_activate" as const,
+    conversationId: "Chat07",
+    conversationTitle: "Deliveries",
+    anchor: "code-version-v_info02",
+    short: "Switch on version 2",
+    app: { name: "Code", icon: "ti ti-player-play" },
+    createdAt: "2026-10-31T09:41:03.000Z",
+  };
+  const automation = {
+    id: "code-attention:c_brief1",
+    kind: "code_attention" as const,
+    conversationId: "",
+    conversationTitle: null,
+    anchor: "",
+    short: "Morning briefing needs a secret",
+    reason: "secret" as const,
+    href: "/app/assistant/code/c_brief1?tab=secrets",
+    app: { name: "Code", icon: "ti ti-code" },
+    createdAt: "2026-10-31T09:42:03.000Z",
+  };
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+      projects: [],
+      doneCount: 0,
+      questions: { items: [version, automation], count: 2 },
+      conversations: [chat],
+    }),
+    spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null),
+  );
   codeInvoke.mockImplementation(async (invocation, schema) => {
+    const input = invocation.input as { kind?: string } | undefined;
     const data =
-      invocation.appId === "mail"
-        ? { view: { title: "info@example.test" } }
-        : invocation.capabilityId === "code.attention.list"
-          ? {
-              items: [
-                {
-                  code: { id: "c_info02", title: "Deliveries", owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } } },
-                  reasons: ["run_failed", "access_missing"],
-                  lastRunAt: "2026-10-31T09:41:03.000Z",
-                },
-              ],
-              nextCursor: null,
-            }
-          : { items: [], nextCursor: null };
-    return {
-      ok: true,
-      data: {
-        data: schema.parse(data),
-        ...(invocation.appId === "mail" ? { links: [{ rel: "open" as const, href: "/app/mail/m/info" }] } : {}),
-      },
-    };
+      invocation.capabilityId === "ai.open_questions" && input?.kind === "code_attention"
+        ? { count: 1, items: [automation] }
+        : { items: [], nextCursor: null };
+    return { ok: true, data: { data: schema.parse(data) } };
   });
   const html = await (await request("https://cloud.example.test/app/assistant?approvals=1")).text();
   expect(html).toContain("None of it happens before you agree.");
-  expect(html).toContain("Code you administer");
-  expect(html).toContain("Code of info@example.test: last run failed, access missing");
-  expect(html).toContain("“Deliveries” · you administer info@example.test");
-  expect(html).toContain('href="/app/mail/m/info"');
+  // The server renders every section the row counts, so nothing appears after the first paint.
+  expect(html).toContain("Versions");
+  expect(html).toContain("Switch on version 2");
+  expect(html).toContain("in Deliveries");
+  expect(html).toContain("Automations");
+  expect(html).toContain("Morning briefing needs a secret");
+  expect(html).not.toContain("Code you administer");
+  expect(codeInvoke.mock.calls.some(([invocation]) => invocation.capabilityId === "code.attention.list")).toBe(false);
 });
 
 test("live dictation availability reaches the composer only when the platform allows it for this person", async () => {
