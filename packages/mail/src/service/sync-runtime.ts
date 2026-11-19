@@ -944,13 +944,17 @@ export const ingestEnvelope = async (params: IngestEnvelopeParams): Promise<stri
 };
 
 const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<string> => {
+  const context = await prepareEnvelopeContext(params);
+  const resolved = await resolveEnvelopeAddress({ ...params, context });
+  const content = await storeEnvelopeContent({ ...params, context, messageContentId: resolved.messageContentId });
+  const bound = await bindEnvelopeRef({ ...params, ...content });
+  return finishEnvelopeProjection({ ...params, context, ...bound, copyOfKnownMessage: resolved.copyOfKnownMessage });
+};
+
+const prepareEnvelopeContext = async (params: IngestEnvelopeParams) => {
   const protocolFacts = parseMessageProtocolFacts(params.message.protocolFacts);
-  const contentHash = sha256Json({
-    remoteResourceId: params.remoteResourceId,
-    folderId: params.folderId,
-    uidValidity: params.message.remoteRef.uidValidity,
-    uid: params.message.remoteRef.uid,
-  });
+  // Keep address hashing before the context query, as in the original ingest order.
+  const contentHash = hashEnvelopeAddress(params);
   const normalizedSubject = normalizeMailSubject(params.message.subject);
   const ownAddresses = await params.db<{ address: string; sender_identity: boolean }[]>`
     SELECT from_address AS address, true AS sender_identity
@@ -967,6 +971,19 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   const isOutbound = senders.length > 0 && senders.every((address) => senderIdentities.has(address));
   // Every From address must be ours; a mixed From set does not identify a sent copy.
   const fromMailbox = senders.length > 0 && senders.every((address) => mailboxAddresses.has(address));
+  return { protocolFacts, contentHash, normalizedSubject, mailboxAddresses, isOutbound, fromMailbox };
+};
+
+const hashEnvelopeAddress = (params: Pick<IngestEnvelopeParams, "remoteResourceId" | "folderId" | "message">) =>
+  sha256Json({
+    remoteResourceId: params.remoteResourceId,
+    folderId: params.folderId,
+    uidValidity: params.message.remoteRef.uidValidity,
+    uid: params.message.remoteRef.uid,
+  });
+
+const resolveEnvelopeAddress = async (params: IngestEnvelopeParams & { context: Awaited<ReturnType<typeof prepareEnvelopeContext>> }) => {
+  const { normalizedSubject, fromMailbox } = params.context;
   const [knownRemoteRef] = await params.db<{ message_id: string }[]>`
     SELECT message_id
     FROM mail.remote_message_refs
@@ -974,7 +991,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       AND uid_validity = ${params.message.remoteRef.uidValidity}::numeric
       AND uid = ${params.message.remoteRef.uid}::numeric
   `;
-  let messageContentId =
+  const messageContentId =
     knownRemoteRef?.message_id ??
     (await findCanonicalMessageContent({
       db: params.db,
@@ -985,6 +1002,17 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       normalizedSubject,
     }));
   const copyOfKnownMessage = !knownRemoteRef && messageContentId !== null;
+  return { messageContentId, copyOfKnownMessage };
+};
+
+const storeEnvelopeContent = async (
+  params: IngestEnvelopeParams & {
+    context: Awaited<ReturnType<typeof prepareEnvelopeContext>>;
+    messageContentId: string | null;
+  },
+) => {
+  const { normalizedSubject, protocolFacts, contentHash } = params.context;
+  let { messageContentId } = params;
   // A copy in the sender's Sent folder proves a send whose outcome Mail could not prove. This
   // locks such a delivery before the message is written, in the order the send itself uses.
   if (messageContentId) {
@@ -1053,6 +1081,11 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     newlyInserted = messageRow.inserted;
   }
 
+  return { messageContentId, newlyInserted };
+};
+
+const bindEnvelopeRef = async (params: IngestEnvelopeParams & { messageContentId: string; newlyInserted: boolean }) => {
+  let { messageContentId, newlyInserted } = params;
   const [remoteRef] = await params.db<{ id: string; message_id: string }[]>`
     INSERT INTO mail.remote_message_refs (
       folder_id, message_id, uid_validity, uid, modseq, connector_ref, last_seen_at, stale_at
@@ -1085,6 +1118,20 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     `;
     messageContentId = remoteRef.message_id;
   }
+  return { remoteRef, messageContentId, newlyInserted };
+};
+
+const finishEnvelopeProjection = async (
+  params: IngestEnvelopeParams & {
+    context: Awaited<ReturnType<typeof prepareEnvelopeContext>>;
+    remoteRef: { id: string };
+    messageContentId: string;
+    newlyInserted: boolean;
+    copyOfKnownMessage: boolean;
+  },
+): Promise<string> => {
+  const { normalizedSubject, protocolFacts, mailboxAddresses, fromMailbox, isOutbound } = params.context;
+  const { remoteRef, messageContentId, newlyInserted, copyOfKnownMessage } = params;
   // The body of a message whose source went missing, for example because another client moved
   // it before Mail loaded it, loads again from this new copy.
   if (copyOfKnownMessage) {
