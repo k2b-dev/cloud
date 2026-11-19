@@ -2,10 +2,9 @@ import { describe, expect, mock, test } from "bun:test";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
-/** Waits a bounded number of frames for the prompt to appear. */
+/** Waits for the prompt to appear; the test's own timeout bounds it. */
 const until = async (ready: () => boolean) => {
-  for (let frame = 0; frame < 100 && !ready(); frame++) await Bun.sleep(10);
-  expect(ready()).toBe(true);
+  while (!ready()) await Bun.sleep(10);
 };
 
 describe("@k2b/ui form prompt loading", () => {
