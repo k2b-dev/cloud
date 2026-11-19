@@ -22,14 +22,30 @@ const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void | Pr
   let publicationFailure: Error | undefined;
   let abortAfterPreparation: (() => void) | undefined;
   let removed = false;
+  let pruneNextPublish = false;
+  let emptyHeadFailure: Error | undefined;
+  let probeFailure: Error | undefined;
+  let attempts = 0;
+  let afterPrune: (() => void | Promise<void>) | undefined;
   const topic = {
-    latestCursor: async () => cursor,
+    latestCursor: async () => {
+      if (cursor === null && probeFailure) throw probeFailure;
+      return cursor;
+    },
     cursorSequence: () => sequence,
     cursorAt: (sequence: number) => `s6t.freeze.${sequence}`,
     replay: async function* () {
       if (marker && cursor) yield { cursor, data: marker };
     },
-    publish: async (input: { data: SharedTextSyncEvent }) => {
+    publish: async (input: { data: SharedTextSyncEvent; expectedAfter?: string | null }) => {
+      attempts++;
+      if (pruneNextPublish) {
+        pruneNextPublish = false;
+        cursor = null;
+        await afterPrune?.();
+      }
+      if (input.expectedAfter === null && emptyHeadFailure) throw emptyHeadFailure;
+      if (input.expectedAfter !== undefined && input.expectedAfter !== cursor) throw new ConflictError("expectedAfter no longer matches");
       if (publicationFailure) {
         const error = publicationFailure;
         publicationFailure = undefined;
@@ -57,6 +73,17 @@ const fixture = (state: Uint8Array, flushed: Uint8Array, flush?: () => void | Pr
   };
   return {
     marker: () => marker,
+    attempts: () => attempts,
+    failEmptyHead: (error: Error) => {
+      emptyHeadFailure = error;
+    },
+    failEmptyProbe: () => {
+      probeFailure = new Error("probe unavailable");
+    },
+    pruneBeforeNextPublish: (after?: () => void | Promise<void>) => {
+      pruneNextPublish = true;
+      afterPrune = after;
+    },
     lifecycle,
     removeSnapshot: () => {
       removed = true;
@@ -210,6 +237,108 @@ test("a committed freeze token can close after expiry, idempotently, without all
     expect(await f.room.closeDocument("doc", { freezeCursor: frozen!.cursor })).toBe(closed);
     await expect(f.room.thaw("doc", { freezeCursor: frozen!.cursor })).rejects.toThrow("DOCUMENT_CLOSED");
     expect(f.marker()?.room?.state).toBe("closed");
+  } finally {
+    source.destroy();
+  }
+});
+
+for (const action of ["closeDocument", "thaw"] as const)
+  test(`${action} refreshes an expected head removed by pruning before its notification`, async () => {
+    const { source, state } = deleted();
+    try {
+      const f = fixture(state, state);
+      const frozen = await f.room.freeze("doc");
+      if (!frozen) throw new Error("Missing freeze fixture");
+      f.pruneBeforeNextPublish();
+      const cursor = await f.room[action]("doc", { freezeCursor: frozen.cursor });
+      expect(cursor).toBe("s6t.freeze.2");
+      expect(f.marker()?.room?.state).toBe(action === "closeDocument" ? "closed" : "open");
+      expect(await f.room[action]("doc", { freezeCursor: frozen.cursor })).toBe(cursor);
+    } finally {
+      source.destroy();
+    }
+  });
+
+test("a pruned marker cannot make a stalled close retry over a newer lifecycle owner", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const frozen = await f.room.freeze("doc");
+    if (!frozen) throw new Error("Missing freeze fixture");
+    f.pruneBeforeNextPublish(async () => {
+      await f.lifecycle.put("doc", await f.lifecycle.get("doc"), {
+        state: "frozen",
+        freezeCursor: "new-owner",
+        expiresAt: NOW.getTime() + 60_000,
+        restoreRevision: "0",
+      });
+    });
+    await expect(f.room.closeDocument("doc", { freezeCursor: frozen.cursor })).rejects.toBeInstanceOf(ConflictError);
+    expect((await f.lifecycle.get("doc"))?.value).toMatchObject({ state: "frozen", freezeCursor: "new-owner" });
+    expect(f.marker()?.room?.state).toBe("frozen");
+  } finally {
+    source.destroy();
+  }
+});
+
+test("a definite marker conflict with a retained head remains visible and retryable", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const frozen = await f.room.freeze("doc");
+    if (!frozen) throw new Error("Missing freeze fixture");
+    const conflict = new ConflictError("a newer append won");
+    f.failNextPublish(conflict);
+    await expect(f.room.closeDocument("doc", { freezeCursor: frozen.cursor })).rejects.toBe(conflict);
+    expect((await f.lifecycle.get("doc"))?.value).toMatchObject({ state: "closed", closeCursor: null });
+    expect(await f.room.closeDocument("doc", { freezeCursor: frozen.cursor })).toBe("s6t.freeze.2");
+  } finally {
+    source.destroy();
+  }
+});
+
+test("freeze retries a pruned base once before draining its new marker", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const first = await f.room.freeze("doc");
+    if (!first) throw new Error("Missing freeze fixture");
+    await f.room.thaw("doc", { freezeCursor: first.cursor });
+    f.pruneBeforeNextPublish();
+    expect((await f.room.freeze("doc"))?.cursor).toBe("s6t.freeze.3");
+  } finally {
+    source.destroy();
+  }
+});
+
+test("a second marker conflict is returned without a third publication", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const frozen = await f.room.freeze("doc");
+    if (!frozen) throw new Error("Missing freeze fixture");
+    f.pruneBeforeNextPublish();
+    const failure = new ConflictError("retry also rejected");
+    f.failEmptyHead(failure);
+    const before = f.attempts();
+    await expect(f.room.closeDocument("doc", { freezeCursor: frozen.cursor })).rejects.toBe(failure);
+    expect(f.attempts() - before).toBe(2);
+    expect((await f.lifecycle.get("doc"))?.value).toMatchObject({ state: "closed", closeCursor: null });
+  } finally {
+    source.destroy();
+  }
+});
+
+test("a failed retry probe preserves the definite rejection and releases freeze preparation", async () => {
+  const { source, state } = deleted();
+  try {
+    const f = fixture(state, state);
+    const first = await f.room.freeze("doc");
+    if (!first) throw new Error("Missing freeze fixture");
+    await f.room.thaw("doc", { freezeCursor: first.cursor });
+    f.pruneBeforeNextPublish(() => f.failEmptyProbe());
+    await expect(f.room.freeze("doc")).rejects.toBeInstanceOf(ConflictError);
+    expect((await f.lifecycle.get("doc"))?.value.state).toBe("open");
   } finally {
     source.destroy();
   }

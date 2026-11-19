@@ -1200,6 +1200,15 @@ with a different token. There is no renewal, polling, or recovery worker.
 Lifecycle authority lives outside the prunable document log. Prefix pruning
 through a covering snapshot may remove active freeze and terminal markers;
 active freezes remain enforced and closed documents never pin the prefix.
+If pruning removes a captured tenant head before a lifecycle marker append,
+the library retries that definite conflict once against an empty head, after
+checking that it still owns the same lifecycle revision. A retained newer head,
+a changed owner or a second conflict is rejected. Unknown publication outcomes
+are not retried automatically; keep the durable close intent for reconciliation.
+A `ConflictError` does not by itself prove token loss: admission contention and
+notification rejection use that error too. Retry with the same token; discard
+an intent only after verifying a superseding lifecycle authority against the
+committed domain state.
 If a marker was definitely rejected, freeze CAS-reverts preparation to the
 previous value, allowing immediate retry. After the marker is published, a
 definite application `save()` rejection during the standard snapshot drain
