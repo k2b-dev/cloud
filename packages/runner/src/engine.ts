@@ -117,6 +117,7 @@ export class WorkerdEngine implements RunnerEngine {
                 code: error instanceof RunnerCallError ? error.code : "runner_bridge_unavailable",
                 ...(error instanceof RunnerCallError && error.origin ? { origin: error.origin } : {}),
                 ...(error instanceof RunnerCallError && error.status ? { status: error.status } : {}),
+                ...(error instanceof RunnerCallError && error.displayMessage ? { message: error.displayMessage } : {}),
               },
             });
           }

@@ -850,8 +850,9 @@
   inset-inline: 0;
   inset-block-end: calc(100% + .375rem);
 }
-.k2b-ui .assistant-queue[data-layout="line"],
-.k2b-ui .assistant-waiting[data-queue] {
+/* A row of its own carries the grey back; the shared row keeps the look and place of "Waiting for you", so a chip
+   that joins it moves nothing (Gustav alarms v1: 32 px, no back). */
+.k2b-ui .assistant-queue[data-layout="line"] {
   block-size: 2rem;
   padding: 0 .25rem 0 .625rem;
   border-radius: .625rem;

@@ -423,11 +423,14 @@ milliseconds. `RunnerHeartbeatRequest` carries the lease proof;
 `RunnerBundleRequestSchema`, `RunnerCompleteRequestSchema`, and
 `RunnerCallRequestSchema` validate the same exported request types in Core.
 `RunnerCallResponse` uses `{ ok: true, data }` or
-`{ ok: false, error: { code, status?, origin? } }`. The optional `status` preserves
+`{ ok: false, error: { code, status?, origin?, message? } }`. The optional `status` preserves
 the capability or Core refusal status in the stored call result. The host
-exposes a fixed safe `Error.message` with the stable `.code`, optional `.status`
+exposes a safe `Error.message` with the stable `.code`, optional `.status`
 and validated refused HTTPS origin. The SDK converts these into `CodeError`;
-missing statuses default to 503. Raw exception details never enter the sandbox.
+missing statuses default to 503. For known Code chat budget refusals, Core supplies
+translated text in the owner's saved locale. Missing model limits name model
+management as the recovery path; they do not report a spent daily budget.
+Raw exception details never enter the sandbox.
 Non-2xx call responses are transport failures. HTTP 409 on a lease route, or
 the domain code `runner_lease_lost`, immediately fences local execution.
 `RunnerCallRequest` attaches the supervisor-held proof to the sandbox's

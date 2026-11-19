@@ -190,7 +190,12 @@ export default ssr<AuthContext>(async (c) => {
     ? Object.fromEntries(
         [...wakeupLines].map(([key, line]) => [
           key,
-          describeWakeupLine(line, { locale, timeZone, current: initialContext?.wakeups?.items }),
+          describeWakeupLine(line, {
+            locale,
+            timeZone,
+            current: initialContext?.wakeups?.items,
+            canConfigureAi: user.roles.includes("admin"),
+          }),
         ]),
       )
     : undefined;

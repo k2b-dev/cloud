@@ -1,3 +1,5 @@
+import { dates } from "@k2b/stdlib";
+import { describeCodeSchedule } from "../../code/schedule";
 import { isUnknownActionOutcome } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { codeStepWords } from "./code-step-words";
@@ -175,7 +177,7 @@ const automationPhrases = (calls: ToolBlock[], t: ReturnType<typeof aiChatMessag
  * At most two confirmed outcomes. Examples come from the last test of the latest draft, including failed examples.
  * Missing evidence uses general words; failure counts and duration stay outside the sentence.
  */
-export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
+export const workSummary = (blocks: AiTurnBlock[], locale: string, timeZone = "UTC"): string => {
   const t = aiChatMessages(locale);
   const list = (names: string[]) => new Intl.ListFormat(locale, { type: "conjunction" }).format(names);
   const looked: string[] = [];
@@ -186,6 +188,7 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
   let calculated = false;
   let analyzedFile = false;
   let uncountedFiles = false;
+  let alarm = "";
   const files = new Map<string, string>();
   const calls = tools(blocks);
   for (const tool of calls) {
@@ -194,6 +197,13 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
     if (presentation?.kind === "capability") {
       const names = presentation.capabilityKind === "action" ? changed : looked;
       if (!names.includes(presentation.appName)) names.push(presentation.appName);
+    } else if (tool.name === "wakeup_create" && isRecord(tool.result)) {
+      // The alarm as set: its rhythm when it repeats, else its time; the alarm line below names the day and note.
+      const { at, cron } = tool.result;
+      if (typeof cron === "string") {
+        const described = describeCodeSchedule(cron, locale);
+        alarm = described === cron ? t.workAlarmSet({ when: "" }).replace(/ · $/, "") : t.workAlarmSet({ when: described });
+      } else if (typeof at === "string") alarm = t.workAlarmSet({ when: dates.formatTime(at, { locale, timeZone }) });
     } else if (WEB_TOOLS.has(tool.name)) web = true;
     else if (FILE_READ_TOOLS.has(tool.name)) {
       readFiles = true;
@@ -221,6 +231,7 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
           ? t.workStoredFiles({ count: files.size })
           : "",
     changed.length > 0 ? t.workChangedIn({ apps: list(changed) }) : "",
+    alarm,
     looked.length > 0 ? t.workLookedIn({ apps: list(looked) }) : "",
     web ? t.workSearchedWeb : "",
     readFiles && !calculated ? t.workReadFiles : "",

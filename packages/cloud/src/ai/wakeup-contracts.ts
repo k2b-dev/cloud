@@ -21,6 +21,15 @@ const AiWakeupNoteSourceSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("person"), userId: z.uuid() }),
   z.strictObject({ kind: z.literal("gustav"), userId: z.uuid(), turnId: z.uuid() }),
 ]);
+/** Preserve admission failures in the durable alarm and its timeline event. */
+export const AiWakeupBudgetCodeSchema = z.enum([
+  "code_ai_budget_unknown",
+  "code_ai_budget_changed",
+  "code_ai_budget_settled",
+  "code_ai_turn_exceeds_daily_budget",
+  "code_ai_daily_budget_limit",
+  "code_ai_owner_daily_budget_limit",
+]);
 export type AiWakeupNoteSource = z.infer<typeof AiWakeupNoteSourceSchema>;
 
 export const AiWakeupInputSchema = z.strictObject({
@@ -50,7 +59,7 @@ export const AiWakeupSchema = z.strictObject({
   noteSource: AiWakeupNoteSourceSchema,
   snoozes: z.number().int(),
   status: z.enum(["active", "missed", "expired", "done", "deleted"]),
-  missedReason: z.enum(["access", "budget", "queue_full", "delivery"]).nullable(),
+  missedReason: z.union([z.enum(["access", "budget", "queue_full", "delivery"]), AiWakeupBudgetCodeSchema]).nullable(),
   revision: z.number().int(),
   rhythm: z.string(),
 });

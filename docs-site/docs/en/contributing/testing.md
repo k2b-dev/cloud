@@ -1133,6 +1133,21 @@ selection without starting infrastructure with
 `bun run --cwd packages/mail test:integration src/service/sent-projection.integration.test.ts`.
 The root runner runs Mail this way, one file per suite.
 
+Mail also has a read-only JMAP conformance suite at
+`packages/mail/src/service/connectors/jmap-conformance.integration.test.ts`.
+It is skipped unless `MAIL_JMAP_CONFORMANCE_CONFIG` points to a private JSON
+file with `origin` (a public HTTPS origin), `username` and `password`.
+It verifies the primary Mail account and reads all folders, including their
+roles and rights. It does not create, change or send messages. Keep the file
+outside Git and restrict its permissions. Run the suite explicitly against a
+test account; normal tests use an in-process server and no real credentials.
+
+```bash
+MAIL_JMAP_CONFORMANCE_CONFIG=/path/to/private-jmap-config.json \
+  bun run --cwd packages/mail test:integration src/service/connectors/jmap-conformance.integration.test.ts
+```
+
+
 ### Sync namespaces on the test broker
 
 Integration tests share one NATS JetStream account, locally the `TEST`

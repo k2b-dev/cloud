@@ -49,7 +49,29 @@ describe("alarm times in words", () => {
   });
 });
 
+test("a repeating alarm reads in the reader's language, also when the fact stored the words of another", () => {
+  const english = alarm({ cron: "0 8 * * 1", rhythm: "Mondays 08:00", endsAt: "2026-12-16T10:00:00.000Z" });
+  expect(aiWakeupWhen(english, zone)).toBe("Montags 08:00");
+  expect(text(describeWakeupLine(line("created", english), { ...zone, current: [english] }))).toBe(
+    "Wecker · montags 08:00 · Antwort von Lena Vogt prüfen · endet 16.12.",
+  );
+  expect(aiWakeupWhen(alarm({ cron: "0 */2 * * *", rhythm: "Custom schedule" }), zone)).toBe("Eigener Rhythmus");
+});
+
 describe("alarm lines", () => {
+  test.each(["de", "en"])("%s: missing model limits remain distinct from spent budget, with a remedy for each role", (locale) => {
+    const missed = alarm({ status: "missed", missedReason: "code_ai_budget_unknown" });
+    for (const canConfigureAi of [false, true]) {
+      const value = describeWakeupLine(line("missed", missed), { ...zone, locale, current: [missed], canConfigureAi });
+      expect(value.body).toContain(locale === "de" ? "Kontext- oder Ausgabegrenzen" : "context or output limits");
+      expect(value.body).toContain(locale === "de" ? "Modellverwaltung" : "model management");
+      expect(value.body).toContain(
+        locale === "de" ? (canConfigureAi ? "Trage" : "Bitte die Administration") : canConfigureAi ? "Enter" : "Ask your administrator",
+      );
+      expect(value.body).not.toContain(locale === "de" ? "Tageslimit" : "daily limit");
+      expect(value.link?.action).toBe("catch-up");
+    }
+  });
   test("set: alarm, time and note; a repeating one names its end; only a current alarm has pencil and cross", () => {
     expect(text(describeWakeupLine(line("created", alarm()), { ...zone, current: [alarm()] }))).toBe(
       "Wecker · heute 16:00 · Antwort von Lena Vogt prüfen",

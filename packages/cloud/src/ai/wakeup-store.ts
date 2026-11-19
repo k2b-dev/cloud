@@ -47,6 +47,10 @@ export async function migrateAiWakeups() {
     missed_reason text CHECK(missed_reason IN ('access','budget','queue_full','delivery')), revision integer NOT NULL DEFAULT 0,
     last_message_id uuid, updated_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
+  await sql`ALTER TABLE ai.wakeups DROP CONSTRAINT IF EXISTS wakeups_missed_reason_check,
+    ADD CONSTRAINT wakeups_missed_reason_check CHECK(missed_reason IN ('access','budget','queue_full','delivery',
+      'code_ai_budget_unknown','code_ai_budget_changed','code_ai_budget_settled',
+      'code_ai_turn_exceeds_daily_budget','code_ai_daily_budget_limit','code_ai_owner_daily_budget_limit'))`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_wakeups_due ON ai.wakeups(next_at) WHERE status='active'`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_wakeups_missed ON ai.wakeups(updated_at) WHERE status='missed'`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_wakeups_chat ON ai.wakeups(conversation_id,status)`.simple();
@@ -66,7 +70,13 @@ export async function recordAiWakeupEvent(row: AiWakeupRow, kind: AiWakeupEvent[
   );
 }
 /** Admission can fail after queuing. Never overwrite a newer occurrence, an edit or a deletion. Caller locks the chat. */
-export async function markAiWakeupMissed(conversationId: string, messageId: string, reason: "access" | "budget", locale: string, db: SQL) {
+export async function markAiWakeupMissed(
+  conversationId: string,
+  messageId: string,
+  reason: NonNullable<AiWakeup["missedReason"]>,
+  locale: string,
+  db: SQL,
+) {
   const [row] = await db<AiWakeupRow[]>`UPDATE ai.wakeups w SET status=CASE WHEN w.cron IS NULL THEN 'missed' ELSE w.status END,
     next_at=CASE WHEN w.cron IS NULL THEN (r.origin->>'scheduledAt')::timestamptz ELSE w.next_at END,
     missed_reason=${reason},revision=w.revision+1,updated_at=clock_timestamp()
