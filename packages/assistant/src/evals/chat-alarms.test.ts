@@ -1,14 +1,15 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { AiWakeupSchema } from "@k2b/cloud/ai";
+import { z } from "zod";
 import { CHAT_ALARM_CASES, type ChatAlarmTrace, scoreChatAlarm } from "./chat-alarms";
 
 afterEach(() => setSystemTime());
 
 const byName = (name: (typeof CHAT_ALARM_CASES)[number]["name"]) => CHAT_ALARM_CASES.find((item) => item.name === name)!;
-const list = (name: Parameters<typeof byName>[0]) => ({
+const list = (name: Parameters<typeof byName>[0]): ChatAlarmTrace["calls"][number] => ({
   name: "wakeup_list",
   args: {},
-  result: { items: byName(name).alarms, limit: 5, paused: false },
+  result: z.json().parse({ items: byName(name).alarms, limit: 5, paused: false }),
 });
 const done = (calls: ChatAlarmTrace["calls"]): ChatAlarmTrace => ({ calls, answer: "Erledigt." });
 const passing = (verdict: ReturnType<typeof scoreChatAlarm>) =>
@@ -89,10 +90,11 @@ test("accepts a repeating alarm, a move by sentence and a delete with the listed
       ]),
     ),
   );
-  for (const args of [
+  const wrongRepeats: Record<string, string>[] = [
     { cron: "0 8 * * *", timezone: "Europe/Berlin", note: "Täglich" },
     { cron: "0 8 * * 1-5", at: "2026-11-23T08:00:00+01:00", timezone: "Europe/Berlin", note: "Später" },
-  ])
+  ];
+  for (const args of wrongRepeats)
     expect(scoreChatAlarm(byName("set-repeating"), done([{ name: "wakeup_create", args, result: {} }])).mechanicalPassed).toBeFalse();
   const lena = byName("move-by-sentence").alarms[0]!;
   passing(

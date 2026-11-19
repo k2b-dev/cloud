@@ -38,7 +38,7 @@ const report = alarm(REPORT, {
 
 /** What a fully passing trace must show. Everything else is the person's rubric review. */
 type AlarmExpectation =
-  | { kind: "create"; at: string; cron?: never; timezone: string }
+  | { kind: "create"; at: string; crons?: never; firstAt?: never; timezone: string }
   /** Accepted spellings of the same repeat; `firstAt` is the first occurrence Gustav may pass as `at`. */
   | { kind: "create"; crons: readonly string[]; firstAt: string; at?: never; timezone: string }
   | { kind: "postpone"; id: string; at?: string }
