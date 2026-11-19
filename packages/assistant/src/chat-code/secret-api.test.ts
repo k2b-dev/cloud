@@ -7,7 +7,8 @@ import { httpService as chatHttpService } from "./http-service";
 import { testIdentity } from "./test-identity";
 
 const owner = testIdentity("00000000-0000-4000-8000-000000000001");
-test("completion persists only the secret output contract, even if the browser adds a private field", async () => {
+for (const configured of [true, false])
+test(`completion ${configured} pins the requested name and strips private browser fields`, async () => {
   const privateValue = "fixture-private-completion-field";
   const complete = spyOn(clientCalls, "complete").mockResolvedValue({ saved: true });
   const api = new Hono<AuthContext>()
@@ -28,12 +29,14 @@ test("completion persists only the secret output contract, even if the browser a
         callId: "secret-call",
         clientId: "11111111-1111-4111-8111-111111111111",
         input: { operation: "secret", name: "API", origin: "https://api.example.com" },
-        result: { configured: true, name: "API", value: privateValue },
+        result: { configured, name: privateValue, value: privateValue },
       }),
     });
     expect(response.status).toBe(200);
     expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete.mock.calls[0]?.[0]).toMatchObject({ result: { configured, name: "API" } });
     expect(JSON.stringify(complete.mock.calls)).not.toContain(privateValue);
+    expect(await response.text()).not.toContain(privateValue);
   } finally {
     complete.mockRestore();
   }

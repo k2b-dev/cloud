@@ -43,7 +43,7 @@ const identity = (c: Context<AuthContext>) => ({
 });
 const secretCall = <T extends z.infer<typeof ClientCall>>(call: T) => {
   if (call.input.operation !== "secret") throw new ArtifactError("ACCESS_DENIED");
-  return call;
+  return { ...call, input: call.input };
 };
 const SecretResult = z.union([z.object({ configured: z.boolean(), name: z.string() }), CodeToolFailure]);
 /** Chat-only services: no resource resolver, app storage, HTML host or database admission. */
@@ -184,6 +184,8 @@ export const createChatCodeServiceRoutes = (caller: (c: Context<AuthContext>) =>
     .post("/runtime/complete", async (c) => {
       const call = secretCall(ClientCallResult.parse(await c.req.json()));
       // Persist only the established tool output, even if a browser accidentally adds a private field.
-      return c.json(await clientCalls.complete({ ...call, result: SecretResult.parse(call.result) }, identity(c)));
+      const result = SecretResult.parse(call.result);
+      if ("configured" in result) result.name = call.input.name;
+      return c.json(await clientCalls.complete({ ...call, result }, identity(c)));
     });
 export const chatCodeApi = createChatCodeServiceRoutes();

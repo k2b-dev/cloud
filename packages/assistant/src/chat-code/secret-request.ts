@@ -38,8 +38,9 @@ type States<Name extends string, Data> = { [State in Name]: Data & { state: Stat
 /** The mockup's 33 scenes are combinations of these states, mode, existing.configured and revealed. */
 export type SecretRequestState =
   | States<"checking" | "held", Facts>
-  | States<"open" | "entered" | "replace" | "saving" | "empty" | "characters" | "too-long" | "save-failed" | "not-saved" | "no-answer" | "conflict" | "refreshing", Field>
-  | States<"saved" | "declined" | "expired" | "access-lost", Facts>
+  | States<"open" | "entered" | "replace" | "saving" | "empty" | "characters" | "too-long" | "save-failed" | "no-answer" | "conflict" | "refreshing", Field>
+  | (Field & { state: "not-saved"; reason: "bad-input" | "rejected" | "destination-refused" | "check-failed" })
+  | States<"saved" | "declined" | "expired" | "access-lost" | "outcome-unknown", Facts>
   | (Facts & { state: "unavailable"; reason: "editor-required" | "destination-refused" | "check-failed" | "list-failed" });
 
 const failure = (error: string, guidance?: string): CodeToolFailure => ({ failed: true, error, ...(guidance ? { guidance } : {}) });
@@ -85,7 +86,7 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
     state = next;
     for (const listener of listeners) listener(state);
   };
-  const finish = (next: "saved" | "declined" | "expired" | "access-lost", result: SecretRequestResult) => {
+  const finish = (next: "saved" | "declined" | "expired" | "access-lost" | "outcome-unknown", result: SecretRequestResult) => {
     if (ended) return;
     ended = true;
     emit({ ...facts, state: next });
@@ -183,7 +184,7 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       const allowed = await check();
       if (ended) return;
       if (allowed !== true) {
-        emit({ ...facts, state: "not-saved", value, revealed: current.revealed });
+        emit({ ...facts, state: "not-saved", reason: allowed === false ? "destination-refused" : "check-failed", value, revealed: current.revealed });
         return;
       }
     }
@@ -205,16 +206,13 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
     }
     if (written.code === "NOT_FOUND" || written.code === "FORBIDDEN" || written.status === 401 || written.status === 403)
       return finish("access-lost", accessFailure());
+    if (written.code === "BAD_INPUT" || (input.target && written.status !== null && written.status < 500)) {
+      emit({ ...facts, state: "not-saved", reason: written.code === "BAD_INPUT" ? "bad-input" : "rejected", value, revealed: current.revealed });
+      return;
+    }
     emit({
       ...facts,
-      state:
-        written.code === "BAD_INPUT"
-          ? "not-saved"
-          : input.target && (written.status === null || written.status >= 500)
-            ? "no-answer"
-            : input.target
-              ? "not-saved"
-              : "save-failed",
+      state: input.target ? "no-answer" : "save-failed",
       value,
       revealed: current.revealed,
     });
@@ -244,9 +242,9 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       }
     },
     reveal() {
-      if (editable() && !ended) {
-        const current = field()!;
-        emit({ ...state, ...current, revealed: !current.revealed });
+      const current = state;
+      if ("value" in current && editable() && !ended) {
+        emit({ ...current, revealed: !current.revealed });
       }
     },
     submit: () => send(false),
@@ -274,6 +272,10 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       if (!ended && state.state !== "saving") emit({ ...facts, state: "held" });
     },
     expire() {
+      if (state.state === "saving") {
+        finish("outcome-unknown", failure("Secret save outcome is unknown.", "Check the current secret metadata before trying again. No entry was replayed; never send the value in chat."));
+        return;
+      }
       finish("expired", failure("Secret entry is no longer open. No entry was replayed."));
     },
     complete(result: SecretRequestResult) {

@@ -233,6 +233,62 @@ for (const status of [400, 422, 500, null])
     expect(f.calls[before]).toBe("list");
     expect(f.controller.state.state).toBe("saved");
   });
+
+for (const [code, status, reason] of [["BAD_INPUT", 400, "bad-input"], ["FAILED", 422, "rejected"]] as const)
+  test(`code failure ${code} has a stable reason for distinct card text`, async () => {
+    const f = fixture(true);
+    await f.controller.start();
+    f.controller.input(privateValue);
+    f.fail({ ok: false, code, status });
+    await f.controller.submit();
+    expect(f.controller.state).toMatchObject({ state: "not-saved", reason, value: privateValue });
+    const state = f.controller.state;
+    if (state.state !== "not-saved") throw new Error("Expected a rejected write");
+    const { value: _fieldValue, ...facts } = state;
+    expect(JSON.stringify(facts)).not.toContain(privateValue);
+    f.controller.decline();
+    expect(await f.controller.result).toEqual({ configured: false, name: "API" });
+    expect(JSON.stringify(f.controller.state)).not.toContain(privateValue);
+  });
+
+for (const allowed of [false, null])
+  test(`code destination recheck ${allowed} never sends the value and keeps its own failure reason`, async () => {
+    const f = fixture(true);
+    await f.controller.start();
+    f.controller.input(privateValue);
+    f.allow(allowed);
+    await f.controller.submit();
+    expect(f.controller.state).toMatchObject({ state: "not-saved", reason: allowed === false ? "destination-refused" : "check-failed" });
+    expect(f.writes).toHaveLength(0);
+    f.controller.expire();
+    expect(JSON.stringify([await f.controller.result, f.controller.state])).not.toContain(privateValue);
+  });
+
+for (const code of [false, true])
+  for (const writeFails of [false, true])
+    test(`${code ? "code" : "chat"}: lease expiry during a pending write stays uncertain after late ${writeFails ? "failure" : "success"}`, async () => {
+      const f = fixture(code);
+      await f.controller.start();
+      f.controller.input(privateValue);
+      f.pause();
+      if (writeFails) f.fail({ ok: false, code: "FAILED", status: 503 });
+      const pending = f.controller.submit();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(f.writes).toHaveLength(1);
+      f.controller.expire();
+      expect(f.controller.state.state).toBe("outcome-unknown");
+      expect(f.controller.state).not.toHaveProperty("value");
+      expect(await f.controller.result).toMatchObject({ failed: true, error: "Secret save outcome is unknown." });
+      f.finish();
+      await pending;
+      f.controller.complete({ configured: true, name: "API" });
+      f.controller.expire();
+      await f.controller.retry();
+      expect(f.controller.state.state).toBe("outcome-unknown");
+      expect(f.writes).toHaveLength(1);
+      expect(JSON.stringify([f.controller.state, await f.controller.result])).not.toContain(privateValue);
+    });
 test("an uncertain write followed by a stored value asks for replacement, never blindly retries", async () => {
   const f = fixture(true);
   await f.controller.start();

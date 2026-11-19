@@ -1152,7 +1152,7 @@ databaseSuite()("Assistant chat runner persistence", () => {
       await clientCalls.complete({ ...winner, result: { opened: id } }, owner);
       expect(await clientCalls.claim(loser, owner)).toEqual({ status: "done", result: { opened: id } });
       await expect(clientCalls.claim(first, stranger)).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(clientCalls.claim({ ...first, input: { ...input, name: "another-secret" } }, owner)).rejects.toMatchObject({
+      await expect(clientCalls.claim({ ...first, input: { ...input, name: "ANOTHER_SECRET" } }, owner)).rejects.toMatchObject({
         code: "INVALID_INPUT",
       });
       await expect(

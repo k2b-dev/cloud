@@ -2,6 +2,7 @@ import { afterAll, expect, spyOn, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import * as client from "./client";
+import type { SecretRequestController } from "./secret-request";
 
 const dom = createDomTestHarness();
 afterAll(() => dom.cleanup());
@@ -167,5 +168,49 @@ for (const code of ["FORBIDDEN", "NOT_FOUND"])
       dispose();
       request.mockRestore();
       ports.mockRestore();
+    }
+  });
+
+for (const completionFails of [false, true])
+  test(`lease expiry while saving returns an uncertain outcome even when completion ${completionFails ? "fails" : "succeeds"}`, async () => {
+    const transport = await import("./secret-request-client");
+    const privateValue = "fixture-private-expired-save";
+    let dispose = () => {};
+    let controller: SecretRequestController | undefined;
+    const request = spyOn(client, "chatCodeRequest").mockImplementation(async (path) => {
+      if (path === "claim") return { status: "execute" };
+      if (completionFails) throw new Error(privateValue);
+      return {};
+    });
+    const ports = spyOn(transport, "secretRequestPorts").mockReturnValue({
+      async list() { return { ok: true, entry: null }; },
+      async check() { return true; },
+      async save(input) {
+        expect(input.value).toBe(privateValue);
+        controller?.expire();
+        return { ok: true };
+      },
+    });
+    const logs = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const runtime = createRoot((cleanup) => {
+        dispose = cleanup;
+        return createChatSecretRuntime({ present(current) {
+          controller = current;
+          current.input(privateValue);
+          void current.submit();
+        } });
+      });
+      const result = await runtime.code_secret({ ...call, args: { ...call.args, prefix: "", target: { code: "Abc234", pathPrefix: "/v1" } } });
+      expect(result).toMatchObject({ failed: true, error: "Secret save outcome is unknown." });
+      expect(controller?.state.state).toBe("outcome-unknown");
+      expect(request.mock.calls.map(([path]) => path)).toEqual(["claim", "complete"]);
+      expect(request.mock.calls[1]?.[1]).toMatchObject({ result: { failed: true, error: "Secret save outcome is unknown." } });
+      expect(JSON.stringify([result, controller?.state, request.mock.calls, logs.mock.calls])).not.toContain(privateValue);
+    } finally {
+      dispose();
+      request.mockRestore();
+      ports.mockRestore();
+      logs.mockRestore();
     }
   });

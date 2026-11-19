@@ -40,9 +40,9 @@ export function secretRuntimeHandlers(
       const ownership = new AbortController();
       let leaseUntil = Date.now() + 120000,
         renewing = false;
-      // runtime-timer: browser lease heartbeat of secret entry already in flight; it must continue while maintenance drains work.
       const heartbeat =
         claim.status === "execute"
+          // runtime-timer: renews ownership of private entry already in flight while maintenance drains work.
           ? setInterval(async () => {
               if (renewing || abort.signal.aborted) return;
               renewing = true;
@@ -109,6 +109,9 @@ export function secretRuntimeHandlers(
       await request("complete", { ...call, result });
       return result;
     } catch {
+      // Losing the lease can also reject completion. Keep the uncertain save outcome
+      // for Gustav instead of reporting that an already-started write failed.
+      if (controller?.state.state === "outcome-unknown") return await controller.result;
       return failed();
     } finally {
       clearLease?.();

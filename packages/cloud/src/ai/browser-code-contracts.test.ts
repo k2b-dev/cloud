@@ -1,7 +1,16 @@
 import { expect, test } from "bun:test";
-import { CODE_RUNTIME_TOOL_NAMES, parseCodeToolInput } from "./browser-code-contracts";
+import { z } from "zod";
+import { CODE_RUNTIME_TOOL_NAMES, CodeSecretInput, parseCodeToolInput } from "./browser-code-contracts";
 
 const id = "aBc234";
+test("code_secret model schema exposes the name pattern while runtime keeps target-specific validation", () => {
+  expect(z.toJSONSchema(CodeSecretInput, { target: "draft-07" })).toHaveProperty(
+    "properties.name.pattern",
+    "^(?:[A-Za-z][A-Za-z0-9_-]{0,79}|_[A-Za-z0-9_]{0,63})$",
+  );
+  expect(CodeSecretInput.safeParse({ name: "my-key", origin: "https://example.com" }).success).toBe(true);
+  expect(CodeSecretInput.safeParse({ name: "_API", origin: "https://example.com", prefix: "", target: { code: id, pathPrefix: "/" } }).success).toBe(true);
+});
 test("code_interact and node inspection no longer exist", () => {
   expect(() => parseCodeToolInput("code_interact", { runId: "run", id: "count" })).toThrow();
   expect(() => parseCodeToolInput("code_inspect", { runId: "run", nodeId: "table" })).toThrow();

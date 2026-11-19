@@ -1,9 +1,15 @@
 import { SecretListSchema, secretCheck, writeSecret } from "@k2b/cloud/browser/code-secrets";
-import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities";
+import { type CapabilityClientResult, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities";
 import { codePersonName, secretSetter } from "@k2b/cloud/shared";
 import { z } from "zod";
 import { chatCodeClient } from "./client";
 import type { SecretRequestEntry, SecretRequestInput, SecretRequestPorts } from "./secret-request";
+
+// Core's public list limit is 20. Spend at most one batch of 20 page requests per lookup
+// (up to 400 rows; byte-bounded pages may contain fewer). Exhaustion fails closed,
+// never claiming a name is new. Cursors are opaque: Core owns database collation.
+const pageLimit = 20;
+const maxPages = pageLimit;
 
 /** Find one name through byte-bounded pages; a list failure never means an empty list. */
 export function secretRequestPorts(input: SecretRequestInput, conversationId: string, signal?: AbortSignal): SecretRequestPorts {
@@ -49,13 +55,16 @@ export function secretRequestPorts(input: SecretRequestInput, conversationId: st
           };
         }
         let cursor: string | null = null;
+        const seenCursors = new Set<string>();
+        let pages = 0;
         do {
-          const listed = await invokeCapabilityWithDataSchema(
+          if (pages++ >= maxPages) return { ok: false, code: "INVALID_RESPONSE", status: null };
+          const listed: CapabilityClientResult<z.output<typeof SecretListSchema>> = await invokeCapabilityWithDataSchema(
             {
               appId: "core",
               capabilityId: "code.secret.list",
               kind: "query",
-              input: { codeId: input.target.code, limit: 20, ...(cursor ? { cursor } : {}) },
+              input: { codeId: input.target.code, limit: pageLimit, ...(cursor !== null ? { cursor } : {}) },
               signal: responseSignal(),
             },
             SecretListSchema,
@@ -109,10 +118,12 @@ export function secretRequestPorts(input: SecretRequestInput, conversationId: st
               valueSetBy: secretSetter(entry.valueSetBy, people),
             });
           }
-          if (page.nextCursor && cursor && page.nextCursor <= cursor) return { ok: false, code: "INVALID_RESPONSE", status: null };
           cursor = page.nextCursor;
-          if (cursor && cursor >= input.name) break;
-        } while (cursor && !signal?.aborted);
+          if (cursor !== null) {
+            if (seenCursors.has(cursor)) return { ok: false, code: "INVALID_RESPONSE", status: null };
+            seenCursors.add(cursor);
+          }
+        } while (cursor !== null && !signal?.aborted);
         if (signal?.aborted) return { ok: false, code: "CANCELLED", status: null };
         return found(null);
       } catch (cause) {
