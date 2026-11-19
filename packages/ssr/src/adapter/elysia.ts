@@ -4,7 +4,7 @@
  */
 import { Elysia } from "elysia";
 import type { SsrConfig } from "../index";
-import { createAssetResponse, createPingResponse, createReloadResponse, getAssetPrefix, getSsrDir, notFound } from "./utils";
+import { createAssetResponse, createPingResponse, createReloadResponse, getAssetDirectory, notFound } from "./utils";
 
 /**
  * Creates Elysia plugin with SSR routes.
@@ -20,14 +20,13 @@ import { createAssetResponse, createPingResponse, createReloadResponse, getAsset
  */
 export const routes = (config: SsrConfig) => {
   const { dev, ssrPath } = config;
-  const ssrDir = getSsrDir(config);
   const assetPath = dev ? ssrPath : `${ssrPath}/:version`;
 
   return new Elysia({ name: "ssr" })
     .get(`${ssrPath}/_reload`, ({ request }) => (dev ? createReloadResponse(request.signal) : notFound()))
     .get(`${ssrPath}/_ping`, () => (dev ? createPingResponse() : notFound()))
     .get(`${assetPath}/*`, ({ request, params }) => {
-      if (!dev && (!("version" in params) || `/${params.version}` !== getAssetPrefix(config))) return notFound();
-      return createAssetResponse(request, ssrDir, params["*"], dev);
+      const directory = getAssetDirectory(config, "version" in params ? String(params.version) : undefined);
+      return directory ? createAssetResponse(request, directory, params["*"], dev) : notFound();
     });
 };

@@ -7,7 +7,7 @@ import type { Context, Env, Handler, MiddlewareHandler, TypedResponse } from "ho
 import { Hono } from "hono";
 import { createFactory } from "hono/factory";
 import type { HtmlFn, RenderFn, SsrConfig } from "../index";
-import { createAssetResponse, createPingResponse, createReloadResponse, getAssetPrefix, getSsrDir } from "./utils";
+import { createAssetResponse, createPingResponse, createReloadResponse, getAssetDirectory } from "./utils";
 
 // ============================================================================
 // Types
@@ -165,7 +165,6 @@ export const createSSRHandler = <T extends object>(html: HtmlFn<T>) => {
  */
 export const routes = (config: SsrConfig) => {
   const { dev } = config;
-  const ssrDir = getSsrDir(config);
 
   const app = new Hono();
 
@@ -178,9 +177,10 @@ export const routes = (config: SsrConfig) => {
   const serveAsset = (c: Context) => {
     const filename = c.req.param("filename");
     if (!filename) return c.notFound();
-    if (!dev && `/${c.req.param("version")}` !== getAssetPrefix(config)) return c.notFound();
+    const directory = getAssetDirectory(config, c.req.param("version"));
+    if (!directory) return c.notFound();
 
-    return createAssetResponse(c.req.raw, ssrDir, filename, dev);
+    return createAssetResponse(c.req.raw, directory, filename, dev);
   };
 
   const prefix = dev ? "" : "/:version";
