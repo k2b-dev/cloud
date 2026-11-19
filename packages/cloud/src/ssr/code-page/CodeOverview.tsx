@@ -448,7 +448,7 @@ function Pages(props: { state: CodePageReady; text: PageText }) {
                           await navigator.clipboard.writeText(new URL(routeHref(props.state.code.id, automation), location.origin).href);
                           toast.success(t().addressCopied);
                         } catch {
-                          toast.error(t().addressCopyFailed);
+                          toast.error(t().addressCopyFailed, { title: t().addressCopyFailedTitle });
                         }
                       }}
                     >

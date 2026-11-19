@@ -46,7 +46,7 @@ const copyPageLink = async (data: CodePageData, t: CodePageMessages) => {
     await navigator.clipboard.writeText(new URL(data.href, window.location.origin).href);
     toast.success(t.linkCopied);
   } catch {
-    toast.error(t.linkCopyFailed);
+    toast.error(t.linkCopyFailed, { title: t.linkCopyFailedTitle });
   }
 };
 
@@ -74,7 +74,7 @@ const openPull = (data: CodePageData, t: CodePageMessages) =>
                 await navigator.clipboard.writeText(pullCommand(data));
                 toast.success(t.commandCopied);
               } catch {
-                toast.error(t.commandCopyFailed);
+                toast.error(t.commandCopyFailed, { title: t.commandCopyFailedTitle });
               }
             }}
           >
@@ -268,6 +268,7 @@ const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive, te
         });
         if (missing)
           toast.error(text.t().runSnapshotFailed, {
+            title: text.t().runSnapshotFailedTitle,
             duration: 0,
             action: { label: text.t().tryAgain, onClick: () => refreshCurrentPath() },
           });
@@ -340,7 +341,7 @@ function ReadyPage(props: {
     );
     setBusy(null);
     if (!result.ok) {
-      toast.error(paused ? t().pauseFailed : t().resumeFailed);
+      toast.error(paused ? t().pauseFailed : t().resumeFailed, { title: paused ? t().pauseFailedTitle : t().resumeFailedTitle });
       return;
     }
     toast.success(paused ? t().paused : t().resumed);

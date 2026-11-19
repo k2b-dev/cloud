@@ -5,6 +5,7 @@ export const placeMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      startOverFailedTitle: "Chat not archived",
       barLabel: "Place of this chat",
       onlyYou: "only you",
       onlyYouHint: "Only you read this chat. Others at this place never see it.",
@@ -50,6 +51,7 @@ export const placeMessages = i18n.define({
       placeOf: ({ app, title }: { app: string; title: string }) => `${app} · ${title}`,
     },
     de: {
+      startOverFailedTitle: "Chat nicht archiviert",
       barLabel: "Ort dieses Chats",
       onlyYou: "nur du",
       onlyYouHint: "Nur du liest diesen Chat. Andere an diesem Ort sehen ihn nie.",

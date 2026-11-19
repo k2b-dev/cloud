@@ -84,6 +84,7 @@ export function createRunAction(options: {
                 ? t().runNoConnection
                 : t().runStartFailed,
           {
+            title: t().runStartFailedTitle,
             duration: 0,
             action: paused
               ? null
@@ -116,12 +117,18 @@ export function createRunAction(options: {
           if (abort.signal.aborted) return;
           const reason = result.ok ? result.data.data.reason : null;
           toast.error(reason ? t().runOwnFailedReason({ reason }) : t().runOwnFailed, {
+            title: t().runOwnFailedTitle,
             duration: 0,
             action: { label: t().viewRun, href: runHref(run.id) },
           });
         })
         .catch(() => {
-          if (!abort.signal.aborted) toast.error(t().runOwnFailed, { duration: 0, action: { label: t().viewRun, href: runHref(run.id) } });
+          if (!abort.signal.aborted)
+            toast.error(t().runOwnFailed, {
+              title: t().runOwnFailedTitle,
+              duration: 0,
+              action: { label: t().viewRun, href: runHref(run.id) },
+            });
         });
     }
   });

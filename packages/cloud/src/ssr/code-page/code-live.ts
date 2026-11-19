@@ -7,8 +7,12 @@ import { CodeRunEventSchema } from "../../code/live-events";
 const messages = i18n.define({
   baseLocale: "en",
   messages: {
-    en: { stopped: "Run updates stopped. Reload to see the current state.", reload: "Reload" },
-    de: { stopped: "Lauf-Updates wurden angehalten. Lade die Seite neu, um den aktuellen Stand zu sehen.", reload: "Neu laden" },
+    en: { stoppedTitle: "Run updates stopped", stopped: "Reload to see the current state.", reload: "Reload" },
+    de: {
+      stoppedTitle: "Lauf-Updates angehalten",
+      stopped: "Lade die Seite neu, um den aktuellen Stand zu sehen.",
+      reload: "Neu laden",
+    },
   },
 });
 
@@ -25,7 +29,7 @@ export function followCodeRuns(
     if (stopped) return;
     if (reloadOnce(`code:live:${codeId}`)) return;
     const t = messages.resolve([document.documentElement.lang || "en"]).t;
-    toast(t.stopped, { duration: 0, action: { label: t.reload, onClick: () => window.location.reload() } });
+    toast(t.stopped, { title: t.stoppedTitle, duration: 0, action: { label: t.reload, onClick: () => window.location.reload() } });
   };
   const refresh = async () => {
     if (onResync) await onResync();

@@ -700,8 +700,8 @@ export default function AssistantWorkspace(props: Props) {
   const addQuote = (quote: AiQuoteDraft) => {
     const key = composerSessionKey();
     const next = aiQuotesWith(quotesFor(key), quote);
-    if (next.full) return void toast(t().quotesFull, { iconClass: "ti ti-info-circle" });
-    if (next.cut) toast(t().quoteCut, { iconClass: "ti ti-info-circle" });
+    if (next.full) return void toast(t().quotesFull, { title: t().quotesFullTitle });
+    if (next.cut) toast(t().quoteCut, { title: t().quoteCutTitle });
     setQuotesFor(key, next.quotes);
     focusComposer();
   };
@@ -3292,7 +3292,7 @@ export default function AssistantWorkspace(props: Props) {
       }
       archiveConversation(conversation);
     } catch {
-      toast.error(placeT().startOverFailed);
+      toast.error(placeT().startOverFailed, { title: placeT().startOverFailedTitle });
     } finally {
       setStartingOver(false);
     }

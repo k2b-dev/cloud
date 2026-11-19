@@ -484,7 +484,7 @@ function SecretRow(props: {
       DeletedSchema,
     );
     setDeleting(false);
-    if (!result.ok) return toast.error(t().secretDeleteFailed);
+    if (!result.ok) return toast.error(t().secretDeleteFailed, { title: t().secretDeleteFailedTitle });
     toast.success(t().secretDeleted);
     refreshCurrentPath();
   };
@@ -559,7 +559,10 @@ function SecretNotice(props: { data: CodePageData; state: CodePageReady; t: Code
     setSubmitting(true);
     const submitted = await authoring("resubmit", { codeId: props.state.code.id, baseVersionId: latest.id }, SubmittedSchema);
     setSubmitting(false);
-    if (!submitted.ok) return toast.error(submitted.status === 409 ? t().secretSubmitConflict : t().secretSubmitFailed);
+    if (!submitted.ok)
+      return toast.error(submitted.status === 409 ? t().secretSubmitConflict : t().secretSubmitFailed, {
+        title: t().secretSubmitFailedTitle,
+      });
     documentNavigate(pageUrl(props.data, { secret: props.secret.name, notice: "submitted" }));
   };
   const askAgain = () => {

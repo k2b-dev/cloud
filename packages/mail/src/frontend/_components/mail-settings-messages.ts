@@ -4,6 +4,8 @@ export const mailSettingsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      deleteRefusedToastTitle: "Mailbox not deleted",
+      deleteUnknownToastTitle: "Deletion status unknown",
       retry: "Retry",
       closeSettings: "Close settings",
       failedLoadMailboxSettings: "Failed to load mailbox settings",
@@ -894,6 +896,8 @@ export const mailSettingsMessages = i18n.define({
       stateRebuilding: "Rebuilding",
     },
     de: {
+      deleteRefusedToastTitle: "Postfach nicht gelöscht",
+      deleteUnknownToastTitle: "Löschstatus unklar",
       retry: "Erneut versuchen",
       closeSettings: "Einstellungen schließen",
       failedLoadMailboxSettings: "Postfacheinstellungen konnten nicht geladen werden",

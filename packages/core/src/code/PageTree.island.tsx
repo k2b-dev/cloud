@@ -283,7 +283,11 @@ function CodePageContent(props: PageProps) {
   /** Someone is typing: new data waits for their choice in a toast, which moves nothing on the page. */
   const offer = () => {
     if (waiting) return;
-    waiting = toast(t().newData, { duration: 0, action: { label: t().refresh, onClick: () => void reload(true) } });
+    waiting = toast(t().newData, {
+      title: t().newDataTitle,
+      duration: 0,
+      action: { label: t().refresh, onClick: () => void reload(true) },
+    });
     notices.add(waiting);
   };
   /** Counts requests that may replace the tree. An answer applies only while its request is the latest one. */
@@ -321,6 +325,7 @@ function CodePageContent(props: PageProps) {
         if (answer.kind === "failed") {
           setStale(true);
           const notice = toast.error(codePageFailure(t(), answer.code, t().refreshFailed), {
+            title: t().refreshFailedTitle,
             action: {
               label: t().retry,
               onClick: () => {
@@ -369,7 +374,13 @@ function CodePageContent(props: PageProps) {
     // A failed form keeps its input and says why beside its button; a single action reports in a toast. A POST
     // is never retried automatically: the person decides whether to send again.
     if (kind === "form") setFormFailure({ form: owner, message });
-    else notices.add(toast.error(message));
+    else
+      notices.add(
+        toast.error(message, {
+          title:
+            answer.code === "code_request_timeout" || answer.code === "code_answer_lost" ? t().outcomeUnknownTitle : t().actionFailedTitle,
+        }),
+      );
   };
 
   onMount(() => {

@@ -728,6 +728,7 @@ describe("Code page in a browser", () => {
       await emit();
       await page.waitForSelector("[data-code-page][aria-busy]");
       await page.getByLabel("Title", { exact: true }).fill("Typed");
+      await page.getByRole("region", { name: "Notifications" }).getByText("New data available", { exact: true }).waitFor();
       await page.getByRole("region", { name: "Notifications" }).getByText("This page has new data.").waitFor();
       state.treeDelay = 0;
       expect(await page.getByRole("cell", { name: "Shelf" }).count()).toBe(0);
