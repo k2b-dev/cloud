@@ -57,10 +57,11 @@ const platformSummary = {
 };
 
 describe("Mail operator read model contract", () => {
-  test("exposes only a JMAP discovery flag and preserves old capability records", () => {
-    expect(platformMailboxOperationSummarySchema.parse({ ...platformSummary, jmap: true }).jmap).toBe(true);
-    expect(platformMailboxOperationSummarySchema.parse({ ...platformSummary, jmap: null }).jmap).toBeNull();
-    expect(platformMailboxOperationSummarySchema.parse({ ...platformSummary, jmap: false }).jmap).toBe(false);
+  test("exposes the single connection's JMAP observation, or null when none is known", () => {
+    for (const jmap of [true, false, null]) {
+      expect(platformMailboxOperationSummarySchema.parse({ ...platformSummary, jmap }).jmap).toBe(jmap);
+    }
+    // Older responses can omit the field; no connection is represented by null in current responses.
     expect(platformMailboxOperationSummarySchema.parse(platformSummary).jmap).toBeUndefined();
     expect(
       mailboxOperatorOperationsSchema.parse({ ...snapshot, connectors: { ...snapshot.connectors, capabilities: { jmap: 1 } } }).connectors

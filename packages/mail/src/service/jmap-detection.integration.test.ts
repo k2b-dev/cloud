@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import type { User } from "@k2b/cloud/contracts";
+import type { Result } from "@k2b/stdlib";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import {
   type ConnectorVerification,
@@ -14,6 +16,11 @@ import { createMailbox } from "./mailboxes";
 import { createProviderConnection, refreshProviderConnectionLimits, replaceProviderConnection } from "./provider-connections";
 
 const suite = suiteFor("database", "nats", "valkey");
+
+function requireSuccess<T>(stage: string, result: Result<T>): T {
+  if (!result.ok) throw new Error(`${stage}: ${result.error.message}`);
+  return result.data;
+}
 const limits = unavailableProviderLimitSnapshot("2026-11-19T00:00:00.000Z");
 const verification: ConnectorVerification = {
   authenticatedPrincipal: "reader",
@@ -34,7 +41,7 @@ const input: ProviderConnectionInput = {
 suite("explicit provider actions persist JMAP observations", () => {
   let context: MailRequestContext;
   let userId = "";
-  let mailboxId = "";
+  const mailboxIds: string[] = [];
   beforeAll(async () => {
     setSystemTime(new Date("2026-11-19T00:00:00.000Z"));
     const uid = "mail-jmap-detection-fixture";
@@ -44,34 +51,37 @@ suite("explicit provider actions persist JMAP observations", () => {
     `;
     if (!user) throw new Error("Fixture user missing");
     userId = user.id;
-    context = {
-      actor: {
-        kind: "user",
-        user: {
-          id: user.id,
-          uid,
-          provider: "local",
-          profile: "user",
-          displayName: uid,
-          givenName: "Example",
-          sn: "Reader",
-          mail: "reader@example.invalid",
-          roles: ["user"],
-          memberofGroupIds: [],
-          memberofGroups: [],
-        } as never,
-      },
-      accessSubject: { type: "user", userId },
-      requestId: "mail-jmap-detection-fixture",
+    const owner: User = {
+      id: user.id,
+      uid,
+      provider: "local",
+      profile: "user",
+      displayName: "JMAP fixture owner",
+      givenname: "Example",
+      sn: "Reader",
+      mail: "reader@example.invalid",
+      roles: ["user"],
+      avatarHash: null,
+      ipa: null,
+      accountExpires: null,
+      lastLoginLocal: null,
+      memberofGroupIds: [],
+      memberofGroup: [],
+      manages: [],
+      managesGroupIds: [],
     };
-    const mailbox = await createMailbox(context, { name: "JMAP detection fixture" });
-    if (!mailbox.ok) throw new Error("Fixture mailbox missing");
-    mailboxId = mailbox.data.id;
+    context = {
+      actor: { kind: "user", user: owner },
+      accessSubject: { type: "user", userId },
+      requestId: uid,
+    };
   });
   afterAll(async () => {
     try {
-      if (mailboxId) {
+      for (const mailboxId of mailboxIds) {
         const access = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid`;
+        await sql`DELETE FROM events.outbox WHERE app_id = 'mail'
+          AND ordering_key IN (${mailboxId}, ${`${mailboxId}:assigned`})`;
         await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
         for (const row of access) await sql`DELETE FROM auth.access WHERE id = ${row.access_id}::uuid`;
       }
@@ -81,47 +91,54 @@ suite("explicit provider actions persist JMAP observations", () => {
     }
   });
 
+  // The partial unique index permits one non-revoked connection per mailbox.
+  const connected = async (label: string) => {
+    const mailbox = requireSuccess(`${label}: create mailbox`, await createMailbox(context, { name: `JMAP ${label}` }));
+    mailboxIds.push(mailbox.id);
+    const { connection } = requireSuccess(
+      `${label}: create connection`,
+      await createProviderConnection({
+        context,
+        mailboxId: mailbox.id,
+        input,
+      }),
+    );
+    return { mailboxId: mailbox.id, connectionId: connection.id };
+  };
+
   const stored = async (id: string) => {
     const [row] = await sql<{ jmap_detected: boolean | null; capabilities: Record<string, unknown> }[]>`
       SELECT jmap_detected, capabilities FROM mail.provider_connections WHERE id = ${id}::uuid
     `;
-    expect(row).toBeDefined();
-    expect(row!.capabilities).not.toHaveProperty("jmap");
-    return row!.jmap_detected;
+    if (!row) throw new Error("Read stored JMAP observation: connection row missing");
+    expect(row.capabilities).not.toHaveProperty("jmap");
+    return row.jmap_detected;
   };
 
   test("create/replace retain completed observations and preserve unknown only for the same host", async () => {
     const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(verification);
     const probe = spyOn(jmapClient, "probeJmap").mockImplementation(async () => new Promise<jmapClient.JmapDetection>(() => {}));
     try {
-      const created = await createProviderConnection({ context, mailboxId, input });
-      if (!created.ok) throw new Error(created.error.message);
-      const connectionId = created.data.connection.id;
+      const { connectionId } = await connected("unfinished detection");
       expect(await stored(connectionId)).toBeNull();
 
       probe.mockResolvedValue("detected");
-      const positive = await createProviderConnection({
-        context,
-        mailboxId,
-        input: { ...input, name: "Positive fixture", username: "other-reader" },
-      });
-      if (!positive.ok) throw new Error(positive.error.message);
-      expect(await stored(positive.data.connection.id)).toBe(true);
+      const positive = await connected("positive detection");
+      expect(await stored(positive.connectionId)).toBe(true);
 
-      expect((await replaceProviderConnection({ context, connectionId, input })).ok).toBe(true);
+      requireSuccess("replace with completed detection", await replaceProviderConnection({ context, connectionId, input }));
       expect(await stored(connectionId)).toBe(true);
       probe.mockImplementation(async () => new Promise<jmapClient.JmapDetection>(() => {}));
-      expect((await replaceProviderConnection({ context, connectionId, input })).ok).toBe(true);
+      requireSuccess("replace with unfinished detection on same host", await replaceProviderConnection({ context, connectionId, input }));
       expect(await stored(connectionId)).toBe(true);
-      expect(
-        (
-          await replaceProviderConnection({
-            context,
-            connectionId,
-            input: { ...input, imap: { ...input.imap, host: "other.example.invalid" } },
-          })
-        ).ok,
-      ).toBe(true);
+      requireSuccess(
+        "replace with unfinished detection on changed host",
+        await replaceProviderConnection({
+          context,
+          connectionId,
+          input: { ...input, imap: { ...input.imap, host: "other.example.invalid" } },
+        }),
+      );
       expect(await stored(connectionId)).toBeNull();
     } finally {
       probe.mockRestore();
@@ -137,27 +154,36 @@ suite("explicit provider actions persist JMAP observations", () => {
       discovered.resolve();
       return limits;
     });
+    const detection = Promise.withResolvers<jmapClient.JmapDetection>();
+    let refresh: ReturnType<typeof refreshProviderConnectionLimits> | undefined;
     try {
-      const created = await createProviderConnection({ context, mailboxId, input: { ...input, username: "refresh-reader" } });
-      if (!created.ok) throw new Error(created.error.message);
-      const connectionId = created.data.connection.id;
+      const { mailboxId, connectionId } = await connected("limit refresh");
       expect(await stored(connectionId)).toBe(false);
-      const detection = Promise.withResolvers<jmapClient.JmapDetection>();
       probe.mockImplementation(() => detection.promise);
       let finished = false;
-      const refresh = refreshProviderConnectionLimits({ context, mailboxId, connectionId }).then((result) => {
+      refresh = refreshProviderConnectionLimits({ context, mailboxId, connectionId }).then((result) => {
         finished = true;
         return result;
       });
-      await discovered.promise;
-      expect(finished).toBe(false);
+      const reached = await Promise.race([
+        discovered.promise.then(() => "discovery"),
+        refresh.then((result) => {
+          requireSuccess("limit refresh before discoverLimits", result);
+          return "finished";
+        }),
+      ]);
+      expect(reached, "limit refresh must reach discoverLimits before finishing").toBe("discovery");
+      expect(finished, "limit refresh must wait for detection").toBe(false);
       detection.resolve("detected");
-      expect((await refresh).ok).toBe(true);
+      requireSuccess("limit refresh with completed detection", await refresh);
       expect(await stored(connectionId)).toBe(true);
       probe.mockRejectedValue(new Error("Fixture probe failure"));
-      expect((await refreshProviderConnectionLimits({ context, mailboxId, connectionId })).ok).toBe(true);
+      requireSuccess("limit refresh with failed detection", await refreshProviderConnectionLimits({ context, mailboxId, connectionId }));
       expect(await stored(connectionId)).toBe(true);
     } finally {
+      detection.resolve("unknown");
+      // Also release the barrier if an assertion failed before the probe was resolved.
+      await refresh?.catch(() => {});
       discover.mockRestore();
       probe.mockRestore();
       verify.mockRestore();

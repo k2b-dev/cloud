@@ -25,7 +25,6 @@ Cloud super administrators can run `cld mail admin operations`:
 
 The JSON field is `jmap`. Failed or unfinished checks preserve the previous
 result for the same IMAP host. A changed host cannot inherit that result.
-With multiple connections, possible takes precedence, then unknown.
 
 `cld --json mail operator status` counts active bindings with positive hints
 in `connectors.capabilities.jmap`. These hints do not verify account access

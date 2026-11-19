@@ -566,11 +566,7 @@ export const getPlatformMailOperations = async (
           mailbox.health,
           mailbox.sync_enabled,
           (
-            SELECT CASE
-              WHEN bool_or(connection.jmap_detected) THEN true
-              WHEN count(*) = count(connection.jmap_detected) AND count(*) > 0 THEN false
-              ELSE NULL
-            END
+            SELECT connection.jmap_detected
             FROM mail.provider_connections connection
             WHERE connection.owner_mailbox_id = mailbox.id
               AND connection.status <> 'revoked'

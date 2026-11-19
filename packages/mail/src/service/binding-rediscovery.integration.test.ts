@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import type { User } from "@k2b/cloud/contracts";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import type { MailRequestContext } from "./auth";
@@ -74,7 +75,7 @@ suite("mail binding rediscovery", () => {
   const createBoundMailbox = async (label: string): Promise<{ bindingId: string; account: string; mailboxId: string }> => {
     const account = `${label}-${suffix}@example.test`;
     const mailbox = await createMailbox(ownerContext, { name: `Rediscovery ${label} ${suffix}` });
-    if (!mailbox.ok) throw new Error(mailbox.error.message);
+    if (!mailbox.ok) throw new Error(`Rediscovery fixture ${label}: create mailbox: ${mailbox.error.message}`);
     mailboxIds.push(mailbox.data.id);
     const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification(account));
     let connectionId = "";
@@ -91,7 +92,7 @@ suite("mail binding rediscovery", () => {
           secret: { kind: "password", password: "fixture-secret" },
         },
       });
-      if (!connection.ok) throw new Error(connection.error.message);
+      if (!connection.ok) throw new Error(`Rediscovery fixture ${label}: create connection: ${connection.error.message}`);
       connectionId = connection.data.connection.id;
     } finally {
       verify.mockRestore();
@@ -126,17 +127,19 @@ suite("mail binding rediscovery", () => {
       VALUES (${mailbox.data.id}::uuid, ${{ accountId: account }}::jsonb, '{}'::jsonb, ${scope}, 'active')
       RETURNING id
     `;
+    if (!resource) throw new Error(`Rediscovery fixture ${label}: insert resource returned no row`);
     const [binding] = await sql<{ id: string }[]>`
       INSERT INTO mail.provider_bindings (
         remote_resource_id, connection_id, state, authenticated_principal, remote_locator,
         capabilities, rights, verification_evidence, verified_scope_fingerprint, verified_secret_revision, last_verified_at
       ) VALUES (
-        ${resource!.id}::uuid, ${connectionId}::uuid, 'active', ${account},
+        ${resource.id}::uuid, ${connectionId}::uuid, 'active', ${account},
         ${{ accountId: account }}::jsonb, ${fixtureVerification(account).capabilities}::jsonb, '{}'::jsonb,
         ${evidence}::jsonb, ${scope}, 1, now()
       ) RETURNING id
     `;
-    return { bindingId: binding!.id, account, mailboxId: mailbox.data.id };
+    if (!binding) throw new Error(`Rediscovery fixture ${label}: insert binding returned no row`);
+    return { bindingId: binding.id, account, mailboxId: mailbox.data.id };
   };
 
   /** The binding's folders by provider path, with their discovery state. */
@@ -159,23 +162,27 @@ suite("mail binding rediscovery", () => {
     `;
     if (!user) throw new Error("Failed to create the rediscovery test user");
     userId = user.id;
+    const owner: User = {
+      id: user.id,
+      uid,
+      provider: "local",
+      profile: "user",
+      displayName: uid,
+      givenname: "Mail",
+      sn: "Test",
+      mail: `${uid}@example.test`,
+      roles: ["user"],
+      avatarHash: null,
+      ipa: null,
+      accountExpires: null,
+      lastLoginLocal: null,
+      memberofGroupIds: [],
+      memberofGroup: [],
+      manages: [],
+      managesGroupIds: [],
+    };
     ownerContext = {
-      actor: {
-        kind: "user",
-        user: {
-          id: user.id,
-          uid,
-          provider: "local",
-          profile: "user",
-          displayName: uid,
-          givenName: "Mail",
-          sn: "Test",
-          mail: `${uid}@example.test`,
-          roles: ["user"],
-          memberofGroupIds: [],
-          memberofGroups: [],
-        } as never,
-      },
+      actor: { kind: "user", user: owner },
       accessSubject: { type: "user", userId: user.id },
       requestId: `mail-rediscovery-${suffix}`,
     };
@@ -186,6 +193,8 @@ suite("mail binding rediscovery", () => {
       const access = await sql<{ access_id: string }[]>`
         SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid
       `;
+      await sql`DELETE FROM events.outbox WHERE app_id = 'mail'
+        AND ordering_key IN (${mailboxId}, ${`${mailboxId}:assigned`})`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
       for (const { access_id } of access) await sql`DELETE FROM auth.access WHERE id = ${access_id}::uuid`;
     }
@@ -193,25 +202,34 @@ suite("mail binding rediscovery", () => {
   });
 
   test("rediscovery neither probes JMAP nor overwrites its separate observation", async () => {
-    const bound = await createBoundMailbox("jmap");
-    await sql`UPDATE mail.provider_connections SET jmap_detected = true
-      WHERE id = (SELECT connection_id FROM mail.provider_bindings WHERE id = ${bound.bindingId}::uuid)`;
+    setSystemTime(new Date("2026-11-19T00:00:00.000Z"));
     const probe = spyOn(jmapClient, "probeJmap").mockResolvedValue("absent");
-    const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification(bound.account));
-    const discover = spyOn(imapSmtpConnector, "discoverFolders").mockResolvedValue([inbox()]);
     try {
-      await rediscoverProviderBinding({ bindingId: bound.bindingId });
-      expect(probe).not.toHaveBeenCalled();
-      const [row] = await sql<{ jmap_detected: boolean | null }[]>`
-        SELECT connection.jmap_detected FROM mail.provider_connections connection
-        JOIN mail.provider_bindings binding ON binding.connection_id = connection.id
-        WHERE binding.id = ${bound.bindingId}::uuid
-      `;
-      expect(row?.jmap_detected).toBe(true);
+      const bound = await createBoundMailbox("jmap");
+      const updated = await sql<{ id: string }[]>`UPDATE mail.provider_connections SET jmap_detected = true
+        WHERE id = (SELECT connection_id FROM mail.provider_bindings WHERE id = ${bound.bindingId}::uuid)
+        RETURNING id`;
+      expect(updated, "JMAP rediscovery setup must update exactly one connection").toHaveLength(1);
+      // Creating the connection is an explicit action; only the following rediscovery must not probe.
+      probe.mockClear();
+      const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification(bound.account));
+      const discover = spyOn(imapSmtpConnector, "discoverFolders").mockResolvedValue([inbox()]);
+      try {
+        await expect(rediscoverProviderBinding({ bindingId: bound.bindingId })).resolves.toMatchObject({ state: "active" });
+        expect(probe, "background rediscovery must not probe JMAP").not.toHaveBeenCalled();
+        const [row] = await sql<{ jmap_detected: boolean | null }[]>`
+          SELECT connection.jmap_detected FROM mail.provider_connections connection
+          JOIN mail.provider_bindings binding ON binding.connection_id = connection.id
+          WHERE binding.id = ${bound.bindingId}::uuid
+        `;
+        expect(row?.jmap_detected, "rediscovery must preserve the stored JMAP observation").toBe(true);
+      } finally {
+        discover.mockRestore();
+        verify.mockRestore();
+      }
     } finally {
-      discover.mockRestore();
-      verify.mockRestore();
       probe.mockRestore();
+      setSystemTime();
     }
   });
 
