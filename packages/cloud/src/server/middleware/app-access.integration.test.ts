@@ -43,7 +43,7 @@ let privateCalls = 0;
 const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
 const sockets = new Set<WebSocket>();
 const requests = new Set<AbortController>();
-let sseStopped = 0;
+const stoppedSseResources = new Set<string>();
 
 const headers = () => ({ cookie: `session_token=${token}` });
 const until = async (condition: () => boolean) => {
@@ -94,18 +94,24 @@ suite("application enforcement and revocation", () => {
         "/socket",
         auth.requireRole("authenticated"),
         upgradeWebSocket(async (c) =>
-          guardAppAccessSocket(c, appId, {
-            onOpen: (_event, ws) => ws.send("ready"),
-            onMessage: (_event, ws) => ws.send("private"),
-          }),
+          guardAppAccessSocket(
+            c,
+            appId,
+            {
+              onOpen: (_event, ws) => ws.send("ready"),
+              onMessage: (_event, ws) => ws.send("private"),
+            },
+            { eventOnly: c.req.query("eventOnly") === "true" },
+          ),
         ),
       )
       .get("/events", (c) => {
         if (c.req.query("eventOnly") === "true") c.set("appAccessGuard", { eventOnly: true });
+        const resourceId = c.req.query("resourceId") ?? crypto.randomUUID();
         return streamSSE(c, async (stream) => {
           await stream.writeSSE({ data: "ready" });
           await new Promise<void>((resolve) => stream.onAbort(resolve));
-          sseStopped++;
+          stoppedSseResources.add(resourceId);
         });
       });
     server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch, websocket });
@@ -250,7 +256,7 @@ suite("application enforcement and revocation", () => {
     expect(await sql`SELECT 1 FROM auth.app_access WHERE app_id = ${appId}`).toHaveLength(0);
   });
 
-  test("SSE guards poll by default and opt out only when declared", async () => {
+  test("SSE guards retain periodic checks in every event mode", async () => {
     await changeGrant(true);
     for (const eventOnly of [false, true]) {
       const controller = new AbortController();
@@ -261,7 +267,7 @@ suite("application enforcement and revocation", () => {
           signal: controller.signal,
         });
         expect(response.status).toBe(200);
-        expect(intervals.mock.calls.filter(([, ms]) => ms === 50_000)).toHaveLength(eventOnly ? 0 : 1);
+        expect(intervals.mock.calls.filter(([, ms]) => ms === 50_000)).toHaveLength(1);
         await response.body!.cancel();
       } finally {
         controller.abort();
@@ -294,7 +300,7 @@ suite("application enforcement and revocation", () => {
           headers: { authorization: `Bearer ${credential.data.token}` },
           signal: controller.signal,
         });
-        expect(intervals.mock.calls.filter(([, ms]) => ms === 50_000)).toHaveLength(0);
+        expect(intervals.mock.calls.filter(([, ms]) => ms === 50_000)).toHaveLength(1);
       } finally {
         intervals.mockRestore();
       }
@@ -318,6 +324,86 @@ suite("application enforcement and revocation", () => {
     }
   });
 
+  test("event-only socket and SSE retain the periodic bound while outbox publication is withheld", async () => {
+    await changeGrant(true);
+    // Stop the publisher before admitting these connections. The revocation
+    // stays in the outbox while their periodic checks run.
+    await stopOutbox?.();
+    stopOutbox = null;
+    const intervals = spyOn(globalThis, "setInterval");
+    const timeouts = spyOn(globalThis, "setTimeout");
+    const clearTimeouts = spyOn(globalThis, "clearTimeout");
+    const resourceId = crypto.randomUUID();
+    const controller = new AbortController();
+    requests.add(controller);
+    let socket: WebSocket | undefined;
+    try {
+      let ready = false;
+      let closed = "";
+      socket = new BunWebSocket(new URL("/socket?eventOnly=true", server!.url).toString().replace("http:", "ws:"), {
+        headers: headers(),
+      });
+      sockets.add(socket);
+      socket.onmessage = (message) => {
+        if (message.data === "ready") ready = true;
+      };
+      socket.onclose = (event) => {
+        closed = event.reason;
+      };
+      await until(() => ready);
+      const response = await fetch(new URL(`/events?eventOnly=true&resourceId=${resourceId}`, server!.url), {
+        headers: headers(),
+        signal: controller.signal,
+      });
+      const reader = response.body!.getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toContain("ready");
+      const ticks = intervals.mock.calls.filter(([, ms]) => ms === 50_000).map(([callback]) => callback);
+      expect(ticks).toHaveLength(2);
+      // Wait for both initial watcher checks to finish before revoking access.
+      await until(() => {
+        const deadlines = timeouts.mock.calls.flatMap(([, ms], index) => (ms === 10_000 ? [timeouts.mock.results[index]!.value] : []));
+        return deadlines.length >= 2 && deadlines.every((deadline) => clearTimeouts.mock.calls.some(([handle]) => handle === deadline));
+      });
+      const before = new Set(
+        (
+          await sql<{ id: string }[]>`SELECT id FROM events.outbox WHERE kind = 'live' AND app_id = 'core'
+          AND ordering_key = ${`app.access:${appId}`}`
+        ).map((row) => row.id),
+      );
+      await changeGrant(false);
+      const revocations = (
+        await sql<{ id: string }[]>`SELECT id FROM events.outbox WHERE kind = 'live' AND app_id = 'core'
+        AND ordering_key = ${`app.access:${appId}`} AND payload->'d'->>'type' = 'app.access.changed'`
+      ).filter((row) => !before.has(row.id));
+      expect(revocations).toHaveLength(1);
+      const revocationId = revocations[0]!.id;
+      expect((await fetch(new URL("/private", server!.url), { headers: headers() })).status).toBe(403);
+      expect(closed).toBe("");
+      expect(stoppedSseResources.has(resourceId)).toBe(false);
+      // Advance only the existing 50-second access intervals. The watcher unit
+      // tests exercise the additional ten-second deadline without real waits.
+      for (const tick of ticks) tick();
+      await until(() => closed === "app_access_denied" && stoppedSseResources.has(resourceId));
+      let text = "";
+      for (;;) {
+        const result = await reader.read();
+        if (result.done) break;
+        text += new TextDecoder().decode(result.value);
+      }
+      expect(text).toContain("app_access_denied");
+      expect(await sql<{ id: string }[]>`SELECT id FROM events.outbox WHERE id = ${revocationId}::uuid`).toEqual([{ id: revocationId }]);
+    } finally {
+      controller.abort();
+      requests.delete(controller);
+      socket?.close();
+      if (socket) sockets.delete(socket);
+      intervals.mockRestore();
+      timeouts.mockRestore();
+      clearTimeouts.mockRestore();
+      stopOutbox = await startLiveOutbox("core");
+    }
+  });
+
   test("transactional app.access.changed revokes an open custom socket and SSE, cancelling their resources", async () => {
     await changeGrant(true);
     const socket = new BunWebSocket(new URL("/socket", server!.url).toString().replace("http:", "ws:"), { headers: headers() });
@@ -333,7 +419,11 @@ suite("application enforcement and revocation", () => {
     await until(() => ready);
     const controller = new AbortController();
     requests.add(controller);
-    const response = await fetch(new URL("/events?eventOnly=true", server!.url), { headers: headers(), signal: controller.signal });
+    const resourceId = crypto.randomUUID();
+    const response = await fetch(new URL(`/events?eventOnly=true&resourceId=${resourceId}`, server!.url), {
+      headers: headers(),
+      signal: controller.signal,
+    });
     const reader = response.body!.getReader();
     expect(new TextDecoder().decode((await reader.read()).value)).toContain("ready");
     await changeGrant(false);
@@ -345,7 +435,7 @@ suite("application enforcement and revocation", () => {
       text += new TextDecoder().decode(result.value);
     }
     expect(text).toContain("app_access_denied");
-    await until(() => sseStopped > 0);
+    await until(() => stoppedSseResources.has(resourceId));
     controller.abort();
     requests.delete(controller);
     sockets.delete(socket);

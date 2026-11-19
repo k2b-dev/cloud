@@ -102,6 +102,7 @@ const startIdleListener = (options: {
     health: [] as { state: string; error?: unknown }[],
     reachable: [] as string[],
     folderSyncs: 0,
+    pushedFolderSyncs: 0,
   };
   let releaseIterator: ((value: IteratorResult<ConnectorChangeHint>) => void) | null = null;
   const task = runImapPushBinding(
@@ -136,8 +137,9 @@ const startIdleListener = (options: {
           },
         };
       },
-      enqueueFolder: async () => {
+      enqueueFolder: async (_folderId, options) => {
         events.folderSyncs += 1;
+        if (options?.pushed) events.pushedFolderSyncs += 1;
       },
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
@@ -145,6 +147,8 @@ const startIdleListener = (options: {
       recordProviderReachable: async (remoteResourceId) => {
         events.reachable.push(remoteResourceId);
       },
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: options.leader,
       permits:
         options.permits ??
@@ -237,6 +241,52 @@ describe("IMAP push runtime", () => {
     ).toEqual({ folderChanged: true, reconcileFromUid: 9_004, rediscover: true });
   });
 
+  test("new mail the server announces ranks the folder's sync as pushed, other changes and own checks do not", async () => {
+    const synced = async (hints: ConnectorChangeHint[], announced = true) => {
+      const calls: Array<{ folderId: string; pushed: boolean; fromUid?: number }> = [];
+      await applyImapPushHints({
+        expected: plan,
+        hints,
+        assertLeaseActive: async () => undefined,
+        loadPlan: async () => plan,
+        enqueueFolder: async (folderId, options) => {
+          calls.push({ folderId, pushed: options?.pushed === true });
+        },
+        enqueueReconciliation: async (folderId, fromUid, options) => {
+          calls.push({ folderId, pushed: options?.pushed === true, fromUid });
+        },
+        enqueueRediscovery: async () => undefined,
+        loadReconnectBudget: async () => ({ lastDiscoveryAt: Date.now(), lastFullReconcileAt: Date.now(), fullReconcilePending: false }),
+        announced,
+      });
+      return calls;
+    };
+    expect(await synced([{ type: "folder_changed", cause: "exists", folderPath: "INBOX", uid: null, modseq: null }])).toEqual([
+      { folderId: plan.folderId, pushed: true },
+    ]);
+    expect(await synced([{ type: "disconnected", folderPath: "INBOX", reason: "closed" }])).toEqual([
+      { folderId: plan.folderId, pushed: false },
+    ]);
+    // New mail next to a removal still ranks as pushed in the reconciliation it becomes.
+    expect(
+      await synced([
+        { type: "folder_changed", cause: "exists", folderPath: "INBOX", uid: null, modseq: null },
+        { type: "folder_changed", cause: "vanished", folderPath: "INBOX", uid: 7_501, modseq: "44" },
+      ]),
+    ).toEqual([{ folderId: plan.folderId, pushed: true, fromUid: 7_501 }]);
+    // Flag changes and removals alone, often echoes of the person's own commands, are no new mail.
+    expect(await synced([{ type: "folder_changed", cause: "flags", folderPath: "INBOX", uid: 2, modseq: "43" }])).toEqual([
+      { folderId: plan.folderId, pushed: false },
+    ]);
+    expect(await synced([{ type: "folder_changed", cause: "vanished", folderPath: "INBOX", uid: 7_501, modseq: "44" }])).toEqual([
+      { folderId: plan.folderId, pushed: false, fromUid: 7_501 },
+    ]);
+    // The listener's own check and a poll use the same hint, but no server announced it.
+    expect(await synced([{ type: "folder_changed", cause: "exists", folderPath: "INBOX", uid: null, modseq: null }], false)).toEqual([
+      { folderId: plan.folderId, pushed: false },
+    ]);
+  });
+
   test("does not rediscover a reconnect within the regular discovery interval", async () => {
     const calls: string[] = [];
     const now = Date.now();
@@ -245,8 +295,8 @@ describe("IMAP push runtime", () => {
       hints: [{ type: "disconnected", folderPath: "INBOX", reason: "error" }],
       assertLeaseActive: async () => undefined,
       loadPlan: async () => plan,
-      enqueueFolder: async (folderId) => {
-        calls.push(`folder:${folderId}`);
+      enqueueFolder: async (folderId, options) => {
+        calls.push(`folder:${folderId}${options?.pushed ? ":pushed" : ""}`);
       },
       enqueueReconciliation: async (_folderId, fromUid) => {
         calls.push(`reconcile:${fromUid}`);
@@ -365,6 +415,8 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: leader,
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -379,6 +431,7 @@ describe("IMAP push runtime", () => {
     const pollingPlan = { ...plan, capabilities: { ...plan.capabilities, idle: false } };
     const controller = new AbortController();
     let folderEnqueues = 0;
+    let pushedEnqueues = 0;
     let permitAcquires = 0;
     const dependencies = {
       listPlans: async () => [pollingPlan],
@@ -392,14 +445,17 @@ describe("IMAP push runtime", () => {
       listen: async () => {
         throw new Error("must not listen");
       },
-      enqueueFolder: async () => {
+      enqueueFolder: async (_folderId: string, options?: { pushed?: boolean }) => {
         folderEnqueues += 1;
+        if (options?.pushed) pushedEnqueues += 1;
         controller.abort(new Error("test complete"));
       },
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: new FakeMutex(),
       permits: {
         acquire: async () => {
@@ -415,6 +471,8 @@ describe("IMAP push runtime", () => {
     };
     await runImapPushBinding(pollingPlan, dependencies, controller.signal);
     expect(folderEnqueues).toBe(1);
+    // A poll is no change the server announced: it ranks like a folder check.
+    expect(pushedEnqueues).toBe(0);
     expect(permitAcquires).toBe(0);
   });
 
@@ -457,6 +515,8 @@ describe("IMAP push runtime", () => {
       },
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async (_ms: number, signal: AbortSignal) => {
@@ -507,6 +567,8 @@ describe("IMAP push runtime", () => {
         enqueueRediscovery: async () => undefined,
         loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
         recordProviderReachable: async () => undefined,
+        recordProviderFailure: async () => null,
+        providerBreakerOpenForMs: async () => 0,
         leaderMutex: new FakeMutex(),
         permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
         sleep: async (_ms: number, signal: AbortSignal) => {
@@ -540,6 +602,8 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -592,6 +656,8 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async (_ms: number, signal: AbortSignal) => {
@@ -649,6 +715,8 @@ describe("IMAP push runtime", () => {
         enqueueRediscovery: async () => undefined,
         loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
         recordProviderReachable: async () => undefined,
+        recordProviderFailure: async () => null,
+        providerBreakerOpenForMs: async () => 0,
         leaderMutex: new FakeMutex(),
         permits: {
           acquire: async () => ({ locks: [] }),
@@ -693,6 +761,8 @@ describe("IMAP push runtime", () => {
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       recordProviderReachable: async () => undefined,
+      recordProviderFailure: async () => null,
+      providerBreakerOpenForMs: async () => 0,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -702,6 +772,110 @@ describe("IMAP push runtime", () => {
     plans.resolve([plan]);
     await Promise.all([start, stop]);
     expect(listenCalls).toBe(0);
+  });
+});
+
+describe("IMAP push against a mail server that drops connection attempts", () => {
+  const CONNECT_TIMEOUT_MS = 15_000;
+  const LONGEST_WINDOW_MS = 15 * 60_000;
+  const connectTimeout = () => Object.assign(new Error("Failed to establish connection in required time"), { code: "CONNECT_TIMEOUT" });
+
+  /**
+   * Runs one binding on a virtual clock that only `sleep` and connection attempts advance. The server
+   * drops every attempt until `answersFrom`, as a host that blocks this installation's address does;
+   * each attempt waits for the connection timeout. The breaker behaves like the mailbox's provider
+   * breaker without its jitter: a timeout opens it for one connection timeout, each further one
+   * doubles the window up to fifteen minutes, and a connection that reaches the server closes it.
+   */
+  const runAgainstDroppingServer = async (answersFrom: number, stopAt: number) => {
+    const controller = new AbortController();
+    const clock = { now: 0 };
+    const breaker = { windowMs: 0, openUntil: 0 };
+    const events = { attempts: [] as number[], rediscoveries: 0, folderSyncs: [] as number[], reachableAt: [] as number[] };
+    await runImapPushBinding(
+      plan,
+      {
+        listPlans: async () => [plan],
+        loadPlan: async () => plan,
+        claimGeneration: async () => 1,
+        updateHealth: async () => undefined,
+        loadRuntime: async () => ({ runtime: runtimeConfig, secretRevision: plan.secretRevision }),
+        listen: async (): Promise<ConnectorChangeListener> => {
+          events.attempts.push(clock.now);
+          if (clock.now < answersFrom) {
+            clock.now += CONNECT_TIMEOUT_MS;
+            throw connectTimeout();
+          }
+          return {
+            mode: "idle",
+            hints: {
+              async *[Symbol.asyncIterator]() {
+                await new Promise((resolve) => controller.signal.addEventListener("abort", resolve, { once: true }));
+              },
+            },
+            close: async () => undefined,
+          };
+        },
+        enqueueFolder: async () => {
+          events.folderSyncs.push(clock.now);
+          // The listener that reached the server checks its folder once; the run ends there.
+          if (clock.now >= answersFrom) controller.abort(new Error("test complete"));
+        },
+        enqueueReconciliation: async () => undefined,
+        enqueueRediscovery: async () => {
+          events.rediscoveries += 1;
+        },
+        // Never rediscovered: the binding's last verification is always overdue.
+        loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+        recordProviderReachable: async () => {
+          events.reachableAt.push(clock.now);
+          breaker.windowMs = 0;
+          breaker.openUntil = 0;
+        },
+        recordProviderFailure: async (_resource, error) => {
+          if ((error as { code?: string }).code !== "CONNECT_TIMEOUT") return null;
+          breaker.windowMs = breaker.windowMs === 0 ? CONNECT_TIMEOUT_MS : Math.min(breaker.windowMs * 2, LONGEST_WINDOW_MS);
+          breaker.openUntil = clock.now + breaker.windowMs;
+          return breaker.windowMs;
+        },
+        providerBreakerOpenForMs: async () => Math.max(0, breaker.openUntil - clock.now),
+        leaderMutex: new FakeMutex(),
+        permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
+        sleep: async (ms: number, signal: AbortSignal) => {
+          clock.now += ms;
+          if (clock.now >= stopAt) controller.abort(new Error("test complete"));
+          if (signal.aborted) throw signal.reason;
+        },
+      },
+      controller.signal,
+    );
+    return events;
+  };
+
+  test("tries the server at growing intervals up to fifteen minutes instead of every minute, and queues no rediscovery", async () => {
+    const twoHours = 2 * 60 * 60_000;
+    const events = await runAgainstDroppingServer(Number.POSITIVE_INFINITY, twoHours);
+
+    // Before the breaker, push tried the server about every 75 seconds (its longest reconnect
+    // delay plus the connection timeout) and queued a folder sync and a rediscovery after each try.
+    const gaps = events.attempts.slice(1).map((at, index) => at - events.attempts[index]!);
+    expect(gaps.slice(0, 7).every((gap, index) => index === 0 || gap > gaps[index - 1]!)).toBe(true);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(LONGEST_WINDOW_MS + CONNECT_TIMEOUT_MS + 60_000);
+    expect(gaps.at(-1)).toBeGreaterThanOrEqual(LONGEST_WINDOW_MS);
+    expect(events.attempts.length).toBeLessThanOrEqual(15);
+    expect(events.rediscoveries).toBe(0);
+    expect(events.folderSyncs).toEqual([]);
+  });
+
+  test("a server that answers again is reached within one longest window, which resets the breaker and checks the folder", async () => {
+    const answersFrom = 60 * 60_000;
+    const events = await runAgainstDroppingServer(answersFrom, 3 * 60 * 60_000);
+
+    const reached = events.attempts.find((at) => at >= answersFrom)!;
+    expect(reached - answersFrom).toBeLessThanOrEqual(LONGEST_WINDOW_MS + 60_000);
+    expect(events.reachableAt).toEqual([reached]);
+    expect(events.folderSyncs).toEqual([reached]);
+    expect(events.rediscoveries).toBe(0);
   });
 });
 
@@ -735,6 +909,8 @@ describe("IMAP push lease renewal", () => {
       // The scheduled sync leaves the folder to its listener: one check a minute, not two.
       await advance(5 * 60_000);
       expect(listener.events.folderSyncs).toBe(6);
+      // Its own checks were announced by no server: they rank like the folder checks they replace.
+      expect(listener.events.pushedFolderSyncs).toBe(0);
       expect(listener.events.closedAt).toEqual([]);
 
       listener.controller.abort(new Error("test shutdown"));

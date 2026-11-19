@@ -213,7 +213,10 @@ export const guardAppAccessSocket = async (
   c: Context<AuthContext>,
   appId: string,
   events: WSEvents,
-  options: { eventOnly?: boolean } = {},
+  _options: {
+    /** @deprecated Kept for compatibility; no effect. All protected connections revalidate on events and periodically. */
+    eventOnly?: boolean;
+  } = {},
 ): Promise<WSEvents> => {
   let app: AccessApp | null;
   try {
@@ -255,7 +258,6 @@ export const guardAppAccessSocket = async (
       if (denied) return;
       stop = watchAppAccess({
         check: revalidate,
-        ...(options.eventOnly && app.access?.kind !== "resources" ? { intervalMs: false as const } : {}),
         subscribe,
         denied: () => {
           connections.delete(shutdown);
@@ -312,7 +314,6 @@ const guardSse = async (c: Context<AuthContext>, app: AccessApp, response: Respo
       streamController = controller;
       connections.add(abort);
       stop = watchAppAccess({
-        ...(c.get("appAccessGuard")?.eventOnly && app.access?.kind !== "resources" ? { intervalMs: false as const } : {}),
         check: appAccessRevalidator(c, app),
         subscribe,
         denied: () => {

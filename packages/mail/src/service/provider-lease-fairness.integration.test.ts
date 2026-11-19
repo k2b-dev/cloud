@@ -34,8 +34,10 @@ import {
   MAIL_PROVIDER_JOB_CONCURRENCY,
   MAIL_PROVIDER_OPERATION_LEASE_MS,
   mailProviderOperationMutex,
+  onParkedProviderWaiterWake,
   type ProviderLeasePriority,
   type ProviderLeaseTurn,
+  providerBreakerOpenForMs,
   providerBusyRetryAfterMs,
   providerLeaseWaitedFor,
   recordProviderFailure,
@@ -69,8 +71,6 @@ const MOVE_MS_PER_MESSAGE = 5;
 // A host that does not answer lets each connection attempt wait this long, like the connectors'
 // 15-second connection timeout, before the attempt fails.
 const UNREACHABLE_TIMEOUT_MS = 5_000;
-// The longest first pause of the provider breaker: one connection timeout plus up to a quarter.
-const LONGEST_FIRST_PAUSE_MS = 15_000 * 1.25;
 
 const connectTimeout = () => Object.assign(new Error("Failed to establish connection in required time"), { code: "CONNECT_TIMEOUT" });
 
@@ -128,11 +128,36 @@ const waitFor = async (ready: () => Promise<boolean>, what: string, timeoutMs = 
   }
 };
 
-type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string };
+type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string; pushed?: boolean };
+
+// A folder job that finds the lease held parks, and a release wakes it by queueing it again. No
+// worker runs folder jobs here: each wake is kept by folder, the last one only, as coalescing
+// keeps one job per folder, and the helpers below run the woken job.
+const wakes = new Map<string, SyncFolderJobInput>();
+const wakeListeners = new Map<string, Array<(input: SyncFolderJobInput) => void>>();
+onParkedProviderWaiterWake(async (waiter, left) => {
+  if (!waiter.startsWith("sync-folder:")) return;
+  const input = JSON.parse(left) as SyncFolderJobInput;
+  const listeners = wakeListeners.get(input.folderId);
+  wakeListeners.delete(input.folderId);
+  if (listeners) for (const listener of listeners) listener(input);
+  else wakes.set(input.folderId, input);
+});
+/** The input of the folder's next wake. */
+const nextWake = (folderId: string): Promise<SyncFolderJobInput> => {
+  const woken = wakes.get(folderId);
+  wakes.delete(folderId);
+  if (woken) return Promise.resolve(woken);
+  return new Promise((resolve) => wakeListeners.set(folderId, [...(wakeListeners.get(folderId) ?? []), resolve]));
+};
+/** Whether a job turn that asked for no continuation parked. */
+const parkedTurn = (result: Awaited<ReturnType<typeof runSyncFolderJob>>, next: unknown): boolean =>
+  next === null && "deferred" in result && result.deferred === "SYNC_BUSY";
 
 /**
  * Runs one `mail:sync-folder` job the way its worker does: a resubmitted job runs again after its
- * delay, until it finishes, or with `oneBatch` until one batch got the provider lease. Returns
+ * delay, and a parked one when a release wakes it, until it finishes, or with `oneBatch` until one
+ * batch got the provider lease. Returns
  * how long that took, recording each attempt's times and outcome when `turns` is passed, and the
  * start of the first turn that got the lease when `timing` is passed.
  */
@@ -153,16 +178,20 @@ const runFolderSyncJob = async (
       },
     };
     const start = Math.round(performance.now() - startedAt);
-    await runSyncFolderJob(ctx);
-    if ((next === null || next === 0) && options.timing && options.timing.firstLeaseTurnMs === undefined) {
+    const parked = parkedTurn(await runSyncFolderJob(ctx), next);
+    if (!parked && (next === null || next === 0) && options.timing && options.timing.firstLeaseTurnMs === undefined) {
       options.timing.firstLeaseTurnMs = start;
     }
     if (options.turns) {
       const end = Math.round(performance.now() - startedAt);
-      const outcome = next === null ? "done" : next === 0 ? "batch" : `busy, again in ${next} ms`;
+      const outcome = parked ? "parked" : next === null ? "done" : next === 0 ? "batch" : `busy, again in ${next} ms`;
       options.turns.push(`${start}-${end} ms ${outcome}`);
     }
     // A batch that ran continues at once; one that found the provider lease busy waits for its turn.
+    if (parked) {
+      input = await nextWake(folderId);
+      continue;
+    }
     if (next === null || (options.oneBatch && next === 0)) return performance.now() - startedAt;
     await Bun.sleep(next);
   }
@@ -178,9 +207,21 @@ const runFolderSyncJob = async (
 const syncFolderWorker = (places = MAIL_PROVIDER_JOB_CONCURRENCY) => {
   type QueuedJob = { input: SyncFolderJobInput; dueAt: number; ended: () => void };
   const queue: QueuedJob[] = [];
+  // The jobs of this worker that parked, by folder: each ends once its woken job ends. Wakes of
+  // earlier tests' jobs are theirs.
+  const parkedEnds = new Map<string, Array<() => void>>();
+  wakes.clear();
   let stopped = false;
   const runPlace = async (): Promise<void> => {
     while (!stopped) {
+      // A release queues the woken job, which any worker runs, as the job queue does, also one
+      // that parked on an earlier worker.
+      for (const [folderId, input] of wakes) {
+        wakes.delete(folderId);
+        const ends = parkedEnds.get(folderId) ?? [];
+        parkedEnds.delete(folderId);
+        queue.push({ input, dueAt: performance.now(), ended: () => ends.forEach((end) => end()) });
+      }
       const index = queue.findIndex((job) => job.dueAt <= performance.now());
       if (index < 0) {
         await Bun.sleep(5);
@@ -188,8 +229,9 @@ const syncFolderWorker = (places = MAIL_PROVIDER_JOB_CONCURRENCY) => {
       }
       const [job] = queue.splice(index, 1);
       let delayMs: number | null = null;
+      let parked = false;
       try {
-        await runSyncFolderJob({
+        const result = await runSyncFolderJob({
           input: job!.input,
           heartbeat: async () => undefined,
           resubmit: (resubmit) => {
@@ -197,10 +239,13 @@ const syncFolderWorker = (places = MAIL_PROVIDER_JOB_CONCURRENCY) => {
             if (resubmit?.input) job!.input = resubmit.input;
           },
         });
+        parked = parkedTurn(result, delayMs);
       } catch {
         delayMs = null;
       }
-      if (delayMs === null) job!.ended();
+      // A parked job is due again once a release wakes it.
+      if (parked) parkedEnds.set(job!.input.folderId, [...(parkedEnds.get(job!.input.folderId) ?? []), job!.ended]);
+      else if (delayMs === null) job!.ended();
       else queue.push({ ...job!, dueAt: performance.now() + delayMs });
     }
   };
@@ -228,7 +273,7 @@ const syncFolderTurn = async (
 ): Promise<{ delayMs: number; input: SyncFolderJobInput } | null> => {
   for (let turn = 0; turn < 50; turn += 1) {
     const turnResult: { next: { delayMs: number; input: SyncFolderJobInput } | null } = { next: null };
-    await runSyncFolderJob({
+    const result = await runSyncFolderJob({
       input,
       heartbeat: async () => undefined,
       resubmit: (resubmit) => {
@@ -236,6 +281,10 @@ const syncFolderTurn = async (
       },
     });
     const { next } = turnResult;
+    if (parkedTurn(result, next)) {
+      input = await nextWake(folderId);
+      continue;
+    }
     // A turn that found the lease busy, for example during body downloads, waits a few seconds.
     if (!next || next.delayMs === 0 || next.delayMs > 10_000) return next;
     await Bun.sleep(next.delayMs);
@@ -2169,6 +2218,191 @@ suite("mail provider lease fairness", () => {
     }
   }, 120_000);
 
+  /** Runs one `mail:sync-folder` job turn and returns the continuation it asked for, or "parked". */
+  const oneFolderTurn = async (input: SyncFolderJobInput): Promise<SyncFolderJobInput | "parked" | null> => {
+    const turnResult: { next: SyncFolderJobInput | null } = { next: null };
+    const result = await runSyncFolderJob({
+      input,
+      heartbeat: async () => undefined,
+      resubmit: (resubmit) => {
+        turnResult.next = resubmit?.input ?? input;
+      },
+    });
+    return parkedTurn(result, turnResult.next) ? "parked" : turnResult.next;
+  };
+
+  test("an Inbox sync the server pushed takes the next turn ahead of twenty waiting folder checks, and they go on after it", async () => {
+    // The listener's job runs as the worker would; it needs the request markers of a running Mail.
+    await ensureHydrationRuntime();
+    const mailbox = await connect("pushed");
+    const inbox = mailbox.folderId(INBOX);
+    const resource = mailbox.remoteResourceId;
+    const take = (waiter: string, priority: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    // A folder check holds the lease, and twenty more wait for it, as on a mailbox with many folders.
+    const holder = await take("sync-folder:holder", "sync");
+    if (!holder.lock) throw new Error("The folder check did not take the provider lease");
+    const folderChecks = Array.from({ length: 20 }, (_, index) => `sync-folder:${index}`);
+    try {
+      for (const waiter of folderChecks) expect((await take(waiter, "sync")).lock).toBeNull();
+      // New mail arrives and IDLE reports it; the Inbox's job asks, finds the lease held, and parks.
+      const [newMail] = deliver(mailbox, 1, "pushed");
+      await enqueueFolderSync(inbox, { trigger: "push", pushed: true });
+      expect(await oneFolderTurn({ folderId: inbox })).toBe("parked");
+
+      // The holder's release wakes it with what it left, push included.
+      await releaseProviderLease(holder.lock);
+      const waiting = await nextWake(inbox);
+      expect(waiting).toEqual({ folderId: inbox, backfill: false, pushed: true, remoteResourceId: resource });
+      // Every folder check asks first for the free lease, and none gets it: the pushed sync is next.
+      // Before the fix it waited behind all of them, like any folder check.
+      for (const waiter of folderChecks) {
+        const turn = await take(waiter, "sync");
+        if (turn.lock) await releaseProviderLease(turn.lock);
+        expect({ waiter, lock: Boolean(turn.lock) }).toEqual({ waiter, lock: false });
+      }
+      expect(await oneFolderTurn(waiting)).toBeNull();
+      expect(await imported(mailbox, newMail!)).toBe(true);
+      // The folder checks go on in their order right after it.
+      const next = await take(folderChecks[0]!, "sync");
+      expect(next.lock).not.toBeNull();
+      if (next.lock) await releaseProviderLease(next.lock);
+    } finally {
+      await releaseProviderLease(holder.lock);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+      );
+    }
+  });
+
+  test("an Inbox the server pushes to without pause takes every other turn, and the folder checks get the rest", async () => {
+    await ensureHydrationRuntime();
+    const mailbox = await connect("pushed-storm");
+    const inbox = mailbox.folderId(INBOX);
+    const resource = mailbox.remoteResourceId;
+    const take = (waiter: string, priority: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    const folderChecks = Array.from({ length: 6 }, (_, index) => `sync-folder:${index}`);
+    const holder = await take("sync-folder:holder", "sync");
+    if (!holder.lock) throw new Error("The folder check did not take the provider lease");
+    try {
+      for (const waiter of folderChecks) expect((await take(waiter, "sync")).lock).toBeNull();
+      // Each pushed batch sees one more message arrive and be pushed while it runs.
+      const pushes: string[] = [];
+      const pushDuringStatus = () => {
+        afterStatus = async (account, path) => {
+          if (account !== mailbox.account || path !== INBOX) return;
+          afterStatus = null;
+          pushes.push(deliver(mailbox, 1, `pushed-storm-${pushes.length}`)[0]!);
+          await enqueueFolderSync(inbox, { trigger: "push", pushed: true });
+          // The waiting checks ask again while the batch holds the lease, as their jobs would, so
+          // none of them is passed over for being away when the lease comes free.
+          for (const waiter of folderChecks) expect((await take(waiter, "sync")).lock).toBeNull();
+        };
+      };
+      await enqueueFolderSync(inbox, { trigger: "push", pushed: true });
+      expect(await oneFolderTurn({ folderId: inbox })).toBe("parked");
+      await releaseProviderLease(holder.lock);
+      let inboxJob: SyncFolderJobInput | "parked" | null = await nextWake(inbox);
+      const order: string[] = [];
+      for (let round = 0; round < 3; round += 1) {
+        // The pushed batch runs and keeps the turn for the push that came meanwhile.
+        pushDuringStatus();
+        try {
+          if (!inboxJob || inboxJob === "parked") throw new Error("The Inbox's job did not continue");
+          inboxJob = await oneFolderTurn(inboxJob);
+        } finally {
+          afterStatus = null;
+        }
+        expect(inboxJob).toEqual({ folderId: inbox, remoteResourceId: resource });
+        order.push("inbox");
+        // Still, the folder check first in line goes next, then the Inbox again.
+        for (const waiter of folderChecks) {
+          const turn = await take(waiter, "sync");
+          if (!turn.lock) continue;
+          order.push(waiter);
+          folderChecks.splice(folderChecks.indexOf(waiter), 1);
+          await releaseProviderLease(turn.lock);
+          break;
+        }
+      }
+      expect(order).toEqual(["inbox", "sync-folder:0", "inbox", "sync-folder:1", "inbox", "sync-folder:2"]);
+      for (const messageId of pushes.slice(0, 2)) expect(await imported(mailbox, messageId)).toBe(true);
+    } finally {
+      afterStatus = null;
+      await releaseProviderLease(holder.lock);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+      );
+    }
+  });
+
+  test("folder jobs of a mailbox whose lease is held ask once each, and each release wakes the next one", async () => {
+    const mailbox = await connect("parked-folders", { extraFolders: 30 });
+    const resource = mailbox.remoteResourceId;
+    const folders = Array.from({ length: 30 }, (_, index) => mailbox.folderId(`Folder-${index}`));
+    const holder = await acquireProviderLease({
+      resource,
+      waiter: `commands:${mailbox.mailboxId}`,
+      priority: "command",
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    if (!holder.lock) throw new Error("The test could not take the provider lease");
+    // The worker on a test clock: a job is due at a virtual time, again after the delay it asks
+    // for, and at once when a release wakes it. No turn waits in real time.
+    const due: Array<{ at: number; input: SyncFolderJobInput }> = folders.map((folderId) => ({ at: 0, input: { folderId } }));
+    let clock = 0;
+    let woken = 0;
+    const runUntil = async (end: number): Promise<{ busy: number; batches: number }> => {
+      const counts = { busy: 0, batches: 0 };
+      for (;;) {
+        for (const [folderId, input] of wakes) {
+          wakes.delete(folderId);
+          woken += 1;
+          due.push({ at: clock, input });
+        }
+        due.sort((left, right) => left.at - right.at);
+        const job = due[0];
+        if (!job || job.at > end) return counts;
+        due.shift();
+        clock = job.at;
+        const turn: { next: { delayMs?: number; input?: SyncFolderJobInput } | null } = { next: null };
+        const result = await runSyncFolderJob({
+          input: job.input,
+          heartbeat: async () => undefined,
+          resubmit: (resubmit) => {
+            turn.next = resubmit ?? {};
+          },
+        });
+        if ("deferred" in result && result.deferred === "SYNC_BUSY") counts.busy += 1;
+        else counts.batches += 1;
+        if (turn.next) due.push({ at: clock + (turn.next.delayMs ?? 0), input: turn.next.input ?? job.input });
+      }
+    };
+    try {
+      // A minute in which a command holds the lease: every folder job asks once and parks.
+      // Polling, each asked every few seconds, more than fifteen times a minute.
+      const held = await runUntil(60_000);
+      expect(held).toEqual({ busy: folders.length, batches: 0 });
+      expect(woken).toBe(0);
+
+      // Each release wakes the folder job next in line, and that one gets the lease at once.
+      await releaseProviderLease(holder.lock);
+      const drained = await runUntil(Number.POSITIVE_INFINITY);
+      expect(drained.busy).toBe(0);
+      expect(drained.batches).toBeGreaterThanOrEqual(folders.length);
+      expect(woken).toBe(folders.length);
+    } finally {
+      await releaseProviderLease(holder.lock);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn", "parked", "woken"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+      );
+    }
+  });
+
   test("a folder check keeps no IMAP connection while a send waits for the mailbox, and the send goes next", async () => {
     const mailbox = await connect("check-before-send");
     const inbox = mailbox.folderId(INBOX);
@@ -2942,17 +3176,22 @@ suite("mail provider lease fairness", () => {
         "every mailbox on the dead host to time out",
         4 * UNREACHABLE_TIMEOUT_MS,
       );
-      const timedOutAt = performance.now();
 
-      // The next scheduled syncs queue all their folders again, and while the mailboxes pause, none connects.
+      // Syncs queued while the mailboxes pause, such as a push's, end at once without connecting
+      // and without holding a place.
       const attemptsBefore = unreachableAttempts.length;
-      for (const folderId of deadFolders) void worker.submit(folderId);
+      await Promise.all(deadFolders.map((folderId) => worker.submit(folderId)));
       await syncHealthy("during-pause");
       expect(unreachableAttempts.length).toBe(attemptsBefore);
 
-      // After their pauses, the waiting syncs try the host again, one mailbox at a time.
+      // After their pauses, the next scheduled syncs try the host again, one mailbox at a time.
+      // The test ends each pause instead of waiting for it: the breaker keeps the window it
+      // remembers, as when its time has passed.
       mostUnreachableWaiting = 0;
-      await Bun.sleep(Math.max(0, LONGEST_FIRST_PAUSE_MS - (performance.now() - timedOutAt)));
+      for (const resource of resourceIds) {
+        await redis.send("HSET", [`mail:provider-lease-line:{${resource}}:breaker`, "until", String(Date.now() - 1)]);
+      }
+      for (const folderId of deadFolders) void worker.submit(folderId);
       await waitFor(
         async () => unreachableAttempts.length > attemptsBefore,
         "a sync to try the dead host again",
@@ -2968,21 +3207,30 @@ suite("mail provider lease fairness", () => {
     } finally {
       for (const mailbox of onDeadHost) unreachable.delete(mailbox.account);
       await worker.stop();
+      // The stopped worker's jobs have ended, as in a process that stopped: they no longer wait in
+      // their mailboxes' lines. Their breakers stay as they are.
+      for (const mailbox of onDeadHost) {
+        await redis.send(
+          "DEL",
+          ["places", "present", "priorities", "turn", "parked", "woken", "entered"].map(
+            (key) => `mail:provider-lease-line:{${mailbox.remoteResourceId}}:${key}`,
+          ),
+        );
+      }
     }
 
-    // IMAP push reaches the host again while a sync job waits out a pause: the job, which a sync
-    // requested meanwhile would join, runs within seconds instead of after the pause.
+    // IMAP push reaches the host again during a pause: it closes the breaker, and the sync it
+    // queues runs at once instead of after the pause.
     const recovered = onDeadHost[0]!;
     expect(await recordProviderFailure(recovered.remoteResourceId, connectTimeout())).toBeGreaterThanOrEqual(15_000);
     const [afterOutage] = deliver(recovered, 1, "after-outage");
     const recovery = syncFolderWorker();
     try {
-      const synced = recovery.submit(recovered.folderId(INBOX));
-      await Bun.sleep(500);
+      await recovery.submit(recovered.folderId(INBOX));
       expect(await imported(recovered, afterOutage!)).toBe(false);
       await recordProviderReachable(recovered.remoteResourceId);
       const reachableAt = performance.now();
-      await synced;
+      await recovery.submit(recovered.folderId(INBOX));
       expect(performance.now() - reachableAt).toBeLessThan(6_000);
       expect(await imported(recovered, afterOutage!)).toBe(true);
     } finally {
@@ -2990,7 +3238,62 @@ suite("mail provider lease fairness", () => {
     }
   }, 90_000);
 
-  test("the provider breaker pauses for one connection timeout, doubles up to a minute, and its waiters notice when the provider answers", async () => {
+  test("a mailbox that may probe its provider parks no waiter, and a provider that answers again wakes the waiter parked before", async () => {
+    const resource = crypto.randomUUID();
+    const breaker = `mail:provider-lease-line:{${resource}}:breaker`;
+    const ask = (waiter: string, park?: boolean) =>
+      acquireProviderLease({
+        resource,
+        waiter,
+        priority: "sync",
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+        ...(park ? { park: () => JSON.stringify({ folderId: waiter }) } : {}),
+      });
+    const woken: string[] = [];
+    const productionWaker = onParkedProviderWaiterWake(async (waiter) => {
+      woken.push(waiter);
+    });
+    // Work that holds the lease without a turn in line, such as a lifecycle change.
+    const holder = await mailProviderOperationMutex().acquire({ resource, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    if (!holder) throw new Error("The test could not take the provider lease");
+    try {
+      // The breaker's window ended: the waiter next in line may probe the provider. It finds the
+      // lease held and keeps asking; the folder sync behind it asks again too instead of parking.
+      // Parked, it would later take the lease on the breaker state it saw before it parked, and
+      // its failed try would free this process's probe for another mailbox.
+      await redis.send("HSET", [breaker, "window", "15000", "until", String(Date.now() - 1)]);
+      expect(await ask("commands:first")).toMatchObject({ lock: null });
+      expect(await ask("sync-folder:behind", true)).toMatchObject({ lock: null, parked: false });
+
+      // Without a breaker, a folder sync that finds the lease held parks.
+      await redis.send("DEL", [breaker]);
+      // The waiters that asked before have gone, as jobs that ended.
+      for (const key of ["places", "present"]) {
+        await redis.send("ZREM", [`mail:provider-lease-line:{${resource}}:${key}`, "commands:first", "sync-folder:behind"]);
+      }
+      expect(await ask("sync-folder:parked", true)).toMatchObject({ lock: null, parked: true });
+      // The provider stops answering, and the lease ends without a release that wakes it.
+      await recordProviderFailure(resource, connectTimeout());
+      await mailProviderOperationMutex().release(holder);
+      expect(woken).toEqual([]);
+      // IMAP push reaches the provider again: the parked waiter goes on now, not with the scheduler.
+      await recordProviderReachable(resource);
+      expect(woken).toEqual(["sync-folder:parked"]);
+    } finally {
+      onParkedProviderWaiterWake(productionWaker);
+      await mailProviderOperationMutex()
+        .release(holder)
+        .catch(() => false);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn", "parked", "woken", "breaker", "entered"].map(
+          (key) => `mail:provider-lease-line:{${resource}}:${key}`,
+        ),
+      );
+    }
+  });
+
+  test("the provider breaker pauses for one connection timeout, doubles up to fifteen minutes, and its waiters notice when the provider answers", async () => {
     const resource = crypto.randomUUID();
     const take = (waiter = "first") =>
       acquireProviderLease({ resource, waiter, priority: "sync", ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
@@ -3003,20 +3306,26 @@ suite("mail provider lease fairness", () => {
     expect(free.lock).not.toBeNull();
     await releaseProviderLease(free.lock!);
 
-    for (const windowMs of [15_000, 30_000, 60_000, 60_000]) {
+    // Before, the window stopped growing at one minute, so a server that drops every connection
+    // attempt was tried again every minute for as long as it stayed unreachable.
+    for (const windowMs of [15_000, 30_000, 60_000, 120_000, 240_000, 480_000, 900_000, 900_000]) {
       // Up to a quarter of the window is added at random.
       const pauseMs = await recordProviderFailure(resource, connectTimeout());
       expect(pauseMs).toBeGreaterThanOrEqual(windowMs);
       expect(pauseMs).toBeLessThanOrEqual(windowMs * 1.25);
+      expect(await providerBreakerOpenForMs(resource)).toBeGreaterThan(windowMs - 1_000);
       const turn = await take();
       expect(turn.lock).toBeNull();
-      // The waiter asks again within the lease line's longest retry, not only when the pause ends.
+      // The turn says the provider is unreachable, not busy, and for how long.
+      if (turn.lock === null) expect(turn.unreachableForMs).toBeGreaterThan(windowMs - 1_000);
+      // A waiter that keeps waiting asks again within the lease line's longest retry, not only when the pause ends.
       expect(turn.retryAfterMs).toBeLessThanOrEqual(4_500);
     }
 
     // Once the provider answers again, the waiter takes the lease at its next try, and the next
     // timeout pauses for one connection timeout again.
     await recordProviderReachable(resource);
+    expect(await providerBreakerOpenForMs(resource)).toBe(0);
     const reachable = await take();
     expect(reachable.lock).not.toBeNull();
     await releaseProviderLease(reachable.lock!);

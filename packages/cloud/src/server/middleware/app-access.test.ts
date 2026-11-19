@@ -313,7 +313,7 @@ test("event-only access watches have no initial recheck or idle timer", async ()
   }
 });
 
-test("SSE entry guards retain polling unless an event-complete fixed rule opts in", async () => {
+test("SSE entry guards retain periodic checks for every rule and event mode", async () => {
   const { bindResourceAppAccess } = await import("../../_internal/app-access-resources");
   const { compileAppAccess } = await import("../../contracts/app-access");
   authenticate(authority);
@@ -345,13 +345,43 @@ test("SSE entry guards retain polling unless an event-complete fixed rule opts i
       });
       const response = await server.request("/");
       expect(response.status).toBe(200);
-      expect(intervals.mock.calls.filter(([, ms]) => ms === 50_000)).toHaveLength(eventOnly && !resource ? 0 : 1);
+      expect(intervals.mock.calls.filter(([, ms]) => ms === 50_000)).toHaveLength(1);
       await response.body!.cancel();
     } finally {
       intervals.mockRestore();
       unbind();
     }
   }
+});
+
+test("an event-only socket starts the 50-second app guard interval", async () => {
+  authenticate(authority);
+  spies.push(
+    spyOn(registry, "getApp").mockResolvedValue({
+      id: "socket-interval",
+      name: "Socket interval",
+      description: "Fixture",
+      icon: "ti ti-test-pipe",
+      baseUrl: "http://socket-interval:3000",
+      routes: ["/"],
+      access: appAccess.signedIn(),
+    }),
+  );
+  spies.push(spyOn(accessEvents, "subscribeAppAccessChanged").mockImplementation(() => () => {}));
+  const intervals = spyOn(globalThis, "setInterval");
+  spies.push(intervals);
+  const server = new Hono<AuthContext>().use(auth.requireRole("*")).get("/", async (c) => {
+    const events = await guardAppAccessSocket(c, "socket-interval", {}, { eventOnly: true });
+    const socket = new WSContext({ readyState: 1, send: () => {}, close: () => {} });
+    events.onOpen?.(new Event("open"), socket);
+    try {
+      expect(intervals.mock.calls.filter(([, ms]) => ms === 50_000)).toHaveLength(1);
+    } finally {
+      events.onClose?.(new CloseEvent("close"), socket);
+    }
+    return c.text("opened");
+  });
+  expect((await server.request("/")).status).toBe(200);
 });
 
 test("an event-only socket checks credentials again between handshake and subscription", async () => {
