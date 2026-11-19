@@ -124,7 +124,7 @@ export type SharedTextProviderOptions<Event = never, Participant = never> = {
 /** Consecutive storage refusals before termination; replay alone does not reset the budget. */
 export const MAX_SHARED_TEXT_STORAGE_RETRIES = 5;
 
-/** One awareness expiry window without an echo means this connection is no longer live. */
+/** One awareness expiry window bounds connection/replay readiness and unacknowledged input. */
 export const SHARED_TEXT_ACK_TIMEOUT_MS = awarenessProtocol.outdatedTimeout;
 
 /**
@@ -166,6 +166,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   let isTerminated = false;
   let needsReopen = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let connectionTimer: ReturnType<typeof setTimeout> | null = null;
   let busyTimer: ReturnType<typeof setTimeout> | null = null;
   let busyAttempts = 0;
   let busyRecovery = false;
@@ -365,9 +366,15 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     busyTimer = null;
   };
 
+  const clearConnectionTimer = () => {
+    if (connectionTimer) clearTimeout(connectionTimer);
+    connectionTimer = null;
+  };
+
   const terminate = (error: SharedTextProviderError) => {
     if (isTerminated) return;
     clearBusy();
+    clearConnectionTimer();
     if (error.reopen) needsReopen = true;
     if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
     acknowledgementTimer = null;
@@ -390,6 +397,32 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     opts.onFatal?.(error);
   };
 
+  const retryTimedOutConnection = (socket: WebSocket) => {
+    if (isDisposed || isTerminated || ws !== socket) return;
+    // A half-open socket need not deliver a close event. Fence its queued
+    // callbacks ourselves; the document and original pending bases survive.
+    ws = null;
+    clearBusy();
+    clearConnectionTimer();
+    if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
+    acknowledgementTimer = null;
+    replayReady = false;
+    localStateSent = false;
+    publishedAt.clear();
+    opts.onError?.({
+      code: "SYNC_TIMEOUT",
+      message: "Synchronization timed out. Your changes remain here; retry or copy your text.",
+      docId: activeDocId,
+    });
+    opts.onConnectionChange?.(false);
+    try {
+      socket.close();
+    } catch {
+      /* Reconnect still owns the pending input. */
+    }
+    if (!isDisposed && !isTerminated) reconnectTimer = setTimeout(connect, opts.reconnectDelayMs(failedConnects++));
+  };
+
   const watchAcknowledgements = () => {
     if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
     acknowledgementTimer = null;
@@ -400,25 +433,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     acknowledgementTimer = setTimeout(
       () => {
         acknowledgementTimer = null;
-        if (isDisposed || isTerminated || !ws) return;
-        const socket = ws;
-        // Do not depend on the half-open socket delivering its close event.
-        ws = null;
-        replayReady = false;
-        localStateSent = false;
-        publishedAt.clear();
-        opts.onError?.({
-          code: "SYNC_TIMEOUT",
-          message: "Synchronization timed out. Your changes remain here; retry or copy your text.",
-          docId: activeDocId,
-        });
-        opts.onConnectionChange?.(false);
-        try {
-          socket.close();
-        } catch {
-          /* Reconnect still owns the pending input. */
-        }
-        reconnectTimer = setTimeout(connect, opts.reconnectDelayMs(failedConnects++));
+        if (ws) retryTimedOutConnection(ws);
       },
       Math.max(0, oldest + SHARED_TEXT_ACK_TIMEOUT_MS - Date.now()),
     );
@@ -561,6 +576,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       return true;
     }
     generation = payload.generation;
+    clearConnectionTimer();
     awarenessPeerId = typeof payload.peerId === "string" ? payload.peerId : null;
     replayReady = true;
     if (typeof payload.cursor === "string") lastCursor = payload.cursor;
@@ -721,6 +737,10 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     eventStreamEventQueue = Promise.resolve();
     const socket = new WebSocket(opts.transport.url);
     ws = socket;
+    // OPEN alone does not establish a usable editor. A stalled handshake or
+    // replay must retry even when no update has been published yet.
+    clearConnectionTimer();
+    connectionTimer = setTimeout(() => retryTimedOutConnection(socket), SHARED_TEXT_ACK_TIMEOUT_MS);
 
     socket.onopen = () => {
       if (ws !== socket) return;
@@ -739,6 +759,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     socket.onclose = (event) => {
       if (ws !== socket) return;
       clearBusy();
+      clearConnectionTimer();
       if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
       acknowledgementTimer = null;
       publishedAt.clear();
@@ -833,6 +854,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     },
     dispose: () => {
       clearBusy();
+      clearConnectionTimer();
       isDisposed = true;
       actionHistory?.dispose();
       if (reconnectTimer) clearTimeout(reconnectTimer);

@@ -5,7 +5,7 @@ section: Frontend
 order: 870
 description: Update an open page from its application's live channels while preserving reload and recovery behavior.
 tags: [realtime, websocket, cursors]
-updated: 2026-10-19
+updated: 2026-11-18
 ---
 
 # Realtime UI
@@ -54,6 +54,14 @@ onMount(() => {
   for it, they collapse into one `resync`.
 - `resync` loads the canonical state again. Events that arrive meanwhile are
   applied after it. A reconnect while it runs resumes after its cursor.
+- `connected` reports whether the server confirmed this subscription on an
+  open socket, independently of pending `apply` or `resync` work. It starts
+  `false` without an initial callback and reports only changes. Confirmation
+  reports `true` even while work runs; a disconnect or hidden-tab pause reports
+  `false` immediately. Reconnect reports `true` only after a new confirmation.
+  Before `revoked` or `unavailable`, it reports a final `false` if needed;
+  no connection callbacks follow that terminal notification.
+  Calling `close()`, including during disposal, silences all later callbacks.
 - `caughtUp` reports whether the subscription has applied every update the
   server sent. It starts `false` and is `true` while the socket is open, the
   server has confirmed the subscription, and no event or `resync` waits or
@@ -64,6 +72,19 @@ onMount(() => {
   socket was refused, or `apply` or `resync` failed four times (after 1, 3,
   and 9 seconds). A subscription that its owner closed reports nothing, even
   when an `apply` or a retry was still pending.
+
+For a "Not current" indicator that should stay quiet during a long `apply`,
+use `connected` and `unavailable`, rather than `caughtUp`. For example, add
+these handlers to the subscription above, with `setNotCurrent` from a Solid
+signal initialized to `false`:
+
+```ts
+connected: (connected) => setNotCurrent(!connected),
+unavailable: () => setNotCurrent(true),
+```
+
+A recoverable disconnect clears the indicator after the server confirms the
+subscription again. Handle a terminal `revoked` separately, as above.
 
 The client owns the socket, visibility, reconnect backoff, connection
 deadlines, recovery when the tab or network returns, cursors, retries, and

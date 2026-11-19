@@ -867,6 +867,27 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("every toast text stands exactly once in the DOM: a short message reads as the title in place, a long one stays body text", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const texts = ["Link copied", "This browser now signs out after 10 minutes without input.", "Budget 2027.xlsx", "Export finished"];
+    toast.success(texts[0]!, { duration: 0 });
+    toast(texts[1]!, { duration: 0 });
+    toast.success(texts[2]!, { title: texts[3], duration: 0 });
+    const rail = dom.document.querySelector("[data-k2b-toast-container]")!;
+    // Hidden elements count too: a screen reader, a text search, and a test all see the DOM, not the paint.
+    for (const text of texts) expect(rail.textContent!.split(text).length - 1).toBe(1);
+    const cards = Array.from(rail.querySelectorAll<HTMLElement>("[data-k2b-toast]"));
+    expect(cards.map((card) => card.querySelector<HTMLElement>(".k2b-toast__content")?.dataset.short ?? null)).toEqual([
+      "true",
+      null,
+      null,
+    ]);
+    toast.dismissAll();
+    dom.cleanup();
+  });
+
   test("a toast shows a title only when the caller passes one", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";

@@ -4,10 +4,12 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
-// Choice cards follow the edge contract: a 2 px edge inside the card in every
-// state, so the card and its text never move. Rest is grey, hover darkens the
-// fill only, focus turns the edge strong blue, a chosen card takes a light blue
-// edge and fill, and focus on a chosen card is strong blue again. No shadow.
+// Choice cards follow the edge contract: a 1 px edge inside the card, and a
+// chosen card draws a second line inside it (2 px in all), so the card and its
+// text never move. Rest is grey, hover darkens the edge a step and the fill,
+// focus turns the edge strong blue and adds a flat ring outside, a chosen card
+// takes a blue edge and a light blue fill, and focus on a chosen card adds the
+// shared focus ring with a gap. No depth shadow.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const TEST_TIMEOUT = 30_000;
@@ -56,9 +58,11 @@ const probes = {
   selected: "color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-share), var(--k2b-surface))",
   surface: "var(--k2b-surface)",
   hover: "var(--k2b-edge-hover-bg)",
+  edgeHover: "var(--k2b-edge-hover)",
   selectedFill: "color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-fill), var(--k2b-surface))",
   selectedHover: "color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-hover-fill), var(--k2b-surface))",
   danger: "var(--k2b-edge-danger)",
+  disabled: "var(--k2b-edge-disabled)",
   muted: "var(--k2b-surface-muted)",
 };
 
@@ -112,7 +116,10 @@ const read = (page: Page, selector: string, index: number) =>
         probe,
         edgeWidth: border + inset.reduce((sum, shadow) => Math.max(sum, Number(shadow[5])), 0),
         edgeColors: [...edgeColors],
-        outerShadows: shadows.filter((shadow) => !shadow[6]).length,
+        // Outer layers that paint: only the flat focus ring (no offset, no blur, 3 px spread) may.
+        outerShadows: shadows.filter((shadow) => !shadow[6] && !rgba(shadow[1]!).endsWith(",0")).length,
+        depth: shadows.filter((shadow) => !shadow[6] && (shadow[2] !== "0" || shadow[3] !== "0" || shadow[4] !== "0")).length,
+        ring: shadows.filter((shadow) => !shadow[6] && !rgba(shadow[1]!).endsWith(",0")).map((shadow) => Number(shadow[5]))[0] ?? 0,
         outline: s.outlineStyle === "none" || parseFloat(s.outlineWidth) === 0 ? "none" : s.outlineStyle,
         fill: rgba(s.backgroundColor),
         card: box(card),
@@ -144,7 +151,7 @@ for (const theme of ["light", "dark"] as const)
   describe(`choice cards in ${theme}`, () => {
     for (const card of cards)
       test(
-        `${card.name}: one 2 px edge in rest, hover, focus, chosen and chosen with focus, without shadow or movement`,
+        `${card.name}: 1 px edge, 2 px when chosen, a flat ring on focus, without depth or movement`,
         async () => {
           const page = await load(theme);
           try {
@@ -152,14 +159,14 @@ for (const theme of ["light", "dark"] as const)
             await settled(page);
             const rest = await read(page, card.selector, card.rest);
             const p = rest.probe;
-            expect(rest.edgeWidth).toBe(2);
+            expect(rest.edgeWidth).toBe(1);
             expect(rest.edgeColors).toEqual([p.edge!]);
             expect(rest.fill).toBe(p.surface!);
 
             await hoverInPlace(page.locator(card.selector).nth(card.rest));
             await settled(page);
             const hover = await read(page, card.selector, card.rest);
-            expect(hover.edgeColors).toEqual([p.edge!]);
+            expect(hover.edgeColors).toEqual([p.edgeHover!]);
             expect(hover.fill).toBe(p.hover!);
 
             const chosen = await read(page, card.selector, card.chosen);
@@ -179,7 +186,7 @@ for (const theme of ["light", "dark"] as const)
             const focus = await read(page, card.selector, card.rest);
             expect(focus.focusVisible).toBe(true);
             expect(focus.edgeColors).toEqual([p.focus!]);
-            expect(focus.edgeWidth).toBe(2);
+            expect(focus.edgeWidth).toBe(1);
             expect(focus.fill).toBe(p.surface!);
 
             await page.locator(focusTarget).nth(card.chosen).focus();
@@ -187,12 +194,16 @@ for (const theme of ["light", "dark"] as const)
             const chosenFocus = await read(page, card.selector, card.chosen);
             expect(chosenFocus.focusVisible).toBe(true);
             expect(chosenFocus.edgeColors).toEqual([p.focus!]);
+            expect(chosenFocus.edgeWidth).toBe(2);
             expect(chosenFocus.fill).toBe(p.selectedFill!);
 
-            for (const state of [rest, hover, chosen, focus, chosenFocus]) {
-              expect(state.outerShadows).toBe(0);
-              expect(state.outline).toBe("none");
-            }
+            for (const state of [rest, hover, chosen, focus, chosenFocus]) expect(state.depth).toBe(0);
+            for (const state of [rest, hover, chosen, focus]) expect(state.outline).toBe("none");
+            for (const state of [rest, hover, chosen, chosenFocus]) expect(state.outerShadows).toBe(0);
+            expect(focus.outerShadows).toBe(1);
+            expect(focus.ring).toBe(3);
+            // A chosen card already has the strong edge: focus adds the shared ring with a gap.
+            expect(chosenFocus.outline).toBe("solid");
             // The card and its first text line stay on the same pixels in every state.
             expect(hover.card).toBe(rest.card);
             expect(hover.text).toBe(rest.text);
@@ -220,7 +231,7 @@ for (const theme of ["light", "dark"] as const)
       );
 
     test(
-      "an invalid checkbox card has a red edge, a disabled card no edge on a muted fill, and the input variant is the same card",
+      "an invalid checkbox card has a red edge and ring, a disabled card a light edge on a muted fill, and the input variant is the same card",
       async () => {
         const page = await load(theme);
         try {
@@ -234,8 +245,10 @@ for (const theme of ["light", "dark"] as const)
           expect(input.fill).toBe(plain.fill);
           expect(invalid.edgeColors).toEqual([p.danger!]);
           expect(invalid.fill).toBe(p.surface!);
+          expect(invalid.outerShadows).toBe(1);
+          expect(invalid.ring).toBe(3);
           for (const state of [locked, lockedChoice]) {
-            expect(state.edgeColors.every((color) => color.endsWith(",0"))).toBe(true);
+            expect(state.edgeColors).toEqual([p.disabled!]);
             expect(state.outerShadows).toBe(0);
           }
         } finally {

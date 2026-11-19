@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 import { sql } from "@k2b/cloud";
 import { z } from "zod";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { FILING_FOLDER_ROLES } from "../../src/folder-display-rules";
 import type { MailRequestContext } from "../../src/service/auth";
@@ -9,6 +10,7 @@ import { createMailbox } from "../../src/service/mailboxes";
 import { hydrateMessageFromSource } from "../../src/service/message-hydration";
 import { getConversationViewCounts, listConversations, listFolders } from "../../src/service/messages";
 import { ingestEnvelope } from "../../src/service/sync-runtime";
+import { loadMailboxListView, resolveWorkspaceRequest } from "../../src/service/workspace";
 import { anchor, planLargeMailbox, seedLargeMailbox } from "./large-mailbox";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -161,6 +163,30 @@ suite("large mailbox fixture persistence", () => {
     expect(counts.data.waiting).toBe(follows.filter((c) => c.status === "waiting" && !c.snoozedUntil).length);
     expect(counts.data.snoozed).toBe(follows.filter((c) => c.snoozedUntil).length);
     expect(counts.data.done).toBe(plan.conversations.filter((c) => c.status === "done").length);
+  }, 30000);
+  test("large mailbox folder switches have a bounded SQL budget", async () => {
+    const id = await mailbox("Folder switch SQL");
+    const plan = planLargeMailbox({ seed: 20261117, anchor, messages: 1800, conversations: 600, folders: 12 });
+    await seedLargeMailbox(sql, plan, { mailboxId: id, userIds: [userId] });
+    const meter = await meterSql();
+    try {
+      for (const folder of [plan.folders[0]!, plan.folders[2]!]) {
+        const statements = await meter.during(async () => {
+          const resolved = await resolveWorkspaceRequest(new URL(`/app/mail/${id}?folder=${folder.id}`, "https://cloud.test"), id);
+          if (!resolved) throw new Error("Fixture folder did not resolve");
+          const result = await loadMailboxListView({ context, mailboxId: id, ...resolved, listMode: "conversations" });
+          if (!result.ok) throw new Error(result.error.message);
+          expect(result.data.listItems).toHaveLength(50);
+          expect(result.data.listError).toBeNull();
+        });
+
+        // Includes folder resolution, authorization and the complete 50-row list projection.
+        // Pin the service path independently of the browser fixture and transport middleware.
+        expect(statements).toHaveLength(20);
+      }
+    } finally {
+      await meter.close();
+    }
   }, 30000);
   test("fixture covers every persisted ingest/hydration table and non-null column", async () => {
     const ingestedMailbox = await mailbox("Ingest parity");

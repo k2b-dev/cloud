@@ -55,7 +55,10 @@ export function createCodeVersionCardStore(live: AssistantLiveHub, initial: read
           batch,
           batch.filter((ref) => pages.has(key(ref))).map((ref) => ref.versionId),
         );
-      })().catch(() => batch.map((ref) => ({ ...ref, state: "failed" as const })));
+      })().catch(() => {
+        console.warn("Code version cards could not be loaded", { reason: "loader_failed" });
+        return batch.map((ref) => ({ ...ref, state: "failed" as const }));
+      });
       if (disposed) return false;
       let ok = true,
         superseded = false;
@@ -115,7 +118,8 @@ export function createCodeVersionCardStore(live: AssistantLiveHub, initial: read
       const id = key(ref),
         current = refs.get(id);
       refs.set(id, { ref, count: (current?.count ?? 0) + 1 });
-      if (!isServer && untrack(() => entries()[id]) === undefined) queue(ref);
+      // A failed SSR snapshot gets one browser attempt, even when both deferred controllers retain it.
+      if (!isServer && untrack(() => entries()[id] === undefined || (!current && entries()[id] === "failed"))) queue(ref);
       let retained = true;
       return () => {
         if (!retained) return;

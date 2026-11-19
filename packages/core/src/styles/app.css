@@ -168,11 +168,14 @@
 }
 
 /* Account sections are view tabs, and the notification views are a segment on
-   a grey track: the current one takes the selected edge and fill in the app
-   ink, like `ViewTabs` and `SegmentedControl`. No shadow, and the box stays. */
+   a grey track: the current tab takes the selected fill in the app ink like
+   `ViewTabs`, the current segment also its 1 px edge like `SegmentedControl`.
+   No shadow, and the box stays. */
 .k2b-ui .account-tabs [aria-current="page"] {
   color: var(--k2b-app-workspace-active);
   background: color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));
+}
+.k2b-ui .account-tabs--segment [aria-current="page"] {
   box-shadow: inset 0 0 0 var(--k2b-edge-width) color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface));
 }
 .k2b-ui .account-tabs--segment {

@@ -674,7 +674,7 @@ export const renderComposeSignatureBlock = (params: {
   context: ComposeRenderContext;
   format: "plain" | "markdown";
   logoAltText?: string;
-}): Result<ComposeSignature> => {
+}): Result<Omit<ComposeSignature, "mailHtml">> => {
   if (params.signature === null) return ok({ html: params.format === "plain" ? null : "", text: "" });
   const valid = validateComposeTemplateSource(params.signature);
   if (!valid.ok) return fail(composeRenderFailure("signatureFailed"));

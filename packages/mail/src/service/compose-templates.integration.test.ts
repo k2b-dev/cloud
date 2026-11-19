@@ -322,6 +322,20 @@ const draftModeTests = (draftEditMode: "shared" | "lock") => {
       expect(preview.ok).toBe(true);
       if (!preview.ok) throw new Error(preview.error.message);
       expect(preview.data.html).toContain(`src="data:image/png;base64,${input.content}"`);
+      // The composer shows the signature exactly as the sent HTML carries it: same wrapper, same signature block.
+      const signatureInput = { senderIdentityId, signatureTemplateId: signature.data.id, format: "markdown" as const };
+      const composed = await previewComposeSignature({ context: owner, mailboxId, input: signatureInput });
+      if (!composed.ok || !composed.data.mailHtml || !preview.data.html) throw new Error("Missing sent signature");
+      const sentSignature = (html: string) => ({
+        wrapper: html.slice(0, html.indexOf(">") + 1),
+        signature: html.slice(html.indexOf('<div class="mail-signature"'), html.lastIndexOf("</div>")),
+      });
+      expect(sentSignature(composed.data.mailHtml)).toEqual(sentSignature(preview.data.html));
+      expect(composed.data.mailHtml).toContain(`src="data:image/png;base64,${input.content}"`);
+      expect(await previewComposeSignature({ context: owner, mailboxId, input: { ...signatureInput, format: "plain" } })).toMatchObject({
+        ok: true,
+        data: { html: null, mailHtml: null },
+      });
       expect(preview.data.text).toContain(`Compose ${suffix}`);
       expect(await removeMailboxComposeLogo({ context: owner, mailboxId })).toEqual({ ok: true, data: { logo: null } });
       expect(await removeMailboxComposeLogo({ context: owner, mailboxId })).toEqual({ ok: true, data: { logo: null } });

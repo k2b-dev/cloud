@@ -806,8 +806,9 @@ for (const viewport of ["desktop", "phone"] as const)
             };
           });
           expect(normal.edge).toBe(normal.expected);
-          expect(normal.edgeWidth).toBe("2px");
-          expect(normal.shadow).toBe("none");
+          expect(normal.edgeWidth).toBe("1px");
+          // The flat focus ring outside the edge: spread only, no offset or blur.
+          expect(normal.shadow).toMatch(/ 0px 0px 0px 3px$/);
           expect(normal.height).toBe(26);
           await target.emulateMedia({ forcedColors: "active" });
           await settled(target);

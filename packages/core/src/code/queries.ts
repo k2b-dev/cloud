@@ -1,9 +1,30 @@
 import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext, capabilityPage } from "@k2b/cloud/contracts";
+import { logger } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
-import { ZodError } from "zod";
+import { ZodError, type z } from "zod";
 import { type CodeContext, CodeDataError, CodeOwnerUnavailableError } from "./access";
 import { CodeJobError } from "./job-errors";
 import { CodeVersionDecisionError, CodeVersionError } from "./versions";
+
+class CodeQueryOutputError extends Error {
+  constructor(
+    readonly query: string,
+    readonly issues: Array<{ code: string; path: PropertyKey[] }>,
+  ) {
+    super("Invalid Code query output.");
+  }
+}
+
+/** Mark validation of service output separately from untrusted query input. */
+export function parseCodeQueryOutput<T>(query: string, schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value);
+  if (!result.success)
+    throw new CodeQueryOutputError(
+      query,
+      result.error.issues.map(({ code, path }) => ({ code, path })),
+    );
+  return result.data;
+}
 
 const contextFor = (context: CapabilityExecutionContext): CodeContext => {
   if (!context.authority) throw new CodeDataError("FORBIDDEN", "Code requires request authority.");
@@ -27,6 +48,10 @@ export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: 
         status: error.code === "code_job_request_limit" ? (400 as const) : (409 as const),
         message: error.code === "code_job_busy" ? "Code runners are busy. Retry later." : error.message,
       });
+    if (error instanceof CodeQueryOutputError) {
+      logger("core:code-queries").error("Code query output validation failed", { query: error.query, issues: error.issues });
+      return fail(err.internal("Invalid Code query output."));
+    }
     if (error instanceof ZodError) return fail(err.badInput("Invalid Code input."));
     if (error instanceof CodeVersionDecisionError)
       return fail({

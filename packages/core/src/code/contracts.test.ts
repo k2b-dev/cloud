@@ -8,6 +8,7 @@ import {
   CodeCheckedVersionManifestSchema,
   type User,
 } from "@k2b/cloud/contracts";
+import * as logging from "@k2b/cloud/services";
 import { z } from "zod";
 import { aiCapabilities } from "../capabilities";
 import { type CodeContext, CodeOwnerUnavailableError, codePerson, readCodeOwner } from "./access";
@@ -21,7 +22,7 @@ import {
   CodeSourceFilesSchema,
   codeQueryContracts,
 } from "./contracts";
-import { runCodeQuery } from "./queries";
+import { parseCodeQueryOutput, runCodeQuery } from "./queries";
 import { readModelNames } from "./read-model/names";
 import { codeSourceHash, codeTextChunk, createCode } from "./store";
 import { CodeVersionError } from "./versions";
@@ -333,6 +334,30 @@ test("owner-provider failures return a recoverable Query error", async () => {
   if (!result.ok) {
     expect(result.error.code).toBe("INTERNAL");
     expect(result.error.message).toContain("Try again");
+  }
+});
+
+test("query input errors remain 400 while output contract errors return 500 with data-free diagnostics", async () => {
+  const error = spyOn(console, "error").mockImplementation(() => {});
+  const logger = spyOn(logging, "logger").mockReturnValue({ error, warn: () => {}, info: () => {}, debug: () => {} });
+  const schema = z.object({ operation: z.literal("read") });
+  const privateValue = "private-query-payload";
+  try {
+    const input = await runCodeQuery(context, async () => schema.parse({ operation: privateValue }));
+    expect(input).toMatchObject({ ok: false, error: { status: 400, message: "Invalid Code input." } });
+    expect(error).not.toHaveBeenCalled();
+    const output = await runCodeQuery(context, async () => parseCodeQueryOutput("code.version.cards", schema, { operation: privateValue }));
+    expect(output).toMatchObject({ ok: false, error: { status: 500, message: "Invalid Code query output." } });
+    expect(error).toHaveBeenCalledWith("Code query output validation failed", {
+      query: "code.version.cards",
+      issues: [{ code: "invalid_value", path: ["operation"] }],
+    });
+    expect(JSON.stringify(error.mock.calls)).not.toContain(privateValue);
+    expect(JSON.stringify(output)).not.toContain(privateValue);
+    expect(parseCodeQueryOutput("code.version.cards", schema, { operation: "read" })).toEqual({ operation: "read" });
+  } finally {
+    logger.mockRestore();
+    error.mockRestore();
   }
 });
 

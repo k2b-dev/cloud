@@ -10,7 +10,9 @@ import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { MailSearchExpression, MailWorkspacePreference } from "../contracts";
 import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
 import { mailTagSearch } from "../search-url";
+import { renderComposeContent, renderComposeSignatureBlock } from "../service/compose-renderer";
 import { readMailHeadFilters } from "./_components/mail-head-filters";
+import { buildMessageDocument } from "./_components/mail-message-document";
 import { measureGeometry, measurements, measureStrip, tabsSelector } from "./mail-shell-metrics.browser-source";
 
 setDefaultTimeout(20_000);
@@ -91,6 +93,7 @@ type Strip = {
   rightInset: number;
   labels: { text: string | null; scroll: number; width: number }[];
 };
+let largeMailbox = false;
 let css = "";
 let controller = "";
 let navigation = "";
@@ -119,6 +122,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
   const html = renderToString(() =>
     createComponent(Fixture, {
       source: `${url.pathname}${url.search}`,
+      largeMailbox,
       locale,
       theme,
       // This opt-in exercises the same request-cookie reader as Mail's SSR page
@@ -159,8 +163,8 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
 beforeAll(async () => {
   setSystemTime(new Date(MAIL_SHELL_NOW));
   const builds = await Promise.all(
-    [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")].map((entry) =>
-      Bun.build({ entrypoints: [entry], plugins: [tailwind] }),
+    [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")].map((entry, index) =>
+      Bun.build({ entrypoints: [entry], plugins: [tailwind], minify: largeMailbox && index === 0 }),
     ),
   );
   for (const build of builds) if (!build.success) throw new AggregateError(build.logs, "Mail shell CSS failed");
@@ -229,7 +233,9 @@ beforeAll(async () => {
       if (url.pathname.endsWith("/workspace-route") || url.pathname.endsWith("/workspace-list")) {
         const target = new URL(url.searchParams.get("href") ?? boxPath, server.url);
         const stored = storedWorkspace(request.headers.get("cookie"));
-        return Response.json(url.pathname.endsWith("/workspace-list") ? mailboxList(target) : mailboxData(target, stored));
+        return Response.json(
+          url.pathname.endsWith("/workspace-list") ? mailboxList(target, largeMailbox) : mailboxData(target, stored, largeMailbox),
+        );
       }
       // The person's list share and seen hints, kept per browser like Mail keeps them per person and mailbox.
       if (url.pathname.endsWith("/workspace-preference") || url.pathname.endsWith("/workspace-preference/seen-hints")) {
@@ -496,11 +502,12 @@ const clickTab = async (page: Page, href: string) => {
 };
 
 /** One test file per part, so the runner spreads the cases over shards and each file stays inside its budget (#1966). */
-export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts";
+export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader" | "events" | "drafts" | "performance";
 
 /** The shell tests of one part. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (part: MailShellPart, screenshots: string | undefined) =>
   describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    largeMailbox = part === "performance";
     const section = (name: MailShellPart, define: () => void) => {
       if (name === part) define();
     };
@@ -508,6 +515,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     // and shadows, and the geometry matrix below compares every size in both themes. Dark copies run only for the
     // review screenshots (#1966).
     const reviewThemes = screenshots ? (["light", "dark"] as const) : (["light"] as const);
+    section("performance", () => {
+      test("large mailbox folder switches retain the pending list and bound warm tasks", async () => {
+        const { measureFolderSwitches } = await import("./mail-folder-performance.browser-probe");
+        const page = await open(`${boxPath}?folder=Inbox1`);
+        try {
+          await measureFolderSwitches(page);
+        } finally {
+          await close(page);
+        }
+      }, 60_000);
+    });
     section("head", () => {
       // One case per summary state, each on its own page; a last case compares the heights they measured (#1966).
       const summaryHeights = new Map<number, Record<string, number>>();
@@ -3784,10 +3802,41 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     section("drafts", () => {
       /** A small Mail draft API: what the reader and the composer call around one draft, with what they sent. */
       /** `suggestedBy` names the automated account behind the untouched suggestion `DrfSug`. */
+      /**
+       * The compose-signature answer as the server gives it for an HTML draft: the send renderer's signature with an
+       * empty text, plus the editor fragment and text. Fictional sender data only.
+       */
+      const signatureAnswer = (
+        signature: string,
+        design: Pick<Parameters<typeof renderComposeContent>[0], "customCss" | "logo"> = { customCss: "" },
+      ) => {
+        const shared = {
+          signature,
+          context: {
+            actor: { display_name: "Erika Beispiel", email: "erika@beispiel.test" },
+            mailbox: { name: "Beispiel Handel GmbH", description: "" },
+            sender: { display_name: "Beispiel Handel", email: "info@beispiel.test", reply_to: "" },
+            message: { subject: "", to: [], cc: [] },
+          },
+          format: "markdown" as const,
+          renderLiquid: true,
+          ...design,
+        };
+        const alone = renderComposeContent({ ...shared, body: "" });
+        const block = renderComposeSignatureBlock({ ...shared, logoAltText: design.logo?.altText });
+        if (!alone.ok || !alone.data.html || !block.ok) throw new Error("The fixture signature did not render");
+        return {
+          answer: { ...block.data, mailHtml: alone.data.html },
+          render: (body: string) => renderComposeContent({ ...shared, body }),
+        };
+      };
+      const defaultSignature = signatureAnswer("Kind regards  \nAda Example  \nExample support · Hall A").answer;
       const draftApi = async (page: Page, suggestedBy = "Gustav", options: { consolidated?: number; sendFails?: boolean } = {}) => {
         const calls: string[] = [];
         const notes: string[] = [];
         const drafts = new Map<string, Record<string, unknown>>();
+        /** Sent submissions by id, to the draft they came from, so Undo can return it. */
+        const submissions = new Map<string, string>();
         const stamp = MAIL_SHELL_NOW;
         const makeDraft = (id: string, content: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
           id,
@@ -3924,14 +3973,30 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               },
             });
           }
-          if (method === "POST" && path === "/commands")
-            return options.sendFails
-              ? route.fulfill({ status: 503, json: { code: "SMTP_UNAVAILABLE", message: "The mail server does not answer." } })
-              : route.fulfill({ json: { id: "00000000-0000-4000-8000-0000000000f1", result: { conversationId: "Conv01" } } });
+          if (method === "POST" && path === "/commands") {
+            if (options.sendFails)
+              return route.fulfill({ status: 503, json: { code: "SMTP_UNAVAILABLE", message: "The mail server does not answer." } });
+            const sent = String(request.postDataJSON().draftId);
+            const draft = drafts.get(sent);
+            if (draft) drafts.set(sent, { ...draft, state: "sending" });
+            submissions.set("Dlv001", sent);
+            return route.fulfill({
+              json: { id: "00000000-0000-4000-8000-0000000000f1", result: { conversationId: "Conv01", outboxSubmissionId: "Dlv001" } },
+            });
+          }
+          // Undo of a send: the submission returns to its draft.
+          const cancel = /^\/scheduled-sends\/(\w+)\/cancel$/.exec(path);
+          if (method === "POST" && cancel) {
+            const draftId = submissions.get(cancel[1]!);
+            const draft = draftId ? drafts.get(draftId) : undefined;
+            if (!draftId || !draft)
+              return route.fulfill({ status: 409, json: { code: "SEND_ALREADY_STARTED", message: "Already on its way" } });
+            drafts.set(draftId, { ...draft, state: "draft", revision: Number(draft.revision ?? 1) + 1 });
+            return route.fulfill({ json: { disposition: "draft", draftId, projectionSnapshotId: null } });
+          }
           if (path === "/compose-templates") return route.fulfill({ json: [{ id: "Sig001", kind: "signature", name: "Support" }] });
           if (path === "/compose-signature-defaults") return route.fulfill({ json: [] });
-          if (method === "POST" && path === "/compose-signature")
-            return route.fulfill({ json: { html: null, text: "Kind regards\nAda Example\nExample support · Hall A" } });
+          if (method === "POST" && path === "/compose-signature") return route.fulfill({ json: defaultSignature });
           if (method === "POST" && path === "/compose-preview")
             return route.fulfill({ json: { html: "<p>Preview of the mail as it arrives.</p>", text: "", formattingWarnings: [] } });
           if (draftPath) {
@@ -4136,41 +4201,255 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
-      test("a long signature that arrives last fades at the reserved height and moves nothing until the person writes", async () => {
-        const releaseSignature = Promise.withResolvers<void>();
-        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
-          await draftApi(next);
-          await next.route("**/compose-signature", async (route) => {
-            await releaseSignature.promise;
-            await route.fulfill({
-              json: { html: null, text: Array.from({ length: 12 }, (_, line) => `Example support line ${line + 1}`).join("\n") },
+      const longSignature = Array.from({ length: 12 }, (_, line) => `Example support line ${line + 1}`);
+      const longSignatureAnswers = {
+        // An HTML draft shows the sent signature in its frame; a plain draft shows the text.
+        frame: signatureAnswer(longSignature.join("  \n")).answer,
+        text: { html: null, text: longSignature.join("\n"), mailHtml: null },
+      };
+      for (const variant of ["frame", "text"] as const)
+        test(`a long signature that arrives last fades at the reserved height and moves nothing until the person writes (${variant})`, async () => {
+          const releaseSignature = Promise.withResolvers<void>();
+          const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
+            await draftApi(next);
+            await next.route("**/compose-signature", async (route) => {
+              await releaseSignature.promise;
+              await route.fulfill({ json: longSignatureAnswers[variant] });
             });
+          });
+          try {
+            await readyDraft(page);
+            await settled(page);
+            const messagesTop = () =>
+              page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top);
+            const before = await messagesTop();
+            releaseSignature.resolve();
+            if (variant === "frame") {
+              const frame = page.locator("[data-mail-signature-frame]");
+              await frame.waitFor();
+              await page.frameLocator("[data-mail-signature-frame]").getByText("Example support line 12").waitFor();
+              await eventually(
+                async () => (await frame.evaluate((element) => element.getBoundingClientRect().height)) > 150,
+                true,
+                "frame height",
+              );
+            } else
+              await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("line 12"));
+            await page.locator(".mail-inline-draft-signature[data-reply-box-clipped]").waitFor();
+            await settled(page);
+            expect(Math.abs((await messagesTop()) - before)).toBeLessThanOrEqual(0.5);
+            // Send stays in view at the reserved height.
+            expect(await page.locator("[data-mail-reply-box='mail'] footer").isVisible()).toBe(true);
+            // Writing in the box lets it grow to the whole signature, without a fade.
+            await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+            await page.locator("[data-reply-box-clipped]").waitFor({ state: "detached" });
+            expect(
+              await page.locator("[data-mail-draft-signature]").evaluate((element) => element.getBoundingClientRect().height),
+            ).toBeGreaterThan(150);
+          } finally {
+            releaseSignature.resolve();
+            await close(page);
+          }
+        });
+
+      // The composer shows the signature exactly as the recipient gets it (2026-11-18): the same markup, logo, link and
+      // design as the sent HTML, in the reader's message document. Fictional sender data only.
+      const sentSignature = (() => {
+        const signature = signatureAnswer(
+          [
+            "{{ mailbox.logo }}",
+            "<strong>{{ actor.display_name }}</strong>",
+            "Musterweg 1 · 12345 Beispielstadt · [+49 30 000000](tel:+4930000000) · [beispiel.test](https://beispiel.test)",
+            "---",
+            "Beispiel Handel GmbH · Amtsgericht Beispielstadt · HRB 000000",
+          ].join("\n\n"),
+          {
+            customCss:
+              ".mail-signature strong { text-transform: uppercase; letter-spacing: 1px; } .mail-signature hr ~ p { color: #71717a; font-size: 11px; }",
+            logo: {
+              src: `data:image/png;base64,${photoPng}`,
+              altText: "Beispiel Handel Logo",
+              displayWidth: 96,
+              pixelWidth: 48,
+              pixelHeight: 36,
+              byteLength: Buffer.from(photoPng, "base64").length,
+            },
+          },
+        );
+        const sent = signature.render("Hallo zusammen,\n\nanbei das Angebot.");
+        if (!sent.ok || !sent.data.html) throw new Error("The fixture message did not render");
+        return {
+          response: signature.answer,
+          sentDocument: buildMessageDocument(sent.data.html, "sent-reference", false, "en", undefined, "light"),
+        };
+      })();
+      const withSentSignature = async (page: Page) => {
+        await draftApi(page);
+        await page.route("**/compose-signature", (route) => route.fulfill({ json: sentSignature.response }));
+      };
+      /** Waits for the composer's signature frame to report its height and returns the frame. */
+      const signatureFrame = async (page: Page, scope: Locator) => {
+        const frame = scope.locator("[data-mail-signature-frame]");
+        await frame.waitFor();
+        await eventually(
+          async () => (await frame.evaluate((element) => element.getBoundingClientRect().height)) > 40,
+          true,
+          "frame height",
+        );
+        return scope.frameLocator("[data-mail-signature-frame]");
+      };
+      const expectSentSignature = async (page: Page, scope: Locator, theme: "light" | "dark") => {
+        const composed = await signatureFrame(page, scope);
+        const box = scope.locator("[data-mail-draft-signature]");
+        // The logo is an image, never its alt text; links are links, never "[tel:…]" or "[https://…]" text.
+        expect(await box.textContent()).not.toContain("Beispiel Handel Logo");
+        const shownText = await composed.locator("body").innerText();
+        expect(shownText).not.toMatch(/\[(?:tel|https?):/);
+        expect(shownText).toContain("ERIKA BEISPIEL");
+        expect(await composed.locator('img[alt="Beispiel Handel Logo"]').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(
+          48,
+        );
+        expect(await composed.locator('a[href="tel:+4930000000"]').count()).toBe(1);
+        expect(await composed.locator("hr").count()).toBe(1);
+        // The same signature as the sent HTML in the reader's document beside it.
+        await page.evaluate((source) => {
+          const reference = document.createElement("iframe");
+          reference.id = "sent-reference";
+          reference.setAttribute("sandbox", "allow-scripts");
+          reference.style.cssText = "position:fixed;left:0;top:0;width:600px;height:400px;visibility:hidden";
+          reference.srcdoc = source;
+          document.body.append(reference);
+        }, sentSignature.sentDocument);
+        const sent = page.frameLocator("#sent-reference");
+        // The reference stays invisible, so it is ready once its signature is there, not once it shows.
+        await sent.locator(".mail-signature").waitFor({ state: "attached" });
+        const footer = (frame: typeof sent) =>
+          frame.locator(".mail-signature hr ~ p").evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { fontSize: style.fontSize, color: style.color };
+          });
+        const composedFooter = await footer(composed);
+        expect(composedFooter.fontSize).toBe("11px");
+        expect(composedFooter.fontSize).toBe((await footer(sent)).fontSize);
+        if (theme === "light") {
+          // In light the frame changes nothing: markup and colors are those of the sent message.
+          const markup = (frame: typeof sent) => frame.locator(".mail-signature").evaluate((element) => element.outerHTML);
+          expect(await markup(composed)).toBe(await markup(sent));
+          expect(composedFooter.color).toBe((await footer(sent)).color);
+        }
+        await page.evaluate(() => document.getElementById("sent-reference")?.remove());
+      };
+
+      for (const theme of reviewThemes)
+        for (const width of [1440, 390])
+          test(`${theme} ${width}: the reply box shows the signature exactly as the sent HTML, without moving the box`, async () => {
+            const page = await open(
+              `${boxPath}?conversation=Conv01&identity=1&theme=${theme}`,
+              width,
+              undefined,
+              "reduce",
+              withSentSignature,
+            );
+            try {
+              await readyDraft(page);
+              await expectSentSignature(page, draftBox(page), theme);
+              await settled(page);
+              const frameBox = await draftBox(page).locator("[data-mail-signature-frame]").boundingBox();
+              const signatureBox = await draftBox(page).locator("[data-mail-draft-signature]").boundingBox();
+              // The frame fills the signature's width and stays inside the box, also on a phone.
+              expect(Math.abs(frameBox!.width - signatureBox!.width)).toBeLessThanOrEqual(1);
+              expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+              if (screenshots) {
+                mkdirSync(screenshots, { recursive: true });
+                await page.screenshot({ path: join(screenshots, `signature-sent-reply-${theme}-${width}.png`) });
+              }
+              // Writing grows the box to the whole signature; the frame keeps its height and nothing fades.
+              const before = frameBox!.height;
+              await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+              await page.keyboard.type("Hallo zusammen");
+              await settled(page);
+              expect((await draftBox(page).locator("[data-mail-signature-frame]").boundingBox())!.height).toBe(before);
+            } finally {
+              await close(page);
+            }
+          });
+
+      test("the signature frame runs nothing from the signature, loads nothing remote, and a late signature never moves the caret", async () => {
+        type HostileWindow = { hostile: string[] };
+        const remote: string[] = [];
+        // Markup the server never sends, handed to the frame directly: the reader's sandbox and policy must still hold.
+        const hostile = [
+          '<div class="mail-content"><div class="mail-signature"><p>Erika Beispiel</p>',
+          '<script>parent.postMessage({ hostile: "script" }, "*")</script>',
+          `<img src="data:," onerror="parent.postMessage({ hostile: 'onerror' }, '*')">`,
+          '<img src="https://remote.beispiel.test/pixel.png" alt="">',
+          "</div></div>",
+        ].join("");
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          await draftApi(next);
+          // Only a request that reaches the network counts: Chromium also reports the image the policy blocked.
+          await next.route("https://remote.beispiel.test/**", (route) => {
+            remote.push(route.request().url());
+            return route.abort();
+          });
+          await next.route("**/compose-signature", async (route) => {
+            await held;
+            await route.fulfill({ json: { html: "", text: "Erika Beispiel", mailHtml: hostile } });
           });
         });
         try {
+          await page.evaluate(() => {
+            const state = window as unknown as HostileWindow;
+            state.hostile = [];
+            addEventListener("message", (event) => {
+              // Only what the signature frame itself posts counts.
+              const frame = document.querySelector<HTMLIFrameElement>("[data-mail-signature-frame]");
+              if (!frame || event.source !== frame.contentWindow) return;
+              if (event.data && typeof event.data === "object" && "hostile" in event.data) state.hostile.push(String(event.data.hostile));
+            });
+          });
           await readyDraft(page);
-          await settled(page);
-          const messagesTop = () =>
-            page.evaluate(() => document.querySelector("[data-mail-conversation-messages]")!.getBoundingClientRect().top);
-          const before = await messagesTop();
-          releaseSignature.resolve();
-          await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("line 12"));
-          await page.locator(".mail-inline-draft-signature[data-reply-box-clipped]").waitFor();
-          await settled(page);
-          expect(Math.abs((await messagesTop()) - before)).toBeLessThanOrEqual(0.5);
-          // Send stays in view at the reserved height.
-          expect(await page.locator("[data-mail-reply-box='mail'] footer").isVisible()).toBe(true);
-          // Writing in the box lets it grow to the whole signature, without a fade.
           await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
-          await page.locator("[data-reply-box-clipped]").waitFor({ state: "detached" });
-          expect(
-            await page.locator("[data-mail-draft-signature]").evaluate((element) => element.getBoundingClientRect().height),
-          ).toBeGreaterThan(150);
+          await page.keyboard.type("Hallo");
+          await settled(page);
+          const caret = () =>
+            page.evaluate(() => document.querySelector("[data-mail-reply-box='mail'] .cm-cursor")?.getBoundingClientRect().top ?? null);
+          const before = await caret();
+          expect(before).not.toBeNull();
+          release();
+          await page.waitForFunction(() => (document.querySelector<HTMLElement>("[data-mail-signature-frame]")?.offsetHeight ?? 0) > 0);
+          await settled(page);
+          // The signature grows in below the text once; the caret in the text stays where it was.
+          expect(await caret()).toBe(before);
+          expect(await page.evaluate(() => (window as unknown as HostileWindow).hostile)).toEqual([]);
+          expect(remote).toEqual([]);
         } finally {
-          releaseSignature.resolve();
           await close(page);
         }
       });
+
+      for (const theme of reviewThemes)
+        for (const width of [1440, 390])
+          test(`${theme} ${width}: the new message window shows the sent signature`, async () => {
+            const page = await open(`${boxPath}?identity=1&theme=${theme}`, width, undefined, "reduce", withSentSignature);
+            try {
+              await page.getByRole("link", { name: "New message" }).first().click();
+              const window = page.locator(".mail-compose-window");
+              await window.locator("[data-mail-inline-draft] .cm-content").waitFor();
+              await expectSentSignature(page, window, theme);
+              await settled(page);
+              if (screenshots) {
+                mkdirSync(screenshots, { recursive: true });
+                await page.screenshot({ path: join(screenshots, `signature-sent-window-${theme}-${width}.png`) });
+              }
+            } finally {
+              await close(page);
+            }
+          });
 
       test("the box takes its place without moving the messages below it", async () => {
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
@@ -4258,10 +4537,22 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
-      test("a failed send turns the bar light red in place; Send again retries", async () => {
+      /** The toasts on the rail, each as [title, description]. */
+      const toasts = (page: Page) =>
+        page.evaluate(() =>
+          [
+            ...document.querySelectorAll<HTMLElement>("[data-k2b-toast-container] .k2b-toast-slot:not([data-state='closing']) .k2b-toast"),
+          ].map((card) => [
+            card.querySelector<HTMLElement>(".k2b-toast__title:not([hidden])")?.textContent ?? null,
+            card.querySelector(".k2b-toast__description")?.textContent ?? "",
+          ]),
+        );
+
+      test("a failed send keeps the box and its text; one toast names the reason, and Try again sends", async () => {
         let api!: Awaited<ReturnType<typeof draftApi>>;
+        const failing = { sendFails: true };
         const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
-          api = await draftApi(next, "Gustav", { sendFails: true });
+          api = await draftApi(next, "Gustav", failing);
         });
         try {
           await readyDraft(page);
@@ -4273,12 +4564,46 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await settled(page);
           const before = await footTop();
           await page.keyboard.press("Control+Enter");
-          const bar = page.locator("[data-mail-send-failed]");
-          await bar.waitFor();
-          expect(await bar.textContent()).toContain("Not sent.");
-          expect(await bar.textContent()).toContain("Your text is saved.");
+          await page.locator("[data-mail-reply-box='mail'] [data-mail-send-again]").waitFor();
+          await eventually(async () => (await toasts(page)).length, 1, "one failure toast");
+          expect(await toasts(page)).toEqual([["Not sent", "The mail server does not answer. Your text stays in the draft."]]);
+          // The box stays with its text, the bar stays where it was, and the reason stands once: in the toast.
+          expect(await page.locator("[data-mail-reply-box='mail'] .cm-content").textContent()).toContain("Ready to go.");
           expect(Math.abs((await footTop()) - before)).toBeLessThanOrEqual(1);
-          expect(await bar.getByRole("button", { name: "Send again" }).isVisible()).toBe(true);
+          expect(await draftBox(page).textContent()).not.toContain("does not answer");
+          failing.sendFails = false;
+          await page.locator("[data-k2b-toast-container]").getByRole("button", { name: "Try again" }).click();
+          await eventually(async () => (await toasts(page)).map(([title]) => title).join(), "Sending", "sending toast");
+          await eventually(() => api.drafts.get("DrfNew")?.state, "sending", "sent");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("a sent reply closes the box; one toast says when it goes out, and Undo brings the text back", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await readyDraft(page);
+          await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+          await page.keyboard.type("Saturday works.");
+          await eventually(() => api.drafts.get("DrfNew")?.body, "Saturday works.", "saved");
+          await page.keyboard.press("Control+Enter");
+          await eventually(() => api.drafts.get("DrfNew")?.state, "sending", "sent");
+          await eventually(async () => (await toasts(page)).length, 1, "one toast");
+          // A short title for the outcome, what happens next as the description; nothing big stays in the box.
+          expect(await toasts(page)).toEqual([["Sending", "The message goes out in 20 s."]]);
+          await eventually(
+            async () => (await page.locator("[data-mail-reply-box='mail'] .cm-content").textContent())?.includes("Saturday works."),
+            false,
+            "the box is empty again",
+          );
+          expect(await page.locator(".k2b-notice-card").count()).toBe(0);
+          await page.locator("[data-k2b-toast-container]").getByRole("button", { name: "Undo" }).click();
+          await eventually(() => api.calls.includes("POST /scheduled-sends/Dlv001/cancel"), true, "undo cancels the submission");
+          await page.locator("[data-mail-reply-box='mail'] .cm-content", { hasText: "Saturday works." }).waitFor();
         } finally {
           await close(page);
         }
@@ -4292,7 +4617,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         try {
           await readyDraft(page);
           const signature = page.locator("[data-mail-reply-box='mail'] [data-mail-draft-signature]");
-          await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("Ada Example"));
+          // An HTML draft shows the sent signature in its frame.
+          await page.frameLocator("[data-mail-reply-box='mail'] [data-mail-signature-frame]").getByText("Ada Example").waitFor();
           // Fixed: the block is not part of the editable text.
           expect(await signature.evaluate((element) => element.closest(".cm-content"))).toBeNull();
           const quote = page.locator("[data-mail-draft-quote]");
@@ -4418,7 +4744,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await composeWindow(page).waitFor({ state: "detached" });
           expect(api.calls).not.toContain("POST /drafts/DrfNew/discard");
           expect(api.drafts.get("DrfNew")?.state).toBe("draft");
-          const notice = page.locator("[data-k2b-toast-container]", { hasText: "Draft is in “Drafts”" });
+          const notice = page.locator("[data-k2b-toast-container]", { hasText: "It is in “Drafts”." });
           await notice.waitFor();
           await notice.getByRole("button", { name: "Open" }).click();
           await readyWindow(page);
@@ -4428,6 +4754,59 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await readyWindow(page);
           await page.waitForFunction(() => !new URL(location.href).searchParams.has("draft"));
           expect(await page.locator(".mail-compose-window").count()).toBe(1);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("Send closes the new message window; the save state stands once, and the toast's Undo brings the window back", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await page.getByRole("link", { name: "New message" }).first().click();
+          await readyWindow(page);
+          await page.waitForFunction(() => document.activeElement?.closest(".mail-compose-window .mail-inline-draft-recipients") !== null);
+          await page.keyboard.type("lena@example.test");
+          await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+          await composeWindow(page).locator(".cm-content").click();
+          await page.keyboard.type("The chairs are ready.");
+          await eventually(() => api.drafts.get("DrfNew")?.body, "The chairs are ready.", "body saved");
+          await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
+          // One save state, in the head: the text area shows only what someone wrote.
+          expect(await composeWindow(page).getByText("Saved", { exact: true }).count()).toBe(1);
+          expect(await composeWindow(page).locator(".k2b-ste-status").count()).toBe(0);
+          await composeWindow(page).locator(".mail-compose-window-foot .mail-compose-action .k2b-split-button__primary").click();
+          await composeWindow(page).waitFor({ state: "detached" });
+          await eventually(async () => (await toasts(page)).length, 1, "one toast");
+          expect(await toasts(page)).toEqual([["Sending", "The message goes out in 20 s."]]);
+          await page.locator("[data-k2b-toast-container]").getByRole("button", { name: "Undo" }).click();
+          await readyWindow(page);
+          expect(api.calls).toContain("POST /scheduled-sends/Dlv001/cancel");
+          expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("Maximize turns a new message window large and back with the same text, without a page error (#3683)", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await page.getByRole("link", { name: "New message" }).first().click();
+          await readyWindow(page);
+          await composeWindow(page).locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+          await eventually(() => api.drafts.get("DrfNew")?.subject, "Pickup on Saturday", "subject saved");
+          await composeWindow(page).getByRole("button", { name: "Maximize" }).click();
+          await composeWindow(page).locator(".mail-inline-draft[data-large] .mail-large-panes .mail-draft-block").waitFor();
+          expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
+          await composeWindow(page).getByRole("button", { name: "Restore size" }).click();
+          await composeWindow(page).locator(".mail-inline-draft:not([data-large]) > .mail-draft-block-place > .mail-draft-block").waitFor();
+          expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
+          // close() fails on any page error, such as the HierarchyRequestError the move used to raise.
         } finally {
           await close(page);
         }
@@ -4837,7 +5216,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             async (page) => {
               await reply(page);
               await page.keyboard.press("Control+Enter");
-              await page.locator("[data-mail-send-failed]").waitFor();
+              await page.locator("[data-mail-reply-box='mail'] [data-mail-send-again]").waitFor();
             },
             { sendFails: true },
           );
@@ -4866,6 +5245,51 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             ["dark", 1440],
           ] as const)
             await shoot("08-new-message", theme, width, `${boxPath}?${width < 640 ? "" : "conversation=Conv01&"}identity=1`, compose);
+          // After Send: the composer is gone and one short toast says what happens next; a failure keeps the text.
+          const sendNew = async (page: Page, width: number) => {
+            await compose(page);
+            await composeWindow(page).locator(".mail-inline-draft-recipients input").first().fill("lena@example.test");
+            await composeWindow(page).locator(".cm-content").click();
+            await page.keyboard.type("The chairs are ready in hall A.");
+            await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
+            const send =
+              width < 640
+                ? composeWindow(page).locator(".k2b-floating-window__actions .mail-compose-action .k2b-split-button__primary")
+                : composeWindow(page).locator(".mail-compose-window-foot .mail-compose-action .k2b-split-button__primary");
+            await send.click();
+          };
+          for (const theme of ["light", "dark"] as const)
+            for (const width of [1440, 390]) {
+              const list = `${boxPath}?${width < 640 ? "" : "conversation=Conv01&"}identity=1`;
+              await shoot("12-new-written", theme, width, list, async (page) => {
+                await compose(page);
+                await composeWindow(page).locator(".cm-content").click();
+                await page.keyboard.type("The chairs are ready in hall A.");
+                await composeWindow(page).locator(".mail-compose-window-status", { hasText: "Saved" }).waitFor();
+              });
+              await shoot("13-new-sent-toast", theme, width, list, async (page) => {
+                await sendNew(page, width);
+                await composeWindow(page).waitFor({ state: "detached" });
+                await page.locator("[data-k2b-toast-container] .k2b-toast", { hasText: "Sending" }).waitFor();
+              });
+              await shoot(
+                "14-box-send-failed-toast",
+                theme,
+                width,
+                thread,
+                async (page) => {
+                  await reply(page);
+                  await page.keyboard.press("Control+Enter");
+                  await page.locator("[data-k2b-toast-container] .k2b-toast", { hasText: "Not sent" }).waitFor();
+                },
+                { sendFails: true },
+              );
+              await shoot("15-box-sent-toast", theme, width, thread, async (page) => {
+                await reply(page);
+                await page.keyboard.press("Control+Enter");
+                await page.locator("[data-k2b-toast-container] .k2b-toast", { hasText: "Sending" }).waitFor();
+              });
+            }
           await shoot("09-new-minimized", "light", 1440, `${boxPath}?conversation=Conv01&identity=1`, async (page) => {
             await compose(page);
             await composeWindow(page).getByRole("button", { name: "Minimize" }).click();
@@ -4877,7 +5301,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await shoot("11-new-closed", "light", 1440, `${boxPath}?identity=1`, async (page) => {
             await compose(page);
             await composeWindow(page).getByRole("button", { name: "Close window" }).click();
-            await page.locator("[data-k2b-toast-container]", { hasText: "Draft is in “Drafts”" }).waitFor();
+            await page.locator("[data-k2b-toast-container]", { hasText: "It is in “Drafts”." }).waitFor();
           });
           await shoot("08-box-preview", "light", 1440, thread, async (page) => {
             await reply(page);
