@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { NoticeCard, useLocale } from "@k2b/ui";
 import { type RunEntry, RunLog, type RunLogAction, type RunLogState } from "@k2b/ui/run-log";
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { followCodeRun, readCodeRunEntries } from "../../browser/code-runs";
 import {
   type CodeOutputText,
@@ -14,6 +14,7 @@ import type { CodeRunEntries } from "../../code/run-ledger";
 import type { CodeRunReadModel } from "../../contracts/code-read-model";
 import type { CodePageRunDetail } from "./data";
 import { codePageMessages } from "./messages";
+import { iconClass, Quiet } from "./page-kit";
 
 const messages = i18n.define({
   baseLocale: "en",
@@ -163,54 +164,60 @@ export function CodeRunLog(props: {
             : null,
       reason(),
       snapshot().output?.droppedLines ? t().lost({ count: snapshot().output!.droppedLines }) : null,
-      !snapshot().output && connection() !== "revoked" ? t().hidden : null,
     ]
       .filter(Boolean)
       .join(" · ");
   const output = createMemo(() => (props.manager && connection() !== "revoked" ? ("open" as const) : ("hidden" as const)));
-  const entries = (): RunEntry[] => {
-    const current = snapshot();
-    if (!current.output) return [];
-    const at = current.endedAt ?? current.startedAt ?? props.now;
-    return [
-      ...codeRunLogEntries(current.output, locale()),
-      ...(props.confirmed?.items ?? []).map(
-        (row, index): RunEntry => ({
-          kind: "log",
-          id: `confirmed:${index}`,
-          at,
-          level: "info",
-          text: row.text,
-        }),
-      ),
-      ...(props.confirmed?.moreText
-        ? [{ kind: "log" as const, id: "confirmed:more", at, level: "info" as const, text: props.confirmed.moreText }]
-        : []),
-    ];
-  };
+  const entries = (): RunEntry[] => (snapshot().output ? codeRunLogEntries(snapshot().output!, locale()) : []);
   const actions = (): readonly RunLogAction[] => [
     ...(connection() === "unavailable" ? [{ icon: "ti ti-refresh", label: t().retry, onClick: connect }] : []),
     ...(connection() === "revoked" ? [{ icon: "ti ti-refresh", label: t().reload, onClick: () => window.location.reload() }] : []),
     ...(props.actions ?? []),
   ];
   return (
-    <Show
-      when={snapshot().state !== "skipped"}
-      fallback={<NoticeCard tone="neutral" icon="ti ti-player-skip-forward" title={t().skipped} detail={reason() ?? undefined} />}
-    >
-      <RunLog
-        state={state()}
-        entries={entries()}
-        duration={duration()}
-        timeZone={props.timeZone ?? "UTC"}
-        output={output()}
-        meta={
-          <span role="status" title={meta() ?? undefined}>
-            {meta()}
-          </span>
-        }
-        actions={actions()}
-      />
-    </Show>
+    <>
+      <Show
+        when={snapshot().state !== "skipped"}
+        fallback={<NoticeCard tone="neutral" icon="ti ti-player-skip-forward" title={t().skipped} detail={reason() ?? undefined} />}
+      >
+        <RunLog
+          state={state()}
+          entries={entries()}
+          duration={duration()}
+          timeZone={props.timeZone ?? "UTC"}
+          output={output()}
+          meta={
+            <span role="status" title={meta() ?? undefined}>
+              {meta()}
+            </span>
+          }
+          actions={actions()}
+        />
+      </Show>
+      <Show when={connection() !== "revoked"}>
+        <Show when={!props.manager}>
+          <Quiet icon="ti ti-lock" class="cloud-code__run-access">
+            {t().hidden}
+          </Quiet>
+        </Show>
+        <Show when={props.confirmed?.items.length || props.confirmed?.moreText}>
+          <div class="cloud-code__run-summary">
+            <For each={props.confirmed?.items}>
+              {(row) => (
+                <Quiet icon={iconClass(row.icon, "ti ti-point")}>
+                  <Show when={row.href} fallback={row.text}>
+                    {(href) => <a href={href()}>{row.text}</a>}
+                  </Show>
+                  <Show when={row.note}>
+                    <span class="cloud-code__step-note">{row.note}</span>
+                  </Show>
+                </Quiet>
+              )}
+            </For>
+            <Show when={props.confirmed?.moreText}>{(text) => <Quiet icon="ti ti-dots">{text()}</Quiet>}</Show>
+          </div>
+        </Show>
+      </Show>
+    </>
   );
 }

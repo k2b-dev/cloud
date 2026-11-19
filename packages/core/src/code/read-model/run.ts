@@ -123,7 +123,7 @@ export async function loadCodeRunReadModel(
     complete: !row.incomplete,
   };
 }
-export function describeRunFailure(outcome: string | null, locale: string): string {
+export function describeRunFailure(outcome: string | null, locale: string): string | null {
   const { t } = codeRunMessages.resolve([locale]);
   switch (outcome) {
     case "code_not_active":
@@ -139,17 +139,23 @@ export function describeRunFailure(outcome: string | null, locale: string): stri
     case "code_retry_exhausted":
       return t.retryExhausted;
     case "code_run_wall_clock_limit":
+    case "wall_clock_limit":
       return t.wallClockLimit;
     case "code_run_memory_limit":
+    case "memory_limit":
       return t.memoryLimit;
     case "code_runner_stalled":
+    case "stalled":
       return t.stalled;
     case "code_result_unknown":
       return t.resultUnknown;
     case "previous_schedule_running":
       return t.previousScheduleRunning;
     case "code_runner_lost":
+    case "lease_lost":
       return t.lost;
+    case "failed":
+      return null;
     default:
       return codeReadModelMessages.resolve([locale]).t.runFailed;
   }

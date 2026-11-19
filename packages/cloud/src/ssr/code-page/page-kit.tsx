@@ -2,7 +2,7 @@ import { dates } from "@k2b/stdlib";
 import { Section, useLocale } from "@k2b/ui";
 import { createMemo, type JSX, Show } from "solid-js";
 import { formatCodeMoment } from "../../code/schedule";
-import type { CodeReadModelRow, CodeRunReadModel } from "../../contracts/code-read-model";
+import type { CodeRunReadModel } from "../../contracts/code-read-model";
 import type { CodePageData, CodePageRun, CodePageTarget, CodePageVersion } from "./data";
 import { type CodePageMessages, codePageMessages } from "./messages";
 import { codeTargetLabel, codeTargetName } from "./targets";
@@ -263,29 +263,3 @@ export const versionStatusWords = (t: CodePageMessages) => [
   t.vWithdrawn,
   t.vReplaced,
 ];
-
-/**
- * The steps of "What happened", in the order the run's read model lists them. The model gives no state per row, so the
- * signs stay neutral and the run's status says how it ended.
- */
-export function Happened(props: { rows: readonly CodeReadModelRow[]; label: string }) {
-  return (
-    <ol class="cloud-code__steps" aria-label={props.label}>
-      {props.rows.map((row) => (
-        <li>
-          <span class="cloud-code__step-sign" aria-hidden="true">
-            <i class={iconClass(row.icon, "ti ti-point")} />
-          </span>
-          <span class="cloud-code__step-text">
-            <Show when={row.href} fallback={row.text}>
-              {(href) => <a href={href()}>{row.text}</a>}
-            </Show>
-            <Show when={row.note}>
-              <span class="cloud-code__step-note">{row.note}</span>
-            </Show>
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-}

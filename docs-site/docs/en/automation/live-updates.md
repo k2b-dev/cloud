@@ -64,8 +64,8 @@ names, call arguments, or results. Read the
 authorized snapshot for details. Effects are counted at run completion:
 the transition to `succeeded` or `failed` tells the page to refresh them.
 Individual calls do not write live outbox rows (DATA-13). Editor-only call
-hints use committed transient publication on the separate `codeDetails` key;
-Sanitized output uses only the selected run’s `codeRun` key;
+hints use committed transient publication on the separate `codeDetails` key.
+Sanitized output uses only the selected run's `codeRun` key;
 see [Code live details](/en/docs/platform/code-runs#follow-calls-and-console-output).
 
 Code live admission uses the same read permissions as Code's HTTP service:

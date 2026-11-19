@@ -327,10 +327,15 @@ Browser-only schema consumers can also import `CodeRunEntriesInputSchema`,
 
 `RunLog` from `@k2b/ui` remains presentational. Its host owns the clock,
 connection, duration, recovery and loading. Confirmed call summaries remain
-visible as quiet output lines, including runs with no logged steps or messages. Gustav's **Runs** detail renders
+visible to readers as a quiet block after the run output, including runs with
+no logged steps or messages. These summaries carry no timestamp unless their
+read model supplies one. Readers see no output disclosure; a separate hint
+explains who can view the output. Gustav's **Runs** detail renders
 the server snapshot first and opens output for Code managers. A stopped
 connection retains the last visible snapshot with **Try again**; revoked
 access removes its output and offers **Reload**.
+After the terminal snapshot, the host closes its run subscription; a later
+connection loss does not change the completed run to **Updates stopped**.
 The page supplies its request timezone through RunLog's `timeZone` prop so
 server output and the first browser render show the same timestamps.
 

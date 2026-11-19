@@ -68,22 +68,94 @@ test("one run applies ordinary output without reads and covers gaps, reconnects 
     await current().apply([{ cursor: "4", data: { type: "code.run", runId: scope.runId, state: "succeeded", at } }]);
     expect(reads).toBe(3);
     expect(snapshots.at(-1)?.state).toBe("succeeded");
+    expect(closed).toBe(1);
     await current().apply([{ cursor: "3", data: { type: "code.run", runId: scope.runId, state: "running", at } }]);
     expect(snapshots.at(-1)?.state).toBe("succeeded");
     authoritative = { ...authoritative, state: "cancelled" };
     await current().apply([{ cursor: "5", data: { type: "code.run", runId: scope.runId, state: "cancelled", at } }]);
-    expect(reads).toBe(4);
-    expect(snapshots.at(-1)?.state).toBe("cancelled");
+    expect(reads).toBe(3);
+    expect(snapshots.at(-1)?.state).toBe("succeeded");
     current().revoked?.("access_denied");
+    current().unavailable?.();
     await current().resync();
     await current().apply([output(4)]);
-    expect(reads).toBe(4);
-    expect(reasons).toEqual(["revoked"]);
+    expect(reads).toBe(3);
+    expect(reasons).toEqual([]);
   } finally {
     stop();
     spy.mockRestore();
   }
-  expect(closed).toBeGreaterThan(0);
+  expect(closed).toBe(1);
+});
+
+test.each(["succeeded", "failed", "cancelled", "skipped"] as const)(
+  "the final %s snapshot closes the subscription and ignores later connection loss",
+  async (state) => {
+    let handlers: Pick<LiveSubscriptionHandlers<unknown>, "resync" | "unavailable" | "revoked"> | undefined;
+    let closed = 0;
+    const spy = spyOn(transport, "liveConnection").mockImplementation(() => ({
+      subscribe: (_channel, _scope, current) => {
+        handlers = current;
+        return {
+          close: () => {
+            closed++;
+          },
+        };
+      },
+    }));
+    const applied: CodeRunEntries[] = [];
+    const unavailable: string[] = [];
+    const stop = followCodeRun(scope, {
+      initial,
+      snapshot: async () => ({ ...initial, state, endedAt: at }),
+      apply: (snapshot) => applied.push(snapshot),
+      unavailable: (reason) => unavailable.push(reason),
+    });
+    try {
+      if (!handlers) throw new Error("Missing subscription");
+      await handlers.resync();
+      expect(applied.at(-1)?.state).toBe(state);
+      expect(closed).toBe(1);
+      handlers.unavailable?.();
+      handlers.revoked?.("access_denied");
+      expect(unavailable).toEqual([]);
+    } finally {
+      stop();
+      spy.mockRestore();
+    }
+    expect(closed).toBe(1);
+  },
+);
+
+test("revocation during a running subscription still closes it and reports revoked", () => {
+  let handlers: Pick<LiveSubscriptionHandlers<unknown>, "revoked"> | undefined;
+  let closed = 0;
+  const spy = spyOn(transport, "liveConnection").mockImplementation(() => ({
+    subscribe: (_channel, _scope, current) => {
+      handlers = current;
+      return {
+        close: () => {
+          closed++;
+        },
+      };
+    },
+  }));
+  const reasons: string[] = [];
+  const stop = followCodeRun(scope, {
+    initial,
+    snapshot: async () => initial,
+    apply: () => {},
+    unavailable: (reason) => reasons.push(reason),
+  });
+  try {
+    if (!handlers) throw new Error("Missing subscription");
+    handlers.revoked?.("access_denied");
+    expect(reasons).toEqual(["revoked"]);
+    expect(closed).toBe(1);
+  } finally {
+    stop();
+    spy.mockRestore();
+  }
 });
 
 test("a failed covering read reports unavailable and disposal aborts work", async () => {

@@ -171,12 +171,6 @@ for (const theme of ["light", "dark"] as const)
         });
         await page.locator('.k2b-run-log__step[data-status="failed"]').waitFor();
         expect(reads).toBe(1);
-        snapshot = { ...snapshot, state: "failed", outcome: "lease_lost", endedAt: RUN_LEDGER_NOW, output: runLedgerOutput(true) };
-        live.event({ type: "code.run", runId: run.id, state: "failed", at: RUN_LEDGER_NOW });
-        await page.locator('.k2b-run-log[data-state="failed"]').waitFor();
-        expect(reads).toBe(2);
-        expect(await bounds(page)).toEqual(before);
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.getByRole("button", { name: /^Ausgabe/ }).focus();
         await page.keyboard.press("Enter");
         expect(await page.locator(".k2b-run-log__output-toggle").getAttribute("aria-expanded")).toBe("false");
@@ -202,10 +196,28 @@ for (const theme of ["light", "dark"] as const)
           await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
           await page.waitForFunction(() => !document.body.textContent?.includes("Verbindung wird hergestellt"));
         }
+        await page.getByRole("button", { name: /^Ausgabe/ }).click();
+        snapshot = { ...snapshot, state: "failed", outcome: "lease_lost", endedAt: RUN_LEDGER_NOW, output: runLedgerOutput(true) };
+        const readsBeforeFinish = reads;
+        live.event({ type: "code.run", runId: run.id, state: "failed", at: RUN_LEDGER_NOW });
+        await page.locator('.k2b-run-log[data-state="failed"]').waitFor();
+        expect(reads).toBe(readsBeforeFinish + 1);
+        expect(await bounds(page)).toEqual(before);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        if (!live.unavailable) throw new Error("Missing unavailable fixture");
+        live.unavailable();
+        await settled(page);
+        expect(await page.getByText(/Updates angehalten/, { exact: false }).count()).toBe(0);
+        // A separate running connection still reacts to revocation.
+        snapshot = { ...snapshot, state: "running", outcome: null, endedAt: null, output: runLedgerOutput() };
+        await page.goto(`${origin}/?theme=${theme}`);
+        await page.waitForFunction(() => !document.body.textContent?.includes("Verbindung wird hergestellt"));
+        await page.getByText("14 Positionen erkannt", { exact: true }).waitFor();
         if (!live.revoke) throw new Error("Missing revoke fixture");
         live.revoke();
         await page.getByText("Zugriff geändert. Lade die Seite neu, um deinen Zugriff zu prüfen.", { exact: false }).waitFor();
         expect(await page.getByText("14 Positionen erkannt", { exact: true }).count()).toBe(0);
+        expect(await page.locator(".cloud-code__run-summary").count()).toBe(0);
         if (width === 390 && theme === "light") {
           await page.goto(`${origin}/?theme=${theme}&failed=1`);
           await page.getByRole("heading", { name: "Lieferschein #4711", exact: true }).waitFor();
@@ -215,6 +227,14 @@ for (const theme of ["light", "dark"] as const)
           await page.goto(`${origin}/?theme=${theme}&failed=1&reader=1`);
           await page.getByText("Nur wer diesen Code verwaltet, sieht seine Ausgabe.", { exact: false }).waitFor();
           expect(await page.getByText("14 Positionen erkannt", { exact: true }).count()).toBe(0);
+          expect(await page.getByText("Lieferschein gelesen · 1 bestätigt", { exact: true }).count()).toBe(1);
+          expect(await page.locator(".k2b-run-log__output-toggle").count()).toBe(0);
+          expect(await page.getByRole("link", { name: "Zugriff prüfen", exact: true }).count()).toBe(0);
+          expect(await page.locator(".cloud-code__run-summary time").count()).toBe(0);
+          expect(await page.locator(".cloud-code__run-access").evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+          expect(await page.locator(".cloud-code__run-access > span").evaluate((node) => getComputedStyle(node).textOverflow)).not.toBe(
+            "ellipsis",
+          );
           await shot(page, "leser", theme, width);
           const readerBounds = await bounds(page);
           await page.evaluate(() => window.dispatchEvent(new Event("fixture-reader-cancelled")));

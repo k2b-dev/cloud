@@ -5,7 +5,10 @@ import { runLedgerFixture } from "./run-ledger.fixture";
 
 const query = new URLSearchParams(window.location.search);
 const data = runLedgerFixture(query.has("failed"));
-if (data.state.kind === "ready" && query.has("reader")) data.state.permission = "reader";
+if (data.state.kind === "ready" && query.has("reader")) {
+  data.state.permission = "reader";
+  if (data.state.run?.refusal) data.state.run.refusal.call = null;
+}
 render(
   () => (
     <LocaleProvider locale="de">

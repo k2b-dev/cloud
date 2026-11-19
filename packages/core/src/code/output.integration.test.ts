@@ -15,7 +15,7 @@ import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-t
 import { RUNNER_PATHS, RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import { LIVE_LIMITS } from "@k2b/cloud/events";
 import { createLiveEngine, type LiveEnvelope, liveTopicConfig } from "@k2b/cloud/events/testing";
-import { accounts } from "@k2b/cloud/services";
+import { accounts, coreSettings } from "@k2b/cloud/services";
 import { createSync, type Sync } from "@k2b/sync";
 import { generateKeyPair } from "jose";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
@@ -41,6 +41,7 @@ import {
   replayCodeOutput,
 } from "./output";
 import * as redaction from "./output-redaction";
+import { loadCodeRunReadModel } from "./read-model/run";
 import { createCodeRunnerRoutes } from "./runner-routes";
 import { secretEchoReplacements } from "./secret-echo";
 import { expireCodeRuns, readCodeRun, readCodeRunEntries } from "./store";
@@ -222,6 +223,37 @@ suiteFor(
       );
     } finally {
       await meter.close();
+    }
+  });
+  test("stored runner outcomes survive the real run-word query with a reader's authority", async () => {
+    const user = await accounts.users.get({ id: reader });
+    if (!user) throw new Error("Missing fixture reader");
+    const context = {
+      authority: {
+        actor: { kind: "user" as const, user },
+        accessSubject: { type: "user" as const, userId: reader },
+        credentialKind: "session" as const,
+        scopes: [],
+      },
+      locale: "de",
+    };
+    const proof = await attempt();
+    const timeZone = spyOn(coreSettings, "get").mockResolvedValue("UTC");
+    try {
+      for (const [outcome, reason] of [
+        ["wall_clock_limit", "Laufzeitlimit erreicht"],
+        ["memory_limit", "Speicherlimit des Runners erreicht"],
+        ["stalled", "Runner antwortet nicht mehr"],
+        ["lease_lost", "Runner-Verbindung verloren. Prüfe die gespeicherten Aufrufe vor der erneuten Ausführung."],
+        ["failed", null],
+      ] as const) {
+        await sql`UPDATE code.runs SET state='failed',outcome=${outcome},ended_at=${new Date(fixed)} WHERE id=${proof.runId}::uuid`;
+        const words = await loadCodeRunReadModel({ codeId, runId: proof.runId }, context);
+        expect(words.state).toBe("failed");
+        expect(words.reason).toBe(reason);
+      }
+    } finally {
+      timeZone.mockRestore();
     }
   });
   test("readers receive no contents through the shared service and capability used by API, CLI and agents", async () => {

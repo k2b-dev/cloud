@@ -38,6 +38,12 @@ export function followCodeRun(
   let refreshing: Promise<void> | undefined;
   const abort = new AbortController();
   let dispose = () => {};
+  const stop = () => {
+    if (closed) return;
+    closed = true;
+    abort.abort();
+    dispose();
+  };
   const refresh = () => {
     if (closed) return Promise.resolve();
     admitted = true;
@@ -47,6 +53,7 @@ export function followCodeRun(
         if (closed) return;
         current = snapshot;
         options.apply(current);
+        if (current.state !== "queued" && current.state !== "running") stop();
       })
       .finally(() => {
         refreshing = undefined;
@@ -55,9 +62,7 @@ export function followCodeRun(
   };
   const fail = (reason: "revoked" | "unavailable") => {
     if (closed) return;
-    closed = true;
-    abort.abort();
-    dispose();
+    stop();
     options.unavailable(reason);
   };
   const subscription = liveConnection("/api/ai/live").subscribe("codeRun", scope, {
@@ -96,9 +101,6 @@ export function followCodeRun(
     unavailable: () => fail("unavailable"),
   });
   dispose = () => subscription.close();
-  return () => {
-    closed = true;
-    abort.abort();
-    subscription.close();
-  };
+  if (closed) dispose();
+  return stop;
 }
