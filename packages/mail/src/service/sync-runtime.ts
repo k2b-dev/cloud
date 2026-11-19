@@ -2671,12 +2671,13 @@ export const commitSyncBatch = async (params: {
 /**
  * Imports one batch of the folder. Syncs and background work take turns with commands of the
  * same mailbox. A sync that checks for new mail gets a head start over background work; a batch
- * that continues with older mail is `background` work.
+ * that continues with older mail is `background` work. The first batch after the provider pushed
+ * a change ranks as a `command`, see `pushedSyncKey`.
  */
 export const syncFolderBatch = async (
   folderId: string,
   jobHeartbeat: () => Promise<void>,
-  priority: Extract<ProviderLeasePriority, "sync" | "background"> = "sync",
+  priority: ProviderLeasePriority = "sync",
   options: { remoteResourceId?: string } = {},
 ): Promise<SyncBatchResult> => {
   // A job that knows its folder's remote mailbox asks for the lease before it reads the folder,
@@ -2885,11 +2886,12 @@ export const syncFolderBatch = async (
       },
     });
     // Reserve the turn for the continuation runSyncFolderJob resubmits for a request made while
-    // this batch ran.
+    // this batch ran, with the rank that continuation asks with.
     const requested =
       !(batch.hasMore && batch.syncPending) && Number(await redis.send("EXISTS", [syncRequestKey(folderId)]).catch(() => 0)) > 0;
+    const pushed = requested && Number(await redis.send("EXISTS", [pushedSyncKey(folderId)]).catch(() => 0)) > 0;
     if (batch.hasMore || requested)
-      next = { waiter: `sync-folder:${folderId}`, priority: batch.syncPending || requested ? "sync" : "background" };
+      next = { waiter: `sync-folder:${folderId}`, priority: pushed ? "command" : batch.syncPending || requested ? "sync" : "background" };
   } catch (error) {
     await recordProviderFailure(resource, error);
     const code = normalizeSyncErrorCode(error);
@@ -2958,6 +2960,15 @@ const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
 // when the job would end. A request counts this long: it outlasts a long batch and a few retries.
 export const FOLDER_SYNC_REQUEST_MS = 10 * 60_000;
 const syncRequestKey = (folderId: string): string => `mail:sync-requested:${folderId}`;
+// The provider announced new mail in the folder, usually the Inbox, and a person may be waiting
+// for it. Set with the request marker above, which the job reads on each turn; the job
+// reads this one only when a request joined, so busy turns cost nothing more. The folder's next
+// batch then ranks as a command instead of waiting behind every folder check of the mailbox.
+// Folder syncs still get every other turn: the lease alternates commands with other work. Each
+// folder has one job, so a provider that pushes without pause takes at most every other turn, and
+// a person's command waits for at most one such batch and one further turn of other work. Only
+// that first batch ranks so; its continuations rank as before.
+const pushedSyncKey = (folderId: string): string => `mail:sync-pushed:${folderId}`;
 // A waiting sync settles on the folder checkpoint (requestedSyncProgress), so its next batch
 // commits a fresh checkpoint even when STATUS is unchanged; history still omits empty successes.
 const awaitedSyncKey = (folderId: string): string => `mail:sync-awaited:${folderId}`;
@@ -2983,10 +2994,11 @@ const markFolderDegraded = async (folderId: string): Promise<void> => {
 
 /**
  * `backfill` marks a continuation that only imports older mail or reconciliation windows.
+ * `pushed` carries a push the job took up across the turns that find the lease busy.
  * `remoteResourceId` is the folder's remote mailbox: a job learns it in its first turn and carries it,
  * so its later turns ask for the lease without a database statement.
  */
-type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string };
+type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string; pushed?: boolean };
 
 const syncFolderJob = lazySync((sync) =>
   sync.job<SyncFolderJobInput>({
@@ -3001,6 +3013,7 @@ const runSyncFolderJobOutcome = async (
 ): Promise<SyncBatchResult | { deferred: string }> => {
   const { folderId } = ctx.input;
   let backfill = ctx.input.backfill === true;
+  let pushed = ctx.input.pushed === true;
   let carried: { remoteResourceId?: string } = ctx.input.remoteResourceId ? { remoteResourceId: ctx.input.remoteResourceId } : {};
   try {
     // The first turn reads which remote mailbox the folder belongs to, as each turn did before;
@@ -3011,8 +3024,11 @@ const runSyncFolderJobOutcome = async (
     }
     // A sync requested meanwhile joined this job. Its next batch checks for new mail before it
     // continues with older mail, so it ranks as a folder sync.
-    if ((await redis.send("GETDEL", [syncRequestKey(folderId)])) != null) backfill = false;
-    const data = await syncFolderBatch(folderId, () => ctx.heartbeat(), backfill ? "background" : "sync", carried);
+    if ((await redis.send("GETDEL", [syncRequestKey(folderId)])) != null) {
+      backfill = false;
+      if ((await redis.send("GETDEL", [pushedSyncKey(folderId)])) != null) pushed = true;
+    }
+    const data = await syncFolderBatch(folderId, () => ctx.heartbeat(), pushed ? "command" : backfill ? "background" : "sync", carried);
     countFolderBatch(data.unchanged ? "unchanged" : "committed");
     if (data.hasMore) {
       countFolderSyncTrigger("continuation");
@@ -3031,14 +3047,14 @@ const runSyncFolderJobOutcome = async (
     if (code === "MAIL_RATE_LIMITED") {
       countFolderBatch("deferred");
       countFolderSyncTrigger("rate_limited");
-      ctx.resubmit({ delayMs: retryAfterMs(error, 5_000), input: { folderId, backfill, ...carried } });
+      ctx.resubmit({ delayMs: retryAfterMs(error, 5_000), input: { folderId, backfill, ...(pushed ? { pushed } : {}), ...carried } });
       return { deferred: code };
     }
     // A sibling job holds the remote resource: routine contention, not a failed attempt.
     if (code === "SYNC_BUSY") {
       countFolderBatch("deferred");
       countFolderSyncTrigger("busy");
-      ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill, ...carried } });
+      ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill, ...(pushed ? { pushed } : {}), ...carried } });
       return { deferred: code };
     }
     countFolderBatch("failed");
@@ -3685,12 +3701,14 @@ const startRediscoveryJob = async (): Promise<void> => {
 const RECENT_REQUEST_MS = 75_000;
 const recentRequestKey = (folderId: string): string => `mail:sync-recent:${folderId}`;
 
-const submitSyncFolderJob = async (folderId: string, trigger: FolderSyncTrigger, awaited = false): Promise<void> => {
+const submitSyncFolderJob = async (folderId: string, trigger: FolderSyncTrigger, awaited = false, pushed = false): Promise<void> => {
   countFolderSyncTrigger(trigger);
   // Recorded even while this process stops and queues nothing: another one's scheduled sync of the
   // folder then records the run the command waits for.
   if (awaited) await redis.send("SET", [awaitedSyncKey(folderId), "1", "PX", String(FOLDER_SYNC_REQUEST_MS)]);
   await (syncTasks.run(async () => {
+    // Before the request marker, so a job that reads the request also finds the push.
+    if (pushed) await redis.send("SET", [pushedSyncKey(folderId), "1", "PX", String(FOLDER_SYNC_REQUEST_MS)]);
     await redis.send("SET", [syncRequestKey(folderId), "1", "PX", String(FOLDER_SYNC_REQUEST_MS)]);
     await syncFolderJob().submit({ coalesce: true, key: `folder:${folderId}`, input: { folderId } });
     // Only a submitted request stands in for the scheduled sync.
@@ -3943,12 +3961,15 @@ export const enqueueMailboxSync = async (
   return folders.length;
 };
 
-/** `awaited`: a sync command waits for the folder, so it records a completed run. */
+/**
+ * `awaited`: a sync command waits for the folder, so it records a completed run. `pushed`: the
+ * provider reported a change of the folder, so its next batch ranks as a command (`pushedSyncKey`).
+ */
 export const enqueueFolderSync = async (
   folderId: string,
-  options: { trigger?: FolderSyncTrigger; awaited?: boolean } = {},
+  options: { trigger?: FolderSyncTrigger; awaited?: boolean; pushed?: boolean } = {},
 ): Promise<void> => {
-  await submitSyncFolderJob(folderId, options.trigger ?? "command", options.awaited);
+  await submitSyncFolderJob(folderId, options.trigger ?? "command", options.awaited, options.pushed);
 };
 
 /**
@@ -4016,7 +4037,8 @@ export const requestedSyncProgress = async (params: {
   );
 };
 
-export const enqueueFolderReconciliation = async (folderId: string, fromUid: number): Promise<void> => {
+/** `pushed`: as for `enqueueFolderSync`, the provider reported the change. */
+export const enqueueFolderReconciliation = async (folderId: string, fromUid: number, options: { pushed?: boolean } = {}): Promise<void> => {
   const windowStart = reconcileWindowStart(fromUid);
   // Only a cursor rewind: a running sync batch may hold the provider mutex, and
   // the request must survive that contention.
@@ -4040,7 +4062,7 @@ export const enqueueFolderReconciliation = async (folderId: string, fromUid: num
       AND sync_status <> 'excluded'
       AND envelope_cursor ->> 'version' = '1'
   `;
-  await submitSyncFolderJob(folderId, "reconcile");
+  await submitSyncFolderJob(folderId, "reconcile", false, options.pushed);
 };
 
 export const enqueueBindingRediscovery = async (bindingId: string, allowCredentialRevision = false): Promise<void> => {

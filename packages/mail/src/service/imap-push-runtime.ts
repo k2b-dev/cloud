@@ -171,8 +171,9 @@ type ImapPushRuntimeDependencies = {
   updateHealth(bindingId: string, generation: number, patch: ImapPushHealthPatch): Promise<void>;
   loadRuntime: typeof loadProviderConnectionRuntimeSnapshot;
   listen: NonNullable<typeof imapSmtpConnector.listenForChanges>;
-  enqueueFolder(folderId: string): Promise<void>;
-  enqueueReconciliation(folderId: string, fromUid: number): Promise<void>;
+  /** `pushed`: the server announced a change of the folder, so its sync ranks ahead of folder checks. */
+  enqueueFolder(folderId: string, options?: { pushed?: boolean }): Promise<void>;
+  enqueueReconciliation(folderId: string, fromUid: number, options?: { pushed?: boolean }): Promise<void>;
   enqueueRediscovery(bindingId: string): Promise<void>;
   loadReconnectBudget(plan: ImapPushBindingPlan): Promise<ImapReconnectBudget>;
   /** The provider answered: closes the remote mailbox's provider breaker, so its waiting syncs run now. */
@@ -518,10 +519,12 @@ export const applyImapPushHints = async (params: {
   hints: readonly ConnectorChangeHint[];
   assertLeaseActive(): Promise<void>;
   loadPlan(bindingId: string): Promise<ImapPushBindingPlan | null>;
-  enqueueFolder(folderId: string): Promise<void>;
-  enqueueReconciliation(folderId: string, fromUid: number): Promise<void>;
+  enqueueFolder(folderId: string, options?: { pushed?: boolean }): Promise<void>;
+  enqueueReconciliation(folderId: string, fromUid: number, options?: { pushed?: boolean }): Promise<void>;
   enqueueRediscovery(bindingId: string): Promise<void>;
   loadReconnectBudget(plan: ImapPushBindingPlan): Promise<ImapReconnectBudget>;
+  /** The hints came from the server, not from the listener's own check or a poll. */
+  announced?: boolean;
 }): Promise<"applied" | "stale"> => {
   const uncertain = hintsCarryUncertainty(params.hints);
   const relevant = uncertain || params.hints.some((hint) => hint.type === "folder_changed");
@@ -534,10 +537,14 @@ export const applyImapPushHints = async (params: {
   const batch = coalesceImapHints(params.hints, uncertain ? await params.loadReconnectBudget(current) : UNSPENT_RECONNECT_BUDGET);
   if (!batch.folderChanged && !batch.rediscover) return "applied";
   await params.assertLeaseActive();
+  // New mail the server announced is what someone waits for, also next to a removal that needs
+  // reconciliation. Flag changes and removals alone, often echoes of the person's own commands, the
+  // listener's own checks, polls, and an uncertain stream rank like any folder check.
+  const pushed = params.announced === true && params.hints.some((hint) => hint.type === "folder_changed" && hint.cause === "exists");
   if (batch.reconcileFromUid != null) {
-    await params.enqueueReconciliation(current.folderId, batch.reconcileFromUid);
+    await params.enqueueReconciliation(current.folderId, batch.reconcileFromUid, { pushed });
   } else if (batch.folderChanged) {
-    await params.enqueueFolder(current.folderId);
+    await params.enqueueFolder(current.folderId, { pushed });
   }
   await params.assertLeaseActive();
   if (batch.rediscover) await params.enqueueRediscovery(current.bindingId);
@@ -590,6 +597,7 @@ const consumeHints = async (params: {
     const applied = await applyImapPushHints({
       expected: params.plan,
       hints,
+      announced: true,
       assertLeaseActive: params.assertLeaseActive,
       loadPlan: params.dependencies.loadPlan,
       enqueueFolder: params.dependencies.enqueueFolder,
@@ -1025,8 +1033,8 @@ const defaultDependencies: ImapPushRuntimeDependencies = {
   updateHealth,
   loadRuntime: loadProviderConnectionRuntimeSnapshot,
   listen: imapSmtpConnector.listenForChanges!,
-  enqueueFolder: (folderId) => enqueueFolderSync(folderId, { trigger: "push" }),
-  enqueueReconciliation: enqueueFolderReconciliation,
+  enqueueFolder: (folderId, options) => enqueueFolderSync(folderId, { trigger: "push", pushed: options?.pushed }),
+  enqueueReconciliation: (folderId, fromUid, options) => enqueueFolderReconciliation(folderId, fromUid, options),
   enqueueRediscovery: enqueueBindingRediscovery,
   loadReconnectBudget,
   recordProviderReachable,
