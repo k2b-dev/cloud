@@ -211,7 +211,6 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     (style.transform !== "none" ||
       style.filter !== "none" ||
       style.perspective !== "none" ||
-      style.backdropFilter !== "none" ||
       /paint|layout|strict|content/.test(style.contain) ||
       /transform|filter|perspective/.test(style.willChange));
   let holdsFixedCache = new WeakMap<Element, boolean>();
