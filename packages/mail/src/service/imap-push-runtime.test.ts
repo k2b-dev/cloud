@@ -102,6 +102,7 @@ const startIdleListener = (options: {
     health: [] as { state: string; error?: unknown }[],
     reachable: [] as string[],
     folderSyncs: 0,
+    pushedFolderSyncs: 0,
   };
   let releaseIterator: ((value: IteratorResult<ConnectorChangeHint>) => void) | null = null;
   const task = runImapPushBinding(
@@ -136,8 +137,9 @@ const startIdleListener = (options: {
           },
         };
       },
-      enqueueFolder: async () => {
+      enqueueFolder: async (_folderId, options) => {
         events.folderSyncs += 1;
+        if (options?.pushed) events.pushedFolderSyncs += 1;
       },
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
@@ -237,6 +239,31 @@ describe("IMAP push runtime", () => {
     ).toEqual({ folderChanged: true, reconcileFromUid: 9_004, rediscover: true });
   });
 
+  test("a change the server announces ranks the folder's sync as pushed, an uncertain stream alone does not", async () => {
+    const synced = async (hints: ConnectorChangeHint[]) => {
+      const calls: Array<{ folderId: string; pushed: boolean }> = [];
+      await applyImapPushHints({
+        expected: plan,
+        hints,
+        assertLeaseActive: async () => undefined,
+        loadPlan: async () => plan,
+        enqueueFolder: async (folderId, options) => {
+          calls.push({ folderId, pushed: options?.pushed === true });
+        },
+        enqueueReconciliation: async () => undefined,
+        enqueueRediscovery: async () => undefined,
+        loadReconnectBudget: async () => ({ lastDiscoveryAt: Date.now(), lastFullReconcileAt: Date.now(), fullReconcilePending: false }),
+      });
+      return calls;
+    };
+    expect(await synced([{ type: "folder_changed", cause: "exists", folderPath: "INBOX", uid: null, modseq: null }])).toEqual([
+      { folderId: plan.folderId, pushed: true },
+    ]);
+    expect(await synced([{ type: "disconnected", folderPath: "INBOX", reason: "closed" }])).toEqual([
+      { folderId: plan.folderId, pushed: false },
+    ]);
+  });
+
   test("does not rediscover a reconnect within the regular discovery interval", async () => {
     const calls: string[] = [];
     const now = Date.now();
@@ -245,8 +272,8 @@ describe("IMAP push runtime", () => {
       hints: [{ type: "disconnected", folderPath: "INBOX", reason: "error" }],
       assertLeaseActive: async () => undefined,
       loadPlan: async () => plan,
-      enqueueFolder: async (folderId) => {
-        calls.push(`folder:${folderId}`);
+      enqueueFolder: async (folderId, options) => {
+        calls.push(`folder:${folderId}${options?.pushed ? ":pushed" : ""}`);
       },
       enqueueReconciliation: async (_folderId, fromUid) => {
         calls.push(`reconcile:${fromUid}`);
@@ -735,6 +762,8 @@ describe("IMAP push lease renewal", () => {
       // The scheduled sync leaves the folder to its listener: one check a minute, not two.
       await advance(5 * 60_000);
       expect(listener.events.folderSyncs).toBe(6);
+      // Its own checks were announced by no server: they rank like the folder checks they replace.
+      expect(listener.events.pushedFolderSyncs).toBe(0);
       expect(listener.events.closedAt).toEqual([]);
 
       listener.controller.abort(new Error("test shutdown"));

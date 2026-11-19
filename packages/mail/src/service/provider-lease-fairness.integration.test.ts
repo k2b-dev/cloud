@@ -128,7 +128,7 @@ const waitFor = async (ready: () => Promise<boolean>, what: string, timeoutMs = 
   }
 };
 
-type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string };
+type SyncFolderJobInput = { folderId: string; backfill?: boolean; remoteResourceId?: string; pushed?: boolean };
 
 /**
  * Runs one `mail:sync-folder` job the way its worker does: a resubmitted job runs again after its
@@ -1910,6 +1910,120 @@ suite("mail provider lease fairness", () => {
       expect(next.lock).not.toBeNull();
       if (next.lock) await releaseProviderLease(next.lock);
     } finally {
+      await releaseProviderLease(holder.lock);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+      );
+    }
+  });
+
+  /** Runs one `mail:sync-folder` job turn and returns the continuation it asked for. */
+  const oneFolderTurn = async (input: SyncFolderJobInput): Promise<SyncFolderJobInput | null> => {
+    const turnResult: { next: SyncFolderJobInput | null } = { next: null };
+    await runSyncFolderJob({
+      input,
+      heartbeat: async () => undefined,
+      resubmit: (resubmit) => {
+        turnResult.next = resubmit?.input ?? input;
+      },
+    });
+    return turnResult.next;
+  };
+
+  test("an Inbox sync the server pushed takes the next turn ahead of twenty waiting folder checks, and they go on after it", async () => {
+    // The listener's job runs as the worker would; it needs the request markers of a running Mail.
+    await ensureHydrationRuntime();
+    const mailbox = await connect("pushed");
+    const inbox = mailbox.folderId(INBOX);
+    const resource = mailbox.remoteResourceId;
+    const take = (waiter: string, priority: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    // A folder check holds the lease, and twenty more wait for it, as on a mailbox with many folders.
+    const holder = await take("sync-folder:holder", "sync");
+    if (!holder.lock) throw new Error("The folder check did not take the provider lease");
+    const folderChecks = Array.from({ length: 20 }, (_, index) => `sync-folder:${index}`);
+    try {
+      for (const waiter of folderChecks) expect((await take(waiter, "sync")).lock).toBeNull();
+      // New mail arrives and IDLE reports it; the Inbox's job asks and finds the lease busy.
+      const [newMail] = deliver(mailbox, 1, "pushed");
+      await enqueueFolderSync(inbox, { trigger: "push", pushed: true });
+      const waiting = await oneFolderTurn({ folderId: inbox });
+      expect(waiting).toEqual({ folderId: inbox, backfill: false, pushed: true, remoteResourceId: resource });
+
+      await releaseProviderLease(holder.lock);
+      // Every folder check asks first for the free lease, and none gets it: the pushed sync is next.
+      // Before the fix it waited behind all of them, like any folder check.
+      for (const waiter of folderChecks) {
+        const turn = await take(waiter, "sync");
+        if (turn.lock) await releaseProviderLease(turn.lock);
+        expect({ waiter, lock: Boolean(turn.lock) }).toEqual({ waiter, lock: false });
+      }
+      expect(await oneFolderTurn(waiting!)).toBeNull();
+      expect(await imported(mailbox, newMail!)).toBe(true);
+      // The folder checks go on in their order right after it.
+      const next = await take(folderChecks[0]!, "sync");
+      expect(next.lock).not.toBeNull();
+      if (next.lock) await releaseProviderLease(next.lock);
+    } finally {
+      await releaseProviderLease(holder.lock);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+      );
+    }
+  });
+
+  test("an Inbox the server pushes to without pause takes every other turn, and the folder checks get the rest", async () => {
+    await ensureHydrationRuntime();
+    const mailbox = await connect("pushed-storm");
+    const inbox = mailbox.folderId(INBOX);
+    const resource = mailbox.remoteResourceId;
+    const take = (waiter: string, priority: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    const folderChecks = Array.from({ length: 6 }, (_, index) => `sync-folder:${index}`);
+    const holder = await take("sync-folder:holder", "sync");
+    if (!holder.lock) throw new Error("The folder check did not take the provider lease");
+    try {
+      for (const waiter of folderChecks) expect((await take(waiter, "sync")).lock).toBeNull();
+      // Each pushed batch sees one more message arrive and be pushed while it runs.
+      const pushes: string[] = [];
+      const pushDuringStatus = () => {
+        afterStatus = async (account, path) => {
+          if (account !== mailbox.account || path !== INBOX) return;
+          afterStatus = null;
+          pushes.push(deliver(mailbox, 1, `pushed-storm-${pushes.length}`)[0]!);
+          await enqueueFolderSync(inbox, { trigger: "push", pushed: true });
+        };
+      };
+      await enqueueFolderSync(inbox, { trigger: "push", pushed: true });
+      let inboxJob = await oneFolderTurn({ folderId: inbox });
+      await releaseProviderLease(holder.lock);
+      const order: string[] = [];
+      for (let round = 0; round < 3; round += 1) {
+        // The pushed batch runs and keeps the turn for the push that came meanwhile.
+        pushDuringStatus();
+        try {
+          inboxJob = await oneFolderTurn(inboxJob!);
+        } finally {
+          afterStatus = null;
+        }
+        expect(inboxJob).toEqual({ folderId: inbox, remoteResourceId: resource });
+        order.push("inbox");
+        // Still, the folder check first in line goes next, then the Inbox again.
+        for (const waiter of folderChecks) {
+          const turn = await take(waiter, "sync");
+          if (!turn.lock) continue;
+          order.push(waiter);
+          folderChecks.splice(folderChecks.indexOf(waiter), 1);
+          await releaseProviderLease(turn.lock);
+          break;
+        }
+      }
+      expect(order).toEqual(["inbox", "sync-folder:0", "inbox", "sync-folder:1", "inbox", "sync-folder:2"]);
+      for (const messageId of pushes.slice(0, 2)) expect(await imported(mailbox, messageId)).toBe(true);
+    } finally {
+      afterStatus = null;
       await releaseProviderLease(holder.lock);
       await redis.send(
         "DEL",

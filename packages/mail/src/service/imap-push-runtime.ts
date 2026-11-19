@@ -171,7 +171,8 @@ type ImapPushRuntimeDependencies = {
   updateHealth(bindingId: string, generation: number, patch: ImapPushHealthPatch): Promise<void>;
   loadRuntime: typeof loadProviderConnectionRuntimeSnapshot;
   listen: NonNullable<typeof imapSmtpConnector.listenForChanges>;
-  enqueueFolder(folderId: string): Promise<void>;
+  /** `pushed`: the server announced a change of the folder, so its sync ranks ahead of folder checks. */
+  enqueueFolder(folderId: string, options?: { pushed?: boolean }): Promise<void>;
   enqueueReconciliation(folderId: string, fromUid: number): Promise<void>;
   enqueueRediscovery(bindingId: string): Promise<void>;
   loadReconnectBudget(plan: ImapPushBindingPlan): Promise<ImapReconnectBudget>;
@@ -518,7 +519,7 @@ export const applyImapPushHints = async (params: {
   hints: readonly ConnectorChangeHint[];
   assertLeaseActive(): Promise<void>;
   loadPlan(bindingId: string): Promise<ImapPushBindingPlan | null>;
-  enqueueFolder(folderId: string): Promise<void>;
+  enqueueFolder(folderId: string, options?: { pushed?: boolean }): Promise<void>;
   enqueueReconciliation(folderId: string, fromUid: number): Promise<void>;
   enqueueRediscovery(bindingId: string): Promise<void>;
   loadReconnectBudget(plan: ImapPushBindingPlan): Promise<ImapReconnectBudget>;
@@ -537,7 +538,9 @@ export const applyImapPushHints = async (params: {
   if (batch.reconcileFromUid != null) {
     await params.enqueueReconciliation(current.folderId, batch.reconcileFromUid);
   } else if (batch.folderChanged) {
-    await params.enqueueFolder(current.folderId);
+    // A change the server announced may be new mail someone waits for; an uncertain stream alone
+    // is no such announcement.
+    await params.enqueueFolder(current.folderId, { pushed: params.hints.some((hint) => hint.type === "folder_changed") });
   }
   await params.assertLeaseActive();
   if (batch.rediscover) await params.enqueueRediscovery(current.bindingId);
@@ -563,7 +566,8 @@ const applyImapReconciliationHint = (params: {
     hints: [reconciliationHint(params.plan)],
     assertLeaseActive: params.assertLeaseActive,
     loadPlan: params.dependencies.loadPlan,
-    enqueueFolder: params.dependencies.enqueueFolder,
+    // The listener's own check finds no change it was told about: it ranks like a folder check.
+    enqueueFolder: (folderId) => params.dependencies.enqueueFolder(folderId),
     enqueueReconciliation: params.dependencies.enqueueReconciliation,
     enqueueRediscovery: params.dependencies.enqueueRediscovery,
     loadReconnectBudget: params.dependencies.loadReconnectBudget,
@@ -1025,7 +1029,7 @@ const defaultDependencies: ImapPushRuntimeDependencies = {
   updateHealth,
   loadRuntime: loadProviderConnectionRuntimeSnapshot,
   listen: imapSmtpConnector.listenForChanges!,
-  enqueueFolder: (folderId) => enqueueFolderSync(folderId, { trigger: "push" }),
+  enqueueFolder: (folderId, options) => enqueueFolderSync(folderId, { trigger: "push", pushed: options?.pushed }),
   enqueueReconciliation: enqueueFolderReconciliation,
   enqueueRediscovery: enqueueBindingRediscovery,
   loadReconnectBudget,
