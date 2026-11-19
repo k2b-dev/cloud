@@ -583,8 +583,27 @@ describe("privacy screen", () => {
     try {
       await ready(page);
       for (const probe of probes) await page.locator(probe).waitFor({ state: "attached" });
+      // Every layer blurs where it is: a cover must never move it, such as out of view.
+      const boxes = () =>
+        page.evaluate(
+          (selectors) =>
+            selectors.map((selector) => {
+              const box = document.querySelector(selector)!.getBoundingClientRect();
+              const shown = box.width > 0 && box.bottom > 0 && box.right > 0 && box.top < innerHeight && box.left < innerWidth;
+              return { selector, box: [box.x, box.y, box.width, box.height].map(Math.round), shown };
+            }),
+          probes,
+        );
+      // settled: transitions are off and the fake clock holds animation frames; the layers stand as opened.
+      const before = await boxes();
+      // The modeless dialog waits behind a modal one; everything else is in view.
+      expect(before.filter((probe) => !probe.shown).map((probe) => probe.selector)).toEqual(
+        variant === "modal" ? ["#overlay-modeless"] : [],
+      );
       await shortcut(page);
       expect(await covered(page)).toBe(true);
+      // settled: covering is the moment measured; the filter applies with the attribute.
+      expect(await boxes()).toEqual(before);
       // A layer is covered when a blurred cover with a box of its own lies between its content and the top layer it
       // renders in: a top-layer element escapes the filter of every ancestor outside it, and an element without a box
       // (`display: contents`, such as the portal root) paints no filter at all.

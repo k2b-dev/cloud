@@ -199,7 +199,10 @@ inside it. An element with text of its own beside an island covers whole,
 the island included, because loose text cannot blur alone. Open dialogs and
 popovers cover too, also in pop-out pages without the app bar. A container
 without a box of its own (`display: contents`), such as the `@k2b/ui` portal
-root, cannot blur; its children cover instead.
+root, cannot blur, and a blurred container would become the frame of the
+fixed windows inside it and move them; such containers cover through their
+children. Loose text directly in a `display: contents` element stays sharp,
+so wrap it in an element.
 
 ## Render the application layout
 

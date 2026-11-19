@@ -199,14 +199,47 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   const hasOwnText = (element: Element) =>
     Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && Boolean(node.textContent?.trim()));
   /**
-   * An element without a box of its own, such as the `@k2b/ui` portal root (`display: contents`), paints no filter or
-   * opacity: blurring it would leave every window, toast, and panel portaled into it sharp. Its children cover instead.
+   * Some containers cannot carry the blur, so their children cover instead:
+   * - an element without a box of its own, such as the `@k2b/ui` portal root (`display: contents`), paints no filter;
+   *   blurring it would leave every window, toast, and panel portaled into it sharp;
+   * - a filter turns its element into the containing block of the fixed elements inside it, and of absolute children
+   *   when it was not positioned. Blurring such a container, such as a portal's wrapper around a window and its scrim,
+   *   would move them away instead of blurring them in place.
    */
-  const boxless = (element: Element) => getComputedStyle(element).display === "contents";
+  const formsContainingBlock = (element: Element, style: CSSStyleDeclaration) =>
+    !element.hasAttribute(COVERED) &&
+    (style.transform !== "none" ||
+      style.filter !== "none" ||
+      style.perspective !== "none" ||
+      style.backdropFilter !== "none" ||
+      /paint|layout|strict|content/.test(style.contain) ||
+      /transform|filter|perspective/.test(style.willChange));
+  let holdsFixedCache = new WeakMap<Element, boolean>();
+  const holdsFixed = (element: Element): boolean => {
+    const known = holdsFixedCache.get(element);
+    if (known !== undefined) return known;
+    let found = false;
+    for (const child of Array.from(element.children)) {
+      if (SKIPPED.has(child.tagName)) continue;
+      const style = getComputedStyle(child);
+      if (style.position === "fixed" || (!formsContainingBlock(child, style) && style.display !== "none" && holdsFixed(child))) {
+        found = true;
+        break;
+      }
+    }
+    holdsFixedCache.set(element, found);
+    return found;
+  };
+  const coversThroughChildren = (element: Element) => {
+    const style = getComputedStyle(element);
+    if (style.display === "contents" || holdsFixed(element)) return true;
+    return style.position === "static" && Array.from(element.children).some((child) => getComputedStyle(child).position === "absolute");
+  };
   const cover = (container: Element) => {
     for (const child of Array.from(container.children)) {
       if (SKIPPED.has(child.tagName) || isIsland(child)) continue;
-      if ((holdsIsland(child) && !hasOwnText(child)) || boxless(child)) cover(child);
+      if (hasOwnText(child)) mark(child, "");
+      else if (holdsIsland(child) || coversThroughChildren(child)) cover(child);
       else mark(child, "");
     }
   };
@@ -272,6 +305,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   /** Keep unchanged covers in place: a layout read between removing and restoring a filter restarts its transition. */
   const reconcile = () => {
     nextCovered.clear();
+    holdsFixedCache = new WeakMap();
     placeHint();
     cover(document.body);
     coverSurfaces();
