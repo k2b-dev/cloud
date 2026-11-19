@@ -262,7 +262,11 @@ export {
   type AiOpenQuestionKind,
   type AiOpenQuestionSource,
   type AiOpenQuestions,
+  type AiOpenQuestionsCursor,
+  AiOpenQuestionsCursorSchema,
   AiOpenQuestionsSchema,
+  aiOpenQuestionsPage,
+  compareAiOpenQuestions,
   countAiOpenQuestions,
   listAiOpenQuestions,
 } from "./open-questions";

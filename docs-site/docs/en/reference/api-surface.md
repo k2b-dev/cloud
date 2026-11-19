@@ -829,6 +829,11 @@ The chat runtime also exports `appendAiBackgroundMessages` and
 [Code review activity](/en/docs/ai/chat-runtime-and-streaming#code-decision-activity).
 `AiOpenQuestionsSchema`, `AiOpenQuestionKind` and `AiOpenQuestionSource` from
 `@k2b/cloud/ai` describe the shared waiting snapshot.
+The browser-safe `@k2b/cloud/contracts/open-questions` entry point exports
+`AiOpenQuestionsSchema`, `AiOpenQuestionsCursorSchema` and their types for
+[waiting-list pagination](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions).
+`aiOpenQuestionsPage` and `compareAiOpenQuestions` are platform-owned source
+composition helpers; applications read through Core's authorized Query.
 `listAccessRecipientUserIds` from `@k2b/cloud/server` supplies bounded
 [background manager candidates](/en/docs/platform/resource-types-and-discussions#resolve-managers-for-background-notices).
 
