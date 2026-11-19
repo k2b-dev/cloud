@@ -862,7 +862,7 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
 | `CLOUD_TEST_JMAP_URL` | `http://admin:cloud_jmap_test@127.0.0.1:8080` (dedicated test server) |
 | `CLOUD_TEST_CLICKHOUSE_URL` | `http://cloud_ci:cloud_ci@127.0.0.1:8123` (test admin URL) |
-| `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
+| `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8081` |
 | `CLOUD_TEST_S3_ENDPOINT` | `http://127.0.0.1:3900` |
 | `CLOUD_TEST_S3_BUCKET` | `cloud-test` (must end in `-test`) |
 | `CLOUD_TEST_S3_ACCESS_KEY_ID` | Test-only S3 access key |
