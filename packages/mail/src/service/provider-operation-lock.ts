@@ -212,14 +212,16 @@ const enterLeaseLineScript = `
   return { position, retryAfter, breaker, redis.call("ZSCORE", KEYS[1], ARGV[1]), priority, openFor, parked or false }
 `;
 
-// KEYS: places, presence, priorities, last turn, parked, woken. ARGV: waiter, what it leaves,
-// place TTL. Parks a waiter that is in line: it stays present with its place and priority until
-// the place TTL, without asking again, and `wakeLeaseLineScript` wakes it. Returns its position
-// among present waiters, or -1 when it is no longer in line.
+// KEYS: places, presence, priorities, last turn, parked, woken, breaker. ARGV: waiter, what it
+// leaves, place TTL. Parks a waiter that is in line: it stays present with its place and priority
+// until the place TTL, without asking again, and `wakeLeaseLineScript` wakes it. Returns its
+// position among present waiters, or -1 when it does not park: it is no longer in line, or the
+// mailbox's breaker is open or remembers a window, because then no release may end its wait.
 const parkInLeaseLineScript = `
   ${lineOrderLua}
   local now = now()
   if not redis.call("ZSCORE", KEYS[1], ARGV[1]) then return -1 end
+  if redis.call("HEXISTS", KEYS[7], "until") == 1 then return -1 end
   redis.call("HSET", KEYS[5], ARGV[1], ARGV[2])
   redis.call("HDEL", KEYS[6], ARGV[1])
   redis.call("ZADD", KEYS[2], now + tonumber(ARGV[3]), ARGV[1])
@@ -309,7 +311,17 @@ const parkingKeys = (resource: string): string[] => {
 };
 
 const parkInLeaseLine = async (resource: string, waiter: string, left: string): Promise<number> =>
-  Number(await redis.send("EVAL", [parkInLeaseLineScript, "6", ...parkingKeys(resource), waiter, left, String(LEASE_PLACE_TTL_MS)]));
+  Number(
+    await redis.send("EVAL", [
+      parkInLeaseLineScript,
+      "7",
+      ...parkingKeys(resource),
+      leaseLineKeys(resource)[2],
+      waiter,
+      left,
+      String(LEASE_PLACE_TTL_MS),
+    ]),
+  );
 
 /**
  * Wakes a parked waiter in the provider lease line of a remote mailbox. It wakes nobody unless the
@@ -475,7 +487,10 @@ export const acquireProviderLease = async (params: {
   };
   let lock = Number(reply[0]) === 0 ? await take() : null;
   if (lock) return { lock, place: Number(reply[3]), retryAfterMs: null, left };
-  if (!params.park) return busy;
+  // A probe ends with the release of whichever mailbox holds this process's probe, which wakes
+  // nobody here, so a waiter of a mailbox that may probe asks again instead of parking. Taking
+  // the lease after parking would also act on the breaker state the waiter saw before it parked.
+  if (!params.park || probe) return busy;
   // A waiter next in line whose lease the holder released while it parked would wait for a wake
   // that already happened, so it asks once more after parking. Every later release wakes it.
   const leaves = params.park(left);
@@ -631,11 +646,15 @@ export const recordProviderFailure = async (resource: string, error: unknown): P
 /**
  * Records that the provider of `resource` answered: a sync, body download, or rediscovery under
  * its lease completed, IMAP push connected, or the verification of a replaced connection
- * succeeded. Closes the breaker and forgets its window, so waiting jobs run at their next try.
+ * succeeded. Closes the breaker and forgets its window, so waiting jobs run at their next try
+ * and the parked waiter next in line is woken.
  * Valkey errors are ignored: a breaker that stays open closes at the end of its window.
  */
 export const recordProviderReachable = async (resource: string): Promise<void> => {
-  await redis.send("DEL", [leaseLineKeys(resource)[2]]).catch(() => undefined);
+  const closed = Number(await redis.send("DEL", [leaseLineKeys(resource)[2]]).catch(() => 0));
+  // Waiters that parked before the breaker opened wait for a release that a closed breaker does
+  // not bring; the waiter next in line goes on now.
+  if (closed > 0) await wakeParkedProviderWaiter(resource);
 };
 
 // KEYS: the mailbox's breaker. Ends an open window and keeps its length, so the next job probes.

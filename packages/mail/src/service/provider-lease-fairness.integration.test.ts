@@ -71,8 +71,6 @@ const MOVE_MS_PER_MESSAGE = 5;
 // A host that does not answer lets each connection attempt wait this long, like the connectors'
 // 15-second connection timeout, before the attempt fails.
 const UNREACHABLE_TIMEOUT_MS = 5_000;
-// The longest first pause of the provider breaker: one connection timeout plus up to a quarter.
-const LONGEST_FIRST_PAUSE_MS = 15_000 * 1.25;
 
 const connectTimeout = () => Object.assign(new Error("Failed to establish connection in required time"), { code: "CONNECT_TIMEOUT" });
 
@@ -209,9 +207,21 @@ const runFolderSyncJob = async (
 const syncFolderWorker = (places = MAIL_PROVIDER_JOB_CONCURRENCY) => {
   type QueuedJob = { input: SyncFolderJobInput; dueAt: number; ended: () => void };
   const queue: QueuedJob[] = [];
+  // The jobs of this worker that parked, by folder: each ends once its woken job ends. Wakes of
+  // earlier tests' jobs are theirs.
+  const parkedEnds = new Map<string, Array<() => void>>();
+  wakes.clear();
   let stopped = false;
   const runPlace = async (): Promise<void> => {
     while (!stopped) {
+      // A release queues the woken job, which any worker runs, as the job queue does, also one
+      // that parked on an earlier worker.
+      for (const [folderId, input] of wakes) {
+        wakes.delete(folderId);
+        const ends = parkedEnds.get(folderId) ?? [];
+        parkedEnds.delete(folderId);
+        queue.push({ input, dueAt: performance.now(), ended: () => ends.forEach((end) => end()) });
+      }
       const index = queue.findIndex((job) => job.dueAt <= performance.now());
       if (index < 0) {
         await Bun.sleep(5);
@@ -234,7 +244,7 @@ const syncFolderWorker = (places = MAIL_PROVIDER_JOB_CONCURRENCY) => {
         delayMs = null;
       }
       // A parked job is due again once a release wakes it.
-      if (parked) void nextWake(job!.input.folderId).then((input) => queue.push({ ...job!, input, dueAt: performance.now() }));
+      if (parked) parkedEnds.set(job!.input.folderId, [...(parkedEnds.get(job!.input.folderId) ?? []), job!.ended]);
       else if (delayMs === null) job!.ended();
       else queue.push({ ...job!, dueAt: performance.now() + delayMs });
     }
@@ -3166,7 +3176,6 @@ suite("mail provider lease fairness", () => {
         "every mailbox on the dead host to time out",
         4 * UNREACHABLE_TIMEOUT_MS,
       );
-      const timedOutAt = performance.now();
 
       // Syncs queued while the mailboxes pause, such as a push's, end at once without connecting
       // and without holding a place.
@@ -3176,8 +3185,12 @@ suite("mail provider lease fairness", () => {
       expect(unreachableAttempts.length).toBe(attemptsBefore);
 
       // After their pauses, the next scheduled syncs try the host again, one mailbox at a time.
+      // The test ends each pause instead of waiting for it: the breaker keeps the window it
+      // remembers, as when its time has passed.
       mostUnreachableWaiting = 0;
-      await Bun.sleep(Math.max(0, LONGEST_FIRST_PAUSE_MS - (performance.now() - timedOutAt)));
+      for (const resource of resourceIds) {
+        await redis.send("HSET", [`mail:provider-lease-line:{${resource}}:breaker`, "until", String(Date.now() - 1)]);
+      }
       for (const folderId of deadFolders) void worker.submit(folderId);
       await waitFor(
         async () => unreachableAttempts.length > attemptsBefore,
@@ -3194,6 +3207,16 @@ suite("mail provider lease fairness", () => {
     } finally {
       for (const mailbox of onDeadHost) unreachable.delete(mailbox.account);
       await worker.stop();
+      // The stopped worker's jobs have ended, as in a process that stopped: they no longer wait in
+      // their mailboxes' lines. Their breakers stay as they are.
+      for (const mailbox of onDeadHost) {
+        await redis.send(
+          "DEL",
+          ["places", "present", "priorities", "turn", "parked", "woken", "entered"].map(
+            (key) => `mail:provider-lease-line:{${mailbox.remoteResourceId}}:${key}`,
+          ),
+        );
+      }
     }
 
     // IMAP push reaches the host again during a pause: it closes the breaker, and the sync it
@@ -3214,6 +3237,61 @@ suite("mail provider lease fairness", () => {
       await recovery.stop();
     }
   }, 90_000);
+
+  test("a mailbox that may probe its provider parks no waiter, and a provider that answers again wakes the waiter parked before", async () => {
+    const resource = crypto.randomUUID();
+    const breaker = `mail:provider-lease-line:{${resource}}:breaker`;
+    const ask = (waiter: string, park?: boolean) =>
+      acquireProviderLease({
+        resource,
+        waiter,
+        priority: "sync",
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+        ...(park ? { park: () => JSON.stringify({ folderId: waiter }) } : {}),
+      });
+    const woken: string[] = [];
+    const productionWaker = onParkedProviderWaiterWake(async (waiter) => {
+      woken.push(waiter);
+    });
+    // Work that holds the lease without a turn in line, such as a lifecycle change.
+    const holder = await mailProviderOperationMutex().acquire({ resource, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    if (!holder) throw new Error("The test could not take the provider lease");
+    try {
+      // The breaker's window ended: the waiter next in line may probe the provider. It finds the
+      // lease held and keeps asking; the folder sync behind it asks again too instead of parking.
+      // Parked, it would later take the lease on the breaker state it saw before it parked, and
+      // its failed try would free this process's probe for another mailbox.
+      await redis.send("HSET", [breaker, "window", "15000", "until", String(Date.now() - 1)]);
+      expect(await ask("commands:first")).toMatchObject({ lock: null });
+      expect(await ask("sync-folder:behind", true)).toMatchObject({ lock: null, parked: false });
+
+      // Without a breaker, a folder sync that finds the lease held parks.
+      await redis.send("DEL", [breaker]);
+      // The waiters that asked before have gone, as jobs that ended.
+      for (const key of ["places", "present"]) {
+        await redis.send("ZREM", [`mail:provider-lease-line:{${resource}}:${key}`, "commands:first", "sync-folder:behind"]);
+      }
+      expect(await ask("sync-folder:parked", true)).toMatchObject({ lock: null, parked: true });
+      // The provider stops answering, and the lease ends without a release that wakes it.
+      await recordProviderFailure(resource, connectTimeout());
+      await mailProviderOperationMutex().release(holder);
+      expect(woken).toEqual([]);
+      // IMAP push reaches the provider again: the parked waiter goes on now, not with the scheduler.
+      await recordProviderReachable(resource);
+      expect(woken).toEqual(["sync-folder:parked"]);
+    } finally {
+      onParkedProviderWaiterWake(productionWaker);
+      await mailProviderOperationMutex()
+        .release(holder)
+        .catch(() => false);
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn", "parked", "woken", "breaker", "entered"].map(
+          (key) => `mail:provider-lease-line:{${resource}}:${key}`,
+        ),
+      );
+    }
+  });
 
   test("the provider breaker pauses for one connection timeout, doubles up to fifteen minutes, and its waiters notice when the provider answers", async () => {
     const resource = crypto.randomUUID();
