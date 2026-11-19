@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { type CapabilityActionCallReview, CapabilityActionCallReviewSchema } from "../contracts/capabilities";
+import { AiOpenQuestionsCursorSchema } from "../contracts/open-questions";
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";
 import { actionFixtures, FIXTURE_AT } from "./chat/action-question.fixtures";
 import { legacyOutcomeWords } from "./chat/tool-action-words";
@@ -271,4 +272,17 @@ test("preserves source lookahead when exactly one full page is merged", async ()
   });
   expect(page.items).toHaveLength(20);
   expect(page.nextCursor?.id).toBe(items[19]!.id);
+});
+
+test("cursor IDs are bounded and timestamp ties follow PostgreSQL C code-point ordering", () => {
+  const createdAt = new Date(FIXTURE_AT).toISOString();
+  expect(AiOpenQuestionsCursorSchema.safeParse({ createdAt, id: "x".repeat(100) }).success).toBe(true);
+  expect(AiOpenQuestionsCursorSchema.safeParse({ createdAt, id: "x".repeat(101) }).success).toBe(false);
+  const ids = ["😀", "é", "a", "_", "Z", "-", "aa", "\uE000"];
+  const sorted = ids
+    .map((id) => ({ createdAt, id }))
+    .sort(compareAiOpenQuestions)
+    .map((item) => item.id);
+  expect(sorted).toEqual(["-", "Z", "_", "a", "aa", "é", "\uE000", "😀"]);
+  expect(compareAiOpenQuestions({ createdAt: "2026-10-01T00:00:00.000Z", id: "z" }, { createdAt, id: "a" })).toBeLessThan(0);
 });

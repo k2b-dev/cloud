@@ -37,14 +37,23 @@ export type AiOpenQuestionCodeReason = (typeof AI_OPEN_QUESTION_CODE_REASONS)[nu
 export const AiOpenQuestionsCursorSchema = z
   .object({
     createdAt: z.iso.datetime({ precision: 3 }).describe("Creation time of the last item, at millisecond precision."),
-    id: z.string().min(1).describe("ID of the last item, breaking creation-time ties."),
+    id: z.string().min(1).max(100).describe("ID of the last item, breaking creation-time ties."),
   })
   .strict();
 export type AiOpenQuestionsCursor = z.infer<typeof AiOpenQuestionsCursorSchema>;
 
 /** The stable oldest-first ordering shared by every source and its continuation cursor. */
-export const compareAiOpenQuestions = (a: AiOpenQuestionsCursor, b: AiOpenQuestionsCursor): number =>
-  a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+export const compareAiOpenQuestions = (a: AiOpenQuestionsCursor, b: AiOpenQuestionsCursor): number => {
+  if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+  // PostgreSQL COLLATE "C" orders UTF-8 IDs by code point, independent of the browser's locale.
+  const left = Array.from(a.id, (character) => character.codePointAt(0)!);
+  const right = Array.from(b.id, (character) => character.codePointAt(0)!);
+  for (let index = 0; index < Math.min(left.length, right.length); index++) {
+    const order = left[index]! - right[index]!;
+    if (order) return order;
+  }
+  return left.length - right.length;
+};
 
 /** Sources retain at most one lookahead item beyond the public page size. */
 export const aiOpenQuestionsPage = (items: AiOpenQuestion[], count: number, hasMore = false): AiOpenQuestions => {

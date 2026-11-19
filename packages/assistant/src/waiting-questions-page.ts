@@ -1,14 +1,16 @@
 import { coreClient } from "@k2b/cloud/clients/core";
-import { type ApprovalPage, ApprovalPageSchema } from "@k2b/cloud/contracts/approvals";
+import { APPROVALS_PAGE_SIZE, type ApprovalPage, ApprovalPageSchema } from "@k2b/cloud/contracts/approvals";
 import {
   type AiOpenQuestion,
   type AiOpenQuestions,
   type AiOpenQuestionsCursor,
   AiOpenQuestionsSchema,
+  compareAiOpenQuestions,
 } from "@k2b/cloud/contracts/open-questions";
 import { type Accessor, createEffect, createMemo, on, onCleanup, type Setter } from "solid-js";
 import type { AssistantApprovalsViewProps } from "./frontend/AssistantApprovalsView";
 import { browserCodeInvoke } from "./frontend/code-client";
+import { sameWaitingQuestion } from "./frontend/waiting-questions";
 import { loadWaitingAutomations, type WaitingAutomation } from "./waiting-automations";
 
 export type WaitingQuestionsPagingState = {
@@ -25,6 +27,7 @@ type WaitingCollections = {
   setAutomations: Setter<readonly WaitingAutomation[] | null | undefined>;
   paging: Accessor<WaitingQuestionsPagingState>;
   setPaging: Setter<WaitingQuestionsPagingState>;
+  element: () => HTMLElement | undefined;
 };
 
 const loadApprovalPage = async (): Promise<ApprovalPage> => {
@@ -45,6 +48,58 @@ export function connectWaitingQuestions(
   const { approvals, setApprovals, automations, setAutomations, paging, setPaging } = state;
   let pageController = new AbortController();
   onCleanup(() => pageController.abort());
+  let refresh: { page: AiOpenQuestions; through: AiOpenQuestionsCursor } | undefined;
+  // A click can cross approval-only pages, but never more pages than the snapshot's total permits.
+  const readPages = async (
+    first: AiOpenQuestions,
+    start: WaitingQuestionsPagingState,
+    signal: AbortSignal,
+    through?: AiOpenQuestionsCursor,
+  ) => {
+    let cursor = start.cursor;
+    const items = new Map(start.items.map((item) => [item.id, item]));
+    const known = new Set([...props.questions(), ...start.items, ...(automations() ?? [])].map((item) => item.id));
+    for (let pageNumber = 1; cursor && pageNumber < Math.ceil(first.count / APPROVALS_PAGE_SIZE); pageNumber++) {
+      const result = await browserCodeInvoke(
+        { appId: "core", capabilityId: "ai.open_questions", kind: "query", input: { timeZone: props.timeZone, cursor }, signal },
+        AiOpenQuestionsSchema,
+      );
+      if (signal.aborted) return;
+      if (!result.ok) throw new Error(result.error.message);
+      const page = result.data.data;
+      if (page.nextCursor && compareAiOpenQuestions(page.nextCursor, cursor) <= 0) throw new Error("Open questions cursor did not advance");
+      for (const item of page.items) items.set(item.id, item);
+      cursor = page.nextCursor;
+      const last = page.items.at(-1);
+      const reached = through
+        ? last && compareAiOpenQuestions(last, through) >= 0
+        : page.items.some((item) => item.kind !== "approval" && !known.has(item.id));
+      if (!cursor || reached) return { items: [...items.values()], cursor };
+    }
+    if (cursor) throw new Error("Open questions exceeded the snapshot's page count");
+    return { items: [...items.values()], cursor };
+  };
+  const refreshPages = async () => {
+    const pending = refresh;
+    if (!pending) return;
+    const signal = pageController.signal;
+    const current = paging();
+    setPaging({ ...current, loading: true });
+    try {
+      const next = await readPages(pending.page, { items: [], cursor: pending.page.nextCursor }, signal, pending.through);
+      if (!next || signal.aborted) return;
+      const previous = new Map(current.items.map((item) => [item.id, item]));
+      // Keep unchanged row objects, so a covering read does not remount the person's buttons or move their focus.
+      next.items = next.items.map((item) => {
+        const old = previous.get(item.id);
+        return old && sameWaitingQuestion(old, item) ? old : item;
+      });
+      refresh = undefined;
+      setPaging(next);
+    } catch {
+      if (!signal.aborted) setPaging({ ...current, loading: false, failed: true });
+    }
+  };
   let previousPage = initialPage;
   createEffect(
     on(
@@ -54,35 +109,40 @@ export function connectWaitingQuestions(
         previousPage = page;
         pageController.abort();
         pageController = new AbortController();
-        setPaging({ items: [], cursor: page?.nextCursor });
+        const current = paging();
+        const through = refresh?.through ?? current.items.at(-1);
+        refresh = undefined;
+        const last = page?.items.at(-1);
+        if (!page?.nextCursor || !through || (last && compareAiOpenQuestions(last, through) >= 0)) {
+          setPaging({ items: [], cursor: page?.nextCursor });
+          return;
+        }
+        const firstIds = new Set(page.items.map((item) => item.id));
+        setPaging({ ...current, items: current.items.filter((item) => !firstIds.has(item.id)), loading: true, failed: false });
+        refresh = { page, through };
+        void refreshPages();
       },
     ),
   );
   const loadMore = async () => {
+    if (refresh) return refreshPages();
     const current = paging();
-    if (!current.cursor) return;
+    const first = props.questionsPage?.();
+    if (!current.cursor || !first) return;
     const signal = pageController.signal;
+    const focused = document.activeElement;
     try {
-      const result = await browserCodeInvoke(
-        {
-          appId: "core",
-          capabilityId: "ai.open_questions",
-          kind: "query",
-          input: { timeZone: props.timeZone, cursor: current.cursor },
-          signal,
-        },
-        AiOpenQuestionsSchema,
-      );
-      if (signal.aborted) return;
-      if (!result.ok) {
-        setPaging({ ...current, loading: false, failed: true });
-        return;
+      const next = await readPages(first, current, signal);
+      if (!next || signal.aborted) return;
+      const known = new Set([...props.questions(), ...current.items, ...(automations() ?? [])].map((item) => item.id));
+      const added = new Set(next.items.filter((item) => item.kind !== "approval" && !known.has(item.id)).map((item) => item.id));
+      setPaging(next);
+      if (document.activeElement === focused || document.activeElement === document.body) {
+        const row = [...(state.element()?.querySelectorAll<HTMLElement>("[data-waiting-question]") ?? [])].find((element) =>
+          added.has(element.dataset.waitingQuestion ?? ""),
+        );
+        (row?.querySelector<HTMLElement>("button, a[href]") ?? row)?.focus();
       }
-      const page = result.data.data;
-      setPaging({
-        items: [...new Map([...current.items, ...page.items].map((item) => [item.id, item])).values()],
-        cursor: page.nextCursor,
-      });
     } catch {
       if (!signal.aborted) setPaging({ ...current, loading: false, failed: true });
     }

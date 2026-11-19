@@ -106,7 +106,7 @@ export default function AssistantWaitingAutomations(props: {
             <ul class="assistant-waiting-page__list">
               <For each={entries()}>
                 {(entry) => (
-                  <li class="assistant-waiting-page__row" data-reason={entry.reason}>
+                  <li class="assistant-waiting-page__row" data-reason={entry.reason} data-waiting-question={entry.id} tabIndex={-1}>
                     <span class="assistant-waiting-page__tile" aria-hidden="true">
                       <FeatCodeMark variant="glyph" tone="current" size={16} decorative />
                     </span>

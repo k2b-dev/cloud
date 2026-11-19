@@ -9,6 +9,7 @@ import type { WaitingQuestionsController, WaitingQuestionsPagingState } from "..
 import AssistantWaitingAutomations from "./AssistantWaitingAutomations";
 import { WAITING_KIND_ICON } from "./AssistantWaitingStrip";
 import { assistantMessages } from "./messages";
+import { sameWaitingQuestion } from "./waiting-questions";
 
 /** Kinds of the person's open questions that are versions of their own Code, such as "Switch on version 2". */
 const VERSION_KINDS: ReadonlySet<AiOpenQuestion["kind"]> = new Set(["code_activate", "code_changes", "code_expired"]);
@@ -42,6 +43,7 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
   const extraQuestions = createMemo(() => paging().items);
   const [approvals, setApprovals] = createSignal<ApprovalPage | null | undefined>(props.initial);
   const [automations, setAutomations] = createSignal<readonly WaitingAutomation[] | null | undefined>(props.initialAutomations);
+  let element: HTMLElement | undefined;
   const owner = getOwner();
   const initialQuestions = untrack(props.questions);
   const initialPage = props.questionsPage?.();
@@ -64,6 +66,7 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
             setAutomations,
             paging,
             setPaging,
+            element: () => element,
           },
           initialQuestions,
           initialPage,
@@ -84,14 +87,20 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
   );
   const loadMore = async () => {
     const current = paging();
-    if (!current.cursor || current.loading) return;
-    setPaging({ ...current, loading: true, failed: false });
+    if ((!current.cursor && !current.failed) || current.loading) return;
+    setPaging({ ...current, loading: true });
     const loaded = await controller();
     if (!active) return;
     if (loaded) await loaded.loadMore();
     else setPaging({ ...current, failed: true });
   };
-  const allQuestions = createMemo(() => [...new Map([...props.questions(), ...extraQuestions()].map((item) => [item.id, item])).values()]);
+  const allQuestions = createMemo((previous: readonly AiOpenQuestion[] = []) => {
+    const old = new Map(previous.map((item) => [item.id, item]));
+    return [...new Map([...props.questions(), ...extraQuestions()].map((item) => [item.id, item])).values()].map((item) => {
+      const before = old.get(item.id);
+      return before && sameWaitingQuestion(before, item) ? before : item;
+    });
+  });
   const retry = () => void controller().then((loaded) => loaded?.retry());
 
   const loading = () => approvals() === undefined || automations() === undefined;
@@ -104,9 +113,9 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
           ...new Map(
             [
               ...automations()!,
-              ...extraQuestions()
-                .filter((question) => question.kind === "code_attention")
-                .map((question) => ({ ...question, kind: "code_attention" as const })),
+              ...extraQuestions().filter(
+                (question): question is AiOpenQuestion & { kind: "code_attention" } => question.kind === "code_attention",
+              ),
             ].map((item) => [item.id, item]),
           ).values(),
         ],
@@ -117,7 +126,7 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
 
   return (
     <ScrollArea class="min-h-0 flex-1">
-      <section class="assistant-waiting-page" aria-labelledby="assistant-waiting-title">
+      <section ref={element} class="assistant-waiting-page" aria-labelledby="assistant-waiting-title">
         <header class="assistant-page-head">
           <div class="assistant-page-head__copy">
             <h1 id="assistant-waiting-title" class="assistant-page-head__title">
@@ -187,7 +196,12 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
                       <ul class="assistant-waiting-page__list">
                         <For each={versions()}>
                           {(question) => (
-                            <li class="assistant-waiting-page__row" data-kind={question.kind}>
+                            <li
+                              class="assistant-waiting-page__row"
+                              data-kind={question.kind}
+                              data-waiting-question={question.id}
+                              tabIndex={-1}
+                            >
                               <span class="assistant-waiting-page__tile" aria-hidden="true">
                                 <i class={WAITING_KIND_ICON[question.kind]} />
                               </span>
@@ -228,13 +242,17 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
             )}
           </Show>
         </Show>
-        <Show when={paging().cursor}>
-          <div class="assistant-waiting-page__section">
+        <Show when={paging().cursor || paging().failed}>
+          <div class="cloud-approvals__more">
             <Show when={paging().failed}>
-              <p role="alert">{t().waitingFailed}</p>
+              <p class="cloud-approvals__more-error" role="alert">
+                <i class="ti ti-alert-circle" aria-hidden="true" />
+                {t().waitingFailed}
+              </p>
             </Show>
-            <Button type="button" variant="secondary" loading={paging().loading} onClick={() => void loadMore()}>
+            <Button type="button" size="sm" variant="link" loading={paging().loading} onClick={() => void loadMore()}>
               {paging().failed ? t().codeViewRetry : t().waitingLoadMore}
+              <i class={paging().failed ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
             </Button>
           </div>
         </Show>
