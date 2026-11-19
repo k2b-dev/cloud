@@ -4880,7 +4880,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 window.querySelector(".mail-inline-draft-subject .k2b-input-shell")!.getBoundingClientRect().top - to.bottom,
               );
             });
-          // settled: the window's content is ready (readyWindow) and motion is reduced.
+          await settled(page);
           expect(await barGap(".mail-compose-window-body > .mail-inline-draft")).toBe(0);
           expect(await fieldGap()).toBeGreaterThanOrEqual(4);
           await composeWindow(page).getByRole("button", { name: "Maximize" }).click();
