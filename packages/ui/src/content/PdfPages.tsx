@@ -392,25 +392,22 @@ export default function PdfPages(props: PdfPagesProps): JSX.Element {
     area.scrollTop = (top * factor()) / before;
   };
   /*
-   * A host's zoom keeps the middle of the view where it is, as a pinch keeps the point between the fingers: the
-   * fractions of the scrolled content at the middle, remembered on every scroll. Before the first scroll the top of
-   * the document stays in view and the pages stay centred sideways.
+   * A host's zoom keeps the reading place: what shows at the left edge of the view stays there, so a page's text, which
+   * starts on the left, stays in view; the middle of the view stays at the same height. Both are fractions of the
+   * scrolled content, remembered on every scroll; before the first one, the left edge and the top of the document.
    */
-  let middle: { x: number; y: number } | undefined;
+  let place: { x: number; y: number } | undefined;
   const remember = () => {
     if (!area?.scrollWidth || !area.scrollHeight) return;
-    middle = {
-      x: (area.scrollLeft + area.clientWidth / 2) / area.scrollWidth,
-      y: (area.scrollTop + area.clientHeight / 2) / area.scrollHeight,
-    };
+    place = { x: area.scrollLeft / area.scrollWidth, y: (area.scrollTop + area.clientHeight / 2) / area.scrollHeight };
   };
   createEffect(
     on(
       hostScale,
       () => {
         if (!area) return;
-        const at = middle ?? { x: 0.5, y: area.clientHeight / 2 / Math.max(1, area.scrollHeight) };
-        area.scrollLeft = at.x * area.scrollWidth - area.clientWidth / 2;
+        const at = place ?? { x: 0, y: area.clientHeight / 2 / Math.max(1, area.scrollHeight) };
+        area.scrollLeft = at.x * area.scrollWidth;
         area.scrollTop = at.y * area.scrollHeight - area.clientHeight / 2;
       },
       { defer: true },

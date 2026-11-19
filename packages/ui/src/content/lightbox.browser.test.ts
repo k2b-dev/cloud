@@ -347,7 +347,7 @@ describe("@k2b/ui Lightbox", () => {
         expect(await page.locator(".k2b-lightbox__tools").evaluate((pill) => getComputedStyle(pill).backdropFilter)).toBe("none");
         await shot(page, `lightbox-vollbild-pdf-light-${width}.png`);
 
-        // Zoomed to 300 % the page runs past both screen edges and scrolls sideways, from its middle.
+        // Zoomed to 300 % the page runs past the screen and scrolls sideways; its text, which starts on the left, stays.
         for (let step = 0; step < 4; step++) await page.getByRole("button", { name: "Zoom in" }).click();
         expect(await page.locator(".k2b-lightbox__percent").textContent()).toBe("300 %");
         await settled(page);
@@ -360,11 +360,12 @@ describe("@k2b/ui Lightbox", () => {
         expect(zoomed.fit).toBe(false);
         expect(zoomed.overflowX).not.toBe("hidden");
         expect(zoomed.sideways).toBeGreaterThan(0);
-        expect(Math.abs(zoomed.left - zoomed.sideways / 2)).toBeLessThanOrEqual(2);
+        expect(zoomed.left).toBe(0);
         const wide = await box('[data-pdf-page="0"]');
         expect(wide.width).toBe(3 * Math.min(width - 24, 793));
-        expect(wide.x).toBeLessThan(0);
+        expect(wide.x).toBe(12);
         expect(wide.x + wide.width).toBeGreaterThan(width);
+        await page.mouse.move(width / 2, height / 3);
         await shot(page, `lightbox-vollbild-pdf-300-light-${width}.png`);
 
         // Fitted again, the end of the last page stays clear of the pills.
@@ -394,6 +395,38 @@ describe("@k2b/ui Lightbox", () => {
         expect(Math.min(picture.width, 1200)).toBe(Math.min(width, 1200));
         expect(await page.locator(".k2b-lightbox__tools").evaluate((pill) => getComputedStyle(pill).backdropFilter)).not.toBe("none");
         await shot(page, `lightbox-vollbild-bild-light-${width}.png`);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+  // The file fills the stage, so the boxes around it count as beside it; the gap between two pages does not.
+  for (const [index, ready] of [
+    [1, '.k2b-lightbox [data-pdf-page="0"] img'],
+    [0, ".k2b-lightbox__image"],
+  ] as const)
+    test(`a press beside the file closes (${index === 1 ? "PDF" : "picture"})`, async () => {
+      const page = await load({ search: `?index=${index}` });
+      try {
+        await page.locator(ready).waitFor();
+        await settled(page);
+        if (index === 1) {
+          const [first, second] = await Promise.all(
+            ['[data-pdf-page="0"]', '[data-pdf-page="1"]'].map((selector) =>
+              page.locator(selector).evaluate((element) => element.getBoundingClientRect().toJSON() as DOMRect),
+            ),
+          );
+          await page.locator(".k2b-lightbox .k2b-pdf-viewer__pages").evaluate((area, top) => {
+            area.scrollTop = top;
+          }, first!.bottom - 450);
+          await settled(page);
+          await page.mouse.click(first!.left + first!.width / 2, 450 + (second!.top - first!.bottom) / 2);
+          expect(await page.locator("dialog.k2b-lightbox[open]").count()).toBe(1);
+        }
+        // Beside the page column and away from the edge buttons in the middle of the height.
+        await page.mouse.click(60, 300);
+        await settled(page);
+        expect(await page.locator("dialog.k2b-lightbox").count()).toBe(0);
       } finally {
         await page.context().close();
       }

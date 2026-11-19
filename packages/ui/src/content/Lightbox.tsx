@@ -87,6 +87,8 @@ const PULL_CLOSE = 110;
 /** Seconds the arrows seek in a video or audio file, as `VideoPlayer`'s own keys do. */
 const MEDIA_SEEK = 5;
 const SPREADSHEET = /\.(xlsx?|ods|csv)$/i;
+/** The boxes around a file that fills the stage; a press on them is a press beside the file. */
+const BESIDE = ".k2b-lightbox__content, .k2b-lightbox__pdf, .k2b-pdf-viewer__document, .k2b-pdf-viewer__pages, .k2b-pdf-viewer__stack";
 
 const kindOf = (item: LightboxItem): Kind => {
   if (item.preview) return "office";
@@ -254,9 +256,20 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
     const dx = last.clientX - start.x;
     if (Math.abs(dx) > SWIPE && Math.abs(dx) > Math.abs(last.clientY - start.y)) step(dx < 0 ? 1 : -1);
   };
-  // A press on the stage beside the file closes, like a press beside a dialog.
+  /*
+   * A press beside the file closes, like a press beside a dialog. The file fills the whole stage, so beside it is the
+   * stage, the file's own box, or a PDF's ground beside its pages, but never the gap between two pages, where a text
+   * selection may start, nor a scroll bar of that ground.
+   */
   const stagePress = (event: MouseEvent) => {
-    if (event.target === stage || event.target === dialog) close();
+    const target = event.target;
+    if (target === stage || target === dialog) return close();
+    if (!(target instanceof HTMLElement) || !target.matches(BESIDE)) return;
+    const box = target.getBoundingClientRect();
+    if (event.clientX - box.left >= target.clientWidth || event.clientY - box.top >= target.clientHeight) return;
+    const column = target.querySelector("[data-pdf-page]")?.getBoundingClientRect();
+    if (column && event.clientX >= column.left && event.clientX <= column.right) return;
+    close();
   };
 
   // Registration and teardown both live in onMount: onCleanup also runs when an SSR render is disposed.
