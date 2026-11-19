@@ -1,8 +1,11 @@
 import { lazySync, redis } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
 import type { ServiceError } from "@k2b/stdlib";
 import type { Lock } from "@k2b/sync";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { isProviderTimeout } from "./provider-errors";
+
+const log = logger("mail:provider-lease");
 
 export const MAIL_PROVIDER_OPERATION_LEASE_MS = 5 * 60_000;
 
@@ -454,7 +457,14 @@ export const recordProviderFailure = async (resource: string, error: unknown): P
       String(Math.random() * BREAKER_JITTER_FRACTION),
     ])
     .catch(() => null);
-  return openForMs === null ? null : Number(openForMs);
+  if (openForMs === null) return null;
+  // Once per window: work on the mailbox stops trying its mail server until the window ends.
+  log.warn("Mail server did not answer in time; pausing attempts for the mailbox", {
+    remoteResourceId: resource,
+    pauseMs: Number(openForMs),
+    code: (error as { code?: unknown } | null)?.code,
+  });
+  return Number(openForMs);
 };
 
 /**

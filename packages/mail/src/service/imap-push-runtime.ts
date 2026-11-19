@@ -984,6 +984,15 @@ export const runImapPushBinding = async (
             // folder sync does, so push, folder checks, and rediscovery all wait for its window.
             const unreachable = connectedAt === null && (await dependencies.recordProviderFailure(plan.remoteResourceId, error)) !== null;
             reconnectAttempt = connectedAt !== null && Date.now() - connectedAt >= STABLE_CONNECTION_MS ? 1 : reconnectAttempt + 1;
+            // Every failed connection or lost listener leaves a log line, not only the health row: a
+            // listener that keeps failing must be visible in the logs. Backoff and the breaker bound
+            // how often this runs.
+            log.warn(connectedAt === null ? "IMAP push could not connect" : "IMAP push listener lost its connection", {
+              bindingId: plan.bindingId,
+              reconnectAttempt,
+              unreachable,
+              ...imapPushFailureFields(error),
+            });
             activeHealthState = "reconnecting";
             await writeHealth({
               state: "reconnecting",
