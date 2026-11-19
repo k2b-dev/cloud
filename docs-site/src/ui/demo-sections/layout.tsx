@@ -2173,7 +2173,7 @@ const PullToRefreshDemo = () => (
   <DemoCard
     id="pull-to-refresh"
     chip={{ kind: "component", name: "PullToRefresh", from: "@k2b/ui" }}
-    description="With the list at its top, pull down on a touch screen, drag the free space with a mouse, or overscroll with a trackpad. The refresh icon follows the pull and spins while the simulated reload runs."
+    description="With the list at its top, pull down on a touch screen, drag the free space with a mouse, or overscroll with a trackpad. The refresh icon follows a touch or drag pull; overscroll slides it in once. It spins while the simulated reload runs, and further scrolling changes nothing until it has slid out."
     code={`<PullToRefresh onRefresh={() => reloadConversations()} label="Refreshing conversations">
   <ScrollArea role="region" aria-label="Needs action">
     <ConversationRows />

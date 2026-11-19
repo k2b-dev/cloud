@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { captureMailWorkspaceRefreshError, requireMailWorkspaceRefresh } from "./mail-workspace-refresh";
+import { captureMailWorkspaceRefreshError, reportMailWorkspaceRefresh, requireMailWorkspaceRefresh } from "./mail-workspace-refresh";
 
 describe("Mail workspace refresh outcomes", () => {
   test("accepts applied and superseded refreshes but rejects a failed refresh", async () => {
@@ -15,5 +15,22 @@ describe("Mail workspace refresh outcomes", () => {
         throw new Error("view unavailable");
       }),
     ).resolves.toEqual(new Error("view unavailable"));
+  });
+
+  test("reports a failed list refresh and still rejects, so pull to refresh can mark it in place", async () => {
+    const reported: string[] = [];
+    await expect(
+      reportMailWorkspaceRefresh(
+        async () => undefined,
+        (message) => reported.push(message),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      reportMailWorkspaceRefresh(
+        () => requireMailWorkspaceRefresh(async () => "failed", "Could not refresh the mailbox"),
+        (message) => reported.push(message),
+      ),
+    ).rejects.toThrow("Could not refresh the mailbox");
+    expect(reported).toEqual(["Could not refresh the mailbox"]);
   });
 });
