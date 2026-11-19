@@ -647,7 +647,9 @@ export const aiCapabilities = defineCapabilities({
         .object({
           timeZone: z.string().max(100).describe("Reader time zone for displayed dates."),
           kind: z.enum(AI_OPEN_QUESTION_KINDS).optional().describe("Only this kind, in the same page size."),
-          cursor: AiOpenQuestionsCursorSchema.optional().describe("Continue after the previous page, keeping the same kind."),
+          cursor: AiOpenQuestionsCursorSchema.optional().describe(
+            "Page cursor from nextCursor; pass unchanged and keep the same kind filter.",
+          ),
         })
         .strict(),
       data: AiOpenQuestionsSchema,

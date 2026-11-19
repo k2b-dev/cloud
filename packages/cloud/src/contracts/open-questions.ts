@@ -36,8 +36,14 @@ export type AiOpenQuestionCodeReason = (typeof AI_OPEN_QUESTION_CODE_REASONS)[nu
 
 export const AiOpenQuestionsCursorSchema = z
   .object({
-    createdAt: z.iso.datetime({ precision: 3 }).describe("Creation time of the last item, at millisecond precision."),
-    id: z.string().min(1).max(100).describe("ID of the last item, breaking creation-time ties."),
+    createdAt: z.iso
+      .datetime({ precision: 3 })
+      .describe("Last item creation time; UTC timestamp at millisecond precision from nextCursor."),
+    id: z
+      .string()
+      .min(1)
+      .max(100)
+      .describe("Last item ID; unchanged from nextCursor, breaking creation-time ties; at most 100 characters."),
   })
   .strict();
 export type AiOpenQuestionsCursor = z.infer<typeof AiOpenQuestionsCursorSchema>;
