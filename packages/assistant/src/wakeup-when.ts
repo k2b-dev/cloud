@@ -1,4 +1,5 @@
 import type { AiWakeup } from "@k2b/cloud/ai";
+import { describeCodeSchedule } from "@k2b/cloud/code/schedule";
 import { dates } from "@k2b/stdlib";
 
 const day = (at: Date, timeZone: string) =>
@@ -15,7 +16,9 @@ export const aiWakeupWhen = (
 ): string => {
   // Words keep their own case in a line; only the start of a row gets a capital ("Mo–Fr" stays, "montags" begins one).
   const first = (text: string) => (input.lower ? text : text.charAt(0).toUpperCase() + text.slice(1));
-  if (wakeup.cron || !wakeup.at) return first(wakeup.rhythm);
+  // The rhythm in the reader's language: a fact keeps the words of the turn that wrote it, the cron does not.
+  if (wakeup.cron) return first(aiWakeupRhythm(wakeup.cron, input.locale));
+  if (!wakeup.at) return first(wakeup.rhythm);
   const at = new Date(wakeup.at);
   const now = new Date(input.now ?? Date.now());
   const time = dates.formatTime(at, { locale: input.locale, timeZone: input.timeZone });
@@ -39,3 +42,9 @@ export const aiWakeupDay = (iso: string, input: { locale: string; timeZone: stri
     day: de(input.locale) ? "2-digit" : "numeric",
     month: de(input.locale) ? "2-digit" : "short",
   }).format(new Date(iso));
+
+/** A repeating alarm's rhythm in words in `locale`, never cron; one the words cannot name is "Custom schedule". */
+export const aiWakeupRhythm = (cron: string, locale: string) => {
+  const described = describeCodeSchedule(cron, locale);
+  return described === cron ? (de(locale) ? "Eigener Rhythmus" : "Custom schedule") : described;
+};

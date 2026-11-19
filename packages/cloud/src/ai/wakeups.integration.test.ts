@@ -203,6 +203,29 @@ suiteFor(
     expect(entry?.origin).toEqual({ kind: "person", id: owner });
   });
 
+  test("missing model limits survive scheduler persistence, timeline and worker admission", async () => {
+    const own = await chat();
+    const alarm = await aiWakeups.create(own.shortId, note, subject, "de", now);
+    await tickAiWakeups(
+      async () => {
+        throw new AiWakeupBudgetError("code_ai_budget_unknown");
+      },
+      { now: due },
+    );
+    const missed = (await aiWakeups.list(own.shortId, subject, "de")).items[0]!;
+    expect(missed).toMatchObject({ status: "missed", missedReason: "code_ai_budget_unknown" });
+    const [event] = await sql<{ reason: string }[]>`SELECT meta#>>'{wakeupEvent,wakeup,missedReason}' AS reason FROM ai.messages
+      WHERE conversation_id=${own.id}::uuid AND meta#>>'{wakeupEvent,kind}'='missed'`;
+    expect(event?.reason).toBe("code_ai_budget_unknown");
+    await aiWakeups.update(own.shortId, alarm.id, { revision: missed.revision, at: "2026-11-18T13:00:00Z" }, subject, "de", due);
+    await tick(new Date("2026-11-18T13:00:00Z"));
+    const messageId = aiWakeupOccurrenceId(alarm.id, new Date("2026-11-18T13:00:00Z"));
+    await sql.begin(async (db) => {
+      await markAiWakeupMissed(own.id, messageId, "code_ai_budget_unknown", "de", db);
+    });
+    expect((await aiWakeups.list(own.shortId, subject, "de")).items[0]?.missedReason).toBe("code_ai_budget_unknown");
+  });
+
   test("a final queue refusal preserves the planned time and cannot overwrite a later human edit", async () => {
     const own = await chat();
     const alarm = await aiWakeups.create(own.shortId, note, subject, "de", now);

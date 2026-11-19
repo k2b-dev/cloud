@@ -84,8 +84,12 @@ describe("box model", () => {
   test("a context line is always there; an empty chat is empty", () => {
     expect(build(sidebarSnapshot({ skills: [], memories: [] })).context).toBe("Secrets & Freigaben");
     expect(build(sidebarSnapshot(), "Einkauf").context).toBe("Einkauf, 1 Skills");
-    const empty = build(sidebarSnapshot({ results: [], sources: [], sourceCount: 0 }));
+    const empty = build(sidebarSnapshot({ results: [], sources: [], sourceCount: 0, skills: [], memories: [] }));
     expect(empty.empty).toBe(true);
+    // A chat whose only content is its context keeps the context line: when its last alarm has rung, the box does not
+    // fall back to the empty sentence.
+    const contextOnly = build(sidebarSnapshot({ results: [], sources: [], sourceCount: 0, memories: [] }));
+    expect([contextOnly.empty, contextOnly.context]).toEqual([false, "1 Skills"]);
   });
 
   test("the sources line names Cloud items in their app's nouns and counts the rest as items", () => {

@@ -257,7 +257,16 @@ for (const kind of ["standalone", "agent"] as const) {
         await aiModelCatalog.createProvider({ id: model.id, label: "Machine fixture", type: "ollama", dataBoundary: "private" }, ownerId);
         await aiModelCatalog.createModels(
           model.id,
-          [{ id: model.id, label: model.label, providerModel: model.model, pricing: model.pricing }],
+          [
+            {
+              id: model.id,
+              label: model.label,
+              providerModel: model.model,
+              pricing: model.pricing,
+              contextWindow: 128_000,
+              maxOutputTokens: 4096,
+            },
+          ],
           ownerId,
         );
         await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE model_id=${model.id})`;

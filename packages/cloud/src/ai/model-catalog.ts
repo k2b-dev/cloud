@@ -2,7 +2,7 @@ import { z } from "zod";
 import { sql } from "../runtime/clients";
 import { ConfigConflict } from "../services/config-conflict";
 import { stripImageDataUrlMetadata } from "../services/image-metadata";
-import { AiModelPricingSchema } from "../shared/ai-costs";
+import { AiModelPricingSchema, hasBillableAiPricing } from "../shared/ai-costs";
 import {
   AI_MODEL_CLASSES,
   AiAssignmentSchema,
@@ -121,6 +121,12 @@ const sanitizeModel = (model: z.infer<typeof AiModelInputSchema>) => ({
   icon: model.icon.kind === "image" ? { ...model.icon, dataUrl: stripImageDataUrlMetadata(model.icon.dataUrl) } : model.icon,
 });
 export const validateAiCatalogModel = (model: z.infer<typeof AiModelInputSchema>, provider: AiProvider) => {
+  if (
+    model.kind === "chat" &&
+    hasBillableAiPricing(model.pricing) &&
+    (!model.contextWindow || !(model.maxOutputTokens ?? model.outputTokenLimit))
+  )
+    throw new AiConfigError("invalid_configuration", "Priced chat models require a context window and a maximum output token limit.");
   if (
     model.kind === "transcription" &&
     (!["openai", "openai-compatible"].includes(provider.type) ||
@@ -311,9 +317,15 @@ export const aiModelCatalog = {
       if (access?.entries.length && provider.dataBoundary === "restricted")
         throw new AiConfigError("restricted_boundary", "Models without a data-protection commitment cannot be shared for chat.");
       if (data.kind === "transcription" || data.kind === "live-transcription") data.capabilities = [data.kind];
-      if (data.kind !== "chat" && (await this.variants(db)).some((v) => v.modelId === id && v.slug !== "standard"))
+      const variants = (await this.variants(db)).filter((variant) => variant.modelId === id);
+      if (data.kind !== "chat" && variants.some((v) => v.slug !== "standard"))
         throw new AiConfigError("invalid_configuration", "Non-chat models only have a standard variant.");
-      const variantIds = (await this.variants(db)).filter((variant) => variant.modelId === id).map((variant) => variant.id);
+      const variantIds = variants.map((variant) => variant.id);
+      for (const variant of variants)
+        validateAiCatalogModel(
+          { ...data, pricing: variant.pricing ?? data.pricing, maxOutputTokens: variant.maxOutputTokens ?? data.maxOutputTokens },
+          provider,
+        );
       for (const assignment of await this.assignments(db))
         if (assignment.variantId && variantIds.includes(assignment.variantId)) validateAiSlot(assignment.slot, data);
       if (access) {
@@ -337,6 +349,10 @@ export const aiModelCatalog = {
       const model = await this.model(modelId, db, true);
       if (model.kind !== "chat") throw new AiConfigError("invalid_configuration", "Non-chat models only have a standard variant.");
       const data = AiVariantInputSchema.parse(input);
+      validateAiCatalogModel(
+        { ...model, pricing: data.pricing ?? model.pricing, maxOutputTokens: data.maxOutputTokens ?? model.maxOutputTokens },
+        await this.provider(model.providerId, db),
+      );
       if (data.slug === "standard") throw new AiConfigError("invalid_configuration", "The standard variant already exists.");
       const id = `${modelId}:${data.slug}`;
       await write("model_variants", { ...data, id, modelId }, actorId, db);
@@ -350,6 +366,10 @@ export const aiModelCatalog = {
       await assertAiRevision(current, revision, db);
       const data = AiVariantInputSchema.parse({ ...AiVariantInputSchema.strip().parse(current), ...patch, slug: current.slug });
       const model = await this.model(current.modelId, db);
+      validateAiCatalogModel(
+        { ...model, pricing: data.pricing ?? model.pricing, maxOutputTokens: data.maxOutputTokens ?? model.maxOutputTokens },
+        await this.provider(model.providerId, db),
+      );
       if (model.kind !== "chat" && (data.reasoningEffort || data.extraBody || data.pricing || data.maxOutputTokens))
         throw new AiConfigError("invalid_configuration", "Non-chat variants do not support overrides.");
       await write("model_variants", data, actorId, db, id);

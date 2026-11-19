@@ -2,6 +2,7 @@ import { dates } from "@k2b/stdlib";
 import { type ChatAction, type ChatAttachment, MessageQuote, useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import { importOnDemand } from "../../browser/reload";
+import { describeCodeSchedule } from "../../code/schedule";
 import type { AiTurnBlock } from "../protocol";
 import type { AiQuoteSource } from "../quote-markers";
 import type { AiStoredMessage } from "../types";
@@ -61,11 +62,16 @@ export const aiUserMessageSource = (
     // The alarm names its own planned time, not when the message was written.
     const time = dates.formatTime(origin.scheduledAt, { locale, timeZone: timeZone ?? "UTC" });
     const delayed = Date.parse(entry.createdAt) - Date.parse(origin.scheduledAt) >= WAKEUP_DELAYED_MS;
+    // In the reader's language; the rhythm a fact stored is in the language of the turn that set the alarm.
+    const rhythm = (cron: string) => {
+      const described = describeCodeSchedule(cron, locale);
+      return described === cron ? (wakeup?.rhythm ?? described) : described;
+    };
     return (
       <>
         <i class={`ai-message-source__icon ti ${wakeup?.cron ? "ti-repeat" : "ti-alarm"}`} data-kind="wakeup" aria-hidden="true" />
         <span>
-          {origin.name} · {delayed ? aiChatMessages(locale).wakeupDelayed({ time }) : wakeup?.cron ? wakeup.rhythm : time}
+          {origin.name} · {delayed ? aiChatMessages(locale).wakeupDelayed({ time }) : wakeup?.cron ? rhythm(wakeup.cron) : time}
         </span>
       </>
     );
