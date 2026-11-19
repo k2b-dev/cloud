@@ -1376,6 +1376,9 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
   .k2b-ui .assistant-authoring-stop[data-card-icon][data-current] { block-size: 10.5rem; }
   .k2b-ui .assistant-authoring-stop[data-card-icon]:not([data-current]),
   .k2b-ui .assistant-code-version[data-card-icon]:is([data-state="denied"], [data-state="replaced"], [data-state="withdrawn"]):not([data-has-actions]) { block-size: auto; }
+  /* A version that was already final when the chat drew it, such as a replaced one, is a fixed receipt: its height
+     never changes, so it needs no reserve and no space below its action. */
+  .k2b-ui .assistant-code-version[data-card-icon][data-receipt] { block-size: auto; }
   .assistant-code-version__quiet,
   .k2b-ui .assistant-authoring-stop__meta {
     display: -webkit-box;
@@ -1398,6 +1401,7 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
   }
   .k2b-ui .assistant-authoring-stop[data-card-icon]:not([data-current]) > .k2b-notice-card__content,
   .k2b-ui .assistant-code-version[data-card-icon]:is([data-state="denied"], [data-state="replaced"], [data-state="withdrawn"]):not([data-has-actions]) > .k2b-notice-card__content { grid-template-rows: auto auto; }
+  .k2b-ui .assistant-code-version[data-card-icon][data-receipt][data-has-actions] > .k2b-notice-card__content { grid-template-rows: auto auto auto; }
   .k2b-ui .assistant-code-version .k2b-notice-card__actions,
   .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__actions {
     grid-column: 1;

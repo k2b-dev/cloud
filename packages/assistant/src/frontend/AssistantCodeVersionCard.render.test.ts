@@ -120,6 +120,37 @@ test("the real deferred card server-renders authorized operating state and pages
   expect(html).not.toContain("Diese Version wird geladen");
 });
 
+test("only a version that is already final when the chat draws it is a receipt without reserve", async () => {
+  const { ApprovalSnapshotView } = await import("./code-version-card-ssr.test-fixture");
+  const { approvalSnapshot } = await import("./code-version-card.test-fixture");
+  const card = (state: "replaced" | "ready" | null) => {
+    const html = renderToString(() =>
+      createComponent(ApprovalSnapshotView, {
+        initial: state ? [{ codeId: "c_info01", versionId: approvalVersionId, state: "available", snapshot: approvalSnapshot(state) }] : [],
+      }),
+    );
+    // The card's own element, the only one with a state.
+    return html.match(/<[^>]*\sdata-state="[^"]*"[^>]*>/)?.[0] ?? "";
+  };
+  expect(card("replaced")).toContain('data-state="replaced"');
+  expect(card("replaced")).toContain("data-receipt");
+  expect(card("ready")).not.toContain("data-receipt");
+  // A card that turns into a receipt while in view keeps the receipt flag off: its reserve keeps the chat in place.
+  const view = (state: (typeof approvalStates)[number], receipt: boolean) =>
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodeVersionCardView, { model: approvalModel(state), anchorId: "a", onAction: () => {}, receipt });
+        },
+      }),
+    ).includes("data-receipt");
+  expect(view("replaced", false)).toBe(false);
+  expect(view("replaced", true)).toBe(true);
+  // A live state never sheds its reserve, also when the flag was set for the receipt it started as.
+  for (const state of approvalStates.filter((state) => state !== "replaced")) expect([state, view(state, true)]).toEqual([state, false]);
+});
+
 test("checking shows the same facts as switching; only an unknown outcome asks the person to check", () => {
   const value = approvalFixture("ready");
   const model = (kind: "checking" | "progress" | "unknown") =>
