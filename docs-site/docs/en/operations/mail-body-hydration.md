@@ -64,6 +64,12 @@ other turn while the Inbox receives mail without pause. The listener's own
 minute check, polling on a server without IDLE, and announced flag changes or
 removals alone rank like any folder check.
 
+A folder sync that finds the mailbox's provider lease held does not ask again
+every few seconds. It parks with its place and rank in the line, and the release
+that makes it next wakes it. When a wake is lost, for example because a Mail
+process stopped, the minute scheduler wakes the line. In the folder sync activity
+log, `busy` then counts one turn per waiting folder, and `woken` counts the wakes.
+
 Inspect `cld mail sync runs --mailbox <mailbox> --state failed` and the mailbox
 sync status. A long batch may perform flag or UID reconciliation before its
 envelopes commit. Body timings start after the envelope commit and cannot
