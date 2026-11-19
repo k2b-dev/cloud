@@ -12,6 +12,7 @@ export type FolderSyncTrigger =
   | "mailbox"
   | "continuation"
   | "busy"
+  | "woken"
   | "rate_limited";
 
 /** How a folder batch ended: it committed a change, found the folder unchanged, waited, or failed. */

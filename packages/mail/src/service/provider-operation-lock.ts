@@ -87,17 +87,60 @@ const BREAKER_JITTER_FRACTION = 0.25;
 const BREAKER_OPEN = 1;
 const BREAKER_PROBE = 2;
 
-// KEYS: places, presence, breaker, priorities, last turn, and entry times, all for one mailbox. ARGV:
-// waiter, head start, retry step, retry maximum, jitter, presence grace, place TTL, breaker
-// memory, priority, aging (milliseconds, or 0 for none). Registers the waiter, keeping the better
-// of its earlier place and the new one, and returns its position among present waiters, when it
-// should retry, whether the breaker is open, remembers a window that ended, or neither, its
-// place, and the priority it ranks with: `command` once an aging waiter has waited long enough.
-// An aging waiter's wait counts from its first ask, not from its place, which also moves with the
-// priority it asks with.
+// The order of a mailbox's line, shared by the scripts below. KEYS: places, presence,
+// priorities, last turn. Returns the present waiters, each with its effective score and natural
+// rank: effective score, then rank, gives every present waiter the same total order. `asking`
+// counts as present.
+const lineOrderLua = `
+  local function lineOrder(placesKey, presentKey, prioritiesKey, turnKey, now, asking)
+    local function class(priority)
+      if priority == "command" then return "command" end
+      if priority == "sync" or priority == "background" then return "other" end
+    end
+    local lastWaiter = redis.call("HGET", turnKey, "waiter")
+    local demoted = class(redis.call("HGET", turnKey, "priority"))
+    local present = {}
+    local demotedMin
+    local places = redis.call("ZRANGE", placesKey, 0, -1, "WITHSCORES")
+    for rank = 1, #places, 2 do
+      local waiter = places[rank]
+      local presentUntil = redis.call("ZSCORE", presentKey, waiter)
+      if waiter == asking or (presentUntil and tonumber(presentUntil) >= now) then
+        local entry = { waiter = waiter, score = tonumber(places[rank + 1]), rank = rank, class = class(redis.call("HGET", prioritiesKey, waiter)) }
+        table.insert(present, entry)
+        -- The last holder's continuation keeps its natural place between batches.
+        if demoted and entry.class == demoted and waiter ~= lastWaiter then
+          demotedMin = math.min(demotedMin or entry.score, entry.score)
+        end
+      end
+    end
+    for _, entry in ipairs(present) do
+      entry.effective = entry.score
+      if demotedMin and entry.class and entry.class ~= demoted then entry.effective = math.min(entry.score, demotedMin - 1) end
+    end
+    return present
+  end
+  local function before(a, b)
+    return a.effective < b.effective or (a.effective == b.effective and a.rank < b.rank)
+  end
+  local function now()
+    local time = redis.call("TIME")
+    return (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
+  end
+`;
+
+// KEYS: places, presence, breaker, priorities, last turn, entry times, parked, and woken, all for
+// one mailbox. ARGV: waiter, head start, retry step, retry maximum, jitter, presence grace, place
+// TTL, breaker memory, priority, aging (milliseconds, or 0 for none). Registers the waiter,
+// keeping the better of its earlier place and the new one, and returns its position among
+// present waiters, when it should retry, whether the breaker is open, remembers a window that
+// ended, or neither, its place, the priority it ranks with, and what it left when it parked. A
+// waiter that parked asks again with the better of its parked priority and the new one, and an
+// aging waiter ranks as `command` once it has waited long enough. Its wait counts from its first
+// ask, not from its place, which also moves with the priority it asks with.
 const enterLeaseLineScript = `
-  local time = redis.call("TIME")
-  local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
+  ${lineOrderLua}
+  local now = now()
   local placeTtl = tonumber(ARGV[7])
   local gone = redis.call("ZRANGEBYSCORE", KEYS[2], "-inf", now - placeTtl)
   for _, waiter in ipairs(gone) do
@@ -105,9 +148,19 @@ const enterLeaseLineScript = `
     redis.call("ZREM", KEYS[2], waiter)
     redis.call("HDEL", KEYS[4], waiter)
     redis.call("HDEL", KEYS[6], waiter)
+    redis.call("HDEL", KEYS[7], waiter)
+    redis.call("HDEL", KEYS[8], waiter)
   end
   redis.call("ZADD", KEYS[1], "LT", now - tonumber(ARGV[2]), ARGV[1])
   local priority = ARGV[9]
+  local parked = redis.call("HGET", KEYS[7], ARGV[1])
+  if parked then
+    redis.call("HDEL", KEYS[7], ARGV[1])
+    redis.call("HDEL", KEYS[8], ARGV[1])
+    local strength = { background = 1, sync = 2, command = 3 }
+    local held = redis.call("HGET", KEYS[4], ARGV[1])
+    if held and (strength[held] or 0) > (strength[priority] or 0) then priority = held end
+  end
   local aging = tonumber(ARGV[10])
   if aging > 0 then
     redis.call("HSETNX", KEYS[6], ARGV[1], now)
@@ -115,41 +168,14 @@ const enterLeaseLineScript = `
     redis.call("PEXPIRE", KEYS[6], placeTtl)
   end
   redis.call("HSET", KEYS[4], ARGV[1], priority)
-  local function class(priority)
-    if priority == "command" then return "command" end
-    if priority == "sync" or priority == "background" then return "other" end
-  end
-  local lastWaiter = redis.call("HGET", KEYS[5], "waiter")
-  local demoted = class(redis.call("HGET", KEYS[5], "priority"))
-  local present = {}
+  local present = lineOrder(KEYS[1], KEYS[2], KEYS[4], KEYS[5], now, ARGV[1])
   local asking
-  local demotedMin
-  local places = redis.call("ZRANGE", KEYS[1], 0, -1, "WITHSCORES")
-  for rank = 1, #places, 2 do
-    local waiter = places[rank]
-    local presentUntil = redis.call("ZSCORE", KEYS[2], waiter)
-    if waiter == ARGV[1] or (presentUntil and tonumber(presentUntil) >= now) then
-      local entry = { score = tonumber(places[rank + 1]), rank = rank, class = class(redis.call("HGET", KEYS[4], waiter)) }
-      table.insert(present, entry)
-      if waiter == ARGV[1] then asking = entry end
-      -- The last holder's continuation keeps its natural place between batches.
-      if demoted and entry.class == demoted and waiter ~= lastWaiter then
-        demotedMin = math.min(demotedMin or entry.score, entry.score)
-      end
-    end
+  for _, entry in ipairs(present) do
+    if entry.waiter == ARGV[1] then asking = entry end
   end
-  local function effective(entry)
-    if demotedMin and entry.class and entry.class ~= demoted then
-      return math.min(entry.score, demotedMin - 1)
-    end
-    return entry.score
-  end
-  -- Effective score, then natural rank, gives every present waiter the same total order.
-  local askingScore = effective(asking)
   local position = 0
   for _, entry in ipairs(present) do
-    local score = effective(entry)
-    if score < askingScore or (score == askingScore and entry.rank < asking.rank) then position = position + 1 end
+    if before(entry, asking) then position = position + 1 end
   end
   local retryAfter = math.min(tonumber(ARGV[3]) * (position + 1), tonumber(ARGV[4])) + math.floor(tonumber(ARGV[5]) / 5)
   local breaker = 0
@@ -165,7 +191,50 @@ const enterLeaseLineScript = `
   redis.call("PEXPIRE", KEYS[1], placeTtl)
   redis.call("PEXPIRE", KEYS[2], placeTtl)
   redis.call("PEXPIRE", KEYS[4], placeTtl)
-  return { position, retryAfter, breaker, redis.call("ZSCORE", KEYS[1], ARGV[1]), priority }
+  return { position, retryAfter, breaker, redis.call("ZSCORE", KEYS[1], ARGV[1]), priority, parked or false }
+`;
+
+// KEYS: places, presence, priorities, last turn, parked, woken. ARGV: waiter, what it leaves,
+// place TTL. Parks a waiter that is in line: it stays present with its place and priority until
+// the place TTL, without asking again, and `wakeLeaseLineScript` wakes it. Returns its position
+// among present waiters, or -1 when it is no longer in line.
+const parkInLeaseLineScript = `
+  ${lineOrderLua}
+  local now = now()
+  if not redis.call("ZSCORE", KEYS[1], ARGV[1]) then return -1 end
+  redis.call("HSET", KEYS[5], ARGV[1], ARGV[2])
+  redis.call("HDEL", KEYS[6], ARGV[1])
+  redis.call("ZADD", KEYS[2], now + tonumber(ARGV[3]), ARGV[1])
+  for _, key in ipairs({ KEYS[1], KEYS[2], KEYS[3], KEYS[5], KEYS[6] }) do redis.call("PEXPIRE", key, ARGV[3]) end
+  local present = lineOrder(KEYS[1], KEYS[2], KEYS[3], KEYS[4], now, ARGV[1])
+  local parked
+  for _, entry in ipairs(present) do
+    if entry.waiter == ARGV[1] then parked = entry end
+  end
+  local position = 0
+  for _, entry in ipairs(present) do
+    if before(entry, parked) then position = position + 1 end
+  end
+  return position
+`;
+
+// KEYS: places, presence, priorities, last turn, parked, woken. ARGV: presence of a woken waiter.
+// When the first present waiter is parked, marks it woken, gives it the presence of a waiter
+// that just asked, and returns its name and what it left; otherwise returns nothing. A woken
+// waiter keeps what it left until it asks again, so its rank and input survive the wake.
+const wakeLeaseLineScript = `
+  ${lineOrderLua}
+  local now = now()
+  local first
+  for _, entry in ipairs(lineOrder(KEYS[1], KEYS[2], KEYS[3], KEYS[4], now, nil)) do
+    if not first or before(entry, first) then first = entry end
+  end
+  if not first then return false end
+  local parked = redis.call("HGET", KEYS[5], first.waiter)
+  if not parked then return false end
+  redis.call("HSET", KEYS[6], first.waiter, 1)
+  redis.call("ZADD", KEYS[2], now + tonumber(ARGV[1]), first.waiter)
+  return { first.waiter, parked }
 `;
 
 // KEYS: the mailbox's breaker. ARGV: first window, longest window, jitter fraction. Doubles the
@@ -183,20 +252,23 @@ const openBreakerScript = `
 `;
 
 // One hash tag, so the line, its last turn, and the breaker of a mailbox live together.
-const leaseLineKeys = (resource: string): [string, string, string, string, string, string] => [
-  `mail:provider-lease-line:{${resource}}:places`,
-  `mail:provider-lease-line:{${resource}}:present`,
-  `mail:provider-lease-line:{${resource}}:breaker`,
-  `mail:provider-lease-line:{${resource}}:priorities`,
-  `mail:provider-lease-line:{${resource}}:turn`,
-  `mail:provider-lease-line:{${resource}}:entered`,
-];
+const leaseLineKeys = (resource: string) =>
+  [
+    `mail:provider-lease-line:{${resource}}:places`,
+    `mail:provider-lease-line:{${resource}}:present`,
+    `mail:provider-lease-line:{${resource}}:breaker`,
+    `mail:provider-lease-line:{${resource}}:priorities`,
+    `mail:provider-lease-line:{${resource}}:turn`,
+    `mail:provider-lease-line:{${resource}}:entered`,
+    `mail:provider-lease-line:{${resource}}:parked`,
+    `mail:provider-lease-line:{${resource}}:woken`,
+  ] as const;
 
 /** Lines `waiter` up for the provider lease of `resource` with the script above and returns its reply. */
 const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeasePriority, ages: boolean): Promise<unknown> =>
   redis.send("EVAL", [
     enterLeaseLineScript,
-    "6",
+    "8",
     ...leaseLineKeys(resource),
     waiter,
     String(LEASE_HEAD_START_MS[priority]),
@@ -210,14 +282,55 @@ const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeas
     String(ages ? LEASE_AGING_MS : 0),
   ]);
 
-// KEYS: places, presence, priorities, last turn, entry times. ARGV: waiter, acquired priority or empty,
-// place TTL, keep place. Record an acquired turn and leave the line together, unless the caller
-// needs to keep its place while taking another lock. Leaving later does not change the turn.
+/** The keys of the park and wake scripts above. */
+const parkingKeys = (resource: string): string[] => {
+  const [places, present, , priorities, turn, , parked, woken] = leaseLineKeys(resource);
+  return [places, present, priorities, turn, parked, woken];
+};
+
+const parkInLeaseLine = async (resource: string, waiter: string, left: string): Promise<number> =>
+  Number(await redis.send("EVAL", [parkInLeaseLineScript, "6", ...parkingKeys(resource), waiter, left, String(LEASE_PLACE_TTL_MS)]));
+
+/**
+ * Wakes a parked waiter in the provider lease line of a remote mailbox. It wakes nobody unless the
+ * waiter next in line is parked; that one gets the presence of a waiter that just asked, and the
+ * function passed to `onParkedProviderWaiterWake` gets what it left. A waker that fails parks it
+ * again. Valkey errors are ignored: the scheduler's next run wakes the line again.
+ */
+export const wakeParkedProviderWaiter = async (resource: string): Promise<void> => {
+  const reply = await redis
+    .send("EVAL", [wakeLeaseLineScript, "6", ...parkingKeys(resource), String(LEASE_RETRY_STEP_MS + LEASE_PRESENCE_GRACE_MS)])
+    .catch(() => null);
+  if (!Array.isArray(reply) || !waker) return;
+  const [waiter, left] = [String(reply[0]), String(reply[1])];
+  try {
+    await waker(waiter, left);
+  } catch {
+    await parkInLeaseLine(resource, waiter, left).catch(() => undefined);
+  }
+};
+
+let waker: ((waiter: string, left: string) => Promise<void>) | null = null;
+
+/**
+ * Sets what wakes a parked waiter: given its name and what it left when it parked, it starts the
+ * waiter's job again. The job that parks waiters sets it once.
+ */
+export const onParkedProviderWaiterWake = (wake: ((waiter: string, left: string) => Promise<void>) | null): void => {
+  waker = wake;
+};
+
+// KEYS: places, presence, priorities, last turn, entry times, parked, woken. ARGV: waiter, acquired
+// priority or empty, place TTL, keep place. Record an acquired turn and leave the line together,
+// unless the caller needs to keep its place while taking another lock. Leaving later does not
+// change the turn. A waiter that leaves is no longer parked.
 const leaveLeaseLineScript = `
   if ARGV[2] ~= "" then
     redis.call("HSET", KEYS[4], "waiter", ARGV[1], "priority", ARGV[2])
     redis.call("PEXPIRE", KEYS[4], ARGV[3])
   end
+  redis.call("HDEL", KEYS[6], ARGV[1])
+  redis.call("HDEL", KEYS[7], ARGV[1])
   if ARGV[4] ~= "1" then
     redis.call("ZREM", KEYS[1], ARGV[1])
     redis.call("ZREM", KEYS[2], ARGV[1])
@@ -231,15 +344,17 @@ const leaveLeaseLine = async (
   waiter: string,
   acquired?: { priority: ProviderLeasePriority; keepPlace?: boolean },
 ): Promise<void> => {
-  const [places, present, , priorities, turn, entered] = leaseLineKeys(resource);
+  const [places, present, , priorities, turn, entered, parked, woken] = leaseLineKeys(resource);
   await redis.send("EVAL", [
     leaveLeaseLineScript,
-    "5",
+    "7",
     places,
     present,
     priorities,
     turn,
     entered,
+    parked,
+    woken,
     waiter,
     acquired?.priority ?? "",
     String(LEASE_PLACE_TTL_MS),
@@ -247,7 +362,13 @@ const leaveLeaseLine = async (
   ]);
 };
 
-export type ProviderLeaseTurn = { lock: Lock; place: number; retryAfterMs: null } | { lock: null; retryAfterMs: number };
+/**
+ * A turn, or when to ask again. `left` is what the waiter left when it last parked, so a new job
+ * of the same waiter can take it over. A parked waiter has `parked` and asks again only when woken.
+ */
+export type ProviderLeaseTurn =
+  | { lock: Lock; place: number; retryAfterMs: null; left: string | null }
+  | { lock: null; retryAfterMs: number; left: string | null; parked: boolean };
 
 // The lease with which this process probes a provider that timed out, or "taking" while it asks
 // for one, and until when it counts: a holder that never released it does not block probes past
@@ -269,7 +390,11 @@ let probeLeaseUntil = 0;
  * keeps its place and retries after `retryAfterMs`; `waiter` must stay the same across those tries. A
  * waiter that comes back late is passed over until it returns, without losing its place. While
  * the mailbox's provider breaker is open, nobody takes the lease; after it, the waiter next in
- * line takes it once no other mailbox's probe holds this process's probe. Release the lease with
+ * line takes it once no other mailbox's probe holds this process's probe. With `park`, a waiter
+ * that finds the lease held parks instead of asking again: it keeps its place and priority, and
+ * the release that makes it next in line wakes it (`onParkedProviderWaiterWake`). It does not park
+ * while the breaker is open or this process's probe is taken, because no release ends those
+ * waits. Release the lease with
  * `releaseProviderLease`, passing `next` when the job continues with another turn so it lines up
  * before letting go. The line, its last turn, and the breaker are ephemeral Valkey state: losing
  * them only loses the order and the pause, never the lease. With `keepPlace`, the waiter stays in
@@ -284,33 +409,56 @@ export const acquireProviderLease = async (params: {
   keepPlace?: boolean;
   /** Ranks the waiter as a command once it has waited in line for the aging time above. */
   ages?: boolean;
+  /** Parks a waiter that finds the lease held; given what it left last time, returns what it leaves now. */
+  park?: (left: string | null) => string;
 }): Promise<ProviderLeaseTurn> => {
   const reply = await enterLeaseLine(params.resource, params.waiter, params.priority, params.ages === true);
   if (!Array.isArray(reply)) throw new Error("The provider lease line returned no position");
-  const busy: ProviderLeaseTurn = { lock: null, retryAfterMs: Number(reply[1]) };
+  const left = typeof reply[5] === "string" ? reply[5] : null;
+  const busy = { lock: null, retryAfterMs: Number(reply[1]), left, parked: false } as const;
   const breaker = Number(reply[2]);
-  if (Number(reply[0]) !== 0 || breaker === BREAKER_OPEN) return busy;
+  if (breaker === BREAKER_OPEN) return busy;
   const probe = breaker === BREAKER_PROBE;
-  if (probe) {
-    if (probeLease !== null && performance.now() < probeLeaseUntil) return busy;
-    probeLease = "taking";
-    probeLeaseUntil = performance.now() + params.ttlMs;
-  }
-  let lock: Lock | null = null;
-  try {
-    lock = await mailProviderOperationMutex().acquire({ resource: params.resource, ttlMs: params.ttlMs });
-    // The turn counts with the priority the waiter ranked with, so an aged waiter's turn is a
-    // command turn and the other work goes next.
-    if (lock) await leaveLeaseLine(params.resource, params.waiter, { ...params, priority: leasePriority(reply[4], params.priority) });
-  } catch (error) {
-    if (lock) await releaseProviderLease(lock);
-    lock = null;
-    throw error;
-  } finally {
-    if (probe) probeLease = lock;
-  }
-  return lock ? { lock, place: Number(reply[3]), retryAfterMs: null } : busy;
+  if (probe && probeLease !== null && performance.now() < probeLeaseUntil) return busy;
+  const take = async (): Promise<Lock | null> => {
+    if (probe) {
+      probeLease = "taking";
+      probeLeaseUntil = performance.now() + params.ttlMs;
+    }
+    let lock: Lock | null = null;
+    try {
+      lock = await mailProviderOperationMutex().acquire({ resource: params.resource, ttlMs: params.ttlMs });
+      // The turn counts with the priority the waiter ranked with, so an aged waiter's turn is a
+      // command turn and the other work goes next.
+      if (lock) await leaveLeaseLine(params.resource, params.waiter, { ...params, priority: leasePriority(reply[4], params.priority) });
+    } catch (error) {
+      if (lock) await releaseProviderLease(lock);
+      lock = null;
+      throw error;
+    } finally {
+      if (probe) probeLease = lock;
+    }
+    return lock;
+  };
+  let lock = Number(reply[0]) === 0 ? await take() : null;
+  if (lock) return { lock, place: Number(reply[3]), retryAfterMs: null, left };
+  if (!params.park) return busy;
+  // A waiter next in line whose lease the holder released while it parked would wait for a wake
+  // that already happened, so it asks once more after parking. Every later release wakes it.
+  const leaves = params.park(left);
+  const position = await parkInLeaseLine(params.resource, params.waiter, leaves);
+  if (position < 0) return busy;
+  if (position === 0) lock = await take();
+  if (lock) return { lock, place: Number(reply[3]), retryAfterMs: null, left: leaves };
+  return { ...busy, parked: true };
 };
+
+/**
+ * Whether a release woke `waiter` since it parked. A job that parked checks this before it ends:
+ * a wake that came while it still ran started no new job, so it continues itself instead.
+ */
+export const providerLeaseWaiterWoken = async (resource: string, waiter: string): Promise<boolean> =>
+  Number(await redis.send("HEXISTS", [leaseLineKeys(resource)[7], waiter]).catch(() => 1)) === 1;
 
 // KEYS: places, presence, priorities. ARGV: holder's place, yield to foreground work.
 // Reports whether a present waiter should end the body batch, without changing the line.
@@ -405,8 +553,9 @@ export const providerLeaseWaiterCount = async (resource: string, prefix: string)
  * Releases a lease from `acquireProviderLease`. A job that continues passes `next` to line up
  * before letting go, so a job that asks between its turns does not take the lease just because
  * the holder was briefly out of line. It lines up anew: a command that waited longer than the
- * head-start difference still goes first. Valkey errors lose only the order, never the release;
- * a release that fails leaves the lease to expire.
+ * head-start difference still goes first. Then it wakes the waiter next in line if that one
+ * parked. Valkey errors lose only the order, never the release; a release that fails leaves the
+ * lease to expire, and the scheduler wakes the line.
  */
 export const releaseProviderLease = async (lock: Lock, next?: { waiter: string; priority: ProviderLeasePriority }): Promise<void> => {
   if (next) await enterLeaseLine(lock.resource, next.waiter, next.priority, false).catch(() => undefined);
@@ -414,6 +563,7 @@ export const releaseProviderLease = async (lock: Lock, next?: { waiter: string; 
   await mailProviderOperationMutex()
     .release(lock)
     .catch(() => false);
+  await wakeParkedProviderWaiter(lock.resource);
 };
 
 /**
