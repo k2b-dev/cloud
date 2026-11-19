@@ -400,8 +400,7 @@ test("an approval decided on the page keeps its receipt; a new one elsewhere app
   // (a) The person declines here; the request leaves the row's list. Its card stays as the receipt and is not read again.
   await Bun.sleep(550);
   const card = cards()[0]!;
-  // Declining comes before the one filled answer.
-  card.querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer")[0]!.click();
+  [...card.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Nicht ausführen")!.click();
   await waitFor(() => card.dataset.decided === "rejected");
   server.questions = { items: [], count: 0 };
   server.approvals = [];
