@@ -9,6 +9,10 @@ import type { Finding, Rule } from "./rule";
  * OKLCH hue from both AI accents. Near-gray colors (chroma below `MIN_CHROMA`) carry no hue and pass. The Assistant
  * is the AI app and may use the AI colors.
  *
+ * The fallback palette (`appIconPalette`, the icon tone of an app without a color) is Cloud's own choice and stricter:
+ * no tone in the violet-to-plum hues (`RESERVED_HUES`), and no grey (chroma below `PALETTE_MIN_CHROMA`), because a grey
+ * icon reads as black and lifeless. A palette file without the palette is a finding, so a move cannot hide it.
+ *
  * One named case widens "plum means AI" to "plum means machine-written": a chat message that an automation or another
  * chat wrote for the person sits on `--k2b-chat-machine-surface`, a faint plum (at most `MACHINE_MIX_MAX` percent) in
  * the grey of the person's own bubble. That tint exists only as this token: every declaration of the token mixes the
@@ -18,7 +22,10 @@ const MIN_HUE_DISTANCE = 20;
 const MIN_CHROMA = 0.03;
 const AI_APPS = new Set(["assistant"]);
 const TOKENS = "packages/ui/src/styles/index.css";
-const LAUNCHPAD = "packages/cloud/src/ssr/AppLaunchpadPanel.tsx";
+const PALETTE = "packages/cloud/src/ssr/app-icon-style.ts";
+/** OKLCH hues from violet to plum, both AI accents among them; the platform blue (263°) and rose (18°) stay outside. */
+const RESERVED_HUES = [270, 360] as const;
+const PALETTE_MIN_CHROMA = 0.08;
 const MACHINE_TOKEN = "--k2b-chat-machine-surface";
 const MACHINE_MIX_MAX = 10;
 /** A `color-mix` that puts the AI accent into the bubble grey, in either order. */
@@ -120,13 +127,29 @@ export const rule: Rule = {
           message: `Plum mixed into the bubble grey is the named machine-written case; use var(${MACHINE_TOKEN}) instead of mixing it here.`,
         });
     }
-    const launchpad = join(workspaceRoot, LAUNCHPAD);
-    if (existsSync(launchpad)) {
-      const source = readFileSync(launchpad, "utf8");
-      const at = source.search(/\bappIconPalette\b[^=]*=/);
-      if (at >= 0) {
-        const block = balanced(source, source.indexOf("=", at) + 1);
-        inspect(launchpad, source, block, source.indexOf(block, at), "A launchpad fallback");
+    const palette = join(workspaceRoot, PALETTE);
+    const paletteSource = existsSync(palette) ? readFileSync(palette, "utf8") : "";
+    const at = paletteSource.search(/\bappIconPalette\b[^=]*=/);
+    if (at < 0)
+      findings.push({ file: palette, line: 1, message: "No appIconPalette found; the ai-color rule must guard the fallback icon tones." });
+    else {
+      const block = balanced(paletteSource, paletteSource.indexOf("=", at) + 1);
+      const offset = paletteSource.indexOf(block, at);
+      inspect(palette, paletteSource, block, offset, "A fallback icon");
+      for (const match of block.matchAll(/#[0-9a-f]{6}\b/gi)) {
+        const { chroma, hue } = oklchHue(match[0]);
+        const reason =
+          chroma < PALETTE_MIN_CHROMA
+            ? `is grey (OKLCH chroma ${chroma.toFixed(3)} below ${PALETTE_MIN_CHROMA}); a grey icon reads as black and lifeless`
+            : hue >= RESERVED_HUES[0] && hue < RESERVED_HUES[1]
+              ? `sits at ${hue.toFixed(1)}° OKLCH hue, in the violet-to-plum range ${RESERVED_HUES[0]}–${RESERVED_HUES[1]}° that means AI`
+              : undefined;
+        if (reason)
+          findings.push({
+            file: palette,
+            line: lineAt(paletteSource, offset + (match.index ?? 0)),
+            message: `The fallback icon tone ${match[0]} ${reason}.`,
+          });
       }
     }
     // Reported by path and line, never in the order the file system lists directories.

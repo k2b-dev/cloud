@@ -299,10 +299,16 @@ Each app's icon in the app bar carries a third derived color, the color on
 the canvas. It lies directly on the open app's tinted gradient, so Cloud
 darkens the accent in light mode and lightens it in dark mode only until it
 keeps 3:1 (WCAG 1.4.11) against every stop of that gradient, the tablet bar's
-gradient, and the hover fill on them. An app without an accent uses the same
-palette tone as its tile in the app grid. The app bar editor's tiles keep the
-same 3:1 for their glyphs. Names, counts, and the bar's own controls stay
-neutral.
+gradient, and the hover fill on them. An app that declares `iconColor` uses it
+for its icon instead of the accent; the icon color changes nothing else. An app
+without either uses the same palette tone as its tile in the app grid. The app
+bar editor's tiles keep the same 3:1 for their glyphs. Names, counts, and the
+bar's own controls stay neutral.
+
+The palette has seven tones: blue `#2563eb`, emerald `#059669`, olive
+`#4d7c0f`, amber `#d97706`, rose `#e11d48`, cyan `#0891b2`, and terracotta
+`#c2410c`. It has no violet or plum, which mean AI, and no grey, which reads as
+black. The tones keep their places, so an app keeps its tone when one changes.
 
 Plum means AI. `--k2b-ai-accent` (`#8e1b6f` light, `#f0abdc` dark) and
 `--k2b-ai-surface` mark AI surfaces, which also carry ✦ or the
@@ -310,7 +316,8 @@ word "KI", so no app color may look like it: keep the accent and every
 background stop at least 20° of OKLCH hue away from both AI accents. Near-gray
 colors carry no hue and are fine. Only the Assistant, the AI app itself, may
 use plum. In the Cloud repository the `ai-color` check enforces this for every
-built-in app and for the launchpad's fallback tile colors.
+built-in app and, stricter, for the palette: no tone from violet to plum
+(270–360° OKLCH hue) and no grey.
 
 One named case widens this to "plum means machine-written": a chat message
 that an automation or another chat wrote for the person sits on
