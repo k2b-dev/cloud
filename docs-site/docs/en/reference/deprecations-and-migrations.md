@@ -5,13 +5,33 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## One compact approval frame
+
+`ApprovalFrame` from `@k2b/cloud/approvals/ui` now renders the same compact
+summary for Capability Actions, Code versions and administrator reviews.
+Replace `outcome` and `factLines` with the current `sentence` and `reason.text`;
+put complete proposals in `details.content` and additional facts in `meta`.
+Pass `details.content` as a function so it mounts when **See everything** opens.
+Existing `confirm`, `decline`, `back` and `remember` callbacks keep their meaning;
+draft editing and remembering are available in the details dialog.
+Use `secondary` for a direct second decision and `detailsPlacement="quiet"`
+for a proposal link in the quiet line. Capability rejection stays direct;
+admin rejection/change opens its decision dialog without a proposal step.
+`status` supplies metadata, not a second visible state label.
+See [Cloud approvals](/en/ui/cloud/approvals) for the current props and flow.
+Stored approvals, authorization and decision endpoints are unchanged.
+Focused `@k2b/cloud/approvals/frame`, `/list` and `/navigation` entries keep
+proposal rendering out of summary-only views; the combined `/ui` entry remains.
+Optional `details.load` prepares deferred UI before the dialog opens, with a
+visible error and retry through **See everything** if loading fails.
 
 ## One chat-writing capability
 

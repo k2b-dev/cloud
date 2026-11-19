@@ -6,6 +6,8 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { approvalFixture, approvalModel, approvalNow, approvalStates, approvalVersionId } from "./code-version-card.test-fixture";
+import { codeVersionCardCopy } from "./code-version-card-copy";
+import { codeVersionCardMessages } from "./code-version-card-messages";
 import { type CodeVersionCardModel, describeCodeVersionCard } from "./code-version-card-state";
 
 registerSsrTestPlugin({ dev: true, rootDir: mkdtempSync(join(tmpdir(), "assistant-approval-render-")) });
@@ -24,6 +26,11 @@ const render = (model: CodeVersionCardModel, locale: string) =>
 const live = (html: string, role: string) =>
   (html.match(new RegExp(`<span role="${role}"[^>]*>([\\s\\S]*?)</span>`))?.[1] ?? "").replace(/<!--[\s\S]*?-->/g, "");
 
+test("the v10 sentences and remaining shared controls have matching locale contracts", () => {
+  expect(codeVersionCardCopy.check()).toEqual([]);
+  expect(codeVersionCardMessages.check()).toEqual([]);
+});
+
 for (const locale of ["de", "en"])
   for (const state of approvalStates) {
     test(`${locale}: ${state} has one sentence, quiet line and at most two actions on one plum surface`, () => {
@@ -31,7 +38,7 @@ for (const locale of ["de", "en"])
       const html = render(model, locale);
       expect(live(html, model.alert ? "alert" : "status")).toBe(model.main);
       expect(live(html, model.alert ? "status" : "alert")).toBe("");
-      expect(html).toContain("assistant-code-version__quiet");
+      expect(html).toContain("k2b-notice-card__description");
       expect(html.match(/ti-shield-check/g)).toHaveLength(1);
       expect(html).not.toContain("k2b-chat-decision");
       expect(html.match(/data-code-version-primary/g)).toHaveLength(1);
@@ -76,7 +83,7 @@ test("missing pages offer retry, while a real empty list offers runs and never i
     });
     expect(model.primary?.id).toBe(pages && pages.versionId === approvalVersionId ? "runs" : "load");
     const html = render(model, "en");
-    const quiet = html.match(/<p class="assistant-code-version__quiet"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    const quiet = html.match(/<p class="k2b-notice-card__description"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
     if (pages && pages.versionId === approvalVersionId) {
       expect(model.secondary).toBeUndefined();
       expect(live(quiet, "alert")).toBe("");
@@ -101,6 +108,7 @@ test("loading, denial, unreadable state and failure keep the same surface and of
       canAsk: true,
     });
     expect(render(model, "de")).toContain("k2b-notice-card");
+    if (value === null) expect(render(model, "de")).toContain("data-reserve");
     expect(model.primary?.id).not.toBe("activate");
   }
 });
@@ -136,7 +144,7 @@ test("only a version that is already final when the chat draws it is a receipt w
   expect(card("replaced")).toContain("data-receipt");
   expect(card("ready")).not.toContain("data-receipt");
   // A card that turns into a receipt while in view keeps the receipt flag off: its reserve keeps the chat in place.
-  const view = (state: (typeof approvalStates)[number], receipt: boolean) =>
+  const viewHtml = (state: (typeof approvalStates)[number], receipt: boolean) =>
     renderToString(() =>
       createComponent(LocaleProvider, {
         locale: "de",
@@ -144,9 +152,15 @@ test("only a version that is already final when the chat draws it is a receipt w
           return createComponent(CodeVersionCardView, { model: approvalModel(state), anchorId: "a", onAction: () => {}, receipt });
         },
       }),
-    ).includes("data-receipt");
+    );
+  const view = (state: (typeof approvalStates)[number], receipt: boolean) => viewHtml(state, receipt).includes("data-receipt");
   expect(view("replaced", false)).toBe(false);
   expect(view("replaced", true)).toBe(true);
+  const hasReserve = (state: (typeof approvalStates)[number], receipt: boolean) =>
+    (viewHtml(state, receipt).match(/<[^>]*\sdata-approval-frame[^>]*>/)?.[0] ?? "").includes("data-reserve");
+  expect(hasReserve("replaced", true)).toBe(false);
+  expect(hasReserve("replaced", false)).toBe(true);
+  expect(hasReserve("ready", true)).toBe(true);
   // A live state never sheds its reserve, also when the flag was set for the receipt it started as.
   for (const state of approvalStates.filter((state) => state !== "replaced")) expect([state, view(state, true)]).toEqual([state, false]);
 });

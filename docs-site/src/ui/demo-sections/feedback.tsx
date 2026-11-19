@@ -47,6 +47,15 @@ const BlocksDemo = () => (
   {(notice) => <NoticeCard {...notice} />}
 </NoticeCard.Grid>
 
+<NoticeRow tone="ai" icon="ti ti-shield-check"
+  detail="Reads mail · daily at 8:00"
+  detailTitle="Reads mail · daily at 8:00"
+  actions={({ narrow }) => <>
+    <Button size={narrow ? "md" : "sm"} variant={narrow ? "secondary" : "link"}>See everything</Button>
+    <Button size={narrow ? "md" : "sm"} variant="ai">Enable</Button>
+  </>}
+>The proposal is ready to review.</NoticeRow>
+
 <InlineGuidance loading>Loading templates…</InlineGuidance>
 <InlineGuidance tone="info" icon="ti ti-info-circle">Your content stays unchanged.</InlineGuidance>
 <InlineGuidance tone="success" icon="ti ti-circle-check">Template linked.</InlineGuidance>
@@ -71,6 +80,24 @@ const BlocksDemo = () => (
       >
         {(notice) => <NoticeCard {...notice} />}
       </NoticeCard.Grid>
+      <NoticeRow
+        tone="ai"
+        icon="ti ti-shield-check"
+        detail="Reads mail · daily at 8:00"
+        detailTitle="Reads mail · daily at 8:00"
+        actions={({ narrow }) => (
+          <>
+            <Button size={narrow ? "md" : "sm"} variant={narrow ? "secondary" : "link"}>
+              See everything
+            </Button>
+            <Button size={narrow ? "md" : "sm"} variant="ai">
+              Enable
+            </Button>
+          </>
+        )}
+      >
+        The proposal is ready to review.
+      </NoticeRow>
       <div class="space-y-3">
         <h3 class="text-sm font-medium">Inline guidance</h3>
         <InlineGuidance loading>Loading templates…</InlineGuidance>
