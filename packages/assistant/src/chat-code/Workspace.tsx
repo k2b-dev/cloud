@@ -156,7 +156,7 @@ export function ChatWorkspace(props: {
       await navigator.clipboard.writeText(new URL(workspaceSelectionHref(window.location.href, tab), window.location.href).href);
       toast.success(w().linkCopied);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+      toast.error(error instanceof Error ? error.message : String(error), { title: w().linkCopyFailedTitle });
     }
   };
   const resultOf = (path: string) => props.snapshot?.()?.results.find((result) => result.file?.path === path) ?? null;
@@ -251,7 +251,7 @@ export function ChatWorkspace(props: {
               await source.remove!(tab.path);
               props.controller.close(tab.key);
             } catch (error) {
-              toast.error(error instanceof Error ? error.message : String(error));
+              toast.error(error instanceof Error ? error.message : String(error), { title: copy.fileDeleteFailedTitle });
             }
           },
         });

@@ -3,8 +3,6 @@
 # The rule never adds lines; `bun scripts/check.ts toast-copy --fix` removes resolved findings. This list only shrinks.
 packages/accounts/src/frontend/action-notice.tsx | untitled | messages.creationNoticeFailed
 packages/accounts/src/frontend/groups/detail/GroupActions.island.tsx | untitled | messages().groupDeletedFrom({ name: displayName(), provider: props.provider === "ipa" ? "FreeIPA" : messages().local })
-packages/assistant/src/chat-code/Workspace.tsx | untitled | error instanceof Error ? error.message : String(error)
-packages/assistant/src/chat-code/Workspace.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
@@ -25,12 +23,7 @@ packages/assistant/src/frontend/AssistantSidebar.tsx | untitled | text("Could no
 packages/assistant/src/frontend/AssistantSkillsSettings.tsx | untitled | text("Skill deleted")
 packages/assistant/src/frontend/AssistantSkillsSettings.tsx | untitled | text(enabled ? "Skill enabled for you" : "Skill disabled for you")
 packages/assistant/src/frontend/AssistantSkillsSettings.tsx | untitled | text(props.request.skillId ? "Skill saved" : "Skill created")
-packages/assistant/src/frontend/AssistantWorkspace.island.tsx | tone-icon | "ti ti-info-circle"
-packages/assistant/src/frontend/AssistantWorkspace.island.tsx | tone-icon | "ti ti-info-circle"
 packages/assistant/src/frontend/AssistantWorkspace.island.tsx | untitled | contextText("Failed to dismiss the suggestion")
-packages/assistant/src/frontend/AssistantWorkspace.island.tsx | untitled | placeT().startOverFailed
-packages/assistant/src/frontend/AssistantWorkspace.island.tsx | untitled | t().quoteCut
-packages/assistant/src/frontend/AssistantWorkspace.island.tsx | untitled | t().quotesFull
 packages/assistant/src/frontend/AssistantWorkspace.island.tsx | untitled | t().tabsNotSaved
 packages/assistant/src/frontend/ConversationSidebarPreview.tsx | untitled | text("Could not update pin.")
 packages/assistant/src/frontend/assistant-dictation.tsx | untitled | message
@@ -95,24 +88,6 @@ packages/cloud/src/ssr/LayoutHelp.tsx | untitled | t().helpCopied
 packages/cloud/src/ssr/PwaRuntime.island.tsx | untitled | t().newVersion({ cloud: props.cloud })
 packages/cloud/src/ssr/PwaRuntime.island.tsx | untitled | t().otherAccount({ cloud: props.cloud, name: otherAccount.name })
 packages/cloud/src/ssr/RailEditor.tsx | untitled | t.failedClosed
-packages/cloud/src/ssr/code-page/CodeChatBinding.tsx | untitled | t().chatRestoreFailed
-packages/cloud/src/ssr/code-page/CodeChatBinding.tsx | untitled | t().chatRestored({ title })
-packages/cloud/src/ssr/code-page/CodeChatChooser.tsx | untitled | t().chatChanged({ title: chat.title })
-packages/cloud/src/ssr/code-page/CodeOverview.tsx | untitled | t().addressCopyFailed
-packages/cloud/src/ssr/code-page/CodePage.tsx | untitled | paused ? t().pauseFailed : t().resumeFailed
-packages/cloud/src/ssr/code-page/CodePage.tsx | untitled | t.commandCopyFailed
-packages/cloud/src/ssr/code-page/CodePage.tsx | untitled | t.linkCopyFailed
-packages/cloud/src/ssr/code-page/CodePage.tsx | untitled | text.t().runSnapshotFailed
-packages/cloud/src/ssr/code-page/CodeRefusalNotice.tsx | untitled | t.handleCopyFailed
-packages/cloud/src/ssr/code-page/CodeRuns.tsx | untitled | t().rerunFailed
-packages/cloud/src/ssr/code-page/CodeRuns.tsx | untitled | t().rerunNeedsInput
-packages/cloud/src/ssr/code-page/CodeRuns.tsx | untitled | t().rerunStarted
-packages/cloud/src/ssr/code-page/CodeSecrets.tsx | untitled | submitted.status === 409 ? t().secretSubmitConflict : t().secretSubmitFailed
-packages/cloud/src/ssr/code-page/CodeSecrets.tsx | untitled | t().secretDeleteFailed
-packages/cloud/src/ssr/code-page/code-live.ts | untitled | t.stopped
-packages/cloud/src/ssr/code-page/run-action.ts | untitled | paused ? t().runPaused({ name: options.state().code.pausedBy?.name ?? null }) : approval ? t().runApproval : error instanceof StartFailure && error.status === 503 ? t().runNoConnection : t().runStartFailed
-packages/cloud/src/ssr/code-page/run-action.ts | untitled | reason ? t().runOwnFailedReason({ reason }) : t().runOwnFailed
-packages/cloud/src/ssr/code-page/run-action.ts | untitled | t().runOwnFailed
 packages/cloud/src/ssr/global-search-host.tsx | untitled | resourceSearchMessages.resolve([locale]).t.searchFailed
 packages/cloud/src/ssr/layout-help-panel-menu.tsx | untitled | message
 packages/cloud/src/ssr/layout-help-panel-menu.tsx | untitled | t().articleCopied
@@ -134,9 +109,6 @@ packages/contacts/src/frontend/_components/ContactNotesSection.tsx | untitled | 
 packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | untitled | error instanceof Error ? error.message : t().couldNotPrepareBulkAction
 packages/contacts/src/frontend/_components/ContactsBulkActions.tsx | untitled | error.message
 packages/contacts/src/frontend/_components/ContactsLiveEvents.island.tsx | untitled | t().liveUpdatesStopped
-packages/core/src/code/PageTree.island.tsx | untitled | codePageFailure(t(), answer.code, t().refreshFailed)
-packages/core/src/code/PageTree.island.tsx | untitled | message
-packages/core/src/code/PageTree.island.tsx | untitled | t().newData
 packages/core/src/pages/admin/CacheNotice.tsx | untitled | t().cleared
 packages/core/src/pages/admin/ai/AiBudgetToggle.island.tsx | untitled | failure instanceof Error ? failure.message : t().saveFailed
 packages/core/src/pages/admin/apps/remove-dialog.tsx | untitled | t.removed({ name: app.name })
@@ -293,7 +265,6 @@ packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | m
 packages/mail/src/frontend/_components/MailSubscriptionDialog.tsx | untitled | result.commandCount === 0 ? messages().noMessagesNeededMoving({ name: item.name }) : messages().messageMovesQueued({ count: result.commandCount })
 packages/mail/src/frontend/_components/MailboxMenu.tsx | untitled | messages().syncQueued
 packages/mail/src/frontend/_components/MailboxSettings.tsx | untitled | messages().mailboxSettingsSaved
-packages/mail/src/frontend/_components/MailboxSettings.tsx | untitled | outcome === "refused" ? messages().deleteFailedBody : messages().deleteUnknownBody
 packages/mail/src/frontend/_components/mail-cloud-id.tsx | untitled | copied
 packages/mail/src/frontend/_components/mail-cloud-id.tsx | untitled | copied
 packages/mail/src/frontend/_components/mail-cloud-id.tsx | untitled | t().copyFailed

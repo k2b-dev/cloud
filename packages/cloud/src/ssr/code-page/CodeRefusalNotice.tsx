@@ -9,7 +9,7 @@ export const copyHandle = async (handle: string, t: CodePageMessages) => {
     await navigator.clipboard.writeText(handle);
     toast.success(t.handleCopied);
   } catch {
-    toast.error(t.handleCopyFailed);
+    toast.error(t.handleCopyFailed, { title: t.handleCopyFailedTitle });
   }
 };
 

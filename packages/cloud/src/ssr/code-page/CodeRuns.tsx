@@ -137,7 +137,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
     props.state.code.state === "active";
   const rerun = async () => {
     // The input is too large to carry along; Core keeps it, and cld code can start the run again.
-    if (props.detail.inputTooLarge) return toast.error(t().rerunNeedsInput);
+    if (props.detail.inputTooLarge) return toast.error(t().rerunNeedsInput, { title: t().rerunNeedsInputTitle });
     const did = words()?.untilThen.items ?? [];
     const confirmed = await prompts.confirm(
       <div class="cloud-code__dialog">
@@ -166,8 +166,8 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
       StartSchema,
     ).catch(() => null);
     setRerunning(false);
-    if (!result?.ok) return toast.error(t().rerunFailed);
-    toast.success(t().rerunStarted);
+    if (!result?.ok) return toast.error(t().rerunFailed, { title: t().rerunFailedTitle });
+    toast.success(t().rerunStarted, { title: t().rerunStartedTitle });
     documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.runId }));
   };
   const automation = () => props.state.automations?.find((entry) => entry.entrypoint === run().entrypoint);

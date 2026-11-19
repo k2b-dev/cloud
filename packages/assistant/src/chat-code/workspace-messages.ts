@@ -7,6 +7,8 @@ export const workspaceMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      linkCopyFailedTitle: "Link not copied",
+      fileDeleteFailedTitle: "File not deleted",
       backToChat: "To the chat",
       moreNamed: ({ title }: { title: string }) => `More for “${title}”`,
       showInChat: "Show in chat",
@@ -42,6 +44,8 @@ export const workspaceMessages = i18n.define({
         })[category],
     },
     de: {
+      linkCopyFailedTitle: "Link nicht kopiert",
+      fileDeleteFailedTitle: "Datei nicht gelöscht",
       backToChat: "Zum Chat",
       moreNamed: ({ title }: { title: string }) => `Mehr zu „${title}“`,
       showInChat: "Im Chat zeigen",

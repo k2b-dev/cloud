@@ -5,6 +5,9 @@ export const codePageMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      newDataTitle: "New data available",
+      refreshFailedTitle: "Refresh failed",
+      actionFailedTitle: "Action not completed",
       yes: "Yes",
       asOf: ({ time }: { time: string }) => `As of ${time}`,
       points: "pts",
@@ -34,6 +37,9 @@ export const codePageMessages = i18n.define({
       answerLost: "The answer was lost. Check whether the step took effect before you send it again.",
     },
     de: {
+      newDataTitle: "Neue Daten",
+      refreshFailedTitle: "Aktualisieren fehlgeschlagen",
+      actionFailedTitle: "Aktion nicht abgeschlossen",
       yes: "Ja",
       asOf: ({ time }) => `Stand ${time}`,
       points: "Pkt.",

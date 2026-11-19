@@ -4,6 +4,8 @@ export const assistantMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      quotesFullTitle: "Quote limit reached",
+      quoteCutTitle: "Quote shortened",
       authoringStopTitle: "Gustav is taking a break.",
       authoringStopRepeatedTitle: "Gustav is taking a break. A hint from you will help.",
       authoringStopRepeated: "The same error came up several times",
@@ -314,6 +316,8 @@ export const assistantMessages = i18n.define({
       waitingViewLabel: ({ title }: { title: string }) => `View: ${title}`,
     },
     de: {
+      quotesFullTitle: "Zitatlimit erreicht",
+      quoteCutTitle: "Zitat gekürzt",
       authoringStopTitle: "Gustav macht eine Pause.",
       authoringStopRepeatedTitle: "Gustav macht eine Pause. Ein Hinweis von dir hilft weiter.",
       authoringStopRepeated: "Derselbe Fehler kam mehrmals",

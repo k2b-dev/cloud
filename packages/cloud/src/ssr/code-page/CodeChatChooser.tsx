@@ -114,7 +114,7 @@ function ChatChooser(props: { codeId: string; binding: CodeChatBinding; text: Pa
     }
     setSaving(false);
     const chat = result.data.data.chat;
-    if (chat?.state === "available") toast.success(t().chatChanged({ title: chat.title }));
+    if (chat?.state === "available") toast.success(t().chatChanged({ title: chat.title }), { title: t().chatChangedTitle });
     props.close();
     refreshCurrentPath();
   };

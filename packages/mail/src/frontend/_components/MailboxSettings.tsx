@@ -311,7 +311,10 @@ export default function MailboxSettings(props: {
     const finishedLate = (outcome: MailboxDeleteOutcome) => {
       if (!dismissed) return;
       if (outcome === "deleted") props.onDeleted();
-      else toast.error(outcome === "refused" ? messages().deleteFailedBody : messages().deleteUnknownBody);
+      else
+        toast.error(outcome === "refused" ? messages().deleteFailedBody : messages().deleteUnknownBody, {
+          title: outcome === "refused" ? messages().deleteRefusedToastTitle : messages().deleteUnknownToastTitle,
+        });
     };
     const deleted = await prompts.dialog<boolean>(
       (close) => (
