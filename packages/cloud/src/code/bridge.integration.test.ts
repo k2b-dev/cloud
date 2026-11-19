@@ -16,6 +16,7 @@ import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "../../../core/src/code/ai-budget";
 import { codeAiFileTool, codeAiRun } from "../../../core/src/code/ai-loop";
 import { createCodeBridgeHost, readCodeOwnOrigins } from "../../../core/src/code/bridge";
+import { codeChatBudgetMessages } from "../../../core/src/code/chat-budget-messages";
 import { codeDatabaseNamespace, deleteCodeDatabase, dispatchCodeDatabase, readCodeDatabaseUsage } from "../../../core/src/code/database";
 import type { CodeDatabaseClient } from "../../../core/src/code/database-client";
 import { codeDatabaseSettings } from "../../../core/src/code/database-settings";
@@ -647,6 +648,30 @@ suiteFor(
     fileEntries = new Map();
     providerRequestsConfirmation = false;
     await resetFixture();
+  });
+  test.each(["de", "en"])("%s: Code chat budget refusal uses its owner's language and trusted reason", async (locale) => {
+    await resetFixture({
+      personal: true,
+      entry: true,
+      permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null }, file: "code.ts", line: 1 }],
+      policyRows: ["ai_chat_you"],
+    });
+    await sql`UPDATE auth.users SET notification_locale=${locale} WHERE id=${userId}::uuid`;
+    const token = await signCodeRunToken(claims, { issuer, signer, now, deadlineAt: now.getTime() + 300_000 });
+    const verified = await verifyCodeRunToken(token, { issuer, key, now });
+    if (!verified) throw new Error("Missing verified fixture token");
+    const response = await createCodeBridgeHost({ checkRate: async () => ({ limited: false }) }).withCall(
+      {
+        claims: verified,
+        kind: "action",
+        call: { capability: "core.ai.chat.send", target: { type: "core.ai.chat", id: "bound" }, refs: {}, input: {} },
+      },
+      async () => Response.json({ ok: false, error: { code: "code_ai_budget_unknown", status: 409 } }),
+    );
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: { code: "code_ai_budget_unknown", status: 409, message: codeChatBudgetMessages(locale).reason("code_ai_budget_unknown") },
+    });
   });
   afterAll(async () => {
     settingsSpy?.mockRestore();

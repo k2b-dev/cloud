@@ -30,6 +30,7 @@ import { aiChatSendData, chatSendSnapshot } from "./ai-chat-send-result";
 import { chatWriteAuthority, ownedActiveChat, sendsToItself } from "./ai-code-chat";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
 import { resolveCodeChatDestination } from "./code/chat-binding";
+import { codeChatBudgetMessages } from "./code/chat-budget-messages";
 import { assertCodeChatTurnFits, CodeChatBudgetError } from "./code/chat-turn-budget";
 import { codeSettings } from "./code/settings";
 
@@ -44,8 +45,6 @@ const messages = i18n.define({
       origin: ({ name }: { name: string }) => `Started by Code ${name}`,
       budget:
         "The daily Code AI allowance is spent, reserved by running calls, or its usage is unknown. Try again after calls finish or the allowance resets.",
-      budgetFit:
-        "The model’s maximum turn cost cannot fit the Code daily budget, or its limits are unknown. Choose a less expensive model with known limits, or ask an administrator to adjust the Code budget.",
       ai_disabled: "AI is disabled. Ask an administrator to enable it before trying again.",
       ai_no_model: "No model is available for this chat. Check the AI model settings before trying again.",
       model_policy_mismatch: "The Code owner may not use this model. Choose a model their account may use.",
@@ -57,8 +56,6 @@ const messages = i18n.define({
       origin: ({ name }: { name: string }) => `Gestartet von Code ${name}`,
       budget:
         "Das KI-Tageskontingent des Codes ist verbraucht, durch laufende Aufrufe reserviert oder der Verbrauch ist unbekannt. Versuche es nach Abschluss der Aufrufe oder nach dem Zurücksetzen erneut.",
-      budgetFit:
-        "Der Höchstbetrag des Modells passt nicht ins Code-Tagesbudget oder seine Grenzen sind unbekannt. Wähle ein günstigeres Modell mit bekannten Grenzen oder bitte die Administration, das Code-Budget anzupassen.",
       ai_disabled: "KI ist deaktiviert. Bitte die Administration, sie vor einem weiteren Versuch zu aktivieren.",
       ai_no_model: "Für diesen Chat ist kein Modell verfügbar. Prüfe die KI-Modelleinstellungen vor einem weiteren Versuch.",
       model_policy_mismatch: "Der Code-Eigentümer darf dieses Modell nicht verwenden. Wähle ein für sein Konto freigegebenes Modell.",
@@ -204,8 +201,12 @@ export const aiChatSendAction = {
       ? await aiProjects.snapshot(chat.project_id, { actor, accessSubject: { type: "user", userId: owner } })
       : null;
     if (chat.project_id && !project) return fail(err.forbidden("Current Project access is unavailable"));
-    const t = messages.resolve([context.locale]).t;
     const code = source.data.code;
+    const ownerLocale = code
+      ? (await sql<{ locale: string | null }[]>`SELECT notification_locale AS locale FROM auth.users WHERE id=${owner}::uuid`)[0]?.locale
+      : null;
+    const locale = ownerLocale ?? context.locale;
+    const t = messages.resolve([locale]).t;
     const text = withAiSourceContext(parsed.data.text, parsed.data.context);
     try {
       const prepared = await prepareAiChatTurn({
@@ -215,7 +216,7 @@ export const aiChatSendAction = {
         input: text,
         userMessage: { role: "user", content: [{ type: "text", text }] },
         actor,
-        locale: context.locale,
+        locale,
         writerOrigin: source.data.origin,
         turnTrigger: source.data.turnTrigger,
         send: { id, accountId: owner, keyHash, requestHash: hash },
@@ -293,7 +294,8 @@ export const aiChatSendAction = {
       wakeAiMessageQueue(chat.id);
       return result(chat.id, chat.short_id, id);
     } catch (cause) {
-      if (cause instanceof CodeChatBudgetError) return fail({ code: cause.code, message: t.budgetFit, status: 409 as const });
+      if (cause instanceof CodeChatBudgetError)
+        return fail({ code: cause.code, message: codeChatBudgetMessages(locale).reason(cause.code), status: 409 as const });
       if (
         typeof cause === "object" &&
         cause !== null &&

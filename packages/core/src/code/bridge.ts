@@ -22,6 +22,7 @@ import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
 import { codeAiReferenceCost, codeAiReservesAttemptBudget, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
+import { codeChatBudgetMessages } from "./chat-budget-messages";
 import { publishCodeCallHint } from "./live";
 import { codePolicyGroupRowsQuery, codePolicyGroupsFromRows, codePolicySnapshotFromRow, codePolicySnapshotQuery } from "./policy";
 import { codeOperationPolicyRow } from "./policy-contracts";
@@ -472,6 +473,26 @@ export function createCodeBridgeHost(
             : { ok: false, error: { code: "code_file_observation_failed", status: response.status >= 400 ? response.status : 503 } }
         : await response.clone().json(),
     );
+    if (
+      !result.ok &&
+      call.call.capability === "core.ai.chat.send" &&
+      [
+        "code_ai_budget_unknown",
+        "code_ai_budget_changed",
+        "code_ai_budget_settled",
+        "code_ai_turn_exceeds_daily_budget",
+        "code_ai_daily_budget_limit",
+        "code_ai_owner_daily_budget_limit",
+      ].includes(result.error.code)
+    ) {
+      // Compose trusted Core text after dispatch has stripped upstream messages.
+      const [owner] = await sql<{ locale: string | null }[]>`SELECT u.notification_locale AS locale
+        FROM code.codes c JOIN auth.users u ON u.id=c.owner_user_id WHERE c.id=${call.claims.codeId} AND c.owner_kind='person'`;
+      result.error.message = codeChatBudgetMessages(owner?.locale ?? (await coreSettings.get<string>("app.locale")) ?? "en").reason(
+        result.error.code,
+      );
+      response = Response.json(result, { status: response.status });
+    }
     if (!result.ok && call.kind === "internet") refusalKind = codeBridgeLocalRefusalKind(result.error.code);
     const success = result.ok;
     const observedOrdinal = ordinal;

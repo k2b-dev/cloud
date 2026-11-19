@@ -143,6 +143,19 @@ per million input and output tokens in the installation's accounting unit.
 Missing or zero prices do not consume a priced chat allowance. Audio has no
 token pricing. A variant can override its model's prices.
 
+Chat models with a positive input or output price require a known context
+window and an output limit before they can be saved. Enter the provider's
+documented `contextWindow` and either `maxOutputTokens` or the catalog's
+reported `outputTokenLimit`. The same rule applies to a variant's effective
+prices and limits. Administration flags existing incomplete models so an
+administrator can fill in the missing limits. Free models and decision models
+keep their existing rules.
+
+An alarm that cannot run because model limits are missing names that cause in
+the chat and asks for the model configuration to be completed. It does not
+report an exhausted daily budget. Code chat calls return the translated
+budget reason in the owner's locale, including the recovery step.
+
 ## Assign classes and tools
 
 ```bash
@@ -184,7 +197,7 @@ cld admin ai variants update local-chat:deep --input-file variant-patch.json --y
 A model patch can set shared prices or parameters:
 
 ```json
-{ "pricing": { "inputPerMillion": 0.5, "outputPerMillion": 2, "cacheReadPerMillion": 0.05 }, "extraBody": { "custom": true } }
+{ "pricing": { "inputPerMillion": 0.5, "outputPerMillion": 2, "cacheReadPerMillion": 0.05 }, "contextWindow": 128000, "maxOutputTokens": 4096, "extraBody": { "custom": true } }
 ```
 
 Set the optional `cacheReadPerMillion` through the CLI or model API to charge

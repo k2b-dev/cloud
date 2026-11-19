@@ -42,6 +42,20 @@ suite("AI model catalog migration and revisions", () => {
       );
       expect(model?.id).toBe(id);
       expect(model?.outputTokenLimit).toBe(65_536);
+      const pricing = { inputPerMillion: 2.5, outputPerMillion: 10 };
+      await expect(
+        aiModelCatalog.createModels(id, [{ id: `${id}-incomplete`, providerModel: "test", label: "Incomplete", pricing }], user.id),
+      ).rejects.toMatchObject({ code: "invalid_configuration" });
+      await expect(aiModelCatalog.updateModel(id, { pricing }, model!.revision, user.id)).rejects.toMatchObject({
+        code: "invalid_configuration",
+      });
+      await expect(aiModelCatalog.createVariant(id, { slug: "priced", label: "Priced", pricing }, user.id)).rejects.toMatchObject({
+        code: "invalid_configuration",
+      });
+      const standard = await aiModelCatalog.variant(id);
+      await expect(aiModelCatalog.updateVariant(id, { pricing }, standard.revision, user.id)).rejects.toMatchObject({
+        code: "invalid_configuration",
+      });
       const [legacyRow] = await sql<{ data: Record<string, unknown> }[]>`SELECT to_jsonb(t) AS data FROM ai.models t WHERE id=${id}`;
       if (!legacyRow) throw new Error("Missing stored model");
       const decoded = Object.fromEntries(
