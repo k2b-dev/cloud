@@ -102,6 +102,9 @@ export const aiChatCreateAction = {
         title: parsed.data.title,
         projectId: project?.id,
       });
+      // Replays can return a chat moved to another Project since creation, just as on the HTTP route.
+      if (chat.projectId && chat.projectId !== project?.id && !(await aiProjects.get(chat.projectId, context, "read")))
+        return fail(err.notFound("Project"));
       const ref = { type: "core.ai.chat", id: chat.shortId };
       const open = `/app/assistant?conversation=${encodeURIComponent(chat.shortId)}`;
       return ok({ data: { chat: ref, open }, refs: [ref], links: [{ rel: "open" as const, href: open }] });

@@ -105,7 +105,7 @@ suiteFor(
     expect(await aiConversations.getLatestTurn({ conversationId: chat!.id })).toBeNull();
     expect(await invoke(context, "Different title")).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT" } });
   });
-  test("personal Code reuses its original chat across separate running executions", async () => {
+  test("personal Codes and the person share the creation key across separate running executions", async () => {
     const context = { ...ctx(), idempotencyKey: "code-creation" };
     const first = await created(context);
     const [run] = await sql<{ id: string }[]>`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
@@ -116,6 +116,22 @@ suiteFor(
       actor: { ...context.actor, delegation: { ...context.actor.delegation, workloadRun: run!.id } },
     });
     expect(second).toEqual(first);
+    const secondCodeId = "c_chatcreateother5b";
+    const secondVersionId = "5b000000-0000-4000-8000-000000000004";
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title) VALUES(${secondCodeId},'person',${owner}::uuid,'Second create fixture')`;
+    await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,source_bytes,bundle_bytes)
+      SELECT ${secondVersionId}::uuid,${secondCodeId},1,source_files,bundle,source_hash,bundle_hash,source_bytes,bundle_bytes
+      FROM code.versions WHERE id=${versionId}::uuid`;
+    await sql`UPDATE code.codes SET state='active',active_version_id=${secondVersionId}::uuid WHERE id=${secondCodeId}`;
+    const [otherRun] = await sql<{ id: string }[]>`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
+      VALUES(${secondCodeId},${secondVersionId}::uuid,'schedule','fixture','running',32768,10) RETURNING id`;
+    expect(
+      await created({
+        ...context,
+        actor: { ...context.actor, delegation: { ...context.actor.delegation, workloadId: secondVersionId, workloadRun: otherRun!.id } },
+      }),
+    ).toEqual(first);
+    expect(await created({ ...person(), idempotencyKey: context.idempotencyKey })).toEqual(first);
   });
   test.each(["archived", "deleted"])("a %s creation is never replaced on replay", async (state) => {
     const context = { ...person(), idempotencyKey: `unavailable-${state}` };
@@ -128,7 +144,7 @@ suiteFor(
     >`SELECT count(*)::int AS count FROM ai.conversation_creations WHERE owner_user_id=${owner}::uuid`;
     expect(receipt!.count).toBeGreaterThan(0);
   });
-  test("Gustav and code_run use person-triggered source authority; chains and tool ceilings are refused", async () => {
+  test("Gustav shares Code's creation key; chains and restricted source turns are refused", async () => {
     const source = await aiConversations.createConversation({ ownerUserId: owner });
     const submitted = await aiConversations.submitChatTurn({
       conversationId: source.id,
@@ -152,14 +168,18 @@ suiteFor(
         delegation: { kind: "invocation", credentialKind: "session", callingAppId: "core", invocationId: "creation-source" },
       },
     };
-    for (const key of ["gustav-creation", "code-run-creation"])
-      expect(await invoke({ ...context, idempotencyKey: key })).toMatchObject({ ok: true });
+    const fromCode = await created({ ...ctx(), idempotencyKey: "gustav-code-shared" });
+    expect(await created({ ...context, idempotencyKey: "gustav-code-shared" })).toEqual(fromCode);
+    expect(await invoke({ ...context, idempotencyKey: "gustav-creation" })).toMatchObject({ ok: true });
     for (const trigger of [{ kind: "automation", id: codeId }, { kind: "chat", id: source.shortId }, null]) {
       await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{turnTrigger}',${JSON.stringify(trigger)}::text::jsonb) WHERE id=${submitted.turn.id}::uuid`;
       expect(await invoke(context)).toMatchObject({ ok: false, error: { code: "chat_chain_forbidden" } });
     }
     await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{turnTrigger}',${JSON.stringify({ kind: "person", id: owner })}::text::jsonb) WHERE id=${submitted.turn.id}::uuid`;
     await sql`UPDATE ai.conversations SET allowed_tools=ARRAY[]::text[] WHERE id=${source.id}::uuid`;
+    expect(await invoke(context)).toMatchObject({ ok: false, error: { code: "source_restricted" } });
+    await sql`UPDATE ai.conversations SET allowed_tools=NULL WHERE id=${source.id}::uuid`;
+    await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{sourceRestricted}','true'::jsonb) WHERE id=${submitted.turn.id}::uuid`;
     expect(await invoke(context)).toMatchObject({ ok: false, error: { code: "source_restricted" } });
   });
   test("Project creation checks current owner grants and keeps the selected Project", async () => {

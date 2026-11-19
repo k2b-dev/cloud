@@ -97,7 +97,13 @@ test("target methods omit their repeated type path while preserving capability I
       target: "ai.chat",
       inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false },
     },
-    { ...action, localId: "ai.chat.create", target: undefined },
+    {
+      ...action,
+      localId: "ai.chat.create",
+      target: undefined,
+      idempotency: "required",
+      inputSchema: { type: "object", properties: { title: { type: "string" } }, required: ["title"], additionalProperties: false },
+    },
     { ...action, localId: "ai.skill.update", target: "ai.skill" },
   ];
   manifest.queries = [];
@@ -115,7 +121,10 @@ test("target methods omit their repeated type path while preserving capability I
   await sdk.core.ai.chat("chat-1").send({ text: "Read the supplied facts." });
   await sdk.core.ai.skill("skill-1").update({});
   expect(calls).toMatchObject([
-    { capability: "core.ai.chat.create", invocation: { call: { input: { title: "Briefing" } } } },
+    {
+      capability: "core.ai.chat.create",
+      invocation: { call: { input: { title: "Briefing" } }, metadata: { idempotencyKey: "briefing" } },
+    },
     {
       capability: "core.ai.chat.send",
       invocation: { call: { target: { type: "core.ai.chat", id: "chat-1" }, input: { text: "Read the supplied facts." } } },
@@ -134,8 +143,9 @@ test("target methods omit their repeated type path while preserving capability I
     });
   // Keep the input valid so this assertion isolates the target method path.
   expect(
-    check('await core.ai.chat("chat-1").send({ text: "Read the supplied facts." }); await core.ai.skill("skill-1").update({});')
-      .diagnostics,
+    check(
+      'await core.ai.chat.create({ title: "Briefing", idempotencyKey: "briefing" }); await core.ai.chat("chat-1").send({ text: "Read the supplied facts." }); await core.ai.skill("skill-1").update({});',
+    ).diagnostics,
   ).toEqual([]);
   expect(check('await core.ai.chat("chat-1").ai.chat.send({ text: "Read the supplied facts." });').diagnostics.length).toBeGreaterThan(0);
 });

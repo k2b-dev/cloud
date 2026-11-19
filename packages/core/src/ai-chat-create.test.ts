@@ -140,3 +140,11 @@ test("a Project removed during creation returns not found", async () => {
   spyOn(aiConversations, "createConversation").mockRejectedValue(new AiConversationCreationError("project_unavailable"));
   expect(await aiChatCreateAction.run({ title: "New chat" }, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
 });
+
+test("replay checks the current Project after the original chat was moved", async () => {
+  spyOn(accounts.users, "get").mockResolvedValue(user);
+  spyOn(aiConversations, "createConversation").mockResolvedValue({ ...chat, projectId: "4f000000-0000-4000-8000-000000000009" });
+  const read = spyOn(aiProjects, "get").mockResolvedValue(null);
+  expect(await aiChatCreateAction.run({ title: "New chat" }, context)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  expect(read).toHaveBeenCalledWith("4f000000-0000-4000-8000-000000000009", context, "read");
+});
