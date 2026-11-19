@@ -126,9 +126,7 @@ test("only a version that is already final when the chat draws it is a receipt w
   const card = (state: "replaced" | "ready" | null) => {
     const html = renderToString(() =>
       createComponent(ApprovalSnapshotView, {
-        initial: state
-          ? [{ codeId: "c_info01", versionId: approvalVersionId, state: "available", snapshot: approvalSnapshot(state) }]
-          : [],
+        initial: state ? [{ codeId: "c_info01", versionId: approvalVersionId, state: "available", snapshot: approvalSnapshot(state) }] : [],
       }),
     );
     // The card's own element, the only one with a state.
