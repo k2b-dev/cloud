@@ -34,7 +34,6 @@ import type { MailboxListView, MailboxPageData, MailConversationDetailData, Mail
 import { readApiError } from "./_components/api-response";
 import { UndoNotPossible } from "./_components/MailAutomationLog";
 import MailBulkActionBar from "./_components/MailBulkActionBar";
-import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
 import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
 import MailComposeWindows from "./_components/MailComposeWindows";
 import MailConversationList from "./_components/MailConversationList";
@@ -66,6 +65,7 @@ import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { MailCloudIdProvider } from "./_components/mail-cloud-id";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { openDraftWindow } from "./_components/mail-compose-windows";
+import { preloadMailComposer } from "./_components/mail-composer-preload";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
 import { type MailRespondIntent, type MailRespondRequest, openMailReplyWindow } from "./_components/mail-conversation-menu";
@@ -99,6 +99,7 @@ import {
   projectMailList,
 } from "./_components/mail-list-projection";
 import { createMailboxPreferences } from "./_components/mail-mailbox-preferences";
+import { mailMailboxViewMessages } from "./_components/mail-mailbox-view-messages";
 import {
   buildMailListHref,
   buildMailSearchClearHref,
@@ -110,7 +111,6 @@ import {
   resolveMailWorkspaceUrl,
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
-import { mailRemainingMessages } from "./_components/mail-remaining-messages";
 import { mailRowAssignees } from "./_components/mail-row-assignees";
 import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection } from "./_components/mail-selection-detail";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./_components/mail-sender-preference";
@@ -139,7 +139,6 @@ import {
 import { createMailboxSearch } from "./_components/mailbox-search";
 import { automationLogHref } from "./automation-log-href";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
-import { mailPageMessages } from "./pages-messages";
 import { assertCursorProgress } from "./pagination";
 
 /** A Detail column beside an open conversation leaves the list and the reader their minimums and the handle between. */
@@ -217,7 +216,7 @@ function createMailboxController(props: MailboxControllerProps) {
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
   const folderName = createMemo(() => mailFolderNames(locale()));
   const conversationText = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
-  const remainingText = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const remainingText = createMemo(() => mailMailboxViewMessages.resolve([locale()]).t);
   // A store keeps shell, list, and detail consumers granular even though the
   // server snapshot remains one canonical contract.
   const [data, setData] = createStore(props.data);
@@ -1033,6 +1032,7 @@ function createMailboxController(props: MailboxControllerProps) {
     const identity = selectComposeSenderIdentity(data.identities, readMailSenderPreference(localStorage, mailboxId), true);
     if (!identity) return options.fallback();
     setComposeStarting(true);
+    preloadMailComposer();
     const request = new AbortController();
     composeRequest = request;
     if (options.progressToast)
@@ -1088,6 +1088,16 @@ function createMailboxController(props: MailboxControllerProps) {
     };
     window.addEventListener("pageshow", restored);
     onCleanup(() => window.removeEventListener("pageshow", restored));
+    // The composer is outside the first script; it loads while the mailbox is idle, so New message and Reply open with it.
+    if (!canWrite()) return;
+    if (typeof requestIdleCallback === "function") {
+      const idle = requestIdleCallback(preloadMailComposer, { timeout: 2000 });
+      onCleanup(() => cancelIdleCallback(idle));
+    } else {
+      // Without idle callbacks (WebKit), wait past hydration as the Cloud panel does, rather than load during it.
+      const idle = setTimeout(preloadMailComposer, 200);
+      onCleanup(() => clearTimeout(idle));
+    }
   });
   onCleanup(() => {
     composeRequest?.abort();
@@ -2572,7 +2582,8 @@ function createMailboxController(props: MailboxControllerProps) {
 
   const addTagsMutation = mutation.create<void, string[]>({
     mutation: async (conversationIds, { abortSignal }) => {
-      const tagIds = await chooseBulkTags(data.localTags);
+      const dialog = await importOnDemand(() => import("./_components/MailBulkTagDialog"));
+      const tagIds = dialog && (await dialog.chooseBulkTags(data.localTags));
       if (!tagIds?.length || abortSignal.aborted || disposed) return;
       const response = await apiClient.mailboxes[":mailboxId"].conversations["local-tags"].$post(
         {
@@ -2619,7 +2630,8 @@ function createMailboxController(props: MailboxControllerProps) {
   const manageConversationTagsMutation = mutation.create<void, MailListItem>({
     mutation: async (item, { abortSignal }) => {
       if (!item.conversationId) return;
-      const tagIds = await chooseConversationTags(data.localTags, item.localTags);
+      const dialog = await importOnDemand(() => import("./_components/MailBulkTagDialog"));
+      const tagIds = dialog && (await dialog.chooseConversationTags(data.localTags, item.localTags));
       if (tagIds === undefined || tagIds === null || abortSignal.aborted || disposed) return;
       const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"]["local-tags"].$put(
         {
@@ -3811,7 +3823,7 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
         initialUserPreferences: readMailUserPreferences(target.id),
         initialPreferences,
       });
-      const { t } = mailPageMessages.resolve([locale()]);
+      const { t } = mailMailboxViewMessages.resolve([locale()]);
       layout.update({
         breadcrumbs: [
           { title: t.breadcrumbStart, href: "/" },
