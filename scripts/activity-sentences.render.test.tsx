@@ -23,6 +23,7 @@ const { LocaleProvider } = await import("../packages/ui/src/intl/locale");
 const NOW = "2026-11-12T15:31:00Z";
 const actor = "Mira Lang";
 const person = { id: "mira", displayName: actor, avatarHash: null };
+const other = { id: "other", displayName: "Nora Berg", avatarHash: null };
 const base: MailActivityEvent = {
   id: "1",
   action: "conversation.comment_created",
@@ -51,9 +52,9 @@ const mailVariants: Partial<MailActivityEvent>[] = [
   ...[
     { before: [], after: [person], idsBefore: [], idsAfter: ["mira"] },
     { before: [], after: [{ ...person, id: "me" }], idsBefore: [], idsAfter: ["me"] },
-    { before: [], after: [{ ...person, id: "other" }], idsBefore: [], idsAfter: ["other"] },
+    { before: [], after: [other], idsBefore: [], idsAfter: ["other"] },
     { before: [person], after: [], idsBefore: ["mira"], idsAfter: [] },
-    { before: [person], after: [{ ...person, id: "other" }], idsBefore: ["mira", "other"], idsAfter: ["other"] },
+    { before: [person], after: [other], idsBefore: ["mira", "other"], idsAfter: ["other"] },
   ].map((v) => ({
     action: "conversation.collaboration_updated",
     assignees: { before: v.before, after: v.after },
@@ -141,6 +142,10 @@ test("all five apps render standalone activity sentences after an actor in DE an
         expect(exercised.has(value), `Mail/${locale}/${key}`).toBe(true);
     }
     samples.push(...mail.map((row): [string, string] => [`Mail/events/${row.event.id}`, `${row.before}${row.subject ?? ""}${row.after}`]));
+    // An assignment names each person once: the line below lists only assignees the sentence leaves out.
+    for (const row of mail)
+      for (const name of [actor, other.displayName])
+        expect(row.detail?.includes(name) && `${row.before}${row.after}`.includes(name), `Mail/${locale}/${row.event.id}`).toBeFalsy();
     const conversation = mailConversationUiMessages.resolve([locale]).t;
     for (const [key, value] of Object.entries(conversation)) {
       if (key.startsWith("activity") && key !== "activityAnd" && typeof value === "string")
@@ -154,15 +159,12 @@ test("all five apps render standalone activity sentences after an actor in DE an
     ).toEqual(["activityMarked", "activityRepeated"]);
     samples.push(["Mail/conversation/activityMarked", conversation.activityMarked({ status: "Erledigt" })]);
     samples.push(["Mail/conversation/activityRepeated", conversation.activityRepeated({ label: "Kommentar ergänzt", count: 2 })]);
-    for (const [key, sentence] of samples) {
-      const label = `${locale}/${key}`;
-      expect(sentence.trim().length, label).toBeGreaterThan(0);
-      expect(sentence.trim(), label).not.toMatch(/^(?:hat|hast|haben|has|have|had|he|she|they)\b|^[–—·-]/i);
+    const render = (entry: { actor?: string; text: string }) => {
       const html = renderToString(() =>
         createComponent(LocaleProvider, {
           locale,
           get children() {
-            return createComponent(ActivityList.Row, { entry: { at: NOW, actor, text: sentence }, now: NOW, timeZone: "UTC" });
+            return createComponent(ActivityList.Row, { entry: { at: NOW, ...entry }, now: NOW, timeZone: "UTC" });
           },
         }),
       );
@@ -174,9 +176,20 @@ test("all five apps render standalone activity sentences after an actor in DE an
           },
         })
         .transform(html);
+      // Whoever stands before the separator starts the line: a lowercase word there reads as a broken sentence.
+      expect(rendered.split(" · ")[0], `${locale}/${entry.text}`).not.toMatch(/^\p{Ll}/u);
+      return { html, rendered };
+    };
+    for (const [key, sentence] of samples) {
+      const label = `${locale}/${key}`;
+      expect(sentence.trim().length, label).toBeGreaterThan(0);
+      expect(sentence.trim(), label).not.toMatch(/^(?:hat|hast|haben|has|have|had|he|she|they)\b|^[–—·-]/i);
+      const { html, rendered } = render({ actor, text: sentence });
       expect(rendered, label).toBe(`${actor} · ${sentence}`);
       expect(html, label).not.toContain(" title=");
     }
+    // Without an actor, the row names the automatic origin in the actor's place.
+    expect(render({ text: "Archived" }).rendered).toBe(`${locale === "de" ? "Automatisch" : "Automatic"} · Archived`);
     expect(samples.length).toBeGreaterThan(100);
     const workflow = presentMailEvents(
       [{ ...base, actor: { kind: "workflow", id: null, displayName: "Importdienst", avatarHash: null } }],

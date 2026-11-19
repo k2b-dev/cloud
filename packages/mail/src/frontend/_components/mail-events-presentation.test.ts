@@ -89,7 +89,8 @@ describe("mailbox event presentation", () => {
       "Rechnungen · Tag Rechnung gesetzt in Invoice 4711",
       "Mail · Wieder geöffnet: Invoice 4711",
     ]);
-    expect(rows[0]?.detail).toBe("Zuständig: Mira Schulz und Du");
+    // The sentence names you; the line below names only the other assignee.
+    expect(rows[0]?.detail).toBe("Zuständig: Mira Schulz");
     expect(rows.map((row) => row.tone)).toEqual(["assign", "done", "draft", "error", "sent", "automation", "done"]);
     // The failure names its reason and points to the conversation without asking to send again.
     expect(rows[3]?.detail).toBe("Die Nachricht wurde nicht zugestellt. Details in der Unterhaltung.");
@@ -97,6 +98,26 @@ describe("mailbox event presentation", () => {
     expect(rows[5]?.automated).toBe(true);
     expect(rows.map((row) => row.day)).toEqual(["Heute", "Heute", "Heute", "Heute", "Heute", "Heute", "Gestern"]);
     expect(rows[6]?.detail).toBe("Eine neue Nachricht ist eingegangen.");
+  });
+
+  test("names a new assignee once and lists only further assignees below", () => {
+    const NORA = "33333333-3333-4333-8333-333333333333";
+    const nora = { id: NORA, displayName: "Nora Berg", avatarHash: null };
+    const mira = { id: MIRA, displayName: "Mira Schulz", avatarHash: null };
+    const assign = (before: (typeof nora)[], after: (typeof nora)[]) =>
+      event({
+        id: "1",
+        action: "conversation.collaboration_updated",
+        actor: { kind: "user", id: ME, displayName: "Lea Brandt", avatarHash: null },
+        metadata: { before: { assigneeUserIds: before.map((p) => p.id) }, after: { assigneeUserIds: after.map((p) => p.id) } },
+        assignees: { before, after },
+      });
+    const [alone] = present([assign([], [mira])]);
+    expect(sentence(alone!)).toBe("Lea Brandt · Zugewiesen an Mira Schulz: Invoice 4711");
+    expect(alone?.detail).toBeNull();
+    const [joined] = present([assign([nora], [nora, mira])], "en");
+    expect(sentence(joined!)).toBe("Lea Brandt · Assigned to Mira Schulz: Invoice 4711");
+    expect(joined?.detail).toBe("Assigned: Nora Berg");
   });
 
   test("names why a send failed as the reader does", () => {
