@@ -131,7 +131,8 @@ test("only a version that is already final when the chat draws it is a receipt w
           : [],
       }),
     );
-    return html.match(/<div[^>]*class="[^"]*assistant-code-version[^-"][^>]*>/)?.[0] ?? "";
+    // The card's own element, the only one with a state.
+    return html.match(/<[^>]*\sdata-state="[^"]*"[^>]*>/)?.[0] ?? "";
   };
   expect(card("replaced")).toContain('data-state="replaced"');
   expect(card("replaced")).toContain("data-receipt");
