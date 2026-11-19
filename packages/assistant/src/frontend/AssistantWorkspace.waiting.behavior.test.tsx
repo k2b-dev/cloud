@@ -1,6 +1,7 @@
 import { afterEach, expect, mock, setSystemTime, test } from "bun:test";
 import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiTurnSnapshot } from "@k2b/cloud/ai";
 import type { LiveSubscriptionHandlers } from "@k2b/cloud/browser/live";
+import type { PendingApproval } from "@k2b/cloud/contracts/approvals";
 import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
@@ -59,7 +60,7 @@ const waitFor = async (condition: () => boolean, timeoutMs = 2_000) => {
 };
 
 const mount = (
-  server: { conversations: AiConversation[]; questions: AiOpenQuestions },
+  server: { conversations: AiConversation[]; questions: AiOpenQuestions; approvals?: PendingApproval[] },
   here: AiConversation,
   activeTurn: AiTurnSnapshot | null = null,
 ) => {
@@ -72,6 +73,7 @@ const mount = (
   shell.textContent = JSON.stringify({ apps: [], appId: "assistant" });
   dom.document.body.append(shell);
   const sidebarLoads: string[] = [];
+  let approvalLoads = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
@@ -80,7 +82,12 @@ const mount = (
         sidebarLoads.push(url.pathname);
         return Response.json({ conversations: server.conversations, projects: [], doneCount: 0, questions: server.questions });
       }
-      if (url.pathname === "/api/approvals") return Response.json({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
+      if (url.pathname === "/api/approvals") {
+        approvalLoads++;
+        const items = server.approvals ?? [];
+        return Response.json({ items, nextCursor: null, count: items.length, elsewhere: 0 });
+      }
+      if (/^\/api\/approvals\/[^/]+\/decision$/.test(url.pathname)) return Response.json({ status: "rejected" });
       // Core's open questions of one kind, the read the page's "Automations" section makes.
       if (url.pathname === "/api/capabilities/v1/queries/core/ai.open_questions")
         return Response.json({
@@ -156,7 +163,14 @@ const mount = (
       },
     ]);
   };
-  return { ...dom, dotted, changed, sidebarLoads, strip: () => dom.root.querySelector("nav.assistant-waiting") };
+  return {
+    ...dom,
+    dotted,
+    changed,
+    sidebarLoads,
+    approvalLoads: () => approvalLoads,
+    strip: () => dom.root.querySelector("nav.assistant-waiting"),
+  };
 };
 
 test("the dot and the waiting row follow a question that opens and is decided in another chat, one load per change", async () => {
@@ -336,5 +350,73 @@ test("the page Waiting for you lists the same entries as the row and the sidebar
   expect(page()).toEqual(["Morgenbriefing braucht einen Chat", "Version 2 einschalten"]);
   expect(sidebar()).toBe("2");
   // Nothing on the page shows a loading state for it.
+  expect(h.root.querySelector(".assistant-waiting-page [aria-busy='true']")).toBeNull();
+});
+
+/** A request Mail asks about, as the approvals list returns it, and the same request in the row's list. */
+const mailApproval = (id: string, offer: string): { request: PendingApproval; question: AiOpenQuestion } => ({
+  request: {
+    id,
+    app: { id: "mail", name: "Mail", icon: "ti ti-mail" },
+    action: "draft.send",
+    assurance: "confirm",
+    sentence: `Mail: Angebot ${offer} senden`,
+    review: null,
+    requester: { kind: "chat", appId: "assistant", title: "Wartung Oktober", href: "/app/assistant?conversation=Wart42" },
+    remember: { chat: false, always: false, website: false },
+    createdAt: now,
+    expiresAt: new Date(Date.parse(now) + 23 * 3_600_000).toISOString(),
+  },
+  question: {
+    id,
+    kind: "approval",
+    conversationId: "Wart42",
+    conversationTitle: "Wartung Oktober",
+    anchor: `tool-${id}`,
+    short: `Mail: Angebot ${offer} senden`,
+    app: { name: "Mail", icon: "ti ti-mail" },
+    createdAt: now,
+  },
+});
+
+test("an approval decided on the page keeps its receipt; a new one elsewhere appears", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const first = mailApproval("00000000-0000-4000-8000-0000000000a1", "1");
+  const second = mailApproval("00000000-0000-4000-8000-0000000000a2", "2");
+  const server = {
+    conversations: [here],
+    questions: { items: [first.question], count: 1 } as AiOpenQuestions,
+    approvals: [first.request],
+  };
+  const h = mount(server, here);
+  await waitFor(() => subscriptions.length > 0);
+  h.root
+    .querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!
+    .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  const cards = () => [...h.root.querySelectorAll<HTMLElement>(".assistant-waiting-page article.cloud-approval")];
+  await waitFor(() => cards().length === 1);
+  const loads = h.approvalLoads();
+
+  // (a) The person declines here; the request leaves the row's list. Its card stays as the receipt and is not read again.
+  await Bun.sleep(550);
+  const card = cards()[0]!;
+  // Declining comes before the one filled answer.
+  card.querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer")[0]!.click();
+  await waitFor(() => card.dataset.decided === "rejected");
+  server.questions = { items: [], count: 0 };
+  server.approvals = [];
+  await h.changed("Wart42");
+  await waitFor(() => h.sidebarLoads.length === 1);
+  await Bun.sleep(50);
+  expect(cards()).toEqual([card]);
+  expect(card.dataset.decided).toBe("rejected");
+  expect(h.approvalLoads()).toBe(loads);
+
+  // (b) A new request arrives from another chat: the page reads its approvals again and shows it.
+  server.questions = { items: [second.question], count: 1 };
+  server.approvals = [second.request];
+  await h.changed("Wart42");
+  await waitFor(() => cards().some((entry) => entry.textContent?.includes("Angebot 2")));
+  expect(h.approvalLoads()).toBe(loads + 1);
   expect(h.root.querySelector(".assistant-waiting-page [aria-busy='true']")).toBeNull();
 });
