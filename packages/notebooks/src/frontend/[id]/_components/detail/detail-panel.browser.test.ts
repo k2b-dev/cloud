@@ -225,11 +225,7 @@ for (const width of [1440, 390]) {
           ),
         ]
           .filter((row) => visible(row) && !row.closest("[hidden]"))
-          .map((row) => ({
-            label: row.textContent?.trim().slice(0, 30) ?? "",
-            x: inkLeft(row),
-            inset: row.classList.contains("k2b-activity__entry") ? 20 : 0,
-          }))
+          .map((row) => ({ label: row.textContent?.trim().slice(0, 30) ?? "", x: inkLeft(row) }))
           .filter((row) => Number.isFinite(row.x));
         const right = [...document.querySelectorAll(".k2b-discussion__timestamp, .k2b-section__actions .k2b-button")]
           .filter(visible)
@@ -256,8 +252,7 @@ for (const width of [1440, 390]) {
       expect(edges.bodies.length).toBeGreaterThanOrEqual(10);
       expect(edges.bodies.filter((body) => Math.abs(body.x - edge) > 1).map((body) => `${body.label}: ${body.x - edge}`)).toEqual([]);
       expect(edges.rows.length).toBeGreaterThan(30);
-      expect(edges.rows.filter((row) => Math.abs(row.x - edge - row.inset) > 1).map((row) => `${row.label}: ${row.x - edge}`)).toEqual([]);
-      // Activity avatars deliberately keep the shared list inset (8px surface + 12px row padding).
+      expect(edges.rows.filter((row) => Math.abs(row.x - edge) > 1).map((row) => `${row.label}: ${row.x - edge}`)).toEqual([]);
       // Comment times and section actions keep their own right edge.
       expect(edges.right.length).toBeGreaterThanOrEqual(5);
       for (const right of edges.right) closeTo(right.x, edges.right[0]!.x, 2);
