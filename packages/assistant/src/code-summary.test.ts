@@ -7,7 +7,6 @@ import {
   type CodeSummary,
   codeStatus,
   hasPersonalCode,
-  loadCodeAttention,
   loadCodeNextRun,
   loadCodeSummaries,
   nextCodeRun,
@@ -176,60 +175,6 @@ test("one status per Code: paused and a failed last run come before on", () => {
   expect(codeStatus(summary("paused", "failed"))).toEqual({ key: "paused", tone: "warning" });
   expect(codeStatus(summary("draft", null))).toEqual({ key: "draft", tone: "neutral" });
   expect(codeStatus(summary("deleting", null))).toEqual({ key: "deleting", tone: "neutral" });
-});
-
-test("attention comes from Core's public queries", async () => {
-  const core = fakeCore({
-    "code.attention.list": (input: { cursor?: string }) =>
-      input.cursor === "c_page01"
-        ? {
-            items: [
-              {
-                code: { ...code("c_info02"), owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } } },
-                reasons: ["run_failed", "access_missing"],
-                lastRunAt: "2026-10-31T09:41:03.000Z",
-              },
-            ],
-            nextCursor: null,
-          }
-        : // A first window without the person's Code still continues.
-          { items: [], nextCursor: "c_page01" },
-  });
-  expect(await loadCodeAttention(core.invoke)).toEqual({
-    items: [
-      {
-        codeId: "c_info02",
-        title: "Code c_info02",
-        owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
-        reasons: ["run_failed", "access_missing"],
-        lastRunAt: "2026-10-31T09:41:03.000Z",
-      },
-    ],
-    nextCursor: null,
-  });
-  await expect(loadCodeAttention(fakeCore({}).invoke)).rejects.toThrow("missing");
-});
-
-test("attention stops after its bounded windows and says where to continue", async () => {
-  let calls = 0;
-  const endless = fakeCore({
-    "code.attention.list": () => {
-      calls++;
-      return { items: [], nextCursor: `c_more0${calls}` };
-    },
-  });
-  expect(await loadCodeAttention(endless.invoke)).toEqual({ items: [], nextCursor: "c_more04" });
-  expect(calls).toBe(4);
-});
-
-test("personal missing-chat attention stays in the shared Waiting feed instead of duplicating the place section", async () => {
-  const core = fakeCore({
-    "code.attention.list": () => ({
-      items: [{ code: { ...code("c_personal"), owner: { kind: "person" } }, reasons: ["chat_missing"], lastRunAt: null }],
-      nextCursor: null,
-    }),
-  });
-  expect(await loadCodeAttention(core.invoke)).toEqual({ items: [], nextCursor: null });
 });
 
 test("a Code with a page and an event keeps its schedule's next run", async () => {

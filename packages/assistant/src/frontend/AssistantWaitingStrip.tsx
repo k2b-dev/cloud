@@ -5,7 +5,7 @@ import { assistantMessages } from "./messages";
 import type { WaitingAttention, WaitingQuestionsView } from "./waiting-questions";
 
 /** The sign of each kind of entry; a new source adds its kind here. */
-const KIND_ICON: Record<AiOpenQuestion["kind"] | WaitingAttention["kind"], string> = {
+export const WAITING_KIND_ICON: Record<AiOpenQuestion["kind"] | WaitingAttention["kind"], string> = {
   approval: "ti ti-shield-check",
   code_activate: "ti ti-power",
   code_changes: "ti ti-message-2",
@@ -123,7 +123,7 @@ export function AssistantWaitingStrip(props: {
         entry.kind === "approval"
           ? "assistant-waiting__menu-entry"
           : "assistant-waiting__menu-entry assistant-waiting__menu-entry--attention",
-      icon: KIND_ICON[entry.kind],
+      icon: WAITING_KIND_ICON[entry.kind],
       label: entry.short,
       description: entry.where ?? undefined,
       action: entry.open,
@@ -166,7 +166,7 @@ export function AssistantWaitingStrip(props: {
                       title={entry.where ? `${entry.short} ${entry.where}` : entry.short}
                       onClick={() => entry.open()}
                     >
-                      <i class={`assistant-waiting__icon ${KIND_ICON[entry.kind]}`} aria-hidden="true" />
+                      <i class={`assistant-waiting__icon ${WAITING_KIND_ICON[entry.kind]}`} aria-hidden="true" />
                       <span class="assistant-waiting__short k2b-truncate-fade">{entry.short}</span>
                       {/* The chip shows one sentence (v12 image 69); the chat it belongs to is named in the list. */}
                       <Show when={entry.where}>{(where) => <span class="k2b-sr-only"> {where()}</span>}</Show>

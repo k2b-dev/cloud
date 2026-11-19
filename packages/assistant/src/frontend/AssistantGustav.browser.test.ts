@@ -251,16 +251,29 @@ const approval = {
   createdAt: at(80),
   expiresAt: at(-1440),
 };
-const attention = {
-  nextCursor: null,
+/** What waits for the person, as the row above the field and its count read it: the approval and one version. */
+const waitingQuestions = {
+  count: 2,
   items: [
     {
-      codeId: "c_info02",
-      title: "Lieferungen eintragen",
-      owner: { kind: "resource" as const, ref: { type: "mail.mailbox", id: "m_info" } },
-      reasons: ["run_failed", "access_missing"] as ("run_failed" | "access_missing")[],
-      lastRunAt: at(20),
-      place: { name: "info@moebel-beispiel.de", type: "Postfach", href: "/app/mail/m/info" },
+      id: "req-jana",
+      kind: "approval" as const,
+      conversationId: "Jana42",
+      conversationTitle: "Angebot an Jana Probe",
+      anchor: "tool-call-jana",
+      short: "Mail: Angebot an Jana Probe senden",
+      app: { name: "Mail", icon: "ti ti-mail" },
+      createdAt: at(80),
+    },
+    {
+      id: "code:v_info02",
+      kind: "code_activate" as const,
+      conversationId: "Lief42",
+      conversationTitle: "Lieferungen eintragen",
+      anchor: "code-version-v_info02",
+      short: "Version 2 einschalten",
+      app: { name: "Code", icon: "ti ti-player-play" },
+      createdAt: at(20),
     },
   ],
 };
@@ -287,7 +300,7 @@ const propsOf = (scenario: Scenario, url: URL) => ({
   initialLiveCursor: "s6t.cloud-live-core.0",
   initialConversations: chats,
   initialDoneCount: 4,
-  initialQuestions: { items: [], count: 0 },
+  initialQuestions: scenario.waiting ? waitingQuestions : { items: [], count: 0 },
   initialConversationId: null,
   initialArtifactPath: null,
   initialWorkspaceHref: `${url.pathname}${url.search}`,
@@ -301,7 +314,7 @@ const propsOf = (scenario: Scenario, url: URL) => ({
   approvals: scenario.waiting
     ? { page: { items: [approval], nextCursor: null, count: 1, elsewhere: 0 }, open: true }
     : { page: { items: [], nextCursor: null, count: 2, elsewhere: 0 }, open: false },
-  ...(scenario.waiting ? { initialAttention: attention } : {}),
+  ...(scenario.waiting ? { initialAutomations: [] } : {}),
   code: {
     has: true,
     open: Boolean(scenario.codeOpen || scenario.detail),
@@ -622,7 +635,14 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
     }
     if (url.pathname === "/api/capabilities/v1/catalog") return route.fulfill({ json: mailCatalog });
     if (url.pathname === "/api/assistant/workspace/sidebar")
-      return route.fulfill({ json: { conversations: chats, projects: [], doneCount: 4, questions: { items: [], count: 0 } } });
+      return route.fulfill({
+        json: {
+          conversations: chats,
+          projects: [],
+          doneCount: 4,
+          questions: scenario.waiting ? waitingQuestions : { items: [], count: 0 },
+        },
+      });
     if (url.pathname === "/api/approvals") return route.fulfill({ json: { items: [], nextCursor: null, count: 0, elsewhere: 0 } });
     const empty: Record<string, unknown> = {
       "/api/ai/resources/recent": { resources: [] },
@@ -1229,16 +1249,26 @@ describe("Gustav", () => {
     }
   }, 180_000);
 
-  test("Waiting for you lists chat questions and Code of a place the person administers", async () => {
+  test("Waiting for you lists what the row and the count hold: approvals and versions, nothing else", async () => {
     for (const view of [desktop, phone]) {
       const h = await open(view, { waiting: true }, { path: "/app/assistant?approvals=1" });
       try {
-        const section = h.page.locator("section.assistant-code-attention");
-        await section.getByText("Code von info@moebel-beispiel.de: letzter Lauf fehlgeschlagen, Zugriff fehlt").waitFor();
+        const versions = h.page.locator('section[aria-labelledby="assistant-waiting-versions"]');
+        await versions.getByText("Version 2 einschalten").waitFor();
         expect(await h.page.getByRole("heading", { name: "Freigaben 1" }).count()).toBe(1);
-        expect(await section.getByText("„Lieferungen eintragen“ · du verwaltest info@moebel-beispiel.de").count()).toBe(1);
-        expect(await section.getByRole("link", { name: "Ansehen: info@moebel-beispiel.de" }).getAttribute("href")).toBe("/app/mail/m/info");
+        expect(await h.page.getByRole("heading", { name: "Versionen 1" }).count()).toBe(1);
+        expect(await versions.getByText("in Lieferungen eintragen").count()).toBe(1);
+        expect(await versions.getByRole("button", { name: "Ansehen: Version 2 einschalten" }).count()).toBe(1);
+        // The page shows as many entries as the sidebar counts, and Code of places is no entry of its own.
+        const entries = (await h.page.locator(".cloud-approval").count()) + (await versions.locator("li").count());
+        if (view === desktop)
+          expect(
+            await h.page.locator('a[href="/app/assistant?approvals=1"] .k2b-app-workspace__sidebar-status-count').first().textContent(),
+          ).toBe(String(entries));
+        expect(entries).toBe(waitingQuestions.count);
+        expect(await h.page.getByText("du verwaltest").count()).toBe(0);
         await shot(h.page, `d-wartet-auf-dich-${view.name}-light`);
+        expect(h.errors).toEqual([]);
       } finally {
         await h.close();
       }

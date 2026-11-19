@@ -81,6 +81,11 @@ const mount = (
         return Response.json({ conversations: server.conversations, projects: [], doneCount: 0, questions: server.questions });
       }
       if (url.pathname === "/api/approvals") return Response.json({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
+      // Core's open questions of one kind, the read the page's "Automations" section makes.
+      if (url.pathname === "/api/capabilities/v1/queries/core/ai.open_questions")
+        return Response.json({
+          data: { count: 0, items: server.questions.items.filter((question) => question.kind === "code_attention") },
+        });
       if (url.pathname.endsWith("/stream")) return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
       return Response.json({ message: "unavailable" }, { status: 503 });
     },
@@ -248,10 +253,8 @@ test("a run that starts in the open chat and in another marks both rows without 
   expect(h.sidebarLoads).toHaveLength(2);
 });
 
-test("the sidebar counts exactly what the waiting row lists, also entries that are not approvals, and follows it live", async () => {
-  const here = chat("Wart42", "Wartung Oktober", "idle");
-  const other = chat("Tops42", "Team Ops Wochenplanung", "idle");
-  // The tour's case: Code entries wait, no approval does, so the approvals count would say 0.
+/** Code entries that wait without any approval: a version to switch on and an automation that needs a secret. */
+const codeEntries = () => {
   const code = (kind: AiOpenQuestion["kind"], id: string, short: string, conversationId: string, title: string): AiOpenQuestion => ({
     kind,
     id,
@@ -262,8 +265,17 @@ test("the sidebar counts exactly what the waiting row lists, also entries that a
     app: { name: "Automationen", icon: "ti ti-stack-2" },
     createdAt: now,
   });
-  const activate = code("code_activate", "code:v2", "Version 2 einschalten", "Wart42", "Wartung Oktober");
-  const secret = code("code_attention", "code:a1", "Lieferavise sortieren braucht ein Secret", "Tops42", "Team Ops Wochenplanung");
+  return {
+    activate: code("code_activate", "code:v2", "Version 2 einschalten", "Wart42", "Wartung Oktober"),
+    secret: code("code_attention", "code:a1", "Lieferavise sortieren braucht ein Secret", "Tops42", "Team Ops Wochenplanung"),
+  };
+};
+
+test("the sidebar counts exactly what the waiting row lists, also entries that are not approvals, and follows it live", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const other = chat("Tops42", "Team Ops Wochenplanung", "idle");
+  // The tour's case: Code entries wait, no approval does, so the approvals count would say 0.
+  const { activate, secret } = codeEntries();
   const server = { conversations: [here, other], questions: { items: [activate, secret], count: 2 } as AiOpenQuestions };
   const h = mount(server, here);
   /** The sidebar's "Waiting for you" count, and the number of entries the row above the field lists. */
@@ -289,4 +301,29 @@ test("the sidebar counts exactly what the waiting row lists, also entries that a
   await waitFor(() => h.strip() === null);
   expect(counts()).toEqual({ sidebar: "0", row: 0 });
   expect(h.sidebarLoads).toHaveLength(2);
+});
+
+test("the page Waiting for you lists the same entries as the row and the sidebar count", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const other = chat("Tops42", "Team Ops Wochenplanung", "idle");
+  const { activate, secret } = codeEntries();
+  const h = mount({ conversations: [here, other], questions: { items: [activate, secret], count: 2 } }, here);
+  await waitFor(() => subscriptions.length > 0);
+  const row = waitingStripSummary(h.strip()!.outerHTML)!
+    .entries.map((entry) => entry.replace(/ in .*$/, ""))
+    .sort();
+  const sidebarRow = () =>
+    h.root.querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!;
+  const sidebar = () => sidebarRow().querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent;
+  expect(sidebar()).toBe("2");
+
+  sidebarRow().dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+  const page = () =>
+    [...h.root.querySelectorAll(".assistant-waiting-page .assistant-waiting-page__row-title")]
+      .map((title) => title.textContent ?? "")
+      .sort();
+  await waitFor(() => page().length === 2);
+  expect(page()).toEqual(row);
+  expect(page()).toEqual(["Lieferavise sortieren braucht ein Secret", "Version 2 einschalten"]);
+  expect(sidebar()).toBe(String(page().length));
 });
