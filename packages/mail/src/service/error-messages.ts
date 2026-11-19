@@ -30,7 +30,11 @@ export const safeErrorDetail = (text: string, secrets: readonly string[] = []): 
 const genericGermanMessage = (error: HumanFacingError): string => {
   if (error.message === "Only a Cloud administrator can stop keeping a conversation")
     return "Nur eine Cloud-Administratorin oder ein Cloud-Administrator kann die Aufbewahrung aufheben.";
-  if (error.code === "SEND_CONTENT_CHANGED")
+  if (error.code === "DRAFT_DOCUMENT_UNAVAILABLE")
+    return "Der Entwurf konnte nicht zum Senden vorbereitet werden. Es wurde nichts eingereiht. Die Bearbeitung kann noch bis zu einer Minute gesperrt sein. Öffne und prüfe den aktuellen Entwurf vor einem erneuten Sendeversuch.";
+  if (error.code === "DOCUMENT_FROZEN")
+    return "Der Entwurf ist vorübergehend gesperrt. Es wurde nichts eingereiht. Öffne und prüfe ihn erneut, sobald die laufende Sendevorbereitung endet oder die Sperre nach spätestens einer Minute abläuft.";
+  if (error.code === "SEND_CONTENT_CHANGED" || error.code === "DOCUMENT_CLOSED" || error.code === "GENERATION_CHANGED")
     return "Der Nachrichteninhalt hat sich geändert. Es wurde nichts eingereiht. Öffne den Entwurf, prüfe ihn erneut und gib einen neuen Sendeversuch frei.";
   if (error.code === "CONVERSATION_KEPT")
     return "Diese Unterhaltung wird aufbewahrt und kann nicht gelöscht oder in den Papierkorb, den Spam-Ordner oder die Entwürfe verschoben werden. Verschieben und Archivieren sind weiterhin möglich.";
@@ -38,6 +42,8 @@ const genericGermanMessage = (error: HumanFacingError): string => {
     return "Dieser Ordner enthält aufbewahrte Unterhaltungen und kann nicht gelöscht werden. Verschiebe sie zuerst in einen anderen Ordner.";
   if (error.code === "KEPT_COPY_ONLY")
     return "Von diesen Nachrichten ist nur noch die in Cloud aufbewahrte Kopie vorhanden. Sie können auf dem Mailserver nicht geändert werden.";
+  if (error.code === "BAD_INPUT" && error.message === "At least one recipient is required before sending")
+    return "Gib mindestens eine Empfängeradresse an.";
   if (error.code === "BAD_INPUT") {
     const detail = safeErrorDetail(error.message);
     return detail ? `Die Eingabe ist ungültig: ${detail}` : "Die Eingabe ist ungültig";

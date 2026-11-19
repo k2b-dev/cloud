@@ -290,8 +290,9 @@
     :has(> :last-child .k2b-panel-dialog[data-surface="contained"][data-tone])
   ),
 .k2b-ui .k2b-panel-dialog[data-surface="floating"][data-tone] {
-  outline: var(--k2b-edge-width) solid var(--k2b-dialog-tone);
-  outline-offset: calc(-1 * var(--k2b-edge-width));
+  /* A frame, not a field: the tone keeps its 2 px line. */
+  outline: var(--k2b-frame-width) solid var(--k2b-dialog-tone);
+  outline-offset: calc(-1 * var(--k2b-frame-width));
 }
 
 .k2b-ui .k2b-dialog.is-bare {
@@ -1376,11 +1377,13 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   animation: k2b-parity-spin 900ms linear infinite;
 }
 
-/* Title, bar and message in one column. A message without a title reads as
-   calm body text in the regular weight, however long it is; only a title is
-   semibold, and the message under it turns smaller and muted. A link in the
-   message keeps its weight, so a toast has at most these two text styles. The
-   line heights stay the same in both forms. */
+/* Title, bar and message in one column. The first line of a toast reads as
+   its title: the title the caller passes, or a short message without one
+   ("Link copied"). It is semibold in the normal text colour; a message under a
+   title is the smaller, muted description. A longer message without a title
+   stays calm body text in the regular weight. A link keeps the weight of its
+   text, so a toast has at most these two text styles. The line heights stay
+   the same in every form. */
 .k2b-ui .k2b-toast__content {
   display: flex;
   min-width: 0;
@@ -1419,6 +1422,13 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   font-size: 0.875rem;
   font-weight: 400;
   line-height: 1.25rem;
+}
+
+/* A short message without a title is the outcome itself and reads in the
+   title's type. */
+.k2b-ui .k2b-toast__content[data-short] .k2b-toast__description {
+  font-weight: 600;
+  letter-spacing: -0.006em;
 }
 
 .k2b-ui .k2b-toast__title:not([hidden]) ~ .k2b-toast__description {

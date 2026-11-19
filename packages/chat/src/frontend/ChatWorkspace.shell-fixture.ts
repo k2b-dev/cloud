@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import type { RuntimeContext } from "@k2b/cloud/ssr";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
 /** Invented shell account, matching the Chat fixture viewer without importing Cloud's own test harness. */
@@ -35,8 +35,8 @@ const person = {
 /** Real SSR Cloud Layout around the existing Chat REST/live fixture; no copied shell markup or CSS. */
 export const chatShellPage = async (snapshot: (request: Request) => ChatWorkspaceProps) => {
   const root = mkdtempSync(resolve(tmpdir(), "chat-shell-browser-"));
-  const { plugin } = createConfig({ dev: true, rootDir: root });
-  Bun.plugin(plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
+
   const { defineApp } = await import("@k2b/cloud");
   const settings = await import("@k2b/cloud/server/middleware/settings");
   const help = await import("@k2b/cloud/ssr/help");

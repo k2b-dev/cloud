@@ -2,14 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../test/ssr-test-plugin";
 import { focusSignalCount, parseCssRules } from "../../styles/css-contract-test-helpers";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-editors-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { AutocompleteEditor } = await import("../AutocompleteEditor");
@@ -141,7 +141,9 @@ describe("source-faithful editor SSR contracts", () => {
         .join(";");
 
     expect(body(".k2b-ui .k2b-markdown-editor")).toContain("border: var(--k2b-edge-width) solid var(--k2b-edge-color)");
-    expect(body(".k2b-ui .k2b-markdown-editor")).not.toContain("box-shadow");
+    // The only shadow is the flat focus ring outside the border, transparent at rest.
+    expect(body(".k2b-ui .k2b-markdown-editor")).toContain("box-shadow: 0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring)");
+    expect(body(".k2b-ui .k2b-markdown-editor:focus-within")).toContain("--k2b-edge-ring: color-mix(");
     const focus = body(".k2b-ui .k2b-markdown-editor:focus-within");
     expect(focus).toContain("--k2b-edge-color: var(--k2b-edge-focus)");
     expect(focus).toContain("outline: none");

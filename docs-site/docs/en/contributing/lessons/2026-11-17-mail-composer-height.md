@@ -1,0 +1,6 @@
+### Focusing an empty Mail reply shrank the composer
+
+- **What happened:** Opening a conversation showed a tall reply box. Focusing its editor reduced the height and moved the quote control and Send button upward.
+- **Root cause:** Above the conversation, Mail reserved 19rem for both the loading surface and the loaded reply. Its interaction state removed the fixed height and its minimum together, exposing the lower 12.5rem minimum. On phones, the shared text editor also added clearance for its floating toolbar even when the application supplied its own toolbar.
+- **Error class:** Leaving a loading or inactive state discards a layout minimum that the interactive state still needs.
+- **Guard:** Mail retains the reserved minimum after interaction. `packages/mail/src/frontend/mail-shell-drafts.browser.test.ts` opens a conversation and compares the reply height, quote control and Send position before and after pointer and keyboard focus at desktop and phone widths, above and below the conversation. It also checks that longer reply content can grow beyond the starting height. `packages/ui/src/text-editor/text-editor-component.browser.test.ts` checks that only an editor with its own floating toolbar adds phone clearance; an editor with a host-owned toolbar keeps its size.

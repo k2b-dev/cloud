@@ -276,6 +276,8 @@ Auf einem erreichbaren Pfad können beliebig viele Änderungen mit `addFlag`, `r
 
 `createDraft` und `createReplyDraft` erzeugen immer `deliveryClass: normal`. `createReplyDraft` leitet Empfänger und Betreff aus der Quellnachricht ab, erhält den Antwortverlauf und bleibt mit seiner Unterhaltung verknüpft. Nur `automaticReply` kann `deliveryClass: automatic_reply` erzeugen. Normale Workflow-Sendungen erhalten daher weder Header für automatische Antworten noch einen leeren Envelope-Absender. `scheduleDraftSend` akzeptiert nur ein `mail.draft`-Ergebnis, das zuvor im selben erreichbaren Gültigkeitsbereich erstellt wurde.
 
+Enthält die Quelle nur eigene Adressen des Postfachs, lässt `createReplyDraft` das An-Feld leer, damit eine Person es ergänzen kann. Der Entwurf belegt die Antwortbox der Unterhaltung. `scheduleDraftSend` lehnt einen Entwurf ohne Empfänger weiterhin ab.
+
 `forEach` gehört zur gemeinsamen Workflow-Grammatik, aber das Mail-Vokabular unterstützt es bewusst nicht. Mail-Workflows verarbeiten jeweils ein materialisiertes Nachrichtenziel.
 
 ## E-Mails mit KI klassifizieren und Entwürfe erstellen {icon="sparkles"}

@@ -1,3 +1,3 @@
-import { solidTestPlugin } from "./solid-test-plugin";
+import { registerSsrTestPlugin } from "./ssr-test-plugin";
 
-Bun.plugin(solidTestPlugin("ssr"));
+registerSsrTestPlugin({ dev: true, rootDir: import.meta.dir, componentRoots: [] });

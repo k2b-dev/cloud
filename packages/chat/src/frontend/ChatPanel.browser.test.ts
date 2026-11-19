@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
-import { createConfig } from "@k2b/ssr";
 import { ok } from "@k2b/stdlib";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { z } from "zod";
 import { launchBrowser, settled } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { startConversationPanelFixture } from "./ChatPanel.browser-fixture";
 import { nora, viewer } from "./ChatWorkspace.browser-fixture";
 
@@ -52,8 +52,8 @@ const switchPanelChat = async (page: Page, id: string) => {
   }, id);
 };
 const root = mkdtempSync(resolve(tmpdir(), "conversation-panel-ssr-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 beforeAll(async () => {
   const { startConversationPanelFixture } = await import("./ChatPanel.browser-fixture");
   fixture = await startConversationPanelFixture();

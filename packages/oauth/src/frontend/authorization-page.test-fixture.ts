@@ -2,16 +2,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { createConfig } from "@k2b/ssr";
 import type { MiddlewareHandler } from "hono";
 import { createComponent } from "solid-js";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // Every page a person sees during an authorization, rendered as the full HTML document the SSR
 // framework sends. Pages that need no database go through their real route handlers; the
 // confirmation and consent states render their real components inside the same page shell.
 const root = mkdtempSync(resolve(tmpdir(), "oauth-authorization-pages-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Hono } = await import("hono");

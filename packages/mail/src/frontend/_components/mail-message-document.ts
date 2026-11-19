@@ -45,6 +45,8 @@ export const buildMessageDocument = (
   locale = "en",
   quotedTextLabels: QuotedTextLabels = { show: "Show quoted text", hide: "Hide quoted text" },
   initialMode: MessageAppearanceMode = "light",
+  /** The host's own CSS after the document's rules, never message content: for a host that shows part of a message. */
+  hostStyle = "",
 ): string => {
   const initialModeLiteral = JSON.stringify(initialMode).replaceAll("<", "\\u003c");
   const channelLiteral = JSON.stringify(channel).replaceAll("<", "\\u003c");
@@ -94,6 +96,7 @@ export const buildMessageDocument = (
     details.mail-quoted-history > blockquote,
     details.mail-quoted-history > div { margin: 8px 0 0; padding-left: 12px; border-left: 2px solid var(--mail-quote-border, color-mix(in srgb, currentColor 25%, transparent)); }
     #mail-message-root { display: flow-root; min-height: 0; }
+    ${hostStyle}
   </style>
 </head>
 <body><div id="mail-message-root">${html}</div>

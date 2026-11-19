@@ -3,14 +3,16 @@ import { isolateHistory } from "@codemirror/commands";
 import { Transaction } from "@codemirror/state";
 import { createLiveDictationSource } from "@k2b/cloud/ai/browser";
 import { isolateYjsHistory } from "@k2b/editor/collab";
-import { Button, type Completion, Dropdown, useLocale } from "@k2b/ui";
+import { Button, type Completion, useLocale } from "@k2b/ui";
 import { type TableHost, TextEditor, type TextEditorController, type TextEditorControls } from "@k2b/ui/text-editor";
 import { type Accessor, createEffect, createSignal, onCleanup, Show, untrack } from "solid-js";
+import { Portal } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import { type MailDraftDocumentClient, type MailSharedDraftState, mailSharedDraftMessages } from "../../lib/draft-document-client";
 import { mailComposerMessages } from "./mail-composer-messages";
-import { mailDraftPeers, mailDraftTablePresence } from "./mail-draft-document-presence";
+import { copySharedDraft } from "./mail-draft-document-actions";
+import { mailDraftTablePresence } from "./mail-draft-document-presence";
 import { createMailDraftTableStructure, type UnknownTableAction } from "./mail-draft-document-table";
 
 const liveDictationSource = createLiveDictationSource({ app: "mail" });
@@ -25,6 +27,8 @@ export type MailTextEditorActions = {
 export default function MailTextEditor(props: {
   shared?: MailDraftDocumentClient;
   sharedState?: Accessor<MailSharedDraftState | null>;
+  /** Where the shared draft's hint stands, such as right above the composer's bar; without it, under the text. */
+  hintMount?: Accessor<HTMLElement | undefined>;
   onTableCheck?: (needsCheck: boolean) => void;
   format: Accessor<"plain" | "markdown">;
   body: Accessor<string>;
@@ -127,14 +131,6 @@ export default function MailTextEditor(props: {
     });
   });
   const binding = props.shared;
-  const [peers, setPeers] = createSignal<string[]>([]);
-  if (binding) {
-    const changed = () =>
-      setPeers([...new Set(mailDraftPeers(binding.doc.getText("codemirror"), binding.awareness).map((peer) => peer.name))]);
-    binding.awareness.on("change", changed);
-    onCleanup(() => binding.awareness.off("change", changed));
-    changed();
-  }
   const structure = binding
     ? createMailDraftTableStructure({
         ytext: binding.doc.getText("codemirror"),
@@ -169,23 +165,10 @@ export default function MailTextEditor(props: {
   createEffect(() => {
     if (props.sharedState?.()?.message === st().retainedColumn) controls?.notify(st().retainedColumn);
   });
-  const sharedStatus = () => {
-    const current = props.sharedState?.();
-    if (!current) return "";
-    if (current.terminal || current.error) return current.message;
-    if (current.structuring) return st().tablePending;
-    if (current.message === st().retainedColumn) return current.message;
-    if (!current.ready && current.connected) return st().connecting;
-    if (!current.connected) return `${st().offline} · ${current.locallySaved ? st().localSaved : st().pending}`;
-    return current.dirty ? st().saving : st().saved;
-  };
   const copy = async () => {
     if (!binding) return;
     try {
-      const content = binding.state().rejectedEdit ?? binding.content();
-      await navigator.clipboard.writeText(
-        `${content.to.map((entry) => entry.address).join(", ")}\nCc: ${content.cc.map((entry) => entry.address).join(", ")}\nBcc: ${content.bcc.map((entry) => entry.address).join(", ")}\n${content.subject}\n\n${content.body}`,
-      );
+      await copySharedDraft(binding);
     } catch {
       controls?.notify(t().copyTextFailed);
     }
@@ -200,10 +183,44 @@ export default function MailTextEditor(props: {
       controls?.notify(error instanceof Error ? error.message : st().bodyEditFailed);
     }
   };
+  const hint = () => (
+    <div class="mail-draft-hint" data-tone={props.sharedState?.()?.error ? "danger" : undefined} role="status" data-mail-draft-hint>
+      <span class="mail-draft-hint-text">
+        {unknownAction() ? st().tableUnknown : props.sharedState?.()?.error ? props.sharedState?.()?.message : st().notRemembered}
+      </span>
+      <span class="mail-draft-hint-actions">
+        <Show
+          when={unknownAction()}
+          fallback={
+            <>
+              <Show when={props.sharedState?.()?.rejectedEdit}>
+                <Button size="sm" variant="secondary" disabled={props.sharedState?.()?.terminal} onClick={restoreProposal}>
+                  {st().restoreProposal}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => binding?.discardRejectedEdit()}>
+                  {st().discardProposal}
+                </Button>
+              </Show>
+              <Button size="sm" variant="secondary" onClick={retry}>
+                {t().draftHintRetry}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => void copy()}>
+                {t().draftHintCopy}
+              </Button>
+            </>
+          }
+        >
+          <Button size="sm" variant="secondary" onClick={() => unknownAction()?.stopWaiting()}>
+            {st().stopWaiting}
+          </Button>
+        </Show>
+      </span>
+    </div>
+  );
   return (
-    <div class={props.inline ? "mail-inline-text-editor relative" : "relative h-full min-h-72"}>
-      {/* The message scrolls here, under the editor's toolbar; the notice below stays at the bottom of the pane. */}
-      <div class={props.inline ? undefined : "h-full min-h-72 overflow-y-auto overscroll-contain"}>
+    <div class={props.inline ? "mail-inline-text-editor" : "flex h-full min-h-72 flex-col"}>
+      {/* The message scrolls here, under the editor's toolbar; the hint below takes its own line under the text. */}
+      <div class={props.inline ? undefined : "min-h-0 flex-1 overflow-y-auto overscroll-contain"}>
         <TextEditor
           class={props.inline ? undefined : "min-h-full"}
           toolbar={props.toolbar ? props.toolbar() : undefined}
@@ -211,40 +228,6 @@ export default function MailTextEditor(props: {
           placeholder={props.placeholder ?? t().writeMessage}
           initialValue={binding ? binding.doc.getText("codemirror").toString() : untrack(props.body)}
           onTableCheck={props.onTableCheck}
-          status={
-            binding ? (
-              <span class="flex h-6 w-64 max-w-full min-w-0 items-center justify-between gap-2">
-                <span class="min-w-0 truncate" title={sharedStatus()}>
-                  {sharedStatus()}
-                  {peers().length ? ` · ${peers().join(", ")}` : ""}
-                </span>
-                <Dropdown.Root
-                  position="bottom-right"
-                  items={[
-                    { label: st().retry, icon: "ti ti-refresh", action: retry },
-                    { label: st().copy, icon: "ti ti-copy", action: () => void copy() },
-                    {
-                      label: props.sharedState?.()?.remembering ? st().forget : st().remember,
-                      icon: "ti ti-device-laptop",
-                      action: () => {
-                        void binding
-                          .setRemembering(!binding.state().remembering)
-                          .catch((error: unknown) => controls?.notify(error instanceof Error ? error.message : st().storageFailed));
-                      },
-                    },
-                    ...(props.sharedState?.()?.terminal ? [{ label: st().recover, icon: "ti ti-history", action: retry }] : []),
-                    ...(props.sharedState?.()?.terminal && !props.sharedState?.()?.dirty && !props.sharedState?.()?.structuring
-                      ? [{ label: st().reopen, icon: "ti ti-external-link", action: () => window.location.reload() }]
-                      : []),
-                  ]}
-                >
-                  <Dropdown.Trigger appearance="plain" class="focus-ui shrink-0 rounded px-1" aria-label={t().messageOptions}>
-                    <i class="ti ti-dots" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              </span>
-            ) : undefined
-          }
           host={
             binding
               ? {
@@ -311,40 +294,12 @@ export default function MailTextEditor(props: {
           }}
         />
       </div>
+      {/* A quiet line, never over the text: what keeps the draft from saving normally, with its way out. In a composer
+          it stands right above the bar; the saved state itself stands once, in the composer's head. */}
       <Show when={binding && (!props.sharedState?.()?.remembering || props.sharedState?.()?.error || unknownAction())}>
-        <div
-          class="absolute inset-x-2 bottom-2 z-20 flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2 text-xs text-primary shadow-[var(--k2b-shadow-toolbar)]"
-          role="status"
-        >
-          <span class="min-w-0 flex-1">
-            {unknownAction() ? st().tableUnknown : props.sharedState?.()?.error ? props.sharedState?.()?.message : st().notRemembered}
-          </span>
-          <Show
-            when={unknownAction()}
-            fallback={
-              <>
-                <Show when={props.sharedState?.()?.rejectedEdit}>
-                  <Button size="sm" variant="secondary" disabled={props.sharedState?.()?.terminal} onClick={restoreProposal}>
-                    {st().restoreProposal}
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => binding?.discardRejectedEdit()}>
-                    {st().discardProposal}
-                  </Button>
-                </Show>
-                <Button size="sm" variant="secondary" onClick={retry}>
-                  {st().retry}
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => void copy()}>
-                  {st().copy}
-                </Button>
-              </>
-            }
-          >
-            <Button size="sm" variant="secondary" onClick={() => unknownAction()?.stopWaiting()}>
-              {st().stopWaiting}
-            </Button>
-          </Show>
-        </div>
+        <Show when={props.hintMount?.()} fallback={hint()}>
+          {(mount) => <Portal mount={mount()}>{hint()}</Portal>}
+        </Show>
       </Show>
     </div>
   );

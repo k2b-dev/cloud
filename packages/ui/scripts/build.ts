@@ -4,6 +4,7 @@ import { type PresetItem, transformAsync } from "@babel/core";
 import tsPreset from "@babel/preset-typescript";
 import solidPreset from "babel-preset-solid";
 import tailwind from "bun-plugin-tailwind";
+import { indexClassGroups } from "./index-class-groups";
 import { buildPlexFonts } from "./plex-fonts";
 import { buildTablerPreset } from "./tabler-fonts";
 
@@ -146,6 +147,10 @@ for (const build of builds) {
     throw new Error(`@k2b/ui ${build.name} stylesheet build failed`);
   }
 }
+
+// Keep equal-specificity class alternatives indexable even after a consumer rebundles the CSS.
+const stylesheet = resolve(dist, "styles.css");
+await writeFile(stylesheet, indexClassGroups(await readFile(stylesheet, "utf8")));
 
 await buildPlexFonts(dist);
 await buildTablerPreset(dist);

@@ -665,6 +665,14 @@ const copy = i18n.define({
           : `${names.length} routines run in this chat (${list}). Archiving pauses them.`;
       },
       archiveChatAnyRoutines: "Archiving pauses the routines in this chat.",
+      archiveQueuedMessages: ({ count }: { count?: number }) =>
+        count === 0
+          ? ""
+          : count === undefined
+            ? "Waiting messages will be discarded."
+            : count === 1
+              ? "1 waiting message will be discarded."
+              : `${count} waiting messages will be discarded.`,
       deleteNamed: ({ name }: { name: string }) => `Delete "${name}"?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `Delete “${name}” from this chat? Earlier messages keep their text, but their links to this file stop working.`,
@@ -782,6 +790,14 @@ const copy = i18n.define({
           : `In diesem Chat laufen ${names.length} Routinen (${list}). Archivieren pausiert sie.`;
       },
       archiveChatAnyRoutines: "Archivieren pausiert die Routinen in diesem Chat.",
+      archiveQueuedMessages: ({ count }: { count?: number }) =>
+        count === 0
+          ? ""
+          : count === undefined
+            ? "Wartende Nachrichten werden verworfen."
+            : count === 1
+              ? "1 wartende Nachricht wird verworfen."
+              : `${count} wartende Nachrichten werden verworfen.`,
       deleteNamed: ({ name }: { name: string }) => `„${name}“ löschen?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `„${name}“ aus diesem Chat löschen? Frühere Nachrichten bleiben erhalten, ihre Verweise auf diese Datei funktionieren aber nicht mehr.`,

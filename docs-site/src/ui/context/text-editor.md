@@ -193,7 +193,8 @@ through `extensions`. The editor surface then carries no shared text styling.
 The table grid, cell menu, **Check table**, notices, paste rules and the
 length limit stay shared, so tables look and behave as in every other editor.
 
-With `toolbar={false}`, the application renders its own toolbar and mode
+With `toolbar={false}`, the editor adds no phone clearance for its floating toolbar.
+The application renders its own toolbar and mode
 control and passes `mode`. `onReady(editor, controls)` provides the shared
 table controls for that toolbar:
 

@@ -68,7 +68,8 @@ export const clientCalls = {
       // Never replay an execution with an uncertain outcome, including after reload.
       return { status: row?.expired ? ("interrupted" as const) : ("pending" as const) };
     });
-    if (result.status === "execute") await aiToolAudit.noteToolStarted({ conversationId, turnId, callId: call.callId, toolName });
+    if (result.status === "execute" && !(await aiToolAudit.noteToolStarted({ conversationId, turnId, callId: call.callId, toolName })))
+      return { status: "interrupted" as const };
     return result;
   },
   async complete(input: unknown, identity: ArtifactIdentity) {

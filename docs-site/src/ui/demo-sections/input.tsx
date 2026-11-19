@@ -502,7 +502,13 @@ const MarkdownSelectionDemo = () => {
 />
 <MarkdownSelectionToolbar textarea={textarea()} />`}
     >
-      <div style={{ "max-width": "36rem", border: "2px solid var(--k2b-border-strong)", "border-radius": "var(--k2b-radius-surface)" }}>
+      <div
+        style={{
+          "max-width": "36rem",
+          border: "var(--k2b-frame-width) solid var(--k2b-edge)",
+          "border-radius": "var(--k2b-radius-surface)",
+        }}
+      >
         <MarkdownEditor
           aria-label="Message"
           variant="embedded"
@@ -2175,6 +2181,32 @@ const ChoiceChipsDemo = () => {
   );
 };
 
+const ChoiceListReasonsDemo = (props: { icons?: boolean }) => {
+  const [reason, setReason] = createSignal<string | null>("other");
+  const [note, setNote] = createSignal("");
+  return (
+    <ChoiceList
+      variant="list"
+      label={props.icons ? "Why not bill yet? · With icons" : "Why not bill yet? · Without icons"}
+      value={reason}
+      onValueChange={setReason}
+      options={[
+        { value: "return", label: "Buyer is returning it", icon: props.icons ? "ti ti-package-export" : undefined },
+        { value: "cancel", label: "Purchase is being cancelled", icon: props.icons ? "ti ti-x" : undefined },
+        {
+          value: "relist",
+          label: "Will be relisted",
+          description: "Return still pending",
+          disabled: true,
+          icon: props.icons ? "ti ti-refresh" : undefined,
+        },
+        { value: "other", label: "Another reason", icon: props.icons ? "ti ti-dots" : undefined },
+      ]}
+      details={reason() === "other" ? <TextInput label="Reason" value={note} onValueChange={setNote} /> : undefined}
+    />
+  );
+};
+
 const ChoiceListDemo = () => {
   const [level, setLevel] = createSignal<string | null>("off");
   const [duration, setDuration] = createSignal<string | null>("8h");
@@ -2185,7 +2217,7 @@ const ChoiceListDemo = () => {
     <DemoCard
       id="choice-list"
       chip={{ kind: "component", name: "ChoiceList", from: "@k2b/ui" }}
-      description="A labeled radio group of cards, each with one sentence on its consequence. Cards sit side by side while each gets 11rem and stack in narrow places. A quiet marker names the default, an icon helps tell choices apart, a choice that is not possible now says why, details open under the chosen card, and a save in progress shows a spinner without moving anything."
+      description="Radio choices as cards with explanations or compact framed rows. The list examples compare icons, keep disabled reasons readable, and open follow-up input below the frame."
       code={`<ChoiceList
   label="Notifications"
   value={level}
@@ -2198,6 +2230,10 @@ const ChoiceListDemo = () => {
   details={level() === "off" ? <ChoiceChips ... /> : undefined}
 />`}
     >
+      <div class="mb-6 grid max-w-xl gap-6">
+        <ChoiceListReasonsDemo />
+        <ChoiceListReasonsDemo icons />
+      </div>
       <div class="grid max-w-xl gap-4">
         <ChoiceList
           label="How do we bill?"

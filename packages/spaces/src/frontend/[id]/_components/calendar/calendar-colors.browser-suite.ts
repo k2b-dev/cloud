@@ -2,13 +2,13 @@ import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceColumn, SpaceItemAssignee, SpaceTag } from "@/contracts";
 import { browserName, hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { defaultFilter } from "../filter/types";
 import { buildSpacesItemLinkBaseUrl } from "../workspace/workspace-types";
 import { calendarPersonColor } from "./colors";
@@ -22,8 +22,8 @@ const packageCache = resolve(import.meta.dir, "../../../../../node_modules/.cach
 mkdirSync(packageCache, { recursive: true });
 const root = mkdtempSync(join(packageCache, "spaces-calendar-browser-"));
 const workspaceDir = resolve(import.meta.dir, "../workspace");
-const { plugin } = createConfig({ dev: false, verbose: false, rootDir: root, componentRoots: [workspaceDir] });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: false, verbose: false, rootDir: root, componentRoots: [workspaceDir] });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CalendarFixture } = await import("./calendar.browser-fixture");
 

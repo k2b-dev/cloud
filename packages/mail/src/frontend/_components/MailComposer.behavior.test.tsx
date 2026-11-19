@@ -1214,9 +1214,10 @@ describe("MailComposer robustness", () => {
     content: { ...initialSeed.content, body: "" },
   };
 
-  test("the reply box: a failed send turns the bar light red in place, and Send again retries", async () => {
-    const { prompts } = await import("@k2b/ui");
+  test("the reply box: a failed send keeps the box, a toast names the reason, and Send again retries in place", async () => {
+    const { prompts, toast } = await import("@k2b/ui");
     const dialog = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const failure = spyOn(toast, "error");
     let failures = 1;
     const serve = globalThis.fetch;
     globalThis.fetch = Object.assign(
@@ -1233,18 +1234,19 @@ describe("MailComposer robustness", () => {
     try {
       await mount({ host: true, draft: replyDraft, box: {} });
       sendButton().click();
-      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-send-failed]")));
-      const bar = dom.root.querySelector<HTMLElement>("[data-mail-send-failed]")!;
-      expect(bar.textContent).toContain("Not sent.");
-      expect(bar.textContent).toContain("The mail server does not answer.");
-      expect(bar.textContent).toContain("Your text is saved.");
-      expect(dom.root.querySelector("button.mail-compose-action")).toBeNull();
+      await waitFor(() => Boolean(dom.root.querySelector("[data-mail-send-again]")));
+      expect(failure).toHaveBeenCalledTimes(1);
+      expect(failure.mock.calls[0]![0]).toBe("The mail server does not answer. Your text stays in the draft.");
+      expect(failure.mock.calls[0]![1]).toMatchObject({ title: "Not sent", action: { label: "Try again" } });
+      // The reason stands once, in the toast; the box keeps its bar and text.
+      expect(dom.root.querySelector("[data-mail-reply-box='mail']")!.textContent).not.toContain("does not answer");
       expect(dialog).not.toHaveBeenCalled();
       expect(leaves).toEqual([]);
       dom.root.querySelector<HTMLButtonElement>("[data-mail-send-again]")!.click();
       await waitFor(() => leaves.includes("sent"));
     } finally {
       dialog.mockRestore();
+      failure.mockRestore();
     }
   });
 

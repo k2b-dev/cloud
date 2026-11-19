@@ -989,9 +989,6 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                       if (!(await chat.retryUserMessage(entry.id, { ...input, model: selectedModel() })))
                         throw new Error(chat.error() ?? t().retry);
                     },
-                    onRetrySteer: async (block) => {
-                      if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retry);
-                    },
                     onContinueTurn: async (message) => {
                       await send({ intent: "send", text: message, attachments: [] }, false);
                     },
@@ -1093,6 +1090,14 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     const id = chat.activeConversationId();
     if (!conversation || !id) return;
     void mutate(t().archiveChat, async () => {
+      const queuedMessageCount = await assistantApi
+        .loadQueuedMessages(id)
+        .then((entries) => entries.length)
+        .catch(() => undefined);
+      if (queuedMessageCount !== 0) {
+        const { confirmAssistantArchive } = await import("../frontend/confirm-archive");
+        if (!(await confirmAssistantArchive(conversation, locale(), queuedMessageCount))) return;
+      }
       await assistantApi.archiveConversation(id);
       // Back to the list, which no longer shows the chat; a short note offers the way back and moves nothing.
       const view = listView();

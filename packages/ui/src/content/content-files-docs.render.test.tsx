@@ -11,13 +11,13 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent, Suspense } from "solid-js";
 import { renderToString, renderToStringAsync } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-content-styles-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const stylesPath = resolve(import.meta.dir, "../../dist/styles.css");

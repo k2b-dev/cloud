@@ -215,6 +215,16 @@ export type {
   ReferenceChipTimeProps,
 } from "./ReferenceChip";
 export { REFERENCE_CHIP_MAX_CHARACTERS, ReferenceChip, truncateMiddle } from "./ReferenceChip";
+export {
+  type RunEntry,
+  type RunLevel,
+  RunLog,
+  type RunLogAction,
+  type RunLogEntry,
+  type RunLogProps,
+  type RunLogState,
+  type RunStepEntry,
+} from "./RunLog";
 export type { StepsProps } from "./Steps";
 export { Steps } from "./Steps";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";

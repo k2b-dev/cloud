@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-choice-list-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { ChoiceList } = await import("./ChoiceList");
@@ -25,6 +25,7 @@ describe("ChoiceList", () => {
       createComponent(ChoiceList, { id: "level", label: "Notifications", description: "Per chat", value: "mentions", options }),
     );
     expect(html).toContain('role="radiogroup"');
+    expect(html).toContain('data-variant="cards"');
     expect(html).toContain('aria-labelledby="level-label"');
     expect(html).toContain('aria-describedby="level-description"');
     expect(html.match(/role="radio"/g)).toHaveLength(3);
@@ -86,6 +87,32 @@ describe("ChoiceList", () => {
     expect(courier).toMatch(/ disabled[ >]/);
     expect(html).toMatch(/tabindex="0"[^>]*>.*Parcel/s);
     expect(html.match(/tabindex="0"/g)).toHaveLength(1);
+  });
+
+  test("list details follow the whole frame and require a matching selected option", () => {
+    const html = renderToString(() =>
+      createComponent(ChoiceList<string>, {
+        "aria-label": "Reason",
+        variant: "list",
+        value: "all",
+        options,
+        details: "Follow-up",
+      }),
+    );
+    expect(html).toContain('data-variant="list"');
+    expect(html).toMatch(/Off[^]*?<\/button><\/div><div class="k2b-choice-list__details">Follow-up<\/div>/);
+    for (const value of [null, "missing"]) {
+      const empty = renderToString(() =>
+        createComponent(ChoiceList<string>, {
+          "aria-label": "Reason",
+          variant: "list",
+          value,
+          options,
+          details: "Follow-up",
+        }),
+      );
+      expect(empty).not.toContain("k2b-choice-list__details");
+    }
   });
 
   test("a disabled list disables every row", () => {

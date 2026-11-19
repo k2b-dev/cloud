@@ -2,17 +2,17 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { clientFixture, type FixtureOptions, workspaceCss, workspaceFrames } from "../../test/workspace-host-fixture";
 
 // A column edge has one shadow. Hover, keyboard focus, and a drag on its
 // resize handle only darken it: the painted box keeps its top, height, and
 // boundary side in every state, so no second strip appears beside it.
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-workspace-edge-shadow-"));
-const { plugin } = createConfig({ dev: true, rootDir: directory });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: directory });
+
 process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const script = await clientFixture();
 const css = workspaceCss();

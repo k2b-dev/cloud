@@ -1,4 +1,3 @@
-import { createConfig } from "@k2b/ssr";
+import { registerSsrTestPlugin } from "../../ui/test/ssr-test-plugin";
 
-const { plugin } = createConfig({ dev: true, rootDir: `${import.meta.dir}/..` });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: `${import.meta.dir}/..` });

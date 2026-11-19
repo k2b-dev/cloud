@@ -5,8 +5,9 @@ import type { Browser, Page } from "playwright";
 import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // The assistant prompt carries the AI colour: a light plum edge at rest, the full plum edge with a soft glow outside on
-// focus, red with an error and a quiet grey edge when disabled. The edge stays 2 px in every state and the glow lies
-// outside the box, so neither the card nor its text moves. The conversation composer between people stays neutral.
+// focus, red with an error and a quiet grey edge when disabled. The card is a writing surface with its own frame: the
+// edge stays 2 px in every state and the glow lies outside the box, so neither the card nor its text moves. The
+// conversation composer between people is a neutral field with the 1 px field edge.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const assets = "http://k2b-ui.test/";
@@ -104,7 +105,12 @@ const measure = (page: Page, name: string) =>
         text: box(text),
         width: Number.parseFloat(style.borderTopWidth) + Number(inset[0]?.match(/(-?[\d.]+)px\s+inset/)?.[1] ?? 0),
         border: rgba(style.borderTopColor),
-        drop: shadows.filter((part) => !part.includes("inset")).length,
+        // Depth: an outer layer with an offset or a blur. The flat focus ring of a field (spread only) is no depth.
+        drop: shadows.filter((part) => {
+          if (part.includes("inset")) return false;
+          const [x = 0, y = 0, blur = 0] = [...part.matchAll(/(-?[\d.]+)px/g)].map((match) => Number(match[1]));
+          return x !== 0 || y !== 0 || blur !== 0;
+        }).length,
         // The glow is a layer around the card that only fades in.
         glow: (() => {
           const layer = getComputedStyle(edge, "::after");
@@ -256,7 +262,7 @@ describe("assistant composer edge in the browser", () => {
               expect(actual.border, `${label} conversation ${state} edge`).toEqual(state === "focus" ? token.neutralFocus : token.edge);
               expect(actual.drop, `${label} conversation ${state} shadow`).toBe(0);
               expect(actual.glow, `${label} conversation ${state} glow`).toBe(false);
-              expect(actual.width, `${label} conversation ${state} edge width`).toBe(2);
+              expect(actual.width, `${label} conversation ${state} edge width`).toBe(1);
             }
           } finally {
             await page.close();

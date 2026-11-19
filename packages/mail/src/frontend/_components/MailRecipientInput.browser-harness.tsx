@@ -9,6 +9,9 @@ export type MailRecipientHarnessOptions = {
   locale: "en" | "de";
   /** Whether a contact directory app is registered; without one every directory function is unmapped. */
   contacts: boolean;
+  recipients?: string[];
+  disabled?: boolean;
+  readOnly?: boolean;
 };
 
 declare global {
@@ -24,7 +27,7 @@ window.mountMailRecipients = (options) => {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing harness root");
   document.documentElement.lang = options.locale;
-  const [to, setTo] = createSignal<string[]>([]);
+  const [to, setTo] = createSignal<string[]>(options.recipients ?? []);
   render(
     () => (
       <LocaleProvider locale={options.locale}>
@@ -38,6 +41,8 @@ window.mountMailRecipients = (options) => {
                   placeholder={options.locale === "de" ? "Empfänger" : "Recipients"}
                   value={to}
                   onChange={setTo}
+                  disabled={options.disabled}
+                  readOnly={options.readOnly}
                 />
               </div>
             </section>

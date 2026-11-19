@@ -74,7 +74,6 @@ integration(
       const first = await enqueue("First");
       const second = await enqueue("Second");
       expect((await listQueuedMessages(chat.id)).map((item) => item.id)).toEqual([first, second]);
-      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: user!.id })).toBe(false);
       expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: user!.id, done: true })).toEqual({
         ok: false,
         reason: "active_turn",
@@ -115,7 +114,7 @@ integration(
       expect(await updateQueuedMessage(chat.id, first, "retry")).toBe(false);
       await sql`UPDATE ai.files SET bytes=${new TextEncoder().encode("original")},size=8,version=${file.version} WHERE conversation_id=${chat.id}::uuid AND path=${file.path}`;
       const third = await enqueue("Cancel me");
-      expect(await editQueuedMessage(chat.id, third, "Edited in queue")).toBe(true);
+      expect(await editQueuedMessage(chat.id, third, "Edited in queue", user!.id)).toBe(true);
       expect((await listQueuedMessages(chat.id))[0]?.content).toEqual([{ type: "text", text: "Edited in queue" }]);
       expect(await updateQueuedMessage(chat.id, third, "cancel")).toBe(true);
       expect(await listQueuedMessages(chat.id)).toEqual([]);

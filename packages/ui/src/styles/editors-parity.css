@@ -338,26 +338,32 @@
 
 .k2b-ui .k2b-markdown-editor {
   --k2b-edge-color: var(--k2b-edge);
+  --k2b-edge-ring: transparent;
   position: relative;
   min-height: 0;
   overflow: hidden;
-  /* The field edge (see `--k2b-edge`): one 2 px border. */
+  /* The field edge (see `--k2b-edge`): one 1 px border, and the soft ring
+     outside it on focus and error. */
   border: var(--k2b-edge-width) solid var(--k2b-edge-color);
   border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface);
+  box-shadow: 0 0 0 var(--k2b-edge-ring-width) var(--k2b-edge-ring);
   /* Cloud's `.md-editor` carries `@apply transition-colors`; same omission as
      `.k2b-autocomplete` above. */
   transition:
     border-color 150ms ease-out,
-    background-color 150ms ease-out;
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out;
 }
 
 .k2b-ui .k2b-markdown-editor:where(:not([data-variant="embedded"], [data-disabled="true"])):hover {
+  --k2b-edge-color: var(--k2b-edge-hover);
   background: var(--k2b-edge-hover-bg);
 }
 
 .k2b-ui .k2b-markdown-editor:focus-within {
   --k2b-edge-color: var(--k2b-edge-focus);
+  --k2b-edge-ring: color-mix(in srgb, var(--k2b-edge-color) var(--k2b-edge-ring-share), transparent);
   outline: none;
   background: var(--k2b-surface);
 }
@@ -393,7 +399,7 @@
 }
 
 .k2b-ui .k2b-markdown-editor[data-disabled="true"] {
-  --k2b-edge-color: transparent;
+  --k2b-edge-color: var(--k2b-edge-disabled);
   background: var(--k2b-surface-muted);
   opacity: 0.5;
   cursor: not-allowed;
@@ -401,6 +407,7 @@
 
 .k2b-ui .k2b-markdown-editor[data-invalid="true"]:not([data-disabled="true"]) {
   --k2b-edge-color: var(--k2b-edge-danger);
+  --k2b-edge-ring: color-mix(in srgb, var(--k2b-edge-color) var(--k2b-edge-ring-share), transparent);
   border-color: var(--k2b-edge-color);
 }
 

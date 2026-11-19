@@ -9,16 +9,16 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as chatContext from "../chat-context";
 import * as chatWorkspace from "../chat-workspace-service";
 import * as projectContext from "../project-context";
 import * as sidebar from "../sidebar";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-page-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
 
@@ -253,7 +253,7 @@ test.each(["/app/assistant", "/app/assistant/panel"])(
     spies.push(state);
     const response = await request(`https://cloud.example.test${path}?conversation=${chat.shortId}`);
     expect(response.status).toBe(200);
-    expect(state).toHaveBeenCalledWith(expect.objectContaining({ id: chat.id }), user.id, expect.any(String));
+    expect(state).toHaveBeenCalledWith(expect.objectContaining({ id: chat.id }), user.id, { locale: expect.any(String) });
   },
 );
 

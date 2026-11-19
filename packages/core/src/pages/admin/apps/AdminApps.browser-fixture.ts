@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { checkFixtureSessionOrigin } from "../../../../../../scripts/fixtures/session-origin";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import {
   ADMIN_ID,
   FIXTURE_NOW,
@@ -70,7 +70,7 @@ const user: User = {
 export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "core-admin-apps-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-  Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
   const { AdminLayout } = await import("@k2b/cloud/ssr");
   const { AppsView } = await import("./view");
   const { appsFormat } = await import("./format");

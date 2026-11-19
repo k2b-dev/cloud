@@ -2,17 +2,17 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { resolveMailSearchRoute } from "../../search-state";
 import { DEFAULT_MAIL_QUICK_SEARCH_FIELDS } from "../../search-url";
 import type { MailFolderView } from "../../service/messages";
 import { mailTestFolder } from "./mail-list-test-fixtures";
 
 const root = mkdtempSync(join(tmpdir(), "mail-head-render-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { MailSearchFilter } = await import("./MailWorkspaceHead");
 const tag = {

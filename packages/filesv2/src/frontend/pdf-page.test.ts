@@ -5,13 +5,13 @@ import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { session } from "@k2b/cloud/services/session";
 import type { RuntimeContext } from "@k2b/cloud/ssr";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { FilesError, filesService } from "../service";
 
 // Page errors render Solid on the server; the transform must be installed before the page module loads.
 const root = mkdtempSync(join(tmpdir(), "filesv2-pdf-page-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { inlinePdfHref } = await import("./file-preview");
 const { pdfPage } = await import("./pdf-page");

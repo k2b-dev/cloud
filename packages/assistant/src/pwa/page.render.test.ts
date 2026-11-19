@@ -9,16 +9,16 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
 import { announcements } from "@k2b/cloud/services/announcements";
 import { session } from "@k2b/cloud/services/session";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as sidebar from "../sidebar";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-pwa-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 // The count route's rate limit needs Valkey; this test reads the route's answer only.
 const limiter = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
@@ -200,7 +200,7 @@ describe("The Assistant in the Cloud app", () => {
     expect(document.querySelector(".k2b-mobile-shell")?.hasAttribute("data-k2b-screen")).toBe(true);
     expect(readSpy.mock.calls[0]?.[0]).toEqual({ shortId: "Chat01", ownerUserId: person.id });
     expect(viewedSpy.mock.calls[0]?.[0]).toEqual({ conversationId: own.id, ownerUserId: person.id });
-    expect(spies[5]).toHaveBeenLastCalledWith(expect.objectContaining({ id: own.id }), person.id, expect.any(String));
+    expect(spies[5]).toHaveBeenLastCalledWith(expect.objectContaining({ id: own.id }), person.id, { locale: expect.any(String) });
     expect(islandProps(document).initialDetail?.conversation.title).toBe("Velvet care");
   });
 

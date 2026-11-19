@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { type ItemListResult, SetCompletedSchema, type Space, type SpaceColumn, type SpaceItem } from "@/contracts";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { spaceMessages } from "../../messages";
 import { defaultFilter } from "../filter/types";
 
@@ -17,8 +17,8 @@ const packageCache = resolve(import.meta.dir, "../../../../../node_modules/.cach
 mkdirSync(packageCache, { recursive: true });
 const root = mkdtempSync(join(packageCache, "spaces-list-browser-"));
 const workspaceDir = resolve(import.meta.dir, "../workspace");
-const { plugin } = createConfig({ dev: false, verbose: false, rootDir: root, componentRoots: [workspaceDir] });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: false, verbose: false, rootDir: root, componentRoots: [workspaceDir] });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: ListFixture } = await import("./item-list.browser-fixture");
 

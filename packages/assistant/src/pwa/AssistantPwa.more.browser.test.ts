@@ -221,6 +221,69 @@ describe("The … of a chat in the Cloud app", () => {
     }
   }, 30_000);
 
+  test("an empty queue archives directly without loading routines", async () => {
+    const page = await open("screen=menu&chat=messe&fail=/tasks:500");
+    try {
+      await page.getByRole("button", { name: "Mehr zu diesem Chat" }).click();
+      await page.getByRole("menuitem", { name: "Archivieren" }).click();
+      await page.waitForURL(/\/pwa\/assistant$/);
+      expect(await page.getByRole("dialog").count()).toBe(0);
+      expect(await page.getByRole("button", { name: "Rückgängig" }).isVisible()).toBe(true);
+      expect((await requests(page)).filter((request) => /\/(queue|tasks)$/.test(request))).toEqual([
+        "GET /api/ai/conversations/messe/queue",
+      ]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test.each([
+    [1, "1 wartende Nachricht wird verworfen."],
+    [2, "2 wartende Nachrichten werden verworfen."],
+  ] as const)(
+    "archiving with %s waiting entries names the count; Cancel keeps the chat",
+    async (count, warning) => {
+      const page = await open(`screen=menu&chat=messe&queued=${count}`);
+      const chatUrl = page.url();
+      try {
+        await page.getByRole("button", { name: "Mehr zu diesem Chat" }).click();
+        await page.getByRole("menuitem", { name: "Archivieren" }).click();
+        const dialog = page.getByRole("dialog");
+        await dialog.getByText(warning, { exact: false }).waitFor();
+        expect((await requests(page)).filter((request) => request.endsWith("/archive"))).toEqual([]);
+        expect((await requests(page)).filter((request) => /\/(queue|tasks)$/.test(request))).toEqual([
+          "GET /api/ai/conversations/messe/queue",
+          "GET /api/ai/tasks",
+        ]);
+        await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+        expect(page.url()).toBe(chatUrl);
+        expect((await requests(page)).filter((request) => request.endsWith("/archive"))).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    },
+    30_000,
+  );
+
+  test("a failed queue read asks for confirmation with a general discard warning", async () => {
+    const page = await open("screen=menu&chat=messe&fail=/queue:500");
+    try {
+      await page.getByRole("button", { name: "Mehr zu diesem Chat" }).click();
+      await page.getByRole("menuitem", { name: "Archivieren" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByText("Wartende Nachrichten werden verworfen.", { exact: false }).waitFor();
+      expect((await requests(page)).filter((request) => request.endsWith("/archive"))).toEqual([]);
+      expect((await requests(page)).filter((request) => request.endsWith("/queue"))).toEqual(["GET /api/ai/conversations/messe/queue"]);
+      await dialog.getByRole("button", { name: "Archivieren", exact: true }).click();
+      await page.waitForURL(/\/pwa\/assistant$/);
+      expect((await requests(page)).filter((request) => request.endsWith("/archive"))).toEqual([
+        "POST /api/ai/conversations/messe/archive",
+      ]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("a refusal says it failed and a missing answer that it is not confirmed, both with Try again", async () => {
     for (const [fail, text] of [
       ["/archive:422", "Archivieren fehlgeschlagen."],

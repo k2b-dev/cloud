@@ -1,5 +1,4 @@
 import type { DateContext } from "@k2b/stdlib";
-import { dates } from "@k2b/stdlib";
 import { FloatingWindow, type FloatingWindowRect, type FloatingWindowState, toast, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createSignal, For, onCleanup, onMount, type Setter } from "solid-js";
 import { apiClient } from "../../api/client";
@@ -17,6 +16,7 @@ import {
   type StoredComposeWindow,
   writeComposeWindows,
 } from "./mail-compose-windows";
+import { showDeliveryToast } from "./mail-delivery-toast";
 import type { MailReplyPosition } from "./mail-workspace-preferences";
 
 /** Below this width a window is a full-screen sheet (the `FloatingWindow` phone rule); Send then moves into its head. */
@@ -131,45 +131,16 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
       props.onDraftsChanged();
       open(result.draftId, { fresh: false });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t().reopenFailed);
+      toast.error(error instanceof Error ? error.message : t().reopenFailed, { title: t().reopenFailedTitle });
     }
   };
 
-  const delivered: NonNullable<MailComposerHost["delivered"]> = (delivery) => {
-    const submissionId = delivery.submissionId;
-    if (delivery.scheduledAt) {
-      const notice = toast.success(t().scheduledFor({ value: dates.formatDateTime(delivery.scheduledAt, props.dateConfig) }), {
-        iconClass: "ti ti-clock",
-        action: submissionId
-          ? {
-              label: t().change,
-              onClick: () => {
-                notice.dismiss();
-                void reopenFromDelivery(submissionId);
-              },
-            }
-          : null,
-      });
-      return;
-    }
-    if (delivery.undoSeconds > 0 && submissionId) {
-      // The notice lasts exactly as long as the send can still be undone.
-      const notice = toast(t().sendingIn({ seconds: delivery.undoSeconds }), {
-        iconClass: "ti ti-send",
-        duration: delivery.undoSeconds * 1000,
-        action: {
-          label: t().undo,
-          variant: "ghost",
-          onClick: () => {
-            notice.dismiss();
-            void reopenFromDelivery(submissionId);
-          },
-        },
-      });
-      return;
-    }
-    toast.success(t().sending, { iconClass: "ti ti-send" });
-  };
+  const delivered: NonNullable<MailComposerHost["delivered"]> = (delivery) =>
+    showDeliveryToast(delivery, {
+      locale: locale(),
+      dateConfig: props.dateConfig,
+      reopen: (submissionId) => void reopenFromDelivery(submissionId),
+    });
 
   /**
    * Making a large window smaller: a draft the reply box handed over goes back into that box, with its caret; any
@@ -200,7 +171,8 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
       if (outcome === "moved") return;
       props.onDraftsChanged();
       if (outcome !== "closed" || quiet) return;
-      const notice = toast(t().draftInDrafts, {
+      const notice = toast.success(t().draftInDrafts, {
+        title: t().draftSavedTitle,
         iconClass: "ti ti-file-text",
         action: {
           label: t().open,
