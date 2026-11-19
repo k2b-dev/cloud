@@ -169,8 +169,22 @@ const open = async (view: View, items: AiWakeup[]) => {
     timezoneId: "Europe/Berlin",
   });
   const page = await context.newPage();
-  // Monday, 16 November 2026, 10:00 in Berlin.
-  await page.clock.setFixedTime(new Date("2026-11-16T09:00:00.000Z"));
+  // Monday, 16 November 2026, 10:00 in Berlin: only Date is pinned, timers and frames stay real.
+  await context.addInitScript((at: number) => {
+    const RealDate = Date;
+    const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+    class PinnedDate extends RealDate {
+      constructor(...args: ConstructorParameters<DateConstructor> | []) {
+        if (args.length === 0)
+          super(RealDate.now() + offset); // real clock: flows from the pinned instant
+        else super(...(args as ConstructorParameters<DateConstructor>));
+      }
+      static override now() {
+        return RealDate.now() + offset; // real clock: flows from the pinned instant
+      }
+    }
+    globalThis.Date = PinnedDate as DateConstructor;
+  }, Date.parse("2026-11-16T09:00:00.000Z"));
   page.setDefaultTimeout(5000);
   const errors = pageErrors(page);
   await page.route(`${assets.url.origin}/app`, (route) =>

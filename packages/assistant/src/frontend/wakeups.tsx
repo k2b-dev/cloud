@@ -57,6 +57,7 @@ const words = i18n.define({
       deleted: "Alarm deleted",
       undo: "Undo",
       failed: "That did not work. Try again.",
+      failedTitle: "Alarm unchanged",
       resting: ({ count }: { count: number }) =>
         count === 1 ? "Its alarm pauses until you restore the chat:" : `Its ${count} alarms pause until you restore the chat:`,
     },
@@ -94,6 +95,7 @@ const words = i18n.define({
       deleted: "Wecker gelöscht",
       undo: "Rückgängig",
       failed: "Das hat nicht geklappt. Versuch es noch einmal.",
+      failedTitle: "Wecker unverändert",
       resting: ({ count }: { count: number }) =>
         count === 1 ? "Sein Wecker ruht, bis du den Chat zurückholst:" : `Seine ${count} Wecker ruhen, bis du den Chat zurückholst:`,
     },
@@ -142,7 +144,7 @@ const change = async (ctx: AssistantWakeupContext, work: (chatId: string) => Pro
     await work(chatId);
     return true;
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : copy(ctx).failed);
+    toast.error(error instanceof Error && error.message ? error.message : copy(ctx).failed, { title: copy(ctx).failedTitle });
     return false;
   } finally {
     void ctx.refresh().catch(() => undefined);
