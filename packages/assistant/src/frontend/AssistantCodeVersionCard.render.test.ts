@@ -6,6 +6,8 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { approvalFixture, approvalModel, approvalNow, approvalStates, approvalVersionId } from "./code-version-card.test-fixture";
+import { codeVersionCardCopy } from "./code-version-card-copy";
+import { codeVersionCardMessages } from "./code-version-card-messages";
 import { type CodeVersionCardModel, describeCodeVersionCard } from "./code-version-card-state";
 
 registerSsrTestPlugin({ dev: true, rootDir: mkdtempSync(join(tmpdir(), "assistant-approval-render-")) });
@@ -23,6 +25,11 @@ const render = (model: CodeVersionCardModel, locale: string) =>
   );
 const live = (html: string, role: string) =>
   (html.match(new RegExp(`<span role="${role}"[^>]*>([\\s\\S]*?)</span>`))?.[1] ?? "").replace(/<!--[\s\S]*?-->/g, "");
+
+test("the v10 sentences and remaining shared controls have matching locale contracts", () => {
+  expect(codeVersionCardCopy.check()).toEqual([]);
+  expect(codeVersionCardMessages.check()).toEqual([]);
+});
 
 for (const locale of ["de", "en"])
   for (const state of approvalStates) {
