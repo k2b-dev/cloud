@@ -1,6 +1,7 @@
 import type { AiStoredMessage, AiTurnSnapshot } from "@k2b/cloud/ai";
 import { buildAiMessageTimeline } from "@k2b/cloud/ai/browser";
 import { CODE_VERSION_CARD_BATCH_LIMIT, type CodeVersionCards, codeVersionCardsContract } from "@k2b/cloud/contracts/code-version-cards";
+import { z } from "zod";
 import type { CodeQueryInvoke } from "./code-summary";
 
 export type CodeVersionCardRef = { codeId: string; versionId: string };
@@ -54,6 +55,7 @@ export async function loadCodeVersionCards(
     // Each successful continuation must settle a reference. At most the receipt window's 50 invocations.
     while (versions.length) {
       const known = new Set(versions.map((ref) => ref.versionId));
+      let failure: { reason: string; issueCodes?: string[]; status?: number; code?: string } | undefined;
       const answer = await invoke(
         {
           appId: "core",
@@ -62,21 +64,41 @@ export async function loadCodeVersionCards(
           input: { versions, knownPages: knownPages.filter((id) => known.has(id)) },
         },
         codeVersionCardsContract.data,
-      ).catch(() => null);
+      ).catch((error: unknown) => {
+        // Never log the Error itself: schema issues and transport messages can contain private response data.
+        failure =
+          error instanceof z.ZodError
+            ? { reason: "invalid_data", issueCodes: [...new Set(error.issues.map((issue) => issue.code))] }
+            : { reason: error instanceof SyntaxError ? "invalid_json" : "request_failed" };
+        return null;
+      });
+      if (answer && !answer.ok)
+        failure = {
+          reason: answer.error.code === "INVALID_APP_RESPONSE" ? "invalid_response" : "unavailable",
+          status: answer.error.status,
+          code: answer.error.code,
+        };
       const returned = answer?.ok ? new Map(answer.data.data.items.map((item) => [codeVersionCardKey(item), item])) : null;
       const remaining = new Set(answer?.ok ? answer.data.data.remaining.map(codeVersionCardKey) : []);
       const next: CodeVersionCardRef[] = [];
       for (const ref of versions) {
         const key = codeVersionCardKey(ref);
         const item = returned?.get(key);
-        if (item) items.push(item);
-        else if (remaining.has(key)) next.push(ref);
-        else items.push({ ...ref, state: "failed" });
+        if (item) {
+          items.push(item);
+          if (item.state === "failed") failure ??= { reason: "read_failed" };
+        } else if (remaining.has(key)) next.push(ref);
+        else {
+          items.push({ ...ref, state: "failed" });
+          failure ??= { reason: "missing_result" };
+        }
       }
       if (next.length === versions.length) {
         items.push(...next.map((ref) => ({ ...ref, state: "failed" as const })));
-        break;
+        failure ??= { reason: "continuation_stalled" };
+        next.length = 0;
       }
+      if (failure) console.warn("Code version cards could not be loaded", failure);
       versions = next;
     }
   }

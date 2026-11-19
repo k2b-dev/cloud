@@ -144,6 +144,19 @@ service, environment variable or operator setting is required. Older hints
 without the ID still cause a covering read. The Query is read-only and leaves
 activation Actions and their durable identities unchanged.
 
+Version-card snapshots project chat origins to their display fields; internal
+card anchors are omitted. A failed card read keeps its retry action and emits
+`Code version cards could not be loaded` in the server log or browser console.
+Diagnostics contain a stable failure reason, capability error status and code,
+or schema issue codes. They omit payloads, Code and version IDs, and raw error
+messages. Missing results and continuations without progress also emit a
+diagnostic. A failed server snapshot gets one browser read on mount; another
+failure leaves the retry action available.
+
+Core reports a version-card output contract failure as HTTP 500 and logs the
+Query name and schema issue paths without values. Invalid query input remains
+HTTP 400.
+
 The shared Cloud library now accepts capability manifests up to 400 KiB,
 previously 384 KiB. The capability registry itself stays at 512 KiB per record;
 its configuration and existing Sync resources do not change. The full Core
