@@ -1,7 +1,7 @@
 ---
 title: stdlib service error compatibility
 section: Operations
-order: 1199
+order: 1201
 description: Upgrade application libraries together with the expanded stdlib service error contract.
 tags: [upgrade, capabilities, errors]
 updated: 2026-11-20
@@ -24,7 +24,9 @@ messages; other statuses remain invalid provider responses.
 
 Mail document reads return `DRAFT_DOCUMENT_READ_UNAVAILABLE` with 503 for an
 unexpected loading failure. Clients that handle this code specifically should
-accept 503 in place of 500, preserve the local text and offer a retry. History
+accept 503 in place of 500, preserve the local text and offer a retry. The same
+code and status can occur while preparing a shared draft for sending, before
+a send command is created; nothing is queued in that case. History
 and content conflicts keep their existing 409 responses. No data migration is
 required for these error changes.
 
