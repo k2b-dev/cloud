@@ -52,6 +52,24 @@ and database grants are not transferred; export them before upgrading.
 See [Code SDK](/en/docs/platform/code-sdk) and
 [Code runtime operations](/en/docs/operations/code-runtime).
 
+## Delegated chat completion after upgrading
+
+New chat-to-chat `ai.chat.send` calls record the original source chat and turn
+in their immutable receipt. When the target turn ends, the source gets one
+completion activity with its result link, including failure or cancellation.
+No model turn starts there. Startup migrations add the receipt coordinates,
+completion key and indexed recovery marker; the runtime sweep repairs missed
+activities. Older receipts without a verified source snapshot receive no
+retrospective activity. Deleted and archived sources are skipped permanently;
+restoring an archived source does not backfill its skipped activities. Queue
+removal, target archive, and start refusal also write a completion activity when
+no target turn started. A source database error leaves target completion intact.
+The sweep retries that fact at most five times; `ai:chat-done` logs its error
+code and work coordinates without chat content. After correcting a persistent
+database failure, an operator can reset that item's `delegated_done_fail_count`
+to zero to admit it to recovery again. The marker remains null until recovery
+succeeds or the origin is permanently skipped.
+
 ## Read existing history
 
 Messages already delivered into a chat remain readable, including their original

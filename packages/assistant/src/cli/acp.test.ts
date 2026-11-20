@@ -1620,6 +1620,33 @@ describe("ACP session/load", () => {
     expect(said(of(h), "user_message_chunk")).toBe("");
   });
 
+  test("saved delegated completion is a status with the exact result link", async () => {
+    const h = await harness();
+    h.streams.push([
+      state([
+        {
+          ...stored({ role: "assistant", content: [] }, null),
+          meta: {
+            chatDone: {
+              chatId: "Target",
+              turnId: "Turn02",
+              status: "completed",
+              messageSeq: 2,
+              name: "Hotels in Lyon",
+              href: "/app/assistant?conversation=Target&message=2",
+            },
+          },
+        },
+      ]),
+    ]);
+    await load(h);
+    expect(said(of(h), "agent_message_chunk")).toBe(
+      "Hotels in Lyon is done. View result: https://cloud.test/app/assistant?conversation=Target&message=2\n\n",
+    );
+    expect(said(of(h), "user_message_chunk")).toBe("");
+    expect(h.requests.some((request) => request.method === "POST")).toBe(false);
+  });
+
   test("a chat that is not listed opens by its ID and replays its history before the response", async () => {
     const h = await harness();
     h.streams.push([

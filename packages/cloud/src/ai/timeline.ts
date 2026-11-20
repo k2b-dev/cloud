@@ -22,6 +22,7 @@ export type AiAssistantTimelineItem = {
 export type AiMessageTimelineItem =
   | { type: "user"; id: string; entry: AiStoredMessage }
   | { type: "summary"; id: string; entry: AiStoredMessage }
+  | { type: "chat-done"; id: string; entry: AiStoredMessage; after: string | null }
   | { type: "code-decision"; id: string; entry: AiStoredMessage }
   | { type: "code-review-start"; id: string; entry: AiStoredMessage }
   /** A Cloud-authored alarm fact (`meta.wakeupEvent`), drawn as a line and never as an answer. */
@@ -93,7 +94,7 @@ const placeWakeupFacts = (
   let loopId: string | null = null;
   let toolTurn = false;
   for (const entry of messages) {
-    if (entry.meta?.wakeupEvent) {
+    if (entry.meta?.wakeupEvent || entry.meta?.chatDone) {
       if (!loopId) placed.push(entry);
       else {
         held.push(entry);
@@ -122,7 +123,9 @@ const placeWakeupFacts = (
 export const buildAiMessageTimeline = (stored: AiStoredMessage[]): AiMessageTimelineItem[] => {
   const inLoop = new Map<AiStoredMessage, string>();
   const after = new Map<AiStoredMessage, string>();
-  const messages = stored.some((entry) => entry.meta?.wakeupEvent) ? placeWakeupFacts(stored, inLoop, after) : stored;
+  const messages = stored.some((entry) => entry.meta?.wakeupEvent || entry.meta?.chatDone)
+    ? placeWakeupFacts(stored, inLoop, after)
+    : stored;
   const items: AiMessageTimelineItem[] = [];
   let lastUserEntry: AiStoredMessage | null = null;
   let pendingSteers: Array<{ loopId: string | null; steerId: string }> = [];
@@ -144,6 +147,13 @@ export const buildAiMessageTimeline = (stored: AiStoredMessage[]): AiMessageTime
 
   for (let index = 0; index < messages.length; ) {
     const entry = messages[index]!;
+
+    if (entry.meta?.chatDone) {
+      flushPendingSteers();
+      items.push({ type: "chat-done", id: entry.id, entry, after: after.get(entry) ?? null });
+      index += 1;
+      continue;
+    }
 
     if (entry.meta?.codeDecision || entry.meta?.codeReviewStart) {
       flushPendingSteers();
@@ -192,6 +202,7 @@ export const buildAiMessageTimeline = (stored: AiStoredMessage[]): AiMessageTime
       isAssistantPart(messages[index]!) &&
       !messages[index]!.meta?.codeDecision &&
       !messages[index]!.meta?.wakeupEvent &&
+      !messages[index]!.meta?.chatDone &&
       sameLoop(messages[index]!, loopId) &&
       (loopId !== null || sameBackgroundResult(messages[index]!, entry))
     ) {
