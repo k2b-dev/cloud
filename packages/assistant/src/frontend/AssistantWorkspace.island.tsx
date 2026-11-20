@@ -89,6 +89,7 @@ import { revokeChatWebsite } from "../chat-code/approval-preferences";
 import { artifactMessages } from "../chat-code/messages";
 import { SecretRequestEntry } from "../chat-code/SecretRequestEntry";
 import { createChatSecretRuntime } from "../chat-code/secret-runtime";
+import { createSecretTitleStore } from "../chat-code/secret-title-store";
 import { createChatWorkspace } from "../chat-code/workspace-controller";
 import { contextTab, fileTab, webTab } from "../chat-code/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
@@ -96,6 +97,7 @@ import type { ChatWorkspaceSnapshot } from "../chat-workspace";
 import type { CodeVersionCardEntry } from "../code-version-cards";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
+import type { SecretTitles } from "../secret-titles";
 import type { AssistantSidebarSnapshot } from "../sidebar";
 import type { WaitingAutomation } from "../waiting-automations";
 import AssistantApprovalsView from "./AssistantApprovalsView";
@@ -225,6 +227,8 @@ type InitialDetail = {
 
 type Props = {
   initialCodeVersionCards?: CodeVersionCardEntry[];
+  /** Automation titles that stored secret outcome lines name, read with the reader's rights. */
+  initialSecretTitles?: SecretTitles;
   embedded?: boolean;
   initialPanelContext?: ReturnType<typeof getContext>;
   /** The panel's place at render time, from `loadPlaceAssistant`; null without a place or before it is known. */
@@ -371,6 +375,7 @@ export default function AssistantWorkspace(props: Props) {
   const [liveError, setLiveError] = createSignal<string | null>(null);
   const liveHub = createAssistantLiveHub();
   const codeVersionCards = createCodeVersionCardStore(liveHub, props.initialCodeVersionCards);
+  const secretTitles = createSecretTitleStore(props.initialSecretTitles);
 
   const chat = createAiChatController({
     baseUrl: "/api/ai",
@@ -3508,6 +3513,7 @@ export default function AssistantWorkspace(props: Props) {
                                         {...request}
                                         conversationId={chat.activeConversationId}
                                         timeZone={props.timeZone}
+                                        titles={secretTitles}
                                       />
                                     ),
                                     renderCodeVersion: (version) => (

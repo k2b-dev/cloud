@@ -5,6 +5,7 @@ import { Chat, type ChatOutcomeLine, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import type { SecretRequestController, SecretRequestState } from "./secret-request";
 import { getSecretRequest, observeSecretRequests } from "./secret-request-registry";
+import type { SecretTitleStore } from "./secret-title-store";
 
 const messages = /* @__PURE__ */ i18n.define({
   baseLocale: "en",
@@ -97,7 +98,14 @@ export const preloadSecretCard = () => {
  * controller; afterwards one outcome line, from the controller while it lives and from the stored `{ configured, name }`
  * after a reload. The value never reaches this component: only the card's field holds it.
  */
-export function SecretRequestEntry(props: AiSecretRequestView & { conversationId: () => string | null; timeZone: string }) {
+export function SecretRequestEntry(
+  props: AiSecretRequestView & {
+    conversationId: () => string | null;
+    timeZone: string;
+    /** Automation titles from the page's request, so a reloaded line names its automation in the first frame. */
+    titles?: SecretTitleStore;
+  },
+) {
   const locale = useLocale();
   const t = () => messages.resolve([locale()]).t;
   // The timeline gives `code_secret` its public arguments only: name, origin, header, prefix and target.
@@ -112,6 +120,10 @@ export function SecretRequestEntry(props: AiSecretRequestView & { conversationId
     return typeof value === "object" && value !== null ? value : null;
   };
   const automation = () => target() !== null;
+  const codeId = () => {
+    const code = target() && Reflect.get(target()!, "code");
+    return typeof code === "string" ? code : null;
+  };
   // The controller of this window stays once found: its outcome shows until the stored result arrives.
   const [controller, setController] = createSignal<SecretRequestController>();
   const [state, setState] = createSignal<SecretRequestState>();
@@ -169,17 +181,30 @@ export function SecretRequestEntry(props: AiSecretRequestView & { conversationId
       root?.querySelector<HTMLElement>(".k2b-chat-outcome")?.focus({ preventScroll: true });
     }),
   );
+  // The mockup's "· 19:42" after the sentence; only this line adds the dot, other outcomes keep their own times.
   const time = () => {
     const at = props.block().at;
-    return at ? dates.formatTime(at, { locale: locale(), timeZone: props.timeZone }) : undefined;
+    return at ? `· ${dates.formatTime(at, { locale: locale(), timeZone: props.timeZone })}` : undefined;
   };
+  /** This window's title while its controller lives, otherwise the one the page loaded; general words only when Core has none. */
+  const title = () => {
+    const live = state()?.title;
+    if (live) return live;
+    const code = codeId();
+    return code ? (props.titles?.title(code) ?? null) : null;
+  };
+  // A chat opened without a reload asks once for the title of a line that names it.
+  createEffect(() => {
+    const code = codeId();
+    if (outcome() === "access" && code && !state()?.title && props.titles?.title(code) === undefined) props.titles?.want(code);
+  });
   const line = (key: Outcome): ChatOutcomeLine => {
     const words = t();
-    const current = state();
-    const title = current && current.title ? `„${current.title}“` : words.theAutomation;
+    const named = title();
+    const automationName = named ? `„${named}“` : words.theAutomation;
     // The reason follows the cause the controller or the stored error names, never the mode alone.
     const frame = key === "access" ? (automation() ? words.editor : words.chat) : words[key];
-    return { ...OUTCOME_LINE[key], text: framed(frame, name(), title), time: time() };
+    return { ...OUTCOME_LINE[key], text: framed(frame, name(), automationName), time: time() };
   };
 
   return (

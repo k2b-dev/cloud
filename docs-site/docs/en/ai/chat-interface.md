@@ -1137,7 +1137,11 @@ when the window's lease ended while the save was on its way, or **Request for
 secret API no longer open** after the window's two-minute lease ran out. An answer given in the card moves the focus to that line. The
 line is rebuilt from the stored `{ configured, name }` or one fixed failure
 sentence (`CODE_SECRET_ERRORS`), so it reads the same after a reload and never
-contains the value. A call that never showed a card, such as when the person
+contains the value. A line that names the automation gets its title from the
+page's request, read through `core.code.read` with the reader's rights, so the
+server and the first browser frame show the same title; a chat opened without a
+reload reads it once. The line says "the automation" only when Core answers that
+the automation is gone or no longer readable. A call that never showed a card, such as when the person
 may not edit the automation, shows no line; Gustav says why in his answer.
 
 Open secret requests join **Waiting for you** as **Enter secret: API** with

@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import type { AiTurnBlock } from "@k2b/cloud/ai";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
@@ -10,6 +10,7 @@ const first = createDomTestHarness();
 const { LocaleProvider } = await import("@k2b/ui");
 const { SecretRequestEntry, storedSecretOutcome } = await import("./SecretRequestEntry");
 const { registerSecretRequest } = await import("./secret-request-registry");
+const { createSecretTitleStore } = await import("./secret-title-store");
 const { SECRET_CARD_SCENES, SECRET_FIXTURE_VALUE, secretCardScene, secretSceneArgs } = await import("./secret-card.fixture");
 first.cleanup();
 
@@ -32,12 +33,16 @@ const until = (check: () => boolean) =>
   });
 
 /** One call in the timeline, live with this window's controller, or as history after a reload. */
-const mount = async (scene: SecretCardScene, live: boolean) => {
+/** What the page's request loaded for the scenes' automation "Abc234"; `{}` is a chat opened without a reload. */
+const LOADED = { Abc234: "Paketstatus abrufen" };
+const mount = async (scene: SecretCardScene, live: boolean, titles: Record<string, string | null> = LOADED) => {
   const dom = createDomTestHarness();
   const driven = live ? await secretCardScene(scene) : undefined;
   // A reloaded page has no controller of the earlier window; its own call id keeps the live mount's controller away.
   const callId = live ? `call-${scene.id}` : `reload-${scene.id}`;
   const unregister = driven ? registerSecretRequest({ conversationId: "chat", turnId: "turn", callId }, driven.controller) : () => {};
+  // One store per mounted page, as an island holds it.
+  const store = createSecretTitleStore(titles);
   const [step, setStep] = createSignal<Step>(live ? "interaction" : scene.step);
   const [result, setResult] = createSignal<unknown>(live ? undefined : scene.result);
   const block = (): Extract<AiTurnBlock, { kind: "tool" }> => ({
@@ -53,7 +58,14 @@ const mount = async (scene: SecretCardScene, live: boolean) => {
   const dispose = render(
     () => (
       <LocaleProvider locale="de">
-        <SecretRequestEntry turnId="turn" block={block} state={step} conversationId={() => "chat"} timeZone="Europe/Berlin" />
+        <SecretRequestEntry
+          turnId="turn"
+          block={block}
+          state={step}
+          conversationId={() => "chat"}
+          timeZone="Europe/Berlin"
+          titles={store}
+        />
       </LocaleProvider>
     ),
     dom.root,
@@ -85,7 +97,8 @@ const card = (root: HTMLElement) => {
     value: input?.value ?? null,
   };
 };
-const outcome = (root: HTMLElement) => text(root.querySelector(".k2b-chat-outcome"))?.replace(/ · ?\d\d:\d\d$|\s*\d\d:\d\d$/, "") ?? null;
+// The time stands apart by margin, so its "· 19:42" follows the sentence without a space in the text.
+const outcome = (root: HTMLElement) => text(root.querySelector(".k2b-chat-outcome"))?.replace(/\s*· \d\d:\d\d$/, "") ?? null;
 
 const CHAT_FACTS = [
   "Liegt nur für dich in diesem Chat, bis du es entfernst",
@@ -187,9 +200,9 @@ const LINES: Record<string, { live: string | null; reload: string | null }> = {
   "c-abgelehnt": { live: "Secret Paketdienst_API abgelehnt", reload: "Secret Paketdienst_API abgelehnt" },
   "c-recht": {
     live: "Secret Paketdienst_API nicht gespeichert: Du darfst „Paketstatus abrufen“ nicht mehr bearbeiten, oder es gibt sie nicht mehr. Gespeichert ist nichts.",
-    // The stored result keeps no title: after a reload the line names the automation without it.
+    // The stored result keeps no title; the page's request loaded it, so the reloaded line names the automation too.
     reload:
-      "Secret Paketdienst_API nicht gespeichert: Du darfst die Automation nicht mehr bearbeiten, oder es gibt sie nicht mehr. Gespeichert ist nichts.",
+      "Secret Paketdienst_API nicht gespeichert: Du darfst „Paketstatus abrufen“ nicht mehr bearbeiten, oder es gibt sie nicht mehr. Gespeichert ist nichts.",
   },
   "c-abgelaufen": {
     live: "Anfrage nach Secret Paketdienst_API nicht mehr offen. Gespeichert ist nichts.",
@@ -242,7 +255,7 @@ for (const scene of SECRET_CARD_SCENES) {
       const reload = await mount(scene, false);
       expect(outcome(reload.dom.root)).toBe(line.reload);
       expect(reload.dom.root.textContent ?? "").not.toContain(SECRET_FIXTURE_VALUE);
-      if (line.reload) expect(reload.dom.root.querySelector(".k2b-chat-outcome")?.textContent).toContain("19:42");
+      if (line.reload) expect(text(reload.dom.root.querySelector(".k2b-chat-outcome__time"))).toBe("· 19:42");
     });
 }
 
@@ -294,6 +307,33 @@ test("a held card outcome from another window takes no focus here", async () => 
   await until(() => Boolean(dom.root.querySelector(".k2b-chat-outcome")));
   expect(outcome(dom.root)).toBe("Secret Paketdienst-API gespeichert");
   expect(document.activeElement).toBe(outside);
+});
+
+test("a lost-right line names no automation when Core has none, and a chat opened without a reload asks for it once", async () => {
+  const scene = SECRET_CARD_SCENES.find((item) => item.id === "c-recht")!;
+  const gone = await mount(scene, false, { Abc234: null });
+  expect(outcome(gone.dom.root)).toContain("Du darfst die Automation nicht mehr bearbeiten");
+  const reads: unknown[] = [];
+  const request = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        reads.push({ url: String(url), body: init?.body ?? null });
+        return Response.json({ data: { code: { title: "Paketstatus abrufen" } } });
+      },
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  restore.push(() => request.mockRestore());
+  const opened = await mount(scene, false, {});
+  await until(() => outcome(opened.dom.root)?.includes("„Paketstatus abrufen“") ?? false);
+  expect(reads).toHaveLength(1);
+  expect(JSON.stringify(reads[0])).toContain("Abc234");
+});
+
+test("the automation fact shows the Code glyph of @k2b/ui", async () => {
+  const { dom } = await mount(SECRET_CARD_SCENES.find((item) => item.id === "c-neu")!, true);
+  const icons = [...dom.root.querySelectorAll(".k2b-chat-decision__fact-line i")].map((icon) => icon.className);
+  expect(icons).toEqual([expect.stringContaining("ti-feat-code"), expect.stringContaining("ti-world")]);
 });
 
 test("a stored failure names its outcome only from the fixed sentences", () => {

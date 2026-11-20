@@ -57,6 +57,7 @@ import {
 import { assistantApi } from "../api/client";
 import { SecretRequestEntry } from "../chat-code/SecretRequestEntry";
 import { createChatSecretRuntime } from "../chat-code/secret-runtime";
+import { createSecretTitleStore } from "../chat-code/secret-title-store";
 import type { CodeVersionCardEntry } from "../code-version-cards";
 import AssistantAuthoringStop from "../frontend/AssistantAuthoringStop";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
@@ -73,6 +74,7 @@ import { AssistantCodeVersionCard } from "../frontend/code-version-card-deferred
 import { createCodeVersionCardStore } from "../frontend/code-version-card-store";
 import { assistantMessages } from "../frontend/messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
+import type { SecretTitles } from "../secret-titles";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
 import { pwaMessages } from "./messages";
 import { createOnline } from "./online";
@@ -96,6 +98,8 @@ type Detail = {
 
 export type AssistantPwaProps = {
   initialCodeVersionCards?: CodeVersionCardEntry[];
+  /** Automation titles that stored secret outcome lines name, read with the reader's rights. */
+  initialSecretTitles?: SecretTitles;
   userId: string;
   /** The part's name and icon from the app's presentation. */
   name: string;
@@ -186,6 +190,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
   // ---- live updates, as on the web
   const liveHub = createAssistantLiveHub();
   const codeVersionCards = createCodeVersionCardStore(liveHub, props.initialCodeVersionCards);
+  const secretTitles = createSecretTitleStore(props.initialSecretTitles);
   onMount(() => {
     const unregisterList = liveHub.register({
       matches: matchesAssistantInvalidation(["conversation-list"]),
@@ -1020,7 +1025,12 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                       <AssistantCodeDecisionEntry entry={entry} messages={chat.messages} timeZone={props.timeZone} />
                     ),
                     renderSecretRequest: (request) => (
-                      <SecretRequestEntry {...request} conversationId={chat.activeConversationId} timeZone={props.timeZone} />
+                      <SecretRequestEntry
+                        {...request}
+                        conversationId={chat.activeConversationId}
+                        timeZone={props.timeZone}
+                        titles={secretTitles}
+                      />
                     ),
                     renderCodeVersion: (version) => (
                       <AssistantLiveProvider value={liveHub}>

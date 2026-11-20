@@ -21,14 +21,18 @@ afterAll(() => {
   if (createdSerovalLink) unlinkSync(serovalLink);
 });
 
-const [{ SecretRequestEntry }, { SECRET_CARD_SCENES, SECRET_FIXTURE_VALUE, secretSceneArgs }, { LocaleProvider }] = await Promise.all([
-  import("./SecretRequestEntry"),
-  import("./secret-card.fixture"),
-  import("@k2b/ui"),
-]);
+const [
+  { SecretRequestEntry },
+  { SECRET_CARD_SCENES, SECRET_FIXTURE_VALUE, secretSceneArgs },
+  { LocaleProvider },
+  { createSecretTitleStore },
+] = await Promise.all([import("./SecretRequestEntry"), import("./secret-card.fixture"), import("@k2b/ui"), import("./secret-title-store")]);
+/** What the page's request loaded for the scenes' automation "Abc234". */
+const LOADED = { Abc234: "Paketstatus abrufen" };
 
-const html = (code: boolean, step: string, result: unknown) =>
-  renderToString(() =>
+const html = (code: boolean, step: string, result: unknown, titles: Record<string, string | null> = LOADED) => {
+  const store = createSecretTitleStore(titles);
+  return renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "de",
       get children() {
@@ -48,10 +52,12 @@ const html = (code: boolean, step: string, result: unknown) =>
           state: () => step as "interaction",
           conversationId: () => "chat",
           timeZone: "Europe/Berlin",
+          titles: store,
         });
       },
     }),
   );
+};
 const words = (markup: string) =>
   markup
     .replace(/<[^>]+>/g, " ")
@@ -66,30 +72,44 @@ test("every stored outcome renders its one line on the server, without the value
     words(html(scene.code, scene.step, scene.result)),
   ]);
   expect(Object.fromEntries(lines)).toEqual({
-    gespeichert: "Secret Paketdienst-API gespeichert 19:42",
-    "b-ersetzt": "Secret Paketdienst-API gespeichert 19:42",
-    abgelehnt: "Secret Paketdienst-API abgelehnt 19:42",
-    "f-recht": "Secret Paketdienst-API nicht gespeichert: Deine Anmeldung ist abgelaufen. Gespeichert ist nichts. 19:42",
+    gespeichert: "Secret Paketdienst-API gespeichert · 19:42",
+    "b-ersetzt": "Secret Paketdienst-API gespeichert · 19:42",
+    abgelehnt: "Secret Paketdienst-API abgelehnt · 19:42",
+    "f-recht": "Secret Paketdienst-API nicht gespeichert: Deine Anmeldung ist abgelaufen. Gespeichert ist nichts. · 19:42",
     "f-chat-weg+":
-      "Secret Paketdienst-API nicht gespeichert: Du kannst in diesem Chat nicht mehr schreiben, oder es gibt ihn nicht mehr. Gespeichert ist nichts. 19:42",
-    "c-anmeldung+": "Secret Paketdienst_API nicht gespeichert: Deine Anmeldung ist abgelaufen. Gespeichert ist nichts. 19:42",
-    abgelaufen: "Anfrage nach Secret Paketdienst-API nicht mehr offen. Gespeichert ist nichts. 19:42",
-    "c-gespeichert": "Secret Paketdienst_API gespeichert 19:42",
-    "c-ersetzt": "Secret Paketdienst_API gespeichert 19:42",
-    "c-abgelehnt": "Secret Paketdienst_API abgelehnt 19:42",
+      "Secret Paketdienst-API nicht gespeichert: Du kannst in diesem Chat nicht mehr schreiben, oder es gibt ihn nicht mehr. Gespeichert ist nichts. · 19:42",
+    "c-anmeldung+": "Secret Paketdienst_API nicht gespeichert: Deine Anmeldung ist abgelaufen. Gespeichert ist nichts. · 19:42",
+    abgelaufen: "Anfrage nach Secret Paketdienst-API nicht mehr offen. Gespeichert ist nichts. · 19:42",
+    "c-gespeichert": "Secret Paketdienst_API gespeichert · 19:42",
+    "c-ersetzt": "Secret Paketdienst_API gespeichert · 19:42",
+    "c-abgelehnt": "Secret Paketdienst_API abgelehnt · 19:42",
     "c-recht":
-      "Secret Paketdienst_API nicht gespeichert: Du darfst die Automation nicht mehr bearbeiten, oder es gibt sie nicht mehr. Gespeichert ist nichts. 19:42",
-    "c-abgelaufen": "Anfrage nach Secret Paketdienst_API nicht mehr offen. Gespeichert ist nichts. 19:42",
+      "Secret Paketdienst_API nicht gespeichert: Du darfst „Paketstatus abrufen“ nicht mehr bearbeiten, oder es gibt sie nicht mehr. Gespeichert ist nichts. · 19:42",
+    "c-abgelaufen": "Anfrage nach Secret Paketdienst_API nicht mehr offen. Gespeichert ist nichts. · 19:42",
     "c-nicht-verwaltet": "",
-    "c-ausgang-unklar+": "Secret Paketdienst_API: Keine Antwort von Cloud, vielleicht gespeichert. 19:42",
+    "c-ausgang-unklar+": "Secret Paketdienst_API: Keine Antwort von Cloud, vielleicht gespeichert. · 19:42",
   });
   for (const scene of SECRET_CARD_SCENES) expect(html(scene.code, scene.step, scene.result)).not.toContain(SECRET_FIXTURE_VALUE);
+});
+
+test("after a reload the lost-right line names the automation the page loaded; general words only when Core has none", () => {
+  const scene = SECRET_CARD_SCENES.find((item) => item.id === "c-recht")!;
+  expect(words(html(true, scene.step, scene.result))).toContain("Du darfst „Paketstatus abrufen“ nicht mehr bearbeiten");
+  // Deleted, or the reader may no longer read it: Core answered, and the line says "the automation".
+  expect(words(html(true, scene.step, scene.result, { Abc234: null }))).toContain("Du darfst die Automation nicht mehr bearbeiten");
+  // Another automation's title never fills this line.
+  expect(words(html(true, scene.step, scene.result, { Other1: "Andere" }))).toContain("Du darfst die Automation nicht mehr bearbeiten");
+});
+
+test("the time follows the sentence after a middle dot, as in the mockup", () => {
+  const markup = html(false, "done", { configured: true, name: "Paketdienst-API" });
+  expect(markup).toMatch(/class="k2b-chat-outcome__time"[^>]*>· 19:42</);
 });
 
 test("a waiting call renders the quiet step on the server, and a turn that ended before an answer says so", () => {
   expect(words(html(false, "interaction", undefined))).toBe("Secret Paketdienst-API");
   expect(html(false, "interaction", undefined)).not.toContain("k2b-chat-decision");
   expect(words(html(true, "not_run", undefined))).toBe(
-    "Anfrage nach Secret Paketdienst_API nicht mehr offen. Gespeichert ist nichts. 19:42",
+    "Anfrage nach Secret Paketdienst_API nicht mehr offen. Gespeichert ist nichts. · 19:42",
   );
 });

@@ -229,7 +229,8 @@ export function SecretRequestCard(props: {
         : existing
           ? [{ text: words.deleted, icon: "ti ti-history" }]
           : []),
-      { text: words.codeStays({ title: state.title }), icon: "ti ti-code" },
+      // The Code glyph of the mockup, which @k2b/ui carries as `ti-feat-code`.
+      { text: words.codeStays({ title: state.title }), icon: "ti ti-feat-code" },
       state.state === "conflict" && before
         ? {
             text: words.codeMoved({
