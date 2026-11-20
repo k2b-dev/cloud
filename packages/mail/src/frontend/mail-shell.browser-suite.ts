@@ -4953,6 +4953,54 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
+      // #3859: the box above the conversation grew on the press, which moved Send from under the pointer, so the click
+      // on a suggestion cut off at the reserved height never arrived. Send now sends it as it is, with one click.
+      // Composer v4: the box no longer grows on a press at all; a long text scrolls in its one surface, so neither Send
+      // nor the quote card moves between press and click.
+      test("one click on Send sends an untouched suggestion that the box cuts off, and the press moves nothing", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1&suggestion=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+          const lines = Array.from({ length: 16 }, (_, line) => `Example answer line ${line + 1}.`);
+          // A reply quotes the message it answers, so the card stands under the long text too.
+          api.drafts.set("DrfSug", {
+            ...api.drafts.get("DrfSug"),
+            body: `Hello,\n\n${lines.join("\n")}`,
+            sourceMessageId: "Msg001",
+            quoteSource: { locale: "en", timeZone: "UTC" },
+          });
+        });
+        try {
+          await readyDraft(page);
+          await page.waitForFunction(() => {
+            const body = document.querySelector<HTMLElement>("[data-mail-reply-box='mail'] [data-mail-compose-body]");
+            return Boolean(body && body.scrollHeight > body.clientHeight + 1);
+          });
+          await settled(page);
+          const pressStays = async (target: Locator, label: string) => {
+            const before = (await target.boundingBox())!;
+            await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+            await page.mouse.down();
+            await settled(page);
+            const pressed = (await target.boundingBox())!;
+            expect(Math.abs(pressed.y - before.y), `${label} ${before.y} → ${pressed.y} on the press`).toBeLessThanOrEqual(0.5);
+            await page.mouse.up();
+          };
+          // The quote card under the long text: its × leaves the original out on the first click.
+          const remove = draftBox(page).locator("[data-mail-quote-card]").getByRole("button", { name: "Leave the original message out" });
+          await remove.scrollIntoViewIfNeeded();
+          await settled(page);
+          await pressStays(remove, "Leave the original out");
+          await draftBox(page).locator("[data-mail-quote-add]").waitFor();
+          await settled(page);
+          await pressStays(draftBox(page).locator("[data-mail-reply-send]"), "Send");
+          await eventually(() => api.calls.includes("POST /commands"), true, "one click sends the suggestion as it is");
+          expect(api.calls).toContain("POST /drafts/DrfSug/safety-review");
+        } finally {
+          await close(page);
+        }
+      });
+
       test("another automated account's suggestion carries that account's name, in plum, in the box and its row", async () => {
         const page = await open(
           `${boxPath}?conversation=Conv01&identity=1&suggestion=1&suggestionBy=Rechnungseingang`,
@@ -5123,7 +5171,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               const top = element.getBoundingClientRect().top;
               const to = window.querySelector(".mail-recipient-control")!.getBoundingClientRect();
               const subject = window.querySelector(".mail-inline-draft-subject .k2b-input-shell")!.getBoundingClientRect();
-              return element.scrollTop > 0 && to.top >= top && subject.bottom <= top + 120;
+              // The fields stand above the one scrolling surface and stay there (Composer v4).
+              return element.scrollTop > 0 && to.bottom <= top && subject.bottom <= top;
             }, scroller);
           await settled(page);
           expect(await barGap(".mail-compose-window-body > .mail-inline-draft")).toBe(0);
