@@ -106,6 +106,13 @@ export function ItemChat(props: {
 Keep the `k2b-ui` scope on the nearest stable application root and import
 `@k2b/ui/styles.css` once in the application stylesheet.
 
+Completion activities load through `importOnDemand`. If an island receives
+stored chat history in its initial props, set its default component's
+`preload = preloadAiChatDone`, imported from `@k2b/cloud/ai/ui`. The island
+keeps its server-rendered activities until their presentation is ready, so
+the first client frame has the same rows and geometry. Server rendering uses
+the eager presentation. A chat opened later preloads the presentation on mount.
+
 Each entry of `AiPeopleModels["options"]` carries `contextWindow` when the
 model catalog knows it. Pass it as `contextUsage.contextWindow` to
 `Chat.Composer`, so the usage ring shows how full the chat's context is and

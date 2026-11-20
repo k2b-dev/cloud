@@ -10,11 +10,13 @@ import {
   getOwner,
   type JSX,
   onCleanup,
+  onMount,
   type Setter,
   Show,
   sharedConfig,
 } from "solid-js";
 import { isServer } from "solid-js/web";
+import { aiChatDoneItem, preloadAiChatDone } from "#chat-done";
 import { blockWords } from "../../blocks/messages";
 import type { AiActiveTurn } from "../client/projection";
 import { aiModelChooserMessages } from "../model-chooser-messages";
@@ -22,7 +24,6 @@ import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } fro
 import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timeline";
 import type { AiConversationTimelineEntry, AiStoredMessage, AiTurnError } from "../types";
 import { AiReaderTimeZoneProvider } from "./action-sentences";
-import { aiChatDoneItem } from "./chat-done-line";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
@@ -690,6 +691,10 @@ export type AiChatTimelineSource = {
  * action context.
  */
 export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<readonly ChatTimelineItem[]> {
+  onMount(() => {
+    // Chats opened after mounting warm the renderer too; importOnDemand already offers reload on failure.
+    void preloadAiChatDone().catch(() => {});
+  });
   const actions = useAiChatActions();
   const locale = useLocale();
   const disclosureState = createAiToolDisclosureState();

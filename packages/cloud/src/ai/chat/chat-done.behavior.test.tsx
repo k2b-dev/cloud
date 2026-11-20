@@ -9,6 +9,8 @@ test("a completion preserves existing messages and draft focus; its result is a 
   const dom = createDomTestHarness();
   const { Chat, LocaleProvider } = await import("@k2b/ui");
   const { AiChatActionsProvider, createAiChatTimeline } = await import("./presentation");
+  const { preloadAiChatDone } = await import("./chat-done-lazy");
+  await preloadAiChatDone();
   const [messages, setMessages] = createSignal<AiStoredMessage[]>([chatDoneMessage(1, "Mit dem Zug zur Messe.")]);
   const dispose = render(
     () => (

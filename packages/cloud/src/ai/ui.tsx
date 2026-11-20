@@ -15,6 +15,7 @@ export { AiModelIcon, aiModelDisplayIcon } from "./model-icon";
 
 import { latestLoopUsage, latestUsage, latestUsageSnapshot, textFromMessage } from "./chat/message-utils";
 
+export { preloadAiChatDone } from "#chat-done";
 export {
   AI_COMPOSER_TEXT_MAX_CHARS,
   AI_PASTED_TEXT_ATTACHMENT_THRESHOLD,

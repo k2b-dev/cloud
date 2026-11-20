@@ -39,9 +39,13 @@ let assets: ReturnType<typeof Bun.serve>;
 const entry = resolve(import.meta.dir, "chat-done.browser-entry.tsx");
 const fakeLive = resolve(import.meta.dir, "chat-done.browser-live.ts");
 const entrySource = `import { LocaleProvider } from "@k2b/ui";
-import { render } from "solid-js/web";
+import { mount } from ${JSON.stringify(resolve(import.meta.dir, "../../../ssr/src/mount.ts"))};
+import { toJSON } from ${JSON.stringify(Bun.resolveSync("seroval", cloud))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
-render(() => <LocaleProvider locale="de"><AssistantWorkspace {...window.harness} /></LocaleProvider>, document.getElementById("root"));`;
+function Workspace(props) { return <LocaleProvider locale="de"><AssistantWorkspace {...props} /></LocaleProvider>; }
+Workspace.preload = AssistantWorkspace.preload;
+document.getElementById("root").dataset.props = JSON.stringify(toJSON(window.harness));
+mount(Workspace, "#root");`;
 const fakeLiveSource = `export const liveConnection = () => ({ subscribe: (_channel, _scope, handlers) => {
 window.doneLive = handlers; return { close() {} }; } });`;
 beforeAll(async () => {
