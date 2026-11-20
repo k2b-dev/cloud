@@ -110,7 +110,7 @@ const fontPreloads = () =>
     .join("");
 const html = (locale: string, theme: string) =>
   `<!doctype html><html lang="${locale}" data-theme="${theme}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${fontPreloads()}<link rel="stylesheet" href="/__head.css"><script type="module" src="/__head.js"></script></head><body class="k2b-ui"><main id="root" style="padding:32px 24px;max-width:1440px;margin:auto"></main></body></html>`;
-async function open(state: HeadState, width: number, locale = "de", theme = "light") {
+async function open(state: HeadState, width: number, locale = "de", theme = "light", query = "") {
   const context = await browser.newContext({
     viewport: { width, height: width === 390 ? 780 : 900 },
     reducedMotion: "reduce",
@@ -130,7 +130,7 @@ async function open(state: HeadState, width: number, locale = "de", theme = "lig
       let key = 0;
       Object.defineProperty(crypto, "randomUUID", { value: () => `00000000-0000-4000-8000-${String(++key).padStart(12, "0")}` });
     }, fixedNow);
-    await page.goto(`${origin}/?state=${state}&locale=${locale}&theme=${theme}`);
+    await page.goto(`${origin}/?state=${state}&locale=${locale}&theme=${theme}${query}`);
     await page.evaluate(async () => {
       await document.fonts.ready;
     });
@@ -729,3 +729,39 @@ for (const theme of ["light", "dark"])
       },
     );
   }
+
+// P5 Rundgang l01/l02: a next run in another year ("Fr, 01.01.2027, 06:00") was cut off. It reads whole in both
+// languages, at desktop width on one line and on a phone within the two lines the situation already reserves, and the
+// situation and its strip keep their place against a date of this year.
+for (const width of [1440, 390])
+  for (const locale of ["de", "en"])
+    test(`a next run in another year reads whole at ${width} in ${locale} and moves nothing`, async () => {
+      const measure = async (query: string) => {
+        const page = await open("schedule", width, locale, "light", query);
+        try {
+          return await page.evaluate(() => {
+            const value = document.querySelector<HTMLElement>(".cloud-code__lage-cell .cloud-code__lage-value")!;
+            const box = (selector: string) => {
+              const rect = document.querySelector(selector)!.getBoundingClientRect();
+              return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+            };
+            return {
+              text: value.textContent ?? "",
+              whole: value.scrollWidth <= value.clientWidth + 1 && value.scrollHeight <= value.clientHeight + 1,
+              lines: Math.round(value.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(value).lineHeight)),
+              lage: box(".cloud-code__lage"),
+              strip: box(".cloud-code__runs"),
+            };
+          });
+        } finally {
+          await page.context().close();
+        }
+      };
+      const thisYear = await measure("");
+      const otherYear = await measure("&next=2027-01-01T05:00:00.000Z");
+      expect(otherYear.text).toContain("2027");
+      expect(otherYear.whole).toBe(true);
+      expect(otherYear.lines).toBeLessThanOrEqual(width === 1440 ? 1 : 2);
+      expect(otherYear.lage).toEqual(thisYear.lage);
+      expect(otherYear.strip).toEqual(thisYear.strip);
+    });

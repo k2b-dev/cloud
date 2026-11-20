@@ -183,3 +183,13 @@ test("checking shows the same facts as switching; only an unknown outcome asks t
   expect(model("checking").quiet).not.toContain("Prüf den Stand");
   expect(model("unknown").quiet).toContain("Prüf den Stand");
 });
+
+// P5 Rundgang f03: the card cannot know where the newer version waits, so it never claims "further down".
+test("a replaced version names what replaced it and leads there, without saying where its approval stands", () => {
+  for (const locale of ["de", "en"]) {
+    const model = approvalModel("replaced", locale);
+    expect(model.main).toBe(locale === "de" ? "Version 1 wurde durch Version 2 ersetzt." : "Version 1 was replaced by version 2.");
+    expect(model.quiet).not.toMatch(/weiter unten|further down|Freigabe für|approval for/);
+    expect(model.primary?.label).toBe(locale === "de" ? "Zu Version 2" : "Go to version 2");
+  }
+});
