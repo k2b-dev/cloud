@@ -2,8 +2,10 @@ import { afterAll, afterEach, beforeAll, expect, mock, spyOn, test } from "bun:t
 import { sql } from "@k2b/cloud";
 import { aiConversations, aiProjects, createAiProvider } from "@k2b/cloud/ai";
 import * as runtime from "@k2b/cloud/ai/runtime";
+import { dispatchCapability } from "@k2b/cloud/api";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
-import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
+import { nestedInvocationLeases, signInvocationToken } from "@k2b/cloud/services/identity";
+import { decodeJwt, generateKeyPair } from "jose";
 import {
   aiModelFixture,
   aiModelSettings,
@@ -12,6 +14,8 @@ import {
   drainQueuedMessages,
   enrichDirtyAiConversations,
   invokeCompiledCapability,
+  reviewCompiledCapability,
+  serializeCapabilityProviderResult,
 } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 import { aiChatCreateAction } from "./ai-chat-create";
@@ -292,6 +296,98 @@ suiteFor(
     await sql`UPDATE ai.conversations SET allowed_tools=NULL WHERE id=${source.id}::uuid`;
     await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{sourceRestricted}','true'::jsonb) WHERE id=${submitted.turn.id}::uuid`;
     expect(await invoke(context)).toMatchObject({ ok: false, error: { code: "source_restricted" } });
+  });
+  test("a Gustav turn reviews and creates a chat through the real dispatch and its nested-invocation lease", async () => {
+    const source = await aiConversations.createConversation({ ownerUserId: owner });
+    const submitted = await aiConversations.submitChatTurn({
+      conversationId: source.id,
+      modelId: "fixture",
+      userMessage: { role: "user", content: [{ type: "text", text: "Open a new chat" }] },
+      runConfig: { kind: "chat", input: "Open a new chat", turnTrigger: { kind: "person", id: owner }, actor: { kind: "user", user } },
+    });
+    await sql`UPDATE ai.turns SET status='running' WHERE id=${submitted.turn.id}::uuid`;
+    const { privateKey } = await generateKeyPair("RS256");
+    const turn = { conversationId: source.id, turnId: submitted.turn.id };
+    const input = { title: "Gustav briefing" };
+    const reviews: string[] = [];
+    // What the AI executor dispatches for the turn's review and run: the owner's session authority, no reusable proof.
+    const dispatch = (review: boolean, assistantTurn?: typeof turn) =>
+      dispatchCapability({
+        request: new Request("http://cloud.internal/api/ai/capability", {
+          method: "POST",
+          headers: review ? {} : { "idempotency-key": "gustav-real-dispatch" },
+        }),
+        kind: "actions",
+        review,
+        origin: "assistant",
+        ...(assistantTurn ? { assistantTurn } : {}),
+        appId: "core",
+        capabilityId: "ai.chat.create",
+        input,
+        authority: { actor: { kind: "user", user }, accessSubject: { type: "user", userId: owner }, credentialKind: "session", scopes: [] },
+        dependencies: {
+          getCapability: async () => ({
+            appId: "core",
+            appName: "Core",
+            appIcon: "ti ti-cloud",
+            appDescription: "",
+            endpoint: "http://core.test/api/_internal/capabilities/v1",
+            manifest: compiled.manifest,
+          }),
+          signInvocation: signInvocationToken,
+          withActiveSigner: async (_purpose, use) =>
+            use(
+              { kid: "gustav", key: privateKey, issuer: "https://cloud.test", signUntil: new Date(Date.now() + 60_000), groupsAdmin: [] },
+              sql,
+            ),
+          // Core receives the signed invocation; its delegation names the token, and the action reads the stored lease.
+          fetch: async (url, init) => {
+            const token = new Request(url, init).headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+            const context: CapabilityExecutionContext = {
+              ...person(),
+              origin: "assistant",
+              idempotencyKey: review ? undefined : "gustav-real-dispatch",
+              actor: {
+                kind: "user",
+                user,
+                delegation: {
+                  kind: "invocation",
+                  credentialKind: "session",
+                  callingAppId: "core",
+                  invocationId: String(decodeJwt(token).jti),
+                },
+              },
+            };
+            const result = review
+              ? await reviewCompiledCapability({
+                  compiled,
+                  localId: "ai.chat.create",
+                  input,
+                  expectedSchemaHash: action.manifest.schemaHash,
+                  context,
+                })
+              : await invoke(context, input.title);
+            if (review) reviews.push(result.ok ? "ok" : result.error.code);
+            const serialized = serializeCapabilityProviderResult(result, { review, nonIdempotentAction: false });
+            return new Response(serialized.body, { status: serialized.status, headers: { "content-type": "application/json" } });
+          },
+        },
+      });
+    // Without its turn the call has no source the target can check: refused, never a chat.
+    const unbound = await dispatch(true);
+    expect({ status: unbound.status, code: ((await unbound.json()) as { code?: string }).code }).toEqual({
+      status: 409,
+      code: "source_unavailable",
+    });
+    await dispatch(true, turn);
+    // Core decides on the source: refused without the turn, allowed with it. The transport check of the review
+    // view needs the registered presentation and is covered by the capability suites.
+    expect(reviews).toEqual(["source_unavailable", "ok"]);
+    const response = await dispatch(false, turn);
+    const body = (await response.json()) as { data?: { chat?: { id?: string } }; code?: string };
+    expect({ status: response.status, code: body.code }).toEqual({ status: 200, code: undefined });
+    const chat = await aiConversations.getConversationByShortId({ shortId: body.data!.chat!.id!, ownerUserId: owner });
+    expect(chat).toMatchObject({ title: "Gustav briefing", createdByUserId: owner });
   });
   test("Project creation checks current owner grants and keeps the selected Project", async () => {
     const context = { ...person(), idempotencyKey: "project-chat" };
