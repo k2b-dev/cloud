@@ -253,6 +253,9 @@ export async function callJmap(
   checkHttp(response);
   const parsed = responseSchema.safeParse(json(response.body));
   if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
+  // One response per call holds for the read methods used today. A method with implicit follow-up
+  // calls (EmailSubmission/set with onSuccessUpdateEmail, Foo/copy with onSuccessDestroyOriginal)
+  // answers twice under one call id (RFC 8620 §5.4); sending must relax this check.
   if (parsed.data.methodResponses.length !== calls.size) throw new JmapError("JMAP_INVALID_RESPONSE");
   for (const [name, args, id] of parsed.data.methodResponses) {
     const expected = calls.get(id);

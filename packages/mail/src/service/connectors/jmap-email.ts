@@ -6,7 +6,9 @@ import { jmapIdSchema } from "./jmap-client";
 
 const addressList = z.array(z.object({ name: z.string().nullish(), email: z.string() })).nullish();
 const messageIds = z.array(z.string()).nullish();
-const rawHeader = z.string().nullable();
+// Servers differ in whether an absent optional value is null or left out; both mean "none".
+const optional = <T extends z.ZodType>(schema: T) => schema.nullish().transform((value) => value ?? null);
+const rawHeader = optional(z.string());
 const rawHeaders = {
   "header:Return-Path:asRaw": rawHeader,
   "header:Auto-Submitted:asRaw": rawHeader,
@@ -30,15 +32,15 @@ const rawHeaders = {
 
 const bodyPartSchema = z.object({
   // MIME part paths (such as "1.2") are strings, not RFC 8620 Id values.
-  partId: z.string().nullable(),
+  partId: optional(z.string()),
   type: z.string(),
-  charset: z.string().nullable(),
-  name: z.string().nullable(),
-  cid: z.string().nullable(),
-  disposition: z.string().nullable(),
+  charset: optional(z.string()),
+  name: optional(z.string()),
+  cid: optional(z.string()),
+  disposition: optional(z.string()),
   size: z.number().int().nonnegative(),
   get subParts() {
-    return z.array(bodyPartSchema).nullable();
+    return optional(z.array(bodyPartSchema));
   },
 });
 export const jmapEmailSnapshotSchema = z.object({
@@ -50,7 +52,7 @@ export const jmapEmailSnapshotSchema = z.object({
   size: z.number().int().nonnegative(),
   receivedAt: z.string().datetime(),
   sentAt: z.string().datetime({ offset: true }).nullish(),
-  subject: z.string().nullable(),
+  subject: optional(z.string()),
   from: addressList,
   to: addressList,
   cc: addressList,
