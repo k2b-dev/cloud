@@ -1,4 +1,5 @@
 import { type AuthContext, auth, jsonResponse, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout, v } from "@k2b/cloud/server";
+import type { Result, ServiceError } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -37,20 +38,7 @@ const identity = (c: Context<AuthContext>) => ({
 });
 const answer = <T>(
   c: Context<AuthContext>,
-  result:
-    | { ok: true; data: T }
-    | {
-        ok: false;
-        error: {
-          code: string;
-          message: string;
-          status: 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 503;
-          line?: number;
-          column?: number;
-          retryAfter?: number;
-          resetAt?: string;
-        };
-      },
+  result: Result<T, ServiceError & { line?: number; column?: number; retryAfter?: number; resetAt?: string }>,
   successStatus: 200 | 201 = 200,
 ) => {
   if (!result.ok) {

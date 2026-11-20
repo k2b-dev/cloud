@@ -742,7 +742,9 @@ export const CapabilityErrorSchema = z
   })
   .strict();
 
-export const CAPABILITY_ERROR_STATUSES = [400, 401, 403, 404, 409, 429, 499, 500, 502, 503, 504] as const;
+export const CAPABILITY_ERROR_STATUSES = [
+  400, 401, 403, 404, 405, 406, 408, 409, 410, 412, 413, 415, 416, 421, 422, 429, 499, 500, 501, 502, 503, 504,
+] as const;
 export type CapabilityErrorStatus = (typeof CAPABILITY_ERROR_STATUSES)[number];
 export type CapabilityError = {
   code: string;
