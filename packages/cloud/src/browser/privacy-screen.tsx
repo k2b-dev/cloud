@@ -311,7 +311,8 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   };
   /**
    * The veil rises above a dialog or popover that opened after it, the hint with it. The sign-out warning always stays
-   * above: while it is open the veil does not rise.
+   * above: while it is open the veil does not rise. Like the hint, it lives in the topmost modal dialog: a modal dialog
+   * makes everything outside it inert, and an element inside a closed dialog does not render, not even in the top layer.
    */
   const raiseVeil = (): boolean => {
     if (!veilSupported || sessionWarningOpen()) return false;
@@ -323,12 +324,15 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
       }
     };
     const surfaces = [...open("dialog:modal"), ...open(":popover-open")].filter((surface) => !isIsland(surface));
-    const below = veil.matches(":popover-open") && surfaces.every((surface) => underVeil.has(surface));
+    const host = hintHost();
+    const below = veil.parentElement === host && veil.matches(":popover-open") && surfaces.every((surface) => underVeil.has(surface));
     // A surface that closed leaves the set: when it opens again it opens above the veil.
     underVeil = new Set(surfaces);
     if (below) return false;
     const focused = hint.contains(document.activeElement);
     showHint(false);
+    showVeil(false);
+    if (veil.parentElement !== host) host.append(veil);
     showVeil(true);
     return focused;
   };
@@ -421,7 +425,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
       const target = record.target instanceof Element ? record.target : record.target.parentElement;
       const inside = Boolean(target?.closest(`[${COVERED}]`));
       if (record.type === "characterData") return !inside;
-      const nodes = [...Array.from(record.addedNodes), ...Array.from(record.removedNodes)].filter((node) => node !== hint);
+      const nodes = [...Array.from(record.addedNodes), ...Array.from(record.removedNodes)].filter((node) => node !== hint && node !== veil);
       if (!nodes.length) return false;
       return (
         !inside ||
