@@ -357,6 +357,14 @@ export const imageEdgeScenes: BlockScene[] = [
       { kind: "Text", text: "Die Vase steht seit März im Lager Nord." },
     ],
   },
+  {
+    name: "21-bild-flach-wartet",
+    app: "/kunst",
+    blocks: [
+      { kind: "Image", src: "/kunst/images/later.svg", alt: "Fries_Ostwand.jpg", ratio: 12 },
+      { kind: "Text", text: "Der Fries läuft über die ganze Ostwand." },
+    ],
+  },
 ];
 
 /** The colour of the portrait and landscape stand-ins: one flat field, so a test can find their edges. */

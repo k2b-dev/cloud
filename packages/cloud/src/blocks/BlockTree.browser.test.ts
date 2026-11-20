@@ -508,6 +508,31 @@ describe("BlockTree", () => {
     }
   });
 
+  test("a flat picture with a ratio keeps the height of its ratio while it waits, even below the small place", async () => {
+    const scene = imageEdgeScenes.find((entry) => entry.name === "21-bild-flach-wartet")!;
+    expect(() => validateBlocks(scene.blocks, "result", { appId: "kunst", appPrefixes: [scene.app] })).not.toThrow();
+    imageRequests.length = 0;
+    const tab = await open(scene, 1440, "browser", "result", true);
+    try {
+      const place = () => tab.locator(".cloud-blocks__image-place").evaluate((node) => node.getBoundingClientRect().height);
+      const text = () => tab.locator(".cloud-blocks__cell[data-kind='Text']").evaluate((node) => node.getBoundingClientRect().top);
+      const first = { place: await place(), text: await text() };
+      await tab.locator(".cloud-blocks__image-wait").waitFor();
+      const waiting = { place: await place(), text: await text() };
+      await tab.clock.runFor(2_000);
+      await tab.locator('.cloud-blocks__image img[data-retry][src$="retry=1"]').waitFor();
+      const retrying = { place: await place(), text: await text() };
+      await tab.clock.resume();
+      const width = await tab.locator(".cloud-blocks__image-place").evaluate((node) => node.getBoundingClientRect().width);
+      // The ratio alone sets the height: no state grows the place, so the text below never moves.
+      expect(Math.abs(first.place - width / 12)).toBeLessThan(1);
+      expect(waiting).toEqual(first);
+      expect(retrying).toEqual(first);
+    } finally {
+      await tab.close();
+    }
+  });
+
   test("before hydration only a requested picture that does not decode counts as failed", async () => {
     const tab = await open(imageEdgeScenes[0]!, 1440);
     try {

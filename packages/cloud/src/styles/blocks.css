@@ -39,6 +39,7 @@
 .k2b-ui .cloud-blocks__cell[data-media-row] .cloud-blocks__image .cloud-blocks__image-place {
   aspect-ratio: 4 / 3;
   grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
 }
 
 @container (max-width: 40rem) {
@@ -453,6 +454,8 @@
 .k2b-ui .cloud-blocks__image[data-ratio] .cloud-blocks__image-place {
   aspect-ratio: var(--cloud-blocks-image-ratio);
   grid-template-rows: minmax(0, 1fr);
+  /* The ratio alone sets the height: a state's own minimum must not grow a flat place. */
+  min-height: 0;
 }
 
 /* Without a ratio, a wait and a later try keep the same small place, so the height does not jump with every try. */
