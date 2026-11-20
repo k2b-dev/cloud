@@ -1464,8 +1464,11 @@ export default function MailComposer(props: {
    */
   const sendOrSayWhy = (delivery: { scheduledAt?: string }) => {
     if (!sendHeld()) return sendDraft(delivery);
+    // Send again in the bar repeats this delivery, its picked time included.
+    currentDelivery = delivery;
     const windowT = mailComposeWindowMessages.resolve([locale()]).t;
-    reportDeliveryError(online() ? windowT.sendWaits : windowT.sendOffline, () => void sendOrSayWhy(delivery));
+    const offlineHolds = !online() && Boolean(props.host?.window || props.host?.box);
+    reportDeliveryError(offlineHolds ? windowT.sendOffline : windowT.sendWaits, () => void sendOrSayWhy(delivery));
   };
 
   const schedule = async () => {
@@ -2361,12 +2364,12 @@ export default function MailComposer(props: {
        * not connected or saved yet. A draft that failed or became read-only says why through its own banner instead.
        */
       const sendBlockedReason = () =>
-        status() === "error" || status() === "readonly"
-          ? null
-          : uploads().length > 0
-            ? r().uploadReason
-            : !online()
-              ? r().offlineReason
+        uploads().length > 0
+          ? r().uploadReason
+          : !online()
+            ? r().offlineReason
+            : status() === "error" || status() === "readonly"
+              ? null
               : holdActive()
                 ? r().holdReason
                 : tableNeedsCheck()
@@ -2380,6 +2383,8 @@ export default function MailComposer(props: {
         if (percent !== null) return { icon: "ti-upload", text: r().uploading({ percent }), tone: "busy" };
         if (!online()) return { icon: "ti-cloud-off", text: r().offline };
         if (status() === "error" || status() === "readonly") return null;
+        // A shared draft's failure or refused edit stands in its hint over the bar; no spinner promises it resolves.
+        if (sharedState()?.error || sharedState()?.rejectedEdit) return null;
         // A shared draft that is not ready says why Send waits, at the status's fixed place.
         if (tableNeedsCheck() || sharedWaits()) return { icon: "ti-loader-2", text: sendBlockedReason() ?? r().saving, tone: "busy" };
         // An empty box that nobody touched has nothing to save yet.
