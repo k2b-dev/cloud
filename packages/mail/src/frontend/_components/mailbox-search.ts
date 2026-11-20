@@ -93,6 +93,25 @@ export function createMailboxSearch(props: {
   const [searchValue, setSearchValue] = createSignal(props.query);
   const [validationError, setValidationError] = createSignal(false);
   let quickSearchPending = false;
+  /**
+   * The route the field asked for last. Only that one can still commit, because the workspace aborts a superseded
+   * route load and drops its answer. When it arrives, the person may already have typed on: it is no newer intent.
+   */
+  let requestedRoute: string | null = null;
+  const routeKey = (href: string) => {
+    const url = mailRouteUrl(href);
+    return `${url.pathname}${url.search}`;
+  };
+  const requestRoute = (href: string, replace?: boolean) => {
+    const route = routeKey(href);
+    requestedRoute = route;
+    void Promise.resolve(props.onOpenHref(href, replace)).then(() => {
+      // Settled without a newer request, also when it failed or showed the same route again: nothing is on its way.
+      if (requestedRoute !== route) return;
+      requestedRoute = null;
+      quickSearchPending = false;
+    });
+  };
   const [searchFields, setSearchFields] = createSignal<MailQuickSearchField[]>(selectedQuickSearchFields(requestUrl()));
   const activeSavedView = createMemo(() => props.savedViews.find((view) => view.id === props.activeSavedViewId) ?? null);
   const currentSearchState = createMemo(() => {
@@ -162,10 +181,10 @@ export function createMailboxSearch(props: {
     const currentUrl = requestUrl();
     if (currentUrl.searchParams.has("q")) {
       // A new history entry, so Back after clearing returns to the search instead of repeating the starting view.
-      void props.onOpenHref(buildMailSearchClearHref(currentUrl));
+      requestRoute(buildMailSearchClearHref(currentUrl));
     } else if (quickSearchPending) {
       // Supersede the pending search before it can put the cleared text back.
-      void props.onOpenHref(`${currentUrl.pathname}${currentUrl.search}`, true);
+      requestRoute(`${currentUrl.pathname}${currentUrl.search}`, true);
     }
   };
 
@@ -188,10 +207,13 @@ export function createMailboxSearch(props: {
   const updateScope = (folderId: string | null) => {
     if (searchValue().trim()) props.onNavigationStart?.();
     setScopeFolderId(folderId);
-    if (searchValue().trim()) quickSearch.trigger(searchValue(), searchFields(), replaceLiveSearchRoute());
+    if (searchValue().trim()) quickSearch.trigger(searchValue(), searchFields());
   };
-  const applyQuickSearch = (query: string, fields: MailQuickSearchField[], replace: boolean) => {
+  const applyQuickSearch = (query: string, fields: MailQuickSearchField[]) => {
     const currentUrl = requestUrl();
+    // Decided when the search runs, not per key: a search session adds one history entry, also while its first
+    // search is still on its way when the next key is typed.
+    const replace = currentUrl.searchParams.has("q");
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
       clearSearch();
@@ -212,20 +234,20 @@ export function createMailboxSearch(props: {
       return;
     }
     setValidationError(false);
-    if (href === `${currentUrl.pathname}${currentUrl.search}`) return;
+    // Back to the shown query while a newer search is on its way: ask for it again, so that search cannot answer into a
+    // field that no longer holds its text.
+    if (href === `${currentUrl.pathname}${currentUrl.search}` && !quickSearchPending) return;
     quickSearchPending = true;
-    void props.onOpenHref(href, replace);
+    requestRoute(href, replace);
   };
 
-  const quickSearch = timed.debounce(
-    (query: string, fields: MailQuickSearchField[], replace: boolean) => applyQuickSearch(query, fields, replace),
-    300,
-  );
+  const quickSearch = timed.debounce((query: string, fields: MailQuickSearchField[]) => applyQuickSearch(query, fields), 300);
   const controls = {
     edit: (state: MailSearchState, source: URL) => void openAdvancedSearch(state, source),
     cancelPending: () => {
       quickSearch.cancel();
       quickSearchPending = false;
+      requestedRoute = null;
       setValidationError(false);
       setSearchValue(props.query);
       manualMode = false;
@@ -238,11 +260,17 @@ export function createMailboxSearch(props: {
     on(
       () => [props.query, props.requestUrl],
       () => {
-        quickSearch.cancel();
+        const own = requestedRoute !== null && routeKey(props.requestUrl) === requestedRoute;
+        requestedRoute = null;
         quickSearchPending = false;
-        setSearchValue(props.query);
-        setSearchFields(selectedQuickSearchFields(requestUrl()));
-        setScopeFolderId(routeScope());
+        if (!own) {
+          // Another route, such as Back, a link or the search builder, wins over what the field still holds.
+          quickSearch.cancel();
+          setSearchValue(props.query);
+          setSearchFields(selectedQuickSearchFields(requestUrl()));
+          setScopeFolderId(routeScope());
+        }
+        // The field's own search keeps the text, the caret and a search typed meanwhile: it is the person's latest intent.
         if (props.query.trim()) setOpened(true);
         else if (!manualMode) {
           setOpened(false);
@@ -252,21 +280,19 @@ export function createMailboxSearch(props: {
     ),
   );
 
-  const replaceLiveSearchRoute = () => requestUrl().searchParams.has("q");
-
   const updateSearchValue = (next: string) => {
     if (next.trim() !== props.query.trim()) props.onNavigationStart?.();
     setSearchValue(next);
     if (!next.trim()) {
-      quickSearch.trigger("", searchFields(), replaceLiveSearchRoute());
+      quickSearch.trigger("", searchFields());
       return;
     }
-    quickSearch.debouncedFn(next, searchFields(), replaceLiveSearchRoute());
+    quickSearch.debouncedFn(next, searchFields());
   };
 
   const submitSearch = (event: SubmitEvent) => {
     event.preventDefault();
-    quickSearch.trigger(searchValue(), searchFields(), replaceLiveSearchRoute());
+    quickSearch.trigger(searchValue(), searchFields());
   };
 
   const updateSearchFields = (next: string[]) => {
@@ -275,7 +301,7 @@ export function createMailboxSearch(props: {
     const normalized = selected.length > 0 ? selected : [...DEFAULT_MAIL_QUICK_SEARCH_FIELDS];
     if (searchValue().trim() && normalized.join(",") !== searchFields().join(",")) props.onNavigationStart?.();
     setSearchFields(normalized);
-    if (searchValue().trim()) quickSearch.trigger(searchValue(), normalized, replaceLiveSearchRoute());
+    if (searchValue().trim()) quickSearch.trigger(searchValue(), normalized);
     else quickSearch.cancel();
   };
   const searchFieldsLabel = () =>
