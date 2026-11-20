@@ -179,6 +179,8 @@
 .k2b-ui .mail-reader-chip-label {
   min-width: 0;
   overflow: hidden;
+  /* The label clips its overflow, so its line box must hold the font's descenders; the chip's line-height of 1 does not. */
+  line-height: normal;
   text-overflow: ellipsis;
 }
 
