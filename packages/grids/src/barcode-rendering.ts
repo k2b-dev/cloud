@@ -1,16 +1,9 @@
 import { toSVG } from "@bwip-js/generic";
 import { qr } from "@k2b/stdlib/qr";
-import { type BarcodeFormat, barcodeValueText } from "./barcode-values";
+import { type BarcodeFormat, BarcodeRenderError, barcodeValueText } from "./barcode-values";
 
 const BARCODE_BCID_RE = /^[a-z0-9]+$/;
 const DEFAULT_PRINT_COLOR = "#0f172a";
-
-export class BarcodeRenderError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "BarcodeRenderError";
-  }
-}
 
 const validateBcid = (bcid: string): string => {
   const normalized = bcid.trim();

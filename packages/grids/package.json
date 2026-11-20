@@ -5,9 +5,9 @@
   "type": "module",
   "module": "src/index.ts",
   "imports": {
-    "#barcode-svg": {
-      "browser": "./src/frontend/_components/table/barcode-svg.browser.ts",
-      "default": "./src/frontend/_components/table/barcode-svg.ts"
+    "#barcode-drawing": {
+      "browser": "./src/barcode-drawing.browser.ts",
+      "default": "./src/barcode-drawing.ts"
     }
   },
   "exports": {

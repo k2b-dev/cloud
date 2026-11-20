@@ -12,7 +12,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js";
-import { preloadBarcodes } from "#barcode-svg";
+import { preloadBarcodes } from "#barcode-drawing";
 import type {
   PublicField as Field,
   PublicForm as Form,

@@ -1,16 +1,39 @@
 import { ButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
-import { barcodeMarkup } from "#barcode-svg";
+import { barcodeSvgForCell, barcodesReady, preloadBarcodes } from "#barcode-drawing";
 import type { BarcodeFormat } from "../../../barcode-values";
-import { barcodeKey, barcodeUrl, barcodeValueText } from "./BarcodeRendering";
+import { barcodeKey, barcodeSvgForDisplay, barcodeUrl, barcodeValueText } from "./BarcodeRendering";
 import { tableMessages } from "./messages";
+
+/**
+ * The drawings in the server markup, read while the island modules evaluate in the browser: the island's mount removes
+ * its server children right after, and until the drawing code has loaded, the first browser render shows the same
+ * drawings from here. A page or view that shows barcodes warms that code (see `RecordsView`).
+ */
+const serverDrawings = new Map<string, string>();
+if (typeof document !== "undefined" && !barcodesReady()) {
+  for (const element of document.querySelectorAll<HTMLElement>("[data-grids-barcode]")) {
+    const key = element.dataset.gridsBarcode;
+    if (key && element.firstElementChild) serverDrawings.set(key, element.innerHTML);
+  }
+}
 
 export function BarcodeDisplay(props: { value: unknown; format: BarcodeFormat; size?: "table" | "detail"; showOpenAction?: boolean }) {
   const locale = useLocale();
   const t = () => tableMessages.resolve([locale()]).t;
-  const sizedSvg = createMemo(() => barcodeMarkup(props.value, props.format, props.size ?? "table"));
   const fallback = () => barcodeValueText(props.value);
   const key = () => barcodeKey(fallback().trim(), props.format, props.size ?? "table");
+  // A string draws, `null` shows the value as text, and `undefined` keeps the place while the drawing code loads.
+  const sizedSvg = createMemo((): string | null | undefined => {
+    if (!barcodesReady()) {
+      const drawing = serverDrawings.get(key());
+      if (drawing) return drawing;
+      preloadBarcodes();
+      return undefined;
+    }
+    const svg = barcodeSvgForCell(props.value, props.format);
+    return svg ? barcodeSvgForDisplay(svg, props.format, props.size ?? "table") : null;
+  });
   const openUrl = () => barcodeUrl(props.value);
   const detail = () => props.size === "detail";
   const svgClass = () =>

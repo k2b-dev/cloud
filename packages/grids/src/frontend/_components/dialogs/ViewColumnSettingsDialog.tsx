@@ -1,6 +1,6 @@
 import { Button, Checkbox, dialogCore, NumberInput, PanelDialog, panelDialogOptions, Select, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
-import { preloadBarcodes } from "#barcode-svg";
+import { preloadBarcodes } from "#barcode-drawing";
 import type { FormatSpec } from "../../../contracts";
 import { effectiveDisplayField } from "../../../lookup-display";
 import type { Field } from "../../../service";

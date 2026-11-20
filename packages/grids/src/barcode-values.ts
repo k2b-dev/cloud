@@ -6,6 +6,13 @@ import type { FormatSpec } from "./contracts";
  */
 export type BarcodeFormat = Extract<FormatSpec, { kind: "barcode" }>;
 
+export class BarcodeRenderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BarcodeRenderError";
+  }
+}
+
 export const barcodeValueText = (value: unknown): string => {
   if (Array.isArray(value)) return barcodeValueText(value[0]);
   if (value === null || value === undefined) return "";
