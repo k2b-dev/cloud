@@ -23,7 +23,7 @@ export default ssr<AuthContext>(async (c) => {
   if (!mailboxId) return ssr.error(c, 404);
   const draftId = await resolveSsrMailboxResourceId("drafts", mailboxId, c.req.param("draftId") ?? "");
   if (!draftId) return ssr.error(c, 404);
-  const context = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), requestId: c.req.header("x-request-id") ?? null };
+  const context = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), requestId: c.req.header("x-request-id") ?? null, locale };
   // The way back names the mailbox it leads to; both reads refuse a caller without access to it.
   const [mailbox, result] = await Promise.all([mailboxes.getMailbox(context, mailboxId), drafts.getDraft(context, mailboxId, draftId)]);
   // Without access the page answers as for an unknown address, so it never tells that the mailbox or draft exists.

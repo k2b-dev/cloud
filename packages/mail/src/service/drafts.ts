@@ -55,6 +55,7 @@ import {
 import { attachmentMimeOrder } from "./attachment-order";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
+import { codeAuthorLabels } from "./code-author-labels";
 import { composeFormattingWarnings, removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import { requireSelectableSignature, resolveDefaultSignatureTemplateId } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
@@ -2048,7 +2049,8 @@ export const listDrafts = async (context: MailRequestContext, mailboxId: string,
     ORDER BY d.updated_at DESC, d.id DESC
     LIMIT ${Math.min(Math.max(Math.floor(limit), 1), 200)}
   `;
-  return ok(rows.map(mapDraft));
+  const label = await codeAuthorLabels({ mailboxId, locale: context.locale, names: rows.map((row) => row.suggested_by) });
+  return ok(rows.map((row) => ({ ...mapDraft(row), suggestedBy: label(row.suggested_by) ?? null })));
 };
 
 export const listConversationDrafts = async (params: {
@@ -2217,7 +2219,22 @@ export const listDraftFolder = async (params: {
   });
 };
 
-export const getDraft = async (context: MailRequestContext, mailboxId: string, draftId: string): Promise<Result<MailDraft>> =>
+export const getDraft = async (context: MailRequestContext, mailboxId: string, draftId: string): Promise<Result<MailDraft>> => {
+  const result = await readDraft(context, mailboxId, draftId);
+  if (!result.ok) return result;
+  const label = await codeAuthorLabels({
+    mailboxId,
+    locale: context.locale,
+    names: [result.data.suggestedBy, result.data.lastEditedByDisplayName],
+  });
+  return ok({
+    ...result.data,
+    suggestedBy: label(result.data.suggestedBy) ?? null,
+    lastEditedByDisplayName: label(result.data.lastEditedByDisplayName) ?? result.data.lastEditedByDisplayName,
+  });
+};
+
+const readDraft = async (context: MailRequestContext, mailboxId: string, draftId: string): Promise<Result<MailDraft>> =>
   withDraftDocumentCommit(async (db) => {
     const allowed = await requireDraftAccess(context, mailboxId, draftId, "read", db);
     if (!allowed.ok) return allowed;
