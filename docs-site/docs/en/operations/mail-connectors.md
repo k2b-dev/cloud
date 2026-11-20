@@ -11,6 +11,8 @@ updated: 2026-11-19
 # Mail connectors
 
 Mail uses IMAP for mailboxes and SMTP for sending. No mailbox uses JMAP yet.
+Mail can internally apply each batch of JMAP account changes in one transaction.
+Only tests call this path.
 
 Adding or changing a provider connection and refreshing its limits checks the
 IMAP hostname for JMAP over HTTPS on port 443, **without credentials**.
