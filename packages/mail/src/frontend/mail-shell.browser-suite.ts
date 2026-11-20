@@ -4326,12 +4326,19 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 expect(await editor.evaluate((element) => element === document.activeElement)).toBe(true);
                 await settled(page);
                 sameGeometry(await measure(), after);
-                // The starting height is a floor, not a ceiling on the person's reply.
+                // The person's own text grows the box to its content, up to its cap; beyond that the one surface scrolls.
                 await page.keyboard.insertText(Array.from({ length: 24 }, (_, line) => `Example reply line ${line + 1}`).join("\n"));
                 await eventually(async () => (await measure()).height > before.height, true, "content grows the reply box");
                 await settled(page);
-                expect(await draftBox(page).evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
-                expect(await page.locator("[data-reply-box-clipped]").count()).toBe(0);
+                const capped = await draftBox(page).evaluate((element) => ({
+                  height: element.getBoundingClientRect().height,
+                  cap: Number.parseFloat(getComputedStyle(element).maxHeight),
+                  scrolls:
+                    (element.querySelector<HTMLElement>("[data-mail-compose-body]")?.scrollHeight ?? 0) >
+                    (element.querySelector<HTMLElement>("[data-mail-compose-body]")?.clientHeight ?? 0),
+                }));
+                expect(Math.abs(capped.height - capped.cap), `height ${capped.height}, cap ${capped.cap}`).toBeLessThanOrEqual(1);
+                expect(capped.scrolls).toBe(true);
                 const send = draftBox(page).locator("[data-mail-reply-send]");
                 await send.scrollIntoViewIfNeeded();
                 await settled(page);
@@ -4370,10 +4377,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           expect(Math.abs(ready.box - pending.box), `box ${pending.box} → ${ready.box}`).toBeLessThanOrEqual(0.5);
           expect(Math.abs(ready.messages - pending.messages), `messages ${pending.messages} → ${ready.messages}`).toBeLessThanOrEqual(0.5);
           expect(ready.scroll).toBe(pending.scroll);
-          // Only work in the box makes it grow to its content; then nothing is cut off and nothing fades.
+          // A click alone keeps the height; the person's own input fits the box to its content.
           await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
-          await page.locator("[data-mail-reply-box-frame][data-reply-box-expanded]").waitFor();
-          expect(await page.locator("[data-reply-box-clipped]").count()).toBe(0);
+          await settled(page);
+          expect(Math.abs((await measure()).box - ready.box)).toBeLessThanOrEqual(0.5);
+          await page.keyboard.type("Saturday works.");
+          await page.locator("[data-mail-reply-box='mail'][data-compose-fitted]").waitFor();
         } finally {
           releaseSeed.resolve();
           await close(page);
@@ -4387,7 +4396,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         text: { html: null, text: longSignature.join("\n"), mailHtml: null },
       };
       for (const variant of ["frame", "text"] as const)
-        test(`a long signature that arrives last fades at the reserved height and moves nothing until the person writes (${variant})`, async () => {
+        test(`a long signature that arrives last scrolls whole in the box and moves nothing until the person writes (${variant})`, async () => {
           const releaseSignature = Promise.withResolvers<void>();
           const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "no-preference", async (next) => {
             await draftApi(next);
@@ -4414,19 +4423,111 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               );
             } else
               await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("line 12"));
-            await page.locator(".mail-inline-draft-signature[data-reply-box-clipped]").waitFor();
             await settled(page);
             expect(Math.abs((await messagesTop()) - before)).toBeLessThanOrEqual(0.5);
-            // Send stays in view at the reserved height.
+            // The signature keeps its whole height and scrolls with the text; Send stays in view at the reserved height.
+            const signature = await page.locator("[data-mail-draft-signature]").evaluate((element) => ({
+              height: element.getBoundingClientRect().height,
+              cut: element.scrollHeight > element.clientHeight + 1,
+              shrink: getComputedStyle(element).flexShrink,
+            }));
+            expect(signature.height).toBeGreaterThan(150);
+            expect(signature.cut).toBe(false);
+            expect(signature.shrink).toBe("0");
             expect(await page.locator("[data-mail-reply-box='mail'] footer").isVisible()).toBe(true);
-            // Writing in the box lets it grow to the whole signature, without a fade.
+            // Writing in the box fits it to its content, up to the cap.
             await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
-            await page.locator("[data-reply-box-clipped]").waitFor({ state: "detached" });
-            expect(
-              await page.locator("[data-mail-draft-signature]").evaluate((element) => element.getBoundingClientRect().height),
-            ).toBeGreaterThan(150);
+            await page.keyboard.type("Thanks");
+            await page.locator("[data-mail-reply-box='mail'][data-compose-fitted]").waitFor();
+            expect(Math.abs((await messagesTop()) - before)).toBeGreaterThan(0.5);
           } finally {
             releaseSignature.resolve();
+            await close(page);
+          }
+        });
+
+      // Composer v4 (Höhenmodell A): one head, one scrolling surface, and the bar; the box is as high as its content
+      // after the person's own input, with no hole below the content; text, signature, quote line and Send share one
+      // edge, and the first line starts 12 px under the head.
+      for (const position of ["top", "bottom"] as const)
+        test(`the reply box is one surface as high as its content, with one edge (${position})`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, 900, "reduce", async (next) => {
+            await replyAt(position)(next);
+            await draftApi(next);
+          });
+          try {
+            await readyDraft(page);
+            await draftBox(page).locator("[data-mail-draft-signature]").waitFor();
+            await draftBox(page).locator("[data-mail-quote-card]:not([data-loading])").waitFor();
+            await page.locator("[data-mail-reply-box='mail'] .cm-content").click();
+            await page.keyboard.type("Saturday at 11 works for us.");
+            await page.locator("[data-mail-reply-box='mail'][data-compose-fitted]").waitFor();
+            await settled(page);
+            const geometry = () =>
+              draftBox(page).evaluate((box) => {
+                const rect = (selector: string) => box.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+                const body = box.querySelector<HTMLElement>("[data-mail-compose-body]")!;
+                const content = box.querySelector<HTMLElement>(".mail-compose-content")!;
+                const scrollers = [...box.querySelectorAll<HTMLElement>("*")].filter((element) => {
+                  const overflow = getComputedStyle(element).overflowY;
+                  return (overflow === "auto" || overflow === "scroll") && element.scrollHeight > element.clientHeight + 1;
+                });
+                const kept = [".mail-inline-draft-text", "[data-mail-draft-signature]", "[data-mail-quote-card]"].map((selector) => {
+                  const element = box.querySelector<HTMLElement>(selector)!;
+                  return { selector, cut: element.scrollHeight > element.clientHeight + 1, shrink: getComputedStyle(element).flexShrink };
+                });
+                const firstLine = box.querySelector<HTMLElement>(".cm-line")!.getBoundingClientRect();
+                const quote = rect("[data-mail-quote-card]");
+                return {
+                  height: box.getBoundingClientRect().height,
+                  sendGap: box.getBoundingClientRect().bottom - rect("[data-mail-reply-send]").bottom,
+                  hole: body.getBoundingClientRect().bottom - content.getBoundingClientRect().bottom,
+                  scrollers: scrollers.map((element) => element.className),
+                  bodyScrollable: getComputedStyle(body).overflowY,
+                  kept,
+                  headGap: firstLine.top - rect(".mail-compose-head").bottom,
+                  edges: {
+                    text: firstLine.left,
+                    signature: rect("[data-mail-draft-signature]").left,
+                    quote: quote.left,
+                    send: rect("[data-mail-reply-send]").left,
+                  },
+                  quoteHeight: quote.height,
+                };
+              });
+            const fitted = await geometry();
+            // One scrolling surface; text, signature, and quote card keep their whole height.
+            expect(fitted.bodyScrollable).toBe("auto");
+            expect(fitted.scrollers).toEqual([]);
+            for (const part of fitted.kept) {
+              expect(part.cut, part.selector).toBe(false);
+              expect(part.shrink, part.selector).toBe("0");
+            }
+            // Send ends 10 px above the box's bottom edge.
+            expect(Math.abs(fitted.sendGap - 10), `send gap ${fitted.sendGap}`).toBeLessThanOrEqual(1);
+            // No hole: below the content only the 8 px room that puts the caret at the end of the text.
+            expect(Math.abs(fitted.hole - 8), `room ${fitted.hole}`).toBeLessThanOrEqual(2);
+            // The first line starts 12 px under the head; text, signature, quote line, and Send share one edge.
+            expect(Math.abs(fitted.headGap - 12), `head gap ${fitted.headGap}`).toBeLessThanOrEqual(1);
+            for (const [part, left] of Object.entries(fitted.edges))
+              expect(Math.abs(left - fitted.edges.text), `${part} edge ${left} vs text ${fitted.edges.text}`).toBeLessThanOrEqual(1);
+            // Leaving the original out is the person's own input: the box loses the card's height, and adding it back
+            // restores the height.
+            await draftBox(page).getByRole("button", { name: "Leave the original message out" }).click();
+            await settled(page);
+            const without = await geometry();
+            expect(without.height, `${fitted.height} → ${without.height}`).toBeLessThan(fitted.height - fitted.quoteHeight / 2);
+            expect(Math.abs(without.hole - 8)).toBeLessThanOrEqual(2);
+            await draftBox(page).locator("[data-mail-quote-add]").click();
+            await draftBox(page).locator("[data-mail-quote-card]").waitFor();
+            await settled(page);
+            expect(Math.abs((await geometry()).height - fitted.height)).toBeLessThanOrEqual(1);
+            if (screenshots) {
+              mkdirSync(screenshots, { recursive: true });
+              await draftBox(page).scrollIntoViewIfNeeded();
+              await page.screenshot({ path: join(screenshots, `compose-surface-${position}-light-1440.png`) });
+            }
+          } finally {
             await close(page);
           }
         });
@@ -5012,14 +5113,6 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 window.querySelector(".mail-inline-draft-subject .k2b-input-shell")!.getBoundingClientRect().top - to.bottom,
               );
             });
-          await settled(page);
-          expect(await barGap(".mail-compose-window-body > .mail-inline-draft")).toBe(0);
-          expect(await fieldGap()).toBeGreaterThanOrEqual(4);
-          await composeWindow(page).getByRole("button", { name: "Maximize" }).click();
-          await composeWindow(page).locator(".mail-inline-draft[data-large] .mail-large-panes .mail-draft-block").waitFor();
-          await settled(page);
-          expect(await barGap(".mail-large-panes .mail-draft-block")).toBe(0);
-          expect(await fieldGap()).toBeGreaterThanOrEqual(4);
           // At the end of a long text, To and Subject still stand at the top: only the text scrolled.
           const fieldsAtTop = (scroller: string) =>
             composeWindow(page).evaluate((window, selector) => {
@@ -5030,7 +5123,22 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               const subject = window.querySelector(".mail-inline-draft-subject .k2b-input-shell")!.getBoundingClientRect();
               return element.scrollTop > 0 && to.top >= top && subject.bottom <= top + 120;
             }, scroller);
-          expect(await fieldsAtTop(".mail-large-panes .mail-draft-block")).toBe(true);
+          await settled(page);
+          expect(await barGap(".mail-compose-window-body > .mail-inline-draft")).toBe(0);
+          expect(await fieldGap()).toBeGreaterThanOrEqual(4);
+          expect(await fieldsAtTop(".mail-compose-window-body [data-mail-compose-body]")).toBe(true);
+          await composeWindow(page).getByRole("button", { name: "Maximize" }).click();
+          await composeWindow(page).locator(".mail-inline-draft[data-large] .mail-large-panes .mail-draft-block").waitFor();
+          await settled(page);
+          expect(await barGap(".mail-large-panes .mail-draft-block")).toBe(0);
+          expect(await fieldGap()).toBeGreaterThanOrEqual(4);
+          // Only the one surface scrolls; the draft block itself holds still (Composer v4).
+          expect(await fieldsAtTop(".mail-large-panes [data-mail-compose-body]")).toBe(true);
+          expect(
+            await composeWindow(page).evaluate(
+              (window) => window.querySelector<HTMLElement>(".mail-large-panes .mail-draft-block")!.scrollTop,
+            ),
+          ).toBe(0);
           expect(await composeWindow(page).locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
           await composeWindow(page).getByRole("button", { name: "Restore size" }).click();
           await composeWindow(page).locator(".mail-inline-draft:not([data-large]) > .mail-draft-block-place > .mail-draft-block").waitFor();

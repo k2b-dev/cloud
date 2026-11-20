@@ -1095,12 +1095,14 @@
   container: mail-reader / size;
 }
 .k2b-ui .mail-inline-draft {
+  /* Text, attachments, signature, the quote line, and Send start on one edge, 16 px inside. */
+  --mail-compose-inset: 1rem;
   position: relative;
   display: flex;
   flex-direction: column;
   min-height: clamp(20rem, 60cqh, 51rem);
   margin-block-end: 0.875rem;
-  padding: 0.5rem 0.875rem;
+  padding: 0.5rem var(--mail-compose-inset);
   border-radius: 0.875rem;
   background: var(--k2b-surface);
   box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
@@ -1133,8 +1135,9 @@
 @media not all and (min-width: 48rem) {
   .k2b-ui .mail-inline-draft[data-suggestion],
   .k2b-ui .mail-inline-draft[data-suggestion]:focus-within {
+    --mail-compose-inset: 0.75rem;
     margin-inline: -0.75rem;
-    padding-inline: 0.75rem;
+    padding-inline: var(--mail-compose-inset);
     background: color-mix(in srgb, var(--k2b-ai-surface) 70%, var(--k2b-surface));
   }
 }
@@ -1369,6 +1372,59 @@
   flex: 1 1 auto;
   cursor: text;
 }
+/* One build for every form (reply box, window, Write large): the head, one scrolling surface, the hints, and the bar.
+   Head and bar never scroll; only the surface does. Text, attachments, signature, and the quote card keep their whole
+   height in it and scroll together: nothing in it scrolls, shrinks, or fades on its own. The surface reaches the box's
+   edges, so its scrollbar stands at the edge while the text keeps the box's inset; a fade at its ends replaces a line
+   when text lies under the head or the bar. */
+.k2b-ui .mail-compose-head {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+}
+.k2b-ui .mail-compose-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin-inline: calc(-1 * var(--mail-compose-inset));
+  padding-inline: var(--mail-compose-inset);
+  /* The first line starts 12 px under the head. */
+  padding-block-start: 0.75rem;
+  cursor: text;
+}
+.k2b-ui .mail-compose-body:is([data-scroll-fade="bottom"], [data-scroll-fade="both"]) {
+  --scroll-fade-bottom: 1.5rem;
+}
+.k2b-ui .mail-compose-content {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+}
+.k2b-ui .mail-compose-content > * {
+  flex-shrink: 0;
+}
+.k2b-ui .mail-compose-body > .mail-inline-draft-space {
+  min-height: 0.5rem;
+  flex: 1 0 0.5rem;
+}
+/* At least four lines to write in (4 × 24 px), so it is clear where the text goes. */
+.k2b-ui .mail-compose-body .mail-inline-draft-text {
+  min-height: 6rem;
+}
+.k2b-ui .mail-compose-body .mail-inline-text-editor .k2b-ste-host {
+  min-height: 6rem;
+}
+/* Fixed forms (window, Write large): the text fills the free room, and signature and quote stand right above the bar
+   until the text pushes them down. */
+.k2b-ui :is(.mail-compose-window, .mail-large-panes) .mail-compose-content,
+.k2b-ui :is(.mail-compose-window, .mail-large-panes) .mail-compose-content > .mail-inline-draft-text {
+  flex: 1 0 auto;
+}
+.k2b-ui :is(.mail-compose-window, .mail-large-panes) .mail-compose-body > .mail-inline-draft-space {
+  min-height: 0;
+  flex: 0 0 0.5rem;
+}
 /* The original message under the signature, where the sent mail puts it. Its line on the left is the quote mark of the
    sent mail (3 px, the same light gray as its blockquote), so card and preview read as one thing. Loading keeps the
    collapsed card's height. */
@@ -1567,8 +1623,8 @@
   min-height: 0;
   flex: 1 1 auto;
   margin: 0;
-  padding: 0 0.875rem;
-  overflow-y: auto;
+  padding: 0 var(--mail-compose-inset);
+  overflow: hidden;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -1659,9 +1715,6 @@
   display: contents;
 }
 .k2b-ui .mail-compose-window .mail-draft-fields {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   display: flex;
   flex: none;
   flex-direction: column;
@@ -2223,49 +2276,31 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 0.5rem 0.875rem;
+  padding: 0.5rem 1rem;
   border-radius: 0.875rem;
   background: var(--k2b-surface);
   box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
 }
-/* #3297: above the conversation, the placeholder and the loaded box share one reserved height, so a late draft,
-   signature, or suggestion never moves the messages below. Text and signature fade out at that height (the signature
-   first); interaction reveals overflowing content while retaining the reserved minimum height. Under the
-   conversation nothing sits below the box, so it keeps its natural height there. The reserve holds the quoted original's
-   collapsed card under the signature too. */
+/* Höhenmodell A: the reply box is as high as its content, up to max(20rem, column − 7rem). Only the person's own input
+   measures it again (createComposeFit); then it holds that height, and focus, saving, hints, or text from someone
+   writing along never change it. Above the conversation the placeholder and the loaded box share one reserved height
+   until that first own input, so a late draft or signature never moves the messages below (#3297); content that does
+   not fit scrolls in the box's one surface meanwhile, never cut off. */
+.k2b-ui .mail-reply-box-frame > .mail-inline-draft.mail-reply-box {
+  min-height: 0;
+  max-height: max(20rem, calc(100cqh - 7rem));
+}
 .k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame {
   --mail-reply-box-reserved: 21rem;
 }
-.k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-reply-box-pending,
-.k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-inline-draft.mail-reply-box {
+.k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-reply-box-pending {
   min-height: var(--mail-reply-box-reserved);
 }
-.k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame:not([data-reply-box-expanded]) > .mail-inline-draft.mail-reply-box {
+.k2b-ui
+  .mail-reading-column[data-reply-position="top"]
+  > .mail-reply-box-frame
+  > .mail-inline-draft.mail-reply-box:not([data-compose-fitted]) {
   height: var(--mail-reply-box-reserved);
-  overflow: hidden;
-}
-.k2b-ui
-  .mail-reading-column[data-reply-position="top"]
-  > .mail-reply-box-frame:not([data-reply-box-expanded])
-  > .mail-inline-draft.mail-reply-box
-  > :is(.mail-inline-draft-text, .mail-inline-draft-signature) {
-  flex-shrink: 1;
-  overflow: hidden;
-}
-.k2b-ui
-  .mail-reading-column[data-reply-position="top"]
-  > .mail-reply-box-frame:not([data-reply-box-expanded])
-  > .mail-inline-draft.mail-reply-box
-  > [data-reply-box-clipped] {
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.25rem), transparent);
-}
-.k2b-ui
-  .mail-reading-column[data-reply-position="top"]
-  > .mail-reply-box-frame:not([data-reply-box-expanded])
-  > .mail-inline-draft.mail-reply-box
-  > .mail-inline-draft-signature {
-  min-height: 0;
-  flex-shrink: 1000;
 }
 
 /* Scheduled and detached: one quiet row in the box's place, with its ways back. */
@@ -2479,9 +2514,10 @@
 @media not all and (min-width: 48rem) {
   .k2b-ui .mail-inline-draft.mail-reply-box,
   .k2b-ui .mail-inline-draft.mail-reply-box:focus-within {
+    --mail-compose-inset: 0.75rem;
     min-height: 12.5rem;
     margin-inline: 0;
-    padding-inline: 0.75rem;
+    padding-inline: var(--mail-compose-inset);
     border-radius: 0.875rem;
     background: var(--k2b-surface);
     box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
@@ -2532,12 +2568,13 @@
   display: contents;
 }
 .k2b-ui .mail-large-panes .mail-draft-block {
+  --mail-compose-inset: 1rem;
   display: flex;
   height: 100%;
   min-height: 0;
   flex-direction: column;
-  padding: 0 0.875rem;
-  overflow-y: auto;
+  padding: 0 var(--mail-compose-inset);
+  overflow: hidden;
 }
 
 /* The preview pane: a quiet line at a fixed place, then the mail as it arrives. The line keeps its height in every
