@@ -436,6 +436,13 @@ describe("MailComposer in a floating window", () => {
     await waitFor(() => status() === "Offline · saved here");
     expect(sendButton()!.disabled).toBe(true);
     expect(dom.root.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("true");
+    // Mod+Enter waits with the button: the shortcut never sends what the disabled Send holds back.
+    dom.root
+      .querySelector(".cm-content")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+    await Bun.sleep(50);
+    expect(requests.some((request) => request.endsWith("/commands"))).toBe(false);
+    expect(leaves).toEqual([]);
     Object.defineProperty(navigator, "onLine", { configurable: true, get: () => true });
     window.dispatchEvent(new Event("online"));
     await waitFor(() => !sendButton()!.disabled);
