@@ -7,6 +7,10 @@ const settle = async () => {
   await Promise.resolve();
   await Bun.sleep(10);
 };
+/** The form fields and the typed confirmation phrase load on demand; a page has them from its idle preload. */
+const formFields = async () => {
+  await (await import("../src/feedback/prompt-form-loader")).loadPromptForm();
+};
 /** The toast stack lays itself out in the next animation frame. */
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
@@ -192,6 +196,7 @@ describe("@k2b/ui feedback runtime", () => {
     dom.root.className = "k2b-ui";
     const { dialogCore } = await import("../src/feedback/dialog-core");
     const { prompts } = await import("../src/feedback/prompts");
+    await formFields();
 
     const openers: Array<{
       name: string;
@@ -316,6 +321,7 @@ describe("@k2b/ui feedback runtime", () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     const { prompts } = await import("../src/feedback/prompts");
+    await formFields();
 
     const result = prompts.confirm("Delete Project Atlas and all stored data?", {
       title: "Delete project",
@@ -361,6 +367,7 @@ describe("@k2b/ui feedback runtime", () => {
     dom.root.className = "k2b-ui";
     const { dialogCore } = await import("../src/feedback/dialog-core");
     const { prompts } = await import("../src/feedback/prompts");
+    await formFields();
     const label = () => dom.document.querySelector<HTMLInputElement>(".k2b-dialog__body input")?.labels?.[0];
 
     for (const [lang, text] of [
@@ -425,6 +432,7 @@ describe("@k2b/ui feedback runtime", () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     const { prompts } = await import("../src/feedback/prompts");
+    await formFields();
 
     expect(() => prompts.confirm("Delete everything?", { confirmationPhrase: "  " })).toThrow(
       "confirmationPhrase must be non-empty, visible, and single-line",
@@ -644,6 +652,7 @@ describe("@k2b/ui feedback runtime", () => {
     dom.root.className = "k2b-ui";
     const { dialogCore } = await import("../src/feedback/dialog-core");
     const { prompts } = await import("../src/feedback/prompts");
+    await formFields();
 
     const searchResult = prompts.search(
       async () => [
@@ -683,6 +692,7 @@ describe("@k2b/ui feedback runtime", () => {
     dom.root.className = "k2b-ui";
     const { dialogCore } = await import("../src/feedback/dialog-core");
     const { prompts } = await import("../src/feedback/prompts");
+    await formFields();
 
     // The prompt's date field was imported in an earlier test with a different document.
     delegateEvents(["keydown", "click", "focusout"], dom.document);
@@ -723,6 +733,7 @@ describe("@k2b/ui feedback runtime", () => {
     dom.document.documentElement.setAttribute("lang", "de");
     const { dialogCore } = await import("../src/feedback/dialog-core");
     const { prompts } = await import("../src/feedback/prompts");
+    await formFields();
 
     const formResult = prompts.form({
       fields: {
@@ -750,6 +761,7 @@ describe("@k2b/ui feedback runtime", () => {
     dom.root.className = "k2b-ui";
     const { dialogCore } = await import("../src/feedback/dialog-core");
     const { prompts } = await import("../src/feedback/prompts");
+    await formFields();
 
     const formResult = prompts.form({
       fields: {
