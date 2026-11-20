@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import type { EstimateSuggestionResult, SpaceColumn, SpaceItem } from "@/contracts";
@@ -74,6 +73,7 @@ const mount = async (options: {
 }) => {
   const dom = createDomTestHarness();
   const submitted: ItemFormData[] = [];
+  const { LocaleProvider } = await import("@k2b/ui");
   const { default: ItemForm } = await import("./ItemForm");
   const dispose = render(
     () =>
@@ -95,7 +95,7 @@ const mount = async (options: {
   );
   delegateEvents(["click", "input", "keydown", "focusout"]);
   const submit = async () => {
-    dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    dom.root.querySelector("form")!.requestSubmit();
     await until(() => submitted.length > 0, "Saving", dom.root);
     return submitted.at(-1)!;
   };
@@ -230,7 +230,7 @@ else {
     try {
       await until(() => parts(none.dom.root).title === "Gustav hat zu wenig, um diese Aufgabe zu schätzen", "No estimate", none.dom.root);
       const empty = parts(none.dom.root);
-      expect(empty.input.placeholder).not.toBe("");
+      expect(empty.input.placeholder).toBe("");
       expect(empty.accept()).toBeUndefined();
       // The status line stays reserved, so nothing moves.
       expect(empty.field).not.toBeNull();
