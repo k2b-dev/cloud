@@ -11,6 +11,7 @@ import {
   buildBackfillActivityIndex,
   buildCommandTargetIndex,
   buildDraftRemoteIdIndex,
+  buildFolderIdentityIndexes,
   buildOpenConversationIndex,
   buildOptionalSearchIndex,
   buildProviderMessageIndex,
@@ -71,6 +72,8 @@ const result = await app.start({
         if ((await buildOpenConversationIndex()) === "busy") return;
         if ((await buildActivityFeedIndex()) === "busy") return;
         await buildOptionalSearchIndex();
+        // Last: its final rule change gives up after a short lock wait and must not defer the builds above.
+        await buildFolderIdentityIndexes();
       })();
     },
     start: async () => {

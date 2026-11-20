@@ -491,7 +491,7 @@ export const mailboxHealthSchema = z.enum([
 ]);
 export type MailboxHealth = z.infer<typeof mailboxHealthSchema>;
 
-export const connectorKindSchema = z.literal("imap_smtp");
+export const connectorKindSchema = z.enum(["imap_smtp", "jmap"]);
 export type ConnectorKind = z.infer<typeof connectorKindSchema>;
 
 export const tlsModeSchema = z.enum(["implicit", "starttls"]);

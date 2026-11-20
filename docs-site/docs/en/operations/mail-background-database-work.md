@@ -69,6 +69,12 @@ Mail reads both tables once before it finishes starting, then builds two
 indexes in the background. Neither step blocks writes, so an older Mail
 instance keeps synchronizing over IMAP while they run. Later starts skip both.
 
+The folder-identity upgrade builds two small indexes on
+`mail.binding_folder_refs` in the background, then replaces the old path
+uniqueness rule once both indexes are valid. Index construction permits
+writes; the final rule change uses a short lock wait and retries on a later
+start if the table is busy.
+
 `mail:runtime-history-cleanup` runs every minute while the Mail scheduler
 worker runs. Each pass gives successful runs, other terminal runs, automation
 logs and workflow ordering a separate 1.25-second share of a five-second work

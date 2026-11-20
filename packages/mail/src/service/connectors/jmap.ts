@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { FolderRole, RemoteFolder } from "../../contracts";
+import { jmapFolderStableKey } from "../provider-identity";
 import {
   callJmap,
   fetchJmapSession,
@@ -82,7 +83,7 @@ const querySchema = z.object({
   total: z.number().int().nonnegative(),
 });
 const getSchema = z.object({ accountId: jmapIdSchema, state: z.string(), list: z.array(mailboxSchema), notFound: z.array(jmapIdSchema) });
-export type JmapRemoteFolder = RemoteFolder & { mailboxId: string };
+export type JmapRemoteFolder = RemoteFolder & { mailboxId: string; parentMailboxId: string | null };
 
 export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransportDependencies = {}): Promise<JmapRemoteFolder[]> {
   const session = await fetchJmapSession(input, deps);
@@ -171,13 +172,12 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
   }
 
   const paths = new Map<string, string>();
-  const usedPaths = new Set<string>();
   for (const mailbox of mailboxes.values()) {
     const chain: z.infer<typeof mailboxSchema>[] = [];
     const ancestors = new Set<string>();
     let current: z.infer<typeof mailboxSchema> | undefined = mailbox;
     while (current && !paths.has(current.id)) {
-      if (ancestors.has(current.id) || current.name.includes("/")) throw new JmapError("JMAP_FOLDER_TREE");
+      if (ancestors.has(current.id)) throw new JmapError("JMAP_FOLDER_TREE");
       ancestors.add(current.id);
       chain.push(current);
       const parentId: string | null = current.parentId;
@@ -185,20 +185,25 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
       if (parentId && !current) throw new JmapError("JMAP_FOLDER_TREE");
     }
     while (chain.length) {
-      const entry = chain.pop()!;
+      const entry = chain.pop();
+      if (!entry) throw new JmapError("JMAP_FOLDER_TREE");
       const parent = entry.parentId ? paths.get(entry.parentId) : undefined;
       const path = parent === undefined ? entry.name : `${parent}/${entry.name}`;
-      if (usedPaths.has(path)) throw new JmapError("JMAP_FOLDER_TREE");
-      paths.set(entry.id, path);
-      usedPaths.add(path);
+      paths.set(entry.id, Array.from(path).slice(0, 4_000).join(""));
     }
   }
+  const pathFor = (id: string): string => {
+    const path = paths.get(id);
+    if (path === undefined) throw new JmapError("JMAP_FOLDER_TREE");
+    return path;
+  };
   return [...mailboxes.values()].map((mailbox) => ({
     mailboxId: mailbox.id,
-    stableKey: mailbox.id,
-    path: paths.get(mailbox.id)!,
+    parentMailboxId: mailbox.parentId,
+    stableKey: jmapFolderStableKey({ version: 1, kind: "jmap", origin: session.origin, accountId }, mailbox.id),
+    path: pathFor(mailbox.id),
     name: mailbox.name,
-    parentPath: mailbox.parentId ? paths.get(mailbox.parentId)! : null,
+    parentPath: mailbox.parentId ? pathFor(mailbox.parentId) : null,
     delimiter: "/",
     role: folderRole(mailbox.role),
     subscribed: mailbox.isSubscribed,
