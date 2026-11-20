@@ -1,4 +1,5 @@
 import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
+import { CODE_SECRET_ERRORS } from "@k2b/cloud/ai/ui";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { onCleanup } from "solid-js";
 import type { SecretRequestController } from "./secret-request";
@@ -16,7 +17,7 @@ export function createChatSecretRuntime(
     } catch {
       /* An import failure must leave a visible tool failure without exception text. */
     }
-    return { failed: true, error: "Secret entry could not be opened. No value was returned." };
+    return { failed: true, error: CODE_SECRET_ERRORS.notOpened };
   };
   return { code_secret };
 }

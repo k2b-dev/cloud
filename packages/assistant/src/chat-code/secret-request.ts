@@ -1,4 +1,4 @@
-import type { CodeToolFailure } from "@k2b/cloud/ai/browser";
+import { CODE_SECRET_ERRORS, type CodeToolFailure } from "@k2b/cloud/ai/browser";
 import { valueAllowed } from "@k2b/cloud/browser/code-secrets";
 import type { SecretPerson } from "@k2b/cloud/shared";
 import { LIMITS } from "./contracts";
@@ -59,7 +59,7 @@ export type SecretRequestState =
 const failure = (error: string, guidance?: string): CodeToolFailure => ({ failed: true, error, ...(guidance ? { guidance } : {}) });
 const editorRequired = () =>
   failure(
-    "Secret entry is unavailable.",
+    CODE_SECRET_ERRORS.editorRequired,
     "Only people who can edit this automation may enter its secret. Ask an editor; never ask for the value in chat.",
   );
 const equalBinding = (a: SecretRequestBinding, b: SecretRequestBinding) =>
@@ -84,10 +84,14 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       ...(input.target ? {} : { prefix: input.prefix }),
     },
   };
+  // Only after a card showed: Cloud answers "not found" alike for lost rights and a deleted automation, so no reason.
   const accessFailure = () =>
-    input.target
-      ? editorRequired()
-      : failure("Secret was not saved.", "Sign in again, then ask for a new secret request. Never send the value in chat.");
+    failure(
+      CODE_SECRET_ERRORS.accessLost,
+      input.target
+        ? "Only people who can edit this automation may enter its secret. Ask an editor; never ask for the value in chat."
+        : "Sign in again, then ask for a new secret request. Never send the value in chat.",
+    );
   let state: SecretRequestState = { ...facts, state: "checking" };
   let ended = false;
   // Only a request that may have reached the store makes the outcome unknown; the destination check before it does not.
@@ -136,9 +140,7 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
     if (!listed.ok)
       return unavailable(
         listed.code === "FORBIDDEN" || listed.code === "NOT_FOUND" ? "editor-required" : "list-failed",
-        listed.code === "FORBIDDEN" || listed.code === "NOT_FOUND"
-          ? editorRequired()
-          : failure("Secret metadata could not be read. No private entry was opened."),
+        listed.code === "FORBIDDEN" || listed.code === "NOT_FOUND" ? editorRequired() : failure(CODE_SECRET_ERRORS.listFailed),
       );
     facts.existing = listed.entry;
     facts.title = listed.title ?? null;
@@ -148,11 +150,7 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       if (allowed !== true)
         return unavailable(
           allowed === false ? "destination-refused" : "check-failed",
-          failure(
-            allowed === false
-              ? "This destination cannot receive a secret."
-              : "The secret destination could not be checked. No private entry was opened.",
-          ),
+          failure(allowed === false ? CODE_SECRET_ERRORS.destinationRefused : CODE_SECRET_ERRORS.checkFailed),
         );
     }
     emit({ ...facts, state: facts.existing?.configured ? "replace" : "open", value: "", revealed: false });
@@ -306,40 +304,18 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
         finish(
           "outcome-unknown",
           failure(
-            "Secret save outcome is unknown.",
+            CODE_SECRET_ERRORS.unknown,
             "Check the current secret metadata before trying again. No entry was replayed; never send the value in chat.",
           ),
         );
         return;
       }
-      finish("expired", failure("Secret entry is no longer open. No entry was replayed."));
+      finish("expired", failure(CODE_SECRET_ERRORS.expired));
     },
     complete(result: SecretRequestResult) {
       if ("configured" in result) finish(result.configured ? "saved" : "declined", { configured: result.configured, name: input.name });
-      else finish("expired", failure("Secret entry did not complete."));
+      else finish("expired", failure(CODE_SECRET_ERRORS.incomplete));
     },
   };
 }
 export type SecretRequestController = ReturnType<typeof createSecretRequest>;
-
-/** Only this window's runtime registers controllers; no storage, URL or cross-window transport. */
-export type SecretRequestKey = { conversationId: string; turnId: string; callId: string };
-const requestKey = (key: SecretRequestKey) => JSON.stringify([key.conversationId, key.turnId, key.callId]);
-const requests = new Map<string, SecretRequestController>();
-const observers = new Set<() => void>();
-export const getSecretRequest = (key: SecretRequestKey) => requests.get(requestKey(key));
-export const observeSecretRequests = (listener: () => void) => {
-  observers.add(listener);
-  return () => {
-    observers.delete(listener);
-  };
-};
-export function registerSecretRequest(key: SecretRequestKey, controller: SecretRequestController) {
-  const id = requestKey(key);
-  requests.set(id, controller);
-  for (const observer of observers) observer();
-  return () => {
-    if (requests.get(id) === controller) requests.delete(id);
-    for (const observer of observers) observer();
-  };
-}

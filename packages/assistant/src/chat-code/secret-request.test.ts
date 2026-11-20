@@ -386,7 +386,7 @@ test("binding is sent only for a new name or a changed destination", async () =>
 });
 
 test("window registry scopes controllers to chat, turn and call and removes them on cleanup", async () => {
-  const { getSecretRequest, registerSecretRequest, observeSecretRequests } = await import("./secret-request");
+  const { getSecretRequest, registerSecretRequest, observeSecretRequests } = await import("./secret-request-registry");
   const key = { conversationId: "chat-1", turnId: "turn-1", callId: "call-1" };
   const f = fixture();
   let updates = 0;

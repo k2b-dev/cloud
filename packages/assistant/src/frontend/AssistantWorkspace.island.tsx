@@ -87,7 +87,7 @@ import {
 import { assistantApi } from "../api/client";
 import { revokeChatWebsite } from "../chat-code/approval-preferences";
 import { artifactMessages } from "../chat-code/messages";
-import { openSecretsDialog } from "../chat-code/SecretsDialog";
+import { SecretRequestEntry } from "../chat-code/SecretRequestEntry";
 import { createChatSecretRuntime } from "../chat-code/secret-runtime";
 import { createChatWorkspace } from "../chat-code/workspace-controller";
 import { contextTab, fileTab, webTab } from "../chat-code/workspace-state";
@@ -358,9 +358,11 @@ export default function AssistantWorkspace(props: Props) {
       ),
     });
   };
+  // "Secrets & approvals" loads with its first use; a secret request itself asks in the timeline.
   const openChatSecrets = () => {
     const conversationId = chat.activeConversationId();
-    if (conversationId) void openSecretsDialog({ conversationId });
+    if (conversationId)
+      void importOnDemand(() => import("../chat-code/SecretsDialog")).then((dialog) => dialog?.openSecretsDialog({ conversationId }));
   };
   const artifactCopy = () => artifactMessages.resolve([locale()]).t;
   const t = () => assistantMessages.resolve([locale()]).t;
@@ -378,7 +380,7 @@ export default function AssistantWorkspace(props: Props) {
     initialError: props.status.error?.message ?? null,
     trackViewedState: true,
     clientToolIds: ["code_secret"],
-    frontendTools: createChatSecretRuntime(),
+    frontendTools: createChatSecretRuntime({ cards: true }),
   });
 
   const quotas = createAssistantQuota(props.initialQuotas);
@@ -3500,6 +3502,13 @@ export default function AssistantWorkspace(props: Props) {
                                     ),
                                     renderCodeDecision: (entry) => (
                                       <AssistantCodeDecisionEntry entry={entry} messages={chat.usageMessages} timeZone={props.timeZone} />
+                                    ),
+                                    renderSecretRequest: (request) => (
+                                      <SecretRequestEntry
+                                        {...request}
+                                        conversationId={chat.activeConversationId}
+                                        timeZone={props.timeZone}
+                                      />
                                     ),
                                     renderCodeVersion: (version) => (
                                       <AssistantCodeVersionCard

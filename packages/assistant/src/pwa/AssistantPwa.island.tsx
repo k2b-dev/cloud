@@ -55,6 +55,8 @@ import {
   untrack,
 } from "solid-js";
 import { assistantApi } from "../api/client";
+import { SecretRequestEntry } from "../chat-code/SecretRequestEntry";
+import { createChatSecretRuntime } from "../chat-code/secret-runtime";
 import type { CodeVersionCardEntry } from "../code-version-cards";
 import AssistantAuthoringStop from "../frontend/AssistantAuthoringStop";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
@@ -142,6 +144,9 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     initialDetail: props.initialDetail,
     initialTimeline: props.initialDetail?.timeline,
     trackViewedState: true,
+    // Gustav asks for a secret as a card in the conversation, as in the workspace.
+    clientToolIds: ["code_secret"],
+    frontendTools: createChatSecretRuntime({ cards: true }),
   });
   const [openFailed, setOpenFailed] = createSignal(false);
 
@@ -1013,6 +1018,9 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                     ),
                     renderCodeDecision: (entry) => (
                       <AssistantCodeDecisionEntry entry={entry} messages={chat.messages} timeZone={props.timeZone} />
+                    ),
+                    renderSecretRequest: (request) => (
+                      <SecretRequestEntry {...request} conversationId={chat.activeConversationId} timeZone={props.timeZone} />
                     ),
                     renderCodeVersion: (version) => (
                       <AssistantLiveProvider value={liveHub}>
