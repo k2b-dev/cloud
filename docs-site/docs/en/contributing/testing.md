@@ -1170,6 +1170,10 @@ selection without starting infrastructure with
 `bun run --cwd packages/mail test:integration src/service/sent-projection.integration.test.ts`.
 The root runner runs Mail this way, one file per suite.
 
+Mail's `jmap-stalwart.integration.test.ts` runs in the gate against the CI
+Stalwart server to verify Session handling and folder discovery.
+The opt-in suite remains available for other real JMAP servers.
+
 Mail also has a read-only JMAP conformance suite at
 `packages/mail/src/service/connectors/jmap-conformance.integration.test.ts`.
 It is skipped unless `MAIL_JMAP_CONFORMANCE_CONFIG` points to a private JSON
