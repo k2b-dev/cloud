@@ -1,19 +1,10 @@
 import { expect, spyOn, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { z } from "zod";
+import * as canvasWorker from "../_internal/canvas-worker";
 import { PDF_MAX_BYTES, PdfPages, renderPdfPages } from "./pdf-render";
 import { visionPdfFixture } from "./pdf-render.fixture";
 
-/** Thread counts of a running process by name, with pool indexes ("Bun Pool 3") removed. */
-function threadCounts(pid: number) {
-  const counts = new Map<string, number>();
-  try {
-    for (const tid of readdirSync(`/proc/${pid}/task`)) {
-      const name = readFileSync(`/proc/${pid}/task/${tid}/comm`, "utf8").trim().replace(/ \d+$/, "");
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-  } catch {} // The process or one of its threads exited while it was read.
-  return counts;
-}
+const originalSpawn = canvasWorker.spawnCanvasWorker;
 
 test.skipIf(process.platform !== "linux")("PDF renderer selects one-based pages in requested order and emits bounded PNGs", async () => {
   const result = await renderPdfPages(visionPdfFixture(), [2, 1]);
@@ -61,26 +52,24 @@ test.skipIf(process.platform !== "linux")(
 
 test.skipIf(process.platform !== "linux")("PDF decoder keeps a fixed thread set so its memory limit holds on any core count", async () => {
   // The data limit also counts per-thread memory: pools sized by core count exhausted it on 16-core hosts.
-  const spawn = spyOn(Bun, "spawn");
+  // The probe runs the real decoder with the real spawn settings and reports its threads after the render and a full GC,
+  // because a pool that starts on demand (the GC helpers) is not yet running when sampled from outside.
+  const spawn = spyOn(canvasWorker, "spawnCanvasWorker").mockImplementationOnce((worker, name, input, cpuSeconds) => {
+    expect(worker.href).toBe(new URL("./pdf-render-worker.ts", import.meta.url).href);
+    return originalSpawn(new URL("./fixtures/pdf-decoder-thread-probe.ts", import.meta.url), name, input, cpuSeconds);
+  });
   try {
-    let rendering = true;
-    const render = renderPdfPages(visionPdfFixture()).finally(() => {
-      rendering = false;
-    });
+    expect((await renderPdfPages(visionPdfFixture())).pages).toHaveLength(2);
     const spawned = spawn.mock.results[0];
     if (spawned?.type !== "return") throw new Error("The PDF decoder did not start.");
-    const peak = new Map<string, number>();
-    while (rendering) {
-      for (const [name, count] of threadCounts(spawned.value.pid)) peak.set(name, Math.max(peak.get(name) ?? 0, count));
-      await Bun.sleep(1);
-    }
-    expect((await render).pages).toHaveLength(2);
+    const threads = z.record(z.string(), z.number()).parse(JSON.parse(await spawned.value.diagnostics));
     // Each pool must be seen, so a renamed thread fails here instead of passing unchecked.
-    expect(peak.get("tokio-rt-worker")).toBeGreaterThan(0);
-    expect(peak.get("tokio-rt-worker")).toBeLessThanOrEqual(2);
-    expect(peak.get("Bun Pool")).toBeGreaterThan(0);
-    expect(peak.get("Bun Pool")).toBeLessThanOrEqual(2);
-    expect(peak.get("HeapHelper")).toBe(1);
+    expect(threads["tokio-rt-worker"]).toBeGreaterThan(0);
+    expect(threads["tokio-rt-worker"]).toBeLessThanOrEqual(2);
+    expect(threads["Bun Pool"]).toBeGreaterThan(0);
+    expect(threads["Bun Pool"]).toBeLessThanOrEqual(2);
+    // Two GC markers are the collector plus one helper; without the setting JSC starts one per core, up to seven.
+    expect(threads.HeapHelper).toBe(1);
   } finally {
     spawn.mockRestore();
   }
