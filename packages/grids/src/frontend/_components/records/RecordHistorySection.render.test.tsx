@@ -67,26 +67,39 @@ describe("Record history", () => {
     const plain = textOf(html);
     expect(plain).toContain("Updated");
     expect(plain).toContain("Changed: Status");
-    expect(plain).toContain("14:00 · 1 hr. ago · Mira Lang");
+    expect(plain).toContain("Mira Lang · Updated");
     // Without a person: the system or an anonymous actor; a deleted account keeps its own words.
-    expect(plain).toContain("09:00 · 6 hr. ago · System or anonymous actor");
-    expect(plain).toContain("15:00 · 31 min. ago · Deleted user");
-    // One fixed icon per action; only a finalized record carries a tone.
-    expect(html).toContain('<i class="ti ti-pencil"');
-    expect(html).toContain('data-tone="success"');
+    expect(plain).toContain("System or anonymous actor · Created");
+    expect(plain).toContain("Deleted user · Record finalized");
+    // The avatar keeps one axis; redundant action icons stay out of the sentence.
+    expect(html).not.toContain('<i class="ti ti-pencil"');
+    expect(html).toContain("k2b-activity__avatar");
+    expect(html).not.toContain(" title=");
+    // Deleted and system actors use neutral glyphs, never coloured initials.
+    expect(html.match(/class="ti ti-settings"/g)).toHaveLength(1);
+    expect(html.match(/class="ti ti-user-off"/g)).toHaveLength(1);
+    expect(html.match(/data-tint=/g)).toHaveLength(1);
     // The before and after of a field fold out from its row and are not rendered until then.
     expect(html).toMatch(/<button type="button" class="k2b-activity__text-button" aria-expanded="false"/);
     expect(plain).not.toContain("Open → Done");
+  });
+
+  test("keeps the person's profile picture on the shared row", () => {
+    const html = render({ entries: [entry({ userAvatarHash: "fixture-picture" })] });
+    expect(html).toContain("/api/accounts/users/11111111-1111-4111-8111-111111111111/avatar?rev=fixture-picture");
+    expect(html).not.toContain('class="ti ti-settings"');
   });
 
   test("keeps the server clock when the browser starts across midnight", () => {
     const serverTime = "2026-11-12T23:59:00.000Z";
     setSystemTime(new Date("2026-11-13T00:01:00.000Z"));
     try {
-      const html = textOf(render({ now: serverTime }));
+      const rendered = render({ now: serverTime });
+      const html = textOf(rendered);
       expect(html).toContain("Today");
       expect(html).not.toContain("Yesterday");
-      expect(html).toContain("14:00 · 9 hr. ago · Mira Lang");
+      expect(html).toContain("Mira Lang · Updated");
+      expect(rendered).toContain("9 hr. ago");
     } finally {
       setSystemTime(new Date(NOW));
     }

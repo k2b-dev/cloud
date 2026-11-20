@@ -399,6 +399,7 @@ export const mailConversationUiMessages = i18n.define({
       activityKeepReleased: "Keeping stopped",
       activitySummary: "Summary updated",
       activityDraftCreated: "Draft created",
+      activityDraftRecovered: "Draft recovered for review",
       activityDraftDerived: "Draft created from this conversation",
       activityDraftDiscarded: "Draft discarded",
       activityDraftConsolidated: "Reply draft removed during consolidation",
@@ -414,7 +415,6 @@ export const mailConversationUiMessages = i18n.define({
       activityRepeated: ({ label, count }: { label: string; count: number }) => `${label} (${count} times)`,
       activityFailed: "failed",
       activityAnd: " and ",
-      workflowActor: ({ name }: { name: string }) => `Workflow ${name}`,
     },
     de: {
       noTags: "Keine Tags verfügbar",
@@ -819,6 +819,7 @@ export const mailConversationUiMessages = i18n.define({
       activityKeepReleased: "Aufbewahrung aufgehoben",
       activitySummary: "Zusammenfassung aktualisiert",
       activityDraftCreated: "Entwurf erstellt",
+      activityDraftRecovered: "Entwurf zur Prüfung wiederhergestellt",
       activityDraftDerived: "Entwurf aus dieser Unterhaltung erstellt",
       activityDraftDiscarded: "Entwurf verworfen",
       activityDraftConsolidated: "Antwortentwurf bei der Zusammenführung entfernt",
@@ -834,7 +835,6 @@ export const mailConversationUiMessages = i18n.define({
       activityRepeated: ({ label, count }) => `${label} (${count}-mal)`,
       activityFailed: "fehlgeschlagen",
       activityAnd: " und ",
-      workflowActor: ({ name }) => `Workflow ${name}`,
     },
   },
 });

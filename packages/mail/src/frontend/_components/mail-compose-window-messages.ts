@@ -24,6 +24,11 @@ export const mailComposeWindowMessages = i18n.define({
       sendFailedTitle: "Not sent",
       sendFailed: ({ reason }: { reason: string }) => `${reason} Your text stays in the draft.`,
       tryAgain: "Try again",
+      // A draft window before its composer is there; the composer's own catalog loads with it.
+      preparingDraft: "Preparing draft...",
+      editorFailed: "The editor could not load.",
+      draftCouldNotBeSaved: "Draft could not be saved",
+      retry: "Retry",
     },
     de: {
       newMessage: "Neue Nachricht",
@@ -45,6 +50,10 @@ export const mailComposeWindowMessages = i18n.define({
       sendFailedTitle: "Nicht gesendet",
       sendFailed: ({ reason }) => `${reason} Dein Text bleibt im Entwurf.`,
       tryAgain: "Erneut versuchen",
+      preparingDraft: "Entwurf wird vorbereitet…",
+      editorFailed: "Der Editor konnte nicht geladen werden.",
+      draftCouldNotBeSaved: "Der Entwurf konnte nicht gespeichert werden",
+      retry: "Erneut versuchen",
     },
   },
 });

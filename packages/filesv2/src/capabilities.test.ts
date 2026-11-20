@@ -18,6 +18,7 @@ import {
   fileProviderIssues,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
+import * as cloudServices from "@k2b/cloud/services";
 import { FilegateError } from "@k2b/filegate";
 import { errorMessage } from "./api/messages";
 import type { DirectoryResult, FileEntry } from "./contracts";
@@ -65,6 +66,15 @@ const persistedEntryRefId = async (baseId: string, path: string) => {
   ids.set(id, { baseId, path });
   return id;
 };
+/** The installation's time zone, which previews read dates in. */
+let installationZone: string | undefined = "Europe/Berlin";
+mock.module("@k2b/cloud/services", () => ({
+  ...cloudServices,
+  coreSettings: {
+    ...cloudServices.coreSettings,
+    get: async (key: string) => (key === "app.timezone" ? installationZone : undefined),
+  },
+}));
 mock.module("./data/references", () => ({
   persistedEntryRefId,
   entryRef: async (baseId: string, entry: { path: string; resourceId?: string }) => {
@@ -1524,14 +1534,15 @@ for (const [locale, size, modified, folder] of [
   ["en", "Size", "Modified", "Folder path"],
   ["de", "Größe", "Geändert", "Ordnerpfad"],
 ] as const) {
-  test(`entry reader supplies an authorized metadata preview in ${locale} without image leases`, async () => {
+  test(`entry reader previews an image in ${locale} with its picture from Files' own checked route, before the details`, async () => {
     ids.set("image-id", { baseId: "base", path: "Photos/image.png" });
-    items = [{ ...entry("Photos/image.png"), name: "image.png", modified: "2026-09-19T12:00:00Z" }];
+    items = [{ ...entry("Photos/image.png"), name: "image.png", modified: "2026-09-19T12:00:00Z", revision: "r/7 ü" }];
     const result = await filesCapabilities.queries["entry.read"].run({ id: "image-id" }, { ...context, locale });
     if (!result.ok) throw new Error("Expected readable entry");
     const view = bindView(result.data.view, result.data.data);
     validateBlocks(view.blocks, "preview", { appId: "filesv2", appPrefixes: ["/app/filesv2", "/api/filesv2"], envelope: result.data });
     expect(view.blocks).toEqual([
+      { kind: "Image", src: "/api/filesv2/entries/image-id/image?rev=r%2F7+%C3%BC", alt: "image.png", ratio: 4 / 3 },
       {
         kind: "Detail",
         title: "Details",
@@ -1542,12 +1553,46 @@ for (const [locale, size, modified, folder] of [
         ],
       },
     ]);
-    const detail = view.blocks[0];
+    const detail = view.blocks[1];
     if (detail?.kind !== "Detail") throw new Error("Expected details");
     expect(detail.items[1]?.value).toContain(locale === "de" ? "Sept." : "Sep");
+    // 12:00 UTC is 14:00 in Berlin, the installation's zone.
+    expect(detail.items[1]?.value).toContain("14:00");
+    // The view carries a path to the checked route, never a lease that works without the reader's session.
     expect(downloads).toEqual([]);
   });
 }
+
+test("entry reader shows no picture for documents, PDFs, or folders", async () => {
+  for (const [path, name] of [
+    ["Docs/report.pdf", "report.pdf"],
+    ["Docs/notes.txt", "notes.txt"],
+    ["Docs/vector.svg", "vector.svg"],
+    ["", "Home"],
+  ] as const) {
+    ids.set(`plain-${name}`, { baseId: "base", path });
+    items = path ? [{ ...entry(path), name }] : [];
+    const result = await filesCapabilities.queries["entry.read"].run({ id: `plain-${name}` }, context);
+    if (!result.ok) throw new Error("Expected readable entry");
+    expect(bindView(result.data.view, result.data.data).blocks.map((block) => block.kind)).toEqual(["Detail"]);
+  }
+});
+
+test("the entry reader shows the change time in the setting's default zone when the installation's is empty", async () => {
+  ids.set("image-id", { baseId: "base", path: "Photos/image.png" });
+  items = [{ ...entry("Photos/image.png"), name: "image.png", modified: "2026-09-19T12:00:00Z" }];
+  installationZone = " ";
+  try {
+    const result = await filesCapabilities.queries["entry.read"].run({ id: "image-id" }, { ...context, locale: "de" });
+    if (!result.ok) throw new Error("Expected readable entry");
+    const detail = bindView(result.data.view, result.data.data).blocks.find((block) => block.kind === "Detail");
+    if (detail?.kind !== "Detail") throw new Error("Expected details");
+    // Europe/Berlin, the default of `app.timezone`, as Mail's previews fall back to.
+    expect(detail.items[1]?.value).toContain("14:00");
+  } finally {
+    installationZone = "Europe/Berlin";
+  }
+});
 
 test("every Query people see says in English and German what it did once it finished", async () => {
   const { filesCapabilityPresentation } = await import("./capability-presentation");

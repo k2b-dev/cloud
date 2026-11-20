@@ -28,7 +28,9 @@ else {
   const tick = (ms = 0) => new Promise((done) => setTimeout(done, ms));
 
   /** A host that keeps the value, the line and the state, like the secret card does. */
-  const mount = (options: { confirm?: ChatDecisionAnswer["onSelect"]; disabled?: () => boolean } = {}) => {
+  const mount = (
+    options: { confirm?: ChatDecisionAnswer["onSelect"]; decline?: ChatDecisionAnswer["onSelect"]; disabled?: () => boolean } = {},
+  ) => {
     const [state, setState] = createSignal<ChatDecisionState>("open");
     const [field, setField] = createSignal("");
     const [current, setCurrent] = createSignal("safe");
@@ -63,7 +65,7 @@ else {
                     confirmed.push(field());
                   }),
               }}
-              decline={{ label: "Decline", onSelect: () => void declined.push(1) }}
+              decline={{ label: "Decline", onSelect: options.decline ?? (() => void declined.push(1)) }}
             />
           }
           outcome={<Chat.Outcome current="done" lines={{ done: { tone: "done", text: "Secret saved" } }} />}
@@ -228,5 +230,97 @@ else {
     dom.root.querySelector<HTMLButtonElement>(".k2b-chat-decision__confirm")!.click();
     expect(calls).toBe(2);
     expect(host.field()).toBe(value);
+  });
+
+  test("a running save locks the field, the eye and both answers by itself and sends once", async () => {
+    let fail = () => {};
+    let calls = 0;
+    const host = mount({
+      confirm: () => {
+        calls++;
+        return new Promise<void>((done) => {
+          fail = () => {
+            host.setCurrent("failed");
+            done();
+          };
+        });
+      },
+    });
+    const confirm = () => dom.root.querySelector<HTMLButtonElement>(".k2b-chat-decision__confirm")!;
+    const decline = () => dom.root.querySelector<HTMLButtonElement>(".k2b-chat-decision__decline")!;
+    const eye = () => dom.root.querySelector<HTMLButtonElement>(".k2b-input-shell__reveal")!;
+    const enter = () => host.control().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    type(host.control(), value);
+    host.control().focus();
+    enter();
+    enter();
+    confirm().click();
+    decline().click();
+    expect([calls, host.declined.length]).toEqual([1, 0]);
+    expect([host.control().disabled, eye().disabled]).toEqual([true, true]);
+    // The answers stay focusable, as the question's own buttons do, and show which one runs.
+    expect([confirm().disabled, confirm().getAttribute("aria-disabled"), confirm().getAttribute("aria-busy"), confirm().hasAttribute("data-busy")]).toEqual([
+      false,
+      "true",
+      "true",
+      true,
+    ]);
+    expect([decline().disabled, decline().getAttribute("aria-disabled"), decline().getAttribute("aria-busy")]).toEqual([false, "true", null]);
+    // The lock took the focus from the field; the failed save gives it back with working answers.
+    host.control().blur();
+    fail();
+    await tick();
+    expect([host.control().disabled, eye().disabled, confirm().getAttribute("aria-disabled"), decline().getAttribute("aria-disabled")]).toEqual([
+      false,
+      false,
+      null,
+      null,
+    ]);
+    expect(dom.document.activeElement).toBe(host.control());
+    expect(host.field()).toBe(value);
+    enter();
+    expect(calls).toBe(2);
+  });
+
+  test("a failed save does not pull the focus away from where the person is now", async () => {
+    let fail = () => {};
+    const host = mount({
+      confirm: () =>
+        new Promise<void>((done) => {
+          fail = done;
+        }),
+    });
+    const outside = dom.document.createElement("button");
+    dom.document.body.append(outside);
+    try {
+      type(host.control(), value);
+      dom.root.querySelector<HTMLButtonElement>(".k2b-chat-decision__confirm")!.click();
+      outside.focus();
+      fail();
+      await tick();
+      expect(dom.document.activeElement).toBe(outside);
+    } finally {
+      outside.remove();
+    }
+  });
+
+  test("a running decline holds the main answer too", async () => {
+    let finish = () => {};
+    const host = mount({
+      decline: () =>
+        new Promise<void>((done) => {
+          finish = done;
+        }),
+    });
+    const decline = dom.root.querySelector<HTMLButtonElement>(".k2b-chat-decision__decline")!;
+    decline.click();
+    expect(decline.getAttribute("aria-busy")).toBe("true");
+    host.control().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    dom.root.querySelector<HTMLButtonElement>(".k2b-chat-decision__confirm")!.click();
+    expect(host.confirmed).toEqual([]);
+    finish();
+    await tick();
+    dom.root.querySelector<HTMLButtonElement>(".k2b-chat-decision__confirm")!.click();
+    expect(host.confirmed).toEqual([""]);
   });
 }

@@ -413,8 +413,8 @@ Each `{…}` reference names a field by its dotted schema path, like the schema
 presentation maps: `{input.to}` or `{input.to[].name}` for the call input,
 `{data.id}` for the Action's result data. Cloud inserts each value as plain
 one-line text without control characters, line breaks, or invisible format
-characters such as direction marks and joiners, and never reads it as a
-template. A value longer than 60 characters keeps its start and its end, so a
+characters such as direction marks, and never reads it as a template. Emoji
+joiners remain unchanged. A value longer than 60 characters keeps its start and its end, so a
 path keeps its file name and an address its domain. Lists show three entries,
 such as "jana@example.com, max@example.com, and 2 more"; an entry without a
 value to show still counts toward "more". Only fields whose schema declares
@@ -1106,6 +1106,12 @@ workspace; this list does not replace shared provider role contracts:
 
 All four declare `code: false`. The check exempts only those named fields on
 those operations; another ID field or removal of `code: false` fails it.
+
+`core.ai.chat.create` is also untargeted: its optional `project.id` selects
+readable context for a new personal chat and does not mutate the Project.
+Personal Code may use it. The check exempts only this field on this operation;
+another ID field still requires a target.
+
 The retired `code.access.` namespace remains reserved and unavailable to Code,
 including when an old catalog still advertises it.
 Shared provider contracts continue to use their published shapes. Do not
@@ -1388,7 +1394,8 @@ also checks:
   name of a single person are cut to 24 characters; a group of people renders
   as a count.
 - Sentence forms, slot strings and consequences reject controls, invisible
-  format characters and line separators. These strings must be well-formed
+  format characters and line separators, except zero-width joiners (U+200D)
+  in `text` slot values. These strings must be well-formed
   Unicode: do not split a surrogate pair when shortening one. A view preserves
   the original code units of its text.
 - The review locale is canonical BCP 47 and belongs to the app's presentation
@@ -2037,8 +2044,12 @@ Framework errors include `VALIDATION_FAILED`, `SCHEMA_MISMATCH`,
 `DEADLINE_EXCEEDED`, `ACTION_OUTCOME_UNKNOWN`, `REQUEST_CANCELLED`,
 `INVALID_APP_RESPONSE`, and `RESPONSE_TOO_LARGE`. Applications may return their
 own domain error codes. Provider failures accept the explicit HTTP statuses
-`400`, `401`, `403`, `404`, `409`, `429`, `499`, `500`, `502`, `503`, and
-`504`; other statuses fail closed as an invalid provider response.
+`400`, `401`, `403`, `404`, `405`, `406`, `408`, `409`, `410`, `412`, `413`,
+`415`, `416`, `421`, `422`, `429`, `499`, `500`, `501`, `502`, `503`, and `504`.
+This includes every `ServiceError.status` from `@k2b/stdlib` 0.36 and Cloud's
+cancellation status `499`. Returned and thrown service errors preserve the
+application's code, message, and status. Other statuses fail closed as an
+invalid provider response.
 Cloud resolves the human `message` of framework-owned failures from the
 caller's request locale without changing the code, status, details, or retry
 semantics. Provider-owned failures remain the application's responsibility and

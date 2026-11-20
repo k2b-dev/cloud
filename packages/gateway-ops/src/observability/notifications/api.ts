@@ -101,21 +101,7 @@ const requireNotificationAccess = async (
 /**
  * Wraps mutation results and returns a standardized message payload for API handlers.
  */
-const respondMessage = async (
-  c: Context,
-  resultPromise: Promise<
-    | { ok: true; data: void }
-    | {
-        ok: false;
-        error: {
-          code: string;
-          message: string;
-          status: 400 | 401 | 403 | 404 | 409 | 500;
-        };
-      }
-  >,
-  message: string,
-) => {
+const respondMessage = async (c: Context, resultPromise: Promise<Result<void>>, message: string) => {
   return respond(c, async () => {
     const result = await resultPromise;
     if (!result.ok) return result;

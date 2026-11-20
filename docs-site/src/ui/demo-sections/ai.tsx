@@ -713,7 +713,7 @@ const DecisionFieldDemo = () => {
     label="Value for Parcel_API" value={value()} onValueChange={setValue}
     placeholder="Paste the key" revealLabel="Show value"
     lines={{ safe: { text: "Not in the chat history …", icon: "ti ti-shield-lock" }, empty: { … } }}
-    current={current()} invalid={invalid()} disabled={saving()}
+    current={current()} invalid={invalid()} disabled={heldElsewhere()}
     confirm={{ label: "Save securely", icon: "ti ti-lock", alternates: [{ label: "Saving …" }, { label: "Try again" }], onSelect: save }}
     decline={{ label: "Decline", onSelect: decline }}
   />}

@@ -389,9 +389,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     let target = chat.activeConversationId();
     if (!target) {
       setCreating(true);
-      const created = await chat
-        .createConversation({ requestId: crypto.randomUUID(), title: t().newChat })
-        .finally(() => setCreating(false));
+      const created = await chat.createConversation({ requestId: crypto.randomUUID() }).finally(() => setCreating(false));
       if (!created) {
         setNotice(t().createFailed);
         return false;
@@ -557,9 +555,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       if (key !== NEW_DRAFT) return recordingTarget() ? { key, target: key } : null;
       // A recording needs its chat first, as sending does; the field's text and files move along into it.
       setCreating(true);
-      const created = await chat
-        .createConversation({ requestId: crypto.randomUUID(), title: t().newChat })
-        .finally(() => setCreating(false));
+      const created = await chat.createConversation({ requestId: crypto.randomUUID() }).finally(() => setCreating(false));
       if (!created) {
         setNotice(t().createFailed);
         return null;

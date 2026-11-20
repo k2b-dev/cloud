@@ -75,3 +75,17 @@ test("consequences, old literals and read-more line limits remain visible", () =
   card.readMore = "/app/demo/full";
   expect(actionQuestionLines(actionCardText(card), { timeZone: "UTC" }).join("\n")).not.toContain("Line 12");
 });
+
+test("a card reads in the reader's language; the app's stored sentence stays as written", () => {
+  const review: CapabilityActionCallReview = {
+    ...reviewFixture(),
+    locale: "de",
+    ask: "sends",
+    slots: {},
+    sentence: { action: "Nachricht senden", running: "Wird gesendet …", done: "Gesendet.", confirm: "Senden", decline: "Nicht senden" },
+  };
+  const card = reviewActionCard(review, ctx);
+  expect(card.locale).toBe("en");
+  expect(actionCardText(card).question).toContain("Nachricht senden");
+  expect(actionCardText(card).question).toBe(actionCardText(reviewActionCard({ ...review, locale: "en" }, ctx)).question);
+});

@@ -19,6 +19,7 @@ import {
   rememberAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModel } from "./assistant-models";
+import { sweepAiChatDone } from "./chat-done";
 import { waitingAiApprovals } from "./conversation-watchers";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
@@ -33,6 +34,7 @@ import {
   reconcileQueuedInterruptions,
   requestQueuedMessageSendNow,
 } from "./message-queue";
+import { aiModelAccess } from "./model-access";
 import { AI_QUEUE_SWEEP_INTERVAL_MS } from "./queue-waits";
 
 export type { QueuedChatSubmission, ValidateQueuedChatStart } from "./message-queue";
@@ -58,13 +60,13 @@ import { aiConversations } from "./store";
 import { publishAiTurnInterrupt, publishAiWireEvent } from "./stream";
 import { aiToolAudit } from "./tool-audit";
 import { finishAiTurnAbort } from "./turn-abort";
+import { AI_TURN_WRITE_FORBIDDEN, mayWriteIntoAiTurn } from "./turn-writer";
 import type {
   AiChatTurnRunConfig,
   AiClientToolId,
   AiCompactionTurnRunConfig,
   AiConversationFileSnapshot,
   AiConversationResourceObservation,
-  AiInterChatMessage,
   AiModelPolicy,
   AiPendingTurnAction,
   AiRuntimeTool,
@@ -79,6 +81,7 @@ import { validateAiTurnRequest } from "./validate";
 
 export { createAiTurnCodeAndClientTools } from "./default-tools";
 export type { AiStoredMessageOrigin } from "./queue-contracts";
+export { AiConversationCreationError } from "./store";
 export type { ValidateAiTurnInput } from "./validate";
 export { isAiSettingsError, validateAiTurnRequest } from "./validate";
 
@@ -135,7 +138,7 @@ export type SubmitAiChatTurnInput = {
   codeOrigin?: AiChatTurnRunConfig["codeOrigin"];
   /** Only interactive Assistant HTTP handlers set this server-owned marker. */
   assistantChat?: true;
-  /** Only a handler that saw a signed-in browser session sets this server-owned marker; see `AiChatTurnRunConfig`. */
+  /** Only a handler that saw a signed-in session (browser or Cloud app) sets this server-owned marker; see `AiChatTurnRunConfig`. */
   signedInSession?: true;
   conversationId: string;
   /** Stable public ID exposed as runtime context, not instructions. */
@@ -307,51 +310,6 @@ export const sendQueuedAiChatMessageNow = async (conversationId: string, id: str
   return queuedMessageReceipt(conversationId, id);
 };
 
-export const deliverAiInterChatMessage = async (input: {
-  message: AiInterChatMessage;
-  chatId?: string;
-  actor: RequestActor;
-  locale?: string;
-  theme?: "light" | "dark";
-  timeZone?: string;
-  modelPolicy?: AiModelPolicy;
-  systemPrompt?: string;
-  project?: AiChatTurnRunConfig["project"];
-  toolSource?: AiTurnToolSource;
-  toolApprovalContext?: AiToolApprovalContext;
-}): Promise<
-  { delivered: false; reason: "not_found" | "busy" | "failed" } | { delivered: true; message: AiInterChatMessage; turn: AiTurn }
-> => {
-  const text = [`Assistant message from chat ${input.message.sourceChatId} (${input.message.sourceTitle}):`, input.message.text].join(
-    "\n\n",
-  );
-  const { resolved } = await validateAiTurnRequest({ input: text, modelPolicy: input.modelPolicy });
-  const runConfig: AiChatTurnRunConfig = {
-    kind: "chat",
-    writerOrigin: { kind: "chat", id: input.message.sourceChatId, turnId: input.message.sourceTurnShortId },
-    turnTrigger: { kind: "chat", id: input.message.sourceChatId },
-    input: text,
-    chatId: input.chatId,
-    actor: input.actor,
-    ...(input.locale ? { locale: input.locale } : {}),
-    ...(input.theme ? { theme: input.theme } : {}),
-    ...(input.timeZone ? { timeZone: input.timeZone } : {}),
-    modelPolicy: input.modelPolicy,
-    systemPrompt: input.systemPrompt,
-    project: input.project,
-    toolSource: input.toolSource ?? { kind: "none" },
-    toolApprovalContext: input.toolApprovalContext,
-  };
-  const delivered = await aiConversations.deliverInterChatMessage({
-    messageId: input.message.id,
-    modelId: resolved.profile.id,
-    runConfig,
-    userMessage: { role: "user", content: [{ type: "text", text }] },
-  });
-  if (delivered.delivered) await enqueueAiTurn({ conversationId: delivered.message.targetConversationId, turnId: delivered.turn.id });
-  return delivered;
-};
-
 export type SubmitAiCompactionInput = {
   conversationId: string;
   actor?: RequestActor;
@@ -361,6 +319,7 @@ export type SubmitAiCompactionInput = {
 
 export const submitAiCompaction = async (input: SubmitAiCompactionInput): Promise<{ turn: AiTurn }> => {
   const { resolved } = await validateAiTurnRequest({ input: "", modelPolicy: input.modelPolicy, model: input.model });
+  await aiModelAccess.assertAllowed(resolved.profile.modelId, aiChatAccessSubject(input.actor));
   const runConfig: AiCompactionTurnRunConfig = {
     kind: "compact",
     actor: input.actor,
@@ -446,8 +405,10 @@ export const submitAiTurnAction = async (input: {
   action: AiTurnActionInput;
   decidedBy: { userId: string; via: ApprovalDecisionChannel; deviceId?: string };
   toolApprovalContext?: AiToolApprovalChangeContext;
-  /** Whether a person decides in a signed-in browser session; only such a decision may remember a website. */
+  /** Whether a person decides in a signed-in session; only such a decision may remember a website. */
   signedInSession?: boolean;
+  /** Who sends a tool result. The result runs with the turn's actor, so a missing writer refuses it. */
+  actor?: RequestActor;
 }): Promise<{ ok: true } | { ok: false; status: 400 | 403 | 404 | 409; message: string }> => {
   const pending = await aiConversations.getPendingTurnAction(input);
   if (!pending) return { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
@@ -533,6 +494,10 @@ export const submitAiTurnAction = async (input: {
     }
   } else {
     if (pending.kind !== "client_tool") return { ok: false, status: 400, message: "Approval requests require an approval response." };
+    const config = await aiConversations.getTurnRunConfig(input);
+    if (!input.actor || !mayWriteIntoAiTurn(input.actor, config?.actor)) {
+      return { ok: false, status: 403, message: AI_TURN_WRITE_FORBIDDEN };
+    }
     const resolved = await aiConversations.resolvePendingTurnAction({
       ...input,
       signedInSession: input.signedInSession === true,
@@ -668,7 +633,8 @@ const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: stri
 export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>): Promise<void> => {
   await aiQuotas.prune().catch(() => log.warn("Quota retention failed", { code: "quota_retention_failed" }));
   await drainQueuedMessages(enqueueAiTurn, undefined, running?.validateQueuedChatStart);
-  const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS });
+  const limit = 200; // The existing runtime sweep batch, shared with delegated-completion repair.
+  const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS, limit });
   await Promise.all([
     ...sweep.requeued.map((job) =>
       enqueueAiTurn(job).catch(() => log.warn("AI recovery enqueue failed", { code: "recovery_enqueue_failed", ...job })),
@@ -689,6 +655,7 @@ export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEv
   if (sweep.requeued.length || sweep.failed.length || sweep.aborted.length) {
     log.info("AI runtime sweep", { requeued: sweep.requeued.length, failed: sweep.failed.length, aborted: sweep.aborted.length });
   }
+  await sweepAiChatDone(limit);
 };
 
 type AiRuntimeState = {

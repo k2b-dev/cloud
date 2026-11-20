@@ -24,13 +24,17 @@ export type ChatDecisionFieldProps = {
   current: string;
   /** The value cannot be taken as it is: a red edge, and the field takes the focus back from the answers. */
   invalid?: boolean;
-  /** Locks the field, the eye and both answers, such as while the value is saved or another window holds the question. */
+  /**
+   * Locks the field, the eye and both answers, such as while another window holds the question. While an answer's
+   * promise runs, the question locks them by itself.
+   */
   disabled?: boolean;
   /** Receives the input, for a host that moves the focus into the field, such as after a jump to the question. */
   inputRef?: (input: HTMLInputElement) => void;
   /**
-   * The main answer, filled, beside the field, such as "Save securely". A promise it returns keeps the question
-   * answered here until it settles, so an outcome set at its end takes the focus.
+   * The main answer, filled, beside the field, such as "Save securely". A promise it returns locks the field, the eye
+   * and both answers until it settles and keeps the question answered here, so an outcome set before it settles takes
+   * the focus. A question still open afterwards gives the focus back to the field.
    */
   confirm: ChatDecisionAnswer;
   /** The quiet answer in the AI colour under it, such as "Decline". */
@@ -64,9 +68,12 @@ const faces = (choice: ChatDecisionAnswer) => (
 export function ChatDecisionField(props: ChatDecisionFieldProps): JSX.Element {
   const question = useContext(DecisionScope);
   const id = createUniqueId();
-  const locked = () => Boolean(props.disabled);
-  const confirmOff = () => Boolean(question?.off()) || locked();
-  const declineOff = () => question?.off() === "all" || locked();
+  // A running answer holds the question: the field and the eye lock like `disabled`, the answers stay focusable but
+  // take nothing, as the question's own buttons do.
+  const pending = () => question?.pending();
+  const locked = () => Boolean(props.disabled) || Boolean(pending());
+  const confirmOff = () => Boolean(question?.off()) || Boolean(props.disabled);
+  const declineOff = () => question?.off() === "all" || Boolean(props.disabled);
   const keys = createMemo(() => {
     const all = Object.keys(props.lines);
     return all.includes(props.current) ? all : [props.current, ...all];
@@ -114,13 +121,27 @@ export function ChatDecisionField(props: ChatDecisionFieldProps): JSX.Element {
     ),
   );
 
+  // The lock takes the focus from the field; a question that stays open afterwards, such as after a failed save,
+  // gives it back, unless the person is somewhere else by now.
+  createEffect(
+    on(
+      () => Boolean(pending()),
+      (running, was) => {
+        if (running || !was) return;
+        const active = document.activeElement;
+        if (!active || active === document.body) input?.focus({ preventScroll: true });
+      },
+      { defer: true },
+    ),
+  );
+
   const confirm = () => {
     if (props.confirm.busy) return;
-    if (question) question.answer(props.confirm, !confirmOff(), true);
+    if (question) question.answer("confirm", props.confirm, !confirmOff());
     else if (!confirmOff()) void props.confirm.onSelect();
   };
   const decline = (choice: ChatDecisionAnswer) => {
-    if (question) question.answer(choice, !declineOff());
+    if (question) question.answer("decline", choice, !declineOff());
     else if (!declineOff()) void choice.onSelect();
   };
 
@@ -166,9 +187,9 @@ export function ChatDecisionField(props: ChatDecisionFieldProps): JSX.Element {
           class="k2b-chat-decision__answer k2b-chat-decision__confirm"
           variant="ai"
           disabled={confirmOff()}
-          aria-disabled={props.confirm.busy ? "true" : undefined}
-          aria-busy={props.confirm.busy ? "true" : undefined}
-          data-busy={props.confirm.busy ? "" : undefined}
+          aria-disabled={props.confirm.busy || pending() ? "true" : undefined}
+          aria-busy={props.confirm.busy || pending() === "confirm" ? "true" : undefined}
+          data-busy={props.confirm.busy || pending() === "confirm" ? "" : undefined}
           onClick={confirm}
         >
           {faces(props.confirm)}
@@ -199,6 +220,8 @@ export function ChatDecisionField(props: ChatDecisionFieldProps): JSX.Element {
               class="k2b-chat-decision__answer k2b-chat-decision__decline"
               variant="text"
               disabled={declineOff()}
+              aria-disabled={pending() ? "true" : undefined}
+              aria-busy={pending() === "decline" ? "true" : undefined}
               onClick={() => decline(choice())}
             >
               {faces(choice())}

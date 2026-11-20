@@ -580,7 +580,6 @@
     "@k2b/cloud src/ai/files-store.integration.test.ts": 3.3,
     "@k2b/cloud src/ai/firecrawl-tools.integration.test.ts": 1.6,
     "@k2b/cloud src/ai/html-pdf-tool.integration.test.ts": 5.2,
-    "@k2b/cloud src/ai/inter-chat.integration.test.ts": 1.8,
     "@k2b/cloud src/ai/live-channel.integration.test.ts": 8.6,
     "@k2b/cloud src/ai/live-dictation.integration.test.ts": 2.9,
     "@k2b/cloud src/ai/live.integration.test.ts": 2.8,

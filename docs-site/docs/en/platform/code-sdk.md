@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-19
+updated: 2026-11-20
 ---
 
 # Code SDK
@@ -397,7 +397,7 @@ belong to those views; forms and buttons belong to Code pages.
 | `Table` | `title`, `rows` of scalar values, optional `subtitle`, `search`, `empty` text and `width` | 1–20 `Column` |
 | `Column` | `key` (the row field), `label`, optional `type`, `format`, `states`, `priority` | none |
 | `Detail` | `title`, optional `width` and `height` | up to 100 `Item` |
-| `Item` | `label`, `value`, optional number `format` | none |
+| `Item` | `label`, `value`, optional number `format` (formats like `Stat`) | none |
 | `Form` | `title`, `action`, `submit`, optional `width`; always POST | 1–40 `Field.*` |
 | `Field.Text`, `Field.Email`, `Field.Textarea`, `Field.Scan` | `name`, `label`, optional text `value`, `required`, `error` | none |
 | `Field.Number` | as above, number `value` | none |
@@ -441,7 +441,8 @@ the whole row.
 
 `Stats` shows up to six key figures in one row. A `Stat` has a `label` and a
 `value` (number, text or `null` for not counted), and optionally a `format`
-(the chart number format: `style`, `currency`, `unit`, `decimals`, `compact`),
+(the chart number format: `style`, `currency`, `unit`, `decimals`, `compact`;
+`unit: "B"` reads as a size, `2.4 MB`),
 a `delta` with the change since the comparison (`value` is a share,
 `0.082` for 8.2 %; with `unit: "points"` it is percentage points), its
 `better` direction (`up` or `down`, which colours the change), a `compare`
@@ -845,7 +846,54 @@ or the recovery window expires. A consumed date does not run again after a resta
 activation. The automation list shows its `at`, `timeZone`, and a null
 `nextRunAt` once consumed or expired.
 
+## Start a new Gustav chat
+
+Use `core.ai.chat.create({ title, project?, idempotencyKey })` to create an empty
+personal chat. The title contains 1–120 characters and remains unchanged by
+the first message and automatic enrichment. Titles made only of controls or
+invisible format characters are rejected; direction controls are removed and
+emoji joiners are preserved. An optional `project` is a
+`{ type: "core.ai.project", id }` ref to a Project the owner can currently read.
+The result is `{ chat: { type: "core.ai.chat", id }, open }`.
+
+```ts
+const created = await core.ai.chat.create({
+  title: "Weekly briefing",
+  idempotencyKey: "weekly-briefing-chat",
+});
+await core.ai.chat(created.chat.id).send({
+  text: "Prepare my weekly briefing in this chat.",
+  idempotencyKey: "weekly-briefing:first-message",
+});
+```
+
+Creating a chat uses `silent_you`; it does not run a model or consume an AI
+turn. `send` is a separate Action with its own key and AI admission. The same
+creation key and input recover the original active chat for the same person,
+including across different Codes. Gustav derives its key from the conversation
+and tool call, so it deduplicates only approval or replay of that same tool call.
+Changed input returns `IDEMPOTENCY_CONFLICT`. An archived or deleted result
+returns `chat_unavailable`; replay never creates a replacement. Use a new key
+when the person intends another chat.
+
+When passed as an `ai.generate` tool, creation lets the model choose titles and
+create chats within the run’s existing call and tool-round limits. Supply the
+Action directly in Code when its title and creation key must stay fixed.
+
+Creation uses the same source-authority and chain checks as `send`: unrestricted
+person sessions, person-initiated Gustav turns and personal Code are allowed.
+App sessions and tool-limited source chats return `source_restricted`. A turn
+started by Code or another chat cannot create a chat (`chat_chain_forbidden`).
+Service accounts cannot create personal chats. Gustav asks the person the first
+time and can remember their choice through the normal `silent_you` approval.
+
 ## Write to your Gustav chat
+
+When Gustav uses `ai.chat.send` from one chat to another, Cloud adds a completion
+activity to the source chat after the target turn ends. It distinguishes success,
+failure and cancellation and links to the result. The activity starts no new
+turn; it is not another message sent through the SDK. Personal Code keeps reading
+its send receipt through `ai.chat.read` to inspect progress and the answer.
 
 Personal Code can write to its currently bound chat with `chat.send`. Code
 created through `code_init` starts bound to the chat where Gustav created it:
@@ -949,7 +997,7 @@ text or context under that key returns `idempotency_conflict`. The accepted
 receipt keeps its original destination after a chat-binding change, queue
 removal, or a later budget refusal. A new destination needs a new key.
 
-Automation and inter-chat sends have 32 pending places per chat, separate from
+Sends from Code and from other chats have 32 pending places per chat, separate from
 the person's composer queue. Each source Code or source chat can occupy one
 place in a destination chat. Further sends return `chat_busy`; use a later
 scheduled run to try again. Cloud rechecks ownership, source authority, enabled

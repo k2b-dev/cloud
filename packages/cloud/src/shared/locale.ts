@@ -15,6 +15,12 @@ export const LOCALE_HEADER = "x-cloud-locale";
 export const DEFAULT_LOCALE = "en";
 
 /**
+ * Languages Cloud ships platform catalogs for and offers in its language picker, the default first. Each one gets its
+ * own island build.
+ */
+export const CATALOG_LOCALES = [DEFAULT_LOCALE, "de"] as const;
+
+/**
  * The canonical BCP 47 form of one locale tag, or `undefined` when the value
  * is empty or not a structurally valid tag. Canonicalization fixes casing
  * (`DE-ch` → `de-CH`) and keeps regional subtags such as `de-CH` intact.

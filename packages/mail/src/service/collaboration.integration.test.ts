@@ -415,7 +415,7 @@ suite("mail collaboration backend", () => {
     expect(completedAgain.ok && completedAgain.data).toMatchObject({ workStatus: "done", revision: 6 });
 
     const inbound: ConnectorEnvelope = {
-      remoteRef: { folderStableKey: folderId, uidValidity: "1", uid: "2", modseq: null },
+      remoteRef: { kind: "imap", folderStableKey: folderId, uidValidity: "1", uid: "2", modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId: `<collaboration-reply-${suffix}@example.com>`,

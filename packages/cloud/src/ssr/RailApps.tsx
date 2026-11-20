@@ -27,7 +27,7 @@ function RailIcon(props: { link: RailLink; currentPath: string; grounds: ReturnT
         style={
           [
             appAccentStyle(props.link.accent),
-            props.link.appId && appBarIconStyle(appIconTone({ id: props.link.appId, accent: props.link.accent }), props.grounds),
+            props.link.appId && appBarIconStyle(appIconTone({ id: props.link.appId, iconColor: props.link.iconColor }), props.grounds),
           ]
             .filter(Boolean)
             .join(";") || undefined

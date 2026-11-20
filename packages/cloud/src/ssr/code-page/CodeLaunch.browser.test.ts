@@ -14,7 +14,11 @@ const fonts = new Map<string, string>();
 const scripts = new Map<string, string>();
 const fontBodies = new Map<string, ArrayBuffer>();
 const harnessErrors = new WeakMap<Page, string[]>();
-let harness: string;
+/**
+ * The harness entry's one address. It is served only under the name its chunks import it by: under a second name a
+ * lazily loaded chunk (the phone sheets at 390 px) evaluated it again and rendered a second page (#3810).
+ */
+let entryPath: string;
 let css: string;
 let icons: string;
 /** IBM Plex, which Cloud ships, so the wrap is measured with the product's widths. */
@@ -51,7 +55,7 @@ beforeAll(async () => {
   if (!build.success) throw new AggregateError(build.logs, "Head harness build failed");
   const entry = build.outputs.find((output) => output.kind === "entry-point");
   if (!entry) throw new Error("Missing head harness entry");
-  harness = await entry.text();
+  entryPath = `/${basename(entry.path)}`;
   for (const output of build.outputs) scripts.set(`/${basename(output.path)}`, await output.text());
   const styles = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../../styles.css")], plugins: [tailwind] });
   if (!styles.success) throw new AggregateError(styles.logs, "Head stylesheet build failed");
@@ -77,7 +81,6 @@ beforeAll(async () => {
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
-      if (url.pathname === "/__head.js") return new Response(harness, { headers: { ...assets, "content-type": "text/javascript" } });
       if (url.pathname === "/__head.css") return new Response(stylesheet, { headers: { ...assets, "content-type": "text/css" } });
       const script = scripts.get(url.pathname);
       if (script !== undefined) return new Response(script, { headers: { ...assets, "content-type": "text/javascript" } });
@@ -109,8 +112,8 @@ const fontPreloads = () =>
     .map((path) => `<link rel="preload" as="font" type="font/woff2" href="${path}" crossorigin>`)
     .join("");
 const html = (locale: string, theme: string) =>
-  `<!doctype html><html lang="${locale}" data-theme="${theme}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${fontPreloads()}<link rel="stylesheet" href="/__head.css"><script type="module" src="/__head.js"></script></head><body class="k2b-ui"><main id="root" style="padding:32px 24px;max-width:1440px;margin:auto"></main></body></html>`;
-async function open(state: HeadState, width: number, locale = "de", theme = "light") {
+  `<!doctype html><html lang="${locale}" data-theme="${theme}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${fontPreloads()}<link rel="stylesheet" href="/__head.css"><script type="module" src="${entryPath}"></script></head><body class="k2b-ui"><main id="root" style="padding:32px 24px;max-width:1440px;margin:auto"></main></body></html>`;
+async function open(state: HeadState, width: number, locale = "de", theme = "light", query = "") {
   const context = await browser.newContext({
     viewport: { width, height: width === 390 ? 780 : 900 },
     reducedMotion: "reduce",
@@ -130,11 +133,14 @@ async function open(state: HeadState, width: number, locale = "de", theme = "lig
       let key = 0;
       Object.defineProperty(crypto, "randomUUID", { value: () => `00000000-0000-4000-8000-${String(++key).padStart(12, "0")}` });
     }, fixedNow);
-    await page.goto(`${origin}/?state=${state}&locale=${locale}&theme=${theme}`);
+    await page.goto(`${origin}/?state=${state}&locale=${locale}&theme=${theme}${query}`);
     await page.evaluate(async () => {
       await document.fonts.ready;
     });
     await settled(page);
+    // Guard: one harness, one page. Every scene fails if a second evaluation of the entry renders the page again.
+    const pages = await page.locator(".cloud-code").count();
+    if (pages !== 1) throw new Error(`Expected one Code page in the harness, found ${pages}`);
     return page;
   } catch (error) {
     await page.context().close();
@@ -425,7 +431,10 @@ for (const theme of ["light", "dark"])
         await shot(page, "starting", width);
         expect(finish).toBeDefined();
         await finish!();
-        await page.getByText("Lauf startet.", { exact: true }).waitFor();
+        await page
+          .getByRole("region", { name: "Benachrichtigungen, Alt+T", exact: true })
+          .getByText("Lauf startet.", { exact: true })
+          .waitFor();
         expect(page.url()).toBe(initialUrl);
         expect(await boxes(page)).toEqual(before);
         await shot(page, "queued", width);
@@ -449,7 +458,10 @@ for (const theme of ["light", "dark"])
         const before = await boxes(page);
         const timingBefore = await timingBoxes(page);
         await page.getByRole("button", { name: "Jetzt ausführen", exact: true }).first().click();
-        await page.getByText("Lauf startet.", { exact: true }).waitFor();
+        await page
+          .getByRole("region", { name: "Benachrichtigungen, Alt+T", exact: true })
+          .getByText("Lauf startet.", { exact: true })
+          .waitFor();
         await page.evaluate(
           (id) =>
             window.codeHead.run({
@@ -598,7 +610,10 @@ for (const theme of ["light", "dark"])
         );
         const before = await boxes(page);
         await page.getByRole("button", { name: "Jetzt ausführen", exact: true }).first().click();
-        await page.getByText("Lauf startet.", { exact: true }).waitFor();
+        await page
+          .getByRole("region", { name: "Benachrichtigungen, Alt+T", exact: true })
+          .getByText("Lauf startet.", { exact: true })
+          .waitFor();
         expect(await page.getByText("Lauf startet, sobald der laufende Lauf fertig ist.", { exact: true }).count()).toBe(0);
         expect(await boxes(page)).toEqual(before);
         expect(await page.locator(".cloud-code__lage-cell").nth(1).textContent()).toContain("Läuft gerade · dein Lauf wartet");
@@ -627,7 +642,12 @@ for (const theme of ["light", "dark"])
         await page.getByText("„Jetzt ausführen“ hat nicht geklappt: keine Verbindung.", { exact: true }).waitFor();
         await shot(page, "start-error", width);
         await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
-        await page.getByText("Lauf startet.", { exact: true }).waitFor();
+        // A toast also writes to its visually hidden live region. Keep both present to catch an unscoped locator.
+        await page.locator("[data-k2b-live]").getByText("Lauf startet.", { exact: true }).waitFor({ state: "attached" });
+        await page
+          .getByRole("region", { name: "Benachrichtigungen, Alt+T", exact: true })
+          .getByText("Lauf startet.", { exact: true })
+          .waitFor();
         expect(keys).toHaveLength(2);
         expect(keys[0]).toBeTruthy();
         expect(keys[1]).toBe(keys[0]);
@@ -715,3 +735,39 @@ for (const theme of ["light", "dark"])
       },
     );
   }
+
+// P5 Rundgang l01/l02: a next run in another year ("Fr, 01.01.2027, 06:00") was cut off. It reads whole in both
+// languages, at desktop width on one line and on a phone within the two lines the situation already reserves, and the
+// situation and its strip keep their place against a date of this year.
+for (const width of [1440, 390])
+  for (const locale of ["de", "en"])
+    test(`a next run in another year reads whole at ${width} in ${locale} and moves nothing`, async () => {
+      const measure = async (query: string) => {
+        const page = await open("schedule", width, locale, "light", query);
+        try {
+          return await page.evaluate(() => {
+            const value = document.querySelector<HTMLElement>(".cloud-code__lage-cell .cloud-code__lage-value")!;
+            const box = (selector: string) => {
+              const rect = document.querySelector(selector)!.getBoundingClientRect();
+              return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+            };
+            return {
+              text: value.textContent ?? "",
+              whole: value.scrollWidth <= value.clientWidth + 1 && value.scrollHeight <= value.clientHeight + 1,
+              lines: Math.round(value.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(value).lineHeight)),
+              lage: box(".cloud-code__lage"),
+              strip: box(".cloud-code__runs"),
+            };
+          });
+        } finally {
+          await page.context().close();
+        }
+      };
+      const thisYear = await measure("");
+      const otherYear = await measure("&next=2027-01-01T05:00:00.000Z");
+      expect(otherYear.text).toContain("2027");
+      expect(otherYear.whole).toBe(true);
+      expect(otherYear.lines).toBeLessThanOrEqual(width === 1440 ? 1 : 2);
+      expect(otherYear.lage).toEqual(thisYear.lage);
+      expect(otherYear.strip).toEqual(thisYear.strip);
+    });

@@ -10,6 +10,7 @@ import type { RequestAuthority } from "../server/middleware/auth";
 import { approvalArgsDigest, approvalReviewDigest, approvals } from "../services/approvals";
 import { userResourceContext } from "./projects.test-fixture";
 import { defineAiTool, prepareAiTools } from "./tools";
+import { AI_TURN_WRITE_FORBIDDEN } from "./turn-writer";
 
 const authority: RequestAuthority = {
   ...userResourceContext({ type: "user", userId: "11111111-1111-4111-8111-111111111111" }),
@@ -40,6 +41,7 @@ let state = {
   kind: "action",
   status: "pending",
   argsDigest: "",
+  runActor: authority.actor,
 };
 let queries = 0;
 const query = async (strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown[]> => {
@@ -61,7 +63,7 @@ const query = async (strings: TemplateStringsArray, ...values: unknown[]): Promi
             call_id: "send-approval-0",
             turn_id: "33333333-3333-4333-8333-333333333333",
             conversation_id: "44444444-4444-4444-8444-444444444444",
-            run_config: { kind: "chat", actor: authority.actor },
+            run_config: { kind: "chat", actor: state.runActor },
           },
         ]
       : [];
@@ -121,11 +123,19 @@ function setup() {
     kind: "action",
     status: "pending",
     argsDigest: "",
+    runActor: authority.actor,
   };
   queries = 0;
 }
-const edit = (values: Record<string, string>, digest = state.review_digest) =>
-  editAiApprovalDraft({ id: "22222222-2222-4222-8222-222222222222", values, digest, authority, signedInSession: true });
+const edit = (values: Record<string, string>, digest = state.review_digest, writer = authority) =>
+  editAiApprovalDraft({ id: "22222222-2222-4222-8222-222222222222", values, digest, authority: writer, signedInSession: true });
+const appContext = userResourceContext({ type: "user", userId: "11111111-1111-4111-8111-111111111111" });
+const appAuthority: RequestAuthority = {
+  ...appContext,
+  actor: appContext.actor.kind === "user" ? { ...appContext.actor, sessionKind: "app" } : appContext.actor,
+  credentialKind: "session",
+  scopes: [],
+};
 test("only declared Draft strings are accepted; legacy conversions never grant editability", () => {
   expect(() => draftEditValues(raw(), { to: "Someone else" })).toThrow("declared string fields");
   expect(() => draftEditValues(raw(), { body: 12 as never })).toThrow("declared string fields");
@@ -233,4 +243,20 @@ test("re-review CAS stores effective arguments and replay sends edits while reta
       })
     ).fields,
   ).toEqual(["subject", "body"]);
+});
+const storedArgs = () => (typeof state.args === "string" ? JSON.parse(state.args) : state.args);
+test("an app session edits only drafts of turns started in the app", async () => {
+  setup();
+  await expect(edit({ body: "From the app" }, state.review_digest, appAuthority)).rejects.toMatchObject({
+    status: 403,
+    message: AI_TURN_WRITE_FORBIDDEN,
+  });
+  expect(storedArgs()).toEqual({ subject: "Original", body: "Original body" });
+  await expect(edit({ body: "In the started session" })).resolves.toMatchObject({ digest: expect.any(String) });
+  expect(storedArgs()).toEqual({ subject: "Original", body: "In the started session" });
+
+  setup();
+  state.runActor = appAuthority.actor;
+  await expect(edit({ body: "From the app" }, state.review_digest, appAuthority)).resolves.toMatchObject({ digest: expect.any(String) });
+  expect(storedArgs()).toEqual({ subject: "Original", body: "From the app" });
 });

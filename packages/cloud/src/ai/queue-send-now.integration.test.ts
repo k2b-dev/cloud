@@ -8,6 +8,7 @@ import {
   editQueuedMessage,
   enqueueChatMessage,
   listQueuedMessages,
+  mayChangeQueuedMessage,
   migrateAiMessageQueue,
   queuedMessageReceipt,
   readQueuedTurnInterruption,
@@ -15,6 +16,7 @@ import {
   requestQueuedMessageSendNow,
   updateQueuedMessage,
 } from "./message-queue";
+import { userResourceContext } from "./projects.test-fixture";
 import type { AiStoredMessageOrigin } from "./queue-contracts";
 import { AiQuotaError, aiQuotas } from "./quotas";
 import { aiConversations } from "./store";
@@ -29,6 +31,8 @@ const fixture = async () => {
   const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name,mail,given_name,sn)
     VALUES (${crypto.randomUUID()},'local','user','Queue owner','queue-owner@example.test','Queue','Owner') RETURNING id`;
   const chat = await aiConversations.createConversation({ ownerUserId: user!.id });
+  const { actor: author } = userResourceContext({ type: "user", userId: user!.id });
+  if (author.kind !== "user") throw new Error("fixture actor must be a user");
   const input = (text: string, origin: AiStoredMessageOrigin = { kind: "person", id: user!.id }): Submission => ({
     conversationId: chat.id,
     modelId: "fixture",
@@ -49,6 +53,7 @@ const fixture = async () => {
   return {
     chat,
     userId: user!.id,
+    author,
     input,
     add,
     async close() {
@@ -73,8 +78,12 @@ integration("one FIFO combines people, automations and chats; only the person's 
     expect(entries[2]?.origin).toMatchObject({ name: f.chat.title, href: `/app/assistant?conversation=${f.chat.shortId}` });
     const hidden = await listQueuedMessages(f.chat.id, { userId: "00000000-0000-4000-8000-000000000099" });
     expect(hidden[2]?.origin).toEqual({ kind: "chat", id: f.chat.shortId, name: f.chat.title });
-    expect(await editQueuedMessage(f.chat.id, automation, "Changed", { signedInSession: true, authorUserId: f.userId })).toBe(false);
-    expect(await editQueuedMessage(f.chat.id, person, "Edited", { signedInSession: true, authorUserId: f.userId })).toBe(true);
+    expect(await editQueuedMessage(f.chat.id, automation, "Changed", { signedInSession: true, author: f.author })).toBe("not_found");
+    expect(await editQueuedMessage(f.chat.id, person, "Edited", { signedInSession: true, author: f.author })).toBe("edited");
+    // An automation entry runs as its owner, so a phone app session may not retry it or send it now.
+    await sql`UPDATE ai.queued_messages SET submission=jsonb_set(submission,'{runConfig,actor}',(${JSON.stringify(f.author)}::text)::jsonb) WHERE id=${automation}::uuid`;
+    expect(await mayChangeQueuedMessage(f.chat.id, automation, { ...f.author, sessionKind: "app" })).toBe(false);
+    expect(await mayChangeQueuedMessage(f.chat.id, automation, f.author)).toBe(true);
     expect(await updateQueuedMessage(f.chat.id, automation, "cancel")).toBe(true);
     const jobs: Array<{ conversationId: string; turnId: string }> = [];
     await drainQueuedMessages(async (job) => {
@@ -121,7 +130,7 @@ integration("legacy queue backfill keeps non-person authorship and its separate 
       SELECT origin,author_user_id,automation_source FROM ai.queued_messages WHERE id=${id}::uuid`;
     expect(stored).toEqual({ origin, author_user_id: null, automation_source: "automation:legacy-code" });
     expect((await listQueuedMessages(f.chat.id, { userId: f.userId }))[0]).toMatchObject({ id, authorIsViewer: false });
-    expect(await editQueuedMessage(f.chat.id, id, "Changed", { signedInSession: true, authorUserId: f.userId })).toBe(false);
+    expect(await editQueuedMessage(f.chat.id, id, "Changed", { signedInSession: true, author: f.author })).toBe("not_found");
     await expect(f.add("Same source", origin)).rejects.toThrow("no free slot for this source");
     for (let n = 0; n < AI_MESSAGE_QUEUE_LIMIT; n++) await f.add(`Person ${n}`);
     expect(await listQueuedMessages(f.chat.id)).toHaveLength(AI_MESSAGE_QUEUE_LIMIT + 1);
@@ -544,10 +553,10 @@ integration("send now preserves restricted quoted input and starts no later effe
       { type: "text", text: "Urgent" },
       { type: "quote", messageId: "Quote01", text: "Checked passage" },
     ]);
-    expect(await editQueuedMessage(f.chat.id, id, "Edited", { signedInSession: false, authorUserId: f.userId })).toBeTrue();
-    expect(await editQueuedMessage(f.chat.id, id, "Current", { signedInSession: true, authorUserId: f.userId })).toBeTrue();
+    expect(await editQueuedMessage(f.chat.id, id, "Edited", { signedInSession: false, author: f.author })).toBe("edited");
+    expect(await editQueuedMessage(f.chat.id, id, "Current", { signedInSession: true, author: f.author })).toBe("edited");
     const nonPerson = await f.add("Automation", { kind: "automation", id: "c1-code" });
-    expect(await editQueuedMessage(f.chat.id, nonPerson, "Forged", { signedInSession: true, authorUserId: f.userId })).toBeFalse();
+    expect(await editQueuedMessage(f.chat.id, nonPerson, "Forged", { signedInSession: true, author: f.author })).toBe("not_found");
     await requestQueuedMessageSendNow(f.chat.id, id);
     expect(await aiToolAudit.noteToolStarted({ ...target, callId: "later-effect" })).toBeFalse();
     expect(await aiToolAudit.noteCapabilityDispatch({ ...target, callId: "nested-effect", requestId: crypto.randomUUID() })).toBeFalse();

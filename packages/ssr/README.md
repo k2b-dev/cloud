@@ -675,6 +675,7 @@ createConfig({
   external?: string[];   // passed to Bun.build for island bundle
   devSourcemap?: "none" | "linked" | "inline"; // default: "linked"
   errorFallback?: string; // optional island error fallback module, relative to rootDir
+  variants?: { names; select; transform }; // optional production builds per variant, see below
   template?: ({ body, scripts, ...custom }) => string | Promise<string>;
 })
 ```
@@ -701,6 +702,27 @@ Use the same configuration in development and production. Files outside `rootDir
 - The production inline loader preloads rendered islands' shared static imports after the page's stylesheets; dynamic imports stay lazy. It creates modulepreload links at runtime so the HTML preload scanner does not compete with first paint.
 - All adapters stream island assets from `Bun.file`. Production assets under the versioned path and content-hashed development chunks are immutable; stable development entries and source maps use validators for inexpensive freshness checks.
 - Production adapters serve adjacent `.br` or `.gz` files when accepted by the request, preserving the original MIME type and varying caches by `Accept-Encoding`. Generate these siblings in the application build; the adapter does not compress responses at runtime. Development always serves the original file to avoid stale compressed copies.
+
+### Island variants
+
+`variants` builds the production islands once per variant, for example once per language, so a page loads only the
+code its variant needs:
+
+```ts
+createConfig<{ lang?: string }>({
+  variants: {
+    names: ["en", "de"], // lowercase path segments; the first is the default build
+    select: (options) => (options.lang?.startsWith("de") ? "de" : "en"),
+    transform: (source, path, variant) => source, // rewrite one browser module for one variant
+  },
+});
+```
+
+- `select` receives the same options as `template` for each `html()` call. A name that is not built, or no name, loads the default build.
+- `transform` runs for every JavaScript and TypeScript module the islands reach, including packages, before the Solid transform. Return the source unchanged for modules it does not concern; the rewrite may be async. Server rendering never runs it, so the variant code must render what the full module renders for every page that selects the variant, or the island changes the page when it mounts.
+- The default build keeps the plain layout (`_ssr/<id>.js`, `_ssr/manifest.json`); each further variant builds into `_ssr/<name>/`, and `manifest.json` lists it under `variants` with its own content version. Every variant has its own URL directory (`/_ssr/<version>/<id>.js`), so immutable caching never mixes variants, and `@k2b/ssr/nav` swaps fall back to a document load when the next page selects another variant.
+- A short discovery build (Bun's own JSX parser, no Solid transform) lists the reachable modules first; rewritten modules then enter each build as in-memory files, so imports with `with { type: "file" }` or `"text"` keep their loader. Build time grows with one bundle per variant.
+- Development ignores `variants`: it builds once, without `transform`, and keeps its reload speed.
 
 ## Microfrontend mount example
 

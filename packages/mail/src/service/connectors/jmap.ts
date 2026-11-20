@@ -1,5 +1,8 @@
+import type { Readable } from "node:stream";
 import { z } from "zod";
 import type { FolderRole, RemoteFolder } from "../../contracts";
+import { jmapFolderStableKey } from "../provider-identity";
+import { ENVELOPE_BATCH_SIZE } from "./contract";
 import {
   callJmap,
   fetchJmapSession,
@@ -10,9 +13,16 @@ import {
   type JmapAccess,
   JmapError,
   type JmapSession,
+  jmapDownloadUrl,
   jmapIdSchema,
+  requireJmapMethodResult,
+  validateJmapId,
 } from "./jmap-client";
-import type { JmapTransportDependencies } from "./jmap-transport";
+import { JMAP_EMAIL_BODY_PROPERTIES, JMAP_EMAIL_PROPERTIES, type JmapEmailSnapshot, jmapEmailSnapshotSchema } from "./jmap-email";
+import { jmapStateSchema } from "./jmap-sync-state";
+import { consumeJmapDownload, type JmapTransportDependencies, JmapTransportError } from "./jmap-transport";
+
+import { MAX_IMAP_LITERAL_BYTES } from "./source-limits";
 
 function primaryMailAccount(session: JmapSession) {
   if (!session.capabilities[JMAP_MAIL] || !session.capabilities[JMAP_SUBMISSION]) throw new JmapError("JMAP_CAPABILITY");
@@ -64,7 +74,7 @@ const LOCAL_MAILBOX_NAME_BYTES = 4_000;
 export const JMAP_DISCOVERY_PAGES = 1_024;
 const RESPONSE_FRAME_BYTES = 4_096;
 const MAILBOX_OVERHEAD_BYTES = 2_048; // Two 255-byte IDs, role, nine rights, keys and JSON framing.
-const mailboxProperties = ["id", "name", "parentId", "role", "isSubscribed", "myRights"];
+export const mailboxProperties = ["id", "name", "parentId", "role", "isSubscribed", "myRights"];
 
 const mailboxSchema = z.object({
   id: jmapIdSchema,
@@ -81,18 +91,32 @@ const querySchema = z.object({
   ids: z.array(jmapIdSchema),
   total: z.number().int().nonnegative(),
 });
-const getSchema = z.object({ accountId: jmapIdSchema, state: z.string(), list: z.array(mailboxSchema), notFound: z.array(jmapIdSchema) });
-export type JmapRemoteFolder = RemoteFolder & { mailboxId: string };
+export const mailboxGetSchema = z.object({
+  accountId: jmapIdSchema,
+  state: z.string(),
+  list: z.array(mailboxSchema),
+  notFound: z.array(jmapIdSchema),
+});
+export type JmapRemoteFolder = RemoteFolder & { mailboxId: string; parentMailboxId: string | null };
 
-export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransportDependencies = {}): Promise<JmapRemoteFolder[]> {
-  const session = await fetchJmapSession(input, deps);
-  const { accountId, account } = primaryMailAccount(session);
-  const advertisedNameBytes = z.number().int().positive().safeParse(account.accountCapabilities[JMAP_MAIL]?.maxSizeMailboxName);
+export function jmapMailboxBudget(session: JmapSession, accountId: string) {
+  const advertisedNameBytes = z
+    .number()
+    .int()
+    .positive()
+    .safeParse(session.accounts[accountId]?.accountCapabilities[JMAP_MAIL]?.maxSizeMailboxName);
   const nameBytes = Math.min(advertisedNameBytes.success ? advertisedNameBytes.data : LOCAL_MAILBOX_NAME_BYTES, LOCAL_MAILBOX_NAME_BYTES);
   // JSON can escape each name byte as six ASCII bytes. Limit object count locally
   // using the existing metadata budget / per-object overhead, independently of server limits.
   const objectBytes = 6 * nameBytes + MAILBOX_OVERHEAD_BYTES;
   const batchSize = Math.min(session.core.maxObjectsInGet, Math.floor(JMAP_JSON_BYTES / MAILBOX_OVERHEAD_BYTES));
+  return { nameBytes, objectBytes, batchSize, frameBytes: RESPONSE_FRAME_BYTES };
+}
+
+export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransportDependencies = {}): Promise<JmapRemoteFolder[]> {
+  const session = await fetchJmapSession(input, deps);
+  const { accountId } = primaryMailAccount(session);
+  const { nameBytes, objectBytes, batchSize } = jmapMailboxBudget(session, accountId);
   const method = async (name: string, args: Record<string, unknown>, maxBytes: number) => {
     input.signal.throwIfAborted();
     const response = await callJmap(
@@ -106,10 +130,7 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
       },
       deps,
     );
-    const result = response.methodResponses[0];
-    if (response.methodResponses.length !== 1 || !result || result[0] !== name || result[2] !== "folders")
-      throw new JmapError("JMAP_INVALID_RESPONSE");
-    return result[1];
+    return requireJmapMethodResult(response, "folders", name);
   };
   const ids: string[] = [];
   const seen = new Set<string>();
@@ -150,7 +171,7 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
   let state: string | undefined;
   for (let offset = 0; offset < ids.length; offset += batchSize) {
     const batch = ids.slice(offset, offset + batchSize);
-    const parsed = getSchema.safeParse(
+    const parsed = mailboxGetSchema.safeParse(
       await method("Mailbox/get", { ids: batch, properties: mailboxProperties }, RESPONSE_FRAME_BYTES + batch.length * objectBytes),
     );
     if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
@@ -170,14 +191,21 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
     }
   }
 
+  return mapJmapMailboxes(session, accountId, mailboxes);
+}
+
+export function mapJmapMailboxes(
+  session: JmapSession,
+  accountId: string,
+  mailboxes: ReadonlyMap<string, z.infer<typeof mailboxSchema>>,
+): JmapRemoteFolder[] {
   const paths = new Map<string, string>();
-  const usedPaths = new Set<string>();
   for (const mailbox of mailboxes.values()) {
     const chain: z.infer<typeof mailboxSchema>[] = [];
     const ancestors = new Set<string>();
     let current: z.infer<typeof mailboxSchema> | undefined = mailbox;
     while (current && !paths.has(current.id)) {
-      if (ancestors.has(current.id) || current.name.includes("/")) throw new JmapError("JMAP_FOLDER_TREE");
+      if (ancestors.has(current.id)) throw new JmapError("JMAP_FOLDER_TREE");
       ancestors.add(current.id);
       chain.push(current);
       const parentId: string | null = current.parentId;
@@ -185,20 +213,25 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
       if (parentId && !current) throw new JmapError("JMAP_FOLDER_TREE");
     }
     while (chain.length) {
-      const entry = chain.pop()!;
+      const entry = chain.pop();
+      if (!entry) throw new JmapError("JMAP_FOLDER_TREE");
       const parent = entry.parentId ? paths.get(entry.parentId) : undefined;
       const path = parent === undefined ? entry.name : `${parent}/${entry.name}`;
-      if (usedPaths.has(path)) throw new JmapError("JMAP_FOLDER_TREE");
-      paths.set(entry.id, path);
-      usedPaths.add(path);
+      paths.set(entry.id, Array.from(path).slice(0, 4_000).join(""));
     }
   }
+  const pathFor = (id: string): string => {
+    const path = paths.get(id);
+    if (path === undefined) throw new JmapError("JMAP_FOLDER_TREE");
+    return path;
+  };
   return [...mailboxes.values()].map((mailbox) => ({
     mailboxId: mailbox.id,
-    stableKey: mailbox.id,
-    path: paths.get(mailbox.id)!,
+    parentMailboxId: mailbox.parentId,
+    stableKey: jmapFolderStableKey({ version: 1, kind: "jmap", origin: session.origin, accountId }, mailbox.id),
+    path: pathFor(mailbox.id),
     name: mailbox.name,
-    parentPath: mailbox.parentId ? paths.get(mailbox.parentId)! : null,
+    parentPath: mailbox.parentId ? pathFor(mailbox.parentId) : null,
     delimiter: "/",
     role: folderRole(mailbox.role),
     subscribed: mailbox.isSubscribed,
@@ -223,4 +256,166 @@ function folderRole(role: string | null): FolderRole {
     default:
       return "other";
   }
+}
+
+// Same budget as MAX_MESSAGE_HEADER_BYTES in message-protocol.ts, for metadata only.
+export const JMAP_EMAIL_RESPONSE_BYTES = 2 * 1024 * 1024;
+const emailGetSchema = z.object({
+  accountId: jmapIdSchema,
+  state: jmapStateSchema,
+  list: z.array(jmapEmailSnapshotSchema),
+  notFound: z.array(jmapIdSchema),
+});
+
+/** Bounded Email/get only. No checkpoint or mailbox projection is performed here. */
+export async function readJmapEmails(
+  session: JmapSession,
+  authorization: string,
+  accountId: string,
+  ids: readonly string[],
+  signal: AbortSignal,
+  deps: JmapTransportDependencies = {},
+): Promise<{ objects: JmapEmailSnapshot[]; notFoundIds: string[] }> {
+  validateJmapId(accountId);
+  const account = Object.hasOwn(session.accounts, accountId) ? session.accounts[accountId] : undefined;
+  if (!account) throw new JmapError("JMAP_ACCOUNT");
+  if (!session.capabilities[JMAP_MAIL] || !account.accountCapabilities[JMAP_MAIL]) throw new JmapError("JMAP_CAPABILITY");
+  for (const id of ids) validateJmapId(id);
+  if (new Set(ids).size !== ids.length) throw new JmapError("JMAP_INVALID_ID");
+  const objects: JmapEmailSnapshot[] = [];
+  const notFoundIds: string[] = [];
+  let batchSize = Math.min(ENVELOPE_BATCH_SIZE, session.core.maxObjectsInGet);
+  for (let offset = 0; offset < ids.length; ) {
+    if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
+    const batch = ids.slice(offset, offset + batchSize);
+    let response: Awaited<ReturnType<typeof callJmap>>;
+    try {
+      response = await callJmap(
+        {
+          session,
+          authorization,
+          signal,
+          using: [JMAP_CORE, JMAP_MAIL],
+          methodCalls: [
+            [
+              "Email/get",
+              { accountId, ids: batch, properties: JMAP_EMAIL_PROPERTIES, bodyProperties: JMAP_EMAIL_BODY_PROPERTIES },
+              "emails",
+            ],
+          ],
+          maxBytes: JMAP_EMAIL_RESPONSE_BYTES,
+        },
+        deps,
+      );
+    } catch (error) {
+      if (!(error instanceof JmapTransportError) || error.code !== "JMAP_TOO_LARGE") throw error;
+      if (batch.length === 1) throw new JmapError("JMAP_EMAIL_TOO_LARGE");
+      batchSize = Math.max(1, Math.floor(batch.length / 2));
+      continue;
+    }
+    const page = parseJmapEmailGet(requireJmapMethodResult(response, "emails", "Email/get"), accountId, batch);
+    objects.push(...page.list);
+    notFoundIds.push(...page.notFound);
+    offset += batch.length;
+  }
+  if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
+  return { objects, notFoundIds };
+}
+
+/** Validate exact coverage, including objects removed between changes and get. */
+export function parseJmapEmailGet(value: unknown, accountId: string, ids: readonly string[]) {
+  const parsed = emailGetSchema.safeParse(value);
+  if (!parsed.success || parsed.data.accountId !== accountId) throw new JmapError("JMAP_INVALID_RESPONSE");
+  const page = parsed.data;
+  const remaining = new Set(ids);
+  for (const id of [...page.list.map((email) => email.id), ...page.notFound]) {
+    if (!remaining.delete(id)) throw new JmapError("JMAP_INVALID_RESPONSE");
+  }
+  if (remaining.size) throw new JmapError("JMAP_INVALID_RESPONSE");
+  return page;
+}
+
+const emailBlobGetSchema = z.object({
+  accountId: jmapIdSchema,
+  state: jmapStateSchema,
+  list: z.array(z.object({ id: jmapIdSchema, blobId: jmapIdSchema, size: z.number().int().nonnegative() })),
+  notFound: z.array(jmapIdSchema),
+});
+
+/** Transient source references only; no blob ID is persisted. */
+export async function readJmapEmailBlobs(
+  session: JmapSession,
+  authorization: string,
+  accountId: string,
+  emailIds: readonly string[],
+  signal: AbortSignal,
+  deps: JmapTransportDependencies = {},
+): Promise<{ objects: Array<{ id: string; blobId: string; size: number }>; notFoundIds: string[] }> {
+  validateJmapId(accountId);
+  const account = Object.hasOwn(session.accounts, accountId) ? session.accounts[accountId] : undefined;
+  if (!account) throw new JmapError("JMAP_ACCOUNT");
+  if (!session.capabilities[JMAP_MAIL] || !account.accountCapabilities[JMAP_MAIL]) throw new JmapError("JMAP_CAPABILITY");
+  for (const id of emailIds) validateJmapId(id);
+  if (new Set(emailIds).size !== emailIds.length) throw new JmapError("JMAP_INVALID_ID");
+  const objects: Array<{ id: string; blobId: string; size: number }> = [];
+  const notFoundIds: string[] = [];
+  let batchSize = Math.min(ENVELOPE_BATCH_SIZE, session.core.maxObjectsInGet);
+  for (let offset = 0; offset < emailIds.length; ) {
+    if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
+    const batch = emailIds.slice(offset, offset + batchSize);
+    let response: Awaited<ReturnType<typeof callJmap>>;
+    try {
+      response = await callJmap(
+        {
+          session,
+          authorization,
+          signal,
+          using: [JMAP_CORE, JMAP_MAIL],
+          methodCalls: [["Email/get", { accountId, ids: batch, properties: ["id", "blobId", "size"] }, "blobs"]],
+          maxBytes: JMAP_JSON_BYTES,
+        },
+        deps,
+      );
+    } catch (error) {
+      if (!(error instanceof JmapTransportError) || error.code !== "JMAP_TOO_LARGE") throw error;
+      if (batch.length === 1) throw new JmapError("JMAP_EMAIL_TOO_LARGE");
+      batchSize = Math.max(1, Math.floor(batch.length / 2));
+      continue;
+    }
+    const parsed = emailBlobGetSchema.safeParse(requireJmapMethodResult(response, "blobs", "Email/get"));
+    if (!parsed.success || parsed.data.accountId !== accountId) throw new JmapError("JMAP_INVALID_RESPONSE");
+    const page = parsed.data;
+    const remaining = new Set(batch);
+    for (const id of [...page.list.map((email) => email.id), ...page.notFound]) {
+      if (!remaining.delete(id)) throw new JmapError("JMAP_INVALID_RESPONSE");
+    }
+    if (remaining.size) throw new JmapError("JMAP_INVALID_RESPONSE");
+    objects.push(...page.list);
+    notFoundIds.push(...page.notFound);
+    offset += batch.length;
+  }
+  if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
+  return { objects, notFoundIds };
+}
+
+export async function downloadJmapEmailSource<T>(
+  session: JmapSession,
+  authorization: string,
+  accountId: string,
+  blobId: string,
+  expectedSize: number,
+  consume: (source: Readable) => Promise<T>,
+  signal: AbortSignal,
+  deps: JmapTransportDependencies = {},
+): Promise<T> {
+  validateJmapId(accountId);
+  validateJmapId(blobId);
+  if (!Object.hasOwn(session.accounts, accountId)) throw new JmapError("JMAP_ACCOUNT");
+  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) throw new JmapError("JMAP_INVALID_RESPONSE");
+  if (expectedSize > MAX_IMAP_LITERAL_BYTES) throw new JmapTransportError("JMAP_TOO_LARGE");
+  return consumeJmapDownload(
+    { url: jmapDownloadUrl(session, accountId, blobId), method: "GET", authorization, maxBytes: MAX_IMAP_LITERAL_BYTES, signal },
+    consume,
+    deps,
+  );
 }

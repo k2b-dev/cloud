@@ -76,8 +76,8 @@ const railSaver = (initial: RailPreferences, locale: string) => {
   return saver;
 };
 
-const Tile = (props: { id: string; accent?: string; icon: string }) => (
-  <span class="rail-editor-tile" style={appTileStyle({ id: props.id, accent: props.accent })}>
+const Tile = (props: { id: string; iconColor?: string; icon: string }) => (
+  <span class="rail-editor-tile" style={appTileStyle({ id: props.id, iconColor: props.iconColor })}>
     <i class={props.icon} aria-hidden="true" />
   </span>
 );
@@ -244,7 +244,7 @@ function RailEditorList(props: { saver: RailSaver; apps: RailApp[] }) {
             <li>
               <Row
                 grip={<i class="ti ti-lock rail-editor-row__lock" aria-hidden="true" />}
-                tile={<Tile id={link.appId ?? link.id} accent={link.accent} icon={link.iconClass} />}
+                tile={<Tile id={link.appId ?? link.id} iconColor={link.iconColor} icon={link.iconClass} />}
                 title={link.label}
                 subtitle={t().managedHint}
               />
@@ -272,7 +272,7 @@ function RailEditorList(props: { saver: RailSaver; apps: RailApp[] }) {
             return (
               <Row
                 grip={handle}
-                tile={<Tile id={appId} accent={catalog(appId)?.accent} icon={catalog(appId)?.iconClass ?? "ti ti-apps"} />}
+                tile={<Tile id={appId} iconColor={catalog(appId)?.iconColor} icon={catalog(appId)?.iconClass ?? "ti ti-apps"} />}
                 title={label(entry())}
                 failed={failedMark({ appId, id: entry().id }, label(entry()))}
                 actions={
@@ -365,7 +365,7 @@ function RailEditorList(props: { saver: RailSaver; apps: RailApp[] }) {
           {(app) => (
             <li>
               <Row
-                tile={<Tile id={app.id} accent={app.accent} icon={app.iconClass} />}
+                tile={<Tile id={app.id} iconColor={app.iconColor} icon={app.iconClass} />}
                 title={app.label}
                 off={!visible(app)}
                 failed={failedMark({ appId: app.id }, app.label)}

@@ -68,11 +68,13 @@ else {
     field.value = "halb getippt";
     const bundle = dom.root.querySelector("[data-bundle]");
     expect(bundle?.textContent).toBe("Entwurf 2-mal geändert");
-    expect(mail.querySelector(".k2b-activity__meta")?.textContent).toBe("16:20 · 11 min. ago · automatic");
+    expect(mail.querySelector("time [aria-hidden]")?.textContent).toBe("16:20");
 
+    expect(mail.querySelector("time .k2b-sr-only")?.textContent).toContain("11 min. ago");
     tick();
+    expect(mail.querySelector("time .k2b-sr-only")?.textContent).toContain("12 min. ago");
 
-    expect(mail.querySelector(".k2b-activity__meta")?.textContent).toBe("16:20 · 12 min. ago · automatic");
+    expect(mail.querySelector("time [aria-hidden]")?.textContent).toBe("16:20");
     expect(dom.root.querySelector("[data-field]")).toBe(field);
     expect(field.value).toBe("halb getippt");
     expect(dom.root.querySelector("[data-bundle]")).toBe(bundle);
@@ -91,7 +93,7 @@ else {
     dom.root.querySelector<HTMLElement>("[data-inside]")!.click();
     expect(sentence.getAttribute("aria-expanded")).toBe("true");
     // Selecting the time with the mouse ends in a click on the row; it must not fold.
-    const time = meta.querySelector("time")!.firstChild!;
+    const time = meta.querySelector("time [aria-hidden]")!.firstChild!;
     dom.document.getSelection()!.setBaseAndExtent(time, 0, time, 5);
     meta.click();
     expect(sentence.getAttribute("aria-expanded")).toBe("true");
@@ -144,5 +146,35 @@ else {
     setEntries(build());
     expect(rowOf(dom.root, "Per E-Mail gesendet")).toBe(row);
     expect(row.querySelector(".k2b-activity__details")?.textContent).toBe("Betreff");
+  });
+
+  test("a feed row follows the parent's clock and selection without replacing the focused link", async () => {
+    const [now, setNow] = createSignal(NOW);
+    const [selected, setSelected] = createSignal(false);
+    let navigated = 0;
+    const { dom } = await mount(({ ActivityList }) => () => (
+      <ActivityList.Row
+        entry={{ at: "2026-11-12T16:20:00+01:00", text: "Kommentar ergänzt", actor: "Mira Lang", href: "/conversation" }}
+        now={now()}
+        timeZone={ZONE}
+        selected={selected()}
+        onNavigate={(event) => {
+          event.preventDefault();
+          navigated++;
+        }}
+      />
+    ));
+    const row = rowOf(dom.root, "Kommentar ergänzt")!;
+    const link = row.querySelector<HTMLAnchorElement>("a")!;
+    link.focus();
+    expect(row.querySelector("time .k2b-sr-only")?.textContent).toContain("11 min. ago");
+    setNow("2026-11-12T15:32:00Z");
+    setSelected(true);
+    expect(row.querySelector("time .k2b-sr-only")?.textContent).toContain("12 min. ago");
+    expect(rowOf(dom.root, "Kommentar ergänzt")).toBe(row);
+    expect(dom.document.activeElement).toBe(link);
+    expect(link.getAttribute("aria-current")).toBe("true");
+    row.querySelector<HTMLElement>(".k2b-activity__meta")!.click();
+    expect(navigated).toBe(1);
   });
 }

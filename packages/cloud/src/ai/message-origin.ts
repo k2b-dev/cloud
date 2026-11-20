@@ -78,8 +78,16 @@ export const projectAiMessageOrigins = async (
 export const loadAiMessageOrigins = async (
   origins: readonly AiStoredMessageOrigin[],
   viewer: AiOriginViewer,
-  turns?: { conversationId: string; turnIds: readonly string[] },
-): Promise<{ origins: AiMessageOrigin[]; turnShortIds: Map<string, string> }> => {
+  turns?: {
+    conversationId: string;
+    turnIds: readonly string[];
+    doneMessages?: readonly { id: string; conversationId: string; turnId: string | null; messageSeq: number | null }[];
+  },
+): Promise<{
+  origins: AiMessageOrigin[];
+  turnShortIds: Map<string, string>;
+  doneChats: Map<string, { name: string; href: string; messageSeq: number | null; summary: string | null }>;
+}> => {
   // Typed key lookups keep each branch on its primary or unique index.
   const idsOf = (kind: AiStoredMessageOrigin["kind"], uuidOnly: boolean) => [
     ...new Set(origins.flatMap((origin) => (origin.kind === kind && (!uuidOnly || UUID.test(origin.id)) ? [origin.id] : []))),
@@ -88,20 +96,38 @@ export const loadAiMessageOrigins = async (
   const automations = idsOf("automation", true);
   const chats = idsOf("chat", false);
   const turnIds = [...new Set(turns?.turnIds.filter((id) => UUID.test(id)) ?? [])];
-  type NameRow = { id: string; name: string; kind: "person" | "automation" | "chat" | "turn"; href: string | null };
+  const doneMessages = turns?.doneMessages?.filter((message) => UUID.test(message.conversationId)) ?? [];
+  type NameRow = {
+    id: string;
+    name: string;
+    kind: "person" | "automation" | "chat" | "turn" | "done";
+    href: string | null;
+    message_seq: number | null;
+    summary: string | null;
+  };
   const rows: NameRow[] =
-    !people.length && !automations.length && !chats.length && !turnIds.length
+    !people.length && !automations.length && !chats.length && !turnIds.length && !doneMessages.length
       ? []
       : await sql<NameRow[]>`
-    SELECT id::text, display_name AS name, 'person' AS kind, NULL::text AS href FROM auth.users WHERE id = ANY(${toPgTextArray(people)}::uuid[])
+    SELECT id::text, display_name AS name, 'person' AS kind, NULL::text AS href, NULL::int AS message_seq, NULL::text AS summary FROM auth.users WHERE id = ANY(${toPgTextArray(people)}::uuid[])
     UNION ALL
-    SELECT id::text, name, 'automation', NULL::text FROM auth.service_accounts WHERE id = ANY(${toPgTextArray(automations)}::uuid[])
+    SELECT id::text, name, 'automation', NULL::text, NULL::int, NULL::text FROM auth.service_accounts WHERE id = ANY(${toPgTextArray(automations)}::uuid[])
     UNION ALL
     SELECT short_id, title, 'chat', CASE WHEN created_by_user_id=${viewer.userId ?? null}::uuid AND archived_at IS NULL
-      THEN '/app/assistant?conversation=' || short_id ELSE NULL END FROM ai.conversations WHERE short_id=ANY(${toPgTextArray(chats)}::text[])
+      THEN '/app/assistant?conversation=' || short_id ELSE NULL END, NULL::int, NULL::text FROM ai.conversations WHERE short_id=ANY(${toPgTextArray(chats)}::text[])
     UNION ALL
-    SELECT id::text, short_id, 'turn', NULL::text FROM ai.turns
+    SELECT id::text, short_id, 'turn', NULL::text, NULL::int, NULL::text FROM ai.turns
     WHERE conversation_id = ${turns?.conversationId ?? null}::uuid AND id = ANY(${toPgTextArray(turnIds)}::uuid[])
+    UNION ALL
+    SELECT requested.id, target.title, 'done', '/app/assistant?conversation=' || target.short_id,
+      answer.seq, CASE WHEN answer.role='assistant' THEN left(split_part(trim(answer.search_text), E'\n', 1), 320) ELSE NULL END
+    FROM jsonb_to_recordset(${JSON.stringify(doneMessages)}::text::jsonb)
+      AS requested(id text,"conversationId" uuid,"turnId" text,"messageSeq" int)
+    JOIN ai.conversations target ON target.id=requested."conversationId"
+      AND target.created_by_user_id=${viewer.userId ?? null}::uuid AND target.archived_at IS NULL
+    LEFT JOIN ai.turns target_turn ON target_turn.conversation_id=target.id AND target_turn.short_id=requested."turnId"
+    LEFT JOIN ai.messages answer ON answer.conversation_id=target.id AND answer.seq=requested."messageSeq"
+      AND answer.loop_id=target_turn.id::text
   `;
   const turnShortIds = new Map(rows.flatMap((row) => (row.kind === "turn" ? [[row.id, row.name] as const] : [])));
   const known = new Map(rows.map((row) => [`${row.kind}:${row.id}`, row]));
@@ -150,5 +176,12 @@ export const loadAiMessageOrigins = async (
       ),
     ),
   );
-  return { origins: projectedOrigins, turnShortIds };
+  const doneChats = new Map(
+    rows.flatMap((row) =>
+      row.kind === "done" && row.href
+        ? [[row.id, { name: row.name, href: row.href, messageSeq: row.message_seq, summary: row.summary }] as const]
+        : [],
+    ),
+  );
+  return { origins: projectedOrigins, turnShortIds, doneChats };
 };

@@ -1,11 +1,12 @@
 import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
-import { returnFocus, ringOnReturn } from "../internal/focus-return";
+import { returnFocus } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { applyUiScope, readUiScope } from "../internal/portal-scope";
 import { RenderErrorBoundary } from "../internal/render-error";
 import { keepScroll, restoreScroll } from "../internal/scroll-places";
 import { resolveUiMessages } from "../intl/messages";
+import { type DialogCall, notePageDisposal, pageDisposals, readDialogCall } from "./dialog-call";
 import type { FrameMotion } from "./dialog-frame-motion";
 import { isPointInsideToast } from "./toast-hit";
 
@@ -16,6 +17,8 @@ export type OpenDialogOptions = {
   primary?: "blue" | "ai";
   /** Close only this dialog when its owning operation is cancelled. */
   signal?: AbortSignal;
+  /** Hold and animate content height changes after first rest. Defaults to false; level morphs are independent. */
+  followContent?: boolean;
   panelClassName?: string;
   contentClassName?: string;
   initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
@@ -48,7 +51,7 @@ export type DialogRender<T> = (
     dialog: HTMLDialogElement;
     /** Switch this entry between a modal and a modeless window without remounting. */
     setModal: (modal: boolean) => void;
-    /** Set viewport coordinates, or restore the panel stylesheet position with null. */
+    /** Set viewport coordinates, or restore stylesheet positioning with null. Repeating the current value preserves running motion. */
     setPosition: (position: { x: number; y: number } | null) => void;
     /** Route Escape/backdrop through the same guarded handler as Cancel and X. */
     setDismissHandler: (handler: () => void | Promise<void>) => void;
@@ -78,6 +81,7 @@ type DialogStackEntry = {
   role: "dialog" | "alertdialog";
   dismissHandler?: () => void | Promise<void>;
   dismissPending?: boolean;
+  follow?: boolean;
   modal: boolean;
   position?: { x: number; y: number } | null;
   /** The marker of this dialog's history entry, for dialogs opened with `history`. */
@@ -157,8 +161,10 @@ const applyAccessibleName = (dialog: HTMLDialogElement, entry: DialogStackEntry)
  */
 let frameMotion: typeof import("./dialog-frame-motion") | undefined;
 let frameMotionLoading: Promise<void> | undefined;
-const loadFrameMotion = (): Promise<void> =>
-  (frameMotionLoading ??= import("./dialog-frame-motion").then(
+const loadFrameMotion = (state: DialogState, announced?: DialogStackEntry): void => {
+  const arrived = () => frameMotion?.connectFrameMotion(state, announced);
+  if (frameMotion) return arrived();
+  frameMotionLoading ??= import("./dialog-frame-motion").then(
     (module) => {
       frameMotion = module;
     },
@@ -166,7 +172,9 @@ const loadFrameMotion = (): Promise<void> =>
       // A failed chunk request may succeed on the next open.
       frameMotionLoading = undefined;
     },
-  ));
+  );
+  void frameMotionLoading.then(arrived);
+};
 
 const schedule = (callback: () => void): void => {
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(callback);
@@ -202,7 +210,6 @@ export const createDialogCore = () => {
   const forgotten = new Set<number>();
   const deadMarker = (marker: unknown): marker is number => typeof marker === "number" && forgotten.has(marker);
   /** How often islands were disposed, so a dialog that waits to open notices that a content swap happened meanwhile. */
-  let disposals = 0;
   const ownMarker = (marker: unknown): marker is number => typeof marker === "number" && issued.has(marker);
   /** The address of each own entry that a dialog named with `historyUrl`. */
   const ownUrls = new Map<number, string>();
@@ -320,7 +327,7 @@ export const createDialogCore = () => {
         forgotten.add(id);
       }
     }
-    disposals++;
+    notePageDisposal();
     while (state.stack.length > 0) popTop(undefined);
     // New page content: a frame still fading out leaves at once, as if the document were replaced.
     endLeaving();
@@ -427,7 +434,6 @@ export const createDialogCore = () => {
     // Each stack level carries its own palette, independently of the first opener.
     getK2bPortalRoot(undefined, document.body).appendChild(element);
     state.element = element;
-    void loadFrameMotion();
     return element;
   };
 
@@ -455,8 +461,8 @@ export const createDialogCore = () => {
     if (dialog.className !== entry.panelClassName) dialog.className = entry.panelClassName;
     applyUiScope(dialog, entry.uiScope);
     const position = entry.position;
+    if (position || dialog.style.position) dialog.style.inset = position ? `${position.y}px auto auto ${position.x}px` : "";
     dialog.style.position = position ? "fixed" : "";
-    dialog.style.inset = position ? `${position.y}px auto auto ${position.x}px` : "";
     dialog.style.margin = position ? "0" : "";
     dialog.style.transform = position ? "none" : "";
     dialog.dataset.modeless = String(!entry.modal);
@@ -532,19 +538,6 @@ export const createDialogCore = () => {
     }
   };
 
-  /** A level that replaces another says its name; before the module has loaded, as soon as it has, if it still shows. */
-  const announceLevel = (entry: DialogStackEntry) => {
-    if (state.motion) state.motion.announce(entry.role);
-    else {
-      const element = state.element;
-      void loadFrameMotion().then(() => {
-        if (!element || state.element !== element || state.stack.at(-1) !== entry || !frameMotion) return;
-        state.motion ??= frameMotion.createFrameMotion(element);
-        state.motion.announce(entry.role);
-      });
-    }
-  };
-
   /** Closes the shown level. `below` are the levels under it that close with it (lowest last): they leave with the frame. */
   const popTop = (result?: unknown, below: DialogStackEntry[] = []) => {
     const top = state.stack.pop();
@@ -570,9 +563,9 @@ export const createDialogCore = () => {
       applyPresentation(previous);
       applyAccessibleName(dialog, previous);
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
-      if (motion) motion.arrive(previous.container, discard);
+      if (motion) motion.arrive(previous.container, discard, previous.follow);
       else discard();
-      announceLevel(previous);
+      loadFrameMotion(state, previous);
       schedule(() => {
         if (!focusUnclaimed(dialog)) return;
         if (top.opener?.isConnected) returnFocus(top.opener, top.openerRing);
@@ -647,28 +640,48 @@ export const createDialogCore = () => {
     state.connectionObserver.observe(document.documentElement, { childList: true, subtree: true });
   };
 
-  const open = <T>(view: DialogRender<T>, options: OpenDialogOptions = {}): Promise<T | undefined> => {
+  /** A call read in the dialog core takes its palette at once; a field's call reads it from its element later. */
+  const readCall = (): DialogCall => {
     if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
-    const scope = readUiScope();
-    return openAfter(view, options, disposals, { ...scope, primary: options.primary ?? scope.primary });
+    return { ...readDialogCall(), scope: readUiScope() };
+  };
+  /** The context a captured call hands to the `open` it calls next. */
+  let captured: DialogCall | undefined;
+
+  /**
+   * Reads the call's context now: its palette, the page it belongs to, and the opener focus returns to. A dialog whose
+   * code loads first opens with it later through `target.open`, as if it had opened at the call; a test that replaces
+   * `dialogCore.open` still sees every prompt.
+   */
+  const capture = (target: DialogCore, call: DialogCall = readCall()): DialogCore["open"] => {
+    return (view, options) => {
+      captured = call;
+      try {
+        return target.open(view, options);
+      } finally {
+        captured = undefined;
+      }
+    };
   };
 
-  const openAfter = <T>(
-    view: DialogRender<T>,
-    options: OpenDialogOptions,
-    requested: number,
-    uiScope: ReturnType<typeof readUiScope>,
-  ): Promise<T | undefined> => {
+  const open: DialogCore["open"] = (view, options = {}) => {
+    // Taken at once: a dialog that its own render opens has a call of its own.
+    const call = captured ?? readCall();
+    captured = undefined;
+    return openAfter(view, options, call);
+  };
+
+  const openAfter = <T>(view: DialogRender<T>, options: OpenDialogOptions, call: DialogCall): Promise<T | undefined> => {
     if (options.signal?.aborted) return Promise.resolve(undefined);
     if (options.history) {
       // Dialogs closed just now leave the history first, or this dialog's entry would be the one removed.
       if (historySyncScheduled) syncHistory();
-      if (returning) return returning.then(() => openAfter(view, options, requested, uiScope));
+      if (returning) return returning.then(() => openAfter(view, options, call));
     }
-    // A dialog that waited for history while islands were disposed would open over content it was never meant for.
-    if (disposals !== requested) return Promise.resolve(undefined);
+    // A dialog that waited for history or its code while islands were disposed would open over content it was never
+    // meant for.
+    if (pageDisposals() !== call.requested) return Promise.resolve(undefined);
     const dialog = ensureDialogElement();
-    if (!state.motion && frameMotion) state.motion = frameMotion.createFrameMotion(dialog);
     listen();
     const previousTop = state.stack[state.stack.length - 1];
     // The shown level fades out while the new one replaces it in the same frame; it is hidden once it has faded.
@@ -687,18 +700,22 @@ export const createDialogCore = () => {
     container.className = options.contentClassName ?? DEFAULT_CONTENT_CLASS;
     dialog.appendChild(container);
 
+    // A field's call names its element; its palette is read now, from that element, not from where focus went.
+    const scope = call.scope ?? readUiScope(call.source?.isConnected ? call.source : undefined);
     const entry: DialogStackEntry = {
-      uiScope,
+      uiScope: { ...scope, primary: options.primary ?? scope.primary },
       container,
       panelClassName,
       cancelBehavior,
       initialFocus,
-      opener: activeElement instanceof HTMLElement ? activeElement : undefined,
-      openerRing: ringOnReturn(activeElement),
+      // An opener that left the page while the code loaded hands the return to the focus at opening.
+      opener: call.opener?.isConnected ? call.opener : activeElement instanceof HTMLElement ? activeElement : undefined,
+      openerRing: call.openerRing,
       ariaLabel: options.ariaLabel,
       ariaDescribedBy: options.ariaDescribedBy,
       role: options.role ?? "dialog",
       modal: true,
+      follow: options.followContent,
     };
 
     return new Promise((resolve, reject) => {
@@ -747,7 +764,8 @@ export const createDialogCore = () => {
                   },
                   setPosition: (position) => {
                     if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) return;
-                    entry.position = position;
+                    if (state.stack[state.stack.length - 1] === entry && state.motion?.position(entry.position, position) === false) return;
+                    entry.position = position ? { ...position } : null;
                     applyPresentation(entry);
                   },
                   requestDismiss: () => requestDismiss(entry),
@@ -771,9 +789,9 @@ export const createDialogCore = () => {
           const hide = () => {
             previousTop.container.style.display = "none";
           };
-          if (state.motion) state.motion.arrive(container, hide);
+          if (state.motion) state.motion.arrive(container, hide, entry.follow);
           else hide();
-          announceLevel(entry);
+          loadFrameMotion(state, entry);
         }
 
         if (state.stack.length === 1) {
@@ -791,6 +809,8 @@ export const createDialogCore = () => {
             else dialog.show();
           } else dialog.setAttribute("open", "");
           observeConnection();
+          // Only opted-in levels follow content; the first open itself does not animate.
+          loadFrameMotion(state);
         }
         options.signal?.addEventListener("abort", abort, { once: true });
         if (options.signal?.aborted) abort();
@@ -825,12 +845,13 @@ export const createDialogCore = () => {
     open,
     close,
     isOpen: () => state.stack.length > 0,
+    capture,
     holdHistory,
     historySettled,
   };
 };
 
-const { holdHistory, historySettled, ...publicDialogCore } = createDialogCore();
+const { capture, holdHistory, historySettled, ...publicDialogCore } = createDialogCore();
 export const dialogCore: DialogCore = publicDialogCore;
 
 /**
@@ -839,5 +860,12 @@ export const dialogCore: DialogCore = publicDialogCore;
  * Release during island disposal forgets the marker without traversing; the router may replace the remaining entry.
  */
 export const holdDialogHistory = holdHistory;
+/**
+ * Internal: for a dialog whose code loads first. Call it synchronously where the dialog is asked for; the returned
+ * `open` uses that call's palette and opener, and resolves `undefined` without opening when the page changed since.
+ */
+export const captureDialogOpen = (): DialogCore["open"] => capture(dialogCore);
+/** Internal: the `open` of a call read earlier with `readDialogCall()`, for code that loads after the call. */
+export const dialogOpenFor = (call: DialogCall): DialogCore["open"] => capture(dialogCore, call);
 /** Internal: waits until released holders have left history or were forgotten during island disposal. */
 export const dialogHistorySettled = historySettled;

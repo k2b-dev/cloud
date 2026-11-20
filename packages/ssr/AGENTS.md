@@ -95,6 +95,17 @@ build, mount runtime, or adapters reaches every application: also run the
 7. In production only, writes `_ssr/manifest.json` with the JavaScript content
    version and each entry's static import closure after the export dedupe.
 
+With `variants` in production, a Babel-free discovery build (Bun's JSX
+parser) first lists every reachable module; steps 3 to 6 then run once per
+variant, one after another, with the modules `transform` changed passed as
+`Bun.build` `files`. Never rewrite plain modules in a plugin `onLoad`: Bun
+calls it for `with { type: "file" }` imports too and the asset turns into
+JavaScript. The default variant builds into `_ssr/`, every other one into
+`_ssr/<name>/`; the one manifest lists them under `variants`, each with a
+content version that includes its name. `html()` reads the build that
+`select` names and falls back to the default; adapters map a version to its
+directory with `getAssetDirectory()`. Development ignores `variants`.
+
 Production builds emit no source maps. Development builds use linked maps by
 default; `devSourcemap` opts into `"inline"` or `"none"`.
 

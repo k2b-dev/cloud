@@ -174,7 +174,7 @@ function Row(props: {
           unavailable={props.item.canApprove === false ? t().anotherAdminRequired : undefined}
           onConfirm={() => props.decide({ approved: true })}
           onDecline={() => props.decide({ approved: false })}
-          // The outcome lines join the card's sentence, so they speak the stored review's language.
+          // The outcome lines join the card's sentence, so they speak the card's language, the reader's.
           outcome={{
             lines: outcomeLines(
               card(),

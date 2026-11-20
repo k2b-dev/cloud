@@ -1,12 +1,11 @@
-import { createSignal, type JSX, Show } from "solid-js";
-import { TextInput } from "../inputs/TextInput";
-import { showTruncatedTitle } from "../internal/truncated-title";
+import { createSignal, type JSX } from "solid-js";
+import type { TextInput } from "../inputs/TextInput";
 import { resolveUiMessages } from "../intl/messages";
-import { type DialogTone, dialogToneIcon, dialogToneLabel } from "./dialog-tone";
+import { captureDialogOpen, type DialogCore } from "./dialog-core";
+import { DialogHeader, promptButtonVariant, promptTone } from "./prompt-header";
 import { resolvePromptMessages } from "./prompt-messages";
 import { openPrompt } from "./prompt-sheet";
 import type { ConfirmOptions, DialogOptions } from "./prompts";
-import { SuccessCheck } from "./success-check";
 
 // The dialog frame and `prompts.confirm`, apart from the form prompts: `PanelDialog` asks before discarding changes,
 // and the form prompts render date pickers whose phone sheet is a `PanelDialog`, so one module would be an import cycle.
@@ -15,58 +14,49 @@ export type PromptContent = string | HTMLElement | JSX.Element;
 
 const PHRASE_SLOT = "\u0000";
 
-/** A prompt's `variant` is its tone too: a success, warning or danger prompt carries the dialog tone of that name. */
-export const promptTone = (variant: DialogOptions["variant"]): DialogTone | undefined => (variant === "primary" ? undefined : variant);
+export const openError = (content: string | HTMLElement, options?: DialogOptions, sheet?: boolean, open?: DialogCore["open"]) =>
+  openPrompt(
+    (close) => (
+      <div class="k2b-dialog__panel">
+        <DialogHeader title={options?.title ?? resolveUiMessages().error} icon={options?.icon} tone="danger" close={close} />
+        <div class="k2b-dialog__body">{content}</div>
+        <footer class="k2b-dialog__actions">
+          <button type="button" class="k2b-button" onClick={() => close()}>
+            {options?.confirmText || resolveUiMessages().close}
+          </button>
+        </footer>
+      </div>
+    ),
+    { ...options, variant: "danger" },
+    resolveUiMessages().error,
+    sheet,
+    undefined,
+    open,
+  );
 
-/** A warning asks for care, not for a destructive act: its confirm button stays primary. */
-export const promptButtonVariant = (variant: DialogOptions["variant"]): "danger" | "primary" | "success" =>
-  variant === undefined || variant === "warning" ? "primary" : variant;
+/**
+ * The fields of a prompt did not load: the person sees why and asks again, which requests them again. The message
+ * keeps the dialog in the middle, since the phone sheet loads on demand too. `open` is the one the prompt captured at
+ * its call, so after a navigation the message does not appear over the new page either.
+ */
+export const promptFormUnavailable = async (signal: AbortSignal | undefined, open: DialogCore["open"]): Promise<void> => {
+  if (!signal?.aborted) await openError(resolvePromptMessages().formUnavailable, { signal }, false, open);
+};
 
-export const DialogHeader = (props: {
-  close: () => void;
-  title?: string;
-  icon?: string;
-  tone?: DialogTone;
-  /** A success tone draws its check once when the header appears; see `prompts.success`. */
-  celebrate?: boolean;
-}): JSX.Element => (
-  <header class="k2b-dialog__header">
-    <Show
-      when={props.celebrate && props.tone === "success"}
-      fallback={
-        <Show when={props.tone ? dialogToneIcon(props.tone) : props.icon}>
-          {(icon) => <i class={icon()} data-tone={props.tone} aria-hidden="true" />}
-        </Show>
-      }
-    >
-      <SuccessCheck />
-    </Show>
-    <Show when={props.tone}>
-      {(tone) => (
-        <span class="k2b-sr-only" data-dialog-tone-label>
-          {dialogToneLabel(resolveUiMessages(), tone())}
-        </span>
-      )}
-    </Show>
-    <Show when={props.title} fallback={<span class="k2b-dialog__header-spacer" />}>
-      {(title) => <h2 onPointerEnter={showTruncatedTitle}>{title()}</h2>}
-    </Show>
-    <button type="button" class="k2b-dialog__close" aria-label={resolveUiMessages().closeDialog} onClick={props.close}>
-      <i class="ti ti-x" aria-hidden="true" />
-    </button>
-  </header>
-);
-
-export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions): Promise<boolean | undefined> => {
+const openConfirm = (
+  content: PromptContent,
+  options: ConfirmOptions | undefined,
+  phraseInput?: typeof TextInput,
+  open?: DialogCore["open"],
+) => {
   const confirmationPhrase = options?.confirmationPhrase;
-  if (confirmationPhrase !== undefined && (confirmationPhrase.trim().length === 0 || /[\r\n\t]/.test(confirmationPhrase))) {
-    throw new Error("confirmationPhrase must be non-empty, visible, and single-line");
-  }
+  // A confirmation that asks for a phrase never opens without the field to type it.
+  if (confirmationPhrase && !phraseInput) throw new Error("A confirmationPhrase needs its text field");
   let confirmationInput: HTMLInputElement | undefined;
 
   return openPrompt<boolean>(
     (close) => {
-      if (!confirmationPhrase) {
+      if (!confirmationPhrase || !phraseInput) {
         return (
           <div class="k2b-dialog__panel">
             <DialogHeader title={options?.title} icon={options?.icon} tone={promptTone(options?.variant)} close={() => close(false)} />
@@ -83,6 +73,7 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
         );
       }
 
+      const PhraseInput = phraseInput;
       // The catalog owns word order; the slot marks where the verbatim phrase is rendered as code.
       const [labelBefore, labelAfter] = resolvePromptMessages().typeToConfirm({ phrase: PHRASE_SLOT }).split(PHRASE_SLOT);
       const [confirmationValue, setConfirmationValue] = createSignal("");
@@ -97,7 +88,7 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
           <DialogHeader title={options?.title} icon={options?.icon} tone={promptTone(options?.variant)} close={() => close(false)} />
           <div class="k2b-dialog__body k2b-prompt-form">
             <div class="k2b-prompt-copy">{content}</div>
-            <TextInput
+            <PhraseInput
               ref={(element) => {
                 confirmationInput = element;
               }}
@@ -132,7 +123,39 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
     resolvePromptMessages().confirmation,
     true,
     confirmationPhrase ? () => confirmationInput ?? null : undefined,
+    open,
   );
+};
+
+export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions): Promise<boolean | undefined> => {
+  const confirmationPhrase = options?.confirmationPhrase;
+  if (confirmationPhrase === undefined) return openConfirm(content, options);
+  if (confirmationPhrase.trim().length === 0 || /[\r\n\t]/.test(confirmationPhrase)) {
+    throw new Error("confirmationPhrase must be non-empty, visible, and single-line");
+  }
+  // The typed phrase uses the form's text field, which loads with the form prompts.
+  const field = phraseField?.loaded();
+  if (field) return openConfirm(content, options, field);
+  // The confirmation opens with the palette, page and opener of this call, not of the moment the field arrives.
+  const open = captureDialogOpen();
+  if (!phraseField) return promptFormUnavailable(options?.signal, open).then(() => false);
+  return phraseField.load().then(
+    (input) => openConfirm(content, options, input, open),
+    async () => {
+      await promptFormUnavailable(options?.signal, open);
+      return false;
+    },
+  );
+};
+
+/**
+ * Where the typed phrase's text field comes from: `prompts` provides it from the form chunk that loads on demand.
+ * `PanelDialog` imports this module for its discard question, and the form's date picker imports `PanelDialog`
+ * through its phone sheet, so importing the form's loader here would be an import cycle.
+ */
+let phraseField: { loaded: () => typeof TextInput | undefined; load: () => Promise<typeof TextInput> } | undefined;
+export const providePhraseField = (source: NonNullable<typeof phraseField>) => {
+  phraseField = source;
 };
 
 /** `prompts` starts as this object; `PanelDialog` asks through it, so it reaches a replaced `prompts.confirm` too. */

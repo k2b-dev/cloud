@@ -212,8 +212,7 @@ for each viewer who may read it. Without a readable name the projection says
 `named: false` and `name` is only “Automation”, so surfaces read “From an
 automation” instead of naming it. Chat and automation links appear only when the viewer
 can open the target. Durable provenance stores IDs, never translated names or
-display links. The existing inter-chat delivery path also records its source
-chat. Its delivery lifecycle is unchanged.
+display links.
 
 The admission limit is defined by `AI_MESSAGE_QUEUE_LIMIT` for the existing
 personal composer queue. Platform adapters supply provenance through the
@@ -236,6 +235,17 @@ key or another delegated credential. The text is still accepted and the turn
 keeps running, but it loses rights that need a person's session, such as
 writing to another chat with `ai.chat.send`. An approval without text does not
 restrict the turn.
+
+Queued text, steering, client tool results, and edited action drafts run as
+the person and session that started the turn or queued the entry. A session of
+the Cloud app may therefore edit, retry, or send now only entries queued in the
+app, and steer, answer tool requests, or edit an action's draft only in turns
+started there; others answer `403` with code `FORBIDDEN`. Automation entries
+never come from the app, so the app cannot edit, retry, or send them now.
+Removing an entry adds no text, so the app may remove any entry, automation
+entries included. A browser session, `cld`, and other clients keep their
+access. The Cloud app cannot write to another chat with `ai.chat.send` or create
+one with `ai.chat.create`; both answer `source_restricted`.
 
 ## List place chats
 
@@ -506,20 +516,18 @@ work from model text or trigger language-dependent automatic retries.
 
 ### Conversation titles
 
-A title given at creation, such as the localized "New chat" of the web chat,
-stays a default title. A chat created without a title gets the same default in
-the request locale, so `cld assistant chats create` names a chat "Neuer Chat"
-for a German caller. The first message's text replaces it, and enrichment may
-rename it. Renaming through `PATCH /api/ai/conversations/:id` marks the title as
-the user's (`titleSource: "user"`). Neither the first message nor enrichment
-replaces that title, for web and API clients alike. Renaming to the current title
-changes nothing.
+An explicit title at creation belongs to the person (`titleSource: "user"`),
+including a title equal to "New chat". The first message and enrichment preserve it.
+Without a title, the chat gets the localized default in the request locale:
+"Neuer Chat" for a German caller. The first message replaces that default,
+and enrichment may rename it.
 
-The CLI is one consumer of this rule. `--title` on `cld assistant -p` and
-`cld assistant chats create` creates the chat and then renames it through this
-endpoint. The CLI trims the title and checks the 1 to 120 character limit before
-creating anything. A `--title` equal to the default title the chat got keeps
-automatic naming.
+Renaming through `PATCH /api/ai/conversations/:id` also marks a changed title as
+the person's. Renaming to the current title changes nothing.
+
+`--title` on `cld assistant -p` and `cld assistant chats create` passes the title
+in the creation request. The CLI trims it and checks the 1 to 120 character
+limit before creating anything.
 
 ## Chat route groups
 
@@ -1459,6 +1467,32 @@ author field.
 The optional host-owned `runConfig.codeOrigin` is copied to the user message
 and turn record for attribution; it grants no tool authority.
 
+### Durable delegated completion
+
+The normal terminal-turn transaction writes a `meta.chatDone` activity into the
+source chat, keyed by the original source and target turn UUIDs. Its immutable
+send receipt records the verified source coordinates. Public short-ID reuse
+cannot redirect delivery. Success, failure and abort each retain their status;
+deleted or archived sources receive no activity. An archived source stays skipped
+even if it is restored later. A queued request removed, archived, or refused
+before starting records the same terminal fact, keyed by source turn and send
+receipt; its target turn is null. Receipts accepted before this
+source snapshot existed are not reconstructed from public identifiers.
+
+The runtime's bounded sweep repairs missed activities after terminal events have
+been published. Concurrent repairs share the unique key. A busy source is
+deferred rather than blocking the target's completion. The activity and its
+recovery marker commit together. The source lookup and insert share a savepoint,
+so a source-side database error cannot undo target completion. Such errors leave
+the marker unset and log only the error code and work coordinates. Recovery stops
+after five failed attempts for that item; a busy source consumes no attempt.
+Existing live invalidations deliver the new history; no per-event lookup or extra
+turn is needed. The owner's authorized snapshot batches target names, answer
+previews (first line, at most 320 characters), and exact turn/message validation
+in the existing origin query. Normal retries preserve the old activity and add a
+new one for the new target turn; an old link cannot select a reused sequence.
+Model context excludes these activities.
+
 ## Host admission and terminal bookkeeping
 
 The first `startAiRuntime` call from `@k2b/cloud/ai/runtime` can register
@@ -1510,3 +1544,16 @@ it as `AiTurnError.message` and renders it without interpreting host domains.
 A failed call without response bytes uses zero or its recorded estimate; other
 unknown usage stays fail-closed. Provider diagnostics remain log-only. Third-party hosts can supply their own
 explanations through the same contract.
+
+### Idempotent empty-chat creation
+
+Core's `ai.chat.create` Action and `POST /api/ai/conversations` share
+`aiConversations.createConversation`. A stable `requestId` claims one durable
+`ai.conversation_creations` receipt per owner, with normalized input hash.
+Concurrent retries return the same active chat. Conflicting input fails;
+archiving or deleting the original never creates a replacement.
+`AiConversationCreationError` from `@k2b/cloud/ai/runtime` distinguishes
+`conflict`, `unavailable` and `project_unavailable` for hosts translating transport errors.
+Core derives a domain-separated UUIDv8 from owner, operation and idempotency key;
+it checks full source authority and current Project read access before invoking
+the service. Creation writes an empty chat and does not submit an AI turn.

@@ -5,7 +5,7 @@ section: Operations
 order: 1198
 description: Additional Mail Actions for summaries, explicit work status, individual messages, unassigned claims, and conversation references.
 tags: [mail, upgrade, capabilities, cli]
-updated: 2026-11-12
+updated: 2026-11-19
 ---
 
 # Mail collaboration capability additions
@@ -44,3 +44,20 @@ list share. The `/workspace-preference` routes and initial workspace snapshot
 expose these preferences. Existing view settings and sending behavior remain
 unchanged. See [Mail](/en/apps/mail#reader-notes-sender-history-and-workspace-preferences)
 for request and response contracts.
+
+## Sender identity validation errors
+
+Mail reports an unavailable or unverified sender with
+`SENDER_IDENTITY_UNVERIFIED` (400), replacing the generic `BAD_INPUT` for this
+reason. Draft creation, send preparation and compose previews can return this
+code through REST and capabilities. Clients that branch on `BAD_INPUT` should also handle the new code.
+The HTTP status stays 400; no data migration or provider reconfiguration is
+required. Messages are English or German according to the request locale and
+name an available mailbox sender address with a setup path. Disabled identities
+are not named. Capabilities transmit the final message; the internal address
+field is not part of their public error schema.
+
+Automation and workflow sends use the same sender validation code; the 400
+status still determines that the rejection is not retryable. For
+`DRAFT_DOCUMENT_STREAM_FULL`, REST and capability responses give localized
+storage and retry guidance; the code and status remain unchanged.

@@ -19,7 +19,7 @@ import { cleanupPublicAttachmentLinks } from "./attachment-links";
 import { type BindingRediscoveryResult, rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
 import { releaseDueSnoozes } from "./collaboration";
-import type { ConnectorEnvelope, FlagChange } from "./connectors";
+import type { ConnectorEnvelope, FlagChange, ProjectionEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
 import { closeReusableImapSessions } from "./connectors/imap-smtp";
 import { keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
@@ -291,11 +291,11 @@ export const claimFence = async (
 // fits a Postgres B-tree entry (at most 2704 bytes) in message_contents_message_id_idx.
 const MESSAGE_ID_MAX_BYTES = 998;
 
-const replyMessageIds = (message: ConnectorEnvelope): string[] => [
+const replyMessageIds = (message: ProjectionEnvelope): string[] => [
   ...new Set([message.inReplyTo, ...message.references].filter((value): value is string => Boolean(value))),
 ];
 
-const allParticipantEmails = (message: ConnectorEnvelope): string[] => [
+const allParticipantEmails = (message: ProjectionEnvelope): string[] => [
   ...new Set(
     Object.values(message.addresses)
       .flat()
@@ -307,7 +307,7 @@ const allParticipantEmails = (message: ConnectorEnvelope): string[] => [
 const storedAddress = (address: string): string => normalizeEmailAddress(address) ?? address.trim().toLowerCase();
 
 /** The message's From addresses in their stored form, to compare with a stored message's. */
-const senderSet = (message: ConnectorEnvelope): string[] => [
+const senderSet = (message: ProjectionEnvelope): string[] => [
   ...new Set(message.addresses.from.map((address) => storedAddress(address.address))),
 ];
 
@@ -318,7 +318,7 @@ const getAutomaticConversationAdmission = async (params: {
   conversationId: string;
   messageId: string;
   normalizedSubject: string;
-  message: ConnectorEnvelope;
+  message: ProjectionEnvelope;
   mailboxAddresses: string[];
   fromMailbox: boolean;
 }): Promise<"participant" | "list" | null> => {
@@ -439,7 +439,7 @@ const getAutomaticConversationAdmission = async (params: {
   return eligible?.admission ?? null;
 };
 
-const counterpartyLabels = (message: ConnectorEnvelope, outbound: boolean): string[] => {
+const counterpartyLabels = (message: ProjectionEnvelope, outbound: boolean): string[] => {
   const addresses = outbound ? [...message.addresses.to, ...message.addresses.cc, ...message.addresses.bcc] : message.addresses.from;
   const labels = new Map<string, string>();
   for (const address of addresses) {
@@ -454,7 +454,7 @@ const counterpartyLabels = (message: ConnectorEnvelope, outbound: boolean): stri
  * server, but several copies can share one stored message, and not every copy carries every
  * address: the copy in Sent keeps its Bcc recipients, the delivered copy does not.
  */
-const upsertAddresses = async (db: typeof sql, messageId: string, message: ConnectorEnvelope, newlyInserted = false): Promise<void> => {
+const upsertAddresses = async (db: typeof sql, messageId: string, message: ProjectionEnvelope, newlyInserted = false): Promise<void> => {
   const existing = newlyInserted
     ? []
     : await db<{ role: string; position: number; normalized_email: string }[]>`
@@ -486,7 +486,7 @@ const findConversation = async (params: {
   db: typeof sql;
   mailboxId: string;
   messageId: string;
-  message: ConnectorEnvelope;
+  message: ProjectionEnvelope;
   normalizedSubject: string;
   /** The other side of the message: its recipients when the mailbox sent it, otherwise its sender and Reply-To, without the mailbox's own addresses. */
   counterparties: string[];
@@ -754,14 +754,36 @@ const findManualConversationOverride = async (params: { db: typeof sql; mailboxI
   return override?.conversation_id ?? null;
 };
 
-const findCanonicalMessageContent = async (params: {
+const findOutboxMessageContent = async (params: {
   db: typeof sql;
   fromMailbox: boolean;
   mailboxId: string;
   remoteResourceId: string;
-  message: ConnectorEnvelope;
-  normalizedSubject: string;
+  message: ProjectionEnvelope;
 }): Promise<string | null> => {
+  if (params.message.remoteRef.kind === "jmap") {
+    if (!params.message.messageId || !params.fromMailbox) return null;
+    const candidates = await params.db<{ message_id: string }[]>`
+      SELECT DISTINCT outbox.message_id
+      FROM mail.outbox_submissions outbox
+      WHERE outbox.mailbox_id = ${params.mailboxId}::uuid
+        AND outbox.message_id IS NOT NULL
+        AND lower(btrim(outbox.stable_message_id)) = lower(btrim(${params.message.messageId}))
+      LIMIT 2
+    `;
+    const [candidate] = candidates;
+    if (candidates.length !== 1 || !candidate) return null;
+    const [other] = await params.db<{ id: string }[]>`
+      SELECT ref.id
+      FROM mail.remote_message_refs ref
+      JOIN mail.folders folder ON folder.id = ref.folder_id
+      WHERE ref.message_id = ${candidate.message_id}::uuid
+        AND folder.remote_resource_id = ${params.remoteResourceId}::uuid
+        AND ref.remote_id <> ${params.message.remoteRef.emailId}
+      LIMIT 1
+    `;
+    return other ? null : candidate.message_id;
+  }
   if (params.message.messageId && params.fromMailbox) {
     const [outbound] = await params.db<{ message_id: string }[]>`
       SELECT outbox.message_id
@@ -774,6 +796,19 @@ const findCanonicalMessageContent = async (params: {
     `;
     if (outbound) return outbound.message_id;
   }
+  return null;
+};
+
+const findCanonicalMessageContent = async (params: {
+  db: typeof sql;
+  fromMailbox: boolean;
+  mailboxId: string;
+  remoteResourceId: string;
+  message: ProjectionEnvelope;
+  normalizedSubject: string;
+}): Promise<string | null> => {
+  const outbound = await findOutboxMessageContent(params);
+  if (outbound) return outbound;
   if (params.message.providerMessageId) {
     const candidates = await params.db.unsafe<{ message_id: string }[]>(providerMessageLookupQuery, [
       params.remoteResourceId,
@@ -866,11 +901,11 @@ type IngestEnvelopeParams = {
   mailboxId: string;
   remoteResourceId: string;
   folderId: string;
-  message: ConnectorEnvelope;
+  message: ProjectionEnvelope;
   captureWorkflowTriggers?: boolean;
 };
 
-type AddressRole = keyof ConnectorEnvelope["addresses"];
+type AddressRole = keyof ProjectionEnvelope["addresses"];
 
 /**
  * Bounds the envelope values the store cannot hold as received. One unusable header must not
@@ -879,8 +914,8 @@ type AddressRole = keyof ConnectorEnvelope["addresses"];
  * in the message source.
  */
 const storableEnvelope = (
-  message: ConnectorEnvelope,
-): { message: ConnectorEnvelope; skipped: { role: AddressRole; length: number }[]; messageIdShortened: boolean } => {
+  message: ProjectionEnvelope,
+): { message: ProjectionEnvelope; skipped: { role: AddressRole; length: number }[]; messageIdShortened: boolean } => {
   const skipped: { role: AddressRole; length: number }[] = [];
   const keep = (role: AddressRole) =>
     message.addresses[role].filter((address) => {
@@ -911,7 +946,7 @@ const isTrashOrJunkPlacement = async (db: typeof sql, folderId: string): Promise
  * action. Gmail lists a message in All Mail too and labels it with the folders it is in, so its
  * labels give the same answer whichever folder syncs first.
  */
-const startsWaiting = async (db: typeof sql, folderId: string, message: ConnectorEnvelope): Promise<boolean> => {
+const startsWaiting = async (db: typeof sql, folderId: string, message: ProjectionEnvelope): Promise<boolean> => {
   if (isAutomaticSubmission(message.protocolFacts?.autoSubmitted)) return false;
   if (message.inReplyTo || message.references.length > 0) return true;
   const labels = new Set(message.labels.map((label) => label.toLowerCase()));
@@ -922,14 +957,16 @@ const startsWaiting = async (db: typeof sql, folderId: string, message: Connecto
   return !folder?.inbox && (folder?.sent === true || labels.has("\\sent"));
 };
 
+/** JMAP callers own a transaction and lock its remote resource before projecting any envelopes. */
 export const ingestEnvelope = async (params: IngestEnvelopeParams): Promise<string> => {
   const { message, skipped, messageIdShortened } = storableEnvelope(params.message);
   if (skipped.length > 0 || messageIdShortened) {
     // Lengths only: the rejected values are untrusted header text from the message.
     log.warn("Mail adjusted envelope values it cannot store", {
       folderId: params.folderId,
-      uidValidity: message.remoteRef.uidValidity,
-      uid: message.remoteRef.uid,
+      ...(message.remoteRef.kind === "imap"
+        ? { uidValidity: message.remoteRef.uidValidity, uid: message.remoteRef.uid }
+        : { kind: message.remoteRef.kind }),
       skippedAddresses: skipped,
       messageIdShortened,
     });
@@ -968,16 +1005,44 @@ const prepareEnvelopeContext = async (params: IngestEnvelopeParams) => {
   return { protocolFacts, contentHash, normalizedSubject, mailboxAddresses, isOutbound, fromMailbox };
 };
 
-const hashEnvelopeAddress = (params: Pick<IngestEnvelopeParams, "remoteResourceId" | "folderId" | "message">) =>
-  sha256Json({
+export const hashEnvelopeAddress = (params: Pick<IngestEnvelopeParams, "remoteResourceId" | "folderId" | "message">) => {
+  if (params.message.remoteRef.kind === "jmap") {
+    return sha256Json({ kind: "jmap", remoteResourceId: params.remoteResourceId, emailId: params.message.remoteRef.emailId });
+  }
+  return sha256Json({
     remoteResourceId: params.remoteResourceId,
     folderId: params.folderId,
     uidValidity: params.message.remoteRef.uidValidity,
     uid: params.message.remoteRef.uid,
   });
+};
 
 const resolveEnvelopeAddress = async (params: IngestEnvelopeParams & { context: Awaited<ReturnType<typeof prepareEnvelopeContext>> }) => {
   const { normalizedSubject, fromMailbox } = params.context;
+  if (params.message.remoteRef.kind === "jmap") {
+    const [knownRemoteRef] = await params.db<{ message_id: string }[]>`
+      SELECT message_id
+      FROM mail.remote_message_refs
+      WHERE folder_id = ${params.folderId}::uuid
+        AND remote_id = ${params.message.remoteRef.emailId}
+    `;
+    if (knownRemoteRef) return { messageContentId: knownRemoteRef.message_id, copyOfKnownMessage: false };
+    const candidates = await params.db<{ message_id: string }[]>`
+      SELECT DISTINCT ref.message_id
+      FROM mail.remote_message_refs ref
+      JOIN mail.folders folder ON folder.id = ref.folder_id
+      WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid
+        AND ref.remote_id = ${params.message.remoteRef.emailId}
+      LIMIT 2
+    `;
+    if (candidates.length > 1) {
+      throw Object.assign(new Error("JMAP email identity resolves to multiple message contents"), {
+        code: "JMAP_MESSAGE_IDENTITY_CONFLICT",
+      });
+    }
+    const messageContentId = candidates[0]?.message_id ?? (await findOutboxMessageContent({ ...params, fromMailbox }));
+    return { messageContentId, copyOfKnownMessage: messageContentId !== null };
+  }
   const [knownRemoteRef] = await params.db<{ message_id: string }[]>`
     SELECT message_id
     FROM mail.remote_message_refs
@@ -1080,7 +1145,27 @@ const storeEnvelopeContent = async (
 
 const bindEnvelopeRef = async (params: IngestEnvelopeParams & { messageContentId: string; newlyInserted: boolean }) => {
   let { messageContentId, newlyInserted } = params;
-  const [remoteRef] = await params.db<{ id: string; message_id: string }[]>`
+  let remoteRef: { id: string; message_id: string } | undefined;
+  if (params.message.remoteRef.kind === "jmap") {
+    [remoteRef] = await params.db<{ id: string; message_id: string }[]>`
+      INSERT INTO mail.remote_message_refs (
+        folder_id, message_id, remote_id, uid_validity, uid, modseq, connector_ref, last_seen_at, stale_at
+      )
+      VALUES (
+        ${params.folderId}::uuid,
+        ${messageContentId}::uuid,
+        ${params.message.remoteRef.emailId},
+        NULL, NULL, NULL, '{}'::jsonb, now(), NULL
+      )
+      ON CONFLICT (folder_id, remote_id) WHERE remote_id IS NOT NULL DO UPDATE SET
+        modseq = EXCLUDED.modseq,
+        connector_ref = EXCLUDED.connector_ref,
+        last_seen_at = now(),
+        stale_at = NULL
+      RETURNING id, message_id
+    `;
+  } else {
+    [remoteRef] = await params.db<{ id: string; message_id: string }[]>`
     INSERT INTO mail.remote_message_refs (
       folder_id, message_id, uid_validity, uid, modseq, connector_ref, last_seen_at, stale_at
     )
@@ -1101,6 +1186,7 @@ const bindEnvelopeRef = async (params: IngestEnvelopeParams & { messageContentId
       stale_at = NULL
     RETURNING id, message_id
   `;
+  }
   if (!remoteRef) throw new Error("Remote message reference insert returned no row");
   if (remoteRef.message_id !== messageContentId) {
     newlyInserted = false;
@@ -2376,6 +2462,7 @@ export const commitSyncBatch = async (params: {
           UPDATE mail.remote_message_refs
           SET stale_at = now()
           WHERE folder_id = ${params.folderId}::uuid AND stale_at IS NULL
+            AND uid_validity IS NOT NULL
           RETURNING id
         )
         UPDATE mail.message_placements mp
@@ -3207,9 +3294,9 @@ type HydrationTarget = {
 
 type HydrationBatch = { hydrated: boolean; settled: number; stopped: boolean; missingFromUid: number | null; targetError: unknown };
 
-const requestedHydrationTarget = async (messageId: string): Promise<HydrationTarget | null> => {
-  const [target] = await sql<HydrationTarget[]>`
-    SELECT mc.id, mc.hydration_attempt, mc.mailbox_id, rmr.folder_id, f.remote_resource_id
+const requestedHydrationTarget = async (messageId: string): Promise<HydrationTarget | "unsupported" | null> => {
+  const [target] = await sql<(HydrationTarget & { remote_id: string | null })[]>`
+    SELECT mc.id, mc.hydration_attempt, mc.mailbox_id, rmr.folder_id, f.remote_resource_id, rmr.remote_id
     FROM mail.message_contents mc
     JOIN mail.remote_message_refs rmr ON rmr.message_id = mc.id AND rmr.stale_at IS NULL
     JOIN mail.folders f
@@ -3224,10 +3311,10 @@ const requestedHydrationTarget = async (messageId: string): Promise<HydrationTar
     WHERE mc.id = ${messageId}::uuid
       AND mc.hydration_status <> 'complete'
       AND mc.hydration_attempt < 5
-    ORDER BY f.role = 'inbox' DESC, rmr.last_seen_at DESC
+    ORDER BY (rmr.uid_validity IS NOT NULL) DESC, f.role = 'inbox' DESC, rmr.last_seen_at DESC
     LIMIT 1
   `;
-  return target ?? null;
+  return target?.remote_id != null ? "unsupported" : (target ?? null);
 };
 
 /**
@@ -3309,6 +3396,21 @@ export const hydrateMessageBatch = async (
         "mailboxId" in ctx.input
           ? await nextMailboxHydrationTarget(ctx.input.mailboxId, ctx.input.retryBodies !== false)
           : await requestedHydrationTarget(ctx.input.messageId);
+      if (message === "unsupported") {
+        if ("messageId" in ctx.input) {
+          await sql`
+            UPDATE mail.message_contents message
+            SET hydration_status = 'failed', hydration_error_code = 'REMOTE_MESSAGE_PROTOCOL_UNSUPPORTED'
+            WHERE message.id = ${ctx.input.messageId}::uuid
+              AND message.hydration_status IN ('envelope', 'headers', 'failed')
+              AND EXISTS (SELECT 1 FROM mail.remote_message_refs ref
+                WHERE ref.message_id = message.id AND ref.stale_at IS NULL AND ref.remote_id IS NOT NULL)
+              AND NOT EXISTS (SELECT 1 FROM mail.remote_message_refs ref
+                WHERE ref.message_id = message.id AND ref.stale_at IS NULL AND ref.uid_validity IS NOT NULL)
+          `;
+        }
+        return { hydrated: false };
+      }
       if (!message) return { hydrated: false };
       // Only the first batch of a completed incremental arrival shares sync priority.
       // Backfill, later body batches and retries retain background rank, so importing old
@@ -3618,7 +3720,10 @@ export const enqueueMessageHydration = async (messageId: string): Promise<void> 
 };
 
 /** Whether a job queued for this message's body can fetch it: a live copy in a synced folder of a synced mailbox. */
-export const canHydrateMessage = async (messageId: string): Promise<boolean> => (await requestedHydrationTarget(messageId)) !== null;
+export const canHydrateMessage = async (messageId: string): Promise<boolean> => {
+  const target = await requestedHydrationTarget(messageId);
+  return target !== null && target !== "unsupported";
+};
 
 /** Hydrates every pending body of the mailbox, one batch per turn of the shared worker. */
 export const enqueueMailboxHydration = async (mailboxId: string): Promise<void> => {
@@ -3813,6 +3918,7 @@ export const submitDueHydrationWork = async (): Promise<number> => {
             FROM mail.remote_message_refs remote_ref
             WHERE remote_ref.message_id = mc.id
               AND remote_ref.stale_at IS NULL
+              AND remote_ref.uid_validity IS NOT NULL
           )
       )
     ORDER BY mailbox.id

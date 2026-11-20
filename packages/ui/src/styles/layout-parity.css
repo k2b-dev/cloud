@@ -3815,7 +3815,10 @@ html {
     .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body,
     .k2b-ui .k2b-detail-panel__body,
     .k2b-ui .k2b-chat-timeline__viewport,
-    .k2b-ui .k2b-virtual-feed__viewport {
+    .k2b-ui .k2b-virtual-feed__viewport,
+    /* Match the SSR rule's specificity too: its hidden overflow must not
+       remove this track until hydration and narrow every row by 0.5rem. */
+    .k2b-ui .k2b-virtual-feed[data-server] > .k2b-virtual-feed__viewport {
       overflow-y: scroll;
     }
 

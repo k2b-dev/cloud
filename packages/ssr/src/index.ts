@@ -51,6 +51,11 @@ export type SsrOptions<T extends object = object> = {
   devSourcemap?: DevSourcemap;
   /** Path relative to rootDir (or absolute) to a default-exported Solid component receiving IslandErrorProps. */
   errorFallback?: string;
+  /**
+   * Production island builds per variant, for example one per language. Each name builds the islands once with its own
+   * `transform`; `select` picks the build a page loads. Development builds once without `transform`.
+   */
+  variants?: IslandVariants<T>;
   /** HTML template function (optional, has default) */
   template?: (
     ctx: {
@@ -58,6 +63,19 @@ export type SsrOptions<T extends object = object> = {
       scripts: string;
     } & T,
   ) => string | Promise<string>;
+};
+
+export type IslandVariants<T extends object = object> = {
+  /** Lowercase names such as `"en"`; the first is the default build, which keeps the plain `_ssr/` layout. */
+  names: readonly string[];
+  /** The variant one page render loads, from the same options the template receives. Any other value loads the default. */
+  select: (options: T) => string | undefined;
+  /**
+   * Rewrites one browser source module (`.ts`, `.tsx`, `.js`, ... including packages) for one variant, before the
+   * Solid transform. Return the source unchanged for modules it does not concern. Server rendering never runs it, so a
+   * page and its islands agree only when the variant's code renders what the full module renders for that page.
+   */
+  transform: (source: string, path: string, variant: string) => string | Promise<string>;
 };
 
 export type SsrConfig = {
@@ -118,6 +136,7 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     external,
     devSourcemap = "linked",
     errorFallback,
+    variants,
     template,
     rootDir: rootDirOption,
     componentRoots,
@@ -166,7 +185,11 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     const body = renderToString(render);
 
     // Production reads the manifest on first render; build scripts create configs before islands exist.
-    const manifest = dev ? undefined : readAssetManifest(config);
+    const assets = dev ? undefined : readAssetManifest(config);
+    // A variant missing from the manifest, such as one added after this build, loads the default build.
+    const variant = assets && variants?.select(opts);
+    // An own property only: a name such as "constructor" or "__proto__" is not a build.
+    const manifest = (variant && assets?.variants && Object.hasOwn(assets.variants, variant) && assets.variants[variant]) || assets;
     const assetPath = manifest ? `${ssrPath}/${manifest.version}` : ssrPath;
     // The loader preloads the rendered entries' shared static imports next to the entry imports, so the chain is one
     // level deep. It runs after script-blocking stylesheets, keeping the preload scanner from competing with first paint.
@@ -234,6 +257,7 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
             devSourcemap,
             external,
             errorFallback: errorFallback ? resolve(rootDir, errorFallback) : undefined,
+            variants,
           }).catch((error) => {
             islandsBuild = undefined;
             throw error;

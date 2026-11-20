@@ -3,6 +3,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { MailExecutionOperation, SenderAuthenticationPolicy } from "../contracts";
 import { type MailboxAccess, requireMailboxAccess, requireMailboxPermission } from "./access";
 import type { MailRequestContext } from "./auth";
+import { senderIdentityUnverified } from "./sender-identity-errors";
 
 type SqlClient = typeof sql;
 
@@ -145,23 +146,23 @@ const loadSenderSelection = async (params: {
   db: SqlClient;
 }): Promise<Result<SenderSelection>> => {
   if (!params.senderIdentityId) {
-    return params.operation === "actorSend"
-      ? fail(err.badInput("A verified sender identity is required"))
-      : ok({ policy: null, sentFolderId: null });
+    return params.operation === "actorSend" ? fail(senderIdentityUnverified()) : ok({ policy: null, sentFolderId: null });
   }
   const [identity] = await params.db<
     {
+      from_address: string;
+      status: string;
       automation_policy: "disabled" | "mailbox";
       sent_folder_id: string | null;
     }[]
   >`
-    SELECT automation_policy, sent_folder_id
+    SELECT from_address, status, automation_policy, sent_folder_id
     FROM mail.sender_identities
     WHERE id = ${params.senderIdentityId}::uuid
       AND mailbox_id = ${params.mailboxId}::uuid
-      AND status = 'verified'
   `;
-  if (!identity) return fail(err.badInput("Sender identity is not verified"));
+  if (!identity || identity.status !== "verified")
+    return fail(senderIdentityUnverified(identity?.status === "disabled" ? null : identity?.from_address));
   return ok({
     policy: { automation: identity.automation_policy },
     sentFolderId: identity.sent_folder_id,

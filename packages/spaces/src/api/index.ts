@@ -38,6 +38,7 @@ import {
   CreateTaskChecklistEntrySchema,
   CreateWormholeSchema,
   ErrorResponseSchema,
+  EstimateSuggestionResultSchema,
   GrantAccessSchema,
   ItemFilterResponseSchema,
   ItemFilterSchema,
@@ -130,6 +131,7 @@ import { resolveByteRange } from "../service/byte-range";
 import { loadCalendarEvents, loadCalendarSources } from "../service/calendar-view";
 import type { BoardOrderEntry } from "../service/columns";
 import type { CommentAuthor } from "../service/comments";
+import { suggestEstimate } from "../service/estimate-suggestion";
 import { spacesLive } from "../service/live";
 import { spacesLiveChannels } from "../service/live-channels";
 import { type SpacesMessages, spacesApiErrorMessage, spacesMessages } from "../service/messages";
@@ -1011,6 +1013,46 @@ const app = new Hono<AuthContext>()
       if (!item.ok) return respond(c, item);
       if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
       return respond(c, ok(await spacesService.item.checklist.list({ itemId: item.data.id })));
+    },
+  )
+  .post(
+    "/:id/items/:itemId/estimate-suggestion",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Suggest a task estimate",
+      description:
+        "Asks the assistant for the task's duration from its title, description, and checklist, for the edit form to offer. Requires write access. The answer is a suggestion, never stored as the task's estimate; it costs the caller's assistant allowance once per task text and language.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(EstimateSuggestionResultSchema, "Suggestion, no suggestion, or why there is none"),
+        400: jsonResponse(ErrorResponseSchema, "Item is not a task"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Item not found"),
+      },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
+      const checklist = await spacesService.item.checklist.list({ itemId: item.data.id });
+      return respond(
+        c,
+        ok(
+          await suggestEstimate({
+            source: {
+              itemId: item.data.id,
+              title: item.data.title,
+              description: item.data.description,
+              checklist: checklist.map((entry) => entry.label),
+            },
+            subject: c.get("accessSubject"),
+            locale: getLocale(c),
+            signal: c.req.raw.signal,
+          }),
+        ),
+      );
     },
   )
   .post(

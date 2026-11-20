@@ -205,7 +205,7 @@ included. `invalid` draws the red edge, marks the input `aria-invalid`, makes
 the current line its error, and takes the focus back into the field unless the
 person is somewhere else by now; otherwise the input is described by the
 current line. `disabled` locks the field, the eye, and both answers, such as
-while the value is saved or another window holds the question. The question's
+while another window holds the question. The question's
 `waiting` turns both answers off but keeps the field, and its `unavailable`
 turns `confirm` off. Use `inputRef` to move the focus into the field, such as
 after a jump to the question.
@@ -213,11 +213,14 @@ after a jump to the question.
 Typing, or the focus in the field, turns the question into the raised island of
 `edit` for good, with the facts on the canvas colour; in server HTML the
 question keeps its tinted ground, as on the first frame in the browser.
-`confirm` stays the filled answer. A promise that `confirm` returns keeps the
-question answered here until it settles, so a host can save while the question
-stays open and then set `state` to `decided`: the outcome takes the focus as for
-any other answer. A failed save that keeps the question open gives working
-answers back. Below 32.5 rem the field and its line take the full width and both
+`confirm` stays the filled answer. A promise that `confirm` or `decline` returns
+holds the question like any other answer: until it settles the field and the
+eye are disabled, as `disabled` draws them, both answers have `aria-disabled`,
+the pressed one `aria-busy`, and Enter, a second press, or a held key sends
+nothing. So a host can save while the question stays open and set `state` to
+`decided` before the promise resolves: the outcome takes the focus as for any
+other answer. A failed save that keeps the question open gives working answers
+back and the focus to the field, unless the person is somewhere else by now. Below 32.5 rem the field and its line take the full width and both
 answers share one row in equal halves, without icons, each label on one line.
 
 Use [ReferenceChip](/en/ui/content/label-chip#referencechip) for objects, places,
@@ -238,7 +241,13 @@ lead the person to an open question from elsewhere, such as a list of waiting
 questions, scroll to its `anchorId` and focus `.k2b-chat-decision__sentence`
 (`tabindex="-1"`): any focus that does not come from a press on the sentence
 itself briefly highlights it the same way. Handle rejected answer callbacks
-with `onAnswerError` and show a recoverable outcome.
+with `onAnswerError` and show a recoverable outcome. While the promise an
+answer's `onSelect` returns is pending, the question takes no answer at all:
+every answer has `aria-disabled`, the pressed one `aria-busy`, and a second
+press or a held key sends nothing. Once the promise settles, resolved or
+rejected, the answers work again if the question is still open, so change `state`
+before the promise resolves. A host that returns the question to `open` ends the
+running answer at once, even if its promise never settles.
 
 Pass `Chat.Outcome` only the lines this flow can reach. Every supplied line
 occupies the same grid cell, including hidden alternatives, so the longest line

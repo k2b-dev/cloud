@@ -43,10 +43,10 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width = 1440, dark = false, timelineWidth?: "narrow" | "wide", facts = false) => {
+const open = async (width = 1440, dark = false, timelineWidth?: "narrow" | "wide", facts = false, pending = false) => {
   const page = await browser.newPage({ viewport: { width, height: 1100 } });
   await page.setContent(
-    `<!doctype html><html${timelineWidth ? ` data-timeline-width="${timelineWidth}"` : ""}${facts ? " data-facts" : ""}><head><style>${css}
+    `<!doctype html><html${timelineWidth ? ` data-timeline-width="${timelineWidth}"` : ""}${facts ? " data-facts" : ""}${pending ? " data-pending" : ""}><head><style>${css}
       html { font-size:16px; } body { margin:0; font-family:Arial,sans-serif; }
       main { max-width:720px; margin:24px; }
     </style></head><body class="k2b-ui${dark ? " k2b-dark" : ""}"><div id="root"></div></body></html>`,
@@ -406,3 +406,50 @@ for (const width of [1440, 390])
       await page.close();
     }
   });
+
+test("an answer that still runs takes no second press, held key, Space or double click, and moves nothing", async () => {
+  const page = await open(1440, false, undefined, false, true);
+  try {
+    const confirm = page.getByRole("button", { name: "Turn on version 5", exact: true });
+    const row = () =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll(".k2b-chat-decision__answers, .k2b-chat-decision__answer")).map((e) => {
+          const { x, y, width, height } = e.getBoundingClientRect();
+          return { x, y, width, height };
+        }),
+      );
+    await settled(page);
+    const before = await row();
+    await confirm.focus();
+    // A held Enter repeats its keydown; each one is a click on a native button.
+    await page.keyboard.down("Enter");
+    await page.keyboard.down("Enter");
+    await page.keyboard.down("Enter");
+    await page.keyboard.up("Enter");
+    await page.keyboard.press("Space");
+    // The other answers say they take no press; a person can still press them. `force` skips Playwright's wait for them.
+    await page.getByRole("button", { name: "Keep version 4", exact: true }).dblclick({ force: true });
+    await page.getByRole("button", { name: "Withdraw", exact: true }).click({ force: true });
+    expect(await page.evaluate(() => window.__answers)).toEqual(["confirm"]);
+    expect(await confirm.getAttribute("aria-busy")).toBe("true");
+    expect(await page.getByRole("button", { name: "Keep version 4", exact: true }).getAttribute("aria-disabled")).toBe("true");
+    // Waiting moves nothing and keeps the answers in the focus order.
+    await settled(page);
+    expect(await row()).toEqual(before);
+    await confirm.focus();
+    expect(await confirm.evaluate((e) => e === document.activeElement)).toBe(true);
+
+    // A failure gives the answers back once; the next answer is taken.
+    await page.evaluate(() => window.__settle(true));
+    await page.waitForFunction(() => !document.querySelector(".k2b-chat-decision__answer[aria-disabled]"));
+    expect(await page.evaluate(() => window.__errors)).toEqual(["Error: offline"]);
+    expect(await confirm.evaluate((e) => e === document.activeElement)).toBe(true);
+    await page.keyboard.press("Enter");
+    expect(await page.evaluate(() => window.__answers)).toEqual(["confirm", "confirm"]);
+    await page.evaluate(() => window.__settle());
+    await page.waitForFunction(() => !document.querySelector(".k2b-chat-decision__answer[aria-disabled]"));
+    expect(await row()).toEqual(before);
+  } finally {
+    await page.close();
+  }
+});

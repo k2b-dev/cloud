@@ -410,6 +410,14 @@ is removed:
 - Cloud Login pairing management and pairing another device answer
   `FORBIDDEN` in their own error format.
 
+An Assistant turn or queued message runs as the session that started it. The
+Cloud app may steer, answer tool requests, or edit the draft of a waiting
+action only in turns started in the app, and edit, retry, or send now only
+messages queued there; others answer `403` with code `FORBIDDEN`. Removing a
+queued message adds no text, so the app may remove any of the person's queued
+messages. The app cannot write to or create another chat
+through `ai.chat.send` or `ai.chat.create`.
+
 Ordinary work stays available, including profile changes, sharing, and
 read-only calendar feed links. In your application, guard every route that
 creates such authority with `auth.rejectAppSession`, which answers the `403`

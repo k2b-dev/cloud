@@ -27,6 +27,7 @@ export type ChatDecisionAnswer = {
    * by the answers of `ChatDecisionField`.
    */
   alternates?: readonly { label: string; icon?: string }[];
+  /** A returned promise holds every answer of the question until it settles; then they work again while it stays open. */
   onSelect: () => void | Promise<void>;
 };
 

@@ -4,7 +4,7 @@ import { toPgIntArray, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/
 import type { JobContext, Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import { z } from "zod";
-import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../contracts";
+import type { CommandState, MailCommand, RemoteMessagePrecondition, RemoteMessageRef } from "../contracts";
 import { remoteMessagePreconditionSchema } from "../contracts";
 import { MAIL_SENT_ACTIVITY_ACTION, mailSentActivityResult } from "./activity-feed";
 import { recordRefusedProviderLogin, rediscoverProviderBinding } from "./bindings";
@@ -57,6 +57,7 @@ import {
   releaseProviderLease,
 } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
+import { decodeRemoteMessageAddress, unsupportedRemoteMessageProtocol } from "./remote-message-ref";
 import { notifySendWaitingForLogin } from "./send-login-notifications";
 import { loadSenderIdentityTransportRuntimeById } from "./sender-identity-transports";
 import { enqueueFolderSync } from "./sync-runtime";
@@ -121,10 +122,20 @@ type DbRemoteMessage = {
   message_id: string | null;
   folder_id: string;
   folder_path: string;
-  uid_validity: string | number;
-  uid: string | number;
+  folder_stable_key: string;
+  uid_validity: string | number | null;
+  uid: string | number | null;
+  remote_id: string | null;
+  modseq: string | number | null;
   effective_rights: string[];
 };
+
+type RemoteMessage = DbRemoteMessage & { remoteRef: RemoteMessageRef };
+
+const decodeRemoteMessage = (row: DbRemoteMessage): RemoteMessage => ({
+  ...row,
+  remoteRef: { ...decodeRemoteMessageAddress(row), folderStableKey: row.folder_stable_key },
+});
 
 type DbDestinationFolder = {
   folder_id: string;
@@ -211,7 +222,7 @@ const hasEarlierActiveMessageMutation = async (commandId: string): Promise<boole
   return Boolean(predecessor);
 };
 
-const loadRemoteMessage = async (command: DbCommandExecution, target: z.infer<typeof sourceTargetSchema>): Promise<DbRemoteMessage> => {
+const loadRemoteMessage = async (command: DbCommandExecution, target: z.infer<typeof sourceTargetSchema>): Promise<RemoteMessage> => {
   const folderId = target.folderId ?? target.sourceFolderId;
   if (!folderId) throw Object.assign(new Error("Command source folder is missing"), { code: "INVALID_COMMAND_TARGET" });
   const [message] = await sql<DbRemoteMessage[]>`
@@ -221,6 +232,9 @@ const loadRemoteMessage = async (command: DbCommandExecution, target: z.infer<ty
       mc.message_id,
       rmr.folder_id,
       bfr.remote_path AS folder_path,
+      f.stable_key AS folder_stable_key,
+      rmr.remote_id,
+      rmr.modseq,
       rmr.uid_validity,
       rmr.uid,
       bfr.effective_rights
@@ -235,10 +249,10 @@ const loadRemoteMessage = async (command: DbCommandExecution, target: z.infer<ty
       AND rmr.folder_id = ${folderId}::uuid
       AND rr.mailbox_id = ${command.mailbox_id}::uuid
       AND rmr.stale_at IS NULL
-      AND bfr.uid_validity = rmr.uid_validity
+      AND (rmr.remote_id IS NOT NULL OR bfr.uid_validity = rmr.uid_validity)
   `;
   if (!message) throw Object.assign(new Error("Remote message reference is no longer current"), { code: "REMOTE_MESSAGE_STALE" });
-  return message;
+  return decodeRemoteMessage(message);
 };
 
 const loadDestinationFolder = async (command: DbCommandExecution, folderId: string): Promise<DbDestinationFolder> => {
@@ -265,11 +279,10 @@ const requireRights = (rights: readonly string[], required: readonly string[]): 
   throw Object.assign(new Error("Provider rights changed before command execution"), { code: "PROVIDER_RIGHTS_CHANGED" });
 };
 
-const remoteTarget = (message: DbRemoteMessage): RemoteMutationTarget => ({
-  folderPath: message.folder_path,
-  uidValidity: String(message.uid_validity),
-  uid: Number(message.uid),
-});
+const remoteTarget = (message: RemoteMessage): RemoteMutationTarget => {
+  if (message.remoteRef.kind !== "imap") throw unsupportedRemoteMessageProtocol();
+  return { folderPath: message.folder_path, uidValidity: message.remoteRef.uidValidity, uid: Number(message.remoteRef.uid) };
+};
 
 type CommandStateTarget = {
   id: string;
@@ -414,7 +427,7 @@ const claimCommand = async (
 
 const updateMutationProjection = async (params: {
   command: DbCommandExecution;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
   destination?: DbDestinationFolder | null;
   destinationUidValidity?: string | null;
   destinationUid?: number | null;
@@ -561,6 +574,7 @@ const AMBIGUOUS_COMMAND_CODES = new Set([
 export const mutationFailureState = (error: unknown, providerEffectStarted = true): CommandState => {
   const code = normalizeCode(error, "");
   if (["CONVERSATION_KEPT", "FOLDER_HAS_KEPT_CONVERSATIONS", "KEPT_COPY_ONLY"].includes(code)) return "failed";
+  if (code === "REMOTE_MESSAGE_PROTOCOL_UNSUPPORTED") return "needs_attention";
   if (PARTIAL_MUTATION_CODES.has(code)) return "needs_attention";
   if (AMBIGUOUS_COMMAND_CODES.has(code)) return "ambiguous";
   // A started provider effect can never be replayed, so its outcome is reconciled instead of retried.
@@ -849,7 +863,7 @@ const stateChangeMatches = (
   );
 };
 
-const assertRemoteIdentity = (current: RemoteMessageState, source: DbRemoteMessage): void => {
+const assertRemoteIdentity = (current: RemoteMessageState, source: RemoteMessage): void => {
   if (!current.exists) throw Object.assign(new Error("Remote message no longer exists"), { code: "REMOTE_MESSAGE_MISSING" });
   if (source.message_id && current.messageId?.trim().toLowerCase() !== source.message_id.trim().toLowerCase()) {
     throw Object.assign(new Error("Remote UID no longer identifies the expected message"), { code: "REMOTE_IDENTITY_MISMATCH" });
@@ -858,7 +872,7 @@ const assertRemoteIdentity = (current: RemoteMessageState, source: DbRemoteMessa
 
 const assertRemoteMessageIdentity = async (
   runtime: MutationRuntime,
-  source: DbRemoteMessage,
+  source: RemoteMessage,
   target: RemoteMutationTarget,
 ): Promise<RemoteMessageState> => {
   const current = await imapSmtpConnector.getMessageState(runtime, target);
@@ -900,7 +914,7 @@ const assertRemoteMessagePrecondition = (current: RemoteMessageState, expected?:
 const executeSetFlagsMutation = async (params: {
   command: DbCommandExecution;
   runtime: MutationRuntime;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
   target: RemoteMutationTarget;
   assertLeaseActive: LeaseAssertion;
   assertAuthorized: LeaseAssertion;
@@ -928,7 +942,7 @@ const executeSetFlagsMutation = async (params: {
 const executeMessageStateMutation = async (params: {
   command: DbCommandExecution;
   runtime: MutationRuntime;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
   target: RemoteMutationTarget;
   assertLeaseActive: LeaseAssertion;
   assertAuthorized: LeaseAssertion;
@@ -962,7 +976,7 @@ const executeMessageStateMutation = async (params: {
 const executeDeleteMutation = async (params: {
   command: DbCommandExecution;
   runtime: MutationRuntime;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
   target: RemoteMutationTarget;
   assertLeaseActive: LeaseAssertion;
   assertAuthorized: LeaseAssertion;
@@ -999,7 +1013,7 @@ const confirmedDestinationRef = (
 const executeCopyMutation = async (params: {
   command: DbCommandExecution;
   runtime: MutationRuntime;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
   target: MutationTarget;
   remoteTarget: RemoteMutationTarget;
   assertLeaseActive: LeaseAssertion;
@@ -1044,7 +1058,7 @@ const commandError = (message: string, code: string): Error => Object.assign(new
 /** Settles one command of a move set whose own step failed; the rest of the set goes on. */
 type MoveFailure = (command: DbCommandExecution, error: unknown) => Promise<void>;
 
-type FreshMove = { command: DbCommandExecution; target: MutationTarget; source: DbRemoteMessage };
+type FreshMove = { command: DbCommandExecution; target: MutationTarget; source: RemoteMessage };
 
 const MISSING_REMOTE_MESSAGE: RemoteMessageState = { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
 
@@ -1098,6 +1112,7 @@ const prepareFreshMove = async (command: DbCommandExecution): Promise<FreshMove>
   await assertCommandKeepProtection(command);
   const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
   const source = await loadRemoteMessage(command, target);
+  remoteTarget(source);
   requireRights(source.effective_rights, ["read", "move"]);
   return { command, target, source };
 };
@@ -1249,8 +1264,8 @@ const moveMessageSet = async (params: {
   const { runtime, moves, destination, assertLeaseActive, fail } = params;
   const sourceSet = (members: FreshMove[]): RemoteMessageSet => ({
     folderPath: moves[0]!.source.folder_path,
-    uidValidity: String(moves[0]!.source.uid_validity),
-    uids: members.map((move) => Number(move.source.uid)),
+    uidValidity: remoteTarget(moves[0]!.source).uidValidity,
+    uids: members.map((move) => remoteTarget(move.source).uid),
   });
   await assertLeaseActive();
   const status = await imapSmtpConnector.getFolderStatus(runtime, destination.folder_path);
@@ -1263,7 +1278,7 @@ const moveMessageSet = async (params: {
   const checked: FreshMove[] = [];
   for (const move of moves) {
     try {
-      const state = current.get(Number(move.source.uid)) ?? MISSING_REMOTE_MESSAGE;
+      const state = current.get(remoteTarget(move.source).uid) ?? MISSING_REMOTE_MESSAGE;
       assertRemoteIdentity(state, move.source);
       const expected = move.target.expectedRemoteState;
       assertRemoteMessagePrecondition(state, expected);
@@ -1285,7 +1300,7 @@ const moveMessageSet = async (params: {
   const remaining = await imapSmtpConnector.getMessageStates(runtime, sourceSet(started));
   const settled: SettledMove[] = [];
   for (const move of started) {
-    const uid = Number(move.source.uid);
+    const uid = remoteTarget(move.source).uid;
     if (remaining.has(uid)) {
       await fail(
         move.command,
@@ -1346,7 +1361,7 @@ const executeMutationSteps = async (params: {
   command: DbCommandExecution;
   runtime: MutationRuntime;
   target: MutationTarget;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
   remote: RemoteMutationTarget;
   assertLeaseActive: LeaseAssertion;
 }): Promise<void> => {
@@ -1378,7 +1393,7 @@ const executeMutationSteps = async (params: {
   return executeCopyMutation({ ...steps, target, remoteTarget: remote });
 };
 
-const loadReconciliationSource = async (command: DbCommandExecution, target: MutationTarget): Promise<DbRemoteMessage> => {
+const loadReconciliationSource = async (command: DbCommandExecution, target: MutationTarget): Promise<RemoteMessage> => {
   try {
     return await loadRemoteMessage(command, target);
   } catch (error) {
@@ -1390,17 +1405,21 @@ const loadReconciliationSource = async (command: DbCommandExecution, target: Mut
         mc.message_id,
         rmr.folder_id,
         bfr.remote_path AS folder_path,
+        f.stable_key AS folder_stable_key,
+        rmr.remote_id,
+        rmr.modseq,
         rmr.uid_validity,
         rmr.uid,
         bfr.effective_rights
       FROM mail.remote_message_refs rmr
       JOIN mail.message_contents mc ON mc.id = rmr.message_id
+      JOIN mail.folders f ON f.id = rmr.folder_id
       JOIN mail.binding_folder_refs bfr
         ON bfr.folder_id = rmr.folder_id
        AND bfr.binding_id = ${command.selected_binding_id}::uuid
       WHERE rmr.id = ${target.remoteMessageRefId}::uuid
     `;
-    if (stale) return stale;
+    if (stale) return decodeRemoteMessage(stale);
     throw error;
   }
 };
@@ -1408,7 +1427,7 @@ const loadReconciliationSource = async (command: DbCommandExecution, target: Mut
 const reconcileSetFlagsMutation = async (params: {
   command: DbCommandExecution;
   runtime: MutationRuntime;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
   target: RemoteMutationTarget;
 }): Promise<void> => {
   const payload = flagsPayloadSchema.parse(parseJsonRecord(params.command.payload));
@@ -1430,7 +1449,7 @@ const reconcileSetFlagsMutation = async (params: {
 const reconcileMessageStateMutation = async (params: {
   command: DbCommandExecution;
   runtime: MutationRuntime;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
   target: RemoteMutationTarget;
 }): Promise<void> => {
   const change = remoteStateChange(messageStatePayloadSchema.parse(parseJsonRecord(params.command.payload)));
@@ -1458,7 +1477,7 @@ const reconcileMessageStateMutation = async (params: {
 
 const reconcileDeleteMutation = async (params: {
   command: DbCommandExecution;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
   sourceExists: boolean;
 }): Promise<void> => {
   if (!params.sourceExists) {
@@ -1477,7 +1496,7 @@ const reconcileTransferMutation = async (params: {
   command: DbCommandExecution;
   runtime: MutationRuntime;
   target: MutationTarget;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
   sourceState: Awaited<ReturnType<typeof imapSmtpConnector.getMessageState>>;
 }): Promise<boolean> => {
   const { command, runtime, target, source, sourceState } = params;
@@ -1519,7 +1538,7 @@ const reconcileMutationSteps = async (params: {
   command: DbCommandExecution;
   runtime: MutationRuntime;
   target: MutationTarget;
-  source: DbRemoteMessage;
+  source: RemoteMessage;
 }): Promise<void> => {
   const { command, runtime, target, source } = params;
   const remote = remoteTarget(source);

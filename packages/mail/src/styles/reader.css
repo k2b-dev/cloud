@@ -179,6 +179,8 @@
 .k2b-ui .mail-reader-chip-label {
   min-width: 0;
   overflow: hidden;
+  /* The label clips its overflow, so its line box must hold the font's descenders; the chip's line-height of 1 does not. */
+  line-height: normal;
   text-overflow: ellipsis;
 }
 
@@ -578,6 +580,13 @@
   display: inline-flex;
   flex: none;
   font-size: 1.25rem;
+}
+
+/* The viewer loads on demand: the tapped tile turns its type glyph into a spinner in the same box until it opens. */
+@media (prefers-reduced-motion: no-preference) {
+  .k2b-ui .mail-attachment-tile__open[aria-busy="true"] .mail-attachment-tile__icon i {
+    animation: k2b-spin var(--k2b-motion-spin) linear infinite;
+  }
 }
 
 .k2b-ui .mail-attachment-tile__text {

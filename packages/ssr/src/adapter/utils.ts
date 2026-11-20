@@ -37,11 +37,16 @@ export const toSsrPath = (basePath: string): string => (basePath ? `${basePath}/
  */
 export const getSsrDir = (config: SsrConfig): string => join(config.dev ? (config.rootDir ?? process.cwd()) : dirname(Bun.main), "_ssr");
 
-export type AssetManifest = { version: string; entries: Record<string, string[]> };
+/** One build's content version and each entry's static import closure. */
+export type AssetBuild = { version: string; entries: Record<string, string[]> };
+/** The default build at the root of `_ssr/`, plus each further island variant's build in `_ssr/<name>/`. */
+export type AssetManifest = AssetBuild & { variants?: Record<string, AssetBuild> };
 export const ASSET_MANIFEST = "manifest.json";
 const ASSET_FILE = /^[a-z0-9._-]+\.js(?:\.map)?$/i;
+/** Island variant names: one lowercase path segment. */
+export const VARIANT_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-const isAssetManifest = (value: unknown): value is AssetManifest =>
+const isAssetBuild = (value: unknown): value is AssetBuild =>
   typeof value === "object" &&
   value !== null &&
   "version" in value &&
@@ -54,6 +59,14 @@ const isAssetManifest = (value: unknown): value is AssetManifest =>
   Object.values(value.entries).every(
     (files) => Array.isArray(files) && files.every((file) => typeof file === "string" && ASSET_FILE.test(file) && /\.js$/i.test(file)),
   );
+
+const isAssetManifest = (value: unknown): value is AssetManifest =>
+  isAssetBuild(value) &&
+  (!("variants" in value) ||
+    (typeof value.variants === "object" &&
+      value.variants !== null &&
+      !Array.isArray(value.variants) &&
+      Object.entries(value.variants).every(([name, build]) => VARIANT_NAME.test(name) && isAssetBuild(build))));
 
 const assetManifests = new Map<string, AssetManifest>();
 const unbuiltAssetManifest: AssetManifest = { version: "0", entries: {} };
@@ -84,15 +97,25 @@ export const readAssetManifest = (config: SsrConfig): AssetManifest => {
   }
   if (!isAssetManifest(manifest)) {
     throw new Error(
-      `[ssr] Invalid ${path}. Expected a 16-character hexadecimal version and an entries object of JavaScript filename arrays matching /^[a-z0-9._-]+\\.js$/i.`,
+      `[ssr] Invalid ${path}. Expected a 16-character hexadecimal version and an entries object of JavaScript filename arrays matching /^[a-z0-9._-]+\\.js$/i, and optional variants of the same shape keyed by lowercase names.`,
     );
   }
   assetManifests.set(directory, manifest);
   return manifest;
 };
 
-/** Relative imports inherit a content-hashed directory, unlike a query string. */
-export const getAssetPrefix = (config: SsrConfig): string => (config.dev ? "" : `/${readAssetManifest(config).version}`);
+/**
+ * The directory that serves one production version: the default build's `_ssr/`, or a variant's `_ssr/<name>/`.
+ * Development serves `_ssr/` without a version. Relative imports inherit the version directory, unlike a query string.
+ */
+export const getAssetDirectory = (config: SsrConfig, version?: string): string | undefined => {
+  const directory = getSsrDir(config);
+  if (config.dev) return directory;
+  const manifest = readAssetManifest(config);
+  if (version === manifest.version) return directory;
+  for (const [name, build] of Object.entries(manifest.variants ?? {})) if (version === build.version) return join(directory, name);
+  return undefined;
+};
 
 const HASHED_CHUNK = /^chunk-[a-z0-9]+\.js$/i;
 

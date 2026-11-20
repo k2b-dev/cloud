@@ -19,6 +19,8 @@ export type AppLaunchpadApp = {
   href: string;
   description?: string;
   accent?: string;
+  /** The colour the app declares for its icon; without it the tile takes its palette tone. */
+  iconColor?: string;
   /** The app's `nav.badge` endpoint. */
   badge?: string;
 };
@@ -57,7 +59,7 @@ export const AppLaunchpadPanel = (
       ...(props.surface === "sheet" && props.profile
         ? [{ id: "home", label: messages().home, href: "/", iconClass: "ti ti-home", start: true }]
         : []),
-      // A pinned app keeps its app's colour; a link takes the tone of its own id, as an app without an accent does.
+      // A pinned app keeps its icon colour; a link takes the tone of its own id, as an app without an icon colour does.
       ...pinned.map((entry) => ({ ...entry, id: entry.appId ?? entry.id })),
       ...props.apps.filter((app) => !pinnedApps.has(app.id)).map((app) => ({ ...app, appId: app.id })),
     ];

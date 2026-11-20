@@ -89,7 +89,8 @@ error. It reserves no line under the field, and it does not repeat the chosen
 day at rest.
 
 Passing `suggestion` at all reserves the status line beside the label, even
-while it resolves to `undefined`. Nothing moves when a suggestion arrives, is
+while it resolves to `undefined`. On a phone the status line has its own line
+under the label in every state, so a long label or value never cuts it short. Nothing moves when a suggestion arrives, is
 accepted, is overruled, or goes away. A field without a visible label shows the
 status line under the control.
 
@@ -99,7 +100,8 @@ status line under the control.
 fields without their own), `onAcceptAll(ids)`, and optional `onRetryAll`. Its
 fields register themselves, also during server rendering, so the counts are
 right in the first render. A form with a single suggested field still uses a
-group.
+group. Its line then names the source and the state, without **Accept all**:
+the field's own Accept is right beside it.
 
 **Accept all** takes only open suggestions with `confidence: "high"` in fields
 that are enabled, editable, and valid. It calls `onAcceptAll` once with their

@@ -3,9 +3,10 @@ import { mailComposerMessages } from "./_components/mail-composer-messages";
 import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./_components/mail-conversation-ui-messages";
 import { mailMailboxDetailsMessages } from "./_components/mail-mailbox-details-messages";
+import { mailMailboxViewMessages } from "./_components/mail-mailbox-view-messages";
 import { mailMessageMessages } from "./_components/mail-message-messages";
 import { mailReaderMessages } from "./_components/mail-reader-messages";
-import { mailRemainingMessages } from "./_components/mail-remaining-messages";
+import { mailPresetDescriptionMessages, mailRemainingMessages } from "./_components/mail-remaining-messages";
 import { mailSettingsMessages } from "./_components/mail-settings-messages";
 import { mailSidebarMessages } from "./_components/mail-sidebar-messages";
 import { mailOverviewMessages } from "./mail-overview-messages";
@@ -23,6 +24,8 @@ const catalogs = [
   mailComposerMessages,
   mailSettingsMessages,
   mailRemainingMessages,
+  mailPresetDescriptionMessages,
+  mailMailboxViewMessages,
 ];
 
 describe("Mail browser message catalogs", () => {
@@ -46,5 +49,16 @@ describe("Mail browser message catalogs", () => {
     expect(mailComposerMessages.resolve(["fr"]).t.send).toBe("Send");
     expect(mailSettingsMessages.resolve(["fr"]).t.retry).toBe("Retry");
     expect(mailRemainingMessages.resolve(["fr"]).t.overview).toBe("Overview");
+  });
+
+  test("messages in both the mailbox view and the remaining catalog read the same", () => {
+    // The view catalog carries the few messages the first script needs; a copy left in the larger catalog must not drift.
+    for (const locale of ["en", "de"]) {
+      const view: Record<string, unknown> = mailMailboxViewMessages.resolve([locale]).t;
+      const remaining: Record<string, unknown> = mailRemainingMessages.resolve([locale]).t;
+      const shared = Object.keys(view).filter((key) => key in remaining);
+      expect(shared.length).toBeGreaterThan(0);
+      for (const key of shared) expect([locale, key, String(remaining[key])]).toEqual([locale, key, String(view[key])]);
+    }
   });
 });

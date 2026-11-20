@@ -415,7 +415,7 @@ test("website approvals apply only to a turn a person started in a signed-in ses
   const mandate = { id: crypto.randomUUID(), revision: 1 };
   const background = { taskId: "task01", occurrenceId: "run001", context: [] };
   expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run", signedInSession: true })).toBe(true);
-  // `cld`, an API key, or an inter-chat message starts a turn without the marker.
+  // `cld` or an API key starts a turn without the marker.
   expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run" })).toBe(false);
   expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run", signedInSession: true, mandate, background })).toBe(false);
   expect(aiTurnAllowsWebsiteApprovals({ kind: "chat", input: "Run", signedInSession: true, background })).toBe(false);

@@ -2,7 +2,9 @@ import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { SharedTextBoundaryError } from "@k2b/cloud/shared-text";
+import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
+import { ConflictError, CursorMismatchError } from "@k2b/sync";
 import { convert } from "html-to-text";
 import * as Y from "yjs";
 import { z } from "zod";
@@ -32,6 +34,12 @@ import {
   type MailPriority,
   type MaterializeDraftSeedInput,
 } from "../contracts";
+import {
+  type DraftQuarantineInspection,
+  type DraftQuarantineRecovery,
+  type DraftQuarantineRecoveryInput,
+  draftQuarantineRecoverySchema,
+} from "../draft-quarantine-contracts";
 import { createDraftDocument, readDraftDocument as draftDocumentContent } from "../lib/draft-document";
 import { withShortIdDb } from "../lib/short-id";
 import { deriveReplyAddressObjects } from "../reply-recipients";
@@ -47,15 +55,23 @@ import {
 import { attachmentMimeOrder } from "./attachment-order";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
+import { codeAuthorLabels } from "./code-author-labels";
 import { composeFormattingWarnings, removeOrphanComposeSegmentMarks } from "./compose-renderer";
 import { requireSelectableSignature, resolveDefaultSignatureTemplateId } from "./compose-templates";
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
 import { humanDraftEditor, refreshDraftAdoption, requireDraftContentWrite } from "./draft-adoption";
-import { draftDocumentStreamFull, isDraftDocumentStreamFull, mailDraftDocumentLog, withDraftDocumentCommit } from "./draft-document-log";
+import {
+  draftDocumentStreamFull,
+  isDraftDocumentStreamFull,
+  lockDraftDocumentCoverage,
+  mailDraftDocumentLog,
+  withDraftDocumentCommit,
+} from "./draft-document-log";
 import { withDraftDocumentReplacement } from "./draft-document-replacement";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { lockDraftDocumentInTransaction } from "./draft-documents";
 import { newDraftEditMode } from "./draft-edit-mode";
+import { proveQuarantinedDraftHistory } from "./draft-quarantine-proof";
 import { retireDraftInTransaction } from "./draft-retirement";
 import { legacySignature, publicDraftContent, resolveDraftSignature, validateIdentity } from "./draft-validation";
 import { lockConversationReplyDraft, replyDraftOccupied } from "./reply-draft-box";
@@ -2033,7 +2049,8 @@ export const listDrafts = async (context: MailRequestContext, mailboxId: string,
     ORDER BY d.updated_at DESC, d.id DESC
     LIMIT ${Math.min(Math.max(Math.floor(limit), 1), 200)}
   `;
-  return ok(rows.map(mapDraft));
+  const label = await codeAuthorLabels({ mailboxId, locale: context.locale, names: rows.map((row) => row.suggested_by) });
+  return ok(rows.map((row) => ({ ...mapDraft(row), suggestedBy: label(row.suggested_by) ?? null })));
 };
 
 export const listConversationDrafts = async (params: {
@@ -2202,7 +2219,22 @@ export const listDraftFolder = async (params: {
   });
 };
 
-export const getDraft = async (context: MailRequestContext, mailboxId: string, draftId: string): Promise<Result<MailDraft>> =>
+export const getDraft = async (context: MailRequestContext, mailboxId: string, draftId: string): Promise<Result<MailDraft>> => {
+  const result = await readDraft(context, mailboxId, draftId);
+  if (!result.ok) return result;
+  const label = await codeAuthorLabels({
+    mailboxId,
+    locale: context.locale,
+    names: [result.data.suggestedBy, result.data.lastEditedByDisplayName],
+  });
+  return ok({
+    ...result.data,
+    suggestedBy: label(result.data.suggestedBy) ?? null,
+    lastEditedByDisplayName: label(result.data.lastEditedByDisplayName) ?? result.data.lastEditedByDisplayName,
+  });
+};
+
+const readDraft = async (context: MailRequestContext, mailboxId: string, draftId: string): Promise<Result<MailDraft>> =>
   withDraftDocumentCommit(async (db) => {
     const allowed = await requireDraftAccess(context, mailboxId, draftId, "read", db);
     if (!allowed.ok) return allowed;
@@ -2702,6 +2734,301 @@ export const discardDraft = async (params: {
     return result;
   } catch {
     return fail(err.internal("Failed to discard draft"));
+  }
+};
+
+type QuarantinedDraft = DbDraft & {
+  doc_state: Uint8Array | null;
+  doc_cursor: string | null;
+  doc_seq: string | null;
+  doc_idle_through: string | null;
+  doc_history_complete: boolean;
+  doc_frozen_cursor: string | null;
+  send_pending?: boolean;
+};
+
+/** Inspect without opening the shared document or changing its history. */
+export const inspectDraftQuarantine = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  draftId: string;
+  signal?: AbortSignal;
+}): Promise<Result<DraftQuarantineInspection>> => {
+  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "admin");
+  if (!allowed.ok) return allowed;
+  return sql.begin(async (db) => {
+    await lockDraftDocumentCoverage(db);
+    const [row] = await db<QuarantinedDraft[]>`SELECT ${draftColumns()}, d.doc_state, d.doc_cursor,
+      d.doc_seq, d.doc_idle_through, d.doc_history_complete, d.doc_frozen_cursor,
+      EXISTS(SELECT 1 FROM mail.commands WHERE mailbox_id = ${params.mailboxId}::uuid AND kind = 'send'
+        AND target->>'draftId' = d.id::text AND state IN ('queued', 'executing', 'ambiguous')) AS send_pending
+      FROM mail.drafts d WHERE d.id = ${params.draftId}::uuid AND d.mailbox_id = ${params.mailboxId}::uuid
+        AND d.origin = 'user' FOR UPDATE OF d`;
+    if (!row) return fail(err.notFound("Draft"));
+    const [seed] = await db<{ cursor: string | null }[]>`SELECT cursor FROM mail.draft_document_revisions
+      WHERE draft_id = ${row.id}::uuid AND generation = 1 AND revision = 1`;
+    const proof =
+      row.edit_mode === "shared" &&
+      row.state === "draft" &&
+      !row.doc_frozen_cursor &&
+      !row.send_pending &&
+      !row.doc_history_complete &&
+      row.doc_state
+        ? await proveQuarantinedDraftHistory({ ...params, db, generation: String(row.doc_generation), state: row.doc_state })
+        : null;
+    return ok({
+      revision: Number(row.revision),
+      generation: String(row.doc_generation),
+      historyComplete: row.doc_history_complete,
+      snapshotCursor: row.doc_cursor,
+      idleThrough: row.doc_idle_through,
+      seedCursor: seed?.cursor ?? null,
+      firstRetainedSequence: await mailDraftDocumentLog.firstSequence(),
+      head: await mailDraftDocumentLog.topic().head(),
+      originalRepairPossible: proof !== null,
+    });
+  });
+};
+
+/** Admission fences edits, shared coverage fences pruning, the row fences domain writes. */
+export const recoverQuarantinedDraft = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  draftId: string;
+  input: DraftQuarantineRecoveryInput;
+  signal?: AbortSignal;
+}): Promise<Result<DraftQuarantineRecovery>> => {
+  const parsed = draftQuarantineRecoverySchema.safeParse(params.input);
+  if (!parsed.success) return fail(err.badInput("Invalid draft recovery request"));
+  const input = parsed.data;
+  const actor = mutableActor(params.context);
+  if (!actor) return fail(err.forbidden("Draft editor is invalid"));
+  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "admin");
+  if (!allowed.ok) return allowed;
+  try {
+    const result = await withDraftDocumentReplacement(params.draftId, async (db, replace, signal) => {
+      await lockDraftDocumentCoverage(db);
+      const access = await requireMailboxPermission(params.context, params.mailboxId, "admin", db);
+      if (!access.ok) return access;
+      const [row] = await db<QuarantinedDraft[]>`SELECT ${draftColumns()}, d.doc_state, d.doc_cursor,
+        d.doc_seq, d.doc_idle_through, d.doc_history_complete, d.doc_frozen_cursor
+        FROM mail.drafts d WHERE d.id = ${params.draftId}::uuid AND d.mailbox_id = ${params.mailboxId}::uuid
+          AND d.origin = 'user' FOR UPDATE OF d`;
+      if (!row) return fail(err.notFound("Draft"));
+      const [previous] = await db<
+        { rest_draft_id: string | null; quarantine_revision: string | null }[]
+      >`SELECT rest_draft_id, quarantine_revision FROM mail.draft_document_rests
+        WHERE source_draft_id = ${row.id}::uuid AND generation = ${input.generation}::bigint
+          AND actor_kind = ${actor.kind} AND actor_id = ${actorId(actor)}::uuid AND client_id = ${input.requestId}::uuid`;
+      if (previous) {
+        if (Number(previous.quarantine_revision) !== input.expectedRevision)
+          return conflict("This recovery request already refers to a different source revision; inspect the draft again");
+        const [saved] = await db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d
+          WHERE d.id = ${previous.rest_draft_id ?? row.id}::uuid`;
+        return saved
+          ? ok({
+              outcome: previous.rest_draft_id ? ("recovery_copy" as const) : ("original_repaired" as const),
+              draft: mapDraft(saved),
+              reviewRequired: previous.rest_draft_id !== null,
+            })
+          : fail(err.notFound("Recovery draft"));
+      }
+      if (row.edit_mode !== "shared" || row.state !== "draft" || row.doc_history_complete || !row.doc_state || row.doc_frozen_cursor)
+        return conflict("Only an unfrozen quarantined shared draft can be recovered; inspect the draft again");
+      if (Number(row.revision) !== input.expectedRevision || String(row.doc_generation) !== input.generation)
+        return conflict("Draft changed before recovery; inspect it again");
+      const pending = await db`SELECT 1 FROM mail.commands WHERE mailbox_id = ${params.mailboxId}::uuid
+        AND kind = 'send' AND target->>'draftId' = ${row.id} AND state IN ('queued', 'executing', 'ambiguous') LIMIT 1`;
+      if (pending.length)
+        return fail({
+          code: "DRAFT_RECOVERY_SEND_PENDING",
+          status: 409,
+          message: "A send is still pending for this draft. Resolve that command before recovering it to avoid sending twice.",
+        });
+      const recoverySignal = signal && params.signal ? AbortSignal.any([signal, params.signal]) : (params.signal ?? signal);
+      recoverySignal?.throwIfAborted();
+      const proof = await proveQuarantinedDraftHistory({
+        db,
+        draftId: row.id,
+        generation: input.generation,
+        state: row.doc_state,
+        signal: recoverySignal,
+      });
+      const doc = new Y.Doc();
+      let content = internalDraftEditableContentSchema.strip().parse(mapDraft(row));
+      let sourceState = row.doc_state;
+      try {
+        let decoded = false;
+        try {
+          Y.applyUpdate(doc, proof?.state ?? row.doc_state);
+          decoded = true;
+        } catch (error) {
+          if (proof) throw error;
+        }
+        if (decoded && !proof) {
+          let after = row.doc_cursor;
+          try {
+            if (after) mailDraftDocumentLog.topic().cursorSequence(after);
+          } catch (error) {
+            if (!(error instanceof CursorMismatchError)) throw error;
+            after = null;
+          }
+          await mailDraftDocumentLog.recover({
+            docId: row.id,
+            doc,
+            after,
+            until: await mailDraftDocumentLog.topic().head(),
+            restoreRevision: input.generation,
+            signal: recoverySignal,
+          });
+        }
+        if (decoded) sourceState = Y.encodeStateAsUpdate(doc);
+        // An incomplete Yjs document may be unreadable. Preserve its exact bytes
+        // and use the last durable SQL projection only for a copy to review.
+        let publicContent: DraftEditableContent | null = null;
+        try {
+          if (decoded) publicContent = draftDocumentContent(doc);
+        } catch (error) {
+          if (proof) throw error;
+        }
+        if (publicContent) {
+          const [ids] = await db<{ sender: string | null; signature: string | null }[]>`SELECT
+            (SELECT id FROM mail.sender_identities WHERE mailbox_id = ${params.mailboxId}::uuid AND short_id = ${publicContent.senderIdentityId}) AS sender,
+            (SELECT id FROM mail.compose_templates WHERE mailbox_id = ${params.mailboxId}::uuid AND short_id = ${publicContent.signatureTemplateId}) AS signature`;
+          if (!ids?.sender || (publicContent.signatureTemplateId && !ids.signature))
+            return fail(err.badInput("Recovery sender or signature is unavailable; keep the original and restore its configuration first"));
+          content = { ...publicContent, senderIdentityId: ids.sender, signatureTemplateId: ids.signature };
+        }
+      } finally {
+        doc.destroy();
+      }
+      const remember = async (restId: string | null) => {
+        await db`INSERT INTO mail.draft_document_rests
+          (source_draft_id, generation, actor_kind, actor_id, client_id, rest_draft_id, source_state, quarantine_revision, quarantine_state)
+          VALUES (${row.id}::uuid, ${input.generation}::bigint, ${actor.kind}, ${actorId(actor)}::uuid,
+            ${input.requestId}::uuid, ${restId}::uuid, ${Buffer.from(row.doc_state!)}, ${input.expectedRevision}, ${Buffer.from(sourceState)})`;
+      };
+      let targetId: string;
+      if (proof) {
+        if (!replace) throw new Error("Shared draft recovery requires generation admission");
+        // Keep quarantined bytes independently of revision-history trimming.
+        sourceState = row.doc_state;
+        await remember(null);
+        const cursor = await replace(input.generation, proof.latest);
+        targetId = row.id;
+        await db`UPDATE mail.drafts SET doc_history_complete = true, doc_generation = doc_generation + 1,
+          doc_state = ${Buffer.from(proof.state)}, doc_cursor = ${cursor}, doc_seq = ${mailDraftDocumentLog.topic().cursorSequence(cursor)},
+          doc_idle_through = NULL, revision = revision + 1,
+          to_addresses = ${content.to}::jsonb, cc_addresses = ${content.cc}::jsonb, bcc_addresses = ${content.bcc}::jsonb,
+          subject = ${content.subject}, body_markdown = ${content.body}, body_format = ${content.format},
+          sender_identity_id = ${content.senderIdentityId}::uuid, signature_template_id = ${content.signatureTemplateId}::uuid,
+          quote_source = ${content.quoteSource !== null}, quote_locale = ${content.quoteSource?.locale ?? "en"}, quote_time_zone = ${content.quoteSource?.timeZone ?? "UTC"},
+          priority = ${content.priority}, request_delivery_receipt = ${content.requestDeliveryReceipt}, request_read_receipt = ${content.requestReadReceipt},
+          adopted_at = COALESCE(adopted_at, now()), last_editor_kind = ${actor.kind}, last_editor_id = ${actorId(actor)}::uuid
+          WHERE id = ${row.id}::uuid`;
+        await db`INSERT INTO mail.draft_document_revisions (draft_id, generation, revision, state, cursor)
+          VALUES (${row.id}::uuid, ${input.generation}::bigint + 1, ${input.expectedRevision + 1}, ${Buffer.from(proof.state)}, ${cursor})`;
+      } else {
+        // A new compose draft avoids stealing the original's occupied reply slot.
+        content = { ...content, quoteSource: null };
+        const created = await insertComposeDraftInTransaction({
+          db,
+          context: params.context,
+          mailboxId: params.mailboxId,
+          actor,
+          adopted: true,
+          content,
+          prepared: {
+            conversationId: null,
+            intent: "new",
+            sourceMessageId: null,
+            content,
+            attachments: [],
+          },
+        });
+        if (!created.ok) throw Object.assign(new Error(created.error.message), created.error);
+        targetId = created.data.id;
+        const attachments = await db<
+          {
+            blob_id: string;
+            filename: string;
+            content_type: string;
+            byte_length: string;
+            content_hash: string;
+            position: number;
+            forwarded_source_message_id: string | null;
+            copied_source_message_id: string | null;
+          }[]
+        >`
+          SELECT blob_id, filename, content_type, byte_length, content_hash, position, forwarded_source_message_id, copied_source_message_id
+          FROM mail.draft_attachments WHERE draft_id = ${row.id}::uuid AND removed_at IS NULL ORDER BY position`;
+        for (const attachment of attachments)
+          await withShortIdDb(
+            db,
+            "draftAttachment",
+            (tx, shortId) => tx`
+          INSERT INTO mail.draft_attachments (short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash,
+            position, forwarded_source_message_id, copied_source_message_id)
+          VALUES (${shortId}, ${targetId}::uuid, ${attachment.blob_id}::uuid, ${attachment.filename}, ${attachment.content_type},
+            ${attachment.byte_length}::bigint, ${attachment.content_hash}, ${attachment.position},
+            ${attachment.forwarded_source_message_id}::uuid, ${attachment.copied_source_message_id}::uuid)`,
+          );
+        await remember(targetId);
+      }
+      recoverySignal?.throwIfAborted();
+      await insertActivity({
+        db,
+        mailboxId: params.mailboxId,
+        conversationId: row.conversation_id,
+        actor,
+        action: "draft.quarantine_recovered",
+        targetType: "draft",
+        targetId,
+        metadata: {
+          sourceDraftId: row.id,
+          sourceRevision: input.expectedRevision,
+          sourceGeneration: input.generation,
+          requestId: input.requestId,
+          outcome: proof ? "original_repaired" : "recovery_copy",
+          seedRevision: proof ? 1 : null,
+        },
+      });
+      await queueDraftProjectionInTransaction({ db, draftId: targetId });
+      await enqueueMailInvalidation(db, { mailboxId: params.mailboxId, conversationId: row.conversation_id });
+      const [saved] = await db<DbDraft[]>`SELECT ${draftColumns()} FROM mail.drafts d WHERE d.id = ${targetId}::uuid`;
+      if (!saved) throw new Error("Recovered draft is missing");
+      return ok({
+        outcome: proof ? ("original_repaired" as const) : ("recovery_copy" as const),
+        draft: mapDraft(saved),
+        reviewRequired: !proof,
+      });
+    });
+    if (result.ok) mailLive.wake();
+    return result;
+  } catch (error) {
+    if (isServiceError(error)) return fail(error);
+    if (isDraftDocumentStreamFull(error)) return draftDocumentStreamFull();
+    if (error instanceof ConflictError)
+      return fail({
+        code: "DRAFT_QUARANTINE_RECOVERY_CHANGED",
+        status: 409,
+        message: "The draft changed during recovery. Inspect it again before retrying.",
+      });
+    if (error instanceof SharedTextBoundaryError)
+      return fail({
+        code: error.code,
+        status: 409,
+        message: "Draft recovery is temporarily locked. Wait for the current operation, then inspect and retry.",
+      });
+    log.error("Quarantined draft recovery failed", {
+      draftId: params.draftId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return fail({
+      code: "DRAFT_QUARANTINE_RECOVERY_UNAVAILABLE",
+      status: 500,
+      message: "Draft recovery could not be confirmed. Inspect the draft and retry with the same request id.",
+    });
   }
 };
 

@@ -1,5 +1,6 @@
 import { DRAFT_LEASE_ERROR_CODES } from "../contracts";
 import { draftAdoptionMessages } from "../draft-adoption-messages";
+import { mailErrorMessages } from "../mail-error-messages";
 import { localizedComposeRenderMessage } from "./compose-render-errors";
 import { localizedMailboxLogoMessage } from "./mailbox-logo-errors";
 
@@ -27,9 +28,26 @@ export const safeErrorDetail = (text: string, secrets: readonly string[] = []): 
   return detail.length > MAX_ERROR_DETAIL_LENGTH ? `${detail.slice(0, MAX_ERROR_DETAIL_LENGTH - 1).trimEnd()}…` : detail;
 };
 
-const genericGermanMessage = (error: HumanFacingError): string => {
+const genericGermanMessage = (error: HumanFacingError, includeInputDetails: boolean): string => {
+  if (error.code === "DRAFT_QUARANTINE_RECOVERY_CHANGED")
+    return "Der Entwurf hat sich während der Wiederherstellung geändert. Prüfe ihn vor einer Wiederholung mit recovery inspect.";
+  if (error.code === "DRAFT_QUARANTINE_RECOVERY_UNAVAILABLE")
+    return "Die Wiederherstellung konnte nicht bestätigt werden. Prüfe den Entwurf mit recovery inspect und wiederhole die Anfrage mit derselben Request-ID.";
+  if (error.code === "DRAFT_RECOVERY_SEND_PENDING")
+    return "Für diesen Entwurf steht noch ein Sendeauftrag aus. Kläre ihn vor der Wiederherstellung, damit die Nachricht nicht doppelt gesendet wird.";
   if (error.message === "Only a Cloud administrator can stop keeping a conversation")
     return "Nur eine Cloud-Administratorin oder ein Cloud-Administrator kann die Aufbewahrung aufheben.";
+  if (
+    error.message === "The draft's editing state changed. Keep any text on this device and reopen the draft before editing." ||
+    error.message === "The draft changed while loading. Keep any text on this device and reopen it."
+  )
+    return "Der Entwurf hat sich beim Laden geändert. Sichere den Text auf diesem Gerät und öffne den Entwurf erneut.";
+  if (error.code === "DRAFT_DOCUMENT_HISTORY_UNAVAILABLE")
+    return "Die Bearbeitungshistorie dieses Entwurfs ist nicht verfügbar. Sichere den Text auf diesem Gerät und bitte die Postfach-Administration, den Entwurf vor dem Senden wiederherzustellen.";
+  if (error.code === "DRAFT_DOCUMENT_INVALID_HISTORY")
+    return "Die Bearbeitungshistorie dieses Entwurfs konnte nicht sicher gelesen werden. Sichere den Text auf diesem Gerät und bitte die Postfach-Administration, den Entwurf vor dem Senden wiederherzustellen.";
+  if (error.code === "DRAFT_DOCUMENT_READ_UNAVAILABLE")
+    return "Der Entwurf konnte nicht geladen werden. Sichere den Text auf diesem Gerät und versuche es gleich erneut. Bleibt das Problem bestehen, bitte die Postfach-Administration um Wiederherstellung.";
   if (error.code === "DRAFT_DOCUMENT_UNAVAILABLE")
     return "Der Entwurf konnte nicht zum Senden vorbereitet werden. Es wurde nichts eingereiht. Die Bearbeitung kann noch bis zu einer Minute gesperrt sein. Öffne und prüfe den aktuellen Entwurf vor einem erneuten Sendeversuch.";
   if (error.code === "DOCUMENT_FROZEN")
@@ -47,6 +65,7 @@ const genericGermanMessage = (error: HumanFacingError): string => {
   if (error.code === "BAD_INPUT" && error.message === "At least one recipient is required before sending")
     return "Gib mindestens eine Empfängeradresse an.";
   if (error.code === "BAD_INPUT") {
+    if (!includeInputDetails) return mailErrorMessages.resolve(["de"]).t.invalidCapabilityInput;
     const detail = safeErrorDetail(error.message);
     return detail ? `Die Eingabe ist ungültig: ${detail}` : "Die Eingabe ist ungültig";
   }
@@ -64,7 +83,20 @@ const genericGermanMessage = (error: HumanFacingError): string => {
 };
 
 /** Localizes a final API or capability error while preserving its stable code and status. */
-export const localizeMailError = <T extends HumanFacingError>(error: T, locale?: string | null): T => {
+export const localizeMailError = <T extends HumanFacingError>(
+  error: T,
+  locale?: string | null,
+  { includeInputDetails = true }: { includeInputDetails?: boolean } = {},
+): T => {
+  if (error.code === "DRAFT_DOCUMENT_STREAM_FULL")
+    return { ...error, message: mailErrorMessages.resolve([locale ?? "en"]).t.draftStorageFull };
+  if (error.code === "SENDER_IDENTITY_UNVERIFIED")
+    return {
+      ...error,
+      message: mailErrorMessages.resolve([locale ?? "en"]).t.senderUnverified({
+        address: "senderAddress" in error && typeof error.senderAddress === "string" ? error.senderAddress : null,
+      }),
+    };
   if (error.code === "DRAFT_REPLY_BOX_OCCUPIED" && "draftId" in error && typeof error.draftId === "string")
     return { ...error, message: draftAdoptionMessages.resolve([locale ?? "en"]).t.replyOccupied({ draftId: error.draftId }) };
   if (error.code === "DRAFT_ADOPTED") return { ...error, message: draftAdoptionMessages.resolve([locale ?? "en"]).t.adopted };
@@ -78,5 +110,5 @@ export const localizeMailError = <T extends HumanFacingError>(error: T, locale?:
   if (normalizedLocale !== "de" && !normalizedLocale?.startsWith("de-")) return error;
   if (error.code === "NOT_FOUND" && error.message === "Mailbox not found")
     return { ...error, message: "Das Postfach wurde nicht gefunden" };
-  return { ...error, message: genericGermanMessage(error) };
+  return { ...error, message: genericGermanMessage(error, includeInputDetails) };
 };

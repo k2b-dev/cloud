@@ -141,6 +141,7 @@ import {
   draftTableActionResponseSchema,
   MAX_DRAFT_DOCUMENT_PAYLOAD,
 } from "../draft-document-contracts";
+import { draftQuarantineRecoverySchema } from "../draft-quarantine-contracts";
 import { KeptConversationExportSchema } from "../kept-conversation-export";
 import { MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../search-url";
 import {
@@ -204,7 +205,7 @@ import { startMailboxCodeAttention } from "../service/code-attention";
 import { requestContactDirectory } from "../service/contact-directory";
 import { conversationSummaryStateSchema } from "../service/conversation-summary-contract";
 import { generateConversationSummary, generateConversationSummarySchema } from "../service/conversation-summary-jobs";
-import { acceptDraftDocumentUpdate, readDraftDocument } from "../service/draft-documents";
+import { acceptDraftDocumentUpdate } from "../service/draft-documents";
 import { applyDraftTableAction } from "../service/draft-table-actions";
 import { localizeMailError } from "../service/error-messages";
 import { mailLive } from "../service/live";
@@ -219,6 +220,7 @@ import automationExportRoutes from "./automation-export";
 import automationLogRoutes from "./automation-log";
 import contactDirectoryRoutes from "./contact-directory";
 import { requireDraftDocumentAccount } from "./draft-document-identity";
+import { respondDraftDocumentRead } from "./draft-document-read";
 import { upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import {
   internalDraftSeedInput,
@@ -3234,21 +3236,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
     v("param", mailboxAndIdParamSchema("draftId")),
     async (c) => {
       const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; draftId: string };
-      const result = await readDraftDocument({ context: requestContext(c), ...params, signal: c.req.raw.signal });
-      if (!result.ok) return respond(c, result);
-      const value = result.data;
-      return respond(
-        c,
-        ok({
-          generation: value.generation,
-          revision: value.revision,
-          lifecycle: value.lifecycle,
-          historyComplete: value.historyComplete,
-          fresh: { ...value.fresh, state: toBase64(value.fresh.state) },
-          durable: { ...value.durable, state: toBase64(value.durable.state) },
-          frozen: value.frozen ? { ...value.frozen, state: toBase64(value.frozen.state) } : null,
-        }),
-      );
+      return respondDraftDocumentRead(c, { context: requestContext(c), ...params, signal: c.req.raw.signal });
     },
   )
   .post(
@@ -3454,6 +3442,50 @@ const mailOperationsApi = new Hono<MailApiContext>()
           expectedRevision: (await internalInput(c, c.req.valid("json"))).expectedRevision,
           locale: getLocale(c),
         }),
+      );
+    },
+  )
+  .get(
+    "/mailboxes/:mailboxId/drafts/:draftId/quarantine",
+    describeRoute({ tags: ["Mail:Drafts"], summary: "Inspect quarantined draft history (mailbox admin)", ...requiresAuth }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    async (c) =>
+      respondPublic(
+        c,
+        drafts.inspectDraftQuarantine({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+          signal: c.req.raw.signal,
+        }),
+      ),
+  )
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/quarantine/recover",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Recover a quarantined draft or create a review copy (mailbox admin)",
+      ...requiresAuth,
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    v("json", draftQuarantineRecoverySchema),
+    async (c) => {
+      const recovered = await drafts.recoverQuarantinedDraft({
+        context: requestContext(c),
+        ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+        input: c.req.valid("json"),
+        signal: c.req.raw.signal,
+      });
+      return respondPublic(
+        c,
+        await projectResourcePaths(recovered, [
+          { path: ["draft", "id"], table: "drafts" },
+          ...(recovered.ok
+            ? recovered.data.draft.attachments.map((_, index) => ({
+                path: ["draft", "attachments", String(index), "id"],
+                table: "draftAttachments" as const,
+              }))
+            : []),
+        ]),
       );
     },
   )

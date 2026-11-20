@@ -270,8 +270,11 @@ describe("alarms above the field", () => {
     }
   });
 
-  test("a chip that joins Waiting for you moves nothing in that row and gives it no back", async () => {
-    const { page, errors, close } = await open(desktop, []);
+  test.each([
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const)("a chip that joins Waiting for you moves nothing in that row, gives it no back, and keeps its word (%s)", async (_, view) => {
+    const { page, errors, close } = await open(view, []);
     try {
       await dock(page, { waiting: true });
       await settled(page);
@@ -291,8 +294,12 @@ describe("alarms above the field", () => {
       expect(alone.box[3]).toBe(32);
       await dock(page, { items: ALARMS.slice(0, 2) });
       await settled(page);
-      expect(await page.locator("nav.assistant-waiting .assistant-wakeups .assistant-queue__chip").count()).toBe(1);
+      const chip = page.locator("nav.assistant-waiting .assistant-wakeups .assistant-queue__chip");
+      expect(await chip.count()).toBe(1);
       expect(await row()).toEqual(alone);
+      // Also on a phone the chip says "Alarms · n", not only the sign and the number (Gustav alarms v1, F1 A).
+      const word = await chip.getByText("Wecker", { exact: true }).evaluate((element) => element.getBoundingClientRect().width);
+      expect(word).toBeGreaterThan(20);
       await dock(page, { queued: true });
       await settled(page);
       expect(await row()).toEqual(alone);

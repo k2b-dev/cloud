@@ -6,6 +6,8 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { coreSettings } from "@k2b/cloud/services";
+import { previewSourceKind } from "@k2b/cloud/shared";
 import { FilegateError } from "@k2b/filegate";
 import { dates, err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
@@ -173,10 +175,24 @@ export const filesCapabilities = defineCapabilities({
           const folder = parent(result.entry.path).split("/").at(-1) || result.base.name;
           const t = filesCapabilityMessages(context.locale);
           const resourceContext = result.entry.directory ? t.folderInFolder({ folder }) : t.fileInFolder({ folder });
-          // Thumbnail/download endpoints issue POST leases, not session-authorized image bytes.
+          const revision = markdownRevision(result.entry);
+          // A picture comes from Files' own route, which checks the reader's access again on every request. Its 4:3
+          // place stands while the picture loads and when it cannot be shown.
+          const image =
+            !result.entry.directory && previewSourceKind(result.entry.name) === "image"
+              ? [
+                  {
+                    kind: "Image" as const,
+                    src: `/api/filesv2/entries/${encodeURIComponent(input.id)}/image?${new URLSearchParams({ rev: revision })}`,
+                    alt: result.entry.name,
+                    ratio: 4 / 3,
+                  },
+                ]
+              : [];
           const view: BlockView = {
             version: 1,
             blocks: [
+              ...image,
               {
                 kind: "Detail",
                 title: t.previewDetails,
@@ -184,7 +200,12 @@ export const filesCapabilities = defineCapabilities({
                   { label: t.size, value: result.entry.size, format: { unit: "B" } },
                   {
                     label: t.previewModified,
-                    value: dates.formatDateTime(result.entry.modified, { locale: context.locale, timeZone: "UTC" }),
+                    // A capability carries no reader zone: the installation's (`app.timezone`), as in Mail's previews, with
+                    // the setting's own default when it is empty or invalid.
+                    value: dates.formatDateTime(result.entry.modified, {
+                      locale: context.locale,
+                      timeZone: dates.normalizeTimeZone((await coreSettings.get<string>("app.timezone"))?.trim(), "Europe/Berlin"),
+                    }),
                   },
                   {
                     label: t.previewFolder,
@@ -209,7 +230,7 @@ export const filesCapabilities = defineCapabilities({
               id: input.id,
               base: { id: result.base.id, name: result.base.name, area: result.base.area },
               ...result.entry,
-              revision: markdownRevision(result.entry),
+              revision,
               href: entryHref(result.base.id, result.entry.path, result.entry.directory),
               view: CloudResourceReaderViewSchema.required({ container: true }).parse({
                 ...result.view,

@@ -9,7 +9,7 @@ import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { reviewDraftComposeSafety, validateComposeSafetyEdits, validateDraftComposeSafety } from "./compose-safety";
-import { draftDocumentStreamFull, isDraftDocumentStreamFull, withDraftDocumentCommit } from "./draft-document-log";
+import { draftDocumentStreamFull, isDraftDocumentStreamFull, mailDraftDocumentLog, withDraftDocumentCommit } from "./draft-document-log";
 import { mailDraftRoom } from "./draft-document-room";
 import { sameDraftDocumentState } from "./draft-document-state";
 import { lockDraftDocumentInTransaction, readDraftDocument } from "./draft-documents";
@@ -279,6 +279,12 @@ export const finishDraftSendClose = async (commandId: string, signal?: AbortSign
       return;
     } catch (error) {
       if (!(error instanceof ConflictError)) throw error;
+      const current = (await mailDraftDocumentLog.lifecycle!.get(saved.draft_id))?.value;
+      if ((current?.state === "frozen" || current?.state === "closed") && current.freezeCursor === token) {
+        // Publication can conflict with pruning after authority committed.
+        // Our token is still current: retain the intent until its notification succeeds.
+        throw error;
+      }
       const [draft] = await sql<{ state: string }[]>`SELECT state FROM mail.drafts WHERE id = ${saved.draft_id}::uuid`;
       if (!draft || draft.state === "sent" || draft.state === "discarded") {
         // The committed domain tombstone is authoritative after an expired token

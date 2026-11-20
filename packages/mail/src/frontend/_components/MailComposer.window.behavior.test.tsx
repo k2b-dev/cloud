@@ -150,7 +150,7 @@ describe("MailComposer in a floating window", () => {
   let statusSlot: HTMLElement;
   let actionsSlot: HTMLElement;
   let setSheet: (value: boolean) => void;
-  let documentResponse: ((path: string) => Response | null) | null;
+  let documentResponse: ((path: string) => Response | Promise<Response> | null) | null;
 
   beforeEach(() => {
     dom = createDomTestHarness();
@@ -186,7 +186,11 @@ describe("MailComposer in a floating window", () => {
         if (path.endsWith("/safety-review"))
           return Response.json({ revision: 1, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) });
         if (path.endsWith("/commands")) {
-          if (commandFailure) return Response.json({ code: "SEND_FAILED", message: commandFailure }, { status: 503 });
+          if (commandFailure)
+            return Response.json(
+              { code: commandFailure.startsWith("At least one recipient") ? "BAD_INPUT" : "SEND_FAILED", message: commandFailure },
+              { status: commandFailure.startsWith("At least one recipient") ? 400 : 503 },
+            );
           return Response.json({ id: crypto.randomUUID(), result: { outboxSubmissionId: "Dlv001", conversationId: "Conv01" } });
         }
         throw new Error(`Unexpected request: ${request.method} ${path}`);
@@ -249,7 +253,7 @@ describe("MailComposer in a floating window", () => {
               toggleFullscreen: () => undefined,
               initialSelection: options.initialSelection,
               register: () => undefined,
-              messageLabel: () => null,
+              messageSource: () => null,
               leave: (outcome) => leaves.push(outcome),
               openDraft: () => undefined,
               window: { status: () => statusSlot, actions: () => actionsSlot, sheet },
@@ -306,6 +310,140 @@ describe("MailComposer in a floating window", () => {
     // To and Subject form one block that stays in view above the text.
     expect(row.parentElement?.matches("[data-mail-draft-fields]")).toBe(true);
     expect(dom.root.querySelector("[data-mail-draft-fields] > .mail-inline-draft-head")).not.toBeNull();
+  });
+
+  test("a reply's original stands under the signature as a card: it loads in place, fails with a way out, and × leaves it out", async () => {
+    const original = {
+      from: [{ name: "Lena Berger", address: "lena@example.test" }],
+      internalDate: now,
+      plainText:
+        "Hello,\n\ncould we move the pickup to Saturday at 11? The van only fits twelve chairs.\nIf hall A is still locked, call me at the gate.\n\nThanks, Lena",
+    };
+    let answer = Promise.withResolvers<Response>();
+    documentResponse = (path) => (path.endsWith("/messages/Msg001") ? answer.promise : null);
+    await mount({
+      draft: {
+        ...initialDraft,
+        intent: "reply",
+        conversationId: "Conv01",
+        sourceMessageId: "Msg001",
+        quoteSource: { locale: "en", timeZone: "UTC" },
+      },
+    });
+    const card = () => dom.root.querySelector<HTMLElement>("[data-mail-quote-card]");
+    // Loading holds the collapsed card's place under the signature.
+    expect(card()?.hasAttribute("data-loading")).toBe(true);
+    const signature = dom.root.querySelector(".mail-inline-draft-signature, [data-mail-draft-signature]");
+    if (signature) expect(signature.compareDocumentPosition(card()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    answer.resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+    await waitFor(() => card()?.hasAttribute("data-failed") === true);
+    expect(card()!.getAttribute("role")).toBe("alert");
+    expect(card()!.textContent).toContain("It still goes along below your signature.");
+    answer = Promise.withResolvers<Response>();
+    answer.resolve(Response.json(original));
+    [...card()!.querySelectorAll("button")].find((button) => button.textContent === "Try again")!.click();
+    await waitFor(() => card()?.getAttribute("aria-label") === "Original message from Lena Berger");
+    // Collapsed: the first two lines with content, not the greeting.
+    expect([...card()!.querySelectorAll(".mail-quote-card-text > p")].map((line) => line.textContent)).toEqual([
+      "could we move the pickup to Saturday at 11? The van only fits twelve chairs.",
+      "If hall A is still locked, call me at the gate.",
+    ]);
+    [...card()!.querySelectorAll("button")].find((button) => button.textContent === "Show all")!.click();
+    await waitFor(() => card()!.querySelectorAll(".mail-quote-card-text > p").length === 3);
+    card()!.querySelector<HTMLButtonElement>('button[aria-label="Leave the original message out"]')!.click();
+    const add = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-quote-add]");
+    await waitFor(() => Boolean(add()));
+    expect(card()).toBeNull();
+    // The focus follows to the control that takes the place, never to the page.
+    await waitFor(() => dom.document.activeElement === add());
+    add()!.click();
+    await waitFor(() => Boolean(card()));
+    await waitFor(() => dom.document.activeElement === card()!.querySelector('button[aria-label="Leave the original message out"]'));
+  });
+
+  test("an original that is gone or not visible here shows no card, as nothing goes along", async () => {
+    documentResponse = (path) => (path.endsWith("/messages/Msg001") ? Response.json({ message: "Not found" }, { status: 404 }) : null);
+    await mount({
+      draft: {
+        ...initialDraft,
+        intent: "reply",
+        conversationId: "Conv01",
+        sourceMessageId: "Msg001",
+        quoteSource: { locale: "en", timeZone: "UTC" },
+      },
+    });
+    await waitFor(() => !dom.root.querySelector("[data-mail-quote-card][data-loading]"));
+    expect(dom.root.querySelector("[data-mail-quote-card]")).toBeNull();
+  });
+
+  test("a message without text adds no quote and shows no card", async () => {
+    documentResponse = (path) =>
+      path.endsWith("/messages/Msg001")
+        ? Response.json({
+            from: [{ name: "Lena Berger", address: "lena@example.test" }],
+            internalDate: now,
+            plainText: null,
+            forwardText: "",
+          })
+        : null;
+    await mount({
+      draft: {
+        ...initialDraft,
+        intent: "reply",
+        conversationId: "Conv01",
+        sourceMessageId: "Msg001",
+        quoteSource: { locale: "en", timeZone: "UTC" },
+      },
+    });
+    await waitFor(() => !dom.root.querySelector("[data-mail-quote-card][data-loading]"));
+    expect(dom.root.querySelector("[data-mail-quote-card]")).toBeNull();
+    expect(dom.root.querySelector("[data-mail-quote-add]")).toBeNull();
+  });
+
+  test("Send without recipients marks the To field, puts the caret there, and sends nothing", async () => {
+    await mount({ draft: { ...initialDraft, to: [], subject: "" }, fullscreen: () => true });
+    sendButton()!.click();
+    const control = () => dom.root.querySelector<HTMLElement>(".mail-inline-draft-recipients .mail-recipient-control")!;
+    await waitFor(() => control().hasAttribute("data-missing"));
+    const input = control().querySelector<HTMLInputElement>("input")!;
+    // The reason stands inside the empty field, where its placeholder was: the field keeps its size.
+    expect(input.placeholder).toBe("Add at least one recipient.");
+    expect(control().getAttribute("data-invalid")).toBe("true");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(dom.document.getElementById(input.getAttribute("aria-describedby")!)?.textContent).toBe("Add at least one recipient.");
+    await waitFor(() => dom.document.activeElement === input);
+    // Nothing goes out, and no toast offers to try the same send again.
+    await Bun.sleep(50);
+    expect(requests.some((request) => request.endsWith("/commands"))).toBe(false);
+    expect(dom.document.querySelector(".k2b-toast")).toBeNull();
+    expect(leaves).toEqual([]);
+    // Typing clears the mark.
+    input.value = "lena@example.test";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => !control().hasAttribute("data-missing"));
+  });
+
+  test("the normal window: Send without recipients marks the To field and sends nothing", async () => {
+    await mount({ draft: { ...initialDraft, to: [], subject: "" } });
+    sendButton()!.click();
+    const control = () => dom.root.querySelector<HTMLElement>(".mail-recipient-control")!;
+    await waitFor(() => control().hasAttribute("data-missing"));
+    expect(control().querySelector<HTMLInputElement>("input")!.placeholder).toBe("Add at least one recipient.");
+    await Bun.sleep(50);
+    expect(requests.some((request) => request.endsWith("/commands"))).toBe(false);
+    expect(dom.document.querySelector(".k2b-toast")).toBeNull();
+    expect(leaves).toEqual([]);
+  });
+
+  test("a server that refuses the send stays visible: the toast names its reason", async () => {
+    commandFailure = "At least one recipient is required before sending";
+    await mount();
+    sendButton()!.click();
+    const toastCard = () => dom.document.querySelector<HTMLElement>("[data-k2b-toast-container] .k2b-toast");
+    await waitFor(() => Boolean(toastCard()));
+    expect(toastCard()!.querySelector(".k2b-toast__title")?.textContent).toBe("Not sent");
+    expect(toastCard()!.textContent).toContain("At least one recipient is required before sending");
+    expect(leaves).toEqual([]);
   });
 
   test("a send that fails keeps the window with its text; a toast names the reason and Send stays in place", async () => {

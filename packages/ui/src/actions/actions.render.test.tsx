@@ -602,6 +602,47 @@ describe("@k2b/ui complete action migrations", () => {
     expect(rule(".k2b-ui .k2b-dropdown__menu.k2b-filter-chip__menu")).toContain("min-width: min(13rem, 100vw - 2rem)");
   });
 
+  test("puts a search field above a long list of options and keeps its value in the chip", () => {
+    const html = renderToString(() =>
+      createComponent(FilterChip, {
+        label: "Person",
+        icon: "ti ti-user",
+        showValue: true,
+        search: { label: "Find person", placeholder: "Name" },
+        value: ["mira"],
+        onValueChange: () => {},
+        options: [
+          {
+            options: [
+              { value: "mira", label: "Mira Schulz", icon: "ti ti-user" },
+              { value: "bot", label: "Import", icon: "ti ti-robot" },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain("Person: Mira Schulz");
+    // The field names itself and keeps the focus, so the menu is a dialog and its options a list box.
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-label="Find person"');
+    expect(html).toContain('placeholder="Name"');
+    expect(html.match(/role="option"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(html).not.toContain('role="menuitemradio"');
+
+    const plain = renderToString(() =>
+      createComponent(FilterChip, {
+        label: "Person",
+        icon: "ti ti-user",
+        value: [],
+        onValueChange: () => {},
+        options: [{ options: [{ value: "mira", label: "Mira Schulz" }] }],
+      }),
+    );
+    expect(plain).not.toContain('role="dialog"');
+    expect(plain).toContain('role="menuitemradio"');
+  });
+
   test("renders a row section as one segmented row of radio choices", () => {
     const html = renderToString(() =>
       createComponent(FilterChip, {

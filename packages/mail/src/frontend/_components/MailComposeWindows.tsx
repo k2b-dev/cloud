@@ -161,7 +161,7 @@ export default function MailComposeWindows(props: MailComposeWindowsProps) {
     replyPosition: props.replyPosition,
     arrangeHint: props.arrangeHint,
     register: (next) => controls.set(entry.key, next),
-    messageLabel: () => null,
+    messageSource: () => null,
     summary: (value) => title(value.subject),
     window: slots,
     delivered,

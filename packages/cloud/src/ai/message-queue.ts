@@ -1,11 +1,14 @@
 import type { Message } from "@k2b/nessi";
 import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
+import type { RequestActor, UserRequestActor } from "../server";
+import { isAppSessionActor } from "../server/actor";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { coreSettings } from "../services/settings/api";
 import { isUnknownActionOutcome } from "./action-review";
 import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
+import { appendAiQueuedChatDone } from "./chat-done";
 import { assertPersonalChatWriter } from "./chat-writer";
 import { aiDraftTurnContent, editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
@@ -40,6 +43,7 @@ const AI_QUEUE_SWEEP_CHAT_LIMIT = 32;
 import { finishAiTurnAbort } from "./turn-abort";
 import { AI_ACTION_BUDGET_MS } from "./turn-action-budget";
 import { isQueueInterruptedResult, queuedClientInterruptionState } from "./turn-interruption";
+import { mayWriteIntoAiTurn } from "./turn-writer";
 
 export { AiMessageQueueConflict } from "./queue-conflict";
 
@@ -111,9 +115,14 @@ export const migrateAiQueuedMessagesTable = async () => {
     created_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_chat_send_receipts_key ON ai.chat_send_receipts(account_id,operation,key_hash,created_at DESC)`.simple();
+  // Immutable internal coordinates: deleting and later reusing a public short ID never redirects a completion.
+  await sql`ALTER TABLE ai.chat_send_receipts ADD COLUMN IF NOT EXISTS source_conversation_id uuid,
+    ADD COLUMN IF NOT EXISTS source_turn_id uuid`.simple();
   await sql`CREATE OR REPLACE FUNCTION ai.chat_send_receipt_immutable() RETURNS trigger AS $$
     BEGIN RAISE EXCEPTION 'Chat send receipts are immutable'; END;
     $$ LANGUAGE plpgsql`.simple();
+  await sql`ALTER TABLE ai.queued_messages ADD COLUMN IF NOT EXISTS delegated_done_at timestamptz,
+    ADD COLUMN IF NOT EXISTS delegated_done_fail_count integer NOT NULL DEFAULT 0`.simple();
   // The immutable trigger follows a completed backfill, including on earlier versions of this migration.
   // Backfill and trigger commit together now; a failed start can repeat safely without rescanning on every start.
   await sql.begin(async (tx) => {
@@ -141,6 +150,9 @@ export const migrateAiQueuedMessagesTable = async () => {
     ADD COLUMN IF NOT EXISTS interruption_deadline timestamptz,
     ADD COLUMN IF NOT EXISTS interruption_client_calls text[],
     ADD COLUMN IF NOT EXISTS submitted_turn_id uuid REFERENCES ai.turns(id) ON DELETE SET NULL`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_delegated_done_sweep ON ai.queued_messages(created_at,id)
+    WHERE status IN ('cancelled','failed') AND submitted_turn_id IS NULL
+      AND origin->>'kind'='chat' AND delegated_done_at IS NULL`.simple();
   // A person's Stop holds the queue until that person acts again (coordinator, 16.11.): Send now starts one entry, a new
   // message of the person releases the hold. Kept on the chat, so no entry needs a second state.
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS queue_held_at timestamptz`.simple();
@@ -283,8 +295,14 @@ export const assertQueuedMessageQuota = async (conversationId: string, id: strin
     if (isAssistantChatTurn(row.submission.runConfig) && subject) await aiQuotas.assertAllowed(subject, row.submission.modelId);
   } catch (error) {
     if (error instanceof AiQuotaError)
-      await sql`UPDATE ai.queued_messages SET status='failed',error=${error.code},quota_checked_at=clock_timestamp()
-        WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid AND status IN ('pending','failed') AND send_requested_at IS NULL`;
+      await sql.begin(async (tx) => {
+        await tx`SELECT id FROM ai.conversations WHERE id=${conversationId}::uuid FOR NO KEY UPDATE`;
+        const [failed] = await tx<{ origin_kind: string }[]>`
+          UPDATE ai.queued_messages SET status='failed',error=${error.code},quota_checked_at=clock_timestamp()
+          WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid AND status IN ('pending','failed') AND send_requested_at IS NULL
+          RETURNING origin->>'kind' AS origin_kind`;
+        if (failed?.origin_kind === "chat") await appendAiQueuedChatDone(id, tx);
+      });
     throw error;
   }
 };
@@ -353,6 +371,18 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
   return db ? enqueue(db) : sql.begin(enqueue);
 };
 
+/**
+ * Whether `writer` may retry or send now the queued entry `id`. The entry runs as the actor that queued it, so a
+ * session of the Cloud app may run only entries queued in the app; other writers skip the lookup. A missing entry
+ * passes, so the change itself answers that it is gone. Removing an entry adds no text and needs no such check.
+ */
+export const mayChangeQueuedMessage = async (conversationId: string, id: string, writer: RequestActor): Promise<boolean> => {
+  if (!isAppSessionActor(writer)) return true;
+  const [row] = await sql<{ actor: RequestActor | null }[]>`SELECT submission#>'{runConfig,actor}' AS actor FROM ai.queued_messages
+    WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid`;
+  return !row || mayWriteIntoAiTurn(writer, row.actor ?? undefined);
+};
+
 /** Cancellation and retry share the conversation lock with promotion. */
 export const updateQueuedMessage = async (conversationId: string, id: string, action: "cancel" | "retry") => {
   const timeZone = action === "retry" ? (await coreSettings.get<string>("app.timezone")) || "UTC" : "UTC";
@@ -364,12 +394,13 @@ export const updateQueuedMessage = async (conversationId: string, id: string, ac
       AND (${action}='cancel' OR automation_source IS NULL)
       AND (${action}='cancel' OR NOT (submission->'runConfig' ? 'codeOrigin')
         OR (created_at AT TIME ZONE ${timeZone})::date >= (clock_timestamp() AT TIME ZONE ${timeZone})::date)
-      AND NOT EXISTS (SELECT 1 FROM ai.queued_messages q WHERE q.conversation_id=${conversationId}::uuid AND q.send_requested_at IS NOT NULL AND q.status IN ('pending','failed')) RETURNING id`;
+      AND NOT EXISTS (SELECT 1 FROM ai.queued_messages q WHERE q.conversation_id=${conversationId}::uuid AND q.send_requested_at IS NOT NULL AND q.status IN ('pending','failed')) RETURNING id,origin->>'kind' AS origin_kind`;
     if (action === "cancel" && changed.length) {
       await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${id}::uuid`;
       await tx`UPDATE ai.queued_messages SET submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END,
         content = '[]'::jsonb WHERE id = ${id}::uuid`;
     }
+    if (action === "cancel" && changed[0]?.origin_kind === "chat") await appendAiQueuedChatDone(id, tx);
     return Boolean(changed.length);
   });
 };
@@ -379,22 +410,24 @@ export class AiQueuedMessageTooLarge extends Error {}
 
 /**
  * Edit only queued text; immutable attachments, checked quotes, and the independent composer draft stay intact. Text
- * from a source without a signed-in session restricts the queued turn; editing stays possible.
+ * from a source without a signed-in session restricts the queued turn; editing stays possible. Only the author may
+ * edit, and the message keeps running as the actor that queued it, so `author` must also be allowed to write into it.
  */
 export const editQueuedMessage = async (
   conversationId: string,
   id: string,
   text: string,
-  source: { signedInSession: boolean; authorUserId: string },
-) =>
+  source: { signedInSession: boolean; author: UserRequestActor },
+): Promise<"edited" | "not_found" | "forbidden"> =>
   sql.begin(async (tx) => {
     await tx`SELECT id FROM ai.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
     const [row] = await tx<{ submission: Submission; content: AiDraftContentPart[] }[]>`SELECT submission, content FROM ai.queued_messages
     WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND status IN ('pending','failed')
-      AND author_user_id=${source.authorUserId}::uuid
+      AND author_user_id=${source.author.user.id}::uuid
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages q WHERE q.conversation_id=${conversationId}::uuid AND q.send_requested_at IS NOT NULL AND q.status IN ('pending','failed')) FOR UPDATE`;
-    if (!row) return false;
-    if (row.submission.runConfig.writerOrigin && row.submission.runConfig.writerOrigin.kind !== "person") return false;
+    if (!row) return "not_found";
+    if (row.submission.runConfig.writerOrigin && row.submission.runConfig.writerOrigin.kind !== "person") return "not_found";
+    if (!mayWriteIntoAiTurn(source.author, row.submission.runConfig.actor)) return "forbidden";
     // Typed text never passes for a quote; the edited message keeps the bounds of any message, quotes included.
     const content = editAiDraftText(row.content, aiNeutralizeQuoteMarkers(text));
     const problem = aiDraftContentProblem(content);
@@ -418,7 +451,7 @@ export const editQueuedMessage = async (
     };
     await tx`UPDATE ai.queued_messages SET submission = (${JSON.stringify(submission)}::text)::jsonb,
     content = (${JSON.stringify(content)}::text)::jsonb, revision=revision+1 WHERE id = ${id}::uuid`;
-    return true;
+    return "edited";
   });
 
 type QueuedInterruption = { id: string; conversation_id: string; interrupted_turn_id: string };
@@ -509,10 +542,13 @@ const reconcileQueuedInterruptionRows = async (rows: QueuedInterruption[]): Prom
           : "confirmed";
       }
       if (state === "unconfirmed") {
-        await tx`UPDATE ai.queued_messages SET status='failed',error='interruption_unconfirmed',send_requested_at=NULL,
-          interruption_deadline=NULL,interruption_client_calls=NULL,interrupted_turn_id=NULL,interruption_steps=NULL WHERE id=${row.id}::uuid`;
+        const [failed] = await tx<{ origin_kind: string }[]>`
+          UPDATE ai.queued_messages SET status='failed',error='interruption_unconfirmed',send_requested_at=NULL,
+          interruption_deadline=NULL,interruption_client_calls=NULL,interrupted_turn_id=NULL,interruption_steps=NULL WHERE id=${row.id}::uuid
+          RETURNING origin->>'kind' AS origin_kind`;
         await tx`UPDATE ai.turns SET cancel_requested_at=NULL,cancellation_reason=NULL WHERE id=${row.interrupted_turn_id}::uuid
           AND cancellation_reason='queue_interrupt'`;
+        if (failed?.origin_kind === "chat") await appendAiQueuedChatDone(row.id, tx);
         return false;
       }
       return state === "confirmed" && turn.ownerless;
@@ -722,6 +758,7 @@ export const drainQueuedMessages = async (
               submission=CASE WHEN ${terminal && Boolean(row.automation_source)} THEN ${retiredSubmission(tx)} ELSE submission END,
               content=CASE WHEN ${terminal && Boolean(row.automation_source)} THEN '[]'::jsonb ELSE content END
               WHERE id=${row.id}::uuid`;
+            if (terminal && row.origin?.kind === "chat") await appendAiQueuedChatDone(row.id, tx);
             if (terminal && row.submission.runConfig?.wakeup)
               await markAiWakeupMissed(
                 chat.conversation_id,
