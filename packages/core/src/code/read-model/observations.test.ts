@@ -82,6 +82,25 @@ test("one-day schedule projection preserves DST and groups over 200 timeline mar
   expect(bounded.reduce((sum, mark) => sum + mark.count, 0)).toBe(1000);
 });
 
+test("every surface reads a repeated finding once, in its first place; unknown codes share one sentence", () => {
+  const rows = describeCodeNotices(
+    [
+      { code: "code_route_unchecked" },
+      { code: "code_unknown_method" },
+      { code: "code_route_unchecked" },
+      { code: "code_unknown_method" },
+      { code: "code_future_one" },
+      { code: "code_future_two" },
+    ],
+    "de",
+  );
+  expect(rows.map((row) => row.text)).toEqual([
+    "Diese Seite prüft die angemeldete Person nicht.",
+    "Diese Version ruft eine unbekannte Operation auf.",
+    "Die Versionsprüfung ist unerwartet fehlgeschlagen.",
+  ]);
+});
+
 test("each checker code has its own text and route warnings do not block submission", () => {
   for (const locale of ["de", "en"]) {
     const rows = describeCodeNotices(
