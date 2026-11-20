@@ -55,8 +55,9 @@ When the first client render needs deferred code, give the default component a
 `preload(): Promise<unknown>` property, for example
 `ChatPage.preload = preloadChatPresentation`. The browser keeps the complete
 server markup while it loads and replaces it only after the promise resolves.
-The hook does not run during server rendering. Rejection reports
-`ssr:island-error` and offers **Try again**, which runs the preload again.
+The hook does not run during server rendering. Rejection keeps the server
+markup and typed fields, reports `ssr:island-error`, and offers **Try again**,
+which runs the preload again.
 Components without a preload still mount synchronously.
 
 Text a person typed into a text field (`<textarea>`, or `<input>` of type

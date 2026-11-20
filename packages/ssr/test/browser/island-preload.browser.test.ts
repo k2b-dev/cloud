@@ -43,7 +43,8 @@ test("preloading retains the server DOM and focus until the first complete clien
 });
 
 test("a failed preload reports its error and offers a retry that loads again", async () => {
-  const { element, selector } = wrapper("preload-retry");
+  const { element, input, selector } = wrapper("preload-retry");
+  input.value = "Still typing";
   const failure = new Error("missing chunk");
   let attempts = 0;
   let retry: (() => void) | undefined;
@@ -63,6 +64,9 @@ test("a failed preload reports its error and offers a retry that loads again", a
   try {
     mount(Component, selector);
     await Bun.sleep(0);
+    expect(element.firstChild).toBe(input);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("Still typing");
     expect(element.querySelector('[role="alert"]')).not.toBeNull();
     expect(element.querySelector("button")?.textContent).toBe("Try again");
     expect(islandsPending(element)).toBe(false);

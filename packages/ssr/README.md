@@ -30,7 +30,8 @@ An island's default component may have a `preload(): Promise<unknown>` property.
 The browser waits for it before replacing any server markup; for example,
 `ChatPage.preload = preloadChatPresentation` prepares a deferred renderer before
 the first client frame. Keep server rendering synchronous. A rejected preload
-reports `ssr:island-error` and shows **Try again**, which retries the preload.
+keeps the server markup and typed fields, reports `ssr:island-error`, and adds
+**Try again**, which retries the preload.
 
 Text a person typed into a text field (`<textarea>`, or `<input>` of type
 text, search, email, url, or tel) before the island mounted moves to the same

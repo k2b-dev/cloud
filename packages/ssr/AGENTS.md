@@ -119,7 +119,8 @@ Test `transform()` directly in both modes when changing it, including the
 
 The default component may have `preload(): Promise<unknown>`. `mount()` registers
 immediately and waits before replacing server HTML. Rejection reports the island
-error and installs a disposable DOM retry notice; retry runs the preload again.
+error and appends a disposable retry notice while retaining server fields;
+retry removes the notice and runs the preload again.
 An entry without this property still mounts synchronously.
 
 `mount()` in `src/mount.ts` gives each wrapper element its own `render()` root

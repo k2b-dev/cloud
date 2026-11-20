@@ -149,11 +149,13 @@ export const mount = <Props extends object>(
       if (!failure) return mountElement(element, Component, Fallback);
       const retry = () => {
         registry().mounted.delete(element);
+        notice.remove();
         mount(Component, selector, Fallback);
       };
-      report(element, failure.error, retry);
-      element.replaceChildren(defaultFallback(retry));
+      const notice = defaultFallback(retry);
+      element.append(notice);
       registry().mounted.set(element, () => element.replaceChildren());
+      report(element, failure.error, retry);
     });
   };
   registry().components.set(selector, mountOne);
