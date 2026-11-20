@@ -118,7 +118,7 @@ else {
       const open = parts(dom.root);
       expect(open.input.value).toBe("");
       expect(open.title).toBe("Gustav hat die Dauer aus dieser Aufgabe geschätzt");
-      expect(open.note?.textContent).toBe("Der Vorschlag ist noch offen und wird nicht gespeichert.");
+      expect(open.note?.textContent).toBe("Der Vorschlag wird nicht gespeichert.");
       expect(open.accept()?.getAttribute("aria-label")).toBe("Vorschlag für Geschätzte Dauer übernehmen");
       // An open suggestion is not the value: saving keeps the estimate empty.
       expect((await submit()).estimatedDurationMinutes).toBeNull();
