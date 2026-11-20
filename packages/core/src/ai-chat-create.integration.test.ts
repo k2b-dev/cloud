@@ -308,6 +308,7 @@ suiteFor(
     const { privateKey } = await generateKeyPair("RS256");
     const turn = { conversationId: source.id, turnId: submitted.turn.id };
     const input = { title: "Gustav briefing" };
+    const reviews: string[] = [];
     // What the AI executor dispatches for the turn's review and run: the owner's session authority, no reusable proof.
     const dispatch = (review: boolean, assistantTurn?: typeof turn) =>
       dispatchCapability({
@@ -351,6 +352,7 @@ suiteFor(
             const result = review
               ? await reviewCompiledCapability({ compiled, localId: "ai.chat.create", input, expectedSchemaHash: action.manifest.schemaHash, context })
               : await invoke(context, input.title);
+            if (review) reviews.push(result.ok ? "ok" : result.error.code);
             const serialized = serializeCapabilityProviderResult(result, { review, nonIdempotentAction: false });
             return new Response(serialized.body, { status: serialized.status, headers: { "content-type": "application/json" } });
           },
@@ -362,8 +364,10 @@ suiteFor(
       status: 409,
       code: "source_unavailable",
     });
-    const reviewed = await dispatch(true, turn);
-    expect(reviewed.status).toBe(200);
+    await dispatch(true, turn);
+    // Core decides on the source: refused without the turn, allowed with it. The transport check of the review
+    // view needs the registered presentation and is covered by the capability suites.
+    expect(reviews).toEqual(["source_unavailable", "ok"]);
     const response = await dispatch(false, turn);
     const body = (await response.json()) as { data?: { chat?: { id?: string } }; code?: string };
     expect({ status: response.status, code: body.code }).toEqual({ status: 200, code: undefined });
