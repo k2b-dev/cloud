@@ -144,8 +144,9 @@ const SESSION_EXPIRED_ERROR: SharedTextProviderError = { code: SESSION_EXPIRED_C
 const sessionExpiredClose = (code: number, reason: string): SharedTextProviderError | null =>
   code === 1008 && reason.trim() === SESSION_EXPIRED_CLOSE_REASON ? { ...SESSION_EXPIRED_ERROR } : null;
 /**
- * A socket refused during its upgrade (an expired sign-in answers HTTP 401 there) reaches the browser only as a close
- * without a status. Cloud answers 401 on this route once the browser's sign-in has ended; reading never extends it.
+ * A socket refused during its upgrade (an expired sign-in answers HTTP 401 there) reaches the browser without a
+ * status: directly as a close without opening, behind Cloud's gateway as an open socket that closes before the server
+ * sends anything. Cloud answers 401 on this route once the browser's sign-in has ended; reading never extends it.
  */
 const SESSION_CHECK_PATH = "/api/me/browser";
 /** Server error code with the same meaning as {@link TRY_AGAIN_LATER}; it never ends the session. */
@@ -182,7 +183,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   let isTerminated = false;
   let needsReopen = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  /** At most one sign-in check runs; a new check needs another refused connection, which follows the backoff. */
+  /** At most one sign-in check runs; a new check needs another unanswered connection, which follows the backoff. */
   let sessionCheck: AbortController | null = null;
   const stopSessionCheck = () => {
     sessionCheck?.abort();
@@ -754,13 +755,14 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   };
 
   /**
-   * Asks Cloud over HTTP whether the sign-in ended after a connection that never opened. Only a 401 ends the session
-   * as `SESSION_EXPIRED`; any other answer, a network failure or another origin leaves the reconnect as it is.
+   * Asks Cloud over HTTP whether the sign-in ended after a connection the server never answered. Only a 401 ends the
+   * session as `SESSION_EXPIRED`; any other answer, a network failure or another origin leaves the reconnect as it is.
    */
-  const checkSessionAfterRefusedConnection = () => {
+  const checkSessionAfterUnansweredConnection = () => {
     if (sessionCheck || isDisposed || isTerminated || typeof fetch !== "function" || typeof location === "undefined") return;
-    const url = new URL(SESSION_CHECK_PATH, opts.transport.url);
-    url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+    const url = new URL(SESSION_CHECK_PATH, new URL(opts.transport.url, location.href));
+    if (url.protocol === "wss:") url.protocol = "https:";
+    else if (url.protocol === "ws:") url.protocol = "http:";
     if (url.origin !== location.origin) return;
     const controller = new AbortController();
     sessionCheck = controller;
@@ -790,11 +792,9 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     clearConnectionTimer();
     connectionTimer = setTimeout(() => retryTimedOutConnection(socket), SHARED_TEXT_ACK_TIMEOUT_MS);
 
-    let opened = false;
+    let answered = false;
     socket.onopen = () => {
       if (ws !== socket) return;
-      opened = true;
-      stopSessionCheck();
       opts.onConnectionChange?.(true);
       replayReady = false;
       localStateSent = false;
@@ -804,6 +804,11 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
 
     socket.onmessage = (event) => {
       if (ws !== socket) return;
+      if (!answered) {
+        // The server accepted this connection, so the sign-in held.
+        answered = true;
+        stopSessionCheck();
+      }
       if (typeof event.data === "string") handleJsonMessage(event.data);
     };
 
@@ -834,7 +839,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       if (!isDisposed && !isTerminated) {
         reconnectTimer = setTimeout(connect, opts.reconnectDelayMs(failedConnects));
         failedConnects += 1;
-        if (!opened && event.code !== TRY_AGAIN_LATER) checkSessionAfterRefusedConnection();
+        if (!answered && event.code !== TRY_AGAIN_LATER) checkSessionAfterUnansweredConnection();
       }
     };
 

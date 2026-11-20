@@ -796,11 +796,9 @@ describe("Mail draft session", () => {
       FakeWebSocket.instances.find((entry) => entry.url.includes("/document/socket"))!.close(1006);
       f.session.shared()!.provider.reconnectNow();
       await waitFor(() => requests.some((request) => request.url === "/api/me/browser"));
-      await Bun.sleep(0);
       expect(f.current().body).toBe("Typed while the network was down");
       if (signIn === "active") {
         // Only the network was gone: the draft reconnects and the server confirms the text.
-        expect(f.session.authenticationRequired()).toBe(false);
         FakeWebSocket.refuse = false;
         FakeWebSocket.acknowledge = true;
         f.session.shared()!.provider.reconnectNow();
@@ -808,6 +806,7 @@ describe("Mail draft session", () => {
         expect(f.session.authenticationRequired()).toBe(false);
         return;
       }
+      await waitFor(() => f.session.authenticationRequired());
       expect({
         authenticationRequired: f.session.authenticationRequired(),
         status: f.session.status(),

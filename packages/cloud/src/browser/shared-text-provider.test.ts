@@ -508,7 +508,7 @@ test("a reconnect refused after the sign-in expired ends the session as SESSION_
   expect(provider.hasUnsentChanges()).toBe(true);
 });
 
-test("a reconnect refused without an expired sign-in keeps reconnecting; an opened socket cancels the check", async () => {
+test("a reconnect refused without an expired sign-in keeps reconnecting; the server's first answer cancels the check", async () => {
   jest.useFakeTimers();
   cleanups.push(() => jest.useRealTimers());
   const pending: { resolve: (response: Response) => void }[] = [];
@@ -536,13 +536,49 @@ test("a reconnect refused without an expired sign-in keeps reconnecting; an open
   jest.advanceTimersByTime(2_000);
   const reconnected = Socket.instances.at(-1)!;
   reconnected.open();
+  reconnected.ready();
   expect(checks[1]!.signal.aborted).toBe(true);
   pending.at(-1)!.resolve(new Response(null, { status: 401 }));
   await settle();
-  reconnected.ready();
   expect(fatal).toEqual([]);
   expect(publishes(reconnected).length).toBeGreaterThan(0);
   expect(provider.pendingState().text).toBe("typed before the drop");
+});
+
+test("behind the gateway a refused upgrade opens and closes without a server message; it is checked too", async () => {
+  jest.useFakeTimers();
+  cleanups.push(() => jest.useRealTimers());
+  const checks = sessionCheckPage("https://example.invalid", async () => new Response(null, { status: 401 }));
+  const fatal: string[] = [];
+  const { socket, local, provider } = fixture({ onFatal: (error) => fatal.push(error.code) });
+  socket.ready();
+  local.getText("codemirror").insert(0, "typed while disconnected");
+  // An answered socket that drops is a plain drop: no check.
+  socket.onclose?.({ code: 1006, reason: "" });
+  expect(checks).toHaveLength(0);
+  jest.advanceTimersByTime(2_000);
+  // The gateway accepts the browser socket before the app refuses the upgrade, then closes it with 1012.
+  const refused = Socket.instances.at(-1)!;
+  refused.open();
+  refused.onclose?.({ code: 1012, reason: "upstream unavailable" });
+  expect(checks).toHaveLength(1);
+  await settle();
+  expect(fatal).toEqual(["SESSION_EXPIRED"]);
+  expect(provider.pendingState().text).toBe("typed while disconnected");
+});
+
+test("a terminal close before any server message ends the session without a sign-in check", () => {
+  jest.useFakeTimers();
+  cleanups.push(() => jest.useRealTimers());
+  const checks = sessionCheckPage("https://example.invalid", async () => new Response(null, { status: 401 }));
+  const fatal: string[] = [];
+  const { socket } = fixture({ onFatal: (error) => fatal.push(error.code) });
+  // The fixture adapter maps 1008 to lost access; that close needs no check.
+  socket.onclose?.({ code: 1008, reason: "app_access_denied" });
+  jest.advanceTimersByTime(60_000);
+  expect(fatal).toEqual(["ACCESS_REVOKED"]);
+  expect(checks).toHaveLength(0);
+  expect(Socket.instances).toHaveLength(1);
 });
 
 test("a socket on another origin than the page is never checked with the page's sign-in", () => {

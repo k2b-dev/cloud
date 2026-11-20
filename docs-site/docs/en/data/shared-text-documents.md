@@ -400,12 +400,15 @@ after replay; `closeError` never sees 1013. A close with code 1008 and reason
 or account expires, always ends the session as `SESSION_EXPIRED`: `onError`
 and then `onFatal` receive that code, so the application can offer sign-in.
 `closeError` never sees this close either. A sign-in that expires while the
-socket is disconnected refuses the next upgrade with HTTP 401, which the
-browser only sees as a close without opening. After each such close the
-provider asks `GET /api/me/browser` on the page's own origin once, cancelled
-when a socket opens or the session ends. Only a 401 ends the session as
+socket is disconnected refuses the next upgrade with HTTP 401. The browser
+sees no status: directly a close without opening, behind the gateway an open
+socket that closes before the server sends anything. After such a close the
+provider asks `GET /api/me/browser` on the page's own origin, one check at a
+time, cancelled by the server's first message or the end of the session; a
+socket on another origin is not checked. Only a 401 ends the session as
 `SESSION_EXPIRED`; any other answer or a network failure keeps reconnecting
-with `reconnectDelayMs`. Encoding maps normalized
+with `reconnectDelayMs`. The provider therefore assumes a page with a Cloud
+browser sign-in. Encoding maps normalized
 `replayRequest`, `syncPublish`, `awarenessPublish`, and optional event-stream
 `subscribe` requests to the application's protocol. Decoding validates unknown
 JSON and maps it to `SharedTextProviderMessage`, or returns null to ignore it.
