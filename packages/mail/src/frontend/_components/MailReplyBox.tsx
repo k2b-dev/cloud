@@ -165,16 +165,43 @@ export default function MailReplyBox(props: {
   const expand = () => {
     if (!expanded()) setExpanded(true);
   };
-  // At the reserved height, only a text or signature that is cut off fades out; one that fits stays fully readable.
-  // Content arrives late (draft, signature, a signature's logo), so the marks follow every change inside the box.
+  // A press grows the box only once it is over (#3859). Growing on the press moved Send and the quoted card from under
+  // the pointer, so their click never arrived. A press on the action bar does not grow it at all: growing would only
+  // push the bar away from the hand that just used it. Keyboard focus and a dragged file grow it at once.
   onMount(() => {
     const root = frame;
     if (!root) return;
-    for (const type of ["focusin", "pointerdown", "dragenter"] as const) root.addEventListener(type, expand);
+    let press: { onBar: boolean } | null = null;
+    const pressStarted = (event: PointerEvent) => {
+      press = { onBar: event.target instanceof Element && Boolean(event.target.closest(".mail-reply-box-foot")) };
+    };
+    // After the click: the browser dispatches it in the same task as the release, before this timer.
+    const pressEnded = () => {
+      if (!press) return;
+      setTimeout(() => {
+        const ended = press;
+        press = null;
+        if (ended && !ended.onBar) expand();
+      });
+    };
+    const focused = () => {
+      if (!press) expand();
+    };
+    root.addEventListener("pointerdown", pressStarted);
+    root.addEventListener("focusin", focused);
+    root.addEventListener("dragenter", expand);
+    window.addEventListener("pointerup", pressEnded);
+    window.addEventListener("pointercancel", pressEnded);
     onCleanup(() => {
-      for (const type of ["focusin", "pointerdown", "dragenter"] as const) root.removeEventListener(type, expand);
+      root.removeEventListener("pointerdown", pressStarted);
+      root.removeEventListener("focusin", focused);
+      root.removeEventListener("dragenter", expand);
+      window.removeEventListener("pointerup", pressEnded);
+      window.removeEventListener("pointercancel", pressEnded);
     });
   });
+  // At the reserved height, only a text or signature that is cut off fades out; one that fits stays fully readable.
+  // Content arrives late (draft, signature, a signature's logo), so the marks follow every change inside the box.
   createEffect(() => {
     const root = frame;
     if (expanded() || !root) return;
