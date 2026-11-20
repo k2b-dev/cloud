@@ -18,11 +18,11 @@ import {
   aiCapabilityCheckResult,
   checkAiCapability,
   executeAiCapability,
-  mayWriteIntoAiTurn,
   resolveAiCapabilityActor,
   reviewAiCapability,
 } from "./capability-execution";
 import { aiToolAudit } from "./tool-audit";
+import { mayWriteIntoAiTurn } from "./turn-writer";
 import type { AiConversation } from "./types";
 
 useUnitClients();

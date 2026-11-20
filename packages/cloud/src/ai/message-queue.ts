@@ -8,7 +8,6 @@ import { coreSettings } from "../services/settings/api";
 import { isUnknownActionOutcome } from "./action-review";
 import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
 import { appendAiQueuedChatDone } from "./chat-done";
-import { mayWriteIntoAiTurn } from "./capability-execution";
 import { assertPersonalChatWriter } from "./chat-writer";
 import { aiDraftTurnContent, editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
@@ -43,6 +42,7 @@ const AI_QUEUE_SWEEP_CHAT_LIMIT = 32;
 import { finishAiTurnAbort } from "./turn-abort";
 import { AI_ACTION_BUDGET_MS } from "./turn-action-budget";
 import { isQueueInterruptedResult, queuedClientInterruptionState } from "./turn-interruption";
+import { mayWriteIntoAiTurn } from "./turn-writer";
 
 export { AiMessageQueueConflict } from "./queue-conflict";
 

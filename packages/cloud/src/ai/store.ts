@@ -18,7 +18,6 @@ import { assertInteractiveChatTurn } from "./retired-routines";
 export { AI_TOOL_CHECK_STALE_MS };
 
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
-import { mayWriteIntoAiTurn } from "./capability-execution";
 import { projectSettledAiToolChecks } from "./capability-result";
 import {
   type CapabilityMigrationHistoryRow,
@@ -48,6 +47,7 @@ import { withAiShortIdForDb } from "./short-id";
 import { parseAiTodoPlan } from "./todo-contracts";
 import { queuedClientInterruptionState } from "./turn-interruption";
 import { activeTurnWaits } from "./turn-timing";
+import { mayWriteIntoAiTurn } from "./turn-writer";
 import type {
   AiConversation,
   AiConversationDraft,

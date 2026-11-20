@@ -19,7 +19,6 @@ import {
   rememberAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModel } from "./assistant-models";
-import { AI_TURN_WRITE_FORBIDDEN, mayWriteIntoAiTurn } from "./capability-execution";
 import { sweepAiChatDone } from "./chat-done";
 import { waitingAiApprovals } from "./conversation-watchers";
 import { startAiDictationRuntime } from "./dictation-runtime";
@@ -61,6 +60,7 @@ import { aiConversations } from "./store";
 import { publishAiTurnInterrupt, publishAiWireEvent } from "./stream";
 import { aiToolAudit } from "./tool-audit";
 import { finishAiTurnAbort } from "./turn-abort";
+import { AI_TURN_WRITE_FORBIDDEN, mayWriteIntoAiTurn } from "./turn-writer";
 import type {
   AiChatTurnRunConfig,
   AiClientToolId,

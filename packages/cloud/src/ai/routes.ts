@@ -39,7 +39,7 @@ import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { assistantAiSettingsState, peopleAiModels, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog, buildAiCapabilityHistoryCatalog } from "./capabilities";
-import { AI_TURN_WRITE_FORBIDDEN, checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
+import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
 import { userVisibleTextFromMessage } from "./chat/message-utils";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
@@ -136,6 +136,7 @@ import { createAiConversationStreamResponse, loadAiStreamState } from "./stream"
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
 import { aiToolPromptHints } from "./tools";
+import { AI_TURN_WRITE_FORBIDDEN } from "./turn-writer";
 import type { AiConversation, AiTurn } from "./types";
 import { isAiViewFile } from "./view-block";
 import { nameViewReferences } from "./view-names";
