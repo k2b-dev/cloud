@@ -27,7 +27,8 @@ export class JmapError extends Error {
       | "JMAP_FOLDER_TREE"
       | "JMAP_DISCOVERY_LIMIT"
       | "JMAP_EMAIL_TOO_LARGE"
-      | "JMAP_DOWNLOAD_TEMPLATE",
+      | "JMAP_DOWNLOAD_TEMPLATE"
+      | "JMAP_SESSION_CHANGED",
   ) {
     super(code);
     this.name = "JmapError";
@@ -213,6 +214,9 @@ export async function callJmap(
     calls.delete(id);
     if (name === "error" && typeof args.type !== "string") throw new JmapError("JMAP_INVALID_RESPONSE");
   }
+  // RFC 8620 §3.4: a different sessionState means the Session changed. Only report it; whether to
+  // reload the Session and read again belongs to the caller.
+  if (parsed.data.sessionState !== input.session.state) throw new JmapError("JMAP_SESSION_CHANGED");
   return parsed.data;
 }
 
