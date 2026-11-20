@@ -5,6 +5,7 @@ import { ssr } from "../../config";
 import { ResourceShortIdSchema } from "../../contracts";
 import { spacesPageHelp } from "../../help";
 import { spacesService } from "../../service";
+import { isEstimateSuggestionAvailable } from "../../service/estimate-suggestion";
 import { isMailInvitationIntegrationAvailable } from "../../service/mail-integration";
 import { loadSpacesSidebar } from "../../service/overview";
 import { spacesPublicResources } from "../../service/public-resources";
@@ -36,11 +37,16 @@ export default ssr<AuthContext>(async (c) => {
   const peoplePromise = statePromise.then((state) =>
     state.kind === "ok" && state.canWrite ? spacesService.item.listAssignableUsers({ spaceId, search: "", limit: 20 }) : [],
   );
-  const [state, mailIntegrationAvailable, sidebar, people] = await Promise.all([
+  // Only people who can edit see the estimate field; whether the assistant can suggest one is known before it renders.
+  const estimatePromise = statePromise.then((state) =>
+    state.kind === "ok" && state.canWrite ? isEstimateSuggestionAvailable(c.get("accessSubject")) : false,
+  );
+  const [state, mailIntegrationAvailable, sidebar, people, estimateSuggestions] = await Promise.all([
     statePromise,
     isMailInvitationIntegrationAvailable(appAccessAuthority(c)),
     loadSpacesSidebar({ userId: user.id, cookieHeader: c.req.header("Cookie"), dateConfig }),
     peoplePromise,
+    estimatePromise,
   ]);
 
   if (state.kind !== "ok")
@@ -69,6 +75,7 @@ export default ssr<AuthContext>(async (c) => {
         state={state}
         dateConfig={dateConfig}
         mailIntegrationAvailable={mailIntegrationAvailable}
+        estimateSuggestions={estimateSuggestions}
         sidebar={sidebar}
         hints={hints}
         people={people}

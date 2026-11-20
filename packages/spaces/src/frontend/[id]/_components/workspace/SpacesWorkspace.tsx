@@ -68,6 +68,8 @@ export default function SpacesWorkspace(props: {
   state: OkWorkspaceState;
   dateConfig?: DateContext;
   mailIntegrationAvailable: boolean;
+  /** Whether the edit form asks the assistant for a task estimate; decided on the server for this person. */
+  estimateSuggestions?: boolean;
 }) {
   const t = useSpaceMessages();
   const state = props.state;
@@ -231,6 +233,7 @@ export default function SpacesWorkspace(props: {
             canWrite={state.canWrite}
             accessVisible={state.accessVisible}
             mailIntegrationAvailable={props.mailIntegrationAvailable}
+            estimateSuggestions={props.estimateSuggestions}
           />
         </AppWorkspace.Content>
       </AppWorkspace>

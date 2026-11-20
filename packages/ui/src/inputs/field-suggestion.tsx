@@ -312,7 +312,10 @@ export type SuggestionGroupProps = {
   title?: JSX.Element;
   /** Who proposes the values; fields without their own `source` use it. */
   source?: string;
-  /** Called once with every open, certain suggestion of an enabled, valid field. Apply them as one form change. */
+  /**
+   * Called once with every open, certain suggestion of an enabled, valid field. Apply them as one form change. The
+   * group offers Accept all from two fields on; a single field has only its own Accept.
+   */
   onAcceptAll: (ids: string[]) => void;
   /** Shown while a field's suggestion failed. */
   onRetryAll?: () => void;
@@ -405,18 +408,21 @@ export function SuggestionGroup(props: SuggestionGroupProps): JSX.Element {
             </Button>
           )}
         </Show>
-        {/* aria-disabled keeps focus on the button after it accepted everything it could. */}
-        <Button
-          type="button"
-          variant="ai"
-          size="sm"
-          class="k2b-ai-suggestion-group__accept"
-          aria-disabled={eligible().length ? undefined : "true"}
-          onClick={acceptAll}
-        >
-          <i class="ti ti-checks" aria-hidden="true" />
-          {messages().acceptAll({ count: eligible().length })}
-        </Button>
+        {/* One field has its own Accept beside it, so Accept all starts with two. aria-disabled keeps focus on the
+            button after it accepted everything it could. The line keeps its height either way. */}
+        <Show when={entries().length > 1}>
+          <Button
+            type="button"
+            variant="ai"
+            size="sm"
+            class="k2b-ai-suggestion-group__accept"
+            aria-disabled={eligible().length ? undefined : "true"}
+            onClick={acceptAll}
+          >
+            <i class="ti ti-checks" aria-hidden="true" />
+            {messages().acceptAll({ count: eligible().length })}
+          </Button>
+        </Show>
       </div>
       <span class="k2b-sr-only" aria-live="polite">
         {announcement()}
