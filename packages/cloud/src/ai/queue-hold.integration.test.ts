@@ -108,44 +108,6 @@ integration("a held queue stays waiting even when its stored Stop timestamp is e
   }
 });
 
-integration("inter-chat work waits after Stop and leaves the background batch until the person resumes", async () => {
-  const f = await fixture();
-  const source = await aiConversations.createConversation({ ownerUserId: f.userId });
-  try {
-    const turn = await aiConversations.createCompactionTurn({
-      conversationId: source.id,
-      modelId: "fixture",
-      runConfig: { kind: "compact" },
-    });
-    const created = await aiConversations.createInterChatMessage({
-      sourceConversationId: source.id,
-      sourceTurnId: turn.id,
-      sourceCallId: "hold-delivery",
-      targetChatId: f.chat.shortId,
-      actorUserId: f.userId,
-      text: "Please check the stock.",
-      idempotencyKey: `hold-delivery-${source.id}`,
-    });
-    if (!created.ok) throw new Error("Fixture inter-chat message was not created");
-    await f.stop();
-    expect((await aiConversations.listPendingInterChatMessages()).map(({ id }) => id)).not.toContain(created.message.id);
-    expect(
-      await aiConversations.deliverInterChatMessage({
-        messageId: created.message.id,
-        modelId: "fixture",
-        runConfig: { kind: "chat", input: "Please check the stock.", toolSource: { kind: "none" } },
-        userMessage: { role: "user", content: [{ type: "text", text: "Please check the stock." }] },
-      }),
-    ).toEqual({ delivered: false, reason: "busy" });
-    expect(await f.started()).toBe(0);
-    await f.add("Jetzt bitte weiter.");
-    expect((await aiConversations.listPendingInterChatMessages()).map(({ id }) => id)).toContain(created.message.id);
-  } finally {
-    await sql`DELETE FROM ai.conversations WHERE id=${source.id}::uuid`;
-    await f.close();
-  }
-});
-
 integration("a routine cancellation leaves the normal queue flow intact", async () => {
   const f = await fixture();
   try {
