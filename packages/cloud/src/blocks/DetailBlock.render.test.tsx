@@ -13,6 +13,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { BlockTree } = await import("./BlockTree");
 const { formatDescriptionNumber } = await import("../descriptions/format");
+const { blocksText } = await import("./text");
 const { LocaleProvider } = await import("@k2b/ui");
 
 const items = [
@@ -43,6 +44,20 @@ for (const [locale, size, price, share, weight] of [
 ] as const)
   test(`a detail block in ${locale} formats its numbers as key figures do: sizes, money, shares, and units`, () => {
     expect(shown(locale)).toEqual([size, price, share, weight, "2026"]);
+    // The terminal and MCP read the same values as the screen.
+    expect(blocksText([detail], { locale })).toBe(
+      ["Details", ...items.map((item, index) => `${item.label}: ${shown(locale)[index]}`)].join("\n"),
+    );
+    const figures: Block = {
+      kind: "Stats",
+      items: items.map(({ label, value, format }) => ({ label, value, ...(format ? { format } : {}) })),
+    };
+    // Key figures format every number, also one without a format, as the screen does.
+    expect(blocksText([figures], { locale }).split("\n")).toEqual(
+      [size, price, share, weight, formatDescriptionNumber(2026, undefined, locale)].map(
+        (value, index) => `${items[index]!.label}: ${value}`,
+      ),
+    );
     // One formatter for every block: what a key figure shows for the same value and format.
     expect(shown(locale).slice(0, 4)).toEqual([
       formatDescriptionNumber(2_400_000, { unit: "B" }, locale),
@@ -68,4 +83,23 @@ test("a changed size in an approval shows its earlier value in the same format",
   );
   expect(html).toContain("1 KB</s>");
   expect(html).toContain("2.4 MB</strong>");
+});
+
+test("a change whose two sizes read alike shows both with more digits, on screen and in text", () => {
+  const change: Block = {
+    kind: "Detail",
+    title: "Change",
+    items: [{ label: "Size", before: 2_400_000, value: 2_400_100, format: { unit: "B" } }],
+  };
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(BlockTree, { blocks: [change], host: "review", locale: "de", timeZone: "Europe/Berlin" });
+      },
+    }),
+  );
+  expect(html).toContain("2,4000 MB</s>");
+  expect(html).toContain("2,4001 MB</strong>");
+  expect(blocksText([change], { locale: "de" })).toBe("Change\nSize: 2,4000 MB → 2,4001 MB");
 });

@@ -185,10 +185,11 @@ export const filesCapabilities = defineCapabilities({
                   { label: t.size, value: result.entry.size, format: { unit: "B" } },
                   {
                     label: t.previewModified,
-                    // A capability carries no reader zone: the installation's, as in Mail's previews, and UTC only without one.
+                    // A capability carries no reader zone: the installation's (`app.timezone`), as in Mail's previews, with
+                    // the setting's own default when it is empty or invalid.
                     value: dates.formatDateTime(result.entry.modified, {
                       locale: context.locale,
-                      timeZone: dates.normalizeTimeZone((await coreSettings.get<string>("app.timezone"))?.trim(), "UTC"),
+                      timeZone: dates.normalizeTimeZone((await coreSettings.get<string>("app.timezone"))?.trim(), "Europe/Berlin"),
                     }),
                   },
                   {

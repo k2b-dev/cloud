@@ -397,7 +397,7 @@ belong to those views; forms and buttons belong to Code pages.
 | `Table` | `title`, `rows` of scalar values, optional `subtitle`, `search`, `empty` text and `width` | 1–20 `Column` |
 | `Column` | `key` (the row field), `label`, optional `type`, `format`, `states`, `priority` | none |
 | `Detail` | `title`, optional `width` and `height` | up to 100 `Item` |
-| `Item` | `label`, `value`, optional number `format` | none |
+| `Item` | `label`, `value`, optional number `format` (formats like `Stat`) | none |
 | `Form` | `title`, `action`, `submit`, optional `width`; always POST | 1–40 `Field.*` |
 | `Field.Text`, `Field.Email`, `Field.Textarea`, `Field.Scan` | `name`, `label`, optional text `value`, `required`, `error` | none |
 | `Field.Number` | as above, number `value` | none |

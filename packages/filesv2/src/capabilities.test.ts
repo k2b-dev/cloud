@@ -1561,16 +1561,17 @@ for (const [locale, size, modified, folder] of [
   });
 }
 
-test("the entry reader shows the change time in UTC when the installation names no time zone", async () => {
+test("the entry reader shows the change time in the setting's default zone when the installation's is empty", async () => {
   ids.set("image-id", { baseId: "base", path: "Photos/image.png" });
   items = [{ ...entry("Photos/image.png"), name: "image.png", modified: "2026-09-19T12:00:00Z" }];
-  installationZone = undefined;
+  installationZone = " ";
   try {
     const result = await filesCapabilities.queries["entry.read"].run({ id: "image-id" }, { ...context, locale: "de" });
     if (!result.ok) throw new Error("Expected readable entry");
-    const detail = bindView(result.data.view, result.data.data).blocks[0];
+    const detail = bindView(result.data.view, result.data.data).blocks.find((block) => block.kind === "Detail");
     if (detail?.kind !== "Detail") throw new Error("Expected details");
-    expect(detail.items[1]?.value).toContain("12:00");
+    // Europe/Berlin, the default of `app.timezone`, as Mail's previews fall back to.
+    expect(detail.items[1]?.value).toContain("14:00");
   } finally {
     installationZone = "Europe/Berlin";
   }
