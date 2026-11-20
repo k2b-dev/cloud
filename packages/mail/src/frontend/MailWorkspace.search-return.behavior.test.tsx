@@ -448,42 +448,52 @@ describe("Mail workspace search return", () => {
     expect(input().selectionStart).toBe(0);
     expect(hits()).toEqual(["hit-i"]);
 
-    // The text typed before the answer is still searched.
+    // The text typed before the answer is still searched, and it replaces the entry its search session pushed.
     jest.advanceTimersByTime(300);
     await flush();
     expect(queries()).toEqual(["i", "in"]);
-    // Back to the shown query while "in" is on its way: it is asked for again, and "in" cannot answer into the field.
-    typeKey("i");
-    jest.advanceTimersByTime(300);
-    await flush();
-    expect(queries()).toEqual(["i", "in", "i"]);
-    expect(searches[1]!.signal?.aborted).toBe(true);
     answer(1);
     await flush();
-    answer(2);
-    await flush();
-    expect(input().value).toBe("i");
-    expect(hits()).toEqual(["hit-i"]);
-    expect(route()).toBe("i");
+    expect(input().value).toBe("in");
+    expect(hits()).toEqual(["hit-in"]);
+    expect(route()).toBe("in");
+    expect(history.length).toBe(historyLength + 1);
 
-    typeKey("in");
-    jest.advanceTimersByTime(300);
-    await flush();
+    // Back to the shown query while "inv" is on its way: it is asked for again, and "inv" cannot answer into the field.
     typeKey("inv");
     jest.advanceTimersByTime(300);
     await flush();
-    expect(queries()).toEqual(["i", "in", "i", "in", "inv"]);
-    // The newer search supersedes the one still on its way.
-    expect(searches[3]!.signal?.aborted).toBe(true);
-    expect(searches[4]!.signal?.aborted).toBe(false);
-    answer(4);
+    typeKey("in");
+    jest.advanceTimersByTime(300);
+    await flush();
+    expect(queries()).toEqual(["i", "in", "inv", "in"]);
+    expect(searches[2]!.signal?.aborted).toBe(true);
+    answer(2);
     await flush();
     answer(3);
     await flush();
-    expect(input().value).toBe("inv");
-    expect(input().selectionStart).toBe(3);
-    expect(hits()).toEqual(["hit-inv"]);
-    expect(route()).toBe("inv");
+    expect(input().value).toBe("in");
+    expect(hits()).toEqual(["hit-in"]);
+    expect(route()).toBe("in");
+
+    typeKey("inv");
+    jest.advanceTimersByTime(300);
+    await flush();
+    typeKey("invo");
+    jest.advanceTimersByTime(300);
+    await flush();
+    expect(queries()).toEqual(["i", "in", "inv", "in", "inv", "invo"]);
+    // The newer search supersedes the one still on its way.
+    expect(searches[4]!.signal?.aborted).toBe(true);
+    expect(searches[5]!.signal?.aborted).toBe(false);
+    answer(5);
+    await flush();
+    answer(4);
+    await flush();
+    expect(input().value).toBe("invo");
+    expect(input().selectionStart).toBe(4);
+    expect(hits()).toEqual(["hit-invo"]);
+    expect(route()).toBe("invo");
     // One search session adds one history entry, so Back returns to the starting view.
     expect(history.length).toBe(historyLength + 1);
   });
