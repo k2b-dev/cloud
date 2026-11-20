@@ -1148,9 +1148,12 @@ incoming request headers, browser cookies or credentials.
 
 Non-public routes open for every signed-in member of the Cloud, for personal,
 resource and app Code alike. Guest accounts get 403 `code_members_only`
-before the Code runs. They run with the Code account's authority; personal Code
-uses its owner's mandate. Check `c.user` before reading private data or
-performing effects. For an owner-only page, compare `c.user.id` to the
+before the Code runs. A person who opens a refused, missing or paused page in
+the browser sees the Cloud's "not available" page instead of a code, the same
+one in every case; scripts and the page's own requests keep the JSON codes.
+These routes run with the Code account's authority; personal Code uses its
+owner's mandate. Check `c.user` before reading private data or performing
+effects. For an owner-only page, compare `c.user.id` to the
 intended person's ID in shared middleware or in every protected handler.
 
 Routes require a signed-in member's session by default; guests are refused.
