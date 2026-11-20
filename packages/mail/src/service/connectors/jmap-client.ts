@@ -215,7 +215,8 @@ export async function callJmap(
     if (name === "error" && typeof args.type !== "string") throw new JmapError("JMAP_INVALID_RESPONSE");
   }
   // RFC 8620 §3.4: a different sessionState means the Session changed. Only report it; whether to
-  // reload the Session and read again belongs to the caller.
+  // reload the Session and read again belongs to the caller. The methods have already run on the
+  // server: a caller may repeat reads, never a call with effects.
   if (parsed.data.sessionState !== input.session.state) throw new JmapError("JMAP_SESSION_CHANGED");
   return parsed.data;
 }

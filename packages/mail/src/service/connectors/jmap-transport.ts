@@ -127,7 +127,7 @@ function transportError(error: unknown, signal: AbortSignal): JmapTransportError
   if (signal.aborted) return new JmapTransportError("JMAP_ABORTED");
   if (error instanceof JmapTransportError) return error;
   // A DNS deadline (endpoint-policy.ts) or a socket that timed out is a timeout, not a broken connection.
-  const code = (error as { code?: unknown } | null)?.code;
+  const code: unknown = error instanceof Error ? Reflect.get(error, "code") : undefined;
   if (code === "ENDPOINT_DNS_TIMEOUT" || code === "ETIMEDOUT") return new JmapTransportError("JMAP_TIMEOUT");
   // Node and response-reading errors may contain headers or URLs. Retain no cause.
   // Consumer failures belong to the caller and bypass this normalization.

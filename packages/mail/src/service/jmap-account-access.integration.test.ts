@@ -11,9 +11,9 @@ import { type JmapAccountAccessResult, loadJmapAccountAccess } from "./jmap-acco
 import { type JmapScopeEvidence, jmapScopeFingerprint } from "./provider-identity";
 
 const suite = suiteFor("database", "nats", "valkey");
-// BEGIN and COMMIT would count; the loader reads without a transaction. The driver pins the
-// measured number after the first gate.
-const JMAP_ACCESS_STATEMENTS: number | null = null;
+// The loader reads without a transaction: one joined read of the account and one of the
+// connection row that carries password, revision and origin together.
+const JMAP_ACCESS_STATEMENTS = 2;
 const password = "fixture-only-password";
 let sequence = 0;
 const uuid = () => `00000000-005a-4000-8000-${String(++sequence).padStart(12, "0")}`;
@@ -204,9 +204,8 @@ suite("JMAP account runtime access", () => {
     } finally {
       await meter.close();
     }
-    if (JMAP_ACCESS_STATEMENTS === null)
-      throw new Error(`Pin JMAP_ACCESS_STATEMENTS = ${statements.length}: ${JSON.stringify(statements)}`);
-    expect(statements).toHaveLength(JMAP_ACCESS_STATEMENTS);
+    // Statement texts carry no parameters; a mismatch shows which reads ran.
+    expect(statements, "one load").toHaveLength(JMAP_ACCESS_STATEMENTS);
   });
 
   test("the migration adds a nullable origin once; the baseline has it", async () => {

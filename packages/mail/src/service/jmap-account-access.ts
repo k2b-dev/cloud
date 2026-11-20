@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import { fetchJmapSession, JMAP_MAIL, type JmapSession, jmapBasicAuthorization } from "./connectors/jmap-client";
 import { type JmapTransportDependencies, JmapTransportError } from "./connectors/jmap-transport";
 import { loadJmapConnectionRuntimeSnapshot } from "./provider-connections";
+import { providerErrorCode } from "./provider-errors";
 import { jmapScopeEvidenceSchema, jmapScopeFingerprint } from "./provider-identity";
 
 export type JmapAccountAccess = {
@@ -102,7 +103,7 @@ export async function loadJmapAccountAccess(params: {
     snapshot = await loadJmapConnectionRuntimeSnapshot(row.connection_id, db);
   } catch (error) {
     // Revoked between the two reads.
-    if ((error as { code?: unknown } | null)?.code === "CONNECTION_UNAVAILABLE") return unavailable("binding_inactive");
+    if (providerErrorCode(error, "") === "CONNECTION_UNAVAILABLE") return unavailable("binding_inactive");
     throw error;
   }
   if (snapshot.connectorKind !== "jmap") return unavailable("not_jmap");
