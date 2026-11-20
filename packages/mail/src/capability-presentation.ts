@@ -813,7 +813,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             priority: "Hinweis zur Nachrichtenpriorität.",
             requestDeliveryReceipt: "Ob eine Lieferquittung angefordert werden soll.",
             requestReadReceipt: "Ob eine Lesebestätigung angefordert werden soll.",
-            intent: "Absicht verfassen.",
+            intent: "Art des Entwurfs. Eine Antwort ohne Empfänger oder Betreff übernimmt sie aus der Quellnachricht.",
             conversationId: "Gespräch ID für eine Antwort oder Weiterleitung.",
             sourceMessageId: "Quellnachricht ID für eine Antwort oder Weiterleitung.",
             includeSourceAttachments: "Ob berechtigte Quellanhänge kopiert werden sollen.",

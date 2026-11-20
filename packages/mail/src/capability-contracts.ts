@@ -776,7 +776,10 @@ export const DraftCreateInputSchema = z
     priority: mailPrioritySchema.default("normal").describe("Message priority hint."),
     requestDeliveryReceipt: z.boolean().default(false).describe("Whether to request a delivery receipt."),
     requestReadReceipt: z.boolean().default(false).describe("Whether to request a read receipt."),
-    intent: z.enum(["new", "reply", "reply_all", "forward"]).default("new").describe("Compose intent."),
+    intent: z
+      .enum(["new", "reply", "reply_all", "forward"])
+      .default("new")
+      .describe("Compose intent. A reply without recipients or subject derives them from the source message."),
     conversationId: ResourceShortIdSchema.nullable().optional().describe("Conversation ID for a reply or forward."),
     sourceMessageId: ResourceShortIdSchema.nullable().optional().describe("Source message ID for a reply or forward."),
     includeSourceAttachments: z.boolean().default(false).describe("Whether to copy eligible source attachments."),

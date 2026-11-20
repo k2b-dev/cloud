@@ -53,6 +53,7 @@ import {
 } from "./capability-reviews";
 import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
 import {
+  type DraftEditableContent,
   MAX_DRAFT_ATTACHMENT_BYTES,
   type Mailbox,
   type MailDraft,
@@ -605,6 +606,20 @@ type DraftPublicIds = {
   senderIdentities: Map<string, string>;
   draftAttachments: Map<string, string>;
   composeTemplates: Map<string, string>;
+};
+
+/**
+ * A reply without its own recipients or subject takes them from the source message, exactly as the reply action in
+ * Mail does (the seed derives them). Explicit recipients or an explicit subject win; other intents keep the input.
+ */
+const withSeededReply = (
+  input: Pick<z.output<typeof c.DraftCreateInputSchema>, "intent" | "to" | "cc" | "bcc" | "subject">,
+  seed: Pick<DraftEditableContent, "to" | "cc" | "bcc" | "subject">,
+) => {
+  const own = { to: input.to, cc: input.cc, bcc: input.bcc, subject: input.subject };
+  if (input.intent !== "reply" && input.intent !== "reply_all") return own;
+  const noRecipients = input.to.length === 0 && input.cc.length === 0 && input.bcc.length === 0;
+  return { ...(noRecipients ? { to: seed.to, cc: seed.cc, bcc: seed.bcc } : own), subject: input.subject || seed.subject };
 };
 
 const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
@@ -3284,6 +3299,7 @@ const actionDefinitions = {
         },
       });
       if (!seed.ok) return seed;
+      const reply = withSeededReply(input, seed.data.content);
       const attachments = seed.data.attachments.map(({ filename, byteLength, contentHash }) => ({ filename, byteLength, contentHash }));
       // Materialization uploads inline attachments after copied originals and skips exact duplicates.
       for (const attachment of input.attachments) {
@@ -3293,11 +3309,11 @@ const actionDefinitions = {
           attachments.push({ filename: attachment.filename, byteLength: bytes.byteLength, contentHash });
         }
       }
-      const proposed = { ...input, attachments };
+      const proposed = { ...input, ...reply, attachments };
       return ok(
         mailActionReviews["draft.create"](
           context.locale,
-          { draft: draftSlot(undefined, input.subject, context.locale) },
+          { draft: draftSlot(undefined, reply.subject, context.locale) },
           {
             ...(await draftAudienceOptions(scope.data.id, mailboxId, context)),
             view: draftPreview(proposed, context.locale),
@@ -3353,10 +3369,19 @@ const actionDefinitions = {
           includeSourceAttachments: input.includeSourceAttachments,
         },
       };
+      const seed =
+        input.intent === "reply" || input.intent === "reply_all"
+          ? await drafts.prepareDraftSeed({ context: requestContext(context), mailboxId: scope.data.id, origin })
+          : null;
+      if (seed && !seed.ok) return seed;
       let result = await drafts.materializeDraftSeed({
         context: requestContext(context),
         mailboxId: scope.data.id,
-        input: { idempotencyKey: stableUuid(key.data), origin, draft: draftContent },
+        input: {
+          idempotencyKey: stableUuid(key.data),
+          origin,
+          draft: { ...draftContent, ...(seed ? withSeededReply(input, seed.data.content) : {}) },
+        },
         rejectOccupiedContent: drafts.hasDraftCreationContent(input),
       });
       if (!result.ok) return result;
