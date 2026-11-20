@@ -13,7 +13,14 @@ declare global {
 const params = new URL(location.href).searchParams;
 const locale = params.get("locale") ?? "de";
 const [name, setName] = createSignal(HEAD_STATES.find((state) => state === params.get("state")) ?? "schedule");
-const data = createMemo(() => headActionFixture(name(), locale));
+// `next` moves every planned run, such as into another year, to measure the situation's widest value.
+const next = params.get("next");
+const data = createMemo(() => {
+  const value = headActionFixture(name(), locale);
+  if (next && value.state.kind === "ready")
+    for (const automation of value.state.automations ?? []) if (automation.nextRunAt) automation.nextRunAt = next;
+  return value;
+});
 let feed: CodeLiveFeed | undefined;
 window.codeHead = { show: setName, run: (run) => feed?.run(run) };
 render(
