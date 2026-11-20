@@ -18,6 +18,7 @@ import {
   fileProviderIssues,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
+import * as cloudServices from "@k2b/cloud/services";
 import { FilegateError } from "@k2b/filegate";
 import { errorMessage } from "./api/messages";
 import type { DirectoryResult, FileEntry } from "./contracts";
@@ -65,6 +66,15 @@ const persistedEntryRefId = async (baseId: string, path: string) => {
   ids.set(id, { baseId, path });
   return id;
 };
+/** The installation's time zone, which previews read dates in. */
+let installationZone: string | undefined = "Europe/Berlin";
+mock.module("@k2b/cloud/services", () => ({
+  ...cloudServices,
+  coreSettings: {
+    ...cloudServices.coreSettings,
+    get: async (key: string) => (key === "app.timezone" ? installationZone : undefined),
+  },
+}));
 mock.module("./data/references", () => ({
   persistedEntryRefId,
   entryRef: async (baseId: string, entry: { path: string; resourceId?: string }) => {
@@ -1545,9 +1555,26 @@ for (const [locale, size, modified, folder] of [
     const detail = view.blocks[0];
     if (detail?.kind !== "Detail") throw new Error("Expected details");
     expect(detail.items[1]?.value).toContain(locale === "de" ? "Sept." : "Sep");
+    // 12:00 UTC is 14:00 in Berlin, the installation's zone.
+    expect(detail.items[1]?.value).toContain("14:00");
     expect(downloads).toEqual([]);
   });
 }
+
+test("the entry reader shows the change time in UTC when the installation names no time zone", async () => {
+  ids.set("image-id", { baseId: "base", path: "Photos/image.png" });
+  items = [{ ...entry("Photos/image.png"), name: "image.png", modified: "2026-09-19T12:00:00Z" }];
+  installationZone = undefined;
+  try {
+    const result = await filesCapabilities.queries["entry.read"].run({ id: "image-id" }, { ...context, locale: "de" });
+    if (!result.ok) throw new Error("Expected readable entry");
+    const detail = bindView(result.data.view, result.data.data).blocks[0];
+    if (detail?.kind !== "Detail") throw new Error("Expected details");
+    expect(detail.items[1]?.value).toContain("12:00");
+  } finally {
+    installationZone = "Europe/Berlin";
+  }
+});
 
 test("every Query people see says in English and German what it did once it finished", async () => {
   const { filesCapabilityPresentation } = await import("./capability-presentation");

@@ -6,6 +6,7 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { coreSettings } from "@k2b/cloud/services";
 import { FilegateError } from "@k2b/filegate";
 import { dates, err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
@@ -184,7 +185,11 @@ export const filesCapabilities = defineCapabilities({
                   { label: t.size, value: result.entry.size, format: { unit: "B" } },
                   {
                     label: t.previewModified,
-                    value: dates.formatDateTime(result.entry.modified, { locale: context.locale, timeZone: "UTC" }),
+                    // A capability carries no reader zone: the installation's, as in Mail's previews, and UTC only without one.
+                    value: dates.formatDateTime(result.entry.modified, {
+                      locale: context.locale,
+                      timeZone: dates.normalizeTimeZone((await coreSettings.get<string>("app.timezone"))?.trim(), "UTC"),
+                    }),
                   },
                   {
                     label: t.previewFolder,
