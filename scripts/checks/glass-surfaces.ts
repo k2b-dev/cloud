@@ -5,7 +5,7 @@ import { isTestFile, listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const message =
-  "blur only through `k2b-overlay-surface` on a layer over a picture, video, or map, or behind a dialog (::backdrop); forms, lists, menus, and notices stay solid.";
+  "blur only through `k2b-overlay-surface` on a layer over a picture, video, or map, behind a dialog (::backdrop), or as the privacy screen's veil; forms, lists, menus, and notices stay solid.";
 
 /** A Tailwind blur utility, with or without variants, except the one that turns blur off. */
 const blurUtility = /(?<![\w-])(?:[\w-]+(?:\/[\w-]+)?:)*!?backdrop-blur(?!-none)(?:-[\w[\]./%-]+)?(?![\w-])/g;
@@ -32,7 +32,8 @@ export const rule: Rule = {
         for (const block of source.matchAll(/([^{};]+)\{([^{}]*)\}/g)) {
           const [, prelude = "", body = ""] = block;
           const selector = prelude.trim().replace(/\s+/g, " ");
-          if (/k2b-overlay-surface|::backdrop/.test(selector)) continue;
+          // The privacy screen's veil is a backdrop too: it hides everything below it, nothing is to be read through it.
+          if (/k2b-overlay-surface|::backdrop|cloud-privacy-veil/.test(selector)) continue;
           const bodyIndex = block.index + block[0].indexOf("{") + 1;
           for (const declaration of body.matchAll(/(?:^|;)\s*(?:-webkit-)?backdrop-filter\s*:\s*([^;]*)/gi)) {
             const value = (declaration[1] ?? "").replace(/\s*!important\s*$/i, "").trim();

@@ -380,6 +380,7 @@ describe("privacy screen", () => {
       expect(await page.locator("#warning").getAttribute("data-cloud-privacy-covered")).toBeNull();
       // The warning lies above the veil: with the veil hit-testable for the read, its button is the topmost element.
       expect(
+        // settled: the top layer's order changes with showModal, not with a frame; the hit test reads that order.
         await page.locator("#warning button").evaluate((button) => {
           const veil = document.querySelector<HTMLElement>(".cloud-privacy-veil")!;
           const box = button.getBoundingClientRect();
@@ -474,6 +475,7 @@ describe("privacy screen", () => {
       // Mail's case: a positioned row whose closed "…" menu is a fixed popover that is not displayed. It holds no fixed
       // element, so the row carries its own blur, fill included.
       expect(await page.locator("#mail-row").getAttribute("data-cloud-privacy-covered")).toBe("");
+      // settled: the menu's position comes from the stylesheet, not from a frame.
       expect(await page.locator("#mail-row .k2b-dropdown__menu").evaluate((menu) => getComputedStyle(menu).position)).toBe("fixed");
       /** The topmost element at the middle of each target's left part, with the veil hit-testable for the moment of the read. */
       const topmost = (selectors: string[]) =>
@@ -499,9 +501,12 @@ describe("privacy screen", () => {
         ".layout-rail [data-cloud-rail-apps] .rail-item",
         "#subject",
       ];
+      // settled: transitions are off and the fake clock holds animation frames; the veil shows with the covering pass.
       expect(await topmost(coveredTargets)).toEqual(Array(coveredTargets.length).fill("veil"));
       // The island stays open: the veil has a hole there, and the veil itself takes no input.
+      // settled: transitions are off and the fake clock holds animation frames; the veil's hole is set with the covering pass.
       expect(await topmost(["#upload"])).toEqual(["upload"]);
+      // settled: transitions are off and the fake clock holds animation frames; the veil's look applies with its popover state.
       const veil = await page.locator(".cloud-privacy-veil").evaluate((element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
@@ -517,9 +522,11 @@ describe("privacy screen", () => {
       });
       expect(veil).toEqual({ open: true, hidden: "true", box: veil.view, view: veil.view, blur: true, tint: true, input: "none" });
       // The hint shows above the veil and keeps its focus.
+      // settled: the hint shows with the covering pass; the hit test reads the top layer's order.
       expect(await topmost([".cloud-privacy-hint__continue"])).not.toEqual(["veil"]);
       expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Weiterarbeiten");
       // Nothing moves when the veil comes or goes.
+      // settled: transitions are off; that covering moves nothing is the subject.
       expect(await boxes()).toEqual(before);
       // The island's hole follows it when the window changes; the veil's outer edge lies beyond any screen.
       /** The hole the veil leaves for the island where it is now. */
@@ -565,6 +572,7 @@ describe("privacy screen", () => {
         (document.getElementById("late-dialog") as HTMLDialogElement).close();
         document.getElementById("late-toast")!.hidePopover();
       });
+      // settled: transitions are off; that lifting moves nothing is the subject.
       expect(await boxes()).toEqual(before);
       expect(errors).toEqual([]);
     } finally {
