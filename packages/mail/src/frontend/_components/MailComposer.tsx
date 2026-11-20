@@ -1350,6 +1350,11 @@ export default function MailComposer(props: {
     },
   });
 
+  /** Send gave an untouched suggestion's quote the sender's words: no take-over, so it keeps its look while it sends. */
+  const [suggestionSending, setSuggestionSending] = createSignal(false);
+  createEffect(() => {
+    if (composerTransition.active() !== "send") setSuggestionSending(false);
+  });
   const prepareDelivery = async (delivery: { scheduledAt?: string }, abortSignal: AbortSignal): Promise<PreparedDelivery> => {
     for (;;) {
       abortSignal.throwIfAborted();
@@ -1358,7 +1363,10 @@ export default function MailComposer(props: {
       const quote = quoteSource();
       if (quote && draft()?.createdBy.kind === "service_account") {
         const own = { locale: locale(), timeZone: props.dateConfig.timeZone ?? "UTC" };
-        if (quote.locale !== own.locale || quote.timeZone !== own.timeZone) setQuoteSource(own);
+        if (quote.locale !== own.locale || quote.timeZone !== own.timeZone) {
+          setSuggestionSending(Boolean(draft()?.suggestion));
+          setQuoteSource(own);
+        }
       }
       validateDelivery();
       if (!sharedCanSend() || tableNeedsCheck()) throw new Error(sharedT().syncFirst);
@@ -2091,7 +2099,9 @@ export default function MailComposer(props: {
       host.summary({ subject: subject(), to: recipients });
     });
     // A suggestion from Gustav stays plum until someone types or changes anything, recipients included.
-    const suggestionUntouched = () => Boolean(draft()?.suggestion) && serializeMailDraftContent(content()) === initialSerializedContent;
+    const suggestionUntouched = () =>
+      (Boolean(draft()?.suggestion) && serializeMailDraftContent(content()) === initialSerializedContent) ||
+      (suggestionSending() && composerTransition.active() === "send");
     /** A reply quotes the message it answers; the card under the signature shows what goes along. */
     const quotedMessageId = () => {
       const intent = composerIntent();

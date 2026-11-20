@@ -165,8 +165,6 @@ export default function MailReplyBox(props: {
   const expand = () => {
     if (!expanded()) setExpanded(true);
   };
-  // At the reserved height, only a text or signature that is cut off fades out; one that fits stays fully readable.
-  // Content arrives late (draft, signature, a signature's logo), so the marks follow every change inside the box.
   // A press grows the box only once it is over (#3859). Growing on the press moved Send and the quoted card from under
   // the pointer, so their click never arrived. A press on the action bar does not grow it at all: growing would only
   // push the bar away from the hand that just used it. Keyboard focus and a dragged file grow it at once.
@@ -202,6 +200,8 @@ export default function MailReplyBox(props: {
       window.removeEventListener("pointercancel", pressEnded);
     });
   });
+  // At the reserved height, only a text or signature that is cut off fades out; one that fits stays fully readable.
+  // Content arrives late (draft, signature, a signature's logo), so the marks follow every change inside the box.
   createEffect(() => {
     const root = frame;
     if (expanded() || !root) return;

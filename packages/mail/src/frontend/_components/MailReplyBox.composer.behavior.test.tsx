@@ -415,9 +415,14 @@ describe("MailReplyBox with the real composer", () => {
       lastEditedBy: account,
       quoteSource: { locale: "en", timeZone: "UTC" },
     } as Partial<MailDraft>;
-    intercept = async ({ path }) => {
-      if (path.endsWith("/safety-review"))
+    let plumDuringReview: boolean | undefined;
+    intercept = async ({ method, path }) => {
+      // A person's save takes a suggestion over on the server.
+      if (method === "PUT" && path.endsWith("/drafts/Draft1")) saved.Draft1 = { ...saved.Draft1, suggestion: false };
+      if (path.endsWith("/safety-review")) {
+        plumDuringReview = dom.root.querySelector("[data-mail-reply-box='mail']")?.hasAttribute("data-suggestion");
         return Response.json({ revision: 4, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) });
+      }
       if (path.endsWith("/commands"))
         return Response.json({ id: crypto.randomUUID(), result: { conversationId: "Conv01", outboxSubmissionId: "Sub001" } });
       return null;
@@ -431,6 +436,8 @@ describe("MailReplyBox with the real composer", () => {
     const save = requests.findLast((request) => request.method === "PUT" && request.path.endsWith("/drafts/Draft1"));
     expect((save?.body?.draft as Partial<MailDraft> | undefined)?.quoteSource).toEqual({ locale: "de", timeZone: "UTC" });
     expect(requests.findIndex((request) => request.path.endsWith("/safety-review"))).toBeGreaterThan(requests.indexOf(save!));
+    // That save is the send's own step, no take-over: the box keeps the suggestion's look and moves nothing.
+    expect(plumDuringReview).toBe(true);
   });
 
   test("a second Undo keeps the earlier text typed meanwhile as well, newest first, across reopening", async () => {
