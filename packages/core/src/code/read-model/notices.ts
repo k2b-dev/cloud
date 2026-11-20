@@ -259,15 +259,24 @@ export const codeNoticeCodes: readonly string[] = [
   "code_route_unchecked",
 ];
 const warnings = new Set(["code_route_unchecked", "code_route_before_middleware"]);
+/**
+ * Checker findings as the sentences a person reads. The checker reports a finding once per place (two pages without a
+ * check are two warnings); a person reads each sentence once, in the order it first appeared.
+ */
 export function describeCodeNotices(diagnostics: readonly Pick<CodeCheckDiagnostic, "code">[], locale: string): CodeReadModelNotice[] {
   const { t } = messages.resolve([locale]);
-  return diagnostics.map(({ code }) => {
+  const seen = new Set<string>();
+  return diagnostics.flatMap(({ code }): CodeReadModelNotice[] => {
     const entry = Object.entries(t).find(([key]) => key === code);
     const consequence = Object.entries(t).find(([key]) => key === `${code}_consequence`);
-    return {
+    const notice: CodeReadModelNotice = {
       severity: warnings.has(code) ? "warning" : "block",
       text: entry?.[1] ?? t.code_check_failed,
       consequence: consequence?.[1] ?? t.code_check_failed_consequence,
     };
+    const key = `${notice.severity}\u0000${notice.text}\u0000${notice.consequence}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [notice];
   });
 }
