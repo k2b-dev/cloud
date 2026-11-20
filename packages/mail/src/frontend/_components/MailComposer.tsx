@@ -108,7 +108,7 @@ import type { MailReplyPosition } from "./mail-workspace-preferences";
 
 class ComposeSafetyCancelled extends Error {}
 class ComposeSafetyAttachmentRequested extends Error {}
-/** A recipient field still holds text that is no address; the field itself marks it and holds the focus. */
+/** A recipient field holds text that is no address, or nobody is addressed; the field itself marks it and takes the focus. */
 class ComposeRecipientPending extends Error {}
 
 const intentIcon = (intent: DraftIntent): string =>
@@ -1021,10 +1021,23 @@ export default function MailComposer(props: {
     for (const field of recipientFields) if (!field.commitPending()) throw new ComposeRecipientPending();
   };
 
+  /**
+   * Nobody addressed: the To field says so where the address belongs and takes the caret, instead of a toast that offers
+   * to try the same send again. False when no such field is on screen.
+   */
+  const markMissingRecipient = () => {
+    if (to().length + cc().length + bcc().length > 0) return false;
+    const field = [...recipientFields].find((candidate) => candidate.required);
+    field?.requireRecipient(t().addRecipient);
+    return Boolean(field);
+  };
   const validateDelivery = () => {
     commitRecipientFields();
     if (uploads().length > 0) throw new Error(t().finishUploadsBeforeSend);
-    if (to().length + cc().length + bcc().length === 0) throw new Error(t().addRecipient);
+    if (to().length + cc().length + bcc().length === 0) {
+      if (markMissingRecipient()) throw new ComposeRecipientPending();
+      throw new Error(t().addRecipient);
+    }
     if (!body().trim() && !(draft()?.attachments.length ?? props.initialSeed?.attachments.length ?? 0)) {
       throw new Error(t().addContent);
     }
@@ -1320,6 +1333,8 @@ export default function MailComposer(props: {
         leaveAsOwnSend(closed);
         return;
       }
+      // The server refused a message without recipients (someone removed them meanwhile): the field says so.
+      if (markMissingRecipient()) return;
       const delivery = currentDelivery;
       return reportDeliveryError(error.message, () => void sendDraft(delivery));
     },
@@ -2528,6 +2543,7 @@ export default function MailComposer(props: {
               <MailRecipientInput
                 register={registerRecipientField}
                 mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                required
                 placeholder={t().recipients}
                 value={to}
                 onChange={setTo}
@@ -2956,6 +2972,7 @@ export default function MailComposer(props: {
               <MailRecipientInput
                 register={registerRecipientField}
                 mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                required
                 placeholder={t().recipients}
                 value={to}
                 onChange={setTo}
@@ -3672,6 +3689,7 @@ export default function MailComposer(props: {
                 <MailRecipientInput
                   register={registerRecipientField}
                   mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                  required
                   placeholder={t().recipients}
                   value={to}
                   onChange={setTo}

@@ -24,6 +24,10 @@ export type MailRecipientField = {
   commitPending: () => boolean;
   /** Whether the field holds typed text that is not a recipient yet. */
   pending: () => boolean;
+  /** The field the message cannot go without (To): Send marks it and puts the caret there when nobody is addressed. */
+  required: boolean;
+  /** Marks the empty field with the reason inside it and takes the focus; the next recipient or keystroke clears it. */
+  requireRecipient: (message: string) => void;
 };
 
 export default function MailRecipientInput(props: {
@@ -36,6 +40,8 @@ export default function MailRecipientInput(props: {
   mailboxId?: string;
   /** Hands the composer this field's last check before sending; the returned function ends the registration. */
   register?: (field: MailRecipientField) => () => void;
+  /** The field the message cannot go without (To). */
+  required?: boolean;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -56,6 +62,13 @@ export default function MailRecipientInput(props: {
   };
   const [loading, setLoading] = createSignal(false);
   const [validationError, setValidationError] = createSignal<string | null>(null);
+  /**
+   * Send without anybody addressed: the reason stands inside the empty field, where its placeholder was, so the field
+   * keeps its size and nothing below it moves.
+   */
+  const [missing, setMissing] = createSignal<string | null>(null);
+  const missingShown = () => (props.value().length === 0 && !query() ? missing() : null);
+  const missingId = `${fieldId}-recipient-missing`;
   const [editingIndex, setEditingIndex] = createSignal<number | null>(null);
   let editingAddress: string | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -111,6 +124,11 @@ export default function MailRecipientInput(props: {
         return false;
       },
       pending: () => Boolean(query().trim()),
+      required: Boolean(props.required),
+      requireRecipient: (message) => {
+        setMissing(message);
+        focusInput(true);
+      },
     }) ?? (() => undefined),
   );
 
@@ -329,7 +347,8 @@ export default function MailRecipientInput(props: {
       <div
         class="no-scrollbar mail-recipient-control mail-recipient-input flex h-[var(--ui-control-md)] w-full flex-nowrap items-center gap-1 overflow-x-auto overflow-y-hidden px-2 py-1"
         data-disabled={props.disabled ? "true" : undefined}
-        data-invalid={validationError() ? "true" : undefined}
+        data-invalid={validationError() || missingShown() ? "true" : undefined}
+        data-missing={missingShown() ? "" : undefined}
         data-editing={editingIndex() === null ? undefined : "true"}
       >
         <i class="ti ti-at shrink-0 text-dimmed" aria-hidden="true" />
@@ -414,13 +433,13 @@ export default function MailRecipientInput(props: {
             ref={input}
             class="h-7 min-w-32 flex-1 bg-transparent px-1 text-xs outline-none placeholder:text-xs"
             value={query()}
-            placeholder={props.value().length === 0 ? props.placeholder : t().addAnotherRecipient}
+            placeholder={missingShown() ?? (props.value().length === 0 ? props.placeholder : t().addAnotherRecipient)}
             disabled={props.disabled}
             readOnly={props.readOnly}
             aria-label={props.placeholder}
-            aria-invalid={Boolean(validationError())}
-            title={validationError() ?? undefined}
-            aria-describedby={validationError() ? errorId : undefined}
+            aria-invalid={Boolean(validationError() || missingShown())}
+            title={validationError() ?? missingShown() ?? undefined}
+            aria-describedby={validationError() ? errorId : missingShown() ? missingId : undefined}
             autocomplete="off"
             role="combobox"
             aria-autocomplete="list"
@@ -430,6 +449,7 @@ export default function MailRecipientInput(props: {
             onInput={(event) => {
               setQuery(event.currentTarget.value);
               setValidationError(null);
+              setMissing(null);
             }}
             onPaste={paste}
             onKeyDown={(event) => {
@@ -457,6 +477,13 @@ export default function MailRecipientInput(props: {
           aria-hidden="true"
         />
       </div>
+      <Show when={missingShown()}>
+        {(message) => (
+          <span id={missingId} class="sr-only" role="alert">
+            {message()}
+          </span>
+        )}
+      </Show>
       <Show when={validationError()}>
         {(message) => (
           <p id={errorId} class="mt-1 text-xs text-[var(--k2b-danger-text)]">

@@ -396,6 +396,40 @@ describe("MailComposer in a floating window", () => {
     expect(dom.root.querySelector("[data-mail-quote-add]")).toBeNull();
   });
 
+  test("Send without recipients marks the To field, puts the caret there, and sends nothing", async () => {
+    await mount({ draft: { ...initialDraft, to: [], subject: "" }, fullscreen: () => true });
+    sendButton()!.click();
+    const control = () => dom.root.querySelector<HTMLElement>(".mail-inline-draft-recipients .mail-recipient-control")!;
+    await waitFor(() => control().hasAttribute("data-missing"));
+    const input = control().querySelector<HTMLInputElement>("input")!;
+    // The reason stands inside the empty field, where its placeholder was: the field keeps its size.
+    expect(input.placeholder).toBe("Add at least one recipient.");
+    expect(control().getAttribute("data-invalid")).toBe("true");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(dom.document.getElementById(input.getAttribute("aria-describedby")!)?.textContent).toBe("Add at least one recipient.");
+    await waitFor(() => dom.document.activeElement === input);
+    // Nothing goes out, and no toast offers to try the same send again.
+    await Bun.sleep(50);
+    expect(requests.some((request) => request.endsWith("/commands"))).toBe(false);
+    expect(dom.document.querySelector(".k2b-toast")).toBeNull();
+    expect(leaves).toEqual([]);
+    // Typing clears the mark.
+    input.value = "lena@example.test";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => !control().hasAttribute("data-missing"));
+  });
+
+  test("a server that refuses the send stays visible: the toast names its reason", async () => {
+    commandFailure = "At least one recipient is required before sending";
+    await mount();
+    sendButton()!.click();
+    const toastCard = () => dom.document.querySelector<HTMLElement>("[data-k2b-toast-container] .k2b-toast");
+    await waitFor(() => Boolean(toastCard()));
+    expect(toastCard()!.querySelector(".k2b-toast__title")?.textContent).toBe("Not sent");
+    expect(toastCard()!.textContent).toContain("At least one recipient is required before sending");
+    expect(leaves).toEqual([]);
+  });
+
   test("a send that fails keeps the window with its text; a toast names the reason and Send stays in place", async () => {
     await mount();
     commandFailure = "The mail server is not reachable.";

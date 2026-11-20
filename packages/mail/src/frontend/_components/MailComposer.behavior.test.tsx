@@ -1250,6 +1250,26 @@ describe("MailComposer robustness", () => {
     }
   });
 
+  test("the reply box: Send without recipients and subject marks the To field and sends nothing", async () => {
+    const { toast } = await import("@k2b/ui");
+    const failure = spyOn(toast, "error");
+    try {
+      await mount({ host: true, draft: { ...replyDraft, to: [], subject: "" }, box: {} });
+      sendButton().click();
+      const control = () => dom.root.querySelector<HTMLElement>("[data-mail-reply-box='mail'] .mail-recipient-control")!;
+      await waitFor(() => control().hasAttribute("data-missing"));
+      const input = control().querySelector<HTMLInputElement>("input")!;
+      expect(input.placeholder).toBe("Add at least one recipient.");
+      await waitFor(() => document.activeElement === input);
+      await Bun.sleep(50);
+      expect(requests.some((request) => request.includes("/commands"))).toBe(false);
+      expect(failure).not.toHaveBeenCalled();
+      expect(leaves).toEqual([]);
+    } finally {
+      failure.mockRestore();
+    }
+  });
+
   test("a suspended reply box (internal note mode) is hidden, inert, and never sends", async () => {
     const [suspended, setSuspended] = createSignal(false);
     await mount({ host: true, draft: replyDraft, box: { suspended } });
