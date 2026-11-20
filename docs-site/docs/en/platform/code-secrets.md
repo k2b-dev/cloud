@@ -21,7 +21,9 @@ and `core.code.secret.delete`. All three require an editor of that Code.
 Cloud administration alone gives no access. Set and delete also require a
 write-capable credential, and have `code: false`: Code cannot manage its own
 credentials. Set accepts only private HTTP input from the editor or CLI;
-Assistant, MCP, app tools and background mandates cannot set values. It uses
+Assistant, MCP, app tools and background mandates cannot set values. A Secret
+card in a chat is such editor input: the editor's browser sends the value, and
+Gustav only learns whether it was stored. It uses
 `idempotency: "none"`, so clients must omit idempotency keys. Reconcile a lost
 response by reading metadata before replacing the value again.
 
@@ -128,7 +130,9 @@ window's field and its private write request, and is discarded on completion.
 The browser holds the existing claim, renews it every 15 seconds and stops when
 the two-minute lease expires. Another window shows a locked request and never
 replays it. Successful creation and replacement both leave one metadata-only
-receipt after reload.
+outcome line after reload. A lost right ends the request as **not saved**
+without a reason, because Core answers a deleted automation and a removed right
+alike. See [the Secret card](/en/docs/ai/chat-interface) for its states.
 
 Without `target`, existing chat-secret names, header/prefix defaults, storage
 and validation remain unchanged. The browser uses Assistant's private

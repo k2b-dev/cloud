@@ -817,7 +817,8 @@ or mandate never uses a remembered approval; it runs only on its own grants.
 
 `code_secret` requests private entry through a Secret card in the conversation.
 The model supplies only the name and destination, and receives only
-`{ configured, name }`. With `target: { code, pathPrefix }`, the browser first
+`{ configured, name }`; after a saved automation secret it submits the version
+and says from that result whether it waits for approval or can be switched on. With `target: { code, pathPrefix }`, the browser first
 checks editor access and the destination, then writes to that automation through
 Core. Without `target`, it keeps the existing personal chat-secret contract.
 See [Private entry in Gustav](/en/docs/platform/code-secrets#ask-for-private-entry-in-gustav)
