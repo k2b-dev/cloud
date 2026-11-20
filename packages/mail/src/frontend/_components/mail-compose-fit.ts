@@ -65,6 +65,9 @@ export function createComposeFit(parts: {
   const markOwn = (event: Event) => {
     if (event instanceof KeyboardEvent && (NAVIGATION_KEYS.has(event.key) || event.isComposing)) return;
     ownInputAt = performance.now();
+    // Typed, pasted, cut, or dropped content fits the box even when its size stays: a short text in the reserved
+    // height leaves no hole below it.
+    if (event.type === "input" || event.type === "paste" || event.type === "cut" || event.type === "drop") request();
   };
   onMount(() => {
     const surface = parts.surface();
