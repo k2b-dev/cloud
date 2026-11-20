@@ -30,6 +30,7 @@ export const chatDoneFact = (status: "completed" | "failed" | "aborted" = "compl
         status,
         messageSeq: 2,
         name: "Hotels in Lyon",
+        summary: "3 Hotels verglichen, eines unter 120 €",
         href: "/app/assistant?conversation=Target&message=2",
       },
     },

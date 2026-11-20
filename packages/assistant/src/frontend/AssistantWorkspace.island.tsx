@@ -35,7 +35,6 @@ import {
   aiModelRequestFor,
   createAiChatTimeline,
   createAiPastedTextFile,
-  preloadAiChatDone,
   readAiComposerFiles,
   resolveAiModelChoice,
   shouldAttachAiPastedText,
@@ -307,8 +306,6 @@ const TurnErrorAction = lazy(() => import("./AssistantTurnErrorAction"));
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
-
-AssistantWorkspace.preload = preloadAiChatDone;
 
 export default function AssistantWorkspace(props: Props) {
   const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";

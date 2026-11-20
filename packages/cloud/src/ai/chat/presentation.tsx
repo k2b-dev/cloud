@@ -16,7 +16,6 @@ import {
   sharedConfig,
 } from "solid-js";
 import { isServer } from "solid-js/web";
-import { aiChatDoneItem, preloadAiChatDone } from "#chat-done";
 import { blockWords } from "../../blocks/messages";
 import type { AiActiveTurn } from "../client/projection";
 import { aiModelChooserMessages } from "../model-chooser-messages";
@@ -24,6 +23,7 @@ import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } fro
 import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timeline";
 import type { AiConversationTimelineEntry, AiStoredMessage, AiTurnError } from "../types";
 import { AiReaderTimeZoneProvider } from "./action-sentences";
+import { aiChatDoneItem } from "./chat-done-line";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
@@ -177,6 +177,7 @@ const storedItems = (
   activeTurnId: string | null,
   /** The request's time zone; server and browser name the same clock time with it. */
   timeZone: string | undefined,
+  renderedAt?: string,
 ): ChatTimelineItem[] => {
   const idle = activeTurnId === null;
   const timeline = buildAiMessageTimeline([...messages]);
@@ -362,7 +363,7 @@ const storedItems = (
 
     if (item.type === "chat-done") {
       if (activeTurnId !== null && item.after === activeTurnId) return [];
-      return aiChatDoneItem(item.entry, locale, timeZone);
+      return aiChatDoneItem(item.entry, locale, timeZone, renderedAt);
     }
 
     if (item.type === "code-decision" || item.type === "code-review-start") {
@@ -691,19 +692,18 @@ export type AiChatTimelineSource = {
  * action context.
  */
 export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<readonly ChatTimelineItem[]> {
-  onMount(() => {
-    // Chats opened after mounting warm the renderer too; importOnDemand already offers reload on failure.
-    void preloadAiChatDone().catch(() => {});
-  });
   const actions = useAiChatActions();
   const locale = useLocale();
+  // Match the server's calendar day on the first frame; later snapshots use the current day.
+  const [renderedAt, setRenderedAt] = createSignal(source.renderedAt);
+  onMount(() => setRenderedAt(undefined));
   const disclosureState = createAiToolDisclosureState();
   const views = createTurnViews(disclosureState, source.timeZone);
   // While the stream reconnects or a model call waits for its retry, the live turn says so and its clock stands.
   const reconnecting = createMemo(() => source.activeTurn()?.providerRetry === true || source.reconnecting?.() === true);
   const clock = createActiveTurnClock(source, reconnecting);
   const activeTurnId = createMemo(() => source.activeTurn()?.turnId ?? null);
-  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale(), activeTurnId(), source.timeZone));
+  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale(), activeTurnId(), source.timeZone, renderedAt()));
   const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock, reconnecting(), locale()));
   return createMemo(() => {
     const items = [...stored(), ...active()];

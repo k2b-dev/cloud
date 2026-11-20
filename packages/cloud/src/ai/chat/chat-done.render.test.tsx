@@ -20,11 +20,13 @@ const render = (status: "completed" | "failed" | "aborted", locale = "de", avail
             if (!available && fact.meta?.chatDone) {
               delete fact.meta.chatDone.name;
               delete fact.meta.chatDone.href;
+              delete fact.meta.chatDone.summary;
             }
             const items = createAiChatTimeline({
               messages: () => [chatDoneMessage(1, "Ich suche die Hotels im anderen Chat."), fact],
               activeTurn: () => null,
               timeZone: "UTC",
+              renderedAt: "2026-11-19T10:20:00.000Z",
             });
             return createComponent(Chat.Timeline, {
               get items() {
@@ -46,7 +48,11 @@ test.each([
   expect(html).toMatch(/class="[^"]*k2b-chat-activity[^"]*ai-chat-done-line/);
   expect(html).toContain(words);
   expect(html).toContain("Hotels in Lyon");
-  expect(html).toContain("Ergebnis ansehen");
+  expect(html).toContain(status === "completed" ? "Ergebnis ansehen" : "Chat ansehen");
+  expect(html).toContain(`aria-label="${status === "completed" ? "Ergebnis ansehen" : "Chat ansehen"}: Hotels in Lyon"`);
+  expect(html).toContain("heute, 10:19");
+  if (status === "completed") expect(html).toContain("3 Hotels verglichen, eines unter 120 €");
+  else expect(html).not.toContain("3 Hotels verglichen");
   expect(html).toContain('href="/app/assistant?conversation=Target&amp;message=2"');
   expect(html).toContain("10:19");
   expect(html.match(/<article/g)).toHaveLength(1);

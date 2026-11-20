@@ -1,10 +1,20 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
-import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, testFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import { appendAiChatDone, sweepAiChatDone } from "./chat-done";
 import { enqueueAiChatSend } from "./chat-send";
+import {
+  AiQueuedChatStartError,
+  assertQueuedMessageQuota,
+  drainQueuedMessages,
+  reconcileQueuedInterruptions,
+  requestQueuedMessageSendNow,
+  updateQueuedMessage,
+} from "./message-queue";
 import { publicAiStoredMessages } from "./public-projection";
+import { AiQuotaError, aiQuotas } from "./quotas";
+import { sweepAiRuntime } from "./runtime";
 import { aiConversations } from "./store";
 import type { AiChatTurnRunConfig } from "./types";
 
@@ -19,7 +29,7 @@ suiteFor("database")("delegated chat completion", () => {
     await database?.drop();
   });
 
-  const fixture = async () => {
+  const queuedFixture = async () => {
     const source = await aiConversations.createConversation({ ownerUserId: owner, title: "Reise nach Lyon" });
     const target = await aiConversations.createConversation({ ownerUserId: owner, title: "Hotels in Lyon" });
     await sql`UPDATE ai.conversations SET title_source='user' WHERE id=${source.id}::uuid OR id=${target.id}::uuid`;
@@ -58,11 +68,16 @@ suiteFor("database")("delegated chat completion", () => {
         turnId: sourceWork.turn.id,
       });
     });
+    const facts = async () => (await aiConversations.listMessages({ conversationId: source.id })).filter((m) => m.meta?.chatDone);
+    return { source, target, sourceWork, submission, id, facts };
+  };
+  const fixture = async (summary = "Three hotels compared.\nA long list follows.") => {
+    const queued = await queuedFixture();
+    const { source, target, sourceWork, submission, id, facts } = queued;
     const work = await aiConversations.submitChatTurn({ ...submission, queuedMessageId: id });
     await aiConversations
       .createSessionStore({ conversationId: target.id, turnId: work.turn.id })
-      .append({ role: "assistant", content: [{ type: "text", text: "Three hotels compared." }] });
-    const facts = async () => (await aiConversations.listMessages({ conversationId: source.id })).filter((m) => m.meta?.chatDone);
+      .append({ role: "assistant", content: [{ type: "text", text: summary }] });
     return {
       source,
       target,
@@ -101,7 +116,18 @@ suiteFor("database")("delegated chat completion", () => {
       expect(await sql`SELECT id FROM ai.turns WHERE conversation_id=${f.source.id}::uuid`).toHaveLength(1);
       expect(await sql`SELECT id FROM ai.queued_messages WHERE conversation_id=${f.source.id}::uuid`).toHaveLength(0);
       expect((await aiConversations.listContextMessages({ conversationId: f.source.id })).some((m) => m.meta?.chatDone)).toBe(false);
-      const projected = await publicAiStoredMessages(facts, f.source, owner, { userId: owner, locale: "de" });
+      const projectionMeter = await meterSql();
+      let projected: typeof facts = [];
+      try {
+        const projectionStatements = await projectionMeter.during(async () => {
+          projected = await publicAiStoredMessages(facts, f.source, owner, { userId: owner, locale: "de" });
+        });
+        // Existing origin + next-message snapshot queries: the preview adds no statement.
+        expect(projectionStatements).toHaveLength(2);
+      } finally {
+        await projectionMeter.close();
+      }
+      expect(projected[0]?.meta?.chatDone?.summary).toBe(status === "completed" ? "Three hotels compared." : undefined);
       expect(projected[0]?.meta?.chatDone).toMatchObject({
         name: "Hotels in Lyon",
         href: `/app/assistant?conversation=${f.target.shortId}&message=2`,
@@ -110,9 +136,19 @@ suiteFor("database")("delegated chat completion", () => {
       const unavailable = await publicAiStoredMessages(facts, f.source, owner, { userId: owner, locale: "de" });
       expect(unavailable[0]?.meta?.chatDone?.href).toBeUndefined();
       expect(unavailable[0]?.meta?.chatDone?.name).toBeUndefined();
+      expect(unavailable[0]?.meta?.chatDone?.summary).toBeUndefined();
+      const otherViewer = await publicAiStoredMessages(facts, f.source, null, { userId: null, locale: "de" });
+      expect(otherViewer[0]?.meta?.chatDone?.summary).toBeUndefined();
       expect(projected[0]?.meta?.chatDone?.targetConversationId).toBeUndefined();
     },
   );
+
+  test("the owner preview is bounded to the same 320 characters as chat answer previews", async () => {
+    const f = await fixture("x".repeat(321) + "\nMore details");
+    await f.end("completed");
+    const projected = await publicAiStoredMessages(await f.facts(), f.source, owner, { userId: owner, locale: "de" });
+    expect(projected[0]?.meta?.chatDone?.summary).toBe("x".repeat(320));
+  });
 
   test("ordinary turn completion keeps its existing statement budget", async () => {
     const conversation = await aiConversations.createConversation({ ownerUserId: owner });
@@ -182,6 +218,9 @@ suiteFor("database")("delegated chat completion", () => {
           { value: string }[]
         >`SELECT updated_at::text AS value FROM ai.conversations WHERE id=${f.source.id}::uuid`;
         expect(after?.value).toBe(before?.value);
+        await sql`UPDATE ai.conversations SET archived_at=NULL WHERE id=${f.source.id}::uuid`;
+        await sweepAiChatDone(200);
+        expect(await f.facts()).toHaveLength(0);
       }
     },
   );
@@ -206,5 +245,158 @@ suiteFor("database")("delegated chat completion", () => {
     const projected = await publicAiStoredMessages(await f.facts(), f.source, owner, { userId: owner, locale: "de" });
     expect(projected[0]?.meta?.chatDone?.href).toBeUndefined();
     expect(projected[0]?.meta?.chatDone?.name).toBeUndefined();
+  });
+
+  test.each(["cancel", "archive", "failed"] as const)(
+    "a queued request that ends by %s writes exactly one fact without a target turn",
+    async (state) => {
+      const f = await queuedFixture();
+      if (state === "cancel") expect(await updateQueuedMessage(f.target.id, f.id, "cancel")).toBe(true);
+      else if (state === "archive")
+        expect(await aiConversations.archiveConversation({ conversationId: f.target.id, ownerUserId: owner })).toBeTruthy();
+      else
+        await drainQueuedMessages(
+          async () => {},
+          f.target.id,
+          async () => {
+            throw new AiQueuedChatStartError("source_restricted");
+          },
+        );
+      const [queued] = await sql<
+        { status: string; error: string | null }[]
+      >`SELECT status,error FROM ai.queued_messages WHERE id=${f.id}::uuid`;
+      expect(queued?.status).toBe(state === "failed" ? "failed" : "cancelled");
+      if (state === "failed") expect(queued?.error).toBe("source_restricted");
+      const facts = await f.facts();
+      expect(facts).toHaveLength(1);
+      expect(facts[0]?.meta?.chatDone).toMatchObject({ turnId: null, messageSeq: null, status: state === "failed" ? "failed" : "aborted" });
+      expect(await sql`SELECT id FROM ai.turns WHERE conversation_id=${f.target.id}::uuid`).toHaveLength(0);
+      await sql`UPDATE ai.queued_messages SET delegated_done_at=NULL WHERE id=${f.id}::uuid`;
+      await sweepAiChatDone(200);
+      expect(await f.facts()).toHaveLength(1);
+      expect(await sql`SELECT id FROM ai.queued_messages WHERE id=${f.id}::uuid AND delegated_done_at IS NULL`).toHaveLength(0);
+    },
+  );
+
+  test("quota rejection records the queued failure before any target turn starts", async () => {
+    const f = await queuedFixture();
+    f.submission.runConfig.assistantChat = true;
+    f.submission.runConfig.accessSubject = { type: "user", userId: owner };
+    await sql`UPDATE ai.queued_messages SET submission=${JSON.stringify(f.submission)}::jsonb WHERE id=${f.id}::uuid`;
+    const quota = spyOn(aiQuotas, "assertAllowed").mockRejectedValue(new AiQuotaError("quota_exhausted", "Fixture quota exhausted"));
+    try {
+      await expect(assertQueuedMessageQuota(f.target.id, f.id)).rejects.toThrow("Fixture quota exhausted");
+      expect(await f.facts()).toHaveLength(1);
+      expect((await f.facts())[0]?.meta?.chatDone).toMatchObject({ status: "failed", turnId: null, messageSeq: null });
+      await expect(assertQueuedMessageQuota(f.target.id, f.id)).rejects.toThrow("Fixture quota exhausted");
+      expect(await f.facts()).toHaveLength(1);
+    } finally {
+      quota.mockRestore();
+    }
+  });
+
+  test("an unconfirmed interruption records the queued failure without ending the interrupted turn", async () => {
+    const f = await queuedFixture();
+    const { turn } = await aiConversations.submitChatTurn({
+      ...f.submission,
+      runConfig: { kind: "chat", input: "Old work", toolSource: { kind: "none" } },
+    });
+    await sql`UPDATE ai.turns SET status='running' WHERE id=${turn.id}::uuid`;
+    await sql`INSERT INTO ai.tool_calls(turn_id,conversation_id,call_id,tool_name,status,started_at)
+      VALUES(${turn.id}::uuid,${f.target.id}::uuid,'server-effect','write_file','running',now())`;
+    await requestQueuedMessageSendNow(f.target.id, f.id);
+    await reconcileQueuedInterruptions(f.target.id);
+    await reconcileQueuedInterruptions(f.target.id);
+    expect(
+      await sql`SELECT id FROM ai.queued_messages WHERE id=${f.id}::uuid AND status='failed' AND error='interruption_unconfirmed'`,
+    ).toHaveLength(1);
+    expect(await f.facts()).toHaveLength(1);
+    expect((await f.facts())[0]?.meta?.chatDone).toMatchObject({ status: "failed", turnId: null, messageSeq: null });
+    expect((await aiConversations.getTurn({ conversationId: f.target.id, turnId: turn.id }))?.status).toBe("running");
+    await aiConversations.completeTurn({ conversationId: f.target.id, turnId: turn.id, status: "completed" });
+  });
+
+  test("retry keeps the old fact but cannot link it to a removed or reused sequence", async () => {
+    const f = await fixture();
+    await f.end("aborted");
+    await aiConversations.truncateMessagesFrom({ conversationId: f.target.id, fromSeq: 1 });
+    const project = () => f.facts().then((facts) => publicAiStoredMessages(facts, f.source, owner, { userId: owner, locale: "de" }));
+    expect((await project())[0]?.meta?.chatDone?.href).toBe(`/app/assistant?conversation=${f.target.shortId}`);
+    const work = await aiConversations.submitChatTurn({
+      conversationId: f.target.id,
+      modelId: "fixture",
+      retrySourceTurnId: f.work.turn.id,
+      runConfig: { kind: "chat", input: "Retry", toolSource: { kind: "none" } },
+      userMessage: { role: "user", content: [{ type: "text", text: "Retry" }] },
+    });
+    await aiConversations
+      .createSessionStore({ conversationId: f.target.id, turnId: work.turn.id })
+      .append({ role: "assistant", content: [{ type: "text", text: "New result" }] });
+    await aiConversations.completeTurn({ conversationId: f.target.id, turnId: work.turn.id, status: "completed" });
+    const facts = await project();
+    expect(facts).toHaveLength(2);
+    expect(facts[0]?.meta?.chatDone).toMatchObject({ messageSeq: null, href: `/app/assistant?conversation=${f.target.shortId}` });
+    expect(facts[1]?.meta?.chatDone).toMatchObject({
+      messageSeq: 2,
+      summary: "New result",
+      href: `/app/assistant?conversation=${f.target.shortId}&message=2`,
+    });
+  });
+
+  test("a source SELECT error rolls back to the savepoint and recovery can repair it", async () => {
+    const f = await fixture();
+    const config = await aiConversations.getTurnRunConfig({ conversationId: f.target.id, turnId: f.work.turn.id });
+    await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{send,id}','"invalid"'::jsonb) WHERE id=${f.work.turn.id}::uuid`;
+    expect(await f.end("completed")).toBe("completed");
+    expect(await f.facts()).toHaveLength(0);
+    expect(
+      await sql`SELECT id FROM ai.turns WHERE id=${f.work.turn.id}::uuid AND status='completed'
+      AND delegated_done_at IS NULL AND delegated_done_fail_count=1`,
+    ).toHaveLength(1);
+    await sql`UPDATE ai.turns SET run_config=${JSON.stringify(config)}::jsonb WHERE id=${f.work.turn.id}::uuid`;
+    await sweepAiChatDone(200);
+    expect(await f.facts()).toHaveLength(1);
+  });
+
+  test("a permanent source INSERT failure cannot roll back the target or starve the recovery batch", async () => {
+    const f = await fixture();
+    await sql.unsafe(`CREATE FUNCTION ai.reject_done_fixture() RETURNS trigger AS $$ BEGIN
+      IF NEW.conversation_id='${f.source.id}'::uuid AND NEW.meta ? 'chatDone' THEN
+        RAISE EXCEPTION USING ERRCODE='23514', MESSAGE='fixture'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`);
+    await sql`CREATE TRIGGER reject_done_fixture BEFORE INSERT ON ai.messages FOR EACH ROW EXECUTE FUNCTION ai.reject_done_fixture()`.simple();
+    try {
+      expect(await f.end("completed")).toBe("completed");
+      for (let attempt = 0; attempt < 4; attempt++) await sweepAiChatDone(1);
+      expect(
+        await sql`SELECT id FROM ai.turns WHERE id=${f.work.turn.id}::uuid AND status='completed'
+        AND delegated_done_at IS NULL AND delegated_done_fail_count=5`,
+      ).toHaveLength(1);
+      const healthy = await fixture();
+      await sql`UPDATE ai.turns SET status='completed',completed_at=now() WHERE id=${healthy.work.turn.id}::uuid`;
+      await sweepAiChatDone(1);
+      expect(await healthy.facts()).toHaveLength(1);
+    } finally {
+      await sql`DROP TRIGGER reject_done_fixture ON ai.messages`.simple();
+      await sql`DROP FUNCTION ai.reject_done_fixture()`.simple();
+    }
+    await sweepAiChatDone(200);
+    expect(await f.facts()).toHaveLength(0);
+  });
+
+  testFor(
+    "database",
+    "nats",
+    "valkey",
+  )("the runtime sweep repairs a delegated turn that sweepTurns itself finalizes", async () => {
+    const f = await fixture();
+    await sql`UPDATE ai.turns SET attempt=5 WHERE id=${f.work.turn.id}::uuid`;
+    const finished: string[] = [];
+    await sweepAiRuntime(async (event) => {
+      finished.push(event.turnId);
+    });
+    expect(finished).toContain(f.work.turn.id);
+    expect((await aiConversations.getTurn({ conversationId: f.target.id, turnId: f.work.turn.id }))?.status).toBe("failed");
+    expect(await f.facts()).toHaveLength(1);
+    expect((await f.facts())[0]?.meta?.chatDone?.status).toBe("failed");
   });
 });

@@ -129,35 +129,11 @@ const wrappers = (root: ParentNode): HTMLElement[] => {
 
 /** Mount each island/client instance in its own error boundary. */
 export const mount = <Props extends object>(
-  Component: Component<Props> & { preload?: () => Promise<unknown> },
+  Component: Component<Props>,
   selector: string,
   Fallback?: Component<IslandErrorProps>,
 ): void => {
-  // Handle rejection even when an entry is imported before its wrappers arrive in a page swap.
-  const prepared = Component.preload
-    ? Promise.resolve()
-        .then(Component.preload)
-        .then(
-          () => null,
-          (error: unknown) => ({ error }),
-        )
-    : undefined;
-  const mountOne = (element: HTMLElement): void => {
-    if (!prepared) return mountElement(element, Component, Fallback);
-    void prepared.then((failure) => {
-      if (!element.isConnected || registry().mounted.has(element)) return;
-      if (!failure) return mountElement(element, Component, Fallback);
-      const retry = () => {
-        registry().mounted.delete(element);
-        notice.remove();
-        mount(Component, selector, Fallback);
-      };
-      const notice = defaultFallback(retry);
-      element.append(notice);
-      registry().mounted.set(element, () => element.replaceChildren());
-      report(element, failure.error, retry);
-    });
-  };
+  const mountOne = (element: HTMLElement) => mountElement(element, Component, Fallback);
   registry().components.set(selector, mountOne);
   document.querySelectorAll<HTMLElement>(selector).forEach(mountOne);
 };

@@ -221,9 +221,12 @@ export const publicAiStoredMessages = async (
           ...(message.loopId ? [message.loopId] : []),
           ...(message.meta?.choice ? [message.meta.choice.turnId] : []),
         ]),
-        doneConversationIds: messages.flatMap((message) =>
-          message.meta?.chatDone?.targetConversationId ? [message.meta.chatDone.targetConversationId] : [],
-        ),
+        doneMessages: messages.flatMap((message) => {
+          const done = message.meta?.chatDone;
+          return done?.targetConversationId
+            ? [{ id: message.id, conversationId: done.targetConversationId, turnId: done.turnId, messageSeq: done.messageSeq }]
+            : [];
+        }),
       },
     ),
     withCurrentAppNames(messages, originViewer.locale),
@@ -232,7 +235,7 @@ export const publicAiStoredMessages = async (
   const projected = named.map((message) => {
     const done = message.meta?.chatDone;
     if (!done && !byId.has(message.id)) return message;
-    const target = done?.targetConversationId && doneChats.get(done.targetConversationId);
+    const target = done?.targetConversationId && doneChats.get(message.id);
     return {
       ...message,
       meta: {
@@ -244,9 +247,13 @@ export const publicAiStoredMessages = async (
                 chatId: done.chatId,
                 turnId: done.turnId,
                 status: done.status,
-                messageSeq: done.messageSeq,
+                messageSeq: target ? target.messageSeq : null,
                 ...(target
-                  ? { name: target.name, href: target.href + (done.messageSeq === null ? "" : `&message=${done.messageSeq}`) }
+                  ? {
+                      name: target.name,
+                      href: target.href + (target.messageSeq === null ? "" : `&message=${target.messageSeq}`),
+                      ...(done.status === "completed" && target.summary ? { summary: target.summary } : {}),
+                    }
                   : {}),
               },
             }

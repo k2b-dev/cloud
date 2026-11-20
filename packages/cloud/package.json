@@ -12,10 +12,6 @@
   "bugs": "https://github.com/k2b-dev/cloud/issues",
   "type": "module",
   "imports": {
-    "#chat-done": {
-      "browser": "./src/ai/chat/chat-done-lazy.ts",
-      "default": "./src/ai/chat/chat-done-eager.ts"
-    },
     "#katex-render": {
       "browser": "./src/shared/markdown/extensions/katex-render.browser.ts",
       "default": "./src/shared/markdown/extensions/katex-render.ts"

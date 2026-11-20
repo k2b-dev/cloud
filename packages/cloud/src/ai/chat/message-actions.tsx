@@ -1,5 +1,15 @@
-import { Button, type ChatAction, CheckboxCard, prompts, TextInput, useLocale } from "@k2b/ui";
-import { createContext, createSignal, For, type JSX, useContext } from "solid-js";
+import {
+  Button,
+  type ChatAction,
+  CheckboxCard,
+  dialogCore,
+  PanelDialog,
+  panelDialogFixedOptions,
+  prompts,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
+import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
 import { importOnDemand } from "../../browser/reload";
 import type { ApprovalDraftResult } from "../../contracts/approvals";
 import type { CloudResourceRef } from "../../contracts/capabilities";
@@ -288,9 +298,39 @@ export function createAssistantMessageActions(props: {
     label: t.actionMessageInfo,
     icon: "ti ti-info-circle",
     overflow: true,
-    onSelect: async () => {
-      const details = await importOnDemand(() => import("./message-info"));
-      details?.openAssistantResponseInfo(props.entries, locale());
+    onSelect: () => {
+      const [details, setDetails] = createSignal<typeof import("./message-info")>();
+      const [failed, setFailed] = createSignal(false);
+      const load = () => {
+        setFailed(false);
+        return importOnDemand(() => import("./message-info")).then((module) => {
+          if (module) setDetails(module);
+          else setFailed(true);
+        });
+      };
+      void dialogCore.open<void>(
+        (close) => (
+          <PanelDialog>
+            <PanelDialog.Header title={t.actionMessageInfo} subtitle={t.infoSubtitle} icon="ti ti-info-circle" close={close} />
+            <PanelDialog.Body>
+              <Show
+                when={details()}
+                fallback={
+                  <Show when={failed()} fallback={<p role="status">{t.viewLoading}</p>}>
+                    <Button variant="secondary" onClick={load}>
+                      {t.chartReload}
+                    </Button>
+                  </Show>
+                }
+              >
+                {(module) => module().AssistantResponseInfo({ entries: props.entries, locale: locale() })}
+              </Show>
+            </PanelDialog.Body>
+          </PanelDialog>
+        ),
+        panelDialogFixedOptions,
+      );
+      return load();
     },
   });
   return result;

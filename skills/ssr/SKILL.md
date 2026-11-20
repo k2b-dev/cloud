@@ -138,13 +138,6 @@ the island opened. Disposal closes every open `@k2b/ui` dialog.
 
 ## Island Error Boundaries
 
-An island's default component can expose `preload(): Promise<unknown>`, such as
-`ChatPage.preload = preloadChatPresentation`. The browser keeps server markup
-until it resolves, then renders the complete first frame. This hook runs only
-in the browser; server rendering stays synchronous. A rejection keeps the
-server markup and typed fields, reports `ssr:island-error`, and offers
-**Try again**, which retries the preload.
-
 Every island and client component instance is mounted in its own error
 boundary by default. Do not add a root `ErrorBoundary` to each island just for
 protection. Read [Island errors](references/island-errors.md) before changing

@@ -9,7 +9,7 @@ import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { isUniqueViolation, toPgTextArray } from "../services/postgres";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
-import { appendAiChatDone } from "./chat-done";
+import { appendAiChatDone, appendAiQueuedChatDone } from "./chat-done";
 import { AiChoiceConflict, resolveAiChoice } from "./choices";
 import { aiCodeDecisionContext } from "./code-review-turn";
 import { AiMapSchema } from "./map-contracts";
@@ -2498,7 +2498,7 @@ export const aiConversations: AiConversationService = {
       if (!chat) return false;
       // Archiving considers pending learning work once, just like learning being
       // off at completion. Restoring cannot backfill these turns or receipts.
-      const rows = await tx<{ id: string; discardedQueuedMessages: number }[]>`
+      const rows = await tx<{ id: string; discardedQueuedMessages: number; cancelledIds: string[] }[]>`
       WITH archived AS (
         UPDATE ai.conversations
         SET archived_at = now(), pinned_at = NULL, queue_held_at = NULL
@@ -2518,7 +2518,7 @@ export const aiConversations: AiConversationService = {
         UPDATE ai.queued_messages SET status = 'cancelled', error = 'chat_archived', send_requested_at = NULL,
           submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END, content = '[]'::jsonb
         WHERE conversation_id IN (SELECT id FROM archived) AND (status = 'pending' OR (status = 'failed' AND automation_source IS NULL))
-        RETURNING id
+        RETURNING id,origin
       ), expired_files AS (
         DELETE FROM ai.queued_message_files WHERE message_id IN (SELECT id FROM expired_queue)
       ), considered_turns AS (
@@ -2535,8 +2535,10 @@ export const aiConversations: AiConversationService = {
         WHERE conversation_id IN (SELECT id FROM archived)
           AND reviewed_at IS NULL
       )
-      SELECT id, (SELECT count(*)::int FROM expired_queue) AS "discardedQueuedMessages" FROM archived
+      SELECT id, (SELECT count(*)::int FROM expired_queue) AS "discardedQueuedMessages",
+        ARRAY(SELECT id::text FROM expired_queue WHERE origin->>'kind'='chat') AS "cancelledIds" FROM archived
     `;
+      for (const id of rows[0]?.cancelledIds ?? []) await appendAiQueuedChatDone(id, tx);
       return rows[0] ? { discardedQueuedMessages: rows[0].discardedQueuedMessages } : false;
     }),
 

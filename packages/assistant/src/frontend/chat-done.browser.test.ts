@@ -43,7 +43,6 @@ import { mount } from ${JSON.stringify(resolve(import.meta.dir, "../../../ssr/sr
 import { toJSON } from ${JSON.stringify(Bun.resolveSync("seroval", cloud))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
 function Workspace(props) { return <LocaleProvider locale="de"><AssistantWorkspace {...props} /></LocaleProvider>; }
-Workspace.preload = AssistantWorkspace.preload;
 document.getElementById("root").dataset.props = JSON.stringify(toJSON(window.harness));
 mount(Workspace, "#root");`;
 const fakeLiveSource = `export const liveConnection = () => ({ subscribe: (_channel, _scope, handlers) => {
@@ -295,6 +294,10 @@ const open = async (width: number, theme: string) => {
       const result = page.getByRole("link", { name: "Ergebnis ansehen" });
       await result.waitFor();
       await settled(page);
+      const line = page.locator(".ai-chat-done-line");
+      expect(await line.textContent()).toContain("3 Hotels verglichen, eines unter 120 €");
+      expect(await line.textContent()).toContain("heute, 10:19");
+      expect(await result.getAttribute("aria-label")).toBe("Ergebnis ansehen: Hotels in Lyon");
       return result;
     },
   };
@@ -323,7 +326,8 @@ for (const width of [390, 1440])
         expect(await field.inputValue()).toBe("Mein Entwurf");
         expect(await field.evaluate((node) => document.activeElement === node)).toBe(true);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-        if (process.env.CHAT_DONE_SHOTS) await page.screenshot({ path: `${process.env.CHAT_DONE_SHOTS}/done-${theme}-${width}.png` });
+        if (process.env.CHAT_DONE_SHOTS && theme === "light")
+          await page.screenshot({ path: `${process.env.CHAT_DONE_SHOTS}/done-${theme}-${width}.png` });
         expect(unknown).toEqual([]);
         expect(errors).toEqual([]);
       });

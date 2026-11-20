@@ -1465,15 +1465,25 @@ The normal terminal-turn transaction writes a `meta.chatDone` activity into the
 source chat, keyed by the original source and target turn UUIDs. Its immutable
 send receipt records the verified source coordinates. Public short-ID reuse
 cannot redirect delivery. Success, failure and abort each retain their status;
-deleted or archived sources receive no activity. Receipts accepted before this
+deleted or archived sources receive no activity. An archived source stays skipped
+even if it is restored later. A queued request removed, archived, or refused
+before starting records the same terminal fact, keyed by source turn and send
+receipt; its target turn is null. Receipts accepted before this
 source snapshot existed are not reconstructed from public identifiers.
 
 The runtime's bounded sweep repairs missed activities after terminal events have
 been published. Concurrent repairs share the unique key. A busy source is
 deferred rather than blocking the target's completion. The activity and its
-recovery marker commit together. Existing live invalidations deliver the new
-history; no per-event lookup or extra turn is needed. Normal retries preserve
-the activity, and model context excludes it.
+recovery marker commit together. The source lookup and insert share a savepoint,
+so a source-side database error cannot undo target completion. Such errors leave
+the marker unset and log only the error code and work coordinates. Recovery stops
+after five failed attempts for that item; a busy source consumes no attempt.
+Existing live invalidations deliver the new history; no per-event lookup or extra
+turn is needed. The owner's authorized snapshot batches target names, answer
+previews (first line, at most 320 characters), and exact turn/message validation
+in the existing origin query. Normal retries preserve the old activity and add a
+new one for the new target turn; an old link cannot select a reused sequence.
+Model context excludes these activities.
 
 ## Host admission and terminal bookkeeping
 

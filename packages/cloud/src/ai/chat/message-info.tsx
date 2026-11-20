@@ -1,5 +1,5 @@
 import type { Message, Usage } from "@k2b/nessi";
-import { dialogCore, PanelDialog, panelDialogFixedOptions } from "@k2b/ui";
+import { PanelDialog } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import type { AiStoredMessage } from "../types";
 import { aiToolIcon, describeResponseEnd, displayToolName, formatWorkedDuration } from "./message-utils";
@@ -84,7 +84,8 @@ function InfoRows(props: { rows: readonly { label: string; value: string; hint?:
   );
 }
 
-export const openAssistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
+export const AssistantResponseInfo = (props: { entries: AiStoredMessage[]; locale: string }) => {
+  const { entries, locale } = props;
   const info = assistantResponseInfo(entries, locale);
   if (!info) return;
 
@@ -94,78 +95,72 @@ export const openAssistantResponseInfo = (entries: AiStoredMessage[], locale: st
   const issueSummary = info.issues.map((issue) => `${issue.count} ${issue.label}`).join(" · ");
   const issueTotal = info.issues.reduce((sum, issue) => sum + issue.count, 0);
 
-  void dialogCore.open<void>(
-    (close) => (
-      <PanelDialog>
-        <PanelDialog.Header title={t.actionMessageInfo} subtitle={t.infoSubtitle} icon="ti ti-info-circle" close={close} />
-        <PanelDialog.Body>
-          <PanelDialog.Section title={t.infoDetails} icon="ti ti-list-details">
-            <InfoRows rows={info.meta} />
-          </PanelDialog.Section>
+  return (
+    <>
+      <PanelDialog.Section title={t.infoDetails} icon="ti ti-list-details">
+        <InfoRows rows={info.meta} />
+      </PanelDialog.Section>
 
-          <Show when={info.timing}>
-            {(timing) => (
-              <PanelDialog.Section title={t.infoTiming} icon="ti ti-clock">
-                {/* Worked = writing + tool execution; waiting for approvals and answers is listed separately. */}
-                <InfoRows
-                  rows={[
-                    { label: t.infoWorked, value: formatWorkedDuration(timing().totalElapsedMs), hint: t.infoWorkedHint },
-                    { label: t.infoGeneration, value: formatWorkedDuration(timing().generationMs) },
-                    { label: t.infoToolTime, value: timing().toolExecutionMs > 0 ? formatWorkedDuration(timing().toolExecutionMs) : "–" },
-                    {
-                      label: t.infoWaiting,
-                      value: timing().actionWaitMs > 0 ? formatWorkedDuration(timing().actionWaitMs) : "–",
-                      hint: t.infoWaitingHint,
-                    },
-                    { label: t.infoWallClock, value: formatWorkedDuration(timing().wallMs) },
-                    {
-                      label: t.infoSpeed,
-                      value:
-                        timing().outputTokensPerSecond !== undefined
-                          ? t.infoTokensPerSecond({
-                              value: timing().outputTokensPerSecond!.toLocaleString(locale, { maximumFractionDigits: 1 }),
-                            })
-                          : "–",
-                    },
-                  ]}
-                />
-              </PanelDialog.Section>
-            )}
-          </Show>
-
-          <PanelDialog.Section title={t.infoUsage} icon="ti ti-chart-bar">
+      <Show when={info.timing}>
+        {(timing) => (
+          <PanelDialog.Section title={t.infoTiming} icon="ti ti-clock">
+            {/* Worked = writing + tool execution; waiting for approvals and answers is listed separately. */}
             <InfoRows
               rows={[
-                { label: t.infoInputTokens, value: tokens(info.usage.input) },
-                { label: t.infoOutputTokens, value: tokens(info.usage.output) },
-                { label: t.infoTotalTokens, value: tokens(info.usage.total) },
-                { label: t.assistantTurns, value: number(info.turns) },
-                { label: t.toolCalls, value: number(info.toolCallCount) },
-                { label: t.toolIssues, value: info.issues.length > 0 ? `${number(issueTotal)} · ${issueSummary}` : t.none },
+                { label: t.infoWorked, value: formatWorkedDuration(timing().totalElapsedMs), hint: t.infoWorkedHint },
+                { label: t.infoGeneration, value: formatWorkedDuration(timing().generationMs) },
+                { label: t.infoToolTime, value: timing().toolExecutionMs > 0 ? formatWorkedDuration(timing().toolExecutionMs) : "–" },
+                {
+                  label: t.infoWaiting,
+                  value: timing().actionWaitMs > 0 ? formatWorkedDuration(timing().actionWaitMs) : "–",
+                  hint: t.infoWaitingHint,
+                },
+                { label: t.infoWallClock, value: formatWorkedDuration(timing().wallMs) },
+                {
+                  label: t.infoSpeed,
+                  value:
+                    timing().outputTokensPerSecond !== undefined
+                      ? t.infoTokensPerSecond({
+                          value: timing().outputTokensPerSecond!.toLocaleString(locale, { maximumFractionDigits: 1 }),
+                        })
+                      : "–",
+                },
               ]}
             />
           </PanelDialog.Section>
+        )}
+      </Show>
 
-          <Show when={info.tools.length > 0}>
-            <PanelDialog.Section title={t.infoTools} icon="ti ti-tool" subtitle={t.infoToolsHint}>
-              <ul class="ai-response-info__tools">
-                <For each={info.tools}>
-                  {(tool) => (
-                    <li>
-                      <i class={aiToolIcon(tool.name)} aria-hidden="true" />
-                      {displayToolName(tool.name, locale)}
-                      <Show when={tool.count > 1}>
-                        <span class="text-dimmed tabular-nums">×{tool.count}</span>
-                      </Show>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </PanelDialog.Section>
-          </Show>
-        </PanelDialog.Body>
-      </PanelDialog>
-    ),
-    panelDialogFixedOptions,
+      <PanelDialog.Section title={t.infoUsage} icon="ti ti-chart-bar">
+        <InfoRows
+          rows={[
+            { label: t.infoInputTokens, value: tokens(info.usage.input) },
+            { label: t.infoOutputTokens, value: tokens(info.usage.output) },
+            { label: t.infoTotalTokens, value: tokens(info.usage.total) },
+            { label: t.assistantTurns, value: number(info.turns) },
+            { label: t.toolCalls, value: number(info.toolCallCount) },
+            { label: t.toolIssues, value: info.issues.length > 0 ? `${number(issueTotal)} · ${issueSummary}` : t.none },
+          ]}
+        />
+      </PanelDialog.Section>
+
+      <Show when={info.tools.length > 0}>
+        <PanelDialog.Section title={t.infoTools} icon="ti ti-tool" subtitle={t.infoToolsHint}>
+          <ul class="ai-response-info__tools">
+            <For each={info.tools}>
+              {(tool) => (
+                <li>
+                  <i class={aiToolIcon(tool.name)} aria-hidden="true" />
+                  {displayToolName(tool.name, locale)}
+                  <Show when={tool.count > 1}>
+                    <span class="text-dimmed tabular-nums">×{tool.count}</span>
+                  </Show>
+                </li>
+              )}
+            </For>
+          </ul>
+        </PanelDialog.Section>
+      </Show>
+    </>
   );
 };

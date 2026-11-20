@@ -18,7 +18,6 @@ import {
   aiComposerSendInput,
   aiModelBlocksSending,
   createAiChatTimeline,
-  preloadAiChatDone,
   readAiComposerFiles,
 } from "@k2b/cloud/ai/ui";
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
@@ -123,8 +122,6 @@ export type AssistantPwaProps = {
 type List = { conversations: AiConversation[]; questions: AiOpenQuestions };
 /** A message that did not reach its chat stays in the timeline with "Send again" instead of in the field. */
 type FailedSend = { id: string; conversationId: string; input: ChatSubmitInput };
-
-AssistantPwa.preload = preloadAiChatDone;
 
 /**
  * The Assistant in the Cloud app. The start lists recent chats and what waits for the person, with a field to ask
