@@ -478,21 +478,27 @@ describe("privacy screen", () => {
       // settled: the menu's position comes from the stylesheet, not from a frame.
       expect(await page.locator("#mail-row .k2b-dropdown__menu").evaluate((menu) => getComputedStyle(menu).position)).toBe("fixed");
       /** The topmost element at the middle of each target's left part, with the veil hit-testable for the moment of the read. */
-      const topmost = (selectors: string[]) =>
-        page.evaluate((list) => {
-          const veil = document.querySelector<HTMLElement>(".cloud-privacy-veil");
-          if (!veil) return list.map(() => "no veil");
-          veil.style.pointerEvents = "auto";
-          try {
-            return list.map((selector) => {
-              const rect = document.querySelector(selector)!.getBoundingClientRect();
-              const top = document.elementsFromPoint(rect.left + Math.min(16, rect.width / 2), rect.top + rect.height / 2)[0];
-              return top === veil ? "veil" : (top?.closest("[id]")?.id ?? top?.tagName ?? "nothing");
-            });
-          } finally {
-            veil.style.pointerEvents = "";
-          }
-        }, selectors);
+      const topmost = (selectors: string[], { pastHint = false } = {}) =>
+        page.evaluate(
+          ([list, pastHint]) => {
+            const veil = document.querySelector<HTMLElement>(".cloud-privacy-veil");
+            if (!veil) return list.map(() => "no veil");
+            veil.style.pointerEvents = "auto";
+            try {
+              return list.map((selector) => {
+                const rect = document.querySelector(selector)!.getBoundingClientRect();
+                // The hint stands above the veil on purpose, wherever the pointer left it; past it, the content counts.
+                const top = document
+                  .elementsFromPoint(rect.left + Math.min(16, rect.width / 2), rect.top + rect.height / 2)
+                  .find((element) => !pastHint || !element.closest(".cloud-privacy-hint"));
+                return top === veil ? "veil" : (top?.closest("[id]")?.id ?? top?.tagName ?? "nothing");
+              });
+            } finally {
+              veil.style.pointerEvents = "";
+            }
+          },
+          [selectors, pastHint] as const,
+        );
       // Every pixel of the covered screen lies under the veil: the selected row, the sidebar's active item, the app bar.
       const coveredTargets = [
         "#selected-row",
@@ -578,7 +584,7 @@ describe("privacy screen", () => {
         dialog.showModal();
       });
       await page.waitForFunction(() => document.querySelector("#late-dialog")?.hasAttribute("data-cloud-privacy-covered"));
-      expect(await topmost(["#late-dialog"])).toEqual(["veil"]);
+      expect(await topmost(["#late-dialog"], { pastHint: true })).toEqual(["veil"]);
       await page.keyboard.press("x");
       expect(await covered(page)).toBe(false);
       expect(await page.locator(".cloud-privacy-veil").evaluate((element) => element.matches(":popover-open"))).toBe(false);
