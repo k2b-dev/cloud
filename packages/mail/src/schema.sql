@@ -416,6 +416,7 @@ CREATE TABLE mail.binding_folder_refs (
     binding_id uuid NOT NULL,
     folder_id uuid NOT NULL,
     remote_path text NOT NULL,
+    remote_folder_id text,
     delimiter text,
     namespace_kind text,
     uid_validity numeric(20,0),
@@ -441,8 +442,9 @@ CREATE TABLE mail.binding_folder_refs (
 ALTER TABLE ONLY mail.binding_folder_refs
     ADD CONSTRAINT binding_folder_refs_binding_id_folder_id_key UNIQUE (binding_id, folder_id);
 
-ALTER TABLE ONLY mail.binding_folder_refs
-    ADD CONSTRAINT binding_folder_refs_binding_id_remote_path_key UNIQUE (binding_id, remote_path);
+CREATE UNIQUE INDEX binding_folder_refs_imap_path_idx ON mail.binding_folder_refs (binding_id, remote_path) WHERE remote_folder_id IS NULL;
+
+CREATE UNIQUE INDEX binding_folder_refs_jmap_id_idx ON mail.binding_folder_refs (binding_id, remote_folder_id) WHERE remote_folder_id IS NOT NULL;
 
 ALTER TABLE ONLY mail.binding_folder_refs
     ADD CONSTRAINT binding_folder_refs_pkey PRIMARY KEY (id);
@@ -1910,7 +1912,7 @@ CREATE TABLE mail.provider_connections (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     limit_snapshot jsonb DEFAULT '{"imap": {"status": "unavailable", "storage": null, "messages": null}, "smtp": {"status": "unavailable", "maxMessageBytes": null}, "checkedAt": "1970-01-01T00:00:00.000Z"}'::jsonb NOT NULL,
     CONSTRAINT provider_connections_capabilities_check CHECK ((jsonb_typeof(capabilities) = 'object'::text)),
-    CONSTRAINT provider_connections_connector_kind_check CHECK ((connector_kind = 'imap_smtp'::text)),
+    CONSTRAINT provider_connections_connector_kind_check CHECK (connector_kind IN ('imap_smtp', 'jmap')),
     CONSTRAINT provider_connections_email_check CHECK (((char_length(email) >= 3) AND (char_length(email) <= 320))),
     CONSTRAINT provider_connections_encrypted_secret_check CHECK (((encrypted_secret IS NULL) OR (char_length(encrypted_secret) > 0))),
     CONSTRAINT provider_connections_imap_host_check CHECK (((char_length(imap_host) >= 1) AND (char_length(imap_host) <= 253))),
@@ -2048,6 +2050,7 @@ CREATE TABLE mail.remote_resources (
     scope_fingerprint text NOT NULL,
     status text DEFAULT 'pending'::text NOT NULL,
     sync_generation bigint DEFAULT 1 NOT NULL,
+    sync_state jsonb,
     current_fence_token bigint DEFAULT 0 NOT NULL,
     discovery_generation bigint DEFAULT 0 NOT NULL,
     last_sync_at timestamp with time zone,
@@ -2056,7 +2059,7 @@ CREATE TABLE mail.remote_resources (
     last_error_message text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT remote_resources_connector_kind_check CHECK ((connector_kind = 'imap_smtp'::text)),
+    CONSTRAINT remote_resources_connector_kind_check CHECK (connector_kind IN ('imap_smtp', 'jmap')),
     CONSTRAINT remote_resources_current_fence_token_check CHECK ((current_fence_token >= 0)),
     CONSTRAINT remote_resources_discovery_generation_check CHECK ((discovery_generation >= 0)),
     CONSTRAINT remote_resources_last_error_message_check CHECK (((last_error_message IS NULL) OR (char_length(last_error_message) <= 1000))),
@@ -2064,6 +2067,7 @@ CREATE TABLE mail.remote_resources (
     CONSTRAINT remote_resources_scope_fingerprint_check CHECK ((char_length(scope_fingerprint) = 64)),
     CONSTRAINT remote_resources_server_identity_check CHECK ((jsonb_typeof(server_identity) = 'object'::text)),
     CONSTRAINT remote_resources_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'active'::text, 'degraded'::text, 'connection_required'::text, 'paused'::text]))),
+    CONSTRAINT remote_resources_sync_state_check CHECK (sync_state IS NULL OR jsonb_typeof(sync_state) = 'object'),
     CONSTRAINT remote_resources_sync_generation_check CHECK ((sync_generation > 0))
 );
 

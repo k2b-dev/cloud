@@ -1719,8 +1719,12 @@ Framework errors include `VALIDATION_FAILED`, `SCHEMA_MISMATCH`,
 `DEADLINE_EXCEEDED`, `ACTION_OUTCOME_UNKNOWN`, `REQUEST_CANCELLED`,
 `INVALID_APP_RESPONSE`, and `RESPONSE_TOO_LARGE`. Applications may return their
 own domain error codes. Provider failures accept the explicit HTTP statuses
-`400`, `401`, `403`, `404`, `409`, `429`, `499`, `500`, `502`, `503`, and
-`504`; other statuses fail closed as an invalid provider response.
+`400`, `401`, `403`, `404`, `405`, `406`, `408`, `409`, `410`, `412`, `413`,
+`415`, `416`, `421`, `422`, `429`, `499`, `500`, `501`, `502`, `503`, and `504`.
+This includes every `ServiceError.status` from `@k2b/stdlib` 0.36 and Cloud's
+cancellation status `499`. Returned and thrown service errors preserve the
+application's code, message, and status. Other statuses fail closed as an
+invalid provider response.
 Cloud resolves the human `message` of framework-owned failures from the
 caller's request locale without changing the code, status, details, or retry
 semantics. Provider-owned failures remain the application's responsibility and

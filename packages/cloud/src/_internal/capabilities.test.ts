@@ -1,11 +1,12 @@
-import { describe, expect, mock, test } from "bun:test";
-import { fail, ok } from "@k2b/stdlib";
+import { describe, expect, expectTypeOf, mock, test } from "bun:test";
+import { fail, ok, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionManifest,
   type CapabilityDefinitions,
+  type CapabilityErrorStatus,
   type CapabilityManifest,
   CapabilityPageSchema,
   type CapabilityQueryManifest,
@@ -17,6 +18,7 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
+import type { MutationResult } from "../contracts/shared";
 import {
   capabilityHash,
   capabilityManifestEvolutionIssues,
@@ -1527,8 +1529,20 @@ describe("capability v1 compilation", () => {
     });
   });
 
-  test("preserves every declared provider error status", async () => {
-    for (const status of CAPABILITY_ERROR_STATUSES) {
+  // Independent of Cloud's allowlist: a dependency upgrade must also update this fixture and Cloud's public type.
+  const stdlibErrorStatuses = [
+    400, 401, 403, 404, 405, 406, 408, 409, 410, 412, 413, 415, 416, 421, 422, 429, 500, 501, 502, 503, 504,
+  ] as const satisfies readonly ServiceError["status"][];
+
+  test("the capability error contract covers the entire stdlib status union", () => {
+    expectTypeOf<Exclude<ServiceError["status"], CapabilityErrorStatus>>().toEqualTypeOf<never>();
+    expectTypeOf<Extract<MutationResult, { ok: false }>["status"]>().toEqualTypeOf<ServiceError["status"]>();
+    expectTypeOf<Exclude<ServiceError["status"], (typeof stdlibErrorStatuses)[number]>>().toEqualTypeOf<never>();
+  });
+
+  test.each([...stdlibErrorStatuses, 499] as const)("preserves stdlib and cancellation provider error status %s", async (status) => {
+    for (const thrown of [false, true]) {
+      const failure = { code: "DOMAIN_REJECTION", message: "Application guidance", status };
       const base = example();
       const compiled = compileCapabilities("example", {
         ...base,
@@ -1536,7 +1550,10 @@ describe("capability v1 compilation", () => {
           ...base.queries,
           get: {
             ...base.queries!.get!,
-            run: async () => ({ ok: false, error: { code: "PROVIDER_ERROR", message: "Provider failed", status } }),
+            run: async () => {
+              if (thrown) throw failure;
+              return { ok: false, error: failure };
+            },
           },
         },
       });
@@ -1548,7 +1565,38 @@ describe("capability v1 compilation", () => {
         expectedSchemaHash: compiled.manifest.queries[0]!.schemaHash,
         context,
       });
-      expect(result).toEqual({ ok: false, error: { code: "PROVIDER_ERROR", message: "Provider failed", status } });
+      expect(result).toEqual({ ok: false, error: failure });
+    }
+    expect(CAPABILITY_ERROR_STATUSES).toContain(status);
+  });
+
+  test.each([200, 418, 599])("rejects unsupported provider error status %s", async (status) => {
+    for (const thrown of [false, true]) {
+      const base = example();
+      const compiled = compileCapabilities("example", {
+        ...base,
+        queries: {
+          ...base.queries,
+          get: {
+            ...base.queries!.get!,
+            // Deliberately invalid external provider output exercises runtime validation.
+            run: async () => {
+              const error = { code: "DOMAIN_REJECTION", message: "Application guidance", status };
+              if (thrown) throw error;
+              return { ok: false, error } as never;
+            },
+          },
+        },
+      });
+      const result = await invokeCompiledCapability({
+        compiled,
+        kind: "query",
+        localId: "get",
+        input: { id: "one" },
+        expectedSchemaHash: compiled.manifest.queries[0]!.schemaHash,
+        context,
+      });
+      expect(result).toMatchObject({ ok: false, error: { code: "INVALID_APP_RESPONSE", status: 500 } });
     }
   });
 

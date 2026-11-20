@@ -7,9 +7,14 @@ import type {
   ProviderLimitSnapshot,
   ProviderSecret,
   RemoteFolder,
+  RemoteMessageRef,
   SmtpTransportCapabilities,
 } from "../../contracts";
 import type { MessageProtocolFacts } from "../message-protocol";
+
+// Matches the IMAP envelope fetch budget in sync-runtime.ts. Kept here for connector readers;
+// that runtime can adopt this shared constant when its next slice permits changes.
+export const ENVELOPE_BATCH_SIZE = 200;
 
 export type ConnectorAddress = {
   name: string | null;
@@ -40,6 +45,11 @@ export type ConnectorEnvelope = {
     bcc: ConnectorAddress[];
   };
   mimeStructure: Record<string, unknown>;
+};
+
+/** Content projection accepts either locator; IMAP transport batches stay UID-addressed. */
+export type ProjectionEnvelope = Omit<ConnectorEnvelope, "remoteRef"> & {
+  remoteRef: RemoteMessageRef;
 };
 
 export type EnvelopeBatchRequest = {

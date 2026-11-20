@@ -355,7 +355,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       "FIXTURE_DRAFT_REJECTION",
       403,
     ],
-    ["transport failure", new Error("Fixture broker disconnected"), "DRAFT_DOCUMENT_READ_UNAVAILABLE", 500],
+    ["transport failure", new Error("Fixture broker disconnected"), "DRAFT_DOCUMENT_READ_UNAVAILABLE", 503],
   ] as const)("document read classifies %s and leaves the draft unchanged", async (_reason, failure, code, status) => {
     const target = await draft();
     const base = await read();

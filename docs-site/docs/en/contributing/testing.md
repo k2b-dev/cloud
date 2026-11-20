@@ -925,8 +925,10 @@ CLOUD_TEST_JMAP_URL=http://admin:cloud_jmap_test@127.0.0.1:8080 \
 ```
 
 The fixture checks the authenticated session and Inbox, uploads and imports a
-fictional message, finds it through `Email/changes`, then deletes it. Stop the
-server and remove its anonymous volumes with
+fictional message, finds it through `Email/changes`, then deletes it.
+The Mail suite `jmap-stalwart-emails.integration.test.ts` checks production
+email reading and mapping against the CI Stalwart server. Stop the server and
+remove its anonymous volumes with
 `docker rm --force --volumes cloud-test-stalwart`.
 
 `CLOUD_TEST_CLICKHOUSE_URL` is an **admin URL**, including URL-encoded userinfo,
@@ -1169,6 +1171,10 @@ selection without starting infrastructure with
 `bun run --cwd packages/mail test:integration:list`; run one file with
 `bun run --cwd packages/mail test:integration src/service/sent-projection.integration.test.ts`.
 The root runner runs Mail this way, one file per suite.
+
+Mail's `jmap-stalwart.integration.test.ts` runs in the gate against the CI
+Stalwart server to verify Session handling and folder discovery.
+The opt-in suite remains available for other real JMAP servers.
 
 Mail also has a read-only JMAP conformance suite at
 `packages/mail/src/service/connectors/jmap-conformance.integration.test.ts`.

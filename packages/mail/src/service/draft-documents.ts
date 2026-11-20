@@ -758,10 +758,10 @@ export const readDraftDocument = async (params: Target): Promise<Result<DraftDoc
         message: "The draft's editing state changed. Keep any text on this device and reopen the draft before editing.",
       });
     return fail({
-      code: "DRAFT_DOCUMENT_READ_UNAVAILABLE",
-      status: 500,
-      message:
+      ...err.unavailable(
         "The draft could not be loaded. Keep any text on this device and retry shortly. If this continues, ask a mailbox administrator to recover the draft.",
+      ),
+      code: "DRAFT_DOCUMENT_READ_UNAVAILABLE",
     });
   }
 };

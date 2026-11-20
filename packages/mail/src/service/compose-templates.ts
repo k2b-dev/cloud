@@ -65,6 +65,7 @@ import {
   mapMailboxLogo,
 } from "./mailbox-logos";
 import type { OutboundDraftSnapshot } from "./outbound-mime";
+import { senderIdentityUnverified } from "./sender-identity-errors";
 
 type SqlClient = typeof sql;
 
@@ -818,6 +819,7 @@ const composeRenderContext = async (params: {
       mailbox_description: string | null;
       sender_name: string;
       sender_email: string;
+      sender_status: string;
       sender_reply_to: string | null;
     }[]
   >`
@@ -826,15 +828,16 @@ const composeRenderContext = async (params: {
       mailbox.description AS mailbox_description,
       sender.display_name AS sender_name,
       sender.from_address AS sender_email,
+      sender.status AS sender_status,
       sender.reply_to AS sender_reply_to
     FROM mail.mailboxes mailbox
     JOIN mail.sender_identities sender ON sender.mailbox_id = mailbox.id
     WHERE mailbox.id = ${params.mailboxId}::uuid
       AND sender.id = ${params.senderIdentityId}::uuid
       AND mailbox.deleted_at IS NULL
-      AND sender.status = 'verified'
   `;
-  if (!base) return fail(err.badInput("A verified sender identity is required"));
+  if (!base || base.sender_status !== "verified")
+    return fail(senderIdentityUnverified(base?.sender_status === "disabled" ? null : base?.sender_email));
 
   let actor = { display_name: "Mailbox automation", email: "" };
   const actorUserId =
