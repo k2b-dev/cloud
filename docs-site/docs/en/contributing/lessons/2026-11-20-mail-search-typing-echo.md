@@ -1,0 +1,6 @@
+### The Mail search field put back older text while the person typed
+
+- **What happened:** In Mail 0.82, typing in the search field at the top of the mailbox sometimes stuttered: letters that had just been typed disappeared, the caret jumped to the end, and the text typed meanwhile was not searched.
+- **Root cause:** The route effect in `packages/mail/src/frontend/_components/mailbox-search.ts` treated every committed route as a new intent. When the field's own earlier search (for example `q=in` after typing `inv`) arrived, the effect wrote that older query back into the field and cancelled the pending debounced search for the newer text. The workspace already aborted superseded route loads and dropped their answers; only the echo of the field's own latest request was wrong.
+- **Error class:** A controlled input is written from an asynchronous echo of its own earlier value, so a late answer overwrites newer local input.
+- **Guard:** `MailWorkspace.search-return.behavior.test.tsx` ("typing stays in the field while earlier searches answer late and out of order") types character by character with fake timers while each search waits for its answer. It asserts that the field keeps the typed text and the caret, that the newer search aborts the superseded one, and that only the latest query's results show after answers arrive out of order.
