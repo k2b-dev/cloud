@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { CodeActivityReadModelSchema, CodeRunReadModelSchema, CodeVersionReadModelSchema } from "@k2b/cloud/contracts";
+import { codeUsesBoundChat } from "../bound-chat";
 import {
   codeActivityReadModelFixture,
   codeReadModelFixture,
@@ -291,6 +292,20 @@ test.each(["de", "en"])("bound chat grants defer names and preserve permission c
     },
   });
   expect(JSON.stringify(literal.mayDo)).not.toContain(boundChat.id);
+});
+
+// P6 Rundgang n02: Code that creates its own chat and writes there read as an automation still lacking its chat.
+test("Code that creates its own chats offers no bound chat to choose", () => {
+  const send = { ...manifest.permissions[0]!, operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null } };
+  const create = { ...manifest.permissions[0]!, operation: "core.ai.chat.create", target: null };
+  expect(codeUsesBoundChat([send])).toBe(true);
+  expect(codeUsesBoundChat([create, send])).toBe(false);
+  expect(codeUsesBoundChat([{ ...send, target: { type: "core.ai.chat", id: "Other1" } }])).toBe(false);
+  const created = { ...manifest, permissions: [create, send] };
+  const model = present({ personal: true, manifest: created, locale: "de", explanation: null, boundChat: null });
+  const row = model.mayDo.items.find((item) => item.text === "In einen Chat schreiben, Gustav antwortet");
+  expect(row).toBeDefined();
+  expect(row).not.toHaveProperty("target");
 });
 
 test.each(["de", "en"])("shared personal Code names the execution owner, never the reader's allowance (%s)", (locale) => {
