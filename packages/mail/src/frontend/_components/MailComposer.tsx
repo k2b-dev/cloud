@@ -1346,7 +1346,7 @@ export default function MailComposer(props: {
         return;
       }
       const delivery = currentDelivery;
-      return reportDeliveryError(error.message, () => void sendDraft(delivery));
+      return reportDeliveryError(error.message, () => void sendOrSayWhy(delivery));
     },
   });
 
@@ -1448,7 +1448,7 @@ export default function MailComposer(props: {
     } catch (error) {
       if (error instanceof ComposeSafetyAttachmentRequested) attachAfterDeliveryReview = true;
       else if (!(error instanceof ComposeSafetyCancelled) && !(error instanceof ComposeRecipientPending)) {
-        reportDeliveryError(error instanceof Error ? error.message : t().messageNotReadySend, () => void sendDraft(delivery));
+        reportDeliveryError(error instanceof Error ? error.message : t().messageNotReadySend, () => void sendOrSayWhy(delivery));
       }
     } finally {
       setSendingHere(false);
@@ -1456,6 +1456,16 @@ export default function MailComposer(props: {
       if (deliveryPreparationController === preparation) deliveryPreparationController = null;
       finishDeliveryTransition(reservation);
     }
+  };
+
+  /**
+   * Try again in the toast and a time picked for Send later reach Send after a while, when it may wait (offline, an
+   * upload). Then the toast says why and keeps Try again: such a click never ends without a visible answer.
+   */
+  const sendOrSayWhy = (delivery: { scheduledAt?: string }) => {
+    if (!sendHeld()) return sendDraft(delivery);
+    const windowT = mailComposeWindowMessages.resolve([locale()]).t;
+    reportDeliveryError(online() ? windowT.sendWaits : windowT.sendOffline, () => void sendOrSayWhy(delivery));
   };
 
   const schedule = async () => {
@@ -1470,7 +1480,7 @@ export default function MailComposer(props: {
     } finally {
       finishDeliveryTransition(reservation);
     }
-    if (!disposed && scheduledAt) await sendDraft({ scheduledAt });
+    if (!disposed && scheduledAt) await sendOrSayWhy({ scheduledAt });
   };
 
   const openDeliveryOptionsDialog = () =>
@@ -2342,23 +2352,28 @@ export default function MailComposer(props: {
         return list.length ? Math.floor(list.reduce((sum, upload) => sum + upload.progress, 0) / list.length) : null;
       };
       /**
-       * Why Send waits, said where Send is: uploads, offline, the last reply still on its way, or a shared draft that is
-       * not connected or saved yet. A disabled Send always has its reason here and in the status at its side.
+       * A shared draft still connecting or saving holds Send until it is ready. A closed draft, a refused edit, or a
+       * failure does not resolve by waiting: the shared hint over the bar names it and offers the way out.
        */
-      /** A shared draft still connecting or saving holds Send; a closed one says so through its own state instead. */
-      const sharedWaits = () => !sharedCanSend() && !sharedState()?.terminal;
+      const sharedWaits = () => !sharedCanSend() && !sharedState()?.terminal && !sharedState()?.error && !sharedState()?.rejectedEdit;
+      /**
+       * Why Send waits, said where Send is: uploads, offline, the last reply still on its way, or a shared draft that is
+       * not connected or saved yet. A draft that failed or became read-only says why through its own banner instead.
+       */
       const sendBlockedReason = () =>
-        uploads().length > 0
-          ? r().uploadReason
-          : !online()
-            ? r().offlineReason
-            : holdActive()
-              ? r().holdReason
-              : tableNeedsCheck()
-                ? r().tableReason
-                : sharedWaits()
-                  ? r().sharedReason
-                  : null;
+        status() === "error" || status() === "readonly"
+          ? null
+          : uploads().length > 0
+            ? r().uploadReason
+            : !online()
+              ? r().offlineReason
+              : holdActive()
+                ? r().holdReason
+                : tableNeedsCheck()
+                  ? r().tableReason
+                  : sharedWaits()
+                    ? r().sharedReason
+                    : null;
       /** The quiet status at its fixed place: what is happening to the text right now. */
       const boxStatus = (): { icon: string; text: string; tone?: "busy" } | null => {
         const percent = uploadPercent();
