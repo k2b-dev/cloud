@@ -21,6 +21,7 @@ export type ChatDecisionAnswer = {
    * stays in place. A shimmer runs over the filled button and it takes no second press. Only `confirm` reads it.
    */
   busy?: boolean;
+  /** A returned promise holds every answer of the question until it settles; then they work again while it stays open. */
   onSelect: () => void | Promise<void>;
 };
 
