@@ -5,7 +5,7 @@ section: Operations
 order: 1150
 description: Run multiple application instances and shut them down without losing work.
 tags: [scaling, lifecycle, shutdown]
-updated: 2026-11-02
+updated: 2026-11-08
 ---
 
 # Scaling and shutdown
@@ -389,10 +389,13 @@ time, and the later ones wait for it; see
 [Use lifecycle hooks](#use-lifecycle-hooks).
 
 On `SIGTERM` or `SIGINT`, an application immediately changes readiness to
-HTTP 503 and closes HTTP admission. Bun stops accepting new connections and
-lets current responses finish for up to **30 seconds**, matching the existing
-worker drain deadline. At that deadline, Cloud forcibly closes remaining
-connections, including SSE streams and WebSockets; the native request signal
+HTTP 503 and closes HTTP admission. Cloud stops live admission and closes live
+and app-access WebSockets with **1012 (service restart)**, so clients reconnect
+to a running replica. It also closes app-access SSE streams. These connections
+no longer hold up the HTTP drain. Bun stops accepting new connections and lets
+current responses finish for up to **30 seconds**, matching the existing worker
+drain deadline. At that deadline, Cloud forcibly closes remaining connections,
+including other SSE streams and WebSockets; the native request signal
 cancels request work. Only after HTTP has drained or been closed does Cloud run
 lifecycle stop hooks and release its dependencies, ending with Sync.
 
