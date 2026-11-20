@@ -84,3 +84,17 @@ export const activeNavigationKey = (route: PublicOkWorkspaceState["route"]): str
     return route.activeWorkflow ? navigationReferenceKey({ type: "workflow", id: route.activeWorkflow.id }) : "workflow:all";
   return null;
 };
+
+/**
+ * The navigation island's view of the workspace: the route shrinks to what navigation reads. Rows, record details and
+ * other page data stay with the route island, so the page serializes them once.
+ */
+export type NavigationState = Omit<PublicOkWorkspaceState, "route"> & {
+  route: { kind: PublicOkWorkspaceState["route"]["kind"]; activeKey: string | null; activeTableId?: string };
+};
+
+export const navigationState = ({ route, ...state }: PublicOkWorkspaceState): NavigationState => {
+  const activeTableId =
+    route.kind === "records" ? route.activeTable.id : route.kind === "queryResultView" ? route.activeView.tableId : undefined;
+  return { ...state, route: { kind: route.kind, activeKey: activeNavigationKey(route), ...(activeTableId ? { activeTableId } : {}) } };
+};
