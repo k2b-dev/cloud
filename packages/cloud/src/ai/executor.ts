@@ -1443,6 +1443,8 @@ export class AiTurnExecutor {
                   capabilityOperations.set(entry.name, entry);
                   return reviewAiCapability({
                     conversationId,
+                    // The review is part of this turn: the target checks the same turn authority as the run.
+                    turnId,
                     authority: capabilityAuthority!,
 
                     locale: promptLocale,

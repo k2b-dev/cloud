@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CapabilityOriginSchema } from "../../contracts/capabilities";
+import { type CapabilityOrigin, CapabilityOriginSchema } from "../../contracts/capabilities";
 import type { RequestCredentialProof } from "../../server/middleware/auth";
 import { resolveOAuthTokenActor } from "../oauth-tokens";
 import { requestCacheRedis } from "../request-cache-redis";
@@ -28,6 +28,10 @@ const ProofSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("oauth"), payload: z.record(z.string(), z.unknown()) }).strict(),
   z.object({ kind: z.literal("api_key"), credentialId: z.uuid() }).strict(),
 ]);
+/** Only an Assistant or choice call carries turn authority, and such a call always names its turn. */
+export const nestedLeaseTurnMatches = (origin: CapabilityOrigin, hasTurn: boolean): boolean =>
+  (origin === "assistant" || origin === "choice") === hasTurn;
+
 const LeaseSchema = z
   .object({
     appId: z.string(),
@@ -37,7 +41,7 @@ const LeaseSchema = z
     assistantTurn: z.object({ conversationId: z.uuid(), turnId: z.uuid() }).strict().optional(),
   })
   .strict()
-  .refine((lease) => (lease.origin === "assistant" || lease.origin === "choice") === !!lease.assistantTurn, {
+  .refine((lease) => nestedLeaseTurnMatches(lease.origin, !!lease.assistantTurn), {
     message: "Turn authority requires the Assistant or choice origin",
   });
 export type NestedInvocationLease = z.infer<typeof LeaseSchema>;

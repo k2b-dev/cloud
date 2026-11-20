@@ -1276,6 +1276,8 @@ suite("AI executor integration", () => {
         });
       };
       await run("queue");
+      // The live review belongs to this turn: targets check its turn authority exactly as for the run.
+      expect(review).toHaveBeenCalledWith(expect.objectContaining({ conversationId: conversation.id, turnId: turn.id }));
       const first = (await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id }))[0];
       expect(first).toMatchObject({ callId: "write-1-approval-0", review: { message: "Original effect" } });
       if (!first?.approvalId) throw new Error("Expected platform approval");
