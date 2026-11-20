@@ -378,7 +378,12 @@ export async function commitJmapAccountBatch(
   }
 }
 
-/** A single bounded page. Folders always catch up before any email page is read. */
+/**
+ * A single bounded page. Folders always catch up before any email page is read.
+ *
+ * The caller holds the mailbox's provider lease, as the IMAP sync does: the lease keeps credential,
+ * binding and mailbox administration, which lock the mailbox first, away from this commit.
+ */
 export async function syncJmapAccountDelta(
   params: Account & { authorization: string; transport?: JmapTransportDependencies },
 ): Promise<JmapAccountSyncResult> {

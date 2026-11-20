@@ -240,12 +240,12 @@ suite("JMAP account commit", () => {
     JOIN mail.folders f ON f.id = ref.folder_id WHERE f.remote_resource_id = ${source.args.remoteResourceId}::uuid ORDER BY ref.remote_id, f.stable_key
   `;
 
-  async function waitForBlockedCommit(blockerPid: number) {
+  async function waitForBlockedCommit(blockerPid: number, commits = 1) {
     const deadline = performance.now() + 10_000;
     while (true) {
-      const [row] = await sql<{ blocked: boolean }[]>`SELECT EXISTS (
-        SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))
-      ) AS blocked`;
+      const [row] = await sql<{ blocked: boolean }[]>`SELECT (
+        SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+      ) >= ${commits} AS blocked`;
       if (row?.blocked) return;
       if (performance.now() >= deadline) throw new Error("locks: account commit did not reach the held row");
       await Bun.sleep(10);
@@ -333,6 +333,42 @@ suite("JMAP account commit", () => {
     }
   }, 30_000);
 
+  test("lock order: a command writer holding the mailbox and a folder batch both finish", async () => {
+    source.f.mailboxes.push(fixtureMailbox("cmdlock", "Command lock"));
+    source.f.journal.Mailbox.push({ id: "cmdlock", kind: "created" });
+    const beforeState = await state();
+    const fence = await claimFence(source.args.remoteResourceId, source.args.bindingId, "incremental");
+    const delta = await readJmapMailboxDelta(
+      source.args.session,
+      source.args.authorization,
+      source.args.accountId,
+      "Mailbox:0",
+      source.args.signal,
+      source.f.dependencies,
+    );
+    const writer = await sql.reserve();
+    let committing: Promise<PromiseSettledResult<Awaited<ReturnType<typeof commitJmapAccountBatch>>>[]> | undefined;
+    try {
+      await writer<[]>`BEGIN`.simple();
+      await writer<[]>`SET LOCAL lock_timeout = '10s'`.simple();
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!backend) throw new Error("command lock: missing backend");
+      // Command creation's order: the mailbox first, then the key-share check of commands.selected_binding_id.
+      await writer<{ id: string }[]>`SELECT id FROM mail.mailboxes WHERE id = ${source.mailboxId}::uuid FOR UPDATE`;
+      committing = Promise.allSettled([commitJmapAccountBatch({ ...source.args, fence, beforeState, batch: { kind: "mailbox", delta } })]);
+      await waitForBlockedCommit(backend.pid);
+      await writer<{ id: string }[]>`SELECT id FROM mail.provider_bindings WHERE id = ${source.args.bindingId}::uuid FOR KEY SHARE`;
+      await writer<[]>`COMMIT`.simple();
+      expect(await committing, "command lock: no deadlock or lock timeout").toMatchObject([
+        { status: "fulfilled", value: { status: "committed", stats: { folders: 1 } } },
+      ]);
+    } finally {
+      await writer<[]>`ROLLBACK`.simple();
+      writer.release();
+      if (committing) await committing;
+    }
+  }, 30_000);
+
   test("flow: one content, locator, placement, conversation, receipt and checkpoint; quiet retry has no visible writes", async () => {
     change(message("arrival"));
     expect(await run(), "flow: committed").toMatchObject({ status: "committed", hasMore: false, stats: { imported: 1 } });
@@ -369,8 +405,25 @@ suite("JMAP account commit", () => {
       []
     >`UPDATE mail.remote_resources SET last_sync_at = now() + interval '1 minute' WHERE id = ${source.args.remoteResourceId}::uuid`;
     const batch = await prepared();
-    const results = await Promise.all([commitJmapAccountBatch(batch), commitJmapAccountBatch(batch)]);
-    expect(results.map((result) => result.status).sort(), "concurrent replay: exactly one commit").toEqual(["committed", "superseded"]);
+    const writer = await sql.reserve();
+    let committing: Promise<Awaited<ReturnType<typeof commitJmapAccountBatch>>[]> | undefined;
+    try {
+      await writer<[]>`BEGIN`.simple();
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!backend) throw new Error("concurrent replay: missing backend");
+      // Both commits start their first statement while the run is still running: the second one
+      // then proceeds on that view after the first has finished the run.
+      await writer<{ id: string }[]>`SELECT id FROM mail.remote_resources WHERE id = ${source.args.remoteResourceId}::uuid FOR UPDATE`;
+      committing = Promise.all([commitJmapAccountBatch(batch), commitJmapAccountBatch(batch)]);
+      await waitForBlockedCommit(backend.pid, 2);
+      await writer<[]>`COMMIT`.simple();
+      const results = await committing;
+      expect(results.map((result) => result.status).sort(), "concurrent replay: exactly one commit").toEqual(["committed", "superseded"]);
+    } finally {
+      await writer<[]>`ROLLBACK`.simple();
+      writer.release();
+      if (committing) await committing.catch(() => undefined);
+    }
     expect(await counts(), "concurrent replay: no visible work").toMatchObject({ contents: 0, live: 0, receipts: 0 });
   });
   test("primary: a new email with two memberships receives exactly once through Inbox", async () => {
