@@ -13,7 +13,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "field-label-row.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
-import { createComponent, render } from "solid-js/web";
+import { createComponent, insert, render } from "solid-js/web";
 import { LocaleProvider, NumberInput, Select, SuggestionGroup, TextInput } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const states = {
@@ -41,7 +41,10 @@ render(
           source: "Gustav",
           onAcceptAll: () => {},
           get children() {
-            return [
+            // Two fields per row, as a form lays them out.
+            const grid = document.createElement("div");
+            grid.style.cssText = "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.75rem";
+            insert(grid, () => [
               createComponent(TextInput, { label: "Fälligkeitsdatum", value: "6. Okt. 2026, 17:00" }),
               createComponent(NumberInput, {
                 label: "Geschätzte Dauer",
@@ -59,7 +62,8 @@ render(
                 suggestion: () => (state() === "none" ? undefined : { id: "priority", state: "ready", value: "high", confidence: "high" }),
               }),
               createComponent(TextInput, { label: "Ort", value: "" }),
-            ];
+            ]);
+            return grid;
           },
         });
       },
@@ -79,20 +83,14 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async () => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const load = async (touch: boolean) => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, hasTouch: touch });
   await page.setContent(
     `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
       `<body class="k2b-ui" style="margin:0;padding:16px"><div id="row" style="width:760px"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator("input").first().waitFor();
-  // The group lays its fields out two by two, as a form row does.
-  await page.addStyleTag({
-    content:
-      ".k2b-ai-suggestion-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem }" +
-      ".k2b-ai-suggestion-group > .k2b-ai-suggestion-group__bar, .k2b-ai-suggestion-group > .k2b-sr-only { grid-column: 1 / -1 }",
-  });
   return page;
 };
 
@@ -109,28 +107,39 @@ const controls = (page: Page) =>
   );
 
 describe("a field's label row", () => {
-  test("label actions never push a field's control below its neighbour's, in any suggestion state", async () => {
-    const page = await load();
-    try {
-      for (const view of ["none", "loading", "open", "unsure", "accepted", "own", "error"]) {
-        await page.evaluate((next) => (globalThis as unknown as { show: (state: string) => void }).show(next), view);
-        await settled(page);
-        await page.locator("#row").screenshot({ path: `/tmp/field-label-row-${view}.png`, animations: "disabled" });
-        const [due, estimate, priority, place] = await controls(page);
-        for (const [left, right] of [
-          [due!, estimate!],
-          [priority!, place!],
-        ] as const) {
-          expect({ view, field: right.label, top: Math.abs(right.top - left.top) <= 0.5 }).toEqual({ view, field: right.label, top: true });
-          expect({ view, field: right.label, bottom: Math.abs(right.bottom - left.bottom) <= 0.5 }).toEqual({
-            view,
-            field: right.label,
-            bottom: true,
-          });
+  for (const touch of [false, true])
+    test(`label actions never push a field's control below its neighbour's, in any suggestion state${touch ? ", on touch" : ""}`, async () => {
+      const page = await load(touch);
+      try {
+        expect(await page.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(touch);
+        const misaligned: { view: string; fields: string; top: number; bottom: number }[] = [];
+        let hit: { box: number; area: number } | undefined;
+        for (const view of ["none", "loading", "open", "unsure", "accepted", "own", "error"]) {
+          await page.evaluate((next) => (globalThis as unknown as { show: (state: string) => void }).show(next), view);
+          await settled(page);
+          await page
+            .locator("#row")
+            .screenshot({ path: `/tmp/field-label-row-${touch ? "touch-" : ""}${view}.png`, animations: "disabled" });
+          if (view === "open")
+            hit = await page.getByRole("button", { name: "Vorschlag für Geschätzte Dauer übernehmen" }).evaluate((button) => ({
+              box: button.getBoundingClientRect().height,
+              area: Number.parseFloat(getComputedStyle(button, "::after").height) || 0,
+            }));
+          const [due, estimate, priority, place] = await controls(page);
+          for (const [left, right] of [
+            [due!, estimate!],
+            [priority!, place!],
+          ] as const) {
+            const offset = { top: right.top - left.top, bottom: right.bottom - left.bottom };
+            if (Math.abs(offset.top) > 0.5 || Math.abs(offset.bottom) > 0.5)
+              misaligned.push({ view, fields: `${left.label} | ${right.label}`, ...offset });
+          }
         }
+        expect(misaligned).toEqual([]);
+        // Accept is as high as the label's line; on touch its hit area still reaches 44 px.
+        expect(hit).toEqual({ box: 18, area: touch ? 44 : 0 });
+      } finally {
+        await page.close();
       }
-    } finally {
-      await page.close();
-    }
-  }, 60_000);
+    }, 60_000);
 });
