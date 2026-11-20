@@ -222,9 +222,9 @@ export const createCloudAiCodeTools = () => [
   defineAiTool({
     name: "code_secret",
     description:
-      'Ask for a secret through trusted private browser entry in the conversation. You never see the value; only configured/name returns. With target {code, pathPrefix}, an editor stores it on that automation through Core: use a CodeSecretName identifier, a lowercase header and prefix "" (put Bearer in Code as Bearer ${secrets.NAME}); after configured:true, submit the version and say from its result whether it waits for approval or can be switched on. Without target the value stays in encrypted Assistant storage for this chat. Never ask for a credential in chat, survey or app fields. Personal secrets are scoped to this chat and bound to the exact HTTPS origin, header and prefix. Use cloud.http.secret(name,{prefix}) in cloud.http.fetch headers; load assistant-code-mode for HTTP details. Web UI required for secret entry; stored secrets also work from CLI.',
+      'Ask for a secret through trusted private browser entry in the conversation. You never see the value; only configured/name returns. With target {code, pathPrefix}, an editor stores it on that automation through Core: use a CodeSecretName identifier, a lowercase header and prefix "" (put Bearer in Code as Bearer ${secrets.NAME}); an existing name keeps its stored destination and only its value changes; after configured:true, submit the version and say from its result whether it waits for approval or can be switched on. Without target the value stays in encrypted Assistant storage for this chat. Never ask for a credential in chat, survey or app fields. Personal secrets are scoped to this chat and bound to the exact HTTPS origin, header and prefix. Use cloud.http.secret(name,{prefix}) in cloud.http.fetch headers; load assistant-code-mode for HTTP details. Web UI required for secret entry; stored secrets also work from CLI.',
     inputSchema: CodeSecretInput,
-    outputSchema: z.object({ configured: z.boolean(), name: z.string() }),
+    outputSchema: z.object({ configured: z.boolean(), name: z.string(), guidance: z.string().optional() }),
     approval: "never",
   }).client(),
   defineAiTool({

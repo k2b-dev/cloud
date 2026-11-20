@@ -70,6 +70,9 @@ test("every stored outcome renders its one line on the server, without the value
     "b-ersetzt": "Secret Paketdienst-API gespeichert 19:42",
     abgelehnt: "Secret Paketdienst-API abgelehnt 19:42",
     "f-recht": "Secret Paketdienst-API nicht gespeichert: Deine Anmeldung ist abgelaufen. Gespeichert ist nichts. 19:42",
+    "f-chat-weg+":
+      "Secret Paketdienst-API nicht gespeichert: Du kannst in diesem Chat nicht mehr schreiben, oder es gibt ihn nicht mehr. Gespeichert ist nichts. 19:42",
+    "c-anmeldung+": "Secret Paketdienst_API nicht gespeichert: Deine Anmeldung ist abgelaufen. Gespeichert ist nichts. 19:42",
     abgelaufen: "Anfrage nach Secret Paketdienst-API nicht mehr offen. Gespeichert ist nichts. 19:42",
     "c-gespeichert": "Secret Paketdienst_API gespeichert 19:42",
     "c-ersetzt": "Secret Paketdienst_API gespeichert 19:42",

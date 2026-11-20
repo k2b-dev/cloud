@@ -116,23 +116,28 @@ no such right. Core enforces that right again on every list, check and write.
 The browser writes through `core.code.secret.set`, with
 `target: { type: "core.code", id: code }`, without an idempotency key. A new
 name uses `binding_revision: null` and the requested binding. An existing name
-uses its current revision; the browser sends a binding only when the destination
-differs. A deleted value keeps its revision and is offered as entry again.
-After a binding conflict the card reads the list again, shows the current
-destination and offers replacement without restoring the old destination.
+uses its current revision and never sends a binding: the card replaces only the
+value, checks and names the stored destination, and keeps it. When Gustav asked
+for another destination, the card says **Goes to …, as before** and the result
+carries a fixed `guidance` sentence; an editor changes the destination on the
+automation's **Secrets** tab. A deleted value keeps its revision and binding and
+is offered as entry again. When someone else changes the destination while the
+card is open, the card reads the list again, shows the current destination and
+the one shown before, and offers replacement without restoring the old one.
 An uncertain answer never causes an automatic write: **Retry** reads metadata
 first, and an existing value needs explicit replacement.
 
-The tool result stays `{ configured, name }`; declining returns
-`configured: false`. Neither the value nor a digest enters tool arguments,
+The tool result stays `{ configured, name }`, with an optional fixed `guidance`
+sentence; declining returns `configured: false`. Hosts keep only the fixed
+failure sentences (`CODE_SECRET_ERRORS`) and hints (`CODE_SECRET_GUIDANCE`). Neither the value nor a digest enters tool arguments,
 results, conversation history, waiting entries or logs. The value stays in this
 window's field and its private write request, and is discarded on completion.
 The browser holds the existing claim, renews it every 15 seconds and stops when
 the two-minute lease expires. Another window shows a locked request and never
 replays it. Successful creation and replacement both leave one metadata-only
-outcome line after reload. A lost right ends the request as **not saved**
-without a reason, because Core answers a deleted automation and a removed right
-alike. See [the Secret card](/en/docs/ai/chat-interface) for its states.
+outcome line after reload. An expired sign-in ends the request as **not saved**
+with that reason. A lost right ends it as **not saved** without a reason,
+because Core answers a deleted automation and a removed right alike. See [the Secret card](/en/docs/ai/chat-interface) for its states.
 
 Without `target`, existing chat-secret names, header/prefix defaults, storage
 and validation remain unchanged. The browser uses Assistant's private

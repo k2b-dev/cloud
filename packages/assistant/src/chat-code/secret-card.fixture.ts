@@ -11,6 +11,8 @@ import {
 export const SECRET_FIXTURE_VALUE = "pk_live_7f3Qm2Lx9aVt0eR";
 const HOST = "https://api.paketdienst-beispiel.de";
 const destination = { origin: HOST, pathPrefix: "/v1", headers: ["authorization"] };
+/** A destination stored earlier that differs from the request. */
+const OTHER = { origin: "https://alt.paketdienst-beispiel.de", pathPrefix: "/api", headers: ["authorization"] };
 const stored = (configured: boolean, code: boolean, binding = destination): SecretRequestEntry => ({
   revision: "11111111-1111-4111-8111-111111111111",
   configured,
@@ -122,7 +124,7 @@ export const SECRET_CARD_SCENES: readonly SecretCardScene[] = [
         id: `${p}${code ? "recht" : "f-recht"}`,
         code,
         step: "failed",
-        result: { failed: true, error: CODE_SECRET_ERRORS.accessLost },
+        result: { failed: true, error: code ? CODE_SECRET_ERRORS.accessLost : CODE_SECRET_ERRORS.signInExpired },
         drive: failedWith(code ? { ok: false, code: "NOT_FOUND", status: 404 } : { ok: false, code: "HTTP_401", status: 401 }),
       },
       {
@@ -194,6 +196,34 @@ export const SECRET_CARD_SCENES: readonly SecretCardScene[] = [
     },
   },
   { id: "c-bad-input+", code: true, step: "interaction", drive: failedWith({ ok: false, code: "BAD_INPUT", status: 400 }) },
+  // Gustav asks for another destination than the stored one: replacing keeps the stored one and says so.
+  { id: "c-ziel-bleibt+", code: true, step: "interaction", entry: stored(true, true, OTHER), drive: (c) => c.start() },
+  {
+    id: "c-ziel-bleibt-wiederholen+",
+    code: true,
+    step: "interaction",
+    entry: stored(true, true, OTHER),
+    drive: async (c, ports) => {
+      await typed(c);
+      ports.fail({ ok: false, code: "UNAVAILABLE", status: null });
+      await c.replace();
+      await c.retry();
+    },
+  },
+  {
+    id: "c-anmeldung+",
+    code: true,
+    step: "failed",
+    result: { failed: true, error: CODE_SECRET_ERRORS.signInExpired },
+    drive: failedWith({ ok: false, code: "HTTP_401", status: 401 }),
+  },
+  {
+    id: "f-chat-weg+",
+    code: false,
+    step: "failed",
+    result: { failed: true, error: CODE_SECRET_ERRORS.accessLost },
+    drive: failedWith({ ok: false, code: "NOT_FOUND", status: 404 }),
+  },
   {
     id: "c-ausgang-unklar+",
     code: true,

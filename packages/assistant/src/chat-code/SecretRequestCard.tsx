@@ -19,6 +19,7 @@ const messages = /* @__PURE__ */ i18n.define({
           ? `Stays on the automation “${title}” until someone replaces or deletes it`
           : "Stays on this automation until someone replaces or deletes it",
       codeGoes: ({ target }: { target: string }) => `Goes only to ${target}, from approved versions`,
+      codeKept: ({ target }: { target: string }) => `Goes to ${target}, as before; set up another destination in the automation`,
       codeMoved: ({ target, before }: { target: string; before: string }) => `Destination changed meanwhile: ${target} (was ${before})`,
       storedBy: ({ date, name }: { date: string | null; name: string | null }) =>
         date ? (name ? `Stored on ${date} by ${name}` : `Stored on ${date}`) : "Stored",
@@ -63,6 +64,7 @@ const messages = /* @__PURE__ */ i18n.define({
           ? `Liegt an der Automation „${title}“, bis jemand es ersetzt oder löscht`
           : "Liegt an dieser Automation, bis jemand es ersetzt oder löscht",
       codeGoes: ({ target }) => `Geht nur an ${target}, aus freigegebenen Versionen`,
+      codeKept: ({ target }) => `Geht an ${target}, wie bisher; ein anderes Ziel richtet ihr in der Automation ein`,
       codeMoved: ({ target, before }) => `Ziel inzwischen geändert: ${target} (bisher ${before})`,
       storedBy: ({ date, name }) => (date ? (name ? `Hinterlegt am ${date} von ${name}` : `Hinterlegt am ${date}`) : "Hinterlegt"),
       deleted: "Wert gelöscht; Läufe, die ihn brauchen, schlagen fehl",
@@ -194,8 +196,6 @@ export function SecretRequestCard(props: {
   /** An open request: never checking, unavailable or ended; those show no card. */
   state: SecretRequestState;
   anchorId: string;
-  /** Where Gustav asked the value to go; a destination changed since shows both. */
-  requested: { origin: string; pathPrefix: string };
   timeZone: string;
   /** The person answered in this window: the outcome line takes the focus. */
   onAnswer: () => void;
@@ -204,8 +204,8 @@ export function SecretRequestCard(props: {
   const t = createMemo(() => messages.resolve([locale()]).t);
   const code = () => props.state.mode === "code";
   const replacing = () => Boolean(props.state.existing?.configured);
-  const moved = () =>
-    code() && (props.state.binding.origin !== props.requested.origin || props.state.binding.pathPrefix !== props.requested.pathPrefix);
+  // Only a change by someone else since the card showed; a stored destination that differs from the request stays calm.
+  const moved = () => code() && props.state.before !== null;
   const view = createMemo(() => secretCardView(props.state, moved()));
   const value = () => ("value" in props.state ? props.state.value : "");
   const facts = createMemo((): ChatDecisionReason[] => {
@@ -222,6 +222,7 @@ export function SecretRequestCard(props: {
     const date = at
       ? new Intl.DateTimeFormat(locale(), { timeZone: props.timeZone, day: "2-digit", month: "2-digit" }).format(new Date(at))
       : null;
+    const before = state.before;
     return [
       ...(existing?.configured
         ? [{ text: words.storedBy({ date, name: existing.valueSetBy?.name ?? null }), icon: "ti ti-history" }]
@@ -229,19 +230,22 @@ export function SecretRequestCard(props: {
           ? [{ text: words.deleted, icon: "ti ti-history" }]
           : []),
       { text: words.codeStays({ title: state.title }), icon: "ti ti-code" },
-      state.state === "conflict" && moved()
+      state.state === "conflict" && before
         ? {
             text: words.codeMoved({
               target: destination(state.binding, true),
               before:
-                destination(state.binding, false) === destination(props.requested, false)
-                  ? props.requested.pathPrefix.replace(/\/+$/, "") || "/"
-                  : destination(props.requested, true),
+                destination(state.binding, false) === destination(before, false)
+                  ? before.pathPrefix.replace(/\/+$/, "") || "/"
+                  : destination(before, true),
             }),
             icon: "ti ti-alert-triangle",
             tone: "warning",
           }
-        : { text: words.codeGoes({ target: destination(state.binding, true) }), icon: "ti ti-world" },
+        : {
+            text: (state.kept ? words.codeKept : words.codeGoes)({ target: destination(state.binding, true) }),
+            icon: "ti ti-world",
+          },
     ];
   });
   const faces = createMemo(() => {

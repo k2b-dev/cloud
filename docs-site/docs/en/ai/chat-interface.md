@@ -1112,7 +1112,11 @@ surface colour, and offers one password field with an eye, **Save securely** or
 say that it stays only for this person in this chat and which HTTPS host
 receives it. For an automation (`target`) they name the automation, the host
 and path it goes to from approved versions, and **Stored on … by …** when a
-value exists. A deleted value asks for entry again.
+value exists. A deleted value asks for entry again. Replacing an automation's
+secret changes only its value: when Gustav asks for another destination than
+the stored one, the card names the stored destination with **Goes to …, as
+before; set up another destination in the automation**, and Gustav's result
+says that the destination stayed.
 
 Every state changes words in fixed cells only: the line under the field, the
 labels of both answers, and the field's edge. Saving shows **Saving …** and
@@ -1120,16 +1124,17 @@ locks the card; an empty field, characters the destination cannot take, or a
 value that is too long marks the field and returns the focus there; a failed
 save keeps the value in the field and offers **Try again**; no answer from Cloud
 says the value may be saved and **Try again** reads the metadata first; a
-changed name or destination shows the current destination before **Replace**
-or **Replace anyway**. A window that does not hold the request shows the card
+name or destination that someone else changed meanwhile shows the current
+destination and the one shown before, then **Replace** or **Replace anyway**. A window that does not hold the request shows the card
 locked with **Open in another window**. The card loads on demand when a request
 arrives, so the first JavaScript of a chat stays small.
 
 When the request ends, the card becomes one line in the history: **Secret API
 saved** (also after a replacement), **declined**, **not saved** with the reason
-Cloud gave (an expired sign-in, or no longer allowed to edit the automation),
-or **Request for secret API no longer open** after the window's two-minute
-lease ran out. An answer given in the card moves the focus to that line. The
+Cloud gave (an expired sign-in, or no longer allowed to edit the automation or
+write in the chat), **Secret API: Cloud did not answer, so it may be saved**
+when the window's lease ended while the save was on its way, or **Request for
+secret API no longer open** after the window's two-minute lease ran out. An answer given in the card moves the focus to that line. The
 line is rebuilt from the stored `{ configured, name }` or one fixed failure
 sentence (`CODE_SECRET_ERRORS`), so it reads the same after a reload and never
 contains the value. A call that never showed a card, such as when the person

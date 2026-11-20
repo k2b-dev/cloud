@@ -16,6 +16,7 @@ const messages = /* @__PURE__ */ i18n.define({
       expired: "Request for secret {name} no longer open. Nothing was saved.",
       signIn: "Secret {name} not saved: your sign-in expired. Nothing was saved.",
       editor: "Secret {name} not saved: you can no longer edit {title}, or it no longer exists. Nothing was saved.",
+      chat: "Secret {name} not saved: you can no longer write in this chat, or it no longer exists. Nothing was saved.",
       theAutomation: "the automation",
       unknown: "Secret {name}: Cloud did not answer, so it may be saved.",
     },
@@ -27,18 +28,20 @@ const messages = /* @__PURE__ */ i18n.define({
       signIn: "Secret {name} nicht gespeichert: Deine Anmeldung ist abgelaufen. Gespeichert ist nichts.",
       editor:
         "Secret {name} nicht gespeichert: Du darfst {title} nicht mehr bearbeiten, oder es gibt sie nicht mehr. Gespeichert ist nichts.",
+      chat: "Secret {name} nicht gespeichert: Du kannst in diesem Chat nicht mehr schreiben, oder es gibt ihn nicht mehr. Gespeichert ist nichts.",
       theAutomation: "die Automation",
       unknown: "Secret {name}: Keine Antwort von Cloud, vielleicht gespeichert.",
     },
   },
 });
 
-type Outcome = "saved" | "declined" | "expired" | "access" | "unknown";
+type Outcome = "saved" | "declined" | "expired" | "access" | "signIn" | "unknown";
 const OUTCOME_LINE: Record<Outcome, Pick<ChatOutcomeLine, "tone" | "icon">> = {
   saved: { tone: "done", icon: "ti ti-shield-check" },
   declined: { tone: "off", icon: "ti ti-key-off" },
   expired: { tone: "off", icon: "ti ti-clock-x" },
   access: { tone: "error", icon: "ti ti-lock" },
+  signIn: { tone: "error", icon: "ti ti-lock" },
   unknown: { tone: "warning", icon: "ti ti-help-circle" },
 };
 const ENDED: Partial<Record<SecretRequestState["state"], Outcome>> = {
@@ -46,6 +49,7 @@ const ENDED: Partial<Record<SecretRequestState["state"], Outcome>> = {
   declined: "declined",
   expired: "expired",
   "access-lost": "access",
+  "signed-out": "signIn",
   "outcome-unknown": "unknown",
 };
 /** Failures that end a call without a card ever showing: Gustav says why in his answer, the timeline shows no line. */
@@ -65,6 +69,7 @@ export const storedSecretOutcome = (state: string, result: unknown): Outcome | n
   const error = typeof result === "object" && result !== null && "error" in result ? result.error : null;
   if (typeof error === "string" && NO_CARD.includes(error)) return null;
   if (error === CODE_SECRET_ERRORS.accessLost) return "access";
+  if (error === CODE_SECRET_ERRORS.signInExpired) return "signIn";
   if (error === CODE_SECRET_ERRORS.unknown) return "unknown";
   return "expired";
 };
@@ -77,7 +82,7 @@ const framed = (frame: string, name: string, title?: string): JSX.Element => {
 
 const loadCard = () => importOnDemand(() => import("./SecretRequestCard"));
 let cardModule: ReturnType<typeof loadCard> | undefined;
-/** Starts loading the card with the call, so it is there when the controller has read the secret list. */
+/** Loads the card once per window, as soon as an entry waits for this browser or finds its controller. */
 export const preloadSecretCard = () => {
   cardModule ??= loadCard().then((loaded) => {
     // A failed load may be tried again by the next call; importOnDemand already offered a reload.
@@ -107,11 +112,6 @@ export function SecretRequestEntry(props: AiSecretRequestView & { conversationId
     return typeof value === "object" && value !== null ? value : null;
   };
   const automation = () => target() !== null;
-  /** Where Gustav asked the value to go, so a card can name a destination that changed since. */
-  const requested = () => {
-    const current = target();
-    return { origin: text(arg("origin")), pathPrefix: current ? text(Reflect.get(current, "pathPrefix")) : "/" };
-  };
   // The controller of this window stays once found: its outcome shows until the stored result arrives.
   const [controller, setController] = createSignal<SecretRequestController>();
   const [state, setState] = createSignal<SecretRequestState>();
@@ -177,7 +177,8 @@ export function SecretRequestEntry(props: AiSecretRequestView & { conversationId
     const words = t();
     const current = state();
     const title = current && current.title ? `„${current.title}“` : words.theAutomation;
-    const frame = key === "access" ? (automation() ? words.editor : words.signIn) : words[key];
+    // The reason follows the cause the controller or the stored error names, never the mode alone.
+    const frame = key === "access" ? (automation() ? words.editor : words.chat) : words[key];
     return { ...OUTCOME_LINE[key], text: framed(frame, name(), title), time: time() };
   };
 
@@ -204,7 +205,6 @@ export function SecretRequestEntry(props: AiSecretRequestView & { conversationId
                     controller={current().controller}
                     state={current().state}
                     anchorId={props.block().id}
-                    requested={requested()}
                     timeZone={props.timeZone}
                     onAnswer={() => {
                       answeredHere = true;

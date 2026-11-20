@@ -147,6 +147,27 @@ const CARDS: Record<string, Partial<Card>> = {
   },
   "zu-lang+": { line: "Zu lang für einen Schlüssel. Kopiere nur den Schlüssel.", invalid: true },
   "c-bad-input+": { line: "Cloud nimmt diesen Wert nicht an. Kopiere nur den Schlüssel.", invalid: true },
+  "c-ziel-bleibt+": {
+    sentence: "Paketdienst_API ersetzen?",
+    facts: [
+      "Hinterlegt am 03.11. von Lea Brandt",
+      CODE_FACTS[0]!,
+      "Geht an alt.paketdienst-beispiel.de/api, wie bisher; ein anderes Ziel richtet ihr in der Automation ein",
+    ],
+    line: `${SAFE} Gilt ab dem nächsten Lauf, ohne neue Freigabe.`,
+    confirm: "Ersetzen",
+  },
+  // Nobody moved the destination: the retry never claims "changed meanwhile".
+  "c-ziel-bleibt-wiederholen+": {
+    facts: [
+      "Hinterlegt am 03.11. von Lea Brandt",
+      CODE_FACTS[0]!,
+      "Geht an alt.paketdienst-beispiel.de/api, wie bisher; ein anderes Ziel richtet ihr in der Automation ein",
+    ],
+    line: `${SAFE} Gilt ab dem nächsten Lauf, ohne neue Freigabe.`,
+    confirm: "Ersetzen",
+    value: SECRET_FIXTURE_VALUE,
+  },
 };
 /** Every scene that ends: the one line the timeline keeps, live and after a reload. */
 const LINES: Record<string, { live: string | null; reload: string | null }> = {
@@ -175,6 +196,16 @@ const LINES: Record<string, { live: string | null; reload: string | null }> = {
     reload: "Anfrage nach Secret Paketdienst_API nicht mehr offen. Gespeichert ist nichts.",
   },
   "c-nicht-verwaltet": { live: null, reload: null },
+  // The line follows the cause, not the mode: an expired sign-in at an automation, a chat that is gone.
+  "c-anmeldung+": {
+    live: "Secret Paketdienst_API nicht gespeichert: Deine Anmeldung ist abgelaufen. Gespeichert ist nichts.",
+    reload: "Secret Paketdienst_API nicht gespeichert: Deine Anmeldung ist abgelaufen. Gespeichert ist nichts.",
+  },
+  "f-chat-weg+": {
+    live: "Secret Paketdienst-API nicht gespeichert: Du kannst in diesem Chat nicht mehr schreiben, oder es gibt ihn nicht mehr. Gespeichert ist nichts.",
+    reload:
+      "Secret Paketdienst-API nicht gespeichert: Du kannst in diesem Chat nicht mehr schreiben, oder es gibt ihn nicht mehr. Gespeichert ist nichts.",
+  },
   "c-ausgang-unklar+": {
     live: "Secret Paketdienst_API: Keine Antwort von Cloud, vielleicht gespeichert.",
     reload: "Secret Paketdienst_API: Keine Antwort von Cloud, vielleicht gespeichert.",
@@ -267,6 +298,7 @@ test("a held card outcome from another window takes no focus here", async () => 
 
 test("a stored failure names its outcome only from the fixed sentences", () => {
   expect(storedSecretOutcome("failed", { failed: true, error: "Secret was not saved." })).toBe("access");
+  expect(storedSecretOutcome("failed", { failed: true, error: "Secret was not saved because the sign-in expired." })).toBe("signIn");
   expect(storedSecretOutcome("failed", { failed: true, error: "Secret entry is unavailable." })).toBeNull();
   expect(storedSecretOutcome("failed", { failed: true, error: "anything else" })).toBe("expired");
   expect(storedSecretOutcome("not_run", undefined)).toBe("expired");

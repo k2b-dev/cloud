@@ -1,4 +1,4 @@
-import { CODE_SECRET_ERRORS, type CodeToolFailure } from "@k2b/cloud/ai/browser";
+import { CODE_SECRET_ERRORS, CODE_SECRET_GUIDANCE, type CodeToolFailure } from "@k2b/cloud/ai/browser";
 import { valueAllowed } from "@k2b/cloud/browser/code-secrets";
 import type { SecretPerson } from "@k2b/cloud/shared";
 import { LIMITS } from "./contracts";
@@ -18,7 +18,7 @@ export type SecretRequestEntry = {
   valueSetAt: string | null;
   valueSetBy: SecretPerson | null;
 };
-export type SecretRequestResult = { configured: boolean; name: string } | CodeToolFailure;
+export type SecretRequestResult = { configured: boolean; name: string; guidance?: string } | CodeToolFailure;
 export type SecretRequestFailure = { ok: false; code: string; status: number | null };
 export type SecretRequestPorts = {
   list(): Promise<{ ok: true; entry: SecretRequestEntry | null; title?: string | null } | SecretRequestFailure>;
@@ -30,7 +30,12 @@ type Facts = {
   title: string | null;
   mode: "chat" | "code";
   name: string;
+  /** Where the value goes: Gustav's request for a new name, otherwise the stored destination, which the card never moves. */
   binding: SecretRequestBinding;
+  /** A stored destination that differs from Gustav's request; the card keeps it and says so. */
+  kept: boolean;
+  /** The destination shown before someone else changed it meanwhile. */
+  before: SecretRequestBinding | null;
   existing: SecretRequestEntry | null;
 };
 type Field = Facts & { value: string; revealed: boolean };
@@ -53,15 +58,11 @@ export type SecretRequestState =
       Field
     >
   | (Field & { state: "not-saved"; reason: "bad-input" | "rejected" | "destination-refused" | "check-failed" })
-  | States<"saved" | "declined" | "expired" | "access-lost" | "outcome-unknown", Facts>
+  | States<"saved" | "declined" | "expired" | "access-lost" | "signed-out" | "outcome-unknown", Facts>
   | (Facts & { state: "unavailable"; reason: "editor-required" | "destination-refused" | "check-failed" | "list-failed" });
 
 const failure = (error: string, guidance?: string): CodeToolFailure => ({ failed: true, error, ...(guidance ? { guidance } : {}) });
-const editorRequired = () =>
-  failure(
-    CODE_SECRET_ERRORS.editorRequired,
-    "Only people who can edit this automation may enter its secret. Ask an editor; never ask for the value in chat.",
-  );
+const editorRequired = () => failure(CODE_SECRET_ERRORS.editorRequired, CODE_SECRET_GUIDANCE.editorRequired);
 const equalBinding = (a: SecretRequestBinding, b: SecretRequestBinding) =>
   a.origin === b.origin &&
   a.pathPrefix === b.pathPrefix &&
@@ -71,27 +72,41 @@ const equalBinding = (a: SecretRequestBinding, b: SecretRequestBinding) =>
 
 /** Window-local, headless state. Subscribers must never persist or log a field state. */
 export function createSecretRequest(input: SecretRequestInput, ports: SecretRequestPorts) {
+  const requested: SecretRequestBinding = {
+    origin: input.origin,
+    pathPrefix: input.target?.pathPrefix ?? "/",
+    headers: [input.header],
+    ...(input.target ? {} : { prefix: input.prefix }),
+  };
   const facts: Facts = {
     target: input.target ? { code: input.target.code } : null,
     title: null,
     mode: input.target ? "code" : "chat",
     name: input.name,
     existing: null,
-    binding: {
-      origin: input.origin,
-      pathPrefix: input.target?.pathPrefix ?? "/",
-      headers: [input.header],
-      ...(input.target ? {} : { prefix: input.prefix }),
-    },
+    binding: requested,
+    kept: false,
+    before: null,
   };
-  // Only after a card showed: Cloud answers "not found" alike for lost rights and a deleted automation, so no reason.
-  const accessFailure = () =>
-    failure(
-      CODE_SECRET_ERRORS.accessLost,
-      input.target
-        ? "Only people who can edit this automation may enter its secret. Ask an editor; never ask for the value in chat."
-        : "Sign in again, then ask for a new secret request. Never send the value in chat.",
-    );
+  // Replacing an automation's value never moves its destination: approved versions keep sending to the stored one.
+  const adopt = (entry: SecretRequestEntry | null) => {
+    facts.existing = entry;
+    if (!input.target || !entry) return;
+    facts.binding = entry.binding;
+    facts.kept = !equalBinding(requested, entry.binding);
+  };
+  const signedOut = (status: number | null) => status === 401;
+  /**
+   * Only after a card showed. An expired sign-in says so; otherwise Cloud answers "not found" alike for lost rights
+   * and a deleted automation or chat, so no reason.
+   */
+  const accessFailure = (status: number | null) =>
+    signedOut(status)
+      ? failure(CODE_SECRET_ERRORS.signInExpired, CODE_SECRET_GUIDANCE.signIn)
+      : failure(CODE_SECRET_ERRORS.accessLost, input.target ? CODE_SECRET_GUIDANCE.editorRequired : CODE_SECRET_GUIDANCE.chatAccess);
+  const endAccess = (status: number | null) => finish(signedOut(status) ? "signed-out" : "access-lost", accessFailure(status));
+  const accessEnded = (failed: SecretRequestFailure) =>
+    failed.code === "NOT_FOUND" || failed.code === "FORBIDDEN" || failed.status === 401 || failed.status === 403;
   let state: SecretRequestState = { ...facts, state: "checking" };
   let ended = false;
   // Only a request that may have reached the store makes the outcome unknown; the destination check before it does not.
@@ -105,7 +120,10 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
     state = next;
     for (const listener of listeners) listener(state);
   };
-  const finish = (next: "saved" | "declined" | "expired" | "access-lost" | "outcome-unknown", result: SecretRequestResult) => {
+  const finish = (
+    next: "saved" | "declined" | "expired" | "access-lost" | "signed-out" | "outcome-unknown",
+    result: SecretRequestResult,
+  ) => {
     if (ended) return;
     ended = true;
     emit({ ...facts, state: next });
@@ -142,7 +160,7 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
         listed.code === "FORBIDDEN" || listed.code === "NOT_FOUND" ? "editor-required" : "list-failed",
         listed.code === "FORBIDDEN" || listed.code === "NOT_FOUND" ? editorRequired() : failure(CODE_SECRET_ERRORS.listFailed),
       );
-    facts.existing = listed.entry;
+    adopt(listed.entry);
     facts.title = listed.title ?? null;
     if (input.target) {
       const allowed = await check();
@@ -160,16 +178,15 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
     const listed = await read();
     if (ended) return false;
     if (!listed.ok) {
-      if (listed.code === "NOT_FOUND" || listed.code === "FORBIDDEN" || listed.status === 401 || listed.status === 403)
-        finish("access-lost", accessFailure());
+      if (accessEnded(listed)) endAccess(listed.status);
       else emit({ ...facts, state: "no-answer", value, revealed });
       return false;
     }
     const previous = facts.existing;
-    facts.existing = listed.entry;
     // A conflict adopts the current destination. Never undo another editor's binding change.
     const changedTarget = Boolean(input.target && listed.entry && !equalBinding(facts.binding, listed.entry.binding));
-    if (input.target && listed.entry) facts.binding = listed.entry.binding;
+    if (changedTarget) facts.before = facts.binding;
+    adopt(listed.entry);
     const changed =
       previous?.revision !== listed.entry?.revision ||
       previous?.configured !== listed.entry?.configured ||
@@ -213,7 +230,8 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       written = await ports.save({
         value,
         revision: facts.existing?.revision ?? null,
-        ...(!facts.existing || !equalBinding(facts.binding, facts.existing.binding) ? { binding: facts.binding } : {}),
+        // Only a new name gets a destination; an existing one keeps its own.
+        ...(!facts.existing ? { binding: facts.binding } : {}),
       });
     } catch {
       written = { ok: false, code: "UNAVAILABLE", status: null };
@@ -221,13 +239,17 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       writing = false;
     }
     if (ended) return;
-    if (written.ok) return finish("saved", { configured: true, name: input.name });
+    if (written.ok)
+      return finish("saved", {
+        configured: true,
+        name: input.name,
+        ...(facts.kept ? { guidance: CODE_SECRET_GUIDANCE.keptDestination } : {}),
+      });
     if (written.code === "CONFLICT" || written.code === "HTTP_CONFLICT" || written.status === 409) {
       await refresh(value, current.revealed, true);
       return;
     }
-    if (written.code === "NOT_FOUND" || written.code === "FORBIDDEN" || written.status === 401 || written.status === 403)
-      return finish("access-lost", accessFailure());
+    if (accessEnded(written)) return endAccess(written.status);
     if (written.code === "BAD_INPUT" || (input.target && written.status !== null && written.status < 500)) {
       emit({
         ...facts,
@@ -301,13 +323,7 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
     },
     expire() {
       if (writing) {
-        finish(
-          "outcome-unknown",
-          failure(
-            CODE_SECRET_ERRORS.unknown,
-            "Check the current secret metadata before trying again. No entry was replayed; never send the value in chat.",
-          ),
-        );
+        finish("outcome-unknown", failure(CODE_SECRET_ERRORS.unknown, CODE_SECRET_GUIDANCE.unknown));
         return;
       }
       finish("expired", failure(CODE_SECRET_ERRORS.expired));
