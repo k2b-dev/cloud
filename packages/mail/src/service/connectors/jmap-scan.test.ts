@@ -423,6 +423,16 @@ describe("readJmapAccountStart", () => {
     }
   });
 
+  test("reports changed when a mailbox is destroyed between the query and its get", async () => {
+    const { f, start } = await setup();
+    f.controls.transform = ([name, args, id]) => {
+      const list = Array.isArray(args.list) ? args.list : [];
+      if (name !== "Mailbox/get" || list.length === 0) return [name, args, id];
+      return [name, { ...args, state: "moved", list: list.slice(1), notFound: ["a"] }, id];
+    };
+    expect(await start()).toEqual({ kind: "changed" });
+  });
+
   test("reports changed when the folder queryState moves between pages", async () => {
     const { f, start } = await setup(2);
     let pages = 0;

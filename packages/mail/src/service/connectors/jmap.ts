@@ -123,11 +123,12 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
 }
 
 export type JmapMailbox = z.infer<typeof mailboxSchema>;
-export type JmapMailboxInventory = { kind: "inventory"; mailboxes: Map<string, JmapMailbox>; state: string | null } | { kind: "changed" };
+export type JmapMailboxInventory = { kind: "inventory"; mailboxes: Map<string, JmapMailbox> } | { kind: "changed" };
 
 /**
  * The bounded folder inventory shared by discovery and the account snapshot. Every query page
- * shares one queryState and every get one state (null without mailboxes); otherwise `changed`.
+ * shares one queryState and every get one state; otherwise `changed`. With `expectedState`,
+ * the first get must already carry that state.
  */
 export async function readJmapMailboxInventory(
   session: JmapSession,
@@ -135,6 +136,7 @@ export async function readJmapMailboxInventory(
   accountId: string,
   signal: AbortSignal,
   deps: JmapTransportDependencies = {},
+  expectedState?: string,
 ): Promise<JmapMailboxInventory> {
   const { nameBytes, objectBytes, batchSize } = jmapMailboxBudget(session, accountId);
   const method = async (name: string, args: Record<string, unknown>, maxBytes: number) => {
@@ -183,7 +185,7 @@ export async function readJmapMailboxInventory(
   } while (ids.length < total);
 
   const mailboxes = new Map<string, JmapMailbox>();
-  let state: string | undefined;
+  let state = expectedState;
   for (let offset = 0; offset < ids.length; offset += batchSize) {
     const batch = ids.slice(offset, offset + batchSize);
     const parsed = mailboxGetSchema.safeParse(
@@ -201,7 +203,7 @@ export async function readJmapMailboxInventory(
       mailboxes.set(mailbox.id, mailbox);
     }
   }
-  return { kind: "inventory", mailboxes, state: state ?? null };
+  return { kind: "inventory", mailboxes };
 }
 
 export function mapJmapMailboxes(session: JmapSession, accountId: string, mailboxes: ReadonlyMap<string, JmapMailbox>): JmapRemoteFolder[] {

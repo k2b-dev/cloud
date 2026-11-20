@@ -383,7 +383,7 @@ suiteFor("jmap")("Mail account scan conformance against CI Stalwart", () => {
         console.info("JMAP_STALWART_SCAN", JSON.stringify({ restarts, pages, totalReported }));
       }
     });
-  }, 60_000);
+  }, 30_000);
 
   test("3 Existence finds present ids and reports a deleted id as notFound", async () => {
     await withFixtures("Existence", async (f) => {

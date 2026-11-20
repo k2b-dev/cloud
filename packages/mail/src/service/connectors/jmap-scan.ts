@@ -302,8 +302,9 @@ export async function readJmapAccountStart(
   };
   const emailState = await emptyGet("Email/get");
   const mailboxState = await emptyGet("Mailbox/get");
-  const inventory = await readJmapMailboxInventory(session, authorization, accountId, signal, deps);
-  if (inventory.kind === "changed" || (inventory.state !== null && inventory.state !== mailboxState)) return { kind: "changed" };
+  // A mailbox destroyed after the query is a moved state for this snapshot, not an invalid response.
+  const inventory = await readJmapMailboxInventory(session, authorization, accountId, signal, deps, mailboxState);
+  if (inventory.kind === "changed") return { kind: "changed" };
   // A mailbox created after the last get would otherwise be missing from a snapshot labeled mailboxState.
   if ((await emptyGet("Mailbox/get")) !== mailboxState) return { kind: "changed" };
   const folders = mapJmapMailboxes(session, accountId, inventory.mailboxes);
