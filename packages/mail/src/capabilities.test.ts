@@ -2781,9 +2781,8 @@ describe("mail capabilities", () => {
       spyOn(reviewReaders, "loadSendReviewContent").mockResolvedValue(fail(error));
       spyOn(commands, "createActorCommand").mockResolvedValue(fail(error));
       const localizedContext = { ...context, locale, idempotencyKey: "localized-draft-rejection" };
-      const createInput = DraftCreateInputSchema.parse({ mailboxId, senderIdentityId, subject: "Release", body: "Hello" });
+      const createInput = DraftCreateInputSchema.parse({ senderIdentityId, subject: "Release", body: "Hello" });
       const sendInput = DraftSendInputSchema.parse({
-        mailboxId,
         draftId,
         senderIdentityId,
         expectedRevision: 2,
@@ -2841,7 +2840,7 @@ describe("mail capabilities", () => {
     });
     spyOn(collaboration, "listEligibleAssignees").mockResolvedValue([]);
     const reviewed = await mailCapabilities.actions["conversation.assign"].review(
-      { mailboxId, conversationId, assigneeUserIds: [userId], mode: "replace" },
+      { conversationId, assigneeUserIds: [userId], mode: "replace" },
       { ...context, locale: "de" },
     );
     expect(reviewed).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
@@ -2851,7 +2850,7 @@ describe("mail capabilities", () => {
       fail(err.badInput("Zuständige müssen aktive Benutzer mit Schreibzugriff auf das Postfach oder mit zugewiesenem Zugriff sein.")),
     );
     const result = await mailCapabilities.actions["conversation.assign"].run(
-      { mailboxId, conversationId, assigneeUserIds: [userId], mode: "replace" },
+      { conversationId, assigneeUserIds: [userId], mode: "replace" },
       { ...context, locale: "de", idempotencyKey: "assignment-rejection" },
     );
     expect(result).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
