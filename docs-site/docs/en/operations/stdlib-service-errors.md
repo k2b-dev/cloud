@@ -42,4 +42,6 @@ stdlib 0.36 adds optional DATEV document links and file-only `documentImage`
 documents. Code consuming `DatevXmlFileDocument` must check
 `document.dataFile !== undefined` before reading ledger metadata. Existing
 ledger documents retain their output. Cloud's current consumers do not use the
-expanded DATEV XML document types.
+expanded DATEV XML document types. Grids stamps newly issued financial artifacts
+with stdlib 0.36.0 as the renderer and validator version; existing artifact
+provenance remains unchanged.
