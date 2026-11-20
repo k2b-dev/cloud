@@ -43,19 +43,27 @@ afterEach(() => {
   dom.cleanup();
 });
 
-const style = (element: Element | null | undefined) => element?.getAttribute("style") ?? "";
+/** One custom property of an element's inline style, as the browser reads it. */
+const property = (selector: string, name: string) =>
+  dom.root.querySelector<HTMLElement>(selector)?.style.getPropertyValue(name).trim() ?? "";
+/** Each declaration of a style string, as `[name, value]`. */
+const declarations = (style: string | undefined) =>
+  (style ?? "").split(";").map((declaration) => {
+    const [name = "", value = ""] = declaration.split(":").map((part) => part.trim());
+    return [name, value] as const;
+  });
 
 test("the app bar paints each icon in its icon colour while the selected entry keeps the app's accent", async () => {
   const { default: RailApps } = await import("./RailApps");
   const dispose = render(() => createComponent(RailApps, { apps, settings, currentPath: "/app/stock" }), dom.root);
   try {
-    const stock = style(dom.root.querySelector('a[href="/app/stock"]'));
-    // The selection colour is the accent's, exactly as without an icon colour.
-    expect(stock).toStartWith(`${appAccentStyle("#0284c7")};`);
-    expect(stock).toContain("--app-bar-icon-light:#c2410c");
-    const notes = style(dom.root.querySelector('a[href="/app/notes"]'));
-    expect(notes).not.toContain("--app-accent:");
-    expect(notes).toContain("--app-bar-icon-light:#4d7c0f");
+    const stock = 'a[href="/app/stock"]';
+    // The selection colours are the accent's, exactly as without an icon colour.
+    for (const [name, value] of declarations(appAccentStyle("#0284c7"))) expect(property(stock, name)).toBe(value);
+    expect(property(stock, "--app-bar-icon-light")).toBe("#c2410c");
+    const notes = 'a[href="/app/notes"]';
+    expect(property(notes, "--app-accent")).toBe("");
+    expect(property(notes, "--app-bar-icon-light")).toBe("#4d7c0f");
   } finally {
     dispose();
   }
@@ -65,9 +73,8 @@ test("the app grid tiles take the icon colour, not the accent", async () => {
   const { AppLaunchpadPanel } = await import("./AppLaunchpadPanel");
   const dispose = render(() => createComponent(AppLaunchpadPanel, { apps, legalLinks: [], close: () => {} }), dom.root);
   try {
-    const icon = (href: string) => style(dom.root.querySelector(`a[href="${href}"] .app-icon`));
-    expect(icon("/app/stock")).toBe("--app-icon-color:#c2410c");
-    expect(icon("/app/notes")).toBe("--app-icon-color:#4d7c0f");
+    expect(property('a[href="/app/stock"] .app-icon', "--app-icon-color")).toBe("#c2410c");
+    expect(property('a[href="/app/notes"] .app-icon', "--app-icon-color")).toBe("#4d7c0f");
   } finally {
     dispose();
   }
