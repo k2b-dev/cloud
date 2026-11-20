@@ -148,20 +148,42 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   const confirmOff = () => Boolean(props.waiting ?? props.unavailable);
   const open = () => props.state === "open";
 
-  const answer = (choice: ChatDecisionAnswer, enabled: boolean) => {
-    if (!enabled || !open() || answeredHere()) return;
-    setAnsweredHere(true);
+  // The answer whose promise still runs. Until it settles the question takes no answer at all, so a second press, a
+  // held key or another answer sends nothing twice.
+  const [pending, setPending] = createSignal<string>();
+  const select = (key: string, choice: ChatDecisionAnswer, settled: (async: boolean) => void) => {
+    let result: void | Promise<void>;
     try {
-      const result = choice.onSelect();
-      if (result instanceof Promise) result.catch((error: unknown) => props.onAnswerError?.(error));
+      result = choice.onSelect();
     } catch (error) {
       props.onAnswerError?.(error);
+      settled(false);
+      return;
     }
-    // A host that keeps the question open (it could not take the answer) gets working buttons back.
-    queueMicrotask(() => {
-      if (open()) setAnsweredHere(false);
-    });
+    if (!(result instanceof Promise)) {
+      settled(false);
+      return;
+    }
+    setPending(key);
+    result
+      .catch((error: unknown) => props.onAnswerError?.(error))
+      .finally(() => {
+        setPending(undefined);
+        settled(true);
+      });
   };
+
+  const answer = (key: string, choice: ChatDecisionAnswer, enabled: boolean) => {
+    if (!enabled || !open() || answeredHere() || pending()) return;
+    setAnsweredHere(true);
+    // A host that keeps the question open (it could not take the answer) gets working buttons back.
+    const release = () => {
+      if (open()) setAnsweredHere(false);
+    };
+    select(key, choice, (async) => (async ? release() : queueMicrotask(release)));
+  };
+  const answerOff = () => (pending() ? "true" : undefined);
+  const answerBusy = (key: string) => (pending() === key ? "true" : undefined);
 
   createEffect(
     on(
@@ -201,7 +223,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   const confirm = () => {
     if (props.confirm?.busy) return;
     const chosen = props.remember && remembered() && !editing() ? props.remember : props.confirm;
-    if (chosen) answer(chosen, !confirmOff());
+    if (chosen) answer("confirm", chosen, !confirmOff());
   };
 
   return (
@@ -339,8 +361,9 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                     wrap
                     variant="text"
                     disabled={Boolean(props.waiting)}
+                    aria-disabled={answerOff()}
                     onClick={() => {
-                      if (!props.waiting) void back().onSelect();
+                      if (!props.waiting && !pending()) void back().onSelect();
                     }}
                   >
                     <Show when={back().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
@@ -349,14 +372,16 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                 )}
               </Show>
               <For each={props.more ?? []}>
-                {(more) => (
+                {(more, index) => (
                   <Button
                     class="k2b-chat-decision__answer"
                     wrap
                     variant="secondary"
                     disabled={Boolean(props.waiting)}
+                    aria-disabled={answerOff()}
+                    aria-busy={answerBusy(`more-${index()}`)}
                     onClick={() => {
-                      if (!props.waiting) void Promise.resolve(more.onSelect()).catch((error: unknown) => props.onAnswerError?.(error));
+                      if (!props.waiting && !pending()) select(`more-${index()}`, more, () => undefined);
                     }}
                   >
                     <Show when={more.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
@@ -371,7 +396,9 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                     wrap
                     variant={editing() ? "text" : "secondary"}
                     disabled={Boolean(props.waiting)}
-                    onClick={() => answer(decline(), !props.waiting)}
+                    aria-disabled={answerOff()}
+                    aria-busy={answerBusy("decline")}
+                    onClick={() => answer("decline", decline(), !props.waiting)}
                   >
                     <Show when={decline().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
                     {decline().label}
@@ -385,9 +412,9 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                     wrap
                     variant={editing() ? "secondary" : "ai"}
                     disabled={confirmOff()}
-                    aria-disabled={confirmAnswer().busy ? "true" : undefined}
-                    aria-busy={confirmAnswer().busy ? "true" : undefined}
-                    data-busy={confirmAnswer().busy ? "" : undefined}
+                    aria-disabled={confirmAnswer().busy ? "true" : answerOff()}
+                    aria-busy={confirmAnswer().busy ? "true" : answerBusy("confirm")}
+                    data-busy={confirmAnswer().busy || pending() === "confirm" ? "" : undefined}
                     onClick={confirm}
                   >
                     <Show when={confirmAnswer().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>

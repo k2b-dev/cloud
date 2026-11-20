@@ -189,7 +189,11 @@ lead the person to an open question from elsewhere, such as a list of waiting
 questions, scroll to its `anchorId` and focus `.k2b-chat-decision__sentence`
 (`tabindex="-1"`): any focus that does not come from a press on the sentence
 itself briefly highlights it the same way. Handle rejected answer callbacks
-with `onAnswerError` and show a recoverable outcome.
+with `onAnswerError` and show a recoverable outcome. While the promise an
+answer's `onSelect` returns is pending, the question takes no answer at all:
+every answer has `aria-disabled`, the pressed one `aria-busy`, and a second
+press or a held key sends nothing. Once the promise settles, resolved or
+rejected, the answers work again if the question is still open.
 
 Pass `Chat.Outcome` only the lines this flow can reach. Every supplied line
 occupies the same grid cell, including hidden alternatives, so the longest line
