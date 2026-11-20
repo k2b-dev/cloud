@@ -147,6 +147,7 @@ suiteFor(
       retrySourceTurnId: input.retrySourceTurnId,
       runConfig: {
         kind: "chat",
+        chatId: input.chatId,
         input: input.input,
         actor: input.actor,
         turnTrigger: input.turnTrigger,
