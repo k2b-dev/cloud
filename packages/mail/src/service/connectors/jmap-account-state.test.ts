@@ -38,6 +38,10 @@ test("round-trips every scan step with its counters", () => {
       scan: { ...scan, reason: "reconciliation", step, pages: 4, restarts: 2, stalledAt: "2026-11-20T00:15:00Z" },
     };
     expect(readJmapSyncState(serializeJmapSyncState(state)), step.kind).toEqual(state);
+    for (const reason of ["initial", "repair"] as const) {
+      const other = { ...state, scan: { ...scan, reason, step } };
+      expect(readJmapSyncState(other), `${step.kind} ${reason}`).toEqual(other);
+    }
   }
 });
 
@@ -60,7 +64,7 @@ for (const value of [
   { version: 2, emailState: "Email:0", mailboxState: null, scan },
   { ...full, scan: {} },
   { ...full, scan: { ...scan, extra: true } },
-  { ...full, scan: { ...scan, reason: "repair" } },
+  { ...full, scan: { ...scan, reason: "rebuild" } },
   { ...full, scan: { ...scan, startedAt: "2026-11-20T01:00:00+01:00" } },
   { ...full, scan: { ...scan, startedAt: "yesterday" } },
   { ...full, scan: { ...scan, stalledAt: "2026-11-20" } },

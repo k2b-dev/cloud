@@ -57,7 +57,8 @@ type SupersededResult = { status: "superseded"; cause: "account_changed" | "fold
 export type JmapAccountCommitResult = { status: "committed"; hasMore: boolean; stats: Stats } | SupersededResult;
 export type JmapAccountSyncResult =
   | JmapAccountCommitResult
-  | { status: "reconciliation_required"; cause: JmapReconciliationRequiredError["cause"] };
+  /** `axis` names the rejected state: a mailbox state calls for a repair, an Email state for a reconciliation. */
+  | { status: "reconciliation_required"; cause: JmapReconciliationRequiredError["cause"]; axis: "mailbox" | "email" };
 /** `retry`: a state moved while the start snapshot was read; nothing was written. */
 export type JmapAccountScanStartResult = { status: "committed"; stats: Stats } | SupersededResult | { status: "retry" };
 export type JmapAccountScanResult =
@@ -66,7 +67,9 @@ export type JmapAccountScanResult =
   /** No scan is running. */
   | { status: "idle" }
   /** The scan restarted too often; it waits until the stall budget's pause has passed. */
-  | { status: "stalled" };
+  | { status: "stalled" }
+  /** Mail changed since the stored Email state: the delta runs first, so new mail arrives once. */
+  | { status: "delta_required" };
 
 export class JmapInitialSyncRequiredError extends Error {
   readonly code = "JMAP_INITIAL_SYNC_REQUIRED";
@@ -150,6 +153,8 @@ function validateScanBatch(params: Account & { beforeState: JmapSyncState | null
   const step = params.beforeState?.scan?.step;
   if (!step || (step.kind === "verify") !== (batch.kind === "verify")) throw new RangeError("JMAP scan batch does not match the scan step");
   if (batch.kind === "scan") {
+    // A step read at another Email state could import new mail without its arrival.
+    if (batch.page.emailState !== params.beforeState?.emailState) throw new RangeError("JMAP scan page was read at another Email state");
     if (batch.page.kind === "restart") return;
     const ids = [...batch.page.objects.map((email) => email.id), ...batch.page.notFoundIds];
     if (ids.length > Math.min(ENVELOPE_BATCH_SIZE, params.session.core.maxObjectsInGet) || new Set(ids).size !== ids.length)
@@ -170,7 +175,10 @@ function validateScanBatch(params: Account & { beforeState: JmapSyncState | null
 function validateBatch(params: Account & { beforeState: JmapSyncState | null; batch: Batch }) {
   const { batch, beforeState } = params;
   if (beforeState) serializeJmapSyncState(beforeState);
-  if (batch.kind === "start") return;
+  if (batch.kind === "start") {
+    if (batch.reason === "repair" && !beforeState?.emailState) throw new RangeError("JMAP scan repair needs a stored Email state");
+    return;
+  }
   if (batch.kind === "scan" || batch.kind === "verify") return validateScanBatch({ ...params, batch });
   if (!beforeState) throw new JmapInitialSyncRequiredError();
   const delta = batch.delta;
@@ -223,7 +231,8 @@ export async function commitJmapAccountBatch(
     if (batch.kind === "start")
       return serializeJmapSyncState({
         version: 2,
-        emailState: batch.start.emailState,
+        // A repair keeps the Email state, so the delta still reports every message since then.
+        emailState: batch.reason === "repair" ? (beforeState?.emailState ?? null) : batch.start.emailState,
         mailboxState: batch.start.mailboxState,
         scan: {
           reason: batch.reason,
@@ -572,7 +581,13 @@ async function claimAccountFence(params: Account, kind: "incremental" | "reconci
       FROM mail.remote_resources resource WHERE run.id = ${fence.runId}::uuid AND run.state = 'running'
         AND resource.id = run.remote_resource_id AND resource.current_fence_token = ${fence.token}`;
   };
-  return { fence, finish };
+  /** Removes the own run without a trace, as a quiet commit does. */
+  const discard = async () => {
+    await db`DELETE FROM mail.sync_runs run USING mail.remote_resources resource
+      WHERE run.id = ${fence.runId}::uuid AND run.state = 'running'
+        AND resource.id = run.remote_resource_id AND resource.current_fence_token = ${fence.token}`;
+  };
+  return { fence, finish, discard };
 }
 
 /**
@@ -590,6 +605,7 @@ export async function syncJmapAccountDelta(params: Account & Network): Promise<J
   const claimed = await claimAccountFence(params, "incremental");
   if (!claimed) return { status: "superseded", cause: "account_changed" };
   const { fence, finish } = claimed;
+  let axis: "mailbox" | "email" = "mailbox";
   try {
     const folders = await readJmapMailboxDelta(
       params.session,
@@ -602,6 +618,7 @@ export async function syncJmapAccountDelta(params: Account & Network): Promise<J
     const folderPending =
       folders.hasMoreChanges ||
       folders.created.length + folders.updated.length + folders.destroyedIds.length + folders.notFoundIds.length > 0;
+    if (!folderPending) axis = "email";
     const batch: Batch = folderPending
       ? { kind: "mailbox", delta: folders }
       : {
@@ -622,16 +639,18 @@ export async function syncJmapAccountDelta(params: Account & Network): Promise<J
     return result.status === "committed" && folderPending ? { ...result, hasMore: true } : result;
   } catch (error) {
     await finish(error instanceof JmapReconciliationRequiredError ? error.code : "JMAP_SYNC_FAILED", "failed");
-    if (error instanceof JmapReconciliationRequiredError) return { status: "reconciliation_required", cause: error.cause };
+    if (error instanceof JmapReconciliationRequiredError) return { status: "reconciliation_required", cause: error.cause, axis };
     throw error;
   }
 }
 
 /**
  * Begins a complete scan: start states and a folder snapshot, committed with a fresh scan step.
- * `initial` needs an uninitialized account; `reconciliation` restarts any valid checkpoint, a
- * running scan included. Existing mail refs stay visible until the scan or its verify pass
- * confirms or removes them. The caller holds the mailbox's provider lease, as for the delta.
+ * `initial` needs an uninitialized account. `reconciliation` (the server rejected the Email state)
+ * takes both states from the server, so mail since the old state arrives without automations.
+ * `repair` (any other restart) keeps the stored Email state and needs one. Both restart any valid
+ * checkpoint, a running scan included. Existing mail refs stay visible until the scan or its
+ * verify pass confirms or removes them. The caller holds the mailbox's provider lease.
  */
 export async function startJmapAccountScan(
   params: Account & Network & { reason: JmapAccountScan["reason"] },
@@ -642,6 +661,7 @@ export async function startJmapAccountScan(
   const beforeState = read.state;
   const initialized = beforeState !== null && beforeState.emailState !== null && beforeState.mailboxState !== null;
   if (params.reason === "initial" && initialized) return { status: "superseded", cause: "account_changed" };
+  if (params.reason === "repair" && !beforeState?.emailState) return { status: "superseded", cause: "account_changed" };
   const claimed = await claimAccountFence(params, "reconcile");
   if (!claimed) return { status: "superseded", cause: "account_changed" };
   const { fence, finish } = claimed;
@@ -691,7 +711,7 @@ export async function syncJmapAccountScan(params: Account & Network): Promise<Jm
   if (scan.stalledAt !== null && Date.parse(scan.stalledAt) > read.now.getTime() - JMAP_SCAN_STALL_MS) return { status: "stalled" };
   const claimed = await claimAccountFence(params, "reconcile");
   if (!claimed) return { status: "superseded", cause: "account_changed" };
-  const { fence, finish } = claimed;
+  const { fence, finish, discard } = claimed;
   try {
     let batch: Extract<Batch, { kind: "scan" | "verify" }>;
     if (scan.step.kind === "verify") {
@@ -719,6 +739,12 @@ export async function syncJmapAccountScan(params: Account & Network): Promise<Jm
         params.signal,
         params.transport,
       );
+      // Mail changed since the stored state: a new message must arrive through the delta first.
+      // Nothing is written and no restart counts; the run leaves no trace.
+      if (page.emailState !== beforeState.emailState) {
+        await discard();
+        return { status: "delta_required" };
+      }
       batch = { kind: "scan", page };
     }
     const result = await commitJmapAccountBatch({ ...params, captureWorkflowTriggers: false, fence, beforeState, batch });

@@ -6,7 +6,9 @@ const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const utc = z.iso.datetime();
 const scanSchema = z
   .object({
-    reason: z.enum(["initial", "reconciliation"]),
+    // initial: an uninitialized account. reconciliation: the server rejected the Email state, so
+    // both states start over. repair: any other restart, which keeps the stored Email state.
+    reason: z.enum(["initial", "reconciliation", "repair"]),
     startedAt: utc,
     step: jmapScanStepSchema,
     pages: count,

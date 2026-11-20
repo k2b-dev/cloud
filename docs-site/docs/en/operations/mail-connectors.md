@@ -18,7 +18,10 @@ Mail can also compare a whole JMAP account with its server in a complete scan.
 The scan reads the account page by page, brings folders, flags, and folder
 memberships up to date, and then removes messages from local folders when the
 server no longer has them. Messages that a scan finds never start incoming-mail
-automations. Only tests call this path.
+automations. When the server rejects the stored mail state, the scan starts from
+the server's current state, so messages that arrived in between do not start
+automations either, as after an IMAP UIDVALIDITY change. Only tests call this
+path.
 
 Adding or changing a provider connection and refreshing its limits checks the
 IMAP hostname for JMAP over HTTPS on port 443, **without credentials**.

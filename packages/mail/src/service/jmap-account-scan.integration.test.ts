@@ -33,7 +33,7 @@ const at = new Date("2026-11-20T00:00:00Z");
 // are outside the window). The driver records them after the first gate; until then only the
 // ratios are checked. Only a new membership costs per message: the shared ingestEnvelope.
 const STATEMENT_BUDGET: Record<
-  "start5" | "new1" | "new7" | "known7" | "flags7" | "restart" | "verify1" | "verify7" | "verifyNone",
+  "start5" | "new1" | "new7" | "known7" | "flags7" | "restart" | "verify1" | "verify7" | "verifyNone" | "deltaRequired",
   number | null
 > = {
   start5: null,
@@ -45,6 +45,8 @@ const STATEMENT_BUDGET: Record<
   verify1: null,
   verify7: null,
   verifyNone: null,
+  // The whole scan call that yields to a pending delta: read, fence and removing its own run.
+  deltaRequired: null,
 };
 let sequence = 0;
 const uuid = () => `00000000-004c-4000-8000-${String(++sequence).padStart(12, "0")}`;
@@ -276,14 +278,16 @@ suite("JMAP account scan", () => {
   }
   const startScan = (reason: JmapAccountScan["reason"] = "initial") => startJmapAccountScan({ ...source.args, reason });
   const step = (signal = source.args.signal) => syncJmapAccountScan({ ...source.args, signal });
+  /** Scan steps until the end; a step that yields to new mail runs the delta first, as the job will. */
   async function scanToEnd(between: Record<number, () => void> = {}) {
     const trace: Array<{ result: JmapAccountScanResult; scan: JmapAccountScan | null }> = [];
     for (let turn = 0; turn < 60; turn++) {
       const result = await step();
       trace.push({ result, scan: await scanOf() });
-      if (result.status !== "committed") throw new Error(`scan: unexpected ${JSON.stringify(result)}`);
+      if (result.status === "delta_required") await deltaToEnd();
+      else if (result.status !== "committed") throw new Error(`scan: unexpected ${JSON.stringify(result)}`);
       between[turn]?.();
-      if (result.scanComplete) return trace;
+      if (result.status === "committed" && result.scanComplete) return trace;
     }
     throw new Error("scan: no end");
   }
@@ -420,48 +424,127 @@ suite("JMAP account scan", () => {
     ] as const)
       put(message(id, at));
     await startScan();
+    // Each journaled change makes the next step yield to the delta, which then removes A and C and
+    // receives X, Y and Z; the scan reads Y and Z later as known mail.
     const trace = await scanToEnd({
       0: () => {
         remove("A");
         change(message("X", "11"));
         change(message("Y", "05"));
       },
-      2: () => {
+      3: () => {
         remove("C");
         change(message("Z", "08"));
       },
     });
+    const bucket = (position: number) => ({
+      kind: "bucket",
+      second: second("08"),
+      position,
+      queryState: position ? expect.any(String) : null,
+    });
     expect(
-      trace.map(({ result, scan }) => [
+      trace.map(({ result, scan }): unknown[] => [
+        result.status,
         result.status === "committed" ? result.stats.imported : null,
         scan?.step ?? null,
         scan?.restarts ?? null,
       ]),
       "race: every step and its counters",
     ).toEqual([
-      [2, { kind: "query", before: second("09") }, 0],
-      [0, { kind: "bucket", second: second("08"), position: 0, queryState: null }, 0],
-      [3, { kind: "bucket", second: second("08"), position: 3, queryState: expect.any(String) }, 0],
-      [0, { kind: "bucket", second: second("08"), position: 0, queryState: null }, 1],
-      [1, { kind: "bucket", second: second("08"), position: 3, queryState: expect.any(String) }, 1],
-      [1, { kind: "query", before: second("08") }, 0],
-      [3, { kind: "verify", afterEmailId: null }, 0],
-      // Local IDs A..H, Y, Z in byte order, three per page; A and C are gone on the server.
-      [0, { kind: "verify", afterEmailId: "C" }, 0],
-      [0, { kind: "verify", afterEmailId: "F" }, 0],
-      [0, { kind: "verify", afterEmailId: "Y" }, 0],
-      [0, null, null],
+      ["committed", 2, { kind: "query", before: second("09") }, 0],
+      ["delta_required", null, { kind: "query", before: second("09") }, 0],
+      ["committed", 0, bucket(0), 0],
+      ["committed", 3, bucket(3), 0],
+      // A changed Email state comes first and counts no restart; the changed list then does.
+      ["delta_required", null, bucket(3), 0],
+      ["committed", 0, bucket(0), 1],
+      ["committed", 1, bucket(3), 1],
+      ["committed", 0, { kind: "query", before: second("08") }, 0],
+      ["committed", 2, { kind: "verify", afterEmailId: null }, 0],
+      // Active local IDs B, D..H, X, Y, Z in byte order, three per page.
+      ["committed", 0, { kind: "verify", afterEmailId: "E" }, 0],
+      ["committed", 0, { kind: "verify", afterEmailId: "H" }, 0],
+      ["committed", 0, { kind: "verify", afterEmailId: "Z" }, 0],
+      ["committed", 0, null, null],
     ]);
     expect(
-      trace.map(({ result }) => (result.status === "committed" ? result.stats.removed : null)),
-      "race: only the verify pass removes",
-    ).toEqual([0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0]);
-    expect((await state()).emailState, "race: the scan leaves the email axis alone").toBe("Email:1");
-    await deltaToEnd();
+      trace.every(({ result }) => result.status !== "committed" || result.stats.removed === 0),
+      "race: the delta removed A and C before any scan commit could",
+    ).toBeTrue();
+    expect((await state()).emailState, "race: the delta caught up").toBe("Email:6");
     expect(await projection(), "race: projection equals the server").toEqual(serverProjection());
     expect(await scanOf(), "race: no scan left").toBeNull();
-    expect(await counts(), "race: only X arrived, through the delta").toMatchObject({ receipts: 1, hydration: 0 });
-    expect(await workflowRows(), "race: one durable trigger").toEqual({ events: 1, deliveries: 1 });
+    expect(await counts(), "race: X, Y and Z each arrived once, through the delta").toMatchObject({ receipts: 3, hydration: 0 });
+    expect(await workflowRows(), "race: one durable trigger each").toEqual({ events: 3, deliveries: 3 });
+    expect(
+      (await runs()).filter((run) => run.state !== "completed"),
+      "race: yielding steps leave no failed run",
+    ).toEqual([]);
+  });
+
+  test("scan: mail after the start, scan before the delta: the scan yields and the mail arrives exactly once", async () => {
+    await listen();
+    put(message("OLD", "10"));
+    await startScan();
+    await setScan({ restarts: 2 });
+    change(message("NEWMAIL", "30"));
+    const before = await state();
+    expect(await step(), "yield: the delta comes first").toEqual({ status: "delta_required" });
+    expect(await state(), "yield: scan step and restart count unchanged").toEqual(before);
+    expect(await counts(), "yield: nothing imported").toMatchObject({ contents: 0, refs: 0, receipts: 0 });
+    expect(await runs(), "yield: no run left behind").toEqual([{ kind: "reconcile", state: "completed", error_code: null }]);
+    await deltaToEnd();
+    expect(await counts(), "delta: one arrival").toMatchObject({ contents: 1, receipts: 1 });
+    await scanToEnd();
+    expect(await counts(), "scan: still one arrival").toMatchObject({ contents: 2, receipts: 1 });
+    expect(await workflowRows(), "scan: one durable trigger").toEqual({ events: 1, deliveries: 1 });
+    expect(await projection(), "scan: projection equals the server").toEqual(serverProjection());
+  });
+
+  test("start: repair keeps the Email state and takes the mailbox state from the snapshot", async () => {
+    await listen();
+    put(message("OLD", "10"));
+    await startScan();
+    await scanToEnd();
+    // Mail the delta has not read yet, and a folder change, before the repair.
+    change(message("M1", "20"));
+    change(message("M2", "21"));
+    source.f.journal.Mailbox.push({ id: "b", kind: "updated" });
+    expect(await startScan("repair"), "repair: committed").toMatchObject({ status: "committed" });
+    expect(await state(), "repair: stored Email state, snapshot mailbox state").toMatchObject({
+      emailState: "Email:1",
+      mailboxState: "Mailbox:2",
+      scan: { reason: "repair", step: { kind: "query", before: null }, pages: 0 },
+    });
+    expect(await step(), "repair: the delta catches up first").toEqual({ status: "delta_required" });
+    await deltaToEnd();
+    expect(await counts(), "repair: M1 and M2 arrive once each").toMatchObject({ receipts: 2 });
+    await scanToEnd();
+    expect(await counts(), "repair: the scan adds no arrival").toMatchObject({ contents: 3, receipts: 2 });
+    expect(await workflowRows(), "repair: two durable triggers").toEqual({ events: 2, deliveries: 2 });
+    expect(await projection(), "repair: projection equals the server").toEqual(serverProjection());
+  });
+
+  test("start: repair needs a stored Email state; reconciliation replaces both states", async () => {
+    expect(await startScan("repair"), "repair: refused").toEqual({ status: "superseded", cause: "account_changed" });
+    expect(await storedState(), "repair: checkpoint stays NULL").toBeNull();
+    expect(await fenceToken(), "repair: no fence").toBe(0);
+    expect(await counts(), "repair: no folder").toMatchObject({ folders: 0, live: 0 });
+    put(message("OLD", "10"));
+    await startScan();
+    await scanToEnd();
+    change(message("LOST", "20"));
+    source.f.journal.Mailbox.push({ id: "b", kind: "updated" });
+    expect(await startScan("reconciliation"), "reconciliation: committed").toMatchObject({ status: "committed" });
+    expect(await state(), "reconciliation: both states from the server").toMatchObject({
+      emailState: "Email:2",
+      mailboxState: "Mailbox:2",
+      scan: { reason: "reconciliation" },
+    });
+    await scanToEnd();
+    // The documented loss: mail since the rejected state is found by the scan, without an arrival.
+    expect(await counts(), "reconciliation: LOST without an arrival").toMatchObject({ contents: 2, receipts: 0 });
   });
 
   test("scan: an abort at each boundary reads the same step again and ends with the same projection", async () => {
@@ -533,15 +616,11 @@ suite("JMAP account scan", () => {
     put(message("OLD", "10"));
     put(message("OLDER", "05"));
     await startScan();
-    let raced = false;
-    source.f.controls.handle = async (request) => {
-      if (request.method !== "POST" || raced) return undefined;
-      raced = true;
-      change(message("NEW", "30"));
-      expect(await syncJmapAccountDelta(source.args), "scan race: delta commits first").toMatchObject({ status: "committed" });
-      return undefined;
-    };
-    expect(await step(), "scan race: page superseded").toEqual({ status: "superseded", cause: "account_changed" });
+    // Read at the stored Email state; a delta commits before the page does.
+    const batch = await preparedScan();
+    change(message("NEW", "30"));
+    expect(await syncJmapAccountDelta(source.args), "scan race: delta commits first").toMatchObject({ status: "committed" });
+    expect(await commitJmapAccountBatch(batch), "scan race: page superseded").toEqual({ status: "superseded", cause: "account_changed" });
     expect(await state(), "scan race: delta state kept, scan step unchanged").toMatchObject({
       emailState: "Email:2",
       scan: { step: { kind: "query", before: null }, pages: 0 },
@@ -551,7 +630,7 @@ suite("JMAP account scan", () => {
     expect(await step(), "scan race: read again").toMatchObject({ status: "committed" });
     expect(await state(), "scan race: both axes advance").toMatchObject({ emailState: "Email:2", scan: { pages: 1 } });
 
-    raced = false;
+    let raced = false;
     source.f.controls.handle = async (request) => {
       if (request.method !== "POST" || raced) return undefined;
       raced = true;
@@ -679,11 +758,11 @@ suite("JMAP account scan", () => {
 
   test("verify: a scanned mail that the server deleted without a delta entry is removed, keeping the last placement", async () => {
     put(message("STAYS", "10"));
+    put(message("GHOST", "20"));
     await startScan();
-    // Created and destroyed after the start: the fixture's journal coalesces both into nothing.
-    change(message("GHOST", "20"));
     expect(await step(), "ghost: the only page imports both").toMatchObject({ status: "committed", stats: { imported: 2 } });
-    remove("GHOST");
+    // Deleted without a delta entry, as when a server's journal coalesces a create and a delete.
+    remove("GHOST", false);
     await deltaToEnd();
     expect(await projection(), "ghost: the delta never names it").toContain("GHOST:a");
     await sql<[]>`INSERT INTO mail.conversation_keeps (conversation_id, mailbox_id, kept_by_kind)
@@ -755,6 +834,50 @@ suite("JMAP account scan", () => {
     expect(await projection(), "verify: V2 and V6 removed").toEqual(serverProjection());
     expect(await imap(), "verify: IMAP ref and placement untouched").toEqual(imapBefore);
   });
+
+  test("lock order: a role writer holding a folder and a start snapshot both finish", async () => {
+    await startScan();
+    const [folder] = await sql<{ id: string }[]>`SELECT folder_id AS id FROM mail.binding_folder_refs
+      WHERE binding_id = ${source.args.bindingId}::uuid AND remote_folder_id = 'b'`;
+    if (!folder) throw new Error("start lock: missing folder");
+    const beforeState = await state();
+    const fence = await claimFence(source.args.remoteResourceId, source.args.bindingId, "reconcile");
+    const start = await readJmapAccountStart(
+      source.args.session,
+      source.args.authorization,
+      source.args.accountId,
+      source.args.signal,
+      source.f.dependencies,
+    );
+    if (start.kind !== "ready") throw new Error("start lock: not ready");
+    const batch = { ...source.args, fence, beforeState, batch: { kind: "start" as const, reason: "repair" as const, start } };
+    const writer = await sql.reserve();
+    let committing: Promise<PromiseSettledResult<Awaited<ReturnType<typeof commitJmapAccountBatch>>>[]> | undefined;
+    try {
+      await writer<[]>`BEGIN`.simple();
+      await writer<[]>`SET LOCAL lock_timeout = '10s'`.simple();
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!backend) throw new Error("start lock: missing backend");
+      await writer<{ id: string }[]>`SELECT id FROM mail.folders WHERE id = ${folder.id}::uuid FOR UPDATE`;
+      // The snapshot locks every folder of the account, this one included.
+      committing = Promise.allSettled([commitJmapAccountBatch(batch)]);
+      await waitForBlockedCommit(backend.pid);
+      await writer<[]>`INSERT INTO mail.folder_role_overrides (mailbox_id, role, folder_id)
+        VALUES (${source.mailboxId}::uuid, 'archive', ${folder.id}::uuid)`;
+      await writer<[]>`COMMIT`.simple();
+      expect(await committing, "start lock: no deadlock or lock timeout").toMatchObject([
+        { status: "fulfilled", value: { status: "committed", stats: { folders: 6 } } },
+      ]);
+      expect(
+        await sql<{ role: string }[]>`SELECT role FROM mail.folder_role_overrides WHERE mailbox_id = ${source.mailboxId}::uuid`,
+        "start lock: role writer also committed",
+      ).toEqual([{ role: "archive" }]);
+    } finally {
+      await writer<[]>`ROLLBACK`.simple();
+      writer.release();
+      if (committing) await committing;
+    }
+  }, 30_000);
 
   test("lock order: a role writer holding a folder and a scan page both finish", async () => {
     put(message("ROLELOCK", "10"));
@@ -831,6 +954,7 @@ suite("JMAP account scan", () => {
       verify1: 0,
       verify7: 0,
       verifyNone: 0,
+      deltaRequired: 0,
     };
     const texts: Partial<Record<keyof typeof STATEMENT_BUDGET, string[]>> = {};
     const fence = () => claimFence(source.args.remoteResourceId, source.args.bindingId, "reconcile");
@@ -848,6 +972,8 @@ suite("JMAP account scan", () => {
       objects,
       notFoundIds: [],
       next: { kind: "query", before: second("30") },
+      // The fixture's journal does not move in this test: pages are read at the stored state.
+      emailState: "Email:1",
     });
     const batch7 = (keywords: Record<string, boolean> = {}) =>
       Array.from({ length: 7 }, (_, index) => message(`BATCH${index}`, "20", { a: true }, keywords));
@@ -874,7 +1000,7 @@ suite("JMAP account scan", () => {
       await measure("flags7", { kind: "scan", page: page(batch7({ $seen: true })) });
       await measure("restart", {
         kind: "scan",
-        page: { kind: "restart", next: { kind: "bucket", second: second("20"), position: 0, queryState: null } },
+        page: { kind: "restart", next: { kind: "bucket", second: second("20"), position: 0, queryState: null }, emailState: "Email:1" },
       });
       const ids = batch7().map((email) => email.id);
       await setScan({ step: { kind: "verify", afterEmailId: null } });
@@ -894,6 +1020,14 @@ suite("JMAP account scan", () => {
         },
       }}::jsonb WHERE id = ${source.args.remoteResourceId}::uuid`;
       await measure("verify7", { kind: "verify", checkedIds: ids, notFoundIds: ids });
+      await setScan({ step: { kind: "query", before: null } });
+      source.f.journal.Email.push({ id: "elsewhere", kind: "created" });
+      const yielded = await meter.during(async () => {
+        const result = await step();
+        if (result.status !== "delta_required") throw new Error(`deltaRequired: ${JSON.stringify(result)}`);
+      });
+      measured.deltaRequired = yielded.length;
+      texts.deltaRequired = yielded;
       // The line names the measured values for the budget.
       console.info("JMAP_SCAN_STATEMENTS", JSON.stringify(measured));
       for (const [key, budget] of Object.entries(STATEMENT_BUDGET))
@@ -904,6 +1038,10 @@ suite("JMAP account scan", () => {
       expect(measured.known7, "budget: a page of known, unchanged mail writes less than a changed one").toBeLessThan(measured.flags7);
       expect(measured.verify7, "budget: removal is one batch for any count").toBe(measured.verify1);
       expect(measured.verifyNone, "budget: a verify page without absences removes nothing").toBeLessThan(measured.verify1);
+      expect(
+        texts.deltaRequired?.some((text) => text.startsWith("UPDATE mail.remote_resources SET sync_state")),
+        "deltaRequired: no checkpoint write",
+      ).toBeFalse();
       for (const key of ["restart", "verifyNone"] as const)
         expect(
           texts[key]?.some(
@@ -969,6 +1107,9 @@ suite("JMAP account scan", () => {
           (sum, node) => sum + ((node["Actual Rows"] ?? 0) + (node["Rows Removed by Filter"] ?? 0)) * (node["Actual Loops"] ?? 1),
           0,
         ),
+        refsIndexes: all
+          .filter((node) => node["Index Name"]?.startsWith("remote_message_refs"))
+          .map((node) => `${node["Node Type"]}(${node["Index Name"]})`),
         rows: plan.Plan["Actual Rows"],
         executionMs: plan["Execution Time"],
       }),

@@ -174,7 +174,13 @@ describe("readJmapScanPage", () => {
 
   test("an empty account completes at once", async () => {
     const { page } = await setup();
-    expect(await page(query())).toEqual({ kind: "page", objects: [], notFoundIds: [], next: { kind: "verify", afterEmailId: null } });
+    expect(await page(query())).toEqual({
+      kind: "page",
+      objects: [],
+      notFoundIds: [],
+      next: { kind: "verify", afterEmailId: null },
+      emailState: "emails-state",
+    });
   });
 
   test("a non-final page whose IDs all vanish restarts the same step; a final one ends", async () => {
@@ -184,9 +190,15 @@ describe("readJmapScanPage", () => {
       f.emails.splice(0, 2);
       f.controls.afterEmailQuery = undefined;
     };
-    expect(await page(query())).toEqual({ kind: "restart", next: query() });
+    expect(await page(query())).toEqual({ kind: "restart", next: query(), emailState: "emails-state" });
     f.controls.afterEmailQuery = () => f.emails.splice(0);
-    expect(await page(query())).toEqual({ kind: "page", objects: [], notFoundIds: ["c"], next: { kind: "verify", afterEmailId: null } });
+    expect(await page(query())).toEqual({
+      kind: "page",
+      objects: [],
+      notFoundIds: ["c"],
+      next: { kind: "verify", afterEmailId: null },
+      emailState: "emails-state",
+    });
   });
 
   test("a vanished ID advances the bucket position but never yields a bound", async () => {
@@ -197,12 +209,18 @@ describe("readJmapScanPage", () => {
       f.emails.splice(3, 1);
       f.controls.afterEmailQuery = undefined;
     };
-    expect(await page(query())).toEqual({ kind: "page", objects: [], notFoundIds: ["gone"], next: bucket("05") });
+    expect(await page(query())).toEqual({
+      kind: "page",
+      objects: [],
+      notFoundIds: ["gone"],
+      next: bucket("05"),
+      emailState: "emails-state",
+    });
     const first = await page(bucket("05"));
     if (first.kind !== "page" || first.next.kind !== "bucket") throw new Error("bucket page expected");
     f.controls.afterEmailQuery = () => f.emails.splice(2, 1);
     const second = await page(first.next);
-    expect(second).toEqual({ kind: "page", objects: [], notFoundIds: ["c"], next: query("05") });
+    expect(second).toEqual({ kind: "page", objects: [], notFoundIds: ["c"], next: query("05"), emailState: "emails-state" });
   });
 
   test("a changed bucket queryState restarts at position zero without objects", async () => {
@@ -211,7 +229,7 @@ describe("readJmapScanPage", () => {
     const first = await page(bucket("05"));
     if (first.kind !== "page" || first.next.kind !== "bucket") throw new Error("bucket page expected");
     f.emails.push(mail("d", "05"));
-    expect(await page(first.next)).toEqual({ kind: "restart", next: bucket("05") });
+    expect(await page(first.next)).toEqual({ kind: "restart", next: bucket("05"), emailState: "emails-state" });
     // A different filter is a different query: its queryState is not compared.
     expect((await page(query())).kind).toBe("page");
   });
@@ -246,6 +264,58 @@ describe("readJmapScanPage", () => {
       ["Email/get"],
     ]);
   });
+
+  /** Numbers every Email/get answer, including oversized attempts, so a test can name the last one. */
+  const countGets = (f: ReturnType<typeof createJmapFixture>) => {
+    let gets = 0;
+    f.controls.transform = ([name, args, id]: JmapInvocation): JmapInvocation =>
+      name === "Email/get" ? [name, { ...args, state: `get-${++gets}` }, id] : [name, args, id];
+  };
+  for (const maxCalls of [16, 1])
+    test(`emailState is the state of the step's last get (maxCallsInRequest=${maxCalls})`, async () => {
+      const combined = maxCalls > 1;
+      const { f, page } = await setup(2, maxCalls);
+      countGets(f);
+      expect((await page(query())).emailState, "empty final page").toBe("get-1");
+      f.emails.push(mail("a", "05"), mail("b", "05"), mail("c", "05"));
+      const first = await page(bucket("05"));
+      expect(first, "page").toMatchObject({ kind: "page", emailState: "get-2" });
+      if (first.kind !== "page" || first.next.kind !== "bucket") throw new Error("bucket page expected");
+      f.emails.push(mail("d", "05"));
+      const before = f.requests.length;
+      // Combined, the restart reads the get of its own request; alone, an empty get before any other.
+      expect(await page(first.next), "queryState restart").toEqual({ kind: "restart", next: bucket("05"), emailState: "get-3" });
+      expect(
+        f.requests.slice(before).map((request) => request.calls?.map(([name, args]) => [name, args.ids ?? null])),
+        "queryState restart: requests",
+      ).toEqual(
+        combined
+          ? [
+              [
+                ["Email/query", null],
+                ["Email/get", null],
+              ],
+            ]
+          : [[["Email/query", null]], [["Email/get", []]]],
+      );
+      f.emails.splice(0);
+      f.emails.push(mail("x", "03"), mail("y", "02"), mail("z", "01"));
+      f.controls.afterEmailQuery = () => {
+        f.emails.splice(0, 2);
+        f.controls.afterEmailQuery = undefined;
+      };
+      expect(await page(query()), "vanished restart").toEqual({ kind: "restart", next: query(), emailState: "get-4" });
+    });
+  for (const maxCalls of [16, 1])
+    test(`after halving, emailState is the state of the get that counted (maxCallsInRequest=${maxCalls})`, async () => {
+      const { f, page } = await setup(4, maxCalls);
+      f.emails.push(...["a", "b", "c", "d"].map((id, i) => mail(id, `0${4 - i}`)));
+      for (const email of f.emails.slice(0, 2)) email.subject = "x".repeat(1_100_000);
+      countGets(f);
+      // Combined: gets of 4 and 2 objects are too large, the third counts. Alone: [a-d] and [a, b]
+      // are too large, then one object per get: a, b, c, d.
+      expect((await page(query())).emailState).toBe(maxCalls > 1 ? "get-3" : "get-6");
+    });
 
   const invalid: Array<[string, (args: Record<string, unknown>) => Record<string, unknown>]> = [
     ["wrong account", (args) => ({ ...args, accountId: "other" })],

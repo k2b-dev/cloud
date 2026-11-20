@@ -826,6 +826,7 @@ suite("JMAP account commit", () => {
       expect(await run(), "reconciliation: typed result").toEqual({
         status: "reconciliation_required",
         cause: reason === "invalidArguments" ? "state_rejected" : "cannot_calculate",
+        axis: "mailbox",
       });
       expect(await state(), "reconciliation: unchanged checkpoint").toEqual(initial);
       expect(
@@ -836,6 +837,11 @@ suite("JMAP account commit", () => {
       ).toEqual([{ state: "failed", error_code: "JMAP_RECONCILIATION_REQUIRED" }]);
     });
   }
+  test("reconciliation: a rejected Email state names the email axis and keeps the checkpoint", async () => {
+    source.f.methodErrors.set("Email/changes", "invalidArguments");
+    expect(await run(), "email axis: typed result").toEqual({ status: "reconciliation_required", cause: "state_rejected", axis: "email" });
+    expect(await state(), "email axis: unchanged checkpoint").toEqual(initial);
+  });
   test("initial and unknown states are never overwritten and never claim a fence", async () => {
     for (const value of [null, { version: 99 }]) {
       await sql<[]>`UPDATE mail.remote_resources SET sync_state = ${value}::jsonb WHERE id = ${source.args.remoteResourceId}::uuid`;
