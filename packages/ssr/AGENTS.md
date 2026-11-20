@@ -117,6 +117,11 @@ Test `transform()` directly in both modes when changing it, including the
 
 ## Mount runtime
 
+The default component may have `preload(): Promise<unknown>`. `mount()` registers
+immediately and waits before replacing server HTML. Rejection reports the island
+error and installs a disposable DOM retry notice; retry runs the preload again.
+An entry without this property still mounts synchronously.
+
 `mount()` in `src/mount.ts` gives each wrapper element its own `render()` root
 with a root `ErrorBoundary`; `JSON.parse` and Seroval `fromJSON` parse props
 inside the boundary. Rendering replaces the server markup, so the runtime

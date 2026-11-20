@@ -51,6 +51,14 @@ This has two consequences:
   for example the server's render time, or read the value in `onMount` and
   reserve its space in the server markup.
 
+When the first client render needs deferred code, give the default component a
+`preload(): Promise<unknown>` property, for example
+`ChatPage.preload = preloadChatPresentation`. The browser keeps the complete
+server markup while it loads and replaces it only after the promise resolves.
+The hook does not run during server rendering. Rejection reports
+`ssr:island-error` and offers **Try again**, which runs the preload again.
+Components without a preload still mount synchronously.
+
 Text a person typed into a text field (`<textarea>`, or `<input>` of type
 text, search, email, url, or tel) before the island mounted moves to the same
 field of the new markup. The field is found by tag, type, `name`,

@@ -26,6 +26,12 @@ re-rendering follow:
 - server and client must render the same markup from the same props, or the
   page shifts when the island mounts.
 
+An island's default component may have a `preload(): Promise<unknown>` property.
+The browser waits for it before replacing any server markup; for example,
+`ChatPage.preload = preloadChatPresentation` prepares a deferred renderer before
+the first client frame. Keep server rendering synchronous. A rejected preload
+reports `ssr:island-error` and shows **Try again**, which retries the preload.
+
 Text a person typed into a text field (`<textarea>`, or `<input>` of type
 text, search, email, url, or tel) before the island mounted moves to the same
 field of the new markup. The field is found by tag, type, `name`,
