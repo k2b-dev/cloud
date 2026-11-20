@@ -34,6 +34,7 @@ export default ssr<AuthContext>(async (c) => {
       actor,
       accessSubject: c.get("accessSubject"),
       requestId: c.req.header("x-request-id") ?? null,
+      locale,
     };
     const readable = await mailboxAccess.requireMailboxAccess(context, mailboxId, "read");
     if (!readable.ok) return ssr.error(c, 404);
