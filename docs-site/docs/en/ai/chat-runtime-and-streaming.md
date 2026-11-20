@@ -236,6 +236,13 @@ keeps running, but it loses rights that need a person's session, such as
 writing to another chat with `ai.chat.send`. An approval without text does not
 restrict the turn.
 
+Queued text, steering, and client tool results run as the person and session
+that started the turn or queued the entry. A session of the Cloud app may
+therefore edit only entries queued in the app, and steer or answer tool
+requests only in turns started there; others answer `403` with code
+`FORBIDDEN`. A browser session, `cld`, and other clients keep their access. The Cloud app cannot write to another chat with `ai.chat.send` or create
+one with `ai.chat.create`; both answer `source_restricted`.
+
 ## List place chats
 
 A place chat belongs to the person who sent its first message. Opening a place

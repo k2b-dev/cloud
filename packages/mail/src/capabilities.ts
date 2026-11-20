@@ -21,7 +21,8 @@ import {
 } from "@k2b/cloud/contracts";
 import { AppEventEnvelopeSchema } from "@k2b/cloud/events";
 import { coreSettings, logger } from "@k2b/cloud/services";
-import { principalLabel } from "@k2b/cloud/shared";
+import { get as settingsGet } from "@k2b/cloud/services/settings";
+import { normalizeTimeZone, principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
@@ -52,6 +53,7 @@ import {
   sendReceipt,
 } from "./capability-reviews";
 import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
+import { defaultReplyQuoteSource } from "./compose-quotation";
 import {
   type DraftEditableContent,
   MAX_DRAFT_ATTACHMENT_BYTES,
@@ -106,6 +108,26 @@ import { isTerminalHydrationFailure } from "./service/message-hydration";
 import { waitForMessageHydration } from "./service/message-readiness";
 import type { ConversationSummary, MessageSummary } from "./service/messages";
 import { sendContentChanged } from "./service/send-content";
+
+/**
+ * A reply draft from Gustav or the API quotes the message it answers unless the caller chooses (null leaves it out), as
+ * the composer does. Capabilities know no person's time zone, so the quote's date uses the installation's time zone
+ * (UTC without one) unless the caller passes its own.
+ */
+const replyQuoteSource = async (
+  input: Pick<z.output<typeof c.DraftCreateInputSchema>, "quoteSource" | "intent" | "sourceMessageId" | "conversationId" | "body">,
+  context: CapabilityExecutionContext,
+) => {
+  const chosen = defaultReplyQuoteSource({
+    quoteSource: input.quoteSource,
+    intent: input.intent,
+    sourceMessageId: input.sourceMessageId ?? input.conversationId,
+    body: input.body,
+    quote: () => ({ locale: context.locale, timeZone: "UTC" }),
+  });
+  if (!chosen || input.quoteSource !== undefined) return chosen;
+  return { ...chosen, timeZone: normalizeTimeZone(String((await settingsGet<string>("app.timezone")) || "").trim(), "UTC") };
+};
 
 const requestContext = (context: CapabilityExecutionContext): MailRequestContext => ({
   actor: context.actor,
@@ -3272,6 +3294,7 @@ const actionDefinitions = {
       if (!conversation.ok) return conversation;
       if (!sourceMessage.ok) return sourceMessage;
       if (!signature.ok) return signature;
+      const quoteSource = await replyQuoteSource(input, context);
       // This is the same read-only origin preparation used when materializing the draft.
       const seed = await drafts.prepareDraftSeed({
         context: requestContext(context),
@@ -3294,7 +3317,7 @@ const actionDefinitions = {
             conversationId: conversation.data?.conversationId ?? null,
             sourceMessageId: sourceMessage.data,
             signatureTemplateId: signature.data,
-            quoteSource: input.quoteSource,
+            quoteSource: quoteSource,
           },
         },
       });
@@ -3348,7 +3371,7 @@ const actionDefinitions = {
       const draftContent = {
         senderIdentityId: senderIdentity.data,
         signatureTemplateId: signature.data,
-        quoteSource: input.quoteSource,
+        quoteSource: await replyQuoteSource(input, context),
         to: input.to,
         cc: input.cc,
         bcc: input.bcc,

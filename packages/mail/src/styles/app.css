@@ -545,6 +545,12 @@
     color: var(--k2b-danger-text);
   }
 
+  /* Send without anybody addressed: the reason stands where the placeholder was, in the danger colour. */
+  .mail-recipient-control[data-missing] input::placeholder {
+    color: var(--k2b-danger-text);
+    opacity: 1;
+  }
+
   .mail-recipient-control[data-disabled="true"] {
     cursor: not-allowed;
     opacity: 0.55;

@@ -119,7 +119,9 @@ dist/
 ├── server.js
 ├── _ssr/
 │   ├── manifest.json
-│   └── <island>.js
+│   ├── <island>.js      English build
+│   └── de/
+│       └── <island>.js  German build
 ├── assets/
 ├── cli/
 │   └── inventory/
@@ -242,9 +244,14 @@ Island URLs are `/inventory/_ssr/<content-hash>/<island>.js`. The hash covers
 built island JavaScript, so it stays stable across restarts and releases that
 do not change the application's island code, preserving browser caches. Build
 from a fixed path, such as the Docker `WORKDIR`, because lazy chunk names
-depend on it. Files remain flat in `dist/_ssr/`; the SSR adapter serves
-compressed siblings. Copy the whole `_ssr` directory into the image, including
-the build output `dist/_ssr/manifest.json`. The server fails with a clear
+depend on it. The islands build once per catalog language: the English build
+stays flat in `dist/_ssr/`, the German one in `dist/_ssr/de/` under its own
+hash, and each page loads the build of its request language. The island build
+therefore takes about twice as long and `_ssr` holds about twice the files. A
+person who changes the language gets the other build on the next page load;
+both builds stay cacheable side by side. The SSR adapter serves compressed
+siblings. Copy the whole `_ssr` directory into the image, including its
+subdirectories and the build output `dist/_ssr/manifest.json`. The server fails with a clear
 error when `_ssr` exists without the manifest. The production inline loader
 preloads rendered islands' shared static imports after the page's stylesheets.
 It creates modulepreload links at runtime so the HTML preload scanner does not

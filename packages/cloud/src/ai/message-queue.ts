@@ -1,12 +1,14 @@
 import type { Message } from "@k2b/nessi";
 import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
+import type { UserRequestActor } from "../server";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { coreSettings } from "../services/settings/api";
 import { isUnknownActionOutcome } from "./action-review";
 import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
 import { appendAiQueuedChatDone } from "./chat-done";
+import { mayWriteIntoAiTurn } from "./capability-execution";
 import { assertPersonalChatWriter } from "./chat-writer";
 import { aiDraftTurnContent, editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
@@ -395,22 +397,24 @@ export class AiQueuedMessageTooLarge extends Error {}
 
 /**
  * Edit only queued text; immutable attachments, checked quotes, and the independent composer draft stay intact. Text
- * from a source without a signed-in session restricts the queued turn; editing stays possible.
+ * from a source without a signed-in session restricts the queued turn; editing stays possible. Only the author may
+ * edit, and the message keeps running as the actor that queued it, so `author` must also be allowed to write into it.
  */
 export const editQueuedMessage = async (
   conversationId: string,
   id: string,
   text: string,
-  source: { signedInSession: boolean; authorUserId: string },
-) =>
+  source: { signedInSession: boolean; author: UserRequestActor },
+): Promise<"edited" | "not_found" | "forbidden"> =>
   sql.begin(async (tx) => {
     await tx`SELECT id FROM ai.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
     const [row] = await tx<{ submission: Submission; content: AiDraftContentPart[] }[]>`SELECT submission, content FROM ai.queued_messages
     WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND status IN ('pending','failed')
-      AND author_user_id=${source.authorUserId}::uuid
+      AND author_user_id=${source.author.user.id}::uuid
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages q WHERE q.conversation_id=${conversationId}::uuid AND q.send_requested_at IS NOT NULL AND q.status IN ('pending','failed')) FOR UPDATE`;
-    if (!row) return false;
-    if (row.submission.runConfig.writerOrigin && row.submission.runConfig.writerOrigin.kind !== "person") return false;
+    if (!row) return "not_found";
+    if (row.submission.runConfig.writerOrigin && row.submission.runConfig.writerOrigin.kind !== "person") return "not_found";
+    if (!mayWriteIntoAiTurn(source.author, row.submission.runConfig.actor)) return "forbidden";
     // Typed text never passes for a quote; the edited message keeps the bounds of any message, quotes included.
     const content = editAiDraftText(row.content, aiNeutralizeQuoteMarkers(text));
     const problem = aiDraftContentProblem(content);
@@ -434,7 +438,7 @@ export const editQueuedMessage = async (
     };
     await tx`UPDATE ai.queued_messages SET submission = (${JSON.stringify(submission)}::text)::jsonb,
     content = (${JSON.stringify(content)}::text)::jsonb, revision=revision+1 WHERE id = ${id}::uuid`;
-    return true;
+    return "edited";
   });
 
 type QueuedInterruption = { id: string; conversation_id: string; interrupted_turn_id: string };

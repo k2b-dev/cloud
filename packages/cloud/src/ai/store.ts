@@ -18,6 +18,7 @@ import { assertInteractiveChatTurn } from "./retired-routines";
 export { AI_TOOL_CHECK_STALE_MS };
 
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
+import { mayWriteIntoAiTurn } from "./capability-execution";
 import { projectSettledAiToolChecks } from "./capability-result";
 import {
   type CapabilityMigrationHistoryRow,
@@ -4139,6 +4140,7 @@ export const aiConversations: AiConversationService = {
       if (!turn) return { ok: false, reason: "not_found" as const };
       const runConfig = turn.run_config ? parseJsonValue<AiTurnRunConfig>(turn.run_config) : null;
       if (runConfig?.kind === "compact") return { ok: false, reason: "not_chat" as const };
+      if (!mayWriteIntoAiTurn(input.actor, runConfig?.actor)) return { ok: false, reason: "forbidden" as const };
       if (!(["queued", "running", "waiting_for_action"] as AiTurnStatus[]).includes(turn.status)) {
         return { ok: false, reason: "not_active" as const };
       }

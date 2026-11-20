@@ -109,6 +109,13 @@ export function createJmapFixture() {
   const requests: Array<{ path: string; method: string; authorization: string | null; calls?: JmapInvocation[] }> = [];
   const mailboxes = [fixtureMailbox("a", "Inbox", null, "inbox"), fixtureMailbox("b", "Projects"), fixtureMailbox("c", "Example", "b")];
   const emails: JmapEmailSnapshot[] = [];
+  const blobs = new Map<string, Uint8Array[]>();
+  const download: {
+    status?: number;
+    contentLength?: number;
+    afterChunk?: (index: number) => Promise<void>;
+    cancelled: number;
+  } = { cancelled: 0 };
   const journal: Record<FixtureType, FixtureChange[]> = { Email: [], Mailbox: [] };
   const state = (type: FixtureType, position = journal[type].length) => `${type}:${position}`;
   const changes = (type: FixtureType, args: Record<string, unknown>): Record<string, unknown> => {
@@ -172,6 +179,31 @@ export function createJmapFixture() {
         });
       if (path === "/.well-known/jmap" && controls.redirect)
         return new Response(null, { status: 307, headers: { location: controls.redirect } });
+      if (path.startsWith("/jmap/download/")) {
+        const blobId = path.split("/")[4];
+        const chunks = blobId ? blobs.get(decodeURIComponent(blobId)) : undefined;
+        const status = download.status ?? (chunks ? 200 : 404);
+        if (status !== 200) return new Response("", { status, headers: { location: "/elsewhere", "retry-after": "30" } });
+        let index = 0;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              const chunk = chunks?.[index];
+              if (!chunk) {
+                controller.close();
+                return;
+              }
+              controller.enqueue(chunk);
+              const sent = index++;
+              await download.afterChunk?.(sent);
+            },
+            cancel() {
+              download.cancelled++;
+            },
+          }),
+          { headers: download.contentLength === undefined ? {} : { "content-length": String(download.contentLength) } },
+        );
+      }
       if (req.method === "GET")
         return Response.json(req.headers.has("authorization") ? session : { ...session, accounts: {}, primaryAccounts: {} });
       if (controls.apiStatus !== null)
@@ -202,7 +234,7 @@ export function createJmapFixture() {
         if (name === "Email/get") {
           const ids = z.array(z.string()).parse(args.ids);
           const properties = z.array(z.string()).parse(args.properties);
-          const bodyProperties = z.array(z.string()).parse(args.bodyProperties);
+          const bodyProperties = z.array(z.string()).optional().parse(args.bodyProperties) ?? [];
           const list = emails
             .filter((email) => ids.includes(email.id))
             .map((email) =>
@@ -266,6 +298,8 @@ export function createJmapFixture() {
       request({ ...options, protocol: "http:", hostname: "127.0.0.1", port: server.port, agent: false }, callback),
   };
   return {
+    blobs,
+    download,
     journal,
     state,
     origin,

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Glob } from "bun";
 import { isPwaStaticAsset, type PwaStaticAsset } from "../contracts/pwa-assets";
+import { CATALOG_LOCALES } from "../shared/locale";
 import { sharedStylesheetVersion, versionedPublicHref } from "./static-assets";
 
 /** Hash the final (post-rewrite, uncompressed) output, not Bun's chunk names or island IDs. */
@@ -17,15 +18,18 @@ export async function readPwaStaticAssets(root: string, appId: string, ssrPath: 
   const ssr = join(root, "_ssr");
   if (existsSync(join(ssr, "manifest.json"))) {
     const manifest: unknown = JSON.parse(await readFile(join(ssr, "manifest.json"), "utf8"));
-    if (
-      typeof manifest === "object" &&
-      manifest !== null &&
-      "version" in manifest &&
-      typeof manifest.version === "string" &&
-      /^[a-f0-9]{16}$/.test(manifest.version)
-    ) {
-      for await (const file of new Glob("*.js").scan(ssr))
-        await add(join(ssr, file), `${ssrPath}/${manifest.version}/${file}`, "text/javascript");
+    // The default island build sits in _ssr/, each further language build in _ssr/<language>/ under its own version.
+    const builds: [string, unknown][] = [[ssr, manifest]];
+    const variants = typeof manifest === "object" && manifest !== null && "variants" in manifest ? manifest.variants : undefined;
+    for (const language of CATALOG_LOCALES.slice(1))
+      if (typeof variants === "object" && variants !== null && Object.hasOwn(variants, language))
+        builds.push([join(ssr, language), Reflect.get(variants, language)]);
+    for (const [directory, build] of builds) {
+      if (!existsSync(directory) || typeof build !== "object" || build === null || !("version" in build)) continue;
+      const { version } = build;
+      if (typeof version !== "string" || !/^[a-f0-9]{16}$/.test(version)) continue;
+      for await (const file of new Glob("*.js").scan(directory))
+        await add(join(directory, file), `${ssrPath}/${version}/${file}`, "text/javascript");
     }
   }
   const publicDir = join(root, "public");

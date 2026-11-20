@@ -1,13 +1,14 @@
 import { z } from "zod";
+import { checkJmapHttp, JMAP_JSON_BYTES } from "./jmap-http";
+
+export { JMAP_JSON_BYTES, JmapHttpError, JmapRateLimitError, JmapRequestError } from "./jmap-http";
+
 import type { ProviderSecret } from "../../contracts";
 import { type JmapResponse, type JmapTransportDependencies, requestJmap } from "./jmap-transport";
 
 export const JMAP_CORE = "urn:ietf:params:jmap:core";
 export const JMAP_MAIL = "urn:ietf:params:jmap:mail";
 export const JMAP_SUBMISSION = "urn:ietf:params:jmap:submission";
-// Default metadata budget, matching MAX_AUTOCONFIG_BYTES in onboarding-discovery.ts.
-// Object-list callers supply a bounded budget derived from the requested properties and count.
-export const JMAP_JSON_BYTES = 256 * 1024;
 // Stalwart 1.0 sessions measured 1.5–4 KiB; 64 KiB allows 16 times that upper
 // observation for capabilities/accounts, while bounding even the first unauthenticated response.
 export const JMAP_SESSION_BYTES = 64 * 1024;
@@ -25,31 +26,11 @@ export class JmapError extends Error {
       | "JMAP_ACCOUNT"
       | "JMAP_FOLDER_TREE"
       | "JMAP_DISCOVERY_LIMIT"
-      | "JMAP_EMAIL_TOO_LARGE",
+      | "JMAP_EMAIL_TOO_LARGE"
+      | "JMAP_DOWNLOAD_TEMPLATE",
   ) {
     super(code);
     this.name = "JmapError";
-  }
-}
-export class JmapHttpError extends Error {
-  readonly code = "JMAP_HTTP";
-  constructor(readonly status: number) {
-    super("JMAP HTTP request failed");
-    this.name = "JmapHttpError";
-  }
-}
-export class JmapRateLimitError extends Error {
-  readonly code = "JMAP_RATE_LIMIT";
-  constructor(readonly retryAfter: string | null) {
-    super("JMAP request rate limited");
-    this.name = "JmapRateLimitError";
-  }
-}
-export class JmapRequestError extends Error {
-  readonly code = "JMAP_REQUEST";
-  constructor(readonly problemType: string) {
-    super("JMAP request rejected");
-    this.name = "JmapRequestError";
   }
 }
 export class JmapMethodError extends Error {
@@ -127,40 +108,6 @@ function json(body: string): unknown {
     throw new JmapError("JMAP_INVALID_RESPONSE");
   }
 }
-function checkHttp(response: JmapResponse): void {
-  if (response.status === 429) {
-    // Retain Retry-After syntax only, never arbitrary reflected response text.
-    const value = response.retryAfter;
-    const retryAfter =
-      value && (/^\d+$/.test(value) || /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value))
-        ? value
-        : null;
-    throw new JmapRateLimitError(retryAfter);
-  }
-  if (response.status >= 200 && response.status < 300) return;
-  // A refused login stays an HTTP status whatever body the server adds: servers such as Stalwart
-  // answer every error as problem+json, which would otherwise turn it into a request error.
-  if (response.status === 401 || response.status === 403) throw new JmapHttpError(response.status);
-  let problem: unknown;
-  try {
-    problem = JSON.parse(response.body);
-  } catch {
-    /* HTTP failures need not be JSON. */
-  }
-  const parsed = z.object({ type: z.string() }).safeParse(problem);
-  if (parsed.success) {
-    const known = [
-      "about:blank",
-      "urn:ietf:params:jmap:error:unknownCapability",
-      "urn:ietf:params:jmap:error:notJSON",
-      "urn:ietf:params:jmap:error:notRequest",
-      "urn:ietf:params:jmap:error:limit",
-    ];
-    throw new JmapRequestError(known.includes(parsed.data.type) ? parsed.data.type : "unknown");
-  }
-  throw new JmapHttpError(response.status);
-}
-
 /** Credential-free hint only: this never authorizes use of the discovered origin. */
 export type JmapDetection = "detected" | "absent" | "unknown";
 export async function probeJmap(host: string, signal: AbortSignal, deps: JmapTransportDependencies = {}): Promise<JmapDetection> {
@@ -207,7 +154,7 @@ export async function fetchJmapSession(input: JmapAccess, deps: JmapTransportDep
     response = await get();
   }
   if (response.status >= 300 && response.status < 400) throw new JmapError("JMAP_REDIRECT");
-  checkHttp(response);
+  checkJmapHttp(response);
   const parsed = sessionSchema.safeParse(json(response.body));
   if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
   const session = parsed.data;
@@ -253,7 +200,7 @@ export async function callJmap(
     deps,
   );
   if (response.status >= 300 && response.status < 400) throw new JmapError("JMAP_REDIRECT");
-  checkHttp(response);
+  checkJmapHttp(response);
   const parsed = responseSchema.safeParse(json(response.body));
   if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
   // One response per call holds for the read methods used today. A method with implicit follow-up
@@ -298,4 +245,28 @@ export function requireJmapMethodResult(response: z.infer<typeof responseSchema>
   }
   if (result[0] !== name) throw new JmapError("JMAP_INVALID_RESPONSE");
   return result[1];
+}
+
+/** RFC 8620 §6.2: only fixed download parameters, then reauthorize the expanded origin. */
+export function jmapDownloadUrl(session: JmapSession, accountId: string, blobId: string): URL {
+  if (/%7[bd]/i.test(session.downloadUrl)) throw new JmapError("JMAP_DOWNLOAD_TEMPLATE");
+  const values = new Map([
+    ["accountId", accountId],
+    ["blobId", blobId],
+    ["name", "message.eml"],
+    ["type", "message/rfc822"],
+  ]);
+  const found = new Set<string>();
+  const expanded = session.downloadUrl.replace(/\{([^{}]*)\}/g, (_expression, key: string) => {
+    const value = values.get(key);
+    if (value === undefined) throw new JmapError("JMAP_DOWNLOAD_TEMPLATE");
+    found.add(key);
+    return encodeURIComponent(value);
+  });
+  if (found.size !== values.size || /[{}]/.test(expanded)) throw new JmapError("JMAP_DOWNLOAD_TEMPLATE");
+  try {
+    return httpsUrl(new URL(expanded, session.origin).href, session.origin);
+  } catch {
+    throw new JmapError("JMAP_ORIGIN");
+  }
 }

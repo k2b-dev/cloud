@@ -1250,6 +1250,73 @@ describe("MailComposer robustness", () => {
     }
   });
 
+  test("the reply box: Send without recipients and subject marks the To field and sends nothing", async () => {
+    const { toast } = await import("@k2b/ui");
+    const failure = spyOn(toast, "error");
+    try {
+      await mount({ host: true, draft: { ...replyDraft, to: [], subject: "" }, box: {} });
+      sendButton().click();
+      const control = () => dom.root.querySelector<HTMLElement>("[data-mail-reply-box='mail'] .mail-recipient-control")!;
+      await waitFor(() => control().hasAttribute("data-missing"));
+      const input = control().querySelector<HTMLInputElement>("input")!;
+      expect(input.placeholder).toBe("Add at least one recipient.");
+      await waitFor(() => document.activeElement === input);
+      await Bun.sleep(50);
+      expect(requests.some((request) => request.includes("/commands"))).toBe(false);
+      expect(failure).not.toHaveBeenCalled();
+      expect(leaves).toEqual([]);
+    } finally {
+      failure.mockRestore();
+    }
+  });
+
+  test("the reply box: a Send held for a shared draft that is not connected names why, beside Send", async () => {
+    const offline = await import("@k2b/cloud/browser/shared-text");
+    const generations = spyOn(offline, "listSharedTextOfflineGenerations").mockResolvedValue([]);
+    const shared = { ...replyDraft, editMode: "shared" as const, generation: "1" };
+    const base = draftEditableContentInputSchema.strip().parse(shared);
+    const bytes = Y.encodeStateAsUpdate(createDraftDocument(base));
+    const cursor = "s6t.fixture.1";
+    const serve = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        if (new URL(request.url).pathname.endsWith("/document"))
+          return Response.json({
+            generation: "1",
+            revision: 1,
+            lifecycle: "draft",
+            historyComplete: true,
+            fresh: { state: encoding.toBase64(bytes), cursor, content: base },
+            durable: { state: encoding.toBase64(bytes), cursor, content: base },
+            frozen: null,
+          });
+        return serve(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    localStorage.setItem("cloud:mail:shared:Usr001:Draft1:1:remember", "no");
+    try {
+      await mount({ host: true, draft: shared, box: {}, ready: false });
+      const status = () => dom.root.querySelector(".mail-reply-box-status-text")?.textContent;
+      const reason = "Send waits until this shared draft is connected and saved.";
+      await waitFor(() => status() === reason);
+      expect(sendButton().disabled).toBe(true);
+      const blocked = () => dom.root.querySelector('[data-mail-reply-box="mail"] span.sr-only[id$="-blocked"]')?.textContent;
+      expect(blocked()).toBe(reason);
+      const socket = () =>
+        OfflineWebSocket.instances.find((candidate) => candidate.url && new URL(candidate.url).pathname.endsWith("/document/socket"));
+      await waitFor(() => socket()?.readyState === 0);
+      socket()!.open();
+      socket()!.message({ type: "replayReady", payload: { docId: "Draft1", generation: "1", cursor, peerId: "peer1" } });
+      await waitFor(() => !sendButton().disabled);
+      expect(status()).not.toBe(reason);
+      expect(blocked()).toBe("");
+    } finally {
+      generations.mockRestore();
+    }
+  });
+
   test("a suspended reply box (internal note mode) is hidden, inert, and never sends", async () => {
     const [suspended, setSuspended] = createSignal(false);
     await mount({ host: true, draft: replyDraft, box: { suspended } });

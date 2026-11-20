@@ -1910,6 +1910,7 @@ suite("AI conversation store integration", () => {
             turnId: turn.id,
             clientRequestId: "waiting-steer",
             text: "Apply after approval",
+            actor: userResourceContext({ type: "user", userId }).actor,
           })
         ).ok,
       ).toBe(true);
@@ -2169,6 +2170,7 @@ suite("AI conversation store integration", () => {
         turnId: turn.id,
         clientRequestId: "request-1",
         text: "First steer",
+        actor: userResourceContext({ type: "user", userId }).actor,
       });
       const duplicate = await aiConversations.enqueueTurnSteer({
         signedInSession: true,
@@ -2176,6 +2178,7 @@ suite("AI conversation store integration", () => {
         turnId: turn.id,
         clientRequestId: "request-1",
         text: "First steer",
+        actor: userResourceContext({ type: "user", userId }).actor,
       });
       const second = await aiConversations.enqueueTurnSteer({
         signedInSession: true,
@@ -2183,6 +2186,7 @@ suite("AI conversation store integration", () => {
         turnId: turn.id,
         clientRequestId: "request-2",
         text: "Second steer",
+        actor: userResourceContext({ type: "user", userId }).actor,
       });
       expect(first.ok && duplicate.ok ? duplicate.steer.id : null).toBe(first.ok ? first.steer.id : null);
       expect(second.ok ? second.steer.seq : null).toBe(2);
@@ -2262,6 +2266,7 @@ suite("AI conversation store integration", () => {
         turnId: turn.id,
         clientRequestId: "abort-steer",
         text: "Too late",
+        actor: userResourceContext({ type: "user", userId }).actor,
       });
 
       const request = await aiConversations.requestTurnAbort({ conversationId: conversation.id, turnId: turn.id });

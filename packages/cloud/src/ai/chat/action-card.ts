@@ -181,15 +181,18 @@ export const actionPlainText = (text: ActionText): string =>
     })
     .join("");
 
-/** The short template, else the action sentence, read as the card's chips without person addresses or title quotes. */
+/**
+ * The short template, else the action sentence, read as the card's chips without person addresses or title quotes, in
+ * the reader's language like `reviewActionCard`.
+ */
 export const reviewShortText = (review: CapabilityActionCallReview, context: ActionCardContext): string =>
   actionPlainText(
     partsText(
       capabilitySentenceParts(review.sentence.short ?? review.sentence.action, review.slots, {
-        locale: review.locale,
+        locale: context.locale,
         timeZone: context.timeZone,
       }),
-      review.locale,
+      context.locale,
       context.app,
     ),
   );
@@ -251,15 +254,21 @@ const freshBlocks = (review: CapabilityActionCallReview): Block[] | undefined =>
   }
 };
 
+/**
+ * A review's card in the reader's language: Cloud's words, formats, and the `@k2b/ui` chrome follow `context.locale`,
+ * the request locale, so the server and every language's island build show the same text. The app's stored sentences
+ * stay as they were written.
+ */
 export const reviewActionCard = (
-  review: CapabilityActionCallReview & {
+  stored: CapabilityActionCallReview & {
     contentRef?: CapabilityReviewContentRef;
     draft?: { editable: boolean; fields: string[] };
     incomplete?: boolean;
   },
   context: ActionCardContext,
 ): ActionCard => {
-  const locale = review.locale;
+  const locale = context.locale;
+  const review = { ...stored, locale };
   const tz = { timeZone: context.timeZone };
   const parts = (form: Parameters<typeof capabilityReviewSentenceParts>[1]) =>
     partsText(capabilityReviewSentenceParts(review, form, tz), locale, context.app);
@@ -408,7 +417,7 @@ export const legacyActionCard = (input: LegacyCardInput, context: ActionCardCont
   };
 };
 
-/** The receipt an Action returned, or the result of its `check`, as a sentence in the review's language. */
+/** The receipt an Action returned, or the result of its `check`, as a sentence in the card's language. */
 export const actionReceiptText = (receipt: CapabilityActionReceipt, card: ActionCard, timeZone: string): ActionText =>
   partsText(capabilityReceiptParts(receipt, { locale: card.locale, timeZone }), card.locale, card.app);
 
@@ -449,7 +458,7 @@ const messageRows = (block: ToolBlock): AiLegacyReviewRow[] => {
 
 export type ToolOutcomeWords = LegacyCardInput["outcome"];
 
-/** The card for one tool block, in the reader's locale unless its review names another. */
+/** The card for one tool block, in the reader's locale. */
 export const toolActionCard = (
   block: ToolBlock,
   context: { locale: string; timeZone: string; outcome: (subject: string) => ToolOutcomeWords },

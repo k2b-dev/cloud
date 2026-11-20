@@ -12,8 +12,13 @@ test("the catalog hashes final SSR chunks and versioned CSS, excluding data and 
   try {
     await mkdir(join(root, "_ssr"));
     await mkdir(join(root, "public/core"), { recursive: true });
-    await writeFile(join(root, "_ssr/manifest.json"), JSON.stringify({ version: "0123456789abcdef", entries: {} }));
+    await mkdir(join(root, "_ssr/de"));
+    await writeFile(
+      join(root, "_ssr/manifest.json"),
+      JSON.stringify({ version: "0123456789abcdef", entries: {}, variants: { de: { version: "fedcba9876543210", entries: {} } } }),
+    );
     await writeFile(join(root, "_ssr/123456789012.js"), "final rewritten JavaScript");
+    await writeFile(join(root, "_ssr/de/123456789012.js"), "German build");
     await writeFile(join(root, "_ssr/chunk-opaque.js"), "export const x = 1;");
     await writeFile(join(root, "public/global.css"), "body{color:blue}");
     await writeFile(join(root, "public/core/app.css"), "body{color:red}");
@@ -28,6 +33,7 @@ test("the catalog hashes final SSR chunks and versioned CSS, excluding data and 
     expect(assets.map((a) => a.url)).toEqual([
       "/app/core/_ssr/0123456789abcdef/123456789012.js",
       "/app/core/_ssr/0123456789abcdef/chunk-opaque.js",
+      "/app/core/_ssr/fedcba9876543210/123456789012.js",
       expect.stringMatching(/^\/public\/core\/app.css\?v=[a-f0-9]{16}$/),
       "/public/global.css?v=release-1",
       `/public/plex-${fontHash}.woff2`,
