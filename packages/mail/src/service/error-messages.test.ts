@@ -10,7 +10,7 @@ describe("Mail service messages", () => {
   test.each([
     ["DRAFT_DOCUMENT_HISTORY_UNAVAILABLE", 409],
     ["DRAFT_DOCUMENT_INVALID_HISTORY", 409],
-    ["DRAFT_DOCUMENT_READ_UNAVAILABLE", 500],
+    ["DRAFT_DOCUMENT_READ_UNAVAILABLE", 503],
   ])("%s offers draft recovery without hiding its code or status", (code, status) => {
     const error = { code, status, message: "Keep the device text and recover the draft" };
     for (const locale of ["de", "de-DE"]) {

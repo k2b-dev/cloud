@@ -150,7 +150,7 @@ removed prefix. Reconnecting alone does not create a content revision.
 Document reads distinguish unavailable history (`DRAFT_DOCUMENT_HISTORY_UNAVAILABLE`)
 from malformed history (`DRAFT_DOCUMENT_INVALID_HISTORY`), both with status 409.
 Keep device text and ask a mailbox administrator to follow the recovery steps
-below. Unexpected read failures return `DRAFT_DOCUMENT_READ_UNAVAILABLE` (500);
+below. Unexpected read failures return `DRAFT_DOCUMENT_READ_UNAVAILABLE` (503);
 retain device text and retry. Mail logs the underlying exception with the draft
 and request identifiers. Existing typed rejections retain their code and status.
 
