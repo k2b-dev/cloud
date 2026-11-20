@@ -1140,6 +1140,7 @@ databaseSuite()("Assistant chat runner persistence", () => {
       actionWaitMs: 0,
       waitingSince: null,
     });
+    const runConfig = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue(null);
     const first = { conversationId, turnId: "ghijkl", callId: "call", clientId: crypto.randomUUID(), input };
     const second = { ...first, turnId, clientId: crypto.randomUUID() };
     try {
@@ -1181,10 +1182,23 @@ databaseSuite()("Assistant chat runner persistence", () => {
       await sql`DELETE FROM assistant.code_client_calls WHERE turn_id=${turnId}::uuid`;
       start.mockResolvedValue(false);
       expect(await clientCalls.claim(first, owner)).toEqual({ status: "interrupted" });
+      // An app session answers only turns started in the app; the browser keeps its access to every turn.
+      await sql`DELETE FROM assistant.code_client_calls WHERE turn_id=${turnId}::uuid`;
+      start.mockResolvedValue(true);
+      const app = { ...owner, actor: { kind: "user" as const, user: owner.user, sessionKind: "app" as const } };
+      runConfig.mockResolvedValue({ input: "Run", actor: app.actor });
+      expect(await clientCalls.claim(first, app)).toEqual({ status: "execute" });
+      expect(await clientCalls.claim(second, owner)).toEqual({ status: "pending" });
+      runConfig.mockResolvedValue({ input: "Run", actor: owner.actor });
+      await expect(clientCalls.complete({ ...first, result: { configured: true, name: "crm" } }, app)).rejects.toMatchObject({
+        code: "ACCESS_DENIED",
+      });
+      expect(await clientCalls.claim(second, owner)).toEqual({ status: "pending" });
     } finally {
       start.mockRestore();
       conversation.mockRestore();
       turn.mockRestore();
+      runConfig.mockRestore();
     }
   });
 });

@@ -1,5 +1,12 @@
 import { sql } from "@k2b/cloud";
-import { aiConversations, aiToolAudit, CODE_RUNTIME_TOOL_NAMES, CodeRuntimeInput, parseCodeToolInput } from "@k2b/cloud/ai";
+import {
+  aiConversations,
+  aiToolAudit,
+  CODE_RUNTIME_TOOL_NAMES,
+  CodeRuntimeInput,
+  mayWriteIntoAiTurn,
+  parseCodeToolInput,
+} from "@k2b/cloud/ai";
 import { userFromActor } from "@k2b/cloud/server";
 import { z } from "zod";
 import { ArtifactError, type ArtifactIdentity } from "./identity";
@@ -44,6 +51,9 @@ async function authorize(call: z.infer<typeof ClientCall>, identity: ArtifactIde
     JSON.stringify(CodeRuntimeInput.parse(call.input))
   )
     throw new ArtifactError("INVALID_INPUT");
+  // The stored result becomes this turn's tool result, also when another window delivers it: same writer rule as the result itself.
+  const config = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: active.turn.id });
+  if (!mayWriteIntoAiTurn(identity.actor, config?.actor)) throw new ArtifactError("ACCESS_DENIED");
   return { user, turnId: active.turn.id, conversationId: conversation.id, toolName: block.name };
 }
 
