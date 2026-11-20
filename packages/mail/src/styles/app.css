@@ -2453,6 +2453,14 @@
   align-items: center;
   gap: 0.25rem;
 }
+/* Send ends 10 px above the box's bottom edge in every state: the bar's controls sit on its bottom, the quiet status
+   stays on their middle. */
+.k2b-ui .mail-reply-box-foot:not([data-tone]) {
+  align-items: flex-end;
+}
+.k2b-ui .mail-reply-box-foot:not([data-tone]) > :is(.mail-inline-draft-status, .mail-reply-box-status) {
+  align-self: center;
+}
 .k2b-ui .mail-reply-box-tools {
   flex-wrap: nowrap;
   margin-inline-start: 0.25rem;

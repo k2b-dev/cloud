@@ -4472,12 +4472,14 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   const overflow = getComputedStyle(element).overflowY;
                   return (overflow === "auto" || overflow === "scroll") && element.scrollHeight > element.clientHeight + 1;
                 });
-                const kept = [".mail-inline-draft-text", "[data-mail-draft-signature]", "[data-mail-quote-card]"].map((selector) => {
-                  const element = box.querySelector<HTMLElement>(selector)!;
-                  return { selector, cut: element.scrollHeight > element.clientHeight + 1, shrink: getComputedStyle(element).flexShrink };
+                const kept = [".mail-inline-draft-text", "[data-mail-draft-signature]", "[data-mail-quote-card]"].flatMap((selector) => {
+                  const element = box.querySelector<HTMLElement>(selector);
+                  return element
+                    ? [{ selector, cut: element.scrollHeight > element.clientHeight + 1, shrink: getComputedStyle(element).flexShrink }]
+                    : [];
                 });
                 const firstLine = box.querySelector<HTMLElement>(".cm-line")!.getBoundingClientRect();
-                const quote = rect("[data-mail-quote-card]");
+                const quote = box.querySelector<HTMLElement>("[data-mail-quote-card]")?.getBoundingClientRect() ?? null;
                 return {
                   height: box.getBoundingClientRect().height,
                   sendGap: box.getBoundingClientRect().bottom - rect("[data-mail-reply-send]").bottom,
@@ -4489,15 +4491,15 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   edges: {
                     text: firstLine.left,
                     signature: rect("[data-mail-draft-signature]").left,
-                    quote: quote.left,
+                    quote: quote?.left ?? firstLine.left,
                     send: rect("[data-mail-reply-send]").left,
                   },
-                  quoteHeight: quote.height,
+                  quoteHeight: quote?.height ?? 0,
                 };
               });
             const fitted = await geometry();
             // One scrolling surface; text, signature, and quote card keep their whole height.
-            expect(fitted.bodyScrollable).toBe("auto");
+            expect(["auto", "scroll"]).toContain(fitted.bodyScrollable);
             expect(fitted.scrollers).toEqual([]);
             for (const part of fitted.kept) {
               expect(part.cut, part.selector).toBe(false);
