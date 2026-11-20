@@ -87,6 +87,14 @@ type DialogStackEntry = {
   historyId?: number;
 };
 
+/** What a dialog takes from its call: the page's disposal count, the palette, and where focus returns. */
+type DialogCall = {
+  requested: number;
+  scope: ReturnType<typeof readUiScope>;
+  opener?: HTMLElement;
+  openerRing: boolean;
+};
+
 type DialogState = {
   element?: HTMLDialogElement;
   /** The size and content motion of the open frame while levels replace each other. */
@@ -640,26 +648,34 @@ export const createDialogCore = () => {
     state.connectionObserver.observe(document.documentElement, { childList: true, subtree: true });
   };
 
-  const open = <T>(view: DialogRender<T>, options: OpenDialogOptions = {}): Promise<T | undefined> => {
+  /**
+   * Reads the call's context now: its palette, the page it belongs to, and the opener focus returns to. A dialog whose
+   * code loads first opens with it later, as if it had opened at the call.
+   */
+  const capture = (): DialogCore["open"] => {
     if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
-    const scope = readUiScope();
-    return openAfter(view, options, disposals, { ...scope, primary: options.primary ?? scope.primary });
+    const opener = document.activeElement;
+    const call: DialogCall = {
+      requested: disposals,
+      scope: readUiScope(),
+      opener: opener instanceof HTMLElement ? opener : undefined,
+      openerRing: ringOnReturn(opener),
+    };
+    return (view, options = {}) => openAfter(view, options, call);
   };
 
-  const openAfter = <T>(
-    view: DialogRender<T>,
-    options: OpenDialogOptions,
-    requested: number,
-    uiScope: ReturnType<typeof readUiScope>,
-  ): Promise<T | undefined> => {
+  const open: DialogCore["open"] = (view, options) => capture()(view, options);
+
+  const openAfter = <T>(view: DialogRender<T>, options: OpenDialogOptions, call: DialogCall): Promise<T | undefined> => {
     if (options.signal?.aborted) return Promise.resolve(undefined);
     if (options.history) {
       // Dialogs closed just now leave the history first, or this dialog's entry would be the one removed.
       if (historySyncScheduled) syncHistory();
-      if (returning) return returning.then(() => openAfter(view, options, requested, uiScope));
+      if (returning) return returning.then(() => openAfter(view, options, call));
     }
-    // A dialog that waited for history while islands were disposed would open over content it was never meant for.
-    if (disposals !== requested) return Promise.resolve(undefined);
+    // A dialog that waited for history or its code while islands were disposed would open over content it was never
+    // meant for.
+    if (disposals !== call.requested) return Promise.resolve(undefined);
     const dialog = ensureDialogElement();
     listen();
     const previousTop = state.stack[state.stack.length - 1];
@@ -680,13 +696,13 @@ export const createDialogCore = () => {
     dialog.appendChild(container);
 
     const entry: DialogStackEntry = {
-      uiScope,
+      uiScope: { ...call.scope, primary: options.primary ?? call.scope.primary },
       container,
       panelClassName,
       cancelBehavior,
       initialFocus,
-      opener: activeElement instanceof HTMLElement ? activeElement : undefined,
-      openerRing: ringOnReturn(activeElement),
+      opener: call.opener,
+      openerRing: call.openerRing,
       ariaLabel: options.ariaLabel,
       ariaDescribedBy: options.ariaDescribedBy,
       role: options.role ?? "dialog",
@@ -821,12 +837,13 @@ export const createDialogCore = () => {
     open,
     close,
     isOpen: () => state.stack.length > 0,
+    capture,
     holdHistory,
     historySettled,
   };
 };
 
-const { holdHistory, historySettled, ...publicDialogCore } = createDialogCore();
+const { capture, holdHistory, historySettled, ...publicDialogCore } = createDialogCore();
 export const dialogCore: DialogCore = publicDialogCore;
 
 /**
@@ -835,5 +852,10 @@ export const dialogCore: DialogCore = publicDialogCore;
  * Release during island disposal forgets the marker without traversing; the router may replace the remaining entry.
  */
 export const holdDialogHistory = holdHistory;
+/**
+ * Internal: for a dialog whose code loads first. Call it synchronously where the dialog is asked for; the returned
+ * `open` uses that call's palette and opener, and resolves `undefined` without opening when the page changed since.
+ */
+export const captureDialogOpen = capture;
 /** Internal: waits until released holders have left history or were forgotten during island disposal. */
 export const dialogHistorySettled = historySettled;

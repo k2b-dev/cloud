@@ -1,6 +1,7 @@
 import { createSignal, type JSX } from "solid-js";
 import type { TextInput } from "../inputs/TextInput";
 import { resolveUiMessages } from "../intl/messages";
+import { captureDialogOpen, type DialogCore } from "./dialog-core";
 import { DialogHeader, promptButtonVariant, promptTone } from "./prompt-header";
 import { resolvePromptMessages } from "./prompt-messages";
 import { openPrompt } from "./prompt-sheet";
@@ -39,7 +40,12 @@ export const promptFormUnavailable = async (signal?: AbortSignal): Promise<void>
   if (!signal?.aborted) await openError(resolvePromptMessages().formUnavailable, { signal }, false);
 };
 
-const openConfirm = (content: PromptContent, options: ConfirmOptions | undefined, phraseInput?: typeof TextInput) => {
+const openConfirm = (
+  content: PromptContent,
+  options: ConfirmOptions | undefined,
+  phraseInput?: typeof TextInput,
+  open?: DialogCore["open"],
+) => {
   const confirmationPhrase = options?.confirmationPhrase;
   // A confirmation that asks for a phrase never opens without the field to type it.
   if (confirmationPhrase && !phraseInput) throw new Error("A confirmationPhrase needs its text field");
@@ -114,6 +120,7 @@ const openConfirm = (content: PromptContent, options: ConfirmOptions | undefined
     resolvePromptMessages().confirmation,
     true,
     confirmationPhrase ? () => confirmationInput ?? null : undefined,
+    open,
   );
 };
 
@@ -127,8 +134,10 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
   const field = phraseField?.loaded();
   if (field) return openConfirm(content, options, field);
   if (!phraseField) return promptFormUnavailable(options?.signal).then(() => false);
+  // The confirmation opens with the palette, page and opener of this call, not of the moment the field arrives.
+  const open = captureDialogOpen();
   return phraseField.load().then(
-    (input) => openConfirm(content, options, input),
+    (input) => openConfirm(content, options, input, open),
     async () => {
       await promptFormUnavailable(options?.signal);
       return false;
