@@ -49,7 +49,7 @@ Während du in **An**, **Cc** oder **Bcc** tippst, schlägt Mail zuerst Kontakte
 
 Für mehrere Personen auf einmal tippst oder fügst du eine Liste ein, getrennt durch Komma, Semikolon oder Zeilenumbruch, auch in der Form `Name <Adresse>`. Jede Adresse wird ein eigener Empfänger; ein Teil, der keine Adresse ist, bleibt markiert im Feld stehen. Steht beim Senden noch Text in einem Empfängerfeld, geht er mit, wenn er eine vollständige Adresse ist. Sonst sendet Mail nicht, behält den Text und setzt die Schreibmarke in dieses Feld.
 
-**Strg+Enter** (**⌘+Enter** auf dem Mac) sendet aus jedem Feld des Entwurfs, mit denselben Prüfungen wie **Senden**. Während Mail speichert oder sendet, behält der Text Schreibmarke und Werkzeugleiste; Tippen wartet, bis der Schritt fertig ist. Ein Entwurf im eigenen Fenster schließt das Fenster nach dem Senden oder Verwerfen.
+**Strg+Enter** (**⌘+Enter** auf dem Mac) sendet aus jedem Feld des Entwurfs, mit denselben Prüfungen wie **Senden**. Wartet **Senden** noch, etwa auf einen Upload oder die Verbindung, sagt eine Meldung, warum. Während Mail speichert oder sendet, behält der Text Schreibmarke und Werkzeugleiste; Tippen wartet, bis der Schritt fertig ist. Ein Entwurf im eigenen Fenster schließt das Fenster nach dem Senden oder Verwerfen.
 
 Öffnest du mit offenem Entwurf eine andere Unterhaltung oder ein anderes Postfach, speichert Mail die letzten Änderungen, bevor es die Bearbeitungssperre freigibt. Zurück und Neuladen öffnen die Unterhaltung wieder mit offenem Entwurf.
 
@@ -108,7 +108,7 @@ Dein Standardformat steht unter **… → Einstellungen → Schreiben → Format
 
 Entwürfe gehören zum Postfach, nicht nur zu dem Browser, der sie erstellt hat. Eine Unterhaltung hat einen Antwortentwurf, und er steht immer in der Antwortbox. **Antworten**, **Allen antworten** und **Weiterleiten** ändern seine Art, statt einen zweiten zu beginnen. In der Liste zeigt eine Unterhaltung mit Entwürfen **Entwurf** oder die Anzahl der Entwürfe mit den Personen, die daran schreiben.
 
-Ein Vorschlag von Gustav oder einem anderen automatischen Konto ist dieser eine Antwortentwurf, in der Antwortbox, in Pflaume, mit dem Namen des Kontos, zum Beispiel **Vorschlag von Gustav**, und **Tippe, um ihn zu übernehmen, oder sende ihn so**. Ein Vorschlag vom Code des Postfachs zeigt **Code von** und den Namen des Postfachs. Er geht nie von selbst raus; **Senden** sendet ihn unverändert. Sobald jemand etwas ändert, auch die Empfänger, ist er ein normaler Entwurf, und das Konto ersetzt ihn nie. Jedes Konto hat in einer Unterhaltung höchstens einen solchen Vorschlag.
+Ein Vorschlag von Gustav oder einem anderen automatischen Konto ist dieser eine Antwortentwurf, in der Antwortbox, in Pflaume, mit dem Namen des Kontos, zum Beispiel **Vorschlag von Gustav**, und **Tippe, um ihn zu übernehmen, oder sende ihn so**. Ein Vorschlag vom Code des Postfachs zeigt **Code von** und den Namen des Postfachs. Er geht nie von selbst raus; **Senden** sendet ihn unverändert. Nur die Zeile über dem zitierten Original („Am … schrieb …:“) steht in deiner Sprache und Zeitzone. Sobald jemand etwas ändert, auch die Empfänger, ist er ein normaler Entwurf, und das Konto ersetzt ihn nie. Jedes Konto hat in einer Unterhaltung höchstens einen solchen Vorschlag.
 
 Mail speichert den gemeinsamen Entwurf, während du arbeitest. Außerdem führt Mail im Browser ein Wiederherstellungsprotokoll für Änderungen, die den Server noch nicht erreicht haben. Nach einem Neuladen oder einer unterbrochenen Verbindung kann Mail diese Browseränderungen wiederherstellen.
 
