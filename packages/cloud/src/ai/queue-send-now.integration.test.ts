@@ -15,6 +15,7 @@ import {
   requestQueuedMessageSendNow,
   updateQueuedMessage,
 } from "./message-queue";
+import { userResourceContext } from "./projects.test-fixture";
 import type { AiStoredMessageOrigin } from "./queue-contracts";
 import { AiQuotaError, aiQuotas } from "./quotas";
 import { aiConversations } from "./store";
@@ -73,8 +74,10 @@ integration("one FIFO combines people, automations and chats; only the person's 
     expect(entries[2]?.origin).toMatchObject({ name: f.chat.title, href: `/app/assistant?conversation=${f.chat.shortId}` });
     const hidden = await listQueuedMessages(f.chat.id, { userId: "00000000-0000-4000-8000-000000000099" });
     expect(hidden[2]?.origin).toEqual({ kind: "chat", id: f.chat.shortId, name: f.chat.title });
-    expect(await editQueuedMessage(f.chat.id, automation, "Changed", f.userId)).toBe(false);
-    expect(await editQueuedMessage(f.chat.id, person, "Edited", f.userId)).toBe(true);
+    const { actor: author } = userResourceContext({ type: "user", userId: f.userId });
+    if (author.kind !== "user") throw new Error("fixture actor must be a user");
+    expect(await editQueuedMessage(f.chat.id, automation, "Changed", author)).toBe("not_found");
+    expect(await editQueuedMessage(f.chat.id, person, "Edited", author)).toBe("edited");
     expect(await updateQueuedMessage(f.chat.id, automation, "cancel")).toBe(true);
     const jobs: Array<{ conversationId: string; turnId: string }> = [];
     await drainQueuedMessages(async (job) => {

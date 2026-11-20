@@ -17,6 +17,7 @@ import {
   rememberAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModel } from "./assistant-models";
+import { AI_TURN_WRITE_FORBIDDEN, mayWriteIntoAiTurn } from "./capability-execution";
 import { waitingAiApprovals } from "./conversation-watchers";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
@@ -113,7 +114,7 @@ export type SubmitAiChatTurnInput = {
   writerOrigin?: AiStoredMessageOrigin;
   /** Only interactive Assistant HTTP handlers set this server-owned marker. */
   assistantChat?: true;
-  /** Only a handler that saw a signed-in browser session sets this server-owned marker; see `AiChatTurnRunConfig`. */
+  /** Only a handler that saw a signed-in session (browser or Cloud app) sets this server-owned marker; see `AiChatTurnRunConfig`. */
   signedInSession?: true;
   conversationId: string;
   /** Stable public ID exposed as runtime context, not instructions. */
@@ -389,8 +390,10 @@ export const submitAiTurnAction = async (input: {
   action: AiTurnActionInput;
   decidedBy: { userId: string; via: ApprovalDecisionChannel; deviceId?: string };
   toolApprovalContext?: AiToolApprovalChangeContext;
-  /** Whether a person decides in a signed-in browser session; only such a decision may remember a website. */
+  /** Whether a person decides in a signed-in session; only such a decision may remember a website. */
   signedInSession?: boolean;
+  /** Who sends a tool result. The result runs with the turn's actor, so a missing writer refuses it. */
+  actor?: RequestActor;
 }): Promise<{ ok: true } | { ok: false; status: 400 | 403 | 404 | 409; message: string }> => {
   const pending = await aiConversations.getPendingTurnAction(input);
   if (!pending) return { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
@@ -469,6 +472,10 @@ export const submitAiTurnAction = async (input: {
     }
   } else {
     if (pending.kind !== "client_tool") return { ok: false, status: 400, message: "Approval requests require an approval response." };
+    const config = await aiConversations.getTurnRunConfig(input);
+    if (!input.actor || !mayWriteIntoAiTurn(input.actor, config?.actor)) {
+      return { ok: false, status: 403, message: AI_TURN_WRITE_FORBIDDEN };
+    }
     const resolved = await aiConversations.resolvePendingTurnAction({
       ...input,
       event: { type: "tool_result", callId: input.callId, result: input.action.result },

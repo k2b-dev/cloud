@@ -1,5 +1,5 @@
 import { PHONE_SHEET_QUERY } from "../actions/phone-sheet";
-import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
+import { captureDialogOpen, type DialogCore, type DialogRender, type OpenDialogOptions } from "./dialog-core";
 
 /** The prompt options that shape its dialog, as in `DialogOptions`. */
 type PromptFrame = {
@@ -37,6 +37,8 @@ if (typeof matchMedia === "function" && matchMedia(PHONE_SHEET_QUERY).matches) l
 /**
  * Opens a prompt with the frame, cancellation, history, and name every prompt shares: the dialog in the middle, or on
  * a phone the same content as a bottom sheet. `label` names it when it has no title; `sheet: false` keeps the dialog.
+ * A caller that loads code before it opens passes `open` from `captureDialogOpen()` at its own call; by default the
+ * prompt takes its context here, before the sheet's code loads.
  */
 export const openPrompt = <T,>(
   render: DialogRender<T>,
@@ -44,6 +46,7 @@ export const openPrompt = <T,>(
   label: string,
   sheet = true,
   initialFocus?: OpenDialogOptions["initialFocus"],
+  open: DialogCore["open"] = captureDialogOpen(),
 ): Promise<T | undefined> => {
   const frame: OpenDialogOptions = {
     panelClassName: panelClass(options),
@@ -56,8 +59,8 @@ export const openPrompt = <T,>(
     ariaLabel: options?.ariaLabel ?? options?.title ?? label,
   };
   return !sheet || !opensAsSheet(options)
-    ? dialogCore.open<T>(render, frame)
+    ? open<T>(render, frame)
     : view
-      ? view.openPromptSheet(render, frame)
-      : load().then((module) => module.openPromptSheet(render, frame));
+      ? view.openPromptSheet(render, frame, open)
+      : load().then((module) => module.openPromptSheet(render, frame, open));
 };
