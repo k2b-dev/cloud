@@ -8,6 +8,7 @@ import {
   editQueuedMessage,
   enqueueChatMessage,
   listQueuedMessages,
+  mayChangeQueuedMessage,
   migrateAiMessageQueue,
   updateQueuedMessage,
 } from "./message-queue";
@@ -122,6 +123,8 @@ integration(
       const phone = { ...writer, sessionKind: "app" as const };
       // The fixture stores no actor: the phone app may not change it, and other callers keep their access.
       expect(await editQueuedMessage(chat.id, third, "From the phone", { signedInSession: true, author: phone })).toBe("forbidden");
+      expect(await mayChangeQueuedMessage(chat.id, third, phone)).toBe(false);
+      expect(await mayChangeQueuedMessage(chat.id, third, writer)).toBe(true);
       expect(await editQueuedMessage(chat.id, third, "Edited in queue", { signedInSession: true, author: writer })).toBe("edited");
       expect((await listQueuedMessages(chat.id))[0]?.content).toEqual([{ type: "text", text: "Edited in queue" }]);
       const restricted = async (id: string) =>
@@ -137,6 +140,7 @@ integration(
       expect(await restricted(third)).toBe(true);
       // An entry queued in the app stays changeable there.
       await sql`UPDATE ai.queued_messages SET submission=jsonb_set(submission,'{runConfig,actor}',(${JSON.stringify(phone)}::text)::jsonb) WHERE id=${third}::uuid`;
+      expect(await mayChangeQueuedMessage(chat.id, third, phone)).toBe(true);
       expect(await editQueuedMessage(chat.id, third, "Edited in the app", { signedInSession: true, author: phone })).toBe("edited");
       expect(await updateQueuedMessage(chat.id, third, "cancel")).toBe(true);
       expect(await listQueuedMessages(chat.id)).toEqual([]);

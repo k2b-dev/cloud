@@ -1,7 +1,8 @@
 import type { Message } from "@k2b/nessi";
 import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
-import type { UserRequestActor } from "../server";
+import type { RequestActor, UserRequestActor } from "../server";
+import { isAppSessionActor } from "../server/actor";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { coreSettings } from "../services/settings/api";
@@ -368,6 +369,18 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
       await tx`UPDATE ai.conversations SET last_used_at = now(), done = CASE WHEN done IS TRUE THEN NULL ELSE done END, queue_held_at = CASE WHEN ${origin.kind === "person"} THEN NULL ELSE queue_held_at END WHERE id = ${input.conversationId}::uuid`;
   };
   return db ? enqueue(db) : sql.begin(enqueue);
+};
+
+/**
+ * Whether `writer` may cancel, retry, or send now the queued entry `id`. The entry runs as the actor that queued it,
+ * so a session of the Cloud app may change only entries queued in the app; other writers skip the lookup. A missing
+ * entry passes, so the change itself answers that it is gone.
+ */
+export const mayChangeQueuedMessage = async (conversationId: string, id: string, writer: RequestActor): Promise<boolean> => {
+  if (!isAppSessionActor(writer)) return true;
+  const [row] = await sql<{ actor: RequestActor | null }[]>`SELECT submission#>'{runConfig,actor}' AS actor FROM ai.queued_messages
+    WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid`;
+  return !row || mayWriteIntoAiTurn(writer, row.actor ?? undefined);
 };
 
 /** Cancellation and retry share the conversation lock with promotion. */

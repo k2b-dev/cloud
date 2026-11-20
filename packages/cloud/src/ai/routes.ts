@@ -85,6 +85,7 @@ import {
   editQueuedMessage,
   enqueueChatMessage,
   listQueuedMessages,
+  mayChangeQueuedMessage,
   queuedMessageAccepted,
   queuedMessageReceipt,
   updateQueuedMessage,
@@ -1168,6 +1169,8 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
+        if (!(await mayChangeQueuedMessage(conversation.id, c.req.param("messageId") ?? "", ctx.actor)))
+          return respond(c, fail(err.forbidden(AI_TURN_WRITE_FORBIDDEN)));
         if (!(await updateQueuedMessage(conversation.id, c.req.param("messageId") ?? "", "cancel"))) return notFound(c);
         wakeAiMessageQueue(conversation.id);
         return respond(c, ok({ ok: true }));
@@ -1177,6 +1180,8 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
+        if (!(await mayChangeQueuedMessage(conversation.id, c.req.param("messageId") ?? "", ctx.actor)))
+          return respond(c, fail(err.forbidden(AI_TURN_WRITE_FORBIDDEN)));
         if (!(await updateQueuedMessage(conversation.id, c.req.param("messageId") ?? "", "retry"))) return notFound(c);
         wakeAiMessageQueue(conversation.id);
         return respond(c, ok({ ok: true }));
@@ -1187,6 +1192,8 @@ export const aiRoutes = (() => {
         const conversation = await loadConversation(c, ctx);
         const id = c.req.param("messageId") ?? "";
         if (!conversation || !z.uuid().safeParse(id).success) return notFound(c);
+        if (!(await mayChangeQueuedMessage(conversation.id, id, ctx.actor)))
+          return respond(c, fail(err.forbidden(AI_TURN_WRITE_FORBIDDEN)));
         try {
           const receipt = await sendQueuedAiChatMessageNow(conversation.id, id);
           return receipt ? respond(c, ok(receipt)) : notFound(c);

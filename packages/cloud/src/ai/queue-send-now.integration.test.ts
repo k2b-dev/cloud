@@ -8,6 +8,7 @@ import {
   editQueuedMessage,
   enqueueChatMessage,
   listQueuedMessages,
+  mayChangeQueuedMessage,
   migrateAiMessageQueue,
   queuedMessageReceipt,
   readQueuedTurnInterruption,
@@ -79,6 +80,10 @@ integration("one FIFO combines people, automations and chats; only the person's 
     expect(hidden[2]?.origin).toEqual({ kind: "chat", id: f.chat.shortId, name: f.chat.title });
     expect(await editQueuedMessage(f.chat.id, automation, "Changed", { signedInSession: true, author: f.author })).toBe("not_found");
     expect(await editQueuedMessage(f.chat.id, person, "Edited", { signedInSession: true, author: f.author })).toBe("edited");
+    // An automation entry runs as its owner, so a phone app session may neither send it now nor remove it.
+    await sql`UPDATE ai.queued_messages SET submission=jsonb_set(submission,'{runConfig,actor}',(${JSON.stringify(f.author)}::text)::jsonb) WHERE id=${automation}::uuid`;
+    expect(await mayChangeQueuedMessage(f.chat.id, automation, { ...f.author, sessionKind: "app" })).toBe(false);
+    expect(await mayChangeQueuedMessage(f.chat.id, automation, f.author)).toBe(true);
     expect(await updateQueuedMessage(f.chat.id, automation, "cancel")).toBe(true);
     const jobs: Array<{ conversationId: string; turnId: string }> = [];
     await drainQueuedMessages(async (job) => {

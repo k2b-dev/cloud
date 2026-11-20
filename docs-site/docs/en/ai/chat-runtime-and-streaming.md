@@ -238,9 +238,11 @@ restrict the turn.
 
 Queued text, steering, and client tool results run as the person and session
 that started the turn or queued the entry. A session of the Cloud app may
-therefore edit only entries queued in the app, and steer or answer tool
-requests only in turns started there; others answer `403` with code
-`FORBIDDEN`. A browser session, `cld`, and other clients keep their access. The Cloud app cannot write to another chat with `ai.chat.send` or create
+therefore edit, remove, retry, or send now only entries queued in the app, and
+steer or answer tool requests only in turns started there; others answer `403`
+with code `FORBIDDEN`. Automation entries never come from the app, so the app
+cannot change them. A browser session, `cld`, and other clients keep their
+access. The Cloud app cannot write to another chat with `ai.chat.send` or create
 one with `ai.chat.create`; both answer `source_restricted`.
 
 ## List place chats

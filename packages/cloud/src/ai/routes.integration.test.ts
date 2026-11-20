@@ -479,7 +479,7 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
-  test("a phone app session steers, answers and edits only turns and queued messages started in the app", async () => {
+  test("a phone app session steers, answers, edits and removes only turns and queued messages started in the app", async () => {
     const userId = await insertUser();
     const user = (await accounts.users.get({ id: userId }))!;
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
@@ -504,7 +504,7 @@ suite("global AI conversation boundaries", () => {
         headers,
         body: JSON.stringify({ message: "Change course", clientRequestId }),
       });
-    const enqueue = async (actor: RequestActor) => {
+    const enqueue = async (actor: RequestActor, automation?: string) => {
       const current = (await aiConversations.getConversation({ conversationId: chat.id }))!;
       const id = crypto.randomUUID();
       await enqueueChatMessage(
@@ -512,15 +512,28 @@ suite("global AI conversation boundaries", () => {
         {
           conversationId: chat.id,
           modelId: "fixture-model",
-          runConfig: runConfig(actor),
+          runConfig: {
+            ...runConfig(actor),
+            ...(automation ? { writerOrigin: { kind: "automation" as const, id: automation, runId: crypto.randomUUID() } } : {}),
+          },
           userMessage: userMessage("Queued"),
-          expectedDraftRevision: current.draft.revision,
+          ...(automation ? {} : { expectedDraftRevision: current.draft.revision }),
           expectedProjectId: null,
         },
         [{ type: "text", text: "Queued" }],
       );
       return id;
     };
+    const change = (id: string, headers: Record<string, string>, action: "remove" | "retry" | "send-now") =>
+      aiRoutes.request(`/conversations/${chat.shortId}/queue/${id}${action === "remove" ? "" : `/${action}`}`, {
+        method: action === "remove" ? "DELETE" : "POST",
+        headers,
+      });
+    const status = async (id: string) =>
+      (
+        await sql<{ status: string; sending: boolean }[]>`SELECT status, send_requested_at IS NOT NULL AS sending
+        FROM ai.queued_messages WHERE id=${id}::uuid`
+      )[0];
     const edit = (id: string, headers: Record<string, string>) =>
       aiRoutes.request(`/conversations/${chat.shortId}/queue/${id}`, {
         method: "PATCH",
@@ -602,6 +615,23 @@ suite("global AI conversation boundaries", () => {
       ]);
       expect((await edit(browserQueued, web)).status).toBe(200);
       expect((await edit(appQueued, phone)).status).toBe(200);
+
+      // Removing, retrying and sending now follow the same rule, automation entries included.
+      const automationQueued = await enqueue(browserActor, "code-1");
+      for (const id of [browserQueued, automationQueued])
+        for (const action of ["remove", "retry", "send-now"] as const) {
+          const refused = await change(id, phone, action);
+          expect(refused.status).toBe(403);
+          expect(await refused.json()).toMatchObject({ code: "FORBIDDEN" });
+          expect(await status(id)).toEqual({ status: "pending", sending: false });
+        }
+      expect((await change(browserQueued, web, "retry")).status).toBe(200);
+      expect((await change(browserQueued, web, "remove")).status).toBe(200);
+      expect((await change(automationQueued, web, "remove")).status).toBe(200);
+      expect((await change(appQueued, phone, "remove")).status).toBe(200);
+      expect((await status(browserQueued))?.status).toBe("cancelled");
+      expect((await status(automationQueued))?.status).toBe("cancelled");
+      expect((await status(appQueued))?.status).toBe("cancelled");
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;

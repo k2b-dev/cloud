@@ -412,9 +412,9 @@ is removed:
 
 An Assistant turn or queued message runs as the session that started it. The
 Cloud app may steer or answer tool requests only in turns started in the app
-and edit only messages queued there; others answer `403` with code
-`FORBIDDEN`. The app cannot write to or create another chat through
-`ai.chat.send` or `ai.chat.create`.
+and edit, remove, retry, or send now only messages queued there; others answer
+`403` with code `FORBIDDEN`. The app cannot write to or create another chat
+through `ai.chat.send` or `ai.chat.create`.
 
 Ordinary work stays available, including profile changes, sharing, and
 read-only calendar feed links. In your application, guard every route that
