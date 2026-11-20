@@ -141,6 +141,14 @@ describe("FieldValue rendering", () => {
     expect(lookupHtml).toContain("Ada Lovelace");
     expect(barcodeHtml).toContain("grids-code-display--linear");
     expect(barcodeHtml).toContain("ITEM-42");
+    // The browser shows the server's drawing, or its text for a value it could not draw, until its code loads.
+    expect(barcodeHtml).toContain('data-grids-barcode="table:code128:0:ITEM-42"');
+    expect(barcodeHtml).toContain("<svg");
+    const undrawableHtml = renderToString(() =>
+      createComponent(FieldValue, { field: itemCode, value: "abc", format: { kind: "barcode", bcid: "ean13" } }),
+    );
+    expect(undrawableHtml).toContain('data-grids-barcode="table:ean13:0:abc"');
+    expect(undrawableHtml).not.toContain("<svg");
     expect(progressHtml).toContain("75%");
   });
 });

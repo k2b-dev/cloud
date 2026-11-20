@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "module": "src/index.ts",
+  "imports": {
+    "#barcode-drawing": {
+      "browser": "./src/barcode-drawing.browser.ts",
+      "default": "./src/barcode-drawing.ts"
+    }
+  },
   "exports": {
     ".": "./src/index.ts",
     "./cli": "./src/cli.ts"
