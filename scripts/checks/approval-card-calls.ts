@@ -32,6 +32,19 @@ const openingTags = (source: string): { index: number; text: string }[] => {
   return tags;
 };
 
+/** The opening tag that starts at `index`, honouring braces, so a prop's JSX value belongs to it. */
+const openingTag = (source: string, index: number): string => {
+  let depth = 0;
+  let end = index + 1;
+  for (; end < source.length; end++) {
+    const char = source[end];
+    if (char === "{") depth++;
+    else if (char === "}") depth--;
+    else if (char === ">" && depth === 0 && source[end - 1] !== "=") break;
+  }
+  return source.slice(index, end);
+};
+
 /** Strips the values inside braces, so only the prop names of one tag remain. */
 const propNames = (tag: string): string => {
   let depth = 0;
@@ -76,14 +89,18 @@ export const checkSource = (file: string, source: string): Finding[] => {
     `<Chat\\.Decision\\b|\\bChatDecision\\b(?!Props|State|Answer|Reason|Fact)${aliases.map((alias) => `|<${alias}(?:\\.Decision)?\\b`).join("")}`,
     "g",
   );
+  // A question that asks for one value (`entry`, such as ChatDecisionField) is no approval and has no ApprovalFrame form.
+  const valueQuestion = (index: number) => openingTag(source, index).includes("<ChatDecisionField");
   if (!file.endsWith(FRAME_FILE))
-    for (const match of source.matchAll(drawn))
+    for (const match of source.matchAll(drawn)) {
+      if (valueQuestion(match.index)) continue;
       findings.push({
         file,
         line: line(source, match.index),
         message:
           "Draw approvals with ApprovalFrame or ApprovalCard from @k2b/cloud/approvals/ui; Chat.Decision belongs to ApprovalFrame alone.",
       });
+    }
   return findings;
 };
 
