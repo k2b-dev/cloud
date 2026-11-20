@@ -9,18 +9,27 @@ import { JmapReconciliationRequiredError, readJmapEmailDelta, readJmapMailboxDel
 import { jmapStateSchema } from "./jmap-sync-state";
 import { type JmapTransportDependencies, requestJmap } from "./jmap-transport";
 
-// Assertions and request failures expose stages only, never server values.
+// Assertions and request failures expose stages and error classes only, never server values.
 function check(condition: unknown, label: string): asserts condition {
   ok(Boolean(condition), label);
 }
 function equal(actual: unknown, expected: unknown, label: string): void {
   check(isDeepStrictEqual(actual, expected), label);
 }
+function describeFailure(error: unknown): string {
+  if (!(error instanceof Error)) return "non-error";
+  const parts = [error.name];
+  for (const key of ["code", "status", "problemType", "methodType", "cause"]) {
+    const value: unknown = Reflect.get(error, key);
+    if (typeof value === "string" || typeof value === "number") parts.push(`${key}=${value}`);
+  }
+  return parts.join(" ");
+}
 async function stage<T>(label: string, operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
-  } catch {
-    throw new Error(`${label}: request failed`);
+  } catch (error) {
+    throw new Error(`${label}: request failed (${describeFailure(error)})`);
   }
 }
 function parse<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
@@ -254,7 +263,10 @@ suiteFor("jmap")("Mail delta conformance against CI Stalwart", () => {
         } catch (error) {
           failure = error;
         }
-        check(failure instanceof JmapReconciliationRequiredError, `${label} Rejected state: reconciliation required`);
+        check(
+          failure instanceof JmapReconciliationRequiredError,
+          `${label} Rejected state: reconciliation required (${failure === undefined ? "no failure" : describeFailure(failure)})`,
+        );
         check(failure.cause === "state_rejected" || failure.cause === "cannot_calculate", `${label} Rejected state: known cause`);
       },
       cleanup: async () => {
@@ -489,10 +501,8 @@ suiteFor("jmap")("Mail delta conformance against CI Stalwart", () => {
         equal(box.parentMailboxId, parent, "Mailbox hierarchy: parent identity");
         equal(box.parentPath, parentName, "Mailbox hierarchy: parent path");
       }
-      check(
-        !childOnly.created.some((box) => box.mailboxId === parent) && !childOnly.updated.some((box) => box.mailboxId === parent),
-        "Mailbox hierarchy: unchanged parent resolved without appearing in delta",
-      );
+      // A server may report the parent as updated when it gains a child; it was not created again.
+      check(!childOnly.created.some((box) => box.mailboxId === parent), "Mailbox hierarchy: parent resolved without being created again");
     });
   }, 30_000);
 
