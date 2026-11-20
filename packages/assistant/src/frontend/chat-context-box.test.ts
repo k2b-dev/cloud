@@ -92,6 +92,17 @@ describe("box model", () => {
     expect([contextOnly.empty, contextOnly.context]).toEqual([false, "1 Skills"]);
   });
 
+  test("a box that showed content keeps its lines when the last of it goes, such as a one-off alarm that rang", () => {
+    const bare = sidebarSnapshot({ results: [], sources: [], sourceCount: 0, skills: [], memories: [] });
+    const options = { locale: "de", formatSize: (bytes: number) => `${bytes} B`, copy, project: null };
+    expect(buildContextBoxModel(bare, options).empty).toBe(true);
+    expect(buildContextBoxModel(bare, { ...options, filled: true })).toMatchObject({
+      empty: false,
+      results: { count: 0 },
+      context: "Secrets & Freigaben",
+    });
+  });
+
   test("the sources line names Cloud items in their app's nouns and counts the rest as items", () => {
     const mails = ["M1", "M2", "M3"].map((id) =>
       source("resource", `mail.message:${id}`, `Mail ${id}`, minutesAgo(5), { ref: { type: "mail.message", id } }),

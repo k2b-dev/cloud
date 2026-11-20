@@ -176,6 +176,7 @@ the main action.
 | --- | --- | --- |
 | Selected file tile or list row | `FileGrid` | `k2b-file-grid` |
 | Selected file tree row | `FileTree` | `k2b-content-file-tree` |
+| Activity row for the open object | `ActivityList.Row` | `k2b-activity` |
 
 A selected table row (`DataTable`) is a stronger fill of the same app ink and
 never a coloured line or bar; see [Tables](/en/ui/content/tables#presentation).

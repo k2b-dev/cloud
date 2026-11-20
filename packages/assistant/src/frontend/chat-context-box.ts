@@ -186,7 +186,14 @@ export const contextBoxSourceCounts = (snapshot: Pick<AssistantChatContextSnapsh
  */
 export const buildContextBoxModel = (
   snapshot: AssistantChatContextSnapshot,
-  input: { locale: string; formatSize: (bytes: number) => string; copy: ContextBoxCopy; project: string | null },
+  input: {
+    locale: string;
+    formatSize: (bytes: number) => string;
+    copy: ContextBoxCopy;
+    project: string | null;
+    /** The box already showed this chat's content, such as an alarm that has rung since: it stays a box, not the empty sentence. */
+    filled?: boolean;
+  },
 ): ContextBoxModel => {
   const newest = snapshot.results.toSorted((a, b) => Date.parse(b.deliveredAt) - Date.parse(a.deliveredAt) || a.key.localeCompare(b.key));
   const results: ContextBoxGroup = {
@@ -228,9 +235,10 @@ export const buildContextBoxModel = (
     ];
   });
   return {
-    // A chat with a project, Skills or memories is not empty: its context line stays, also when a group such as
-    // its alarms goes away, so the box never falls back to the empty sentence under the person's eyes.
-    empty: snapshot.results.length === 0 && groups.every((group) => group.count === 0) && !sources && !summary,
+    // A chat with a project, Skills or memories is not empty, and a box that showed content keeps showing its lines when
+    // the last of it goes, such as a one-off alarm that rang: it never falls back to the empty sentence under the
+    // person's eyes. A reload shows what the chat holds now.
+    empty: !input.filled && snapshot.results.length === 0 && groups.every((group) => group.count === 0) && !sources && !summary,
     results,
     groups,
     sources,

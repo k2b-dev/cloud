@@ -6,7 +6,7 @@ import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
 import type { MailConversationContext } from "../../contracts";
 import { readApiError } from "./api-response";
-import { mailRemainingMessages } from "./mail-remaining-messages";
+import { mailMailboxViewMessages } from "./mail-mailbox-view-messages";
 
 /** One linked item as the head's chip lists it: its title, icon and the link that opens it. */
 export type MailLinkedItem = { id: string; title: string; icon: string; href: string; detail?: string };
@@ -26,7 +26,7 @@ export function createMailConversationLinks(props: {
   canWrite: () => boolean;
 }) {
   const locale = useLocale();
-  const t = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const t = createMemo(() => mailMailboxViewMessages.resolve([locale()]).t);
   let mounted = true;
   onCleanup(() => {
     mounted = false;

@@ -51,7 +51,11 @@ const navInk = [
 ];
 // A selected table row mixes a stronger fill of its own (see the table test below).
 const tableRow = '.k2b-ui .k2b-data-table__row[data-selected="true"]';
-const rows = ['.k2b-ui .k2b-file-grid__item[aria-selected="true"]', '.k2b-ui .k2b-content-file-tree__row[data-state="selected"]'];
+const rows = [
+  '.k2b-ui .k2b-file-grid__item[aria-selected="true"]',
+  '.k2b-ui .k2b-content-file-tree__row[data-state="selected"]',
+  ".k2b-ui .k2b-activity__entry[data-selected]",
+];
 
 describe("selection hooks", () => {
   test("one navigation fill and one row fill alias platform selection and action without color-mix", () => {

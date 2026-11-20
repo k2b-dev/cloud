@@ -47,6 +47,7 @@ import { coreUserEvents, coreUserEventTypes } from "@k2b/cloud/services/core-use
 import { principalLabel } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { aiChatCreateAction } from "./ai-chat-create";
 import { aiChatSendAction } from "./ai-chat-send";
 import { aiChatSendData, chatSendSnapshot } from "./ai-chat-send-result";
 import { aiDecisionQuery } from "./ai-decision-capability";
@@ -1288,6 +1289,7 @@ export const aiCapabilities = defineCapabilities({
       review: (input, context) => reviewSavedCatchup(input.operationId, context, "catchup_cancel"),
       run: (input, context) => runCodeQuery(context, (ctx) => cancelCodeEventCatchup(codeTargetId(context), input.operationId, ctx)),
     },
+    "ai.chat.create": aiChatCreateAction,
     "ai.chat.send": aiChatSendAction,
     "code.run": {
       title: "Run Code",

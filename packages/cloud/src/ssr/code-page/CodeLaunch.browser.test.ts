@@ -425,7 +425,10 @@ for (const theme of ["light", "dark"])
         await shot(page, "starting", width);
         expect(finish).toBeDefined();
         await finish!();
-        await page.getByText("Lauf startet.", { exact: true }).waitFor();
+        await page
+          .getByRole("region", { name: "Benachrichtigungen, Alt+T", exact: true })
+          .getByText("Lauf startet.", { exact: true })
+          .waitFor();
         expect(page.url()).toBe(initialUrl);
         expect(await boxes(page)).toEqual(before);
         await shot(page, "queued", width);
@@ -449,7 +452,10 @@ for (const theme of ["light", "dark"])
         const before = await boxes(page);
         const timingBefore = await timingBoxes(page);
         await page.getByRole("button", { name: "Jetzt ausführen", exact: true }).first().click();
-        await page.getByText("Lauf startet.", { exact: true }).waitFor();
+        await page
+          .getByRole("region", { name: "Benachrichtigungen, Alt+T", exact: true })
+          .getByText("Lauf startet.", { exact: true })
+          .waitFor();
         await page.evaluate(
           (id) =>
             window.codeHead.run({
@@ -598,7 +604,10 @@ for (const theme of ["light", "dark"])
         );
         const before = await boxes(page);
         await page.getByRole("button", { name: "Jetzt ausführen", exact: true }).first().click();
-        await page.getByText("Lauf startet.", { exact: true }).waitFor();
+        await page
+          .getByRole("region", { name: "Benachrichtigungen, Alt+T", exact: true })
+          .getByText("Lauf startet.", { exact: true })
+          .waitFor();
         expect(await page.getByText("Lauf startet, sobald der laufende Lauf fertig ist.", { exact: true }).count()).toBe(0);
         expect(await boxes(page)).toEqual(before);
         expect(await page.locator(".cloud-code__lage-cell").nth(1).textContent()).toContain("Läuft gerade · dein Lauf wartet");
@@ -627,7 +636,12 @@ for (const theme of ["light", "dark"])
         await page.getByText("„Jetzt ausführen“ hat nicht geklappt: keine Verbindung.", { exact: true }).waitFor();
         await shot(page, "start-error", width);
         await page.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
-        await page.getByText("Lauf startet.", { exact: true }).waitFor();
+        // A toast also writes to its visually hidden live region. Keep both present to catch an unscoped locator.
+        await page.locator("[data-k2b-live]").getByText("Lauf startet.", { exact: true }).waitFor({ state: "attached" });
+        await page
+          .getByRole("region", { name: "Benachrichtigungen, Alt+T", exact: true })
+          .getByText("Lauf startet.", { exact: true })
+          .waitFor();
         expect(keys).toHaveLength(2);
         expect(keys[0]).toBeTruthy();
         expect(keys[1]).toBe(keys[0]);

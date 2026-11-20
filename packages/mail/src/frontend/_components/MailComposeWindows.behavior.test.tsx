@@ -62,6 +62,7 @@ describe.skipIf(isServer)("Mail draft windows", () => {
         text: () => "",
         changed: () => false,
         appendText: () => undefined,
+        quoteText: () => undefined,
         release: async () => undefined,
         forgetLocal: () => undefined,
         settleMaterialization: async () => undefined,

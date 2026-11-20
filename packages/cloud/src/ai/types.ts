@@ -516,29 +516,6 @@ export type AiTurn = {
   error: string | null;
 };
 
-export type AiInterChatMessage = {
-  id: string;
-  shortId: string;
-  sourceConversationId: string;
-  sourceChatId: string;
-  sourceTitle: string;
-  sourceTurnId: string;
-  sourceTurnShortId: string;
-  sourceCallId: string;
-  targetConversationId: string;
-  targetChatId: string;
-  targetTitle: string;
-  actorUserId: string;
-  text: string;
-  status: "pending" | "delivered" | "failed";
-  targetTurnId: string | null;
-  targetTurnShortId: string | null;
-  targetMessageId: string | null;
-  error: string | null;
-  createdAt: string;
-  deliveredAt: string | null;
-};
-
 export type AiPendingTurnAction =
   | {
       type: "approval_request";
@@ -786,7 +763,7 @@ export type AiChatTurnRunConfig = {
   quotes?: import("./quote-markers").AiMessageQuote[];
   background?: RetiredRoutineContext;
   selectedSkillIds?: string[];
-  /** Server-owned marker: model grants apply only to interactive Assistant chat. */
+  /** Server-owned marker for interactive Assistant chat: personal model selection and chat quotas. Model grants apply to every turn. */
   assistantChat?: true;
   /**
    * Server-owned marker: a person started this turn in a signed-in browser session, not through `cld`, an API key,
@@ -872,6 +849,7 @@ export type AiConversationService = {
     /** Stable identity for one logical creation; replay never creates a replacement. */
     requestId?: string;
     ownerUserId: string;
+    /** An explicit user-owned title, preserved by first-message naming and enrichment. */
     title?: string;
     /** The title without `title`, such as the default in the request locale; a replay may differ in it. */
     defaultTitle?: string;
@@ -974,32 +952,6 @@ export type AiConversationService = {
     /** Only resources a tool call read; leaves out resources indexed as Project context without a call. */
     observed?: boolean;
   }): Promise<{ sources: AiConversationSource[]; nextCursor?: string; total: number }>;
-  getCapabilityInvocationOrigin(input: { idempotencyKey: string; toolName: string }): Promise<{
-    conversationId: string;
-    conversationShortId: string;
-    turnId: string;
-    turnShortId: string;
-    callId: string;
-  } | null>;
-  createInterChatMessage(input: {
-    sourceConversationId: string;
-    sourceTurnId: string;
-    sourceCallId: string;
-    targetChatId: string;
-    actorUserId: string;
-    text: string;
-    idempotencyKey: string;
-  }): Promise<{ ok: true; message: AiInterChatMessage } | { ok: false; reason: "not_found" | "same_chat" | "recursive" }>;
-  listPendingInterChatMessages(input?: { targetConversationId?: string; limit?: number }): Promise<AiInterChatMessage[]>;
-  failInterChatMessage(input: { messageId: string; error: string }): Promise<boolean>;
-  deliverInterChatMessage(input: {
-    messageId: string;
-    modelId: string;
-    runConfig: AiChatTurnRunConfig;
-    userMessage: Message;
-  }): Promise<
-    { delivered: false; reason: "not_found" | "busy" | "failed" } | { delivered: true; message: AiInterChatMessage; turn: AiTurn }
-  >;
   updateConversationMetadata(input: {
     conversationId: string;
     ownerUserId?: string;

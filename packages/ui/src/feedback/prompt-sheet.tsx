@@ -9,6 +9,7 @@ type PromptFrame = {
   signal?: AbortSignal;
   cancelBehavior?: OpenDialogOptions["cancelBehavior"];
   history?: boolean;
+  followContent?: boolean;
   ariaLabel?: string;
   title?: string;
 };
@@ -51,6 +52,7 @@ export const openPrompt = <T,>(
     signal: options?.signal,
     cancelBehavior: options?.cancelBehavior,
     history: options?.history,
+    followContent: options?.followContent,
     ariaLabel: options?.ariaLabel ?? options?.title ?? label,
   };
   return !sheet || !opensAsSheet(options)

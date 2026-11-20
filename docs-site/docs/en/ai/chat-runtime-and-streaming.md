@@ -212,8 +212,7 @@ for each viewer who may read it. Without a readable name the projection says
 `named: false` and `name` is only “Automation”, so surfaces read “From an
 automation” instead of naming it. Chat and automation links appear only when the viewer
 can open the target. Durable provenance stores IDs, never translated names or
-display links. The existing inter-chat delivery path also records its source
-chat. Its delivery lifecycle is unchanged.
+display links.
 
 The admission limit is defined by `AI_MESSAGE_QUEUE_LIMIT` for the existing
 personal composer queue. Platform adapters supply provenance through the
@@ -506,20 +505,18 @@ work from model text or trigger language-dependent automatic retries.
 
 ### Conversation titles
 
-A title given at creation, such as the localized "New chat" of the web chat,
-stays a default title. A chat created without a title gets the same default in
-the request locale, so `cld assistant chats create` names a chat "Neuer Chat"
-for a German caller. The first message's text replaces it, and enrichment may
-rename it. Renaming through `PATCH /api/ai/conversations/:id` marks the title as
-the user's (`titleSource: "user"`). Neither the first message nor enrichment
-replaces that title, for web and API clients alike. Renaming to the current title
-changes nothing.
+An explicit title at creation belongs to the person (`titleSource: "user"`),
+including a title equal to "New chat". The first message and enrichment preserve it.
+Without a title, the chat gets the localized default in the request locale:
+"Neuer Chat" for a German caller. The first message replaces that default,
+and enrichment may rename it.
 
-The CLI is one consumer of this rule. `--title` on `cld assistant -p` and
-`cld assistant chats create` creates the chat and then renames it through this
-endpoint. The CLI trims the title and checks the 1 to 120 character limit before
-creating anything. A `--title` equal to the default title the chat got keeps
-automatic naming.
+Renaming through `PATCH /api/ai/conversations/:id` also marks a changed title as
+the person's. Renaming to the current title changes nothing.
+
+`--title` on `cld assistant -p` and `cld assistant chats create` passes the title
+in the creation request. The CLI trims it and checks the 1 to 120 character
+limit before creating anything.
 
 ## Chat route groups
 
@@ -1510,3 +1507,16 @@ it as `AiTurnError.message` and renders it without interpreting host domains.
 A failed call without response bytes uses zero or its recorded estimate; other
 unknown usage stays fail-closed. Provider diagnostics remain log-only. Third-party hosts can supply their own
 explanations through the same contract.
+
+### Idempotent empty-chat creation
+
+Core's `ai.chat.create` Action and `POST /api/ai/conversations` share
+`aiConversations.createConversation`. A stable `requestId` claims one durable
+`ai.conversation_creations` receipt per owner, with normalized input hash.
+Concurrent retries return the same active chat. Conflicting input fails;
+archiving or deleting the original never creates a replacement.
+`AiConversationCreationError` from `@k2b/cloud/ai/runtime` distinguishes
+`conflict`, `unavailable` and `project_unavailable` for hosts translating transport errors.
+Core derives a domain-separated UUIDv8 from owner, operation and idempotency key;
+it checks full source authority and current Project read access before invoking
+the service. Creation writes an empty chat and does not submit an AI turn.

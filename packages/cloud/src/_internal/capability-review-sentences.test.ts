@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { CAPABILITY_ASK_REASONS, type CapabilitySlot } from "../contracts/capabilities";
+import { CAPABILITY_ASK_REASONS, type CapabilitySlot, CapabilitySlotSchema } from "../contracts/capabilities";
 import { reviewFixture } from "./capability-review.test-fixture";
 import {
   capabilityAskReasonText,
@@ -183,4 +183,13 @@ test("Cloud's EN/DE reason catalog has the exact contract texts", () => {
   expect(CAPABILITY_ASK_REASONS.map((reason) => capabilityAskReasonText(reason, { locale: "de", appName: "Mail" }))).toEqual(de);
   expect(capabilityAskReasonText("sends", { locale: "fr", appName: "Mail" })).toBe(en[0]!);
   expect(checkCapabilitySentenceMessages()).toEqual([]);
+});
+
+test("review text preserves emoji joiners while rejecting bidi controls", () => {
+  const slot = { kind: "text" as const, value: "Familie 👨‍👩‍👧" };
+  expect(CapabilitySlotSchema.safeParse(slot).success).toBe(true);
+  expect(capabilitySentenceText("Create {title}", { title: slot }, { locale: "en", timeZone: "UTC" })).toBe(`Create ${slot.value}`);
+  for (const control of ["\u202a", "\u202b", "\u202c", "\u202d", "\u202e", "\u2066", "\u2067", "\u2068", "\u2069", "\t", "\n"]) {
+    expect(CapabilitySlotSchema.safeParse({ ...slot, value: slot.value + control }).success).toBe(false);
+  }
 });

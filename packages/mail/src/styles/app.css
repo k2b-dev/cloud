@@ -1363,21 +1363,124 @@
   flex: 1 1 auto;
   cursor: text;
 }
-.k2b-ui .mail-inline-draft-quote {
+/* The original message under the signature, where the sent mail puts it. Its line on the left is the quote mark of the
+   sent mail (3 px, the same light gray as its blockquote), so card and preview read as one thing. Loading keeps the
+   collapsed card's height. */
+.k2b-ui .mail-quote-card {
+  display: grid;
+  gap: 0.375rem;
+  margin-block: 0.75rem 0.5rem;
+  padding: 0.125rem 0 0.125rem 0.75rem;
+  border-inline-start: 3px solid var(--k2b-border-strong);
+}
+.k2b-ui .mail-quote-card-head {
   display: flex;
   min-width: 0;
+  min-height: 2rem;
   align-items: center;
   gap: 0.5rem;
-  margin-block: 0.375rem 0.5rem;
-  padding: 0.25rem 0.25rem 0.25rem 0.5rem;
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface-muted);
-  font-size: 0.75rem;
-  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
 }
-.k2b-ui .mail-inline-draft-quote > .ti {
-  font-size: 0.9375rem;
+.k2b-ui .mail-quote-card-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2b-ui .mail-quote-card-date {
+  flex: none;
   color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+.k2b-ui .mail-quote-card-remove {
+  margin-inline-start: auto;
+}
+.k2b-ui .mail-quote-card-text {
+  display: grid;
+  gap: 0.375rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.k2b-ui .mail-quote-card-text > p {
+  margin: 0;
+  white-space: pre-line;
+}
+.k2b-ui .mail-quote-card:not([data-open]) .mail-quote-card-text > p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2b-ui .mail-quote-card-more {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  color: var(--ui-app-accent-text, var(--k2b-action));
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.k2b-ui .mail-quote-card-more:focus-visible,
+.k2b-ui .mail-quote-add:focus-visible {
+  outline: 2px solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+/* Loading: the shapes of the collapsed card, so nothing moves when the message arrives. */
+.k2b-ui .mail-quote-card-skeleton-avatar {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+}
+.k2b-ui .mail-quote-card-skeleton-name {
+  width: 8rem;
+  height: 0.75rem;
+}
+/* One text line (0.875rem × 1.5) per bar, and the "Show all" row most quoted messages have. */
+.k2b-ui .mail-quote-card-skeleton-line {
+  width: min(28rem, 100%);
+  height: 0.875rem;
+  margin-block: 0.21875rem;
+}
+.k2b-ui .mail-quote-card-skeleton-more {
+  width: 4.5rem;
+  height: 0.8125rem;
+  margin-block: 0.15625rem;
+}
+.k2b-ui .mail-quote-card-failed {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+.k2b-ui .mail-quote-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+/* Left out: one quiet line at the same place adds the original again; its text stands on the text edge. */
+.k2b-ui .mail-quote-add {
+  display: inline-flex;
+  align-self: flex-start;
+  justify-self: start;
+  align-items: center;
+  gap: 0.375rem;
+  margin-block: 0.5rem;
+  margin-inline-start: -0.25rem;
+  padding: 0.125rem 0.25rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  color: var(--k2b-text-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.k2b-ui .mail-quote-add:hover:not(:disabled) {
+  color: var(--k2b-text);
+  background: var(--k2b-edge-hover-bg);
 }
 .k2b-ui .mail-inline-draft-write {
   display: flex;
@@ -2048,8 +2151,8 @@
 .mail-bulk-actions > * { flex: none; }
 .mail-bulk-actions > [data-section-start] { margin-inline-start: 0.75rem; }
 
-/* The Events tab: one flat feed in the list's place. Rows keep fixed geometry in every state, so loading, a longer
-   detail, or the selection only change colour, never the place of the rows around them. */
+/* The Events tab: one flat feed in the list's place. The filter strip keeps its height when labels grow or Reset
+   appears, like the workspace head's horizontal filters. */
 .mail-events {
   display: flex;
   height: 100%;
@@ -2058,157 +2161,39 @@
   flex-direction: column;
   overflow: hidden;
 }
-.mail-events__filters {
+.k2b-ui .mail-events__filters {
   display: flex;
+  min-width: 0;
   min-height: 2.75rem;
-  flex-wrap: wrap;
+  flex: none;
   align-items: center;
   gap: 0.5rem;
   padding: 0.375rem 1rem;
+  scrollbar-width: none;
 }
+.mail-events__filters > * { flex: none; }
+.mail-events__filters::-webkit-scrollbar { display: none; }
 .mail-events__scroll,
 .mail-events__feed {
   flex: 1;
 }
-.mail-events__skeleton {
-  display: flex;
-  max-width: 57.5rem;
-  flex-direction: column;
-  margin: 0;
-  padding: 0 0 0.5rem;
-  list-style: none;
+/* The embedded loading timeline aligns with VirtualFeed's 0.5rem inset plus the shared row's 0.75rem padding. */
+.mail-events__skeleton { padding: 0 1.25rem 0.5rem; }
+/* VirtualFeed owns scrolling. Each item supplies the message list's two half-rem insets. */
+[data-mail-event] { padding-inline: 0.5rem; }
+/* Neighbouring selected rows read as one surface, without notches at the shared edge. */
+.k2b-ui [data-mail-event]:is([data-selected-join="above"], [data-selected-join="both"]) > .mail-events__row {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
 }
-/* Rows keep the reading width of the skeleton; the day headings that stay at the top span the list. */
-[data-mail-event] {
-  max-width: 57.5rem;
+.k2b-ui [data-mail-event]:is([data-selected-join="below"], [data-selected-join="both"]) > .mail-events__row {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
 }
-.mail-event {
-  display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 0.75rem;
-  min-height: 3rem;
-  padding: 0.5625rem 1rem;
-  color: var(--k2b-text);
-  text-decoration: none;
-}
-.mail-event--link {
-  cursor: pointer;
-}
-.mail-event--link:hover {
-  background: var(--k2b-hover);
-}
-.mail-event--link[aria-current="true"],
-.mail-event--link[aria-current="true"]:hover {
-  background: var(--k2b-row-selected);
-}
-.mail-event--link:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: -2px;
-}
-.mail-event__robot {
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  place-items: center;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-violet-600) 12%, var(--k2b-surface));
-  color: var(--color-violet-700);
-  font-size: 1rem;
-}
-.dark .mail-event__robot {
-  color: var(--color-violet-300);
-}
-.mail-event__text {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.0625rem;
-  font-size: 0.875rem;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-.mail-event__line {
-  min-width: 0;
-}
-.mail-event__icon {
-  display: inline-flex;
-  width: 1.125rem;
-  height: 1.125rem;
-  align-items: center;
-  justify-content: center;
-  margin-right: 0.25rem;
-  vertical-align: -0.1875rem;
-  font-size: 0.8125rem;
-  color: var(--k2b-text-secondary);
-}
-.mail-event__icon[data-tone="assign"] {
-  color: var(--k2b-app-workspace-active);
-}
-.mail-event__icon[data-tone="sent"] {
-  color: var(--k2b-info-text);
-}
-.mail-event__icon[data-tone="draft"],
-.mail-event__icon[data-tone="warning"] {
-  color: var(--k2b-warning-text);
-}
-.mail-event__icon[data-tone="done"] {
-  color: var(--k2b-success-text);
-}
-.mail-event__icon[data-tone="error"] {
-  color: var(--k2b-danger-text);
-}
-.mail-event__icon[data-tone="automation"] {
-  color: var(--color-violet-700);
-}
-.dark .mail-event__icon[data-tone="automation"] {
-  color: var(--color-violet-300);
-}
-.mail-event__actor,
-.mail-event__subject {
-  font-weight: 600;
-}
-.mail-event__count {
-  color: var(--k2b-text-muted);
-}
-.mail-event__detail {
-  font-size: 0.8125rem;
-  color: var(--k2b-text-muted);
-}
-[data-tone="error"] > .mail-event .mail-event__detail {
-  color: var(--k2b-danger-text);
-}
-[data-tone="warning"] > .mail-event .mail-event__detail {
-  color: var(--k2b-warning-text);
-}
-.mail-event__time {
-  padding-top: 0.125rem;
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--k2b-text-muted);
-  white-space: nowrap;
-}
-.mail-event--skeleton {
-  align-items: center;
-}
-.mail-event__skeleton-avatar {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 999px;
-}
-.mail-event__skeleton-line {
-  height: 0.875rem;
-  max-width: 26rem;
-}
-.mail-event__skeleton-line--1 {
-  max-width: 21rem;
-}
-.mail-event__skeleton-line--2 {
-  max-width: 17rem;
-}
-.mail-event__skeleton-time {
-  width: 2.5rem;
-  height: 0.75rem;
+/* Keep exactly the Mail message-list hover token on the shared row. */
+.k2b-ui .mail-events__row:where(:hover) {
+  --k2b-activity-row-surface: var(--ui-hover);
+  background: var(--ui-hover);
 }
 
 /* The reply box (Mail v5): always open above the newest message or under the conversation, one reply draft, and the internal note. One flat
@@ -2240,9 +2225,10 @@
 /* #3297: above the conversation, the placeholder and the loaded box share one reserved height, so a late draft,
    signature, or suggestion never moves the messages below. Text and signature fade out at that height (the signature
    first); interaction reveals overflowing content while retaining the reserved minimum height. Under the
-   conversation nothing sits below the box, so it keeps its natural height there. */
+   conversation nothing sits below the box, so it keeps its natural height there. The reserve holds the quoted original's
+   collapsed card under the signature too. */
 .k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame {
-  --mail-reply-box-reserved: 19rem;
+  --mail-reply-box-reserved: 21rem;
 }
 .k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-reply-box-pending,
 .k2b-ui .mail-reading-column[data-reply-position="top"] > .mail-reply-box-frame > .mail-inline-draft.mail-reply-box {
@@ -2321,6 +2307,27 @@
 .k2b-ui .mail-reply-box-recipients {
   min-width: 0;
   flex: 1 1 auto;
+}
+/* The sender is a quiet label of the head, as in the compose window: "from Support ⌄" in the head's 0.75 rem. It
+   keeps its full name while there is room; in a narrow head its name ends in an ellipsis down to "from ⌄", never
+   under Cc, and the recipients field keeps a usable width. */
+.k2b-ui .mail-reply-box-head:has(.mail-reply-box-sender) .mail-reply-box-recipients {
+  min-width: 6rem;
+  flex-basis: 0;
+}
+.k2b-ui .mail-reply-box-sender {
+  display: inline-flex;
+  min-width: 3.5rem;
+  flex: 0 1 auto;
+}
+.k2b-ui .mail-reply-box-sender > *,
+.k2b-ui .mail-reply-box-sender .k2b-dropdown__trigger {
+  min-width: 0;
+}
+.k2b-ui .mail-reply-box-sender .k2b-dropdown__trigger {
+  max-width: 100%;
+  padding-block: 0.125rem;
+  font-size: 0.75rem;
 }
 .k2b-ui .mail-reply-box-cc {
   display: inline-flex;
