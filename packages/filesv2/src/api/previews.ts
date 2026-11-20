@@ -1,6 +1,7 @@
 import { type AuthContext, auth, getLocale, middleware, requiresAuth, respond, v } from "@k2b/cloud/server";
+import type { PreviewReadResult } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { DownloadInputSchema } from "../contracts";
 import { requestCall } from "../files-call";
@@ -8,6 +9,39 @@ import { filesService } from "../service";
 import { errorMessage } from "./messages";
 
 const PreviewQuery = DownloadInputSchema.extend({ rev: z.string().min(1).max(256), size: z.enum(["small", "large", "pdf", "text"]) });
+const EntryImageQuery = z.object({ rev: z.string().min(1).max(256) });
+
+/** Private preview bytes for the session that was just allowed to read them; never a shared cache's copy. */
+function previewResponse(
+  c: Context<AuthContext>,
+  read: { result: PreviewReadResult; immutable: boolean },
+  missing: (code: string) => string,
+) {
+  const { result, immutable } = read;
+  if (result.state === "pending") {
+    c.header("Retry-After", String(result.retryAfter));
+    return respond(c, ok({ state: "pending" as const }), 202);
+  }
+  if (result.state !== "ready") {
+    const code = missing(`preview_${result.state}`);
+    return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status: 404, code });
+  }
+  const headers = new Headers({
+    "Content-Type": result.type,
+    "Content-Length": String(result.bytes),
+    "Cache-Control": immutable ? "private, max-age=31536000, immutable" : "no-store",
+    // The browser keeps a preview only for the session that was allowed to read it.
+    Vary: "Cookie, Authorization",
+    "X-Content-Type-Options": "nosniff",
+    "Cross-Origin-Resource-Policy": "same-origin",
+  });
+  if (result.type === "application/pdf") {
+    headers.set("Content-Disposition", "inline");
+    headers.set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");
+  }
+  return new Response(result.body, { headers });
+}
+
 export const previewApi = new Hono<AuthContext>()
   .get(
     "/bases/:baseId/preview",
@@ -23,33 +57,38 @@ export const previewApi = new Hono<AuthContext>()
     v("query", PreviewQuery),
     async (c) => {
       c.header("Cache-Control", "no-store");
-      const { result, immutable } = await filesService.preview(
+      const read = await filesService.preview(
         requestCall(c),
         { baseId: c.req.param("baseId") ?? "", ...c.req.valid("query") },
         c.req.raw.signal,
       );
-      if (result.state === "pending") {
-        c.header("Retry-After", String(result.retryAfter));
-        return respond(c, ok({ state: "pending" as const }), 202);
-      }
-      if (result.state !== "ready") {
-        const code = `preview_${result.state}`;
-        return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status: 404, code });
-      }
-      const headers = new Headers({
-        "Content-Type": result.type,
-        "Content-Length": String(result.bytes),
-        "Cache-Control": immutable ? "private, max-age=31536000, immutable" : "no-store",
-        // The browser keeps a preview only for the session that was allowed to read it.
-        Vary: "Cookie, Authorization",
-        "X-Content-Type-Options": "nosniff",
-        "Cross-Origin-Resource-Policy": "same-origin",
-      });
-      if (result.type === "application/pdf") {
-        headers.set("Content-Disposition", "inline");
-        headers.set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");
-      }
-      return new Response(result.body, { headers });
+      return previewResponse(c, read, (code) => code);
+    },
+  )
+  .get(
+    "/entries/:id/image",
+    middleware.openapi({
+      summary: "Read the picture of an image entry",
+      description:
+        "The large preview of one image entry by its filesv2.entry ref, for capability views such as the search preview. Access is checked on every request; an entry the caller cannot read answers like a missing one.",
+      ...requiresAuth,
+      responses: {
+        200: { description: "Private preview bytes" },
+        202: { description: "Preview pending; retry after Retry-After seconds" },
+        404: { description: "No readable image entry, or no picture of it" },
+      },
+    }),
+    v("param", z.object({ id: z.string().min(1).max(512) })),
+    v("query", EntryImageQuery),
+    async (c) => {
+      c.header("Cache-Control", "no-store");
+      const read = await filesService.entryImage(
+        requestCall(c),
+        { id: c.req.valid("param").id, rev: c.req.valid("query").rev },
+        c.req.raw.signal,
+      );
+      // A picture that cannot be drawn reads as no picture, like an entry the caller may not read.
+      return previewResponse(c, read, () => "not_found");
     },
   )
   .post(

@@ -269,6 +269,7 @@ export const rule: Rule = {
       "--annotation-color", // Notebooks lib/editor/annotations.ts and NotePreview: the person color of a commented passage
       "--ai-code-live-lines", // ai/chat/code-steps.tsx: the lines a Code file Gustav still writes will show once written
       "--cloud-search-end", // blocks/search-toggle.tsx: how far an opened table search may reach from the head's end
+      "--cloud-blocks-image-ratio", // blocks/BlockTree.tsx: the place an Image block declares with its ratio
     ]);
     for (const [property, consumers] of customPropertyReferences) {
       if (customPropertyOwners.has(property) || uiCustomProperties.has(property)) continue;

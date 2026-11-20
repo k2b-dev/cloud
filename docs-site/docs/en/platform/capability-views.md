@@ -143,6 +143,26 @@ application response; Cloud never drops or shortens a block silently.
   rejected. The page keeps `img-src 'self'`. Serve a remote picture through your
   app's route, as Mail does for external images. Without `alt`, the card title
   is the text alternative.
+- An `Image` is at most 24 rem wide; beside its `Detail` in an approval it is
+  a 6 rem thumbnail in 4:3. With `ratio` the picture keeps that place from the
+  first frame, and a caption adds its line below instead of shrinking it. A
+  picture is never cropped: one of another shape is fitted whole into its
+  place, centred on a muted ground. The same ground shows while the picture
+  loads and, if the picture cannot be shown (missing, refused, or not yet
+  drawn), a quiet stand-in with `alt` as its label. What follows the picture
+  never moves.
+- A browser image cannot read `202` with `Retry-After`, so a picture that is
+  still being drawn fails like a missing one. Cloud then waits on the muted
+  ground and asks your route twice more, 2 s apart, with `retry=1` and
+  `retry=2` added to the query (before any `#fragment`), before the stand-in
+  shows. A route that answers
+  `202` should draw a picture within those 4 s; ignore the `retry` parameter and
+  check access on each request as on the first.
+- The view carries a path, never a lease. Check the reader's access on every
+  request to the image route, as for a download, and answer a picture the
+  reader may not see exactly like a missing one. Send `Cache-Control: private`
+  (or `no-store`) with `Vary: Cookie, Authorization`, so no shared cache keeps
+  a copy.
 - **Links** in a result go to a path of the answering app, a Cloud resource link
   (`/open/<type>/~<id>`), or an `https:` address. Links in an approval or a
   search preview stay on Cloud paths. Encoded separators, dot segments, and
@@ -212,7 +232,14 @@ The hits keep a 360 px column; the preview takes the rest of the dialog, and
 detail blocks stand flat in it. A button left of **Close** maximizes the search
 to nearly the whole window, with 440 px for the hits; the browser remembers the
 choice. On a phone the search already fills the screen and the preview opens as
-its own page. Mail's `message.read` shows the people, the date, the attachments,
+its own page. Files' `entry.read` puts the picture of an image file before its details. The
+picture is the large preview Files already draws (at most 1280 px on its long
+side), served by `GET /api/filesv2/entries/<entry ref>/image?rev=<revision>`.
+That route checks the person's read access on every request, with the same check
+as a download, and answers `404 not_found` for an entry that is missing,
+refused, in another person's storage, not an image, or has no drawable
+preview; `202` with `Retry-After` while the preview is still being drawn.
+Mail's `message.read` shows the people, the date, the attachments,
 and the text of a message (16 KiB, then a note to open it in Mail);
 `conversation.read` shows its state, assignees, tags, summary, and latest
 messages.

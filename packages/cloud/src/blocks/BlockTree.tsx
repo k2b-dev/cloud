@@ -26,6 +26,7 @@ import {
   onMount,
   Show,
   Switch,
+  sharedConfig,
   useContext,
 } from "solid-js";
 import { CloudChartBlock } from "#chat-charts";
@@ -37,6 +38,7 @@ import { blockFileName, figuresCopy, saveBlob, tableCopy, tableCsv, wholeTable }
 import { BLOCK_PANEL_HEIGHTS, blockChartHeight, blockDescription, blockJson } from "./description";
 import { blockWords } from "./messages";
 import { blockDataAtPath } from "./path";
+import { failedBeforeHydration, retrySource } from "./picture";
 import type { Block } from "./schema";
 import { SearchToggle } from "./search-toggle";
 
@@ -323,12 +325,81 @@ function CardsBlock(props: { block: Leaf<"Cards">; locale: string }) {
   );
 }
 
+/**
+ * An `<img>` cannot read a 202 with `Retry-After`, so a picture that is still being drawn fails like a missing one. It is
+ * tried again a fixed few times, a little later and under a fresh address, before the stand-in shows.
+ */
+const IMAGE_RETRIES = 2;
+const IMAGE_RETRY_DELAY_MS = 2_000;
+
+/**
+ * One source of a picture, from its first try to its stand-in. While a later try waits, the place keeps its muted
+ * ground; the stand-in follows only once every try has failed. Unmounting, or a new source, ends a waiting try.
+ */
+function BlockPicture(props: { src: string; alt?: string }) {
+  // Only a server-drawn picture can fail before its error listener exists; one this code draws reports its own error.
+  const hydrating = Boolean(sharedConfig.context);
+  const [attempt, setAttempt] = createSignal(0);
+  const [phase, setPhase] = createSignal<"loading" | "waiting" | "failed">("loading");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(timer));
+  const fail = () => {
+    if (phase() !== "loading") return;
+    if (attempt() >= IMAGE_RETRIES) return setPhase("failed");
+    setPhase("waiting");
+    timer = setTimeout(() => {
+      setAttempt((count) => count + 1);
+      setPhase("loading");
+    }, IMAGE_RETRY_DELAY_MS);
+  };
+  return (
+    <Switch>
+      <Match when={phase() === "loading"}>
+        <img
+          ref={(image) =>
+            // A picture that failed before hydration never fires its error event.
+            onMount(() => {
+              if (hydrating && attempt() === 0) void failedBeforeHydration(image).then((failed) => failed && attempt() === 0 && fail());
+            })
+          }
+          src={retrySource(props.src, attempt())}
+          alt={props.alt}
+          loading="lazy"
+          data-retry={attempt() ? "" : undefined}
+          onError={fail}
+        />
+      </Match>
+      <Match when={phase() === "waiting"}>
+        <div class="cloud-blocks__image-wait" role="img" aria-label={props.alt} aria-busy="true" />
+      </Match>
+      <Match when={phase() === "failed"}>
+        <div class="cloud-blocks__image-missing" role="img" aria-label={props.alt}>
+          <i class="ti ti-photo-off" aria-hidden="true" />
+        </div>
+      </Match>
+    </Switch>
+  );
+}
+
+/**
+ * A picture holds its place while it loads, on its muted ground. One that cannot be shown, because it is missing or the
+ * reader may no longer see it, leaves that place with a quiet symbol and its text alternative instead of a broken image.
+ */
 function ImageBlock(props: { block: Leaf<"Image"> }) {
   return (
     <Show when={imageSource(props.block.src)}>
       {(src) => (
-        <figure class="cloud-blocks__image" style={props.block.ratio ? { "aspect-ratio": String(props.block.ratio) } : undefined}>
-          <img src={src()} alt={props.block.alt} loading="lazy" />
+        <figure
+          class="cloud-blocks__image"
+          data-ratio={props.block.ratio ? "" : undefined}
+          style={props.block.ratio ? { "--cloud-blocks-image-ratio": String(props.block.ratio) } : undefined}
+        >
+          {/* One place for the picture, its wait, and its stand-in; keyed: every source starts with its own tries. */}
+          <div class="cloud-blocks__image-place">
+            <Show when={src()} keyed>
+              {(source) => <BlockPicture src={source} alt={props.block.alt} />}
+            </Show>
+          </div>
           <Show when={props.block.caption}>{(caption) => <figcaption>{caption()}</figcaption>}</Show>
         </figure>
       )}
