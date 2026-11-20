@@ -29,6 +29,7 @@ import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesM
 import type { MailAutomationExportPage } from "./automation-export-contracts";
 import { ConversationSummaryWriteDataSchema } from "./capability-contracts";
 import { composeFormattingMessages, describeComposeFormattingWarning, describeIgnoredMailboxCss } from "./compose-formatting-messages";
+import { defaultReplyQuoteSource } from "./compose-quotation";
 import {
   MAIL_CONTACT_DIRECTORY_DEFAULTS,
   MAIL_CONTACT_DIRECTORY_SETTING_KEYS,
@@ -789,8 +790,11 @@ const draftSignatureChoice = (flags: { signature?: string; noSignature?: boolean
 };
 
 const draftEditableContentFlags = {
-  quote: flag.boolean({ description: "Append the source message after the signature" }),
-  noQuote: flag.boolean({ name: "no-quote", description: "Do not append the source message" }),
+  quote: flag.boolean({
+    description:
+      "Append the source message after the signature; draft create does so for a reply by default, draft update replaces all content and keeps it only with this flag",
+  }),
+  noQuote: flag.boolean({ name: "no-quote", description: "Do not append the source message, also not to a reply" }),
   quoteTimeZone: flag.string({ name: "quote-time-zone", description: "IANA time zone for --quote; defaults to the local time zone" }),
   signature: flag.string({ description: "Signature template id; omitted keeps the default or current signature" }),
   noSignature: flag.boolean({ name: "no-signature", description: "Use no signature" }),
@@ -876,6 +880,14 @@ const draftContentFlags = {
   }),
 };
 
+/** The quote context the CLI saves: the person's locale and this machine's time zone unless --quote-time-zone names one. */
+const cliQuoteSource = (locale: string | undefined, timeZone?: string) => {
+  if (timeZone) return draftQuoteSourceSchema.parse({ locale: locale ?? "en", timeZone });
+  // The automatic quote never fails a reply over this machine's time zone: an unusable one dates the quote in UTC.
+  const local = draftQuoteSourceSchema.safeParse({ locale: locale ?? "en", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+  return local.success ? local.data : draftQuoteSourceSchema.parse({ locale: locale ?? "en", timeZone: "UTC" });
+};
+
 const readDraftEditableContent = async (
   flags: {
     identity?: string;
@@ -909,12 +921,7 @@ const readDraftEditableContent = async (
     ...draftSignatureChoice(flags),
     ...(flags.quote || flags.noQuote
       ? {
-          quoteSource: flags.quote
-            ? draftQuoteSourceSchema.parse({
-                locale: locale ?? "en",
-                timeZone: flags.quoteTimeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
-              })
-            : null,
+          quoteSource: flags.quote ? cliQuoteSource(locale, flags.quoteTimeZone) : null,
         }
       : {}),
     to: parseAddresses(flags.to),
@@ -937,13 +944,26 @@ const readDraftContent = async (
     includeSourceAttachments: boolean;
   },
   locale?: string,
-) => ({
-  ...(await readDraftEditableContent(flags, locale)),
-  conversationId: flags.conversation ? requireMailResourceId(flags.conversation, "Conversation id") : undefined,
-  intent: flags.intent,
-  sourceMessageId: flags.sourceMessage ? requireMailResourceId(flags.sourceMessage, "Source message id") : undefined,
-  ...(flags.includeSourceAttachments ? { includeSourceAttachments: true } : {}),
-});
+) => {
+  const content = await readDraftEditableContent(flags, locale);
+  const sourceMessageId = flags.sourceMessage ? requireMailResourceId(flags.sourceMessage, "Source message id") : undefined;
+  return {
+    ...content,
+    // A reply quotes the message it answers unless --no-quote says otherwise or the body quotes on its own.
+    quoteSource: defaultReplyQuoteSource({
+      quoteSource: content.quoteSource,
+      intent: flags.intent,
+      // A conversation without a named message replies to its latest message, as the server derives it.
+      sourceMessageId: sourceMessageId ?? (flags.conversation ? flags.conversation : undefined),
+      body: content.body,
+      quote: () => cliQuoteSource(locale),
+    }),
+    conversationId: flags.conversation ? requireMailResourceId(flags.conversation, "Conversation id") : undefined,
+    intent: flags.intent,
+    sourceMessageId,
+    ...(flags.includeSourceAttachments ? { includeSourceAttachments: true } : {}),
+  };
+};
 
 const readComposeDraftInput = async (input: Parameters<typeof readCliInput>[0]) => {
   const source = await readCliInput(input, {
@@ -2830,6 +2850,13 @@ const everydayCommands = (t: Translate) => {
         }),
         noSignature: flag.boolean({ name: "no-signature", description: t({ en: "Send without a signature", de: "Ohne Signatur senden" }) }),
         all: flag.boolean({ description: t({ en: "Reply to all recipients", de: "Allen Empfängern antworten" }) }),
+        noQuote: flag.boolean({
+          name: "no-quote",
+          description: t({
+            en: "Leave the original message out; by default it goes along after the signature",
+            de: "Ursprüngliche Nachricht weglassen; standardmäßig geht sie nach der Signatur mit",
+          }),
+        }),
         message: flag.string({
           description: t({
             en: "Message to reply to; default the latest",
@@ -2867,6 +2894,13 @@ const everydayCommands = (t: Translate) => {
           conversationId,
           intent: flags.all ? "reply_all" : "reply",
           sourceMessageId: source.id,
+          quoteSource: defaultReplyQuoteSource({
+            quoteSource: flags.noQuote ? null : undefined,
+            intent: flags.all ? "reply_all" : "reply",
+            sourceMessageId: source.id,
+            body: body ?? "",
+            quote: () => cliQuoteSource(ctx.options.locale),
+          }),
         });
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         if (printExistingReplyDraft(ctx, draft)) return;

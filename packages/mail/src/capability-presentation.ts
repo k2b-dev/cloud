@@ -755,7 +755,8 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             senderIdentityId: "Verifizierte Absenderidentität ID.",
-            quoteSource: "Lesbare Quellnachricht nach der Signatur anhängen; standardmäßig aus.",
+            quoteSource:
+              "Lesbare Quellnachricht nach der Signatur anhängen; null lässt sie weg. Weggelassen zitiert eine Antwort oder Allen antworten mit Quellnachricht oder Unterhaltung diese in der Sprache der Anfrage und der Zeitzone der Installation (sonst UTC), außer der Text zitiert selbst (Markdown-Zitatzeile oder HTML-blockquote).",
             signatureTemplateId:
               "Signaturvorlage nach dem Text oder null für keine; weglassen verwendet die Standardsignatur des Absenders.",
             to: "Hauptempfänger.",

@@ -752,7 +752,12 @@ export const DraftCreateInputSchema = z
     mailboxId: MailboxIdInputSchema,
     senderIdentityId: ResourceShortIdSchema.describe("Verified sender-identity ID."),
     signatureTemplateId: draftEditableContentInputSchema.shape.signatureTemplateId,
-    quoteSource: draftEditableContentInputSchema.shape.quoteSource,
+    quoteSource: draftEditableContentInputSchema.shape.quoteSource
+      .removeDefault()
+      .optional()
+      .describe(
+        "Append the readable source message after the signature using this locale and time zone; null leaves it out. Omitted, a reply or reply all with a source message or conversation quotes it in the request's locale and the installation's time zone (UTC without one), unless the body quotes on its own (a Markdown quote line or an HTML blockquote).",
+      ),
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
