@@ -55,7 +55,9 @@ export type SharedTextProviderTransport<Event = never, Participant = never> = {
   decode: (packet: unknown) => SharedTextProviderMessage<Event, Participant> | null;
   /**
    * Include application-specific terminal reasons; nonterminal drops reconnect.
-   * Close code 1013 (try again later) always reconnects with backoff and never reaches this mapping.
+   * Close code 1013 (try again later) always reconnects with backoff and never reaches this mapping. Close code 1008
+   * with reason `SESSION_EXPIRED` (Cloud's socket guard) always ends the session as `SESSION_EXPIRED` and never
+   * reaches it either.
    */
   closeError: (code: number, reason: string) => SharedTextProviderError | null;
 };
@@ -132,6 +134,16 @@ export const SHARED_TEXT_ACK_TIMEOUT_MS = awarenessProtocol.outdatedTimeout;
  * Like a plain drop, it reconnects with backoff and the replay resends every unsent edit.
  */
 const TRY_AGAIN_LATER = 1013;
+/**
+ * Cloud's application socket guard closes a socket whose sign-in expired with policy close 1008 and this reason
+ * (`guardAppAccessSocket`). It always ends the session as `SESSION_EXPIRED`, so every application can offer sign-in
+ * instead of reporting lost access.
+ */
+const SESSION_EXPIRED_CLOSE_REASON = "SESSION_EXPIRED";
+const sessionExpiredClose = (code: number, reason: string): SharedTextProviderError | null =>
+  code === 1008 && reason.trim() === SESSION_EXPIRED_CLOSE_REASON
+    ? { code: SESSION_EXPIRED_CLOSE_REASON, message: "Session expired" }
+    : null;
 /** Server error code with the same meaning as {@link TRY_AGAIN_LATER}; it never ends the session. */
 const BUSY_ERROR_CODE = "BACKPRESSURE";
 /**
@@ -767,7 +779,10 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       replayReady = false;
       localStateSent = false;
 
-      const closeError = event.code === TRY_AGAIN_LATER ? null : opts.transport.closeError(event.code, event.reason ?? "");
+      const closeError =
+        event.code === TRY_AGAIN_LATER
+          ? null
+          : (sessionExpiredClose(event.code, event.reason ?? "") ?? opts.transport.closeError(event.code, event.reason ?? ""));
       if (closeError) {
         opts.onError?.(closeError);
         terminate(closeError);
