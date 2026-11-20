@@ -22,7 +22,7 @@ import { maintenanceNeedsRenewal, renewMaintenanceState, watchMaintenanceState }
 import { get } from "@k2b/cloud/services/settings";
 import { readEnvSettingsStatus } from "@k2b/cloud/services/settings/env-status";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
-import { appIconKey, availability, tintAppIcon } from "./availability";
+import { appIconColor, appIconKey, availability, tintAppIcon } from "./availability";
 import { gatewayRouter } from "./config";
 import { type AppRouteWarning, buildAppRoutesDetailed } from "./routes";
 import { getRouteTable, setRouteTable, stats } from "./stats";
@@ -218,7 +218,7 @@ const refreshIcons = (): void => {
     for (const app of availability.iconsDue()) {
       let src: string | undefined;
       try {
-        src = await fetchAppIcon(app.baseUrl, app.id, app.appearance?.accent);
+        src = await fetchAppIcon(app.baseUrl, app.id, appIconColor(app));
       } catch {
         src = undefined;
       }

@@ -21,6 +21,7 @@ import { publicCloudOrigin } from "../shared/app-url";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
 import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
+import { declaredIconColor } from "./app-icon-style";
 import { resolveRuntimeRoute, visibleNavigationApps, visiblePanelProviders } from "./app-navigation";
 import { getLayoutHelp, layoutHelpFailed } from "./help";
 import LayoutFooter from "./LayoutFooter";
@@ -80,6 +81,7 @@ function buildNavLinks(
       match: resolveNavMatch(app) ?? app.nav.href.split("?")[0] ?? app.nav.href,
       description: app.description,
       accent: app.appearance?.accent,
+      iconColor: declaredIconColor(app.appearance),
       badge: app.nav.badge,
     } satisfies LayoutAppLink,
   }));
@@ -95,6 +97,7 @@ function buildNavLinks(
       match: "/admin",
       description: t.platformAdministration,
       accent: undefined,
+      iconColor: undefined,
       badge: undefined,
     });
   }

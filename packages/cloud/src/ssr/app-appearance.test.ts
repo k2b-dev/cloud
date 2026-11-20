@@ -5,7 +5,7 @@ import { appIds } from "../../../../scripts/workspace";
 import type { AppAppearance, RuntimeAppMeta } from "../contracts/app";
 import { appAccentStyle, appAppearanceStyle, appBarGrounds, appBarIconStyle, resolveCurrentApp } from "./app-appearance";
 import { contrastRatio, mixHex } from "./app-color";
-import { appIconTone, appTileStyle } from "./app-icon-style";
+import { appIconTone, appTileStyle, declaredIconColor } from "./app-icon-style";
 
 type HexColor = `#${string}`;
 const workspaceRoot = resolve(import.meta.dir, "../../../..");
@@ -47,7 +47,7 @@ const builtInAppearances = appIds().flatMap((id) => {
         }
       : {}),
   };
-  return [{ id, appearance }];
+  return [{ id, accent, appearance }];
 });
 /** The hex value of a declaration in an emitted style; fails when it is missing. */
 const read = (style: string | undefined, property: string): HexColor => {
@@ -100,7 +100,7 @@ test("app bar icons keep 3:1 on every ground of the bar, for every built-in app 
   const canvases: (AppAppearance | undefined)[] = [undefined, yellow, ...builtInAppearances.map(({ appearance }) => appearance)];
   // Third-party apps without a color take their palette tone, as in the app grid.
   const tones: HexColor[] = [
-    ...builtInAppearances.map(({ appearance }) => appearance.accent),
+    ...builtInAppearances.map(({ accent }) => accent),
     "#ffff00",
     "#ffffff",
     "#000000",
@@ -169,8 +169,8 @@ test("app bar icon colors reject an invalid tone before emitting any CSS", () =>
 });
 
 test("the app bar editor's tiles show the same app color at 3:1 on their tile", () => {
-  for (const accent of [...builtInAppearances.map(({ appearance }) => appearance.accent), "#ffff00", undefined]) {
-    const style = appTileStyle({ id: "notes", accent });
+  for (const accent of [...builtInAppearances.map(({ accent }) => accent), "#ffff00", undefined]) {
+    const style = appTileStyle({ id: "notes", iconColor: accent });
     const tone = read(style, "--app-icon-color");
     for (const [theme, surface] of [
       ["light", "#ffffff"],
@@ -180,4 +180,40 @@ test("the app bar editor's tiles show the same app color at 3:1 on their tile", 
       expect(contrastRatio(glyph, mixHex(tone, surface, 0.12)), `${accent} ${theme}`).toBeGreaterThanOrEqual(3);
     }
   }
+});
+
+test("an app's icon takes its iconColor, then its accent, then its palette tone; invalid colours count as unset", () => {
+  expect(declaredIconColor({ accent: "#0284c7", iconColor: "#c2410c" })).toBe("#c2410c");
+  expect(declaredIconColor({ iconColor: "#c2410c" })).toBe("#c2410c");
+  expect(declaredIconColor({ accent: "#0284c7" })).toBe("#0284c7");
+  // Registry entries are unvalidated runtime input: a hex-shaped but invalid value counts as unset too.
+  for (const invalid of ["#fff", "#12345g", "#123456;color:red"] as const)
+    expect(declaredIconColor({ accent: "#0284c7", iconColor: invalid })).toBe("#0284c7");
+  expect(declaredIconColor({ iconColor: "#123456;color:red" })).toBeUndefined();
+  expect(declaredIconColor(undefined)).toBeUndefined();
+  expect(appIconTone({ id: "warenfluss", iconColor: declaredIconColor({ accent: "#0284c7", iconColor: "#c2410c" }) })).toBe("#c2410c");
+  expect(appIconTone({ id: "warenfluss", iconColor: declaredIconColor({}) })).toBe(appIconTone({ id: "warenfluss" }));
+  expect(appTileStyle({ id: "warenfluss", iconColor: "#c2410c" })).toStartWith("--app-icon-color:#c2410c;");
+});
+
+test("iconColor colours only the icon: the accent scope, the canvas and the app bar's grounds stay as declared", () => {
+  const accent: AppAppearance = { accent: "#0284c7", background: { from: "#3b82f6", to: "#60a5fa" } };
+  expect(appAppearanceStyle({ ...accent, iconColor: "#c2410c" })).toBe(appAppearanceStyle(accent));
+  expect(appBarGrounds({ ...accent, iconColor: "#c2410c" })).toEqual(appBarGrounds(accent));
+  // Without an accent, an icon colour paints no app colour at all: selection, accent text and canvas stay neutral.
+  expect(appAppearanceStyle({ iconColor: "#c2410c" })).toBeUndefined();
+  expect(appBarGrounds({ iconColor: "#c2410c" })).toEqual(appBarGrounds(undefined));
+});
+
+test("the palette keeps seven tones in their places, so an app without a colour keeps its tone", () => {
+  // Char codes 97 to 103 cover every index once; replacing a tone changes only the apps that held it.
+  expect(["a", "b", "c", "d", "e", "f", "g"].map((id) => appIconTone({ id }))).toEqual([
+    "#c2410c",
+    "#2563eb",
+    "#059669",
+    "#4d7c0f",
+    "#d97706",
+    "#e11d48",
+    "#0891b2",
+  ]);
 });
