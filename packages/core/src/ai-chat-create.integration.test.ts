@@ -1,17 +1,28 @@
 import { afterAll, afterEach, beforeAll, expect, mock, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import { aiConversations, aiProjects } from "@k2b/cloud/ai";
+import { aiConversations, aiProjects, createAiProvider } from "@k2b/cloud/ai";
+import * as runtime from "@k2b/cloud/ai/runtime";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
-import { compileCapabilities, invokeCompiledCapability } from "../../../scripts/fixtures/code-platform";
+import {
+  aiModelFixture,
+  aiModelSettings,
+  aiSettingsFixture,
+  compileCapabilities,
+  drainQueuedMessages,
+  enrichDirtyAiConversations,
+  invokeCompiledCapability,
+} from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 import { aiChatCreateAction } from "./ai-chat-create";
+import { aiChatSendAction } from "./ai-chat-send";
 import { aiCapabilities } from "./capabilities";
+import { CodeIdSchema } from "./code/contracts";
 
 const owner = "5b000000-0000-4000-8000-000000000001";
 const other = "5b000000-0000-4000-8000-000000000002";
 const versionId = "5b000000-0000-4000-8000-000000000003";
-const codeId = "c_chatcreate5b";
+const codeId = CodeIdSchema.parse("c_chatcreate5b");
 const user: User = {
   id: owner,
   uid: "code-chat-run-owner",
@@ -102,9 +113,89 @@ suiteFor(
     const [first, second] = await Promise.all([created(context), created(context)]);
     expect(second).toEqual(first);
     const chat = await aiConversations.getConversationByShortId({ shortId: first.chat.id, ownerUserId: owner });
-    expect(chat).toMatchObject({ title: "Weekly briefing", createdByUserId: owner, projectId: null, draft: { content: [] } });
+    expect(chat).toMatchObject({
+      title: "Weekly briefing",
+      titleSource: "user",
+      createdByUserId: owner,
+      projectId: null,
+      draft: { content: [] },
+    });
     expect(await aiConversations.getLatestTurn({ conversationId: chat!.id })).toBeNull();
+    const [receipt] = await sql<
+      { input_hash: string }[]
+    >`SELECT input_hash FROM ai.conversation_creations WHERE conversation_id=${chat!.id}::uuid`;
+    // The pre-fix receipt hash: title ownership metadata must not change replay identity.
+    expect(receipt?.input_hash).toBe("c3f8aafc6f92475f570b52fa7625097f1a7add35541b1ba0ec0681ee66c6b377");
     expect(await invoke(context, "Different title")).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT" } });
+  });
+  test("create then send and background enrichment preserve the chosen title", async () => {
+    const context = { ...person(), idempotencyKey: "preserve-title" };
+    const first = await created(context);
+    const chat = await aiConversations.getConversationByShortId({ shortId: first.chat.id, ownerUserId: owner });
+    if (!chat) throw new Error("Missing created chat");
+    const profile = aiModelFixture({ id: "fixture" });
+    spyOn(aiModelSettings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture({ profiles: [profile] }));
+    spyOn(runtime, "wakeAiMessageQueue").mockImplementation(() => {});
+    spyOn(runtime, "prepareAiChatTurn").mockImplementation(async (input) => ({
+      conversationId: input.conversationId,
+      modelId: "fixture",
+      userMessage: input.userMessage,
+      truncateFromSeq: input.truncateFromSeq,
+      expectedDraftRevision: input.expectedDraftRevision,
+      expectedProjectId: input.expectedProjectId,
+      resources: input.resources,
+      retrySourceTurnId: input.retrySourceTurnId,
+      runConfig: {
+        kind: "chat",
+        input: input.input,
+        actor: input.actor,
+        turnTrigger: input.turnTrigger,
+        send: input.send,
+        writerOrigin: input.writerOrigin,
+        assistantChat: true,
+      },
+    }));
+    const sent = await aiChatSendAction.run(
+      { text: "A completely different topic" },
+      {
+        ...context,
+        idempotencyKey: "preserve-title:first-message",
+        target: first.chat,
+      },
+    );
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) throw new Error(sent.error.message);
+    await drainQueuedMessages(async () => {}, chat.id);
+    expect(await aiConversations.listMessages({ conversationId: chat.id })).toHaveLength(1);
+    expect(await aiConversations.getConversation({ conversationId: chat.id, ownerUserId: owner })).toMatchObject({
+      title: "Weekly briefing",
+      titleSource: "user",
+    });
+    await sql`UPDATE ai.turns SET status='completed',completed_at='2026-11-15T12:00:00Z' WHERE conversation_id=${chat.id}::uuid`;
+    const enriched = await enrichDirtyAiConversations({
+      conversationId: chat.id,
+      deps: {
+        resolveModel: async () => ({ model: { id: profile.id }, profile, provider: createAiProvider(profile) }),
+        readAdditionalInstructions: async () => "",
+        structured: async (input) => ({
+          output: input.output.parse({
+            summary: "Different subject.",
+            keywords: ["different"],
+            title: "Replacement title",
+            topicChanged: true,
+          }),
+          model: { id: profile.id },
+          structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+        }),
+      },
+    });
+    expect(enriched).toMatchObject({ enriched: 1, titlesUpdated: 0, failed: 0 });
+    expect(await aiConversations.getConversation({ conversationId: chat.id, ownerUserId: owner })).toMatchObject({
+      title: "Weekly briefing",
+      titleSource: "user",
+      description: "Different subject.",
+    });
+    expect(await created(context)).toEqual(first);
   });
   test("personal Codes and the person share the creation key across separate running executions", async () => {
     const context = { ...ctx(), idempotencyKey: "code-creation" };
@@ -117,7 +208,7 @@ suiteFor(
       actor: { ...context.actor, delegation: { ...context.actor.delegation, workloadRun: run!.id } },
     });
     expect(second).toEqual(first);
-    const secondCodeId = "c_chatcreateother5b";
+    const secondCodeId = CodeIdSchema.parse("c_chatother5b");
     const secondVersionId = "5b000000-0000-4000-8000-000000000004";
     await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title) VALUES(${secondCodeId},'person',${owner}::uuid,'Second create fixture')`;
     await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,source_bytes,bundle_bytes)
@@ -154,15 +245,18 @@ suiteFor(
   test.each(["archived", "deleted"])("a %s creation is never replaced on replay", async (state) => {
     const context = { ...person(), idempotencyKey: `unavailable-${state}` };
     const first = await created(context);
+    const chat = await aiConversations.getConversationByShortId({ shortId: first.chat.id, ownerUserId: owner });
+    const [receipt] = await sql<{ request_id: string }[]>`SELECT request_id FROM ai.conversation_creations
+      WHERE owner_user_id=${owner}::uuid AND conversation_id=${chat!.id}::uuid`;
+    expect(receipt).toBeDefined();
     if (state === "archived") await sql`UPDATE ai.conversations SET archived_at='2026-11-15T12:00:00Z' WHERE short_id=${first.chat.id}`;
     else await sql`DELETE FROM ai.conversations WHERE short_id=${first.chat.id}`;
     expect(await invoke(context)).toMatchObject({ ok: false, error: { code: "chat_unavailable" } });
-    const [receipt] = await sql<
-      { count: number }[]
-    >`SELECT count(*)::int AS count FROM ai.conversation_creations WHERE owner_user_id=${owner}::uuid`;
-    expect(receipt!.count).toBeGreaterThan(0);
+    const [kept] = await sql<{ conversation_id: string | null }[]>`SELECT conversation_id FROM ai.conversation_creations
+      WHERE owner_user_id=${owner}::uuid AND request_id=${receipt!.request_id}::uuid`;
+    expect(kept).toEqual({ conversation_id: state === "deleted" ? null : chat!.id });
   });
-  test("Gustav shares Code's creation key; chains and restricted source turns are refused", async () => {
+  test("a person-triggered Gustav invocation can create; chains and restricted source turns are refused", async () => {
     const source = await aiConversations.createConversation({ ownerUserId: owner });
     const submitted = await aiConversations.submitChatTurn({
       conversationId: source.id,
@@ -186,8 +280,6 @@ suiteFor(
         delegation: { kind: "invocation", credentialKind: "session", callingAppId: "core", invocationId: "creation-source" },
       },
     };
-    const fromCode = await created({ ...ctx(), idempotencyKey: "gustav-code-shared" });
-    expect(await created({ ...context, idempotencyKey: "gustav-code-shared" })).toEqual(fromCode);
     expect(await invoke({ ...context, idempotencyKey: "gustav-creation" })).toMatchObject({ ok: true });
     for (const trigger of [{ kind: "automation", id: codeId }, { kind: "chat", id: source.shortId }, null]) {
       await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{turnTrigger}',${JSON.stringify(trigger)}::text::jsonb) WHERE id=${submitted.turn.id}::uuid`;

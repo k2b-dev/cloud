@@ -1498,6 +1498,7 @@ export const aiConversations: AiConversationService = {
       INSERT INTO ai.conversations (
         short_id,
         title,
+        title_source,
         description,
         project_id,
         draft_content,
@@ -1511,6 +1512,7 @@ export const aiConversations: AiConversationService = {
       SELECT
         ${shortId},
         ${normalized.title},
+        ${input.title?.trim() ? "user" : "default"},
         ${normalized.description},
         ${input.projectId ?? null}::uuid,
         ${JSON.stringify(input.draft ?? [])}::text::jsonb,

@@ -70,7 +70,7 @@ test("creation is an untargeted reviewed silent-you Action with a required key",
   expect(aiChatCreateAction.policy).toEqual({ silent: "you" });
   for (const input of [
     { title: " " },
-    { title: "x".repeat(201) },
+    { title: "x".repeat(121) },
     { title: "Hi", chatId: "Chat23" },
     { title: "Hi", project: { type: "core.ai.chat", id: "Chat23" } },
   ])
@@ -129,12 +129,37 @@ test("conflicting and unavailable durable receipts never create a replacement", 
   });
 });
 
-test.each(["Familie 👨‍👩‍👧", "Plan\tQ4", "\u200d"])("review accepts a title containing format or control characters: %s", async (title) => {
-  const review = await aiChatCreateAction.review({ title }, { ...context, locale: "de" });
-  expect(review.ok).toBe(true);
-  if (!review.ok) throw new Error(review.error.message);
-  expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBe(true);
-  expect(review.data.view.blocks[0]?.fields[0]?.value).toBe(title);
+test.each(["Familie 👨‍👩‍👧", "Plan\tQ4", "Plan\u202eQ4"])(
+  "review and creation keep emoji joiners and remove unsafe controls: %s",
+  async (title) => {
+    spyOn(accounts.users, "get").mockResolvedValue(user);
+    const create = spyOn(aiConversations, "createConversation").mockResolvedValue(chat);
+    const expected = title.replace(/\u202e/g, "").replace(/\t/g, " ");
+    const review = await aiChatCreateAction.review({ title }, { ...context, locale: "de" });
+    expect(review.ok).toBe(true);
+    if (!review.ok) throw new Error(review.error.message);
+    expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBe(true);
+    expect(review.data.slots.title.value).toBe(expected);
+    expect(review.data.view.blocks[0]?.fields[0]?.value).toBe(expected);
+    await aiChatCreateAction.run({ title }, context);
+    expect(create.mock.calls[0]?.[0].title).toBe(expected);
+  },
+);
+test.each(["de", "en"])("invisible-only titles fail clearly in %s before creating a chat", async (locale) => {
+  const create = spyOn(aiConversations, "createConversation").mockResolvedValue(chat);
+  for (const title of ["\u200d", "\u0000\u001b", "\t\u202e", " \u200b\u200c "]) {
+    const error = {
+      code: "BAD_INPUT",
+      message: locale === "de" ? expect.stringContaining("sichtbaren Text") : expect.stringContaining("visible text"),
+    };
+    expect(await aiChatCreateAction.review({ title }, { ...context, locale })).toMatchObject({ ok: false, error });
+    expect(await aiChatCreateAction.run({ title }, { ...context, locale })).toMatchObject({ ok: false, error });
+  }
+  expect(create).not.toHaveBeenCalled();
+});
+test("120 characters fit the shared title editor limit", () => {
+  expect(aiChatCreateInput.safeParse({ title: "x".repeat(120) }).success).toBe(true);
+  expect(aiChatCreateInput.safeParse({ title: "x".repeat(150) }).success).toBe(false);
 });
 test("a Project removed during creation returns not found", async () => {
   spyOn(accounts.users, "get").mockResolvedValue(user);

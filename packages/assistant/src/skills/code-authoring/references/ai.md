@@ -179,12 +179,14 @@ decision limits in Fibel `/en/docs/ai/structured-and-background-ai`.
 ## Start a new Gustav chat
 
 Use `core.ai.chat.create({ title, project?, idempotencyKey })` for an explicitly
-requested empty personal chat. `title` has 1–200 characters; `project` is an
+requested empty personal chat. `title` has 1–120 characters; `project` is an
 optional `{ type: "core.ai.project", id }` ref with current read access.
 The result is `{ chat: { type: "core.ai.chat", id }, open }`. Send through
 `core.ai.chat(created.chat.id).send` separately with a separate message key.
 Creation is `silent_you` and starts no model. Keep one stable creation key to
-reuse the chat for the same person across runs, Codes and Gustav calls. Changed input conflicts; an archived or deleted
+reuse the chat for the same person across runs and Codes. Gustav deduplicates
+only approval or replay of the same tool call, using its conversation and tool-call key.
+Changed input conflicts; an archived or deleted
 chat returns `chat_unavailable` and is never replaced on replay. App sessions,
 tool-limited sources, service accounts and non-person-triggered chat turns
 cannot create personal chats.

@@ -205,7 +205,7 @@ describe("AI capability authority", () => {
     const current = user("11111111-1111-4111-8111-111111111111");
     const entry = buildAiCapabilityCatalog([app()])[0]!;
     const seen: string[] = [];
-    const result = await executeAiCapability({
+    const input: Parameters<typeof executeAiCapability>[0] = {
       conversationId: "conversation-1",
       authority: {
         actor: { kind: "user", user: current },
@@ -230,12 +230,19 @@ describe("AI capability authority", () => {
           return Response.json({ data: { id: "created" } });
         },
       },
-    });
+    };
+    const result = await executeAiCapability(input);
     expect(result).toEqual({ data: { id: "created" } });
     expect(seen).toHaveLength(3);
     expect(seen[0]).toBe("");
     expect(seen[1]).toMatch(/^ai-[a-f0-9]{64}$/);
     expect(seen[2]).toBe("de-CH");
+    await executeAiCapability(input);
+    await executeAiCapability({ ...input, context: { ...input.context, callId: "call-2" } });
+    await executeAiCapability({ ...input, conversationId: "conversation-2" });
+    expect(seen[4]).toBe(seen[1]);
+    expect(seen[7]).not.toBe(seen[1]);
+    expect(seen[10]).not.toBe(seen[1]);
   });
 
   test("dispatch preserves the supplied credential scopes and mobile session limits", async () => {

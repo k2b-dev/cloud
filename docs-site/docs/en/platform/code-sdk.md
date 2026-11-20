@@ -848,7 +848,10 @@ activation. The automation list shows its `at`, `timeZone`, and a null
 ## Start a new Gustav chat
 
 Use `core.ai.chat.create({ title, project?, idempotencyKey })` to create an empty
-personal chat. The title contains 1–200 characters. An optional `project` is a
+personal chat. The title contains 1–120 characters and remains unchanged by
+the first message and automatic enrichment. Titles made only of controls or
+invisible format characters are rejected; direction controls are removed and
+emoji joiners are preserved. An optional `project` is a
 `{ type: "core.ai.project", id }` ref to a Project the owner can currently read.
 The result is `{ chat: { type: "core.ai.chat", id }, open }`.
 
@@ -866,7 +869,8 @@ await core.ai.chat(created.chat.id).send({
 Creating a chat uses `silent_you`; it does not run a model or consume an AI
 turn. `send` is a separate Action with its own key and AI admission. The same
 creation key and input recover the original active chat for the same person,
-including across different Codes and Gustav calls.
+including across different Codes. Gustav derives its key from the conversation
+and tool call, so it deduplicates only approval or replay of that same tool call.
 Changed input returns `IDEMPOTENCY_CONFLICT`. An archived or deleted result
 returns `chat_unavailable`; replay never creates a replacement. Use a new key
 when the person intends another chat.

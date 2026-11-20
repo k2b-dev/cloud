@@ -38,6 +38,9 @@ a replacement automatically.
 
 For an explicitly requested new destination, personal Code can call
 `core.ai.chat.create` once with a stable key and reuse its returned chat ref.
+Its explicit title has at most 120 characters and survives sending and automatic
+enrichment. HTTP creation follows the same title rule; untitled web and PWA
+chats keep automatic naming.
 Creation is `silent_you` and starts no model; sending remains a separate Action.
 Replaying a key never replaces an archived or deleted chat.
 

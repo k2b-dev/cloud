@@ -872,6 +872,7 @@ export type AiConversationService = {
     /** Stable identity for one logical creation; replay never creates a replacement. */
     requestId?: string;
     ownerUserId: string;
+    /** An explicit user-owned title, preserved by first-message naming and enrichment. */
     title?: string;
     /** The title without `title`, such as the default in the request locale; a replay may differ in it. */
     defaultTitle?: string;

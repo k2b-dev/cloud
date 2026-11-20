@@ -929,7 +929,7 @@ export default function AssistantWorkspace(props: Props) {
       if (!request) {
         request = place
           ? { requestId: crypto.randomUUID(), place: { ...place.ref }, draft: { content: place.draft } }
-          : { requestId: crypto.randomUUID(), title: t().newChat, ...(projectId ? { projectId } : {}) };
+          : { requestId: crypto.randomUUID(), ...(projectId ? { projectId } : {}) };
         creationRequests.set(key, request);
         setCreationVersion((version) => version + 1);
       }

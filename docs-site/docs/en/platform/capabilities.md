@@ -413,8 +413,8 @@ Each `{…}` reference names a field by its dotted schema path, like the schema
 presentation maps: `{input.to}` or `{input.to[].name}` for the call input,
 `{data.id}` for the Action's result data. Cloud inserts each value as plain
 one-line text without control characters, line breaks, or invisible format
-characters such as direction marks and joiners, and never reads it as a
-template. A value longer than 60 characters keeps its start and its end, so a
+characters such as direction marks, and never reads it as a template. Emoji
+joiners remain unchanged. A value longer than 60 characters keeps its start and its end, so a
 path keeps its file name and an address its domain. Lists show three entries,
 such as "jana@example.com, max@example.com, and 2 more"; an entry without a
 value to show still counts toward "more". Only fields whose schema declares
@@ -1394,7 +1394,8 @@ also checks:
   name of a single person are cut to 24 characters; a group of people renders
   as a count.
 - Sentence forms, slot strings and consequences reject controls, invisible
-  format characters and line separators. These strings must be well-formed
+  format characters and line separators, except zero-width joiners (U+200D)
+  in `text` slot values. These strings must be well-formed
   Unicode: do not split a surrogate pair when shortening one. A view preserves
   the original code units of its text.
 - The review locale is canonical BCP 47 and belongs to the app's presentation

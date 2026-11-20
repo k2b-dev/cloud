@@ -9,8 +9,23 @@ import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { chatWriteAuthority } from "./ai-code-chat";
 
+const visibleTitle = (title: string) => title.replace(/[\p{Cc}\p{Cf}\p{Cs}]/gu, "").trim().length > 0;
+const cleanTitle = (title: string) =>
+  title
+    .replace(/(?!\u200d)\p{Cf}/gu, "")
+    .replace(/[\p{Cc}\p{Cs}\u2028\u2029]/gu, " ")
+    .trim();
+const invalidTitle = (locale: string) =>
+  fail(
+    err.badInput(
+      locale.split("-")[0] === "de"
+        ? "Der Titel muss sichtbaren Text enthalten (1–120 Zeichen)."
+        : "The title must contain visible text (1–120 characters).",
+    ),
+  );
+
 export const aiChatCreateInput = z.strictObject({
-  title: z.string().trim().min(1).max(200).describe("New personal chat title, 1 to 200 characters."),
+  title: z.string().trim().min(1).max(120).describe("New personal chat title, 1 to 120 characters."),
   project: z
     .strictObject({
       type: z.literal("core.ai.project").describe("Project resource type."),
@@ -50,6 +65,8 @@ export const aiChatCreateAction = {
   async review(input: z.output<typeof aiChatCreateInput>, context: CapabilityExecutionContext) {
     const authority = await chatWriteAuthority(context, sql);
     if (!authority.ok) return authority;
+    if (!visibleTitle(input.title)) return invalidTitle(context.locale);
+    const title = cleanTitle(input.title);
     const project = await readableProject(input, context);
     if (input.project && !project) return fail(err.notFound("Project"));
     const de = context.locale.split("-")[0] === "de";
@@ -60,7 +77,7 @@ export const aiChatCreateAction = {
       slots: {
         title: {
           kind: "text" as const,
-          value: input.title.replace(/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu, " ").trim() || (de ? "Neuer Chat" : "New chat"),
+          value: title,
         },
       },
       sentence: {
@@ -79,7 +96,7 @@ export const aiChatCreateAction = {
           {
             kind: "Draft" as const,
             context: project ? [{ label: de ? "Projekt" : "Project", value: project.name }] : [],
-            fields: [{ name: "title", label: de ? "Titel" : "Title", type: "text" as const, value: input.title }],
+            fields: [{ name: "title", label: de ? "Titel" : "Title", type: "text" as const, value: title }],
           },
         ],
       },
@@ -91,7 +108,9 @@ export const aiChatCreateAction = {
     if (!context.user) return fail(err.forbidden("Creating chats requires their owner"));
     const key = CapabilityIdempotencyKeySchema.safeParse(context.idempotencyKey);
     const parsed = aiChatCreateInput.safeParse(input);
-    if (!key.success || !parsed.success) return fail(err.badInput("Supply a title and a valid idempotency key"));
+    if (!parsed.success) return fail(err.badInput("Supply a title of 1 to 120 characters and a valid Project ref"));
+    if (!visibleTitle(parsed.data.title)) return invalidTitle(context.locale);
+    if (!key.success) return fail(err.badInput("Supply a valid idempotency key"));
     const owner = await accounts.users.get({ id: context.user.id });
     if (!owner || isAccountExpired(owner.accountExpires)) return fail(err.forbidden("The chat owner is inactive"));
     const project = await readableProject(parsed.data, context);
@@ -100,7 +119,7 @@ export const aiChatCreateAction = {
       const chat = await aiConversations.createConversation({
         requestId: creationRequestId(owner.id, key.data),
         ownerUserId: owner.id,
-        title: parsed.data.title,
+        title: cleanTitle(parsed.data.title),
         projectId: project?.id,
       });
       // Replays can return a chat moved to another Project since creation, just as on the HTTP route.
