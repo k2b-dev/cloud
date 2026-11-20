@@ -9,7 +9,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
-import { type BlockScene, fixtureImage, imageStateScenes, blockScenes as scenes } from "./blocks.fixtures";
+import { type BlockScene, fixtureImage, imageLayoutScenes, imageStateScenes, blockScenes as scenes } from "./blocks.fixtures";
 import { validateBlocks } from "./validate";
 
 // Islands, flat options and the six-column rows depend on the real layout engine, at desktop and phone widths.
@@ -93,17 +93,24 @@ afterAll(async () => {
   await browser?.close();
 });
 
+/** Every picture address the harness asked for, with its query, in order. */
+const imageRequests: string[] = [];
+
 const MAIN = `<main style="box-sizing:border-box;padding:24px 16px;max-width:calc(764px + 32px);margin:0 auto">`;
 
 const open = async (
   scene: BlockScene,
   width: number,
   drawn: "server" | "browser" = "browser",
-  host: "result" | "preview" = "result",
+  host: "result" | "preview" | "review" = "result",
+  clock = false,
 ): Promise<Page> => {
   const tab = await browser.newPage({ viewport: { width, height: 1000 } });
+  // A fake clock holds frames too, so the caller settles the page once it lets time run again.
+  if (clock) await tab.clock.install();
   await tab.route("**/*", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith(".svg")) imageRequests.push(`${url.pathname}${url.search}`);
     if (url.pathname === "/tabler.woff2")
       return route.fulfill({ body: Buffer.from(await Bun.file(icons.font).arrayBuffer()), contentType: "font/woff2" });
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript", body: harness });
@@ -129,7 +136,7 @@ const open = async (
         !document.querySelector(":is(.cloud-blocks__cell[data-kind='Table'], .cloud-blocks__cell[data-kind='Stats']) [aria-busy='true']"),
     );
   }
-  await settled(tab);
+  if (!clock) await settled(tab);
   return tab;
 };
 
@@ -216,12 +223,27 @@ describe("BlockTree", () => {
     test(`at ${width} px a search preview's picture keeps one 4:3 place while it loads, once drawn, and when refused`, async () => {
       const shots = process.env.CAPBLOCKS_SHOTS;
       const states = [];
+      let waitBox: { x: number; y: number; width: number; height: number } | null = null;
+      let asked: string[] = [];
       for (const scene of imageStateScenes) {
-        const tab = await open(scene, width, "browser", "preview");
+        const refusedScene = scene.name === "15-suche-datei-fehlt";
+        imageRequests.length = 0;
+        const tab = await open(scene, width, "browser", "preview", refusedScene);
         try {
           if (scene.name === "15-suche-datei")
             await tab.waitForFunction(() => Array.from(document.images).every((image) => image.complete && image.naturalWidth > 0));
-          if (scene.name === "15-suche-datei-fehlt") await tab.locator(".cloud-blocks__image-missing").waitFor();
+          if (refusedScene) {
+            // An <img> cannot tell a picture still being drawn (202) from a missing one: it waits on the muted place and
+            // asks twice more, 2 s apart, before the stand-in shows.
+            for (const attempt of [1, 2]) {
+              await tab.locator(".cloud-blocks__image-wait").waitFor();
+              if (attempt === 1) waitBox = await tab.locator(".cloud-blocks__image-wait").boundingBox();
+              await tab.clock.runFor(2_000);
+            }
+            await tab.locator(".cloud-blocks__image-missing").waitFor();
+            await tab.clock.resume();
+            asked = [...imageRequests];
+          }
           await settled(tab);
           states.push(
             await tab.evaluate(() => {
@@ -258,10 +280,65 @@ describe("BlockTree", () => {
       expect(refused!.images).toBe(0);
       expect(refused!.stand_in).toEqual({ role: "img", label: "Vase_Albers_Boden.jpg" });
       expect(refused!.stand_in_box).toEqual(refused!.picture);
+      // The first frame asked once; each later try asked under a fresh address, then nothing more.
+      expect(asked).toEqual(["/kunst/images/missing.svg", "/kunst/images/missing.svg?retry=1", "/kunst/images/missing.svg?retry=2"]);
+      expect(waitBox && { top: waitBox.y, left: waitBox.x, width: waitBox.width, height: waitBox.height }).toEqual(drawn!.picture);
       for (const state of [loading!, refused!]) {
         expect(state.overflow).toBe(0);
         expect(state.picture).toEqual(drawn!.picture);
         expect(state.details).toEqual(drawn!.details);
+      }
+    });
+
+  for (const width of [1440, 390])
+    test(`at ${width} px a picture is at most 24 rem wide in a result, and a 4:3 thumbnail beside its details in an approval`, async () => {
+      for (const scene of imageLayoutScenes) {
+        expect(() => validateBlocks(scene.blocks, scene.host, { appId: scene.app.slice(1), appPrefixes: [scene.app] })).not.toThrow();
+        const tab = await open(scene, width, "browser", scene.host);
+        try {
+          await tab.waitForFunction(() => Array.from(document.images).every((image) => image.complete && image.naturalWidth > 0));
+          await settled(tab);
+          const facts = await tab.evaluate(() => {
+            const box = (node: Element) => {
+              const rect = node.getBoundingClientRect();
+              return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+            };
+            const figure = document.querySelector(".cloud-blocks__image")!;
+            const cell = figure.closest(".cloud-blocks__cell")!;
+            const detail = document.querySelector(".cloud-blocks__cell[data-media-row] > :not(.cloud-blocks__image)");
+            return {
+              overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+              cell: box(cell),
+              mediaRow: cell.hasAttribute("data-media-row"),
+              figure: box(figure),
+              picture: box(figure.querySelector("img")!),
+              detail: detail ? box(detail) : null,
+              rem: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+            };
+          });
+          expect(facts.overflow).toBe(0);
+          if (scene.host === "result") {
+            // Its own place, at most 24 rem wide on a wide column and the whole column on a phone, in its own ratio.
+            expect(facts.mediaRow).toBe(false);
+            expect(facts.figure.width).toBe(Math.min(24 * facts.rem, facts.cell.width));
+            expect(facts.picture).toEqual(facts.figure);
+            expect(Math.abs(facts.figure.width / facts.figure.height - 16 / 9)).toBeLessThan(0.01);
+          } else {
+            // The thumbnail of what changes: 6 rem, 4:3, its details to its right.
+            expect(facts.mediaRow).toBe(true);
+            expect(facts.figure.width).toBe(6 * facts.rem);
+            expect(facts.picture.width).toBe(facts.figure.width);
+            expect(Math.abs(facts.picture.width / facts.picture.height - 4 / 3)).toBeLessThan(0.01);
+            expect(facts.detail!.left).toBeGreaterThan(facts.figure.left + facts.figure.width);
+          }
+          const shots = process.env.CAPBLOCKS_SHOTS;
+          if (shots) {
+            mkdirSync(shots, { recursive: true });
+            await tab.screenshot({ path: resolve(shots, `${scene.name}-light-${width}.png`), fullPage: true });
+          }
+        } finally {
+          await tab.close();
+        }
       }
     });
 

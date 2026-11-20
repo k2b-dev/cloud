@@ -86,6 +86,15 @@ test("a picture still being drawn asks the browser to come back", async () => {
   expect(response.headers.get("cache-control")).toBe("no-store");
 });
 
+test("a later try of the browser, under a retry address, is checked again like the first", async () => {
+  requests.length = 0;
+  answer = ready(true);
+  expect((await api.request("/entries/p%3Aabc/image?rev=r1&retry=2")).status).toBe(200);
+  expect(requests).toEqual([
+    { call: expect.objectContaining({ accessSubject: testCall(testActor).accessSubject }), input: { id: "p:abc", rev: "r1" } },
+  ]);
+});
+
 test("an entry ref longer than any Files hands out is rejected before the service", async () => {
   requests.length = 0;
   expect((await picture("x".repeat(513))).status).toBe(400);

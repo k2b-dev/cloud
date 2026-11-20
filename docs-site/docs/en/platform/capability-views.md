@@ -143,10 +143,18 @@ application response; Cloud never drops or shortens a block silently.
   rejected. The page keeps `img-src 'self'`. Serve a remote picture through your
   app's route, as Mail does for external images. Without `alt`, the card title
   is the text alternative.
-- An `Image` with `ratio` keeps that place from the first frame: it shows a
-  muted ground while the picture loads and, if the picture cannot be shown
-  (missing, refused, or not yet drawn), a quiet stand-in with `alt` as its
-  label. What follows the picture never moves.
+- An `Image` is at most 24 rem wide; beside its `Detail` in an approval it is
+  a 6 rem thumbnail in 4:3. With `ratio` it keeps that place from the first
+  frame, and a picture of another shape is cropped to fill it: it shows a muted
+  ground while the picture loads and, if the picture cannot be shown (missing,
+  refused, or not yet drawn), a quiet stand-in with `alt` as its label. What
+  follows the picture never moves.
+- A browser image cannot read `202` with `Retry-After`, so a picture that is
+  still being drawn fails like a missing one. Cloud then waits on the muted
+  ground and asks your route twice more, 2 s apart, with `retry=1` and
+  `retry=2` added to the query, before the stand-in shows. A route that answers
+  `202` should draw a picture within those 4 s; ignore the `retry` parameter and
+  check access on each request as on the first.
 - The view carries a path, never a lease. Check the reader's access on every
   request to the image route, as for a download, and answer a picture the
   reader may not see exactly like a missing one. Send `Cache-Control: private`

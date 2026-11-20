@@ -286,6 +286,31 @@ export const imageStateScenes: BlockScene[] = [
   { name: "15-suche-datei-fehlt", app: "/kunst", blocks: filePreview("/kunst/images/missing.svg") },
 ];
 
+/**
+ * The shared picture layout outside the search preview: a result's picture with its own ratio, and an approval's
+ * picture beside the details of the same thing, as the thumbnail of what changes.
+ */
+export const imageLayoutScenes: (BlockScene & { host: "result" | "review" })[] = [
+  {
+    name: "16-ergebnis-bild",
+    app: "/kunst",
+    host: "result",
+    blocks: [
+      { kind: "Image", src: "/kunst/images/m_12.svg", alt: "Vase_Albers_Boden.jpg", ratio: 16 / 9 },
+      { kind: "Text", text: "Die Vase steht seit März im Lager Nord." },
+    ],
+  },
+  {
+    name: "17-freigabe-bild",
+    app: "/kunst",
+    host: "review",
+    blocks: [
+      { kind: "Image", src: "/kunst/images/m_12.svg", alt: "Vase_Albers_Boden.jpg" },
+      { kind: "Detail", title: "Neuer Preis", items: [{ label: "Preis", value: "480 €" }] },
+    ],
+  },
+];
+
 /** An SVG stand-in for an app image: a vase or a plate in one quiet colour. */
 export const fixtureImage = (path: string): string => {
   const palette: Record<string, [string, string]> = {

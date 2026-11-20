@@ -36,7 +36,7 @@
   align-items: start;
 }
 
-.k2b-ui .cloud-blocks__cell[data-media-row] .cloud-blocks__image :is(img, .cloud-blocks__image-missing) {
+.k2b-ui .cloud-blocks__cell[data-media-row] .cloud-blocks__image :is(img, .cloud-blocks__image-wait, .cloud-blocks__image-missing) {
   aspect-ratio: 4 / 3;
 }
 
@@ -427,8 +427,8 @@
   margin: 0;
 }
 
-/* The picture and its stand-in fill the same place, so loading and failing never move what follows. */
-.k2b-ui .cloud-blocks__image :is(img, .cloud-blocks__image-missing) {
+/* The picture, its wait for a later try, and its stand-in fill the same place, so loading and failing never move what follows. */
+.k2b-ui .cloud-blocks__image :is(img, .cloud-blocks__image-wait, .cloud-blocks__image-missing) {
   width: 100%;
   height: 100%;
   border-radius: var(--k2b-radius-control);
@@ -440,10 +440,19 @@
   display: block;
 }
 
+/* A declared ratio is the place itself: a picture of another shape fills it, cropped, and never makes it taller. */
+.k2b-ui .cloud-blocks__image[data-ratio] {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.k2b-ui .cloud-blocks__image :is(.cloud-blocks__image-wait, .cloud-blocks__image-missing) {
+  min-height: 3rem;
+}
+
 .k2b-ui .cloud-blocks__image-missing {
   display: grid;
   place-items: center;
-  min-height: 3rem;
   color: var(--k2b-text-muted);
   font-size: 1.5rem;
 }

@@ -309,24 +309,77 @@ function CardsBlock(props: { block: Leaf<"Cards">; locale: string }) {
 }
 
 /**
+ * An `<img>` cannot read a 202 with `Retry-After`, so a picture that is still being drawn fails like a missing one. It is
+ * tried again a fixed few times, a little later and under a fresh address, before the stand-in shows.
+ */
+const IMAGE_RETRIES = 2;
+const IMAGE_RETRY_DELAY_MS = 2_000;
+
+/** The source of a later try: the same route, which checks the reader again, under an address no cache has answered. */
+const retrySource = (src: string, attempt: number) => (attempt ? `${src}${src.includes("?") ? "&" : "?"}retry=${attempt}` : src);
+
+/**
+ * One source of a picture, from its first try to its stand-in. While a later try waits, the place keeps its muted
+ * ground; the stand-in follows only once every try has failed. Unmounting, or a new source, ends a waiting try.
+ */
+function BlockPicture(props: { src: string; alt?: string }) {
+  const [attempt, setAttempt] = createSignal(0);
+  const [phase, setPhase] = createSignal<"loading" | "waiting" | "failed">("loading");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(timer));
+  const fail = () => {
+    if (phase() !== "loading") return;
+    if (attempt() >= IMAGE_RETRIES) return setPhase("failed");
+    setPhase("waiting");
+    timer = setTimeout(() => {
+      setAttempt((count) => count + 1);
+      setPhase("loading");
+    }, IMAGE_RETRY_DELAY_MS);
+  };
+  return (
+    <Switch>
+      <Match when={phase() === "loading"}>
+        <img
+          ref={(image) =>
+            // A picture that failed before this code ran never fires its error event.
+            onMount(() => {
+              if (image.complete && image.naturalWidth === 0) fail();
+            })
+          }
+          src={retrySource(props.src, attempt())}
+          alt={props.alt}
+          loading="lazy"
+          onError={fail}
+        />
+      </Match>
+      <Match when={phase() === "waiting"}>
+        <div class="cloud-blocks__image-wait" role="img" aria-label={props.alt} aria-busy="true" />
+      </Match>
+      <Match when={phase() === "failed"}>
+        <div class="cloud-blocks__image-missing" role="img" aria-label={props.alt}>
+          <i class="ti ti-photo-off" aria-hidden="true" />
+        </div>
+      </Match>
+    </Switch>
+  );
+}
+
+/**
  * A picture holds its place while it loads, on its muted ground. One that cannot be shown, because it is missing or the
  * reader may no longer see it, leaves that place with a quiet symbol and its text alternative instead of a broken image.
  */
 function ImageBlock(props: { block: Leaf<"Image"> }) {
-  const [failed, setFailed] = createSignal<string>();
   return (
     <Show when={imageSource(props.block.src)}>
       {(src) => (
-        <figure class="cloud-blocks__image" style={props.block.ratio ? { "aspect-ratio": String(props.block.ratio) } : undefined}>
-          <Show
-            when={failed() !== src()}
-            fallback={
-              <div class="cloud-blocks__image-missing" role="img" aria-label={props.block.alt}>
-                <i class="ti ti-photo-off" aria-hidden="true" />
-              </div>
-            }
-          >
-            <img src={src()} alt={props.block.alt} loading="lazy" onError={() => setFailed(src())} />
+        <figure
+          class="cloud-blocks__image"
+          data-ratio={props.block.ratio ? "" : undefined}
+          style={props.block.ratio ? { "aspect-ratio": String(props.block.ratio) } : undefined}
+        >
+          {/* Keyed: every source starts with its own tries. */}
+          <Show when={src()} keyed>
+            {(source) => <BlockPicture src={source} alt={props.block.alt} />}
           </Show>
           <Show when={props.block.caption}>{(caption) => <figcaption>{caption()}</figcaption>}</Show>
         </figure>
