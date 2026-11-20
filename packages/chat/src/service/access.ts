@@ -67,6 +67,19 @@ export const capPermission = (granted: PermissionLevel, actor: RequestActor): Pe
   const cap = scopes.includes("admin") ? "admin" : scopes.includes("write") ? "write" : scopes.includes("read") ? "read" : "none";
   return hasPermission(granted, cap) ? cap : granted;
 };
+/** Personal keys use the person's grants; OAuth and machine credentials also carry a scope limit. */
+export const credentialScopeLimit = (context: Pick<ChatContext, "actor" | "credentialScopes">): readonly string[] | undefined => {
+  const actor = context.actor;
+  return actor.kind === "service_account"
+    ? actor.delegatedUser !== null && !actor.oauthClientId && actor.delegation?.credentialKind !== "oauth"
+      ? undefined
+      : (context.credentialScopes ?? actor.scopes)
+    : context.credentialScopes;
+};
+export const hasMutationScope = (context: Pick<ChatContext, "actor" | "credentialScopes">): boolean => {
+  const scopes = credentialScopeLimit(context);
+  return scopes === undefined || scopes.some((scope) => scope === "write" || scope === "admin");
+};
 export const boundConversation = (actor: RequestActor, locale?: string): Result<string | null> => {
   if (actor.kind !== "service_account" || actor.delegatedUser !== null || actor.serviceAccount.kind !== "resource_bound") return ok(null);
   const account = actor.serviceAccount;
@@ -138,7 +151,8 @@ export const requireConversation = async (
   const permission = conversationPermission(input.conversationId, granted, input.actor);
 
   if (!row || permission === "none") return fail({ code: "NOT_FOUND", message: t.notFound, status: 404 });
-  if (!hasPermission(permission, input.required)) return fail(err.forbidden(t.forbidden));
+  if (!hasPermission(permission, input.required) || (hasPermission(input.required, "write") && !hasMutationScope(input)))
+    return fail(err.forbidden(t.forbidden));
   return ok({ ...row, permission });
 };
 

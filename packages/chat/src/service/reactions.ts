@@ -1,6 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
-import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./access";
+import { type ChatContext, messages as catalog, hasMutationScope, requireConversation, subjectPrincipal } from "./access";
 import { EmojiSchema, MessageIdSchema, REACTIONS_PER_MESSAGE, REACTIONS_PER_PERSON } from "./contracts";
 import { chatLive } from "./live";
 import { reactionGroups } from "./reaction-store";
@@ -32,9 +32,8 @@ const set = async (input: Input & { emoji: string; on: boolean }): Promise<Resul
   if (!EmojiSchema.safeParse(input.emoji).success) return fail(err.badInput(catalog(input).invalidInput));
   const found = await target(sql, input);
   if (!found.ok) return found;
-  // A reader writes their own state. A write/admin credential is required even with a read-only resource grant.
-  const scopes = input.credentialScopes ?? (input.actor.kind === "service_account" ? input.actor.scopes : undefined);
-  if (scopes && !scopes.some((scope) => scope === "write" || scope === "admin")) return fail(err.forbidden(catalog(input).forbidden));
+  // Readers may react; OAuth and machine credentials additionally need a mutation scope.
+  if (!hasMutationScope(input)) return fail(err.forbidden(catalog(input).forbidden));
   const limited = await checkWriteRate(input);
   if (limited) return limited;
   const self = subjectPrincipal(input.accessSubject);
