@@ -413,6 +413,7 @@ export {
   resolveAiAudioModel,
   runAiTranscription,
 } from "./transcription";
+export { AI_TURN_WRITE_FORBIDDEN, mayWriteIntoAiTurn } from "./turn-writer";
 export type {
   AiAccessResult,
   AiApprovalTarget,
