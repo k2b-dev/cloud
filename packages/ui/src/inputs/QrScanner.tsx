@@ -127,17 +127,41 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
     props.onError(reason);
   };
   /**
+   * Resolves once the player presents two more pictures: the picture moves. Players without
+   * requestVideoFrameCallback count as moving.
+   */
+  const moving = () =>
+    new Promise<void>((resolve) => {
+      if (!("requestVideoFrameCallback" in video)) return resolve();
+      let pictures = 0;
+      const next = () => {
+        if (++pictures === 2) resolve();
+        else if (!closed) video.requestVideoFrameCallback(next);
+      };
+      video.requestVideoFrameCallback(next);
+    });
+  /**
    * Waits for the camera picture. WebKit, above all in an installed web app, can leave a stream black: play() never
    * settles or is refused. The scanner then offers to try again rather than wait in silence, and a picture that starts
-   * late still clears that offer.
+   * late still clears that offer. WebKit's player, as seen in Playwright's WebKit, can also stop at the first picture of a
+   * stream although play() resolved, and the engine reads only new pictures, so nothing would scan. Attaching the stream
+   * again starts such a picture; that needs no gesture, since the player already plays, so the scanner does it once by
+   * itself before it offers to try again.
    */
   let attempt = 0;
+  let restarted = false;
   const show = async (play: () => Promise<void>) => {
     const current = ++attempt;
     const latest = () => !closed && current === attempt;
     setStalled(false);
+    let played = false;
     const playing = play().then(
-      () => video.videoWidth > 0,
+      async () => {
+        if (!(video.videoWidth > 0)) return false;
+        played = true;
+        await moving();
+        return true;
+      },
       () => false,
     );
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -150,6 +174,10 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
     clearTimeout(timer);
     if (!latest()) return;
     if (!shown) {
+      if (played && !restarted) {
+        restarted = true;
+        return retry();
+      }
       setStalled(true);
       if (!(await playing) || !latest()) return;
     }
@@ -158,7 +186,8 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
   };
   /**
    * Attaching the stream again restarts a player that stalled on it, and play() runs within the click, the gesture a
-   * refused play() may need. The engine already runs from its first start and scans from the play event it hears.
+   * refused play() may need. The engine already runs from its first start and scans from the play event it hears; its
+   * frame request from before may also answer then, so it can scan from two loops, which costs only decode work.
    */
   const retry = () => {
     if (closed || !stream) return;

@@ -5,14 +5,17 @@ import { capabilityRequestHash } from "../capabilities/claims";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../capabilities/review-storage";
 import { type CapabilityActionReviewPresentation, CapabilityActionReviewPresentationSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
+import type { RequestActor } from "../server";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
+import { withoutAdminRole } from "../services/session/user";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
 import { AiMapSchema } from "./map-contracts";
 
 export { AI_TOOL_CHECK_STALE_MS };
 
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
+import { mayWriteIntoAiTurn } from "./capability-execution";
 import { projectSettledAiToolChecks } from "./capability-result";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { projectAiMaps } from "./map-store";
@@ -319,6 +322,7 @@ type InterChatMessageRow = {
   source_title: string;
   source_turn_id: string;
   source_turn_short_id: string;
+  source_actor: RequestActor | null;
   source_call_id: string;
   target_conversation_id: string;
   target_chat_id: string;
@@ -441,6 +445,7 @@ const interChatMessageSelect = () => sql`
   SELECT message.id, message.short_id, message.source_conversation_id,
          source.short_id AS source_chat_id, source.title AS source_title,
          message.source_turn_id, source_turn.short_id AS source_turn_short_id, message.source_call_id,
+         source_turn.run_config->'actor' AS source_actor,
          message.target_conversation_id, target.short_id AS target_chat_id, target.title AS target_title,
          message.actor_user_id, message.text, message.status, message.target_turn_id,
          target_turn.short_id AS target_turn_short_id, message.target_message_id, message.error,
@@ -2154,13 +2159,20 @@ export const aiConversations: AiConversationService = {
       // After a person's Stop nothing starts by itself: the message waits like for a busy chat.
       if (active || target.queue_held_at) return { delivered: false as const, reason: "busy" as const };
 
+      // Core rebuilds the delivery actor from the current account. Preserve the source turn's
+      // app ceiling here, including for pending messages recovered after a restart.
+      const sourceActor = message.source_actor;
+      const runConfig =
+        sourceActor?.kind === "user" && sourceActor.sessionKind === "app"
+          ? { ...input.runConfig, actor: { ...sourceActor, user: withoutAdminRole(sourceActor.user) } }
+          : input.runConfig;
       const writerOrigin = { kind: "chat" as const, id: message.source_chat_id, turnId: message.source_turn_short_id };
       const turnRows = await withAiShortIdForDb(
         tx,
         "idx_ai_turns_conversation_short_id",
         (attempt, shortId) => attempt<TurnRow[]>`
           INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelId}, 'queued', (${JSON.stringify({ ...input.runConfig, writerOrigin })}::text)::jsonb)
+          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelId}, 'queued', (${JSON.stringify({ ...runConfig, writerOrigin })}::text)::jsonb)
           RETURNING *
         `,
       );
@@ -3997,6 +4009,7 @@ export const aiConversations: AiConversationService = {
       if (!turn) return { ok: false, reason: "not_found" as const };
       const runConfig = turn.run_config ? parseJsonValue<AiTurnRunConfig>(turn.run_config) : null;
       if (runConfig?.kind === "compact") return { ok: false, reason: "not_chat" as const };
+      if (!mayWriteIntoAiTurn(input.actor, runConfig?.actor)) return { ok: false, reason: "forbidden" as const };
       if (!(["queued", "running", "waiting_for_action"] as AiTurnStatus[]).includes(turn.status)) {
         return { ok: false, reason: "not_active" as const };
       }

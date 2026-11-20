@@ -194,6 +194,8 @@ describe("Mail workspace search return", () => {
   let heldSearchResponse: Promise<Response> | undefined;
   let heldCursorResponse: Promise<Response> | undefined;
   let heldNavigationResponse: Promise<Response> | undefined;
+  /** When set, every search request waits here until the test answers it, in any order. */
+  let deferredSearches: Array<{ href: string; signal: AbortSignal | undefined; answer: (response: Response) => void }> | undefined;
 
   const snapshotFor = (href: string): MailboxPageData => {
     const url = new URL(href, "http://localhost");
@@ -254,13 +256,22 @@ describe("Mail workspace search return", () => {
     heldSearchResponse = undefined;
     heldCursorResponse = undefined;
     heldNavigationResponse = undefined;
+    deferredSearches = undefined;
     builderResult = undefined;
     globalThis.fetch = Object.assign(
-      async (input: RequestInfo | URL) => {
+      async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
         if (url.pathname.endsWith("/workspace-route")) {
           const href = url.searchParams.get("href") ?? "";
           workspaceRequests.push(href);
+          if (deferredSearches && new URL(href, "http://localhost").searchParams.has("q")) {
+            const signal = input instanceof Request ? input.signal : (init?.signal ?? undefined);
+            const answer = Promise.withResolvers<Response>();
+            // Like fetch, an aborted request rejects; a late answer to it reaches nobody.
+            signal?.addEventListener("abort", () => answer.reject(new DOMException("Aborted", "AbortError")), { once: true });
+            deferredSearches.push({ href, signal, answer: answer.resolve });
+            return answer.promise;
+          }
           if (new URL(href, "http://localhost").searchParams.has("q") && heldSearchResponse) return heldSearchResponse;
           if (!new URL(href, "http://localhost").searchParams.has("q") && heldNavigationResponse) return heldNavigationResponse;
           return Response.json(snapshotFor(href));
@@ -395,6 +406,97 @@ describe("Mail workspace search return", () => {
       expect(title()).toBe(action === "Reset" ? "All mail" : "Inbox");
     });
   }
+
+  test("typing stays in the field while earlier searches answer late and out of order", async () => {
+    jest.useFakeTimers();
+    setSystemTime(new Date(now));
+    mount();
+    const searches: NonNullable<typeof deferredSearches> = [];
+    deferredSearches = searches;
+    const flush = async () => {
+      for (let turn = 0; turn < 40; turn++) await Promise.resolve();
+    };
+    const queryOf = (href: string) => new URL(href, "http://localhost").searchParams.get("q");
+    /** Each query answers with its own row, so the list shows whose results it holds. */
+    const answer = (index: number) => {
+      const { href, answer } = searches[index]!;
+      answer(Response.json({ ...snapshotFor(href), listItems: [mailTestRow(`hit-${queryOf(href)}`)] }));
+    };
+    const typeKey = (value: string) => {
+      input().value = value;
+      input().setSelectionRange(value.length, value.length);
+      input().dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const hits = () =>
+      [...dom.root.querySelectorAll("[data-conversation-id^='hit-']")].map((row) => row.getAttribute("data-conversation-id"));
+
+    const historyLength = history.length;
+    const queries = () => searches.map((entry) => queryOf(entry.href));
+    const route = () => new URL(location.href).searchParams.get("q");
+
+    typeKey("i");
+    jest.advanceTimersByTime(300);
+    await flush();
+    expect(queries()).toEqual(["i"]);
+    typeKey("in");
+    // The person moves the caret to the start before the first search answers.
+    input().setSelectionRange(0, 0);
+    jest.advanceTimersByTime(100);
+    answer(0);
+    await flush();
+    expect(input().value).toBe("in");
+    expect(input().selectionStart).toBe(0);
+    expect(hits()).toEqual(["hit-i"]);
+
+    // The text typed before the answer is still searched, and it replaces the entry its search session pushed.
+    jest.advanceTimersByTime(300);
+    await flush();
+    expect(queries()).toEqual(["i", "in"]);
+    answer(1);
+    await flush();
+    expect(input().value).toBe("in");
+    expect(hits()).toEqual(["hit-in"]);
+    expect(route()).toBe("in");
+    expect(history.length).toBe(historyLength + 1);
+
+    // Back to the shown query while "inv" is on its way: it is asked for again, and "inv" cannot answer into the field.
+    typeKey("inv");
+    jest.advanceTimersByTime(300);
+    await flush();
+    typeKey("in");
+    jest.advanceTimersByTime(300);
+    await flush();
+    expect(queries()).toEqual(["i", "in", "inv", "in"]);
+    expect(searches[2]!.signal?.aborted).toBe(true);
+    answer(2);
+    await flush();
+    answer(3);
+    await flush();
+    expect(input().value).toBe("in");
+    expect(hits()).toEqual(["hit-in"]);
+    expect(route()).toBe("in");
+
+    typeKey("inv");
+    jest.advanceTimersByTime(300);
+    await flush();
+    typeKey("invo");
+    jest.advanceTimersByTime(300);
+    await flush();
+    expect(queries()).toEqual(["i", "in", "inv", "in", "inv", "invo"]);
+    // The newer search supersedes the one still on its way.
+    expect(searches[4]!.signal?.aborted).toBe(true);
+    expect(searches[5]!.signal?.aborted).toBe(false);
+    answer(5);
+    await flush();
+    answer(4);
+    await flush();
+    expect(input().value).toBe("invo");
+    expect(input().selectionStart).toBe(4);
+    expect(hits()).toEqual(["hit-invo"]);
+    expect(route()).toBe("invo");
+    // One search session adds one history entry, so Back returns to the starting view.
+    expect(history.length).toBe(historyLength + 1);
+  });
 
   for (const method of ["delete", "Escape", "button"]) {
     test(`clearing a pending first quick search via ${method} supersedes its response`, async () => {

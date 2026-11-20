@@ -3079,6 +3079,7 @@ suite("AI executor integration", () => {
           turnId: turn.id,
           clientRequestId: "late-steer",
           text: "Change course",
+          actor: { kind: "user", user: actorUser(userId) },
         });
         expect(result.ok).toBe(true);
       };
@@ -3744,6 +3745,7 @@ suite("AI executor integration", () => {
           turnId: turn.id,
           clientRequestId: "loop-steer",
           text: "Use the Files app instead",
+          actor: { kind: "user", user: actorUser(userId) },
         });
         expect(steered.ok).toBe(true);
       };

@@ -213,6 +213,30 @@ describe(`continuous month in ${browserName}`, () => {
       await page.close();
     }
   }, 30_000);
+  test("bar titles keep their descenders inside the box that clips them, at the lane's height", async () => {
+    const page = await open();
+    try {
+      await page.locator(".k2b-calendar-month__segment .k2b-calendar-event__title").first().waitFor();
+      const titles = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>(".k2b-calendar-month__segment .k2b-calendar-event__title")].map((title) => {
+          const box = title.getBoundingClientRect();
+          // A text range's box is the font's ascent to descent, whatever the line-height: what the title must hold.
+          const range = document.createRange();
+          range.selectNodeContents(title);
+          const glyphs = range.getBoundingClientRect();
+          return {
+            text: title.textContent,
+            fits: glyphs.top >= box.top && glyphs.bottom <= box.bottom,
+            lane: title.closest(".k2b-calendar-month__segment")!.getBoundingClientRect().height,
+          };
+        }),
+      );
+      expect(titles.map((title) => title.text)).toContain("Fair setup");
+      for (const title of titles) expect(title).toMatchObject({ fits: true, lane: 20 });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
   test("scrolling names the center month's days, reports visible rows and focus, and lets the label rest", async () => {
     const page = await open();
     try {

@@ -9,6 +9,7 @@ import type { dispatchCapability } from "../api/capabilities";
 import * as executionStore from "../capabilities/executions";
 import { defineCapabilities } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
+import type { RequestActor } from "../server";
 import * as categoryPolicy from "../services/account-category-policy";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import { buildAiCapabilityCatalog } from "./capabilities";
@@ -17,6 +18,7 @@ import {
   aiCapabilityCheckResult,
   checkAiCapability,
   executeAiCapability,
+  mayWriteIntoAiTurn,
   resolveAiCapabilityActor,
   reviewAiCapability,
 } from "./capability-execution";
@@ -166,6 +168,51 @@ describe("AI capability authority", () => {
       credentialKind: "session",
       scopes: [],
     });
+  });
+
+  test("text from a phone app session goes only into turns started in the app", () => {
+    const person = user("11111111-1111-4111-8111-111111111111");
+    const browser: RequestActor = { kind: "user", user: { ...person, roles: ["user", "admin"] } };
+    const app: RequestActor = { kind: "user", user: person, sessionKind: "app" };
+    const appInvocation: RequestActor = {
+      kind: "user",
+      user: person,
+      sessionKind: "app",
+      delegation: { kind: "invocation", callingAppId: "assistant", credentialKind: "session", invocationId: "invocation-1" },
+    };
+    const cld: RequestActor = {
+      kind: "service_account",
+      serviceAccount: {
+        id: "cli",
+        name: "Terminal",
+        kind: "agent",
+        status: "active",
+        delegatedUserId: person.id,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+        createdBy: null,
+        createdAt: new Date(0).toISOString(),
+      },
+      delegatedUser: person,
+      scopes: [],
+    };
+    const cases: Array<[string, RequestActor, RequestActor | undefined, boolean]> = [
+      ["browser into browser", browser, browser, true],
+      ["browser into app", browser, app, true],
+      ["app into app", app, app, true],
+      ["app invocation into app", appInvocation, app, true],
+      ["app into browser", app, browser, false],
+      ["app invocation into browser", appInvocation, browser, false],
+      ["app into cld", app, cld, false],
+      ["app into unknown", app, undefined, false],
+      ["cld into browser", cld, browser, true],
+      ["cld into app", cld, app, true],
+      ["browser into unknown", browser, undefined, true],
+    ];
+    expect(cases.map(([name, writer, stored]) => [name, mayWriteIntoAiTurn(writer, stored)])).toEqual(
+      cases.map(([name, , , expected]) => [name, expected]),
+    );
   });
 
   test("keeps two users isolated and lets the target return permission-specific results", async () => {
