@@ -103,8 +103,14 @@ export function createMailboxSearch(props: {
     return `${url.pathname}${url.search}`;
   };
   const requestRoute = (href: string, replace?: boolean) => {
-    requestedRoute = routeKey(href);
-    void props.onOpenHref(href, replace);
+    const route = routeKey(href);
+    requestedRoute = route;
+    void Promise.resolve(props.onOpenHref(href, replace)).then(() => {
+      // Settled without a newer request, also when it failed or showed the same route again: nothing is on its way.
+      if (requestedRoute !== route) return;
+      requestedRoute = null;
+      quickSearchPending = false;
+    });
   };
   const [searchFields, setSearchFields] = createSignal<MailQuickSearchField[]>(selectedQuickSearchFields(requestUrl()));
   const activeSavedView = createMemo(() => props.savedViews.find((view) => view.id === props.activeSavedViewId) ?? null);
@@ -201,10 +207,13 @@ export function createMailboxSearch(props: {
   const updateScope = (folderId: string | null) => {
     if (searchValue().trim()) props.onNavigationStart?.();
     setScopeFolderId(folderId);
-    if (searchValue().trim()) quickSearch.trigger(searchValue(), searchFields(), replaceLiveSearchRoute());
+    if (searchValue().trim()) quickSearch.trigger(searchValue(), searchFields());
   };
-  const applyQuickSearch = (query: string, fields: MailQuickSearchField[], replace: boolean) => {
+  const applyQuickSearch = (query: string, fields: MailQuickSearchField[]) => {
     const currentUrl = requestUrl();
+    // Decided when the search runs, not per key: a search session adds one history entry, also while its first
+    // search is still on its way when the next key is typed.
+    const replace = currentUrl.searchParams.has("q");
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
       clearSearch();
@@ -225,15 +234,14 @@ export function createMailboxSearch(props: {
       return;
     }
     setValidationError(false);
-    if (href === `${currentUrl.pathname}${currentUrl.search}`) return;
+    // Back to the shown query while a newer search is on its way: ask for it again, so that search cannot answer into a
+    // field that no longer holds its text.
+    if (href === `${currentUrl.pathname}${currentUrl.search}` && !quickSearchPending) return;
     quickSearchPending = true;
     requestRoute(href, replace);
   };
 
-  const quickSearch = timed.debounce(
-    (query: string, fields: MailQuickSearchField[], replace: boolean) => applyQuickSearch(query, fields, replace),
-    300,
-  );
+  const quickSearch = timed.debounce((query: string, fields: MailQuickSearchField[]) => applyQuickSearch(query, fields), 300);
   const controls = {
     edit: (state: MailSearchState, source: URL) => void openAdvancedSearch(state, source),
     cancelPending: () => {
@@ -272,21 +280,19 @@ export function createMailboxSearch(props: {
     ),
   );
 
-  const replaceLiveSearchRoute = () => requestUrl().searchParams.has("q");
-
   const updateSearchValue = (next: string) => {
     if (next.trim() !== props.query.trim()) props.onNavigationStart?.();
     setSearchValue(next);
     if (!next.trim()) {
-      quickSearch.trigger("", searchFields(), replaceLiveSearchRoute());
+      quickSearch.trigger("", searchFields());
       return;
     }
-    quickSearch.debouncedFn(next, searchFields(), replaceLiveSearchRoute());
+    quickSearch.debouncedFn(next, searchFields());
   };
 
   const submitSearch = (event: SubmitEvent) => {
     event.preventDefault();
-    quickSearch.trigger(searchValue(), searchFields(), replaceLiveSearchRoute());
+    quickSearch.trigger(searchValue(), searchFields());
   };
 
   const updateSearchFields = (next: string[]) => {
@@ -295,7 +301,7 @@ export function createMailboxSearch(props: {
     const normalized = selected.length > 0 ? selected : [...DEFAULT_MAIL_QUICK_SEARCH_FIELDS];
     if (searchValue().trim() && normalized.join(",") !== searchFields().join(",")) props.onNavigationStart?.();
     setSearchFields(normalized);
-    if (searchValue().trim()) quickSearch.trigger(searchValue(), normalized, replaceLiveSearchRoute());
+    if (searchValue().trim()) quickSearch.trigger(searchValue(), normalized);
     else quickSearch.cancel();
   };
   const searchFieldsLabel = () =>

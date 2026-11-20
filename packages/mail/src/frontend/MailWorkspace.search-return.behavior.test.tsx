@@ -430,39 +430,62 @@ describe("Mail workspace search return", () => {
     const hits = () =>
       [...dom.root.querySelectorAll("[data-conversation-id^='hit-']")].map((row) => row.getAttribute("data-conversation-id"));
 
+    const historyLength = history.length;
+    const queries = () => searches.map((entry) => queryOf(entry.href));
+    const route = () => new URL(location.href).searchParams.get("q");
+
     typeKey("i");
     jest.advanceTimersByTime(300);
     await flush();
-    expect(searches.map((entry) => queryOf(entry.href))).toEqual(["i"]);
+    expect(queries()).toEqual(["i"]);
     typeKey("in");
-    // The person moves the caret back into the word before the first search answers.
-    input().setSelectionRange(1, 1);
+    // The person moves the caret to the start before the first search answers.
+    input().setSelectionRange(0, 0);
     jest.advanceTimersByTime(100);
     answer(0);
     await flush();
     expect(input().value).toBe("in");
-    expect(input().selectionStart).toBe(1);
+    expect(input().selectionStart).toBe(0);
     expect(hits()).toEqual(["hit-i"]);
 
     // The text typed before the answer is still searched.
     jest.advanceTimersByTime(300);
     await flush();
-    expect(searches.map((entry) => queryOf(entry.href))).toEqual(["i", "in"]);
+    expect(queries()).toEqual(["i", "in"]);
+    // Back to the shown query while "in" is on its way: it is asked for again, and "in" cannot answer into the field.
+    typeKey("i");
+    jest.advanceTimersByTime(300);
+    await flush();
+    expect(queries()).toEqual(["i", "in", "i"]);
+    expect(searches[1]!.signal?.aborted).toBe(true);
+    answer(1);
+    await flush();
+    answer(2);
+    await flush();
+    expect(input().value).toBe("i");
+    expect(hits()).toEqual(["hit-i"]);
+    expect(route()).toBe("i");
+
+    typeKey("in");
+    jest.advanceTimersByTime(300);
+    await flush();
     typeKey("inv");
     jest.advanceTimersByTime(300);
     await flush();
-    expect(searches.map((entry) => queryOf(entry.href))).toEqual(["i", "in", "inv"]);
+    expect(queries()).toEqual(["i", "in", "i", "in", "inv"]);
     // The newer search supersedes the one still on its way.
-    expect(searches[1]!.signal?.aborted).toBe(true);
-    expect(searches[2]!.signal?.aborted).toBe(false);
-    answer(2);
+    expect(searches[3]!.signal?.aborted).toBe(true);
+    expect(searches[4]!.signal?.aborted).toBe(false);
+    answer(4);
     await flush();
-    answer(1);
+    answer(3);
     await flush();
     expect(input().value).toBe("inv");
     expect(input().selectionStart).toBe(3);
     expect(hits()).toEqual(["hit-inv"]);
-    expect(new URL(location.href).searchParams.get("q")).toBe("inv");
+    expect(route()).toBe("inv");
+    // One search session adds one history entry, so Back returns to the starting view.
+    expect(history.length).toBe(historyLength + 1);
   });
 
   for (const method of ["delete", "Escape", "button"]) {
