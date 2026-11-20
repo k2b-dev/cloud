@@ -1,6 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { batch, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { prefersMenuSheet } from "../actions/phone-sheet";
+import { readDialogCall } from "../feedback/dialog-call";
 import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useDateConfigLocale } from "../intl/locale";
@@ -872,8 +873,10 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
   const openSheet = async () => {
     setSheetOpen(true);
     calendar.close();
+    // The sheet opens with the context of this tap, not of the moment its code arrives.
+    const call = readDialogCall(shell);
     const { openDateSheet } = await import("./date-sheet");
-    await openDateSheet<string>({
+    await openDateSheet<string>(call, {
       title: props.owner.label ?? props.owner["aria-label"],
       subtitle: props.value() ? formatDateLong(props.value()!, locale()) : t().noDate,
       ariaLabel: fieldName(props.owner),
@@ -1326,8 +1329,10 @@ function DateRangeTextField(props: {
       setAnchor(null);
       setPreviewDate(null);
     });
+    // The sheet opens with the context of this tap, not of the moment its code arrives.
+    const call = readDialogCall(shell);
     const { openDateSheet } = await import("./date-sheet");
-    const range = await openDateSheet<DateRangeValue>({
+    const range = await openDateSheet<DateRangeValue>(call, {
       title: props.owner.label ?? props.owner["aria-label"],
       subtitle: rangeStatusText(props.value(), locale(), t()) || t().noDate,
       ariaLabel: name(),

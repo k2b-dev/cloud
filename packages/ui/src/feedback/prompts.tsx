@@ -5,7 +5,7 @@ import { resolveSelectMessages } from "../inputs/select-messages";
 import { KeyedFor } from "../internal/keyed-for";
 import { optionDescription } from "../internal/option-description";
 import { resolveUiMessages } from "../intl/messages";
-import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
+import { captureDialogOpen, type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
 import { openError, type PromptContent, promptFormUnavailable, providePhraseField, sharedPrompts } from "./prompt-confirm";
 import { loadedPromptForm, loadPromptForm } from "./prompt-form-loader";
 import { DialogHeader, promptButtonVariant, promptTone } from "./prompt-header";
@@ -514,10 +514,12 @@ export const prompts = Object.assign(sharedPrompts, {
   promptNumber,
 
   form: async <T extends Record<string, FieldSchema>>(config: PromptFormOptions<T>): Promise<InferFormValues<T> | null> => {
-    // Once the fields are there, the form opens in the same task as the call, like every other prompt.
+    // Once the fields are there, the form opens in the same task as the call, like every other prompt. While they load,
+    // it keeps the palette, page and opener of this call.
+    const open = captureDialogOpen();
     const form = loadedPromptForm() ?? (await loadPromptForm().catch(() => undefined));
     if (!form) {
-      await promptFormUnavailable(config.signal);
+      await promptFormUnavailable(config.signal, open);
       return null;
     }
     const { PromptFormDialog } = form;
@@ -526,6 +528,9 @@ export const prompts = Object.assign(sharedPrompts, {
         (close) => <PromptFormDialog config={config} close={(value) => close(value)} />,
         { ...config, followContent: config.followContent ?? true },
         resolvePromptMessages().form,
+        true,
+        undefined,
+        open,
       )) ?? null
     );
   },
