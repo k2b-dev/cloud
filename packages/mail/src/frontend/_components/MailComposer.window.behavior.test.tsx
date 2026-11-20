@@ -470,6 +470,33 @@ describe("MailComposer in a floating window", () => {
     expect(delivered).toEqual([{ submissionId: "Dlv001", scheduledAt: null, undoSeconds: expect.any(Number) }]);
   });
 
+  test("Try again in the toast while the window is offline says so and sends nothing", async () => {
+    await mount();
+    commandFailure = "The mail server is not reachable.";
+    sendButton()!.click();
+    const toastCard = () => dom.document.querySelector<HTMLElement>("[data-k2b-toast-container] .k2b-toast");
+    await waitFor(() => Boolean(toastCard()?.textContent?.includes("not reachable")));
+    commandFailure = null;
+    Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
+    window.dispatchEvent(new Event("offline"));
+    await waitFor(() => status() === "Offline · saved here");
+    const sends = requests.filter((request) => request.endsWith("/commands")).length;
+    [...toastCard()!.querySelectorAll<HTMLButtonElement>(".k2b-toast__action")]
+      .find((button) => button.textContent === "Try again")!
+      .click();
+    // The click answers at once: the toast names the reason and keeps Try again for later.
+    await waitFor(() => Boolean(toastCard()?.textContent?.includes("You are offline. Try again once you are back online.")));
+    expect(toastCard()!.querySelector(".k2b-toast__title")?.textContent).toBe("Not sent");
+    expect(requests.filter((request) => request.endsWith("/commands")).length).toBe(sends);
+    expect(leaves).toEqual([]);
+    Object.defineProperty(navigator, "onLine", { configurable: true, get: () => true });
+    window.dispatchEvent(new Event("online"));
+    [...toastCard()!.querySelectorAll<HTMLButtonElement>(".k2b-toast__action")]
+      .find((button) => button.textContent === "Try again")!
+      .click();
+    await waitFor(() => leaves.includes("sent"));
+  });
+
   test("a sent message leaves the window and hands the host its delivery for Undo instead of the composer's notice", async () => {
     await mount();
     sendButton()!.click();
@@ -486,6 +513,13 @@ describe("MailComposer in a floating window", () => {
     await waitFor(() => status() === "Offline · saved here");
     expect(sendButton()!.disabled).toBe(true);
     expect(dom.root.querySelector(".cm-content")?.getAttribute("contenteditable")).toBe("true");
+    // Mod+Enter waits with the button: the shortcut never sends what the disabled Send holds back.
+    dom.root
+      .querySelector(".cm-content")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+    await Bun.sleep(50);
+    expect(requests.some((request) => request.endsWith("/commands"))).toBe(false);
+    expect(leaves).toEqual([]);
     Object.defineProperty(navigator, "onLine", { configurable: true, get: () => true });
     window.dispatchEvent(new Event("online"));
     await waitFor(() => !sendButton()!.disabled);
