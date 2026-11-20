@@ -378,6 +378,22 @@ describe("privacy screen", () => {
       expect(await covered(page)).toBe(true);
       await warn();
       expect(await page.locator("#warning").getAttribute("data-cloud-privacy-covered")).toBeNull();
+      // The warning lies above the veil: with the veil hit-testable for the read, its button is the topmost element.
+      expect(
+        await page.locator("#warning button").evaluate((button) => {
+          const veil = document.querySelector<HTMLElement>(".cloud-privacy-veil")!;
+          const box = button.getBoundingClientRect();
+          veil.style.pointerEvents = "auto";
+          try {
+            return [
+              veil.matches(":popover-open"),
+              document.elementsFromPoint(box.left + box.width / 2, box.top + box.height / 2)[0] === button,
+            ];
+          } finally {
+            veil.style.pointerEvents = "";
+          }
+        }),
+      ).toEqual([true, true]);
       // While the warning is open, keys belong to it and lift nothing.
       await page.keyboard.press("x");
       expect(await covered(page)).toBe(true);
@@ -455,6 +471,10 @@ describe("privacy screen", () => {
           .locator("#selected-row")
           .evaluate((row) => [row.hasAttribute("data-cloud-privacy-covered"), row.children[0]!.hasAttribute("data-cloud-privacy-covered")]),
       ).toEqual([false, true]);
+      // Mail's case: a positioned row whose closed "…" menu is a fixed popover that is not displayed. It holds no fixed
+      // element, so the row carries its own blur, fill included.
+      expect(await page.locator("#mail-row").getAttribute("data-cloud-privacy-covered")).toBe("");
+      expect(await page.locator("#mail-row .k2b-dropdown__menu").evaluate((menu) => getComputedStyle(menu).position)).toBe("fixed");
       /** The topmost element at the middle of each target's left part, with the veil hit-testable for the moment of the read. */
       const topmost = (selectors: string[]) =>
         page.evaluate((list) => {
@@ -474,6 +494,7 @@ describe("privacy screen", () => {
       // Every pixel of the covered screen lies under the veil: the selected row, the sidebar's active item, the app bar.
       const coveredTargets = [
         "#selected-row",
+        "#mail-row",
         ".k2b-app-workspace__sidebar-item.is-active, #privacy-navigation [aria-current]",
         ".layout-rail [data-cloud-rail-apps] .rail-item",
         "#subject",
@@ -500,15 +521,32 @@ describe("privacy screen", () => {
       expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Weiterarbeiten");
       // Nothing moves when the veil comes or goes.
       expect(await boxes()).toEqual(before);
-      // A narrow window: the veil still covers all of it, and the island's hole follows it.
+      // The island's hole follows it when the window changes; the veil's outer edge lies beyond any screen.
+      /** The hole the veil leaves for the island where it is now. */
+      const holeAtIsland = () =>
+        page.waitForFunction(() => {
+          const box = document.getElementById("upload")!.getBoundingClientRect();
+          const clip = document.querySelector<HTMLElement>(".cloud-privacy-veil")!.style.clipPath;
+          return clip.includes("-100000") && clip.includes(`M${box.left} ${box.top}h${box.width}v${box.height}`);
+        });
       await page.setViewportSize({ width: 600, height: 800 });
-      const narrow = await page.locator(".cloud-privacy-veil").evaluate((element) => [
-        [element.clientWidth, element.clientHeight],
-        [document.documentElement.clientWidth, document.documentElement.clientHeight],
-      ]);
-      expect(narrow[0]).toEqual(narrow[1]!);
+      await holeAtIsland();
       await page.setViewportSize({ width: 1440, height: 900 });
+      await holeAtIsland();
       expect(await topmost(["#selected-row", "#upload"])).toEqual(["veil", "upload"]);
+      // A toast that arrives while covered: the veil rises above it, and the hint keeps its focus.
+      await page.evaluate(() => {
+        const toast = document.createElement("div");
+        toast.id = "late-toast";
+        toast.popover = "manual";
+        toast.style.cssText = "position:fixed;inset:auto;bottom:2rem;left:2rem;margin:0;width:240px;height:60px";
+        toast.textContent = "Neue Nachricht von Lea Brandt";
+        document.body.append(toast);
+        toast.showPopover();
+      });
+      await page.waitForFunction(() => document.querySelector("#late-toast")?.hasAttribute("data-cloud-privacy-covered"));
+      expect(await topmost(["#late-toast"])).toEqual(["veil"]);
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Weiterarbeiten");
       // A dialog that opens while covered shows below the veil once the veil rises above it.
       await page.evaluate(() => {
         const dialog = document.createElement("dialog");
@@ -523,7 +561,10 @@ describe("privacy screen", () => {
       await page.keyboard.press("x");
       expect(await covered(page)).toBe(false);
       expect(await page.locator(".cloud-privacy-veil").evaluate((element) => element.matches(":popover-open"))).toBe(false);
-      await page.evaluate(() => (document.getElementById("late-dialog") as HTMLDialogElement).close());
+      await page.evaluate(() => {
+        (document.getElementById("late-dialog") as HTMLDialogElement).close();
+        document.getElementById("late-toast")!.hidePopover();
+      });
       expect(await boxes()).toEqual(before);
       expect(errors).toEqual([]);
     } finally {

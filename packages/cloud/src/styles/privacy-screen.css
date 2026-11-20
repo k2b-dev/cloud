@@ -28,13 +28,6 @@
   -webkit-backdrop-filter: blur(24px) saturate(0.7);
   backdrop-filter: blur(24px) saturate(0.7);
   pointer-events: none;
-  transition: opacity 160ms ease-out;
-}
-
-@starting-style {
-  .cloud-privacy-veil:popover-open {
-    opacity: 0;
-  }
 }
 
 /* The runtime sets the countdown's remaining share and the app area's middle; these are the values before it does. */
@@ -257,7 +250,6 @@
   }
   .cloud-privacy-countdown,
   .cloud-privacy-hint,
-  .cloud-privacy-veil,
   [data-cloud-privacy-covered] {
     transition: none;
   }

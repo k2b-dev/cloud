@@ -181,12 +181,14 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   const disposeHint = render(() => <PrivacyHint text={options.text} ids={ids} onContinue={() => lift()} />, hint);
 
   // The veil: a manual popover, so it lies above every stacking context of the page; the hint shows above it. It is
-  // in place from the start, so showing it changes no element and moves nothing.
+  // in place from the start, so showing it changes no element and moves nothing. Without the popover API nothing
+  // would hide it while uncovered, so such a browser gets no veil; the blur of each part still covers.
+  const veilSupported = typeof HTMLElement.prototype.showPopover === "function";
   const veil = document.createElement("div");
   veil.className = "cloud-privacy-veil";
   veil.setAttribute("popover", "manual");
   veil.setAttribute("aria-hidden", "true");
-  document.body.append(veil);
+  if (veilSupported) document.body.append(veil);
   /** The open dialogs and popovers the veil lies over; one that opens later shows above it until the veil rises. */
   let underVeil = new Set<Element>();
   const islandResize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => active && openIslands());
@@ -234,9 +236,12 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     if (known !== undefined) return known;
     let found = false;
     for (const child of Array.from(element.children)) {
-      if (SKIPPED.has(child.tagName)) continue;
+      // A closed popover or dialog paints nothing, and an open one lies in the top layer, where an ancestor's filter
+      // neither frames nor blurs it: neither holds its container open, such as a row's closed "…" menu.
+      if (SKIPPED.has(child.tagName) || child.hasAttribute("popover") || (child.tagName === "DIALOG" && isModal(child))) continue;
       const style = getComputedStyle(child);
-      if (style.position === "fixed" || (!formsContainingBlock(child, style) && style.display !== "none" && holdsFixed(child))) {
+      if (style.display === "none") continue;
+      if (style.position === "fixed" || (!formsContainingBlock(child, style) && holdsFixed(child))) {
         found = true;
         break;
       }
@@ -285,20 +290,23 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   const sharpIslands = () =>
     Array.from(document.querySelectorAll(ISLAND)).filter((island) => island !== live && !island.closest(`[${COVERED}]`));
   const openIslands = () => {
+    if (!veilSupported) return;
     const holes: string[] = [];
     for (const island of sharpIslands()) {
       const box = island.getBoundingClientRect();
       if (box.width > 0 && box.height > 0) holes.push(`M${box.left} ${box.top}h${box.width}v${box.height}h${-box.width}Z`);
     }
     if (holes.length === 0) veil.style.removeProperty("clip-path");
-    else veil.style.setProperty("clip-path", `path(evenodd, "M0 0H${window.innerWidth}V${window.innerHeight}H0Z${holes.join("")}")`);
+    // The outer edge lies far beyond any screen, so a growing window never shows past it; only the holes follow.
+    else veil.style.setProperty("clip-path", `path(evenodd, "M-100000 -100000H100000V100000H-100000Z${holes.join("")}")`);
   };
   const showVeil = (show: boolean) => {
+    if (!veilSupported) return;
     try {
       if (veil.matches(":popover-open")) veil.hidePopover();
       if (show) veil.showPopover();
     } catch {
-      /* Without the popover API the veil stays hidden; the blur of each part still covers. */
+      /* A page that took the veil out of the document keeps the blur of each part. */
     }
   };
   /**
@@ -306,7 +314,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
    * above: while it is open the veil does not rise.
    */
   const raiseVeil = (): boolean => {
-    if (sessionWarningOpen()) return false;
+    if (!veilSupported || sessionWarningOpen()) return false;
     const open = (selector: string) => {
       try {
         return Array.from(document.querySelectorAll(selector));
@@ -431,7 +439,10 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     );
     scheduleReconcile();
   });
-  /** Showing a popover changes no attribute; its toggle event says so. */
+  /**
+   * Showing a popover changes no attribute; its toggle events say so. `beforetoggle` comes before it shows, so the
+   * covering pass runs before the popover's first frame.
+   */
   const toggled = (event: Event) => {
     if (active && event.target !== hint && event.target !== veil) scheduleReconcile();
   };
@@ -714,6 +725,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   window.addEventListener("blur", blur);
   window.addEventListener("resize", resize);
   window.addEventListener("scroll", scrolled, { capture: true, passive: true });
+  document.addEventListener("beforetoggle", toggled, true);
   document.addEventListener("toggle", toggled, true);
   document.addEventListener("visibilitychange", shown);
   document.addEventListener("prerenderingchange", shown);
@@ -750,6 +762,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     window.removeEventListener("blur", blur);
     window.removeEventListener("resize", resize);
     window.removeEventListener("scroll", scrolled, true);
+    document.removeEventListener("beforetoggle", toggled, true);
     document.removeEventListener("toggle", toggled, true);
     document.removeEventListener("visibilitychange", shown);
     document.removeEventListener("prerenderingchange", shown);

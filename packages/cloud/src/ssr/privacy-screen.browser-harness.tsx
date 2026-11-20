@@ -1,4 +1,4 @@
-import { AppWorkspace } from "@k2b/ui";
+import { AppWorkspace, Dropdown } from "@k2b/ui";
 import { Hono } from "hono";
 import { defineApp } from "../_internal/define-app";
 import { person } from "../_internal/define-app.test-fixture";
@@ -88,6 +88,16 @@ export const server = new Hono<Environment>()
                   }}
                 />
                 <span>Mietvertrag Ladenfläche – Nachtrag</span>
+              </div>
+              {/* Shaped like a Mail row: positioned, the open conversation's fill, and a closed "…" menu, whose popover is
+                  fixed but not displayed. */}
+              <div id="mail-row" style={{ position: "relative", background: "var(--k2b-row-selected)", padding: "0.75rem 1rem" }}>
+                <span>Nebenkostenabrechnung 2025</span>
+                <Dropdown.Root lazy items={[{ label: "Archivieren", action: () => {} }]}>
+                  <Dropdown.Trigger iconOnly size="sm" type="button" variant="ghost" label="Aktionen">
+                    <i class="ti ti-dots" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
               </div>
             </AppWorkspace.Main>
           </AppWorkspace.Content>
