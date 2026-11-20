@@ -24,7 +24,8 @@ export class JmapError extends Error {
       | "JMAP_CAPABILITY"
       | "JMAP_ACCOUNT"
       | "JMAP_FOLDER_TREE"
-      | "JMAP_DISCOVERY_LIMIT",
+      | "JMAP_DISCOVERY_LIMIT"
+      | "JMAP_EMAIL_TOO_LARGE",
   ) {
     super(code);
     this.name = "JmapError";
@@ -242,6 +243,8 @@ export async function callJmap(
   deps: JmapTransportDependencies = {},
 ) {
   if (input.methodCalls.length > input.session.core.maxCallsInRequest) throw new JmapError("JMAP_CALL_LIMIT");
+  const calls = new Map(input.methodCalls.map(([name, , id]) => [id, name]));
+  if (calls.size !== input.methodCalls.length) throw new JmapError("JMAP_INVALID_RESPONSE");
   const url = httpsUrl(input.session.apiUrl, input.session.origin);
   const body = JSON.stringify({ using: input.using, methodCalls: input.methodCalls });
   if (Buffer.byteLength(body) > input.session.core.maxSizeRequest) throw new JmapError("JMAP_REQUEST_LIMIT");
@@ -253,30 +256,46 @@ export async function callJmap(
   checkHttp(response);
   const parsed = responseSchema.safeParse(json(response.body));
   if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
-  // Current callers submit one method. Future multi-method callers need each result independently,
-  // including successful responses alongside method errors; this currently throws on the first error.
-  for (const [name, args] of parsed.data.methodResponses) {
-    if (name === "error") {
-      const known = [
-        "serverUnavailable",
-        "serverFail",
-        "serverPartialFail",
-        "unknownMethod",
-        "invalidArguments",
-        "invalidResultReference",
-        "forbidden",
-        "accountNotFound",
-        "accountNotSupportedByMethod",
-        "accountReadOnly",
-        "requestTooLarge",
-        "cannotCalculateChanges",
-        "stateMismatch",
-        "unsupportedFilter",
-        "unsupportedSort",
-        "anchorNotFound",
-      ];
-      throw new JmapMethodError(typeof args.type === "string" && known.includes(args.type) ? args.type : "unknown");
-    }
+  // One response per call holds for the read methods used today. A method with implicit follow-up
+  // calls (EmailSubmission/set with onSuccessUpdateEmail, Foo/copy with onSuccessDestroyOriginal)
+  // answers twice under one call id (RFC 8620 §5.4); sending must relax this check.
+  if (parsed.data.methodResponses.length !== calls.size) throw new JmapError("JMAP_INVALID_RESPONSE");
+  for (const [name, args, id] of parsed.data.methodResponses) {
+    const expected = calls.get(id);
+    if (!expected || (name !== expected && name !== "error")) throw new JmapError("JMAP_INVALID_RESPONSE");
+    calls.delete(id);
+    if (name === "error" && typeof args.type !== "string") throw new JmapError("JMAP_INVALID_RESPONSE");
   }
   return parsed.data;
+}
+
+/** Require one correlated success; callers that need independent failures inspect the tuples. */
+export function requireJmapMethodResult(response: z.infer<typeof responseSchema>, callId: string, name: string): Record<string, unknown> {
+  const results = response.methodResponses.filter(([, , id]) => id === callId);
+  const result = results[0];
+  if (results.length !== 1 || !result) throw new JmapError("JMAP_INVALID_RESPONSE");
+  if (result[0] === "error") {
+    const args = result[1];
+    const known = [
+      "serverUnavailable",
+      "serverFail",
+      "serverPartialFail",
+      "unknownMethod",
+      "invalidArguments",
+      "invalidResultReference",
+      "forbidden",
+      "accountNotFound",
+      "accountNotSupportedByMethod",
+      "accountReadOnly",
+      "requestTooLarge",
+      "cannotCalculateChanges",
+      "stateMismatch",
+      "unsupportedFilter",
+      "unsupportedSort",
+      "anchorNotFound",
+    ];
+    throw new JmapMethodError(typeof args.type === "string" && known.includes(args.type) ? args.type : "unknown");
+  }
+  if (result[0] !== name) throw new JmapError("JMAP_INVALID_RESPONSE");
+  return result[1];
 }
