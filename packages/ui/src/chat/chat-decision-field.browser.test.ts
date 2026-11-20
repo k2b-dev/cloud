@@ -6,7 +6,19 @@ import type { FieldState } from "../../test/chat-decision-field.browser-harness"
 
 // Geometry of a question that asks for one value: no state moves anything, the eye is 44 px on touch, and on a phone
 // both answers share one row with one-line labels and no icons.
-const fieldStates: readonly FieldState[] = ["open", "typed", "saving", "empty", "chars", "failed", "unknown", "held", "conflict"];
+// `running` comes last: its answer never settles, so the question stays held.
+const fieldStates: readonly FieldState[] = [
+  "open",
+  "typed",
+  "saving",
+  "empty",
+  "chars",
+  "failed",
+  "unknown",
+  "held",
+  "conflict",
+  "running",
+];
 let browser: Browser;
 let bundle: string;
 let css: string;
@@ -88,7 +100,7 @@ for (const [name, context] of [
   ["1440 px", desktop],
   ["390 px", phone],
 ] as const)
-  test(`${name}: open, typed, saving, error, locked and conflict share one geometry (0 px)`, async () => {
+  test(`${name}: open, typed, saving, error, locked, conflict and a running answer share one geometry (0 px)`, async () => {
     const page = await open(context);
     try {
       await settled(page);
@@ -167,6 +179,19 @@ test("touch: the eye's box is 44 px wide and its hit area 44 px high, without re
       };
     });
     expect(hits).toEqual({ width: 44, top: true, bottom: true, left: true, text: true });
+    // The shell lets the hit area out, so the input takes its corners for the fill autofill paints on it.
+    const corners = await page.evaluate(() => {
+      const shell = getComputedStyle(document.querySelector(".k2b-chat-decision__field .k2b-input-shell")!);
+      const input = getComputedStyle(document.querySelector(".k2b-chat-decision__field input")!);
+      return {
+        overflow: shell.overflow,
+        start: [input.borderStartStartRadius, input.borderEndStartRadius],
+        shell: [shell.borderStartStartRadius, shell.borderEndStartRadius],
+      };
+    });
+    expect(corners.overflow).toBe("visible");
+    expect(corners.start).toEqual(corners.shell);
+    expect(corners.start[0]).not.toBe("0px");
     // The eye keeps its name while it shows the value.
     const eye = page.getByRole("button", { name: "Show value", exact: true });
     await eye.tap();

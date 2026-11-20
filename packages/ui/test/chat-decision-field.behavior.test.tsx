@@ -259,23 +259,27 @@ else {
     expect([calls, host.declined.length]).toEqual([1, 0]);
     expect([host.control().disabled, eye().disabled]).toEqual([true, true]);
     // The answers stay focusable, as the question's own buttons do, and show which one runs.
-    expect([confirm().disabled, confirm().getAttribute("aria-disabled"), confirm().getAttribute("aria-busy"), confirm().hasAttribute("data-busy")]).toEqual([
+    expect([
+      confirm().disabled,
+      confirm().getAttribute("aria-disabled"),
+      confirm().getAttribute("aria-busy"),
+      confirm().hasAttribute("data-busy"),
+    ]).toEqual([false, "true", "true", true]);
+    expect([decline().disabled, decline().getAttribute("aria-disabled"), decline().getAttribute("aria-busy")]).toEqual([
       false,
       "true",
-      "true",
-      true,
+      null,
     ]);
-    expect([decline().disabled, decline().getAttribute("aria-disabled"), decline().getAttribute("aria-busy")]).toEqual([false, "true", null]);
     // The lock took the focus from the field; the failed save gives it back with working answers.
     host.control().blur();
     fail();
     await tick();
-    expect([host.control().disabled, eye().disabled, confirm().getAttribute("aria-disabled"), decline().getAttribute("aria-disabled")]).toEqual([
-      false,
-      false,
-      null,
-      null,
-    ]);
+    expect([
+      host.control().disabled,
+      eye().disabled,
+      confirm().getAttribute("aria-disabled"),
+      decline().getAttribute("aria-disabled"),
+    ]).toEqual([false, false, null, null]);
     expect(dom.document.activeElement).toBe(host.control());
     expect(host.field()).toBe(value);
     enter();

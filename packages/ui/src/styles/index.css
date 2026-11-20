@@ -3305,6 +3305,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     overflow: visible;
   }
 
+  /* Without the clip, the input takes the shell's corners, so the fill
+     autofill paints on it stays inside the shell's rounded edge; beside the
+     eye the shell shows the same fill. */
+  .k2b-ui .k2b-input-shell:has(> .k2b-input-shell__reveal) > .k2b-input {
+    border-radius: inherit;
+  }
+
   .k2b-ui .k2b-input-shell__reveal {
     position: relative;
     width: 2.75rem;
