@@ -146,7 +146,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         });
         if (!result.ok) {
           const status = result.error.status;
-          return c.json({ message: result.error.message, code: result.error.code }, status as 400 | 401 | 403 | 404 | 409 | 500);
+          return c.json({ message: result.error.message, code: result.error.code }, status);
         }
 
         const sessionToken = await auth.session.create(c, result.data.user.id, {

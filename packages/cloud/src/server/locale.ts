@@ -1,5 +1,5 @@
 import { i18n } from "@k2b/stdlib";
-import { canonicalLocale, DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER, normalizeLocale } from "../shared/locale";
+import { CATALOG_LOCALES, canonicalLocale, DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER, normalizeLocale } from "../shared/locale";
 import { readCookie } from "./request-cookies";
 
 export { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER };
@@ -9,11 +9,8 @@ type LocaleContext = {
   req: { raw: { headers: Headers } };
 };
 
-/**
- * Languages Cloud ships platform catalogs for and offers in its language
- * picker. `Accept-Language` negotiation prefers a tag in one of these.
- */
-const CATALOG_LANGUAGES = new Set(["en", "de"]);
+/** `Accept-Language` negotiation prefers a tag in one of the catalog languages. */
+const CATALOG_LANGUAGES = new Set<string>(CATALOG_LOCALES);
 
 /**
  * The caller's explicit locale preference, or `undefined` when the request

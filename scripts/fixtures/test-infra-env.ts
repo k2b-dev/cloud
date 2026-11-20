@@ -22,7 +22,7 @@ export const quoteTestDatabase = (name: string): string => {
   return `"${name.replaceAll('"', '""')}"`;
 };
 
-export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql" | "clickhouse" | "s3";
+export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql" | "clickhouse" | "jmap" | "s3";
 
 export type InfraMapping = { test: string; runtime: string[]; unset?: string };
 
@@ -38,6 +38,7 @@ export const infraMappings: Record<InfraKind, InfraMapping> = {
   filegate: { test: "CLOUD_TEST_FILEGATE_URL", runtime: ["FILEGATE_URL", "FILESV2_TEST_FILEGATE_URL"] },
   gotenberg: { test: "CLOUD_TEST_GOTENBERG_URL", runtime: ["GOTENBERG_URL", "GRIDS_PDF_URL"] },
   clickhouse: { test: "CLOUD_TEST_CLICKHOUSE_URL", runtime: [] },
+  jmap: { test: "CLOUD_TEST_JMAP_URL", runtime: [] },
   rsql: { test: "CLOUD_TEST_RSQL_URL", runtime: ["RSQL_URL", "RSQL_TEST_URL"] },
 };
 

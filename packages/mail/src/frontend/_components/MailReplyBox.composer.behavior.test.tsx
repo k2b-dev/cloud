@@ -279,7 +279,7 @@ describe("MailReplyBox with the real composer", () => {
             calendarIntegrationAvailable={false}
             liveDictation={false}
             returnHref="/app/mail/Box001"
-            messageLabel={() => null}
+            messageSource={() => null}
             createNote={async () => {
               throw new Error("not used");
             }}
@@ -377,12 +377,12 @@ describe("MailReplyBox with the real composer", () => {
       const send = dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-send]");
       expect(send).toBeDefined();
       send!.click();
-      // The reason stands in the toast "Nicht gesendet"; the box keeps its text.
-      await waitFor(() =>
-        Boolean(
-          dom.document.querySelector("[data-k2b-toast-container]")?.textContent?.includes("Gib mindestens eine Empfängeradresse an."),
-        ),
-      );
+      // The reason stands in the empty To field, which takes the caret; the box keeps its text and offers no toast.
+      const recipients = () => dom.root.querySelector<HTMLInputElement>('input[role="combobox"][aria-label="Empfänger"]')!;
+      await waitFor(() => recipients().placeholder === "Gib mindestens eine Empfängeradresse an.");
+      await waitFor(() => dom.document.activeElement === recipients());
+      expect(recipients().getAttribute("aria-invalid")).toBe("true");
+      expect(dom.document.querySelector("[data-k2b-toast-container] .k2b-toast")).toBeNull();
       expect(requests.some((request) => request.path.endsWith("/send") || request.path.endsWith("/safety-review"))).toBe(false);
     });
   }

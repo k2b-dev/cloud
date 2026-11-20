@@ -52,7 +52,13 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-const renderFeed = async (input: { page: MailEventsPage | null; error?: string | null; loading?: boolean; filter?: MailEventsFilter }) => {
+const renderFeed = async (input: {
+  page: MailEventsPage | null;
+  error?: string | null;
+  loading?: boolean;
+  filter?: MailEventsFilter;
+  selectedConversationId?: string | null;
+}) => {
   const dom = createDomTestHarness();
   dom.document.documentElement.lang = "de";
   const [{ MailEventsFeed, createMailEventsFeed }, { LocaleProvider }] = await Promise.all([import("./MailEventsFeed"), import("@k2b/ui")]);
@@ -76,7 +82,7 @@ const renderFeed = async (input: { page: MailEventsPage | null; error?: string |
             filter: input.filter ?? input.page?.filter ?? EMPTY_MAIL_EVENTS_FILTER,
             error: input.error ?? null,
             loading: input.loading ?? false,
-            selectedConversationId: null,
+            selectedConversationId: input.selectedConversationId ?? null,
             currentUserId: ME,
             dateConfig: { timeZone: "UTC", locale: "de" },
             localTags: [],
@@ -110,7 +116,11 @@ const renderFeed = async (input: { page: MailEventsPage | null; error?: string |
 test.skipIf(isServer)("lists events under their day, opens a conversation in place, and leaves events without one unlinked", async () => {
   const feed = await renderFeed({
     page: page([
-      event("3", { action: "message.sent", metadata: { result: "failed", intent: "reply" } }),
+      event("3", {
+        actor: { kind: "user", id: MIRA, displayName: "Mira Schulz", avatarHash: "fixture-picture" },
+        action: "message.sent",
+        metadata: { result: "failed", intent: "reply" },
+      }),
       event("2", { action: "draft.created", conversationId: null, conversationSubject: null }),
       event("1", {
         actor: { kind: "workflow", id: null, displayName: "Rechnungen", avatarHash: null },
@@ -120,10 +130,14 @@ test.skipIf(isServer)("lists events under their day, opens a conversation in pla
   });
   try {
     expect(feed.text()).toContain("Heute");
+    expect(feed.dom.root.querySelectorAll(".k2b-activity__entry")).toHaveLength(3);
+    expect(feed.dom.root.querySelectorAll("[data-mail-event] [title]")).toHaveLength(0);
+    expect(feed.dom.root.querySelector(".mail-events__person")?.classList.contains("k2b-filter-chip")).toBe(true);
     expect(feed.rows().map((row) => row.dataset.tone)).toEqual(["error", "draft", "automation"]);
+    expect(feed.rows()[0]?.querySelector("img")?.getAttribute("src")).toBe(`/api/accounts/users/${MIRA}/avatar?rev=fixture-picture`);
     expect(feed.rows()[0]?.textContent).toContain("Details in der Unterhaltung.");
     expect(feed.rows()[1]?.querySelector("a")).toBeNull();
-    expect(feed.rows()[2]?.querySelector(".mail-event__robot")).not.toBeNull();
+    expect(feed.rows()[2]?.querySelector(".k2b-activity__avatar .ti-robot")).not.toBeNull();
     const link = feed.rows()[0]!.querySelector<HTMLAnchorElement>("a")!;
     expect(link.getAttribute("href")).toBe("/app/mail/Box001?view=events&conversation=Conv01");
     link.click();
@@ -194,7 +208,9 @@ test.skipIf(isServer)("shows the empty, filtered empty, loading and error states
   }
   const loading = await renderFeed({ page: page([event("1")]), loading: true });
   try {
-    expect(loading.dom.root.querySelector(".mail-events__skeleton[role='status']")?.textContent).toContain("Ereignisse werden geladen");
+    expect(loading.dom.root.querySelector(".mail-events__skeleton [role='status']")?.getAttribute("aria-label")).toContain(
+      "Ereignisse werden geladen",
+    );
     expect(loading.rows()).toHaveLength(0);
     // The chips stay in place while the feed loads.
     expect(loading.dom.root.querySelector("[data-mail-events-filters]")).not.toBeNull();
@@ -250,6 +266,32 @@ test.skipIf(isServer)("loads older events with the feed's filter, and a failed l
     expect(more()).toBeNull();
     // Day headings come from the list itself: one per day, also for the page that loaded later.
     expect(feed.dom.root.querySelectorAll(".k2b-virtual-feed__item .k2b-virtual-feed__separator").length).toBeGreaterThan(0);
+  } finally {
+    feed.cleanup();
+  }
+});
+
+test.skipIf(isServer)("joins neighbouring rows of the selected conversation within one day", async () => {
+  const feed = await renderFeed({
+    selectedConversationId: "Conv01",
+    page: page([
+      event("5"),
+      event("4", { action: "message.sent", metadata: { result: "sent", intent: "reply" } }),
+      event("3", { action: "draft.created" }),
+      event("2", { conversationId: "Conv02", conversationSubject: "Return label" }),
+      event("1", { createdAt: "2026-11-02T09:00:00.000Z" }),
+    ]),
+  });
+  try {
+    expect(feed.rows().map((row) => row.dataset.selectedJoin ?? null)).toEqual(["below", "both", "above", null, null]);
+    // The joined edge loses its corners.
+    const css = await Bun.file(new URL("../../styles/app.css", import.meta.url)).text();
+    expect(css).toMatch(
+      /\[data-selected-join="above"\], \[data-selected-join="both"\]\) > \.mail-events__row \{\s*border-start-start-radius: 0;\s*border-start-end-radius: 0;/,
+    );
+    expect(css).toMatch(
+      /\[data-selected-join="below"\], \[data-selected-join="both"\]\) > \.mail-events__row \{\s*border-end-start-radius: 0;\s*border-end-end-radius: 0;/,
+    );
   } finally {
     feed.cleanup();
   }

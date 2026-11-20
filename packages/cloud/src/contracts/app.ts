@@ -33,7 +33,13 @@ export type AppSearchLink = {
 export type AppAppearanceColor = `#${string}`;
 
 export type AppAppearance = {
-  accent: AppAppearanceColor;
+  /** The app's colour for selection, accent text and the page background. Also its icon's, unless `iconColor` is set. */
+  accent?: AppAppearanceColor;
+  /**
+   * Only the app's icon in the app grid, the app bar and its editor, and the "unavailable" page. Takes precedence over
+   * `accent`; without either, the icon takes a palette tone from the app ID. Buttons, selection and the background stay.
+   */
+  iconColor?: AppAppearanceColor;
   /** Use the AI colour for primary actions, selection and focus. Omit for blue. */
   primary?: "ai";
   background?: {

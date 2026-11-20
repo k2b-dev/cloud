@@ -60,6 +60,7 @@ import { type ResolvedEndpoint, resolvePublicEndpoint } from "./endpoint-policy"
 import { readImapAclRights, selectFallbackRights } from "./imap-acl";
 import { appendStream } from "./imap-append-stream";
 import { openImapChangeListener } from "./imap-listener";
+import { MAX_IMAP_LITERAL_BYTES } from "./source-limits";
 
 type NamespaceEntry = { prefix: string; delimiter: string | null };
 type ImapFlowNamespaces = {
@@ -69,9 +70,7 @@ type ImapFlowNamespaces = {
 };
 type ImapFlowWithNamespaces = ImapFlow & { namespaces?: ImapFlowNamespaces };
 
-// The largest message literal ImapFlow will accept from a server. Anything
-// bigger cannot be fetched at all, so it is also the hydration ceiling.
-export const MAX_IMAP_LITERAL_BYTES = 128 * 1024 * 1024;
+export { MAX_IMAP_LITERAL_BYTES } from "./source-limits";
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
@@ -873,6 +872,7 @@ export const mapFetchedEnvelope = async (message: FetchMessageObject, request: E
   const parsedHeaders = await parseEnvelopeHeaders(message.headers);
   return {
     remoteRef: {
+      kind: "imap",
       folderStableKey: request.folderStableKey,
       uidValidity: request.uidValidity,
       uid: String(message.uid),

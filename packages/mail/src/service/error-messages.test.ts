@@ -4,8 +4,37 @@ import { DRAFT_LEASE_ERROR_CODES } from "../contracts";
 import { composeRenderFailure } from "./compose-render-errors";
 import { localizeMailError, MAX_ERROR_DETAIL_LENGTH, safeErrorDetail } from "./error-messages";
 import { providerBusy } from "./provider-operation-lock";
+import { senderIdentityUnverified } from "./sender-identity-errors";
 
 describe("Mail service messages", () => {
+  test.each([
+    ["DRAFT_DOCUMENT_HISTORY_UNAVAILABLE", 409],
+    ["DRAFT_DOCUMENT_INVALID_HISTORY", 409],
+    ["DRAFT_DOCUMENT_READ_UNAVAILABLE", 503],
+  ])("%s offers draft recovery without hiding its code or status", (code, status) => {
+    const error = { code, status, message: "Keep the device text and recover the draft" };
+    for (const locale of ["de", "de-DE"]) {
+      const localized = localizeMailError(error, locale);
+      expect(localized).toMatchObject({ code, status });
+      expect(localized.message).toContain("Sichere den Text");
+      expect(localized.message).toContain("Postfach-Administration");
+      expect(localized.message).not.toContain("Stand hat sich geändert");
+    }
+    expect(localizeMailError(error, "en")).toBe(error);
+  });
+
+  test.each([
+    ["DOCUMENT_FROZEN", "The draft's editing state changed. Keep any text on this device and reopen the draft before editing."],
+    ["CONFLICT", "The draft changed while loading. Keep any text on this device and reopen it."],
+  ])("%s read failures keep read recovery guidance in German", (code, message) => {
+    const error = { code, message, status: 409 as const };
+    const localized = localizeMailError(error, "de");
+    expect(localized).toMatchObject({ code, status: 409 });
+    expect(localized.message).toContain("Sichere den Text");
+    expect(localized.message).not.toContain("eingereiht");
+    expect(localizeMailError(error, "en")).toBe(error);
+  });
+
   test("localizes the missing send recipient without an English server detail", () => {
     const error = err.badInput("At least one recipient is required before sending");
     for (const locale of ["de", "de-DE", "de-CH"]) {
@@ -106,4 +135,26 @@ describe("Mail service messages", () => {
       message: "Mail ist vorübergehend nicht verfügbar. Versuche es gleich erneut.",
     });
   });
+});
+
+// The service creates a base-locale domain failure; all transports preserve its address and stable code.
+test.each([null, "sender@example.test"])("sender identity failure carries a localizable address %j", (address) => {
+  const error = senderIdentityUnverified(address);
+  for (const locale of ["en", "de", "de-CH"]) {
+    const localized = localizeMailError(error, locale);
+    expect(localized).toMatchObject({ code: "SENDER_IDENTITY_UNVERIFIED", status: 400, senderAddress: address });
+    expect(localized.message).toContain(locale === "en" ? "Sending identities" : "Absenderidentitäten");
+    if (address) expect(localized.message).toContain(address);
+  }
+});
+
+test.each([429, 503])("capability transport status %s has a localized retry hint", (status) => {
+  const error = { code: "TRANSPORT_UNAVAILABLE", status, message: "Distinct English transport failure" };
+  expect(localizeMailError(error, "en")).toBe(error);
+  for (const locale of ["de", "de-CH"]) {
+    const localized = localizeMailError(error, locale);
+    expect(localized).toMatchObject({ code: error.code, status });
+    expect(localized.message).toContain("Versuche es gleich erneut.");
+    expect(localized.message).not.toContain(error.message);
+  }
 });

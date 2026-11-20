@@ -148,7 +148,7 @@ suite("batch conversation completion", () => {
     const externalId = `<completion-${suffix}-${index}@example.test>`;
     const subject = `Completion ${suffix} ${index}`;
     const message: ConnectorEnvelope = {
-      remoteRef: { folderStableKey: `completion-${suffix}`, uidValidity: "1", uid: String(index), modseq: null },
+      remoteRef: { kind: "imap", folderStableKey: `completion-${suffix}`, uidValidity: "1", uid: String(index), modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId: externalId,

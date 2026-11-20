@@ -110,6 +110,8 @@ type Props = {
   /** Who has access to the space; `null` for people who may not read it, such as public-link readers. */
   access: { members: readonly AccessMember[]; state: "ready" | "loading" | "error"; retry: () => void } | null;
   mailIntegrationAvailable: boolean;
+  /** Whether the edit form asks the assistant for a task estimate; decided on the server for this person. */
+  estimateSuggestions?: boolean;
   scrollPreserveKey: string;
 };
 
@@ -624,6 +626,7 @@ export default function ItemDetailPanel(props: Props) {
         tags: props.tags,
         dateConfig: props.dateConfig,
         currentUserId: props.currentUserId,
+        estimateSuggestion: Boolean(props.estimateSuggestions) && !isEvent(),
       });
       if (saved) reconcileAfterWrite();
     } finally {

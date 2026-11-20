@@ -1,24 +1,19 @@
 import { mutation, timed } from "@k2b/stdlib/solid";
-import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, type JSX, onCleanup, Show } from "solid-js";
 import { createStore } from "solid-js/store";
-import { Checkbox } from "../inputs/Checkbox";
-import { PinInput } from "../inputs/ChoiceInputs";
-import { DatePicker, DateTimePicker } from "../inputs/DatePicker";
-import { ImageInput } from "../inputs/FileInputs";
-import { NumberInput } from "../inputs/NumberInput";
-import { Select } from "../inputs/Select";
 import { resolveSelectMessages } from "../inputs/select-messages";
-import { TagsInput } from "../inputs/TagsInput";
-import { TextInput } from "../inputs/TextInput";
 import { KeyedFor } from "../internal/keyed-for";
 import { optionDescription } from "../internal/option-description";
 import { resolveUiMessages } from "../intl/messages";
-import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
-import { DialogHeader, type PromptContent, promptButtonVariant, promptTone, sharedPrompts } from "./prompt-confirm";
+import { captureDialogOpen, type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
+import { openError, type PromptContent, promptFormUnavailable, providePhraseField, sharedPrompts } from "./prompt-confirm";
+import { loadedPromptForm, loadPromptForm } from "./prompt-form-loader";
+import { DialogHeader, promptButtonVariant, promptTone } from "./prompt-header";
 import { resolvePromptMessages } from "./prompt-messages";
 import { openPrompt } from "./prompt-sheet";
 
-export { DialogHeader } from "./prompt-confirm";
+export { createFormState } from "./prompt-form-state";
+export { DialogHeader } from "./prompt-header";
 
 export interface DialogOptions {
   signal?: AbortSignal;
@@ -35,6 +30,8 @@ export interface DialogOptions {
   cancelBehavior?: OpenDialogOptions["cancelBehavior"];
   /** Back closes the prompt like Cancel, as in a phone app; see `OpenDialogOptions.history`. */
   history?: boolean;
+  /** Animate content height changes. Defaults to false, or true for form, prompt and promptNumber. */
+  followContent?: boolean;
 }
 
 export type SuccessDialogOptions = Omit<DialogOptions, "variant"> & {
@@ -167,281 +164,26 @@ type InferFieldType<T extends FieldSchema> = T extends { type: "text" }
                     ? never
                     : never;
 
-type InferFormValues<T extends Record<string, FieldSchema>> = {
+export type InferFormValues<T extends Record<string, FieldSchema>> = {
   [K in keyof T as T[K] extends { type: "info" } ? never : K]: T[K] extends { required: true }
     ? InferFieldType<T[K]>
     : InferFieldType<T[K]> | undefined;
 };
 
-type PromptFormValue = string | number | boolean | string[] | undefined;
-type PromptFormOptions<T extends Record<string, FieldSchema>> = {
+export type PromptFormValue = string | number | boolean | string[] | undefined;
+export type PromptFormOptions<T extends Record<string, FieldSchema>> = {
   signal?: AbortSignal;
   title?: string;
   ariaLabel?: string;
   icon?: string;
+  /** Hold and animate content height changes. Defaults to true. */
+  followContent?: boolean;
   fields: T;
   confirmText?: string;
   cancelText?: string | false;
   variant?: "danger" | "primary" | "success" | "warning";
   size?: DialogOptions["size"];
   cancelBehavior?: DialogOptions["cancelBehavior"];
-};
-
-const isEmpty = (value: unknown): boolean =>
-  value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0);
-
-export const createFormState = <T extends Record<string, FieldSchema>>(schema: T) => {
-  const messages = resolveUiMessages();
-  const promptMessages = resolvePromptMessages();
-  const [values, setValues] = createStore<Record<string, PromptFormValue>>({});
-  const [errors, setErrors] = createStore<Record<string, string | undefined>>({});
-  // Errors appear with the first submit and then follow every change. Before that, a check that fails mid-input,
-  // such as a URL still being typed, would interrupt the user with an alert on the first character.
-  let submitted = false;
-
-  for (const [key, field] of Object.entries(schema)) {
-    if (field.type !== "info" && "default" in field) setValues(key, field.default as PromptFormValue);
-  }
-
-  const validateField = (key: string, value: PromptFormValue): string | null => {
-    const field = schema[key];
-    if (!field || field.type === "info") return null;
-    if (field.type === "boolean" && field.required && value !== true) return messages.required;
-    if (field.required && isEmpty(value)) return messages.required;
-    if ("validate" in field && field.validate) {
-      const customError = (field.validate as (next: never) => string | null)(value as never);
-      if (customError) return customError;
-    }
-    if (field.type === "text" && typeof value === "string" && value.length > 0) {
-      if (field.minLength !== undefined && value.length < field.minLength) return promptMessages.minCharacters({ count: field.minLength });
-      if (field.maxLength !== undefined && value.length > field.maxLength) return promptMessages.maxCharacters({ count: field.maxLength });
-    }
-    if (field.type === "tags" && Array.isArray(value) && value.length > 0) {
-      if (field.minTags !== undefined && value.length < field.minTags) return promptMessages.minTags({ count: field.minTags });
-      if (field.maxTags !== undefined && value.length > field.maxTags) return promptMessages.maxTags({ count: field.maxTags });
-    }
-    return null;
-  };
-
-  const updateField = (key: string, value: PromptFormValue) => {
-    setValues(key, value);
-    if (submitted) setErrors(key, validateField(key, value) ?? undefined);
-  };
-
-  const validateAll = (): boolean => {
-    submitted = true;
-    let valid = true;
-    for (const [key, field] of Object.entries(schema)) {
-      if (field.type === "info") continue;
-      const error = validateField(key, values[key]);
-      setErrors(key, error ?? undefined);
-      if (error) valid = false;
-    }
-    return valid;
-  };
-
-  const reset = () => {
-    submitted = false;
-    for (const [key, field] of Object.entries(schema)) {
-      if (field.type === "info") continue;
-      setValues(key, "default" in field ? (field.default as PromptFormValue) : undefined);
-      setErrors(key, undefined);
-    }
-  };
-
-  return { values, errors, updateField, validateAll, reset };
-};
-
-const renderInfo = (content: Extract<FieldSchema, { type: "info" }>["content"]): JSX.Element => {
-  if (typeof content === "string") return <p>{content}</p>;
-  if (typeof content === "function") return content();
-  return content;
-};
-
-const PromptControl = (props: {
-  field: Exclude<FieldSchema, { type: "info" }>;
-  value: () => PromptFormValue;
-  update: (value: PromptFormValue) => void;
-  error: () => string | undefined;
-  submit: () => void;
-}): JSX.Element => {
-  const label = props.field.label || undefined;
-
-  switch (props.field.type) {
-    case "text":
-      return (
-        <TextInput
-          label={label}
-          description={props.field.description}
-          required={props.field.required}
-          placeholder={props.field.placeholder}
-          error={props.error}
-          value={String(props.value() ?? "")}
-          onValueChange={(value) => props.update(value ?? undefined)}
-          onSubmit={props.submit}
-          multiline={props.field.multiline}
-          lines={props.field.lines}
-          icon={props.field.icon}
-          activeIcon={props.field.activeIcon}
-          password={props.field.password}
-          markdown={props.field.markdown}
-          minLength={props.field.minLength}
-          maxLength={props.field.maxLength}
-        />
-      );
-    case "number":
-      return (
-        <NumberInput
-          label={label}
-          description={props.field.description}
-          required={props.field.required}
-          placeholder={props.field.placeholder}
-          error={props.error}
-          value={typeof props.value() === "number" ? (props.value() as number) : null}
-          onValueChange={(value) => props.update(value ?? undefined)}
-          min={props.field.min}
-          max={props.field.max}
-          step={props.field.step}
-        />
-      );
-    case "image":
-      return (
-        <ImageInput
-          label={label}
-          description={props.field.description}
-          required={props.field.required}
-          error={props.error}
-          value={() => (typeof props.value() === "string" ? (props.value() as string) : null)}
-          onValueChange={(value) => props.update(value ?? undefined)}
-          round={props.field.round}
-          aria-label={props.field.ariaLabel}
-          accept={props.field.accept}
-        />
-      );
-    case "pin":
-      return (
-        <PinInput
-          label={label}
-          description={props.field.description}
-          required={props.field.required}
-          error={props.error}
-          value={() => String(props.value() ?? "")}
-          onValueChange={props.update}
-          length={props.field.length}
-          stretch={props.field.stretch}
-        />
-      );
-    case "select":
-      return (
-        <Select
-          label={label}
-          description={props.field.description}
-          required={props.field.required}
-          placeholder={props.field.placeholder}
-          error={props.error}
-          value={() => (typeof props.value() === "string" ? (props.value() as string) : null)}
-          onValueChange={(value) => props.update(value ?? undefined)}
-          options={props.field.options}
-          icon={props.field.icon}
-          activeIcon={props.field.activeIcon}
-          clearable={props.field.clearable}
-        />
-      );
-    case "tags":
-      return (
-        <TagsInput
-          label={label}
-          description={props.field.description}
-          required={props.field.required}
-          placeholder={props.field.placeholder}
-          error={props.error}
-          value={() => (Array.isArray(props.value()) ? (props.value() as string[]) : [])}
-          onValueChange={props.update}
-          maxTags={props.field.maxTags}
-          icon={props.field.icon}
-          activeIcon={props.field.activeIcon}
-        />
-      );
-    case "boolean":
-      return (
-        <Checkbox
-          label={label}
-          description={props.field.description}
-          required={props.field.required}
-          error={props.error}
-          value={() => Boolean(props.value())}
-          onValueChange={props.update}
-        />
-      );
-    case "datetime": {
-      const pickerProps = {
-        label,
-        description: props.field.description,
-        required: props.field.required,
-        placeholder: props.field.placeholder,
-        error: props.error,
-        value: () => (typeof props.value() === "string" ? (props.value() as string) : null),
-        onValueChange: (value: string | null) => props.update(value ?? ""),
-        clearable: true,
-      };
-      return props.field.dateOnly ? (
-        <DatePicker {...pickerProps} />
-      ) : (
-        <DateTimePicker {...pickerProps} optionalTime={props.field.optionalTime} />
-      );
-    }
-  }
-};
-
-const PromptFormDialog = <T extends Record<string, FieldSchema>>(props: {
-  config: PromptFormOptions<T>;
-  close: (value: InferFormValues<T> | null) => void;
-}): JSX.Element => {
-  const state = createFormState(props.config.fields);
-  const submit = () => {
-    if (state.validateAll()) props.close(state.values as InferFormValues<T>);
-  };
-  const handleSubmit = (event: SubmitEvent) => {
-    event.preventDefault();
-    submit();
-  };
-
-  return (
-    <form class="k2b-dialog__panel" onSubmit={handleSubmit}>
-      <DialogHeader
-        title={props.config.title}
-        icon={props.config.icon}
-        tone={promptTone(props.config.variant)}
-        close={() => props.close(null)}
-      />
-      <div class="k2b-dialog__body k2b-prompt-form">
-        <For each={Object.entries(props.config.fields)}>
-          {([key, field]) => {
-            if (field.type === "info") return <div class="k2b-prompt-form__info">{renderInfo(field.content)}</div>;
-            return (
-              <PromptControl
-                field={field}
-                value={() => state.values[key]}
-                update={(value) => state.updateField(key, value)}
-                error={() => state.errors[key]}
-                submit={submit}
-              />
-            );
-          }}
-        </For>
-      </div>
-      <footer class="k2b-dialog__actions">
-        <Show when={props.config.cancelText !== false}>
-          <button type="button" class="k2b-button" data-variant="secondary" onClick={() => props.close(null)}>
-            {props.config.cancelText || resolveUiMessages().cancel}
-          </button>
-        </Show>
-        <button type="submit" class="k2b-button" data-variant={promptButtonVariant(props.config.variant)}>
-          {props.config.confirmText ?? resolveUiMessages().save}
-        </button>
-      </footer>
-    </form>
-  );
 };
 
 // Results without an ID keep today's behavior: each object is its own identity, so a new answer replaces the row.
@@ -670,6 +412,7 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
       signal: options?.signal,
       cancelBehavior: options?.cancelBehavior,
       history: options?.history,
+      followContent: options?.followContent,
       ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().search,
     },
   );
@@ -736,6 +479,27 @@ const openAlert = (content: PromptContent, options?: DialogOptions, celebrate?: 
     resolveUiMessages().info,
   );
 
+providePhraseField({
+  loaded: () => loadedPromptForm()?.TextInput,
+  load: () => loadPromptForm().then((module) => module.TextInput),
+});
+
+// The browser loads the form when it is idle after the island starts, so the first form opens at once and without a
+// half-drawn frame. Without idle callbacks (WebKit), the first press or key does it, before the click it starts. No
+// timer starts at import: an app's test that steps through its own timers must not meet one of the library's.
+if (typeof window !== "undefined") {
+  const preload = () => void loadPromptForm().catch(() => {});
+  if (typeof requestIdleCallback === "function") requestIdleCallback(preload, { timeout: 2000 });
+  else {
+    const intents = ["pointerdown", "keydown", "focusin"] as const;
+    const onIntent = () => {
+      for (const type of intents) window.removeEventListener(type, onIntent, true);
+      preload();
+    };
+    for (const type of intents) window.addEventListener(type, onIntent, true);
+  }
+}
+
 // The same object as `sharedPrompts`, which `PanelDialog` uses for its discard question: replacing `prompts.confirm`
 // (for example in a test) therefore reaches every confirmation.
 export const prompts = Object.assign(sharedPrompts, {
@@ -749,12 +513,27 @@ export const prompts = Object.assign(sharedPrompts, {
   prompt: promptText,
   promptNumber,
 
-  form: async <T extends Record<string, FieldSchema>>(config: PromptFormOptions<T>): Promise<InferFormValues<T> | null> =>
-    (await openPrompt<InferFormValues<T> | null>(
-      (close) => <PromptFormDialog config={config} close={(value) => close(value)} />,
-      config,
-      resolvePromptMessages().form,
-    )) ?? null,
+  form: async <T extends Record<string, FieldSchema>>(config: PromptFormOptions<T>): Promise<InferFormValues<T> | null> => {
+    // Once the fields are there, the form opens in the same task as the call, like every other prompt. While they load,
+    // it keeps the palette, page and opener of this call.
+    const open = captureDialogOpen();
+    const form = loadedPromptForm() ?? (await loadPromptForm().catch(() => undefined));
+    if (!form) {
+      await promptFormUnavailable(config.signal, open);
+      return null;
+    }
+    const { PromptFormDialog } = form;
+    return (
+      (await openPrompt<InferFormValues<T> | null>(
+        (close) => <PromptFormDialog config={config} close={(value) => close(value)} />,
+        { ...config, followContent: config.followContent ?? true },
+        resolvePromptMessages().form,
+        true,
+        undefined,
+        open,
+      )) ?? null
+    );
+  },
 
   /**
    * Open custom content with a typed close callback and the dialog render context.
@@ -792,20 +571,5 @@ export const prompts = Object.assign(sharedPrompts, {
 
   search: openSearchPrompt,
 
-  error: (content: string | HTMLElement, options?: DialogOptions) =>
-    openPrompt(
-      (close) => (
-        <div class="k2b-dialog__panel">
-          <DialogHeader title={options?.title ?? resolveUiMessages().error} icon={options?.icon} tone="danger" close={close} />
-          <div class="k2b-dialog__body">{content}</div>
-          <footer class="k2b-dialog__actions">
-            <button type="button" class="k2b-button" onClick={() => close()}>
-              {options?.confirmText || resolveUiMessages().close}
-            </button>
-          </footer>
-        </div>
-      ),
-      { ...options, variant: "danger" },
-      resolveUiMessages().error,
-    ),
+  error: (content: string | HTMLElement, options?: DialogOptions) => openError(content, options),
 });

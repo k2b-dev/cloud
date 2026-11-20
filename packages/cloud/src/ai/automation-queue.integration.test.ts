@@ -18,11 +18,14 @@ import {
   requestQueuedMessageSendNow,
   updateQueuedMessage,
 } from "./message-queue";
+import { userResourceContext } from "./projects.test-fixture";
 import { AiQuotaError } from "./quotas";
 import { aiQuoteModelText } from "./quote-markers";
 import { aiConversations } from "./store";
 
 const owner = "50000000-0000-4000-8000-000000000001";
+const { actor: author } = userResourceContext({ type: "user", userId: owner });
+if (author.kind !== "user") throw new Error("fixture actor must be a user");
 suiteFor(
   "database",
   "valkey",
@@ -108,7 +111,7 @@ suiteFor(
     const input = submission(chat.id, "Original");
     const id = crypto.randomUUID();
     await enqueueChatMessage(id, input, [{ type: "text", text: "Original" }]);
-    expect(await editQueuedMessage(chat.id, id, "Latest edit", { signedInSession: false, authorUserId: owner })).toBeTrue();
+    expect(await editQueuedMessage(chat.id, id, "Latest edit", { signedInSession: false, author })).toBe("edited");
     await expect(aiConversations.submitChatTurn({ ...input, queuedMessageId: id, queuedMessageRevision: "0" })).rejects.toThrow(
       "Queued message is no longer ready.",
     );
@@ -150,7 +153,7 @@ suiteFor(
     });
     try {
       await locked.promise;
-      const edit = editQueuedMessage(chat.id, id, "Current revision", { signedInSession: false, authorUserId: owner });
+      const edit = editQueuedMessage(chat.id, id, "Current revision", { signedInSession: false, author });
       const request = requestQueuedMessageSendNow(chat.id, id);
       release.resolve();
       await blocker;
@@ -172,9 +175,9 @@ suiteFor(
       });
       const [message] = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: jobs[0]!.turnId });
       expect(message?.message).toMatchObject({
-        content: [{ type: "text", text: edited ? "Current revision" : "Original" }, expect.anything()],
+        content: [{ type: "text", text: edited === "edited" ? "Current revision" : "Original" }, expect.anything()],
       });
-      if (edited) expect(config).toMatchObject({ sourceRestricted: true });
+      if (edited === "edited") expect(config).toMatchObject({ sourceRestricted: true });
       expect(message?.meta?.quotes).toEqual(quotes);
     } finally {
       release.resolve();

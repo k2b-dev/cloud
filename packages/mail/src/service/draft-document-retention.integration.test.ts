@@ -29,7 +29,7 @@ import {
   stopDraftDocumentLogPolicy,
 } from "./draft-document-log-policy";
 import { mailDraftRoom } from "./draft-document-room";
-import { finishDraftSendClose, recordDraftSendCloseIntent } from "./draft-document-send";
+import { finishDraftSendClose, recordDraftSendCloseIntent, retryDraftSendClose } from "./draft-document-send";
 import { draftDocumentSnapshotStore, draftDocumentSnapshots } from "./draft-document-snapshots";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, readDraftDocument } from "./draft-documents";
 import { applyDraftTableAction } from "./draft-table-actions";
@@ -784,7 +784,32 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
       const pruned = await pruneDraftDocumentLog();
       expect(pruned?.through).toBeLessThanOrEqual(Number(before.doc_seq));
       expect(await mailDraftDocumentLog.firstSequence()).toBeLessThanOrEqual(Number(before.doc_seq) + 1);
-      await finishDraftSendClose(sent.id);
+      // Keep pruning out until close has captured its non-null head. Without
+      // this lock it could already observe null and bypass the stale-head race.
+      const releaseCloseCoverage = await holdCoverage();
+      const lifecycle = mailDraftDocumentLog.lifecycle!;
+      const put = lifecycle.put;
+      let prunedCloseBase = false;
+      const pruneBeforePublish = spyOn(lifecycle, "put").mockImplementation(async (id, previous, next) => {
+        const saved = await put(id, previous, next);
+        if (id === target.draftId && next.state === "closed" && next.closeCursor === null && !prunedCloseBase) {
+          // Close already captured latestCursor. Remove that covered freeze
+          // marker before its expectedAfter append, under the real prune lock.
+          expect(await topic.latestCursor({ tenantId: id })).not.toBeNull();
+          await releaseCloseCoverage();
+          await pruneDraftDocumentLog();
+          expect(await topic.latestCursor({ tenantId: id })).toBeNull();
+          prunedCloseBase = true;
+        }
+        return saved;
+      });
+      try {
+        await finishDraftSendClose(sent.id);
+        expect(prunedCloseBase).toBe(true);
+      } finally {
+        pruneBeforePublish.mockRestore();
+        await releaseCloseCoverage();
+      }
       expect(
         await sql`SELECT 1 FROM mail.draft_document_sends WHERE command_id=${sent.id}::uuid AND NOT close_pending AND close_cursor IS NOT NULL`,
       ).toHaveLength(1);
@@ -793,6 +818,50 @@ suite("Mail snapshot-covered retention on real JetStream and Postgres", () => {
         { revision: number; body_markdown: string }[]
       >`SELECT revision::int, body_markdown FROM mail.drafts WHERE id=${target.draftId}::uuid`;
       expect(after).toEqual({ revision: before.revision, body_markdown: before.body_markdown });
+    } finally {
+      await release();
+      await retire(target);
+    }
+  });
+
+  test("a rejected close notification keeps its durable intent until the matching token completes it", async () => {
+    const release = await holdCoverage();
+    const target = await draft("Retry the close, never SMTP");
+    try {
+      const sent = value(await sendReviewed(target));
+      await sql.begin(async (db) => {
+        await db`UPDATE mail.drafts SET state='sent' WHERE id=${target.draftId}::uuid`;
+        await recordDraftSendCloseIntent(db, sent.id);
+      });
+      const topic = mailDraftDocumentLog.topic;
+      const conflict = new ConflictError("expectedAfter no longer matches");
+      const rejectClose = spyOn(mailDraftDocumentLog, "topic").mockImplementation(() => {
+        const handle = topic();
+        return {
+          ...handle,
+          publish: async (input) => {
+            if (input.tenantId === target.draftId && input.data.room?.state === "closed") throw conflict;
+            return handle.publish(input);
+          },
+        };
+      });
+      try {
+        await retryDraftSendClose(sent.id);
+        // A retry already has close_freeze_cursor. A publish conflict must not
+        // be mistaken for a superseded token and silently clear close_pending.
+        await retryDraftSendClose(sent.id);
+        expect(
+          await sql`SELECT 1 FROM mail.draft_document_sends WHERE command_id=${sent.id}::uuid
+            AND close_pending AND close_cursor IS NULL AND close_freeze_cursor IS NOT NULL AND last_error IS NOT NULL`,
+        ).toHaveLength(1);
+      } finally {
+        rejectClose.mockRestore();
+      }
+      await finishDraftSendClose(sent.id);
+      expect(
+        await sql`SELECT 1 FROM mail.draft_document_sends WHERE command_id=${sent.id}::uuid AND NOT close_pending AND close_cursor IS NOT NULL`,
+      ).toHaveLength(1);
+      expect((await mailDraftDocumentLog.lifecycle!.get(target.draftId))?.value.state).toBe("closed");
     } finally {
       await release();
       await retire(target);

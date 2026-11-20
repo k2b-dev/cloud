@@ -432,6 +432,37 @@ cld --json mail command cancel <command-id>
 
 Cancellation succeeds only while the command is still cancelable. Ambiguous provider outcomes become `needs_attention` rather than being blindly repeated.
 
+## Quarantined drafts (mailbox administrators)
+
+After every Mail instance has been upgraded, inspect a blocked draft without
+opening its incomplete shared document:
+
+```sh
+cld --json mail draft recovery inspect <draft-id> --mailbox <mailbox-id>
+cld --json mail draft recovery repair <draft-id> --mailbox <mailbox-id> \
+  --revision 4 --generation 1 \
+  --request-id 2d374fed-1c32-48ea-a910-f65505db6f8a --yes
+```
+
+Use the revision and generation from `inspect`. Reuse the same request UUID on
+retry. Mail does not resolve queued, executing or ambiguous sends automatically: resolve
+them first to avoid duplicate mail.
+
+The result has `outcome`, `draft` and `reviewRequired`. `original_repaired`
+requires a retained original seed, the complete topic prefix and a strict replay that includes
+the quarantined state. Reopen that draft before sending. Otherwise,
+`recovery_copy` creates a linked compose draft with active attachments; the
+original stays quarantined and keeps its reply slot. Review all recipients,
+text and attachments against any device copies before sending. The copy can
+contain only the last durable projection when document dependencies are
+incomplete; it does not guarantee that every edit was recovered. Current
+coverage values alone never unlock an old quarantined original.
+The detached copy turns off automatic source-message quoting; consult the source
+message during review. Keep the original and any device copies until review
+finishes. Retained source bytes and the retry receipt are removed when either
+the original or the recovery copy is retired or deleted. Preserve unaccepted device input
+before repairing an original: its new generation cannot automatically merge it.
+
 ## Command map
 
 | Area | Commands |
@@ -439,13 +470,20 @@ Cancellation succeeds only while the command is still cancelable. Ambiguous prov
 | Templates | `compose template list|create|update|archive`, `compose snippet render`, `compose suggestions`, `compose preview` |
 | Signatures and CSS | `compose signature list|default`, `compose style get|set` |
 | Drafts | `draft list|get|create|update|intent|acknowledge-consolidation|discard`, `conversation drafts` |
-| Coordination | `draft lease get|acquire|heartbeat|release`, `draft recovery list|restore` |
+| Coordination | `draft lease get|acquire|heartbeat|release`, `draft recovery list|restore|inspect|repair` |
 | Draft attachments | `draft attachment add|remove|download`, `draft attachment upload list|cancel` |
 | Delivery | `send`, `scheduled list|cancel`, `command list|get|wait|cancel` |
 
-Drafts omit the original message by default. Pass `--quote` to `draft create`
-or `draft update` to append its readable source message after the signature;
-`--no-quote` removes that automatic history. `--quote` captures the CLI locale
+A reply quotes the message it answers by default, as in Mail itself:
+`mail reply` and `draft create --intent reply|reply_all --source-message <id>`
+append the readable source message after the signature, unless the body quotes
+on its own with a Markdown `>` line or an HTML blockquote. An original without
+text, or one you cannot read, adds nothing. Pass `--no-quote` to leave it out.
+Other drafts omit it; pass `--quote` to `draft create` to append it.
+`draft update` replaces all content: pass `--quote` again to keep the original,
+because an update without it removes the quote. The automatic quote uses the CLI
+locale and the local time zone; pass `--quote --quote-time-zone <zone>` to date
+it elsewhere. `--quote` captures the CLI locale
 and local IANA time zone; use `--quote-time-zone Europe/Berlin` to override the
 zone. The editable body stays unchanged. Draft JSON uses
 `quoteSource: { "locale": "de", "timeZone": "Europe/Berlin" }` (or `null` to

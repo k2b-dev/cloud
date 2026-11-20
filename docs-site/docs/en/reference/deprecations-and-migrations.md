@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-18
+updated: 2026-11-19
 ---
 
 # Deprecations and migrations
@@ -125,6 +125,25 @@ images. Automatic replies (out-of-office, office-hours and reference
 acknowledgements) have no replacement. Ask Gustav to rebuild supported rules as
 mailbox Code, then review, preview and activate it explicitly. See the
 [Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
+
+## Mail replies from capabilities and the CLI quote the original message
+
+`mail.draft.create`, `cld mail reply`, and `cld mail draft create` now quote the
+message a reply or reply all answers after the signature, as Mail's composer
+does. Before, they quoted only on request. An explicit choice still wins:
+`quoteSource: null` or `--no-quote` leaves the original out. A body that quotes
+on its own (a Markdown `>` line or an HTML blockquote outside code blocks)
+keeps the whole original out. An original without text, or one the person
+cannot read, adds nothing. Capabilities date the quote in the installation's
+time zone (`app.timezone`, UTC without one), the CLI in the local time zone.
+The REST API keeps its default of no quote.
+
+If an integration pastes the original into the body in another form, such as
+an `-----Original Message-----` block, pass `quoteSource: null` or
+`--no-quote`, or the history goes along twice. A retried create with an
+idempotency key from before this change, or with another locale, now carries a
+quote and answers with an idempotency conflict; use a new key. Very long
+originals can fail at send with `tooLarge`, as they already do in the composer.
 
 ## A stopped chat keeps its queue waiting
 

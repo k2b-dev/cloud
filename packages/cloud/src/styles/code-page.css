@@ -397,10 +397,13 @@ a.cloud-code__row-main:focus-visible {
   font-family: var(--k2b-font-mono, ui-monospace, monospace);
 }
 
-/* The situation: a fixed grid, so changing words never move the strip (6b). */
+/*
+ * The situation: a fixed grid, so changing words never move the strip (6b). The first column holds the longest next
+ * run, a date in another year ("Fri, 01/01/2027, 06:00"); the two columns keep their sum, so the strip stays put.
+ */
 .cloud-code__lage {
   display: grid;
-  grid-template-columns: 10.5rem 21rem minmax(0, 1fr);
+  grid-template-columns: 14rem 17.5rem minmax(0, 1fr);
   align-items: end;
   gap: 0.75rem 1.75rem;
   padding: 0.875rem 1rem 0.8125rem;
@@ -1222,6 +1225,14 @@ a.cloud-code__row-main:focus-visible {
   }
   .cloud-code__lage-cell:nth-child(2) {
     min-height: 94px;
+  }
+  /* A half-width cell may need two lines for a date in another year; the row's 94 px already hold them. */
+  .cloud-code__lage-cell:first-child > .cloud-code__lage-value {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
   }
   .cloud-code__lage-cell:nth-child(2) > .cloud-code__meta,
   .cloud-code__lage--skeleton .cloud-code__lage-cell:nth-child(2) > .cloud-code__skel-label {

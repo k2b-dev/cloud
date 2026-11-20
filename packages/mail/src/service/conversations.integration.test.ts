@@ -8,6 +8,7 @@ import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { createConversationComment, loadConversationAssigneeIds, writeConversationAssignees } from "./collaboration";
+import type { ConnectorEnvelope } from "./connectors";
 import { mergeConversations, reassignConversationMessage, splitConversation } from "./conversations";
 import { createLocalTag } from "./local-tags";
 import { createMailbox } from "./mailboxes";
@@ -865,7 +866,7 @@ suite("mail manual conversation threading", () => {
       remoteResourceId,
       folderId,
       message: {
-        remoteRef: { folderStableKey: folderId, uidValidity: "2", uid: "1", modseq: "2" },
+        remoteRef: { kind: "imap", folderStableKey: folderId, uidValidity: "2", uid: "1", modseq: "2" },
         providerMessageId: `thread-source-provider-${suffix}`,
         providerThreadId: "provider-would-merge",
         messageId: sourceMessageEnvelopeId,
@@ -1134,8 +1135,8 @@ suite("mail manual conversation threading", () => {
     const newerDate = new Date("2026-07-13T11:45:00.000Z");
     const olderMessageId = `<verified-before-failure-${suffix}@example.com>`;
     const newerMessageId = `<failed-after-verified-${suffix}@example.com>`;
-    const envelope = (params: { uid: string; messageId: string; date: Date; inReplyTo: string | null }) => ({
-      remoteRef: { folderStableKey: folderId, uidValidity: "8", uid: params.uid, modseq: null },
+    const envelope = (params: { uid: string; messageId: string; date: Date; inReplyTo: string | null }): ConnectorEnvelope => ({
+      remoteRef: { kind: "imap", folderStableKey: folderId, uidValidity: "8", uid: params.uid, modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId: params.messageId,
@@ -1247,8 +1248,8 @@ suite("mail manual conversation threading", () => {
     const envelope = (
       uid: string,
       change: { from?: string; sentAt?: Date | null; subject?: string; sizeBytes?: number; inReplyTo?: string; internalDate?: Date } = {},
-    ) => ({
-      remoteRef: { folderStableKey: folderId, uidValidity: "3", uid, modseq: null },
+    ): ConnectorEnvelope => ({
+      remoteRef: { kind: "imap", folderStableKey: folderId, uidValidity: "3", uid, modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId,
@@ -1323,8 +1324,8 @@ suite("mail manual conversation threading", () => {
     );
     // These envelopes lack a Date header and differ in INTERNALDATE, so they cannot prove at
     // import that the copies are one message; only the hydrated source can.
-    const envelope = (uidValidity: string) => ({
-      remoteRef: { folderStableKey: folderId, uidValidity, uid: "1", modseq: null },
+    const envelope = (uidValidity: string): ConnectorEnvelope => ({
+      remoteRef: { kind: "imap", folderStableKey: folderId, uidValidity, uid: "1", modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId,

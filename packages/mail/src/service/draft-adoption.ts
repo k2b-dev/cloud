@@ -18,18 +18,23 @@ export const refreshDraftAdoption = async ({ db, draftId, signal }: Target): Pro
       doc_state: Uint8Array | null;
       doc_cursor: string | null;
       doc_generation: string | number;
+      coverage: string;
     }[]
-  >`SELECT adopted_at, edit_mode, doc_state, doc_cursor, doc_generation
+  >`SELECT adopted_at, edit_mode, doc_state, doc_cursor, doc_generation,
+      GREATEST(COALESCE(doc_seq, 0), COALESCE(doc_idle_through, 0))::text AS coverage
     FROM mail.drafts WHERE id = ${draftId}::uuid FOR UPDATE`;
   if (!row || row.adopted_at !== null) return row?.adopted_at ?? null;
   if (row.edit_mode !== "shared" || !row.doc_state) return null;
   const topic = mailDraftDocumentLog.topic();
   const head = await topic.latestCursor({ tenantId: draftId });
-  if (!head || (row.doc_cursor && topic.cursorSequence(head) <= topic.cursorSequence(row.doc_cursor))) return null;
+  // An idle proof covers absent tenant events in the pruned global prefix.
+  // The row lock keeps the pruner from advancing beyond this committed proof.
+  const after = Number(row.coverage) > 0 ? topic.cursorAt(Number(row.coverage)) : row.doc_cursor;
+  if (!head || (after && topic.cursorSequence(head) <= topic.cursorSequence(after))) return null;
   const edited = await hasHumanDraftDocumentEdit({
     state: row.doc_state,
     generation: String(row.doc_generation),
-    events: topic.replay({ tenantId: draftId, after: row.doc_cursor ?? topic.cursorAt(0), until: head, signal }),
+    events: topic.replay({ tenantId: draftId, after: after ?? topic.cursorAt(0), until: head, signal }),
   });
   if (!edited) return null;
   const [adopted] = await db<{ adopted_at: Date | string }[]>`UPDATE mail.drafts

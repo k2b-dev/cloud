@@ -52,6 +52,7 @@ import {
   recordProviderFailure,
   releaseProviderLease,
 } from "./provider-operation-lock";
+import { decodeRemoteMessageAddress, sameRemoteSnapshotAddress, unsupportedRemoteMessageProtocol } from "./remote-message-ref";
 import { lockConversationReplyDraft } from "./reply-draft-box";
 
 type SqlClient = typeof sql;
@@ -83,6 +84,7 @@ type DbProjection = {
   folder_id: string | null;
   uid_validity: string | number | null;
   uid: string | number | null;
+  remote_id: string | null;
   modseq: string | number | null;
   transport_generation: string | number | null;
   secret_revision: number | null;
@@ -286,7 +288,7 @@ export const queueDraftProjectionInTransaction = async (params: { db: SqlClient;
       WHERE draft.id = ${params.draftId}::uuid AND draft.edit_mode = 'shared'
         AND snapshot.direction = 'export' AND snapshot.cloud_revision < ${draft.revision}
         AND snapshot.state IN ('prepared', 'retired', 'needs_attention')
-        AND snapshot.provider_effect_started_at IS NULL AND snapshot.uid IS NULL
+        AND snapshot.provider_effect_started_at IS NULL AND snapshot.uid IS NULL AND snapshot.remote_id IS NULL
       FOR UPDATE OF snapshot SKIP LOCKED
     )
   `;
@@ -359,6 +361,7 @@ const claimExportSnapshot = async (snapshotId: string): Promise<{ snapshot: DbPr
     if (!candidate.draft_id || candidate.cloud_revision == null) {
       throw Object.assign(new Error("Export snapshot is missing its Cloud identity"), { code: "INVALID_DRAFT_SNAPSHOT" });
     }
+    if (decodeRemoteMessageAddress(candidate, true)?.kind === "jmap") return { snapshot: candidate, followUpSnapshotId: null };
     if (candidate.state === "retiring") return { snapshot: candidate, followUpSnapshotId: null };
     const draft = await loadDraftContent(candidate.draft_id, tx);
     if (!draft) {
@@ -466,6 +469,7 @@ const activateExportSnapshot = async (params: {
           folder_id = ${params.folderId}::uuid,
           uid_validity = ${params.uidValidity}::numeric,
           uid = ${params.uid}::numeric,
+          remote_id = NULL,
           transport_generation = ${params.transportGeneration},
           secret_revision = ${params.secretRevision},
           last_error_code = 'DRAFT_CHANGED_AFTER_APPEND',
@@ -505,6 +509,7 @@ const activateExportSnapshot = async (params: {
         folder_id = ${params.folderId}::uuid,
         uid_validity = ${params.uidValidity}::numeric,
         uid = ${params.uid}::numeric,
+        remote_id = NULL,
         transport_generation = ${params.transportGeneration},
         secret_revision = ${params.secretRevision},
         last_seen_at = now(),
@@ -524,7 +529,12 @@ const retireRemoteSnapshot = async (params: {
   uidValidity: string;
   uidplus: boolean;
 }): Promise<void> => {
-  if (!params.snapshot.uid || !params.snapshot.uid_validity) {
+  const address = decodeRemoteMessageAddress(params.snapshot, true);
+  if (address?.kind === "jmap") {
+    await markProjectionFailure(params.snapshot.id, "needs_attention", unsupportedRemoteMessageProtocol());
+    return;
+  }
+  if (!address) {
     await markProjectionFailure(
       params.snapshot.id,
       "needs_attention",
@@ -532,7 +542,7 @@ const retireRemoteSnapshot = async (params: {
     );
     return;
   }
-  if (String(params.snapshot.uid_validity) !== params.uidValidity || !params.uidplus || !params.rights.includes("delete_messages")) {
+  if (address.uidValidity !== params.uidValidity || !params.uidplus || !params.rights.includes("delete_messages")) {
     await markProjectionFailure(
       params.snapshot.id,
       "needs_attention",
@@ -544,8 +554,8 @@ const retireRemoteSnapshot = async (params: {
   }
   const target = {
     folderPath: params.folderPath,
-    uidValidity: String(params.snapshot.uid_validity),
-    uid: Number(params.snapshot.uid),
+    uidValidity: address.uidValidity,
+    uid: Number(address.uid),
   };
   const state = await imapSmtpConnector.getMessageState(params.runtime, target);
   if (!state.exists) {
@@ -572,7 +582,7 @@ const retireRemoteSnapshot = async (params: {
   `;
 };
 
-const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Promise<void>): Promise<void> => {
+export const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Promise<void>): Promise<void> => {
   const claimed = await claimExportSnapshot(snapshotId);
   const followUp = { snapshotId: claimed.followUpSnapshotId };
   try {
@@ -597,6 +607,10 @@ const exportClaimedSnapshot = async (
   jobHeartbeat: () => Promise<void>,
   followUp: { snapshotId: string | null },
 ): Promise<void> => {
+  if (decodeRemoteMessageAddress(snapshot, true)?.kind === "jmap") {
+    await markProjectionFailure(snapshot.id, "needs_attention", unsupportedRemoteMessageProtocol());
+    return;
+  }
   const roleFolder = await resolveRoleFolder(snapshot.mailbox_id, "drafts");
   if (!roleFolder.ok) throw Object.assign(new Error(roleFolder.error.message), { code: roleFolder.error.code });
   const initial = await loadCurrentExecution({
@@ -689,6 +703,7 @@ const exportClaimedSnapshot = async (
             folder_id = ${roleFolder.data.id}::uuid,
             uid_validity = ${remoteIdentity.uidValidity}::numeric,
             uid = ${remoteIdentity.uid}::numeric,
+            remote_id = NULL,
             transport_generation = ${fence.generation},
             secret_revision = ${current.execution.secretRevision}
           WHERE id = ${snapshot.id}::uuid
@@ -785,7 +800,7 @@ const exportClaimedSnapshot = async (
                 SET state = 'prepared', provider_effect_started_at = NULL
                 WHERE id = ${snapshot.id}::uuid
                   AND state = 'appending'
-                  AND uid IS NULL
+                  AND uid IS NULL AND remote_id IS NULL
               `;
             }
             throw error;
@@ -1093,11 +1108,7 @@ const storeProviderRecovery = async (params: {
   }
 };
 
-const sameRemoteIdentity = (
-  left: Pick<DbProjection, "folder_id" | "uid_validity" | "uid">,
-  right: Pick<DbProjection, "folder_id" | "uid_validity" | "uid">,
-): boolean =>
-  left.folder_id === right.folder_id && String(left.uid_validity) === String(right.uid_validity) && String(left.uid) === String(right.uid);
+const sameRemoteIdentity = sameRemoteSnapshotAddress;
 
 export const resolveRemoteDraftBaseRevision = (params: {
   snapshotRevision: string | number | null;
@@ -1458,7 +1469,7 @@ const applyImportedDraft = async (params: {
       INSERT INTO mail.draft_provider_snapshots (
         mailbox_id, draft_id, cloud_revision, direction, state,
         stable_message_id, content_fingerprint, content_snapshot, mime_blob_id,
-        remote_resource_id, binding_id, folder_id, uid_validity, uid, modseq,
+        remote_resource_id, binding_id, folder_id, uid_validity, uid, remote_id, modseq,
         transport_generation, secret_revision, last_seen_at, completed_at
       )
       SELECT
@@ -1476,6 +1487,7 @@ const applyImportedDraft = async (params: {
         ${params.snapshot.folder_id}::uuid,
         ${params.snapshot.uid_validity}::numeric,
         ${params.snapshot.uid}::numeric,
+        ${params.snapshot.remote_id},
         ${params.snapshot.modseq}::numeric,
         ${params.snapshot.transport_generation},
         ${params.snapshot.secret_revision},
@@ -1492,6 +1504,7 @@ const applyImportedDraft = async (params: {
         folder_id = EXCLUDED.folder_id,
         uid_validity = EXCLUDED.uid_validity,
         uid = EXCLUDED.uid,
+        remote_id = EXCLUDED.remote_id,
         modseq = EXCLUDED.modseq,
         transport_generation = EXCLUDED.transport_generation,
         secret_revision = EXCLUDED.secret_revision,
@@ -1511,7 +1524,7 @@ const applyImportedDraft = async (params: {
   return params.draftId && target?.editable ? withDraftDocumentReplacement(params.draftId, apply) : withDraftDocumentCommit(apply);
 };
 
-const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Promise<void>): Promise<void> => {
+export const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Promise<void>): Promise<void> => {
   const [snapshot] = await sql<DbProjection[]>`
     UPDATE mail.draft_provider_snapshots
     SET state = 'importing', attempt = attempt + 1
@@ -1520,7 +1533,13 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
       AND state IN ('external', 'importing')
     RETURNING *
   `;
-  if (!snapshot || !snapshot.folder_id || !snapshot.uid_validity || !snapshot.uid) return;
+  if (!snapshot) return;
+  const address = decodeRemoteMessageAddress(snapshot, true);
+  if (address?.kind === "jmap") {
+    await markProjectionFailure(snapshot.id, "needs_attention", unsupportedRemoteMessageProtocol());
+    return;
+  }
+  if (!snapshot.folder_id || !address) return;
   const current = await loadCurrentExecution({
     mailboxId: snapshot.mailbox_id,
     folderId: snapshot.folder_id,
@@ -1554,7 +1573,7 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
           await imapSmtpConnector.downloadSourceBatch(
             execution.runtime,
             execution.folder.path,
-            [{ key: snapshot.id, uidValidity: String(snapshot.uid_validity), uid: Number(snapshot.uid) }],
+            [{ key: snapshot.id, uidValidity: address.uidValidity, uid: Number(address.uid) }],
             async (download) => {
               if (download.expectedSize !== null && download.expectedSize > MAX_IMPORT_SOURCE_BYTES) {
                 throw Object.assign(new Error("Remote draft source exceeds the import limit"), { code: "REMOTE_DRAFT_TOO_LARGE" });
@@ -1666,17 +1685,19 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
             FROM mail.draft_provider_snapshots
             WHERE draft_id = ${draftId}::uuid AND direction = 'export' AND state = 'active'
           `;
-          if (!copy?.uid || !copy.uid_validity) return { copy: copy ?? null, remains: false };
+          const copyAddress = copy ? decodeRemoteMessageAddress(copy, true) : null;
+          if (copyAddress?.kind === "jmap") throw unsupportedRemoteMessageProtocol();
+          if (!copy || !copyAddress) return { copy: copy ?? null, remains: false };
           if (sameRemoteIdentity(copy, snapshot)) return { copy, remains: false };
           // A copy in another folder or UID namespace cannot have been replaced by this one.
-          if (copy.folder_id !== snapshot.folder_id || String(copy.uid_validity) !== String(snapshot.uid_validity)) {
+          if (copy.folder_id !== snapshot.folder_id || copyAddress.uidValidity !== address.uidValidity) {
             return { copy, remains: true };
           }
           await assertLeaseActive();
           const state = await imapSmtpConnector.getMessageState(execution.runtime, {
             folderPath: execution.folder.path,
-            uidValidity: String(copy.uid_validity),
-            uid: Number(copy.uid),
+            uidValidity: copyAddress.uidValidity,
+            uid: Number(copyAddress.uid),
           });
           return {
             copy,
@@ -1703,6 +1724,7 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
                   folder_id = ${snapshot.folder_id}::uuid,
                   uid_validity = ${snapshot.uid_validity}::numeric,
                   uid = ${snapshot.uid}::numeric,
+                  remote_id = ${snapshot.remote_id},
                   modseq = ${snapshot.modseq}::numeric,
                   last_seen_at = now()
                 WHERE id = ${copy.id}::uuid AND state = 'active'
@@ -1748,6 +1770,10 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
       },
     });
   } catch (error) {
+    if (failureCode(error, "") === "REMOTE_MESSAGE_PROTOCOL_UNSUPPORTED") {
+      await markProjectionFailure(snapshot.id, "needs_attention", error);
+      return;
+    }
     await recordProviderFailure(current.execution.remoteResourceId!, error);
     throw error;
   } finally {
@@ -1911,6 +1937,7 @@ export const recordDraftFolderSyncInTransaction = async (params: {
         ) AS remote_identity_match
       FROM mail.draft_provider_snapshots
       WHERE mailbox_id = ${params.mailboxId}::uuid
+        AND remote_id IS NULL
         AND (
           (folder_id = ${params.folderId}::uuid
             AND uid_validity = ${params.uidValidity}::numeric
@@ -1950,6 +1977,7 @@ export const recordDraftFolderSyncInTransaction = async (params: {
               folder_id = ${params.folderId}::uuid,
               uid_validity = ${params.uidValidity}::numeric,
               uid = ${uid}::numeric,
+              remote_id = NULL,
               modseq = ${envelope.remoteRef.modseq}::numeric,
               last_seen_at = now(),
               completed_at = CASE
@@ -2011,6 +2039,7 @@ export const recordDraftFolderSyncInTransaction = async (params: {
           folder_id = ${params.folderId}::uuid,
           uid_validity = ${params.uidValidity}::numeric,
           uid = ${uid}::numeric,
+          remote_id = NULL,
           modseq = ${envelope.remoteRef.modseq}::numeric,
           mime_blob_id = CASE
             WHEN ${remoteChanged} AND direction = 'import' THEN NULL

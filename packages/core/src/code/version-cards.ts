@@ -227,6 +227,7 @@ export async function readCodeVersionCards(
     const revision = CodeReviewRevisionSchema.safeParse(row.revision);
     const words = presentCodeVersion({
       personal: code.owner.kind === "person",
+      viewerIsOwner: code.owner.kind === "person" && code.owner.userId === viewer.id,
       versionId: row.id,
       number: row.number,
       submittedAt: row.created_at.toISOString(),

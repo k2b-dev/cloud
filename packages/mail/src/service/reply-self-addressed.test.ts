@@ -52,6 +52,9 @@ describe("self-addressed reply seed service", () => {
             if (query.includes("default_cc"))
               return [
                 {
+                  // The sender was already required to be verified; validation now reads that status from the row.
+                  from_address: "info@example.test",
+                  status: "verified",
                   default_cc: [],
                   default_bcc: [],
                   default_format: "plain",

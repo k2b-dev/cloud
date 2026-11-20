@@ -9,7 +9,10 @@ export type RailApp = {
   match: string;
   defaultVisible: boolean;
   description?: string;
+  /** The app's colour for its selected entry (`appearance.accent`). */
   accent?: string;
+  /** The colour the app declares for its icon (`declaredIconColor`); without it the icon takes its palette tone. */
+  iconColor?: string;
   /** The app's `nav.badge` endpoint. */
   badge?: string;
 };

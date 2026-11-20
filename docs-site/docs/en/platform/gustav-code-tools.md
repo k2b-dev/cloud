@@ -142,6 +142,12 @@ Gustav turn in the selected Assistant chat. For a prepared result, put it in
 for the supported mapping and unresolved inputs. Gustav checks the live SDK
 before promising equivalent behavior.
 
+When Gustav delegates through `ai.chat.send` in a person's turn, the other chat's
+message names its source. Its completion, failure or cancellation adds one
+activity in the source chat with **View result**. This activity starts no turn
+and cannot chain work into another chat. It also works with an existing target
+chat; creating a chat is not a prerequisite.
+
 The original routine target is an Assistant AI chat. General Chat delivery is a
 different destination; choose that change explicitly. Automatic replies are
 reference-only and are not rebuilt.
@@ -196,3 +202,12 @@ Other success results remain unchanged. The shared HTTP/CLI contracts are
 `CodeAuthoringPermissionSchema` and `CodeAuthoringErrorSchema` describe metadata,
 permission rows and failures. Test and simulation reuse `CodeTestResultSchema`.
 `codeAuthoringServices` owns execution of these commands for both transports.
+
+## Start another chat
+
+Use `ai.chat.create` for a new empty personal chat and keep its returned
+`core.ai.chat` ref. This is a separate, reviewed `silent_you` Action; send work
+with `ai.chat.send` only after the destination and message are clear. Both
+Actions require an unrestricted person-initiated source turn. A Code- or
+chat-initiated turn cannot create another chat. Reusing the creation key returns
+the original chat; an archived or deleted result is not replaced.

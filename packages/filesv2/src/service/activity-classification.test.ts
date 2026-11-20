@@ -123,6 +123,8 @@ const files: Record<string, Classification> = {
   // Reads the file like a download; a retry clears only the preview cache's remembered failure.
   preview: base(),
   retryPreview: base(),
+  // Reads an image entry's large preview like `preview`; only the shared root resolution can provision a home.
+  entryImage: base(),
   // Reads the chosen PDFs like downloads and publishes the new file through the journaled create path.
   preparePdf: mixed(),
   capabilityDownload: base(),

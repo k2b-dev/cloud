@@ -5839,6 +5839,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.25rem var(--k2b-panel-dialog-inset, 1.5rem) 1.5rem;
 }
 
+.k2b-ui [data-k2b-follow-content] .k2b-panel-dialog__body {
+  /* A content basis releases the natural height after an opted-in frame was pinned;
+     WebKit can retain the old intrinsic size with a zero percentage basis. */
+  flex: 1 1 auto;
+}
+
 /* A dialog body owns overflow. Its sections keep their natural height instead
    of shrinking until descendants (for example stat grids) clip internally. */
 .k2b-ui .k2b-panel-dialog__body > * {
@@ -21688,6 +21694,28 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row > .k2b-field__label {
   max-width: 60%;
   flex-shrink: 0;
+}
+
+/* On a phone, label and status rarely fit one line, and a status cut short
+   hides the value someone would accept. There the status has its own line
+   under the label in every state, as tall as its Accept button, so the field
+   looks the same whatever the suggestion says. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row {
+    flex-wrap: wrap;
+    row-gap: 0.125rem;
+  }
+
+  .k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row > .k2b-field__label {
+    max-width: none;
+    flex-basis: 100%;
+  }
+
+  .k2b-ui .k2b-ai-suggestion-field > .k2b-field__label-row > .k2b-ai-suggestion {
+    min-height: 1.5rem;
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
 }
 
 .k2b-ui .k2b-ai-suggestion {

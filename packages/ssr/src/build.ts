@@ -7,7 +7,7 @@ import { Glob } from "bun";
 import { existsSync } from "fs";
 import { mkdir, readdir, stat, unlink } from "fs/promises";
 import { basename, join, relative, resolve } from "path";
-import { ASSET_MANIFEST, type AssetManifest } from "./adapter/utils";
+import { ASSET_MANIFEST, type AssetBuild, type AssetManifest, VARIANT_NAME } from "./adapter/utils";
 import { canonicalFilePath, ISLAND_ID_LENGTH, islandIdFromFile, toStableKey } from "./island-id";
 import { transform } from "./transform";
 
@@ -152,17 +152,20 @@ export const dedupeSharedChunkExports = async (outdir: string, verbose: boolean)
 };
 
 /**
- * Records the content version of the emitted JavaScript and the static import
- * closure of each entry. Dynamic imports stay out, so pages preload only what
- * an entry always loads.
+ * The content version of the emitted JavaScript and the static import closure
+ * of each entry. Dynamic imports stay out, so pages preload only what an entry
+ * always loads. A variant's name enters its version, so two variants never
+ * share a version directory.
  */
-const writeAssetManifest = async (
+const describeAssetBuild = async (
   outdir: string,
   ids: readonly string[],
   outputs: readonly Bun.BuildArtifact[],
   metafile: Bun.BuildMetafile | undefined,
-): Promise<void> => {
+  variant?: string,
+): Promise<AssetBuild> => {
   const hasher = new Bun.CryptoHasher("sha256");
+  if (variant) hasher.update(variant).update("\0");
   const files = outputs.map((output) => basename(output.path)).filter((file) => file.endsWith(".js"));
   for (const file of files.sort()) {
     hasher.update(file).update("\0");
@@ -170,7 +173,7 @@ const writeAssetManifest = async (
   }
 
   const graph = new Map(Object.entries(metafile?.outputs ?? {}).map(([path, output]) => [basename(path), output]));
-  const entries: AssetManifest["entries"] = {};
+  const entries: AssetBuild["entries"] = {};
   for (const id of [...ids].sort()) {
     const entry = `${id}.js`;
     const closure = new Set([entry]);
@@ -184,10 +187,53 @@ const writeAssetManifest = async (
     closure.delete(entry);
     entries[id] = [entry, ...[...closure].sort()];
   }
+  return { version: hasher.digest("hex").slice(0, 16), entries };
+};
 
+const writeAssetManifest = async (outdir: string, manifest: AssetManifest): Promise<void> => {
   await mkdir(outdir, { recursive: true });
-  const manifest: AssetManifest = { version: hasher.digest("hex").slice(0, 16), entries };
   await Bun.write(join(outdir, ASSET_MANIFEST), JSON.stringify(manifest));
+};
+
+/**
+ * The source of every JavaScript and TypeScript module the browser entries reach, statically or on demand. Bun parses
+ * the JSX itself here, without the Solid transform, which only the import graph needs: about 1.5 s for 315 islands.
+ */
+const browserSources = async (entrypoints: string[], external?: string[]): Promise<Map<string, string>> => {
+  const discovery = await Bun.build({
+    entrypoints,
+    target: "browser",
+    conditions: ["browser", "production"],
+    external: [...(external ?? []), "solid-js/jsx-runtime", "solid-js/jsx-dev-runtime"],
+    jsx: { runtime: "automatic", importSource: "solid-js" },
+    metafile: true,
+  });
+  if (!discovery.success || !discovery.metafile)
+    throw new AggregateError(discovery.logs, "[ssr] Could not list the island modules for variant builds.");
+  const sources = new Map<string, string>();
+  // Bun names metafile inputs relative to the process directory, whatever directory the build scans.
+  for (const input of Object.keys(discovery.metafile.inputs)) {
+    const path = resolve(process.cwd(), input);
+    if (!/\.[cm]?[jt]sx?$/.test(path)) continue;
+    if (!existsSync(path)) throw new Error(`[ssr] Variant builds cannot read island module ${path}.`);
+    sources.set(path, await Bun.file(path).text());
+  }
+  // A path that misses here would ship that module unchanged in every variant.
+  for (const entry of entrypoints)
+    if (!sources.has(canonicalFilePath(entry)))
+      throw new Error(`[ssr] Variant builds did not find island entry ${entry} among the listed modules.`);
+  return sources;
+};
+
+/**
+ * Production island builds per variant, for example one per language. The
+ * first name is the default build in `outdir`; every other name builds into
+ * `outdir/<name>`. `transform` rewrites each browser source module of a
+ * variant before the Solid transform.
+ */
+export type IslandBuildVariants = {
+  names: readonly string[];
+  transform: (source: string, path: string, variant: string) => string | Promise<string>;
 };
 
 export const buildIslands = async (options: {
@@ -200,8 +246,18 @@ export const buildIslands = async (options: {
   devSourcemap?: DevSourcemap;
   external?: string[];
   errorFallback?: string;
+  /** Production only: development builds the default modules once, without `transform`. */
+  variants?: IslandBuildVariants;
 }): Promise<void> => {
   const { pattern, outdir, cwd, componentRoots, verbose, dev = false, devSourcemap = "linked", external, errorFallback } = options;
+  const variants = dev ? undefined : options.variants;
+  if (variants) {
+    if (!variants.names.length) throw new Error("[ssr] Island variants need at least one name.");
+    for (const name of variants.names)
+      if (!VARIANT_NAME.test(name))
+        throw new Error(`[ssr] Invalid island variant name ${JSON.stringify(name)}; use lowercase letters, digits, and single hyphens.`);
+    if (new Set(variants.names).size !== variants.names.length) throw new Error("[ssr] Island variant names must be unique.");
+  }
   const resolvedCwd = resolve(cwd);
 
   const totalStart = performance.now();
@@ -231,7 +287,7 @@ export const buildIslands = async (options: {
 
   if (!files.size) {
     if (existsSync(outdir)) await removeStaleBuildAssets(outdir, []);
-    if (!dev) await writeAssetManifest(outdir, [], [], undefined);
+    if (!dev) await writeAssetManifest(outdir, { version: (await describeAssetBuild(outdir, [], [], undefined)).version, entries: {} });
     if (verbose) console.log("No island/client files found.");
     return;
   }
@@ -269,85 +325,107 @@ export const buildIslands = async (options: {
   // This ensures Solid is only bundled once as a shared chunk
   const transformTimings = verbose ? new Map<string, number>() : undefined;
   const bundleStart = performance.now();
-  const result = await Bun.build({
-    entrypoints: components.map((c) => c.id),
-    outdir,
-    naming: { entry: "[name].js", chunk: "chunk-[hash].js" },
-    target: "browser",
-    conditions: ["browser", dev ? "development" : "production"],
-    external,
-    minify: !dev,
-    splitting: true,
-    metafile: true,
-    sourcemap: dev ? devSourcemap : "none",
-    plugins: [
-      {
-        name: "solid-islands",
-        setup(build) {
-          // Core, DOM and store must use the app's Solid copy and the same mode.
-          // Explicit exported entries avoid mixing a production core with
-          // development store/web modules from the host process conditions.
-          build.onResolve({ filter: /^solid-js(?:\/(?:web|store))?$/ }, (args) => {
-            const module = args.path === "solid-js" ? "solid" : args.path.slice("solid-js/".length);
-            const entry = `${args.path}/dist/${dev ? "dev" : module}.js`;
-            return { path: Bun.resolveSync(entry, resolvedCwd) };
-          });
-
-          // Resolve component IDs as virtual entrypoints
-          build.onResolve({ filter: new RegExp(`^[a-f0-9]{${ISLAND_ID_LENGTH}}$`) }, (args) => ({
-            path: args.path,
-            namespace: "island",
-          }));
-
-          // Generate hydration code for each component
-          build.onLoad({ filter: /.*/, namespace: "island" }, (args) => {
-            const component = components.find((c) => c.id === args.path);
-            if (!component) {
-              return { contents: "", loader: "js" };
-            }
-
-            return {
-              contents: `import{mount}from${JSON.stringify(join(import.meta.dir, "mount.ts"))};import C from${JSON.stringify(component.path)};${errorFallback ? `import F from${JSON.stringify(errorFallback)};` : ""}mount(C,${JSON.stringify(component.selector)}${errorFallback ? ",F" : ""})`,
-              loader: "js",
-            };
-          });
-
-          // Transform TSX/JSX with Solid DOM mode
-          build.onLoad({ filter: /\.(tsx|jsx)$/ }, async ({ path }) => {
-            const t0 = performance.now();
-            // Import with ? suffix to register file with bun --watch
-            // Issue: https://github.com/oven-sh/bun/issues/4689
-            const contents = await import(`${path}?`, {
-              with: { type: "text" },
+  const [defaultName, ...variantNames] = variants?.names ?? [];
+  const sources = variants ? await browserSources(components.map((c) => c.path).concat(errorFallback ?? []), external) : undefined;
+  const bundle = async (variantOutdir: string, variant?: string): Promise<{ result: Bun.BuildOutput; asset?: AssetBuild }> => {
+    // A variant passes its rewritten modules as in-memory files. Unlike a plugin `onLoad`, which Bun also calls for
+    // `with { type: "file" }` imports, the files keep each import's loader. Solid source still goes through `onLoad`.
+    const rewritten = new Map<string, string>();
+    if (variant && variants && sources)
+      for (const [path, source] of sources) {
+        const contents = await variants.transform(source, path, variant);
+        if (contents !== source) rewritten.set(path, contents);
+      }
+    const result = await Bun.build({
+      files: Object.fromEntries([...rewritten].filter(([path]) => !/\.(tsx|jsx)$/.test(path))),
+      entrypoints: components.map((c) => c.id),
+      outdir: variantOutdir,
+      naming: { entry: "[name].js", chunk: "chunk-[hash].js" },
+      target: "browser",
+      conditions: ["browser", dev ? "development" : "production"],
+      external,
+      minify: !dev,
+      splitting: true,
+      metafile: true,
+      sourcemap: dev ? devSourcemap : "none",
+      plugins: [
+        {
+          name: "solid-islands",
+          setup(build) {
+            // Core, DOM and store must use the app's Solid copy and the same mode.
+            // Explicit exported entries avoid mixing a production core with
+            // development store/web modules from the host process conditions.
+            build.onResolve({ filter: /^solid-js(?:\/(?:web|store))?$/ }, (args) => {
+              const module = args.path === "solid-js" ? "solid" : args.path.slice("solid-js/".length);
+              const entry = `${args.path}/dist/${dev ? "dev" : module}.js`;
+              return { path: Bun.resolveSync(entry, resolvedCwd) };
             });
-            const result = {
-              contents: await transform(contents.default, path, "dom"),
-              loader: "js" as const,
-            };
-            transformTimings?.set(path, performance.now() - t0);
-            return result;
-          });
+
+            // Resolve component IDs as virtual entrypoints
+            build.onResolve({ filter: new RegExp(`^[a-f0-9]{${ISLAND_ID_LENGTH}}$`) }, (args) => ({
+              path: args.path,
+              namespace: "island",
+            }));
+
+            // Generate hydration code for each component
+            build.onLoad({ filter: /.*/, namespace: "island" }, (args) => {
+              const component = components.find((c) => c.id === args.path);
+              if (!component) {
+                return { contents: "", loader: "js" };
+              }
+
+              return {
+                contents: `import{mount}from${JSON.stringify(join(import.meta.dir, "mount.ts"))};import C from${JSON.stringify(component.path)};${errorFallback ? `import F from${JSON.stringify(errorFallback)};` : ""}mount(C,${JSON.stringify(component.selector)}${errorFallback ? ",F" : ""})`,
+                loader: "js",
+              };
+            });
+
+            // Transform TSX/JSX with Solid DOM mode
+            build.onLoad({ filter: /\.(tsx|jsx)$/ }, async ({ path }) => {
+              const t0 = performance.now();
+              // Import with ? suffix to register file with bun --watch
+              // Issue: https://github.com/oven-sh/bun/issues/4689
+              const contents = await import(`${path}?`, {
+                with: { type: "text" },
+              });
+              const result = {
+                contents: await transform(rewritten.get(path) ?? contents.default, path, "dom"),
+                loader: "js" as const,
+              };
+              transformTimings?.set(path, performance.now() - t0);
+              return result;
+            });
+          },
         },
-      },
-    ],
-  });
+      ],
+    });
 
-  if (result.success) {
+    if (!result.success) return { result };
     rejectNestedComponentImports(result.metafile, components, resolvedCwd);
-    const removed = await removeStaleBuildAssets(outdir, result.outputs);
+    const removed = await removeStaleBuildAssets(variantOutdir, result.outputs);
     if (verbose && removed > 0) console.log(`Removed ${removed} stale build asset(s).`);
-
-    if (!dev) {
-      await dedupeSharedChunkExports(outdir, verbose);
-      await writeAssetManifest(
-        outdir,
-        components.map((c) => c.id),
-        result.outputs,
-        result.metafile,
-      );
-    } else if (verbose) {
-      console.log("Skipped shared-chunk export rewrite in dev mode.");
+    if (dev) {
+      if (verbose) console.log("Skipped shared-chunk export rewrite in dev mode.");
+      return { result };
     }
+    await dedupeSharedChunkExports(variantOutdir, verbose);
+    const ids = components.map((c) => c.id);
+    return {
+      result,
+      asset: await describeAssetBuild(variantOutdir, ids, result.outputs, result.metafile, variant === defaultName ? undefined : variant),
+    };
+  };
+
+  // Variants build one after another, which bounds the build's memory and CPU to one bundle at a time.
+  let { result, asset } = await bundle(outdir, defaultName);
+  if (asset) {
+    const manifest: AssetManifest = { ...asset };
+    for (const name of variantNames) {
+      ({ result, asset } = await bundle(join(outdir, name), name));
+      if (!asset) break;
+      manifest.variants = { ...manifest.variants, [name]: asset };
+    }
+    if (result.success) await writeAssetManifest(outdir, manifest);
   }
 
   if (verbose) {
@@ -358,7 +436,10 @@ export const buildIslands = async (options: {
       console.log(`  ${rel} -> ${outdir}/${c.id}.js${t != null ? ` (transform: ${fmt(t)})` : ""}`);
     }
   }
-  console.log(`Built ${files.size} component(s) to ${outdir}/ in ${fmt(performance.now() - totalStart)}${verbose ? " (total)" : ""}`);
+  const variantNote = variantNames.length ? ` in ${variantNames.length + 1} variants` : "";
+  console.log(
+    `Built ${files.size} component(s)${variantNote} to ${outdir}/ in ${fmt(performance.now() - totalStart)}${verbose ? " (total)" : ""}`,
+  );
 
   if (!result.success) {
     console.error("Build failed:");

@@ -282,12 +282,15 @@ export const CapabilityActionPolicySchema = z.union([
 ]);
 export type CapabilityActionPolicy = z.infer<typeof CapabilityActionPolicySchema>;
 
-const reviewLine = (max: number, min = 1) =>
+const reviewLine = (max: number, min = 1, allowJoiner = false) =>
   z
     .string()
     .min(min)
     .max(max)
-    .refine((text) => !/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(text), "Contains unsafe characters");
+    .refine(
+      (text) => !/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(allowJoiner ? text.replaceAll("\u200d", "") : text),
+      "Contains unsafe characters",
+    );
 export const CapabilityPersonSchema = z
   .object({ name: reviewLine(200).optional(), address: reviewLine(320).optional(), userId: z.uuid().optional() })
   .strict()
@@ -344,7 +347,7 @@ export const CapabilitySlotSchema = z.discriminatedUnion("kind", [
         .strict(),
     })
     .strict(),
-  z.object({ kind: z.literal("text"), value: reviewLine(200) }).strict(),
+  z.object({ kind: z.literal("text"), value: reviewLine(200, 1, true) }).strict(),
 ]);
 export type CapabilitySlot = z.infer<typeof CapabilitySlotSchema>;
 const reviewSlots = z
@@ -604,7 +607,9 @@ export const CapabilityErrorSchema = z
   })
   .strict();
 
-export const CAPABILITY_ERROR_STATUSES = [400, 401, 403, 404, 409, 429, 499, 500, 502, 503, 504] as const;
+export const CAPABILITY_ERROR_STATUSES = [
+  400, 401, 403, 404, 405, 406, 408, 409, 410, 412, 413, 415, 416, 421, 422, 429, 499, 500, 501, 502, 503, 504,
+] as const;
 export type CapabilityErrorStatus = (typeof CAPABILITY_ERROR_STATUSES)[number];
 export type CapabilityError = {
   code: string;

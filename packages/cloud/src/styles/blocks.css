@@ -36,8 +36,10 @@
   align-items: start;
 }
 
-.k2b-ui .cloud-blocks__cell[data-media-row] .cloud-blocks__image img {
+.k2b-ui .cloud-blocks__cell[data-media-row] .cloud-blocks__image .cloud-blocks__image-place {
   aspect-ratio: 4 / 3;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
 }
 
 @container (max-width: 40rem) {
@@ -423,17 +425,49 @@
 .k2b-ui .cloud-blocks__image {
   display: grid;
   gap: 0.375rem;
+  max-width: 24rem;
   margin: 0;
+}
+
+/*
+  The picture, its wait for a later try, and its stand-in fill the same place, so loading and failing never move what
+  follows. A picture is never cropped: in a fixed place it is fitted whole, centred on the muted ground.
+*/
+.k2b-ui .cloud-blocks__image-place {
+  display: grid;
+  min-width: 0;
+}
+
+.k2b-ui .cloud-blocks__image :is(img, .cloud-blocks__image-wait, .cloud-blocks__image-missing) {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--k2b-radius-control);
+  object-fit: contain;
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .cloud-blocks__image img {
   display: block;
-  width: 100%;
-  max-width: 24rem;
-  height: 100%;
-  border-radius: var(--k2b-radius-control);
-  object-fit: cover;
-  background: var(--k2b-surface-muted);
+}
+
+/* A declared ratio is the place of the picture, not of the figure, so a caption below never makes the picture smaller. */
+.k2b-ui .cloud-blocks__image[data-ratio] .cloud-blocks__image-place {
+  aspect-ratio: var(--cloud-blocks-image-ratio);
+  grid-template-rows: minmax(0, 1fr);
+  /* The ratio alone sets the height: a state's own minimum must not grow a flat place. */
+  min-height: 0;
+}
+
+/* Without a ratio, a wait and a later try keep the same small place, so the height does not jump with every try. */
+.k2b-ui .cloud-blocks__image :is(img[data-retry], .cloud-blocks__image-wait, .cloud-blocks__image-missing) {
+  min-height: 3rem;
+}
+
+.k2b-ui .cloud-blocks__image-missing {
+  display: grid;
+  place-items: center;
+  color: var(--k2b-text-muted);
+  font-size: 1.5rem;
 }
 
 .k2b-ui .cloud-blocks__image figcaption {

@@ -55,9 +55,9 @@ export function validateBlockLink(href: string, host: BlockHost, ctx: BlockConte
 }
 export function validateBlockImage(src: string, ctx: BlockContext): void {
   const pathname = blockPathname(src);
-  // Images use the responding app's authorized same-origin routes. /open/<type>/~<id> is
-  // a resource navigation redirect, not file bytes; Files v2 currently issues download leases.
-  // Do not invent /api/files/<id> or turn a resource ref into an unauthenticated image URL.
+  // Images use the responding app's authorized same-origin routes, which check the reader on every request, as
+  // Files v2's /api/filesv2/entries/<ref>/image does. /open/<type>/~<id> is a resource navigation redirect, not file
+  // bytes. Never turn a resource ref or a lease into an image URL that works without the reader's session.
   if (!inApp(pathname, ctx)) throw new Error("blocks_foreign_image");
 }
 const uniqueFields = (fields: { name: string }[]) => {

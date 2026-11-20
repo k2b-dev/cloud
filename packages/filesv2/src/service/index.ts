@@ -16,7 +16,7 @@ import {
   previews,
   serviceAccounts,
 } from "@k2b/cloud/services";
-import { publicCloudOrigin } from "@k2b/cloud/shared";
+import { previewSourceKind, publicCloudOrigin } from "@k2b/cloud/shared";
 import { type ExecutionContext, type ExecutionIdentity, FilegateError, type Node, type RootInfo } from "@k2b/filegate";
 import { z } from "zod";
 import type { ActivityInput, ActivityPage } from "../activity-contracts";
@@ -2933,6 +2933,22 @@ export function createFilesService(
       const current = await authorized(call.actor, input.baseId, input.path, false);
       const source = filePreviewSource(current.inspection.summary, current.relative, current.node);
       return { result: await previews.read(source, input.size, { signal }), immutable: input.rev === source.revision };
+    },
+    /**
+     * The picture of an image entry for capability views, by its entry ref: the download checks on every request, then
+     * the large preview Files' details panel shows. Refused, foreign, missing, and non-image entries answer alike.
+     */
+    async entryImage(call: UserFilesCall, input: { id: string; rev: string }, signal: AbortSignal) {
+      try {
+        const current = await located(call.actor, input.id, false, signal);
+        const source = filePreviewSource(current.inspection.summary, current.relative, current.node);
+        if (previewSourceKind(source.name) !== "image") throw new FilesError("not_found", 404);
+        return { result: await previews.read(source, "large", { signal }), immutable: input.rev === source.revision };
+      } catch (error) {
+        if ((error instanceof FilesError || error instanceof FilegateError) && [400, 403, 404].includes(error.status))
+          throw new FilesError("not_found", 404);
+        throw error;
+      }
     },
     async retryPreview(call: UserFilesCall, input: { baseId: string; path: string }) {
       const current = await authorized(call.actor, input.baseId, input.path, false);

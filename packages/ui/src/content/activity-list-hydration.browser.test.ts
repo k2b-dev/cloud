@@ -16,7 +16,7 @@ const directory = mkdtempSync(resolve(tmpdir(), "k2b-ui-activity-hydration-"));
 process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const fixturePath = resolve(import.meta.dir, "activity-list-hydration.fixture.tsx");
 const fixture = (entry: string) => `
-import { ActivityCard, LocaleProvider } from ${JSON.stringify(entry)};
+import { ActivityCard, ActivityList, LocaleProvider } from ${JSON.stringify(entry)};
 const draft = (minute) => ({
   at: "2026-10-27T10:" + minute + ":00+01:00", icon: "ti ti-pencil", text: "Entwurf geändert", actor: "Elif Kaya",
   bundle: { key: "draft", text: (count) => "Entwurf " + count + "-mal geändert" },
@@ -32,6 +32,8 @@ export function Fixture() {
   ];
   return <LocaleProvider locale="de">
     <ActivityCard entries={entries()} now=${JSON.stringify(NOW)} timeZone="Europe/Berlin" limit={4} />
+    <div id="public-row"><ActivityList.Row now=${JSON.stringify(NOW)} timeZone="Europe/Berlin"
+      entry={{ at: "2026-11-11T23:50:00+01:00", actor: "Import service", avatar: { name: "Import service", kind: "service" }, text: "Import completed", href: "/imports" }} /></div>
   </LocaleProvider>;
 }
 `;
@@ -181,12 +183,20 @@ test("the first browser render shows the server's rows, times, and dividers in a
     // In Berlin 00:20 on 12 Nov is today, 23:50 on 11 Nov yesterday; in Los Angeles both would be 11 Nov.
     expect(server).toContain("Heute");
     expect(server).toContain("Gestern");
-    await page.evaluate(() => Reflect.set(window, "serverRow", document.querySelector(".k2b-activity__entry")));
+    const publicMarkup = await page.locator("#public-row").innerHTML();
+    await page.evaluate(() => {
+      Reflect.set(window, "serverRow", document.querySelector(".k2b-activity__entry"));
+      Reflect.set(window, "serverPublicRow", document.querySelector("#public-row > div"));
+    });
     await page.addScriptTag({ url: `${origin}/client.js` });
     expect(errors).toEqual([]);
     await page.waitForSelector('body[data-ready="true"]');
     await settled(page);
     expect(await markup()).toBe(server);
+    expect(await page.locator("#public-row").innerHTML()).toBe(publicMarkup);
+    expect(await page.evaluate(() => Reflect.get(window, "serverPublicRow") === document.querySelector("#public-row > div"))).toBe(true);
+    expect(await page.locator(".k2b-activity [title]").count()).toBe(0);
+    expect(await page.locator(".k2b-activity .k2b-activity__avatar .k2b-avatar").count()).toBe(4);
     expect(await page.evaluate(() => Reflect.get(window, "serverRow") === document.querySelector(".k2b-activity__entry"))).toBe(true);
     expect(errors).toEqual([]);
     expect(hydrationMessages).toEqual([]);

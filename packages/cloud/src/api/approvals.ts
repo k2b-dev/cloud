@@ -131,12 +131,12 @@ export const approvalRoutes = new Hono<AuthContext>()
     bodyLimit({ maxSize: 256 * 1024 }),
     describeRoute({
       tags: ["Approvals"],
-      summary: "Edit an open chat draft in the owner's browser",
+      summary: "Edit an open chat draft in the owner's session",
       ...requiresAuth,
       responses: {
         200: jsonResponse(ApprovalDraftResultSchema, "Updated draft"),
         400: jsonResponse(ErrorResponseSchema, "Invalid fields"),
-        403: jsonResponse(ErrorResponseSchema, "Browser session required"),
+        403: jsonResponse(ErrorResponseSchema, "Owner session required"),
         404: jsonResponse(ErrorResponseSchema, "Open draft not found"),
         409: jsonResponse(ErrorResponseSchema, "Draft changed"),
       },

@@ -97,6 +97,11 @@ function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, loca
 /** Only checked facts enter this projection. Model titles and explanations are deliberately absent from facts(). */
 export function presentCodeVersion(input: {
   personal: boolean;
+  /**
+   * Whether the reader is the owner of this personal Code, from comparing the owner's and the reader's ids. Missing
+   * means no: only the owner may treat the Code's own chat as a readable target.
+   */
+  viewerIsOwner?: boolean;
   /** Present only when someone else owns personal Code; null name preserves directory restrictions. */
   runsAs?: { name: string | null };
   versionId: string;
@@ -115,9 +120,18 @@ export function presentCodeVersion(input: {
 }): CodeVersionReadModel {
   const { t, locale } = codeReadModelMessages.resolve([input.locale]);
   const { manifest, names } = input;
-  const allReadable = canReadVersionText(manifest, names);
+  // Personal Code's own chat (`chat.send` to the bound chat, id null) is no unknown target for its owner: the owner
+  // chose it. For anyone else it stays unreadable, so the model's description stays hidden from them.
+  const ownChat = (permission: CodeCheckedVersionManifest["permissions"][number]) =>
+    input.personal &&
+    input.viewerIsOwner === true &&
+    permission.operation === "core.ai.chat.send" &&
+    permission.target?.type === "core.ai.chat" &&
+    permission.target.id === null;
+  const checked = { ...manifest, permissions: manifest.permissions.filter((permission) => !ownChat(permission)) };
+  const allReadable = canReadVersionText(checked, names);
   const targets = [
-    ...manifest.permissions.map(({ operation, target }) => target ?? { type: "app", id: operation.split(".")[0]! }),
+    ...checked.permissions.map(({ operation, target }) => target ?? { type: "app", id: operation.split(".")[0]! }),
     ...manifest.entrypoints.flatMap((entry) => (entry.event ? [entry.event.place] : [])),
   ];
   const denied = targets.some((ref) => {

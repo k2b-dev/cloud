@@ -21,6 +21,8 @@ declare global {
     __reopen: () => void;
     __sendFailed: () => void;
     __expireSlow: () => void;
+    __answers: string[];
+    __settle: (failed?: boolean) => void;
   }
 }
 
@@ -70,6 +72,35 @@ function FactsFixture() {
         back={{ label: "Change", onSelect: () => {} }}
         decline={{ label: "Keep version 4", onSelect: () => {} }}
         confirm={{ label: "Turn on version 5", onSelect: () => {} }}
+      />
+    </main>
+  );
+}
+
+/** Answers whose promises hang until the test settles them, while the host keeps the question open. */
+function PendingFixture() {
+  window.__answers = [];
+  window.__errors = [];
+  let settle: ((failed?: boolean) => void) | undefined;
+  window.__settle = (failed) => settle?.(failed);
+  const hang = (name: string) => () => {
+    window.__answers.push(name);
+    return new Promise<void>((resolve, reject) => {
+      settle = (failed) => (failed ? reject(new Error("offline")) : resolve());
+    });
+  };
+  return (
+    <main>
+      <Chat.Decision
+        state="open"
+        kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+        source={{ name: "Code", icon: "ti ti-code" }}
+        sentence="Turn on version 5?"
+        reason={{ text: "It may do more than version 4." }}
+        more={[{ label: "Withdraw", onSelect: hang("withdraw") }]}
+        decline={{ label: "Keep version 4", onSelect: hang("decline") }}
+        confirm={{ label: "Turn on version 5", onSelect: hang("confirm") }}
+        onAnswerError={(error) => window.__errors.push(String(error))}
       />
     </main>
   );
@@ -249,6 +280,8 @@ render(
       <TimelineWidthFixture />
     ) : document.documentElement.hasAttribute("data-facts") ? (
       <FactsFixture />
+    ) : document.documentElement.hasAttribute("data-pending") ? (
+      <PendingFixture />
     ) : (
       <Fixture />
     ),

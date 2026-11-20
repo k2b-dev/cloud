@@ -106,6 +106,14 @@ export function ItemChat(props: {
 Keep the `k2b-ui` scope on the nearest stable application root and import
 `@k2b/ui/styles.css` once in the application stylesheet.
 
+Completion activities render with the initial chat timeline on both server and
+browser. They need no preload hook. The owner sees a short first-line preview
+of the target answer and its result link; failure and cancellation have their
+own wording. The result link identifies the saved turn and message. If a retry
+removed that answer, the old activity opens the target chat without selecting
+a different answer. Answer details open immediately and show loading feedback
+while their optional presentation code loads.
+
 Each entry of `AiPeopleModels["options"]` carries `contextWindow` when the
 model catalog knows it. Pass it as `contextUsage.contextWindow` to
 `Chat.Composer`, so the usage ring shows how full the chat's context is and
@@ -1050,6 +1058,19 @@ files. For lasting Code, use the Code tools and [Code authoring](/en/docs/platfo
 Studio apps, HTML checks and presentations, machine execution, and the direct
 `cld assistant code` commands are retired. See [Studio retirement](/en/docs/operations/studio-retirement).
 
+
+### Delegated work finishes in its source chat
+
+When Gustav writes to another chat with `ai.chat.send`, the source chat gets a
+permanent activity when that target turn completes, fails or is stopped. It uses
+`Chat.Activity`, with **View result** opening the target answer through its
+`conversation` and `message` URL parameters. Assistant loads older history when
+needed and focuses the answer. Reload and Back preserve that destination.
+
+This activity starts no turn, leaves the person's draft and focus alone, and is
+excluded from model context. It does not split an answer already being written.
+The target message keeps its existing **From chat …** source chip. A target the
+viewer can no longer open has no title or result link in the activity.
 
 ### Historical routine results
 

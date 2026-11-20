@@ -14,7 +14,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 ## Capabilities
 
 - Conversations: `core.ai.chats.search`, `core.ai.chat.read`, `core.ai.chat.search`, `core.ai.chat.resources`, and `core.ai.chats.resources`.
-- Messaging: `core.ai.chat.send`.
+- Create or message a conversation: `core.ai.chat.create`, `core.ai.chat.send`.
 
 
 Load only the needed capabilities and reuse returned typed IDs unchanged.
@@ -23,8 +23,9 @@ Load only the needed capabilities and reuse returned typed IDs unchanged.
 
 - The runtime Chat ID identifies the current conversation. Use `core.ai.chat.search` for earlier content in it. For another conversation, use `core.ai.chats.search`, then `core.ai.chat.read` or `core.ai.chat.search` with the returned ID.
 - Use `core.ai.chat.resources` for resources from one known conversation and `core.ai.chats.resources` to search across conversations. Read a returned resource through its owning app rather than guessing its contents.
+- Use `core.ai.chat.create` only when a new personal chat is requested. Supply a clear title and a stable idempotency key; reuse the returned chat ref. Creation starts no AI turn. An archived or deleted result is never replaced by a retry.
 - Before `core.ai.chat.send`, identify the exact target and message. Report queued, running, waiting, done, failed or cancelled status accurately and do not claim the target completed the requested work.
-- Send only from a person-initiated turn with unrestricted authority. App sessions, source tool ceilings and non-person initiators cannot write to another chat. Never bypass `source_restricted` or `chat_chain_forbidden`.
+- Send only from a person-initiated turn with unrestricted authority. App sessions, source tool ceilings and non-person initiators cannot write to or create another chat. Never bypass `source_restricted` or `chat_chain_forbidden`.
 - Scheduled chat routines are retired. A new reminder in this chat is an alarm (see below). To rebuild an exported routine, or for work beyond the alarm limits, load `code-authoring` for reviewed Code scheduling and chat.send. Never offer task creation or resumption.
 
 ## Alarms in this chat

@@ -121,7 +121,7 @@ export const appUnavailableAnswer = (
       return {
         ...cloudModel(availability, locale),
         kind: "app",
-        app: { id: app.id, name: app.name, ...(icon ? { icon } : {}), ...(app.accent ? { accent: app.accent } : {}) },
+        app: { id: app.id, name: app.name, ...(icon ? { icon } : {}), ...(app.iconColor ? { accent: app.iconColor } : {}) },
         reason,
         ...(cloudHost && appId !== "core" ? { homeHref: "/" } : {}),
       };

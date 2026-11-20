@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-11-05
+updated: 2026-11-20
 ---
 
 # Tools and approvals
@@ -232,6 +232,8 @@ Axes accept `label`, `domain: [min, max]`, `ticks` (2..12), `scale: "linear" |
 "currency", currency?, unit?, decimals?, compact?}`. Currency requires an
 uppercase three-letter code exactly when style is currency; percent takes
 fractions, decimals is 0..10, and unit is a suffix of at most 12 characters.
+Charts append it as written, also `B`; only `Stats` and `Detail` blocks of a
+view read `unit: "B"` as a size.
 A currency without decimals shows cents only when a value of the chart has
 them.
 Date x axes take `{date: "day" | "minute" | "second"}`. Bar charts label every
@@ -794,8 +796,9 @@ approval retains `allowChat` and `allowAlways`; a website request also carries
 Wire `onCheckAction` to `checkAction` and propagate failures so the card can
 show recovery. Core serves
 `POST /api/ai/conversations/:conversationId/turns/:turnId/calls/:callId/check`
-for the conversation owner in a signed-in browser session; API keys and other
-clients get `403`. Unknown calls return `404`. Calls without a check, and a
+for the conversation owner in a signed-in session; a session of the Cloud app
+may check only calls of turns started in the app. API keys and other clients
+get `403`. Unknown calls return `404`. Calls without a check, and a
 second press while one check runs, return `409`. The executor and a person's
 press claim the check with one conditional write, so only one runs at a time and
 a settled result is never replaced; a claim whose worker stopped goes stale after

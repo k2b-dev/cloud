@@ -261,8 +261,9 @@ and fallback conventions.
 
 ## Set the application appearance
 
-`appearance` supplies the accent and optional page background. AI applications
-can also [use the AI primary colour](#use-the-ai-primary-colour).
+`appearance` supplies the accent, an optional page background, and an optional
+[icon color](#color-only-the-app-icon). AI applications can also
+[use the AI primary colour](#use-the-ai-primary-colour).
 
 ```ts
 appearance: {
@@ -277,8 +278,9 @@ appearance: {
 },
 ```
 
-Colors use six-digit hex values. `accent` and `background.from` are required
-when their containing object is present.
+Colors use six-digit hex values. `background.from` is required when
+`background` is present, and the background needs an `accent`. All fields are
+optional.
 
 `accent` drives the app's identity text and selection color. Cloud automatically
 derives readable text with at least 4.5:1 contrast (WCAG AA) and soft selection
@@ -286,18 +288,43 @@ fills for light and dark mode. Any six-digit hex accent is accepted. A light
 accent such as yellow is darkened only as far as needed.
 The accent colors the app ink, selected navigation and content rows, selected
 tabs, view tabs and segments, active filter chips, and the app's icon tiles.
-The app's icon in the app bar takes the accent too. It lies on the open app's
-gradient, so Cloud darkens it in light mode and lightens it in dark mode only
-until it keeps 3:1 against every part of that gradient. An app without an
-`appearance` gets a palette tone, the same as its tile in the app grid.
+The app's icon in the app bar takes the accent too, unless the app declares an
+`iconColor`. It lies on the open app's gradient, so Cloud darkens it in light
+mode and lightens it in dark mode only until it keeps 3:1 against every part of
+that gradient. An app without an icon color or accent gets a palette tone, the
+same as its tile in the app grid.
 It never colors buttons, inputs, checkboxes, switches, focus rings, or status;
 link text stays body ink, and only its underline takes the app ink. See
 [Colors and selection](/en/ui/surfaces/color).
 The accent also reaches dialogs and sheets opened from the app's pages,
 with no application code.
-Plum is reserved for AI surfaces, so keep the accent and background colors
-clearly apart from it; see
+Plum is reserved for AI surfaces, so keep the accent, icon, and background
+colors clearly apart from it; see
 [Colors and selection](/en/ui/surfaces/color#app-color-in-cloud).
+
+### Color only the app icon
+
+`iconColor` colors only the app's icon: its tile in the app grid, its icon in
+the app bar and the app bar editor, its tile on the "Access denied" page and
+in the administrators' app list, and its icon on the page the gateway shows
+while the app is updating or unavailable. Selection, accent text, the page background, buttons, and focus
+keep their colors:
+
+```ts
+// Only the icon is green; selection stays blue and the page background neutral.
+appearance: { iconColor: "#15803d" },
+
+// The icon is green; selection and the background follow the teal accent.
+appearance: { accent: "#0f766e", iconColor: "#15803d" },
+```
+
+The icon takes `iconColor` first, then `accent`, then a palette tone derived
+from the app ID. A value that is not a six-digit hex color counts as unset, the
+same as an invalid `accent`. The same contrast rules apply: Cloud adjusts the
+icon only as far as it needs to keep 3:1 on its ground.
+
+Cloud services on an older `@k2b/cloud` version ignore `iconColor` and show the
+icon in the accent or palette tone until they are updated.
 
 | Background field | Default | Accepted range |
 | --- | --- | --- |
@@ -318,7 +345,7 @@ light and dark mode.
 ### Use the AI primary colour
 
 An AI application can also use plum for its primary actions, selection, and
-focus by declaring `appearance.primary: "ai"` alongside its required `accent`:
+focus by declaring `appearance.primary: "ai"` alongside its `accent`:
 
 ```ts
 appearance: { accent: "#0f766e", primary: "ai" },

@@ -4,6 +4,7 @@ import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { redis, sql } from "../runtime/clients";
+import type { RequestActor } from "../server";
 import { userResourceContext } from "./projects.test-fixture";
 import * as aiSettings from "./settings";
 import { composeAiSystemPrompt } from "./system-prompt";
@@ -19,7 +20,7 @@ import { approvalScopeFromToolName, approvals } from "../services/approvals";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import { session } from "../services/session/index";
-import { createTestBrowserSignIn, createTestSession } from "../services/session/session.test-fixture";
+import { createTestAppSession, createTestBrowserSignIn, createTestSession } from "../services/session/session.test-fixture";
 import * as platformSettings from "../services/settings";
 import { createAiApprovalPreferenceRoutes } from "./approval-routes";
 import { AI_WEBSITE_APPROVAL_TOOL, findRememberedAiToolApproval, hasRememberedAiToolApproval } from "./approvals";
@@ -27,7 +28,7 @@ import * as assistantModels from "./assistant-models";
 import { aiFileStore } from "./files-store";
 import { aiLive } from "./live";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
-import { enqueueChatMessage } from "./message-queue";
+import { enqueueChatMessage, listQueuedMessages } from "./message-queue";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import type { AiStreamEvent } from "./protocol";
@@ -38,7 +39,7 @@ import { aiResourceMarker } from "./resource-markers";
 import { __aiRoutesTest, aiRoutes } from "./routes";
 import * as aiRuntime from "./runtime";
 import { createAiShortId } from "./short-id";
-import { aiConversations, recordAiToolCheck, recordAiToolReview, settleAiToolCheck } from "./store";
+import { AiConversationCreationError, aiConversations, recordAiToolCheck, recordAiToolReview, settleAiToolCheck } from "./store";
 import { publishAiWireEvent } from "./stream";
 import { aiToolAudit } from "./tool-audit";
 
@@ -132,6 +133,7 @@ suite("global AI conversation boundaries", () => {
       const first = await post(body);
       expect(first.status).toBe(201);
       const created = await first.json();
+      expect(created).toMatchObject({ title: "Panel draft", titleSource: "user" });
       const replay = await post(body);
       expect(replay.status).toBe(201);
       expect((await replay.json()).id).toBe(created.id);
@@ -146,6 +148,26 @@ suite("global AI conversation boundaries", () => {
     } finally {
       await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (${userId}::uuid, ${otherId}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherId}::uuid)`;
+    }
+  });
+
+  test("a Project removed during HTTP creation is reported as a missing Project", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const create = spyOn(aiConversations, "createConversation").mockRejectedValueOnce(
+      new AiConversationCreationError("project_unavailable"),
+    );
+    try {
+      const response = await aiRoutes.request("/conversations", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Project chat" }),
+      });
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ message: expect.stringContaining("Project") });
+    } finally {
+      create.mockRestore();
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
 
@@ -454,6 +476,175 @@ suite("global AI conversation boundaries", () => {
       wake.mockRestore();
       await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${stranger}::uuid)`;
+    }
+  });
+
+  test("a phone app session steers, answers, edits, retries and sends now only turns and queued messages started in the app", async () => {
+    const userId = await insertUser();
+    const user = (await accounts.users.get({ id: userId }))!;
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const web = { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" };
+    const phone = { Authorization: `Bearer ${(await createTestAppSession(userId)).token}`, "Content-Type": "application/json" };
+    const browserActor: RequestActor = { kind: "user", user };
+    const appActor: RequestActor = { kind: "user", user, sessionKind: "app" };
+    const userMessage = (text: string) => ({ role: "user" as const, content: [{ type: "text" as const, text }] });
+    const runConfig = (actor: RequestActor) => ({ kind: "chat" as const, input: "Run", toolSource: { kind: "none" as const }, actor });
+    const startTurn = async (actor: RequestActor) =>
+      (
+        await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "fixture-model",
+          runConfig: runConfig(actor),
+          userMessage: userMessage("Run"),
+        })
+      ).turn;
+    const steer = (turnShortId: string, headers: Record<string, string>, clientRequestId: string) =>
+      aiRoutes.request(`/conversations/${chat.shortId}/turns/${turnShortId}/steer`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ message: "Change course", clientRequestId }),
+      });
+    const enqueue = async (actor: RequestActor, automation?: string) => {
+      const current = (await aiConversations.getConversation({ conversationId: chat.id }))!;
+      const id = crypto.randomUUID();
+      await enqueueChatMessage(
+        id,
+        {
+          conversationId: chat.id,
+          modelId: "fixture-model",
+          runConfig: {
+            ...runConfig(actor),
+            ...(automation ? { writerOrigin: { kind: "automation" as const, id: automation, runId: crypto.randomUUID() } } : {}),
+          },
+          userMessage: userMessage("Queued"),
+          ...(automation ? {} : { expectedDraftRevision: current.draft.revision }),
+          expectedProjectId: null,
+        },
+        [{ type: "text", text: "Queued" }],
+      );
+      return id;
+    };
+    const change = (id: string, headers: Record<string, string>, action: "remove" | "retry" | "send-now") =>
+      aiRoutes.request(`/conversations/${chat.shortId}/queue/${id}${action === "remove" ? "" : `/${action}`}`, {
+        method: action === "remove" ? "DELETE" : "POST",
+        headers,
+      });
+    const status = async (id: string) =>
+      (
+        await sql<{ status: string; sending: boolean }[]>`SELECT status, send_requested_at IS NOT NULL AS sending
+        FROM ai.queued_messages WHERE id=${id}::uuid`
+      )[0];
+    const edit = (id: string, headers: Record<string, string>) =>
+      aiRoutes.request(`/conversations/${chat.shortId}/queue/${id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ text: "Edited" }),
+      });
+    try {
+      const browserTurn = await startTurn(browserActor);
+      const denied = await steer(browserTurn.shortId, phone, "phone-1");
+      expect(denied.status).toBe(403);
+      expect(await denied.json()).toMatchObject({ code: "FORBIDDEN" });
+      expect(await aiConversations.listTurnSteers({ conversationId: chat.id, turnId: browserTurn.id })).toEqual([]);
+      expect((await steer(browserTurn.shortId, web, "web-1")).status).toBe(201);
+
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: browserTurn.id,
+        callId: "browser-tool",
+        name: "browser_tool",
+        kind: "client_tool",
+        frontendMode: "client",
+        status: "pending",
+        args: {},
+        approvalScope: "browser_tool",
+        allowAlways: false,
+        allowChat: false,
+        resolvedEvent: null,
+      });
+      const toolResult = (headers: Record<string, string>) =>
+        aiRoutes.request(`/conversations/${chat.shortId}/turns/${browserTurn.shortId}/actions/browser-tool`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ type: "tool_result", result: { text: "From the phone" } }),
+        });
+      expect((await toolResult(phone)).status).toBe(403);
+      const check = (headers: Record<string, string>) =>
+        aiRoutes.request(`/conversations/${chat.shortId}/turns/${browserTurn.shortId}/calls/browser-tool/check`, {
+          method: "POST",
+          headers,
+        });
+      const refusedCheck = await check(phone);
+      expect(refusedCheck.status).toBe(403);
+      expect(await refusedCheck.json()).toMatchObject({ code: "FORBIDDEN" });
+      // The person's browser session passes the writer rule and reaches the lookup, which finds no such call.
+      expect((await check(web)).status).toBe(404);
+      expect(
+        await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: browserTurn.id, callId: "browser-tool" }),
+      ).toMatchObject({ status: "pending", resolvedEvent: null });
+      expect((await toolResult(web)).status).toBe(200);
+      await sql`UPDATE ai.turns SET status = 'completed', completed_at = now() WHERE id = ${browserTurn.id}::uuid`;
+
+      const appTurn = await startTurn(appActor);
+      expect((await steer(appTurn.shortId, phone, "phone-2")).status).toBe(201);
+      expect((await steer(appTurn.shortId, web, "web-2")).status).toBe(201);
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: appTurn.id,
+        callId: "app-tool",
+        name: "app_tool",
+        kind: "client_tool",
+        frontendMode: "client",
+        status: "pending",
+        args: {},
+        approvalScope: "app_tool",
+        allowAlways: false,
+        allowChat: false,
+        resolvedEvent: null,
+      });
+      expect(
+        (
+          await aiRoutes.request(`/conversations/${chat.shortId}/turns/${appTurn.shortId}/actions/app-tool`, {
+            method: "POST",
+            headers: phone,
+            body: JSON.stringify({ type: "tool_result", result: { text: "From the phone" } }),
+          })
+        ).status,
+      ).toBe(200);
+      expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: appTurn.id, callId: "app-tool" })).toMatchObject(
+        {
+          status: "resolved",
+        },
+      );
+
+      const browserQueued = await enqueue(browserActor);
+      const appQueued = await enqueue(appActor);
+      expect((await edit(browserQueued, phone)).status).toBe(403);
+      expect((await listQueuedMessages(chat.id)).find((item) => item.id === browserQueued)?.content).toEqual([
+        { type: "text", text: "Queued" },
+      ]);
+      expect((await edit(browserQueued, web)).status).toBe(200);
+      expect((await edit(appQueued, phone)).status).toBe(200);
+
+      // Retrying and sending now follow the same rule, automation entries included. Removing adds no text, so it stays open.
+      const automationQueued = await enqueue(browserActor, "code-1");
+      for (const id of [browserQueued, automationQueued])
+        for (const action of ["retry", "send-now"] as const) {
+          const refused = await change(id, phone, action);
+          expect(refused.status).toBe(403);
+          expect(await refused.json()).toMatchObject({ code: "FORBIDDEN" });
+          expect(await status(id)).toEqual({ status: "pending", sending: false });
+        }
+      expect((await change(browserQueued, web, "retry")).status).toBe(200);
+      expect((await change(browserQueued, phone, "remove")).status).toBe(200);
+      expect((await change(automationQueued, phone, "remove")).status).toBe(200);
+      expect((await change(appQueued, phone, "remove")).status).toBe(200);
+      expect((await status(browserQueued))?.status).toBe("cancelled");
+      expect((await status(automationQueued))?.status).toBe("cancelled");
+      expect((await status(appQueued))?.status).toBe("cancelled");
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
 

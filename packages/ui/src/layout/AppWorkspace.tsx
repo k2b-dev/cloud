@@ -26,7 +26,7 @@ import { Button, ButtonLink, type ButtonSize, IconButton, IconButtonLink } from 
 import { Dropdown, type DropdownItem, type DropdownSearch } from "../actions/Dropdown";
 import { useFilterMessages } from "../actions/filter-messages";
 import { type DialogRender, dialogCore } from "../feedback/dialog-core";
-import { DialogHeader } from "../feedback/prompt-confirm";
+import { DialogHeader } from "../feedback/prompt-header";
 import { contentClass, panelClass } from "../feedback/prompt-sheet";
 import { Tooltip } from "../feedback/Tooltip";
 import { RenderErrorBoundary } from "../internal/render-error";

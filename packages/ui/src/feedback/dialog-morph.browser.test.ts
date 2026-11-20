@@ -185,8 +185,8 @@ describe(`${browserName} one dialog replaces another`, () => {
           }),
       );
       expect(widths.length).toBeGreaterThan(2);
-      // Exact, not rounded: WebKit reports a fractional width with float noise, and a rounded .5 flips.
-      expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(0.5);
+      // Pinned at its exact laid-out size, without a scrollbar of the frame narrowing it: one width in every frame.
+      expect(new Set(widths).size).toBe(1);
     } finally {
       await page.context().close();
     }
