@@ -353,6 +353,9 @@ suiteFor(
       ok: true,
       data: { data: { origin: { kind: "chat", id: source.shortId, turnId: submitted.turn.shortId } } },
     });
+    const [receipt] = await sql`SELECT source_conversation_id,source_turn_id FROM ai.chat_send_receipts
+      WHERE conversation_id=${chat.id}::uuid AND origin->>'kind'='chat' ORDER BY created_at DESC LIMIT 1`;
+    expect(receipt).toMatchObject({ source_conversation_id: source.id, source_turn_id: submitted.turn.id });
     await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
     const forwardedTurn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     expect(forwardedTurn).not.toBeNull();
