@@ -1,6 +1,7 @@
 import { createSignal, type JSX } from "solid-js";
 import type { TextInput } from "../inputs/TextInput";
 import { resolveUiMessages } from "../intl/messages";
+import { captureDialogOpen, type DialogCore } from "./dialog-core";
 import { DialogHeader, promptButtonVariant, promptTone } from "./prompt-header";
 import { resolvePromptMessages } from "./prompt-messages";
 import { openPrompt } from "./prompt-sheet";
@@ -13,7 +14,7 @@ export type PromptContent = string | HTMLElement | JSX.Element;
 
 const PHRASE_SLOT = "\u0000";
 
-export const openError = (content: string | HTMLElement, options?: DialogOptions, sheet?: boolean) =>
+export const openError = (content: string | HTMLElement, options?: DialogOptions, sheet?: boolean, open?: DialogCore["open"]) =>
   openPrompt(
     (close) => (
       <div class="k2b-dialog__panel">
@@ -29,17 +30,25 @@ export const openError = (content: string | HTMLElement, options?: DialogOptions
     { ...options, variant: "danger" },
     resolveUiMessages().error,
     sheet,
+    undefined,
+    open,
   );
 
 /**
  * The fields of a prompt did not load: the person sees why and asks again, which requests them again. The message
- * keeps the dialog in the middle, since the phone sheet loads on demand too.
+ * keeps the dialog in the middle, since the phone sheet loads on demand too. `open` is the one the prompt captured at
+ * its call, so after a navigation the message does not appear over the new page either.
  */
-export const promptFormUnavailable = async (signal?: AbortSignal): Promise<void> => {
-  if (!signal?.aborted) await openError(resolvePromptMessages().formUnavailable, { signal }, false);
+export const promptFormUnavailable = async (signal: AbortSignal | undefined, open: DialogCore["open"]): Promise<void> => {
+  if (!signal?.aborted) await openError(resolvePromptMessages().formUnavailable, { signal }, false, open);
 };
 
-const openConfirm = (content: PromptContent, options: ConfirmOptions | undefined, phraseInput?: typeof TextInput) => {
+const openConfirm = (
+  content: PromptContent,
+  options: ConfirmOptions | undefined,
+  phraseInput?: typeof TextInput,
+  open?: DialogCore["open"],
+) => {
   const confirmationPhrase = options?.confirmationPhrase;
   // A confirmation that asks for a phrase never opens without the field to type it.
   if (confirmationPhrase && !phraseInput) throw new Error("A confirmationPhrase needs its text field");
@@ -114,6 +123,7 @@ const openConfirm = (content: PromptContent, options: ConfirmOptions | undefined
     resolvePromptMessages().confirmation,
     true,
     confirmationPhrase ? () => confirmationInput ?? null : undefined,
+    open,
   );
 };
 
@@ -126,11 +136,13 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
   // The typed phrase uses the form's text field, which loads with the form prompts.
   const field = phraseField?.loaded();
   if (field) return openConfirm(content, options, field);
-  if (!phraseField) return promptFormUnavailable(options?.signal).then(() => false);
+  // The confirmation opens with the palette, page and opener of this call, not of the moment the field arrives.
+  const open = captureDialogOpen();
+  if (!phraseField) return promptFormUnavailable(options?.signal, open).then(() => false);
   return phraseField.load().then(
-    (input) => openConfirm(content, options, input),
+    (input) => openConfirm(content, options, input, open),
     async () => {
-      await promptFormUnavailable(options?.signal);
+      await promptFormUnavailable(options?.signal, open);
       return false;
     },
   );

@@ -3,7 +3,7 @@ import { join } from "path";
 import {
   createPingResponse,
   createReloadStream,
-  getAssetPrefix,
+  getAssetDirectory,
   getCacheHeaders,
   getReloadId,
   getSsrDir,
@@ -132,8 +132,8 @@ describe("toSsrPath()", () => {
 });
 
 describe("asset manifests", () => {
-  test("dev prefixes do not need island build output", () => {
-    expect(getAssetPrefix({ dev: true, rootDir: import.meta.dir, basePath: "", ssrPath: "/_ssr" })).toBe("");
+  test("development serves _ssr without a version or island build output", () => {
+    expect(getAssetDirectory({ dev: true, rootDir: import.meta.dir, basePath: "", ssrPath: "/_ssr" })).toBe(join(import.meta.dir, "_ssr"));
   });
 
   test("a process without island build output gets version 0", () => {

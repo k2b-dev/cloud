@@ -474,9 +474,16 @@ before repairing an original: its new generation cannot automatically merge it.
 | Draft attachments | `draft attachment add|remove|download`, `draft attachment upload list|cancel` |
 | Delivery | `send`, `scheduled list|cancel`, `command list|get|wait|cancel` |
 
-Drafts omit the original message by default. Pass `--quote` to `draft create`
-or `draft update` to append its readable source message after the signature;
-`--no-quote` removes that automatic history. `--quote` captures the CLI locale
+A reply quotes the message it answers by default, as in Mail itself:
+`mail reply` and `draft create --intent reply|reply_all --source-message <id>`
+append the readable source message after the signature, unless the body quotes
+on its own with a Markdown `>` line or an HTML blockquote. An original without
+text, or one you cannot read, adds nothing. Pass `--no-quote` to leave it out.
+Other drafts omit it; pass `--quote` to `draft create` to append it.
+`draft update` replaces all content: pass `--quote` again to keep the original,
+because an update without it removes the quote. The automatic quote uses the CLI
+locale and the local time zone; pass `--quote --quote-time-zone <zone>` to date
+it elsewhere. `--quote` captures the CLI locale
 and local IANA time zone; use `--quote-time-zone Europe/Berlin` to override the
 zone. The editable body stays unchanged. Draft JSON uses
 `quoteSource: { "locale": "de", "timeZone": "Europe/Berlin" }` (or `null` to

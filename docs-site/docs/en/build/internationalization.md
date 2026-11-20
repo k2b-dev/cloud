@@ -122,6 +122,36 @@ object, so `useLocale()` falls back to `document.documentElement.lang` in the
 browser. Cloud keeps that value equal to the SSR locale. No locale prop plumbing
 or browser provider is required.
 
+A production page loads the island build of its catalog language: `en` or `de`,
+picked from the request locale (`de-CH` loads `de`, `fr` loads `en`). In that
+build, every inline `i18n.define({ baseLocale: "en", messages: { ... } })`
+catalog keeps only the messages that `resolve()` returns for the build's
+language, including base-locale fallbacks for missing keys. The browser then
+downloads no other language, and server and browser render the same text.
+A catalog ships every language when its result could differ: `messages` or a
+language is not an inline object literal, a message is a spread, computed key,
+getter, or setter, a language is neither `en` nor `de`, or `baseLocale` is not
+`en`. Browser code that resolves a catalog in a language other than the page's
+gets the page's language, and so does a `LocaleProvider locale={…}` subtree
+with another locale. UI therefore renders in the reader's request locale, also
+for stored items that carry their own language, such as an approval card
+created in German and opened by an English reader: Cloud's words, formats, and
+`@k2b/ui` chrome follow the reader, and the stored text someone wrote stays as
+it is. Server output and the mounted island then match in every build.
+Notifications, email, and Cloud Login keep the language of the chat turn that
+asked. When browser code must compare text in several languages, such as a
+stored value written in any language, keep that small catalog whole in every
+build with the `@i18n-all-locales` comment:
+
+```ts
+export const presetDescriptionMessages = i18n.define(/* @i18n-all-locales */ {
+  baseLocale: "en",
+  messages: { en: { routine: "Routine mail" }, de: { routine: "Gewöhnliche E-Mail" } },
+});
+```
+
+Development builds keep every language.
+
 Generic `@k2b/ui` chrome such as input placeholders, pagination, menus, loading
 states, and accessibility labels follows the inherited locale. Explicit labels,
 empty text, and descriptions passed by an application are application-owned and

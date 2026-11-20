@@ -368,3 +368,16 @@ test("a sole-admin Code review carries the changes-access reason and notice in t
     (await appActionView({ ...code, soleAdmin: false }, { issuer: "https://cloud.example.test", appName: options.appName })).digest,
   );
 });
+
+test("a turn without a language keeps its German review's language on the device and in the digest", async () => {
+  const input = { ...row, details: mailReview("de"), runConfig: null };
+  const card = pendingApprovalCard(input, options.appName);
+  expect(card.locale).toBe("de");
+  // Cloud's own words follow the review's language, not English.
+  expect(card.reason.text).toBe("Ich frage, weil das Cloud verlässt.");
+  const view = await appActionView(input, options);
+  expect(view.message).toBe(card.reason.text);
+  // The same German view as a turn that records German, so the signed digest is the same.
+  const recorded = await appActionView({ ...input, runConfig: { kind: "chat" as const, input: "Senden", locale: "de" } }, options);
+  expect(view.digest).toBe(recorded.digest);
+});

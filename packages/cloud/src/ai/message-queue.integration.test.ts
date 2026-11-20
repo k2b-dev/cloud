@@ -8,9 +8,11 @@ import {
   editQueuedMessage,
   enqueueChatMessage,
   listQueuedMessages,
+  mayChangeQueuedMessage,
   migrateAiMessageQueue,
   updateQueuedMessage,
 } from "./message-queue";
+import { userResourceContext } from "./projects.test-fixture";
 import { aiQuoteModelText } from "./quote-markers";
 import { aiConversations } from "./store";
 import type { AiConversationService, AiDraftContentPart } from "./types";
@@ -116,7 +118,14 @@ integration(
       expect(await updateQueuedMessage(chat.id, first, "retry")).toBe(false);
       await sql`UPDATE ai.files SET bytes=${new TextEncoder().encode("original")},size=8,version=${file.version} WHERE conversation_id=${chat.id}::uuid AND path=${file.path}`;
       const third = await enqueue("Cancel me");
-      expect(await editQueuedMessage(chat.id, third, "Edited in queue", { signedInSession: true, authorUserId: user!.id })).toBe(true);
+      const { actor: writer } = userResourceContext({ type: "user", userId: user!.id });
+      if (writer.kind !== "user") throw new Error("fixture actor must be a user");
+      const phone = { ...writer, sessionKind: "app" as const };
+      // The fixture stores no actor: the phone app may not change it, and other callers keep their access.
+      expect(await editQueuedMessage(chat.id, third, "From the phone", { signedInSession: true, author: phone })).toBe("forbidden");
+      expect(await mayChangeQueuedMessage(chat.id, third, phone)).toBe(false);
+      expect(await mayChangeQueuedMessage(chat.id, third, writer)).toBe(true);
+      expect(await editQueuedMessage(chat.id, third, "Edited in queue", { signedInSession: true, author: writer })).toBe("edited");
       expect((await listQueuedMessages(chat.id))[0]?.content).toEqual([{ type: "text", text: "Edited in queue" }]);
       const restricted = async (id: string) =>
         (
@@ -125,10 +134,14 @@ integration(
         )[0]?.restricted;
       // A session's edit keeps the message unrestricted; an edit from cld is accepted and restricts it.
       expect(await restricted(third)).toBe(false);
-      expect(await editQueuedMessage(chat.id, third, "Edited from the terminal", { signedInSession: false, authorUserId: user!.id })).toBe(
-        true,
+      expect(await editQueuedMessage(chat.id, third, "Edited from the terminal", { signedInSession: false, author: writer })).toBe(
+        "edited",
       );
       expect(await restricted(third)).toBe(true);
+      // An entry queued in the app stays changeable there.
+      await sql`UPDATE ai.queued_messages SET submission=jsonb_set(submission,'{runConfig,actor}',(${JSON.stringify(phone)}::text)::jsonb) WHERE id=${third}::uuid`;
+      expect(await mayChangeQueuedMessage(chat.id, third, phone)).toBe(true);
+      expect(await editQueuedMessage(chat.id, third, "Edited in the app", { signedInSession: true, author: phone })).toBe("edited");
       expect(await updateQueuedMessage(chat.id, third, "cancel")).toBe(true);
       expect(await listQueuedMessages(chat.id)).toEqual([]);
       await sql`UPDATE ai.turns SET status='completed',completed_at=now() WHERE id=${jobs[1]!.turnId}::uuid`;
@@ -174,6 +187,8 @@ integration(
       ],
     };
     const id = crypto.randomUUID();
+    const { actor: author } = userResourceContext({ type: "user", userId: user!.id });
+    if (author.kind !== "user") throw new Error("fixture actor must be a user");
     try {
       const input: Parameters<AiConversationService["submitChatTurn"]>[0] = {
         conversationId: chat.id,
@@ -191,11 +206,11 @@ integration(
         expectedProjectId: null,
       };
       await enqueueChatMessage(id, input, content);
-      await expect(editQueuedMessage(chat.id, id, "Etwas mehr Text", { signedInSession: true, authorUserId: user!.id })).rejects.toThrow(
+      await expect(editQueuedMessage(chat.id, id, "Etwas mehr Text", { signedInSession: true, author })).rejects.toThrow(
         AiQueuedMessageTooLarge,
       );
       // An edit from a source without a signed-in session restricts the turn; the checked quotes stay as they were.
-      expect(await editQueuedMessage(chat.id, id, "Morgen?", { signedInSession: false, authorUserId: user!.id })).toBe(true);
+      expect(await editQueuedMessage(chat.id, id, "Morgen?", { signedInSession: false, author })).toBe("edited");
       const [row] = await sql<
         { submission: { userMessage: { content: { text: string }[] }; runConfig: { quotes: unknown; sourceRestricted?: boolean } } }[]
       >`SELECT submission FROM ai.queued_messages WHERE id = ${id}::uuid`;

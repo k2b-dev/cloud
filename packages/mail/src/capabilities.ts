@@ -21,7 +21,8 @@ import {
 } from "@k2b/cloud/contracts";
 import { AppEventEnvelopeSchema } from "@k2b/cloud/events";
 import { coreSettings, logger } from "@k2b/cloud/services";
-import { principalLabel } from "@k2b/cloud/shared";
+import { get as settingsGet } from "@k2b/cloud/services/settings";
+import { normalizeTimeZone, principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
@@ -52,7 +53,9 @@ import {
   sendReceipt,
 } from "./capability-reviews";
 import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
+import { defaultReplyQuoteSource } from "./compose-quotation";
 import {
+  type DraftEditableContent,
   MAX_DRAFT_ATTACHMENT_BYTES,
   type Mailbox,
   type MailDraft,
@@ -105,6 +108,26 @@ import { isTerminalHydrationFailure } from "./service/message-hydration";
 import { waitForMessageHydration } from "./service/message-readiness";
 import type { ConversationSummary, MessageSummary } from "./service/messages";
 import { sendContentChanged } from "./service/send-content";
+
+/**
+ * A reply draft from Gustav or the API quotes the message it answers unless the caller chooses (null leaves it out), as
+ * the composer does. Capabilities know no person's time zone, so the quote's date uses the installation's time zone
+ * (UTC without one) unless the caller passes its own.
+ */
+const replyQuoteSource = async (
+  input: Pick<z.output<typeof c.DraftCreateInputSchema>, "quoteSource" | "intent" | "sourceMessageId" | "conversationId" | "body">,
+  context: CapabilityExecutionContext,
+) => {
+  const chosen = defaultReplyQuoteSource({
+    quoteSource: input.quoteSource,
+    intent: input.intent,
+    sourceMessageId: input.sourceMessageId ?? input.conversationId,
+    body: input.body,
+    quote: () => ({ locale: context.locale, timeZone: "UTC" }),
+  });
+  if (!chosen || input.quoteSource !== undefined) return chosen;
+  return { ...chosen, timeZone: normalizeTimeZone(String((await settingsGet<string>("app.timezone")) || "").trim(), "UTC") };
+};
 
 const requestContext = (context: CapabilityExecutionContext): MailRequestContext => ({
   actor: context.actor,
@@ -605,6 +628,20 @@ type DraftPublicIds = {
   senderIdentities: Map<string, string>;
   draftAttachments: Map<string, string>;
   composeTemplates: Map<string, string>;
+};
+
+/**
+ * A reply without its own recipients or subject takes them from the source message, exactly as the reply action in
+ * Mail does (the seed derives them). Explicit recipients or an explicit subject win; other intents keep the input.
+ */
+const withSeededReply = (
+  input: Pick<z.output<typeof c.DraftCreateInputSchema>, "intent" | "to" | "cc" | "bcc" | "subject">,
+  seed: Pick<DraftEditableContent, "to" | "cc" | "bcc" | "subject">,
+) => {
+  const own = { to: input.to, cc: input.cc, bcc: input.bcc, subject: input.subject };
+  if (input.intent !== "reply" && input.intent !== "reply_all") return own;
+  const noRecipients = input.to.length === 0 && input.cc.length === 0 && input.bcc.length === 0;
+  return { ...(noRecipients ? { to: seed.to, cc: seed.cc, bcc: seed.bcc } : own), subject: input.subject || seed.subject };
 };
 
 const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
@@ -3257,6 +3294,7 @@ const actionDefinitions = {
       if (!conversation.ok) return conversation;
       if (!sourceMessage.ok) return sourceMessage;
       if (!signature.ok) return signature;
+      const quoteSource = await replyQuoteSource(input, context);
       // This is the same read-only origin preparation used when materializing the draft.
       const seed = await drafts.prepareDraftSeed({
         context: requestContext(context),
@@ -3279,11 +3317,12 @@ const actionDefinitions = {
             conversationId: conversation.data?.conversationId ?? null,
             sourceMessageId: sourceMessage.data,
             signatureTemplateId: signature.data,
-            quoteSource: input.quoteSource,
+            quoteSource: quoteSource,
           },
         },
       });
       if (!seed.ok) return seed;
+      const reply = withSeededReply(input, seed.data.content);
       const attachments = seed.data.attachments.map(({ filename, byteLength, contentHash }) => ({ filename, byteLength, contentHash }));
       // Materialization uploads inline attachments after copied originals and skips exact duplicates.
       for (const attachment of input.attachments) {
@@ -3293,11 +3332,11 @@ const actionDefinitions = {
           attachments.push({ filename: attachment.filename, byteLength: bytes.byteLength, contentHash });
         }
       }
-      const proposed = { ...input, attachments };
+      const proposed = { ...input, ...reply, attachments };
       return ok(
         mailActionReviews["draft.create"](
           context.locale,
-          { draft: draftSlot(undefined, input.subject, context.locale) },
+          { draft: draftSlot(undefined, reply.subject, context.locale) },
           {
             ...(await draftAudienceOptions(scope.data.id, mailboxId, context)),
             view: draftPreview(proposed, context.locale),
@@ -3332,7 +3371,7 @@ const actionDefinitions = {
       const draftContent = {
         senderIdentityId: senderIdentity.data,
         signatureTemplateId: signature.data,
-        quoteSource: input.quoteSource,
+        quoteSource: await replyQuoteSource(input, context),
         to: input.to,
         cc: input.cc,
         bcc: input.bcc,
@@ -3353,10 +3392,19 @@ const actionDefinitions = {
           includeSourceAttachments: input.includeSourceAttachments,
         },
       };
+      const seed =
+        input.intent === "reply" || input.intent === "reply_all"
+          ? await drafts.prepareDraftSeed({ context: requestContext(context), mailboxId: scope.data.id, origin })
+          : null;
+      if (seed && !seed.ok) return seed;
       let result = await drafts.materializeDraftSeed({
         context: requestContext(context),
         mailboxId: scope.data.id,
-        input: { idempotencyKey: stableUuid(key.data), origin, draft: draftContent },
+        input: {
+          idempotencyKey: stableUuid(key.data),
+          origin,
+          draft: { ...draftContent, ...(seed ? withSeededReply(input, seed.data.content) : {}) },
+        },
         rejectOccupiedContent: drafts.hasDraftCreationContent(input),
       });
       if (!result.ok) return result;

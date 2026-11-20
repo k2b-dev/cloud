@@ -164,6 +164,7 @@
       "name": "@k2b/cloud",
       "version": "0.74.1",
       "dependencies": {
+        "@babel/parser": "8.1.0",
         "@codemirror/state": "6.7.6",
         "@firecrawl/anydoc": "0.2.4",
         "@k2b/editor": "0.12.2",

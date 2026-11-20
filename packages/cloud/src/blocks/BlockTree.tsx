@@ -32,6 +32,7 @@ import {
 import { CloudChartBlock } from "#chat-charts";
 import { importOnDemand } from "../browser/reload";
 import { type DescriptionObject, descriptionObject, descriptionTable } from "../descriptions/description-table";
+import { formatDescriptionChange, formatDescriptionNumber } from "../descriptions/format";
 import { BlockActions, useBlockFrame } from "./block-actions";
 import { blockFileName, figuresCopy, saveBlob, tableCopy, tableCsv, wholeTable } from "./block-copy";
 import { BLOCK_PANEL_HEIGHTS, blockChartHeight, blockDescription, blockJson } from "./description";
@@ -142,7 +143,21 @@ function useChoiceModel(blocks: () => readonly Block[], choice: () => BlockChoic
 
 function DetailBlock(props: { block: Leaf<"Detail">; host: Host; locale: string }) {
   const words = () => blockWords(props.locale);
-  const value = (value: unknown) => (typeof value === "boolean" ? (value ? words().yes : words().no) : text(value));
+  type Row = Leaf<"Detail">["items"][number];
+  // A number with a format reads as key figures and tables show it; without one it stays as the app wrote it.
+  const value = (value: unknown, format: Row["format"]) =>
+    typeof value === "boolean"
+      ? value
+        ? words().yes
+        : words().no
+      : typeof value === "number" && format
+        ? formatDescriptionNumber(value, format, props.locale)
+        : text(value);
+  // A changed number reads in one format; when both sides would read alike, both show more digits.
+  const shown = (row: Row): [string, string] =>
+    typeof row.before === "number" && typeof row.value === "number" && row.format
+      ? formatDescriptionChange(row.before, row.value, row.format, props.locale)
+      : [value(row.before, row.format), value(row.value, row.format)];
   const list = () => (
     <DescriptionList
       layout="rows"
@@ -156,10 +171,10 @@ function DetailBlock(props: { block: Leaf<"Detail">; host: Host; locale: string 
             <span class="cloud-blocks__value">
               <Show when={row.before !== undefined && row.before !== null}>
                 <span class="k2b-sr-only">{words().before}:</span>
-                <s class="cloud-blocks__before">{value(row.before)}</s>
+                <s class="cloud-blocks__before">{shown(row)[0]}</s>
                 <i class="ti ti-arrow-right" aria-hidden="true" />
               </Show>
-              <strong>{value(row.value)}</strong>
+              <strong>{shown(row)[1]}</strong>
             </span>
           ),
       }))}

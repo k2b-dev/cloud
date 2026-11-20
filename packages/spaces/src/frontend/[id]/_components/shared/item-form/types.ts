@@ -1,5 +1,13 @@
 import type { DateContext } from "@k2b/stdlib";
-import type { Recurrence, SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceItemTemplate, SpaceTag } from "@/contracts";
+import type {
+  EstimateSuggestionResult,
+  Recurrence,
+  SpaceColumn,
+  SpaceItem,
+  SpaceItemResourceReferenceInput,
+  SpaceItemTemplate,
+  SpaceTag,
+} from "@/contracts";
 
 export type Priority = "low" | "medium" | "high" | "urgent";
 export type ItemType = "task" | "event";
@@ -47,4 +55,6 @@ export type ItemFormProps = {
   title?: string;
   icon?: string;
   dateConfig?: DateContext;
+  /** Edit only: asks the assistant for the task's estimate once the form opens, and offers it in the estimate field. */
+  loadEstimateSuggestion?: (signal: AbortSignal) => Promise<EstimateSuggestionResult>;
 };

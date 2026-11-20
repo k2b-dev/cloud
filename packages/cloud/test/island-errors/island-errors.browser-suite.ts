@@ -44,10 +44,17 @@ beforeAll(async () => {
   const css = await Bun.build({ entrypoints: [resolve(appRoot, "../../src/styles/global.css")], plugins: [tailwind] });
   if (!css.success) throw new AggregateError(css.logs, "Could not compile the global stylesheet.");
   const globalCss = await css.outputs[0]!.text();
+  // A page loads the build of its request language: German pages `_ssr/de/`, every other one the default build.
+  // Outside a packed server the page finds no manifest beside `Bun.main`, so its asset URL carries no build version
+  // to tell them apart; the request language does, as it does for the page itself.
+  const { variants } = (await Bun.file(join(outdir, "_ssr", "manifest.json")).json()) as { variants?: Record<string, unknown> };
+  if (!variants?.de) throw new Error("Expected a German island build");
+  const buildDirectory = (language: string | undefined) =>
+    language?.toLowerCase().startsWith("de") ? join(outdir, "_ssr", "de") : join(outdir, "_ssr");
 
   const routesApp = new Hono()
     // The page asks for `/_ssr/<build version>/<id>.js`; its chunks sit next to it.
-    .get("/_ssr/*", (c) => new Response(Bun.file(join(outdir, "_ssr", basename(c.req.path)))))
+    .get("/_ssr/*", (c) => new Response(Bun.file(join(buildDirectory(c.req.header("accept-language")), basename(c.req.path)))))
     .get("/public/global.css", (c) => c.body(globalCss, 200, { "content-type": "text/css" }))
     .get("/public/tabler-icons.css", () => new Response(Bun.file(join(ui, "tabler.css"))))
     .get("/public/:file{tabler-icons-.+\\.woff2}", (c) => new Response(Bun.file(join(ui, c.req.param("file")))))

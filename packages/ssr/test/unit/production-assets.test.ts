@@ -232,7 +232,7 @@ test("production manifests are required, validated, and memoized only after a su
       import { Hono } from "hono";
       import { ssr } from "solid-js/web";
       import { createConfig } from ${JSON.stringify(join(core, "index.ts"))};
-      import { readAssetManifest, getAssetPrefix } from ${JSON.stringify(join(core, "adapter/utils.ts"))};
+      import { readAssetManifest, getAssetDirectory } from ${JSON.stringify(join(core, "adapter/utils.ts"))};
       import { routes as honoRoutes } from ${JSON.stringify(join(core, "adapter/hono.ts"))};
       import { routes as bunRoutes } from ${JSON.stringify(join(core, "adapter/bun.ts"))};
       import { routes as elysiaRoutes } from ${JSON.stringify(join(core, "adapter/elysia.ts"))};
@@ -245,7 +245,7 @@ test("production manifests are required, validated, and memoized only after a su
       });
       const bun = bunRoutes(config);
       const elysia = elysiaRoutes(config);
-      assert.equal(getAssetPrefix(config), "/0");
+      assert.equal(readAssetManifest(config).version, "0");
       mkdirSync(directory);
       writeFileSync(join(directory, "entry.js"), "export const answer = 42;");
       const missing = "[ssr] Missing " + path;
@@ -261,7 +261,7 @@ test("production manifests are required, validated, and memoized only after a su
         assert.throws(() => readAssetManifest(config), error => error.message.startsWith("[ssr] Invalid " + path));
       }
       const dev = createConfig({ dev: true, rootDir: import.meta.dir });
-      assert.equal(getAssetPrefix(dev.config), "");
+      assert.equal(getAssetDirectory(dev.config), join(import.meta.dir, "_ssr"));
       assert.ok(!(await (await dev.html(() => ssr('<solid-island data-id="0123456789ab"></solid-island>'))).text()).includes("modulepreload"));
       const valid = { version: "0123456789abcdef", entries: { id: ["entry.js"] } };
       writeFileSync(path, JSON.stringify(valid));

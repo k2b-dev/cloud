@@ -3,7 +3,7 @@
  * Serves island chunks from _ssr and dev tools endpoints.
  */
 import type { SsrConfig } from "../index";
-import { createAssetResponse, createPingResponse, createReloadResponse, getAssetPrefix, getSsrDir, notFound } from "./utils";
+import { createAssetResponse, createPingResponse, createReloadResponse, getAssetDirectory, getSsrDir, notFound } from "./utils";
 
 type RouteHandler = (req: Request) => Response | Promise<Response>;
 type Routes = Record<string, RouteHandler>;
@@ -40,7 +40,8 @@ export const routes = (config: SsrConfig): Routes => {
   // The route key cannot name the version: the manifest is read per request.
   const serveVersionedAsset: RouteHandler = (req) => {
     const [version, filename = ""] = new URL(req.url).pathname.slice(ssrPath.length + 1).split("/");
-    return `/${version}` === getAssetPrefix(config) ? createAssetResponse(req, ssrDir, filename, dev) : notFound();
+    const directory = getAssetDirectory(config, version);
+    return directory ? createAssetResponse(req, directory, filename, dev) : notFound();
   };
 
   return dev

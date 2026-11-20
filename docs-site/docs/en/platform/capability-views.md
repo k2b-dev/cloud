@@ -103,7 +103,7 @@ New and changed blocks:
 | `Text` | `text`, `format?: "markdown"`: Markdown draws through Cloud's safe renderer (no raw HTML, no remote images); terminals and the model read the source |
 | `Cards` | `title`, `items`, `card: { id, title, subtitle?, image?, imageAlt?, badges?, facts?, rating?, price?, href? }`, `choose?` (the `id` of the tree's `Choice`), `empty?`, `width?` |
 | `Image` | `src`, `alt`, `ratio?`, `caption?` |
-| `Detail` | Each item may add `before` (the old value, shown struck through) and `type: "status"` with `states` as in `Table` |
+| `Detail` | Each item may add `before` (the old value, shown struck through), `type: "status"` with `states` as in `Table`, and a number `format` as in `Stats`, which formats `value` and `before`; `unit: "B"` reads as a size (`2.4 MB`, `-1.2 GB`, `0.5 B`; `decimals` fixes its digits). When `before` and `value` differ but would read alike, both show more digits. A number without `format` shows as given. Terminals and MCP read the same text |
 | `Table` | Outside Code pages a column names a `path` instead of a `key`; optional `rowId` and `rowHref` |
 | `Choice` | `id`, `title`, `description?`, `mode: "one" \| "many"`, `options`, `option: { id, title, subtitle? }`, `submit`, `then?` |
 | `Draft` | `context?` (read-only rows, text or people) and `fields` (`text`, `textarea`, or `select` from the Code page form fields) |

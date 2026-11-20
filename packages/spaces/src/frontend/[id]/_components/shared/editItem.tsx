@@ -1,7 +1,13 @@
 import type { DateContext } from "@k2b/stdlib";
 import { dialogCore, panelDialogOptions } from "@k2b/ui";
 import { apiClient } from "@/api/client";
-import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import {
+  type EstimateSuggestionResult,
+  EstimateSuggestionResultSchema,
+  type SpaceColumn,
+  type SpaceItem,
+  type SpaceTag,
+} from "@/contracts";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages } from "../../messages";
 import { type ClaimFields, resolveAssigneeClaim } from "./claim/claim";
@@ -15,6 +21,8 @@ type EditItemParams = {
   dateConfig?: DateContext;
   /** The signed-in person, who may remove the person working on the task; see `resolveAssigneeClaim`. */
   currentUserId: string;
+  /** Offers the assistant's estimate in the form; only for tasks of people who may use the assistant. */
+  estimateSuggestion?: boolean;
 };
 
 /** Creates one item in the given Space; a refusal throws the server's reason, or `failure` when it gives none. */
@@ -32,6 +40,16 @@ export const createSpaceItem = async (spaceId: string, data: ItemFormData, failu
   });
   if (!res.ok) throw new Error(await readResponseError(res, failure));
   return res.json();
+};
+
+/** The assistant's estimate for a task; the server checks write access and charges the person's allowance once per task text. */
+export const loadEstimateSuggestion = async (spaceId: string, itemId: string, signal: AbortSignal): Promise<EstimateSuggestionResult> => {
+  const res = await apiClient[":id"].items[":itemId"]["estimate-suggestion"].$post(
+    { param: { id: spaceId, itemId } },
+    { init: { signal } },
+  );
+  if (!res.ok) throw new Error(`Estimate suggestion failed with ${res.status}`);
+  return EstimateSuggestionResultSchema.parse(await res.json());
 };
 
 export const saveItemFormData = async (params: {
@@ -90,6 +108,9 @@ export const openEditItemDialog = async (params: EditItemParams): Promise<ItemFo
           title={t.editItem}
           icon="ti ti-edit"
           dateConfig={params.dateConfig}
+          loadEstimateSuggestion={
+            params.estimateSuggestion ? (signal) => loadEstimateSuggestion(params.spaceId, params.item.id, signal) : undefined
+          }
         />
       ),
       panelDialogOptions,

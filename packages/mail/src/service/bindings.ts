@@ -548,7 +548,9 @@ export const projectJmapFolders = async (
     ) AS ready
   `;
   if (!schema?.ready) throw new Error("JMAP folder projection: folder identity migration is not ready");
-  // The resource serializes identity creation; the caller owns the encompassing commit.
+  // The resource serializes identity creation; the caller owns the encompassing commit. The binding
+  // only has to keep its state: a stronger lock would block writers that hold the mailbox and
+  // reference this binding, such as a new command, while this commit still waits for the mailbox.
   const [scope] = await tx<{ id: string }[]>`
     SELECT resource.id FROM mail.remote_resources resource
     JOIN mail.provider_bindings binding ON binding.remote_resource_id = resource.id
@@ -557,7 +559,7 @@ export const projectJmapFolders = async (
       AND resource.connector_kind = 'jmap' AND connection.connector_kind = 'jmap'
       AND resource.scope_fingerprint = ${fingerprint} AND binding.verified_scope_fingerprint = ${fingerprint}
       AND binding.state = 'active'
-    FOR UPDATE OF resource, binding
+    FOR UPDATE OF resource FOR NO KEY UPDATE OF binding
   `;
   if (!scope) throw new Error("JMAP folder projection: binding or account identity differs");
   const existing = await tx<{ id: string; stable_key: string; parent_id: string | null; remote_folder_id: string | null }[]>`
