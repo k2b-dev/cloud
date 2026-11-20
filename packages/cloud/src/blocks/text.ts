@@ -1,4 +1,5 @@
 import { chartTable } from "@k2b/editor/charts";
+import { formatDescriptionChange, formatDescriptionNumber } from "../descriptions/format";
 import { blockDataAtPath } from "./path";
 import type { Block } from "./schema";
 
@@ -49,23 +50,30 @@ export function blocksText(blocks: readonly Block[], options: TextOptions = {}):
       case "Button":
         return `${node.label}: ${node.action}`;
       case "Stats":
+        // Key figures read as on screen: one shared formatter for every number.
         return node.items
           .map(
             (item) =>
-              `${item.label}: ${format(item.value, item.format)}${item.delta ? ` (${format(item.delta.value, item.delta.unit === "points" ? undefined : { style: "percent" })}${item.delta.unit === "points" ? " pp" : ""})` : ""}`,
+              `${item.label}: ${typeof item.value === "number" ? formatDescriptionNumber(item.value, item.format, locale) : plain(item.value)}${item.delta ? ` (${format(item.delta.value, item.delta.unit === "points" ? undefined : { style: "percent" })}${item.delta.unit === "points" ? " pp" : ""})` : ""}`,
           )
           .join("\n");
       case "Detail":
         return [
           node.title,
           ...node.items.map((item) => {
-            const value =
-              item.type === "status" ? (item.states?.[plain(item.value)]?.label ?? plain(item.value)) : format(item.value, item.format);
-            const before =
-              item.before === undefined
-                ? ""
-                : `${item.type === "status" ? (item.states?.[plain(item.before)]?.label ?? plain(item.before)) : format(item.before, item.format)} → `;
-            return `${item.label}: ${before}${value}`;
+            // As on screen: a number with a format reads like a key figure, one without stays as written, and a
+            // change whose sides would read alike shows both with more digits.
+            const shown = (value: unknown) =>
+              item.type === "status"
+                ? (item.states?.[plain(value)]?.label ?? plain(value))
+                : typeof value === "number" && item.format
+                  ? formatDescriptionNumber(value, item.format, locale)
+                  : plain(value);
+            const [before, value] =
+              typeof item.before === "number" && typeof item.value === "number" && item.format && item.type !== "status"
+                ? formatDescriptionChange(item.before, item.value, item.format, locale)
+                : [shown(item.before), shown(item.value)];
+            return `${item.label}: ${item.before === undefined || item.before === null ? "" : `${before} → `}${value}`;
           }),
         ].join("\n");
       case "Table":

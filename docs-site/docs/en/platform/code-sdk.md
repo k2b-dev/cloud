@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-19
+updated: 2026-11-20
 ---
 
 # Code SDK
@@ -397,7 +397,7 @@ belong to those views; forms and buttons belong to Code pages.
 | `Table` | `title`, `rows` of scalar values, optional `subtitle`, `search`, `empty` text and `width` | 1–20 `Column` |
 | `Column` | `key` (the row field), `label`, optional `type`, `format`, `states`, `priority` | none |
 | `Detail` | `title`, optional `width` and `height` | up to 100 `Item` |
-| `Item` | `label`, `value`, optional number `format` | none |
+| `Item` | `label`, `value`, optional number `format` (formats like `Stat`) | none |
 | `Form` | `title`, `action`, `submit`, optional `width`; always POST | 1–40 `Field.*` |
 | `Field.Text`, `Field.Email`, `Field.Textarea`, `Field.Scan` | `name`, `label`, optional text `value`, `required`, `error` | none |
 | `Field.Number` | as above, number `value` | none |
@@ -441,7 +441,8 @@ the whole row.
 
 `Stats` shows up to six key figures in one row. A `Stat` has a `label` and a
 `value` (number, text or `null` for not counted), and optionally a `format`
-(the chart number format: `style`, `currency`, `unit`, `decimals`, `compact`),
+(the chart number format: `style`, `currency`, `unit`, `decimals`, `compact`;
+`unit: "B"` reads as a size, `2.4 MB`),
 a `delta` with the change since the comparison (`value` is a share,
 `0.082` for 8.2 %; with `unit: "points"` it is percentage points), its
 `better` direction (`up` or `down`, which colours the change), a `compare`

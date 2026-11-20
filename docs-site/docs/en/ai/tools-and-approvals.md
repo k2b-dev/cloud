@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-11-05
+updated: 2026-11-20
 ---
 
 # Tools and approvals
@@ -232,6 +232,8 @@ Axes accept `label`, `domain: [min, max]`, `ticks` (2..12), `scale: "linear" |
 "currency", currency?, unit?, decimals?, compact?}`. Currency requires an
 uppercase three-letter code exactly when style is currency; percent takes
 fractions, decimals is 0..10, and unit is a suffix of at most 12 characters.
+Charts append it as written, also `B`; only `Stats` and `Detail` blocks of a
+view read `unit: "B"` as a size.
 A currency without decimals shows cents only when a value of the chart has
 them.
 Date x axes take `{date: "day" | "minute" | "second"}`. Bar charts label every
