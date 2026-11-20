@@ -167,6 +167,17 @@ interruption signals execute no SQL; the integration budget is pinned with
 `AiMessageOrigin`, `AiQueuedMessage`, `AiSendQueuedMessageResult`, and
 `AiQueueLiveEvent`.
 
+Queued text, steering, and client tool results run as the person and session
+that started the turn or queued the entry. A session of the Cloud app may
+therefore edit only entries queued in the app, and steer or answer tool requests
+only in turns started there; others answer `403` with code `FORBIDDEN`. A browser
+session, `cld`, and other clients keep their access.
+
+The Cloud app can send Assistant messages to another chat only from app-started
+turns. An Assistant message sent from an app-started turn to another chat keeps the
+app session's restrictions in the target turn, including when delivery waits
+for that chat to become idle. It never gains the installation `admin` role.
+
 ## Observe work across conversations
 
 Sidebar snapshots include a compact `activity` projection: completed and total

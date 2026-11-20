@@ -1,7 +1,10 @@
 import { beforeAll, expect, test } from "bun:test";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
+import type { RequestActor } from "../server";
+import { accounts } from "../services/accounts";
 import { aiCapabilityId } from "./capabilities";
+import { resolveAiCapabilityActor } from "./capability-execution";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 import { aiToolAudit } from "./tool-audit";
@@ -19,6 +22,56 @@ const insertUser = async (label: string) => {
 databaseSuite()("AI conversation resources and inter-chat messages (integration)", () => {
   beforeAll(async () => {
     await migrateCloudAi();
+  });
+  test.each(["app", "web"] as const)("keeps %s authority when delivering a pending inter-chat message", async (sessionKind) => {
+    const userId = await insertUser(`authority-${sessionKind}`);
+    const user = await accounts.users.get({ id: userId });
+    if (!user) throw new Error("Missing test user");
+    const currentActor: Extract<RequestActor, { kind: "user" }> = { kind: "user", user: { ...user, roles: ["user", "admin"] } };
+    const sourceActor: RequestActor = sessionKind === "app" ? { kind: "user", user, sessionKind: "app" } : { kind: "user", user };
+    const source = await aiConversations.createConversation({ ownerUserId: userId, title: "Source" });
+    const target = await aiConversations.createConversation({ ownerUserId: userId, title: "Browser target" });
+    try {
+      const { turn: sourceTurn } = await aiConversations.submitChatTurn({
+        conversationId: source.id,
+        modelId: "test-model",
+        runConfig: { kind: "chat", input: "Message the other chat.", actor: sourceActor, toolSource: { kind: "default", appTools: true } },
+        userMessage: { role: "user", content: [{ type: "text", text: "Message the other chat." }] },
+      });
+      const created = await aiConversations.createInterChatMessage({
+        sourceConversationId: source.id,
+        sourceTurnId: sourceTurn.id,
+        sourceCallId: "call-authority",
+        targetChatId: target.shortId,
+        actorUserId: userId,
+        text: "Please continue this task.",
+        idempotencyKey: `ai-inter-chat-authority-${userId}`,
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) throw new Error("Message was not queued");
+      // Delivery can happen after a restart and rebuilds the current full-role user in Core.
+      const delivered = await aiConversations.deliverInterChatMessage({
+        messageId: created.message.id,
+        modelId: "test-model",
+        runConfig: { kind: "chat", input: created.message.text, actor: currentActor, toolSource: { kind: "default", appTools: true } },
+        userMessage: { role: "user", content: [{ type: "text", text: created.message.text }] },
+      });
+      expect(delivered.delivered).toBe(true);
+      if (!delivered.delivered) throw new Error("Message was not delivered");
+      const config = await aiConversations.getTurnRunConfig({ conversationId: target.id, turnId: delivered.turn.id });
+      expect(config?.actor).toEqual(sessionKind === "app" ? sourceActor : currentActor);
+      const authority = await resolveAiCapabilityActor({
+        conversationId: target.id,
+        persistedActor: config?.actor,
+        store: aiConversations,
+        getUser: async () => currentActor.user,
+      });
+      expect(authority.actor.sessionKind).toBe(sessionKind === "app" ? "app" : undefined);
+      expect(authority.actor.user.roles).toEqual(sessionKind === "app" ? ["user"] : ["user", "admin"]);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id IN (${source.id}::uuid, ${target.id}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
   });
   test("indexes structured refs and searches their owned chat occurrences", async () => {
     const userId = await insertUser("resources");

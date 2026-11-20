@@ -1911,6 +1911,10 @@ export const aiCapabilities = defineCapabilities({
           toolName: CHAT_MESSAGE_TOOL_NAME,
         });
         if (!origin) return fail(err.forbidden("Inter-chat messages require an AI conversation turn"));
+        if (isAppSessionActor(context.actor)) {
+          const source = await aiConversations.getTurnRunConfig({ conversationId: origin.conversationId, turnId: origin.turnId });
+          if (!isAppSessionActor(source?.actor)) return fail(err.forbidden("App-session messages require a turn started in the app"));
+        }
         const created = await aiConversations.createInterChatMessage({
           sourceConversationId: origin.conversationId,
           sourceTurnId: origin.turnId,

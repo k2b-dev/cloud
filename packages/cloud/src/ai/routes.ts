@@ -39,7 +39,7 @@ import { type AiStoredActionReview, isLegacyActionReview, isUnknownActionOutcome
 import { assistantAiSettingsState, peopleAiModels, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
-import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
+import { AI_TURN_WRITE_FORBIDDEN, checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
 import { aiChatTasks } from "./chat-tasks";
@@ -1045,9 +1045,9 @@ export const aiRoutes = (() => {
           const conversation = await loadConversation(c, ctx);
           if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
           if (ctx.actor.kind !== "user") return respond(c, fail(err.forbidden("Only the author may edit a queued message.")));
-          return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text, ctx.actor.user.id))
-            ? respond(c, ok({ ok: true }))
-            : notFound(c);
+          const edited = await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text, ctx.actor);
+          if (edited === "forbidden") return respond(c, fail(err.forbidden(AI_TURN_WRITE_FORBIDDEN)));
+          return edited === "edited" ? respond(c, ok({ ok: true })) : notFound(c);
         },
       )
       .delete("/conversations/:conversationId/queue/:messageId", async (c) => {
@@ -1205,9 +1205,11 @@ export const aiRoutes = (() => {
           turnId: turn.id,
           clientRequestId: body.clientRequestId,
           text: body.message,
+          actor: ctx.actor,
         });
         if (!result.ok) {
           if (result.reason === "not_found") return respond(c, fail(err.notFound("Turn")));
+          if (result.reason === "forbidden") return respond(c, fail(err.forbidden(AI_TURN_WRITE_FORBIDDEN)));
           if (result.reason === "not_chat") return respond(c, fail(err.badInput("Compaction turns cannot be steered.")));
           return respond(c, fail(err.conflict("This turn is no longer active.")));
         }
@@ -1519,6 +1521,7 @@ export const aiRoutes = (() => {
             },
             toolApprovalContext: ctx.toolApprovalChangeContext,
             signedInSession: ctx.signedInSession,
+            actor: ctx.actor,
           });
           if (!result.ok) return toAiActionFailureResponse(c, result);
           return respond(c, ok({ ok: true }));

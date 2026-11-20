@@ -924,7 +924,28 @@ describe("Core AI capabilities", () => {
     });
   });
 
-  test("returns the persisted status for an idempotent message retry", async () => {
+  test.each(["missing", "web"] as const)("refuses an app message with a %s source actor", async (source) => {
+    spyOn(aiConversations, "getCapabilityInvocationOrigin").mockResolvedValue({
+      conversationId: chat.id,
+      conversationShortId: chat.shortId,
+      turnId: "33333333-3333-4333-8333-333333333333",
+      turnShortId: "tRn234",
+      callId: "call-1",
+    });
+    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue(
+      source === "missing" ? null : { kind: "chat", input: "Run", actor: context.actor, toolSource: { kind: "none" } },
+    );
+    const create = spyOn(aiConversations, "createInterChatMessage").mockResolvedValue({ ok: false, reason: "not_found" });
+    const actor = { kind: "user" as const, user, sessionKind: "app" as const };
+    const result = await aiCapabilities.actions["ai.chat.message"].run(
+      { chatId: chat.shortId, text: "Please verify it." },
+      { ...idempotentContext, actor, authority: { ...authority, actor } },
+    );
+    expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  test.each(["web", "app"] as const)("returns the persisted status for an idempotent %s message retry", async (sessionKind) => {
     spyOn(aiConversations, "getCapabilityInvocationOrigin").mockResolvedValue({
       conversationId: chat.id,
       conversationShortId: chat.shortId,
@@ -955,10 +976,12 @@ describe("Core AI capabilities", () => {
       deliveredAt: chat.updatedAt,
     };
     spyOn(aiConversations, "createInterChatMessage").mockResolvedValue({ ok: true, message });
+    const actor = sessionKind === "app" ? { kind: "user" as const, user, sessionKind: "app" as const } : context.actor;
+    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Run", actor, toolSource: { kind: "none" } });
 
     const result = await aiCapabilities.actions["ai.chat.message"].run(
       { chatId: message.targetChatId, text: message.text },
-      { ...context, idempotencyKey: "ai-test" },
+      { ...context, actor, authority: { ...authority, actor }, idempotencyKey: "ai-test" },
     );
 
     expect(result).toMatchObject({

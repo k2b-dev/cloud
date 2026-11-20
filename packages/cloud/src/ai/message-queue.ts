@@ -1,9 +1,11 @@
 import type { Message } from "@k2b/nessi";
 import { sql } from "../runtime/clients";
+import type { UserRequestActor } from "../server";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { isUnknownActionOutcome } from "./action-review";
 import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
+import { mayWriteIntoAiTurn } from "./capability-execution";
 import { assertPersonalChatWriter } from "./chat-writer";
 import { editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
@@ -260,15 +262,24 @@ export const updateQueuedMessage = async (conversationId: string, id: string, ac
     return Boolean(changed.length);
   });
 
-/** Edit only queued text; immutable attachments and the independent composer draft stay intact. */
-export const editQueuedMessage = async (conversationId: string, id: string, text: string, authorUserId: string) =>
+/**
+ * Edit only queued text; immutable attachments and the independent composer draft stay intact. Only the author may
+ * edit, and the message keeps running as the actor that queued it, so `author` must also be allowed to write into it.
+ */
+export const editQueuedMessage = async (
+  conversationId: string,
+  id: string,
+  text: string,
+  author: UserRequestActor,
+): Promise<"edited" | "not_found" | "forbidden"> =>
   sql.begin(async (tx) => {
     await tx`SELECT id FROM ai.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
     const [row] = await tx<{ submission: Submission; content: AiDraftContentPart[] }[]>`SELECT submission, content FROM ai.queued_messages
     WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND status IN ('pending','failed')
-      AND author_user_id=${authorUserId}::uuid
+      AND author_user_id=${author.user.id}::uuid
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages q WHERE q.conversation_id=${conversationId}::uuid AND q.send_requested_at IS NOT NULL AND q.status IN ('pending','failed')) FOR UPDATE`;
-    if (!row) return false;
+    if (!row) return "not_found";
+    if (!mayWriteIntoAiTurn(author, row.submission.runConfig.actor)) return "forbidden";
     const content = editAiDraftText(row.content, text);
     const parts = content.map((part) =>
       part.type === "text"
@@ -295,7 +306,7 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
     };
     await tx`UPDATE ai.queued_messages SET submission = (${JSON.stringify(submission)}::text)::jsonb,
     content = (${JSON.stringify(content)}::text)::jsonb WHERE id = ${id}::uuid`;
-    return true;
+    return "edited";
   });
 
 /** Reconcile durable effect receipts; never infer a successful interruption from a lost worker. */
