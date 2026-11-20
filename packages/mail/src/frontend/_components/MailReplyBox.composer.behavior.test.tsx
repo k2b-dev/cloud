@@ -405,6 +405,34 @@ describe("MailReplyBox with the real composer", () => {
     expect(created.draft.body).toContain("Keep me");
   }, 15_000);
 
+  // #3860: a Code reply quoted in English ("… wrote:") in a German mailbox. The person who sends it decides the words.
+  test("an untouched Code suggestion sends as it is, its quote in the language of the person who sends it", async () => {
+    const account = { kind: "service_account", serviceAccountId: "Svc001" };
+    saved.Draft1 = {
+      suggestion: true,
+      suggestedBy: "Lieferavis beantworten",
+      createdBy: account,
+      lastEditedBy: account,
+      quoteSource: { locale: "en", timeZone: "UTC" },
+    } as Partial<MailDraft>;
+    intercept = async ({ path }) => {
+      if (path.endsWith("/safety-review"))
+        return Response.json({ revision: 4, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) });
+      if (path.endsWith("/commands"))
+        return Response.json({ id: crypto.randomUUID(), result: { conversationId: "Conv01", outboxSubmissionId: "Sub001" } });
+      return null;
+    };
+    await mount({ drafts: [{ ...summary, suggestion: true }], locale: "de" });
+    await waitFor(() => dom.root.querySelector("[data-mail-reply-box='mail']")?.hasAttribute("data-suggestion") === true);
+    const send = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-send]")!;
+    await waitFor(() => send().disabled === false);
+    send().click();
+    await waitFor(() => requests.some((request) => request.path.endsWith("/commands")));
+    const save = requests.findLast((request) => request.method === "PUT" && request.path.endsWith("/drafts/Draft1"));
+    expect((save?.body?.draft as Partial<MailDraft> | undefined)?.quoteSource).toEqual({ locale: "de", timeZone: "UTC" });
+    expect(requests.findIndex((request) => request.path.endsWith("/safety-review"))).toBeGreaterThan(requests.indexOf(save!));
+  });
+
   test("a second Undo keeps the earlier text typed meanwhile as well, newest first, across reopening", async () => {
     const first = await mount({ messages: [message, pendingSend] });
     type("First meanwhile");
