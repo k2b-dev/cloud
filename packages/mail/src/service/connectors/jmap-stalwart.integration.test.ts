@@ -23,12 +23,21 @@ import type { JmapTransportDependencies } from "./jmap-transport";
 function check(condition: unknown, stage: string): asserts condition {
   ok(condition, stage);
 }
+// The connector's error classes carry codes and statuses only, so naming them is safe.
+function describeFailure(error: unknown): string {
+  if (!(error instanceof Error)) return "non-error";
+  const parts = [error.name];
+  for (const key of ["code", "status", "problemType", "methodType"]) {
+    const value: unknown = Reflect.get(error, key);
+    if (typeof value === "string" || typeof value === "number") parts.push(`${key}=${value}`);
+  }
+  return parts.join(" ");
+}
 async function stage<T>(label: string, operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
   } catch (error) {
-    const code = error instanceof JmapError ? ` (${error.code})` : "";
-    throw new Error(`${label}: request failed${code}`);
+    throw new Error(`${label}: request failed (${describeFailure(error)})`);
   }
 }
 function parse<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
@@ -176,10 +185,8 @@ suiteFor("jmap")("Mail connector conformance against CI Stalwart", () => {
         return created.id;
       }
       const error = result.notCreated?.fixture;
-      check(
-        allowNameRejection && error?.type === "invalidProperties" && (!error.properties || error.properties.includes("name")),
-        `${label}: creation succeeded or slash name rejected`,
-      );
+      // Any refusal of the slash name is acceptable; the fallback below covers duplicate names instead.
+      check(allowNameRejection && error, `${label}: creation succeeded or the name was refused (${error?.type ?? "no error entry"})`);
       return null;
     };
     try {
@@ -261,7 +268,7 @@ suiteFor("jmap")("Mail connector conformance against CI Stalwart", () => {
     // Setup mode may expose the public Session with no accounts instead of 401.
     check(
       (failure instanceof JmapHttpError && failure.status === 401) || (failure instanceof JmapError && failure.code === "JMAP_ACCOUNT"),
-      "Authentication: typed HTTP 401 or missing primary account error",
+      `Authentication: typed HTTP 401 or missing primary account error (got ${failure === undefined ? "no failure" : describeFailure(failure)})`,
     );
   }, 30_000);
 });

@@ -69,6 +69,18 @@ test("probe follows one redirect and inspects its result without credentials", a
   expect(f.requests.every((request) => request.authorization === null)).toBe(true);
 });
 
+test("a refused login stays an HTTP error even when the server answers with problem details", async () => {
+  const f = fixture();
+  for (const status of [401, 403]) {
+    f.controls.handle = () =>
+      new Response(JSON.stringify({ type: "about:blank", status, title: "Refused" }), {
+        status,
+        headers: { "content-type": "application/problem+json" },
+      });
+    await expect(fetchJmapSession(access(f), f.dependencies)).rejects.toMatchObject({ code: "JMAP_HTTP", status });
+  }
+});
+
 test("probe reports budget exhaustion and blocked endpoints as unknown", async () => {
   const f = fixture();
   f.controls.oversized = true;
