@@ -1259,6 +1259,18 @@ export default function MailComposer(props: {
     if (!box) return false;
     return box.suspended() || (!draft() && box.holdCreate()) || !online();
   };
+  /**
+   * Whether Send waits: one answer for every Send button, Send later and Mod+Enter, so no path sends what the disabled
+   * button holds back (an attachment still arriving, a window offline).
+   */
+  const sendHeld = () =>
+    !editable() ||
+    !sharedCanSend() ||
+    tableNeedsCheck() ||
+    uploads().length > 0 ||
+    attaching() > 0 ||
+    boxBlocksSend() ||
+    (Boolean(props.host?.window) && !online());
   let deliveryPreparationController: AbortController | null = null;
   const deliveryFingerprint = (delivery: { scheduledAt?: string }) =>
     JSON.stringify({
@@ -1334,7 +1346,7 @@ export default function MailComposer(props: {
         return;
       }
       const delivery = currentDelivery;
-      return reportDeliveryError(error.message, () => void sendDraft(delivery));
+      return reportDeliveryError(error.message, () => void sendOrSayWhy(delivery));
     },
   });
 
@@ -1400,7 +1412,7 @@ export default function MailComposer(props: {
   };
 
   const sendDraft = async (delivery: { scheduledAt?: string }) => {
-    if (!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || boxBlocksSend()) return;
+    if (sendHeld()) return;
     const reservation = composerTransition.reserve("send");
     if (!reservation) return;
     setSendFailure(null);
@@ -1436,7 +1448,7 @@ export default function MailComposer(props: {
     } catch (error) {
       if (error instanceof ComposeSafetyAttachmentRequested) attachAfterDeliveryReview = true;
       else if (!(error instanceof ComposeSafetyCancelled) && !(error instanceof ComposeRecipientPending)) {
-        reportDeliveryError(error instanceof Error ? error.message : t().messageNotReadySend, () => void sendDraft(delivery));
+        reportDeliveryError(error instanceof Error ? error.message : t().messageNotReadySend, () => void sendOrSayWhy(delivery));
       }
     } finally {
       setSendingHere(false);
@@ -1446,8 +1458,21 @@ export default function MailComposer(props: {
     }
   };
 
+  /**
+   * Try again in the toast and a time picked for Send later reach Send after a while, when it may wait (offline, an
+   * upload). Then the toast says why and keeps Try again: such a click never ends without a visible answer.
+   */
+  const sendOrSayWhy = (delivery: { scheduledAt?: string }) => {
+    if (!sendHeld()) return sendDraft(delivery);
+    // Send again in the bar repeats this delivery, its picked time included.
+    currentDelivery = delivery;
+    const windowT = mailComposeWindowMessages.resolve([locale()]).t;
+    const offlineHolds = !online() && Boolean(props.host?.window || props.host?.box);
+    reportDeliveryError(offlineHolds ? windowT.sendOffline : windowT.sendWaits, () => void sendOrSayWhy(delivery));
+  };
+
   const schedule = async () => {
-    if (!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || boxBlocksSend()) return;
+    if (sendHeld()) return;
     const reservation = composerTransition.reserve("send");
     if (!reservation) return;
     let scheduledAt: string | null = null;
@@ -1458,7 +1483,7 @@ export default function MailComposer(props: {
     } finally {
       finishDeliveryTransition(reservation);
     }
-    if (!disposed && scheduledAt) await sendDraft({ scheduledAt });
+    if (!disposed && scheduledAt) await sendOrSayWhy({ scheduledAt });
   };
 
   const openDeliveryOptionsDialog = () =>
@@ -2026,14 +2051,6 @@ export default function MailComposer(props: {
     const host = props.host;
     const windowSlots = host.window;
     const windowT = () => mailComposeWindowMessages.resolve([locale()]).t;
-    // A window writes on offline and keeps the text here; Send waits until the connection is back.
-    const sendBlocked = () =>
-      !editable() ||
-      !sharedCanSend() ||
-      tableNeedsCheck() ||
-      uploads().length > 0 ||
-      attaching() > 0 ||
-      (Boolean(windowSlots) && !online());
     const uploadPercent = () => {
       const running = uploads().filter((upload) => !upload.error);
       return running.length === 0 ? null : Math.round(running.reduce((sum, upload) => sum + upload.progress, 0) / running.length);
@@ -2117,7 +2134,7 @@ export default function MailComposer(props: {
     const draftMenu = (): DropdownItem[] => [
       {
         items: [
-          { label: t().sendLater, icon: "ti ti-clock", disabled: !editable() || !sharedCanSend(), action: () => void schedule() },
+          { label: t().sendLater, icon: "ti ti-clock", disabled: sendHeld(), action: () => void schedule() },
           {
             label: t().messageOptions,
             icon: "ti ti-adjustments-horizontal",
@@ -2338,29 +2355,36 @@ export default function MailComposer(props: {
         return list.length ? Math.floor(list.reduce((sum, upload) => sum + upload.progress, 0) / list.length) : null;
       };
       /**
-       * Why Send waits, said where Send is: uploads, offline, the last reply still on its way, or a shared draft that is
-       * not connected or saved yet. A disabled Send always has its reason here and in the status at its side.
+       * A shared draft still connecting or saving holds Send until it is ready. A closed draft, a refused edit, or a
+       * failure does not resolve by waiting: the shared hint over the bar names it and offers the way out.
        */
-      /** A shared draft still connecting or saving holds Send; a closed one says so through its own state instead. */
-      const sharedWaits = () => !sharedCanSend() && !sharedState()?.terminal;
+      const sharedWaits = () => !sharedCanSend() && !sharedState()?.terminal && !sharedState()?.error && !sharedState()?.rejectedEdit;
+      /**
+       * Why Send waits, said where Send is: uploads, offline, the last reply still on its way, or a shared draft that is
+       * not connected or saved yet. A draft that failed or became read-only says why through its own banner instead.
+       */
       const sendBlockedReason = () =>
         uploads().length > 0
           ? r().uploadReason
           : !online()
             ? r().offlineReason
-            : holdActive()
-              ? r().holdReason
-              : tableNeedsCheck()
-                ? r().tableReason
-                : sharedWaits()
-                  ? r().sharedReason
-                  : null;
+            : status() === "error" || status() === "readonly"
+              ? null
+              : holdActive()
+                ? r().holdReason
+                : tableNeedsCheck()
+                  ? r().tableReason
+                  : sharedWaits()
+                    ? r().sharedReason
+                    : null;
       /** The quiet status at its fixed place: what is happening to the text right now. */
       const boxStatus = (): { icon: string; text: string; tone?: "busy" } | null => {
         const percent = uploadPercent();
         if (percent !== null) return { icon: "ti-upload", text: r().uploading({ percent }), tone: "busy" };
         if (!online()) return { icon: "ti-cloud-off", text: r().offline };
         if (status() === "error" || status() === "readonly") return null;
+        // A shared draft's failure or refused edit stands in its hint over the bar; no spinner promises it resolves.
+        if (sharedState()?.error || sharedState()?.rejectedEdit) return null;
         // A shared draft that is not ready says why Send waits, at the status's fixed place.
         if (tableNeedsCheck() || sharedWaits()) return { icon: "ti-loader-2", text: sendBlockedReason() ?? r().saving, tone: "busy" };
         // An empty box that nobody touched has nothing to save yet.
@@ -2371,7 +2395,6 @@ export default function MailComposer(props: {
         if (state === "saved") return { icon: "ti-cloud-check", text: r().saved };
         return { icon: "ti-loader-2", text: r().saving, tone: "busy" };
       };
-      const sendDisabled = () => !editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || boxBlocksSend();
       const sendLaterItems = (): DropdownItem[] => {
         const timeZone = props.dateConfig.timeZone ?? "UTC";
         const shown = mailSendLaterPresets(new Date(), timeZone);
@@ -2743,7 +2766,7 @@ export default function MailComposer(props: {
               size="sm"
               type="button"
               loading={send.loading()}
-              disabled={sendDisabled()}
+              disabled={sendHeld()}
               menuLabel={t().moreSendOptions}
               menuPosition="top-left"
               tooltip={sendBlockedReason() ?? `${t().send} (${sendShortcutLabel()})`}
@@ -2878,7 +2901,7 @@ export default function MailComposer(props: {
         size="sm"
         type="button"
         loading={send.loading()}
-        disabled={sendBlocked()}
+        disabled={sendHeld()}
         menuLabel={t().moreSendOptions}
         tooltip={`${t().send} (${sendShortcutLabel()})`}
         items={[
@@ -3837,7 +3860,7 @@ export default function MailComposer(props: {
           size="sm"
           type="button"
           loading={send.loading()}
-          disabled={!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0}
+          disabled={sendHeld()}
           menuLabel={t().moreSendOptions}
           tooltip={`${t().send} (${sendShortcutLabel()})`}
           items={[
