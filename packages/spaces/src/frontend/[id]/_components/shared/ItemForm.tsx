@@ -991,7 +991,7 @@ export default function ItemForm(props: ItemFormProps) {
               {t.moreOptions}
             </Button>
           </Show>
-          {/* At most two lines beside the buttons, so the footer keeps its height whether the note shows or not. */}
+          {/* Two lines beside the buttons, reserved from the first frame, so the footer keeps its height when the note shows. */}
           <Show when={loadEstimate}>
             <p class="spaces-item-form__open-suggestion" aria-live="polite">
               {estimateOpen() ? t.estimateSuggestionUnsaved : ""}

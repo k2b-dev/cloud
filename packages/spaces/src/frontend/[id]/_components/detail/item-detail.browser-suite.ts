@@ -1066,20 +1066,34 @@ describe("Spaces item detail in a browser", () => {
     }, 30_000);
 
   /** Where the edit form's fields, the assistant's line, and the footer sit; the status text inside may change. */
+  /**
+   * Where the edit form's fields, the assistant's line, and the footer sit, measured in the scrolling body's own
+   * coordinates, so focus scrolling the body is not a move. Inputs keep their row and height; a clear button that
+   * appears with a value only narrows the input inside its unchanged field.
+   */
   const formBoxes = (page: Page) =>
     page.evaluate(() => {
       const form = window.document.querySelector(".spaces-item-form")!;
-      const box = (element: Element, full = true) => {
+      const body = form.querySelector(".k2b-panel-dialog__body") ?? form;
+      const origin = body.getBoundingClientRect().top - body.scrollTop;
+      const box = (element: Element, full: boolean) => {
         const rect = element.getBoundingClientRect();
-        return (full ? [rect.x, rect.y, rect.width, rect.height] : [rect.y, rect.height]).map((value) => value.toFixed(1)).join(" ");
+        const top = body.contains(element) ? rect.top - origin : rect.top;
+        return (full ? [rect.x, top, rect.width, rect.height] : [top, rect.height]).map((value) => value.toFixed(1)).join(" ");
       };
+      const name = (element: Element) => `${element.tagName}.${element.className.toString().split(" ")[0]}`;
       return [
-        ...[
-          ...form.querySelectorAll(
-            ".k2b-ai-suggestion-group__bar, .k2b-field, input, textarea, button[type=submit], .k2b-panel-dialog__footer",
-          ),
-        ].map((element) => `${element.tagName}.${element.className.toString().split(" ")[0]} ${box(element)}`),
-        ...[...form.querySelectorAll(".k2b-ai-suggestion")].map((element) => `status ${box(element, false)}`),
+        ...[...form.querySelectorAll(".k2b-ai-suggestion-group__bar, .k2b-field, button[type=submit], .k2b-panel-dialog__footer")].map(
+          (element) => `${name(element)} ${box(element, true)}`,
+        ),
+        // A hidden input without a box has no place in the layout.
+        ...[...form.querySelectorAll("input, textarea")]
+          .filter((element) => element.getBoundingClientRect().height > 0)
+          .map((element) => `${name(element)} ${box(element, false)}`),
+        // The status line sits in a reserved label row; its own box may grow within it.
+        ...[...form.querySelectorAll(".k2b-ai-suggestion-field > .k2b-field__label-row")].map(
+          (element) => `label row ${box(element, true)}`,
+        ),
       ];
     });
   const estimateInput = (page: Page) => page.getByRole("dialog").getByLabel("Geschätzte Dauer", { exact: true });
@@ -1132,7 +1146,7 @@ describe("Spaces item detail in a browser", () => {
           expect(await formBoxes(page)).toEqual(loading);
           await formShot(page, `${name}-${theme}-accepted`);
 
-          await page.getByRole("button", { name: "Speichern", exact: true }).click();
+          await page.getByRole("button", { name: "Eintrag speichern", exact: true }).click();
           await writesReach(1);
           expect(writes[0]).toMatchObject({ method: "PATCH", body: { estimatedDurationMinutes: 90 } });
         } finally {
@@ -1158,7 +1172,7 @@ describe("Spaces item detail in a browser", () => {
       await page.locator(".k2b-ai-suggestion", { hasText: "unsicher" }).hover();
       await page.getByText("Wie viele Räume es sind, steht nicht in der Aufgabe.", { exact: true }).waitFor();
       await formShot(page, "1440-light-unsure");
-      await page.getByRole("button", { name: "Speichern", exact: true }).click();
+      await page.getByRole("button", { name: "Eintrag speichern", exact: true }).click();
       await writesReach(1);
       expect(writes[0]).toMatchObject({ method: "PATCH", body: { estimatedDurationMinutes: null } });
     } finally {
