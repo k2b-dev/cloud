@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import ts from "@typescript/typescript6";
-import { launchBudgetMs, launchHookMs } from "../../packages/ui/test/browser";
+import { launchBudgetMs, launchHookMs } from "../../packages/ui/test/browser-budget";
 import { discoverTestSuites } from "../run-tests";
 import { workspacePackages } from "../workspace";
 import { isTestFile, listFiles, parseSource, sourceFilePattern } from "./files";
@@ -31,8 +31,9 @@ const timeoutMs = (argument: ts.Expression | undefined): number | undefined => {
 };
 
 /**
- * A `launchBrowser()` call inside a hook whose timeout is below `launchHookMs`. Bun's 5 s hook default is the close budget
- * (#1473); a launch inside it fails nameless at 5 s on a stalled runner (#3862) instead of with the launch's own error.
+ * A `launchBrowser()` call lexically inside a hook whose timeout is below `launchHookMs`, also inside a nested callback of
+ * that hook. Bun's 5 s hook default is the close budget (#1473); a launch inside it fails nameless at 5 s on a stalled runner
+ * (#3862) instead of with the launch's own error. A helper that a hook calls is outside this rule.
  */
 export const launchHookFindings = (file: string, source: string): Finding[] => {
   const { sourceFile, findings } = parseSource(file, source);
@@ -68,7 +69,7 @@ export const launchHookFindings = (file: string, source: string): Finding[] => {
  * test file plus the browser suites that a test file runs in a child process.
  * A Playwright test that the WebKit run would not find, for example one that
  * imports the launcher with a file extension or through a helper, fails too.
- * A hook that calls `launchBrowser()` keeps at least `launchHookMs` (#3862).
+ * A hook that calls `launchBrowser()` lexically inside it keeps at least `launchHookMs`, in test files and browser suites (#3874).
  */
 export const rule: Rule = {
   name: "browser-launch",
@@ -90,7 +91,7 @@ export const rule: Rule = {
           message: "start the browser with launchBrowser() from packages/ui/test/browser; see docs-site/docs/en/contributing/testing.md",
         });
       }
-      if (test && source.includes("launchBrowser(")) findings.push(...launchHookFindings(file, source));
+      if (source.includes("launchBrowser(")) findings.push(...launchHookFindings(file, source));
       if (test && playwrightImport.test(source) && !integrationImport.test(source) && !found.has(file)) {
         findings.push({
           file,

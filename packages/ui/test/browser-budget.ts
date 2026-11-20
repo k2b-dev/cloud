@@ -2,12 +2,13 @@
 
 /**
  * A launch has its own budget: Playwright fails a launch or connect still pending after 20 s, and the error names the launch.
- * A launch normally takes well under 1 s; a stalled CI runner took over 5 s (#2086, #3862). Bun's 5 s hook default is the close
- * budget of the launcher, so a hook that launches would fail nameless at 5 s, beside a launch that was about to finish.
+ * In CI from 6 to 20 November 2026, a launch took at most 0.4 s in Chromium and 1.2 s in WebKit for files whose only setup is
+ * the launch; the slowest of about 25,000 launches took 4.9 s on a stalled runner. The budget is four times that (#3874).
  */
 export const launchBudgetMs = 20_000;
 /**
- * The smallest timeout of a hook that calls `launchBrowser()`: the launch budget plus 10 s for the hook's own setup and for
- * killing a failed launch, so the launch's own error reports before the hook times out. The `browser-launch` check enforces it.
+ * The smallest timeout of a hook that calls `launchBrowser()`: the launch budget, the 2 s kill wait of a failed launch, and 8 s
+ * for the hook's other steps, so the launch's own error reports before the hook times out. The 31 hooks that kept Bun's 5 s
+ * default needed less than 5 s for those steps. The `browser-launch` check enforces it.
  */
 export const launchHookMs = 30_000;
