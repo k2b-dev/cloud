@@ -56,13 +56,15 @@ test.skipIf(process.platform !== "linux")("PDF decoder keeps a fixed thread set 
   // because a pool that starts on demand (the GC helpers) is not yet running when sampled from outside.
   const spawn = spyOn(canvasWorker, "spawnCanvasWorker").mockImplementationOnce((worker, name, input, cpuSeconds) => {
     expect(worker.href).toBe(new URL("./pdf-render-worker.ts", import.meta.url).href);
-    return originalSpawn(new URL("./fixtures/pdf-decoder-thread-probe.ts", import.meta.url), name, input, cpuSeconds);
+    return originalSpawn(new URL("./fixtures/pdf-decoder-thread-probe.test-fixture.ts", import.meta.url), name, input, cpuSeconds);
   });
   try {
     expect((await renderPdfPages(visionPdfFixture())).pages).toHaveLength(2);
     const spawned = spawn.mock.results[0];
     if (spawned?.type !== "return") throw new Error("The PDF decoder did not start.");
-    const threads = z.record(z.string(), z.number()).parse(JSON.parse(await spawned.value.diagnostics));
+    const report = (await spawned.value.diagnostics).split("\n").findLast((line) => line.startsWith("thread-counts "));
+    if (!report) throw new Error("The probe reported no thread counts.");
+    const threads = z.record(z.string(), z.number()).parse(JSON.parse(report.slice("thread-counts ".length)));
     // Each pool must be seen, so a renamed thread fails here instead of passing unchecked.
     expect(threads["tokio-rt-worker"]).toBeGreaterThan(0);
     expect(threads["tokio-rt-worker"]).toBeLessThanOrEqual(2);

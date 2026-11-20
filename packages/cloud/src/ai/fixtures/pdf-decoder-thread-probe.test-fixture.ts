@@ -1,4 +1,5 @@
 // Test probe: runs the real PDF decoder in this process, then reports every thread the process started on stderr.
+// It takes one snapshot after the render; a pool that grew and shrank again before that is out of its scope.
 import { readdirSync, readFileSync } from "node:fs";
 
 await import("../pdf-render-worker.ts");
@@ -11,4 +12,5 @@ for (const tid of readdirSync("/proc/self/task")) {
   const name = readFileSync(`/proc/self/task/${tid}/comm`, "utf8").trim().replace(/ \d+$/, "");
   counts[name] = (counts[name] ?? 0) + 1;
 }
-console.error(JSON.stringify(counts));
+// One marked line, so other decoder output on stderr cannot be mistaken for the report.
+console.error(`thread-counts ${JSON.stringify(counts)}`);
