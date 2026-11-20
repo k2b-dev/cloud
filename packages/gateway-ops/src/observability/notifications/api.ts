@@ -103,17 +103,7 @@ const requireNotificationAccess = async (
  */
 const respondMessage = async (
   c: Context,
-  resultPromise: Promise<
-    | { ok: true; data: void }
-    | {
-        ok: false;
-        error: {
-          code: string;
-          message: string;
-          status: 400 | 401 | 403 | 404 | 409 | 500;
-        };
-      }
-  >,
+  resultPromise: Promise<Result<void>>,
   message: string,
 ) => {
   return respond(c, async () => {

@@ -21,7 +21,10 @@ validation errors such as 413 and 422 and temporary failures such as 429 and
 503. Cloud also keeps cancellation status 499. The same rule applies to
 returned and thrown service errors. See [App capabilities](/en/docs/platform/capabilities)
 for the complete list. Applications still own their stable codes and localized
-messages; other statuses remain invalid provider responses.
+messages; other statuses remain invalid provider responses. The legacy
+`MutationResult` error shape also derives its status from stdlib’s
+`ServiceError` type. General Pulse SQL and notification response adapters
+preserve that status instead of imposing their own narrower lists.
 
 Mail document reads return `DRAFT_DOCUMENT_READ_UNAVAILABLE` with 503 for an
 unexpected loading failure. Clients that handle this code specifically should

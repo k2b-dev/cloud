@@ -18,6 +18,7 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
+import type { MutationResult } from "../contracts/shared";
 import {
   capabilityHash,
   capabilityManifestEvolutionIssues,
@@ -1535,6 +1536,7 @@ describe("capability v1 compilation", () => {
 
   test("the capability error contract covers the entire stdlib status union", () => {
     expectTypeOf<Exclude<ServiceError["status"], CapabilityErrorStatus>>().toEqualTypeOf<never>();
+    expectTypeOf<Extract<MutationResult, { ok: false }>["status"]>().toEqualTypeOf<ServiceError["status"]>();
     expectTypeOf<Exclude<ServiceError["status"], (typeof stdlibErrorStatuses)[number]>>().toEqualTypeOf<never>();
   });
 
