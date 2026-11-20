@@ -11,8 +11,8 @@ import { JMAP_CORE, JMAP_MAIL, JMAP_SUBMISSION } from "./jmap-client";
 import { createJmapFixture, fixtureMailbox, fixtureRights } from "./jmap-fixture";
 
 const fixtures: ReturnType<typeof createJmapFixture>[] = [];
-afterEach(() => {
-  for (const fixture of fixtures.splice(0)) fixture.close();
+afterEach(async () => {
+  await Promise.all(fixtures.splice(0).map((fixture) => fixture.close()));
 });
 const fixture = () => {
   const value = createJmapFixture();
@@ -240,4 +240,12 @@ test("ignores unknown rights and never grants a folder right for maySubmit", () 
   const parsed = jmapMailboxRightsSchema.parse({ ...rights({ maySubmit: true }), mayShare: true, mayAdmin: true });
   expect(mapJmapRights(parsed)).toEqual([]);
   expect(Object.keys(parsed)).not.toContain("mayShare");
+});
+
+test("folder discovery continues to throw a method error with a sanitized type", async () => {
+  const f = fixture();
+  f.methodErrors.set("folders", "forbidden");
+  await expect(discoverJmapFolders(access(f), f.dependencies)).rejects.toMatchObject({ code: "JMAP_METHOD", methodType: "forbidden" });
+  f.methodErrors.set("folders", "private-provider-detail");
+  await expect(discoverJmapFolders(access(f), f.dependencies)).rejects.toMatchObject({ code: "JMAP_METHOD", methodType: "unknown" });
 });

@@ -1,10 +1,19 @@
 import { afterEach, expect, test } from "bun:test";
-import { callJmap, fetchJmapSession, JMAP_CORE, JMAP_MAIL, jmapBasicAuthorization, probeJmap, validateJmapId } from "./jmap-client";
+import {
+  callJmap,
+  fetchJmapSession,
+  JMAP_CORE,
+  JMAP_MAIL,
+  jmapBasicAuthorization,
+  probeJmap,
+  requireJmapMethodResult,
+  validateJmapId,
+} from "./jmap-client";
 import { createJmapFixture } from "./jmap-fixture";
 
 const fixtures: ReturnType<typeof createJmapFixture>[] = [];
-afterEach(() => {
-  for (const fixture of fixtures.splice(0)) fixture.close();
+afterEach(async () => {
+  await Promise.all(fixtures.splice(0).map((fixture) => fixture.close()));
 });
 const fixture = () => {
   const value = createJmapFixture();
@@ -150,7 +159,7 @@ test("separates rate limits, request errors, method errors, HTTP failures and tr
     callJmap(
       { ...auth, session, using: [JMAP_CORE, JMAP_MAIL], methodCalls: [["Mailbox/get", { accountId: "d333333", ids: [] }, "call"]] },
       f.dependencies,
-    );
+    ).then((response) => requireJmapMethodResult(response, "call", "Mailbox/get"));
   f.controls.apiStatus = 429;
   await expect(call()).rejects.toMatchObject({ code: "JMAP_RATE_LIMIT", retryAfter: "30" });
   f.controls.apiStatus = 400;
@@ -198,4 +207,73 @@ test("probe accepts normalized international hostnames without changing the port
   const f = fixture();
   expect(await probeJmap("münchen.example.invalid", signal(), f.dependencies)).toBe("detected");
   expect(f.requests[0]!.authorization).toBeNull();
+});
+
+test("correlates mixed success and method errors independently of response order", async () => {
+  const f = fixture();
+  const auth = access(f);
+  const session = await fetchJmapSession(auth, f.dependencies);
+  f.methodErrors.set("changes", "cannotCalculateChanges");
+  f.methodErrors.set("dependent", "invalidResultReference");
+  const response = await callJmap(
+    {
+      ...auth,
+      session,
+      using: [JMAP_CORE, JMAP_MAIL],
+      methodCalls: [
+        ["Email/changes", {}, "changes"],
+        ["Email/get", {}, "dependent"],
+        ["Mailbox/get", { ids: [] }, "success"],
+      ],
+    },
+    f.dependencies,
+  );
+  response.methodResponses.reverse();
+  expect(response.methodResponses).toContainEqual(["error", { type: "cannotCalculateChanges" }, "changes"]);
+  expect(response.methodResponses).toContainEqual(["error", { type: "invalidResultReference" }, "dependent"]);
+  expect(requireJmapMethodResult(response, "success", "Mailbox/get")).toMatchObject({ list: [] });
+  expect(() => requireJmapMethodResult(response, "changes", "Email/changes")).toThrow("JMAP method rejected");
+  expect(() => requireJmapMethodResult(response, "missing", "Mailbox/get")).toThrow("JMAP_INVALID_RESPONSE");
+});
+
+for (const result of [
+  [],
+  [["Mailbox/get", {}, "other"]],
+  [["Email/get", {}, "call"]],
+  [["error", {}, "call"]],
+  [
+    ["Mailbox/get", {}, "call"],
+    ["Mailbox/get", {}, "call"],
+  ],
+]) {
+  test(`rejects uncorrelated method response ${JSON.stringify(result)}`, async () => {
+    const f = fixture();
+    const auth = access(f);
+    const session = await fetchJmapSession(auth, f.dependencies);
+    f.controls.handle = () => Response.json({ methodResponses: result, sessionState: "s" });
+    await expect(
+      callJmap({ ...auth, session, using: [JMAP_CORE], methodCalls: [["Mailbox/get", { ids: [] }, "call"]] }, f.dependencies),
+    ).rejects.toMatchObject({ code: "JMAP_INVALID_RESPONSE" });
+  });
+}
+
+test("rejects duplicate request call IDs before sending", async () => {
+  const f = fixture();
+  const auth = access(f);
+  const session = await fetchJmapSession(auth, f.dependencies);
+  await expect(
+    callJmap(
+      {
+        ...auth,
+        session,
+        using: [JMAP_CORE],
+        methodCalls: [
+          ["Mailbox/get", {}, "same"],
+          ["Mailbox/get", {}, "same"],
+        ],
+      },
+      f.dependencies,
+    ),
+  ).rejects.toMatchObject({ code: "JMAP_INVALID_RESPONSE" });
+  expect(f.requests).toHaveLength(1);
 });

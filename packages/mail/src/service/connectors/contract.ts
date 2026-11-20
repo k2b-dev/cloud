@@ -12,6 +12,10 @@ import type {
 } from "../../contracts";
 import type { MessageProtocolFacts } from "../message-protocol";
 
+// Matches the IMAP envelope fetch budget in sync-runtime.ts. Kept here for connector readers;
+// that runtime can adopt this shared constant when its next slice permits changes.
+export const ENVELOPE_BATCH_SIZE = 200;
+
 export type ConnectorAddress = {
   name: string | null;
   address: string;

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { FolderRole, RemoteFolder } from "../../contracts";
 import { jmapFolderStableKey } from "../provider-identity";
+import { ENVELOPE_BATCH_SIZE } from "./contract";
 import {
   callJmap,
   fetchJmapSession,
@@ -12,8 +13,11 @@ import {
   JmapError,
   type JmapSession,
   jmapIdSchema,
+  requireJmapMethodResult,
+  validateJmapId,
 } from "./jmap-client";
-import type { JmapTransportDependencies } from "./jmap-transport";
+import { JMAP_EMAIL_BODY_PROPERTIES, JMAP_EMAIL_PROPERTIES, type JmapEmailSnapshot, jmapEmailSnapshotSchema } from "./jmap-email";
+import { type JmapTransportDependencies, JmapTransportError } from "./jmap-transport";
 
 function primaryMailAccount(session: JmapSession) {
   if (!session.capabilities[JMAP_MAIL] || !session.capabilities[JMAP_SUBMISSION]) throw new JmapError("JMAP_CAPABILITY");
@@ -107,10 +111,7 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
       },
       deps,
     );
-    const result = response.methodResponses[0];
-    if (response.methodResponses.length !== 1 || !result || result[0] !== name || result[2] !== "folders")
-      throw new JmapError("JMAP_INVALID_RESPONSE");
-    return result[1];
+    return requireJmapMethodResult(response, "folders", name);
   };
   const ids: string[] = [];
   const seen = new Set<string>();
@@ -228,4 +229,75 @@ function folderRole(role: string | null): FolderRole {
     default:
       return "other";
   }
+}
+
+// Same budget as MAX_MESSAGE_HEADER_BYTES in message-protocol.ts, for metadata only.
+export const JMAP_EMAIL_RESPONSE_BYTES = 2 * 1024 * 1024;
+const emailGetSchema = z.object({
+  accountId: jmapIdSchema,
+  state: z.string(),
+  list: z.array(jmapEmailSnapshotSchema),
+  notFound: z.array(jmapIdSchema),
+});
+
+/** Bounded Email/get only. No checkpoint or mailbox projection is performed here. */
+export async function readJmapEmails(
+  session: JmapSession,
+  authorization: string,
+  accountId: string,
+  ids: readonly string[],
+  signal: AbortSignal,
+  deps: JmapTransportDependencies = {},
+): Promise<{ objects: JmapEmailSnapshot[]; notFoundIds: string[] }> {
+  validateJmapId(accountId);
+  const account = Object.hasOwn(session.accounts, accountId) ? session.accounts[accountId] : undefined;
+  if (!account) throw new JmapError("JMAP_ACCOUNT");
+  if (!session.capabilities[JMAP_MAIL] || !account.accountCapabilities[JMAP_MAIL]) throw new JmapError("JMAP_CAPABILITY");
+  for (const id of ids) validateJmapId(id);
+  if (new Set(ids).size !== ids.length) throw new JmapError("JMAP_INVALID_ID");
+  const objects: JmapEmailSnapshot[] = [];
+  const notFoundIds: string[] = [];
+  let batchSize = Math.min(ENVELOPE_BATCH_SIZE, session.core.maxObjectsInGet);
+  for (let offset = 0; offset < ids.length; ) {
+    if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
+    const batch = ids.slice(offset, offset + batchSize);
+    let response: Awaited<ReturnType<typeof callJmap>>;
+    try {
+      response = await callJmap(
+        {
+          session,
+          authorization,
+          signal,
+          using: [JMAP_CORE, JMAP_MAIL],
+          methodCalls: [
+            [
+              "Email/get",
+              { accountId, ids: batch, properties: JMAP_EMAIL_PROPERTIES, bodyProperties: JMAP_EMAIL_BODY_PROPERTIES },
+              "emails",
+            ],
+          ],
+          maxBytes: JMAP_EMAIL_RESPONSE_BYTES,
+        },
+        deps,
+      );
+    } catch (error) {
+      if (!(error instanceof JmapTransportError) || error.code !== "JMAP_TOO_LARGE") throw error;
+      if (batch.length === 1) throw new JmapError("JMAP_EMAIL_TOO_LARGE");
+      batchSize = Math.max(1, Math.floor(batch.length / 2));
+      continue;
+    }
+    const parsed = emailGetSchema.safeParse(requireJmapMethodResult(response, "emails", "Email/get"));
+    if (!parsed.success || parsed.data.accountId !== accountId) throw new JmapError("JMAP_INVALID_RESPONSE");
+    const page = parsed.data;
+    const remaining = new Set(batch);
+    for (const id of [...page.list.map((email) => email.id), ...page.notFound]) {
+      if (!remaining.delete(id)) throw new JmapError("JMAP_INVALID_RESPONSE");
+    }
+    if (remaining.size) throw new JmapError("JMAP_INVALID_RESPONSE");
+    objects.push(...page.list);
+    notFoundIds.push(...page.notFound);
+    offset += batch.length;
+  }
+  if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
+  return { objects, notFoundIds };
 }
