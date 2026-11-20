@@ -621,7 +621,7 @@ describe("mail capabilities", () => {
     const materialize = spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: mutableDraftFixture });
     spyOn(platformSettings, "get").mockResolvedValue(undefined);
     const action = mailCapabilities.actions["draft.create"];
-    const input = action.input.parse({ mailboxId, senderIdentityId, sourceMessageId: messageId, body: "Saturday works.", ...choice });
+    const input = action.input.parse({ senderIdentityId, sourceMessageId: messageId, body: "Saturday works.", ...choice });
     const english = { ...context, locale: "en" };
     const result = await action.run(input, { ...english, idempotencyKey: `quote-${_name}` });
     expect(result.ok).toBeTrue();
@@ -633,7 +633,7 @@ describe("mail capabilities", () => {
     const materialize = spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: mutableDraftFixture });
     spyOn(platformSettings, "get").mockResolvedValue("Europe/Berlin");
     const action = mailCapabilities.actions["draft.create"];
-    const input = action.input.parse({ mailboxId, senderIdentityId, sourceMessageId: messageId, intent: "reply", body: "Gern." });
+    const input = action.input.parse({ senderIdentityId, sourceMessageId: messageId, intent: "reply", body: "Gern." });
     const result = await action.run(input, { ...context, locale: "de", idempotencyKey: "quote-zone" });
     expect(result.ok).toBeTrue();
     expect(materialize.mock.calls[0]?.[0].input.draft.quoteSource).toEqual({ locale: "de", timeZone: "Europe/Berlin" });

@@ -217,7 +217,13 @@ suite("AI conversation store integration", () => {
     try {
       // A signed-in session keeps the turn unrestricted on both paths.
       const session = await turn();
-      await aiConversations.enqueueTurnSteer({ ...session, clientRequestId: "s1", text: "From the browser", signedInSession: true });
+      await aiConversations.enqueueTurnSteer({
+        ...session,
+        clientRequestId: "s1",
+        text: "From the browser",
+        signedInSession: true,
+        actor: userResourceContext({ type: "user", userId }).actor,
+      });
       await tool(session, "call-session");
       await aiConversations.resolvePendingTurnAction({
         ...session,
@@ -233,6 +239,7 @@ suite("AI conversation store integration", () => {
         clientRequestId: "s2",
         text: "From the terminal",
         signedInSession: false,
+        actor: userResourceContext({ type: "user", userId }).actor,
       });
       expect(steer.ok).toBe(true);
       expect(await restricted(steered.conversationId, steered.turnId)).toBe(true);
