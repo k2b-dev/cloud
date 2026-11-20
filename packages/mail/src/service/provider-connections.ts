@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { audit, decryptSecret, encryptSecret, isUniqueViolation, logger } from "@k2b/cloud/services";
 import { err, fail, isServiceError, ok, type Result, type ServiceError } from "@k2b/stdlib";
-import type { ConnectorVerification, ProviderConnection, ProviderConnectionInput, ProviderSecret } from "../contracts";
+import type { ConnectorKind, ConnectorVerification, ProviderConnection, ProviderConnectionInput, ProviderSecret } from "../contracts";
 import { parseProviderLimitSnapshot, providerSecretSchema } from "../contracts";
 import { requireMailboxPermission } from "./access";
 import { auditActorFromRequest, type MailRequestContext, permissionFromScopes } from "./auth";
@@ -23,7 +23,7 @@ type DbProviderConnection = {
   name: string;
   email: string;
   username: string;
-  connector_kind: "imap_smtp";
+  connector_kind: ConnectorKind;
   imap_host: string;
   imap_port: number;
   imap_tls_mode: "implicit" | "starttls";

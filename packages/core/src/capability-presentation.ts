@@ -649,6 +649,17 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             permission: "Neue Berechtigungsstufe; null entzieht die vorhandene Berechtigung.",
           },
         },
+        "ai.chat.create": {
+          title: "Neuen Chat erstellen",
+          description:
+            "Erstellt einen leeren persönlichen Chat, optional in einem lesbaren Projekt. Derselbe Schlüssel liefert den ursprünglichen Chat. Eingeschränkte Zugänge, Dienstkonten und Chat-Ketten dürfen keine Chats erstellen.",
+          input: {
+            title: "Titel des neuen persönlichen Chats mit 1 bis 200 Zeichen.",
+            project: "Optionales Projekt für den neuen Chat; aktueller Lesezugriff ist nötig.",
+            "project.type": "Ressourcentyp des Projekts.",
+            "project.id": "Öffentliche Kurz-ID eines lesbaren Projekts.",
+          },
+        },
         "ai.chat.send": {
           title: "In einen Chat schreiben",
           description:

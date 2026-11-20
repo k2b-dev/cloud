@@ -112,8 +112,12 @@ const requestContext = (context: CapabilityExecutionContext): MailRequestContext
   requestId: context.requestId,
 });
 
-const localizeCapabilityError = <T extends { code: string; status: number; message: string }>(error: T, locale: string | undefined): T => {
-  const localized = localizeMailError(error, locale);
+const localizeCapabilityError = <T extends { code: string; status: number; message: string }>(
+  error: T,
+  locale: string | undefined,
+  includeInputDetails = true,
+): T => {
+  const localized = localizeMailError(error, locale, { includeInputDetails });
   return error.code === "DRAFT_REPLY_BOX_OCCUPIED"
     ? { ...localized, message: `${localized.message} ${draftAdoptionMessages.resolve([locale ?? "en"]).t.occupiedCapabilityHint}` }
     : localized;
@@ -127,17 +131,18 @@ const localizeCapabilityErrors = <T extends CapabilityDefinitions>(definitions: 
       return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
     };
   }
-  for (const definition of Object.values(definitions.actions ?? {})) {
+  for (const [name, definition] of Object.entries(definitions.actions ?? {})) {
+    const includeInputDetails = name !== "draft.create" && name !== "draft.send";
     const run = definition.run;
     definition.run = async (input, context) => {
       const result = await run(input, context);
-      return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
+      return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale, includeInputDetails) };
     };
     if (definition.review) {
       const review = definition.review;
       definition.review = async (input, context) => {
         const result = await review(input, context);
-        return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
+        return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale, includeInputDetails) };
       };
     }
   }

@@ -617,6 +617,7 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
       ? presentCodeVersion({
           // Administration names no person's chat: the bound chat stays private to its owner.
           personal: owner.kind === "person",
+          viewerIsOwner: owner.kind === "person" && owner.userId === admin.id,
           ...(owner.kind === "person" && owner.userId !== admin.id ? { runsAs: { name: ownerName } } : {}),
           versionId,
           number: row.number,

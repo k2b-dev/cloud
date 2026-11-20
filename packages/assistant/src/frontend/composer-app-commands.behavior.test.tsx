@@ -360,7 +360,7 @@ test("a project composer creates a chat without navigating, saves there, and ret
   h.choose();
   await waitFor(() => openCommand.mock.calls.length === 1);
   expect(events).toEqual(["create", "save", "open"]);
-  expect(h.creates).toEqual([{ title: "Neuer Chat", projectId: "Proj01", requestId: expect.any(String) }]);
+  expect(h.creates).toEqual([{ projectId: "Proj01", requestId: expect.any(String) }]);
   expect(h.saves).toEqual([{ expectedRevision: 0, content: [{ type: "text", text: "Plan" }] }]);
   expect(openCommand).toHaveBeenCalledWith(
     "spaces.task.compose",

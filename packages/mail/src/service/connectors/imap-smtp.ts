@@ -873,6 +873,7 @@ export const mapFetchedEnvelope = async (message: FetchMessageObject, request: E
   const parsedHeaders = await parseEnvelopeHeaders(message.headers);
   return {
     remoteRef: {
+      kind: "imap",
       folderStableKey: request.folderStableKey,
       uidValidity: request.uidValidity,
       uid: String(message.uid),

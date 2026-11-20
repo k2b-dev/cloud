@@ -13,7 +13,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
 import { coreSettings } from "@k2b/cloud/services";
-import { err, fail, ok } from "@k2b/stdlib";
+import { err, fail, ok, type ServiceError } from "@k2b/stdlib";
 import type { z } from "zod";
 import { mailCapabilities } from "./capabilities";
 import {
@@ -72,6 +72,8 @@ import {
 } from "./service";
 import * as reviewReaders from "./service/capability-review-readers";
 import { previewMailCodeMessage, resolveMailCodeEvent, selectMailCodeMessages } from "./service/code-messages";
+import { composeRenderFailure } from "./service/compose-render-errors";
+import { senderIdentityUnverified } from "./service/sender-identity-errors";
 
 test("conditional Mail outcomes keep counted automation wording instead of claiming creation or a full conversation move", () => {
   expect(mailCapabilityPresentation.results?.["draft.create"]).toBeUndefined();
@@ -2709,6 +2711,152 @@ describe("mail capabilities", () => {
       ok: false,
       error: { code: "NOT_FOUND", message: "Das Postfach wurde nicht gefunden", status: 404 },
     });
+  });
+
+  // Each action's service can reject for access, validation, revision/lifecycle, or availability.
+  // Inject at its last read/write boundary so review and run must both use the app's final-message boundary.
+  const draftRejections: Array<{ error: ServiceError & { draftId?: string }; german: string; english?: string }> = [
+    { error: err.badInput("Distinct English validation detail"), german: "Prüfe die Angaben für diese Mail-Aktion" },
+    { error: err.badInput("At least one recipient is required before sending"), german: "Gib mindestens eine Empfängeradresse an." },
+    { error: err.notFound("Sender identity not found"), german: "Mail-Ressource wurde nicht gefunden" },
+    { error: err.forbidden("Mailbox write access required"), german: "Du hast nicht die erforderliche Berechtigung" },
+    { error: err.conflict("Draft changed before review"), german: "Der aktuelle Stand hat sich geändert" },
+    {
+      error: senderIdentityUnverified("sender@example.test"),
+      german: "Die Absenderidentität sender@example.test fehlt oder ist nicht bestätigt.",
+    },
+    { error: senderIdentityUnverified(), german: "Die gewählte Absenderidentität fehlt oder ist nicht bestätigt." },
+    { error: composeRenderFailure("signatureFailed"), german: "Die Signatur dieser Nachricht konnte nicht ausgefüllt werden" },
+    ...["DRAFT_ADOPTED", "DRAFT_SUGGESTION_CONFLICT"].map((code) => ({
+      error: { code, status: 409 as const, message: "Distinct English domain rejection" },
+      english:
+        code === "DRAFT_ADOPTED"
+          ? "A person has edited this draft. Ask them to initiate further changes."
+          : code === "DRAFT_SUGGESTION_CONFLICT"
+            ? "Both conversations have an open reply draft. Send or discard one before merging them."
+            : undefined,
+      german:
+        code === "DRAFT_ADOPTED"
+          ? "Eine Person hat diesen Entwurf bearbeitet"
+          : code === "DRAFT_SUGGESTION_CONFLICT"
+            ? "Beide Unterhaltungen"
+            : "Mail konnte die Anfrage nicht verarbeiten",
+    })),
+    ...["DOCUMENT_FROZEN", "SEND_CONTENT_CHANGED", "GENERATION_CHANGED", "DOCUMENT_CLOSED"].map((code) => ({
+      error: { code, status: 409 as const, message: "Distinct English lifecycle rejection" },
+      german: code === "DOCUMENT_FROZEN" ? "Der Entwurf ist vorübergehend gesperrt" : "Der Nachrichteninhalt hat sich geändert",
+    })),
+    ...["DRAFT_DOCUMENT_HISTORY_UNAVAILABLE", "DRAFT_DOCUMENT_INVALID_HISTORY", "DRAFT_DOCUMENT_UNAVAILABLE"].map((code) => ({
+      error: { code, status: 409 as const, message: "Distinct English recovery rejection" },
+      german:
+        code === "DRAFT_DOCUMENT_UNAVAILABLE"
+          ? "Der Entwurf konnte nicht zum Senden vorbereitet werden"
+          : "Die Bearbeitungshistorie dieses Entwurfs",
+    })),
+    {
+      error: { ...err.conflict("Distinct English occupied reply"), code: "DRAFT_REPLY_BOX_OCCUPIED", draftId },
+      german: `Antwortentwurf ${draftId} ist bereits vorhanden.`,
+      english: `Reply draft ${draftId} already exists. Open it and apply your content explicitly; no supplied content was saved. Switch its mode with mail.draft.intent using the current revision.`,
+    },
+    {
+      error: { code: "DRAFT_DOCUMENT_STREAM_FULL", status: 409, message: "Distinct English storage rejection" },
+      german: "Der Entwurfsspeicher von Mail ist voll.",
+      english:
+        "Mail's draft storage is full. Keep your unsent text and try again later. If the problem continues, ask a mailbox administrator to check draft storage.",
+    },
+    { error: err.unauthenticated("Distinct English authentication failure"), german: "Mail konnte die Anfrage nicht verarbeiten" },
+    { error: err.internal("Distinct English service failure"), german: "Mail konnte die Anfrage nicht verarbeiten" },
+  ];
+  test.each(draftRejections.flatMap((rejection) => ["en", "de", "de-CH"].map((locale) => ({ ...rejection, locale }))))(
+    "draft.create and draft.send localize $error.code rejections in $locale during review and run",
+    async ({ error, german, english, locale }) => {
+      spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+      spyOn(drafts, "prepareDraftSeed").mockResolvedValue(fail(error));
+      spyOn(drafts, "materializeDraftSeed").mockResolvedValue(fail(error));
+      spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+      spyOn(composeSafety, "reviewDraftComposeSafety").mockResolvedValue({
+        ok: true,
+        data: { draftId: internalDraftId, revision: 2, fingerprint: "f".repeat(64), contentHash: "a".repeat(64), warnings: [] },
+      });
+      spyOn(reviewReaders, "loadSendReviewContent").mockResolvedValue(fail(error));
+      spyOn(commands, "createActorCommand").mockResolvedValue(fail(error));
+      const localizedContext = { ...context, locale, idempotencyKey: "localized-draft-rejection" };
+      const createInput = DraftCreateInputSchema.parse({ senderIdentityId, subject: "Release", body: "Hello" });
+      const sendInput = DraftSendInputSchema.parse({
+        draftId,
+        senderIdentityId,
+        expectedRevision: 2,
+        expectedContentHash: "a".repeat(64),
+      });
+      const results = [
+        await mailCapabilities.actions["draft.create"].review(createInput, localizedContext),
+        await mailCapabilities.actions["draft.create"].run(createInput, localizedContext),
+        await mailCapabilities.actions["draft.send"].review(sendInput, localizedContext),
+        await mailCapabilities.actions["draft.send"].run(sendInput, localizedContext),
+      ];
+      for (const result of results) {
+        if (result.ok) throw new Error("Expected a draft rejection");
+        expect(result.error).toEqual({ ...error, message: result.error.message });
+        if (locale === "en") expect(result.error.message).toBe(english ?? error.message);
+        else {
+          expect(result.error.message).toContain(german);
+          expect(result.error.message).not.toContain(error.message);
+        }
+        if (error.code === "SENDER_IDENTITY_UNVERIFIED") {
+          expect(result.error.message).toContain(
+            locale === "en" ? "Accounts & identities → Sending identities" : "Konten und Identitäten → Absenderidentitäten",
+          );
+          expect(result.error.message).toContain(locale === "en" ? "mailbox administrator" : "Postfach-Administration");
+        }
+      }
+    },
+  );
+
+  test("draft fallback changes preserve already-localized assignment rejections", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: {
+        items: [
+          {
+            id: internalMessageId,
+            subject: "Planning",
+            preview: null,
+            hasAttachments: false,
+            messageId: null,
+            internalDate: timestamp,
+            sentAt: null,
+            from: [],
+            to: [],
+            flags: [],
+            keywords: [],
+            hydrationStatus: "complete",
+            remoteAvailable: true,
+            folderId: null,
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    spyOn(collaboration, "listEligibleAssignees").mockResolvedValue([]);
+    const reviewed = await mailCapabilities.actions["conversation.assign"].review(
+      { conversationId, assigneeUserIds: [userId], mode: "replace" },
+      { ...context, locale: "de" },
+    );
+    expect(reviewed).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
+    if (reviewed.ok) throw new Error("Expected assignment review rejection");
+    expect(reviewed.error.message).toContain("Zuständige müssen aktive Benutzer");
+    spyOn(conversationAssignments, "assignConversation").mockResolvedValue(
+      fail(err.badInput("Zuständige müssen aktive Benutzer mit Schreibzugriff auf das Postfach oder mit zugewiesenem Zugriff sein.")),
+    );
+    const result = await mailCapabilities.actions["conversation.assign"].run(
+      { conversationId, assigneeUserIds: [userId], mode: "replace" },
+      { ...context, locale: "de", idempotencyKey: "assignment-rejection" },
+    );
+    expect(result).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
+    if (result.ok) throw new Error("Expected assignment rejection");
+    expect(result.error.message).toContain("Zuständige müssen aktive Benutzer");
+    expect(result.error.message).not.toContain("Mail-Aktion");
   });
 
   test("explains attachment-content conversation matches with public links", async () => {

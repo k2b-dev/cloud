@@ -159,6 +159,36 @@ test("the rule fails an intentionally wrong repository without an enforcement fl
   }
 });
 
+test("untargeted personal chat creation exempts only its optional Project context", () => {
+  const action = {
+    title: "Create a new chat",
+    description: "Create an empty personal chat, optionally in a readable Project.",
+    input: z.strictObject({
+      title: z.string().describe("Chat title."),
+      project: z
+        .strictObject({ type: z.literal("core.ai.project").describe("Project type."), id: z.string().describe("Project ID.") })
+        .optional()
+        .describe("Optional readable Project."),
+    }),
+    data: z.strictObject({}),
+    destructive: false,
+    openWorld: false,
+    idempotency: "required" as const,
+    run: () => ({ ok: true as const, data: { data: {} } }),
+  };
+  const manifest = compileCapabilities("core", defineCapabilities({ protocolVersion: 2, actions: { "ai.chat.create": action } })).manifest;
+  expect(capabilityTargetGaps(manifest)).toEqual([]);
+  expect(capabilityTargetGaps({ ...manifest, appId: "other" })).toEqual(["other.ai.chat.create: project.id"]);
+  const extra = compileCapabilities(
+    "core",
+    defineCapabilities({
+      protocolVersion: 2,
+      actions: { "ai.chat.create": { ...action, input: action.input.extend({ chatId: z.string().describe("Existing chat.") }) } },
+    }),
+  ).manifest;
+  expect(capabilityTargetGaps(extra)).toEqual(["core.ai.chat.create: chatId"]);
+});
+
 test("owner-only Code declarations generate no target-rights Actions", () => {
   const manifest = compileCapabilities("third-party", defineCapabilities({ protocolVersion: 2, code: {} })).manifest;
   expect(manifest.actions).toEqual([]);

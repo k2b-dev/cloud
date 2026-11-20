@@ -38,7 +38,7 @@ import { aiResourceMarker } from "./resource-markers";
 import { __aiRoutesTest, aiRoutes } from "./routes";
 import * as aiRuntime from "./runtime";
 import { createAiShortId } from "./short-id";
-import { aiConversations, recordAiToolCheck, recordAiToolReview, settleAiToolCheck } from "./store";
+import { AiConversationCreationError, aiConversations, recordAiToolCheck, recordAiToolReview, settleAiToolCheck } from "./store";
 import { publishAiWireEvent } from "./stream";
 import { aiToolAudit } from "./tool-audit";
 
@@ -132,6 +132,7 @@ suite("global AI conversation boundaries", () => {
       const first = await post(body);
       expect(first.status).toBe(201);
       const created = await first.json();
+      expect(created).toMatchObject({ title: "Panel draft", titleSource: "user" });
       const replay = await post(body);
       expect(replay.status).toBe(201);
       expect((await replay.json()).id).toBe(created.id);
@@ -146,6 +147,26 @@ suite("global AI conversation boundaries", () => {
     } finally {
       await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (${userId}::uuid, ${otherId}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherId}::uuid)`;
+    }
+  });
+
+  test("a Project removed during HTTP creation is reported as a missing Project", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const create = spyOn(aiConversations, "createConversation").mockRejectedValueOnce(
+      new AiConversationCreationError("project_unavailable"),
+    );
+    try {
+      const response = await aiRoutes.request("/conversations", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Project chat" }),
+      });
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ message: expect.stringContaining("Project") });
+    } finally {
+      create.mockRestore();
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
 

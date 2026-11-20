@@ -715,7 +715,7 @@ test("Core action targets replace their primary input selector in the manifest",
   const manifest = compileCapabilityManifest("core", aiCapabilities);
   for (const action of manifest.actions) {
     if (action.localId.startsWith("code.")) continue;
-    if (action.localId === "ai.skill.create") {
+    if (["ai.skill.create", "ai.chat.create"].includes(action.localId)) {
       expect(action.target).toBeUndefined();
       continue;
     }
@@ -829,6 +829,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "route.update",
   ];
   const actions = [
+    "ai.chat.create",
     "ai.chat.send",
     "ai.skill.access.change",
     "ai.skill.create",
@@ -905,6 +906,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.version.reject": { destructive: false, idempotency: "required" },
     "code.version.request_changes": { destructive: false, idempotency: "required" },
     "code.version.submit": { destructive: false, idempotency: "required" },
+    "ai.chat.create": { destructive: false, idempotency: "required" },
     "ai.chat.send": { destructive: false, idempotency: "required" },
     "ai.skill.access.change": { destructive: true, idempotency: "required" },
     "ai.skill.create": { destructive: false, idempotency: "required" },

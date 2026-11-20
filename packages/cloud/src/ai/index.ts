@@ -445,7 +445,6 @@ export type {
   AiEnrichmentStatus,
   AiEnrichmentTrigger,
   AiFrontendToolMode,
-  AiInterChatMessage,
   AiMessageFeedback,
   AiMessageFeedbackReason,
   AiModelCapability,

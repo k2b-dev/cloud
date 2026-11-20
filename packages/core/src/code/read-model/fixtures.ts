@@ -20,6 +20,7 @@ export function codeReadModelFixture(locale: "de" | "en") {
   };
   return presentCodeVersion({
     personal: false,
+    viewerIsOwner: false,
     versionId: "00000000-0000-4000-8000-000000000001",
     number: 5,
     submittedAt: "2026-11-14T09:00:00.000Z",

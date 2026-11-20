@@ -214,11 +214,14 @@ export function AssistantChatContextBox(props: {
     return chatId ? conversationFileSource("/api/ai", chatId) : null;
   });
   const downloadHref = (path: string) => files()?.downloadHref?.(path) ?? undefined;
+  // The chat whose box showed content in this page view; its box keeps its lines when that content goes.
+  const [filledChat, setFilledChat] = createSignal<string | null>(null);
   const model = createMemo(() => {
     const snapshot = held.shown();
     if (!snapshot) return null;
     const t = copy();
     return buildContextBoxModel(snapshot, {
+      filled: untrack(filledChat) === snapshot.chatId,
       locale: locale(),
       // Whole kilobytes keep the place at the row's end narrow.
       formatSize: (bytes) => formatFileViewSize(bytes < 1024 * 1024 ? Math.round(bytes / 1024) * 1024 : bytes, locale()),
@@ -231,6 +234,10 @@ export function AssistantChatContextBox(props: {
         showInChat: t.showInChat,
       },
     });
+  });
+  createEffect(() => {
+    const chatId = held.shown()?.chatId;
+    if (chatId && model()?.empty === false) setFilledChat(chatId);
   });
   const fresh = () => held.pending() > 0 || held.changed();
   return (
