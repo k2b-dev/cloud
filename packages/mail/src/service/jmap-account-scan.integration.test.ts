@@ -30,23 +30,26 @@ import { claimFence } from "./sync-runtime";
 const suite = suiteFor("database", "nats", "valkey");
 const at = new Date("2026-11-20T00:00:00Z");
 // Measured in the gate, BEGIN and COMMIT included, for the commit of one step (the reads before it
-// are outside the window). The driver records them after the first gate; until then only the
-// ratios are checked. Only a new membership costs per message: the shared ingestEnvelope.
+// are outside the window). A quiet step is the transaction, four locks, the checkpoint and the run
+// (8); a page with changes adds refs, folders, flags, binding usage and the invalidation (13). Only
+// a new membership costs per message: the 18 statements of the shared ingestEnvelope. A start is 17
+// fixed statements (12 in the commit, 5 in projectJmapFolders) plus 5 per new folder (savepoint,
+// insert and release, the binding ref, the parent) or 3 per known one; 5 new folders make 42.
 const STATEMENT_BUDGET: Record<
   "start5" | "new1" | "new7" | "known7" | "flags7" | "restart" | "verify1" | "verify7" | "verifyNone" | "deltaRequired",
-  number | null
+  number
 > = {
-  start5: null,
-  new1: null,
-  new7: null,
-  known7: null,
-  flags7: null,
-  restart: null,
-  verify1: null,
-  verify7: null,
-  verifyNone: null,
+  start5: 42,
+  new1: 31,
+  new7: 139,
+  known7: 11,
+  flags7: 13,
+  restart: 8,
+  verify1: 14,
+  verify7: 14,
+  verifyNone: 8,
   // The whole scan call that yields to a pending delta: read, fence and removing its own run.
-  deltaRequired: null,
+  deltaRequired: 7,
 };
 let sequence = 0;
 const uuid = () => `00000000-004c-4000-8000-${String(++sequence).padStart(12, "0")}`;
@@ -389,6 +392,7 @@ suite("JMAP account scan", () => {
   for (const race of ["fence", "generation", "revision", "pause", "deleted"] as const) {
     test(`start: ${race} between the reads and the commit invalidates the start`, async () => {
       let raced = false;
+      let liveAfterRace: number | undefined;
       source.f.controls.handle = async (request) => {
         if (request.method !== "POST" || raced) return undefined;
         raced = true;
@@ -401,11 +405,15 @@ suite("JMAP account scan", () => {
           await sql<[]>`UPDATE mail.provider_connections SET secret_revision = 2 WHERE id = ${source.connectionId}::uuid`;
         if (race === "pause") await sql<[]>`UPDATE mail.mailboxes SET sync_enabled = false WHERE id = ${source.mailboxId}::uuid`;
         if (race === "deleted") await sql<[]>`UPDATE mail.mailboxes SET deleted_at = ${at} WHERE id = ${source.mailboxId}::uuid`;
+        // Pausing or deleting the mailbox writes its own live row (trigger room_access_changed);
+        // count after the race, so the expectation below holds the start alone to no live row.
+        liveAfterRace = (await counts()).live;
         return undefined;
       };
       expect(await startScan(), `${race}: superseded`).toEqual({ status: "superseded", cause: "account_changed" });
       expect(await storedState(), `${race}: checkpoint stays NULL`).toBeNull();
-      expect(await counts(), `${race}: no folder projected`).toMatchObject({ folders: 0, live: 0 });
+      expect(typeof liveAfterRace, `${race}: race applied`).toBe("number");
+      expect(await counts(), `${race}: no folder projected, no live row from the start`).toMatchObject({ folders: 0, live: liveAfterRace });
       expect(live, `${race}: no wake`).not.toHaveBeenCalled();
     });
   }
@@ -461,11 +469,11 @@ suite("JMAP account scan", () => {
       ["committed", 0, bucket(0), 1],
       ["committed", 1, bucket(3), 1],
       ["committed", 0, { kind: "query", before: second("08") }, 0],
-      ["committed", 2, { kind: "verify", afterEmailId: null }, 0],
-      // Active local IDs B, D..H, X, Y, Z in byte order, three per page.
-      ["committed", 0, { kind: "verify", afterEmailId: "E" }, 0],
-      ["committed", 0, { kind: "verify", afterEmailId: "H" }, 0],
-      ["committed", 0, { kind: "verify", afterEmailId: "Z" }, 0],
+      ["committed", 2, { kind: "verify", after: null }, 0],
+      // Active local refs B, D..H, X, Y, Z of the Inbox, three per page; the cursor is the last ref.
+      ["committed", 0, { kind: "verify", after: { folderId: expect.any(String), emailId: "E" } }, 0],
+      ["committed", 0, { kind: "verify", after: { folderId: expect.any(String), emailId: "H" } }, 0],
+      ["committed", 0, { kind: "verify", after: { folderId: expect.any(String), emailId: "Z" } }, 0],
       ["committed", 0, null, null],
     ]);
     expect(
@@ -641,7 +649,7 @@ suite("JMAP account scan", () => {
     expect(await syncJmapAccountDelta(source.args), "delta race: superseded").toEqual({ status: "superseded", cause: "account_changed" });
     expect(await state(), "delta race: email axis unchanged, scan advanced").toMatchObject({
       emailState: "Email:2",
-      scan: { step: { kind: "verify", afterEmailId: "OLDER" } },
+      scan: { step: { kind: "verify", after: { folderId: expect.any(String), emailId: "OLDER" } } },
     });
   });
 
@@ -706,13 +714,15 @@ suite("JMAP account scan", () => {
       "stall: the limit-th restart stalls",
     ).toEqual([...Array.from({ length: 3 + 2 * (JMAP_SCAN_RESTART_LIMIT - 1) }, () => "committed"), "stalled"]);
     const stalled = await scanOf();
+    // Read before toMatchObject: with expect.any, Bun 1.4.4 replaces the field in the checked object.
+    const stalledAt = stalled?.stalledAt;
     expect(stalled, "stall: counters").toMatchObject({
       restarts: JMAP_SCAN_RESTART_LIMIT,
       stalledAt: expect.any(String),
       step: { kind: "bucket", position: 0, queryState: null },
     });
     const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
-    expect(Date.parse(stalled?.stalledAt ?? ""), "stall: database time").toBeLessThanOrEqual(clock?.now.getTime() ?? Number.NaN);
+    expect(Date.parse(stalledAt ?? ""), "stall: database time").toBeLessThanOrEqual(clock?.now.getTime() ?? Number.NaN);
     source.f.controls.transform = undefined;
     const token = await fenceToken(),
       requests = source.f.requests.length;
@@ -824,7 +834,7 @@ suite("JMAP account scan", () => {
       if (result.status !== "committed") throw new Error(`verify: ${JSON.stringify(result)}`);
       complete = result.scanComplete;
       const scan = await scanOf();
-      if (before?.kind === "verify") verified.push(scan?.step.kind === "verify" ? scan.step.afterEmailId : null);
+      if (before?.kind === "verify") verified.push(scan?.step.kind === "verify" ? (scan.step.after?.emailId ?? null) : null);
       if (turn === 0) {
         expect(result.stats.removed, "scan page: no removal from notFound").toBe(0);
         expect(await projection(), "scan page: V2 still active").toContain("V2:a");
@@ -833,6 +843,39 @@ suite("JMAP account scan", () => {
     expect(verified, "verify: the cursor advances three IDs at a time, then the scan ends").toEqual(["V3", "V6", null]);
     expect(await projection(), "verify: V2 and V6 removed").toEqual(serverProjection());
     expect(await imap(), "verify: IMAP ref and placement untouched").toEqual(imapBefore);
+  });
+
+  test("verify: a missing message in two folders is removed exactly once, its refs on different pages", async () => {
+    // Eight Inbox and Projects refs, three per verify page: TWO's refs end up on pages two and three,
+    // whichever folder sorts first.
+    for (const [id, at, mailboxes] of [
+      ["A1", "17", { a: true }],
+      ["A2", "16", { a: true }],
+      ["A3", "15", { a: true }],
+      ["B1", "14", { b: true }],
+      ["B2", "13", { b: true }],
+      ["B3", "12", { b: true }],
+      ["TWO", "11", { a: true, b: true }],
+    ] as const)
+      put(message(id, at, mailboxes));
+    await startScan();
+    await scanToEnd();
+    remove("TWO", false);
+    await startScan("repair");
+    const requests = source.f.requests.length;
+    const trace = await scanToEnd();
+    const removals = trace.flatMap(({ result }) => (result.status === "committed" && result.stats.removed ? [result.stats.removed] : []));
+    expect(removals, "two folders: both memberships in one commit").toEqual([2]);
+    const checks = source.f.requests
+      .slice(requests)
+      .flatMap((request) => request.calls ?? [])
+      .filter(([name, args]) => name === "Email/get" && JSON.stringify(args.properties) === '["id"]');
+    expect(checks.length, "two folders: three verify pages").toBe(3);
+    expect(
+      checks.filter(([, args]) => Array.isArray(args.ids) && args.ids.includes("TWO")).length,
+      "two folders: checked once; the second ref was already stale",
+    ).toBe(1);
+    expect(await projection(), "two folders: projection equals the server").toEqual(serverProjection());
   });
 
   test("lock order: a role writer holding a folder and a start snapshot both finish", async () => {
@@ -1003,23 +1046,27 @@ suite("JMAP account scan", () => {
         page: { kind: "restart", next: { kind: "bucket", second: second("20"), position: 0, queryState: null }, emailState: "Email:1" },
       });
       const ids = batch7().map((email) => email.id);
-      await setScan({ step: { kind: "verify", afterEmailId: null } });
-      await measure("verifyNone", { kind: "verify", checkedIds: ids, notFoundIds: [] });
-      await setScan({ step: { kind: "verify", afterEmailId: null } });
-      await measure("verify1", { kind: "verify", checkedIds: ["SINGLE"], notFoundIds: ["SINGLE"] });
+      const [inbox] = await sql<{ id: string }[]>`SELECT folder_id AS id FROM mail.binding_folder_refs
+        WHERE binding_id = ${source.args.bindingId}::uuid AND remote_folder_id = 'a'`;
+      if (!inbox) throw new Error("verify: missing Inbox");
+      const refs = (emailIds: string[]) => emailIds.map((emailId) => ({ folderId: inbox.id, emailId }));
+      await setScan({ step: { kind: "verify", after: null } });
+      await measure("verifyNone", { kind: "verify", checked: refs(ids), notFoundIds: [] });
+      await setScan({ step: { kind: "verify", after: null } });
+      await measure("verify1", { kind: "verify", checked: refs(["SINGLE"]), notFoundIds: ["SINGLE"] });
       expect(await scanOf(), "verify1: a short page ends the scan").toBeNull();
       await sql<[]>`UPDATE mail.remote_resources SET sync_state = ${{
         ...(await state()),
         scan: {
           reason: "initial",
           startedAt: at.toISOString(),
-          step: { kind: "verify", afterEmailId: null },
+          step: { kind: "verify", after: null },
           pages: 0,
           restarts: 0,
           stalledAt: null,
         },
       }}::jsonb WHERE id = ${source.args.remoteResourceId}::uuid`;
-      await measure("verify7", { kind: "verify", checkedIds: ids, notFoundIds: ids });
+      await measure("verify7", { kind: "verify", checked: refs(ids), notFoundIds: ids });
       await setScan({ step: { kind: "query", before: null } });
       source.f.journal.Email.push({ id: "elsewhere", kind: "created" });
       const yielded = await meter.during(async () => {
@@ -1030,8 +1077,7 @@ suite("JMAP account scan", () => {
       texts.deltaRequired = yielded;
       // The line names the measured values for the budget.
       console.info("JMAP_SCAN_STATEMENTS", JSON.stringify(measured));
-      for (const [key, budget] of Object.entries(STATEMENT_BUDGET))
-        if (budget !== null) expect(measured[key as keyof typeof measured], `budget: ${key}`).toBe(budget);
+      expect(measured, "budget: exact statement counts").toEqual(STATEMENT_BUDGET);
       expect(measured.new7 - measured.new1, "budget: only the shared ingest grows with new messages").toBe(
         6 * (measured.new1 - measured.flags7),
       );
@@ -1059,29 +1105,57 @@ suite("JMAP account scan", () => {
     }
   });
 
-  test("verify plan: one page of 80,000 active JMAP refs in 20 folders", async () => {
-    const folderIds = Array.from({ length: 20 }, () => uuid());
-    await sql<[]>`INSERT INTO mail.folders (id, short_id, remote_resource_id, stable_key, name)
-      SELECT folder.id, 'P' || lpad(folder.ordinal::text, 5, '0'), ${source.args.remoteResourceId}::uuid,
-        'verify-plan-' || folder.ordinal, 'Verify plan ' || folder.ordinal
-      FROM unnest(${toPgUuidArray(folderIds)}::uuid[]) WITH ORDINALITY AS folder(id, ordinal)`;
-    const contentId = uuid();
-    await sql<[]>`INSERT INTO mail.message_contents (id, short_id, mailbox_id, subject, internal_date, content_hash)
-      VALUES (${contentId}::uuid, ${shortId()}, ${source.mailboxId}::uuid, 'Verify plan', ${at}, ${"d".repeat(64)})`;
-    // 76,000 Email IDs; the first 4,000 also have a second membership in the last folder.
-    await sql<[]>`INSERT INTO mail.remote_message_refs (folder_id, message_id, remote_id)
-      SELECT (${toPgUuidArray(folderIds)}::uuid[])[item / 4000 + 1], ${contentId}::uuid, 'E' || lpad((item % 76000)::text, 6, '0')
-      FROM generate_series(0, 79999) AS item`;
+  test("verify plan: pages follow the (folder, Email ID) index among 160,000 refs of two accounts", async () => {
+    // Two resources with 20 folders and 80,000 refs each: the planner sees a table worth an index.
+    async function account(remoteResourceId: string, mailboxId: string, prefix: string) {
+      const folderIds = Array.from({ length: 20 }, () => uuid());
+      await sql<[]>`INSERT INTO mail.folders (id, short_id, remote_resource_id, stable_key, name)
+        SELECT folder.id, ${prefix} || lpad(folder.ordinal::text, 5, '0'), ${remoteResourceId}::uuid,
+          'verify-plan-' || folder.ordinal, 'Verify plan ' || folder.ordinal
+        FROM unnest(${toPgUuidArray(folderIds)}::uuid[]) WITH ORDINALITY AS folder(id, ordinal)`;
+      const contentId = uuid();
+      await sql<[]>`INSERT INTO mail.message_contents (id, short_id, mailbox_id, subject, internal_date, content_hash)
+        VALUES (${contentId}::uuid, ${shortId()}, ${mailboxId}::uuid, 'Verify plan', ${at}, ${"d".repeat(64)})`;
+      // 76,000 Email IDs, 4,000 per folder; the first 4,000 also have a membership in the last folder.
+      await sql<[]>`INSERT INTO mail.remote_message_refs (folder_id, message_id, remote_id)
+        SELECT (${toPgUuidArray(folderIds)}::uuid[])[item / 4000 + 1], ${contentId}::uuid, 'E' || lpad((item % 76000)::text, 6, '0')
+        FROM generate_series(0, 79999) AS item`;
+      return folderIds;
+    }
+    const otherMailbox = uuid(),
+      otherResource = uuid();
+    await sql<[]>`INSERT INTO mail.mailboxes (id, short_id, name, health)
+      VALUES (${otherMailbox}::uuid, ${shortId()}, 'Other JMAP fixture', 'active')`;
+    await sql<
+      []
+    >`INSERT INTO mail.remote_resources (id, mailbox_id, connector_kind, remote_locator, server_identity, scope_fingerprint, status)
+      VALUES (${otherResource}::uuid, ${otherMailbox}::uuid, 'jmap', '{}'::jsonb, '{}'::jsonb, ${"e".repeat(64)}, 'active')`;
+    const folderIds = await account(source.args.remoteResourceId, source.mailboxId, "P");
+    await account(otherResource, otherMailbox, "Q");
     await sql`ANALYZE mail.folders`;
     await sql`ANALYZE mail.remote_message_refs`;
-    const params = { remoteResourceId: source.args.remoteResourceId, afterEmailId: "E038000", limit: 500 };
-    const rows = await jmapVerifyPageQuery(sql, params);
-    const ids = rows.map((row) => row.email_id);
-    expect(ids.length, "plan: at most one page").toBeLessThanOrEqual(params.limit);
-    expect(ids, "plan: strictly after the cursor in byte order").toEqual(
-      [...new Set(ids)].filter((id) => id > params.afterEmailId).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
-    );
-    expect(ids[0], "plan: the next ID").toBe("E038001");
+    const middle = folderIds[9];
+    const next = folderIds[10];
+    if (!middle || !next) throw new Error("plan: missing folders");
+    const id = (value: number) => `E${String(value).padStart(6, "0")}`;
+    const limit = 500;
+    const pages = [
+      // In the middle of the tenth folder (E036000..E039999).
+      {
+        label: "middle",
+        after: { folderId: middle, emailId: id(37_000) },
+        expected: Array.from({ length: 500 }, (_, i) => [middle, id(37_001 + i)]),
+      },
+      // Across the boundary into the eleventh folder.
+      {
+        label: "boundary",
+        after: { folderId: middle, emailId: id(39_800) },
+        expected: [
+          ...Array.from({ length: 199 }, (_, i) => [middle, id(39_801 + i)]),
+          ...Array.from({ length: 301 }, (_, i) => [next, id(40_000 + i)]),
+        ],
+      },
+    ];
     type Plan = {
       "Node Type": string;
       "Actual Rows"?: number;
@@ -1092,27 +1166,43 @@ suite("JMAP account scan", () => {
       Plans?: Plan[];
     };
     const nodes = (plan: Plan): Plan[] => [plan, ...(plan.Plans ?? []).flatMap(nodes)];
-    const [explained] = await sql<{ "QUERY PLAN": [{ Plan: Plan; "Execution Time": number }] }[]>`
-      EXPLAIN (ANALYZE, FORMAT JSON) ${jmapVerifyPageQuery(sql, params)}`;
-    const plan = explained?.["QUERY PLAN"][0];
-    if (!plan) throw new Error("plan: missing");
-    const all = nodes(plan.Plan);
-    const scans = all.filter((node) => node["Relation Name"]);
-    // One line for the driver's index decision; no expectation on time.
-    console.info(
-      "JMAP_VERIFY_PLAN",
-      JSON.stringify({
+    const measured: Record<string, unknown> = {};
+    for (const page of pages) {
+      const params = { remoteResourceId: source.args.remoteResourceId, after: page.after, limit };
+      const rows = await jmapVerifyPageQuery(sql, params);
+      expect(
+        rows.map((row) => [row.folder_id, row.email_id]),
+        `plan ${page.label}: the next refs in index order`,
+      ).toEqual(page.expected);
+      const [explained] = await sql<{ "QUERY PLAN": [{ Plan: Plan; "Execution Time": number }] }[]>`
+        EXPLAIN (ANALYZE, FORMAT JSON) ${jmapVerifyPageQuery(sql, params)}`;
+      const plan = explained?.["QUERY PLAN"][0];
+      if (!plan) throw new Error("plan: missing");
+      const all = nodes(plan.Plan);
+      const rowsRead = all
+        .filter((node) => node["Relation Name"])
+        .reduce((sum, node) => sum + ((node["Actual Rows"] ?? 0) + (node["Rows Removed by Filter"] ?? 0)) * (node["Actual Loops"] ?? 1), 0);
+      const refsIndexes = all
+        .filter((node) => node["Index Name"]?.startsWith("remote_message_refs"))
+        .map((node) => `${node["Node Type"]}(${node["Index Name"]})`);
+      measured[page.label] = {
         nodes: all.map((node) => node["Node Type"] + (node["Index Name"] ? `(${node["Index Name"]})` : "")),
-        rowsRead: scans.reduce(
-          (sum, node) => sum + ((node["Actual Rows"] ?? 0) + (node["Rows Removed by Filter"] ?? 0)) * (node["Actual Loops"] ?? 1),
-          0,
-        ),
-        refsIndexes: all
-          .filter((node) => node["Index Name"]?.startsWith("remote_message_refs"))
-          .map((node) => `${node["Node Type"]}(${node["Index Name"]})`),
+        rowsRead,
+        refsIndexes,
         rows: plan.Plan["Actual Rows"],
         executionMs: plan["Execution Time"],
-      }),
-    );
+      };
+      expect(
+        all.some((node) => node["Index Name"] === "remote_message_refs_remote_id_idx"),
+        `plan ${page.label}: the (folder_id, remote_id) index`,
+      ).toBeTrue();
+      expect(
+        all.some((node) => node["Node Type"] === "Seq Scan" && node["Relation Name"] === "remote_message_refs"),
+        `plan ${page.label}: no sequential scan of the refs`,
+      ).toBeFalse();
+      expect(rowsRead, `plan ${page.label}: reads about one page`).toBeLessThanOrEqual(2 * limit);
+    }
+    // One line for the driver; no expectation on time.
+    console.info("JMAP_VERIFY_PLAN", JSON.stringify(measured));
   }, 60_000);
 });

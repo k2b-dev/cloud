@@ -37,7 +37,8 @@ export const jmapScanStepSchema = z
   .discriminatedUnion("kind", [
     z.object({ kind: z.literal("query"), before: jmapUtcSecondSchema.nullable() }).strict(),
     z.object({ kind: z.literal("bucket"), second: jmapUtcSecondSchema, position: count, queryState: jmapStateSchema.nullable() }).strict(),
-    z.object({ kind: z.literal("verify"), afterEmailId: jmapIdSchema.nullable() }).strict(),
+    // The verify pass pages through local refs in (folder, Email ID) order, as their index does.
+    z.object({ kind: z.literal("verify"), after: z.object({ folderId: z.uuid(), emailId: jmapIdSchema }).strict().nullable() }).strict(),
   ])
   // Positions are only comparable within one query result (RFC 8620 §5.5).
   .refine((step) => step.kind !== "bucket" || step.position === 0 || step.queryState !== null);
@@ -214,7 +215,7 @@ export async function readJmapScanPage(
       next = end
         ? { kind: "query", before: step.second }
         : { kind: "bucket", second: step.second, position: position + page.ids.length, queryState: page.queryState };
-    else if (end) next = { kind: "verify", afterEmailId: null };
+    else if (end) next = { kind: "verify", after: null };
     else {
       // The oldest second may continue beyond this page, so the next step reads it again in full.
       // Return only newer seconds: without a bucket restart, every object is returned once.

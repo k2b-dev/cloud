@@ -50,8 +50,8 @@ type Batch =
   | { kind: "start"; reason: JmapAccountScan["reason"]; start: Extract<JmapAccountStart, { kind: "ready" }> }
   /** One scan page or restart, read for the stored scan step. */
   | { kind: "scan"; page: JmapScanPage }
-  /** Local Email IDs checked after the stored verify cursor, in byte order, and those the server lacks. */
-  | { kind: "verify"; checkedIds: string[]; notFoundIds: string[] };
+  /** Local refs after the stored verify cursor in the database's order, and the Email IDs the server lacks. */
+  | { kind: "verify"; checked: JmapVerifyRef[]; notFoundIds: string[] };
 type Stats = { imported: number; memberships: number; flagsUpdated: number; removed: number; folders: number; skippedDrafts: number };
 type SupersededResult = { status: "superseded"; cause: "account_changed" | "folders_required" };
 export type JmapAccountCommitResult = { status: "committed"; hasMore: boolean; stats: Stats } | SupersededResult;
@@ -109,10 +109,11 @@ export function diffJmapMemberships(desired: readonly string[], active: readonly
 // The IMAP folder job's stall budget (sync-runtime.ts): restarts before a pause, and the pause.
 export const JMAP_SCAN_RESTART_LIMIT = SYNC_FOLDER_MAX_ATTEMPTS;
 export const JMAP_SCAN_STALL_MS = SYNC_FOLDER_DATA_ERROR_RECHECK_MS;
+export type JmapVerifyRef = { folderId: string; emailId: string };
 type ScanOutcome =
   | { kind: "page"; next: JmapScanStep }
   | { kind: "restart"; next: JmapScanPageStep }
-  | { kind: "verify"; afterEmailId: string | null; complete: boolean };
+  | { kind: "verify"; after: JmapVerifyRef | null; complete: boolean };
 
 /**
  * Restarts after a committed step. A stall that still gets committed has expired, so its count
@@ -129,7 +130,7 @@ export function nextJmapScan(scan: JmapAccountScan, outcome: ScanOutcome, now: s
   const restarts = jmapScanRestarts(scan, outcome);
   return {
     ...scan,
-    step: outcome.kind === "verify" ? { kind: "verify", afterEmailId: outcome.afterEmailId } : outcome.next,
+    step: outcome.kind === "verify" ? { kind: "verify", after: outcome.after } : outcome.next,
     pages: scan.pages + Number(outcome.kind === "page"),
     restarts,
     stalledAt: outcome.kind === "restart" && restarts >= JMAP_SCAN_RESTART_LIMIT ? now : null,
@@ -140,13 +141,11 @@ const scanOutcome = (batch: Extract<Batch, { kind: "scan" | "verify" }>, session
     ? batch.page
     : {
         kind: "verify",
-        afterEmailId: batch.checkedIds.at(-1) ?? null,
-        // A short page is the last one: no local ID follows it.
-        complete: batch.checkedIds.length < jmapEmailExistenceLimit(session),
+        // The last loaded row, as the database ordered it: its collation decides, not JavaScript's.
+        after: batch.checked.at(-1) ?? null,
+        // A short page is the last one: no local ref follows it.
+        complete: batch.checked.length < jmapEmailExistenceLimit(session),
       };
-
-/** Byte order, as COLLATE "C" sorts the verify pass's IDs. JMAP IDs are ASCII (RFC 8620 §1.2). */
-const byteOrder = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 function validateScanBatch(params: Account & { beforeState: JmapSyncState | null; batch: Extract<Batch, { kind: "scan" | "verify" }> }) {
   const { batch } = params;
@@ -161,11 +160,10 @@ function validateScanBatch(params: Account & { beforeState: JmapSyncState | null
       throw new JmapError("JMAP_INVALID_RESPONSE");
     return;
   }
-  const after = step.kind === "verify" ? (step.afterEmailId ?? "") : "";
-  const checked = new Set(batch.checkedIds);
+  const checked = new Set(batch.checked.map((ref) => ref.emailId));
   if (
-    batch.checkedIds.length > jmapEmailExistenceLimit(params.session) ||
-    batch.checkedIds.some((id, index) => byteOrder(index ? (batch.checkedIds[index - 1] ?? "") : after, id) >= 0) ||
+    batch.checked.length > jmapEmailExistenceLimit(params.session) ||
+    new Set(batch.checked.map((ref) => `${ref.folderId}/${ref.emailId}`)).size !== batch.checked.length ||
     new Set(batch.notFoundIds).size !== batch.notFoundIds.length ||
     batch.notFoundIds.some((id) => !checked.has(id))
   )
@@ -684,17 +682,25 @@ export async function startJmapAccountScan(
 }
 
 /**
- * The verify pass's next local Email IDs: active JMAP refs of the resource after the cursor, in
- * byte order. Without a cursor the page starts below every ID: no JMAP ID is empty (RFC 8620 §1.2).
+ * The verify pass's next local refs: active JMAP refs of the resource after the cursor, in
+ * (folder, Email ID) order. The equality on the leading folder column and the row comparison let
+ * one ordered scan of remote_message_refs_remote_id_idx stop after the page; folders before the
+ * cursor are left out of the array, so their refs are never read. A message in two folders is
+ * loaded once per folder.
  */
-export const jmapVerifyPageQuery = (db: typeof sql, params: { remoteResourceId: string; afterEmailId: string | null; limit: number }) =>
-  db<{ email_id: string }[]>`
-    SELECT DISTINCT ref.remote_id COLLATE "C" AS email_id
-    FROM mail.remote_message_refs ref JOIN mail.folders folder ON folder.id = ref.folder_id
-    WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid AND ref.remote_id IS NOT NULL AND ref.stale_at IS NULL
-      AND ref.remote_id COLLATE "C" > ${params.afterEmailId ?? ""}::text
-    ORDER BY email_id LIMIT ${params.limit}
+export const jmapVerifyPageQuery = (db: typeof sql, params: { remoteResourceId: string; after: JmapVerifyRef | null; limit: number }) => {
+  const after = params.after;
+  return db<{ folder_id: string; email_id: string }[]>`
+    SELECT ref.folder_id, ref.remote_id AS email_id
+    FROM mail.remote_message_refs ref
+    WHERE ref.folder_id = ANY(ARRAY(SELECT folder.id FROM mail.folders folder
+        WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid
+          ${after ? db`AND folder.id >= ${after.folderId}::uuid` : db``}))
+      AND ref.remote_id IS NOT NULL AND ref.stale_at IS NULL
+      ${after ? db`AND (ref.folder_id, ref.remote_id) > (${after.folderId}::uuid, ${after.emailId}::text)` : db``}
+    ORDER BY ref.folder_id, ref.remote_id LIMIT ${params.limit}
   `;
+};
 
 /**
  * At most one scan step: a query or bucket page, a restart, or one verify page, committed with
@@ -717,19 +723,21 @@ export async function syncJmapAccountScan(params: Account & Network): Promise<Jm
     if (scan.step.kind === "verify") {
       const rows = await jmapVerifyPageQuery(params.db ?? sql, {
         remoteResourceId: params.remoteResourceId,
-        afterEmailId: scan.step.afterEmailId,
+        after: scan.step.after,
         limit: jmapEmailExistenceLimit(params.session),
       });
-      const checkedIds = rows.map((row) => row.email_id);
+      const checked = rows.map((row) => ({ folderId: row.folder_id, emailId: row.email_id }));
+      // A message in two folders can appear twice; the reader wants each ID once. Its first
+      // notFound removes every membership, so the later ref is stale and never loaded again.
       const { notFoundIds } = await readJmapEmailExistence(
         params.session,
         params.authorization,
         params.accountId,
-        checkedIds,
+        [...new Set(checked.map((ref) => ref.emailId))],
         params.signal,
         params.transport,
       );
-      batch = { kind: "verify", checkedIds, notFoundIds };
+      batch = { kind: "verify", checked, notFoundIds };
     } else {
       const page = await readJmapScanPage(
         params.session,

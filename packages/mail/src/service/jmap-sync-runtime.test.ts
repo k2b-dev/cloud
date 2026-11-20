@@ -56,7 +56,7 @@ test("scan step: a page advances, a completed second resets restarts, a bucket k
   });
   for (const next of [
     { kind: "query", before: "2026-11-19T10:00:08Z" },
-    { kind: "verify", afterEmailId: null },
+    { kind: "verify", after: null },
   ] as const)
     expect(nextJmapScan(scan, { kind: "page", next }, now), `${next.kind} page`).toEqual({ ...scan, step: next, pages: 3, restarts: 0 });
 });
@@ -82,11 +82,12 @@ test("scan step: restarts count, the limit stalls at database time, an expired s
 });
 
 test("scan step: verify moves the cursor without counting a page and a short page ends the scan", () => {
-  const verifying = { ...scan, step: { kind: "verify", afterEmailId: null } } as const;
-  expect(nextJmapScan(verifying, { kind: "verify", afterEmailId: "M9", complete: false }, now), "verify page").toEqual({
+  const verifying = { ...scan, step: { kind: "verify", after: null } } as const;
+  const after = { folderId: "00000000-004c-4000-8000-000000000009", emailId: "M9" };
+  expect(nextJmapScan(verifying, { kind: "verify", after, complete: false }, now), "verify page").toEqual({
     ...verifying,
-    step: { kind: "verify", afterEmailId: "M9" },
+    step: { kind: "verify", after },
     restarts: 0,
   });
-  expect(nextJmapScan(verifying, { kind: "verify", afterEmailId: "M9", complete: true }, now), "verify end").toBeNull();
+  expect(nextJmapScan(verifying, { kind: "verify", after, complete: true }, now), "verify end").toBeNull();
 });

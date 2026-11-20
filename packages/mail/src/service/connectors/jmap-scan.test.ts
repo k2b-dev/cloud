@@ -116,7 +116,7 @@ describe("readJmapScanPage", () => {
       [expect.objectContaining({ position: 3 }), "restart", [], bucket("08")],
       [bucket("08"), "page", ["D", "E", "F"], expect.objectContaining({ kind: "bucket", position: 3 })],
       [expect.objectContaining({ position: 3 }), "page", ["Z"], query("08")],
-      [query("08"), "page", ["G", "H", "Y"], { kind: "verify", afterEmailId: null }],
+      [query("08"), "page", ["G", "H", "Y"], { kind: "verify", after: null }],
     ]);
     for (const id of ["B", "D", "E", "F", "G", "H"]) expect(reads.filter((read) => read === id)).toEqual([id]);
     const [first] = posted(f);
@@ -178,7 +178,7 @@ describe("readJmapScanPage", () => {
       kind: "page",
       objects: [],
       notFoundIds: [],
-      next: { kind: "verify", afterEmailId: null },
+      next: { kind: "verify", after: null },
       emailState: "emails-state",
     });
   });
@@ -196,7 +196,7 @@ describe("readJmapScanPage", () => {
       kind: "page",
       objects: [],
       notFoundIds: ["c"],
-      next: { kind: "verify", afterEmailId: null },
+      next: { kind: "verify", after: null },
       emailState: "emails-state",
     });
   });
@@ -379,7 +379,7 @@ describe("readJmapScanPage", () => {
 
   test("rejects a verify step or an invalid step before any request", async () => {
     const { f, page } = await setup();
-    const verify: JmapScanStep = { kind: "verify", afterEmailId: null };
+    const verify: JmapScanStep = { kind: "verify", after: null };
     // @ts-expect-error verify is not a page step.
     await expect(page(verify)).rejects.toBeInstanceOf(RangeError);
     await expect(page({ kind: "query", before: "2026-11-19T10:00:00.5Z" })).rejects.toBeInstanceOf(RangeError);
@@ -395,8 +395,8 @@ describe("jmapScanStepSchema", () => {
       bucket("05"),
       bucket("05", 3, "q1"),
       { kind: "bucket", second: at("05"), position: Number.MAX_SAFE_INTEGER, queryState: "q" },
-      { kind: "verify", afterEmailId: null },
-      { kind: "verify", afterEmailId: "e1" },
+      { kind: "verify", after: null },
+      { kind: "verify", after: { folderId: "00000000-004c-4000-8000-000000000009", emailId: "e1" } },
     ])
       expect(jmapScanStepSchema.safeParse(step).success).toBe(true);
   });
@@ -410,7 +410,10 @@ describe("jmapScanStepSchema", () => {
     ["negative position", { kind: "bucket", second: at("05"), position: -1, queryState: "q" }],
     ["unsafe position", { kind: "bucket", second: at("05"), position: Number.MAX_SAFE_INTEGER + 1, queryState: "q" }],
     ["oversized queryState", { kind: "bucket", second: at("05"), position: 1, queryState: "q".repeat(1_025) }],
-    ["invalid verify id", { kind: "verify", afterEmailId: "bad/id" }],
+    ["invalid verify id", { kind: "verify", after: { folderId: "00000000-004c-4000-8000-000000000009", emailId: "bad/id" } }],
+    ["invalid verify folder", { kind: "verify", after: { folderId: "folder-9", emailId: "e1" } }],
+    ["verify cursor without folder", { kind: "verify", after: { emailId: "e1" } }],
+    ["old verify cursor", { kind: "verify", afterEmailId: null }],
     ["unknown kind", { kind: "catchup" }],
     ["tail", { kind: "tail" }],
     ["extra field", { kind: "query", before: null, restarts: 0 }],

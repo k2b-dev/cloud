@@ -27,8 +27,8 @@ test("round-trips every scan step with its counters", () => {
     { kind: "query", before: "2026-11-19T10:00:08Z" },
     { kind: "bucket", second: "2026-11-19T10:00:08Z", position: 0, queryState: null },
     { kind: "bucket", second: "2026-11-19T10:00:08Z", position: 3, queryState: "q1" },
-    { kind: "verify", afterEmailId: null },
-    { kind: "verify", afterEmailId: "M123" },
+    { kind: "verify", after: null },
+    { kind: "verify", after: { folderId: "00000000-004c-4000-8000-000000000009", emailId: "M123" } },
   ];
   for (const step of steps) {
     const state: JmapSyncState = {
@@ -75,7 +75,8 @@ for (const value of [
   { ...full, scan: { ...scan, step: { kind: "tail" } } },
   { ...full, scan: { ...scan, step: { kind: "query", before: "2026-11-19T10:00:08.5Z" } } },
   { ...full, scan: { ...scan, step: { kind: "bucket", second: "2026-11-19T10:00:08Z", position: 3, queryState: null } } },
-  { ...full, scan: { ...scan, step: { kind: "verify", afterEmailId: "bad/id" } } },
+  { ...full, scan: { ...scan, step: { kind: "verify", after: { folderId: "00000000-004c-4000-8000-000000000009", emailId: "bad/id" } } } },
+  { ...full, scan: { ...scan, step: { kind: "verify", afterEmailId: null } } },
 ]) {
   test(`rejects unsupported stored checkpoint shape ${JSON.stringify(value)?.slice(0, 120)}`, () => {
     expect(() => readJmapSyncState(value)).toThrow("JMAP_SYNC_STATE_UNSUPPORTED");
