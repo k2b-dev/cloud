@@ -703,10 +703,12 @@ describe("Mail draft session", () => {
           status: "readonly",
           message: "Your sign-in expired. Sign in again to continue with this draft.",
         });
+        // The editor hint says the same in Mail's words, not the transport's.
+        expect(f.session.sharedState()?.message).toBe("Your sign-in expired. Your unsent text remains here until you sign in again.");
         expect(f.current().body).toBe("Typed before the sign-in expired");
         if (mode === "tab-only") {
           // Without device storage a reload would lose the text, so sign-in keeps the page open instead.
-          await expect(f.session.prepareSignIn()).rejects.toThrow();
+          await expect(f.session.prepareSignIn()).rejects.toThrow("Draft could not be saved");
           expect(f.current().body).toBe("Typed before the sign-in expired");
           return;
         }
@@ -796,7 +798,7 @@ describe("Mail draft session", () => {
       expect(storage.state).toBeNull();
       expect(client.state()).toMatchObject({ locallySaved: false, error: true });
       respondWith(() => Response.json({ message: "Session expired" }, { status: 401 }));
-      await expect(client.retry()).rejects.toThrow("Session expired");
+      await expect(client.retry()).rejects.toThrow("Your sign-in expired");
       expect(f.session.authenticationRequired()).toBe(true);
       expect(f.session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
       await expect(f.session.prepareSignIn()).rejects.toThrow("Draft could not be saved");

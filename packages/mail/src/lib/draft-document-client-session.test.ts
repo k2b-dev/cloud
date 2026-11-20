@@ -311,7 +311,7 @@ test("shared initialization reports an expired session before opening a provider
   const f = fixture();
   try {
     f.expireSession();
-    await expect(f.open()).rejects.toThrow("Session expired");
+    await expect(f.open()).rejects.toThrow("Your sign-in expired");
     expect(f.authenticationRequests()).toBe(1);
     expect(f.sockets).toHaveLength(0);
   } finally {
@@ -326,10 +326,10 @@ test("shared snapshot, table action, refresh and recovery report 401 to the owni
     client.edit({ ...client.content(), body: "Pending input" });
     await Bun.sleep(0);
     f.expireSession();
-    await expect(client.save()).rejects.toThrow("Session expired");
+    await expect(client.save()).rejects.toThrow("Your sign-in expired");
     expect((await client.postAction({ generation: "1", actionId: "action" }, new AbortController().signal)).status).toBe(401);
-    await expect(client.refresh()).rejects.toThrow("Session expired");
-    await expect(client.recover()).rejects.toThrow("Session expired");
+    await expect(client.refresh()).rejects.toThrow("Your sign-in expired");
+    await expect(client.recover()).rejects.toThrow("Your sign-in expired");
     expect(f.authenticationRequests()).toBe(4);
     expect(client.content().body).toBe("Pending input");
     expect(client.state().dirty).toBe(false);
@@ -345,7 +345,11 @@ test("an expired socket session also requests sign-in while retaining unsaved in
     client.edit({ ...client.content(), body: "Pending input" });
     f.sockets[0]!.receive("error", { docId: "Draft1", code: "SESSION_EXPIRED", message: "Session expired" });
     expect(f.authenticationRequests()).toBe(1);
-    expect(client.state()).toMatchObject({ terminal: true, dirty: true });
+    expect(client.state()).toMatchObject({
+      terminal: true,
+      dirty: true,
+      message: "Your sign-in expired. Your unsent text remains here until you sign in again.",
+    });
     expect(client.content().body).toBe("Pending input");
   } finally {
     await f.cleanup();
@@ -481,7 +485,7 @@ test("retry after a rejected socket handshake requests sign-in through HTTP and 
     expect(f.sockets[1]!.sent).toEqual([]);
     expect(client.state()).toMatchObject({ connected: false, ready: false, dirty: true });
     expect(f.authenticationRequests()).toBe(0);
-    await expect(client.retry()).rejects.toThrow("Session expired");
+    await expect(client.retry()).rejects.toThrow("Your sign-in expired");
     expect(f.authenticationRequests()).toBe(1);
     expect(f.requests).toHaveLength(2);
     expect(f.requests[1]!.body).toBeNull();
@@ -489,7 +493,7 @@ test("retry after a rejected socket handshake requests sign-in through HTTP and 
     expect(f.sockets).toHaveLength(2);
     expect(client.content().body).toBe("Pending disconnected input");
     expect(await client.flushLocal()).toBe(false);
-    await expect(client.retry()).rejects.toThrow("Session expired");
+    await expect(client.retry()).rejects.toThrow("Your sign-in expired");
     expect(f.authenticationRequests()).toBe(2);
     expect(f.sockets).toHaveLength(2);
   } finally {

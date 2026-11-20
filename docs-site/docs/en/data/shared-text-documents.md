@@ -397,9 +397,9 @@ never terminal: close code 1013 (try again later) and a `BACKPRESSURE` error
 message reconnect with `reconnectDelayMs`, keep unsent input, and resend it
 after replay; `closeError` never sees 1013. A close with code 1008 and reason
 `SESSION_EXPIRED`, which the application socket guard sends when the sign-in
-expires, always ends the session with `onFatal({ code: "SESSION_EXPIRED" })`,
-so the application can offer sign-in; `closeError` never sees it either.
-Encoding maps normalized
+or account expires, always ends the session as `SESSION_EXPIRED`: `onError`
+and then `onFatal` receive that code, so the application can offer sign-in.
+`closeError` never sees this close either. Encoding maps normalized
 `replayRequest`, `syncPublish`, `awarenessPublish`, and optional event-stream
 `subscribe` requests to the application's protocol. Decoding validates unknown
 JSON and maps it to `SharedTextProviderMessage`, or returns null to ignore it.
