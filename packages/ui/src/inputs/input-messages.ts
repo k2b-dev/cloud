@@ -7,7 +7,6 @@ const inputMessages = i18n.define({
     en: {
       decreaseValue: "Decrease value",
       increaseValue: "Increase value",
-      hidePassword: "Hide password",
       showPassword: "Show password",
       useColor: "Use a color",
       useTransparent: "Use transparent",
@@ -22,7 +21,6 @@ const inputMessages = i18n.define({
     de: {
       decreaseValue: "Wert verringern",
       increaseValue: "Wert erhöhen",
-      hidePassword: "Passwort ausblenden",
       showPassword: "Passwort anzeigen",
       useColor: "Farbe verwenden",
       useTransparent: "Transparent verwenden",
