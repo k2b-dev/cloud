@@ -2050,6 +2050,7 @@ CREATE TABLE mail.remote_resources (
     scope_fingerprint text NOT NULL,
     status text DEFAULT 'pending'::text NOT NULL,
     sync_generation bigint DEFAULT 1 NOT NULL,
+    sync_state jsonb,
     current_fence_token bigint DEFAULT 0 NOT NULL,
     discovery_generation bigint DEFAULT 0 NOT NULL,
     last_sync_at timestamp with time zone,
@@ -2066,6 +2067,7 @@ CREATE TABLE mail.remote_resources (
     CONSTRAINT remote_resources_scope_fingerprint_check CHECK ((char_length(scope_fingerprint) = 64)),
     CONSTRAINT remote_resources_server_identity_check CHECK ((jsonb_typeof(server_identity) = 'object'::text)),
     CONSTRAINT remote_resources_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'active'::text, 'degraded'::text, 'connection_required'::text, 'paused'::text]))),
+    CONSTRAINT remote_resources_sync_state_check CHECK (sync_state IS NULL OR jsonb_typeof(sync_state) = 'object'),
     CONSTRAINT remote_resources_sync_generation_check CHECK ((sync_generation > 0))
 );
 
