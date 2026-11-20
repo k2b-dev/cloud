@@ -1259,6 +1259,18 @@ export default function MailComposer(props: {
     if (!box) return false;
     return box.suspended() || (!draft() && box.holdCreate()) || !online();
   };
+  /**
+   * Whether Send waits: one answer for every Send button, Send later and Mod+Enter, so no path sends what the disabled
+   * button holds back (an attachment still arriving, a window offline).
+   */
+  const sendHeld = () =>
+    !editable() ||
+    !sharedCanSend() ||
+    tableNeedsCheck() ||
+    uploads().length > 0 ||
+    attaching() > 0 ||
+    boxBlocksSend() ||
+    (Boolean(props.host?.window) && !online());
   let deliveryPreparationController: AbortController | null = null;
   const deliveryFingerprint = (delivery: { scheduledAt?: string }) =>
     JSON.stringify({
@@ -1400,7 +1412,7 @@ export default function MailComposer(props: {
   };
 
   const sendDraft = async (delivery: { scheduledAt?: string }) => {
-    if (!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || boxBlocksSend()) return;
+    if (sendHeld()) return;
     const reservation = composerTransition.reserve("send");
     if (!reservation) return;
     setSendFailure(null);
@@ -1447,7 +1459,7 @@ export default function MailComposer(props: {
   };
 
   const schedule = async () => {
-    if (!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || boxBlocksSend()) return;
+    if (sendHeld()) return;
     const reservation = composerTransition.reserve("send");
     if (!reservation) return;
     let scheduledAt: string | null = null;
@@ -2026,14 +2038,6 @@ export default function MailComposer(props: {
     const host = props.host;
     const windowSlots = host.window;
     const windowT = () => mailComposeWindowMessages.resolve([locale()]).t;
-    // A window writes on offline and keeps the text here; Send waits until the connection is back.
-    const sendBlocked = () =>
-      !editable() ||
-      !sharedCanSend() ||
-      tableNeedsCheck() ||
-      uploads().length > 0 ||
-      attaching() > 0 ||
-      (Boolean(windowSlots) && !online());
     const uploadPercent = () => {
       const running = uploads().filter((upload) => !upload.error);
       return running.length === 0 ? null : Math.round(running.reduce((sum, upload) => sum + upload.progress, 0) / running.length);
@@ -2117,7 +2121,7 @@ export default function MailComposer(props: {
     const draftMenu = (): DropdownItem[] => [
       {
         items: [
-          { label: t().sendLater, icon: "ti ti-clock", disabled: !editable() || !sharedCanSend(), action: () => void schedule() },
+          { label: t().sendLater, icon: "ti ti-clock", disabled: sendHeld(), action: () => void schedule() },
           {
             label: t().messageOptions,
             icon: "ti ti-adjustments-horizontal",
@@ -2371,7 +2375,6 @@ export default function MailComposer(props: {
         if (state === "saved") return { icon: "ti-cloud-check", text: r().saved };
         return { icon: "ti-loader-2", text: r().saving, tone: "busy" };
       };
-      const sendDisabled = () => !editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0 || boxBlocksSend();
       const sendLaterItems = (): DropdownItem[] => {
         const timeZone = props.dateConfig.timeZone ?? "UTC";
         const shown = mailSendLaterPresets(new Date(), timeZone);
@@ -2743,7 +2746,7 @@ export default function MailComposer(props: {
               size="sm"
               type="button"
               loading={send.loading()}
-              disabled={sendDisabled()}
+              disabled={sendHeld()}
               menuLabel={t().moreSendOptions}
               menuPosition="top-left"
               tooltip={sendBlockedReason() ?? `${t().send} (${sendShortcutLabel()})`}
@@ -2878,7 +2881,7 @@ export default function MailComposer(props: {
         size="sm"
         type="button"
         loading={send.loading()}
-        disabled={sendBlocked()}
+        disabled={sendHeld()}
         menuLabel={t().moreSendOptions}
         tooltip={`${t().send} (${sendShortcutLabel()})`}
         items={[
@@ -3837,7 +3840,7 @@ export default function MailComposer(props: {
           size="sm"
           type="button"
           loading={send.loading()}
-          disabled={!editable() || !sharedCanSend() || tableNeedsCheck() || uploads().length > 0}
+          disabled={sendHeld()}
           menuLabel={t().moreSendOptions}
           tooltip={`${t().send} (${sendShortcutLabel()})`}
           items={[
