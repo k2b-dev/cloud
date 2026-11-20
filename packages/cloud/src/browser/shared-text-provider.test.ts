@@ -441,6 +441,23 @@ test("a busy server or proxy reconnects with backoff and keeps unsent input inst
   expect(publishes(next).map((request) => request.payload.payload)).toEqual([unsent!.payload.payload]);
 });
 
+test("the socket guard's sign-in expiry ends every adapter's session as SESSION_EXPIRED; other policy closes keep the adapter's mapping", () => {
+  const fatal: string[] = [];
+  // The fixture adapter maps every 1008 close to lost access, as an adapter that ignores the reason would.
+  const expired = fixture({ onFatal: (error) => fatal.push(error.code) });
+  expired.socket.ready();
+  expired.local.getText("codemirror").insert(0, "typed before expiry");
+  expired.socket.onclose?.({ code: 1008, reason: "SESSION_EXPIRED" });
+  expired.provider.reconnectNow();
+  expect(Socket.instances).toHaveLength(1);
+  expect(expired.provider.pendingState().text).toBe("typed before expiry");
+  expect(expired.provider.hasUnsentChanges()).toBe(true);
+
+  const denied = fixture({ onFatal: (error) => fatal.push(error.code) });
+  denied.socket.onclose?.({ code: 1008, reason: "app_access_denied" });
+  expect(fatal).toEqual(["SESSION_EXPIRED", "ACCESS_REVOKED"]);
+});
+
 test("an application-specific closed-generation error keeps input recoverable and cannot be resumed", () => {
   const { provider, local, socket } = fixture();
   socket.ready();
