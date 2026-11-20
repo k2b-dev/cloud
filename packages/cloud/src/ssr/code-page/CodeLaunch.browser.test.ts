@@ -14,7 +14,11 @@ const fonts = new Map<string, string>();
 const scripts = new Map<string, string>();
 const fontBodies = new Map<string, ArrayBuffer>();
 const harnessErrors = new WeakMap<Page, string[]>();
-let harness: string;
+/**
+ * The harness entry's one address. It is served only under the name its chunks import it by: under a second name a
+ * lazily loaded chunk (the phone sheets at 390 px) evaluated it again and rendered a second page (#3810).
+ */
+let entryPath: string;
 let css: string;
 let icons: string;
 /** IBM Plex, which Cloud ships, so the wrap is measured with the product's widths. */
@@ -51,7 +55,7 @@ beforeAll(async () => {
   if (!build.success) throw new AggregateError(build.logs, "Head harness build failed");
   const entry = build.outputs.find((output) => output.kind === "entry-point");
   if (!entry) throw new Error("Missing head harness entry");
-  harness = await entry.text();
+  entryPath = `/${basename(entry.path)}`;
   for (const output of build.outputs) scripts.set(`/${basename(output.path)}`, await output.text());
   const styles = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../../styles.css")], plugins: [tailwind] });
   if (!styles.success) throw new AggregateError(styles.logs, "Head stylesheet build failed");
@@ -77,7 +81,6 @@ beforeAll(async () => {
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
-      if (url.pathname === "/__head.js") return new Response(harness, { headers: { ...assets, "content-type": "text/javascript" } });
       if (url.pathname === "/__head.css") return new Response(stylesheet, { headers: { ...assets, "content-type": "text/css" } });
       const script = scripts.get(url.pathname);
       if (script !== undefined) return new Response(script, { headers: { ...assets, "content-type": "text/javascript" } });
@@ -109,7 +112,7 @@ const fontPreloads = () =>
     .map((path) => `<link rel="preload" as="font" type="font/woff2" href="${path}" crossorigin>`)
     .join("");
 const html = (locale: string, theme: string) =>
-  `<!doctype html><html lang="${locale}" data-theme="${theme}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${fontPreloads()}<link rel="stylesheet" href="/__head.css"><script type="module" src="/__head.js"></script></head><body class="k2b-ui"><main id="root" style="padding:32px 24px;max-width:1440px;margin:auto"></main></body></html>`;
+  `<!doctype html><html lang="${locale}" data-theme="${theme}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${fontPreloads()}<link rel="stylesheet" href="/__head.css"><script type="module" src="${entryPath}"></script></head><body class="k2b-ui"><main id="root" style="padding:32px 24px;max-width:1440px;margin:auto"></main></body></html>`;
 async function open(state: HeadState, width: number, locale = "de", theme = "light") {
   const context = await browser.newContext({
     viewport: { width, height: width === 390 ? 780 : 900 },
@@ -135,6 +138,9 @@ async function open(state: HeadState, width: number, locale = "de", theme = "lig
       await document.fonts.ready;
     });
     await settled(page);
+    // Guard: one harness, one page. Every scene fails if a second evaluation of the entry renders the page again.
+    const pages = await page.locator(".cloud-code").count();
+    if (pages !== 1) throw new Error(`Expected one Code page in the harness, found ${pages}`);
     return page;
   } catch (error) {
     await page.context().close();
