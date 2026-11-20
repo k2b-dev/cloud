@@ -6,6 +6,34 @@ import { localizeMailError, MAX_ERROR_DETAIL_LENGTH, safeErrorDetail } from "./e
 import { providerBusy } from "./provider-operation-lock";
 
 describe("Mail service messages", () => {
+  test.each([
+    ["DRAFT_DOCUMENT_HISTORY_UNAVAILABLE", 409],
+    ["DRAFT_DOCUMENT_INVALID_HISTORY", 409],
+    ["DRAFT_DOCUMENT_READ_UNAVAILABLE", 500],
+  ])("%s offers draft recovery without hiding its code or status", (code, status) => {
+    const error = { code, status, message: "Keep the device text and recover the draft" };
+    for (const locale of ["de", "de-DE"]) {
+      const localized = localizeMailError(error, locale);
+      expect(localized).toMatchObject({ code, status });
+      expect(localized.message).toContain("Sichere den Text");
+      expect(localized.message).toContain("Postfach-Administration");
+      expect(localized.message).not.toContain("Stand hat sich geändert");
+    }
+    expect(localizeMailError(error, "en")).toBe(error);
+  });
+
+  test.each([
+    ["DOCUMENT_FROZEN", "The draft's editing state changed. Keep any text on this device and reopen the draft before editing."],
+    ["CONFLICT", "The draft changed while loading. Keep any text on this device and reopen it."],
+  ])("%s read failures keep read recovery guidance in German", (code, message) => {
+    const error = { code, message, status: 409 as const };
+    const localized = localizeMailError(error, "de");
+    expect(localized).toMatchObject({ code, status: 409 });
+    expect(localized.message).toContain("Sichere den Text");
+    expect(localized.message).not.toContain("eingereiht");
+    expect(localizeMailError(error, "en")).toBe(error);
+  });
+
   test("localizes the missing send recipient without an English server detail", () => {
     const error = err.badInput("At least one recipient is required before sending");
     for (const locale of ["de", "de-DE", "de-CH"]) {

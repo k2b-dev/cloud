@@ -58,6 +58,7 @@ export default ssr<AuthContext>(async (c) => {
     const dateConfig = getDateConfig(c);
 
     const directory = await requestContactDirectory(c);
+    const now = new Date().toISOString();
     return () => (
       <Layout
         c={c}
@@ -76,6 +77,7 @@ export default ssr<AuthContext>(async (c) => {
           currentUserEmail={user.mail}
           contactDirectory={directory}
           dateConfig={dateConfig}
+          now={now}
           initialPreferences={workspacePreferences}
           initialUserPreferences={userPreferences}
           initialTheme={themePreference === "system" ? null : themePreference}

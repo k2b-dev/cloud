@@ -143,6 +143,55 @@ pending input. For an uncovered gap, Mail saves the valid retained updates at
 the captured head, preserves the original revision and marks history incomplete.
 The next join requests recovery rather than reopening incomplete content for editing.
 
+Human-adoption checks use the same committed pruning coverage as snapshots.
+After a covered reconnect, the next edit can be saved without replaying the
+removed prefix. Reconnecting alone does not create a content revision.
+
+Document reads distinguish unavailable history (`DRAFT_DOCUMENT_HISTORY_UNAVAILABLE`)
+from malformed history (`DRAFT_DOCUMENT_INVALID_HISTORY`), both with status 409.
+Keep device text and ask a mailbox administrator to follow the recovery steps
+below. Unexpected read failures return `DRAFT_DOCUMENT_READ_UNAVAILABLE` (500);
+retain device text and retry. Mail logs the underlying exception with the draft
+and request identifiers. Existing typed rejections retain their code and status.
+
+### Recover a draft that keeps returning 409
+
+Upgrade every Mail instance before recovering drafts affected by the 0.78
+retention bug. A new draft starts from the current stream head, but another
+prune can expose the bug again while an old instance is still running.
+Restarting Mail or reloading a page does not clear a stored incomplete-history
+flag. Keep any text still visible on a device before closing its editor.
+
+An administrator and the installation's operator should recover each affected
+draft separately:
+
+1. Check its send commands first. A queued command can still retry. Resolve
+   or cancel an outstanding send before sending a replacement draft.
+2. Preserve the original document, its revisions, attachments and any device
+   copy. Inspect metadata in a read-only transaction: generation, revision,
+   history flag, snapshot cursor, idle coverage and the first retained stream
+   sequence. Keep document bytes out of logs and issue reports.
+3. Establish whether the missing prefix was covered **before** recovery marked
+   the history incomplete. Start with the cursor of the preceding revision in
+   `mail.draft_document_revisions`: recovery advances the current snapshot
+   cursor, and later pruning can also advance its idle coverage. Those current
+   values are not historical evidence. Current coverage at or beyond
+   `firstSequence - 1` is necessary for replay, but a later idle proof cannot establish that no
+   input was lost earlier. In 0.78, pruning could skip a locked row without
+   saving its proof. `updated_at` also changes when pruning writes coverage;
+   it does not record when history became incomplete.
+4. If that earlier evidence is unavailable, keep the original quarantined.
+   Have the author compare the saved content with their device or other known
+   copy, then create and review a fresh draft. Check recipients, subject,
+   attachments and body before sending. This recovers reviewed content; it
+   does not establish that the old history was complete.
+
+There is no supported automatic command to mark an incomplete draft complete.
+Do not repair it by changing `doc_history_complete` or moving its cursor to
+the stream head: neither operation reconstructs missing input. If a repair
+with independent evidence is needed, arrange a reviewed operator procedure
+that fences the exact generation and revision and preserves the original.
+
 ## Sending and Undo
 
 The browser waits for its visible input to be accepted before reviewing and

@@ -340,7 +340,8 @@ jobs:
         env:
           RSQL_LISTEN: 0.0.0.0:8080
           RSQL_API_TOKEN: cloud-code-test-token
-        ports: ["8080:8080"]
+        # Stalwart (CLOUD_TEST_JMAP_URL) owns host port 8080.
+        ports: ["8081:8080"]
         options: >-
           --health-cmd "wget -q -O - http://127.0.0.1:8080/healthz"
           --health-interval 2s --health-timeout 2s --health-retries 30
@@ -349,10 +350,11 @@ jobs:
         ports: ["3001:3000"]
     env:
       CLOUD_TEST_CLICKHOUSE_URL: http://cloud_ci:cloud_ci@127.0.0.1:8123
+      CLOUD_TEST_JMAP_URL: http://admin:cloud_jmap_test@127.0.0.1:8080
       CLOUD_TEST_DATABASE_URL: postgres://cloud:cloud@127.0.0.1:5432/cloud_ci_test
       CLOUD_TEST_NATS_SERVERS: nats://127.0.0.1:4222
       CLOUD_TEST_VALKEY_URL: redis://127.0.0.1:6379
-      CLOUD_TEST_RSQL_URL: http://127.0.0.1:8080
+      CLOUD_TEST_RSQL_URL: http://127.0.0.1:8081
       RSQL_API_TOKEN: cloud-code-test-token
       CLOUD_TEST_GOTENBERG_URL: http://127.0.0.1:3001
       CLOUD_TEST_S3_ENDPOINT: http://127.0.0.1:3900
@@ -365,12 +367,13 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - name: Start NATS JetStream and install poppler
+      - name: Start NATS JetStream, Stalwart and install poppler
         run: |
           set -euo pipefail
           # The Files Filegate suites, the Notebooks shared-log suite and the Assistant artifact suite start their own containers from these images.
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.1.0 dxflrs/garage:v2.3.0
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.1.0 dxflrs/garage:v2.3.0 stalwartlabs/stalwart:v1.0.0
           docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
+          docker run --detach --name ci-stalwart --publish 127.0.0.1:8080:8080 --env STALWART_RECOVERY_ADMIN=admin:cloud_jmap_test stalwartlabs/stalwart:v1.0.0
           docker compose -f compose.test-s3.yml up -d --wait
           "$GITHUB_WORKSPACE/.github/poppler.sh" install
           curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
@@ -410,6 +413,22 @@ jobs:
               wait "$storage_sleep"
             done
           '
+      - name: Wait for the Stalwart JMAP session
+        run: |
+          set -euo pipefail
+          # Setup mode can spend 60 s downloading its web admin before opening HTTP.
+          # Allow 30 s reserve; startup overlaps dependency and browser installation.
+          deadline=$((SECONDS + 90))
+          status=000
+          while (( SECONDS < deadline )); do
+            remaining=$((deadline - SECONDS))
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time "$remaining" http://127.0.0.1:8080/jmap/session) || status=000
+            if [[ "$status" == 200 ]]; then exit 0; fi
+            sleep 1
+          done
+          echo "Stalwart JMAP session did not return 200 within 90 s (last HTTP status: $status)" >&2
+          docker logs ci-stalwart || true
+          exit 1
       - run: bun run test --integration --exclude grids --shard ${{ matrix.shard }}/${{ strategy.job-total }} --max-minutes 20
       - name: Stop Postgres storage sampler and print samples
         if: always()
@@ -424,7 +443,11 @@ jobs:
             df -k "$PGDATA"
           '
       - if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
         run: |
+          if [[ "$JOB_STATUS" != success ]]; then docker logs ci-stalwart || true; fi
+          docker rm --force --volumes ci-stalwart || true
           docker compose -f compose.test-s3.yml logs
           docker compose -f compose.test-s3.yml down --volumes
           docker rm --force ci-nats

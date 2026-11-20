@@ -34,10 +34,11 @@
  *   CLOUD_TEST_FILEGATE_URL   http://host:4000
  *   CLOUD_TEST_GOTENBERG_URL  http://host:3001
  *   CLOUD_TEST_CLICKHOUSE_URL http://admin:password@host:8123 (dedicated test admin)
+ *   CLOUD_TEST_JMAP_URL       http://admin:password@127.0.0.1:8080 (dedicated Stalwart test instance)
  *   CLOUD_TEST_S3_ENDPOINT    http://host:3900 (dedicated Garage test instance)
  *   CLOUD_TEST_S3_BUCKET      cloud-test (must end in -test)
  *   CLOUD_TEST_S3_ACCESS_KEY_ID / CLOUD_TEST_S3_SECRET_ACCESS_KEY / CLOUD_TEST_S3_REGION
- *   CLOUD_TEST_RSQL_URL       http://host:8080
+ *   CLOUD_TEST_RSQL_URL       http://host:8081
  */
 import { afterAll, afterEach, beforeAll, describe, test } from "bun:test";
 import { S3Client, SQL } from "bun";
@@ -198,6 +199,17 @@ const probes: Record<InfraKind, (target: string) => Promise<void>> = {
   filegate: httpReachable,
   gotenberg: httpReachable,
   rsql: httpReachable,
+  jmap: async (target) => {
+    const url = new URL(target);
+    const authorization = `Basic ${Buffer.from(`${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`).toString("base64")}`;
+    const response = await fetch(`${url.origin}/jmap/session`, {
+      headers: { authorization },
+      redirect: "error",
+      signal: AbortSignal.timeout(3_000),
+    });
+    await response.body?.cancel();
+    if (response.status !== 200) throw new Error("JMAP session probe failed");
+  },
   clickhouse: async (target) => {
     const url = new URL(target);
     const authorization = `Basic ${Buffer.from(`${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`).toString("base64")}`;

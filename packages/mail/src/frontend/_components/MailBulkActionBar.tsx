@@ -1,7 +1,7 @@
 import { Button, Dropdown, IconButton, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, type JSX, Show } from "solid-js";
 import { getMailAction, type MailActionId } from "./mail-actions";
-import { mailRemainingMessages } from "./mail-remaining-messages";
+import { mailMailboxViewMessages } from "./mail-mailbox-view-messages";
 
 /** Tomorrow at 8:00 and next Monday at 8:00 in the browser's time, as ISO times for "Later". */
 export const mailLaterPresets = (now: Date): { tomorrow: string; monday: string } => {
@@ -36,7 +36,7 @@ export default function MailBulkActionBar(props: {
   onAction: (actionId: MailActionId) => void | Promise<void>;
 }) {
   const locale = useLocale();
-  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const messages = createMemo(() => mailMailboxViewMessages.resolve([locale()]).t);
   const actionLabel = (actionId: MailActionId): string => {
     const labels: Record<MailActionId, string> = {
       archive: messages().archive,

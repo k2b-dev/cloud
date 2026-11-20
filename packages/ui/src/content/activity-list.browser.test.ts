@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // The geometry of the timeline (rail, grid, type) and the clicks of a row need a real engine.
 const ui = resolve(import.meta.dir, "../..");
@@ -10,7 +10,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "activity-list.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { ActivityCard, ActivityList, LocaleProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { ActivityCard, ActivityList, createCollectionSelection, FileGrid, LocaleProvider, ScrollArea } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 window.opened = 0;
 window.acted = 0;
 const draft = (minute) => ({
@@ -19,9 +19,9 @@ const draft = (minute) => ({
 });
 const link = (label) => { const a = document.createElement("a"); a.href = "#doc"; a.textContent = label; return a; };
 const entries = () => [
-  { at: "2026-11-12T08:31:00+01:00", icon: "ti ti-mail-x", tone: "danger", text: "Einladung unzustellbar", detail: "team@stadtpark.example · Postfach voll",
+  { at: "2026-11-12T08:31:00+01:00", icon: "ti ti-mail-x", tone: "danger", iconLabel: "fehlgeschlagen", text: "Einladung unzustellbar", detail: "team@stadtpark.example · Postfach voll",
     action: { icon: "ti ti-send", label: "Einladung erneut senden", data: "resend", onClick: () => { window.acted++; } }, kind: "mail" },
-  { at: "2026-11-12T08:30:00+01:00", icon: "ti ti-bell-ringing", tone: "warning", text: "Erinnerung gesendet", detail: ["Neue Frist 20.11. · ", link("Schreiben")], actor: "Mira Lang", kind: "mail" },
+  { at: "2026-11-12T08:30:00+01:00", icon: "ti ti-bell-ringing", tone: "warning", text: "Erinnerung gesendet", detail: ["Neue Frist 20.11. · ", link("Schreiben")], actor: "Alexandra-Christiane von Sonnenfeld-Lichtenberg", kind: "mail" },
   { at: "2026-11-10T14:05:00+01:00", icon: "ti ti-circle-check", tone: "success", text: "Freigegeben", actor: "Jonas Weber", kind: "change",
     detail: createComponent(ActivityList.Change, { term: "Stand", before: "In Prüfung", now: "Freigegeben" }) },
   { at: "2026-10-28T08:14:00+01:00", icon: "ti ti-eye", text: "Über den Link geöffnet", actor: "Gast", onOpen: () => { window.opened++; } },
@@ -40,8 +40,36 @@ render(() => createComponent(LocaleProvider, { locale: "de", get children() {
     kinds: [{ key: "mail", label: "E-Mails" }, { key: "change", label: "Änderungen" }, { key: "file", label: "Dateien" }],
   });
 } }), document.getElementById("root"));
+const reference = document.createElement("div");
+reference.id = "reference";
+document.body.append(reference);
+render(() => createComponent(ScrollArea, { inset: true, get children() { return createComponent(FileGrid, { layout: "list", selection: createCollectionSelection({ ids: () => ["ref"] }), onOpen: () => {}, rows: [{ id: "ref", name: "Referenz.pdf" }], getRowId: (row) => row.id, label: "Dateien", renderPreview: () => "PDF", renderLabel: (row) => row.name }); } }), reference);
+
+const loading = document.createElement("div");
+loading.id = "loading-reference";
+document.body.append(loading);
+render(() => createComponent(ActivityList.Loading, {}), loading);
+const standalone = document.createElement("div");
+standalone.id = "standalone";
+standalone.style.background = "var(--k2b-surface-elevated)";
+document.body.append(standalone);
+render(() => createComponent(ActivityList.Row, { entry: { at: "2026-11-12T15:00:00Z", actor: "Alexandra-Christiane von Sonnenfeld-Lichtenberg", text: "Unterhaltung zum Sommerfest im Stadtpark kommentiert", href: "#conversation", avatar: { name: "Alexandra-Christiane von Sonnenfeld-Lichtenberg", kind: "person", src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%23789'/%3E%3C/svg%3E" } }, now: "2026-11-12T15:31:00Z", onNavigate: (event) => { event.preventDefault(); window.opened++; } }), standalone);
+const states = document.createElement("div");
+states.id = "state-reference";
+document.body.append(states);
+window.reloaded = 0;
+render(() => createComponent(LocaleProvider, { locale: "de", get children() {
+  return [createComponent(ActivityList.Empty, {}), createComponent(ActivityList.Error, { onReload: () => { window.reloaded++; } })];
+} }), states);
+
 `;
-const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
+const build = await Bun.build({
+  entrypoints: [entry],
+  files: { [entry]: fixture },
+  target: "browser",
+  format: "iife",
+  minify: true,
+});
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the activity list fixture.");
 const script = await build.outputs[0]!.text();
 
@@ -53,9 +81,9 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async (width = 720) => {
+const load = async (width = 720, theme: "light" | "dark" = "light") => {
   // Not about motion: without reduced motion, the button colour fading back after the dialog keeps settled() busy.
-  const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+  const context = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: theme, reducedMotion: "reduce" });
   // Only Date stands at the mockup's "now", so the browser's own reading of the clock changes nothing; timers stay real.
   await context.addInitScript((now: number) => {
     const Real = Date;
@@ -66,7 +94,7 @@ const load = async (width = 720) => {
   }, Date.parse("2026-11-12T15:31:00Z"));
   const page = await context.newPage();
   await page.setContent(
-    `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><style>body{margin:24px}</style></head><body class="k2b-ui" data-theme="light"><div id="root"></div></body></html>`,
+    `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><style>body{margin:24px}</style></head><body class="k2b-ui" data-theme="${theme}"><div id="root"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.waitForSelector(".k2b-activity__entry");
@@ -77,7 +105,7 @@ const counters = (page: Page) =>
   page.evaluate(() => ({ opened: (window as never as { opened: number }).opened, acted: (window as never as { acted: number }).acted }));
 
 describe("ActivityList", () => {
-  test("draws the rail, grid and type of the Warenfluss timeline", async () => {
+  test("draws inset list rows with the shared radius, padding, rail and two text styles", async () => {
     const page = await load();
     try {
       const geometry = await page.evaluate(() => {
@@ -85,7 +113,7 @@ describe("ActivityList", () => {
         const row = document.querySelectorAll<HTMLElement>(".k2b-activity__entry")[1]!;
         const rail = getComputedStyle(row, "::before");
         const below = getComputedStyle(row, "::after");
-        const iconElement = row.querySelector(".k2b-activity__icon")!;
+        const iconElement = row.querySelector(".k2b-activity__avatar")!;
         const icon = iconElement.getBoundingClientRect();
         // A compact list in a container sized by its content (a popover) keeps its width.
         const probe = document.createElement("div");
@@ -100,8 +128,21 @@ describe("ActivityList", () => {
         const day = document.querySelector<HTMLElement>(".k2b-activity__day")!;
         return {
           rail: [rail.width, rail.left, rail.borderStyle],
+          reference: getComputedStyle(document.querySelector(".k2b-file-grid__item")!).borderRadius,
+          radius: getComputedStyle(row).borderRadius,
+          padding: getComputedStyle(row).padding,
+          referencePadding: getComputedStyle(document.querySelector(".k2b-file-grid__item")!).padding,
+          referenceInset: getComputedStyle(document.querySelector("#reference .k2b-scroll-area")!).paddingLeft,
+          inset: [row.getBoundingClientRect().left - list.left, list.right - row.getBoundingClientRect().right],
+          height: getComputedStyle(row).minHeight,
           // The rail pauses behind the icon (6 to 26 px) instead of a disc covering it, on any surface.
           gap: [rail.top, rail.height, below.top, below.width, below.left, getComputedStyle(iconElement).backgroundColor],
+          heading: document.querySelector(".k2b-section__header")!.getBoundingClientRect().left,
+          avatarLeft: icon.left,
+          marker: [
+            getComputedStyle(row.querySelector(".k2b-activity__icon")!).width,
+            getComputedStyle(row.querySelector(".k2b-activity__icon")!).outlineWidth,
+          ],
           fitted,
           icon: [icon.width, icon.left - list.left],
           column: body.left - icon.right,
@@ -111,15 +152,98 @@ describe("ActivityList", () => {
           dash: getComputedStyle(day.querySelector(".k2b-activity__day-line")!).borderTopStyle,
         };
       });
-      expect(geometry.rail.slice(0, 2)).toEqual(["2px", "17px"]);
-      expect(geometry.icon).toEqual([20, 0]);
+      // Embedded timelines bleed 0.5rem past the content edge: the rail sits at bleed + 11px, the avatar at the bleed.
+      expect(geometry.rail.slice(0, 2)).toEqual(["2px", "19px"]);
+      expect(geometry.icon).toEqual([24, 8]);
       expect(geometry.column).toBe(12);
-      expect(geometry.gap).toEqual(["0px", "6px", "26px", "2px", "17px", "rgba(0, 0, 0, 0)"]);
+      expect(geometry.avatarLeft).toBe(geometry.heading);
+      expect(geometry.marker).toEqual(["12px", "2px"]);
+      expect(geometry.gap).toEqual(["0px", "8px", "32px", "2px", "19px", "rgba(0, 0, 0, 0)"]);
       expect(geometry.fitted).toBeGreaterThan(200);
       expect(geometry.text).toEqual(["14px", "20px"]);
-      expect(geometry.meta).toEqual(["13px", "18px"]);
-      expect(geometry.day).toEqual(["12px", "22px"]);
+      expect(geometry.meta).toEqual(["13px", "20px"]);
+      expect(geometry.day).toEqual(["13px", "24px"]);
+      expect(geometry.radius).toBe(geometry.reference);
+      // Vertical padding as FileGrid's list rows; inline padding is the embedded timeline's 0.5rem bleed.
+      expect(geometry.padding).toBe(`${geometry.referencePadding.split(" ")[0]} 8px`.replace(/^(\S+) \1$/, "$1"));
+      expect(geometry.referenceInset).toBe("8px");
+      // Timeline surface overhangs the section content; its avatar aligns with the heading.
+      expect(geometry.inset).toEqual([0, 0]);
+      expect(geometry.height).toBe("44px");
+      expect(await page.locator(".k2b-activity [title]").count()).toBe(0);
       expect(geometry.dash).toBe("dashed");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("compact names ellipsize on one line while keeping their full accessible text", async () => {
+    const page = await load(390);
+    try {
+      const name = page
+        .locator('.k2b-activity[data-density="compact"] .k2b-activity__actor-name')
+        .filter({ hasText: "Alexandra-Christiane" });
+      expect(await name.textContent()).toBe("Alexandra-Christiane von Sonnenfeld-Lichtenberg");
+      const box = await name.evaluate((node) => ({
+        height: node.getBoundingClientRect().height,
+        clipped: node.scrollWidth > node.clientWidth,
+        ellipsis: getComputedStyle(node).textOverflow,
+      }));
+      expect(box).toEqual({ height: 20, clipped: true, ellipsis: "ellipsis" });
+      expect(await name.getAttribute("title")).toBeNull();
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test.each([1440, 390])("hover and focus keep rows in place at %i px without overflow", async (width) => {
+    const page = await load(width);
+    try {
+      const bounds = () =>
+        page.locator(".k2b-activity__entry").evaluateAll((rows) =>
+          rows.map((row) => {
+            const rect = row.getBoundingClientRect();
+            return [rect.x, rect.y, rect.width, rect.height];
+          }),
+        );
+      const before = await bounds();
+      await hoverInPlace(page.locator(".k2b-activity__entry").first());
+      await settled(page);
+      expect(await bounds()).toEqual(before);
+      await page.locator(".k2b-activity__entry").first().focus();
+      await settled(page);
+      expect(await bounds()).toEqual(before);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+      expect(
+        await page.locator(".k2b-activity__text").evaluateAll((nodes) => nodes.every((node) => node.scrollWidth <= node.clientWidth)),
+      ).toBe(true);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("loading reserves the same avatar, sentence and time row height", async () => {
+    const page = await load();
+    try {
+      const heights = await page
+        .locator("#loading-reference .k2b-activity__entry")
+        .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+      expect(heights).toEqual([44, 44, 44]);
+      expect(await page.locator("#loading-reference .k2b-activity__placeholder-meta").count()).toBe(3);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("empty and error states fit the phone and provide a working reload action", async () => {
+    const page = await load(390);
+    try {
+      const states = page.locator("#state-reference");
+      expect(await states.locator(".k2b-activity-empty").textContent()).toBe("Noch nichts passiert.");
+      expect(await states.getByRole("alert").textContent()).toContain("Der Verlauf ließ sich nicht laden.");
+      await states.getByRole("button", { name: "Neu laden" }).click();
+      expect(await page.evaluate(() => Reflect.get(window, "reloaded"))).toBe(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
     } finally {
       await page.context().close();
     }
@@ -140,6 +264,8 @@ describe("ActivityList", () => {
       expect(await sentence.getAttribute("aria-expanded")).toBe("false");
       await mail.locator(".k2b-activity__meta").click();
       expect(await sentence.getAttribute("aria-expanded")).toBe("true");
+      expect(await mail.getAttribute("data-expanded")).toBe("");
+      expect(await mail.getAttribute("data-selected")).toBeNull();
       expect(await mail.locator(".k2b-activity__details").textContent()).toContain("Betreff");
       await sentence.click();
       expect(await mail.locator(".k2b-activity__details").count()).toBe(0);
@@ -160,22 +286,118 @@ describe("ActivityList", () => {
       expect(await dialog.textContent()).toContain("Projekt Sommerfest");
       const chips = await dialog.locator(".k2b-choice-chips [role=radio]").allTextContents();
       expect(chips.map((chip) => chip.trim())).toEqual(["Alle 13", "E-Mails 3", "Änderungen 6", "Dateien 2"]);
+      const frame = () =>
+        page.locator("dialog").evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const filters = element.querySelector(".k2b-choice-chips")!.getBoundingClientRect();
+          return [rect.x, rect.y, rect.width, rect.height, filters.x, filters.y, filters.width, filters.height];
+        });
+      const before = await frame();
+      const chipsGeometry = await dialog
+        .locator(".k2b-choice-chips [role=radio]")
+        .first()
+        .evaluate((chip) => {
+          const style = getComputedStyle(chip);
+          return [style.borderTopWidth, style.borderRadius, chip.getBoundingClientRect().height];
+        });
+      expect(chipsGeometry).toEqual(["1px", "9999px", 32]);
+      const listFrame = await dialog.locator(".k2b-activity-dialog__list").evaluate((element) => {
+        const row = element.querySelector(".k2b-activity__entry")!.getBoundingClientRect();
+        const box = element.getBoundingClientRect();
+        return [row.left - box.left, box.right - row.right, box.height];
+      });
+      expect(listFrame.slice(0, 2)).toEqual([8, 8]);
+      expect(listFrame[2]).toBeGreaterThan(450);
       await dialog.getByRole("radio", { name: "Dateien 2" }).click();
+      await settled(page);
+      expect(await frame()).toEqual(before);
       expect(await dialog.locator(".k2b-activity__entry").count()).toBe(2);
       // Wide: the meta line stands on the right of the first line.
       await dialog.getByRole("radio", { name: "Alle 13" }).click();
       await settled(page);
+      expect(await frame()).toEqual(before);
       const placement = await dialog
         .locator(".k2b-activity__entry")
         .first()
         .evaluate((row) => {
           const text = row.querySelector(".k2b-activity__text")!.getBoundingClientRect();
           const meta = row.querySelector(".k2b-activity__meta")!.getBoundingClientRect();
-          return { sameLine: Math.round(meta.top) === Math.round(text.top), right: meta.left > text.left };
+          return {
+            sameLine:
+              Math.round(meta.top + parseFloat(getComputedStyle(row.querySelector(".k2b-activity__meta")!).paddingTop)) ===
+              Math.round(text.top),
+            right: meta.left > text.left,
+          };
         });
       expect(placement).toEqual({ sameLine: true, right: true });
     } finally {
       await page.context().close();
     }
   });
+  test("phone filters keep their geometry and the complete sentence has no tooltip", async () => {
+    const page = await load(390);
+    try {
+      await page.getByRole("button", { name: "Alle 10" }).click();
+      const dialog = page.locator("[data-activity-dialog]");
+      await dialog.waitFor();
+      await settled(page);
+      const geometry = () =>
+        dialog.locator(".k2b-choice-chips").evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return [box.x, box.y, box.width, box.height];
+        });
+      const before = await geometry();
+      await dialog.getByRole("radio", { name: "Dateien 2" }).click();
+      await settled(page);
+      expect(await geometry()).toEqual(before);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+      expect(await dialog.locator("[title]").count()).toBe(0);
+      expect(
+        await dialog.locator(".k2b-activity__text").evaluateAll((nodes) => nodes.every((node) => node.scrollWidth <= node.clientWidth)),
+      ).toBe(true);
+      expect(await dialog.locator(".k2b-tooltip").count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  });
+  test.each(["light", "dark"] as const)(
+    "public rows keep hover visible on an elevated %s surface and long names fit on a phone",
+    async (theme) => {
+      const page = await load(390, theme);
+      try {
+        const row = page.locator("#standalone .k2b-activity__entry");
+        expect(await row.evaluate((element) => element.tagName)).toBe("DIV");
+        await row.scrollIntoViewIfNeeded();
+        await settled(page);
+        const before = await row.boundingBox();
+        await hoverInPlace(row);
+        await settled(page);
+        expect(await row.boundingBox()).toEqual(before);
+        const paint = await row.evaluate((element) => {
+          const text = element.querySelector(".k2b-activity__text")!;
+          return {
+            hover: getComputedStyle(element).backgroundColor,
+            surface: getComputedStyle(element.parentElement!).backgroundColor,
+            ink: getComputedStyle(text).color,
+            link: getComputedStyle(text.querySelector("a")!).color,
+            fits: text.scrollWidth <= text.clientWidth,
+          };
+        });
+        expect(paint.hover).not.toBe("rgba(0, 0, 0, 0)");
+        expect(paint.hover).not.toBe(paint.surface);
+        expect(paint.ink).toBe(paint.link);
+        expect(paint.fits).toBe(true);
+        expect(await row.locator("[title]").count()).toBe(0);
+        expect(await row.locator("img").count()).toBe(1);
+        await row.locator(".k2b-activity__meta").click();
+        expect((await counters(page)).opened).toBe(1);
+        await row.locator("a").focus();
+        await page.keyboard.press("Enter");
+        expect((await counters(page)).opened).toBe(2);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+      } finally {
+        await page.context().close();
+      }
+    },
+  );
 });

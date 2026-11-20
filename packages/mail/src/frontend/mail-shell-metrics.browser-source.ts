@@ -24,7 +24,7 @@ export const measurements = [
   ".mail-reading-column",
   ".k2b-app-workspace__detail",
   // The Events feed's rows: the server renders the first ones in the flow, the browser places the same ones.
-  ".mail-event",
+  ".mail-events__row",
 ].join(",");
 
 // Rows below the fold render lazily; only the visible geometry must hold still.

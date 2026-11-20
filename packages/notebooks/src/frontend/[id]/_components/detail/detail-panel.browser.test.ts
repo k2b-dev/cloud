@@ -116,7 +116,7 @@ const settle = async (page: Page) => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   });
 };
-const open = async (width: number, delayActivity = false, state = "many") => {
+const open = async (width: number, delayActivity = false, state = "many", activityState?: "empty" | "error") => {
   const page = await browser.newPage({
     viewport: { width, height: width < 600 ? 844 : 900 },
     isMobile: width < 600,
@@ -132,11 +132,16 @@ const open = async (width: number, delayActivity = false, state = "many") => {
   });
   try {
     await page.clock.setFixedTime(new Date("2026-10-16T19:30:00.000Z"));
-    if (delayActivity)
+    if (delayActivity || activityState)
       await page.route("**/api/notebooks/overview/activity?*", async (route) => {
-        requested();
-        await gate;
-        if (!page.isClosed()) await route.continue();
+        if (delayActivity) {
+          requested();
+          await gate;
+        }
+        if (page.isClosed()) return;
+        if (activityState === "error") return route.fulfill({ status: 500, json: { error: { message: "Fixture unavailable" } } });
+        if (activityState === "empty") return route.fulfill({ json: { data: [], nextCursor: null } });
+        await route.continue();
       });
     await page.goto(`${server.url}?state=${state}`);
     await page.waitForFunction(() => Boolean(window.harness));
@@ -248,7 +253,7 @@ for (const width of [1440, 390]) {
       expect(edges.bodies.filter((body) => Math.abs(body.x - edge) > 1).map((body) => `${body.label}: ${body.x - edge}`)).toEqual([]);
       expect(edges.rows.length).toBeGreaterThan(30);
       expect(edges.rows.filter((row) => Math.abs(row.x - edge) > 1).map((row) => `${row.label}: ${row.x - edge}`)).toEqual([]);
-      // Comment times and section actions; the activity timeline keeps its times in the meta line under each sentence.
+      // Comment times and section actions keep their own right edge.
       expect(edges.right.length).toBeGreaterThanOrEqual(5);
       for (const right of edges.right) closeTo(right.x, edges.right[0]!.x, 2);
     } finally {
@@ -362,7 +367,7 @@ for (const width of [1440, 390]) {
   test(`${width}: activity, presence and disclosure keep earlier content in place`, async () => {
     const { page, release } = await open(width, true);
     try {
-      expect(await page.locator(".notebook-activity .k2b-activity__placeholder").count()).toBe(3);
+      expect(await page.locator(".notebook-activity .k2b-activity__placeholder-line").count()).toBe(3);
       const tracked = [header, `${contents} > .k2b-section__header`, ".k2b-discussion__item"];
       const before = await Promise.all(tracked.map((selector) => box(page, selector)));
       release();
@@ -409,11 +414,50 @@ for (const width of [1440, 390]) {
       await settle(page);
       sameBox(await box(page, header), beforeFold);
       expect(await page.locator(".k2b-discussion__item").count()).toBe(12);
+      await page.getByRole("button", { name: /^Aktivität/, expanded: false }).evaluate((button) => {
+        if (!(button instanceof HTMLButtonElement)) throw new Error("Expected an activity disclosure");
+        button.click();
+      });
+      await page.locator(".notebook-activity .k2b-activity__entry").first().scrollIntoViewIfNeeded();
+      await settled(page);
+      const activityRow = page.locator(".notebook-activity .k2b-activity__entry").first();
+      const rowBefore = await activityRow.boundingBox();
+      await hoverInPlace(activityRow);
+      await settled(page);
+      expect(await activityRow.boundingBox()).toEqual(rowBefore);
+      expect(await page.locator(".notebook-activity [title]").count()).toBe(0);
+      expect(
+        await page
+          .locator(".notebook-activity .k2b-activity__text")
+          .evaluateAll((nodes) => nodes.every((node) => node.scrollWidth <= node.clientWidth)),
+      ).toBe(true);
     } finally {
       release();
       await page.close();
     }
   }, 30_000);
+
+  test.each(["empty", "error"] as const)(`${width}: activity %s keeps the narrow panel usable`, async (activityState) => {
+    const { page } = await open(width, false, "many", activityState);
+    try {
+      await page.getByRole("button", { name: /^Aktivität/, expanded: false }).click();
+      const activity = page.locator(".notebook-activity");
+      if (activityState === "error") {
+        expect(await activity.getByRole("alert").isVisible()).toBe(true);
+        await page.unroute("**/api/notebooks/overview/activity?*");
+        await activity.getByRole("button", { name: "Neu laden" }).click();
+        await activity.getByRole("alert").waitFor({ state: "detached" });
+        expect(await activity.locator(".k2b-activity__entry").count()).toBeGreaterThan(1);
+      } else {
+        // An empty audit page still has the note's creation as the start of its timeline.
+        expect(await activity.locator(".k2b-activity__entry").count()).toBe(1);
+      }
+      expect(await activity.locator("[title]").count()).toBe(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+    } finally {
+      await page.close();
+    }
+  });
 
   test(`${width}: Ansicht offers the available modes and offline actions explain recovery`, async () => {
     const { page } = await open(width);

@@ -414,7 +414,6 @@ export const mailConversationUiMessages = i18n.define({
       activityRepeated: ({ label, count }: { label: string; count: number }) => `${label} (${count} times)`,
       activityFailed: "failed",
       activityAnd: " and ",
-      workflowActor: ({ name }: { name: string }) => `Workflow ${name}`,
     },
     de: {
       noTags: "Keine Tags verfügbar",
@@ -834,7 +833,6 @@ export const mailConversationUiMessages = i18n.define({
       activityRepeated: ({ label, count }) => `${label} (${count}-mal)`,
       activityFailed: "fehlgeschlagen",
       activityAnd: " und ",
-      workflowActor: ({ name }) => `Workflow ${name}`,
     },
   },
 });

@@ -1057,7 +1057,7 @@ describe("MailComposer robustness", () => {
                       hostControls = controls;
                     },
                     ...(options.window ? { window: { status: () => windowStatus, actions: () => windowActions, sheet: () => false } } : {}),
-                    messageLabel: () => null,
+                    messageSource: () => null,
                     leave: (outcome) => leaves.push(outcome),
                     openDraft: (draftId) => opened.push(draftId),
                     ...(options.box
