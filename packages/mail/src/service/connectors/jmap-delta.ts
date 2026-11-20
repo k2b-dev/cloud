@@ -91,17 +91,22 @@ function parseChanges(
   const parsed = changesSchema.safeParse(value);
   if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
   const page = parsed.data;
-  const ids = [...page.created, ...page.updated, ...page.destroyed];
+  const lists = [page.created, page.updated, page.destroyed];
   if (
     page.accountId !== accountId ||
     page.oldState !== sinceState ||
-    ids.length > maxChanges ||
-    new Set(ids).size !== ids.length ||
+    lists.reduce((count, list) => count + list.length, 0) > maxChanges ||
+    lists.some((list) => new Set(list).size !== list.length) ||
     (page.hasMoreChanges && page.newState === page.oldState)
   ) {
     throw new JmapError("JMAP_INVALID_RESPONSE");
   }
-  return page;
+  // RFC 8620 §5.2 may repeat an id across lists: destroyed wins, then created; the result is disjoint.
+  const destroyed = new Set(page.destroyed);
+  const created = page.created.filter((id) => !destroyed.has(id));
+  const createdSet = new Set(created);
+  const updated = page.updated.filter((id) => !destroyed.has(id) && !createdSet.has(id));
+  return { ...page, created, updated, sent: { created: page.created, updated: page.updated } };
 }
 
 /** One account-wide page; only changes.newState is a checkpoint, never get.state. */
@@ -148,13 +153,17 @@ export async function readJmapEmailDelta(
     response = await request(false);
   }
   const page = parseChanges(response, "Email/changes", accountId, sinceState, maxChanges);
-  let objects: JmapEmailSnapshot[];
-  let notFoundIds: string[];
+  let objects: JmapEmailSnapshot[] = [];
+  let notFoundIds: string[] = [];
   if (combined) {
-    const created = parseJmapEmailGet(requireJmapMethodResult(response, "created", "Email/get"), accountId, page.created);
-    const updated = parseJmapEmailGet(requireJmapMethodResult(response, "updated", "Email/get"), accountId, page.updated);
-    objects = [...created.list, ...updated.list];
-    notFoundIds = [...created.notFound, ...updated.notFound];
+    // The back-references read the lists as sent; keep each id of the normalized lists exactly once.
+    const created = parseJmapEmailGet(requireJmapMethodResult(response, "created", "Email/get"), accountId, page.sent.created);
+    const updated = parseJmapEmailGet(requireJmapMethodResult(response, "updated", "Email/get"), accountId, page.sent.updated);
+    const wanted = new Set([...page.created, ...page.updated]);
+    for (const get of [created, updated]) {
+      objects.push(...get.list.filter((email) => wanted.delete(email.id)));
+      notFoundIds.push(...get.notFound.filter((id) => wanted.delete(id)));
+    }
   } else {
     ({ objects, notFoundIds } = await readJmapEmails(session, authorization, accountId, [...page.created, ...page.updated], signal, deps));
   }
