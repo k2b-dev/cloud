@@ -379,10 +379,12 @@ function ImageBlock(props: { block: Leaf<"Image"> }) {
           data-ratio={props.block.ratio ? "" : undefined}
           style={props.block.ratio ? { "--cloud-blocks-image-ratio": String(props.block.ratio) } : undefined}
         >
-          {/* Keyed: every source starts with its own tries. */}
-          <Show when={src()} keyed>
-            {(source) => <BlockPicture src={source} alt={props.block.alt} />}
-          </Show>
+          {/* One place for the picture, its wait, and its stand-in; keyed: every source starts with its own tries. */}
+          <div class="cloud-blocks__image-place">
+            <Show when={src()} keyed>
+              {(source) => <BlockPicture src={source} alt={props.block.alt} />}
+            </Show>
+          </div>
           <Show when={props.block.caption}>{(caption) => <figcaption>{caption()}</figcaption>}</Show>
         </figure>
       )}

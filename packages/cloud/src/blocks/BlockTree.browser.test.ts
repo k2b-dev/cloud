@@ -433,16 +433,19 @@ describe("BlockTree", () => {
             expect(shape.ground).toBe(square.ground);
           }
           const { width: w, height: h } = hoch.shot;
+          // An edge pixel may be blended with the ground (WebKit), so the picture's own edges count to within 1 px.
           // Portrait: the whole height, centred, with the muted ground on both sides.
-          expect(hoch.column).toEqual({ from: 0, to: h });
+          expect(hoch.column!.from).toBeLessThanOrEqual(1);
+          expect(hoch.column!.to).toBeGreaterThanOrEqual(h - 1);
           expect(Math.abs(hoch.row!.to - hoch.row!.from - (h * 90) / 160)).toBeLessThanOrEqual(2);
           expect(Math.abs(hoch.row!.from - (w - hoch.row!.to))).toBeLessThanOrEqual(2);
-          expect(hoch.row!.from).toBeGreaterThan(0);
+          expect(hoch.row!.from).toBeGreaterThan(w / 8);
           // Landscape: the whole width, centred, with the muted ground above and below.
-          expect(quer.row).toEqual({ from: 0, to: w });
+          expect(quer.row!.from).toBeLessThanOrEqual(1);
+          expect(quer.row!.to).toBeGreaterThanOrEqual(w - 1);
           expect(Math.abs(quer.column!.to - quer.column!.from - (w * 90) / 160)).toBeLessThanOrEqual(2);
           expect(Math.abs(quer.column!.from - (h - quer.column!.to))).toBeLessThanOrEqual(2);
-          expect(quer.column!.from).toBeGreaterThan(0);
+          expect(quer.column!.from).toBeGreaterThan(h / 16);
         }
       });
 
@@ -489,9 +492,11 @@ describe("BlockTree", () => {
       for (const attempt of [1, 2]) {
         await tab.locator(".cloud-blocks__image-wait").waitFor();
         heights.push(await height(".cloud-blocks__image-wait"));
+        const asked = tab.waitForRequest((request) => request.url().endsWith(`later.svg?retry=${attempt}`));
         await tab.clock.runFor(2_000);
-        // The later try is still under way: its picture holds the same place as the wait before it.
+        // The later try is under way, asked and not answered: its picture holds the same place as the wait before it.
         await tab.locator(`.cloud-blocks__image img[data-retry][src$="retry=${attempt}"]`).waitFor();
+        await asked;
         heights.push(await height(".cloud-blocks__image img"));
         if (attempt === 1) await tab.evaluate(() => document.querySelector(".cloud-blocks__image img")!.dispatchEvent(new Event("error")));
       }
