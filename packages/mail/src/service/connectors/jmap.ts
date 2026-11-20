@@ -123,9 +123,7 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
 }
 
 export type JmapMailbox = z.infer<typeof mailboxSchema>;
-export type JmapMailboxInventory =
-  | { kind: "inventory"; mailboxes: Map<string, JmapMailbox>; queryState: string; state: string | null }
-  | { kind: "changed" };
+export type JmapMailboxInventory = { kind: "inventory"; mailboxes: Map<string, JmapMailbox>; state: string | null } | { kind: "changed" };
 
 /**
  * The bounded folder inventory shared by discovery and the account snapshot. Every query page
@@ -203,9 +201,7 @@ export async function readJmapMailboxInventory(
       mailboxes.set(mailbox.id, mailbox);
     }
   }
-  // The do-while loop ran at least once, so queryState is set.
-  if (queryState === undefined) throw new JmapError("JMAP_INVALID_RESPONSE");
-  return { kind: "inventory", mailboxes, queryState, state: state ?? null };
+  return { kind: "inventory", mailboxes, state: state ?? null };
 }
 
 export function mapJmapMailboxes(session: JmapSession, accountId: string, mailboxes: ReadonlyMap<string, JmapMailbox>): JmapRemoteFolder[] {
