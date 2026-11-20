@@ -888,6 +888,12 @@ time and can remember their choice through the normal `silent_you` approval.
 
 ## Write to your Gustav chat
 
+When Gustav uses `ai.chat.send` from one chat to another, Cloud adds a completion
+activity to the source chat after the target turn ends. It distinguishes success,
+failure and cancellation and links to the result. The activity starts no new
+turn; it is not another message sent through the SDK. Personal Code keeps reading
+its send receipt through `ai.chat.read` to inspect progress and the answer.
+
 Personal Code can write to its currently bound chat with `chat.send`. Code
 created through `code_init` starts bound to the chat where Gustav created it:
 

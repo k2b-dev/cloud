@@ -74,6 +74,7 @@ export async function loadCodeVersionReadModel(
       : { missing: false, target: null };
   const result = presentCodeVersion({
     personal: code.owner.kind === "person",
+    viewerIsOwner: code.owner.kind === "person" && code.owner.userId === viewer.id,
     ...(otherOwner ? { runsAs: { name: row.owner_name } } : {}),
     versionId: input.versionId,
     number: row.number,

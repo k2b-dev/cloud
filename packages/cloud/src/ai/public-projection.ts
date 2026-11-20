@@ -209,7 +209,7 @@ export const publicAiStoredMessages = async (
           : undefined);
     return origin ? [{ ...message, meta: { ...message.meta, writerOrigin: origin } }] : [];
   });
-  const [choiceContext, { origins, turnShortIds }, named] = await Promise.all([
+  const [choiceContext, { origins, turnShortIds, doneChats }, named] = await Promise.all([
     loadedChoiceContext ??
       (messagesNeedChoiceContext(messages) ? aiConversations.listChoiceMessages({ conversationId: conversation.id }) : []),
     loadAiMessageOrigins(
@@ -221,14 +221,46 @@ export const publicAiStoredMessages = async (
           ...(message.loopId ? [message.loopId] : []),
           ...(message.meta?.choice ? [message.meta.choice.turnId] : []),
         ]),
+        doneMessages: messages.flatMap((message) => {
+          const done = message.meta?.chatDone;
+          return done?.targetConversationId
+            ? [{ id: message.id, conversationId: done.targetConversationId, turnId: done.turnId, messageSeq: done.messageSeq }]
+            : [];
+        }),
       },
     ),
     withCurrentAppNames(messages, originViewer.locale),
   ]);
   const byId = new Map(attributed.map((message, index) => [message.id, origins[index]!]));
-  const projected = named.map((message) =>
-    byId.has(message.id) ? { ...message, meta: { ...message.meta, origin: byId.get(message.id)! } } : message,
-  );
+  const projected = named.map((message) => {
+    const done = message.meta?.chatDone;
+    if (!done && !byId.has(message.id)) return message;
+    const target = done?.targetConversationId && doneChats.get(message.id);
+    return {
+      ...message,
+      meta: {
+        ...message.meta,
+        ...(byId.has(message.id) ? { origin: byId.get(message.id)! } : {}),
+        ...(done
+          ? {
+              chatDone: {
+                chatId: done.chatId,
+                turnId: done.turnId,
+                status: done.status,
+                messageSeq: target ? target.messageSeq : null,
+                ...(target
+                  ? {
+                      name: target.name,
+                      href: target.href + (target.messageSeq === null ? "" : `&message=${target.messageSeq}`),
+                      ...(done.status === "completed" && target.summary ? { summary: target.summary } : {}),
+                    }
+                  : {}),
+              },
+            }
+          : {}),
+      },
+    };
+  });
   return projectAiNextMessages(
     projectPublicAiStoredMessages(projected, conversation.shortId, turnShortIds, choiceContext),
     conversation.id,
