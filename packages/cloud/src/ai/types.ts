@@ -516,29 +516,6 @@ export type AiTurn = {
   error: string | null;
 };
 
-export type AiInterChatMessage = {
-  id: string;
-  shortId: string;
-  sourceConversationId: string;
-  sourceChatId: string;
-  sourceTitle: string;
-  sourceTurnId: string;
-  sourceTurnShortId: string;
-  sourceCallId: string;
-  targetConversationId: string;
-  targetChatId: string;
-  targetTitle: string;
-  actorUserId: string;
-  text: string;
-  status: "pending" | "delivered" | "failed";
-  targetTurnId: string | null;
-  targetTurnShortId: string | null;
-  targetMessageId: string | null;
-  error: string | null;
-  createdAt: string;
-  deliveredAt: string | null;
-};
-
 export type AiPendingTurnAction =
   | {
       type: "approval_request";
@@ -786,7 +763,7 @@ export type AiChatTurnRunConfig = {
   quotes?: import("./quote-markers").AiMessageQuote[];
   background?: RetiredRoutineContext;
   selectedSkillIds?: string[];
-  /** Server-owned marker: model grants apply only to interactive Assistant chat. */
+  /** Server-owned marker for interactive Assistant chat: personal model selection and chat quotas. Model grants apply to every turn. */
   assistantChat?: true;
   /**
    * Server-owned marker: a person started this turn in a signed-in browser session, not through `cld`, an API key,
@@ -981,25 +958,6 @@ export type AiConversationService = {
     turnShortId: string;
     callId: string;
   } | null>;
-  createInterChatMessage(input: {
-    sourceConversationId: string;
-    sourceTurnId: string;
-    sourceCallId: string;
-    targetChatId: string;
-    actorUserId: string;
-    text: string;
-    idempotencyKey: string;
-  }): Promise<{ ok: true; message: AiInterChatMessage } | { ok: false; reason: "not_found" | "same_chat" | "recursive" }>;
-  listPendingInterChatMessages(input?: { targetConversationId?: string; limit?: number }): Promise<AiInterChatMessage[]>;
-  failInterChatMessage(input: { messageId: string; error: string }): Promise<boolean>;
-  deliverInterChatMessage(input: {
-    messageId: string;
-    modelId: string;
-    runConfig: AiChatTurnRunConfig;
-    userMessage: Message;
-  }): Promise<
-    { delivered: false; reason: "not_found" | "busy" | "failed" } | { delivered: true; message: AiInterChatMessage; turn: AiTurn }
-  >;
   updateConversationMetadata(input: {
     conversationId: string;
     ownerUserId?: string;

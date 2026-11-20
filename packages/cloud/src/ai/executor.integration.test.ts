@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import type { InboundEvent, Message, OutboundEvent, Provider } from "@k2b/nessi";
 import { openAICompatible } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
@@ -370,6 +370,15 @@ beforeAll(() => {
 
 afterAll(() => {
   mockServer?.stop(true);
+});
+
+// These turns use fixture models without stored grants; model-access-turns.test.ts covers the check before every turn.
+let modelAccessCheck: ReturnType<typeof spyOn<typeof aiModelAccess, "assertAllowed">> | undefined;
+beforeEach(() => {
+  modelAccessCheck = spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
+});
+afterEach(() => {
+  modelAccessCheck?.mockRestore();
 });
 
 const insertUser = async () => {
