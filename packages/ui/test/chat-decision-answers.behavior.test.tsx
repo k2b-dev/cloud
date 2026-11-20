@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
-import type { ChatDecisionProps } from "../src/chat/types";
+import type { ChatDecisionProps } from "../src/chat/ChatDecision";
 import { createDomTestHarness } from "./dom";
 
 /** A promise the test settles itself. */
