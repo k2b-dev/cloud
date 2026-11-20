@@ -12,6 +12,7 @@ import { loadDraftSourceQuote } from "./draft-source-quote";
 import { resolveDraftSignature } from "./draft-validation";
 import { mailboxLogoContentId } from "./mailbox-logos";
 import { type OutboundDraftSnapshot, outboundDraftSnapshotSchema } from "./outbound-mime";
+import { senderIdentityUnverified } from "./sender-identity-errors";
 
 const internalDraftEditableContentInputSchema = draftEditableContentInputSchema.extend({
   senderIdentityId: z.string().uuid(),
@@ -39,6 +40,7 @@ type SendSource = {
   intent: "new" | "reply" | "reply_all" | "forward";
   display_name: string;
   sender_identity_id: string;
+  sender_status: string;
   signature_template_id: string | null;
   quote_source: DraftQuoteSource | null;
   source_message_id: string | null;
@@ -110,6 +112,7 @@ export const loadSendContent = async (params: {
       d.intent,
       si.display_name,
       si.id AS sender_identity_id,
+      si.status AS sender_status,
       si.from_address,
       si.reply_to,
       si.envelope_sender,
@@ -154,10 +157,11 @@ export const loadSendContent = async (params: {
       AND d.mailbox_id = ${params.mailboxId}::uuid
       AND (${params.senderIdentityId ?? null}::uuid IS NULL OR d.sender_identity_id = ${params.senderIdentityId ?? null}::uuid)
       AND d.revision = ${params.expectedRevision}
-      AND si.status = 'verified'
     ${params.lock ? params.db`FOR UPDATE OF d, si` : params.db``}
   `;
   if (!draft) return fail(err.badInput("Draft or sender identity is no longer available"));
+  if (draft.sender_status !== "verified")
+    return fail(senderIdentityUnverified(draft.sender_status === "disabled" ? null : draft.from_address));
   if (draft.edit_mode === "shared") {
     if (!draft.doc_history_complete) return fail(sendContentChanged());
     // Until the recovery marking ran, SQL may lack events the old log expired.

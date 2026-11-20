@@ -69,6 +69,7 @@ export const mailActivityLabel = (event: MailActivityEvent, locale = "en"): stri
     "conversation.split": t.activitySplit,
     "conversation.summary_updated": t.activitySummary,
     "draft.created": t.activityDraftCreated,
+    "draft.quarantine_recovered": t.activityDraftRecovered,
     "draft.derived": t.activityDraftDerived,
     "draft.discarded": t.activityDraftDiscarded,
     "message.delivery_receipt_received": t.activityDeliveryReceipt,

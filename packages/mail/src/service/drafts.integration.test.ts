@@ -11,6 +11,7 @@ import { sha256Json } from "./canonical";
 import { reviewDraftComposeSafety, validateDraftComposeSafety } from "./compose-safety";
 import { acquireDraftLease, heartbeatDraftLease, releaseDraftLease, withOwnedDraftLease } from "./draft-leases";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
+import { validateIdentity } from "./draft-validation";
 import {
   createDraft,
   createWorkflowReviewReplyDraftInTransaction,
@@ -155,6 +156,69 @@ const draftModeTests = (draftEditMode: "shared" | "lock") => {
     if (blobIds.length > 0) {
       await sql`DELETE FROM mail.message_part_blobs WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${blobIds}::jsonb))`;
     }
+  });
+
+  test("draft creation and send review name an unverified sender with a stable localizable reason", async () => {
+    const [unverified] = await sql<{ id: string; from_address: string }[]>`
+      SELECT id, from_address FROM mail.sender_identities
+      WHERE mailbox_id = ${mailboxId}::uuid AND from_address = 'customer@example.com' AND status = 'unverified'
+    `;
+    if (!unverified || owner.actor.kind !== "user") throw new Error("Missing sender validation fixture");
+    const input = {
+      senderIdentityId: identityId,
+      to: [{ address: "recipient@example.test" }],
+      cc: [],
+      bcc: [],
+      quoteSource: null,
+      subject: "Sender validation",
+      body: "Hello",
+      format: "plain" as const,
+    };
+    const actor = { kind: "user" as const, userId: owner.actor.user.id };
+    const rejection = { code: "SENDER_IDENTITY_UNVERIFIED", status: 400, senderAddress: unverified.from_address };
+    expect(
+      await validateIdentity({ db: sql, mailboxId: "00000000-0000-4000-8000-000000000001", senderIdentityId: unverified.id }),
+    ).toMatchObject({ ok: false, error: { ...rejection, senderAddress: null } });
+    const [disabled] = await sql<{ id: string }[]>`
+      INSERT INTO mail.sender_identities (short_id, mailbox_id, label, from_address, automation_policy, is_default, status)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Disabled sender', 'disabled@example.test', 'disabled', false, 'disabled')
+      RETURNING id
+    `;
+    if (!disabled) throw new Error("Missing disabled sender fixture");
+    expect(await validateIdentity({ db: sql, mailboxId, senderIdentityId: disabled.id })).toMatchObject({
+      ok: false,
+      error: { ...rejection, senderAddress: null },
+    });
+    const invalidInput = { ...input, senderIdentityId: unverified.id };
+    const prepared = await prepareDraftSeed({ context: owner, mailboxId, origin: { kind: "compose", input: invalidInput } });
+    expect(prepared).toMatchObject({ ok: false, error: rejection });
+    const rejectedCreate = await createDraft({ context: owner, mailboxId, input: invalidInput });
+    expect(rejectedCreate).toMatchObject({ ok: false, error: rejection });
+
+    const created = await createDraft({ context: owner, mailboxId, input });
+    if (!created.ok) throw new Error(created.error.message);
+    // An identity can lose verification after the draft was created, before review or execution.
+    await sql`UPDATE mail.drafts SET sender_identity_id = ${unverified.id}::uuid WHERE id = ${created.data.id}::uuid`;
+    for (const lock of [false, true]) {
+      const sent = await sql.begin((db) =>
+        loadSendContent({
+          db,
+          mailboxId,
+          draftId: created.data.id,
+          expectedRevision: created.data.revision,
+          actor,
+          context: owner,
+          lock,
+        }),
+      );
+      expect(sent).toMatchObject({ ok: false, error: rejection });
+      if (!sent.ok) expect(localizeMailError(sent.error, "de").message).toContain(unverified.from_address);
+    }
+    const [after] = await sql<
+      { revision: number | string; state: string }[]
+    >`SELECT revision, state FROM mail.drafts WHERE id = ${created.data.id}::uuid`;
+    expect(after?.state).toBe("draft");
+    expect(Number(after?.revision)).toBe(created.data.revision);
   });
 
   test("persists self-addressed replies with no recipient but still refuses delivery", async () => {

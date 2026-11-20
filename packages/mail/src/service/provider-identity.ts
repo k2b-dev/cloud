@@ -1,4 +1,6 @@
+import { z } from "zod";
 import { sha256Json } from "./canonical";
+import { jmapIdSchema } from "./connectors/jmap-client";
 
 /** The configured IMAP endpoint a binding is anchored to; TLS validation itself happens in the connector. */
 export type ProviderEndpoint = { host: string; port: number; tlsMode: string };
@@ -81,4 +83,30 @@ export const compareProviderEvidence = (
       ? "Provider server and authenticated account match; evidence upgraded from version 1"
       : "Provider server and authenticated account match",
   };
+};
+
+/** Account identity only: folder names, paths and rights never change its fingerprint. */
+export const jmapScopeEvidenceSchema = z
+  .object({
+    version: z.literal(1),
+    kind: z.literal("jmap"),
+    origin: z
+      .string()
+      .url()
+      .refine((value) => {
+        if (!URL.canParse(value)) return false;
+        const url = new URL(value);
+        return url.protocol === "https:" && !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash;
+      }, "Expected a credential-free HTTPS origin")
+      .transform((value) => new URL(value).origin),
+    accountId: jmapIdSchema,
+  })
+  .strict();
+export type JmapScopeEvidence = z.infer<typeof jmapScopeEvidenceSchema>;
+
+export const jmapScopeFingerprint = (evidence: JmapScopeEvidence): string => sha256Json(jmapScopeEvidenceSchema.parse(evidence));
+
+export const jmapFolderStableKey = (evidence: JmapScopeEvidence, mailboxId: string): string => {
+  const { origin, accountId } = jmapScopeEvidenceSchema.parse(evidence);
+  return sha256Json({ kind: "jmap", origin, accountId, mailboxId: jmapIdSchema.parse(mailboxId) });
 };

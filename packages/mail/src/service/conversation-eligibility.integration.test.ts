@@ -49,7 +49,7 @@ suiteFor(
         uid += 1;
         const date = new Date(Date.UTC(2026, 10, 6, 10, uid));
         return {
-          remoteRef: { folderStableKey: "inbox", uidValidity: "1", uid: String(uid), modseq: String(uid) },
+          remoteRef: { kind: "imap", folderStableKey: "inbox", uidValidity: "1", uid: String(uid), modseq: String(uid) },
           providerMessageId: null,
           providerThreadId: null,
           messageId: uid === 1 ? rootId : `<message-${uid}@unrelated.test>`,
@@ -142,7 +142,7 @@ suiteFor(
     const message = (from: string, changes: Partial<ConnectorEnvelope> = {}): ConnectorEnvelope => {
       sequence += 1;
       return {
-        remoteRef: { folderStableKey: "inbox", uidValidity: "1", uid: String(sequence), modseq: String(sequence) },
+        remoteRef: { kind: "imap", folderStableKey: "inbox", uidValidity: "1", uid: String(sequence), modseq: String(sequence) },
         providerMessageId: null,
         providerThreadId: null,
         messageId: `<eligibility-${sequence}-${mailboxId}@example.test>`,

@@ -150,47 +150,67 @@ removed prefix. Reconnecting alone does not create a content revision.
 Document reads distinguish unavailable history (`DRAFT_DOCUMENT_HISTORY_UNAVAILABLE`)
 from malformed history (`DRAFT_DOCUMENT_INVALID_HISTORY`), both with status 409.
 Keep device text and ask a mailbox administrator to follow the recovery steps
-below. Unexpected read failures return `DRAFT_DOCUMENT_READ_UNAVAILABLE` (500);
+below. Unexpected read failures return `DRAFT_DOCUMENT_READ_UNAVAILABLE` (503);
 retain device text and retry. Mail logs the underlying exception with the draft
 and request identifiers. Existing typed rejections retain their code and status.
 
-### Recover a draft that keeps returning 409
+### Recover a quarantined draft after upgrading
 
-Upgrade every Mail instance before recovering drafts affected by the 0.78
-retention bug. A new draft starts from the current stream head, but another
-prune can expose the bug again while an old instance is still running.
-Restarting Mail or reloading a page does not clear a stored incomplete-history
-flag. Keep any text still visible on a device before closing its editor.
+Upgrade every Mail instance before recovering drafts quarantined by an older
+release. An older instance can still prune without the newer coverage safeguards.
+Do not reset `doc_history_complete` directly: recovery rewrites the current cursor,
+and later idle coverage cannot prove what happened before that recovery. In
+particular, a previous revision may itself be an incomplete recovery snapshot.
 
-An administrator and the installation's operator should recover each affected
-draft separately:
+A mailbox administrator can inspect a draft even when the ordinary draft read
+is blocked:
 
-1. Check its send commands first. A queued command can still retry. Resolve
-   or cancel an outstanding send before sending a replacement draft.
-2. Preserve the original document, its revisions, attachments and any device
-   copy. Inspect metadata in a read-only transaction: generation, revision,
-   history flag, snapshot cursor, idle coverage and the first retained stream
-   sequence. Keep document bytes out of logs and issue reports.
-3. Establish whether the missing prefix was covered **before** recovery marked
-   the history incomplete. Start with the cursor of the preceding revision in
-   `mail.draft_document_revisions`: recovery advances the current snapshot
-   cursor, and later pruning can also advance its idle coverage. Those current
-   values are not historical evidence. Current coverage at or beyond
-   `firstSequence - 1` is necessary for replay, but a later idle proof cannot establish that no
-   input was lost earlier. In 0.78, pruning could skip a locked row without
-   saving its proof. `updated_at` also changes when pruning writes coverage;
-   it does not record when history became incomplete.
-4. If that earlier evidence is unavailable, keep the original quarantined.
-   Have the author compare the saved content with their device or other known
-   copy, then create and review a fresh draft. Check recipients, subject,
-   attachments and body before sending. This recovers reviewed content; it
-   does not establish that the old history was complete.
+```sh
+cld mail draft recovery inspect <draft-id> --mailbox <mailbox-id> --json
+```
 
-There is no supported automatic command to mark an incomplete draft complete.
-Do not repair it by changing `doc_history_complete` or moving its cursor to
-the stream head: neither operation reconstructs missing input. If a repair
-with independent evidence is needed, arrange a reviewed operator procedure
-that fences the exact generation and revision and preserves the original.
+Use its revision and generation in the repair request. Choose one UUID and keep
+it for retries of the same request:
+
+```sh
+cld mail draft recovery repair <draft-id> --mailbox <mailbox-id> \
+  --revision 4 --generation 1 \
+  --request-id 2d374fed-1c32-48ea-a910-f65505db6f8a --yes --json
+```
+
+The operation rechecks the evidence under document admission, the pruning
+coverage lock and the draft row lock. A queued, executing or ambiguous send must be resolved
+first to avoid sending the message twice. It never sends automatically.
+
+- `original_repaired`: the original generation-one, revision-one seed and the
+  entire topic prefix are still available, every event replays completely,
+  and the replay includes the quarantined state. Mail preserves the quarantined
+  bytes, opens a new generation and repairs the original. Reopen it before sending.
+- `recovery_copy`: completeness cannot be proved. Mail preserves the original in
+  quarantine and creates a linked compose draft from the readable retained state,
+  or its last durable projection when Yjs dependencies are unresolved. Active
+  attachments are copied and the exact source bytes are retained. The copy stays
+  separate from the conversation and links back to the original, leaving its reply
+  slot occupied. It is a starting point for review, not proof that all text was
+  recovered. Compare recipients, subject, body and attachments with any device
+  copies before sending. Automatic source-message quoting is turned off in the
+  detached copy; consult the source message when reviewing it.
+
+A later generation, a missing seed or a pruned prefix always takes the copy
+path. Current idle coverage alone never unlocks the original. Retrying the same
+request ID, source generation and revision returns the committed result without
+creating another copy. The HTTP equivalents are `GET /mailboxes/:mailboxId/drafts/:draftId/quarantine`
+and `POST /mailboxes/:mailboxId/drafts/:draftId/quarantine/recover` with
+`{ expectedRevision, generation, requestId }`; both require mailbox administration.
+
+Original repair is best effort: normal pruning may already have removed the
+evidence before the upgrade finishes. Mail does not pin quarantined drafts to
+the start of the shared log, which could fill the log and block other mailboxes.
+Expect a review copy for old incidents. Keep the original and any device copies
+until review finishes; retained source bytes and the retry receipt are removed
+when either the original or its recovery copy is retired or deleted. Before
+repairing an original, preserve any unaccepted device input too:
+the new generation cannot automatically merge that older input.
 
 ## Sending and Undo
 

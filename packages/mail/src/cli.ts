@@ -119,6 +119,7 @@ import {
   type WorkflowTryResult,
   type WorkflowValidation,
 } from "./contracts";
+import type { DraftQuarantineInspection, DraftQuarantineRecovery } from "./draft-quarantine-contracts";
 import { mailFolderPaths } from "./folder-tree";
 import { forwardMessageBody } from "./frontend/_components/mail-compose-derivation";
 import { incomingAutomationIssues } from "./incoming-automation-issues";
@@ -8541,6 +8542,84 @@ const specialistCommands = {
 };
 
 const replyDraftCommands = (t: Translate) => [
+  command("draft recovery inspect", {
+    summary: t({ en: "Inspect quarantined draft history (mailbox admin)", de: "Gesperrten Entwurf prüfen (Postfach-Admin)" }),
+    args: { draftId: arg.required({ description: t({ en: "Draft id", de: "Entwurfs-ID" }) }) },
+    flags: mailboxFlag,
+    run: async ({ ctx, args, flags }) => {
+      const mailbox = await resolveMailbox(ctx, flags.mailbox);
+      const result = await readApi<DraftQuarantineInspection>(
+        ctx,
+        `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}/quarantine`,
+      );
+      if (printStructured(ctx, result)) return;
+      const available = localizeCloudCliText(
+        ctx.options.locale,
+        result.originalRepairPossible ? { en: "yes", de: "ja" } : { en: "no", de: "nein" },
+      );
+      ctx.print(
+        localizeCloudCliText(ctx.options.locale, {
+          en: `Revision ${result.revision}, generation ${result.generation}. Original repair possible: ${available}. Otherwise recovery creates a copy for review.`,
+          de: `Revision ${result.revision}, Generation ${result.generation}. Original reparierbar: ${available}. Sonst entsteht eine Kopie zum Prüfen.`,
+        }),
+      );
+    },
+  }),
+  command("draft recovery repair", {
+    summary: t({
+      en: "Recover a quarantined draft or create a review copy (mailbox admin)",
+      de: "Gesperrten Entwurf reparieren oder Prüfkopie erstellen (Postfach-Admin)",
+    }),
+    args: { draftId: arg.required({ description: t({ en: "Draft id", de: "Entwurfs-ID" }) }) },
+    flags: {
+      ...mailboxFlag,
+      revision: flag.int({
+        required: true,
+        min: 1,
+        description: t({ en: "Revision from recovery inspect", de: "Revision aus recovery inspect" }),
+      }),
+      generation: flag.string({
+        required: true,
+        description: t({ en: "Generation from recovery inspect", de: "Generation aus recovery inspect" }),
+      }),
+      requestId: flag.string({
+        required: true,
+        description: t({ en: "UUID; reuse for retries", de: "UUID; bei Wiederholung beibehalten" }),
+      }),
+      yes: confirmFlag(t({ en: "Confirm recovery", de: "Wiederherstellung bestätigen" })),
+    },
+    run: async ({ ctx, args, flags }) => {
+      if (!flags.yes)
+        throw new Error(
+          localizeCloudCliText(ctx.options.locale, {
+            en: "Pass --yes to recover the draft.",
+            de: "Bestätige die Wiederherstellung mit --yes.",
+          }),
+        );
+      const mailbox = await resolveMailbox(ctx, flags.mailbox);
+      const result = await readApi<DraftQuarantineRecovery>(
+        ctx,
+        `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}/quarantine/recover`,
+        jsonRequest("POST", { expectedRevision: flags.revision, generation: flags.generation, requestId: flags.requestId }),
+      );
+      const draft = withCloudResourcePermalink(ctx, "mail.draft", result.draft);
+      if (printStructured(ctx, { ...result, draft })) return;
+      ctx.print(
+        localizeCloudCliText(
+          ctx.options.locale,
+          result.reviewRequired
+            ? {
+                en: `Recovery copy ${draft.id} created. Review all content and attachments before sending. The original remains quarantined. ${draft.permalink}`,
+                de: `Prüfkopie ${draft.id} erstellt. Prüfe Inhalt und Anhänge vor dem Senden. Das Original bleibt gesperrt. ${draft.permalink}`,
+              }
+            : {
+                en: `Draft ${draft.id} repaired from verified history. Reopen before sending. ${draft.permalink}`,
+                de: `Entwurf ${draft.id} aus belegter Historie repariert. Öffne ihn vor dem Senden erneut. ${draft.permalink}`,
+              },
+        ),
+      );
+    },
+  }),
   command("draft intent", {
     summary: t({ en: "Switch reply mode while keeping body text", de: "Antwortart wechseln und den Text behalten" }),
     args: { draftId: arg.required({ description: t({ en: "Draft id", de: "Entwurfs-ID" }) }) },

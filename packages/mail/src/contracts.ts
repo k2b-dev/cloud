@@ -28,7 +28,7 @@ export const messageInspectorHeaderSchema = z
   })
   .strict();
 
-export const messageInspectorPlacementSchema = z
+const imapInspectorPlacementSchema = z
   .object({
     folderId: ResourceShortIdSchema,
     folderName: z.string().max(4096),
@@ -40,6 +40,11 @@ export const messageInspectorPlacementSchema = z
     keywords: z.array(z.string().max(4096)).max(1024),
   })
   .strict();
+
+export const messageInspectorPlacementSchema = z.union([
+  imapInspectorPlacementSchema,
+  imapInspectorPlacementSchema.omit({ uidValidity: true, uid: true, modseq: true }).extend({ remoteId: z.string() }).strict(),
+]);
 
 export const messageInspectorPartSchema = z
   .object({
@@ -486,7 +491,7 @@ export const mailboxHealthSchema = z.enum([
 ]);
 export type MailboxHealth = z.infer<typeof mailboxHealthSchema>;
 
-export const connectorKindSchema = z.literal("imap_smtp");
+export const connectorKindSchema = z.enum(["imap_smtp", "jmap"]);
 export type ConnectorKind = z.infer<typeof connectorKindSchema>;
 
 export const tlsModeSchema = z.enum(["implicit", "starttls"]);
@@ -3930,12 +3935,10 @@ export type RemoteFolder = {
   rightsSource: FolderRightsSource;
 };
 
-export type RemoteMessageRef = {
-  folderStableKey: string;
-  uidValidity: string;
-  uid: string;
-  modseq: string | null;
-};
+export type RemoteMessageRef =
+  | { kind: "imap"; folderStableKey: string; uidValidity: string; uid: string; modseq: string | null }
+  | { kind: "jmap"; folderStableKey: string; emailId: string };
+export type ImapRemoteMessageRef = Extract<RemoteMessageRef, { kind: "imap" }>;
 
 export const connectorCapabilitiesSchema = z.object({
   idle: z.boolean(),
