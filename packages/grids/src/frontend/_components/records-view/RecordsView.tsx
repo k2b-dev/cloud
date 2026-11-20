@@ -12,6 +12,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js";
+import { preloadBarcodes } from "#barcode-svg";
 import type {
   PublicField as Field,
   PublicForm as Form,
@@ -41,6 +42,7 @@ import { openCombinedAuditDialog } from "../records/CombinedAuditDialog";
 import { openExportRecordsDialog } from "../records/ExportRecordsDialog";
 import { recordMessages } from "../records/messages";
 import { createRecordAccess } from "../records/record-access";
+import { fieldDisplayFormatForView } from "../records/record-display";
 import type { GroupBucket } from "../table/GroupedTable";
 import { GridCreateActions, offersGridCreateActions } from "../toolbar/GridCreateActions";
 import GridToolbar from "../toolbar/GridToolbar";
@@ -757,11 +759,35 @@ export default function RecordsView(props: Props) {
 
   const hasOpenDetail = () => Boolean(selectedRecordId() || selectedGroup());
 
+  // Barcode drawing code loads on demand. A view that shows barcodes warms it when the page is idle, or earlier when
+  // the pointer or focus reaches the records, so a later page, a live row or an opened record draws without waiting.
+  const showsBarcodes = createMemo(() =>
+    props.fields.some((field) => fieldDisplayFormatForView(field, effectiveViewColumns())?.kind === "barcode"),
+  );
+  const warmBarcodes = () => {
+    if (showsBarcodes()) preloadBarcodes();
+  };
+  createEffect(() => {
+    if (!showsBarcodes()) return;
+    if (typeof requestIdleCallback === "function") {
+      const id = requestIdleCallback(preloadBarcodes, { timeout: 2000 });
+      onCleanup(() => cancelIdleCallback(id));
+    } else {
+      const id = setTimeout(preloadBarcodes, 200);
+      onCleanup(() => clearTimeout(id));
+    }
+  });
+
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <>
       <AppWorkspace.Main class={workspaceMainClass("records")} scroll={false}>
-        <div class="flex flex-1 min-w-0 min-h-0 overflow-hidden" data-route-key={props.workspaceRouteKey}>
+        <div
+          class="flex flex-1 min-w-0 min-h-0 overflow-hidden"
+          data-route-key={props.workspaceRouteKey}
+          onPointerOver={warmBarcodes}
+          onFocusIn={warmBarcodes}
+        >
           {/* Records workbench splits into two zones:
           - header (search + toolbar) — fixed, never scrolls
           - body (records grid + pagination) — scrolls independently

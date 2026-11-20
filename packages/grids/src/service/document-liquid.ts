@@ -5,7 +5,8 @@ import {
   validateLiquidTemplate as validateSharedLiquidTemplate,
 } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, ok, type Result } from "@k2b/stdlib";
-import { type BarcodeFormat, BarcodeRenderError, barcodeDataUrl } from "../barcode-rendering";
+import { BarcodeRenderError, barcodeDataUrl } from "../barcode-rendering";
+import type { BarcodeFormat } from "../barcode-values";
 import type { DocumentTemplate } from "../contracts";
 import { documentServiceText, isGermanDocumentLocale, liquidBudgetFailureMessage } from "./document-messages";
 
