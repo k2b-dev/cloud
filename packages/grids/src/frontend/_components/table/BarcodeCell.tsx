@@ -1,20 +1,23 @@
 import { ButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
-import { barcodeSvgForCell, barcodesReady, preloadBarcodes } from "#barcode-drawing";
+import { barcodeSvgForCell, barcodesFailed, barcodesReady, loadBarcodes } from "#barcode-drawing";
 import type { BarcodeFormat } from "../../../barcode-values";
 import { barcodeKey, barcodeSvgForDisplay, barcodeUrl, barcodeValueText } from "./BarcodeRendering";
 import { tableMessages } from "./messages";
 
 /**
- * The drawings in the server markup, read while the island modules evaluate in the browser: the island's mount removes
- * its server children right after, and until the drawing code has loaded, the first browser render shows the same
- * drawings from here. A page or view that shows barcodes warms that code (see `RecordsView`).
+ * What the server markup shows for each barcode: its drawing, or `null` when the server showed the value as text. It is
+ * read while the island modules evaluate in the browser, because the island's mount removes its server children right
+ * after; until the drawing code has loaded, the first browser render shows the same from here. Grids pages load as
+ * documents (no page swap), so every page's markup is read this way. A view that shows barcodes warms the code
+ * (`RecordsView`).
  */
-const serverDrawings = new Map<string, string>();
+const serverDrawings = new Map<string, string | null>();
 if (typeof document !== "undefined" && !barcodesReady()) {
   for (const element of document.querySelectorAll<HTMLElement>("[data-grids-barcode]")) {
-    const key = element.dataset.gridsBarcode;
-    if (key && element.firstElementChild) serverDrawings.set(key, element.innerHTML);
+    const drawing = element.querySelector(".grids-code-display");
+    if (element.dataset.gridsBarcode)
+      serverDrawings.set(element.dataset.gridsBarcode, drawing?.querySelector("svg") ? drawing.innerHTML : null);
   }
 }
 
@@ -27,8 +30,9 @@ export function BarcodeDisplay(props: { value: unknown; format: BarcodeFormat; s
   const sizedSvg = createMemo((): string | null | undefined => {
     if (!barcodesReady()) {
       const drawing = serverDrawings.get(key());
-      if (drawing) return drawing;
-      preloadBarcodes();
+      if (drawing !== undefined) return drawing;
+      if (barcodesFailed()) return null;
+      loadBarcodes();
       return undefined;
     }
     const svg = barcodeSvgForCell(props.value, props.format);
@@ -77,7 +81,10 @@ export function BarcodeDisplay(props: { value: unknown; format: BarcodeFormat; s
   );
 
   return (
-    <span class={detail() ? "flex min-w-0 flex-col gap-3" : "inline-flex min-w-0 items-center gap-1.5 align-middle"}>
+    <span
+      class={detail() ? "flex min-w-0 flex-col gap-3" : "inline-flex min-w-0 items-center gap-1.5 align-middle"}
+      data-grids-barcode={key()}
+    >
       <Show
         when={sizedSvg() !== undefined}
         fallback={
@@ -113,7 +120,7 @@ export function BarcodeDisplay(props: { value: unknown; format: BarcodeFormat; s
         >
           {(html) => (
             <Tooltip.Anchor content={fallback()}>
-              <span class={svgClass()} data-grids-barcode={key()} innerHTML={html()} />
+              <span class={svgClass()} innerHTML={html()} />
             </Tooltip.Anchor>
           )}
         </Show>

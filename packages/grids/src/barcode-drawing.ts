@@ -7,5 +7,11 @@ export { barcodeDataUrl, barcodeSvgForCell } from "./barcode-rendering";
 /** Whether the drawing functions can run now; in the browser it turns true, reactively, once the code has loaded. */
 export const barcodesReady = (): boolean => true;
 
-/** Starts loading the drawing code; the server has it already. */
+/** Whether the drawing code could not load; in the browser, drawings then show their values as text. */
+export const barcodesFailed = (): boolean => false;
+
+/** Warms the drawing code before a drawing needs it; the server has it already. */
 export const preloadBarcodes = (): void => {};
+
+/** Loads the drawing code that a drawing needs now; the server has it already. */
+export const loadBarcodes = (): void => {};
