@@ -10,9 +10,23 @@ const message =
 /** A Tailwind blur utility, with or without variants, except the one that turns blur off. */
 const blurUtility = /(?<![\w-])(?:[\w-]+(?:\/[\w-]+)?:)*!?backdrop-blur(?!-none)(?:-[\w[\]./%-]+)?(?![\w-])/g;
 
+/**
+ * The privacy screen's veil is a backdrop too: it hides everything below it, and nothing is read through it. Only rules
+ * whose every selector ends on the veil itself count, so content inside or after it stays solid.
+ */
+const isPrivacyVeil = (selector: string) =>
+  selector.split(",").every((part) =>
+    /\.cloud-privacy-veil(?::[\w-]+)*$/.test(
+      part
+        .trim()
+        .split(/[\s>+~]+/)
+        .at(-1) ?? "",
+    ),
+  );
+
 export const rule: Rule = {
   name: "glass-surfaces",
-  description: "Glass (backdrop blur) appears only on k2b-overlay-surface and dialog backdrops",
+  description: "Glass (backdrop blur) appears only on k2b-overlay-surface, dialog backdrops, and the privacy screen's veil",
   run: async ({ workspaceRoot }) => {
     const findings: Finding[] = [];
     for (const name of packageIds(workspaceRoot)) {
@@ -32,8 +46,7 @@ export const rule: Rule = {
         for (const block of source.matchAll(/([^{};]+)\{([^{}]*)\}/g)) {
           const [, prelude = "", body = ""] = block;
           const selector = prelude.trim().replace(/\s+/g, " ");
-          // The privacy screen's veil is a backdrop too: it hides everything below it, nothing is to be read through it.
-          if (/k2b-overlay-surface|::backdrop|cloud-privacy-veil/.test(selector)) continue;
+          if (/k2b-overlay-surface|::backdrop/.test(selector) || isPrivacyVeil(selector)) continue;
           const bodyIndex = block.index + block[0].indexOf("{") + 1;
           for (const declaration of body.matchAll(/(?:^|;)\s*(?:-webkit-)?backdrop-filter\s*:\s*([^;]*)/gi)) {
             const value = (declaration[1] ?? "").replace(/\s*!important\s*$/i, "").trim();

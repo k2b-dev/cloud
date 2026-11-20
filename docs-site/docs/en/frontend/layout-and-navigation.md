@@ -154,9 +154,12 @@ While it is on:
 
 - The whole screen blurs and becomes `inert`: the app bar with its icons,
   counts, search, help and avatar, the navigation, the content, floating
-  windows (normal and maximized), dialogs and toasts. Where the browser has the popover API, one tinted, blurring
-  veil lies above every layer, so the whole screen hides evenly, also a part that cannot blur alone, such as a selected row's fill. Only the hint and
-  the islands below stay sharp; the veil is open over the islands and takes no input. Nothing moves: positions, scroll, focus, caret and unsaved input stay, because the
+  windows (normal and maximized), dialogs and toasts. Where the browser has
+  the popover API, one tinted, blurring veil lies above every layer, so the
+  whole screen hides evenly, also a part that cannot blur alone, such as a
+  selected row's fill. Only the hint and the islands below stay sharp; the
+  veil is open over the islands and takes no input. Nothing moves:
+  positions, scroll, focus, caret and unsaved input stay, because the
   page is never rebuilt. The tab shows only the installation's name.
 - A primary click anywhere or a key shows the content again. That click or key
   never reaches the page: the pointer sequence and the key until its release

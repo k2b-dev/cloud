@@ -13,6 +13,7 @@ test("allows blur only on the overlay surface, dialog backdrops, and the privacy
         ".k2b-ui .k2b-overlay-surface { backdrop-filter: blur(22px) saturate(1.6); }",
         ".k2b-ui .k2b-dialog::backdrop { backdrop-filter: blur(8px); }",
         ".cloud-privacy-veil { backdrop-filter: blur(24px); }",
+        ".cloud-privacy-veil .card, .cloud-privacy-veil-note { backdrop-filter: blur(4px); }",
         ".save-bar { backdrop-filter: none; }",
         "/* .comment { backdrop-filter: blur(2px); } */",
         ".save-bar { background: white; backdrop-filter: blur(12px); }",
@@ -33,9 +34,10 @@ test("allows blur only on the overlay surface, dialog backdrops, and the privacy
     }
     const findings = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
     expect(findings.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line}`).sort()).toEqual([
-      "packages/demo/src/app.css:6",
+      "packages/demo/src/app.css:4",
       "packages/demo/src/app.css:7",
       "packages/demo/src/app.css:8",
+      "packages/demo/src/app.css:9",
       "packages/demo/src/page.tsx:2",
       "packages/demo/src/page.tsx:3",
       "packages/demo/src/page.tsx:4",

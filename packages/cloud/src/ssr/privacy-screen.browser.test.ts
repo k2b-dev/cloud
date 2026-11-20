@@ -532,9 +532,23 @@ describe("privacy screen", () => {
       /** The hole the veil leaves for the island where it is now. */
       const holeAtIsland = () =>
         page.waitForFunction(() => {
-          const box = document.getElementById("upload")!.getBoundingClientRect();
-          const clip = document.querySelector<HTMLElement>(".cloud-privacy-veil")!.style.clipPath;
-          return clip.includes("-100000") && clip.includes(`M${box.left} ${box.top}h${box.width}v${box.height}`);
+          const veil = document.querySelector<HTMLElement>(".cloud-privacy-veil")!;
+          const upload = document.getElementById("upload")!;
+          const box = upload.getBoundingClientRect();
+          /** Whether the veil lies at the point, the hint above it or not. */
+          const veiled = (x: number, y: number) => document.elementsFromPoint(x, y).includes(veil);
+          veil.style.pointerEvents = "auto";
+          try {
+            const inside = document.elementsFromPoint(box.left + 8, box.top + box.height / 2);
+            return (
+              inside.some((element) => upload.contains(element)) &&
+              !inside.includes(veil) &&
+              veiled(box.left + 8, box.top - 4) &&
+              veiled(window.innerWidth - 2, window.innerHeight - 2)
+            );
+          } finally {
+            veil.style.pointerEvents = "";
+          }
         });
       await page.setViewportSize({ width: 600, height: 800 });
       await holeAtIsland();
