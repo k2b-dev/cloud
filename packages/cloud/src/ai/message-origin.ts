@@ -121,7 +121,7 @@ export const loadAiMessageOrigins = async (
     UNION ALL
     SELECT requested.id, target.title, 'done', '/app/assistant?conversation=' || target.short_id,
       answer.seq, CASE WHEN answer.role='assistant' THEN left(split_part(trim(answer.search_text), E'\n', 1), 320) ELSE NULL END
-    FROM jsonb_to_recordset(${JSON.stringify(doneMessages)}::jsonb)
+    FROM jsonb_to_recordset(${JSON.stringify(doneMessages)}::text::jsonb)
       AS requested(id text,"conversationId" uuid,"turnId" text,"messageSeq" int)
     JOIN ai.conversations target ON target.id=requested."conversationId"
       AND target.created_by_user_id=${viewer.userId ?? null}::uuid AND target.archived_at IS NULL

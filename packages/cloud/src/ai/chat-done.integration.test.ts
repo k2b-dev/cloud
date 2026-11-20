@@ -29,7 +29,7 @@ suiteFor("database")("delegated chat completion", () => {
     await database?.drop();
   });
 
-  const queuedFixture = async () => {
+  const queuedFixture = async (withActiveTarget = false) => {
     const source = await aiConversations.createConversation({ ownerUserId: owner, title: "Reise nach Lyon" });
     const target = await aiConversations.createConversation({ ownerUserId: owner, title: "Hotels in Lyon" });
     await sql`UPDATE ai.conversations SET title_source='user' WHERE id=${source.id}::uuid OR id=${target.id}::uuid`;
@@ -40,6 +40,14 @@ suiteFor("database")("delegated chat completion", () => {
       writerOrigin: { kind: "person", id: owner },
       turnTrigger: { kind: "person", id: owner },
     };
+    const activeTarget = withActiveTarget
+      ? await aiConversations.submitChatTurn({
+          conversationId: target.id,
+          modelId: "fixture",
+          runConfig: config,
+          userMessage: { role: "user", content: [{ type: "text", text: "Old work" }] },
+        })
+      : null;
     const sourceWork = await aiConversations.submitChatTurn({
       conversationId: source.id,
       modelId: "fixture",
@@ -69,7 +77,7 @@ suiteFor("database")("delegated chat completion", () => {
       });
     });
     const facts = async () => (await aiConversations.listMessages({ conversationId: source.id })).filter((m) => m.meta?.chatDone);
-    return { source, target, sourceWork, submission, id, facts };
+    return { source, target, sourceWork, submission, id, facts, activeTarget };
   };
   const fixture = async (summary = "Three hotels compared.\nA long list follows.") => {
     const queued = await queuedFixture();
@@ -282,7 +290,7 @@ suiteFor("database")("delegated chat completion", () => {
     const f = await queuedFixture();
     f.submission.runConfig.assistantChat = true;
     f.submission.runConfig.accessSubject = { type: "user", userId: owner };
-    await sql`UPDATE ai.queued_messages SET submission=${JSON.stringify(f.submission)}::jsonb WHERE id=${f.id}::uuid`;
+    await sql`UPDATE ai.queued_messages SET submission=${JSON.stringify(f.submission)}::text::jsonb WHERE id=${f.id}::uuid`;
     const quota = spyOn(aiQuotas, "assertAllowed").mockRejectedValue(new AiQuotaError("quota_exhausted", "Fixture quota exhausted"));
     try {
       await expect(assertQueuedMessageQuota(f.target.id, f.id)).rejects.toThrow("Fixture quota exhausted");
@@ -296,11 +304,8 @@ suiteFor("database")("delegated chat completion", () => {
   });
 
   test("an unconfirmed interruption records the queued failure without ending the interrupted turn", async () => {
-    const f = await queuedFixture();
-    const { turn } = await aiConversations.submitChatTurn({
-      ...f.submission,
-      runConfig: { kind: "chat", input: "Old work", toolSource: { kind: "none" } },
-    });
+    const f = await queuedFixture(true);
+    const { turn } = f.activeTarget!;
     await sql`UPDATE ai.turns SET status='running' WHERE id=${turn.id}::uuid`;
     await sql`INSERT INTO ai.tool_calls(turn_id,conversation_id,call_id,tool_name,status,started_at)
       VALUES(${turn.id}::uuid,${f.target.id}::uuid,'server-effect','write_file','running',now())`;
@@ -353,7 +358,7 @@ suiteFor("database")("delegated chat completion", () => {
       await sql`SELECT id FROM ai.turns WHERE id=${f.work.turn.id}::uuid AND status='completed'
       AND delegated_done_at IS NULL AND delegated_done_fail_count=1`,
     ).toHaveLength(1);
-    await sql`UPDATE ai.turns SET run_config=${JSON.stringify(config)}::jsonb WHERE id=${f.work.turn.id}::uuid`;
+    await sql`UPDATE ai.turns SET run_config=${JSON.stringify(config)}::text::jsonb WHERE id=${f.work.turn.id}::uuid`;
     await sweepAiChatDone(200);
     expect(await f.facts()).toHaveLength(1);
   });
