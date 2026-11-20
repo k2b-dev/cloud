@@ -1,5 +1,6 @@
 ---
 title: stdlib service error compatibility
+navTitle: stdlib service errors
 section: Operations
 order: 1201
 description: Upgrade application libraries together with the expanded stdlib service error contract.
