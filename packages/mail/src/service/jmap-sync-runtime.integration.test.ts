@@ -23,8 +23,12 @@ const suite = suiteFor("database", "nats", "valkey");
 const at = new Date("2026-11-20T00:00:00Z");
 const initial: JmapSyncState = { version: 1, emailState: "Email:0", mailboxState: "Mailbox:0", scan: null };
 // The driver pins measured values after the first gate; null intentionally checks ratios only.
-const STATEMENT_BUDGET: Record<"unchanged" | "new1" | "new7" | "flags1" | "flags7" | "remove1" | "remove7" | "folders", number | null> = {
+const STATEMENT_BUDGET: Record<
+  "unchanged" | "statesOnly" | "new1" | "new7" | "flags1" | "flags7" | "remove1" | "remove7" | "folders",
+  number | null
+> = {
   unchanged: null,
+  statesOnly: null,
   new1: null,
   new7: null,
   flags1: null,
@@ -211,7 +215,7 @@ suite("JMAP account commit", () => {
   const run = (captureWorkflowTriggers = true) => syncJmapAccountDelta({ ...source.args, captureWorkflowTriggers });
   const prepared = async () => {
     const beforeState = await state();
-    if (beforeState.emailState === null) throw new Error("prepare: email state missing");
+    if (beforeState.emailState === null || beforeState.mailboxState === null) throw new Error("prepare: email state missing");
     const fence = await claimFence(source.args.remoteResourceId, source.args.bindingId, "incremental");
     const delta = await readJmapEmailDelta(
       source.args.session,
@@ -221,15 +225,113 @@ suite("JMAP account commit", () => {
       source.args.signal,
       source.f.dependencies,
     );
-    return { ...source.args, beforeState, fence, batch: { kind: "email" as const, delta } };
+    return {
+      ...source.args,
+      beforeState,
+      fence,
+      batch: { kind: "email" as const, delta, mailboxState: { oldState: beforeState.mailboxState, newState: beforeState.mailboxState } },
+    };
   };
   const placements = () => sql<
-    { remote_id: string; flags: string[]; keywords: string[]; stale: boolean; deleted: boolean; message_id: string }[]
+    { remote_id: string | null; flags: string[]; keywords: string[]; stale: boolean; deleted: boolean; message_id: string }[]
   >`
     SELECT ref.remote_id, p.flags, p.keywords, ref.stale_at IS NOT NULL AS stale, p.deleted_at IS NOT NULL AS deleted, ref.message_id
     FROM mail.remote_message_refs ref JOIN mail.message_placements p ON p.remote_message_ref_id = ref.id
     JOIN mail.folders f ON f.id = ref.folder_id WHERE f.remote_resource_id = ${source.args.remoteResourceId}::uuid ORDER BY ref.remote_id, f.stable_key
   `;
+
+  async function waitForBlockedCommit(blockerPid: number) {
+    const deadline = performance.now() + 10_000;
+    while (true) {
+      const [row] = await sql<{ blocked: boolean }[]>`SELECT EXISTS (
+        SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+      ) AS blocked`;
+      if (row?.blocked) return;
+      if (performance.now() >= deadline) throw new Error("locks: account commit did not reach the held row");
+      await Bun.sleep(10);
+    }
+  }
+
+  test("bounded folder locks: a flag update leaves 300 unrelated and missing folders unlocked", async () => {
+    change(message("boundedlocks"));
+    await run();
+    const unrelated = Array.from({ length: 300 }, (_, index) => ({
+      id: uuid(),
+      short_id: shortId(),
+      key: `unrelated-${index}`,
+      missing: index % 3 === 0,
+    }));
+    await sql<[]>`INSERT INTO mail.folders (id, short_id, remote_resource_id, stable_key, name, discovery_state)
+      SELECT item.id, item.short_id, ${source.args.remoteResourceId}::uuid, item.key, item.key,
+        CASE WHEN item.missing THEN 'missing' ELSE 'active' END
+      FROM jsonb_to_recordset(${unrelated}::jsonb) AS item(id uuid, short_id text, key text, missing boolean)`;
+    await sql<[]>`INSERT INTO mail.binding_folder_refs (binding_id, folder_id, remote_folder_id, remote_path, missing_since)
+      SELECT ${source.args.bindingId}::uuid, item.id, item.key, item.key, CASE WHEN item.missing THEN ${at}::timestamptz ELSE NULL END
+      FROM jsonb_to_recordset(${unrelated}::jsonb) AS item(id uuid, key text, missing boolean)`;
+    change(message("boundedlocks", { a: true }, { $seen: true }), "updated");
+    const batch = await prepared();
+    const writer = await sql.reserve();
+    let committing: Promise<PromiseSettledResult<Awaited<ReturnType<typeof commitJmapAccountBatch>>>[]> | undefined;
+    try {
+      await writer<[]>`BEGIN`.simple();
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!backend) throw new Error("locks: missing backend");
+      // Stop the account commit after it has locked its folders, before it releases any lock.
+      await writer<{ id: string }[]>`SELECT id FROM mail.provider_bindings WHERE id = ${source.args.bindingId}::uuid FOR NO KEY UPDATE`;
+      committing = Promise.allSettled([commitJmapAccountBatch(batch)]);
+      await waitForBlockedCommit(backend.pid);
+      const unlocked = await writer<{ id: string }[]>`SELECT id FROM mail.folders
+        WHERE remote_resource_id = ${source.args.remoteResourceId}::uuid ORDER BY id FOR UPDATE SKIP LOCKED`;
+      expect(unlocked.length, "locks: exactly the one affected folder is held").toBe(300 + source.folderIds.size - 1);
+      expect(
+        unlocked.some((row) => row.id === source.folderIds.get("a")),
+        "locks: affected folder held",
+      ).toBeFalse();
+      expect(
+        unrelated.every((folder) => unlocked.some((row) => row.id === folder.id)),
+        "locks: all unrelated rows, including missing ones, available",
+      ).toBeTrue();
+      await writer<[]>`COMMIT`.simple();
+      expect(await committing, "locks: account commit succeeds").toMatchObject([
+        { status: "fulfilled", value: { status: "committed", stats: { flagsUpdated: 1 } } },
+      ]);
+    } finally {
+      await writer<[]>`ROLLBACK`.simple();
+      writer.release();
+      if (committing) await committing;
+    }
+  }, 30_000);
+
+  test("lock order: a role writer holding the folder and the account commit both finish", async () => {
+    change(message("rolelock"));
+    const batch = await prepared();
+    const writer = await sql.reserve();
+    let committing: Promise<PromiseSettledResult<Awaited<ReturnType<typeof commitJmapAccountBatch>>>[]> | undefined;
+    try {
+      await writer<[]>`BEGIN`.simple();
+      await writer<[]>`SET LOCAL lock_timeout = '10s'`.simple();
+      const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!backend) throw new Error("role lock: missing backend");
+      await writer<{ id: string }[]>`SELECT id FROM mail.folders WHERE id = ${source.folderIds.get("a")}::uuid FOR UPDATE`;
+      committing = Promise.allSettled([commitJmapAccountBatch(batch)]);
+      await waitForBlockedCommit(backend.pid);
+      // setFolderRole's write order: folder UPDATE lock, then override insert with mailbox KEY SHARE.
+      await writer<[]>`INSERT INTO mail.folder_role_overrides (mailbox_id, role, folder_id)
+        VALUES (${source.mailboxId}::uuid, 'archive', ${source.folderIds.get("a")}::uuid)`;
+      await writer<[]>`COMMIT`.simple();
+      expect(await committing, "role lock: no deadlock or lock timeout").toMatchObject([
+        { status: "fulfilled", value: { status: "committed" } },
+      ]);
+      expect(
+        await sql<{ role: string }[]>`SELECT role FROM mail.folder_role_overrides WHERE mailbox_id = ${source.mailboxId}::uuid`,
+        "role lock: role writer also committed",
+      ).toEqual([{ role: "archive" }]);
+    } finally {
+      await writer<[]>`ROLLBACK`.simple();
+      writer.release();
+      if (committing) await committing;
+    }
+  }, 30_000);
 
   test("flow: one content, locator, placement, conversation, receipt and checkpoint; quiet retry has no visible writes", async () => {
     change(message("arrival"));
@@ -261,6 +363,15 @@ suite("JMAP account commit", () => {
     const before = await counts();
     expect(await commitJmapAccountBatch(batch), "empty replay: run already finished").toMatchObject({ status: "superseded" });
     expect(await counts(), "empty replay: no writes").toEqual(before);
+  });
+  test("idempotency: concurrent empty replay cannot reuse a completed run when sync time is throttled", async () => {
+    await sql<
+      []
+    >`UPDATE mail.remote_resources SET last_sync_at = now() + interval '1 minute' WHERE id = ${source.args.remoteResourceId}::uuid`;
+    const batch = await prepared();
+    const results = await Promise.all([commitJmapAccountBatch(batch), commitJmapAccountBatch(batch)]);
+    expect(results.map((result) => result.status).sort(), "concurrent replay: exactly one commit").toEqual(["committed", "superseded"]);
+    expect(await counts(), "concurrent replay: no visible work").toMatchObject({ contents: 0, live: 0, receipts: 0 });
   });
   test("primary: a new email with two memberships receives exactly once through Inbox", async () => {
     change(message("primary", { b: true, a: true }));
@@ -331,6 +442,69 @@ suite("JMAP account commit", () => {
     expect(await run(), "flags: unchanged").toMatchObject({ stats: { flagsUpdated: 0 } });
     expect(await timestamps(), "flags: no tuple update").toEqual(before);
   });
+  test("outbox evidence: the sent copy reuses local content without an arrival", async () => {
+    await listen();
+    const stableId = "<sent-evidence@example.invalid>";
+    const [identity] = await sql<{ id: string }[]>`SELECT id FROM mail.sender_identities WHERE mailbox_id = ${source.mailboxId}::uuid`;
+    if (!identity) throw new Error("outbox: missing sender identity");
+    const draftId = uuid(),
+      commandId = uuid(),
+      contentId = uuid();
+    await sql<[]>`INSERT INTO mail.drafts (id, short_id, mailbox_id, sender_identity_id, author_kind, last_editor_kind, edit_mode)
+      VALUES (${draftId}::uuid, ${shortId()}, ${source.mailboxId}::uuid, ${identity.id}::uuid, 'system', 'system', 'lock')`;
+    await sql<
+      []
+    >`INSERT INTO mail.commands (id, mailbox_id, kind, state, actor_kind, access_subject_kind, idempotency_key, request_hash, target, payload)
+      VALUES (${commandId}::uuid, ${source.mailboxId}::uuid, 'send', 'confirmed', 'system', 'system', ${draftId}, ${"a".repeat(64)}, '{}'::jsonb, '{}'::jsonb)`;
+    await sql<[]>`INSERT INTO mail.message_contents (id, short_id, mailbox_id, message_id, subject, internal_date, content_hash)
+      VALUES (${contentId}::uuid, ${shortId()}, ${source.mailboxId}::uuid, ${stableId}, 'Local send', ${at}, ${"b".repeat(64)})`;
+    await sql<[]>`INSERT INTO mail.outbox_submissions (id, short_id, mailbox_id, draft_id, command_id, sender_identity_id,
+      selected_binding_id, stable_message_id, state, requested_at, mime_date, message_id)
+      VALUES (${uuid()}::uuid, ${shortId()}, ${source.mailboxId}::uuid, ${draftId}::uuid, ${commandId}::uuid, ${identity.id}::uuid,
+        ${source.args.bindingId}::uuid, ${stableId}, 'sent', ${at}, ${at}, ${contentId}::uuid)`;
+    change({
+      ...message("sentcopy", { a: true, b: true }),
+      messageId: ["sent-evidence@example.invalid"],
+      from: [{ name: null, email: "own@example.invalid" }],
+    });
+    await run();
+    expect(await counts(), "outbox: one local content, two memberships, no receipt").toMatchObject({
+      contents: 1,
+      refs: 2,
+      active: 2,
+      receipts: 0,
+    });
+    expect(
+      (await placements()).map((row) => row.message_id),
+      "outbox: exact local identity reused",
+    ).toEqual([contentId, contentId]);
+    expect(await workflowRows(), "outbox: no arrival automation").toEqual({ events: 0, deliveries: 0 });
+  });
+  for (const configured of ["archive", "junk"] as const) {
+    test(`roles: configured ${configured} wins over the provider role`, async () => {
+      await listen();
+      const mailboxId = configured === "archive" ? "junk" : "b";
+      await sql<[]>`INSERT INTO mail.folder_role_overrides (mailbox_id, folder_id, role)
+        VALUES (${source.mailboxId}::uuid, ${source.folderIds.get(mailboxId)}::uuid, ${configured})`;
+      change(message("rolearrival", { a: true, [mailboxId]: true }));
+      await run();
+      const arrivals = configured === "archive" ? 1 : 0;
+      expect(await counts(), `${configured}: effective role controls receipt`).toMatchObject({ contents: 1, refs: 2, receipts: arrivals });
+      expect(await workflowRows(), `${configured}: effective role controls workflow`).toEqual({ events: arrivals, deliveries: arrivals });
+    });
+  }
+  test("roles: configured Drafts replaces the provider Drafts folder as in IMAP", async () => {
+    await sql<[]>`INSERT INTO mail.folder_role_overrides (mailbox_id, folder_id, role)
+      VALUES (${source.mailboxId}::uuid, ${source.folderIds.get("b")}::uuid, 'drafts')`;
+    change(message("providerdrafts", { drafts: true }));
+    change(message("configureddrafts", { b: true }));
+    await run();
+    expect(await counts(), "draft role: only provider folder is now ordinary").toMatchObject({ contents: 1, refs: 1, active: 1 });
+    expect(
+      (await placements()).map((row) => row.remote_id),
+      "draft role: configured destination skipped",
+    ).toEqual(["providerdrafts"]);
+  });
   for (const removal of ["last", "destroyed", "notFound", "draft"] as const) {
     test(`removal: ${removal} retains content and conversation`, async () => {
       change(message("remove"));
@@ -379,7 +553,7 @@ suite("JMAP account commit", () => {
       "keep: stale copy retired",
     ).toBeTrue();
   });
-  test("folders: rename, rights, creation precede email; destroyed folder retires memberships", async () => {
+  test("folders: rename, rights, creation precede email; deletion waits for the email delta", async () => {
     const inbox = source.f.mailboxes.find((folder) => folder.id === "a");
     if (!inbox) throw new Error("folders: missing inbox");
     inbox.name = "Renamed";
@@ -405,7 +579,16 @@ suite("JMAP account commit", () => {
     expect((await counts()).active, "folders: new membership imported").toBe(1);
     source.f.journal.Mailbox.push({ id: "new", kind: "destroyed" });
     await run();
-    expect(await counts(), "folders: deletion hides placement").toMatchObject({ contents: 1, active: 0 });
+    expect(await counts(), "folders: deletion retains memberships until email delta").toMatchObject({ contents: 1, active: 1 });
+    expect(
+      await sql<{ discovery_state: string }[]>`SELECT f.discovery_state FROM mail.folders f
+      JOIN mail.binding_folder_refs ref ON ref.folder_id = f.id
+      WHERE ref.binding_id = ${source.args.bindingId}::uuid AND ref.remote_folder_id = 'new'`,
+      "folders: marked missing",
+    ).toEqual([{ discovery_state: "missing" }]);
+    change(message("newfolder", {}), "updated");
+    await run();
+    expect(await counts(), "email delta: removes the deleted folder membership").toMatchObject({ contents: 1, active: 0 });
   });
   test("destroyed folder: membership retirement does not depend on a surviving binding-folder ref", async () => {
     change(message("oldbinding"));
@@ -413,9 +596,44 @@ suite("JMAP account commit", () => {
     await sql<[]>`DELETE FROM mail.binding_folder_refs WHERE binding_id = ${source.args.bindingId}::uuid AND remote_folder_id = 'a'`;
     source.f.journal.Mailbox.push({ id: "a", kind: "destroyed" });
     await run();
-    expect(await counts(), "destroyed folder: resource-wide retirement").toMatchObject({ contents: 1, active: 0 });
+    expect(await counts(), "destroyed folder: no unbounded retirement").toMatchObject({ contents: 1, active: 1 });
+    source.f.journal.Email.push({ id: "oldbinding", kind: "destroyed" });
+    await run();
+    expect(await counts(), "email delta: retirement without binding-folder ref").toMatchObject({ contents: 1, active: 0 });
     expect((await placements())[0], "destroyed folder: stale locator").toMatchObject({ stale: true, deleted: true });
   });
+  for (const removal of ["updated", "destroyed"] as const) {
+    test(`mixed locators: folder deletion then ${removal} leaves the IMAP ref and placement untouched`, async () => {
+      change(message("mixedlocators"));
+      await run();
+      const first = (await placements())[0];
+      if (!first) throw new Error("mixed locators: missing content");
+      const imapId = uuid();
+      await sql<[]>`INSERT INTO mail.remote_message_refs (id, folder_id, message_id, uid_validity, uid)
+        VALUES (${imapId}::uuid, ${source.folderIds.get("a")}::uuid, ${first.message_id}::uuid, 42, 501)`;
+      await sql<[]>`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags, keywords)
+        VALUES (${imapId}::uuid, ${source.folderIds.get("a")}::uuid, ${first.message_id}::uuid, ARRAY[]::text[], ARRAY['imap-label']::text[])`;
+      const imap = () => sql<{ ref: unknown; placement: unknown }[]>`SELECT to_jsonb(ref) AS ref, to_jsonb(p) AS placement
+        FROM mail.remote_message_refs ref JOIN mail.message_placements p ON p.remote_message_ref_id = ref.id WHERE ref.id = ${imapId}::uuid`;
+      const before = await imap();
+      change(message("mixedlocators", { a: true }, { $seen: true }), "updated");
+      await run();
+      expect(await imap(), "mixed locators: JMAP flags leave IMAP unchanged").toEqual(before);
+      source.f.journal.Mailbox.push({ id: "a", kind: "destroyed" });
+      await run();
+      expect(await counts(), "mixed locators: folder commit retains both memberships").toMatchObject({ active: 2 });
+      expect(await imap(), "mixed locators: folder deletion leaves IMAP unchanged").toEqual(before);
+      if (removal === "updated") change(message("mixedlocators", {}), "updated");
+      else source.f.journal.Email.push({ id: "mixedlocators", kind: "destroyed" });
+      await run();
+      expect(await counts(), "mixed locators: only IMAP remains visible").toMatchObject({ active: 1 });
+      expect(await imap(), "mixed locators: email removal leaves IMAP unchanged").toEqual(before);
+      expect(
+        (await placements()).find((row) => row.remote_id === "mixedlocators"),
+        "mixed locators: JMAP retired",
+      ).toMatchObject({ stale: true, deleted: true });
+    });
+  }
   test("unknown folder: entire batch and checkpoint remain unchanged", async () => {
     change(message("known"));
     change(message("unknown", { absent: true }));
@@ -538,7 +756,7 @@ suite("JMAP account commit", () => {
       const before = await counts();
       const input =
         axis === "email"
-          ? { kind: "email" as const, delta }
+          ? { kind: "email" as const, delta, mailboxState: batch.batch.mailboxState }
           : {
               kind: "mailbox" as const,
               delta: {
@@ -643,18 +861,91 @@ suite("JMAP account commit", () => {
     ).toEqual([{ state: "stale_fence" }, { state: "running" }]);
     expect(await state(), "replacement: unchanged checkpoint").toEqual(initial);
   });
-  test("counter-only folder progress preserves the email axis without a visible invalidation", async () => {
-    source.f.controls.updatedProperties = ["totalEmails"];
-    source.f.journal.Mailbox.push({ id: "a", kind: "updated" });
-    change(message("aftercounters"));
-    expect(await run(), "counters: one folder checkpoint").toMatchObject({
-      status: "committed",
-      hasMore: true,
-      stats: { folders: 0, imported: 0 },
+  for (const newMail of [true, false]) {
+    test(`counter-only mailbox progress commits both axes with one fence; new mail: ${newMail}`, async () => {
+      source.f.controls.updatedProperties = ["totalEmails"];
+      source.f.journal.Mailbox.push({ id: "a", kind: "updated" });
+      if (newMail) change(message("aftercounters"));
+      expect(await run(), "counters: one account commit").toMatchObject({
+        status: "committed",
+        hasMore: false,
+        stats: { folders: 0, imported: newMail ? 1 : 0 },
+      });
+      expect(await state(), "counters: both axes caught up").toEqual({
+        ...initial,
+        mailboxState: "Mailbox:1",
+        emailState: newMail ? "Email:1" : "Email:0",
+      });
+      expect(
+        await sql<{ fence: number }[]>`SELECT current_fence_token::int AS fence FROM mail.remote_resources
+        WHERE id = ${source.args.remoteResourceId}::uuid`,
+        "counters: exactly one fence",
+      ).toEqual([{ fence: 1 }]);
+      expect((await counts()).live, "counters: invalidate only visible mail").toBe(newMail ? 1 : 0);
     });
-    expect(await state(), "counters: email waits").toEqual({ ...initial, mailboxState: "Mailbox:1" });
-    expect((await counts()).live, "counters: no visible changes").toBe(0);
-    expect(await run(), "counters: next call reads email").toMatchObject({ status: "committed", hasMore: false, stats: { imported: 1 } });
+  }
+  test("email batch rejects a mailbox checkpoint from a different starting state", async () => {
+    const batch = await prepared();
+    await expect(
+      commitJmapAccountBatch({
+        ...batch,
+        batch: { ...batch.batch, mailboxState: { oldState: "Mailbox:elsewhere", newState: "Mailbox:next" } },
+      }),
+      "mailbox checkpoint: reject mismatch",
+    ).rejects.toMatchObject({ code: "JMAP_INVALID_RESPONSE" });
+    expect(await state(), "mailbox checkpoint: unchanged").toEqual(initial);
+    expect(await counts(), "mailbox checkpoint: no projection").toMatchObject({ contents: 0, live: 0 });
+  });
+  test("quiet commits skip empty work, preserve binding usage and throttle resource sync time", async () => {
+    // Use the database clock for its own throttle; the test's mail fixtures retain their fixed clock.
+    await sql<
+      []
+    >`UPDATE mail.remote_resources SET last_sync_at = now() + interval '1 minute' WHERE id = ${source.args.remoteResourceId}::uuid`;
+    await sql<[]>`UPDATE mail.provider_bindings SET last_used_at = ${at} WHERE id = ${source.args.bindingId}::uuid`;
+    const usage = () => sql<{ last_sync_at: Date; last_used_at: Date }[]>`SELECT r.last_sync_at, b.last_used_at
+      FROM mail.remote_resources r JOIN mail.provider_bindings b ON b.remote_resource_id = r.id WHERE b.id = ${source.args.bindingId}::uuid`;
+    const before = await usage();
+    const meter = await meterSql();
+    try {
+      for (const advance of [false, true]) {
+        const batch = await prepared();
+        const statements = await meter.during(() =>
+          commitJmapAccountBatch({
+            ...batch,
+            batch: {
+              ...batch.batch,
+              mailboxState: {
+                oldState: batch.batch.mailboxState.oldState,
+                newState: advance ? "Mailbox:counters" : batch.batch.mailboxState.newState,
+              },
+            },
+          }),
+        );
+        expect(
+          statements.some(
+            (text) =>
+              text.startsWith("SELECT ref.id") ||
+              text.startsWith("SELECT folder.id") ||
+              text.startsWith("WITH stale AS") ||
+              text.startsWith("WITH incoming AS") ||
+              text.startsWith("UPDATE mail.provider_bindings"),
+          ),
+          `quiet ${advance}: no refs, folders, removal, flags or binding usage work`,
+        ).toBeFalse();
+        expect(await usage(), `quiet ${advance}: timestamps untouched`).toEqual(before);
+        expect((await counts()).live, `quiet ${advance}: nothing visible`).toBe(0);
+      }
+      await sql<
+        []
+      >`UPDATE mail.remote_resources SET last_sync_at = now() - interval '2 minutes' WHERE id = ${source.args.remoteResourceId}::uuid`;
+      const stale = await usage();
+      await commitJmapAccountBatch(await prepared());
+      const refreshed = await usage();
+      expect(refreshed[0]?.last_sync_at, "quiet: due sync time refreshed").not.toEqual(stale[0]?.last_sync_at);
+      expect(refreshed[0]?.last_used_at, "quiet: binding never touched").toEqual(before[0]?.last_used_at);
+    } finally {
+      await meter.close();
+    }
   });
   test("durability: both wakes see committed rows; losing wakes leaves live and receipt outboxes intact", async () => {
     await listen();
@@ -681,6 +972,7 @@ suite("JMAP account commit", () => {
     const meter = await meterSql();
     const measured: Record<keyof typeof STATEMENT_BUDGET, number> = {
       unchanged: 0,
+      statesOnly: 0,
       new1: 0,
       new7: 0,
       flags1: 0,
@@ -695,6 +987,17 @@ suite("JMAP account commit", () => {
     }
     try {
       await measure("unchanged");
+      const stateBatch = await prepared();
+      measured.statesOnly = (
+        await meter.during(() =>
+          commitJmapAccountBatch({
+            ...stateBatch,
+            batch: { ...stateBatch.batch, mailboxState: { oldState: "Mailbox:0", newState: "Mailbox:counters" } },
+          }),
+        )
+      ).length;
+      // Return the fixture to its original mailbox checkpoint outside the measured window.
+      await sql<[]>`UPDATE mail.remote_resources SET sync_state = ${initial}::jsonb WHERE id = ${source.args.remoteResourceId}::uuid`;
       change(message("single"));
       await measure("new1");
       for (let index = 0; index < 7; index++) change(message(`batch${index}`));
@@ -718,9 +1021,20 @@ suite("JMAP account commit", () => {
         source.args.signal,
         source.f.dependencies,
       );
-      measured.folders = (
-        await meter.during(() => commitJmapAccountBatch({ ...source.args, fence, beforeState, batch: { kind: "mailbox", delta } }))
-      ).length;
+      const folderStatements = await meter.during(() =>
+        commitJmapAccountBatch({ ...source.args, fence, beforeState, batch: { kind: "mailbox", delta } }),
+      );
+      measured.folders = folderStatements.length;
+      expect(
+        folderStatements.some(
+          (text) =>
+            text.startsWith("SELECT folder.id, folder.stable_key, ref.remote_folder_id") ||
+            text.startsWith("SELECT ref.id") ||
+            text.startsWith("WITH stale AS") ||
+            text.startsWith("WITH incoming AS"),
+        ),
+        "folder batch: no second folder load and no email work",
+      ).toBeFalse();
       console.info("JMAP_STATEMENTS", JSON.stringify(measured));
       expect(measured.new7, "budget: linear ingest upper bound").toBeLessThanOrEqual(
         measured.unchanged + 7 * (measured.new1 - measured.unchanged),

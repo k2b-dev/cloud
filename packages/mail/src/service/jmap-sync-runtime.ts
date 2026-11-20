@@ -17,8 +17,9 @@ import { mapJmapEmailSnapshot } from "./connectors/jmap-email";
 import { type JmapSyncState, readJmapSyncState, serializeJmapSyncState } from "./connectors/jmap-sync-state";
 import { type JmapTransportDependencies, JmapTransportError } from "./connectors/jmap-transport";
 import { keepLastKeptPlacements } from "./conversation-keep-rules";
+import { isTrashOrJunkFolder } from "./follow-up-scope";
 import { enqueueMailInvalidation, mailLive } from "./live";
-import { type JmapScopeEvidence, jmapFolderStableKey, jmapScopeFingerprint } from "./provider-identity";
+import { type JmapScopeEvidence, jmapScopeFingerprint } from "./provider-identity";
 import { claimFence, ingestEnvelope } from "./sync-runtime";
 
 type Account = {
@@ -31,7 +32,9 @@ type Account = {
   signal: AbortSignal;
   captureWorkflowTriggers: boolean;
 };
-type Batch = { kind: "mailbox"; delta: JmapMailboxDelta } | { kind: "email"; delta: JmapEmailDelta };
+type Batch =
+  | { kind: "mailbox"; delta: JmapMailboxDelta }
+  | { kind: "email"; delta: JmapEmailDelta; mailboxState: Pick<JmapMailboxDelta, "oldState" | "newState"> };
 type Stats = { imported: number; memberships: number; flagsUpdated: number; removed: number; folders: number; skippedDrafts: number };
 export type JmapAccountCommitResult =
   | { status: "committed"; hasMore: boolean; stats: Stats }
@@ -101,6 +104,7 @@ function validateBatch(params: Account & { beforeState: JmapSyncState; batch: Ba
     throw new JmapError("JMAP_INVALID_RESPONSE");
   }
   if (batch.kind === "email") {
+    if (batch.mailboxState.oldState !== beforeState.mailboxState) throw new JmapError("JMAP_INVALID_RESPONSE");
     const expected = new Set([...batch.delta.createdIds, ...batch.delta.updatedIds]);
     for (const id of [...batch.delta.objects.map((email) => email.id), ...batch.delta.notFoundIds]) {
       if (!expected.delete(id)) throw new JmapError("JMAP_INVALID_RESPONSE");
@@ -122,7 +126,9 @@ export async function commitJmapAccountBatch(
   const { batch, beforeState, fence } = params;
   const nextState = serializeJmapSyncState({
     ...beforeState,
-    ...(batch.kind === "mailbox" ? { mailboxState: batch.delta.newState } : { emailState: batch.delta.newState }),
+    ...(batch.kind === "mailbox"
+      ? { mailboxState: batch.delta.newState }
+      : { emailState: batch.delta.newState, mailboxState: batch.mailboxState.newState }),
   });
   const evidence = evidenceOf(params);
   const fingerprint = jmapScopeFingerprint(evidence);
@@ -145,24 +151,11 @@ export async function commitJmapAccountBatch(
           AND resource.sync_state = ${beforeState}::jsonb AND mailbox.sync_enabled AND mailbox.deleted_at IS NULL
           AND run.state = 'running' AND run.binding_id = ${params.bindingId}::uuid
           AND run.fence_token = ${fence.token} AND run.generation = ${fence.generation}
-        FOR UPDATE OF resource, mailbox, run
+        FOR UPDATE OF resource
       `;
       if (!resource) throw new Superseded("account_changed");
-      const [binding] = await tx<{ connection_id: string; recovering: boolean }[]>`
-        SELECT binding.connection_id,
-          (binding.last_error_code IS NOT NULL OR binding.last_error_message IS NOT NULL
-            OR connection.last_error_code IS NOT NULL OR connection.last_error_message IS NOT NULL) AS recovering
-        FROM mail.provider_bindings binding JOIN mail.provider_connections connection ON connection.id = binding.connection_id
-        WHERE binding.id = ${params.bindingId}::uuid AND binding.remote_resource_id = ${params.remoteResourceId}::uuid
-          AND binding.state = 'active' AND binding.verified_scope_fingerprint = ${fingerprint}
-          AND binding.verified_secret_revision = ${params.secretRevision} AND connection.secret_revision = ${params.secretRevision}
-          AND connection.connector_kind = 'jmap' AND connection.status = 'active' AND connection.encrypted_secret IS NOT NULL
-        FOR UPDATE OF binding, connection
-      `;
-      if (!binding) throw new Superseded("account_changed");
       const stats: Stats = { imported: 0, memberships: 0, flagsUpdated: 0, removed: 0, folders: 0, skippedDrafts: 0 };
       const missingMailboxIds = batch.kind === "mailbox" ? [...batch.delta.destroyedIds, ...batch.delta.notFoundIds] : [];
-      const missingFolderKeys = missingMailboxIds.map((id) => jmapFolderStableKey(evidence, id));
       if (batch.kind === "mailbox") {
         const folders = [...batch.delta.created, ...batch.delta.updated];
         stats.folders = folders.length + missingMailboxIds.length;
@@ -176,44 +169,78 @@ export async function commitJmapAccountBatch(
             inventory: { kind: "delta", missingMailboxIds },
           });
       }
-      const folders = await tx<
-        {
-          id: string;
-          stable_key: string;
-          mailbox_id: string;
-          role: string;
-          active: boolean;
-          excluded: boolean;
-          drafts: boolean;
-        }[]
-      >`
-        SELECT folder.id, folder.stable_key, ref.remote_folder_id AS mailbox_id, folder.role,
-          (ref.missing_since IS NULL AND folder.discovery_state = 'active') AS active,
-          (folder.role IN ('trash', 'junk') OR EXISTS (SELECT 1 FROM mail.folder_role_overrides override
-            WHERE override.folder_id = folder.id AND override.role IN ('trash', 'junk'))) AS excluded,
-          (folder.role = 'drafts' OR EXISTS (SELECT 1 FROM mail.folder_role_overrides override
-            WHERE override.folder_id = folder.id AND override.role = 'drafts')) AS drafts
-        FROM mail.folders folder JOIN mail.binding_folder_refs ref ON ref.folder_id = folder.id
-        WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid AND ref.binding_id = ${params.bindingId}::uuid
-          AND ref.remote_folder_id IS NOT NULL
-        ORDER BY folder.id FOR UPDATE OF folder
-      `;
-      const byMailbox = new Map(folders.map((folder) => [folder.mailbox_id, folder]));
       const emails = batch.kind === "email" ? batch.delta.objects.map(mapJmapEmailSnapshot) : [];
-      // Validate every membership before filtering drafts: never silently lose an unknown mailbox.
-      for (const email of emails)
-        for (const id of email.mailboxIds) {
-          if (!byMailbox.get(id)?.active) throw new Superseded("folders_required");
-        }
       const emailIds = batch.kind === "email" ? [...batch.delta.createdIds, ...batch.delta.updatedIds, ...batch.delta.destroyedIds] : [];
-      const refs = await tx<{ id: string; remote_id: string; message_id: string; folder_id: string; active: boolean }[]>`
+      const refs = emailIds.length
+        ? await tx<{ id: string; remote_id: string; message_id: string; folder_id: string; active: boolean }[]>`
         SELECT ref.id, ref.remote_id, ref.message_id, ref.folder_id,
           (ref.stale_at IS NULL AND placement.remote_message_ref_id IS NOT NULL AND placement.deleted_at IS NULL) AS active
         FROM mail.remote_message_refs ref JOIN mail.folders folder ON folder.id = ref.folder_id
         LEFT JOIN mail.message_placements placement ON placement.remote_message_ref_id = ref.id
         WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid
           AND ref.remote_id = ANY(${toPgTextArray(emailIds)}::text[])
+      `
+        : [];
+      const mailboxIds = [...new Set(emails.flatMap((email) => email.mailboxIds))];
+      const refFolderIds = [...new Set(refs.map((ref) => ref.folder_id))];
+      // Match commitSyncBatch: resource first, affected folders by ID, then binding/connection.
+      // In particular, do not hold a mailbox UPDATE lock while setFolderRole holds a folder.
+      const folders =
+        mailboxIds.length || refFolderIds.length
+          ? await tx<
+              {
+                id: string;
+                stable_key: string;
+                mailbox_id: string | null;
+                role: string;
+                active: boolean;
+                excluded: boolean;
+                drafts: boolean;
+              }[]
+            >`
+        SELECT folder.id, folder.stable_key, ref.remote_folder_id AS mailbox_id,
+          COALESCE(role_override.role, folder.role) AS role,
+          (ref.missing_since IS NULL AND ref.remote_folder_id IS NOT NULL AND folder.discovery_state = 'active') AS active,
+          ${isTrashOrJunkFolder(sql`folder.id`)} AS excluded,
+          (EXISTS (SELECT 1 FROM mail.folder_role_overrides override
+            WHERE override.mailbox_id = ${resource.mailbox_id}::uuid AND override.role = 'drafts' AND override.folder_id = folder.id)
+            OR (folder.role = 'drafts' AND NOT EXISTS (SELECT 1 FROM mail.folder_role_overrides override
+              WHERE override.mailbox_id = ${resource.mailbox_id}::uuid AND override.role = 'drafts'))) AS drafts
+        FROM mail.folders folder
+        LEFT JOIN mail.binding_folder_refs ref ON ref.folder_id = folder.id AND ref.binding_id = ${params.bindingId}::uuid
+        LEFT JOIN mail.folder_role_overrides role_override
+          ON role_override.folder_id = folder.id AND role_override.mailbox_id = ${resource.mailbox_id}::uuid
+        WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid
+          AND (ref.remote_folder_id = ANY(${toPgTextArray(mailboxIds)}::text[])
+            OR folder.id = ANY(${toPgUuidArray(refFolderIds)}::uuid[]))
+        ORDER BY folder.id FOR UPDATE OF folder
+      `
+          : [];
+      const byMailbox = new Map(folders.filter((folder) => folder.mailbox_id !== null).map((folder) => [folder.mailbox_id, folder]));
+      // Validate every membership before filtering drafts: never silently lose an unknown mailbox.
+      for (const email of emails)
+        for (const id of email.mailboxIds) {
+          // Schnitt 5's account job must escalate repeated folders_required to reconciliation.
+          if (!byMailbox.get(id)?.active) throw new Superseded("folders_required");
+        }
+      const [binding] = await tx<{ connection_id: string; recovering: boolean }[]>`
+        SELECT binding.connection_id,
+          (binding.last_error_code IS NOT NULL OR binding.last_error_message IS NOT NULL) AS recovering
+        FROM mail.provider_bindings binding
+        WHERE binding.id = ${params.bindingId}::uuid AND binding.remote_resource_id = ${params.remoteResourceId}::uuid
+          AND binding.state = 'active' AND binding.verified_scope_fingerprint = ${fingerprint}
+          AND binding.verified_secret_revision = ${params.secretRevision}
+        FOR NO KEY UPDATE OF binding
       `;
+      if (!binding) throw new Superseded("account_changed");
+      const [connection] = await tx<{ recovering: boolean }[]>`
+        SELECT (last_error_code IS NOT NULL OR last_error_message IS NOT NULL) AS recovering
+        FROM mail.provider_connections
+        WHERE id = ${binding.connection_id}::uuid AND secret_revision = ${params.secretRevision}
+          AND connector_kind = 'jmap' AND status = 'active' AND encrypted_secret IS NOT NULL
+        FOR NO KEY UPDATE
+      `;
+      if (!connection) throw new Superseded("account_changed");
       const byEmail = new Map<string, (typeof refs)[number][]>();
       for (const ref of refs) {
         const entries = byEmail.get(ref.remote_id) ?? [];
@@ -263,25 +290,29 @@ export async function commitJmapAccountBatch(
         }
       }
       // New memberships already retired stale kept copies through ingestEnvelope. Remove old ones afterwards.
-      const removed = await tx<{ remote_message_ref_id: string }[]>`
+      const removed = removeRefIds.length
+        ? await tx<{ remote_message_ref_id: string }[]>`
         WITH stale AS (
           UPDATE mail.remote_message_refs ref SET stale_at = now()
           FROM mail.folders folder
           WHERE ref.folder_id = folder.id AND folder.remote_resource_id = ${params.remoteResourceId}::uuid
-            AND ref.stale_at IS NULL AND (ref.id = ANY(${toPgUuidArray(removeRefIds)}::uuid[]) OR folder.stable_key = ANY(
-              ${toPgTextArray(missingFolderKeys)}::text[]))
+            AND ref.stale_at IS NULL AND ref.remote_id IS NOT NULL
+            AND ref.id = ANY(${toPgUuidArray(removeRefIds)}::uuid[])
           RETURNING ref.id
         )
         UPDATE mail.message_placements placement SET deleted_at = now(), updated_at = now()
         FROM stale WHERE placement.remote_message_ref_id = stale.id AND placement.deleted_at IS NULL
         RETURNING placement.remote_message_ref_id
-      `;
+      `
+        : [];
       stats.removed = removed.length;
-      await keepLastKeptPlacements(
-        tx,
-        removed.map((row) => row.remote_message_ref_id),
-      );
-      const [flags] = await tx<{ count: number }[]>`
+      if (removed.length)
+        await keepLastKeptPlacements(
+          tx,
+          removed.map((row) => row.remote_message_ref_id),
+        );
+      const [flags] = emails.length
+        ? await tx<{ count: number }[]>`
         WITH incoming AS (
           SELECT entry ->> 'emailId' AS email_id,
             ARRAY(SELECT jsonb_array_elements_text(entry -> 'flags')) AS flags,
@@ -296,23 +327,42 @@ export async function commitJmapAccountBatch(
             AND (placement.flags, placement.keywords) IS DISTINCT FROM (incoming.flags, incoming.labels)
           RETURNING placement.remote_message_ref_id
         ) SELECT count(*)::int AS count FROM changed
-      `;
+      `
+        : [];
       stats.flagsUpdated = flags?.count ?? 0;
-      await tx`UPDATE mail.provider_bindings SET last_used_at = now(), last_error_code = NULL, last_error_message = NULL
-        WHERE id = ${params.bindingId}::uuid`;
-      await tx`UPDATE mail.provider_connections SET last_error_code = NULL, last_error_message = NULL
-        WHERE id = ${binding.connection_id}::uuid AND (last_error_code IS NOT NULL OR last_error_message IS NOT NULL)`;
-      await tx`UPDATE mail.remote_resources SET sync_state = ${nextState}::jsonb, last_sync_at = now(), status = 'active',
-        last_error_code = NULL, last_error_message = NULL WHERE id = ${params.remoteResourceId}::uuid`;
-      await tx`UPDATE mail.mailboxes SET health = 'active', health_reason = NULL
-        WHERE id = ${resource.mailbox_id}::uuid AND (health, health_reason) IS DISTINCT FROM ('active', NULL)`;
       const changed = stats.memberships > 0 || stats.flagsUpdated > 0 || stats.removed > 0 || stats.folders > 0;
-      if (!changed && !resource.recovering && !binding.recovering)
-        await tx`DELETE FROM mail.sync_runs WHERE id = ${fence.runId}::uuid AND state = 'running'`;
-      else
-        await tx`UPDATE mail.sync_runs SET state = 'completed', cursor_before = ${beforeState}::jsonb,
+      const recovering = resource.recovering || binding.recovering || connection.recovering;
+      // Like confirmUnchangedFolder, quiet polls leave binding usage alone and refresh sync time at most once a minute.
+      if (changed || recovering)
+        await tx`UPDATE mail.provider_bindings SET last_used_at = now(), last_error_code = NULL, last_error_message = NULL
+          WHERE id = ${params.bindingId}::uuid`;
+      if (connection.recovering)
+        await tx`UPDATE mail.provider_connections SET last_error_code = NULL, last_error_message = NULL
+          WHERE id = ${binding.connection_id}::uuid`;
+      await tx`UPDATE mail.remote_resources SET sync_state = ${nextState}::jsonb,
+        last_sync_at = CASE WHEN ${changed || recovering} OR last_sync_at IS NULL OR last_sync_at < now() - interval '1 minute'
+          THEN now() ELSE last_sync_at END, status = 'active', last_error_code = NULL, last_error_message = NULL
+        WHERE id = ${params.remoteResourceId}::uuid AND (${changed || recovering} OR sync_state IS DISTINCT FROM ${nextState}::jsonb
+          OR last_sync_at IS NULL OR last_sync_at < now() - interval '1 minute')`;
+      // Same late NO KEY UPDATE mailbox lock as commitSyncBatch; recheck pause/delete after acquiring it.
+      const [mailbox] = await tx<{ id: string }[]>`
+        WITH eligible AS MATERIALIZED (
+          SELECT id FROM mail.mailboxes WHERE id = ${resource.mailbox_id}::uuid AND sync_enabled AND deleted_at IS NULL
+          FOR NO KEY UPDATE
+        ), cleared AS (
+          UPDATE mail.mailboxes mailbox SET health = 'active', health_reason = NULL FROM eligible
+          WHERE mailbox.id = eligible.id AND (mailbox.health, mailbox.health_reason) IS DISTINCT FROM ('active', NULL)
+        ) SELECT id FROM eligible
+      `;
+      if (!mailbox) throw new Superseded("account_changed");
+      // The resource lock serializes replay checks; the run needs only its final UPDATE/DELETE lock.
+      const [finished] =
+        !changed && !recovering
+          ? await tx<{ id: string }[]>`DELETE FROM mail.sync_runs WHERE id = ${fence.runId}::uuid AND state = 'running' RETURNING id`
+          : await tx<{ id: string }[]>`UPDATE mail.sync_runs SET state = 'completed', cursor_before = ${beforeState}::jsonb,
         cursor_after = ${nextState}::jsonb, stats = ${stats}::jsonb, finished_at = now()
-        WHERE id = ${fence.runId}::uuid AND state = 'running'`;
+        WHERE id = ${fence.runId}::uuid AND state = 'running' RETURNING id`;
+      if (!finished) throw new Superseded("account_changed");
       if (changed) await enqueueMailInvalidation(tx, { mailboxId: resource.mailbox_id });
       assertActive(params.signal);
       return { stats, changed, wakeWorkflow };
@@ -371,12 +421,12 @@ export async function syncJmapAccountDelta(
     );
     const folderPending =
       folders.hasMoreChanges ||
-      folders.newState !== folders.oldState ||
       folders.created.length + folders.updated.length + folders.destroyedIds.length + folders.notFoundIds.length > 0;
     const batch: Batch = folderPending
       ? { kind: "mailbox", delta: folders }
       : {
           kind: "email",
+          mailboxState: { oldState: folders.oldState, newState: folders.newState },
           delta: await readJmapEmailDelta(
             params.session,
             params.authorization,
