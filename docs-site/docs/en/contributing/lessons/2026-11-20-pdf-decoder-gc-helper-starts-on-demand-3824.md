@@ -1,0 +1,6 @@
+### A thread pool that starts on demand is missing from an outside sample
+
+- **What happened:** The PDF decoder thread-set test sometimes saw no `HeapHelper` thread, although the decoder kept its fixed thread set ([#2256](https://github.com/k2b-dev/cloud/issues/2256)).
+- **Root cause:** JSC starts its GC helper thread only with the first garbage collection, and `BUN_JSC_numberOfGCMarkers=2` pins that pool to one helper (without it, JSC starts one per core, up to seven). The test decoder runs a single, late collection, which an allocation starts just above JSC's 8 MiB Eden collection threshold. Suspected for CI: a run that collects later or not at all, or a sampler that misses the last milliseconds, exits before a sample shows the helper. The fix does not depend on which of these happened.
+- **Error class:** A test samples a process from outside and expects a pool that starts only when the work needs it.
+- **Guard:** `pdf-render.test.ts` runs the real decoder through `fixtures/pdf-decoder-thread-probe.test-fixture.ts`. The probe forces a full collection after the render and reports every thread of its own process. If one of the three pool settings is removed, the test fails on every run.
