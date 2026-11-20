@@ -14,6 +14,12 @@ Mail uses IMAP for mailboxes and SMTP for sending. No mailbox uses JMAP yet.
 Mail can internally apply each batch of JMAP account changes in one transaction.
 Only tests call this path.
 
+Mail can also compare a whole JMAP account with its server in a complete scan.
+The scan reads the account page by page, brings folders, flags, and folder
+memberships up to date, and then removes messages from local folders when the
+server no longer has them. Messages that a scan finds never start incoming-mail
+automations. Only tests call this path.
+
 Adding or changing a provider connection and refreshing its limits checks the
 IMAP hostname for JMAP over HTTPS on port 443, **without credentials**.
 Background rediscovery never checks. Connection changes do not wait for detection;
