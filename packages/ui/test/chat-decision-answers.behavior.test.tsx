@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal, mergeProps } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { ChatDecisionProps } from "../src/chat/ChatDecision";
 import { createDomTestHarness } from "./dom";
@@ -25,15 +25,20 @@ const mount = async (props: Partial<ChatDecisionProps>) => {
   const errors: unknown[] = [];
   const dispose = render(
     () =>
-      createComponent(ChatDecision, {
-        state: "open",
-        kind: { label: "Approval", icon: "ti ti-shield-check" },
-        source: { name: "Mail", icon: "ti ti-mail" },
-        sentence: "Send the mail?",
-        reason: { text: "You asked to review it." },
-        onAnswerError: (error) => errors.push(error),
-        ...props,
-      }),
+      createComponent(
+        ChatDecision,
+        mergeProps(
+          {
+            state: "open" as const,
+            kind: { label: "Approval", icon: "ti ti-shield-check" },
+            source: { name: "Mail", icon: "ti ti-mail" },
+            sentence: "Send the mail?",
+            reason: { text: "You asked to review it." },
+            onAnswerError: (error: unknown) => errors.push(error),
+          },
+          props,
+        ),
+      ),
     dom.root,
   );
   const button = (name: string) => {
@@ -146,6 +151,68 @@ else {
       await flush();
       view.click("Withdraw");
       expect(more.calls).toBe(2);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a host that returns the question to open ends a running answer, even one whose promise never settles", async () => {
+    const hung = deferred();
+    const [state, setState] = createSignal<ChatDecisionProps["state"]>("open");
+    const confirm = counted("Send", () => {
+      setState("sending");
+      return hung.promise;
+    });
+    const decline = counted("Keep draft", () => undefined);
+    const view = await mount({
+      get state() {
+        return state();
+      },
+      confirm,
+      decline,
+    });
+    try {
+      view.click("Send");
+      await flush();
+      setState("open");
+      await flush();
+      expect(view.button("Send").hasAttribute("aria-disabled")).toBe(false);
+      const second = deferred();
+      const retry = counted("Send", () => second.promise);
+      confirm.onSelect = retry.onSelect;
+      view.click("Send");
+      await flush();
+      expect(view.button("Keep draft").getAttribute("aria-disabled")).toBe("true");
+      // The first, ended answer settles late and must not unlock the one that runs now.
+      hung.resolve();
+      await flush();
+      expect(view.button("Keep draft").getAttribute("aria-disabled")).toBe("true");
+      second.resolve();
+      await flush();
+      expect(view.button("Keep draft").hasAttribute("aria-disabled")).toBe(false);
+      expect(retry.calls).toBe(1);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("going back holds every answer while its promise runs and reports a rejection once", async () => {
+    const first = deferred();
+    const back = counted("Change", () => first.promise);
+    const confirm = counted("Send", () => undefined);
+    const view = await mount({ confirm, back });
+    try {
+      view.click("Change");
+      view.click("Change");
+      view.click("Send");
+      await flush();
+      expect([back.calls, confirm.calls]).toEqual([1, 0]);
+      expect(view.button("Change").getAttribute("aria-busy")).toBe("true");
+      const failure = new Error("offline");
+      first.reject(failure);
+      await flush();
+      expect(view.errors).toEqual([failure]);
+      expect(view.button("Send").hasAttribute("aria-disabled")).toBe(false);
     } finally {
       view.done();
     }

@@ -193,7 +193,9 @@ with `onAnswerError` and show a recoverable outcome. While the promise an
 answer's `onSelect` returns is pending, the question takes no answer at all:
 every answer has `aria-disabled`, the pressed one `aria-busy`, and a second
 press or a held key sends nothing. Once the promise settles, resolved or
-rejected, the answers work again if the question is still open.
+rejected, the answers work again if the question is still open, so change `state`
+before the promise resolves. A host that returns the question to `open` ends the
+running answer at once, even if its promise never settles.
 
 Pass `Chat.Outcome` only the lines this flow can reach. Every supplied line
 occupies the same grid cell, including hidden alternatives, so the longest line

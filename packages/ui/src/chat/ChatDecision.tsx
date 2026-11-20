@@ -151,6 +151,8 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   // The answer whose promise still runs. Until it settles the question takes no answer at all, so a second press, a
   // held key or another answer sends nothing twice.
   const [pending, setPending] = createSignal<string>();
+  // Counts answers; a reopen by the host ends the running one, so its late settle cannot unlock a newer answer.
+  let runs = 0;
   const select = (key: string, choice: ChatDecisionAnswer, settled: (async: boolean) => void) => {
     let result: void | Promise<void>;
     try {
@@ -164,10 +166,12 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
       settled(false);
       return;
     }
+    const run = ++runs;
     setPending(key);
     result
       .catch((error: unknown) => props.onAnswerError?.(error))
       .finally(() => {
+        if (run !== runs) return;
         setPending(undefined);
         settled(true);
       });
@@ -198,6 +202,9 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
           const active = document.activeElement;
           const failedHere = answeredHere() && previous === "sending" && (!active || active === document.body);
           setAnsweredHere(false);
+          // The host could not take the answer: the question takes answers again, even if its promise never settles.
+          runs++;
+          setPending(undefined);
           if (reopenedHere || failedHere) {
             sentence?.focus({ preventScroll: true });
             setArrive(true);
@@ -362,8 +369,9 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                     variant="text"
                     disabled={Boolean(props.waiting)}
                     aria-disabled={answerOff()}
+                    aria-busy={answerBusy("back")}
                     onClick={() => {
-                      if (!props.waiting && !pending()) void back().onSelect();
+                      if (!props.waiting && !pending()) select("back", back(), () => undefined);
                     }}
                   >
                     <Show when={back().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
