@@ -9,7 +9,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
-import { type BlockScene, fixtureImage, blockScenes as scenes } from "./blocks.fixtures";
+import { type BlockScene, fixtureImage, imageStateScenes, blockScenes as scenes } from "./blocks.fixtures";
 import { validateBlocks } from "./validate";
 
 // Islands, flat options and the six-column rows depend on the real layout engine, at desktop and phone widths.
@@ -95,13 +95,22 @@ afterAll(async () => {
 
 const MAIN = `<main style="box-sizing:border-box;padding:24px 16px;max-width:calc(764px + 32px);margin:0 auto">`;
 
-const open = async (scene: BlockScene, width: number, drawn: "server" | "browser" = "browser"): Promise<Page> => {
+const open = async (
+  scene: BlockScene,
+  width: number,
+  drawn: "server" | "browser" = "browser",
+  host: "result" | "preview" = "result",
+): Promise<Page> => {
   const tab = await browser.newPage({ viewport: { width, height: 1000 } });
   await tab.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/tabler.woff2")
       return route.fulfill({ body: Buffer.from(await Bun.file(icons.font).arrayBuffer()), contentType: "font/woff2" });
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript", body: harness });
+    // A picture still being drawn never answers while the test looks; a refused one answers like a missing one.
+    if (url.pathname.endsWith("/waiting.svg")) return;
+    if (url.pathname.endsWith("/missing.svg"))
+      return route.fulfill({ status: 404, contentType: "application/json", body: '{"ok":false,"code":"not_found"}' });
     if (url.pathname.endsWith(".svg")) return route.fulfill({ body: fixtureImage(url.pathname), contentType: "image/svg+xml" });
     return route.fulfill({
       contentType: "text/html",
@@ -111,7 +120,7 @@ const open = async (scene: BlockScene, width: number, drawn: "server" | "browser
         `${drawn === "browser" ? '<script type="module" src="/harness.js"></script>' : ""}</body></html>`,
     });
   });
-  await tab.goto(`http://blocks.test/?scene=${scene.name}`);
+  await tab.goto(`http://blocks.test/?scene=${scene.name}&host=${host}`);
   if (drawn === "browser") {
     await tab.locator(".cloud-blocks").first().waitFor();
     // Tables and key figures are drawn once their code has arrived and nothing waits any more.
@@ -202,6 +211,59 @@ describe("BlockTree", () => {
           await tab.close();
         }
       });
+
+  for (const width of [1440, 390])
+    test(`at ${width} px a search preview's picture keeps one 4:3 place while it loads, once drawn, and when refused`, async () => {
+      const shots = process.env.CAPBLOCKS_SHOTS;
+      const states = [];
+      for (const scene of imageStateScenes) {
+        const tab = await open(scene, width, "browser", "preview");
+        try {
+          if (scene.name === "15-suche-datei")
+            await tab.waitForFunction(() => Array.from(document.images).every((image) => image.complete && image.naturalWidth > 0));
+          if (scene.name === "15-suche-datei-fehlt") await tab.locator(".cloud-blocks__image-missing").waitFor();
+          await settled(tab);
+          states.push(
+            await tab.evaluate(() => {
+              const box = (selector: string) => {
+                const rect = document.querySelector(selector)!.getBoundingClientRect();
+                return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+              };
+              const missing = document.querySelector(".cloud-blocks__image-missing");
+              return {
+                picture: box(".cloud-blocks__image"),
+                details: box(".cloud-blocks__cell[data-kind='Detail']"),
+                overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                images: document.images.length,
+                stand_in: missing ? { role: missing.getAttribute("role"), label: missing.getAttribute("aria-label") } : null,
+                stand_in_box: missing ? box(".cloud-blocks__image-missing") : null,
+              };
+            }),
+          );
+          if (shots) {
+            mkdirSync(shots, { recursive: true });
+            await tab.screenshot({ path: resolve(shots, `${scene.name}-light-${width}.png`), fullPage: true });
+          }
+        } finally {
+          await tab.close();
+        }
+      }
+      const [drawn, loading, refused] = states;
+      expect(drawn!.overflow).toBe(0);
+      expect(drawn!.stand_in).toBeNull();
+      expect(drawn!.picture.width).toBeGreaterThan(0);
+      expect(Math.abs(drawn!.picture.width / drawn!.picture.height - 4 / 3)).toBeLessThan(0.01);
+      // Loading shows the muted place itself; a refused picture leaves a labelled stand-in of the same size.
+      expect(loading!.images).toBe(1);
+      expect(refused!.images).toBe(0);
+      expect(refused!.stand_in).toEqual({ role: "img", label: "Vase_Albers_Boden.jpg" });
+      expect(refused!.stand_in_box).toEqual(refused!.picture);
+      for (const state of [loading!, refused!]) {
+        expect(state.overflow).toBe(0);
+        expect(state.picture).toEqual(drawn!.picture);
+        expect(state.details).toEqual(drawn!.details);
+      }
+    });
 
   for (const width of [1440, 390])
     test(`at ${width} px tables and key figures keep the room of their first frame when their code arrives`, async () => {

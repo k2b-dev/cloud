@@ -264,6 +264,28 @@ export const blockScenes: BlockScene[] = [
   { name: "07-tabelle-grids", app: "/grids", blocks: gridsView },
 ];
 
+/**
+ * The search preview of an image file (concept image 15): its picture from the app's own route, then the facts. The
+ * same view three ways: drawn, still loading, and refused or missing, which must all keep one place.
+ */
+const filePreview = (src: string): Block[] => [
+  { kind: "Image", src, alt: "Vase_Albers_Boden.jpg", ratio: 4 / 3 },
+  {
+    kind: "Detail",
+    title: "Details",
+    items: [
+      { label: "Größe", value: 2_400_000, format: { unit: "B" } },
+      { label: "Geändert", value: "03.11.2026, 10:01" },
+      { label: "Ordnerpfad", value: "Ankauf / Nachlass Albers" },
+    ],
+  },
+];
+export const imageStateScenes: BlockScene[] = [
+  { name: "15-suche-datei", app: "/kunst", blocks: filePreview("/kunst/images/m_12.svg") },
+  { name: "15-suche-datei-laedt", app: "/kunst", blocks: filePreview("/kunst/images/waiting.svg") },
+  { name: "15-suche-datei-fehlt", app: "/kunst", blocks: filePreview("/kunst/images/missing.svg") },
+];
+
 /** An SVG stand-in for an app image: a vase or a plate in one quiet colour. */
 export const fixtureImage = (path: string): string => {
   const palette: Record<string, [string, string]> = {

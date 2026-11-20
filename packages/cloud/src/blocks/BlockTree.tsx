@@ -308,12 +308,26 @@ function CardsBlock(props: { block: Leaf<"Cards">; locale: string }) {
   );
 }
 
+/**
+ * A picture holds its place while it loads, on its muted ground. One that cannot be shown, because it is missing or the
+ * reader may no longer see it, leaves that place with a quiet symbol and its text alternative instead of a broken image.
+ */
 function ImageBlock(props: { block: Leaf<"Image"> }) {
+  const [failed, setFailed] = createSignal<string>();
   return (
     <Show when={imageSource(props.block.src)}>
       {(src) => (
         <figure class="cloud-blocks__image" style={props.block.ratio ? { "aspect-ratio": String(props.block.ratio) } : undefined}>
-          <img src={src()} alt={props.block.alt} loading="lazy" />
+          <Show
+            when={failed() !== src()}
+            fallback={
+              <div class="cloud-blocks__image-missing" role="img" aria-label={props.block.alt}>
+                <i class="ti ti-photo-off" aria-hidden="true" />
+              </div>
+            }
+          >
+            <img src={src()} alt={props.block.alt} loading="lazy" onError={() => setFailed(src())} />
+          </Show>
           <Show when={props.block.caption}>{(caption) => <figcaption>{caption()}</figcaption>}</Show>
         </figure>
       )}

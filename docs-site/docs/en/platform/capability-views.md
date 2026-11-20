@@ -5,7 +5,7 @@ section: Platform services
 order: 553
 description: Show a capability result, an approval's details, and a search preview with the same declarative blocks as Code pages.
 tags: [capabilities, views, blocks, approvals, search]
-updated: 2026-11-08
+updated: 2026-11-20
 ---
 
 # Capability views
@@ -143,6 +143,15 @@ application response; Cloud never drops or shortens a block silently.
   rejected. The page keeps `img-src 'self'`. Serve a remote picture through your
   app's route, as Mail does for external images. Without `alt`, the card title
   is the text alternative.
+- An `Image` with `ratio` keeps that place from the first frame: it shows a
+  muted ground while the picture loads and, if the picture cannot be shown
+  (missing, refused, or not yet drawn), a quiet stand-in with `alt` as its
+  label. What follows the picture never moves.
+- The view carries a path, never a lease. Check the reader's access on every
+  request to the image route, as for a download, and answer a picture the
+  reader may not see exactly like a missing one. Send `Cache-Control: private`
+  (or `no-store`) with `Vary: Cookie, Authorization`, so no shared cache keeps
+  a copy.
 - **Links** in a result go to a path of the answering app, a Cloud resource link
   (`/open/<type>/~<id>`), or an `https:` address. Links in an approval or a
   search preview stay on Cloud paths. Encoded separators, dot segments, and
@@ -212,7 +221,14 @@ The hits keep a 360 px column; the preview takes the rest of the dialog, and
 detail blocks stand flat in it. A button left of **Close** maximizes the search
 to nearly the whole window, with 440 px for the hits; the browser remembers the
 choice. On a phone the search already fills the screen and the preview opens as
-its own page. Mail's `message.read` shows the people, the date, the attachments,
+its own page. Files' `entry.read` puts the picture of an image file before its details. The
+picture is the large preview Files already draws (at most 1280 px on its long
+side), served by `GET /api/filesv2/entries/<entry ref>/image?rev=<revision>`.
+That route checks the person's read access on every request, with the same check
+as a download, and answers `404 not_found` for an entry that is missing,
+refused, in another person's storage, not an image, or has no drawable
+preview; `202` with `Retry-After` while the preview is still being drawn.
+Mail's `message.read` shows the people, the date, the attachments,
 and the text of a message (16 KiB, then a note to open it in Mail);
 `conversation.read` shows its state, assignees, tags, summary, and latest
 messages.
