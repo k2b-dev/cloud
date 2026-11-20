@@ -3369,12 +3369,19 @@ const actionDefinitions = {
           includeSourceAttachments: input.includeSourceAttachments,
         },
       };
-      const seed = await drafts.prepareDraftSeed({ context: requestContext(context), mailboxId: scope.data.id, origin });
-      if (!seed.ok) return seed;
+      const seed =
+        input.intent === "reply" || input.intent === "reply_all"
+          ? await drafts.prepareDraftSeed({ context: requestContext(context), mailboxId: scope.data.id, origin })
+          : null;
+      if (seed && !seed.ok) return seed;
       let result = await drafts.materializeDraftSeed({
         context: requestContext(context),
         mailboxId: scope.data.id,
-        input: { idempotencyKey: stableUuid(key.data), origin, draft: { ...draftContent, ...withSeededReply(input, seed.data.content) } },
+        input: {
+          idempotencyKey: stableUuid(key.data),
+          origin,
+          draft: { ...draftContent, ...(seed ? withSeededReply(input, seed.data.content) : {}) },
+        },
         rejectOccupiedContent: drafts.hasDraftCreationContent(input),
       });
       if (!result.ok) return result;
