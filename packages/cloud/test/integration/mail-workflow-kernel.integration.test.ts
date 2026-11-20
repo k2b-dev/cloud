@@ -104,6 +104,7 @@ suite("Mail shared workflow kernel", () => {
 
   const envelope = (params: { uid: number; providerMessageId: string; from?: string; messageId?: string }) => ({
     remoteRef: {
+      kind: "imap" as const,
       folderStableKey: `workflow-inbox-${suffix}`,
       uidValidity: "1",
       uid: String(params.uid),
@@ -650,7 +651,7 @@ steps:
       folderId: copyFolderId,
       message: {
         ...envelope({ uid: 7002, providerMessageId: inbound.providerMessageId, messageId: inbound.messageId }),
-        remoteRef: { folderStableKey: `workflow-copy-${suffix}`, uidValidity: "1", uid: "7002", modseq: "7002" },
+        remoteRef: { kind: "imap", folderStableKey: `workflow-copy-${suffix}`, uidValidity: "1", uid: "7002", modseq: "7002" },
       },
       captureWorkflowTriggers: true,
     });
@@ -683,7 +684,7 @@ steps:
       folderId: junk!.id,
       message: {
         ...envelope({ uid: 7005, providerMessageId: `workflow-spam-${suffix}` }),
-        remoteRef: { folderStableKey: `workflow-junk-${suffix}`, uidValidity: "1", uid: "7005", modseq: "7005" },
+        remoteRef: { kind: "imap", folderStableKey: `workflow-junk-${suffix}`, uidValidity: "1", uid: "7005", modseq: "7005" },
       },
       captureWorkflowTriggers: true,
     });
@@ -898,7 +899,7 @@ steps:
         folderId: folder!.id,
         message: {
           ...envelope({ uid: 7100, providerMessageId: `workflow-scale-${suffix}` }),
-          remoteRef: { folderStableKey: `scale-inbox-${suffix}`, uidValidity: "1", uid: "7100", modseq: "7100" },
+          remoteRef: { kind: "imap", folderStableKey: `scale-inbox-${suffix}`, uidValidity: "1", uid: "7100", modseq: "7100" },
         },
         captureWorkflowTriggers: true,
       });

@@ -31,7 +31,7 @@ try {
       folderId: input.folderId,
       captureWorkflowTriggers: false,
       message: {
-        remoteRef: { folderStableKey: "perf-folder-0", uidValidity: "1", uid: String(input.uid), modseq: "1" },
+        remoteRef: { kind: "imap", folderStableKey: "perf-folder-0", uidValidity: "1", uid: String(input.uid), modseq: "1" },
         providerMessageId: null,
         providerThreadId: null,
         messageId: `<arrival-${input.uid}@example.test>`,

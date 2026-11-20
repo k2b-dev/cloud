@@ -228,7 +228,13 @@ suite("incoming automations", () => {
         folderId: inboxFolderId,
         captureWorkflowTriggers: false,
         message: {
-          remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(9400 + index), modseq: "1" },
+          remoteRef: {
+            kind: "imap",
+            folderStableKey: `incoming-automation-inbox-${suffix}`,
+            uidValidity: "1",
+            uid: String(9400 + index),
+            modseq: "1",
+          },
           providerMessageId: `negation-${suffix}-${index}`,
           providerThreadId: null,
           messageId: `<negation-${suffix}-${index}@example.test>`,
@@ -583,7 +589,13 @@ suite("incoming automations", () => {
         remoteResourceId,
         folderId: inboxFolderId,
         message: {
-          remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: String(uid) },
+          remoteRef: {
+            kind: "imap",
+            folderStableKey: `incoming-automation-inbox-${suffix}`,
+            uidValidity: "1",
+            uid: String(uid),
+            modseq: String(uid),
+          },
           providerMessageId: `limited-${suffix}-${index}`,
           providerThreadId: null,
           messageId: `<limited-${suffix}-${index}@external.test>`,
@@ -725,6 +737,7 @@ suite("incoming automations", () => {
       const largeBodyMarker = "PRIVATE_LARGE_BODY_MARKER";
       const envelopes: ConnectorEnvelope[] = [0, 1].map((index) => ({
         remoteRef: {
+          kind: "imap",
           folderStableKey: `incoming-automation-inbox-${suffix}`,
           uidValidity: "1",
           uid: String((emissionPath === "backfill" ? 21_000 : 21_010) + (oversizedField === "subject" ? 100 : 0) + index),
@@ -1531,7 +1544,13 @@ suite("incoming automations", () => {
         remoteResourceId,
         folderId: inboxFolderId,
         message: {
-          remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: "1" },
+          remoteRef: {
+            kind: "imap",
+            folderStableKey: `incoming-automation-inbox-${suffix}`,
+            uidValidity: "1",
+            uid: String(uid),
+            modseq: "1",
+          },
           providerMessageId: `ordered-${scenario.replaceAll(" ", "-")}-${suffix}`,
           providerThreadId: null,
           messageId: `<ordered-${scenario.replaceAll(" ", "-")}-${suffix}@external.test>`,
@@ -1924,7 +1943,13 @@ suite("incoming automations", () => {
         remoteResourceId,
         folderId: inboxFolderId,
         message: {
-          remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: String(uid) },
+          remoteRef: {
+            kind: "imap",
+            folderStableKey: `incoming-automation-inbox-${suffix}`,
+            uidValidity: "1",
+            uid: String(uid),
+            modseq: String(uid),
+          },
           providerMessageId: `retry-backfill-${suffix}-${index}`,
           providerThreadId: null,
           messageId: `<retry-backfill-${suffix}-${index}@external.test>`,
@@ -2213,7 +2238,13 @@ suite("incoming automations", () => {
       folderId: inboxFolderId,
       captureWorkflowTriggers: true,
       message: {
-        remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: "1" },
+        remoteRef: {
+          kind: "imap",
+          folderStableKey: `incoming-automation-inbox-${suffix}`,
+          uidValidity: "1",
+          uid: String(uid),
+          modseq: "1",
+        },
         providerMessageId: `retry-read-move-${suffix}`,
         providerThreadId: null,
         messageId: `<retry-read-move-${suffix}@external.test>`,
@@ -2369,7 +2400,13 @@ suite("incoming automations", () => {
       remoteResourceId,
       folderId: inboxFolderId,
       message: {
-        remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: String(uid) },
+        remoteRef: {
+          kind: "imap",
+          folderStableKey: `incoming-automation-inbox-${suffix}`,
+          uidValidity: "1",
+          uid: String(uid),
+          modseq: String(uid),
+        },
         providerMessageId: `recheck-${suffix}`,
         providerThreadId: null,
         messageId: `<recheck-${suffix}@external.test>`,
@@ -2525,7 +2562,13 @@ suite("incoming automations", () => {
       remoteResourceId,
       folderId: inboxFolderId,
       message: {
-        remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: String(uid) },
+        remoteRef: {
+          kind: "imap",
+          folderStableKey: `incoming-automation-inbox-${suffix}`,
+          uidValidity: "1",
+          uid: String(uid),
+          modseq: String(uid),
+        },
         providerMessageId: `microsecond-${suffix}`,
         providerThreadId: null,
         messageId: `<microsecond-${suffix}@external.test>`,
@@ -2794,7 +2837,7 @@ suite("incoming automations", () => {
   });
 
   const statusEnvelope = (uid: number, key: string, inReplyTo: string | null = null, senderKey = key): ConnectorEnvelope => ({
-    remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: "1" },
+    remoteRef: { kind: "imap", folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: "1" },
     providerMessageId: `status-${key}-${uid}-${suffix}`,
     providerThreadId: null,
     messageId: `<status-${key}-${uid}-${suffix}@external.test>`,

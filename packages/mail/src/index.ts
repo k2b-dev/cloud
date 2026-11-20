@@ -10,9 +10,11 @@ import {
   buildActivityFeedIndex,
   buildBackfillActivityIndex,
   buildCommandTargetIndex,
+  buildDraftRemoteIdIndex,
   buildOpenConversationIndex,
   buildOptionalSearchIndex,
   buildProviderMessageIndex,
+  buildRemoteMessageIdIndex,
   buildRuntimeHistoryIndexes,
   migrate,
 } from "./migrate";
@@ -64,6 +66,8 @@ const result = await app.start({
         if ((await buildBackfillActivityIndex()) === "busy") return;
         if ((await buildCommandTargetIndex()) === "busy") return;
         if ((await buildProviderMessageIndex()) === "busy") return;
+        if ((await buildRemoteMessageIdIndex()) === "busy") return;
+        if ((await buildDraftRemoteIdIndex()) === "busy") return;
         if ((await buildOpenConversationIndex()) === "busy") return;
         if ((await buildActivityFeedIndex()) === "busy") return;
         await buildOptionalSearchIndex();

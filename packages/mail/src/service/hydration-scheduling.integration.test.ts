@@ -173,7 +173,7 @@ suite("mail body hydration scheduling", () => {
     for (let index = 0; index < count; index += 1) {
       const uid = inbox.length + 1;
       inbox.push({
-        remoteRef: { folderStableKey: fixture.folderId, uidValidity: "10", uid: String(uid), modseq: null },
+        remoteRef: { kind: "imap", folderStableKey: fixture.folderId, uidValidity: "10", uid: String(uid), modseq: null },
         providerMessageId: null,
         providerThreadId: null,
         messageId: `<${fixture.label}-${uid}-${suffix}@example.test>`,

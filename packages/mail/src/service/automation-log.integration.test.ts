@@ -178,7 +178,7 @@ suite("Mail conversation automation log and undo", () => {
       folderId,
       captureWorkflowTriggers: false,
       message: {
-        remoteRef: { folderStableKey: "audit-inbox", uidValidity: "1", uid: String(uid), modseq: "1" },
+        remoteRef: { kind: "imap", folderStableKey: "audit-inbox", uidValidity: "1", uid: String(uid), modseq: "1" },
         providerMessageId: id,
         providerThreadId: null,
         messageId: id,
