@@ -1,11 +1,12 @@
 import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
-import { returnFocus, ringOnReturn } from "../internal/focus-return";
+import { returnFocus } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { applyUiScope, readUiScope } from "../internal/portal-scope";
 import { RenderErrorBoundary } from "../internal/render-error";
 import { keepScroll, restoreScroll } from "../internal/scroll-places";
 import { resolveUiMessages } from "../intl/messages";
+import { type DialogCall, notePageDisposal, pageDisposals, readDialogCall } from "./dialog-call";
 import type { FrameMotion } from "./dialog-frame-motion";
 import { isPointInsideToast } from "./toast-hit";
 
@@ -85,14 +86,6 @@ type DialogStackEntry = {
   position?: { x: number; y: number } | null;
   /** The marker of this dialog's history entry, for dialogs opened with `history`. */
   historyId?: number;
-};
-
-/** What a dialog takes from its call: the page's disposal count, the palette, and where focus returns. */
-type DialogCall = {
-  requested: number;
-  scope: ReturnType<typeof readUiScope>;
-  opener?: HTMLElement;
-  openerRing: boolean;
 };
 
 type DialogState = {
@@ -217,7 +210,6 @@ export const createDialogCore = () => {
   const forgotten = new Set<number>();
   const deadMarker = (marker: unknown): marker is number => typeof marker === "number" && forgotten.has(marker);
   /** How often islands were disposed, so a dialog that waits to open notices that a content swap happened meanwhile. */
-  let disposals = 0;
   const ownMarker = (marker: unknown): marker is number => typeof marker === "number" && issued.has(marker);
   /** The address of each own entry that a dialog named with `historyUrl`. */
   const ownUrls = new Map<number, string>();
@@ -335,7 +327,7 @@ export const createDialogCore = () => {
         forgotten.add(id);
       }
     }
-    disposals++;
+    notePageDisposal();
     while (state.stack.length > 0) popTop(undefined);
     // New page content: a frame still fading out leaves at once, as if the document were replaced.
     endLeaving();
@@ -648,15 +640,10 @@ export const createDialogCore = () => {
     state.connectionObserver.observe(document.documentElement, { childList: true, subtree: true });
   };
 
+  /** A call read in the dialog core takes its palette at once; a field's call reads it from its element later. */
   const readCall = (): DialogCall => {
     if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
-    const opener = document.activeElement;
-    return {
-      requested: disposals,
-      scope: readUiScope(),
-      opener: opener instanceof HTMLElement ? opener : undefined,
-      openerRing: ringOnReturn(opener),
-    };
+    return { ...readDialogCall(), scope: readUiScope() };
   };
   /** The context a captured call hands to the `open` it calls next. */
   let captured: DialogCall | undefined;
@@ -666,8 +653,7 @@ export const createDialogCore = () => {
    * code loads first opens with it later through `target.open`, as if it had opened at the call; a test that replaces
    * `dialogCore.open` still sees every prompt.
    */
-  const capture = (target: DialogCore): DialogCore["open"] => {
-    const call = readCall();
+  const capture = (target: DialogCore, call: DialogCall = readCall()): DialogCore["open"] => {
     return (view, options) => {
       captured = call;
       try {
@@ -694,7 +680,7 @@ export const createDialogCore = () => {
     }
     // A dialog that waited for history or its code while islands were disposed would open over content it was never
     // meant for.
-    if (disposals !== call.requested) return Promise.resolve(undefined);
+    if (pageDisposals() !== call.requested) return Promise.resolve(undefined);
     const dialog = ensureDialogElement();
     listen();
     const previousTop = state.stack[state.stack.length - 1];
@@ -714,8 +700,10 @@ export const createDialogCore = () => {
     container.className = options.contentClassName ?? DEFAULT_CONTENT_CLASS;
     dialog.appendChild(container);
 
+    // A field's call names its element; its palette is read now, from that element, not from where focus went.
+    const scope = call.scope ?? readUiScope(call.source?.isConnected ? call.source : undefined);
     const entry: DialogStackEntry = {
-      uiScope: { ...call.scope, primary: options.primary ?? call.scope.primary },
+      uiScope: { ...scope, primary: options.primary ?? scope.primary },
       container,
       panelClassName,
       cancelBehavior,
@@ -877,5 +865,7 @@ export const holdDialogHistory = holdHistory;
  * `open` uses that call's palette and opener, and resolves `undefined` without opening when the page changed since.
  */
 export const captureDialogOpen = (): DialogCore["open"] => capture(dialogCore);
+/** Internal: the `open` of a call read earlier with `readDialogCall()`, for code that loads after the call. */
+export const dialogOpenFor = (call: DialogCall): DialogCore["open"] => capture(dialogCore, call);
 /** Internal: waits until released holders have left history or were forgotten during island disposal. */
 export const dialogHistorySettled = historySettled;
