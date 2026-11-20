@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import type { AiConversation } from "@k2b/cloud/ai";
 import type { Browser } from "playwright";
 import { chatDoneFact, chatDoneMessage } from "../../../../scripts/fixtures/chat-done";
@@ -35,7 +35,7 @@ const conversation = (id: string, title: string): AiConversation => ({
 });
 const chats = [conversation("Source", "Reise nach Lyon"), conversation("Target", "Hotels in Lyon")];
 let browser: Browser;
-let assets: ReturnType<typeof Bun.serve>;
+let staticAsset: (request: Request) => Response | undefined;
 const entry = resolve(import.meta.dir, "chat-done.browser-entry.tsx");
 const fakeLive = resolve(import.meta.dir, "chat-done.browser-live.ts");
 const entrySource = `import { LocaleProvider } from "@k2b/ui";
@@ -55,7 +55,8 @@ beforeAll(async () => {
     entrypoints: [entry],
     files: { [entry]: entrySource, [fakeLive]: fakeLiveSource },
     target: "browser",
-    format: "iife",
+    format: "esm",
+    splitting: true,
     minify: true,
     conditions: ["browser"],
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
@@ -78,11 +79,13 @@ beforeAll(async () => {
     ],
   });
   if (!build.success) throw new AggregateError(build.logs, "Could not bundle delegated-completion workspace.");
-  const script = await build.outputs[0]!.text();
+  const entryOutput = build.outputs.find((output) => output.kind === "entry-point")!;
+  const scripts = new Map(build.outputs.map((output) => [`/${basename(output.path)}`, output]));
+  scripts.set("/harness.js", entryOutput);
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", cloud))).default;
   const styles: string[] = [];
   for (const path of [resolve(import.meta.dir, "../styles/app.css"), resolve(import.meta.dir, "../../../../styles.css")]) {
-    const built = await Bun.build({ entrypoints: [path], plugins: [tailwind] });
+    const built = await Bun.build({ entrypoints: [path], plugins: [tailwind], minify: true });
     if (!built.success) throw new AggregateError(built.logs, "Could not compile workspace styles.");
     styles.push(await built.outputs[0]!.text());
   }
@@ -92,22 +95,18 @@ beforeAll(async () => {
     )
     .join("\n");
   const css = [fonts, "@layer properties, theme, base, components, utilities;", ...styles].join("\n");
-  assets = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch(request) {
-      const path = new URL(request.url).pathname;
-      if (path === "/harness.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
-      if (path === "/harness.css") return new Response(css, { headers: { "content-type": "text/css" } });
-      if (path.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", path.slice(4))));
-      return new Response("Not found", { status: 404 });
-    },
-  });
+  const cache = { "cache-control": "public, max-age=3600" };
+  staticAsset = (request) => {
+    const path = new URL(request.url).pathname;
+    const script = scripts.get(path);
+    if (script) return new Response(script, { headers: { "content-type": "text/javascript", ...cache } });
+    if (path === "/harness.css") return new Response(css, { headers: { "content-type": "text/css", ...cache } });
+    if (path.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", path.slice(4))), { headers: cache });
+  };
   browser = await launchBrowser();
 }, 180_000);
 afterAll(async () => {
   await browser?.close();
-  assets?.stop(true);
 });
 
 declare global {
@@ -179,87 +178,86 @@ const open = async (width: number, theme: string) => {
       },
     });
   }, Date.parse(now));
-  await page.route(`${assets.url.href}**`, async (route) => {
-    const url = new URL(route.request().url());
-    const path = url.pathname;
-    if (
-      path === "/harness.js" ||
-      path === "/harness.css" ||
-      path.startsWith("/ui/") ||
-      path === "/api/assistant/artifacts/runtime/chart-parts"
-    )
-      return route.continue();
-    if (path === "/app/assistant") {
-      const id = url.searchParams.get("conversation") ?? "Source";
-      const props = {
-        userId: "user123",
-        cloudUrl: assets.url.origin,
-        status: {
-          ok: true,
-          enabled: true,
-          status: "ok",
+  // Serve the isolated fixture over HTTP: Playwright routing disables its asset cache on every navigation.
+  const assets = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const asset = staticAsset(request);
+      if (asset) return asset;
+      const url = new URL(request.url);
+      const path = url.pathname;
+      if (path === "/app/assistant") {
+        const id = url.searchParams.get("conversation") ?? "Source";
+        const props = {
+          userId: "user123",
+          cloudUrl: url.origin,
+          status: {
+            ok: true,
+            enabled: true,
+            status: "ok",
+            selection: null,
+            effectiveDefault: { class: "balanced" },
+            classes: [],
+            visionModelConfigured: false,
+            error: null,
+            options: [],
+          },
+          models: [
+            { id: "standard", label: "Standard", description: "", icon: { kind: "mark", text: "AI", color: "0" }, classes: ["balanced"] },
+          ],
           selection: null,
-          effectiveDefault: { class: "balanced" },
-          classes: [],
-          visionModelConfigured: false,
-          error: null,
-          options: [],
-        },
-        models: [
-          { id: "standard", label: "Standard", description: "", icon: { kind: "mark", text: "AI", color: "0" }, classes: ["balanced"] },
-        ],
-        selection: null,
-        timeZone: "UTC",
-        renderedAt: now,
-        initialLiveCursor: "s6t.cloud-live-core.0",
-        initialConversations: chats,
-        initialDoneCount: 0,
-        initialQuestions: { items: [], count: 0 },
-        initialConversationId: id,
-        initialArtifactPath: null,
-        initialWorkspaceHref: path + url.search,
-        initialDetail: detail(id),
-        initialContext: null,
-        projects: [],
-        initialProject: null,
-        initialProjectChats: null,
-        initialProjectContext: null,
-        approvals: { page: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, open: false },
+          timeZone: "UTC",
+          renderedAt: now,
+          initialLiveCursor: "s6t.cloud-live-core.0",
+          initialConversations: chats,
+          initialDoneCount: 0,
+          initialQuestions: { items: [], count: 0 },
+          initialConversationId: id,
+          initialArtifactPath: null,
+          initialWorkspaceHref: path + url.search,
+          initialDetail: detail(id),
+          initialContext: null,
+          projects: [],
+          initialProject: null,
+          initialProjectChats: null,
+          initialProjectContext: null,
+          approvals: { page: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, open: false },
+        };
+        return new Response(
+          `<!doctype html><html lang="de" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;width:100%;height:100dvh"></div><script>window.harness=${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script type="module" src="/harness.js"></script></body></html>`,
+          { headers: { "content-type": "text/html", "cache-control": "no-store" } },
+        );
+      }
+      if (path === "/api/assistant/workspace/sidebar")
+        return Response.json({ conversations: chats, projects: [], doneCount: 0, questions: { items: [], count: 0 } });
+      const chat = /^\/api\/ai\/conversations\/(Source|Target)$/.exec(path);
+      if (chat) return Response.json(detail(chat[1]!));
+      if (path.endsWith("/draft") && request.method === "PUT") {
+        draft = (await request.json()).content;
+        return Response.json({ content: draft, revision: ++revision, updatedAt: now });
+      }
+      if (path.endsWith("/stream")) return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
+      if (path.endsWith("/viewed")) return new Response(null, { status: 204 });
+      if (path.endsWith("/queue")) return Response.json([]);
+      if (path.endsWith("/dictations")) return Response.json({ items: [], nextCursor: null });
+      if (path === "/api/approvals") return Response.json({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
+      if (path === "/api/capabilities/v1/queries/core/code.attention.list") return Response.json({ data: { items: [], nextCursor: null } });
+      if (path === "/api/capabilities/v1/catalog") return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
+      if (path.endsWith("/tabs")) return Response.json({ state: { tabs: [], layout: null, front: null }, revision: 0 });
+      const sidebar = /^\/api\/assistant\/workspace\/conversations\/(\w+)\/context$/.exec(path);
+      if (sidebar) return Response.json(emptySidebarSnapshot({ chatId: sidebar[1]! }));
+      if (path === "/api/assistant/workspace/web-reader") return Response.json({ available: false });
+      const empty: Record<string, unknown> = {
+        "/api/ai/resources/recent": { resources: [] },
+        "/api/ai/quotas": { enabled: false, balances: [] },
+        "/api/ai/skills": { skills: [] },
+        "/api/ai/tasks": [],
       };
-      return route.fulfill({
-        contentType: "text/html",
-        body: `<!doctype html><html lang="de" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;width:100%;height:100dvh"></div><script>window.harness=${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script type="module" src="/harness.js"></script></body></html>`,
-      });
-    }
-    if (path === "/api/assistant/workspace/sidebar")
-      return route.fulfill({ json: { conversations: chats, projects: [], doneCount: 0, questions: { items: [], count: 0 } } });
-    const chat = /^\/api\/ai\/conversations\/(Source|Target)$/.exec(path);
-    if (chat) return route.fulfill({ json: detail(chat[1]!) });
-    if (path.endsWith("/draft") && route.request().method() === "PUT") {
-      draft = route.request().postDataJSON().content;
-      return route.fulfill({ json: { content: draft, revision: ++revision, updatedAt: now } });
-    }
-    if (path.endsWith("/stream")) return;
-    if (path.endsWith("/viewed")) return route.fulfill({ status: 204 });
-    if (path.endsWith("/queue")) return route.fulfill({ json: [] });
-    if (path.endsWith("/dictations")) return route.fulfill({ json: { items: [], nextCursor: null } });
-    if (path === "/api/approvals") return route.fulfill({ json: { items: [], nextCursor: null, count: 0, elsewhere: 0 } });
-    if (path === "/api/capabilities/v1/queries/core/code.attention.list")
-      return route.fulfill({ json: { data: { items: [], nextCursor: null } } });
-    if (path === "/api/capabilities/v1/catalog") return route.fulfill({ json: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
-    if (path.endsWith("/tabs")) return route.fulfill({ json: { state: { tabs: [], layout: null, front: null }, revision: 0 } });
-    const sidebar = /^\/api\/assistant\/workspace\/conversations\/(\w+)\/context$/.exec(path);
-    if (sidebar) return route.fulfill({ json: emptySidebarSnapshot({ chatId: sidebar[1]! }) });
-    if (path === "/api/assistant/workspace/web-reader") return route.fulfill({ json: { available: false } });
-    const empty: Record<string, unknown> = {
-      "/api/ai/resources/recent": { resources: [] },
-      "/api/ai/quotas": { enabled: false, balances: [] },
-      "/api/ai/skills": { skills: [] },
-      "/api/ai/tasks": [],
-    };
-    if (path in empty) return route.fulfill({ json: empty[path] });
-    unknown.push(`${route.request().method()} ${path}`);
-    return route.fulfill({ status: 503, json: { message: "unavailable" } });
+      if (path in empty) return Response.json(empty[path]);
+      unknown.push(`${request.method} ${path}`);
+      return Response.json({ message: "unavailable" }, { status: 503 });
+    },
   });
   try {
     await page.goto(`${assets.url.origin}/app/assistant?conversation=Source`);
@@ -268,10 +266,14 @@ const open = async (width: number, theme: string) => {
   } catch (error) {
     console.error("Completion workspace errors:", errors);
     await context.close();
+    assets.stop(true);
     throw error;
   }
   return {
-    context,
+    close: async () => {
+      await context.close();
+      assets.stop(true);
+    },
     page,
     errors,
     unknown,
@@ -298,6 +300,12 @@ const open = async (width: number, theme: string) => {
       expect(await line.textContent()).toContain("3 Hotels verglichen, eines unter 120 €");
       expect(await line.textContent()).toContain("heute, 10:19");
       expect(await result.getAttribute("aria-label")).toBe("Ergebnis ansehen: Hotels in Lyon");
+      const rowBox = await line.boundingBox();
+      const actionBox = await result.boundingBox();
+      expect(rowBox).not.toBeNull();
+      expect(actionBox).not.toBeNull();
+      // A completion has no duration/end cells; its action reaches the row's edge at either width.
+      expect(Math.abs(actionBox!.x + actionBox!.width - rowBox!.x - rowBox!.width)).toBeLessThan(1);
       return result;
     },
   };
@@ -311,7 +319,7 @@ for (const width of [390, 1440])
         view = await open(width, theme);
       });
       afterEach(async () => {
-        await view?.context.close();
+        await view?.close();
       });
 
       test("a completion preserves composer and answer geometry, draft and focus", async () => {
