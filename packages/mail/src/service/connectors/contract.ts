@@ -7,6 +7,7 @@ import type {
   ProviderLimitSnapshot,
   ProviderSecret,
   RemoteFolder,
+  RemoteMessageRef,
   SmtpTransportCapabilities,
 } from "../../contracts";
 import type { MessageProtocolFacts } from "../message-protocol";
@@ -40,6 +41,11 @@ export type ConnectorEnvelope = {
     bcc: ConnectorAddress[];
   };
   mimeStructure: Record<string, unknown>;
+};
+
+/** Content projection accepts either locator; IMAP transport batches stay UID-addressed. */
+export type ProjectionEnvelope = Omit<ConnectorEnvelope, "remoteRef"> & {
+  remoteRef: RemoteMessageRef;
 };
 
 export type EnvelopeBatchRequest = {
