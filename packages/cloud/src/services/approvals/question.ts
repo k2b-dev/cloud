@@ -59,8 +59,8 @@ export const pendingApprovalReview = (
 
 /**
  * Resolve the recorded question in the language and time zone of its originating turn. A review in the current form
- * carries that turn's language itself, also when the turn records none, such as an inter-chat message; Cloud Login,
- * app approval inboxes, and notifications read it in that language. Pages render the card in their reader's language.
+ * carries that turn's language itself, also when the turn records none; Cloud Login, app approval inboxes, and
+ * notifications read it in that language. Pages render the card in their reader's language.
  */
 export const pendingApprovalCard = (
   row: PendingApprovalRow,

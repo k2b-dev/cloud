@@ -421,7 +421,6 @@ suite("JMAP account commit", () => {
     await run();
     expect((await counts()).receipts, "flags: no receipt").toBe(1);
     expect(new Set((await placements()).map((row) => row.message_id)).size, "move: original identity").toBe(1);
-    expect((await counts()).receipts, "replay and moves: exactly one durable trigger").toBe(1);
   });
   for (const excluded of ["disabled", "updated", "trash", "junk", "outbound"] as const) {
     test(`receipt exclusion: ${excluded}`, async () => {
