@@ -489,7 +489,9 @@ export type AiTurnSteer = {
   consumedAt: string | null;
 };
 
-export type AiTurnSteerEnqueueResult = { ok: true; steer: AiTurnSteer } | { ok: false; reason: "not_found" | "not_chat" | "not_active" };
+export type AiTurnSteerEnqueueResult =
+  | { ok: true; steer: AiTurnSteer }
+  | { ok: false; reason: "not_found" | "not_chat" | "not_active" | "forbidden" };
 
 export type AiTurnCompletionResult = "completed" | "interrupted" | "pending_steering" | "waiting_for_client" | "lost";
 
@@ -767,7 +769,7 @@ export type AiChatTurnRunConfig = {
   /** Server-owned marker for interactive Assistant chat: personal model selection and chat quotas. Model grants apply to every turn. */
   assistantChat?: true;
   /**
-   * Server-owned marker: a person started this turn in a signed-in browser session, not through `cld`, an API key,
+   * Server-owned marker: a person started this turn in a signed-in session (browser or Cloud app), not through `cld`, an API key,
    * a delegated account, or a schedule. Only such a turn uses website approvals.
    */
   signedInSession?: true;
@@ -1192,6 +1194,8 @@ export type AiConversationService = {
     text: string;
     /** Whether the text comes from a person's signed-in session; otherwise it restricts the turn. */
     signedInSession: boolean;
+    /** Who adds the text; the steer runs with the turn's own actor. */
+    actor: RequestActor;
   }): Promise<AiTurnSteerEnqueueResult>;
   listTurnSteers(input: { conversationId: string; turnId: string }): Promise<AiTurnSteer[]>;
   /** Atomically make pending steers visible to the model and return them in order. */

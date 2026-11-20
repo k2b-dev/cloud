@@ -122,6 +122,7 @@ import { compileAppPresentation } from "./app-presentation";
 import { readBoundedJson } from "./bounded-json";
 import { appRuntimeMetadata, buildMetadata } from "./build-metadata";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability, serializeCapabilityProviderResult } from "./capabilities";
+import { catalogIslandVariants } from "./catalog-variants";
 import { cliPluginRoutePrefixes, createCliPluginRoutes, validateAppCliModules } from "./cli-plugins";
 import { FONT_PRELOAD_LINKS } from "./font-preloads";
 import { createHeartbeat, createRegistryMembership } from "./heartbeat";
@@ -578,6 +579,8 @@ export const defineApp = <
     // Every island instance already mounts inside its own error boundary; this
     // only gives the fallback Cloud's look and the reader's language.
     errorFallback: fileURLToPath(new URL("../ssr/IslandError.tsx", import.meta.url)),
+    // Production islands ship only the request language's messages.
+    variants: catalogIslandVariants<ResolvedPageOptions>(),
     template: ({
       body,
       scripts,

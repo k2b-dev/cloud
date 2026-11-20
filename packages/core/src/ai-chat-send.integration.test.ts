@@ -248,8 +248,8 @@ suiteFor(
     if (!accepted.ok) throw new Error(accepted.error.message);
     const sent = dataSchema.parse(accepted.data.data);
     expect(
-      await editQueuedMessage(chat.id, sent.id, "Edited from the terminal", { signedInSession: false, authorUserId: owner }),
-    ).toBeTrue();
+      await editQueuedMessage(chat.id, sent.id, "Edited from the terminal", { signedInSession: false, author: { kind: "user", user } }),
+    ).toBe("edited");
     await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     expect(turn).not.toBeNull();

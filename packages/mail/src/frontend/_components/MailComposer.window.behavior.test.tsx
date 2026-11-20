@@ -186,7 +186,11 @@ describe("MailComposer in a floating window", () => {
         if (path.endsWith("/safety-review"))
           return Response.json({ revision: 1, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) });
         if (path.endsWith("/commands")) {
-          if (commandFailure) return Response.json({ code: "SEND_FAILED", message: commandFailure }, { status: 503 });
+          if (commandFailure)
+            return Response.json(
+              { code: commandFailure.startsWith("At least one recipient") ? "BAD_INPUT" : "SEND_FAILED", message: commandFailure },
+              { status: commandFailure.startsWith("At least one recipient") ? 400 : 503 },
+            );
           return Response.json({ id: crypto.randomUUID(), result: { outboxSubmissionId: "Dlv001", conversationId: "Conv01" } });
         }
         throw new Error(`Unexpected request: ${request.method} ${path}`);
@@ -394,6 +398,52 @@ describe("MailComposer in a floating window", () => {
     await waitFor(() => !dom.root.querySelector("[data-mail-quote-card][data-loading]"));
     expect(dom.root.querySelector("[data-mail-quote-card]")).toBeNull();
     expect(dom.root.querySelector("[data-mail-quote-add]")).toBeNull();
+  });
+
+  test("Send without recipients marks the To field, puts the caret there, and sends nothing", async () => {
+    await mount({ draft: { ...initialDraft, to: [], subject: "" }, fullscreen: () => true });
+    sendButton()!.click();
+    const control = () => dom.root.querySelector<HTMLElement>(".mail-inline-draft-recipients .mail-recipient-control")!;
+    await waitFor(() => control().hasAttribute("data-missing"));
+    const input = control().querySelector<HTMLInputElement>("input")!;
+    // The reason stands inside the empty field, where its placeholder was: the field keeps its size.
+    expect(input.placeholder).toBe("Add at least one recipient.");
+    expect(control().getAttribute("data-invalid")).toBe("true");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(dom.document.getElementById(input.getAttribute("aria-describedby")!)?.textContent).toBe("Add at least one recipient.");
+    await waitFor(() => dom.document.activeElement === input);
+    // Nothing goes out, and no toast offers to try the same send again.
+    await Bun.sleep(50);
+    expect(requests.some((request) => request.endsWith("/commands"))).toBe(false);
+    expect(dom.document.querySelector(".k2b-toast")).toBeNull();
+    expect(leaves).toEqual([]);
+    // Typing clears the mark.
+    input.value = "lena@example.test";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => !control().hasAttribute("data-missing"));
+  });
+
+  test("the normal window: Send without recipients marks the To field and sends nothing", async () => {
+    await mount({ draft: { ...initialDraft, to: [], subject: "" } });
+    sendButton()!.click();
+    const control = () => dom.root.querySelector<HTMLElement>(".mail-recipient-control")!;
+    await waitFor(() => control().hasAttribute("data-missing"));
+    expect(control().querySelector<HTMLInputElement>("input")!.placeholder).toBe("Add at least one recipient.");
+    await Bun.sleep(50);
+    expect(requests.some((request) => request.endsWith("/commands"))).toBe(false);
+    expect(dom.document.querySelector(".k2b-toast")).toBeNull();
+    expect(leaves).toEqual([]);
+  });
+
+  test("a server that refuses the send stays visible: the toast names its reason", async () => {
+    commandFailure = "At least one recipient is required before sending";
+    await mount();
+    sendButton()!.click();
+    const toastCard = () => dom.document.querySelector<HTMLElement>("[data-k2b-toast-container] .k2b-toast");
+    await waitFor(() => Boolean(toastCard()));
+    expect(toastCard()!.querySelector(".k2b-toast__title")?.textContent).toBe("Not sent");
+    expect(toastCard()!.textContent).toContain("At least one recipient is required before sending");
+    expect(leaves).toEqual([]);
   });
 
   test("a send that fails keeps the window with its text; a toast names the reason and Send stays in place", async () => {

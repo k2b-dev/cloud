@@ -14,7 +14,10 @@ export type AiChatRequestContext = {
   modelPolicy: AiModelPolicy;
   toolApprovalContext: AiToolApprovalContext;
   toolApprovalChangeContext: AiToolApprovalChangeContext;
-  /** A person in a signed-in browser session, not `cld`, an API key, or another delegated credential. */
+  /**
+   * A person in a signed-in session, not `cld`, an API key, or another delegated credential. This includes a session of
+   * the mobile app; its actor carries `sessionKind: "app"`.
+   */
   signedInSession: boolean;
 };
 

@@ -795,7 +795,8 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             "Erstellen Sie einen idempotenten, bearbeitbaren E-Mail-Entwurf mit einem optionalen kleinen Inline-Anhang. Für Gustav und andere Dienstkonten ist dies ein Vorschlag, den Personen in der Unterhaltung mit dem Namen des Kontos sehen. Nach der ersten Bearbeitung durch eine Person darf das Konto ihn nur noch auf deren Wunsch ändern. Pro Unterhaltung und Konto gibt es höchstens einen unberührten Vorschlag; ein weiterer Aufruf desselben Kontos gibt dessen Vorschlag zurück, nie den eines anderen Kontos.",
           input: {
             senderIdentityId: "Verifizierte Absenderidentität ID.",
-            quoteSource: "Lesbare Quellnachricht nach der Signatur anhängen; standardmäßig aus.",
+            quoteSource:
+              "Lesbare Quellnachricht nach der Signatur anhängen; null lässt sie weg. Weggelassen zitiert eine Antwort oder Allen antworten mit Quellnachricht oder Unterhaltung diese in der Sprache der Anfrage und der Zeitzone der Installation (sonst UTC), außer der Text zitiert selbst (Markdown-Zitatzeile oder HTML-blockquote).",
             signatureTemplateId:
               "Signaturvorlage nach dem Text oder null für keine; weglassen verwendet die Standardsignatur des Absenders.",
             to: "Hauptempfänger.",

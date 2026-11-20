@@ -47,6 +47,7 @@ import { withAiShortIdForDb } from "./short-id";
 import { parseAiTodoPlan } from "./todo-contracts";
 import { queuedClientInterruptionState } from "./turn-interruption";
 import { activeTurnWaits } from "./turn-timing";
+import { mayWriteIntoAiTurn } from "./turn-writer";
 import type {
   AiConversation,
   AiConversationDraft,
@@ -4139,6 +4140,7 @@ export const aiConversations: AiConversationService = {
       if (!turn) return { ok: false, reason: "not_found" as const };
       const runConfig = turn.run_config ? parseJsonValue<AiTurnRunConfig>(turn.run_config) : null;
       if (runConfig?.kind === "compact") return { ok: false, reason: "not_chat" as const };
+      if (!mayWriteIntoAiTurn(input.actor, runConfig?.actor)) return { ok: false, reason: "forbidden" as const };
       if (!(["queued", "running", "waiting_for_action"] as AiTurnStatus[]).includes(turn.status)) {
         return { ok: false, reason: "not_active" as const };
       }

@@ -1,3 +1,4 @@
+import type { Readable } from "node:stream";
 import { z } from "zod";
 import type { FolderRole, RemoteFolder } from "../../contracts";
 import { jmapFolderStableKey } from "../provider-identity";
@@ -12,13 +13,16 @@ import {
   type JmapAccess,
   JmapError,
   type JmapSession,
+  jmapDownloadUrl,
   jmapIdSchema,
   requireJmapMethodResult,
   validateJmapId,
 } from "./jmap-client";
 import { JMAP_EMAIL_BODY_PROPERTIES, JMAP_EMAIL_PROPERTIES, type JmapEmailSnapshot, jmapEmailSnapshotSchema } from "./jmap-email";
 import { jmapStateSchema } from "./jmap-sync-state";
-import { type JmapTransportDependencies, JmapTransportError } from "./jmap-transport";
+import { consumeJmapDownload, type JmapTransportDependencies, JmapTransportError } from "./jmap-transport";
+
+import { MAX_IMAP_LITERAL_BYTES } from "./source-limits";
 
 function primaryMailAccount(session: JmapSession) {
   if (!session.capabilities[JMAP_MAIL] || !session.capabilities[JMAP_SUBMISSION]) throw new JmapError("JMAP_CAPABILITY");
@@ -329,4 +333,89 @@ export function parseJmapEmailGet(value: unknown, accountId: string, ids: readon
   }
   if (remaining.size) throw new JmapError("JMAP_INVALID_RESPONSE");
   return page;
+}
+
+const emailBlobGetSchema = z.object({
+  accountId: jmapIdSchema,
+  state: jmapStateSchema,
+  list: z.array(z.object({ id: jmapIdSchema, blobId: jmapIdSchema, size: z.number().int().nonnegative() })),
+  notFound: z.array(jmapIdSchema),
+});
+
+/** Transient source references only; no blob ID is persisted. */
+export async function readJmapEmailBlobs(
+  session: JmapSession,
+  authorization: string,
+  accountId: string,
+  emailIds: readonly string[],
+  signal: AbortSignal,
+  deps: JmapTransportDependencies = {},
+): Promise<{ objects: Array<{ id: string; blobId: string; size: number }>; notFoundIds: string[] }> {
+  validateJmapId(accountId);
+  const account = Object.hasOwn(session.accounts, accountId) ? session.accounts[accountId] : undefined;
+  if (!account) throw new JmapError("JMAP_ACCOUNT");
+  if (!session.capabilities[JMAP_MAIL] || !account.accountCapabilities[JMAP_MAIL]) throw new JmapError("JMAP_CAPABILITY");
+  for (const id of emailIds) validateJmapId(id);
+  if (new Set(emailIds).size !== emailIds.length) throw new JmapError("JMAP_INVALID_ID");
+  const objects: Array<{ id: string; blobId: string; size: number }> = [];
+  const notFoundIds: string[] = [];
+  let batchSize = Math.min(ENVELOPE_BATCH_SIZE, session.core.maxObjectsInGet);
+  for (let offset = 0; offset < emailIds.length; ) {
+    if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
+    const batch = emailIds.slice(offset, offset + batchSize);
+    let response: Awaited<ReturnType<typeof callJmap>>;
+    try {
+      response = await callJmap(
+        {
+          session,
+          authorization,
+          signal,
+          using: [JMAP_CORE, JMAP_MAIL],
+          methodCalls: [["Email/get", { accountId, ids: batch, properties: ["id", "blobId", "size"] }, "blobs"]],
+          maxBytes: JMAP_JSON_BYTES,
+        },
+        deps,
+      );
+    } catch (error) {
+      if (!(error instanceof JmapTransportError) || error.code !== "JMAP_TOO_LARGE") throw error;
+      if (batch.length === 1) throw new JmapError("JMAP_EMAIL_TOO_LARGE");
+      batchSize = Math.max(1, Math.floor(batch.length / 2));
+      continue;
+    }
+    const parsed = emailBlobGetSchema.safeParse(requireJmapMethodResult(response, "blobs", "Email/get"));
+    if (!parsed.success || parsed.data.accountId !== accountId) throw new JmapError("JMAP_INVALID_RESPONSE");
+    const page = parsed.data;
+    const remaining = new Set(batch);
+    for (const id of [...page.list.map((email) => email.id), ...page.notFound]) {
+      if (!remaining.delete(id)) throw new JmapError("JMAP_INVALID_RESPONSE");
+    }
+    if (remaining.size) throw new JmapError("JMAP_INVALID_RESPONSE");
+    objects.push(...page.list);
+    notFoundIds.push(...page.notFound);
+    offset += batch.length;
+  }
+  if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
+  return { objects, notFoundIds };
+}
+
+export async function downloadJmapEmailSource<T>(
+  session: JmapSession,
+  authorization: string,
+  accountId: string,
+  blobId: string,
+  expectedSize: number,
+  consume: (source: Readable) => Promise<T>,
+  signal: AbortSignal,
+  deps: JmapTransportDependencies = {},
+): Promise<T> {
+  validateJmapId(accountId);
+  validateJmapId(blobId);
+  if (!Object.hasOwn(session.accounts, accountId)) throw new JmapError("JMAP_ACCOUNT");
+  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) throw new JmapError("JMAP_INVALID_RESPONSE");
+  if (expectedSize > MAX_IMAP_LITERAL_BYTES) throw new JmapTransportError("JMAP_TOO_LARGE");
+  return consumeJmapDownload(
+    { url: jmapDownloadUrl(session, accountId, blobId), method: "GET", authorization, maxBytes: MAX_IMAP_LITERAL_BYTES, signal },
+    consume,
+    deps,
+  );
 }

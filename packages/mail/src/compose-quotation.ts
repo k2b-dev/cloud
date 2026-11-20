@@ -59,6 +59,31 @@ ${t.to}: ${message.to.map(formatMailAddress).join(", ") || t.undisclosedRecipien
 ${messageForwardTextOf(message)}`;
 };
 
+/**
+ * Whether a body quotes on its own, as "Quote selection" does: a Markdown quote line or an HTML blockquote outside code
+ * blocks. Then the whole original stays out, so nothing goes along twice.
+ */
+export const bodyQuotes = (body: string): boolean => {
+  const prose = body.replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1[^\n]*$/gm, "");
+  return /^ {0,3}>/m.test(prose) || /<blockquote\b/i.test(prose);
+};
+
+/**
+ * The quote a reply draft gets when its caller does not choose: a reply or reply all with a source message quotes it,
+ * unless the body quotes on its own. An explicit choice, null included, always wins.
+ */
+export const defaultReplyQuoteSource = <T>(params: {
+  quoteSource: T | null | undefined;
+  intent: string | undefined;
+  sourceMessageId: string | null | undefined;
+  body: string;
+  quote: () => T;
+}): T | null => {
+  if (params.quoteSource !== undefined) return params.quoteSource;
+  const replies = params.intent === "reply" || params.intent === "reply_all";
+  return replies && params.sourceMessageId && !bodyQuotes(params.body) ? params.quote() : null;
+};
+
 export const quoteReplyBody = (
   message: QuoteMessage,
   selectedText: string,

@@ -12,6 +12,11 @@ createConfig({
   external?: string[];
   devSourcemap?: "none" | "linked" | "inline";
   errorFallback?: string;
+  variants?: {
+    names: readonly string[]; // lowercase; the first is the default build
+    select: (options) => string | undefined; // per html() call, from the template options
+    transform: (source, path, variant) => string | Promise<string>; // one browser module for one variant
+  };
   template?: ({ body, scripts, ...custom }) => string | Promise<string>;
 })
 ```
@@ -27,6 +32,7 @@ Notes:
 - stable development entries and source maps revalidate; content-hashed chunks and all production assets use immutable caching
 - production module URLs use one content-hashed directory under `config.ssrPath`, stable across restarts and identical builds from the same build path; relative imports retain the same version, and adapters reject other versions. Deploy the whole `_ssr` directory, including `_ssr/manifest.json`, next to the server bundle
 - the production inline loader preloads rendered islands' shared static imports after the page's stylesheets; dynamic imports stay lazy. It creates modulepreload links at runtime so the HTML preload scanner does not compete with first paint
+- `variants` builds production islands once per name, for example per language, and `select` picks the build each page loads; an unknown or missing name loads the default. `transform` rewrites every reachable browser module (packages included) before the Solid transform and never runs on the server, so a variant must render what the full module renders for the pages that select it. The default build keeps `_ssr/`; other variants build into `_ssr/<name>/` with their own content version and URL directory, listed under `variants` in `_ssr/manifest.json`. A short Babel-free discovery build lists the modules first; rewritten modules enter the build as in-memory files, so `with { type: "file" }` imports keep their loader. Development ignores `variants` and builds once without `transform`
 - `html()` accepts a synchronous render function: `html(() => <Page />)`
 - `html()` always injects framework assets, including the SSR loader and wrapper styling
 
