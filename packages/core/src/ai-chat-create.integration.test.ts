@@ -14,8 +14,9 @@ import {
   drainQueuedMessages,
   enrichDirtyAiConversations,
   invokeCompiledCapability,
+  reviewCompiledCapability,
+  serializeCapabilityProviderResult,
 } from "../../../scripts/fixtures/code-platform";
-import { reviewCompiledCapability, serializeCapabilityProviderResult } from "../../cloud/src/_internal/capabilities";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 import { aiChatCreateAction } from "./ai-chat-create";
 import { aiChatSendAction } from "./ai-chat-send";
@@ -335,7 +336,10 @@ suiteFor(
           }),
           signInvocation: signInvocationToken,
           withActiveSigner: async (_purpose, use) =>
-            use({ kid: "gustav", key: privateKey, issuer: "https://cloud.test", signUntil: new Date(Date.now() + 60_000), groupsAdmin: [] }, sql),
+            use(
+              { kid: "gustav", key: privateKey, issuer: "https://cloud.test", signUntil: new Date(Date.now() + 60_000), groupsAdmin: [] },
+              sql,
+            ),
           // Core receives the signed invocation; its delegation names the token, and the action reads the stored lease.
           fetch: async (url, init) => {
             const token = new Request(url, init).headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
@@ -346,11 +350,22 @@ suiteFor(
               actor: {
                 kind: "user",
                 user,
-                delegation: { kind: "invocation", credentialKind: "session", callingAppId: "core", invocationId: String(decodeJwt(token).jti) },
+                delegation: {
+                  kind: "invocation",
+                  credentialKind: "session",
+                  callingAppId: "core",
+                  invocationId: String(decodeJwt(token).jti),
+                },
               },
             };
             const result = review
-              ? await reviewCompiledCapability({ compiled, localId: "ai.chat.create", input, expectedSchemaHash: action.manifest.schemaHash, context })
+              ? await reviewCompiledCapability({
+                  compiled,
+                  localId: "ai.chat.create",
+                  input,
+                  expectedSchemaHash: action.manifest.schemaHash,
+                  context,
+                })
               : await invoke(context, input.title);
             if (review) reviews.push(result.ok ? "ok" : result.error.code);
             const serialized = serializeCapabilityProviderResult(result, { review, nonIdempotentAction: false });

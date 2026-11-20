@@ -568,8 +568,7 @@ const runCapabilityDispatch = async (
 
   const invocationOperation = capabilityInvocationOperation(params.kind, params.capabilityId, params.review);
   const mandate = params.mandate;
-  const leaseSource =
-    !params.codeRun && !params.parentInvocation && (mandate || params.authority?.credentialProof || params.assistantTurn);
+  const leaseSource = !params.codeRun && !params.parentInvocation && (mandate || params.authority?.credentialProof || params.assistantTurn);
   // An Assistant or choice call without its turn (resource and origin readers) cannot carry turn authority. It keeps
   // working without nesting; the debug line names why, instead of a lease that cannot be stored.
   const leaseTurnMatches = nestedLeaseTurnMatches(params.origin, !!params.assistantTurn);
