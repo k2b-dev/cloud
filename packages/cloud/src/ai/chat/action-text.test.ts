@@ -18,7 +18,7 @@ const textFor = (locale: "de" | "en", preview: CapabilityPreview, overrides: Par
     preview,
     ...overrides,
   };
-  return actionCardText(reviewActionCard(review, { locale: "en", timeZone: "Europe/Berlin", app: { name: "Mail", icon: "ti ti-mail" } }));
+  return actionCardText(reviewActionCard(review, { locale, timeZone: "Europe/Berlin", app: { name: "Mail", icon: "ti ti-mail" } }));
 };
 const options = {
   timeZone: "Europe/Berlin",
@@ -489,4 +489,18 @@ test("a consent-dependent review does not claim the app always asks", () => {
     const mandatory = textFor(locale, message, { ask: "app_asks" });
     expect(mandatory.reason).toContain(locale === "en" ? "always asks" : "jedes Mal");
   }
+});
+
+test("a card reads in the reader's language; the app's stored sentence stays as written", () => {
+  const review: CapabilityActionCallReview = {
+    locale: "de",
+    slots: {},
+    ask: "sends",
+    sentence: { action: "Nachricht senden", running: "Wird gesendet …", done: "Gesendet.", confirm: "Senden", decline: "Nicht senden" },
+    preview: message,
+  };
+  const text = actionCardText(reviewActionCard(review, { locale: "en", timeZone: "UTC", app: { name: "Mail", icon: "ti ti-mail" } }));
+  expect(text.question).toContain("Nachricht senden");
+  expect(text.rows.map((row) => row.label)).toContain("To");
+  expect(text.rows.map((row) => row.label)).not.toContain("An");
 });

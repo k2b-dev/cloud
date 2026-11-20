@@ -50,7 +50,7 @@ import {
   mailAutomationActionKindsFor,
 } from "./mail-automation-actions";
 import { waitForMailPageTransition } from "./mail-page-transition";
-import { mailRemainingMessages } from "./mail-remaining-messages";
+import { mailPresetDescriptionMessages, mailRemainingMessages } from "./mail-remaining-messages";
 
 export type IncomingAutomationPreset = "blank" | "ai-route" | "ai-tag" | "ai-draft";
 
@@ -63,9 +63,9 @@ const useMessages = () => {
 };
 const choice = (name: string, description: string) => ({ name, description });
 const localizedPresetChoiceDescription = (description: string, locale: string): string => {
-  const english = mailRemainingMessages.resolve(["en"]).t;
-  const german = mailRemainingMessages.resolve(["de"]).t;
-  const messages = mailRemainingMessages.resolve([locale]).t;
+  const english = mailPresetDescriptionMessages.resolve(["en"]).t;
+  const german = mailPresetDescriptionMessages.resolve(["de"]).t;
+  const messages = mailPresetDescriptionMessages.resolve([locale]).t;
   if (description === english.importantDescription || description === german.importantDescription) return messages.importantDescription;
   if (description === english.routineDescription || description === german.routineDescription) return messages.routineDescription;
   return description;
@@ -223,9 +223,13 @@ const classificationSteps = (
   locale = browserLocale(),
 ): MailAutomationStep[] => {
   const messages = mailRemainingMessages.resolve([locale]).t;
+  const descriptions = mailPresetDescriptionMessages.resolve([locale]).t;
   const available = mailAutomationActionKindsFor({ actions, catalog, later });
   const fallbackAction = nextMailAction(actions, catalog, branchActionOrder, later);
-  const choices = [choice(messages.important, messages.importantDescription), choice(messages.routine, messages.routineDescription)];
+  const choices = [
+    choice(messages.important, descriptions.importantDescription),
+    choice(messages.routine, descriptions.routineDescription),
+  ];
   const classifier: MailAutomationStep = many
     ? {
         id: stepId(),

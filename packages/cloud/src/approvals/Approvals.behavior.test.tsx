@@ -47,7 +47,7 @@ describe("Approvals", () => {
   }
 
   const mount = async (
-    props: { initial?: ApprovalPage; layout?: "list" | "band"; app?: string },
+    props: { initial?: ApprovalPage; layout?: "list" | "band"; app?: string; locale?: string },
     answer: (url: string, init?: RequestInit) => Response | Promise<Response>,
   ) => {
     const dom = createDomTestHarness();
@@ -62,8 +62,17 @@ describe("Approvals", () => {
       { preconnect: originalFetch.preconnect },
     );
     const { Approvals } = await import("@k2b/cloud/approvals/ui");
+    const { LocaleProvider } = await import("@k2b/ui");
     delegateEvents(["click"]);
-    const dispose = render(() => <Approvals app={props.app ?? "assistant"} initial={props.initial} layout={props.layout} />, dom.root);
+    // The reader's locale: a card follows the person reading it, not the language its review was written in.
+    const dispose = render(
+      () => (
+        <LocaleProvider locale={props.locale ?? "en"}>
+          <Approvals app={props.app ?? "assistant"} initial={props.initial} layout={props.layout} />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
     return {
       dom,
       requests,
@@ -116,7 +125,8 @@ describe("Approvals", () => {
         // The unlinked case contains the complete text. A truncated review must keep its revision link.
         const review = linked ? source : { ...source, preview: { ...source.preview, truncated: false }, links: [] };
         const view = await mount(
-          { initial: page([item("parity", { review, createdAt: FIXTURE_AT, expiresAt: "2026-10-18T12:02:00.000Z" })]) },
+          // The reader reads the review's language, as the chat card below is shown in it.
+          { initial: page([item("parity", { review, createdAt: FIXTURE_AT, expiresAt: "2026-10-18T12:02:00.000Z" })]), locale },
           () => Response.json({ status: "rejected" }),
         );
         const { toolActionCard } = await import("../ai/chat/action-card");
@@ -166,7 +176,7 @@ describe("Approvals", () => {
     }
   }
 
-  test("a review in another language keeps that language in its outcome line too", async () => {
+  test("an English reader sees a German review's own sentence with Cloud's English detail", async () => {
     const { actionFixtures } = await import("../ai/chat/action-question.fixtures");
     const review = actionFixtures("de").mail!.block.review!;
     if (!("sentence" in review)) throw new Error("Expected a new review");
@@ -176,9 +186,14 @@ describe("Approvals", () => {
       await Bun.sleep(550);
       row().querySelectorAll<HTMLButtonElement>(".k2b-chat-decision__answer")[1]!.click();
       await waitFor(() => row().dataset.decided === "rejected", "the outcome");
-      const line = row().querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent ?? "";
-      expect(line).toContain("Du hast abgelehnt.");
-      expect(line).not.toContain("You declined.");
+      const outcome = row().querySelector<HTMLElement>('.k2b-chat-outcome__text[data-current="true"]')!;
+      // A person in the sentence carries an avatar whose initials are text too; read the sentence without them.
+      const words = outcome.cloneNode(true) as HTMLElement;
+      for (const avatar of words.querySelectorAll(".k2b-avatar")) avatar.remove();
+      const line = words.textContent ?? "";
+      // The app's stored sentence stays German; Cloud's words follow the reader, who reads English here.
+      expect(line).toContain("Mail Wartungsfenster Dienstag an Lea Berg nicht gesendet. You declined.");
+      expect(line).not.toContain("Du hast abgelehnt.");
     } finally {
       view.cleanup();
     }
