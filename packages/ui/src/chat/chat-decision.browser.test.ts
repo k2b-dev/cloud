@@ -418,6 +418,7 @@ test("an answer that still runs takes no second press, held key, Space or double
           return { x, y, width, height };
         }),
       );
+    await settled(page);
     const before = await row();
     await confirm.focus();
     // A held Enter repeats its keydown; each one is a click on a native button.
@@ -433,6 +434,7 @@ test("an answer that still runs takes no second press, held key, Space or double
     expect(await confirm.getAttribute("aria-busy")).toBe("true");
     expect(await page.getByRole("button", { name: "Keep version 4", exact: true }).getAttribute("aria-disabled")).toBe("true");
     // Waiting moves nothing and keeps the answers in the focus order.
+    await settled(page);
     expect(await row()).toEqual(before);
     await confirm.focus();
     expect(await confirm.evaluate((e) => e === document.activeElement)).toBe(true);
