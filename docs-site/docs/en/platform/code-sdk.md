@@ -845,6 +845,47 @@ or the recovery window expires. A consumed date does not run again after a resta
 activation. The automation list shows its `at`, `timeZone`, and a null
 `nextRunAt` once consumed or expired.
 
+## Start a new Gustav chat
+
+Use `core.ai.chat.create({ title, project?, idempotencyKey })` to create an empty
+personal chat. The title contains 1–120 characters and remains unchanged by
+the first message and automatic enrichment. Titles made only of controls or
+invisible format characters are rejected; direction controls are removed and
+emoji joiners are preserved. An optional `project` is a
+`{ type: "core.ai.project", id }` ref to a Project the owner can currently read.
+The result is `{ chat: { type: "core.ai.chat", id }, open }`.
+
+```ts
+const created = await core.ai.chat.create({
+  title: "Weekly briefing",
+  idempotencyKey: "weekly-briefing-chat",
+});
+await core.ai.chat(created.chat.id).send({
+  text: "Prepare my weekly briefing in this chat.",
+  idempotencyKey: "weekly-briefing:first-message",
+});
+```
+
+Creating a chat uses `silent_you`; it does not run a model or consume an AI
+turn. `send` is a separate Action with its own key and AI admission. The same
+creation key and input recover the original active chat for the same person,
+including across different Codes. Gustav derives its key from the conversation
+and tool call, so it deduplicates only approval or replay of that same tool call.
+Changed input returns `IDEMPOTENCY_CONFLICT`. An archived or deleted result
+returns `chat_unavailable`; replay never creates a replacement. Use a new key
+when the person intends another chat.
+
+When passed as an `ai.generate` tool, creation lets the model choose titles and
+create chats within the run’s existing call and tool-round limits. Supply the
+Action directly in Code when its title and creation key must stay fixed.
+
+Creation uses the same source-authority and chain checks as `send`: unrestricted
+person sessions, person-initiated Gustav turns and personal Code are allowed.
+App sessions and tool-limited source chats return `source_restricted`. A turn
+started by Code or another chat cannot create a chat (`chat_chain_forbidden`).
+Service accounts cannot create personal chats. Gustav asks the person the first
+time and can remember their choice through the normal `silent_you` approval.
+
 ## Write to your Gustav chat
 
 When Gustav uses `ai.chat.send` from one chat to another, Cloud adds a completion
@@ -955,7 +996,7 @@ text or context under that key returns `idempotency_conflict`. The accepted
 receipt keeps its original destination after a chat-binding change, queue
 removal, or a later budget refusal. A new destination needs a new key.
 
-Automation and inter-chat sends have 32 pending places per chat, separate from
+Sends from Code and from other chats have 32 pending places per chat, separate from
 the person's composer queue. Each source Code or source chat can occupy one
 place in a destination chat. Further sends return `chat_busy`; use a later
 scheduled run to try again. Cloud rechecks ownership, source authority, enabled

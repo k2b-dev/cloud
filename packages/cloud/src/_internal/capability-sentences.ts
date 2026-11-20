@@ -36,8 +36,8 @@ export type CapabilitySentencePlaceholder = { source: "input" | "data"; path: st
 type Part = string | CapabilitySentencePlaceholder;
 
 const PLACEHOLDER = /\{(input|data)\.([A-Za-z_][\w-]*(?:\[\])?(?:\.[A-Za-z_][\w-]*(?:\[\])?)*)\}/g;
-/** Controls, invisible format characters such as direction marks, joiners, and soft hyphens, and line breaks. */
-const UNSAFE_CHARACTER = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+/** Controls, invisible format characters except emoji joiners, and line breaks. */
+const UNSAFE_CHARACTER = /(?!\u200d)[\p{Cc}\p{Cf}\u2028\u2029]/u;
 const UNSAFE_CHARACTERS = new RegExp(UNSAFE_CHARACTER.source, "gu");
 
 /** Splits a template into text and placeholders, or names what makes it invalid. */

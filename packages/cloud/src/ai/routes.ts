@@ -780,7 +780,14 @@ export const aiRoutes = (() => {
           return respond(c, ok(publicConversation(conversation, currentProject?.shortId ?? null)), 201);
         } catch (error) {
           if (error instanceof AiConversationCreationError) {
-            return respond(c, fail(error.reason === "conflict" ? err.conflict(error.message) : err.notFound("Conversation")));
+            return respond(
+              c,
+              fail(
+                error.reason === "conflict"
+                  ? err.conflict(error.message)
+                  : err.notFound(error.reason === "project_unavailable" ? "Project" : "Conversation"),
+              ),
+            );
           }
           throw error;
         }

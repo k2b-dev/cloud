@@ -6,6 +6,7 @@ import { sql } from "../runtime/clients";
 import { buildEnrichmentTranscript } from "./enrich";
 import { AiTurnExecutor } from "./executor";
 import { migrateCloudAi } from "./migrate";
+import { aiModelAccess } from "./model-access";
 import { aiModelFixture, aiSettingsFixture } from "./model-fixture";
 import * as nextMessageStore from "./next-message-store";
 import { dismissAiNextMessage, saveAiNextMessage } from "./next-message-store";
@@ -114,6 +115,8 @@ databaseSuite()("next message storage and projections", () => {
         yield { type: "usage", usage: { input: 10, output: 10, total: 20 }, finishReason: "tool_use" };
       },
     };
+    // This suite covers the suggestion; model-access-turns.test.ts covers the model check before every turn.
+    const modelAccess = spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
     const save = spyOn(nextMessageStore, "saveAiNextMessage");
     if (saveFails) save.mockRejectedValue(new Error("Frozen storage failure"));
     const events: AiWireEvent[] = [];
@@ -146,6 +149,7 @@ databaseSuite()("next message storage and projections", () => {
       expect(events).toContainEqual(expect.objectContaining({ type: "turn_finished", status: "completed" }));
       expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
     } finally {
+      modelAccess.mockRestore();
       save.mockRestore();
       publish.mockRestore();
     }

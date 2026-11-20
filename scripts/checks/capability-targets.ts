@@ -7,6 +7,7 @@ import type { Rule } from "./rule";
 
 /** Reviewed input fields that do not select a provider-owned resource to mutate.
  * Keep the exception field-specific and unavailable to resource Code; new ID fields still fail.
+ * Chat creation separately accepts its optional, read-only Project context in personal Code.
  * See /en/docs/platform/capabilities#name-the-resource-an-operation-acts-on.
  */
 const reviewedInputIds: Record<string, readonly string[]> = {
@@ -33,7 +34,9 @@ export const capabilityTargetGaps = (manifest: CapabilityManifest): string[] => 
   return manifest.actions
     .filter((action) => action.target === undefined)
     .flatMap((action) => {
-      const exempt = action.code === false ? (reviewedInputIds[`${manifest.appId}.${action.localId}`] ?? []) : [];
+      const operation = `${manifest.appId}.${action.localId}`;
+      const exempt =
+        operation === "core.ai.chat.create" ? ["project.id"] : action.code === false ? (reviewedInputIds[operation] ?? []) : [];
       const fields = [...new Set(idPaths(action.inputSchema))].filter((field) => !exempt.includes(field));
       return fields.length ? [`${manifest.appId}.${action.localId}: ${fields.join(", ")}`] : [];
     });

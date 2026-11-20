@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Message } from "@k2b/nessi";
 import type { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import {
   type AiChatEnrichment,
   buildEnrichmentTranscript,
@@ -12,6 +13,8 @@ import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-c
 import { aiQuoteModelText } from "./quote-markers";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "./structured";
 import type { AiEnrichmentCandidate, AiResolvedModel, AiStoredMessage } from "./types";
+
+useUnitClients();
 
 const conversation = (overrides: Partial<AiEnrichmentCandidate> = {}): AiEnrichmentCandidate => ({
   id: "00000000-0000-0000-0000-00000000c001",

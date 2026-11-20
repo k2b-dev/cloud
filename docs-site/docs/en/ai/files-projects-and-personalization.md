@@ -396,7 +396,7 @@ while the app runs. The built-in apps ship these Skills:
   lookup, join, and aggregation examples. It guides queries and daily work and
   routes product and administration questions to canonical Grids Help.
 - Assistant ships `cloud-assistant` for conversation history and resources,
-  inter-chat messaging;
+  and messages to other chats with `core.ai.chat.send`;
   `assistant-code-mode` and `assistant-data-analysis`; and `skill-creator`,
   which explains how to draft a concise Skill and names the `core.ai.skill`
   Capabilities Assistant can use to list, read, create, update, manage

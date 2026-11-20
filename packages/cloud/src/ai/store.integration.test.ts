@@ -811,7 +811,7 @@ suite("AI conversation store integration", () => {
   });
   test("a metadata-renamed title survives the first message while create-time placeholders get the snapshot", async () => {
     const userId = await insertUser();
-    const defaultChat = await aiConversations.createConversation({ ownerUserId: userId, title: "Neuer Chat" });
+    const defaultChat = await aiConversations.createConversation({ ownerUserId: userId, defaultTitle: "Neuer Chat" });
     const renamedChat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
       expect(

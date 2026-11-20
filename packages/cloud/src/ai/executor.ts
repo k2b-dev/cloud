@@ -1056,12 +1056,8 @@ export class AiTurnExecutor {
         modelPolicy: material.modelPolicy,
         model: claim.turn.modelId ? { id: claim.turn.modelId } : material.model,
       });
-      if (isAssistantChatTurn(config)) {
-        await aiModelAccess.assertAllowed(
-          validated.resolved.profile.modelId,
-          config.accessSubject ?? accessSubjectForActor(material.actor),
-        );
-      }
+      // Every turn runs only with a model its access subject may use, however it was started.
+      await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, config.accessSubject ?? accessSubjectForActor(material.actor));
       if ((config.codeOrigin || config.wakeup) && !this.config.beforeChatTurn)
         throw new AiTurnFailure("not_allowed", "Code chat admission is unavailable.");
       const admission = await this.config.beforeChatTurn?.({
@@ -2580,6 +2576,7 @@ export class AiTurnExecutor {
         modelPolicy: config.modelPolicy,
         model: config.model,
       });
+      await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, accessSubjectForActor(config.actor));
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
       await this.finalize(conversationId, turnId, pipeline, "failed", aiTurnFailureFromThrown(error, "AI compaction failed"), "compact");

@@ -20,11 +20,11 @@ const context = (args: string[] = [], flags: CloudCliContext["flags"] = {}) => {
     fetch: async (path, init) => {
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
       requests.push({ path, method: init?.method ?? "GET", body });
-      if (init?.method === "PATCH") {
+      if (init?.method === "POST" && body?.title) {
         conversation = {
           ...conversation,
           title: body.title,
-          titleSource: body.title !== conversation.title ? "user" : conversation.titleSource,
+          titleSource: "user",
         };
       }
       return Response.json(init?.method ? conversation : { conversation });
@@ -43,10 +43,7 @@ const context = (args: string[] = [], flags: CloudCliContext["flags"] = {}) => {
   };
   return { ctx, requests, values };
 };
-const expectedRequests = (title: string) => [
-  { path: "/api/ai/conversations", method: "POST", body: {} },
-  { path: "/api/ai/conversations/chat", method: "PATCH", body: { title } },
-];
+const expectedRequests = (title: string) => [{ path: "/api/ai/conversations", method: "POST", body: { title } }];
 test.each([" ", "x".repeat(121)])("rejects invalid title %j before resolving a new chat", async (title) => {
   const { ctx, requests } = context();
   await expect(resolveConversation(ctx, { title })).rejects.toThrow("Chat titles must have 1 to 120 characters.");
@@ -59,17 +56,17 @@ test.each([" ", "x".repeat(121)])("chats create rejects invalid title %j before 
   ).rejects.toThrow("Chat titles must have 1 to 120 characters.");
   expect(requests).toEqual([]);
 });
-test("trims an explicit title before renaming a new chat", async () => {
+test("trims an explicit title before creating a new chat", async () => {
   const { ctx, requests } = context();
   expect(await resolveConversation(ctx, { title: " Research " })).toMatchObject({ title: "Research", titleSource: "user" });
   expect(requests).toEqual(expectedRequests("Research"));
 });
-test("print-mode chat resolution creates a draft then applies the user's title through metadata", async () => {
+test("print-mode chat resolution creates a chat with the user's title", async () => {
   const { ctx, requests } = context();
   expect(await resolveConversation(ctx, { title: "Research" })).toMatchObject({ title: "Research", titleSource: "user" });
   expect(requests).toEqual(expectedRequests("Research"));
 });
-test("chats create applies an explicit title through metadata after creation", async () => {
+test("chats create sends the explicit title in the creation request", async () => {
   const { ctx, requests } = context(["chats", "create"], { title: "Research" });
   await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantChatCommands] }).run(ctx);
   expect(requests).toEqual(expectedRequests("Research"));
@@ -84,19 +81,16 @@ test("an omitted title leaves automatic naming enabled and a selected chat is no
   ]);
 });
 
-test("an explicit title equal to the placeholder uses the existing metadata behavior", async () => {
+test("an explicit title equal to the placeholder is still user-owned", async () => {
   const { ctx, requests } = context();
-  expect(await resolveConversation(ctx, { title: "New chat" })).toMatchObject({ title: "New chat", titleSource: "default" });
+  expect(await resolveConversation(ctx, { title: "New chat" })).toMatchObject({ title: "New chat", titleSource: "user" });
   expect(requests).toEqual(expectedRequests("New chat"));
 });
 
 test("creating a titled chat preserves its project assignment", async () => {
   const { ctx, requests } = context(["chats", "create"], { title: "Research", project: "project" });
   await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantChatCommands] }).run(ctx);
-  expect(requests).toEqual([
-    { path: "/api/ai/conversations", method: "POST", body: { projectId: "project" } },
-    { path: "/api/ai/conversations/chat", method: "PATCH", body: { title: "Research" } },
-  ]);
+  expect(requests).toEqual([{ path: "/api/ai/conversations", method: "POST", body: { title: "Research", projectId: "project" } }]);
 });
 
 test("system-prompt --local includes this computer and the profile's local tools default", async () => {

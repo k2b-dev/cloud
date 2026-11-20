@@ -375,6 +375,9 @@ support the [scheduled chat message contract](/en/docs/ai/chat-alarms).
 `enqueueAiChatSend` from `@k2b/cloud/ai/runtime` is the shared transactional
 queue-and-receipt helper for platform send admission and the existing scheduler.
 `markAiWakeupMissed` is a host admission helper on `@k2b/cloud/ai/runtime`.
+`AiConversationCreationError` from the same entrypoint identifies conflicting or
+unavailable chat-creation receipts and unavailable Projects; see
+[Empty-chat creation](/en/docs/ai/chat-runtime-and-streaming#idempotent-empty-chat-creation).
 
 ## Mixed barrels
 

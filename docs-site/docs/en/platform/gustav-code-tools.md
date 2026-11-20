@@ -202,3 +202,12 @@ Other success results remain unchanged. The shared HTTP/CLI contracts are
 `CodeAuthoringPermissionSchema` and `CodeAuthoringErrorSchema` describe metadata,
 permission rows and failures. Test and simulation reuse `CodeTestResultSchema`.
 `codeAuthoringServices` owns execution of these commands for both transports.
+
+## Start another chat
+
+Use `ai.chat.create` for a new empty personal chat and keep its returned
+`core.ai.chat` ref. This is a separate, reviewed `silent_you` Action; send work
+with `ai.chat.send` only after the destination and message are clear. Both
+Actions require an unrestricted person-initiated source turn. A Code- or
+chat-initiated turn cannot create another chat. Reusing the creation key returns
+the original chat; an archived or deleted result is not replaced.
