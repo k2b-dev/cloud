@@ -1,5 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
-import { discoverJmapFolders, JMAP_DISCOVERY_PAGES, type JmapMailboxRights, jmapMailboxRightsSchema, mapJmapRights, verifyJmap } from "./jmap";
+import {
+  discoverJmapFolders,
+  JMAP_DISCOVERY_PAGES,
+  type JmapMailboxRights,
+  jmapMailboxRightsSchema,
+  mapJmapRights,
+  verifyJmap,
+} from "./jmap";
 import { JMAP_CORE, JMAP_MAIL, JMAP_SUBMISSION } from "./jmap-client";
 import { createJmapFixture, fixtureMailbox, fixtureRights } from "./jmap-fixture";
 
@@ -191,13 +198,20 @@ test("uses the advertised mailbox name size with a local ceiling", async () => {
 
 test("keeps mailbox identity and parent IDs when slash names produce duplicate display paths", async () => {
   const f = fixture();
-  f.mailboxes.splice(0, f.mailboxes.length,
-    fixtureMailbox("root", "a"), fixtureMailbox("child", "b", "root"),
-    fixtureMailbox("slash", "a/b"), fixtureMailbox("duplicate", "a/b"));
+  f.mailboxes.splice(
+    0,
+    f.mailboxes.length,
+    fixtureMailbox("root", "a"),
+    fixtureMailbox("child", "b", "root"),
+    fixtureMailbox("slash", "a/b"),
+    fixtureMailbox("duplicate", "a/b"),
+  );
   const folders = await discoverJmapFolders(access(f), f.dependencies);
   expect(folders.map(({ path, parentMailboxId }) => ({ path, parentMailboxId }))).toEqual([
-    { path: "a", parentMailboxId: null }, { path: "a/b", parentMailboxId: "root" },
-    { path: "a/b", parentMailboxId: null }, { path: "a/b", parentMailboxId: null },
+    { path: "a", parentMailboxId: null },
+    { path: "a/b", parentMailboxId: "root" },
+    { path: "a/b", parentMailboxId: null },
+    { path: "a/b", parentMailboxId: null },
   ]);
   expect(new Set(folders.map((folder) => folder.stableKey)).size).toBe(4);
   const child = f.mailboxes.find((mailbox) => mailbox.id === "child");
@@ -211,8 +225,11 @@ test("keeps mailbox identity and parent IDs when slash names produce duplicate d
 
 test("truncates long display paths without losing mailbox or parent identity", async () => {
   const f = fixture();
-  f.mailboxes.splice(0, f.mailboxes.length, ...Array.from({ length: 6 }, (_, i) =>
-    fixtureMailbox(`long${i}`, "x".repeat(1_000), i === 0 ? null : `long${i - 1}`)));
+  f.mailboxes.splice(
+    0,
+    f.mailboxes.length,
+    ...Array.from({ length: 6 }, (_, i) => fixtureMailbox(`long${i}`, "x".repeat(1_000), i === 0 ? null : `long${i - 1}`)),
+  );
   const folders = await discoverJmapFolders(access(f), f.dependencies);
   expect(folders.map((folder) => folder.path.length)).toEqual([1_000, 2_001, 3_002, 4_000, 4_000, 4_000]);
   expect(folders.at(-1)).toMatchObject({ mailboxId: "long5", parentMailboxId: "long4" });

@@ -14,8 +14,13 @@ import { enqueueMailInvalidation, mailLive } from "./live";
 import { getProviderConnection, type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, isTransientProviderFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
 import {
-  compareProviderEvidence, type EvidenceComparison, providerServerKey,
-  jmapFolderStableKey, jmapScopeEvidenceSchema, jmapScopeFingerprint, type JmapScopeEvidence,
+  compareProviderEvidence,
+  type EvidenceComparison,
+  type JmapScopeEvidence,
+  jmapFolderStableKey,
+  jmapScopeEvidenceSchema,
+  jmapScopeFingerprint,
+  providerServerKey,
 } from "./provider-identity";
 import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
@@ -510,14 +515,17 @@ const finalizeFolderProjection = async (params: {
 };
 
 /** Transaction-only test seam; no production discovery or scheduler calls this yet. */
-export const projectJmapFolders = async (tx: SqlClient, params: {
-  remoteResourceId: string;
-  bindingId: string;
-  discoveryGeneration: number;
-  evidence: JmapScopeEvidence;
-  folders: readonly JmapRemoteFolder[];
-  inventory: { kind: "snapshot" } | { kind: "delta"; missingMailboxIds: readonly string[] };
-}): Promise<Map<string, string>> => {
+export const projectJmapFolders = async (
+  tx: SqlClient,
+  params: {
+    remoteResourceId: string;
+    bindingId: string;
+    discoveryGeneration: number;
+    evidence: JmapScopeEvidence;
+    folders: readonly JmapRemoteFolder[];
+    inventory: { kind: "snapshot" } | { kind: "delta"; missingMailboxIds: readonly string[] };
+  },
+): Promise<Map<string, string>> => {
   const evidence = jmapScopeEvidenceSchema.parse(params.evidence);
   const fingerprint = jmapScopeFingerprint(evidence);
   const seen = new Set<string>();
@@ -560,7 +568,9 @@ export const projectJmapFolders = async (tx: SqlClient, params: {
     ORDER BY folder.id FOR UPDATE OF folder
   `;
   const byKey = new Map(existing.map((folder) => [folder.stable_key, folder]));
-  const byMailboxId = new Map(existing.filter((folder) => folder.remote_folder_id !== null).map((folder) => [folder.remote_folder_id, folder]));
+  const byMailboxId = new Map(
+    existing.filter((folder) => folder.remote_folder_id !== null).map((folder) => [folder.remote_folder_id, folder]),
+  );
   const folderIds = new Map<string, string>();
   for (const folder of params.folders) {
     const stableKey = jmapFolderStableKey(evidence, folder.mailboxId);
@@ -576,12 +586,16 @@ export const projectJmapFolders = async (tx: SqlClient, params: {
         WHERE id = ${folderId}::uuid`;
     } else {
       const readable = folder.selectable && folder.rights.includes("read");
-      const [created] = await withShortIdDb(tx, "folder", (db, shortId) => db<{ id: string }[]>`
+      const [created] = await withShortIdDb(
+        tx,
+        "folder",
+        (db, shortId) => db<{ id: string }[]>`
         INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, selectable, selected_for_sync,
           display, discovery_generation, discovery_state, sync_status)
         VALUES (${shortId}, ${params.remoteResourceId}::uuid, ${stableKey}, ${folder.name}, ${folder.role}, ${folder.selectable},
           ${readable}, 'everywhere', ${params.discoveryGeneration}, 'active', ${readable ? "pending" : "excluded"}) RETURNING id
-      `);
+      `,
+      );
       if (!created) throw new Error("JMAP folder projection: insert returned no folder");
       folderId = created.id;
     }
@@ -605,8 +619,10 @@ export const projectJmapFolders = async (tx: SqlClient, params: {
     if (!folderId) throw new Error("JMAP folder projection: missing projected id");
     let parentId: string | null = null;
     if (folder.parentMailboxId !== null) {
-      parentId = folderIds.get(folder.parentMailboxId) ??
-        (params.inventory.kind === "delta" ? byKey.get(jmapFolderStableKey(evidence, folder.parentMailboxId))?.id : undefined) ?? null;
+      parentId =
+        folderIds.get(folder.parentMailboxId) ??
+        (params.inventory.kind === "delta" ? byKey.get(jmapFolderStableKey(evidence, folder.parentMailboxId))?.id : undefined) ??
+        null;
       if (!parentId || missingIds.includes(folder.parentMailboxId)) throw new Error("JMAP folder projection: missing parent");
     }
     parents.set(folderId, parentId);
