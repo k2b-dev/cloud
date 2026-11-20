@@ -648,23 +648,42 @@ export const createDialogCore = () => {
     state.connectionObserver.observe(document.documentElement, { childList: true, subtree: true });
   };
 
-  /**
-   * Reads the call's context now: its palette, the page it belongs to, and the opener focus returns to. A dialog whose
-   * code loads first opens with it later, as if it had opened at the call.
-   */
-  const capture = (): DialogCore["open"] => {
+  const readCall = (): DialogCall => {
     if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
     const opener = document.activeElement;
-    const call: DialogCall = {
+    return {
       requested: disposals,
       scope: readUiScope(),
       opener: opener instanceof HTMLElement ? opener : undefined,
       openerRing: ringOnReturn(opener),
     };
-    return (view, options = {}) => openAfter(view, options, call);
+  };
+  /** The context a captured call hands to the `open` it calls next. */
+  let captured: DialogCall | undefined;
+
+  /**
+   * Reads the call's context now: its palette, the page it belongs to, and the opener focus returns to. A dialog whose
+   * code loads first opens with it later through `target.open`, as if it had opened at the call; a test that replaces
+   * `dialogCore.open` still sees every prompt.
+   */
+  const capture = (target: DialogCore): DialogCore["open"] => {
+    const call = readCall();
+    return (view, options) => {
+      captured = call;
+      try {
+        return target.open(view, options);
+      } finally {
+        captured = undefined;
+      }
+    };
   };
 
-  const open: DialogCore["open"] = (view, options) => capture()(view, options);
+  const open: DialogCore["open"] = (view, options = {}) => {
+    // Taken at once: a dialog that its own render opens has a call of its own.
+    const call = captured ?? readCall();
+    captured = undefined;
+    return openAfter(view, options, call);
+  };
 
   const openAfter = <T>(view: DialogRender<T>, options: OpenDialogOptions, call: DialogCall): Promise<T | undefined> => {
     if (options.signal?.aborted) return Promise.resolve(undefined);
@@ -856,6 +875,6 @@ export const holdDialogHistory = holdHistory;
  * Internal: for a dialog whose code loads first. Call it synchronously where the dialog is asked for; the returned
  * `open` uses that call's palette and opener, and resolves `undefined` without opening when the page changed since.
  */
-export const captureDialogOpen = capture;
+export const captureDialogOpen = (): DialogCore["open"] => capture(dialogCore);
 /** Internal: waits until released holders have left history or were forgotten during island disposal. */
 export const dialogHistorySettled = historySettled;
