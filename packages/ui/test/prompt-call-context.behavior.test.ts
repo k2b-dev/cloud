@@ -99,8 +99,8 @@ describe("@k2b/ui prompts whose code loads on demand", () => {
       expect(dialog()?.dataset.k2bPrimary).toBe("ai");
       ui.dialogCore.close();
       await result;
-      await Bun.sleep(50);
-      expect(dom.document.activeElement === trigger).toBe(true);
+      // Focus returns in the frame after the close.
+      await until(() => dom.document.activeElement === trigger);
     });
 
     test(`a ${kind} asked before a navigation does not open over the new page`, async () => {
@@ -130,7 +130,6 @@ describe("@k2b/ui prompts whose code loads on demand", () => {
     expect(await before).toBeUndefined();
     ui.dialogCore.close();
     await after;
-    await Bun.sleep(50);
-    expect(dom.document.activeElement === trigger).toBe(true);
+    await until(() => dom.document.activeElement === trigger);
   });
 });
