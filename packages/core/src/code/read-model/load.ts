@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import { CodeCheckedVersionManifestSchema, type CodeVersionReadModel, codeReadModelContracts } from "@k2b/cloud/contracts";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson } from "../access";
+import { codeUsesBoundChat } from "../bound-chat";
 import { codeChatReadModelState } from "../chat-binding";
 import { codePolicyGroupRowsQuery, codePolicyGroupsFromRows, codePolicySnapshotFromRow, codePolicySnapshotQuery } from "../policy";
 import { effective } from "../policy-effective";
@@ -65,10 +66,7 @@ export async function loadCodeVersionReadModel(
           { owner_kind: code.owner.kind, owner_user_id: code.owner.userId, chat_conversation_id: row.chat_conversation_id },
           {
             chatSchemaAvailable: row.chat_schema_available,
-            usesBoundChat: manifest.permissions.some(
-              (permission) =>
-                permission.operation === "core.ai.chat.send" && permission.target?.type === "core.ai.chat" && permission.target.id === null,
-            ),
+            usesBoundChat: codeUsesBoundChat(manifest.permissions),
           },
         )
       : { missing: false, target: null };

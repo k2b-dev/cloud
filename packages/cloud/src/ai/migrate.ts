@@ -2428,6 +2428,11 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`CREATE TABLE IF NOT EXISTS ai.task_messages (LIKE ai.messages INCLUDING DEFAULTS INCLUDING CONSTRAINTS, FOREIGN KEY (conversation_id) REFERENCES ai.conversations(id) ON DELETE CASCADE)`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_task_messages_id ON ai.task_messages(id)`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_task_messages_seq ON ai.task_messages(loop_id, seq)`.simple();
+  // LIKE copies ai.messages only once. Every column ai.messages gains later is added here in the same
+  // order, so older images that union both tables with SELECT * keep working; background runs never write them.
+  await sql`ALTER TABLE ai.task_messages ADD COLUMN IF NOT EXISTS delegated_source_turn_id uuid,
+    ADD COLUMN IF NOT EXISTS delegated_target_turn_id uuid,
+    ADD COLUMN IF NOT EXISTS delegated_send_receipt_id uuid`.simple();
 
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS background_received_at TIMESTAMPTZ`.simple();
   await migrateAiMessageQueue();
