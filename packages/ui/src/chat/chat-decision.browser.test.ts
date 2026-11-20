@@ -426,8 +426,9 @@ test("an answer that still runs takes no second press, held key, Space or double
     await page.keyboard.down("Enter");
     await page.keyboard.up("Enter");
     await page.keyboard.press("Space");
-    await page.getByRole("button", { name: "Keep version 4", exact: true }).dblclick();
-    await page.getByRole("button", { name: "Withdraw", exact: true }).click();
+    // The other answers say they take no press; a person can still press them. `force` skips Playwright's wait for them.
+    await page.getByRole("button", { name: "Keep version 4", exact: true }).dblclick({ force: true });
+    await page.getByRole("button", { name: "Withdraw", exact: true }).click({ force: true });
     expect(await page.evaluate(() => window.__answers)).toEqual(["confirm"]);
     expect(await confirm.getAttribute("aria-busy")).toBe("true");
     expect(await page.getByRole("button", { name: "Keep version 4", exact: true }).getAttribute("aria-disabled")).toBe("true");
