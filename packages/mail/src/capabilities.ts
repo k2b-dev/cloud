@@ -135,12 +135,22 @@ const requestContext = (context: CapabilityExecutionContext): MailRequestContext
   requestId: context.requestId,
 });
 
-const localizeCapabilityError = <T extends { code: string; status: number; message: string }>(
-  error: T,
-  locale: string | undefined,
-  includeInputDetails = true,
-): T => {
-  const localized = localizeMailError(error, locale, { includeInputDetails });
+/** Rejections whose message the capability already wrote in the request locale. */
+const localizedRejections = new WeakSet<object>();
+const localizedInputRejection = (message: string) => {
+  const error = err.badInput(message);
+  localizedRejections.add(error);
+  return fail(error);
+};
+
+/**
+ * Service details are English. A person reads a capability's error in the chat, so a translated frame never carries
+ * one (P6 m01: "Die Eingabe ist ungültig: A verified sender identity is required"); only the capability's own
+ * localized rejections keep their words.
+ */
+const localizeCapabilityError = <T extends { code: string; status: number; message: string }>(error: T, locale: string | undefined): T => {
+  if (localizedRejections.has(error)) return error;
+  const localized = localizeMailError(error, locale, { includeInputDetails: false });
   return error.code === "DRAFT_REPLY_BOX_OCCUPIED"
     ? { ...localized, message: `${localized.message} ${draftAdoptionMessages.resolve([locale ?? "en"]).t.occupiedCapabilityHint}` }
     : localized;
@@ -154,18 +164,17 @@ const localizeCapabilityErrors = <T extends CapabilityDefinitions>(definitions: 
       return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
     };
   }
-  for (const [name, definition] of Object.entries(definitions.actions ?? {})) {
-    const includeInputDetails = name !== "draft.create" && name !== "draft.send";
+  for (const definition of Object.values(definitions.actions ?? {})) {
     const run = definition.run;
     definition.run = async (input, context) => {
       const result = await run(input, context);
-      return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale, includeInputDetails) };
+      return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
     };
     if (definition.review) {
       const review = definition.review;
       definition.review = async (input, context) => {
         const result = await review(input, context);
-        return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale, includeInputDetails) };
+        return result.ok ? result : { ok: false, error: localizeCapabilityError(result.error, context.locale) };
       };
     }
   }
@@ -4568,7 +4577,7 @@ const actionDefinitions = {
                 limit: input.assigneeUserIds.length,
               });
       if (input.mode !== "remove" && new Set(input.assigneeUserIds).size !== assignees.length)
-        return fail(err.badInput(t.invalidAssignees));
+        return localizedInputRejection(t.invalidAssignees);
       const change = await reviewReaders.loadAssignmentReviewChange({
         mailboxId: conversation.data.mailboxInternalId,
         conversationIds: [input.conversationId],
@@ -4577,7 +4586,7 @@ const actionDefinitions = {
         actorUserId: context.actor.kind === "user" ? context.actor.user.id : (context.actor.delegatedUser?.id ?? null),
       });
       // A removal that names no known user changes nothing and has no one to show; refuse it like an unknown assignee.
-      if (input.mode === "remove" && change.requested.length === 0) return fail(err.badInput(t.invalidAssignees));
+      if (input.mode === "remove" && change.requested.length === 0) return localizedInputRejection(t.invalidAssignees);
       const options = assignmentOptions(change, context.locale);
       return ok(
         mailActionReviews["conversation.assign"](
@@ -4671,7 +4680,7 @@ const actionDefinitions = {
                 limit: input.assigneeUserIds.length,
               });
       if (input.mode !== "remove" && new Set(input.assigneeUserIds).size !== assignees.length)
-        return fail(err.badInput(t.invalidAssignees));
+        return localizedInputRejection(t.invalidAssignees);
       const change = await reviewReaders.loadAssignmentReviewChange({
         mailboxId: scope.data.id,
         conversationIds: input.conversationIds,
@@ -4680,7 +4689,7 @@ const actionDefinitions = {
         actorUserId: context.actor.kind === "user" ? context.actor.user.id : (context.actor.delegatedUser?.id ?? null),
       });
       // A removal that names no known user changes nothing and has no one to show; refuse it like an unknown assignee.
-      if (input.mode === "remove" && change.requested.length === 0) return fail(err.badInput(t.invalidAssignees));
+      if (input.mode === "remove" && change.requested.length === 0) return localizedInputRejection(t.invalidAssignees);
       const options = assignmentOptions(change, context.locale);
       return ok(
         mailActionReviews["conversation.assign.batch"](

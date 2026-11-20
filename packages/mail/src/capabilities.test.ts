@@ -36,6 +36,7 @@ import {
   DraftUpdateInputSchema,
   FolderListDataSchema,
   MailboxBrowseDataSchema,
+  MailboxListInputSchema,
   MessageDataSchema,
   MessageListDataSchema,
   SubscriptionListDataSchema,
@@ -2744,6 +2745,17 @@ describe("mail capabilities", () => {
     expect(conversation).toMatchObject({ ok: false, error: { code: "NOT_FOUND", message: "Conversation not found" } });
   });
 
+  test("a German query rejection names what to check without an English detail", async () => {
+    const input = MailboxListInputSchema.parse({ cursor: Buffer.from("{}").toString("base64url") });
+    const german = await mailCapabilities.queries["mailbox.list"].run(input, { ...context, locale: "de" });
+    expect(german).toEqual({
+      ok: false,
+      error: { code: "BAD_INPUT", status: 400, message: "Prüfe die Angaben für diese Mail-Aktion und versuche es erneut." },
+    });
+    const english = await mailCapabilities.queries["mailbox.list"].run(input, context);
+    expect(english).toMatchObject({ ok: false, error: { code: "BAD_INPUT", message: "Invalid cursor" } });
+  });
+
   test("localizes capability errors without changing their stable metadata", async () => {
     const result = await mailCapabilities.queries["mailbox.read"].run({ id: "XyZ123" }, { ...context, locale: "de-CH" });
 
@@ -2852,7 +2864,7 @@ describe("mail capabilities", () => {
     },
   );
 
-  test("draft fallback changes preserve already-localized assignment rejections", async () => {
+  test("a German capability error keeps its own localized words and never an English service detail", async () => {
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
     spyOn(messages, "listConversationMessages").mockResolvedValue({
       ok: true,
@@ -2885,18 +2897,21 @@ describe("mail capabilities", () => {
     );
     expect(reviewed).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
     if (reviewed.ok) throw new Error("Expected assignment review rejection");
-    expect(reviewed.error.message).toContain("Zuständige müssen aktive Benutzer");
-    spyOn(conversationAssignments, "assignConversation").mockResolvedValue(
-      fail(err.badInput("Zuständige müssen aktive Benutzer mit Schreibzugriff auf das Postfach oder mit zugewiesenem Zugriff sein.")),
+    expect(reviewed.error.message).toBe(
+      "Zuständige müssen aktive Benutzer mit Schreibzugriff auf das Postfach oder Zugriff auf zugewiesene Unterhaltungen sein.",
     );
-    const result = await mailCapabilities.actions["conversation.assign"].run(
-      { conversationId, assigneeUserIds: [userId], mode: "replace" },
-      { ...context, locale: "de", idempotencyKey: "assignment-rejection" },
-    );
-    expect(result).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
-    if (result.ok) throw new Error("Expected assignment rejection");
-    expect(result.error.message).toContain("Zuständige müssen aktive Benutzer");
-    expect(result.error.message).not.toContain("Mail-Aktion");
+    // P6 m01: a service detail is English; the German line names what to check instead of quoting it.
+    const english = "Assignees must be active principals with mailbox write access or assigned access";
+    spyOn(conversationAssignments, "assignConversation").mockResolvedValue(fail(err.badInput(english)));
+    for (const locale of ["de", "de-CH", "en"]) {
+      const result = await mailCapabilities.actions["conversation.assign"].run(
+        { conversationId, assigneeUserIds: [userId], mode: "replace" },
+        { ...context, locale, idempotencyKey: `assignment-rejection-${locale}` },
+      );
+      expect(result).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
+      if (result.ok) throw new Error("Expected assignment rejection");
+      expect(result.error.message).toBe(locale === "en" ? english : "Prüfe die Angaben für diese Mail-Aktion und versuche es erneut.");
+    }
   });
 
   test("explains attachment-content conversation matches with public links", async () => {

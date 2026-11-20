@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-11-19
+updated: 2026-11-20
 ---
 
 # Mail
@@ -1009,9 +1009,9 @@ Only people with write access can acknowledge an open draft's notice.
 See [F6 operator guidance](/en/docs/operations/mail-reply-draft-consolidation)
 for the irreversible migration and its logged counts.
 
-### Draft capability rejections
+### Capability rejections
 
-`draft.create` and `draft.send` return final error messages in the request locale
+Mail Actions and Queries return final error messages in the request locale
 (English or German). Display `error.message`; use the locale-independent
 `error.code` for programmatic decisions.
 
@@ -1019,9 +1019,9 @@ for the irreversible migration and its logged counts.
 not verified. When the identity is available in the mailbox, the message names
 its address. Choose another verified sender, or ask a mailbox administrator to
 open **Mailbox settings → Accounts & identities → Sending identities**, set up
-and verify the identity, then retry. German draft input errors use a translated
-fallback when no specific translation exists. Structured render and sender
-errors give their specific guidance.
+and verify the identity, then retry. German input errors use a translated
+fallback when no specific translation exists; they never quote an English
+detail. Structured render and sender errors give their specific guidance.
 
 ## Check failed synchronization
 
