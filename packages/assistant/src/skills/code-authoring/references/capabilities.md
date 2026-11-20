@@ -346,6 +346,7 @@ Queries: `core.ai.chat.read`, `core.ai.chat.resources`, `core.ai.chat.search`, `
 
 | Action ID | SDK path | Title | Target | Key | Unattended |
 | --- | --- | --- | --- | --- | --- |
+| `core.ai.chat.create` | `core.ai.chat.create` | Create a new chat | — | required | automatic |
 | `core.ai.chat.send` | `core.ai.chat(id).send` | Write to a chat | core.ai.chat | required | automatic with priced model and reserved turn budget |
 | `core.ai.skill.access.change` | `core.ai.skill(id).access.change` | Change Skill access | core.ai.skill | required | never |
 | `core.ai.skill.create` | `core.ai.skill.create` | Create an Assistant Skill | — | required | never |
@@ -356,7 +357,7 @@ Queries: `core.ai.chat.read`, `core.ai.chat.resources`, `core.ai.chat.search`, `
 | `core.ai.skill.references.set` | `core.ai.skill(id).references.set` | Set Assistant Skill references | core.ai.skill | — | never |
 | `core.ai.skill.update` | `core.ai.skill(id).update` | Update an Assistant Skill | core.ai.skill | — | never |
 
-`core.ai.chat.send` works in personal Code alone ([AI](ai.md)). Skills are managed by people, not by Code.
+`core.ai.chat.create` and `core.ai.chat.send` work in personal Code alone ([AI](ai.md)). Skills are managed by people, not by Code.
 
 ## When a call is refused
 

@@ -4,6 +4,7 @@ export { createCodeOwnerRoutes } from "../../packages/cloud/src/_internal/code-o
 export { createCodeCapabilityRoutes } from "../../packages/cloud/src/ai/code-capability-routes";
 export { codeCapabilityOperation } from "../../packages/cloud/src/ai/code-capability-transport";
 export { DEFAULT_COMPACTION_PROMPT } from "../../packages/cloud/src/ai/compaction";
+export { enrichDirtyAiConversations } from "../../packages/cloud/src/ai/enrich";
 export { AiTurnExecutor } from "../../packages/cloud/src/ai/executor";
 export { beginAiCall, finishAiCall } from "../../packages/cloud/src/ai/inference-calls";
 export {

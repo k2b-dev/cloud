@@ -63,12 +63,11 @@ export const resolveConversation = async (
   if (title !== undefined && (title.length === 0 || title.length > 120)) {
     throw new Error("Chat titles must have 1 to 120 characters.");
   }
-  const conversation = await readApi<AiConversation>(
+  return readApi<AiConversation>(
     ctx,
     "/conversations",
-    jsonRequest("POST", { ...(input.projectId ? { projectId: input.projectId } : {}) }),
+    jsonRequest("POST", { ...(title ? { title } : {}), ...(input.projectId ? { projectId: input.projectId } : {}) }),
   );
-  return title ? readApi<AiConversation>(ctx, conversationPath(conversation.id), jsonRequest("PATCH", { title })) : conversation;
 };
 
 export const uploadAttachment = async (
