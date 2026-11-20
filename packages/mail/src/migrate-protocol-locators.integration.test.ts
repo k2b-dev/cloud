@@ -162,7 +162,7 @@ suite("mail protocol locator schema", () => {
       expect(await buildDraftRemoteIdIndex(), "upgrade: concurrent snapshot build").toBe("built");
       expect(await buildRemoteMessageIdIndex(), "upgrade: reuse valid ref index").toBe("ready");
       expect(await buildDraftRemoteIdIndex(), "upgrade: reuse valid snapshot index").toBe("ready");
-      // Frozen immediate predecessor: markers 1–4 and IMAP-only INSERT/SELECT.
+      // Frozen immediate predecessor: its markers plus this branch's rule retirement, and IMAP-only INSERT/SELECT.
       await sql.begin(async (tx) => {
         const markers = await tx<{ version: number; name: string }[]>`SELECT version, name FROM mail.schema_migrations ORDER BY version`;
         expect(markers, "rollback: predecessor markers").toEqual([
@@ -170,6 +170,7 @@ suite("mail protocol locator schema", () => {
           { version: 2, name: "principal_assignees" },
           { version: 3, name: "suggestions_per_author" },
           { version: 4, name: "one_reply_draft" },
+          { version: 5, name: "rules_retired" },
         ]);
         await tx`INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid) VALUES (${folder}::uuid, ${message}::uuid, 10, 44)`;
         expect(
