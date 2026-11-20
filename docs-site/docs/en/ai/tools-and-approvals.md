@@ -794,8 +794,9 @@ approval retains `allowChat` and `allowAlways`; a website request also carries
 Wire `onCheckAction` to `checkAction` and propagate failures so the card can
 show recovery. Core serves
 `POST /api/ai/conversations/:conversationId/turns/:turnId/calls/:callId/check`
-for the conversation owner in a signed-in browser session; API keys and other
-clients get `403`. Unknown calls return `404`. Calls without a check, and a
+for the conversation owner in a signed-in session; a session of the Cloud app
+may check only calls of turns started in the app. API keys and other clients
+get `403`. Unknown calls return `404`. Calls without a check, and a
 second press while one check runs, return `409`. The executor and a person's
 press claim the check with one conditional write, so only one runs at a time and
 a settled result is never replaced; a claim whose worker stopped goes stale after

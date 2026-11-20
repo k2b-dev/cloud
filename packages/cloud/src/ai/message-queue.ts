@@ -372,9 +372,9 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
 };
 
 /**
- * Whether `writer` may cancel, retry, or send now the queued entry `id`. The entry runs as the actor that queued it,
- * so a session of the Cloud app may change only entries queued in the app; other writers skip the lookup. A missing
- * entry passes, so the change itself answers that it is gone.
+ * Whether `writer` may retry or send now the queued entry `id`. The entry runs as the actor that queued it, so a
+ * session of the Cloud app may run only entries queued in the app; other writers skip the lookup. A missing entry
+ * passes, so the change itself answers that it is gone. Removing an entry adds no text and needs no such check.
  */
 export const mayChangeQueuedMessage = async (conversationId: string, id: string, writer: RequestActor): Promise<boolean> => {
   if (!isAppSessionActor(writer)) return true;

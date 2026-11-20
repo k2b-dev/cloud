@@ -16,6 +16,7 @@ import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { approvalArgsDigest, approvalReviewDigest } from "../services/approvals";
 import { compactCapabilityReview, storedReviewWithContent } from "./review-content";
+import { AI_TURN_WRITE_FORBIDDEN, mayWriteIntoAiTurn } from "./turn-writer";
 import type { AiTurnRunConfig } from "./types";
 
 export class DraftEditError extends Error {
@@ -53,7 +54,10 @@ export function draftEditValues(raw: unknown, values: Record<string, string>): {
   return { review: parsed.data, fields: [...names] };
 }
 
-/** One browser-only runtime operation, locking the request and pending call for the entire CAS. */
+/**
+ * One runtime operation of the approval owner's own session, locking the request and pending call for the entire CAS.
+ * The edited arguments run with the turn's actor, so an app session may only edit turns started in the app.
+ */
 export async function editAiApprovalDraft(input: {
   id: string;
   values: Record<string, string>;
@@ -71,7 +75,7 @@ export async function editAiApprovalDraft(input: {
     input.authority.accessSubject.type !== "user" ||
     input.authority.accessSubject.userId !== actor.user.id
   )
-    throw new DraftEditError(403, "Draft editing requires the approval owner's own browser session.");
+    throw new DraftEditError(403, "Draft editing requires the approval owner's own session.");
   return sql.begin(async (tx) => {
     input.signal?.throwIfAborted();
     // Same user-before-request lock order as decisions and sign-out everywhere.
@@ -117,6 +121,7 @@ export async function editAiApprovalDraft(input: {
       config.actor.user.id !== actor.user.id
     )
       throw new DraftEditError(403, "This request is not a personal chat action.");
+    if (!mayWriteIntoAiTurn(actor, config.actor)) throw new DraftEditError(403, AI_TURN_WRITE_FORBIDDEN);
     const checked = draftEditValues(row.details, input.values);
     const capability = await getCapability(row.app_id);
     const action = capability?.manifest.actions.find((action) => action.localId === row.action);

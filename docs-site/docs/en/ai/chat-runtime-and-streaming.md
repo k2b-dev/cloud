@@ -236,12 +236,14 @@ keeps running, but it loses rights that need a person's session, such as
 writing to another chat with `ai.chat.send`. An approval without text does not
 restrict the turn.
 
-Queued text, steering, and client tool results run as the person and session
-that started the turn or queued the entry. A session of the Cloud app may
-therefore edit, remove, retry, or send now only entries queued in the app, and
-steer or answer tool requests only in turns started there; others answer `403`
-with code `FORBIDDEN`. Automation entries never come from the app, so the app
-cannot change them. A browser session, `cld`, and other clients keep their
+Queued text, steering, client tool results, and edited action drafts run as
+the person and session that started the turn or queued the entry. A session of
+the Cloud app may therefore edit, retry, or send now only entries queued in the
+app, and steer, answer tool requests, or edit an action's draft only in turns
+started there; others answer `403` with code `FORBIDDEN`. Automation entries
+never come from the app, so the app cannot edit, retry, or send them now.
+Removing an entry adds no text, so the app may remove any entry, automation
+entries included. A browser session, `cld`, and other clients keep their
 access. The Cloud app cannot write to another chat with `ai.chat.send` or create
 one with `ai.chat.create`; both answer `source_restricted`.
 

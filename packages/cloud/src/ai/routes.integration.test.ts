@@ -479,7 +479,7 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
-  test("a phone app session steers, answers, edits and removes only turns and queued messages started in the app", async () => {
+  test("a phone app session steers, answers, edits, retries and sends now only turns and queued messages started in the app", async () => {
     const userId = await insertUser();
     const user = (await accounts.users.get({ id: userId }))!;
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
@@ -569,6 +569,16 @@ suite("global AI conversation boundaries", () => {
           body: JSON.stringify({ type: "tool_result", result: { text: "From the phone" } }),
         });
       expect((await toolResult(phone)).status).toBe(403);
+      const check = (headers: Record<string, string>) =>
+        aiRoutes.request(`/conversations/${chat.shortId}/turns/${browserTurn.shortId}/calls/browser-tool/check`, {
+          method: "POST",
+          headers,
+        });
+      const refusedCheck = await check(phone);
+      expect(refusedCheck.status).toBe(403);
+      expect(await refusedCheck.json()).toMatchObject({ code: "FORBIDDEN" });
+      // The person's browser session passes the writer rule and reaches the lookup, which finds no such call.
+      expect((await check(web)).status).toBe(404);
       expect(
         await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: browserTurn.id, callId: "browser-tool" }),
       ).toMatchObject({ status: "pending", resolvedEvent: null });
@@ -616,18 +626,18 @@ suite("global AI conversation boundaries", () => {
       expect((await edit(browserQueued, web)).status).toBe(200);
       expect((await edit(appQueued, phone)).status).toBe(200);
 
-      // Removing, retrying and sending now follow the same rule, automation entries included.
+      // Retrying and sending now follow the same rule, automation entries included. Removing adds no text, so it stays open.
       const automationQueued = await enqueue(browserActor, "code-1");
       for (const id of [browserQueued, automationQueued])
-        for (const action of ["remove", "retry", "send-now"] as const) {
+        for (const action of ["retry", "send-now"] as const) {
           const refused = await change(id, phone, action);
           expect(refused.status).toBe(403);
           expect(await refused.json()).toMatchObject({ code: "FORBIDDEN" });
           expect(await status(id)).toEqual({ status: "pending", sending: false });
         }
       expect((await change(browserQueued, web, "retry")).status).toBe(200);
-      expect((await change(browserQueued, web, "remove")).status).toBe(200);
-      expect((await change(automationQueued, web, "remove")).status).toBe(200);
+      expect((await change(browserQueued, phone, "remove")).status).toBe(200);
+      expect((await change(automationQueued, phone, "remove")).status).toBe(200);
       expect((await change(appQueued, phone, "remove")).status).toBe(200);
       expect((await status(browserQueued))?.status).toBe("cancelled");
       expect((await status(automationQueued))?.status).toBe("cancelled");
