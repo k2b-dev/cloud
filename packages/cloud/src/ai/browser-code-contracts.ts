@@ -36,7 +36,10 @@ export const CodeExportInput = z
 
 export const CodeSecretInput = z
   .object({
-    name: z.string().regex(/^(?:[A-Za-z][A-Za-z0-9_-]{0,79}|_[A-Za-z0-9_]{0,63})$/).describe("With target: ASCII identifier, at most 64 characters; otherwise the chat secret name."),
+    name: z
+      .string()
+      .regex(/^(?:[A-Za-z][A-Za-z0-9_-]{0,79}|_[A-Za-z0-9_]{0,63})$/)
+      .describe("With target: ASCII identifier, at most 64 characters; otherwise the chat secret name."),
     origin: z.string().url().max(2000).describe("Exact HTTPS origin allowed to receive the secret."),
     header: z.string().min(1).max(80).default("authorization"),
     prefix: z.string().max(160).default("Bearer "),

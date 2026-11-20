@@ -38,7 +38,20 @@ type States<Name extends string, Data> = { [State in Name]: Data & { state: Stat
 /** The mockup's 33 scenes are combinations of these states, mode, existing.configured and revealed. */
 export type SecretRequestState =
   | States<"checking" | "held", Facts>
-  | States<"open" | "entered" | "replace" | "saving" | "empty" | "characters" | "too-long" | "save-failed" | "no-answer" | "conflict" | "refreshing", Field>
+  | States<
+      | "open"
+      | "entered"
+      | "replace"
+      | "saving"
+      | "empty"
+      | "characters"
+      | "too-long"
+      | "save-failed"
+      | "no-answer"
+      | "conflict"
+      | "refreshing",
+      Field
+    >
   | (Field & { state: "not-saved"; reason: "bad-input" | "rejected" | "destination-refused" | "check-failed" })
   | States<"saved" | "declined" | "expired" | "access-lost" | "outcome-unknown", Facts>
   | (Facts & { state: "unavailable"; reason: "editor-required" | "destination-refused" | "check-failed" | "list-failed" });
@@ -77,6 +90,8 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       : failure("Secret was not saved.", "Sign in again, then ask for a new secret request. Never send the value in chat.");
   let state: SecretRequestState = { ...facts, state: "checking" };
   let ended = false;
+  // Only a request that may have reached the store makes the outcome unknown; the destination check before it does not.
+  let writing = false;
   const listeners = new Set<(state: SecretRequestState) => void>();
   let resolve!: (result: SecretRequestResult) => void;
   const result = new Promise<SecretRequestResult>((done) => {
@@ -184,11 +199,18 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       const allowed = await check();
       if (ended) return;
       if (allowed !== true) {
-        emit({ ...facts, state: "not-saved", reason: allowed === false ? "destination-refused" : "check-failed", value, revealed: current.revealed });
+        emit({
+          ...facts,
+          state: "not-saved",
+          reason: allowed === false ? "destination-refused" : "check-failed",
+          value,
+          revealed: current.revealed,
+        });
         return;
       }
     }
     let written: Awaited<ReturnType<SecretRequestPorts["save"]>>;
+    writing = true;
     try {
       written = await ports.save({
         value,
@@ -197,6 +219,8 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       });
     } catch {
       written = { ok: false, code: "UNAVAILABLE", status: null };
+    } finally {
+      writing = false;
     }
     if (ended) return;
     if (written.ok) return finish("saved", { configured: true, name: input.name });
@@ -207,7 +231,13 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
     if (written.code === "NOT_FOUND" || written.code === "FORBIDDEN" || written.status === 401 || written.status === 403)
       return finish("access-lost", accessFailure());
     if (written.code === "BAD_INPUT" || (input.target && written.status !== null && written.status < 500)) {
-      emit({ ...facts, state: "not-saved", reason: written.code === "BAD_INPUT" ? "bad-input" : "rejected", value, revealed: current.revealed });
+      emit({
+        ...facts,
+        state: "not-saved",
+        reason: written.code === "BAD_INPUT" ? "bad-input" : "rejected",
+        value,
+        revealed: current.revealed,
+      });
       return;
     }
     emit({
@@ -272,8 +302,14 @@ export function createSecretRequest(input: SecretRequestInput, ports: SecretRequ
       if (!ended && state.state !== "saving") emit({ ...facts, state: "held" });
     },
     expire() {
-      if (state.state === "saving") {
-        finish("outcome-unknown", failure("Secret save outcome is unknown.", "Check the current secret metadata before trying again. No entry was replayed; never send the value in chat."));
+      if (writing) {
+        finish(
+          "outcome-unknown",
+          failure(
+            "Secret save outcome is unknown.",
+            "Check the current secret metadata before trying again. No entry was replayed; never send the value in chat.",
+          ),
+        );
         return;
       }
       finish("expired", failure("Secret entry is no longer open. No entry was replayed."));

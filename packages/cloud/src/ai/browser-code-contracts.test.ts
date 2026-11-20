@@ -9,7 +9,9 @@ test("code_secret model schema exposes the name pattern while runtime keeps targ
     "^(?:[A-Za-z][A-Za-z0-9_-]{0,79}|_[A-Za-z0-9_]{0,63})$",
   );
   expect(CodeSecretInput.safeParse({ name: "my-key", origin: "https://example.com" }).success).toBe(true);
-  expect(CodeSecretInput.safeParse({ name: "_API", origin: "https://example.com", prefix: "", target: { code: id, pathPrefix: "/" } }).success).toBe(true);
+  expect(
+    CodeSecretInput.safeParse({ name: "_API", origin: "https://example.com", prefix: "", target: { code: id, pathPrefix: "/" } }).success,
+  ).toBe(true);
 });
 test("code_interact and node inspection no longer exist", () => {
   expect(() => parseCodeToolInput("code_interact", { runId: "run", id: "count" })).toThrow();

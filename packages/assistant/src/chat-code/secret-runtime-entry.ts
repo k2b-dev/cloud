@@ -42,8 +42,8 @@ export function secretRuntimeHandlers(
         renewing = false;
       const heartbeat =
         claim.status === "execute"
-          // runtime-timer: renews ownership of private entry already in flight while maintenance drains work.
-          ? setInterval(async () => {
+          ? // runtime-timer: renews ownership of private entry already in flight while maintenance drains work.
+            setInterval(async () => {
               if (renewing || abort.signal.aborted) return;
               renewing = true;
               try {

@@ -70,7 +70,7 @@ export function secretRequestPorts(input: SecretRequestInput, conversationId: st
             SecretListSchema,
           );
           if (!listed.ok) return { ok: false, code: listed.error.code, status: listed.error.status };
-          const page = listed.data.data;
+          const page: z.output<typeof SecretListSchema> = listed.data.data;
           const entry = page.items.find((item) => item.name === input.name);
           if (entry) {
             // Directory visibility is enforced by the same Core directory that the Code page follows.

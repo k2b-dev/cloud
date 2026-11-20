@@ -8,39 +8,39 @@ import { testIdentity } from "./test-identity";
 
 const owner = testIdentity("00000000-0000-4000-8000-000000000001");
 for (const configured of [true, false])
-test(`completion ${configured} pins the requested name and strips private browser fields`, async () => {
-  const privateValue = "fixture-private-completion-field";
-  const complete = spyOn(clientCalls, "complete").mockResolvedValue({ saved: true });
-  const api = new Hono<AuthContext>()
-    .use("*", async (c, next) => {
-      c.set("credentialKind", "session");
-      c.set("actor", owner.actor);
-      c.set("accessSubject", owner.accessSubject);
-      await next();
-    })
-    .route("/", createChatCodeServiceRoutes());
-  try {
-    const response = await api.request("/runtime/complete", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        conversationId: "Chat42",
-        turnId: "Turn42",
-        callId: "secret-call",
-        clientId: "11111111-1111-4111-8111-111111111111",
-        input: { operation: "secret", name: "API", origin: "https://api.example.com" },
-        result: { configured, name: privateValue, value: privateValue },
-      }),
-    });
-    expect(response.status).toBe(200);
-    expect(complete).toHaveBeenCalledTimes(1);
-    expect(complete.mock.calls[0]?.[0]).toMatchObject({ result: { configured, name: "API" } });
-    expect(JSON.stringify(complete.mock.calls)).not.toContain(privateValue);
-    expect(await response.text()).not.toContain(privateValue);
-  } finally {
-    complete.mockRestore();
-  }
-});
+  test(`completion ${configured} pins the requested name and strips private browser fields`, async () => {
+    const privateValue = "fixture-private-completion-field";
+    const complete = spyOn(clientCalls, "complete").mockResolvedValue({ saved: true });
+    const api = new Hono<AuthContext>()
+      .use("*", async (c, next) => {
+        c.set("credentialKind", "session");
+        c.set("actor", owner.actor);
+        c.set("accessSubject", owner.accessSubject);
+        await next();
+      })
+      .route("/", createChatCodeServiceRoutes());
+    try {
+      const response = await api.request("/runtime/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          conversationId: "Chat42",
+          turnId: "Turn42",
+          callId: "secret-call",
+          clientId: "11111111-1111-4111-8111-111111111111",
+          input: { operation: "secret", name: "API", origin: "https://api.example.com" },
+          result: { configured, name: privateValue, value: privateValue },
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(complete.mock.calls[0]?.[0]).toMatchObject({ result: { configured, name: "API" } });
+      expect(JSON.stringify(complete.mock.calls)).not.toContain(privateValue);
+      expect(await response.text()).not.toContain(privateValue);
+    } finally {
+      complete.mockRestore();
+    }
+  });
 
 test("a failed private write never echoes the value or exception to logs or the response", async () => {
   const privateValue = "fixture-private-error-echo";

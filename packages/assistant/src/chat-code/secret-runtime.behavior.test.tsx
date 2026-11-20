@@ -183,8 +183,12 @@ for (const completionFails of [false, true])
       return {};
     });
     const ports = spyOn(transport, "secretRequestPorts").mockReturnValue({
-      async list() { return { ok: true, entry: null }; },
-      async check() { return true; },
+      async list() {
+        return { ok: true, entry: null };
+      },
+      async check() {
+        return true;
+      },
       async save(input) {
         expect(input.value).toBe(privateValue);
         controller?.expire();
@@ -195,13 +199,18 @@ for (const completionFails of [false, true])
     try {
       const runtime = createRoot((cleanup) => {
         dispose = cleanup;
-        return createChatSecretRuntime({ present(current) {
-          controller = current;
-          current.input(privateValue);
-          void current.submit();
-        } });
+        return createChatSecretRuntime({
+          present(current) {
+            controller = current;
+            current.input(privateValue);
+            void current.submit();
+          },
+        });
       });
-      const result = await runtime.code_secret({ ...call, args: { ...call.args, prefix: "", target: { code: "Abc234", pathPrefix: "/v1" } } });
+      const result = await runtime.code_secret({
+        ...call,
+        args: { ...call.args, prefix: "", target: { code: "Abc234", pathPrefix: "/v1" } },
+      });
       expect(result).toMatchObject({ failed: true, error: "Secret save outcome is unknown." });
       expect(controller?.state.state).toBe("outcome-unknown");
       expect(request.mock.calls.map(([path]) => path)).toEqual(["claim", "complete"]);

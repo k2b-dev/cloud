@@ -234,7 +234,10 @@ for (const status of [400, 422, 500, null])
     expect(f.controller.state.state).toBe("saved");
   });
 
-for (const [code, status, reason] of [["BAD_INPUT", 400, "bad-input"], ["FAILED", 422, "rejected"]] as const)
+for (const [code, status, reason] of [
+  ["BAD_INPUT", 400, "bad-input"],
+  ["FAILED", 422, "rejected"],
+] as const)
   test(`code failure ${code} has a stable reason for distinct card text`, async () => {
     const f = fixture(true);
     await f.controller.start();
@@ -289,6 +292,31 @@ for (const code of [false, true])
       expect(f.writes).toHaveLength(1);
       expect(JSON.stringify([f.controller.state, await f.controller.result])).not.toContain(privateValue);
     });
+test("lease expiry during the destination recheck ends as expired and never writes", async () => {
+  let release!: (allowed: boolean) => void;
+  let checks = 0;
+  const writes: unknown[] = [];
+  const controller = createSecretRequest(input(true), {
+    list: async () => ({ ok: true, entry: null }),
+    check: () => (checks++ === 0 ? Promise.resolve(true) : new Promise<boolean>((done) => (release = done))),
+    save: async (value) => {
+      writes.push(value);
+      return { ok: true };
+    },
+  });
+  await controller.start();
+  controller.input(privateValue);
+  const pending = controller.submit();
+  await Promise.resolve();
+  expect(controller.state.state).toBe("saving");
+  controller.expire();
+  release(true);
+  await pending;
+  expect(controller.state.state).toBe("expired");
+  expect(await controller.result).toMatchObject({ failed: true, error: "Secret entry is no longer open. No entry was replayed." });
+  expect(writes).toHaveLength(0);
+  expect(JSON.stringify([controller.state, await controller.result])).not.toContain(privateValue);
+});
 test("an uncertain write followed by a stored value asks for replacement, never blindly retries", async () => {
   const f = fixture(true);
   await f.controller.start();
