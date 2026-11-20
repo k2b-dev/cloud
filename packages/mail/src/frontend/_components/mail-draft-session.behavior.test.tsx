@@ -433,6 +433,19 @@ describe("Mail draft session", () => {
     return { session, current, setCurrent, close };
   };
 
+  /**
+   * The sign-in state with the steps before it: did the shared client open, did the save reach the server? A failure
+   * then names the step that went wrong instead of one bare `false` (#3846).
+   */
+  const sharedSignInState = (f: Awaited<ReturnType<typeof sharedFixture>>) => ({
+    opened: Boolean(f.session.shared()),
+    snapshotRequested: requests.some((request) => request.method === "POST" && request.url.endsWith("/document/snapshot")),
+    authenticationRequired: f.session.authenticationRequired(),
+    status: f.session.status(),
+    message: f.session.statusMessage(),
+  });
+  const SIGN_IN_EXPIRED = "Your sign-in expired. Sign in again to continue with this draft.";
+
   test("closing a shared fixture waits for initialization before restoring its dependencies", async () => {
     const originalIndexedDB = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
     Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: {} });
@@ -573,9 +586,11 @@ describe("Mail draft session", () => {
           expect(await f.session.persist()).toBeNull();
         }
       }
-      expect(f.session.authenticationRequired()).toBe(true);
-      expect(f.session.status()).toBe("readonly");
-      expect(f.session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
+      expect({
+        authenticationRequired: f.session.authenticationRequired(),
+        status: f.session.status(),
+        message: f.session.statusMessage(),
+      }).toEqual({ authenticationRequired: true, status: "readonly", message: SIGN_IN_EXPIRED });
       if (initializing) {
         if (!phase.startsWith("materialize")) {
           await f.session.prepareSignIn(); // Unchanged SSR content already exists on the server.
@@ -627,7 +642,13 @@ describe("Mail draft session", () => {
         await Bun.sleep(0);
         expect(f.session.saveStatus()).toBe("pending");
         expect(await f.session.persist()).toBeNull();
-        expect(f.session.authenticationRequired()).toBe(true);
+        expect(sharedSignInState(f)).toEqual({
+          opened: true,
+          snapshotRequested: true,
+          authenticationRequired: true,
+          status: "readonly",
+          message: SIGN_IN_EXPIRED,
+        });
         if (mode === "tab-only") {
           await expect(f.session.prepareSignIn()).rejects.toThrow();
           expect(offline).not.toHaveBeenCalled();
