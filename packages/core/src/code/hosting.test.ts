@@ -185,6 +185,8 @@ test("guests are refused on every page that is not public, for every method, bef
   const groupLookups = page.groups.mock.calls.length;
   for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
     for (const headers of variants) {
+      // A guest who opens the page reads the Cloud's "not available" page instead (`page.render.test.ts`).
+      if (method === "GET" && headers.Accept === "text/html" && !headers["X-Code-Page"]) continue;
       const response = await page.router.request(`/code/${codeId}/`, {
         method,
         headers: { ...headers, "X-Code-CSRF": codeCsrf("fixture-session", codeId) },

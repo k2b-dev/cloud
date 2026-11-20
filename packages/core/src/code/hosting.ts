@@ -1,8 +1,10 @@
 import { CODE_REQUEST_LIMITS, CodeRouteRequestSchema, codeOwnPath, matchCodeRoute, validateCodePage } from "@k2b/cloud/code";
 import type { CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
 import { auth, getEffectiveGroups, getLocale, middleware } from "@k2b/cloud/server";
-import { Hono } from "hono";
-import { admitCodePage } from "./page-admission";
+import { i18n } from "@k2b/stdlib";
+import { type Context, Hono } from "hono";
+import { ssr } from "../config";
+import { admitCodePage, isCodePageNavigation } from "./page-admission";
 import { codePageLabel } from "./page-provenance";
 import type { CodePageProvenanceSeed } from "./page-provenance-contracts";
 import { type CodePageHostingContext, codePageHandlers } from "./render-page";
@@ -46,6 +48,40 @@ export async function readCodeRequestBody(request: Request, maxBytes: number, si
     reader.releaseLock();
   }
 }
+const unavailableMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      title: "This page is not available right now",
+      gone: "It may be paused, the link may be out of date, or the page is not shared with you.",
+      later: "Try again in a moment.",
+      retry: "Try again",
+    },
+    de: {
+      title: "Diese Seite ist gerade nicht erreichbar",
+      gone: "Vielleicht ist sie pausiert, der Link stimmt nicht mehr, oder sie ist nicht für dich freigegeben.",
+      later: "Versuche es in einem Moment noch einmal.",
+      retry: "Erneut versuchen",
+    },
+  },
+});
+
+/**
+ * What a person who opened a Code page sees instead of the stable code a script gets: the Cloud's error page. Missing,
+ * paused and inaccessible Code look the same; a busy or slow Code offers to try again.
+ */
+const unavailablePage = (c: Context, status: number) => {
+  const { t } = unavailableMessages.resolve([getLocale(c)]);
+  const url = new URL(c.req.url);
+  if (status === 409 || status === 429 || status >= 500)
+    return ssr.error(c, status === 429 ? 429 : status === 504 ? 504 : 503, {
+      title: t.title,
+      description: t.later,
+      action: { label: t.retry, href: url.pathname + url.search, icon: "ti ti-refresh" },
+    });
+  return ssr.error(c, 404, { title: t.title, description: t.gone });
+};
+
 export function createCodeHostingRoutes(deps = { version: codeRequestVersion, request: requestCodeRoute }) {
   const router = new Hono<CodePageHostingContext>();
   router.use("/code/:codeId/*", middleware.noTransform(), auth.requireRole("*"));
@@ -60,7 +96,8 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
       try {
         if (!["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"].includes(c.req.method))
           return c.json({ code: "code_request_method" }, 405);
-        if (Buffer.byteLength(c.req.url) > CODE_REQUEST_LIMITS.urlBytes) return c.json({ code: "code_request_size_limit" }, 413);
+        if (Buffer.byteLength(c.req.url) > CODE_REQUEST_LIMITS.urlBytes)
+          return isCodePageNavigation(c) ? await unavailablePage(c, 413) : c.json({ code: "code_request_size_limit" }, 413);
         const path = new URL(c.req.url).pathname.slice(`/code/${codeId}`.length) || "/";
         const admission = await admitCodePage(c, {
           codeId,
@@ -70,7 +107,9 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
           select: (manifest) => selectCodePageRoute(manifest, c.req.method, path),
           limits: { member: "code-visitor-requests", public: "code-public-requests" },
         });
-        if (admission instanceof Response) return admission;
+        // A visitor's way to sign-in stays a redirect; refusals become the page.
+        if (admission instanceof Response)
+          return isCodePageNavigation(c) && admission.status >= 400 ? await unavailablePage(c, admission.status) : admission;
         const { version, selected, isPublic } = admission;
         const actor = c.get("actor");
         const subject = c.get("accessSubject");
@@ -161,9 +200,14 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
           }),
         );
       } catch (error) {
-        if (signal.aborted) return c.json({ code: "code_request_timeout" }, 504);
-        if (error instanceof CodeRequestError) return c.json({ code: error.code }, error.status);
-        return c.json({ code: "code_request_failed" }, 503);
+        const failure = signal.aborted
+          ? { code: "code_request_timeout", status: 504 as const }
+          : error instanceof CodeRequestError
+            ? { code: error.code, status: error.status }
+            : { code: "code_request_failed", status: 503 as const };
+        // A person who opened the page reads a Cloud page with a way out, never the code.
+        if (isCodePageNavigation(c)) return await unavailablePage(c, failure.status);
+        return c.json({ code: failure.code }, failure.status);
       }
     },
     ...codePageHandlers,
