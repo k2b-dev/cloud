@@ -9,7 +9,16 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
-import { type BlockScene, fixtureImage, imageLayoutScenes, imageStateScenes, blockScenes as scenes } from "./blocks.fixtures";
+import {
+  type BlockScene,
+  FIT_FIXTURE_COLOUR,
+  fixtureImage,
+  imageEdgeScenes,
+  imageFitScenes,
+  imageLayoutScenes,
+  imageStateScenes,
+  blockScenes as scenes,
+} from "./blocks.fixtures";
 import { validateBlocks } from "./validate";
 
 // Islands, flat options and the six-column rows depend on the real layout engine, at desktop and phone widths.
@@ -118,6 +127,11 @@ const open = async (
     if (url.pathname.endsWith("/waiting.svg")) return;
     if (url.pathname.endsWith("/missing.svg"))
       return route.fulfill({ status: 404, contentType: "application/json", body: '{"ok":false,"code":"not_found"}' });
+    // A picture refused at first whose later tries are still under way.
+    if (url.pathname.endsWith("/later.svg"))
+      return url.search
+        ? undefined
+        : route.fulfill({ status: 404, contentType: "application/json", body: '{"ok":false,"code":"not_found"}' });
     if (url.pathname.endsWith(".svg")) return route.fulfill({ body: fixtureImage(url.pathname), contentType: "image/svg+xml" });
     return route.fulfill({
       contentType: "text/html",
@@ -341,6 +355,187 @@ describe("BlockTree", () => {
         }
       }
     });
+
+  for (const width of [1440, 390])
+    for (const host of ["preview", "review"] as const)
+      test(`at ${width} px a portrait or landscape picture is fitted whole into the same place in a ${host === "preview" ? "search preview" : "approval"}`, async () => {
+        /** The picture's place, its details, and where the picture's own colour runs along its middle row and column. */
+        const measure = async (tab: Page) => {
+          const place = tab.locator(".cloud-blocks__image img");
+          const shot = (await place.screenshot()).toString("base64");
+          return tab.evaluate(
+            async ({ shot, colour }) => {
+              const box = (node: Element) => {
+                const rect = node.getBoundingClientRect();
+                return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+              };
+              const image = new Image();
+              image.src = `data:image/png;base64,${shot}`;
+              await image.decode();
+              const canvas = document.createElement("canvas");
+              canvas.width = image.naturalWidth;
+              canvas.height = image.naturalHeight;
+              const context = canvas.getContext("2d")!;
+              context.drawImage(image, 0, 0);
+              const picture = (x: number, y: number) => {
+                const [r, g, b] = context.getImageData(x, y, 1, 1).data;
+                return Math.abs(r! - colour[0]) + Math.abs(g! - colour[1]) + Math.abs(b! - colour[2]) < 24;
+              };
+              const run = (length: number, at: (index: number) => boolean) => {
+                const hits = Array.from({ length }, (_, index) => index).filter(at);
+                return hits.length ? { from: hits[0]!, to: hits.at(-1)! + 1 } : null;
+              };
+              const [width, height] = [canvas.width, canvas.height];
+              const img = document.querySelector(".cloud-blocks__image img")!;
+              return {
+                place: box(img),
+                // In an approval the details share the picture's row; in a search preview they have a cell of their own.
+                details: box(
+                  document.querySelector(
+                    ":is(.cloud-blocks__cell[data-kind='Detail'], .cloud-blocks__cell[data-media-row] > :not(.cloud-blocks__image))",
+                  )!,
+                ),
+                fit: getComputedStyle(img).objectFit,
+                ground: getComputedStyle(img).backgroundColor,
+                shot: { width, height },
+                row: run(width, (x) => picture(x, Math.floor(height / 2))),
+                column: run(height, (y) => picture(Math.floor(width / 2), y)),
+              };
+            },
+            { shot, colour: FIT_FIXTURE_COLOUR },
+          );
+        };
+        {
+          const facts: Partial<Record<(typeof imageFitScenes)[number]["shape"], Awaited<ReturnType<typeof measure>>>> = {};
+          for (const scene of imageFitScenes.filter((entry) => entry.host === host)) {
+            expect(() => validateBlocks(scene.blocks, host, { appId: scene.app.slice(1), appPrefixes: [scene.app] })).not.toThrow();
+            const tab = await open(scene, width, "browser", host);
+            try {
+              await tab.waitForFunction(() => Array.from(document.images).every((image) => image.complete && image.naturalWidth > 0));
+              await settled(tab);
+              facts[scene.shape] = await measure(tab);
+              const shots = process.env.CAPBLOCKS_SHOTS;
+              if (shots) {
+                mkdirSync(shots, { recursive: true });
+                await tab.screenshot({ path: resolve(shots, `${scene.name}-light-${width}.png`), fullPage: true });
+              }
+            } finally {
+              await tab.close();
+            }
+          }
+          const { m_12: square, hoch, quer } = facts as Required<typeof facts>;
+          // One 4:3 place for every shape: the picture never makes it taller, and the details beside or below never move.
+          expect(Math.abs(square.place.width / square.place.height - 4 / 3)).toBeLessThan(0.01);
+          for (const shape of [hoch, quer]) {
+            expect(shape.place).toEqual(square.place);
+            expect(shape.details).toEqual(square.details);
+            expect(shape.fit).toBe("contain");
+            expect(shape.ground).toBe(square.ground);
+          }
+          const { width: w, height: h } = hoch.shot;
+          // Portrait: the whole height, centred, with the muted ground on both sides.
+          expect(hoch.column).toEqual({ from: 0, to: h });
+          expect(Math.abs(hoch.row!.to - hoch.row!.from - (h * 90) / 160)).toBeLessThanOrEqual(2);
+          expect(Math.abs(hoch.row!.from - (w - hoch.row!.to))).toBeLessThanOrEqual(2);
+          expect(hoch.row!.from).toBeGreaterThan(0);
+          // Landscape: the whole width, centred, with the muted ground above and below.
+          expect(quer.row).toEqual({ from: 0, to: w });
+          expect(Math.abs(quer.column!.to - quer.column!.from - (w * 90) / 160)).toBeLessThanOrEqual(2);
+          expect(Math.abs(quer.column!.from - (h - quer.column!.to))).toBeLessThanOrEqual(2);
+          expect(quer.column!.from).toBeGreaterThan(0);
+        }
+      });
+
+  for (const width of [1440, 390])
+    test(`at ${width} px a caption below a picture with a ratio never makes the picture smaller`, async () => {
+      const scene = imageEdgeScenes.find((entry) => entry.name === "19-bild-unterschrift")!;
+      expect(() => validateBlocks(scene.blocks, "result", { appId: "kunst", appPrefixes: [scene.app] })).not.toThrow();
+      const tab = await open(scene, width);
+      try {
+        await tab.waitForFunction(() => Array.from(document.images).every((image) => image.complete && image.naturalWidth > 0));
+        await settled(tab);
+        const facts = await tab.evaluate(() => {
+          const box = (selector: string) => {
+            const rect = document.querySelector(selector)!.getBoundingClientRect();
+            return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+          };
+          return {
+            figure: box(".cloud-blocks__image"),
+            picture: box(".cloud-blocks__image img"),
+            caption: box(".cloud-blocks__image figcaption"),
+            cell: box(".cloud-blocks__cell"),
+            rem: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+          };
+        });
+        // The picture keeps the full width and its own 16:9; the caption adds its line below instead.
+        expect(facts.picture.width).toBe(Math.min(24 * facts.rem, facts.cell.width));
+        expect(facts.picture.width).toBe(facts.figure.width);
+        expect(Math.abs(facts.picture.width / facts.picture.height - 16 / 9)).toBeLessThan(0.01);
+        expect(facts.caption.top).toBeGreaterThanOrEqual(facts.picture.top + facts.picture.height);
+        expect(facts.figure.height).toBeGreaterThan(facts.picture.height);
+      } finally {
+        await tab.close();
+      }
+    });
+
+  test("a picture without a ratio keeps one small place while it waits for a later try and while that try loads", async () => {
+    const scene = imageEdgeScenes.find((entry) => entry.name === "20-bild-ohne-format-wartet")!;
+    imageRequests.length = 0;
+    const tab = await open(scene, 1440, "browser", "result", true);
+    try {
+      const height = (selector: string) => tab.locator(selector).evaluate((node) => node.getBoundingClientRect().height);
+      const rem = await tab.evaluate(() => Number.parseFloat(getComputedStyle(document.documentElement).fontSize));
+      const heights: number[] = [];
+      for (const attempt of [1, 2]) {
+        await tab.locator(".cloud-blocks__image-wait").waitFor();
+        heights.push(await height(".cloud-blocks__image-wait"));
+        await tab.clock.runFor(2_000);
+        // The later try is still under way: its picture holds the same place as the wait before it.
+        await tab.locator(`.cloud-blocks__image img[data-retry][src$="retry=${attempt}"]`).waitFor();
+        heights.push(await height(".cloud-blocks__image img"));
+        if (attempt === 1) await tab.evaluate(() => document.querySelector(".cloud-blocks__image img")!.dispatchEvent(new Event("error")));
+      }
+      await tab.clock.resume();
+      expect(heights).toEqual([3 * rem, 3 * rem, 3 * rem, 3 * rem]);
+      expect(imageRequests).toEqual(["/kunst/images/later.svg", "/kunst/images/later.svg?retry=1", "/kunst/images/later.svg?retry=2"]);
+    } finally {
+      await tab.close();
+    }
+  });
+
+  test("before hydration only a requested picture that does not decode counts as failed", async () => {
+    const tab = await open(imageEdgeScenes[0]!, 1440);
+    try {
+      const failed = await tab.evaluate(async () => {
+        const picture = (src: string, style = "") => {
+          const image = document.createElement("img");
+          image.loading = "lazy";
+          image.src = src;
+          image.setAttribute("style", `display:block;width:96px;height:72px;${style}`);
+          document.body.append(image);
+          return image;
+        };
+        const refused = picture("/kunst/images/missing.svg");
+        const viewBoxOnly = picture("/kunst/images/hoch.svg");
+        // Far below the viewport: a lazy picture there has not been asked for yet.
+        const below = picture("/kunst/images/missing.svg?below", "margin-top:40000px");
+        await Promise.all(
+          [refused, viewBoxOnly].map(
+            (image) =>
+              new Promise<void>((done) => {
+                if (image.complete) return done();
+                image.addEventListener("load", () => done(), { once: true });
+                image.addEventListener("error", () => done(), { once: true });
+              }),
+          ),
+        );
+        return Promise.all([refused, viewBoxOnly, below].map((image) => window.failedBeforeHydration(image)));
+      });
+      expect(failed).toEqual([true, false, false]);
+    } finally {
+      await tab.close();
+    }
+  });
 
   for (const width of [1440, 390])
     test(`at ${width} px tables and key figures keep the room of their first frame when their code arrives`, async () => {

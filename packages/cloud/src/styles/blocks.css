@@ -427,12 +427,14 @@
   margin: 0;
 }
 
-/* The picture, its wait for a later try, and its stand-in fill the same place, so loading and failing never move what follows. */
+/*
+  The picture, its wait for a later try, and its stand-in fill the same place, so loading and failing never move what
+  follows. A picture is never cropped: in a fixed place it is fitted whole, centred on the muted ground.
+*/
 .k2b-ui .cloud-blocks__image :is(img, .cloud-blocks__image-wait, .cloud-blocks__image-missing) {
   width: 100%;
-  height: 100%;
   border-radius: var(--k2b-radius-control);
-  object-fit: cover;
+  object-fit: contain;
   background: var(--k2b-surface-muted);
 }
 
@@ -440,13 +442,13 @@
   display: block;
 }
 
-/* A declared ratio is the place itself: a picture of another shape fills it, cropped, and never makes it taller. */
-.k2b-ui .cloud-blocks__image[data-ratio] {
-  min-height: 0;
-  grid-template-rows: minmax(0, 1fr);
+/* A declared ratio is the place of the picture itself, so a caption below it never makes the picture smaller. */
+.k2b-ui .cloud-blocks__image[data-ratio] :is(img, .cloud-blocks__image-wait, .cloud-blocks__image-missing) {
+  aspect-ratio: var(--cloud-blocks-image-ratio);
 }
 
-.k2b-ui .cloud-blocks__image :is(.cloud-blocks__image-wait, .cloud-blocks__image-missing) {
+/* Without a ratio, a wait and a later try keep the same small place, so the height does not jump with every try. */
+.k2b-ui .cloud-blocks__image :is(img[data-retry], .cloud-blocks__image-wait, .cloud-blocks__image-missing) {
   min-height: 3rem;
 }
 

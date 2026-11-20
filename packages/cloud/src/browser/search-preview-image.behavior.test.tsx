@@ -87,9 +87,9 @@ describe("search preview of an image file", () => {
       // Loading: the picture already stands in its 4:3 place, before the facts, with the file name as its text.
       const cells = Array.from(dom.root.querySelectorAll(".cloud-blocks__cell")).map((cell) => cell.getAttribute("data-kind"));
       expect(cells).toEqual(["Image", "Detail"]);
-      // The DOM writes the ratio as "<ratio> / 1"; the place is the 4:3 of the reader's view.
-      const ratio = figure()!.style.aspectRatio;
-      expect(ratio.replace(/ \/ 1$/, "")).toBe(String(4 / 3));
+      // The place is the 4:3 of the reader's view; the picture, its wait, and its stand-in all take that ratio.
+      const ratio = figure()!.style.getPropertyValue("--cloud-blocks-image-ratio");
+      expect(ratio).toBe(String(4 / 3));
       expect(picture()!.getAttribute("src")).toBe("/api/filesv2/entries/vase/image?rev=r1");
       expect(picture()!.alt).toBe("vase.jpg");
       expect(standIn()).toBeNull();
@@ -103,7 +103,7 @@ describe("search preview of an image file", () => {
           expect(picture()).toBeNull();
           expect(standIn()).toBeNull();
           expect(waiting()!.getAttribute("aria-label")).toBe("vase.jpg");
-          expect(figure()!.style.aspectRatio).toBe(ratio);
+          expect(figure()!.style.getPropertyValue("--cloud-blocks-image-ratio")).toBe(ratio);
           jest.advanceTimersByTime(1_999);
           expect(picture()).toBeNull();
           jest.advanceTimersByTime(1);
@@ -116,7 +116,7 @@ describe("search preview of an image file", () => {
         expect(waiting()).toBeNull();
         expect(standIn()!.getAttribute("role")).toBe("img");
         expect(standIn()!.getAttribute("aria-label")).toBe("vase.jpg");
-        expect(figure()!.style.aspectRatio).toBe(ratio);
+        expect(figure()!.style.getPropertyValue("--cloud-blocks-image-ratio")).toBe(ratio);
         expect(picture()).toBeNull();
         jest.advanceTimersByTime(10_000);
         expect(picture()).toBeNull();
@@ -138,8 +138,9 @@ describe("search preview of an image file", () => {
     }
   });
 
-  test("a picture that failed before its code ran counts as failed, and closing the preview ends a waiting try", async () => {
-    // happy-dom's images are complete with no width, as a browser reports one that failed before hydration.
+  test("a picture this code draws waits for its own error event, and closing the preview ends a waiting try", async () => {
+    // happy-dom's images are complete with no width, as a browser reports one that failed before hydration. Only a
+    // hydrated picture can have failed before its listener existed; one drawn here is never taken for failed.
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     globalThis.fetch = searchFetch(originalFetch, []);
@@ -154,7 +155,10 @@ describe("search preview of an image file", () => {
         jest.advanceTimersByTime(10);
         await new Promise((done) => setImmediate(done));
       }
-      // No error event arrives, yet the place already waits for its next try instead of keeping a broken image.
+      await new Promise((done) => setImmediate(done));
+      expect(figure()!.querySelector("img")).not.toBeNull();
+      expect(figure()!.querySelector(".cloud-blocks__image-wait")).toBeNull();
+      figure()!.querySelector("img")!.dispatchEvent(new Event("error"));
       expect(figure()!.querySelector("img")).toBeNull();
       expect(figure()!.querySelector(".cloud-blocks__image-wait")).not.toBeNull();
       expect(figure()!.querySelector(".cloud-blocks__image-missing")).toBeNull();

@@ -26,6 +26,7 @@ import {
   onMount,
   Show,
   Switch,
+  sharedConfig,
   useContext,
 } from "solid-js";
 import { CloudChartBlock } from "#chat-charts";
@@ -36,6 +37,7 @@ import { blockFileName, figuresCopy, saveBlob, tableCopy, tableCsv, wholeTable }
 import { BLOCK_PANEL_HEIGHTS, blockChartHeight, blockDescription, blockJson } from "./description";
 import { blockWords } from "./messages";
 import { blockDataAtPath } from "./path";
+import { failedBeforeHydration, retrySource } from "./picture";
 import type { Block } from "./schema";
 import { SearchToggle } from "./search-toggle";
 
@@ -315,14 +317,13 @@ function CardsBlock(props: { block: Leaf<"Cards">; locale: string }) {
 const IMAGE_RETRIES = 2;
 const IMAGE_RETRY_DELAY_MS = 2_000;
 
-/** The source of a later try: the same route, which checks the reader again, under an address no cache has answered. */
-const retrySource = (src: string, attempt: number) => (attempt ? `${src}${src.includes("?") ? "&" : "?"}retry=${attempt}` : src);
-
 /**
  * One source of a picture, from its first try to its stand-in. While a later try waits, the place keeps its muted
  * ground; the stand-in follows only once every try has failed. Unmounting, or a new source, ends a waiting try.
  */
 function BlockPicture(props: { src: string; alt?: string }) {
+  // Only a server-drawn picture can fail before its error listener exists; one this code draws reports its own error.
+  const hydrating = Boolean(sharedConfig.context);
   const [attempt, setAttempt] = createSignal(0);
   const [phase, setPhase] = createSignal<"loading" | "waiting" | "failed">("loading");
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -341,14 +342,15 @@ function BlockPicture(props: { src: string; alt?: string }) {
       <Match when={phase() === "loading"}>
         <img
           ref={(image) =>
-            // A picture that failed before this code ran never fires its error event.
+            // A picture that failed before hydration never fires its error event.
             onMount(() => {
-              if (image.complete && image.naturalWidth === 0) fail();
+              if (hydrating && attempt() === 0) void failedBeforeHydration(image).then((failed) => failed && attempt() === 0 && fail());
             })
           }
           src={retrySource(props.src, attempt())}
           alt={props.alt}
           loading="lazy"
+          data-retry={attempt() ? "" : undefined}
           onError={fail}
         />
       </Match>
@@ -375,7 +377,7 @@ function ImageBlock(props: { block: Leaf<"Image"> }) {
         <figure
           class="cloud-blocks__image"
           data-ratio={props.block.ratio ? "" : undefined}
-          style={props.block.ratio ? { "aspect-ratio": String(props.block.ratio) } : undefined}
+          style={props.block.ratio ? { "--cloud-blocks-image-ratio": String(props.block.ratio) } : undefined}
         >
           {/* Keyed: every source starts with its own tries. */}
           <Show when={src()} keyed>

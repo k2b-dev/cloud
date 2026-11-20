@@ -311,8 +311,69 @@ export const imageLayoutScenes: (BlockScene & { host: "result" | "review" })[] =
   },
 ];
 
-/** An SVG stand-in for an app image: a vase or a plate in one quiet colour. */
+/**
+ * A picture of another shape than its place: portrait and landscape, each fitted whole into the same fixed place, in a
+ * search preview (declared 4:3) and as an approval's thumbnail. The 4:3 vase is the place they must match.
+ */
+const approvalPicture = (src: string): Block[] => [
+  { kind: "Image", src, alt: "Vase_Albers_Boden.jpg" },
+  { kind: "Detail", title: "Neuer Preis", items: [{ label: "Preis", value: "480 €" }] },
+];
+export const imageFitScenes: (BlockScene & { host: "preview" | "review"; shape: "m_12" | "hoch" | "quer" })[] = (
+  ["preview", "review"] as const
+).flatMap((host) =>
+  (["m_12", "hoch", "quer"] as const).map((shape) => ({
+    name: `18-einpassen-${host}-${shape}`,
+    app: "/kunst",
+    host,
+    shape,
+    blocks: (host === "preview" ? filePreview : approvalPicture)(`/kunst/images/${shape}.svg`),
+  })),
+);
+
+/**
+ * A captioned picture with a ratio, whose caption must not shrink it, and a picture without a ratio whose later try is
+ * still under way after its first one failed.
+ */
+export const imageEdgeScenes: BlockScene[] = [
+  {
+    name: "19-bild-unterschrift",
+    app: "/kunst",
+    blocks: [
+      {
+        kind: "Image",
+        src: "/kunst/images/m_12.svg",
+        alt: "Vase_Albers_Boden.jpg",
+        ratio: 16 / 9,
+        caption: "Vase aus dem Nachlass Albers, seit März im Lager Nord",
+      },
+    ],
+  },
+  {
+    name: "20-bild-ohne-format-wartet",
+    app: "/kunst",
+    blocks: [
+      { kind: "Image", src: "/kunst/images/later.svg", alt: "Vase_Albers_Boden.jpg" },
+      { kind: "Text", text: "Die Vase steht seit März im Lager Nord." },
+    ],
+  },
+];
+
+/** The colour of the portrait and landscape stand-ins: one flat field, so a test can find their edges. */
+export const FIT_FIXTURE_COLOUR = [31, 111, 139] as const;
+
+/** An SVG stand-in for an app image: a vase or a plate in one quiet colour, or a flat portrait or landscape field. */
 export const fixtureImage = (path: string): string => {
+  const shape = { hoch: "0 0 90 160", quer: "0 0 160 90" }[
+    path
+      .split("/")
+      .at(-1)!
+      .replace(/\.svg$/, "")
+  ];
+  if (shape) {
+    const [, , width, height] = shape.split(" ");
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${shape}"><rect width="${width}" height="${height}" fill="rgb(${FIT_FIXTURE_COLOUR.join(",")})"/></svg>`;
+  }
   const palette: Record<string, [string, string]> = {
     m_12: ["#eceee6", "#5f8a6f"],
     m_31: ["#f1e8de", "#8b5a3c"],
