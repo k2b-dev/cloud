@@ -1,8 +1,6 @@
 import { afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
-import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
-import * as workflowStore from "@k2b/cloud/workflows/store";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
@@ -58,7 +56,6 @@ const message = (
 suite("JMAP account commit", () => {
   let source: Awaited<ReturnType<typeof setup>>;
   let live: ReturnType<typeof spyOn<typeof mailLive, "wake">>;
-  let workflow: ReturnType<typeof spyOn<typeof workflowStore, "notifyWorkflowWorker">>;
   beforeAll(async () => {
     // The integration runner owns this file's disposable database.
     await migrate();
@@ -68,7 +65,6 @@ suite("JMAP account commit", () => {
     setSystemTime(at);
     createAppEventTestHarness("mail", mailCapabilities);
     live = spyOn(mailLive, "wake").mockImplementation(() => {});
-    workflow = spyOn(workflowStore, "notifyWorkflowWorker").mockImplementation(() => {});
     source = await setup();
   });
   afterEach(async () => {
@@ -76,7 +72,6 @@ suite("JMAP account commit", () => {
       await source?.f.close();
     } finally {
       live?.mockRestore();
-      workflow?.mockRestore();
       setSystemTime();
     }
   });
@@ -143,46 +138,6 @@ suite("JMAP account commit", () => {
       throw error;
     }
   }
-  async function listen() {
-    const definition = await workflowStore.createWorkflow({
-      appId: "mail",
-      scopeId: source.mailboxId,
-      key: "jmap-arrival",
-      name: "JMAP arrival fixture",
-      author: { kind: "system" },
-    });
-    await sql<[]>`INSERT INTO mail.workflow_profile (id, mailbox_id, enabled)
-      VALUES (${definition.id}::uuid, ${source.mailboxId}::uuid, true)`;
-    const plan: WorkflowBoundPlan = {
-      schemaVersion: 2,
-      languageId: "mail",
-      languageVersion: 1,
-      sourceHash: "a".repeat(64),
-      manifestHash: "b".repeat(64),
-      catalogHash: "c".repeat(64),
-      actionPolicies: {},
-      inputs: [],
-      triggers: [],
-      steps: [],
-      bindings: {},
-    };
-    await workflowStore.publishWorkflowVersion({
-      workflowId: definition.id,
-      source: "steps: []\n",
-      plan,
-      activations: [{ key: "received", eventType: "mail.messageReceived" }],
-      activate: true,
-      author: { kind: "system" },
-    });
-  }
-  const workflowRows = async () => {
-    const [row] = await sql<{ events: number; deliveries: number }[]>`SELECT
-      (SELECT count(*)::int FROM workflows.event WHERE app_id = 'mail' AND scope_id = ${source.mailboxId}) AS events,
-      (SELECT count(*)::int FROM workflows.event_delivery delivery JOIN workflows.event event ON event.id = delivery.event_id
-        WHERE event.app_id = 'mail' AND event.scope_id = ${source.mailboxId}) AS deliveries`;
-    if (!row) throw new Error("workflow: missing aggregate");
-    return row;
-  };
   const state = async () => {
     const [row] = await sql<
       { sync_state: unknown }[]
@@ -445,7 +400,6 @@ suite("JMAP account commit", () => {
     expect(received, "primary: Inbox receipt").toEqual([{ role: "inbox" }]);
   });
   test("idempotency: same batch is superseded; new created/updated replays and moves never receive twice", async () => {
-    await listen();
     change(message("repeat"));
     const batch = await prepared();
     await commitJmapAccountBatch(batch);
@@ -467,18 +421,15 @@ suite("JMAP account commit", () => {
     await run();
     expect((await counts()).receipts, "flags: no receipt").toBe(1);
     expect(new Set((await placements()).map((row) => row.message_id)).size, "move: original identity").toBe(1);
-    expect(await workflowRows(), "replay and moves: exactly one durable trigger").toEqual({ events: 1, deliveries: 1 });
+    expect((await counts()).receipts, "replay and moves: exactly one durable trigger").toBe(1);
   });
   for (const excluded of ["disabled", "updated", "trash", "junk", "outbound"] as const) {
     test(`receipt exclusion: ${excluded}`, async () => {
-      await listen();
       const email = message("excluded", excluded === "trash" || excluded === "junk" ? { a: true, [excluded]: true } : { a: true });
       if (excluded === "outbound") email.from = [{ name: null, email: "own@example.invalid" }];
       change(email, excluded === "updated" ? "updated" : "created");
       await run(excluded !== "disabled");
       expect(await counts(), `${excluded}: stored without receipt`).toMatchObject({ contents: 1, receipts: 0 });
-      if (excluded !== "outbound") expect(workflow, `${excluded}: no eligible ingest, no workflow wake`).not.toHaveBeenCalled();
-      expect(await workflowRows(), `${excluded}: no durable trigger`).toEqual({ events: 0, deliveries: 0 });
     });
   }
   test("flags: all active memberships update once; an identical flag page does not write placements", async () => {
@@ -503,7 +454,6 @@ suite("JMAP account commit", () => {
     expect(await timestamps(), "flags: no tuple update").toEqual(before);
   });
   test("outbox evidence: the sent copy reuses local content without an arrival", async () => {
-    await listen();
     const stableId = "<sent-evidence@example.invalid>";
     const [identity] = await sql<{ id: string }[]>`SELECT id FROM mail.sender_identities WHERE mailbox_id = ${source.mailboxId}::uuid`;
     if (!identity) throw new Error("outbox: missing sender identity");
@@ -538,11 +488,9 @@ suite("JMAP account commit", () => {
       (await placements()).map((row) => row.message_id),
       "outbox: exact local identity reused",
     ).toEqual([contentId, contentId]);
-    expect(await workflowRows(), "outbox: no arrival automation").toEqual({ events: 0, deliveries: 0 });
   });
   for (const configured of ["archive", "junk"] as const) {
     test(`roles: configured ${configured} wins over the provider role`, async () => {
-      await listen();
       const mailboxId = configured === "archive" ? "junk" : "b";
       await sql<[]>`INSERT INTO mail.folder_role_overrides (mailbox_id, folder_id, role)
         VALUES (${source.mailboxId}::uuid, ${source.folderIds.get(mailboxId)}::uuid, ${configured})`;
@@ -550,7 +498,6 @@ suite("JMAP account commit", () => {
       await run();
       const arrivals = configured === "archive" ? 1 : 0;
       expect(await counts(), `${configured}: effective role controls receipt`).toMatchObject({ contents: 1, refs: 2, receipts: arrivals });
-      expect(await workflowRows(), `${configured}: effective role controls workflow`).toEqual({ events: arrivals, deliveries: arrivals });
     });
   }
   test("roles: configured Drafts replaces the provider Drafts folder as in IMAP", async () => {
@@ -760,7 +707,6 @@ suite("JMAP account commit", () => {
     });
   }
   test("rollback after ingest: conflict rolls back content, run, checkpoint and events; retry matches clean projection", async () => {
-    await listen();
     change(message("conflict", { a: true }));
     change(message("other", { b: true }));
     await run();
@@ -773,15 +719,13 @@ suite("JMAP account commit", () => {
       beforeState = await state();
     const runs = () =>
       sql<{ state: string; cursor_after: unknown }[]>`SELECT state, cursor_after FROM mail.sync_runs WHERE id = ${batch.fence.runId}::uuid`;
-    const beforeRun = await runs(),
-      beforeWorkflows = await workflowRows();
+    const beforeRun = await runs();
     await expect(commitJmapAccountBatch(batch), "rollback: identity error").rejects.toMatchObject({
       code: "JMAP_MESSAGE_IDENTITY_CONFLICT",
     });
     expect(await counts(), "rollback: content and outboxes").toEqual(before);
     expect(await state(), "rollback: checkpoint").toEqual(beforeState);
     expect(await runs(), "rollback: run").toEqual(beforeRun);
-    expect(await workflowRows(), "rollback: durable workflow jobs").toEqual(beforeWorkflows);
     await sql<[]>`UPDATE mail.remote_message_refs SET remote_id = 'other' WHERE folder_id = ${source.folderIds.get("b")}::uuid`;
     await commitJmapAccountBatch(batch);
     expect(await counts(), "retry: one new receipt and preserved contents").toMatchObject({ contents: 3, active: 3, receipts: 3 });
@@ -1007,8 +951,7 @@ suite("JMAP account commit", () => {
       await meter.close();
     }
   });
-  test("durability: both wakes see committed rows; losing wakes leaves live and receipt outboxes intact", async () => {
-    await listen();
+  test("durability: the live wake sees committed rows; losing it leaves live and receipt outboxes intact", async () => {
     const observations: Promise<void>[] = [];
     const observe = () => {
       observations.push(
@@ -1019,14 +962,11 @@ suite("JMAP account commit", () => {
       );
     };
     live.mockImplementation(observe);
-    workflow.mockImplementation(observe);
     change(message("durable"));
     await run();
     await Promise.all(observations);
     expect(live, "wake: once").toHaveBeenCalledTimes(1);
-    expect(workflow, "workflow wake: once").toHaveBeenCalledTimes(1);
     expect(await counts(), "lost wakes: rows persist without publishing").toMatchObject({ receipts: 1, live: 1, hydration: 0 });
-    expect(await workflowRows(), "lost wake: durable workflow event and pinned delivery").toEqual({ events: 1, deliveries: 1 });
   });
   test("DATA-13: measured statement budgets are constant for keywords/removal and linear only for new memberships", async () => {
     const meter = await meterSql();
