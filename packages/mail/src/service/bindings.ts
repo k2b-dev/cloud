@@ -7,11 +7,21 @@ import { requireMailboxPermission } from "./access";
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { imapSmtpConnector } from "./connectors";
+import type { JmapRemoteFolder } from "./connectors/jmap";
+import { jmapIdSchema } from "./connectors/jmap-client";
 import { logDatabaseFailure } from "./database-errors";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { getProviderConnection, type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, isTransientProviderFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
-import { compareProviderEvidence, type EvidenceComparison, providerServerKey } from "./provider-identity";
+import {
+  compareProviderEvidence,
+  type EvidenceComparison,
+  type JmapScopeEvidence,
+  jmapFolderStableKey,
+  jmapScopeEvidenceSchema,
+  jmapScopeFingerprint,
+  providerServerKey,
+} from "./provider-identity";
 import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
@@ -502,6 +512,159 @@ const finalizeFolderProjection = async (params: {
     WHERE remote_resource_id = ${params.remoteResourceId}::uuid
   `;
   return { missing: stats?.missing ?? 0, ambiguous: stats?.ambiguous ?? 0 };
+};
+
+/** Transaction-only test seam; no production discovery or scheduler calls this yet. */
+export const projectJmapFolders = async (
+  tx: SqlClient,
+  params: {
+    remoteResourceId: string;
+    bindingId: string;
+    discoveryGeneration: number;
+    evidence: JmapScopeEvidence;
+    folders: readonly JmapRemoteFolder[];
+    inventory: { kind: "snapshot" } | { kind: "delta"; missingMailboxIds: readonly string[] };
+  },
+): Promise<Map<string, string>> => {
+  const evidence = jmapScopeEvidenceSchema.parse(params.evidence);
+  const fingerprint = jmapScopeFingerprint(evidence);
+  const seen = new Set<string>();
+  for (const folder of params.folders) {
+    jmapIdSchema.parse(folder.mailboxId);
+    if (folder.parentMailboxId !== null) jmapIdSchema.parse(folder.parentMailboxId);
+    if (seen.has(folder.mailboxId)) throw new Error("JMAP folder projection: duplicate mailbox id");
+    seen.add(folder.mailboxId);
+  }
+  const missingIds = params.inventory.kind === "delta" ? params.inventory.missingMailboxIds.map((id) => jmapIdSchema.parse(id)) : [];
+  if (missingIds.some((id) => seen.has(id))) throw new Error("JMAP folder projection: observed mailbox is also missing");
+  const [schema] = await tx<{ ready: boolean }[]>`
+    SELECT (
+      SELECT count(*) = 2 FROM pg_index
+      WHERE indexrelid IN (to_regclass('mail.binding_folder_refs_imap_path_idx'), to_regclass('mail.binding_folder_refs_jmap_id_idx'))
+        AND indisvalid AND indisready AND indislive
+    ) AND NOT EXISTS (
+      SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.binding_folder_refs'::regclass
+        AND conname = 'binding_folder_refs_binding_id_remote_path_key'
+    ) AS ready
+  `;
+  if (!schema?.ready) throw new Error("JMAP folder projection: folder identity migration is not ready");
+  // The resource serializes identity creation; the caller owns the encompassing commit.
+  const [scope] = await tx<{ id: string }[]>`
+    SELECT resource.id FROM mail.remote_resources resource
+    JOIN mail.provider_bindings binding ON binding.remote_resource_id = resource.id
+    JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+    WHERE resource.id = ${params.remoteResourceId}::uuid AND binding.id = ${params.bindingId}::uuid
+      AND resource.connector_kind = 'jmap' AND connection.connector_kind = 'jmap'
+      AND resource.scope_fingerprint = ${fingerprint} AND binding.verified_scope_fingerprint = ${fingerprint}
+      AND binding.state = 'active'
+    FOR UPDATE OF resource, binding
+  `;
+  if (!scope) throw new Error("JMAP folder projection: binding or account identity differs");
+  const existing = await tx<{ id: string; stable_key: string; parent_id: string | null; remote_folder_id: string | null }[]>`
+    SELECT folder.id, folder.stable_key, folder.parent_id, ref.remote_folder_id
+    FROM mail.folders folder
+    LEFT JOIN mail.binding_folder_refs ref ON ref.folder_id = folder.id AND ref.binding_id = ${params.bindingId}::uuid
+    WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid
+    ORDER BY folder.id FOR UPDATE OF folder
+  `;
+  const byKey = new Map(existing.map((folder) => [folder.stable_key, folder]));
+  const byMailboxId = new Map(
+    existing.filter((folder) => folder.remote_folder_id !== null).map((folder) => [folder.remote_folder_id, folder]),
+  );
+  const folderIds = new Map<string, string>();
+  for (const folder of params.folders) {
+    const stableKey = jmapFolderStableKey(evidence, folder.mailboxId);
+    const previous = byKey.get(stableKey);
+    const ref = byMailboxId.get(folder.mailboxId);
+    if ((ref && ref.id !== previous?.id) || (previous?.remote_folder_id != null && previous.remote_folder_id !== folder.mailboxId)) {
+      throw new Error("JMAP folder projection: stored mailbox identity differs");
+    }
+    let folderId = previous?.id;
+    if (folderId) {
+      await tx`UPDATE mail.folders SET name = ${folder.name}, role = ${folder.role}, selectable = ${folder.selectable},
+        discovery_generation = ${params.discoveryGeneration}, discovery_state = 'active', missing_since = NULL, dismissed_at = NULL
+        WHERE id = ${folderId}::uuid`;
+    } else {
+      const readable = folder.selectable && folder.rights.includes("read");
+      const [created] = await withShortIdDb(
+        tx,
+        "folder",
+        (db, shortId) => db<{ id: string }[]>`
+        INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, selectable, selected_for_sync,
+          display, discovery_generation, discovery_state, sync_status)
+        VALUES (${shortId}, ${params.remoteResourceId}::uuid, ${stableKey}, ${folder.name}, ${folder.role}, ${folder.selectable},
+          ${readable}, 'everywhere', ${params.discoveryGeneration}, 'active', ${readable ? "pending" : "excluded"}) RETURNING id
+      `,
+      );
+      if (!created) throw new Error("JMAP folder projection: insert returned no folder");
+      folderId = created.id;
+    }
+    folderIds.set(folder.mailboxId, folderId);
+    await tx`
+      INSERT INTO mail.binding_folder_refs (binding_id, folder_id, remote_folder_id, remote_path, delimiter,
+        uid_validity, highest_modseq, uid_next, subscribed, effective_rights, rights_source, last_seen_generation, last_verified_at)
+      VALUES (${params.bindingId}::uuid, ${folderId}::uuid, ${folder.mailboxId}, ${folder.path}, ${folder.delimiter},
+        NULL, NULL, NULL, ${folder.subscribed}, ${toPgTextArray(folder.rights)}::text[], 'acl', ${params.discoveryGeneration}, now())
+      ON CONFLICT (binding_id, folder_id) DO UPDATE SET
+        remote_folder_id = EXCLUDED.remote_folder_id, remote_path = EXCLUDED.remote_path, delimiter = EXCLUDED.delimiter,
+        namespace_kind = NULL, uid_validity = NULL, highest_modseq = NULL, uid_next = NULL,
+        subscribed = EXCLUDED.subscribed, effective_rights = EXCLUDED.effective_rights, rights_source = 'acl',
+        last_seen_generation = EXCLUDED.last_seen_generation, missing_since = NULL, last_verified_at = EXCLUDED.last_verified_at
+    `;
+  }
+  // Resolve parents only after every new UUID exists. A delta may refer to a stored parent.
+  const parents = new Map(existing.map((folder) => [folder.id, folder.parent_id]));
+  for (const folder of params.folders) {
+    const folderId = folderIds.get(folder.mailboxId);
+    if (!folderId) throw new Error("JMAP folder projection: missing projected id");
+    let parentId: string | null = null;
+    if (folder.parentMailboxId !== null) {
+      parentId =
+        folderIds.get(folder.parentMailboxId) ??
+        (params.inventory.kind === "delta" ? byKey.get(jmapFolderStableKey(evidence, folder.parentMailboxId))?.id : undefined) ??
+        null;
+      if (!parentId || missingIds.includes(folder.parentMailboxId)) throw new Error("JMAP folder projection: missing parent");
+    }
+    parents.set(folderId, parentId);
+  }
+  for (const folderId of folderIds.values()) {
+    const ancestors = new Set<string>();
+    let current: string | null = folderId;
+    while (current !== null) {
+      if (ancestors.has(current)) throw new Error("JMAP folder projection: parent cycle");
+      ancestors.add(current);
+      if (!parents.has(current)) throw new Error("JMAP folder projection: missing stored parent");
+      current = parents.get(current) ?? null;
+    }
+    await tx`UPDATE mail.folders SET parent_id = ${parents.get(folderId) ?? null}::uuid WHERE id = ${folderId}::uuid`;
+  }
+  await tx`
+    UPDATE mail.binding_folder_refs SET missing_since = COALESCE(missing_since, now()), effective_rights = ARRAY[]::text[],
+      rights_source = 'unknown', last_verified_at = now()
+    WHERE binding_id = ${params.bindingId}::uuid AND remote_folder_id IS NOT NULL
+      AND CASE WHEN ${params.inventory.kind === "snapshot"} THEN NOT (remote_folder_id = ANY(${toPgTextArray([...seen])}::text[]))
+        ELSE remote_folder_id = ANY(${toPgTextArray(missingIds)}::text[]) END
+  `;
+  // Match IMAP availability and rights loss, including an active replacement binding.
+  await tx`
+    WITH availability AS MATERIALIZED (
+      SELECT folder.id,
+        EXISTS (SELECT 1 FROM mail.binding_folder_refs ref JOIN mail.provider_bindings binding ON binding.id = ref.binding_id
+          WHERE ref.folder_id = folder.id AND ref.missing_since IS NULL AND binding.state = 'active') AS available,
+        EXISTS (SELECT 1 FROM mail.binding_folder_refs ref JOIN mail.provider_bindings binding ON binding.id = ref.binding_id
+          WHERE ref.folder_id = folder.id AND ref.missing_since IS NULL AND binding.state = 'active'
+            AND 'read' = ANY(ref.effective_rights)) AS readable
+      FROM mail.folders folder WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid
+    )
+    UPDATE mail.folders folder SET discovery_state = CASE WHEN availability.available THEN 'active' ELSE 'missing' END,
+      missing_since = CASE WHEN availability.available THEN NULL ELSE COALESCE(folder.missing_since, now()) END,
+      dismissed_at = CASE WHEN availability.available THEN NULL ELSE folder.dismissed_at END,
+      selected_for_sync = availability.readable,
+      sync_status = CASE WHEN NOT availability.available OR NOT availability.readable THEN 'excluded'
+        WHEN folder.sync_status = 'excluded' THEN 'pending' ELSE folder.sync_status END
+    FROM availability WHERE folder.id = availability.id
+  `;
+  return folderIds;
 };
 
 const projectFolders = async (params: {

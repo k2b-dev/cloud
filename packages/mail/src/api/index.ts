@@ -141,6 +141,7 @@ import {
   draftTableActionResponseSchema,
   MAX_DRAFT_DOCUMENT_PAYLOAD,
 } from "../draft-document-contracts";
+import { draftQuarantineRecoverySchema } from "../draft-quarantine-contracts";
 import { KeptConversationExportSchema } from "../kept-conversation-export";
 import { MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../search-url";
 import {
@@ -3441,6 +3442,50 @@ const mailOperationsApi = new Hono<MailApiContext>()
           expectedRevision: (await internalInput(c, c.req.valid("json"))).expectedRevision,
           locale: getLocale(c),
         }),
+      );
+    },
+  )
+  .get(
+    "/mailboxes/:mailboxId/drafts/:draftId/quarantine",
+    describeRoute({ tags: ["Mail:Drafts"], summary: "Inspect quarantined draft history (mailbox admin)", ...requiresAuth }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    async (c) =>
+      respondPublic(
+        c,
+        drafts.inspectDraftQuarantine({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+          signal: c.req.raw.signal,
+        }),
+      ),
+  )
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/quarantine/recover",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Recover a quarantined draft or create a review copy (mailbox admin)",
+      ...requiresAuth,
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    v("json", draftQuarantineRecoverySchema),
+    async (c) => {
+      const recovered = await drafts.recoverQuarantinedDraft({
+        context: requestContext(c),
+        ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+        input: c.req.valid("json"),
+        signal: c.req.raw.signal,
+      });
+      return respondPublic(
+        c,
+        await projectResourcePaths(recovered, [
+          { path: ["draft", "id"], table: "drafts" },
+          ...(recovered.ok
+            ? recovered.data.draft.attachments.map((_, index) => ({
+                path: ["draft", "attachments", String(index), "id"],
+                table: "draftAttachments" as const,
+              }))
+            : []),
+        ]),
       );
     },
   )

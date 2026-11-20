@@ -213,6 +213,7 @@ const createFixture = async (): Promise<Fixture> => {
   const internalDate = new Date();
   const envelope: ConnectorEnvelope = {
     remoteRef: {
+      kind: "imap",
       folderStableKey: "browser-inbox",
       uidValidity: "1",
       uid: "1",

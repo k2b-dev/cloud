@@ -6,6 +6,7 @@ import { principalLabel } from "../access/principal-label";
 import type { AppMeta } from "../contracts/app";
 import type { AccessEntry } from "../contracts/shared";
 import { appAccentStyle } from "./app-appearance";
+import { declaredIconColor } from "./app-icon-style";
 import Layout from "./Layout";
 import type { LayoutContext } from "./layout-context";
 
@@ -31,7 +32,7 @@ export function AppAccessDeniedContent(props: {
     <div class="mx-auto mt-8 w-full max-w-[460px] text-left sm:mt-[10vh]">
       <span
         class="app-accent-scope app-accent-text k2b-icon-tile mb-4 flex h-12 w-12 items-center justify-center rounded-xl text-[26px]"
-        style={appAccentStyle(props.app.appearance?.accent)}
+        style={appAccentStyle(declaredIconColor(props.app.appearance))}
         aria-hidden="true"
       >
         <i class={props.app.icon} />

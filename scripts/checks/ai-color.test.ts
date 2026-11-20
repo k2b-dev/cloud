@@ -5,11 +5,18 @@ import { dirname, join, relative } from "node:path";
 import { rule } from "./ai-color";
 
 const tokens = ":root {\n  --k2b-ai-accent: #8e1b6f;\n}\n.dark {\n  --k2b-ai-accent: #f0abdc;\n}\n";
+const PALETTE = "packages/cloud/src/ssr/app-icon-style.ts";
+const palette = (...tones: string[]) =>
+  `const appIconPalette: readonly Entry[] = [\n${tones.map((tone) => `  { from: "${tone}" },\n`).join("")}];\n`;
 
 const findings = async (files: Record<string, string>) => {
   const root = await mkdtemp(join(tmpdir(), "cloud-ai-color-"));
   try {
-    for (const [file, source] of Object.entries({ "packages/ui/src/styles/index.css": tokens, ...files })) {
+    for (const [file, source] of Object.entries({
+      "packages/ui/src/styles/index.css": tokens,
+      [PALETTE]: palette("#2563eb", "#c2410c"),
+      ...files,
+    })) {
       await mkdir(dirname(join(root, file)), { recursive: true });
       await writeFile(join(root, file), source);
     }
@@ -40,12 +47,19 @@ test("accepts distinct hues, near-gray colors, colors outside appearance, and th
   ).toEqual([]);
 });
 
-test("reports a plum launchpad fallback color", async () => {
-  expect(
-    await findings({
-      "packages/cloud/src/ssr/AppLaunchpadPanel.tsx": `const appIconPalette: readonly Entry[] = [\n  { from: "#2563eb" },\n  { from: "#c026d3" },\n];\n`,
-    }),
-  ).toEqual(["packages/cloud/src/ssr/AppLaunchpadPanel.tsx:3 A launchpad fallback color #c026d3"]);
+test("reports a plum, violet or grey fallback icon tone with its line", async () => {
+  expect(await findings({ [PALETTE]: palette("#2563eb", "#c026d3", "#7c3aed", "#52525b", "#e11d48") })).toEqual([
+    `${PALETTE}:3 A fallback icon color #c026d3`,
+    `${PALETTE}:3 The fallback icon tone #c026d3`,
+    `${PALETTE}:4 The fallback icon tone #7c3aed`,
+    `${PALETTE}:5 The fallback icon tone #52525b is grey (OKLCH chroma 0.015 below 0.08); a grey icon reads as black and lifeless.`,
+  ]);
+});
+
+test("reports a missing fallback palette instead of passing silently", async () => {
+  expect(await findings({ [PALETTE]: "export const tone = () => undefined;\n" })).toEqual([
+    `${PALETTE}:1 No appIconPalette found; the ai-color rule must guard the fallback icon tones.`,
+  ]);
 });
 
 test("accepts the named machine-written surface and reports plum mixed into the bubble grey elsewhere", async () => {

@@ -38,32 +38,37 @@ type KnownApp = {
   id: string;
   name: string;
   presentation?: AppRegistryEntry["presentation"];
-  accent?: string;
+  /** The icon tile's colour (`appIconColor`). */
+  iconColor?: string;
   icon?: string;
   /** Normalized prefixes the gateway accepted for this app; the /app/<id> and /pwa rules already applied. */
   prefixes: string[][];
 };
 type VanishedApp = KnownApp & { reason: AppUnavailableReason; at: number };
 
-export type AppView = { id: string; name: string; icon?: string; accent?: string };
+export type AppView = { id: string; name: string; icon?: string; iconColor?: string };
 
 const ACCENT = /^#[0-9a-f]{6}$/i;
 
 const segments = (path: string): string[] => path.split("/").filter(Boolean);
 
+/** The colour an app declares for its icon: `appearance.iconColor`, else its `accent`; invalid values count as unset. */
+export const appIconColor = (app: AppRegistryEntry): string | undefined =>
+  [app.appearance?.iconColor, app.appearance?.accent].find((color) => color !== undefined && ACCENT.test(color));
+
 const knownApp = (app: AppRegistryEntry, icon: string | undefined): KnownApp => ({
   id: app.id,
   name: app.name,
   ...(app.presentation ? { presentation: app.presentation } : {}),
-  ...(app.appearance?.accent && ACCENT.test(app.appearance.accent) ? { accent: app.appearance.accent } : {}),
+  ...(appIconColor(app) ? { iconColor: appIconColor(app) } : {}),
   ...(icon ? { icon } : {}),
   prefixes: buildAppRoutes([app]).map((route) => segments(route.prefix)),
 });
 
 /**
  * The generated favicon strokes the glyph with a blue gradient (packages/cloud/scripts/app-favicon.ts). On the
- * page it sits in a tile tinted with the app's accent, and an `<img>` cannot inherit a colour, so the stroke takes
- * the accent here. Any other SVG stays as the app served it.
+ * page it sits in a tile tinted with the app's icon colour, and an `<img>` cannot inherit a colour, so the stroke takes
+ * that colour here. Any other SVG stays as the app served it.
  */
 export const tintAppIcon = (svg: string, accent: string | undefined): string =>
   accent && /^#[0-9a-f]{6}$/i.test(accent) ? svg.replace('stroke="url(#cloud-icon)"', `stroke="${accent}"`) : svg;
@@ -191,14 +196,14 @@ export const createAvailability = ({ now = Date.now }: { now?: () => number } = 
       return best ? { appId: best.app.id, reason: best.app.reason } : null;
     },
 
-    /** Name in `locale`, icon and accent of a live or recently vanished app; Core is the Cloud itself. */
+    /** Name in `locale`, icon and icon colour of a live or recently vanished app; Core is the Cloud itself. */
     appView: (appId: string, locale: string): AppView => {
       if (appId === "core") return { id: appId, name: branding.name, ...(branding.logo ? { icon: branding.logo } : {}) };
       const entry = live.get(appId);
       const app = entry ? knownApp(entry, icons.get(appId)?.src) : vanished.get(appId);
       if (!app) return { id: appId, name: appId };
       const { name } = resolveAppIdentityPresentation({ name: app.name, description: "", presentation: app.presentation }, locale);
-      return { id: appId, name, ...(app.icon ? { icon: app.icon } : {}), ...(app.accent ? { accent: app.accent } : {}) };
+      return { id: appId, name, ...(app.icon ? { icon: app.icon } : {}), ...(app.iconColor ? { iconColor: app.iconColor } : {}) };
     },
 
     /** Why a known app is away right now: a clean deregistration says "updating"; everything else "unavailable". */

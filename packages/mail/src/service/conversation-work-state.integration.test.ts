@@ -134,7 +134,7 @@ suite("mail conversation work-state projection", () => {
     date: Date;
     autoSubmitted?: string | null;
   }): ConnectorEnvelope => ({
-    remoteRef: { folderStableKey: `work-state-${suffix}`, uidValidity: "1", uid: String(params.uid), modseq: null },
+    remoteRef: { kind: "imap", folderStableKey: `work-state-${suffix}`, uidValidity: "1", uid: String(params.uid), modseq: null },
     providerMessageId: null,
     providerThreadId: null,
     messageId: params.messageId,

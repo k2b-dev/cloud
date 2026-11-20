@@ -10,6 +10,7 @@ import {
 import type { MailRequestContext } from "./auth";
 import { moveSignatureSegment, withoutSignatureSegments } from "./compose-renderer";
 import { requireSelectableSignature, selectableSignatures } from "./compose-templates";
+import { senderIdentityUnverified } from "./sender-identity-errors";
 
 export const validateIdentity = async (params: {
   mailboxId: string;
@@ -27,6 +28,8 @@ export const validateIdentity = async (params: {
 > => {
   const [identity] = await params.db<
     {
+      from_address: string;
+      status: string;
       default_cc: MailAddress[] | string;
       default_bcc: MailAddress[] | string;
       default_format: MailComposeFormat;
@@ -36,6 +39,8 @@ export const validateIdentity = async (params: {
     }[]
   >`
     SELECT
+      from_address,
+      status,
       default_cc,
       default_bcc,
       default_format,
@@ -45,10 +50,10 @@ export const validateIdentity = async (params: {
     FROM mail.sender_identities
     WHERE id = ${params.senderIdentityId}::uuid
       AND mailbox_id = ${params.mailboxId}::uuid
-      AND status = 'verified'
     FOR SHARE
   `;
-  if (!identity) return fail(err.badInput("A verified sender identity is required"));
+  if (!identity || identity.status !== "verified")
+    return fail(senderIdentityUnverified(identity?.status === "disabled" ? null : identity?.from_address));
   return ok({
     defaultCc: typeof identity.default_cc === "string" ? (JSON.parse(identity.default_cc) as MailAddress[]) : identity.default_cc,
     defaultBcc: typeof identity.default_bcc === "string" ? (JSON.parse(identity.default_bcc) as MailAddress[]) : identity.default_bcc,

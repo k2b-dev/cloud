@@ -219,7 +219,7 @@ export async function run(options: Options): Promise<void> {
       return { uidValidity: "10", uidNext: sources.length + 1, highestModseq: "1", messages: sources.length };
     };
     const envelope = (f: Fixture, folderId: string): ConnectorEnvelope => ({
-      remoteRef: { folderStableKey: folderId, uidValidity: "10", uid: String(f.uid), modseq: null },
+      remoteRef: { kind: "imap", folderStableKey: folderId, uidValidity: "10", uid: String(f.uid), modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId: `<${f.id}@memory.test>`,

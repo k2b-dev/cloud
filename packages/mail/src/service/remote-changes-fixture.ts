@@ -53,7 +53,7 @@ const createProvider = (params: { account: string; condstore: boolean; draftSear
   const envelope = (path: string, uid: number, folderStableKey: string): ConnectorEnvelope => {
     const message = folder(path).entries.get(uid)!;
     return {
-      remoteRef: { folderStableKey, uidValidity: folder(path).uidValidity, uid: String(uid), modseq: null },
+      remoteRef: { kind: "imap", folderStableKey, uidValidity: folder(path).uidValidity, uid: String(uid), modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId: message.messageId,
@@ -199,8 +199,7 @@ const assertTestActive = (state: TestState) => {
   }
 };
 
-export const useRemoteChangesFixture = () => {
-  const suffix = crypto.randomUUID().slice(0, 8);
+export const useRemoteChangesFixture = (suffix = crypto.randomUUID().slice(0, 8)) => {
   const mailboxIds: string[] = [];
   let userId = "";
   let ownerContext: MailRequestContext;

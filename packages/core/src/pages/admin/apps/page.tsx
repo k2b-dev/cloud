@@ -18,6 +18,7 @@ import {
 import { appDomains } from "@k2b/cloud/services/app-domains";
 import { appKeys } from "@k2b/cloud/services/app-keys";
 import { AdminLayout, getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
+import { declaredIconColor } from "@k2b/cloud/ssr/app-icon-style";
 import { createAppStatusReader } from "../../../app-status";
 import { ssr } from "../../../config";
 import { listAppListing } from "../../../known-apps";
@@ -190,7 +191,8 @@ export default ssr<AuthContext>(async (c) => {
         name: names.get(entry.id) ?? entry.id,
         description: localized.get(entry.id)?.description ?? entry.description,
         icon: entry.icon,
-        accent: entry.accent,
+        // The tile is the app's icon: a running app's declared icon colour; a vanished app keeps its last accent.
+        accent: (app ? declaredIconColor(app.appearance) : undefined) ?? entry.accent,
         live: Boolean(app),
         heartbeatStale: Boolean(app && app.expiresAt - Date.now() < 30_000),
         release: app?.runtime?.version ?? app?.runtime?.release ?? entry.release,
