@@ -186,7 +186,11 @@ describe("MailComposer in a floating window", () => {
         if (path.endsWith("/safety-review"))
           return Response.json({ revision: 1, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) });
         if (path.endsWith("/commands")) {
-          if (commandFailure) return Response.json({ code: "SEND_FAILED", message: commandFailure }, { status: 503 });
+          if (commandFailure)
+            return Response.json(
+              { code: commandFailure.startsWith("At least one recipient") ? "BAD_INPUT" : "SEND_FAILED", message: commandFailure },
+              { status: commandFailure.startsWith("At least one recipient") ? 400 : 503 },
+            );
           return Response.json({ id: crypto.randomUUID(), result: { outboxSubmissionId: "Dlv001", conversationId: "Conv01" } });
         }
         throw new Error(`Unexpected request: ${request.method} ${path}`);
@@ -417,6 +421,18 @@ describe("MailComposer in a floating window", () => {
     input.value = "lena@example.test";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await waitFor(() => !control().hasAttribute("data-missing"));
+  });
+
+  test("the normal window: Send without recipients marks the To field and sends nothing", async () => {
+    await mount({ draft: { ...initialDraft, to: [], subject: "" } });
+    sendButton()!.click();
+    const control = () => dom.root.querySelector<HTMLElement>(".mail-recipient-control")!;
+    await waitFor(() => control().hasAttribute("data-missing"));
+    expect(control().querySelector<HTMLInputElement>("input")!.placeholder).toBe("Add at least one recipient.");
+    await Bun.sleep(50);
+    expect(requests.some((request) => request.endsWith("/commands"))).toBe(false);
+    expect(dom.document.querySelector(".k2b-toast")).toBeNull();
+    expect(leaves).toEqual([]);
   });
 
   test("a server that refuses the send stays visible: the toast names its reason", async () => {

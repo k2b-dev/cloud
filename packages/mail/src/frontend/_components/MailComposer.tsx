@@ -1023,13 +1023,13 @@ export default function MailComposer(props: {
 
   /**
    * Nobody addressed: the To field says so where the address belongs and takes the caret, instead of a toast that offers
-   * to try the same send again. False when no such field is on screen.
+   * to try the same send again. False when no such field is on screen, such as behind another pane: then the toast says
+   * it, so Send never ends without a word.
    */
   const markMissingRecipient = () => {
     if (to().length + cc().length + bcc().length > 0) return false;
     const field = [...recipientFields].find((candidate) => candidate.required);
-    field?.requireRecipient(t().addRecipient);
-    return Boolean(field);
+    return field ? field.requireRecipient(t().addRecipient) : false;
   };
   const validateDelivery = () => {
     commitRecipientFields();
@@ -1333,8 +1333,6 @@ export default function MailComposer(props: {
         leaveAsOwnSend(closed);
         return;
       }
-      // The server refused a message without recipients (someone removed them meanwhile): the field says so.
-      if (markMissingRecipient()) return;
       const delivery = currentDelivery;
       return reportDeliveryError(error.message, () => void sendDraft(delivery));
     },
@@ -2339,15 +2337,32 @@ export default function MailComposer(props: {
         const list = activeUploads();
         return list.length ? Math.floor(list.reduce((sum, upload) => sum + upload.progress, 0) / list.length) : null;
       };
-      /** Why Send waits, said where Send is: uploads, offline, or the last reply still on its way. */
+      /**
+       * Why Send waits, said where Send is: uploads, offline, the last reply still on its way, or a shared draft that is
+       * not connected or saved yet. A disabled Send always has its reason here and in the status at its side.
+       */
+      /** A shared draft still connecting or saving holds Send; a closed one says so through its own state instead. */
+      const sharedWaits = () => !sharedCanSend() && !sharedState()?.terminal;
       const sendBlockedReason = () =>
-        uploads().length > 0 ? r().uploadReason : !online() ? r().offlineReason : holdActive() ? r().holdReason : null;
+        uploads().length > 0
+          ? r().uploadReason
+          : !online()
+            ? r().offlineReason
+            : holdActive()
+              ? r().holdReason
+              : tableNeedsCheck()
+                ? r().tableReason
+                : sharedWaits()
+                  ? r().sharedReason
+                  : null;
       /** The quiet status at its fixed place: what is happening to the text right now. */
       const boxStatus = (): { icon: string; text: string; tone?: "busy" } | null => {
         const percent = uploadPercent();
         if (percent !== null) return { icon: "ti-upload", text: r().uploading({ percent }), tone: "busy" };
         if (!online()) return { icon: "ti-cloud-off", text: r().offline };
         if (status() === "error" || status() === "readonly") return null;
+        // A shared draft that is not ready says why Send waits, at the status's fixed place.
+        if (tableNeedsCheck() || sharedWaits()) return { icon: "ti-loader-2", text: sendBlockedReason() ?? r().saving, tone: "busy" };
         // An empty box that nobody touched has nothing to save yet.
         if (!draft() && !changedHere()) return null;
         if (holdActive()) return { icon: "ti-device-laptop", text: r().savedHere };
