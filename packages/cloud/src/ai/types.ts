@@ -951,13 +951,6 @@ export type AiConversationService = {
     /** Only resources a tool call read; leaves out resources indexed as Project context without a call. */
     observed?: boolean;
   }): Promise<{ sources: AiConversationSource[]; nextCursor?: string; total: number }>;
-  getCapabilityInvocationOrigin(input: { idempotencyKey: string; toolName: string }): Promise<{
-    conversationId: string;
-    conversationShortId: string;
-    turnId: string;
-    turnShortId: string;
-    callId: string;
-  } | null>;
   updateConversationMetadata(input: {
     conversationId: string;
     ownerUserId?: string;

@@ -2119,31 +2119,6 @@ export const aiConversations: AiConversationService = {
     };
   },
 
-  getCapabilityInvocationOrigin: async (input) => {
-    const rows = await sql<
-      { conversation_id: string; conversation_short_id: string; turn_id: string; turn_short_id: string; call_id: string }[]
-    >`
-      SELECT call.conversation_id, conversation.short_id AS conversation_short_id,
-             call.turn_id, turn.short_id AS turn_short_id, call.call_id
-      FROM ai.tool_calls call
-      JOIN ai.conversations conversation ON conversation.id = call.conversation_id
-      JOIN ai.turns turn ON turn.id = call.turn_id
-      WHERE call.idempotency_key = ${input.idempotencyKey}
-        AND call.tool_name = ${input.toolName}
-      LIMIT 1
-    `;
-    const row = rows[0];
-    return row
-      ? {
-          conversationId: row.conversation_id,
-          conversationShortId: row.conversation_short_id,
-          turnId: row.turn_id,
-          turnShortId: row.turn_short_id,
-          callId: row.call_id,
-        }
-      : null;
-  },
-
   updateConversationMetadata: async (input) => {
     const title = input.title.trim() || "New chat";
     const description = input.description?.trim() ?? "";

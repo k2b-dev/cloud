@@ -13,7 +13,7 @@ import type { AiChatTurnRunConfig, AiCompactionTurnRunConfig, AiConversation, Ai
 const ownerId = "00000000-0000-4000-8000-000000000001";
 const owner = userResourceContext({ type: "user", userId: ownerId });
 const serviceAccount: AccessSubject = { type: "service_account", serviceAccountId: "00000000-0000-4000-8000-000000000002" };
-const deniedText = "You do not have permission to use this model in Assistant. Choose another model.";
+const deniedText = "You do not have permission to use this model. Choose another model.";
 const denied = () =>
   Object.assign(new Error(deniedText), {
     aiError: { code: "model_policy_mismatch" as const, message: "denied" },

@@ -51,7 +51,7 @@ const allowedModelIds = async (modelIds: string[], subject: AccessSubject | null
   return new Set(rows.map((row) => row.model_id));
 };
 
-/** Assistant chat authorization only. Global/background model resolution does not call this service. */
+/** Model grants for every chat turn and compaction, checked for the turn's access subject. Global/background model resolution does not call this service. */
 export const aiModelAccess = {
   filterModels: async <T extends { id: string; modelId: string }>(models: T[], subject: AccessSubject | null): Promise<T[]> => {
     const allowed = await allowedModelIds(
@@ -62,7 +62,7 @@ export const aiModelAccess = {
   },
   assertAllowed: async (modelId: string, subject: AccessSubject | null, db = sql): Promise<void> => {
     if ((await allowedModelIds([modelId], subject, db)).has(modelId)) return;
-    const message = "You do not have permission to use this model in Assistant. Choose another model.";
+    const message = "You do not have permission to use this model. Choose another model.";
     throw Object.assign(new Error(message), {
       aiError: { code: "model_policy_mismatch", message, fields: { model: message } } satisfies AiSettingsError,
     });
