@@ -76,6 +76,8 @@ export const CodeSecretInput = z
 export const CodeToolFailure = z.object({ failed: z.literal(true), error: z.string(), guidance: z.string().optional() });
 export type CodeToolFailure = z.infer<typeof CodeToolFailure>;
 
+export { CODE_SECRET_ERRORS } from "./code-secret-errors";
+
 // Internal bridge envelope. Each model-facing tool receives only its own flat schema.
 export const CodeRuntimeInput = z.discriminatedUnion("operation", [
   CodeRunInput.safeExtend({ operation: z.literal("run") }),

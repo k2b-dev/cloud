@@ -580,6 +580,7 @@ function AiTurnResultView(props: {
 
 function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; turnId: string; phase: AiTurnPhase }) {
   const locale = useLocale();
+  const actions = useAiChatActions();
   const timeZone = useReaderTimeZone();
   const action = () => props.action();
   const state = () => action()?.state;
@@ -604,6 +605,15 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
         {(current) => (
           <Switch>
             {/* A question and every outcome of its call share one element, so an answer collapses it in place. */}
+            <Match when={current().block.name === "code_secret" && actions.renderSecretRequest}>
+              {(render) => (
+                <Show keyed when={current().block.callId}>
+                  {(_callId: string) =>
+                    untrack(() => render()({ turnId: props.turnId, block: () => current().block, state: () => current().state }))
+                  }
+                </Show>
+              )}
+            </Match>
             <Match when={current().state !== "interaction"}>
               <ToolActionView block={current().block} turnId={props.turnId} state={current().state} phase={props.phase} />
             </Match>

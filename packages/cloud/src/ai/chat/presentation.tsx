@@ -24,7 +24,13 @@ import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timelin
 import type { AiConversationTimelineEntry, AiStoredMessage, AiTurnError } from "../types";
 import { AiReaderTimeZoneProvider } from "./action-sentences";
 import { aiChatDoneItem } from "./chat-done-line";
-import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
+import {
+  type AiChatActions,
+  AiChatActionsProvider,
+  type AiSecretRequestView,
+  createAssistantMessageActions,
+  useAiChatActions,
+} from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { type AiStopNotice, aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
@@ -50,7 +56,7 @@ export type AiChatTimelineSession = {
   activeTurn: AiActiveTurn | null;
 };
 
-export { type AiChatActions, AiChatActionsProvider };
+export { type AiChatActions, AiChatActionsProvider, type AiSecretRequestView };
 
 type AssistantBlock = AiAssistantTimelineItem["blocks"][number];
 type SurveyResultBlock = Extract<AssistantBlock, { kind: "tool" }>;

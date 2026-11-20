@@ -1,3 +1,4 @@
+import { CODE_SECRET_ERRORS } from "../code-secret-errors";
 import { cardToolBlocks } from "../gustav-view-blocks";
 import { type AiTurnBlock, isRenderableTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
@@ -7,6 +8,7 @@ import { isCardToolName, isChartToolName, isRecord, isSurveyToolName, isTextEdit
 import { isFailedTool } from "./tool-groups";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
+const secretErrors: readonly string[] = Object.values(CODE_SECRET_ERRORS);
 type TextBlock = Extract<AiTurnBlock, { kind: "text" }>;
 
 /**
@@ -148,7 +150,7 @@ export function layoutAiTurn(
         result && typeof result.configured === "boolean"
           ? { configured: result.configured, name: args.name }
           : result?.failed === true
-            ? { failed: true, error: "Secret entry did not complete." }
+            ? { failed: true, error: secretErrors.find((error) => error === result.error) ?? CODE_SECRET_ERRORS.incomplete }
             : undefined,
     };
   });
