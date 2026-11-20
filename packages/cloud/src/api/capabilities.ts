@@ -102,6 +102,7 @@ import {
   NESTED_INVOCATION_SETUP_BUDGET_MS,
   type NestedInvocationLease,
   nestedInvocationLeases,
+  nestedLeaseTurnMatches,
   nestedSourceDeadline,
 } from "../services/identity/nested-invocation";
 import type { AuthenticatedWorkload } from "../services/identity/workload-auth";
@@ -567,8 +568,14 @@ const runCapabilityDispatch = async (
 
   const invocationOperation = capabilityInvocationOperation(params.kind, params.capabilityId, params.review);
   const mandate = params.mandate;
+  const leaseSource = !params.codeRun && !params.parentInvocation && (mandate || params.authority?.credentialProof || params.assistantTurn);
+  // An Assistant or choice call without its turn (resource and origin readers) cannot carry turn authority. It keeps
+  // working without nesting; the debug line names why, instead of a lease that cannot be stored.
+  const leaseTurnMatches = nestedLeaseTurnMatches(params.origin, !!params.assistantTurn);
+  if (leaseSource && !leaseTurnMatches)
+    log.debug("Nested Query exchange not offered", { appId: params.appId, origin: params.origin, reason: "turn_authority_mismatch" });
   const lease: NestedInvocationLease | undefined =
-    !params.codeRun && !params.parentInvocation && (mandate || params.authority?.credentialProof || params.assistantTurn)
+    leaseSource && leaseTurnMatches
       ? {
           appId: params.appId,
           deadline: Math.min(
@@ -792,8 +799,13 @@ const runCapabilityDispatch = async (
     const setup = createCapabilityDeadline(NESTED_INVOCATION_SETUP_BUDGET_MS, signal);
     try {
       await setup.wait(() => nestedInvocationLeases.create(claims, lease, setup.signal));
-    } catch {
-      log.warn("Nested Query exchange unavailable", { invocationId: claims.jti });
+    } catch (error) {
+      // Class and code only: the lease holds credential proof, so neither the value nor the message is logged.
+      log.warn("Nested Query exchange unavailable", {
+        invocationId: claims.jti,
+        error: error instanceof Error ? error.name : typeof error,
+        ...(error instanceof Error && "code" in error && typeof error.code === "string" ? { code: error.code } : {}),
+      });
     } finally {
       setup.clear();
     }
