@@ -17,6 +17,7 @@ import {
   validateJmapId,
 } from "./jmap-client";
 import { JMAP_EMAIL_BODY_PROPERTIES, JMAP_EMAIL_PROPERTIES, type JmapEmailSnapshot, jmapEmailSnapshotSchema } from "./jmap-email";
+import { jmapStateSchema } from "./jmap-sync-state";
 import { type JmapTransportDependencies, JmapTransportError } from "./jmap-transport";
 
 function primaryMailAccount(session: JmapSession) {
@@ -69,7 +70,7 @@ const LOCAL_MAILBOX_NAME_BYTES = 4_000;
 export const JMAP_DISCOVERY_PAGES = 1_024;
 const RESPONSE_FRAME_BYTES = 4_096;
 const MAILBOX_OVERHEAD_BYTES = 2_048; // Two 255-byte IDs, role, nine rights, keys and JSON framing.
-const mailboxProperties = ["id", "name", "parentId", "role", "isSubscribed", "myRights"];
+export const mailboxProperties = ["id", "name", "parentId", "role", "isSubscribed", "myRights"];
 
 const mailboxSchema = z.object({
   id: jmapIdSchema,
@@ -86,18 +87,32 @@ const querySchema = z.object({
   ids: z.array(jmapIdSchema),
   total: z.number().int().nonnegative(),
 });
-const getSchema = z.object({ accountId: jmapIdSchema, state: z.string(), list: z.array(mailboxSchema), notFound: z.array(jmapIdSchema) });
+export const mailboxGetSchema = z.object({
+  accountId: jmapIdSchema,
+  state: z.string(),
+  list: z.array(mailboxSchema),
+  notFound: z.array(jmapIdSchema),
+});
 export type JmapRemoteFolder = RemoteFolder & { mailboxId: string; parentMailboxId: string | null };
 
-export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransportDependencies = {}): Promise<JmapRemoteFolder[]> {
-  const session = await fetchJmapSession(input, deps);
-  const { accountId, account } = primaryMailAccount(session);
-  const advertisedNameBytes = z.number().int().positive().safeParse(account.accountCapabilities[JMAP_MAIL]?.maxSizeMailboxName);
+export function jmapMailboxBudget(session: JmapSession, accountId: string) {
+  const advertisedNameBytes = z
+    .number()
+    .int()
+    .positive()
+    .safeParse(session.accounts[accountId]?.accountCapabilities[JMAP_MAIL]?.maxSizeMailboxName);
   const nameBytes = Math.min(advertisedNameBytes.success ? advertisedNameBytes.data : LOCAL_MAILBOX_NAME_BYTES, LOCAL_MAILBOX_NAME_BYTES);
   // JSON can escape each name byte as six ASCII bytes. Limit object count locally
   // using the existing metadata budget / per-object overhead, independently of server limits.
   const objectBytes = 6 * nameBytes + MAILBOX_OVERHEAD_BYTES;
   const batchSize = Math.min(session.core.maxObjectsInGet, Math.floor(JMAP_JSON_BYTES / MAILBOX_OVERHEAD_BYTES));
+  return { nameBytes, objectBytes, batchSize, frameBytes: RESPONSE_FRAME_BYTES };
+}
+
+export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransportDependencies = {}): Promise<JmapRemoteFolder[]> {
+  const session = await fetchJmapSession(input, deps);
+  const { accountId } = primaryMailAccount(session);
+  const { nameBytes, objectBytes, batchSize } = jmapMailboxBudget(session, accountId);
   const method = async (name: string, args: Record<string, unknown>, maxBytes: number) => {
     input.signal.throwIfAborted();
     const response = await callJmap(
@@ -152,7 +167,7 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
   let state: string | undefined;
   for (let offset = 0; offset < ids.length; offset += batchSize) {
     const batch = ids.slice(offset, offset + batchSize);
-    const parsed = getSchema.safeParse(
+    const parsed = mailboxGetSchema.safeParse(
       await method("Mailbox/get", { ids: batch, properties: mailboxProperties }, RESPONSE_FRAME_BYTES + batch.length * objectBytes),
     );
     if (!parsed.success) throw new JmapError("JMAP_INVALID_RESPONSE");
@@ -172,6 +187,14 @@ export async function discoverJmapFolders(input: JmapAccess, deps: JmapTransport
     }
   }
 
+  return mapJmapMailboxes(session, accountId, mailboxes);
+}
+
+export function mapJmapMailboxes(
+  session: JmapSession,
+  accountId: string,
+  mailboxes: ReadonlyMap<string, z.infer<typeof mailboxSchema>>,
+): JmapRemoteFolder[] {
   const paths = new Map<string, string>();
   for (const mailbox of mailboxes.values()) {
     const chain: z.infer<typeof mailboxSchema>[] = [];
@@ -235,7 +258,7 @@ function folderRole(role: string | null): FolderRole {
 export const JMAP_EMAIL_RESPONSE_BYTES = 2 * 1024 * 1024;
 const emailGetSchema = z.object({
   accountId: jmapIdSchema,
-  state: z.string(),
+  state: jmapStateSchema,
   list: z.array(jmapEmailSnapshotSchema),
   notFound: z.array(jmapIdSchema),
 });
@@ -286,18 +309,24 @@ export async function readJmapEmails(
       batchSize = Math.max(1, Math.floor(batch.length / 2));
       continue;
     }
-    const parsed = emailGetSchema.safeParse(requireJmapMethodResult(response, "emails", "Email/get"));
-    if (!parsed.success || parsed.data.accountId !== accountId) throw new JmapError("JMAP_INVALID_RESPONSE");
-    const page = parsed.data;
-    const remaining = new Set(batch);
-    for (const id of [...page.list.map((email) => email.id), ...page.notFound]) {
-      if (!remaining.delete(id)) throw new JmapError("JMAP_INVALID_RESPONSE");
-    }
-    if (remaining.size) throw new JmapError("JMAP_INVALID_RESPONSE");
+    const page = parseJmapEmailGet(requireJmapMethodResult(response, "emails", "Email/get"), accountId, batch);
     objects.push(...page.list);
     notFoundIds.push(...page.notFound);
     offset += batch.length;
   }
   if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
   return { objects, notFoundIds };
+}
+
+/** Validate exact coverage, including objects removed between changes and get. */
+export function parseJmapEmailGet(value: unknown, accountId: string, ids: readonly string[]) {
+  const parsed = emailGetSchema.safeParse(value);
+  if (!parsed.success || parsed.data.accountId !== accountId) throw new JmapError("JMAP_INVALID_RESPONSE");
+  const page = parsed.data;
+  const remaining = new Set(ids);
+  for (const id of [...page.list.map((email) => email.id), ...page.notFound]) {
+    if (!remaining.delete(id)) throw new JmapError("JMAP_INVALID_RESPONSE");
+  }
+  if (remaining.size) throw new JmapError("JMAP_INVALID_RESPONSE");
+  return page;
 }

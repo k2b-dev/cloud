@@ -89,6 +89,8 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`ALTER TABLE mail.remote_resources ADD COLUMN IF NOT EXISTS sync_state jsonb NULL
+    CONSTRAINT remote_resources_sync_state_check CHECK (sync_state IS NULL OR jsonb_typeof(sync_state) = 'object')`.simple();
   await tx`ALTER TABLE mail.binding_folder_refs ADD COLUMN IF NOT EXISTS remote_folder_id text`.simple();
   // Replace only the predecessor's CHECK, leaving already upgraded definitions untouched.
   await tx`DO $$ BEGIN
