@@ -68,7 +68,11 @@ function PromptSheet(props: { children: JSX.Element; canDismiss: boolean; dismis
  * Opens the prompt as a bottom sheet; dismissing it, by its handle or a drag, takes the prompt's own dismiss path.
  * `open` carries the context of the prompt's call, taken before this code loaded.
  */
-export const openPromptSheet = <T,>(render: DialogRender<T>, options: OpenDialogOptions, open: DialogCore["open"]): Promise<T | undefined> =>
+export const openPromptSheet = <T,>(
+  render: DialogRender<T>,
+  options: OpenDialogOptions,
+  open: DialogCore["open"],
+): Promise<T | undefined> =>
   open<T>(
     (close, context) => (
       <PromptSheet canDismiss={options.cancelBehavior !== "ignore"} dismiss={() => context.requestDismiss()}>

@@ -36,7 +36,10 @@ describe("@k2b/ui prompts whose code loads on demand", () => {
 
   let dom: DomTestHarness;
   let phone = false;
-  let ui: { prompts: typeof import("../src/feedback/prompts").prompts; dialogCore: typeof import("../src/feedback/dialog-core").dialogCore };
+  let ui: {
+    prompts: typeof import("../src/feedback/prompts").prompts;
+    dialogCore: typeof import("../src/feedback/dialog-core").dialogCore;
+  };
   beforeAll(async () => {
     // One window for the file: the shared dialog core listens to the window it was created in.
     dom = createDomTestHarness();
@@ -76,8 +79,7 @@ describe("@k2b/ui prompts whose code loads on demand", () => {
     dom.root.append(area, elsewhere);
     return { trigger, elsewhere };
   };
-  const navigate = () =>
-    document.body.dispatchEvent(new CustomEvent("ssr:island-dispose", { bubbles: true, detail: { id: "page" } }));
+  const navigate = () => document.body.dispatchEvent(new CustomEvent("ssr:island-dispose", { bubbles: true, detail: { id: "page" } }));
   const arrive = async () => {
     for (const load of loads) load.resolve();
     await Promise.all(loads.map((load) => load.promise));
