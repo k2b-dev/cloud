@@ -77,7 +77,7 @@ describe("@k2b/ui prompts whose code loads on demand", () => {
     return { trigger, elsewhere };
   };
   const navigate = () =>
-    dom.window.dispatchEvent(new dom.window.CustomEvent("ssr:island-dispose", { bubbles: true, detail: { id: "page" } }) as unknown as Event);
+    document.body.dispatchEvent(new CustomEvent("ssr:island-dispose", { bubbles: true, detail: { id: "page" } }));
   const arrive = async () => {
     for (const load of loads) load.resolve();
     await Promise.all(loads.map((load) => load.promise));
