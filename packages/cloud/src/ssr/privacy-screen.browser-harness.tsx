@@ -74,6 +74,21 @@ export const server = new Hono<Environment>()
                   Gehaltsübersicht 2026.xlsx
                 </span>
               </div>
+              {/* The open conversation's row: its fill is its own, and its unread dot is placed absolutely, so the
+                  cover passes through it to its children and cannot blur the fill. */}
+              <div id="selected-row" style={{ background: "var(--k2b-row-selected)", padding: "0.75rem 1rem 0.75rem 2rem" }}>
+                <span
+                  style={{
+                    position: "absolute",
+                    "margin-left": "-1.25rem",
+                    width: "0.5rem",
+                    height: "0.5rem",
+                    "border-radius": "50%",
+                    background: "var(--k2b-action)",
+                  }}
+                />
+                <span>Mietvertrag Ladenfläche – Nachtrag</span>
+              </div>
             </AppWorkspace.Main>
           </AppWorkspace.Content>
         </AppWorkspace>
