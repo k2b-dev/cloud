@@ -1,0 +1,6 @@
+### A shared draft retried forever after the sign-in expired while offline
+
+- **What happened:** When the sign-in expired while a shared Mail draft was disconnected, every reconnect failed and the composer reported a sync timeout after 30 s instead of asking to sign in (#3852).
+- **Root cause:** The socket route answers an expired sign-in with HTTP 401 during the upgrade. A browser exposes no HTTP status for a refused WebSocket upgrade, only a close without opening (1006). The shared-text provider treated it as a network drop and reconnected with backoff without end.
+- **Error class:** A refusal that a transport hides from the client looks like a temporary failure, so a retry loop never reaches the recovery path the refusal calls for.
+- **Guard:** After a socket closes without opening, the shared-text provider checks the sign-in once over HTTP (`GET /api/me/browser` on the page's origin), one check at a time and cancelled when a socket opens. A 401 ends the session as `SESSION_EXPIRED`. `packages/cloud/src/browser/shared-text-provider.test.ts` covers an expired sign-in, a network drop that reconnects, a cancelled check and a socket on another origin. `mail-draft-session.behavior.test.tsx` checks that Mail asks to sign in, that the typed text survives sign-in and reload, and that a network drop alone reconnects and saves.

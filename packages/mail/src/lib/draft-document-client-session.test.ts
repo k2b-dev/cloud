@@ -470,7 +470,7 @@ test("a BUSY retry on the same socket clears the transient error before a reject
   }
 });
 
-test("retry after a rejected socket handshake requests sign-in through HTTP and retains unsaved input", async () => {
+test("a socket handshake rejected after the sign-in expired requests sign-in on its own and retains unsaved input", async () => {
   const f = fixture();
   try {
     const client = await f.open();
@@ -483,18 +483,27 @@ test("retry after a rejected socket handshake requests sign-in through HTTP and 
     expect(f.sockets).toHaveLength(2);
     expect(f.sockets[1]!.readyState).toBe(3);
     expect(f.sockets[1]!.sent).toEqual([]);
-    expect(client.state()).toMatchObject({ connected: false, ready: false, dirty: true });
-    expect(f.authenticationRequests()).toBe(0);
-    await expect(client.retry()).rejects.toThrow("Your sign-in expired");
-    expect(f.authenticationRequests()).toBe(1);
+    // The refused upgrade shows no status, so the provider asks Cloud's sign-in check, which answers 401.
     expect(f.requests).toHaveLength(2);
-    expect(f.requests[1]!.body).toBeNull();
-    expect(new URL(f.requests[1]!.url, "http://localhost").pathname).toEndWith("/document");
+    expect(new URL(f.requests[1]!.url, "http://localhost").pathname).toBe("/api/me/browser");
+    expect(f.authenticationRequests()).toBe(1);
+    expect(client.state()).toMatchObject({
+      connected: false,
+      ready: false,
+      dirty: true,
+      terminal: true,
+      message: "Your sign-in expired. Your unsent text remains here until you sign in again.",
+    });
+    await expect(client.retry()).rejects.toThrow("Your sign-in expired");
+    expect(f.authenticationRequests()).toBe(2);
+    expect(f.requests).toHaveLength(3);
+    expect(f.requests[2]!.body).toBeNull();
+    expect(new URL(f.requests[2]!.url, "http://localhost").pathname).toEndWith("/document");
     expect(f.sockets).toHaveLength(2);
     expect(client.content().body).toBe("Pending disconnected input");
     expect(await client.flushLocal()).toBe(false);
     await expect(client.retry()).rejects.toThrow("Your sign-in expired");
-    expect(f.authenticationRequests()).toBe(2);
+    expect(f.authenticationRequests()).toBe(3);
     expect(f.sockets).toHaveLength(2);
   } finally {
     await f.cleanup();

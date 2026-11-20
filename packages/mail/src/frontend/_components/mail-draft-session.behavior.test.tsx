@@ -92,6 +92,8 @@ class FakeWebSocket {
   static readonly CLOSED = 3;
   static instances: FakeWebSocket[] = [];
   static acknowledge: boolean | "echo" = true;
+  /** Refuses the next draft sockets during their upgrade, which the browser sees only as a close without opening. */
+  static refuse = false;
   private readonly owner = requestOwner.getStore();
   private deliver(callback: () => void) {
     if (this.owner) requestOwner.run(this.owner, callback);
@@ -115,7 +117,9 @@ class FakeWebSocket {
     FakeWebSocket.instances.push(this);
     if (new URL(url).pathname.endsWith("/document/socket"))
       queueMicrotask(() => {
-        if (this.readyState === FakeWebSocket.CONNECTING) this.open();
+        if (this.readyState !== FakeWebSocket.CONNECTING) return;
+        if (FakeWebSocket.refuse) this.close(1006);
+        else this.open();
       });
   }
   send(data: string) {
@@ -188,6 +192,8 @@ describe("Mail draft session", () => {
   let fixture: Fixture;
   let fixtureId = 0;
   let sharedClosers: Array<() => Promise<void>>;
+  /** What Cloud's sign-in check (`/api/me/browser`) answers for shared fixtures. */
+  let browserSignIn: "active" | "expired" = "active";
   const closeSharedFixtures = () => Promise.all(sharedClosers.map((close) => close()));
   const lateRequests: string[] = [];
   const createRoot = <T,>(run: (dispose: () => void) => T): T => {
@@ -223,6 +229,8 @@ describe("Mail draft session", () => {
     Object.defineProperty(dom.document, "visibilityState", { configurable: true, get: () => "visible" });
     FakeWebSocket.instances = [];
     FakeWebSocket.acknowledge = true;
+    FakeWebSocket.refuse = false;
+    browserSignIn = "active";
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
   });
 
@@ -389,6 +397,10 @@ describe("Mail draft session", () => {
       frozen: null,
     };
     respondWith((_method, url) => {
+      if (url === "/api/me/browser")
+        return browserSignIn === "active"
+          ? Response.json({ sharedWorkstation: false, idle: null })
+          : Response.json({ code: "UNAUTHORIZED", message: "Authentication required" }, { status: 401 });
       if (url.endsWith("/materialize")) return Response.json(currentDraft);
       if (url.endsWith("/document") && !initializing) return Response.json(authorization);
       return Response.json({ message: "Session expired" }, { status: 401 });
@@ -749,6 +761,78 @@ describe("Mail draft session", () => {
       }
     },
   );
+
+  test.each(["expired", "active"])("a reconnect refused while the network was down checks the sign-in: %s", async (signIn) => {
+    // The server never confirmed the typing; when remembered it exists only on this device.
+    FakeWebSocket.acknowledge = false;
+    const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockResolvedValue([]);
+    localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, "yes");
+    let stored: Uint8Array | null = null;
+    const offline = spyOn(sharedText, "openAuthorizedSharedTextOffline").mockImplementation(async (_identity, authorize, signal) => ({
+      authorization: await authorize(signal ?? new AbortController().signal),
+      state: stored,
+      baseCursor: "s6t.fixture.1",
+      session: {
+        signal: new AbortController().signal,
+        load: async () => stored,
+        loadPending: async () => (stored ? { state: stored, baseCursor: "s6t.fixture.1" } : null),
+        save: async (bytes) => {
+          stored = bytes.slice();
+          return stored;
+        },
+        acknowledgeSnapshot: async () => false,
+        forget: async () => {},
+        close: () => {},
+      },
+    }));
+    try {
+      const f = await sharedFixture();
+      await f.session.ensureDraft();
+      f.setCurrent({ ...f.current(), body: "Typed while the network was down" });
+      await Bun.sleep(0);
+      // The network drops; meanwhile the sign-in ends or stays, and the next upgrade is refused.
+      browserSignIn = signIn === "expired" ? "expired" : "active";
+      FakeWebSocket.refuse = true;
+      FakeWebSocket.instances.find((entry) => entry.url.includes("/document/socket"))!.close(1006);
+      f.session.shared()!.provider.reconnectNow();
+      await waitFor(() => requests.some((request) => request.url === "/api/me/browser"));
+      await Bun.sleep(0);
+      expect(f.current().body).toBe("Typed while the network was down");
+      if (signIn === "active") {
+        // Only the network was gone: the draft reconnects and the server confirms the text.
+        expect(f.session.authenticationRequired()).toBe(false);
+        FakeWebSocket.refuse = false;
+        FakeWebSocket.acknowledge = true;
+        f.session.shared()!.provider.reconnectNow();
+        await waitFor(() => f.session.saveStatus() === "saved");
+        expect(f.session.authenticationRequired()).toBe(false);
+        return;
+      }
+      expect({
+        authenticationRequired: f.session.authenticationRequired(),
+        status: f.session.status(),
+        message: f.session.statusMessage(),
+      }).toEqual({
+        authenticationRequired: true,
+        status: "readonly",
+        message: "Your sign-in expired. Sign in again to continue with this draft.",
+      });
+      await f.session.prepareSignIn();
+      await f.close();
+      // After sign-in the page reloads: the device copy returns and the server confirms it.
+      FakeWebSocket.refuse = false;
+      FakeWebSocket.acknowledge = true;
+      browserSignIn = "active";
+      const reloaded = await sharedFixture();
+      await reloaded.session.ensureDraft();
+      expect(reloaded.current().body).toBe("Typed while the network was down");
+      await waitFor(() => reloaded.session.saveStatus() === "saved");
+    } finally {
+      await closeSharedFixtures();
+      offline.mockRestore();
+      generations.mockRestore();
+    }
+  });
 
   test("lost access that closes the shared socket stays read-only without a sign-in action", async () => {
     localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, "no");

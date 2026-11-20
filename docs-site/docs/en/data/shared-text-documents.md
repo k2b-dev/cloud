@@ -399,7 +399,13 @@ after replay; `closeError` never sees 1013. A close with code 1008 and reason
 `SESSION_EXPIRED`, which the application socket guard sends when the sign-in
 or account expires, always ends the session as `SESSION_EXPIRED`: `onError`
 and then `onFatal` receive that code, so the application can offer sign-in.
-`closeError` never sees this close either. Encoding maps normalized
+`closeError` never sees this close either. A sign-in that expires while the
+socket is disconnected refuses the next upgrade with HTTP 401, which the
+browser only sees as a close without opening. After each such close the
+provider asks `GET /api/me/browser` on the page's own origin once, cancelled
+when a socket opens or the session ends. Only a 401 ends the session as
+`SESSION_EXPIRED`; any other answer or a network failure keeps reconnecting
+with `reconnectDelayMs`. Encoding maps normalized
 `replayRequest`, `syncPublish`, `awarenessPublish`, and optional event-stream
 `subscribe` requests to the application's protocol. Decoding validates unknown
 JSON and maps it to `SharedTextProviderMessage`, or returns null to ignore it.

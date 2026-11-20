@@ -140,10 +140,14 @@ const TRY_AGAIN_LATER = 1013;
  * instead of reporting lost access.
  */
 const SESSION_EXPIRED_CLOSE_REASON = "SESSION_EXPIRED";
+const SESSION_EXPIRED_ERROR: SharedTextProviderError = { code: SESSION_EXPIRED_CLOSE_REASON, message: "Session expired" };
 const sessionExpiredClose = (code: number, reason: string): SharedTextProviderError | null =>
-  code === 1008 && reason.trim() === SESSION_EXPIRED_CLOSE_REASON
-    ? { code: SESSION_EXPIRED_CLOSE_REASON, message: "Session expired" }
-    : null;
+  code === 1008 && reason.trim() === SESSION_EXPIRED_CLOSE_REASON ? { ...SESSION_EXPIRED_ERROR } : null;
+/**
+ * A socket refused during its upgrade (an expired sign-in answers HTTP 401 there) reaches the browser only as a close
+ * without a status. Cloud answers 401 on this route once the browser's sign-in has ended; reading never extends it.
+ */
+const SESSION_CHECK_PATH = "/api/me/browser";
 /** Server error code with the same meaning as {@link TRY_AGAIN_LATER}; it never ends the session. */
 const BUSY_ERROR_CODE = "BACKPRESSURE";
 /**
@@ -178,6 +182,12 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
   let isTerminated = false;
   let needsReopen = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** At most one sign-in check runs; a new check needs another refused connection, which follows the backoff. */
+  let sessionCheck: AbortController | null = null;
+  const stopSessionCheck = () => {
+    sessionCheck?.abort();
+    sessionCheck = null;
+  };
   let connectionTimer: ReturnType<typeof setTimeout> | null = null;
   let busyTimer: ReturnType<typeof setTimeout> | null = null;
   let busyAttempts = 0;
@@ -387,6 +397,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     if (isTerminated) return;
     clearBusy();
     clearConnectionTimer();
+    stopSessionCheck();
     if (error.reopen) needsReopen = true;
     if (acknowledgementTimer) clearTimeout(acknowledgementTimer);
     acknowledgementTimer = null;
@@ -742,6 +753,31 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     handlePushMessage(msg);
   };
 
+  /**
+   * Asks Cloud over HTTP whether the sign-in ended after a connection that never opened. Only a 401 ends the session
+   * as `SESSION_EXPIRED`; any other answer, a network failure or another origin leaves the reconnect as it is.
+   */
+  const checkSessionAfterRefusedConnection = () => {
+    if (sessionCheck || isDisposed || isTerminated || typeof fetch !== "function" || typeof location === "undefined") return;
+    const url = new URL(SESSION_CHECK_PATH, opts.transport.url);
+    url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+    if (url.origin !== location.origin) return;
+    const controller = new AbortController();
+    sessionCheck = controller;
+    void fetch(url, { credentials: "same-origin", cache: "no-store", signal: controller.signal })
+      .then((response) => {
+        void response.body?.cancel().catch(() => undefined);
+        if (response.status !== 401 || controller.signal.aborted || isDisposed || isTerminated) return;
+        const error = { ...SESSION_EXPIRED_ERROR };
+        opts.onError?.(error);
+        terminate(error);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (sessionCheck === controller) sessionCheck = null;
+      });
+  };
+
   const connect = () => {
     if (isDisposed || isTerminated) return;
 
@@ -754,8 +790,11 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     clearConnectionTimer();
     connectionTimer = setTimeout(() => retryTimedOutConnection(socket), SHARED_TEXT_ACK_TIMEOUT_MS);
 
+    let opened = false;
     socket.onopen = () => {
       if (ws !== socket) return;
+      opened = true;
+      stopSessionCheck();
       opts.onConnectionChange?.(true);
       replayReady = false;
       localStateSent = false;
@@ -795,6 +834,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
       if (!isDisposed && !isTerminated) {
         reconnectTimer = setTimeout(connect, opts.reconnectDelayMs(failedConnects));
         failedConnects += 1;
+        if (!opened && event.code !== TRY_AGAIN_LATER) checkSessionAfterRefusedConnection();
       }
     };
 
@@ -870,6 +910,7 @@ export function createSharedTextProvider<Event = never, Participant = never>(opt
     dispose: () => {
       clearBusy();
       clearConnectionTimer();
+      stopSessionCheck();
       isDisposed = true;
       actionHistory?.dispose();
       if (reconnectTimer) clearTimeout(reconnectTimer);
