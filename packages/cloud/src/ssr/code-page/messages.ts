@@ -466,11 +466,20 @@ export const codePageMessages = i18n.define({
       nextPaused: "paused",
       lastLabel: "Last",
       lastNone: "no run yet",
+      // One run reads "Last run"; runs that all ran today say so once instead of repeating the number.
       stripCaption: ({ count, today, failed }: { count: number; today: number; failed: number }) =>
-        `Last ${count} runs · today ${today}${failed ? `, ${failed} failed` : ""}`,
-      stripPausedCaption: ({ count }: { count: number }) => `Last ${count} runs before the pause`,
+        i18n.plural(count, "en", {
+          one: `Last run${today ? (failed ? " · today, failed" : " · today") : ""}`,
+          other: `Last ${count} runs${today === count ? " · all today" : today ? ` · today ${today}` : ""}${failed ? `, ${failed} failed` : ""}`,
+        }),
+      stripPausedCaption: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "Last run before the pause", other: `Last ${count} runs before the pause` }),
       stripNext: ({ when }: { when: string }) => `next ${when}`,
-      stripLabel: ({ count, failed }: { count: number; failed: number }) => `Last ${count} runs, ${failed} failed`,
+      stripLabel: ({ count, failed }: { count: number; failed: number }) =>
+        i18n.plural(count, "en", {
+          one: failed ? "Last run, failed" : "Last run",
+          other: `Last ${count} runs, ${failed} failed`,
+        }),
       slotLabel: ({ when, status }: { when: string; status: string }) => `${when}: ${status}`,
       allRuns: "All runs",
       legendSucceeded: "successful",
@@ -1044,10 +1053,18 @@ export const codePageMessages = i18n.define({
       lastLabel: "Zuletzt",
       lastNone: "noch kein Lauf",
       stripCaption: ({ count, today, failed }) =>
-        `Letzte ${count} Läufe · heute ${today}${failed ? `, davon ${failed} fehlgeschlagen` : ""}`,
-      stripPausedCaption: ({ count }) => `Letzte ${count} Läufe vor der Pause`,
+        i18n.plural(count, "de", {
+          one: `Letzter Lauf${today ? (failed ? " · heute, fehlgeschlagen" : " · heute") : ""}`,
+          other: `Letzte ${count} Läufe${today === count ? " · alle heute" : today ? ` · heute ${today}` : ""}${failed ? `, davon ${failed} fehlgeschlagen` : ""}`,
+        }),
+      stripPausedCaption: ({ count }) =>
+        i18n.plural(count, "de", { one: "Letzter Lauf vor der Pause", other: `Letzte ${count} Läufe vor der Pause` }),
       stripNext: ({ when }) => `nächster ${when}`,
-      stripLabel: ({ count, failed }) => `Letzte ${count} Läufe, davon ${failed} fehlgeschlagen`,
+      stripLabel: ({ count, failed }) =>
+        i18n.plural(count, "de", {
+          one: failed ? "Letzter Lauf, fehlgeschlagen" : "Letzter Lauf",
+          other: `Letzte ${count} Läufe, davon ${failed} fehlgeschlagen`,
+        }),
       slotLabel: ({ when, status }) => `${when}: ${status}`,
       allRuns: "Alle Läufe",
       legendSucceeded: "erfolgreich",
