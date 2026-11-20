@@ -1129,7 +1129,7 @@ describe("Spaces item detail in a browser", () => {
           await answerEstimate(
             page,
             { state: "ready", suggestion: { id: "estimate:1", minutes: 90, confidence: "high", reason: null } },
-            "Gustav hat die Dauer aus dieser Aufgabe geschätzt",
+            "Gustav hat geschätzt",
           );
           expect(await input.getAttribute("placeholder")).toBe("90");
           expect(await input.inputValue()).toBe("");
@@ -1165,10 +1165,11 @@ describe("Spaces item detail in a browser", () => {
           state: "ready",
           suggestion: { id: "estimate:2", minutes: 240, confidence: "low", reason: "Wie viele Räume es sind, steht nicht in der Aufgabe." },
         },
-        "Gustav hat die Dauer aus dieser Aufgabe geschätzt",
+        "Gustav hat geschätzt",
       );
       expect(await formBoxes(page)).toEqual(loading);
-      expect(await page.locator(".k2b-ai-suggestion-group__accept").getAttribute("aria-disabled")).toBe("true");
+      // One field has its own Accept, so the line offers no Accept all.
+      expect(await page.locator(".k2b-ai-suggestion-group__accept").count()).toBe(0);
       await page.locator(".k2b-ai-suggestion", { hasText: "unsicher" }).hover();
       await page.getByText("Wie viele Räume es sind, steht nicht in der Aufgabe.", { exact: true }).waitFor();
       await formShot(page, "1440-light-unsure");
@@ -1185,7 +1186,7 @@ describe("Spaces item detail in a browser", () => {
     try {
       await openEditForm(page);
       const loading = await formBoxes(page);
-      await answerEstimate(page, { state: "failed", reason: "error" }, "Gustav konnte die Dauer nicht schätzen");
+      await answerEstimate(page, { state: "failed", reason: "error" }, "Schätzung fehlgeschlagen");
       expect(await formBoxes(page)).toEqual(loading);
       await formShot(page, "390-light-error");
       await page.getByRole("button", { name: "Erneut", exact: true }).click();
@@ -1193,7 +1194,7 @@ describe("Spaces item detail in a browser", () => {
       await answerEstimate(
         page,
         { state: "ready", suggestion: { id: "estimate:3", minutes: 60, confidence: "high", reason: null } },
-        "Gustav hat die Dauer aus dieser Aufgabe geschätzt",
+        "Gustav hat geschätzt",
       );
       expect(await estimateInput(page).inputValue()).toBe("30");
       await page.locator(".k2b-ai-suggestion", { hasText: "Gustav: 60" }).waitFor();

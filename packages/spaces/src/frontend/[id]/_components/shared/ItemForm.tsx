@@ -539,7 +539,7 @@ export default function ItemForm(props: ItemFormProps) {
     }
   };
 
-  /** The estimate's row sits under the assistant's line when it may suggest one; otherwise it renders as before. */
+  /** The assistant's line heads the general fields when it may suggest an estimate; otherwise they render as before. */
   const EstimateGroup = (group: { children: JSX.Element }) => (
     <Show when={loadEstimate} fallback={group.children}>
       <SuggestionGroup
@@ -617,29 +617,29 @@ export default function ItemForm(props: ItemFormProps) {
             when={quickCreate()}
             fallback={
               <>
-                <PanelDialog.Section title={t.general} subtitle={t.generalDescription} icon="ti ti-info-circle">
-                  <TextInput
-                    label={t.title}
-                    description={!isEditMode() ? t.titleDescription : undefined}
-                    placeholder={t.titlePlaceholder}
-                    icon="ti ti-text-caption"
-                    value={title}
-                    onValueChange={(v) => {
-                      setTitle(v);
-                      setError("");
-                    }}
-                    required
-                  />
-                  <TextInput
-                    label={t.description}
-                    description={!isEditMode() ? t.descriptionHint : undefined}
-                    placeholder={t.markdownDescriptionPlaceholder}
-                    value={description}
-                    onValueChange={setDescription}
-                    markdown
-                  />
-                  <Show when={!isEvent()}>
-                    <EstimateGroup>
+                <EstimateGroup>
+                  <PanelDialog.Section title={t.general} subtitle={t.generalDescription} icon="ti ti-info-circle">
+                    <TextInput
+                      label={t.title}
+                      description={!isEditMode() ? t.titleDescription : undefined}
+                      placeholder={t.titlePlaceholder}
+                      icon="ti ti-text-caption"
+                      value={title}
+                      onValueChange={(v) => {
+                        setTitle(v);
+                        setError("");
+                      }}
+                      required
+                    />
+                    <TextInput
+                      label={t.description}
+                      description={!isEditMode() ? t.descriptionHint : undefined}
+                      placeholder={t.markdownDescriptionPlaceholder}
+                      value={description}
+                      onValueChange={setDescription}
+                      markdown
+                    />
+                    <Show when={!isEvent()}>
                       <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <DateTimePicker
                           label={t.deadline}
@@ -667,32 +667,32 @@ export default function ItemForm(props: ItemFormProps) {
                           onSuggestionAccept={() => setEstimateAccepted(true)}
                         />
                       </div>
-                    </EstimateGroup>
-                  </Show>
+                    </Show>
 
-                  <Show when={isEvent()}>
-                    <DateRangePicker
-                      withTime={!allDay()}
-                      label={t.schedule}
-                      description={!isEditMode() ? (allDay() ? t.calendarDaysDescription : t.eventTimesDescription) : undefined}
-                      value={eventRange}
-                      onValueChange={changeEventRange}
-                      dateConfig={props.dateConfig}
-                      datePresets={scheduleDatePresets(props.dateConfig)}
-                      durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}
-                      required
-                      clearable
-                    />
-                    <CheckboxCard
-                      label={t.allDayEvent}
-                      description={t.allDayEventDescription}
-                      icon="ti ti-calendar"
-                      variant="input"
-                      value={allDay}
-                      onValueChange={handleAllDayChange}
-                    />
-                  </Show>
-                </PanelDialog.Section>
+                    <Show when={isEvent()}>
+                      <DateRangePicker
+                        withTime={!allDay()}
+                        label={t.schedule}
+                        description={!isEditMode() ? (allDay() ? t.calendarDaysDescription : t.eventTimesDescription) : undefined}
+                        value={eventRange}
+                        onValueChange={changeEventRange}
+                        dateConfig={props.dateConfig}
+                        datePresets={scheduleDatePresets(props.dateConfig)}
+                        durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}
+                        required
+                        clearable
+                      />
+                      <CheckboxCard
+                        label={t.allDayEvent}
+                        description={t.allDayEventDescription}
+                        icon="ti ti-calendar"
+                        variant="input"
+                        value={allDay}
+                        onValueChange={handleAllDayChange}
+                      />
+                    </Show>
+                  </PanelDialog.Section>
+                </EstimateGroup>
 
                 <Show when={isEvent()}>
                   <PanelDialog.Section title={t.repeat} subtitle={t.repeatDescription} icon="ti ti-repeat">

@@ -109,7 +109,7 @@ else {
     const { dom, submit, cleanup } = await mount({ load: () => new Promise((resolve) => (answer = resolve)) });
     try {
       const loading = parts(dom.root);
-      expect(loading.title).toBe("Gustav schätzt die Dauer …");
+      expect(loading.title).toBe("Gustav schätzt …");
       expect(loading.field?.className).toContain("k2b-ai-suggestion-loading");
       const before = { group: loading.group!.getBoundingClientRect(), input: loading.input.getBoundingClientRect() };
 
@@ -117,7 +117,7 @@ else {
       await until(() => parts(dom.root).input.placeholder === "90", "The suggestion", dom.root);
       const open = parts(dom.root);
       expect(open.input.value).toBe("");
-      expect(open.title).toBe("Gustav hat die Dauer aus dieser Aufgabe geschätzt");
+      expect(open.title).toBe("Gustav hat geschätzt");
       expect(open.note?.textContent).toBe("Der Vorschlag wird nicht gespeichert.");
       expect(open.accept()?.getAttribute("aria-label")).toBe("Vorschlag für Geschätzte Dauer übernehmen");
       // An open suggestion is not the value: saving keeps the estimate empty.
@@ -138,34 +138,22 @@ else {
     }
   });
 
-  test("Accept all takes a certain estimate; an unsure one stays open with its reason", async () => {
-    const certain = await mount({ load: async () => ready(45) });
-    try {
-      await until(() => parts(certain.dom.root).input.placeholder === "45", "The suggestion", certain.dom.root);
-      certain.dom.root.querySelector<HTMLButtonElement>(".k2b-ai-suggestion-group__accept")!.click();
-      await until(() => parts(certain.dom.root).input.value === "45", "Accept all", certain.dom.root);
-    } finally {
-      certain.cleanup();
-    }
-
+  test("one field offers only its own Accept; an unsure estimate stays open with its reason", async () => {
     const unsure = await mount({ load: async () => ready(240, "low", "Wie viele Räume es sind, steht nicht in der Aufgabe.") });
     try {
       await until(() => parts(unsure.dom.root).input.placeholder === "240", "The suggestion", unsure.dom.root);
       const open = parts(unsure.dom.root);
+      expect(unsure.dom.root.querySelector(".k2b-ai-suggestion-group__accept")).toBeNull();
       expect(open.field?.className).toContain("k2b-ai-suggestion-unsure");
       expect(open.status?.textContent).toContain("unsicher");
-      expect(open.input.getAttribute("aria-describedby")).toBeTruthy();
       const described = open.input
         .getAttribute("aria-describedby")!
         .split(" ")
         .map((id) => unsure.dom.document.getElementById(id)?.textContent ?? "")
         .join(" ");
       expect(described).toContain("Wie viele Räume es sind, steht nicht in der Aufgabe.");
-      const acceptAll = unsure.dom.root.querySelector<HTMLButtonElement>(".k2b-ai-suggestion-group__accept")!;
-      expect(acceptAll.getAttribute("aria-disabled")).toBe("true");
-      acceptAll.click();
-      expect(parts(unsure.dom.root).input.value).toBe("");
-      expect(open.accept()).toBeDefined();
+      open.accept()!.click();
+      await until(() => parts(unsure.dom.root).input.value === "240", "Accepting the unsure value", unsure.dom.root);
     } finally {
       unsure.cleanup();
     }
@@ -194,7 +182,7 @@ else {
       load: async () => (++calls === 1 ? { state: "failed", reason: "error" } : ready(120)),
     });
     try {
-      await until(() => parts(failing.dom.root).title === "Gustav konnte die Dauer nicht schätzen", "The failure", failing.dom.root);
+      await until(() => parts(failing.dom.root).title === "Schätzung fehlgeschlagen", "The failure", failing.dom.root);
       expect(parts(failing.dom.root).status?.textContent).toContain("kein Vorschlag");
       parts(failing.dom.root).retry()!.click();
       await until(() => parts(failing.dom.root).input.placeholder === "120", "Retrying", failing.dom.root);
@@ -209,18 +197,14 @@ else {
       },
     });
     try {
-      await until(() => parts(thrown.dom.root).title === "Gustav konnte die Dauer nicht schätzen", "The failure", thrown.dom.root);
+      await until(() => parts(thrown.dom.root).title === "Schätzung fehlgeschlagen", "The failure", thrown.dom.root);
     } finally {
       thrown.cleanup();
     }
 
     const allowance = await mount({ load: async () => ({ state: "failed", reason: "allowance" }) });
     try {
-      await until(
-        () => parts(allowance.dom.root).title === "Dein Gustav-Kontingent ist aufgebraucht, darum gibt es keine Schätzung",
-        "The allowance note",
-        allowance.dom.root,
-      );
+      await until(() => parts(allowance.dom.root).title === "Gustav-Kontingent aufgebraucht", "The allowance note", allowance.dom.root);
       expect(parts(allowance.dom.root).retry()).toBeUndefined();
     } finally {
       allowance.cleanup();
@@ -228,7 +212,7 @@ else {
 
     const none = await mount({ load: async () => ({ state: "none" }) });
     try {
-      await until(() => parts(none.dom.root).title === "Gustav hat zu wenig, um diese Aufgabe zu schätzen", "No estimate", none.dom.root);
+      await until(() => parts(none.dom.root).title === "Zu wenig zum Schätzen", "No estimate", none.dom.root);
       const empty = parts(none.dom.root);
       expect(empty.input.placeholder).toBe("");
       expect(empty.accept()).toBeUndefined();
