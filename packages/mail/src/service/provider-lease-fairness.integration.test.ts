@@ -2341,6 +2341,24 @@ suite("mail provider lease fairness", () => {
 
   test("folder jobs of a mailbox whose lease is held ask once each, and each release wakes the next one", async () => {
     const mailbox = await connect("parked-folders", { extraFolders: 30 });
+    // A different mailbox may leave a wake while this test's virtual worker
+    // runs. Its free lease must not contribute a batch to our mailbox's counts.
+    const other = await connect("parked-folders-other");
+    const otherFolder = other.folderId(INBOX);
+    const otherHolder = await acquireProviderLease({
+      resource: other.remoteResourceId,
+      waiter: `commands:${other.mailboxId}`,
+      priority: "command",
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    if (!otherHolder.lock) throw new Error("The other mailbox could not take its provider lease");
+    try {
+      expect(await oneFolderTurn({ folderId: otherFolder })).toBe("parked");
+    } finally {
+      await releaseProviderLease(otherHolder.lock);
+    }
+    const otherWake = wakes.get(otherFolder);
+    expect(otherWake).toBeDefined();
     const resource = mailbox.remoteResourceId;
     const folders = Array.from({ length: 30 }, (_, index) => mailbox.folderId(`Folder-${index}`));
     const holder = await acquireProviderLease({
@@ -2359,6 +2377,7 @@ suite("mail provider lease fairness", () => {
       const counts = { busy: 0, batches: 0 };
       for (;;) {
         for (const [folderId, input] of wakes) {
+          if (!folders.includes(folderId)) continue;
           wakes.delete(folderId);
           woken += 1;
           due.push({ at: clock, input });
@@ -2394,11 +2413,15 @@ suite("mail provider lease fairness", () => {
       expect(drained.busy).toBe(0);
       expect(drained.batches).toBeGreaterThanOrEqual(folders.length);
       expect(woken).toBe(folders.length);
+      expect(wakes.get(otherFolder)).toEqual(otherWake);
     } finally {
+      wakes.delete(otherFolder);
       await releaseProviderLease(holder.lock);
       await redis.send(
         "DEL",
-        ["places", "present", "priorities", "turn", "parked", "woken"].map((key) => `mail:provider-lease-line:{${resource}}:${key}`),
+        [resource, other.remoteResourceId].flatMap((id) =>
+          ["places", "present", "priorities", "turn", "parked", "woken"].map((key) => `mail:provider-lease-line:{${id}}:${key}`),
+        ),
       );
     }
   });
@@ -2411,6 +2434,8 @@ suite("mail provider lease fairness", () => {
     let sendArrives = false;
     const send = { waiter: `outbox:${randomUUID()}`, priority: "command" as const };
     const session = spyOn(imapSmtpConnector, "withSession").mockImplementation(async (config, fn, options) => {
+      // Other mailboxes may still have background work; only observe this check.
+      if (config.username !== mailbox.account) return fn(config);
       const result = await fn(config);
       // A send lines up while the check still holds the mailbox's lease.
       if (sendArrives) {

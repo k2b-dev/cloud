@@ -638,7 +638,7 @@ export const hoverInPlace = async (target: Locator, position?: { x: number; y: n
 
 /**
  * Guards against state sampled before it settled (#1476, #1499).
- * Waits for fonts, running finite document-timeline animations, then two frames.
+ * Waits for fonts, the first resize delivery and its scheduled frame, running finite document-timeline animations, then two frames.
  * Infinite, scroll-driven, and paused animations are not waited for. A page that
  * keeps starting finite animations is not settled: this throws with their names,
  * and the test must wait for its own condition instead. Suites not about motion
@@ -650,6 +650,15 @@ export const hoverInPlace = async (target: Locator, position?: { x: number; y: n
 export const settled = async (page: Page): Promise<void> => {
   const remaining = await page.evaluate(async () => {
     await document.fonts.ready;
+    // MutationObserver can schedule the next frame; ResizeObserver reports after layout and schedules the frame
+    // after that. Include that first observation wave, once, before the snapshot. Later animation starts still fail.
+    await new Promise<void>((resolve) => {
+      const sizes = new ResizeObserver(() => {
+        sizes.disconnect();
+        requestAnimationFrame(() => resolve());
+      });
+      sizes.observe(document.documentElement);
+    });
     const running = () =>
       document
         .getAnimations()

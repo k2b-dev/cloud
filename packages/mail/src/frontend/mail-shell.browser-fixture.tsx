@@ -466,7 +466,15 @@ const eventsFixture = (url: URL): Pick<MailboxPageData, "eventsMode" | "eventsPa
   if (url.searchParams.get("view") !== "events") return { eventsMode: false, eventsPage: null, eventsError: null };
   const state = url.searchParams.get("events");
   if (state === "error")
-    return { eventsMode: true, eventsPage: null, eventsError: "The server did not answer in time. Your mailbox is unchanged." };
+    return {
+      eventsMode: true,
+      eventsPage: null,
+      // The server sends its message in the request's language.
+      eventsError:
+        url.searchParams.get("locale") === "de"
+          ? "Der Server hat nicht rechtzeitig geantwortet. Dein Postfach ist unverändert."
+          : "The server did not answer in time. Your mailbox is unchanged.",
+    };
   const filter = readMailEventsFilter(url);
   const items =
     state === "empty"
@@ -856,6 +864,7 @@ export default function MailShellFixture(props: {
   return (
     <LocaleProvider locale={locale}>
       <MailWorkspace
+        now={MAIL_SHELL_NOW}
         data={data}
         requestPath={props.source}
         currentUserId="user-1"

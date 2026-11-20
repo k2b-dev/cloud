@@ -123,6 +123,17 @@ export const getFileViewPreviewKind = (file: FileViewFile): FileViewPreviewKind 
   return kind;
 };
 
+/**
+ * A file size such as "4.2 MB". With `locale`, the number follows that language ("4,2 MB") and drops a trailing
+ * zero ("64 KB"); without it, the output stays as before.
+ */
+export const formatFileViewSize = (bytes: number, locale?: string): string => {
+  const [value, unit] = bytes < 1024 ? [bytes, "B"] : bytes < 1024 * 1024 ? [bytes / 1024, "KB"] : [bytes / (1024 * 1024), "MB"];
+  if (unit === "B") return `${bytes} B`;
+  if (!locale) return `${value.toFixed(1)} ${unit}`;
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value)} ${unit}`;
+};
+
 /** Use this to expose preview actions only for files FileView can render. */
 export const canPreviewFile = (file: FileViewFile): boolean => getFileViewPreviewKind(file) !== null;
 

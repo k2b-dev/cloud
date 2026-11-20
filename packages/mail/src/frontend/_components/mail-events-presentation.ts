@@ -56,7 +56,6 @@ const describe = (event: MailActivityEvent, context: MailEventContext): Sentence
     new Intl.ListFormat(context.locale, { type: "conjunction" }).format(
       people.map((person) => (you && person.id === context.currentUserId ? t.you : person.displayName)),
     );
-  const detailFor = (people: readonly MailActivityPerson[]) => (people.length ? t.assignees({ names: names(people, true) }) : null);
 
   if (event.action === "conversation.collaboration_updated" && event.assignees) {
     const { before: was, after: now } = event.assignees;
@@ -64,27 +63,45 @@ const describe = (event: MailActivityEvent, context: MailEventContext): Sentence
     const afterIds = assigneeIds(after);
     const added = now.filter((person) => !beforeIds.includes(person.id));
     const removed = was.filter((person) => !afterIds.includes(person.id));
-    const detail = detailFor(now);
+    // The line below names only assignees the sentence does not name already; when the sentence names someone, the
+    // line says "also", so it never reads as the whole list.
+    const detail = (named: readonly string[] = []) => {
+      const others = now.filter((person) => !named.includes(person.id));
+      if (!others.length) return null;
+      return (named.length ? t.alsoAssigned : t.assignees)({ names: names(others, true) });
+    };
     if (afterIds.length === 0)
-      return { icon: "ti ti-user-off", tone: "assign", before: t.unassignedBefore, after: t.unassignedAfter, detail };
+      return { icon: "ti ti-user-off", tone: "assign", before: t.unassignedBefore, after: t.unassignedAfter, detail: detail() };
     if (added.length === 0)
       return {
         icon: "ti ti-user-minus",
         tone: "assign",
         before: t.assigneeRemovedBefore({ names: names(removed) }),
         after: t.assigneeRemovedAfter,
-        detail,
+        detail: detail(),
       };
     if (added.length === 1 && added[0]!.id === event.actor.id && event.actor.kind === "user")
-      return { icon: "ti ti-user-check", tone: "assign", before: t.assignedSelfBefore, after: t.assignedSelfAfter, detail };
+      return {
+        icon: "ti ti-user-check",
+        tone: "assign",
+        before: t.assignedSelfBefore,
+        after: t.assignedSelfAfter,
+        detail: detail([added[0]!.id]),
+      };
     if (added.some((person) => person.id === context.currentUserId))
-      return { icon: "ti ti-user-share", tone: "assign", before: t.assignedYouBefore, after: t.assignedYouAfter, detail };
+      return {
+        icon: "ti ti-user-share",
+        tone: "assign",
+        before: t.assignedYouBefore,
+        after: t.assignedYouAfter,
+        detail: detail([context.currentUserId]),
+      };
     return {
       icon: "ti ti-user-share",
       tone: "assign",
-      before: t.assignedToBefore,
-      after: t.assignedToAfter({ names: names(added) }),
-      detail,
+      before: t.assignedToBefore({ names: names(added) }),
+      after: t.assignedToAfter,
+      detail: detail(added.map((person) => person.id)),
     };
   }
   if (
@@ -164,8 +181,8 @@ const describe = (event: MailActivityEvent, context: MailEventContext): Sentence
       ? {
           icon: "ti ti-tag",
           tone: "automation",
-          before: t.taggedBefore,
-          after: t.taggedAfter({ tags: new Intl.ListFormat(context.locale, { type: "conjunction" }).format(tags) }),
+          before: t.taggedBefore({ tags: new Intl.ListFormat(context.locale, { type: "conjunction" }).format(tags) }),
+          after: t.taggedAfter,
           detail: null,
         }
       : { icon: "ti ti-tag", tone: "automation", before: t.tagsChangedBefore, after: t.tagsChangedAfter, detail: null };
@@ -176,8 +193,6 @@ const describe = (event: MailActivityEvent, context: MailEventContext): Sentence
 const actorLabel = (event: MailActivityEvent, context: MailEventContext): string => {
   const t = mailEventsMessages.resolve([context.locale]).t;
   if (event.actor.kind === "system") return t.system;
-  if (event.actor.kind === "workflow")
-    return event.actor.displayName === "Workflow" ? event.actor.displayName : t.workflow({ name: event.actor.displayName });
   return event.actor.displayName;
 };
 

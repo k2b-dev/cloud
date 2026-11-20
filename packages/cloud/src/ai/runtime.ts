@@ -33,6 +33,7 @@ import {
   reconcileQueuedInterruptions,
   requestQueuedMessageSendNow,
 } from "./message-queue";
+import { aiModelAccess } from "./model-access";
 import { AI_QUEUE_SWEEP_INTERVAL_MS } from "./queue-waits";
 
 export type { QueuedChatSubmission, ValidateQueuedChatStart } from "./message-queue";
@@ -64,7 +65,6 @@ import type {
   AiCompactionTurnRunConfig,
   AiConversationFileSnapshot,
   AiConversationResourceObservation,
-  AiInterChatMessage,
   AiModelPolicy,
   AiPendingTurnAction,
   AiRuntimeTool,
@@ -308,51 +308,6 @@ export const sendQueuedAiChatMessageNow = async (conversationId: string, id: str
   return queuedMessageReceipt(conversationId, id);
 };
 
-export const deliverAiInterChatMessage = async (input: {
-  message: AiInterChatMessage;
-  chatId?: string;
-  actor: RequestActor;
-  locale?: string;
-  theme?: "light" | "dark";
-  timeZone?: string;
-  modelPolicy?: AiModelPolicy;
-  systemPrompt?: string;
-  project?: AiChatTurnRunConfig["project"];
-  toolSource?: AiTurnToolSource;
-  toolApprovalContext?: AiToolApprovalContext;
-}): Promise<
-  { delivered: false; reason: "not_found" | "busy" | "failed" } | { delivered: true; message: AiInterChatMessage; turn: AiTurn }
-> => {
-  const text = [`Assistant message from chat ${input.message.sourceChatId} (${input.message.sourceTitle}):`, input.message.text].join(
-    "\n\n",
-  );
-  const { resolved } = await validateAiTurnRequest({ input: text, modelPolicy: input.modelPolicy });
-  const runConfig: AiChatTurnRunConfig = {
-    kind: "chat",
-    writerOrigin: { kind: "chat", id: input.message.sourceChatId, turnId: input.message.sourceTurnShortId },
-    turnTrigger: { kind: "chat", id: input.message.sourceChatId },
-    input: text,
-    chatId: input.chatId,
-    actor: input.actor,
-    ...(input.locale ? { locale: input.locale } : {}),
-    ...(input.theme ? { theme: input.theme } : {}),
-    ...(input.timeZone ? { timeZone: input.timeZone } : {}),
-    modelPolicy: input.modelPolicy,
-    systemPrompt: input.systemPrompt,
-    project: input.project,
-    toolSource: input.toolSource ?? { kind: "none" },
-    toolApprovalContext: input.toolApprovalContext,
-  };
-  const delivered = await aiConversations.deliverInterChatMessage({
-    messageId: input.message.id,
-    modelId: resolved.profile.id,
-    runConfig,
-    userMessage: { role: "user", content: [{ type: "text", text }] },
-  });
-  if (delivered.delivered) await enqueueAiTurn({ conversationId: delivered.message.targetConversationId, turnId: delivered.turn.id });
-  return delivered;
-};
-
 export type SubmitAiCompactionInput = {
   conversationId: string;
   actor?: RequestActor;
@@ -362,6 +317,7 @@ export type SubmitAiCompactionInput = {
 
 export const submitAiCompaction = async (input: SubmitAiCompactionInput): Promise<{ turn: AiTurn }> => {
   const { resolved } = await validateAiTurnRequest({ input: "", modelPolicy: input.modelPolicy, model: input.model });
+  await aiModelAccess.assertAllowed(resolved.profile.modelId, aiChatAccessSubject(input.actor));
   const runConfig: AiCompactionTurnRunConfig = {
     kind: "compact",
     actor: input.actor,

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import type { InboundEvent, Message, OutboundEvent, Provider } from "@k2b/nessi";
 import { openAICompatible } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
@@ -370,6 +370,16 @@ beforeAll(() => {
 
 afterAll(() => {
   mockServer?.stop(true);
+});
+
+// Most turns here use fixture models without stored grants. Tests that need the real check restore it and store grants;
+// model-access-turns.test.ts covers every start path.
+let modelAccessCheck: ReturnType<typeof spyOn<typeof aiModelAccess, "assertAllowed">> | undefined;
+beforeEach(() => {
+  modelAccessCheck = spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
+});
+afterEach(() => {
+  modelAccessCheck?.mockRestore();
 });
 
 const insertUser = async () => {
@@ -879,6 +889,71 @@ suite("AI executor integration", () => {
     }
   });
 
+  test("a turn runs only with a model its access subject may use", async () => {
+    // Real grants: the suite-wide stub stays off for this test.
+    modelAccessCheck?.mockRestore();
+    const allowedUser = await insertUser();
+    const deniedUser = await insertUser();
+    const conversations: string[] = [];
+    const [grant] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(user_id,permission) VALUES(${allowedUser}::uuid,'read') RETURNING id`;
+    await sql`INSERT INTO ai.model_access_resources(model_id) VALUES(${MODEL_ID}) ON CONFLICT DO NOTHING`;
+    await sql`INSERT INTO ai.model_access(model_id,access_id) VALUES(${MODEL_ID},${grant!.id}::uuid)`;
+    const start = async (ownerUserId: string, withSubject: boolean) => {
+      const conversation = await aiConversations.createConversation({ ownerUserId });
+      conversations.push(conversation.id);
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelId: MODEL_ID,
+        userMessage: userMessage("Hello"),
+        runConfig: {
+          kind: "chat",
+          input: "Hello",
+          toolSource: { kind: "none" },
+          ...(withSubject
+            ? {
+                actor: { kind: "user" as const, user: actorUser(ownerUserId) },
+                accessSubject: { type: "user" as const, userId: ownerUserId },
+              }
+            : {}),
+        },
+      });
+      const target = { conversationId: conversation.id, turnId: turn.id };
+      const claim = await aiConversations.claimTurn({
+        ...target,
+        leaseOwner: "access-worker",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected access worker claim");
+      await new AiTurnExecutor({
+        leaseOwner: "access-worker",
+        heartbeatMs: 100,
+        enqueueContinuation: async () => {},
+        validateTurn: fakeValidateTurn,
+      }).run({ ...target, claim, signal: new AbortController().signal });
+      return (await aiConversations.getTurn(target))?.status;
+    };
+    try {
+      completionRequestCount = 0;
+      completionQueue = [textCompletion("Hello back")];
+      expect(await start(allowedUser, true)).toBe("completed");
+      expect(completionRequestCount).toBe(1);
+      expect(await start(deniedUser, true)).toBe("failed");
+      expect(await start(allowedUser, false)).toBe("failed");
+      expect(completionRequestCount).toBe(1);
+    } finally {
+      completionQueue = [];
+      for (const id of conversations) await sql`DELETE FROM ai.conversations WHERE id=${id}::uuid`;
+      await sql`DELETE FROM ai.model_access WHERE access_id=${grant!.id}::uuid`;
+      await sql`DELETE FROM auth.access WHERE id=${grant!.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id IN (${allowedUser}::uuid, ${deniedUser}::uuid)`;
+    }
+  });
+
   test("a restricted tool answer survives queue interruption and withdrawal exactly once (withdrawn)", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["client_effect", "budget_probe"] });
@@ -913,6 +988,8 @@ suite("AI executor integration", () => {
         client: { kind: "cli", cwd: "/work", os: "Linux", shell: "bash", localTools: "ask" },
       },
     });
+    // Real grants: the suite-wide stub stays off for this test.
+    modelAccessCheck?.mockRestore();
     const [modelAccess] = await sql<
       { id: string }[]
     >`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'read') RETURNING id`;

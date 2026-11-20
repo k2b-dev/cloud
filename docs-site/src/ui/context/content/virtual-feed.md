@@ -301,7 +301,10 @@ first loaded item too), as many as fill about 1,600 px by their
 sit in the normal flow, at the end of the scroll area or at its top, exactly
 where the browser places them. When the island mounts, the browser renders
 the same rows at the same pixels before it paints, so the server's picture is
-the first picture and nothing jumps. The scroll area cannot scroll until then.
+the first picture and nothing jumps. With classic scrollbars, the server
+already reserves the same scroll track as the mounted feed, so hydration
+keeps the row width. With overlay scrollbars, scrolling starts when the
+island mounts.
 A sticky separator appears with the browser: on the server, the first item's
 own separator is in its place. Pass `empty` for content shown while `items` is
 empty.

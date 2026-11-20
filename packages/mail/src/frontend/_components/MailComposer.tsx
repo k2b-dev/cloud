@@ -76,6 +76,7 @@ import MailComposerLifecycleNotice from "./MailComposerLifecycleNotice";
 import MailComposerSignature from "./MailComposerSignature";
 import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./MailDraftCollaborationDialog";
 import MailInlineSignature from "./MailInlineSignature";
+import { hasQuotableText, MailQuoteCard, type MailQuoteOriginal, type MailQuoteOriginalState } from "./MailQuoteCard";
 import MailRecipientInput, { type MailRecipientField } from "./MailRecipientInput";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
@@ -98,6 +99,7 @@ import { mailDraftPeers } from "./mail-draft-document-presence";
 import { mailDraftJournalKey, serializeMailDraftContent } from "./mail-draft-journal";
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
 import { createMailDraftSession } from "./mail-draft-session";
+import { quoteOriginalOf } from "./mail-quote-original";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
 import { mailSendLaterPresets } from "./mail-reply-box";
 import { mailReplyBoxMessages } from "./mail-reply-box-messages";
@@ -137,6 +139,8 @@ export type MailInlineDraftControls = {
   changed: () => boolean;
   /** Appends text after a blank line as one undo step, through the editor, so it saves like typing. */
   appendText: (text: string) => void;
+  /** Appends a quoted selection as text; the whole original then stays out, so nothing goes along twice. */
+  quoteText: (text: string) => void;
   /** Saves what is typed and gives the edit lease back; the draft stays mounted and takes input again later. */
   release: () => Promise<void>;
   /** Forgets this device's copy of a draft that was never created on the server. */
@@ -195,8 +199,11 @@ export type MailComposerHost = {
   arrangeHint?: { open: () => boolean; dismiss: () => void };
   /** The composer hands the host its safe close, so Esc and the host's own controls take the same path. */
   register: (controls: MailInlineDraftControls) => void;
-  /** Who wrote a message of the conversation and when, for the quote line ("Marlene Hofbauer, today 09:12"). */
-  messageLabel: (messageId: string) => string | null;
+  /**
+   * The message a reply quotes, when the host already has it (the reader's conversation): who wrote it when and the text
+   * that goes along. Without it the composer loads the message itself.
+   */
+  messageSource: (messageId: string) => MailQuoteOriginal | null;
   /** A new message tells the list its subject and recipients while someone types them. */
   summary?: (value: { subject: string; to: string[] }) => void;
   /** The reply box under a conversation; without it the draft keeps the older inline layout. */
@@ -1766,6 +1773,11 @@ export default function MailComposer(props: {
       if (editorActions) editorActions.appendText(text);
       else setBody((current) => `${current}${current.endsWith("\n") || !current ? "" : "\n\n"}${text}`);
     },
+    quoteText: (text) => {
+      setQuoteSource(null);
+      if (editorActions) editorActions.appendText(text);
+      else setBody((current) => `${current}${current.endsWith("\n") || !current ? "" : "\n\n"}${text}`);
+    },
     release: async () => {
       if (!untrack(draft)) return;
       if (untrack(hasUnsavedChanges) && !(await persist())) return;
@@ -2031,12 +2043,64 @@ export default function MailComposer(props: {
     });
     // A suggestion from Gustav stays plum until someone types or changes anything, recipients included.
     const suggestionUntouched = () => Boolean(draft()?.suggestion) && serializeMailDraftContent(content()) === initialSerializedContent;
-    const quoteLabel = () => {
+    /** A reply quotes the message it answers; the card under the signature shows what goes along. */
+    const quotedMessageId = () => {
       const intent = composerIntent();
       const sourceMessageId = draft()?.sourceMessageId ?? initial.sourceMessageId;
-      if ((intent !== "reply" && intent !== "reply_all") || !sourceMessageId) return null;
-      return host.messageLabel(sourceMessageId);
+      return (intent === "reply" || intent === "reply_all") && sourceMessageId ? sourceMessageId : null;
     };
+    const [quoteRetry, setQuoteRetry] = createSignal(0);
+    const [loadedOriginal, setLoadedOriginal] = createSignal<{ id: string; state: MailQuoteOriginalState } | null>(null);
+    // A host without the conversation (a compose window) loads the quoted message once per message; the card holds the
+    // collapsed height meanwhile.
+    createEffect(
+      on([quotedMessageId, quoteRetry], ([id]) => {
+        if (!id || host.messageSource(id)) return;
+        setLoadedOriginal({ id, state: { status: "loading" } });
+        void apiClient.mailboxes[":mailboxId"].messages[":messageId"]
+          .$get({ param: { mailboxId: props.mailboxId, messageId: id } })
+          .then(async (response) => {
+            // Gone or not visible here: the send renderer quotes nothing, so no card promises it.
+            if (response.status === 403 || response.status === 404) {
+              if (!disposed && untrack(quotedMessageId) === id) setLoadedOriginal({ id, state: { status: "missing" } });
+              return;
+            }
+            if (!response.ok) throw new Error(String(response.status));
+            const message = await response.json();
+            if (disposed || untrack(quotedMessageId) !== id) return;
+            setLoadedOriginal({ id, state: { status: "ready", original: quoteOriginalOf(message, props.dateConfig) } });
+          })
+          .catch(() => {
+            if (!disposed && untrack(quotedMessageId) === id) setLoadedOriginal({ id, state: { status: "failed" } });
+          });
+      }),
+    );
+    const quoteState = (): MailQuoteOriginalState | null => {
+      const id = quotedMessageId();
+      if (!id) return null;
+      const known = host.messageSource(id);
+      if (known) return { status: "ready", original: known };
+      const loaded = loadedOriginal();
+      return loaded?.id === id ? loaded.state : { status: "loading" };
+    };
+    /** Nothing quotable (a message without text): the send renderer adds no quote, so no card stands here. */
+    const showQuoteCard = () => {
+      const state = quoteState();
+      if (!state || state.status === "missing") return false;
+      return !(state.status === "ready" && !hasQuotableText(state.original.text));
+    };
+    const quoteCard = () => (
+      <Show when={!inlinePreview() && showQuoteCard()}>
+        <MailQuoteCard
+          state={quoteState()!}
+          quoting={Boolean(quoteSource())}
+          disabled={!editable()}
+          onRemove={() => setQuoteSource(null)}
+          onAdd={() => setQuoteSource({ locale: locale(), timeZone: props.dateConfig.timeZone ?? "UTC" })}
+          onRetry={() => setQuoteRetry((value) => value + 1)}
+        />
+      </Show>
+    );
     const draftMenu = (): DropdownItem[] => [
       {
         items: [
@@ -2344,7 +2408,7 @@ export default function MailComposer(props: {
                   },
                 ]
               : []),
-            ...(quoteLabel()
+            ...(showQuoteCard()
               ? [
                   {
                     label: quoteSource() ? r().removeQuote : r().attachQuote,
@@ -2472,7 +2536,9 @@ export default function MailComposer(props: {
               />
             </div>
             <Show when={verifiedIdentities().length > 1}>
-              <IdentitySwitcher />
+              <span class="mail-reply-box-sender">
+                <IdentitySwitcher />
+              </span>
             </Show>
             <Show when={sharedPeers().length > 0}>
               <span class="mail-inline-draft-peers" data-mail-draft-peers role="status">
@@ -2634,27 +2700,9 @@ export default function MailComposer(props: {
               format={format}
             />
           </Show>
+          {/* The original stands where the sent mail puts it: under the signature. */}
+          {quoteCard()}
           <div class="mail-inline-draft-space" aria-hidden="true" onClick={focusEditorAtEnd} />
-          <Show when={!inlinePreview() && quoteLabel()}>
-            {(label) => (
-              <div class="mail-inline-draft-quote" data-mail-draft-quote>
-                <i class="ti ti-quote" aria-hidden="true" />
-                <span class="min-w-0 flex-1 truncate">
-                  {quoteSource() ? t().quoteAttached({ label: label() }) : t().quoteOffer({ label: label() })}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  disabled={!editable()}
-                  aria-pressed={Boolean(quoteSource())}
-                  onClick={toggleQuote}
-                >
-                  {quoteSource() ? t().removeQuote : t().attachQuote}
-                </Button>
-              </div>
-            )}
-          </Show>
           {/* One bar at a fixed place. After a failed send, Send stays and repeats it; the toast names the reason. */}
           {/* A shared draft's hint stands here, over the bar and below the signature, never in the text. */}
           <div class="mail-draft-hint-slot" ref={setHintSlot} hidden={ownSendCloses()} />
@@ -3067,30 +3115,10 @@ export default function MailComposer(props: {
             format={format}
           />
         </Show>
+        {/* The original stands where the sent mail puts it: under the signature. */}
+        {quoteCard()}
         {/* The empty room below the text belongs to the text: a click there continues writing at its end. */}
         <div class="mail-inline-draft-space" aria-hidden="true" onClick={focusEditorAtEnd} />
-        <Show when={!inlinePreview() && quoteLabel()}>
-          {(label) => (
-            <div class="mail-inline-draft-quote" data-mail-draft-quote>
-              <i class="ti ti-quote" aria-hidden="true" />
-              <span class="min-w-0 flex-1 truncate">
-                {quoteSource() ? t().quoteAttached({ label: label() }) : t().quoteOffer({ label: label() })}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                type="button"
-                disabled={!editable()}
-                aria-pressed={Boolean(quoteSource())}
-                onClick={() =>
-                  setQuoteSource((current) => (current ? null : { locale: locale(), timeZone: props.dateConfig.timeZone ?? "UTC" }))
-                }
-              >
-                {quoteSource() ? t().removeQuote : t().attachQuote}
-              </Button>
-            </div>
-          )}
-        </Show>
 
         {/* A shared draft's hint stands here, over the bar and below the signature, never in the text. */}
         <div class="mail-draft-hint-slot" ref={setHintSlot} hidden={ownSendCloses()} />

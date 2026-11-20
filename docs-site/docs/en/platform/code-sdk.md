@@ -990,7 +990,7 @@ text or context under that key returns `idempotency_conflict`. The accepted
 receipt keeps its original destination after a chat-binding change, queue
 removal, or a later budget refusal. A new destination needs a new key.
 
-Automation and inter-chat sends have 32 pending places per chat, separate from
+Sends from Code and from other chats have 32 pending places per chat, separate from
 the person's composer queue. Each source Code or source chat can occupy one
 place in a destination chat. Further sends return `chat_busy`; use a later
 scheduled run to try again. Cloud rechecks ownership, source authority, enabled

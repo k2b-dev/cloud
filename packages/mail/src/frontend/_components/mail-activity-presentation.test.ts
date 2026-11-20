@@ -3,13 +3,13 @@ import type { MailActivityEvent } from "../../service/collaboration";
 import { mailActivityActorLabel, mailActivityEntry, mailActivityIcon, mailActivityLabel } from "./mail-activity-presentation";
 
 const event = (metadata: Record<string, unknown> = {}): MailActivityEvent => ({
-  id: crypto.randomUUID(),
-  conversationId: crypto.randomUUID(),
+  id: "event-1",
+  conversationId: "conversation-1",
   actor: { kind: "user", id: "user-1", displayName: "Ada", avatarHash: null },
   action: "conversation.collaboration_updated",
   outcome: "confirmed",
   targetType: "conversation",
-  targetId: crypto.randomUUID(),
+  targetId: "target-1",
   metadata,
   createdAt: "2026-07-22T10:00:00.000Z",
   conversationSubject: null,
@@ -72,13 +72,28 @@ describe("mail activity presentation", () => {
     expect(mailActivityLabel({ ...event(), action: "conversation.future_thing_done" })).toBe("Future thing done");
   });
 
-  test("uses quiet semantic icons and names workflows explicitly", () => {
+  test("uses quiet semantic icons and names workflows without repeating their kind", () => {
     const workflowEvent = event();
     workflowEvent.actor = { kind: "workflow", id: "Workflow01", displayName: "Invoice triage", avatarHash: null };
     workflowEvent.action = "conversation.local_tag_added";
 
     expect(mailActivityIcon(workflowEvent)).toBe("ti-tag");
-    expect(mailActivityActorLabel(workflowEvent)).toBe("Workflow Invoice triage");
+    expect(mailActivityActorLabel(workflowEvent)).toBe("Invoice triage");
+    expect(mailActivityEntry(workflowEvent).avatar).toMatchObject({ kind: "service", name: "Invoice triage" });
+  });
+
+  test("keeps profile pictures and distinguishes service and system identities", () => {
+    const person = { ...event(), actor: { kind: "user" as const, id: "user-1", displayName: "Ada", avatarHash: "fixture-picture" } };
+    expect(mailActivityEntry(person).avatar).toEqual({
+      name: "Ada",
+      kind: "person",
+      src: "/api/accounts/users/user-1/avatar?rev=fixture-picture",
+    });
+    const service = { ...event(), actor: { kind: "service_account" as const, id: "service-1", displayName: "Import", avatarHash: null } };
+    expect(mailActivityEntry(service).avatar?.kind).toBe("service");
+    const system = { ...event(), actor: { kind: "system" as const, id: null, displayName: "Mail", avatarHash: null } };
+    expect(mailActivityEntry(system).avatar?.kind).toBe("system");
+    expect(mailActivityEntry({ ...person, actor: { ...person.actor, id: null, avatarHash: null } }).avatar?.kind).toBe("deleted");
   });
 
   test("names who started and stopped keeping a conversation", () => {

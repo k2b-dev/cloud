@@ -212,8 +212,7 @@ for each viewer who may read it. Without a readable name the projection says
 `named: false` and `name` is only “Automation”, so surfaces read “From an
 automation” instead of naming it. Chat and automation links appear only when the viewer
 can open the target. Durable provenance stores IDs, never translated names or
-display links. The existing inter-chat delivery path also records its source
-chat. Its delivery lifecycle is unchanged.
+display links.
 
 The admission limit is defined by `AI_MESSAGE_QUEUE_LIMIT` for the existing
 personal composer queue. Platform adapters supply provenance through the

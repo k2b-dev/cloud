@@ -1,9 +1,20 @@
 import { expect, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { invalidateSpacesData } from "./[id]/_components/workspace/workspace-events";
+
+// Compile the island outside the first case's budget, with a document for @k2b/ui's browser entry.
+const loadOverview = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return (await import("./SpacesOverview.island")).default;
+  } finally {
+    dom.cleanup();
+  }
+};
+const SpacesOverview = isServer ? undefined : await loadOverview();
 
 const snapshot = (view: OverviewView): OverviewWork => ({
   view,
@@ -27,6 +38,7 @@ const snapshot = (view: OverviewView): OverviewWork => ({
 
 test.skipIf(isServer)("view invalidation refreshes overview work, counts and activity without clearing visible data", async () => {
   const dom = createDomTestHarness();
+  delegateEvents(["click"], dom.document);
   setSystemTime(new Date("2026-08-20T12:00:00.000Z"));
   const originalFetch = globalThis.fetch;
   const requests: Array<{ url: URL; resolve: (response: Response) => void }> = [];
@@ -57,10 +69,9 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
     counts: { mine: 2, today: 2, upcoming: 2 },
     items: [...initialWork.items, ...initialWork.items.map((item) => ({ ...item, shortId: "Item02", title: "Created task" }))],
   };
-  const { default: SpacesOverview } = await import("./SpacesOverview.island");
   const dispose = render(
     () =>
-      createComponent(SpacesOverview, {
+      createComponent(SpacesOverview!, {
         spaces: [],
         initialView: "mine",
         initialWork,
@@ -75,6 +86,8 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
   try {
     await Bun.sleep(30);
     expect(requests).toHaveLength(0);
+    expect(dom.root.querySelector(".k2b-activity__avatar .ti-settings")).not.toBeNull();
+    expect(dom.root.querySelector(".k2b-activity__avatar [data-tint]")).toBeNull();
     await invalidateSpacesData(["detail"]);
     expect(requests).toHaveLength(0);
 
@@ -122,6 +135,7 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
 
 test.skipIf(isServer)("overview keeps SSR work and ignores superseded tab requests, including history navigation", async () => {
   const dom = createDomTestHarness();
+  delegateEvents(["click"], dom.document);
   const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
   Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
   dom.window.history.replaceState(null, "", "/app/spaces");
@@ -137,10 +151,9 @@ test.skipIf(isServer)("overview keeps SSR work and ignores superseded tab reques
     },
     { preconnect: originalFetch.preconnect },
   );
-  const { default: SpacesOverview } = await import("./SpacesOverview.island");
   const dispose = render(
     () =>
-      createComponent(SpacesOverview, {
+      createComponent(SpacesOverview!, {
         spaces: [],
         initialView: "mine",
         initialWork: snapshot("mine"),
@@ -198,6 +211,7 @@ test.skipIf(isServer)("overview keeps SSR work and ignores superseded tab reques
 
 test.skipIf(isServer)("a failed older page keeps the rows and says so where Load more was; Try again loads it", async () => {
   const dom = createDomTestHarness();
+  delegateEvents(["click"], dom.document);
   setSystemTime(new Date("2026-08-20T12:00:00.000Z"));
   const originalFetch = globalThis.fetch;
   const pages: string[] = [];
@@ -226,10 +240,9 @@ test.skipIf(isServer)("a failed older page keeps the rows and says so where Load
     },
     { preconnect: originalFetch.preconnect },
   );
-  const { default: SpacesOverview } = await import("./SpacesOverview.island");
   const dispose = render(
     () =>
-      createComponent(SpacesOverview, {
+      createComponent(SpacesOverview!, {
         spaces: [],
         initialView: "mine",
         initialWork: snapshot("mine"),
