@@ -44,6 +44,23 @@ test("Chat.Decision draws only inside ApprovalFrame", () => {
   // Comments between props are no code, even with an apostrophe or a brace in them.
   expect(checkSource(place, "<Chat.Decision state='open'\n  // the card's field {\n  entry={<ChatDecisionField />} />")).toEqual([]);
   expect(checkSource(place, "<Chat.Decision state='open' /* entry={<ChatDecisionField />} */ />")).toHaveLength(1);
+  // Exactly one field and nothing broader: no children, no second element, no condition, no list, no second entry, no spread.
+  for (const broader of [
+    "entry={<ChatDecisionField label='Value'>more</ChatDecisionField>}",
+    "entry={<ChatDecisionField /> || <Other />}",
+    "entry={<ChatDecisionField /> && <Other />}",
+    "entry={<ChatDecisionField />}{...rest}",
+    "entry={cond && <ChatDecisionField />}",
+    "entry={cond() ? <ChatDecisionField /> : <Other />}",
+    "entry={[<ChatDecisionField />, <Other />]}",
+    "entry={<><ChatDecisionField /></>}",
+    "entry={<ChatDecisionField />} entry={<Other />}",
+    "entry={<Other />} entry={<ChatDecisionField />}",
+    'entry="field"',
+    "{...props} entry={<ChatDecisionField />}",
+    "entry={<ChatDecisionFields />}",
+  ])
+    expect(checkSource(place, `<Chat.Decision state='open' ${broader} />`)).toHaveLength(1);
   // A tag that never ends fails closed.
   expect(checkSource(place, "<Chat.Decision state='open' label=\"x entry={<ChatDecisionField />} />")).toHaveLength(1);
   expect(checkSource(place, "type S = ChatDecisionState;")).toEqual([]);

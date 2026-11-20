@@ -63,15 +63,24 @@ const openingTags = (source: string): { index: number; text: string; masked: str
     return { index: match.index, ...(tag ?? { text: rest, masked: rest }) };
   });
 
-/** Whether a tag passes `entry={<ChatDecisionField …}` as its own prop, not inside another prop's value. */
+/**
+ * Whether a tag asks for exactly one value: one `entry` prop of its own whose value is exactly one self-closing
+ * `<ChatDecisionField …/>`, and no spread that could carry another entry. Anything broader is no value question.
+ */
 const asksForValue = (masked: string): boolean => {
+  if (hasSpread(masked) || (propNames(masked).match(/(?:^|\s)entry=/g) ?? []).length !== 1) return false;
   let depth = 0;
+  let open = -1;
   for (let index = 0; index < masked.length; index++) {
     if (masked[index] === "{") {
-      if (depth === 0 && /(?:^|\s)entry=$/.test(masked.slice(0, index)) && /^\{\s*<ChatDecisionField\b/.test(masked.slice(index)))
-        return true;
+      if (depth === 0) open = index;
       depth++;
-    } else if (masked[index] === "}") depth--;
+    } else if (masked[index] === "}" && --depth === 0 && /(?:^|\s)entry=$/.test(masked.slice(0, open))) {
+      const value = masked.slice(open + 1, index).trim();
+      if (!/^<ChatDecisionField\b/.test(value)) return false;
+      const field = openingTag(value, 0);
+      return field !== null && field.text.trimEnd().endsWith("/") && value.slice(field.text.length + 1).trim() === "";
+    }
   }
   return false;
 };
