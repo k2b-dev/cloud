@@ -592,6 +592,8 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       expect(error.message).toContain(`GET ${hang}`);
       // Chromium holds page.evaluate until a pending navigation commits; WebKit answers from the old document.
       expect(error.message).toContain(browserName === "chromium" ? "Main thread: did not answer within 2 s" : "Main thread: answered in ");
+      // The timing WebKit reports then belongs to the old document, which says so by its address.
+      if (browserName === "webkit") expect(error.message).toContain(`Page timing of ${start}: response `);
     } finally {
       await context.close();
     }
@@ -619,6 +621,12 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       expect(error.message).toContain(`GET ${never}`);
       expect(error.message).toContain("Main thread: answered in ");
       expect(error.message).toContain("readyState interactive");
+      // The page's own clock: it reached DOMContentLoaded but not load, measured from its navigation start.
+      expect(error.message).toMatch(
+        new RegExp(
+          `Page timing of ${stalled.replace(/[.?]/g, "\\$&")}: response \\d+ ms, DOMContentLoaded \\d+ ms, load not yet, now \\d+ ms`,
+        ),
+      );
     } finally {
       await context.close();
     }
