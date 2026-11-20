@@ -88,6 +88,15 @@ Unter **Blockiert durch** steht jede blockierende Aufgabe mit Titel und Stand: e
 
 **Blockiert** listet die Aufgaben, die auf diese warten. Ab fünf Einträgen zeigt eine Liste drei, offene zuerst, und fasst den Rest unter **N weitere** zusammen. Ohne Zugriff **Bearbeiten** siehst du dieselben Werte ohne die Bearbeitungsaktionen.
 
+## Dauer von Gustav schätzen lassen {icon="sparkles"}
+
+Wenn du Gustav nutzen darfst, fragt das vollständige Formular einer Aufgabe Gustav nach einer Schätzung. Gustav liest nur Titel, Beschreibung und Checkliste der Aufgabe.
+
+- Die Schätzung steht im leeren Feld **Geschätzte Dauer**. Sie ist ein Vorschlag, kein Wert: Spaces speichert sie erst, wenn du **Übernehmen** oder **Alle übernehmen** wählst.
+- Tippst du eigene Minuten ein, bleibt dein Wert. Lässt du das Feld leer, bekommt die Aufgabe keine Schätzung.
+- **unsicher** heißt: Der Text der Aufgabe lässt den Umfang offen. Zeig darauf, um den Grund zu lesen.
+- Jede Schätzung zählt zu deinem Gustav-Kontingent. Für denselben Aufgabentext fragt Spaces einen Tag lang nicht neu.
+
 ## Den Tag abarbeiten {icon="route"}
 
 :::steps

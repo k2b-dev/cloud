@@ -191,6 +191,13 @@ describe("@k2b/ui field suggestions on the server", () => {
     expect(html).toContain("Alle übernehmen (0)");
   });
 
+  test("a single field has only its own Accept; the group line stays", () => {
+    const html = german(() => createComponent(NumberInput, { label: "Geschätzte Dauer", step: 15, value: null, suggestion: ready(90) }));
+    expect(html).toContain("k2b-ai-suggestion-group__bar");
+    expect(html).toContain(">Übernehmen<");
+    expect(html).not.toContain("Alle übernehmen");
+  });
+
   test("an accepted option from a remote list keeps the suggestion's name, however it was accepted", () => {
     const html = german(() =>
       createComponent(Select, {
