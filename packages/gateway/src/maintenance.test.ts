@@ -10,7 +10,7 @@ import {
 } from "@k2b/cloud/services/maintenance-bypass";
 import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
-import { createAvailability, MAX_VANISHED_APPS, tintAppIcon, UPSTREAM_FAILURE_MS, VANISHED_APP_MS } from "./availability";
+import { appIconColor, createAvailability, MAX_VANISHED_APPS, tintAppIcon, UPSTREAM_FAILURE_MS, VANISHED_APP_MS } from "./availability";
 import { createGatewayHandler } from "./handler";
 import { splitBypassParam, takeBypassCookie } from "./maintenance-bypass";
 import { createProxyStats } from "./proxy";
@@ -252,7 +252,7 @@ test("an app that deregistered cleanly is updating; its paths get its page inste
   expect((await f.request("/pwa")).status).toBe(200);
   expect((await f.request("/api/other")).status).toBe(200);
   expect(f.availability.reasonFor("mail")).toBe("updating");
-  expect(f.availability.appView("mail", "de")).toMatchObject({ name: "E-Mail", accent: "#3366ff" });
+  expect(f.availability.appView("mail", "de")).toMatchObject({ name: "E-Mail", iconColor: "#3366ff" });
 
   f.tick(VANISHED_APP_MS + 1);
   expect((await f.request("/api/mail/v1/messages")).status).toBe(200);
@@ -296,6 +296,18 @@ test("a returned app wins again, and the remembered set stays bounded", () => {
   expect(availability.vanishedOwner(`/api/app${MAX_VANISHED_APPS + 4}/x`, null)).toBeNull();
   // A live match with an equal or longer prefix keeps routing.
   expect(availability.vanishedOwner("/api/app10/x", "/api/app10")).toBeNull();
+});
+
+test("the unavailable page's icon takes the app's icon colour, then its accent; invalid colours count as unset", () => {
+  const app = (appearance: AppRegistryEntry["appearance"]) => ({ ...entry("mail", "http://a.test", ["/api/mail"]), appearance });
+  expect(appIconColor(app({ accent: "#3366ff", iconColor: "#c2410c" }))).toBe("#c2410c");
+  expect(appIconColor(app({ iconColor: "#c2410c" }))).toBe("#c2410c");
+  expect(appIconColor(app({ accent: "#3366ff", iconColor: "#fff" }))).toBe("#3366ff");
+  expect(appIconColor(app({ iconColor: "#c2410c;}*{x:y" }))).toBeUndefined();
+  expect(appIconColor(app(undefined))).toBeUndefined();
+  const availability = createAvailability({ now: () => NOW });
+  availability.updateApps([app({ accent: "#3366ff", iconColor: "#c2410c" })]);
+  expect(availability.appView("mail", "en")).toMatchObject({ iconColor: "#c2410c" });
 });
 
 test("a generated app favicon takes the app accent; other SVGs and invalid accents stay as served", () => {

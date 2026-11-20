@@ -103,6 +103,28 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * record a marker in this same transaction, so older images refuse startup.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`ALTER TABLE mail.remote_resources ADD COLUMN IF NOT EXISTS sync_state jsonb NULL
+    CONSTRAINT remote_resources_sync_state_check CHECK (sync_state IS NULL OR jsonb_typeof(sync_state) = 'object')`.simple();
+  await tx`ALTER TABLE mail.binding_folder_refs ADD COLUMN IF NOT EXISTS remote_folder_id text`.simple();
+  // Replace only the predecessor's CHECK, leaving already upgraded definitions untouched.
+  await tx`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.provider_connections'::regclass
+      AND conname = 'provider_connections_connector_kind_check'
+      AND pg_get_constraintdef(oid) = 'CHECK ((connector_kind = ''imap_smtp''::text))') THEN
+      ALTER TABLE mail.provider_connections DROP CONSTRAINT provider_connections_connector_kind_check;
+      ALTER TABLE mail.provider_connections ADD CONSTRAINT provider_connections_connector_kind_check
+        CHECK (connector_kind IN ('imap_smtp', 'jmap')) NOT VALID;
+    END IF;
+  END $$`.simple();
+  await tx`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.remote_resources'::regclass
+      AND conname = 'remote_resources_connector_kind_check'
+      AND pg_get_constraintdef(oid) = 'CHECK ((connector_kind = ''imap_smtp''::text))') THEN
+      ALTER TABLE mail.remote_resources DROP CONSTRAINT remote_resources_connector_kind_check;
+      ALTER TABLE mail.remote_resources ADD CONSTRAINT remote_resources_connector_kind_check
+        CHECK (connector_kind IN ('imap_smtp', 'jmap')) NOT VALID;
+    END IF;
+  END $$`.simple();
   // Nullable metadata-only addition: no default, backfill or table scan.
   await tx`ALTER TABLE mail.provider_connections ADD COLUMN IF NOT EXISTS jmap_detected boolean`.simple();
   await tx`ALTER TABLE mail.schema_migrations ADD COLUMN IF NOT EXISTS details jsonb NOT NULL DEFAULT '{}'`.simple();
@@ -299,6 +321,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     UNIQUE (rest_draft_id)
   )`.simple();
   await tx`ALTER TABLE mail.draft_document_rests ALTER COLUMN rest_draft_id DROP NOT NULL`.simple();
+  // Bind administrator retries to the inspected source revision; device rests
+  // leave this null and cannot be mistaken for a quarantine repair receipt.
+  await tx`ALTER TABLE mail.draft_document_rests ADD COLUMN IF NOT EXISTS quarantine_revision bigint
+    CHECK (quarantine_revision > 0), ADD COLUMN IF NOT EXISTS quarantine_state bytea`.simple();
 
   await tx.unsafe(automationLogSchema).simple();
   await ensureMailWorkflowEffectOrderSchema(tx);
@@ -484,6 +510,30 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       WHERE state <> 'completed'
     `.simple();
   }
+  await tx`ALTER TABLE mail.remote_message_refs ADD COLUMN IF NOT EXISTS remote_id text`.simple();
+  await tx`ALTER TABLE mail.draft_provider_snapshots ADD COLUMN IF NOT EXISTS remote_id text`.simple();
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'mail.remote_message_refs'::regclass AND conname = 'remote_message_refs_address_shape') THEN
+      ALTER TABLE mail.remote_message_refs ADD CONSTRAINT remote_message_refs_address_shape CHECK (
+        (remote_id IS NULL AND uid_validity IS NOT NULL AND uid IS NOT NULL)
+        OR (remote_id IS NOT NULL AND uid_validity IS NULL AND uid IS NULL)
+      ) NOT VALID;
+    END IF;
+  END $$`.simple();
+  await tx`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'mail.draft_provider_snapshots'::regclass AND conname = 'draft_provider_snapshots_address_shape') THEN
+      ALTER TABLE mail.draft_provider_snapshots ADD CONSTRAINT draft_provider_snapshots_address_shape CHECK (
+        (remote_id IS NULL AND uid_validity IS NULL AND uid IS NULL)
+        OR (folder_id IS NOT NULL AND remote_id IS NULL AND uid_validity IS NOT NULL AND uid IS NOT NULL)
+        OR (folder_id IS NOT NULL AND remote_id IS NOT NULL AND uid_validity IS NULL AND uid IS NULL)
+      ) NOT VALID;
+    END IF;
+  END $$`.simple();
+  await tx`ALTER TABLE mail.draft_provider_snapshots DROP CONSTRAINT IF EXISTS draft_provider_snapshots_remote_shape`.simple();
+  await tx`ALTER TABLE mail.remote_message_refs
+    ALTER COLUMN uid_validity DROP NOT NULL, ALTER COLUMN uid DROP NOT NULL`.simple();
 };
 
 /** List-only membership keeps its provenance across copies, hydration and restarts. */
@@ -817,6 +867,29 @@ export const migrate = async (): Promise<ReplyDraftMigrationResult> => {
         await migrateWorkspacePreferences(tx);
         await migrateWorkflowAi(tx);
       });
+      // Release the metadata transaction's ACCESS EXCLUSIVE locks before scanning existing rows.
+      await sql.begin(async (tx) => {
+        await tx`SET LOCAL lock_timeout = '10s'`;
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
+        await tx`DO $$ BEGIN
+          IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.remote_message_refs'::regclass
+            AND conname = 'remote_message_refs_address_shape' AND NOT convalidated) THEN
+            ALTER TABLE mail.remote_message_refs VALIDATE CONSTRAINT remote_message_refs_address_shape;
+          END IF;
+          IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.draft_provider_snapshots'::regclass
+            AND conname = 'draft_provider_snapshots_address_shape' AND NOT convalidated) THEN
+            ALTER TABLE mail.draft_provider_snapshots VALIDATE CONSTRAINT draft_provider_snapshots_address_shape;
+          END IF;
+          IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.provider_connections'::regclass
+            AND conname = 'provider_connections_connector_kind_check' AND NOT convalidated) THEN
+            ALTER TABLE mail.provider_connections VALIDATE CONSTRAINT provider_connections_connector_kind_check;
+          END IF;
+          IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.remote_resources'::regclass
+            AND conname = 'remote_resources_connector_kind_check' AND NOT convalidated) THEN
+            ALTER TABLE mail.remote_resources VALIDATE CONSTRAINT remote_resources_connector_kind_check;
+          END IF;
+        END $$`.simple();
+      });
       await migrateRoomAccessIndexes();
       // F6 first, then the rule retirement: this is the 0.74 -> 0.75 -> Code order. F6 refuses before its
       // marker, and a refused retirement leaves at most F6's marker, so either refusal keeps a previous
@@ -978,8 +1051,76 @@ const buildBackgroundIndex = async (index: BackgroundIndex, pool: SqlClient): Pr
   }
 };
 
+const folderIdentityIndexes: BackgroundIndex[] = [
+  {
+    name: "mail.binding_folder_refs_imap_path_idx",
+    table: "mail.binding_folder_refs",
+    ddl: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS binding_folder_refs_imap_path_idx
+      ON mail.binding_folder_refs (binding_id, remote_path) WHERE remote_folder_id IS NULL`,
+  },
+  {
+    name: "mail.binding_folder_refs_jmap_id_idx",
+    table: "mail.binding_folder_refs",
+    ddl: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS binding_folder_refs_jmap_id_idx
+      ON mail.binding_folder_refs (binding_id, remote_folder_id) WHERE remote_folder_id IS NOT NULL`,
+  },
+];
+
+/** Keep the predecessor's path rule until both replacement indexes are usable. */
+export const buildFolderIdentityIndexes = async (pool: SqlClient = sql): Promise<"ready" | "busy" | "built" | "failed"> => {
+  let built = false;
+  for (const index of folderIdentityIndexes) {
+    const result = await buildBackgroundIndex(index, pool);
+    if (result === "busy" || result === "failed") return result;
+    built ||= result === "built";
+  }
+  try {
+    return await pool.begin(async (tx) => {
+      // The final metadata change must never queue behind long-running writers.
+      await tx`SET LOCAL lock_timeout = '250ms'`;
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
+      for (const index of folderIdentityIndexes) {
+        if (!(await readBackgroundIndexState(tx, index)).valid) return "busy";
+      }
+      const [legacy] = await tx<{ present: boolean }[]>`
+        SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.binding_folder_refs'::regclass
+          AND conname = 'binding_folder_refs_binding_id_remote_path_key') AS present
+      `;
+      if (legacy?.present) {
+        await tx`ALTER TABLE mail.binding_folder_refs
+          DROP CONSTRAINT binding_folder_refs_binding_id_remote_path_key`.simple();
+        built = true;
+      }
+      return built ? "built" : "ready";
+    });
+  } catch (error) {
+    log.warn("Mail folder identity migration unfinished; the next start retries", { error: String(error) });
+    return migrationErrorCode(error) === "55P03" ? "busy" : "failed";
+  }
+};
+
 export const buildBackfillActivityIndex = (pool: SqlClient = sql) => buildBackgroundIndex(backfillActivityIndex, pool);
 export const buildCommandTargetIndex = (pool: SqlClient = sql) => buildBackgroundIndex(commandTargetIndex, pool);
+export const buildRemoteMessageIdIndex = (pool: SqlClient = sql) =>
+  buildBackgroundIndex(
+    {
+      name: "mail.remote_message_refs_remote_id_idx",
+      table: "mail.remote_message_refs",
+      ddl: `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS remote_message_refs_remote_id_idx
+    ON mail.remote_message_refs (folder_id, remote_id) WHERE remote_id IS NOT NULL`,
+    },
+    pool,
+  );
+export const buildDraftRemoteIdIndex = (pool: SqlClient = sql) =>
+  buildBackgroundIndex(
+    {
+      name: "mail.draft_provider_snapshots_remote_id_idx",
+      table: "mail.draft_provider_snapshots",
+      ddl: `CREATE INDEX CONCURRENTLY IF NOT EXISTS draft_provider_snapshots_remote_id_idx
+    ON mail.draft_provider_snapshots (folder_id, remote_id, created_at DESC) WHERE remote_id IS NOT NULL`,
+    },
+    pool,
+  );
 export const buildProviderMessageIndex = (pool: SqlClient = sql) => buildBackgroundIndex(providerMessageIndex, pool);
 export const buildOpenConversationIndex = (pool: SqlClient = sql) => buildBackgroundIndex(openConversationIndex, pool);
 export const buildActivityFeedIndex = (pool: SqlClient = sql) => buildBackgroundIndex(activityFeedIndex, pool);

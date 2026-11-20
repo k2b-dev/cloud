@@ -1649,8 +1649,8 @@ suite("mail lifecycle control plane", () => {
     lastFullReconcileAt: null,
   });
 
-  const reconcileEnvelope = (uid: number, uidValidity: string, folderId: string, key: string) => ({
-    remoteRef: { folderStableKey: folderId, uidValidity, uid: String(uid), modseq: null },
+  const reconcileEnvelope = (uid: number, uidValidity: string, folderId: string, key: string): ConnectorEnvelope => ({
+    remoteRef: { kind: "imap", folderStableKey: folderId, uidValidity, uid: String(uid), modseq: null },
     providerMessageId: null,
     providerThreadId: null,
     messageId: `<reimport-${key}-${uid}-${suffix}@example.com>`,
