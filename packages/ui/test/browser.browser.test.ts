@@ -37,7 +37,7 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     server = serve();
     other = serve();
     browser = await launchBrowser();
-  });
+  }, 30_000);
   afterAll(async () => {
     try {
       await browser?.close();

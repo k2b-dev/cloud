@@ -115,7 +115,7 @@ const script = await build.outputs[0]!.text();
 let browser: Browser;
 beforeAll(async () => {
   browser = await launchBrowser();
-});
+}, 30_000);
 afterAll(async () => {
   await browser?.close();
 });

@@ -61,3 +61,26 @@ test("reports direct launches and Playwright tests that the WebKit run would not
     "packages/demo/src/helper.browser.test.ts:-",
   ]);
 });
+
+test("a hook that launches a browser keeps at least the launch hook budget (#3862)", async () => {
+  const hook = (body: string, timeout = "") =>
+    `import { beforeAll } from "bun:test";\nimport { launchBrowser, launchHookMs } from "${launcher}";\nlet browser;\nbeforeAll(async () => {\n  ${body}\n}${timeout});\n`;
+  expect(
+    await findings({
+      "packages/demo/src/top-level.browser.test.ts": `import { launchBrowser } from "${launcher}";\nconst browser = await launchBrowser();\n`,
+      "packages/demo/src/literal.browser.test.ts": hook("browser = await launchBrowser();", ", 30_000"),
+      "packages/demo/src/longer.browser.test.ts": hook("browser = await launchBrowser();", ", 120000"),
+      "packages/demo/src/named.browser.test.ts": hook("browser = await launchBrowser();", ", launchHookMs"),
+      // A test that launches its own browser is outside this hook rule.
+      "packages/demo/src/in-test.browser.test.ts": `import { test } from "bun:test";\nimport { launchBrowser } from "${launcher}";\ntest("x", async () => {\n  await launchBrowser();\n});\n`,
+      // Bun's 5 s default is the close budget (#1473); the stalled launch in #3862 failed inside it.
+      "packages/demo/src/default.browser.test.ts": hook("browser = await launchBrowser();"),
+      "packages/demo/src/short.browser.test.ts": hook("browser = await Promise.all([launchBrowser()]);", ", 20_000"),
+      "packages/demo/src/unknown.browser.test.ts": hook("browser = await launchBrowser();", ", budget"),
+    }),
+  ).toEqual([
+    "packages/demo/src/default.browser.test.ts:5",
+    "packages/demo/src/short.browser.test.ts:5",
+    "packages/demo/src/unknown.browser.test.ts:5",
+  ]);
+});

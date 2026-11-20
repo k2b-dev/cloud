@@ -47,6 +47,18 @@ const profileWaitMs = 250;
 const slowLaunchMs = 4000;
 const processPollMs = 25;
 
+/**
+ * A launch has its own budget: Playwright fails a launch or connect still pending after 20 s, and the error names the launch.
+ * A launch normally takes well under 1 s; a stalled CI runner took over 5 s (#2086, #3862). Bun's 5 s hook default is the close
+ * budget above, so a hook that launches would fail nameless at 5 s, beside a launch that was about to finish.
+ */
+export const launchBudgetMs = 20_000;
+/**
+ * The smallest timeout of a hook that calls `launchBrowser()`: the launch budget plus 10 s for the hook's own setup, so the
+ * launch's own error reports before the hook times out. The `browser-launch` check enforces it.
+ */
+export const launchHookMs = 30_000;
+
 /** The process of a browser that this test process launched: the leader of its own process group. */
 type BrowserProcess = { pid: number; kill: () => Promise<unknown> };
 
@@ -180,6 +192,7 @@ const start = async (options: LaunchOptions): Promise<StartedBrowser> => {
   const endpoint = process.env.TEST_BROWSER_ENDPOINT?.trim();
   const began = Date.now();
   const previous = previousCloseSummary();
+  const timeout = options.timeout ?? launchBudgetMs;
   let slow = false;
   const timer = setTimeout(() => {
     slow = true;
@@ -190,12 +203,12 @@ const start = async (options: LaunchOptions): Promise<StartedBrowser> => {
     if (endpoint) {
       started = {
         browser: await type.connect(endpoint, {
-          timeout: options.timeout,
+          timeout,
           headers: { "x-playwright-launch-options": JSON.stringify(options) },
         }),
       };
     } else {
-      const browser = await type.launch(options);
+      const browser = await type.launch({ ...options, timeout });
       try {
         started = { browser, process: browserProcessOf(browser) };
       } catch (error) {
@@ -206,7 +219,7 @@ const start = async (options: LaunchOptions): Promise<StartedBrowser> => {
     if (slow) console.error(`launchBrowser: ${browserName} launch completed after ${Date.now() - began} ms; ${previous}`);
     return started;
   } catch (error) {
-    const diagnosis = `launchBrowser: ${browserName} launch failed after ${Date.now() - began} ms; ${previous}`;
+    const diagnosis = `launchBrowser: ${browserName} launch failed after ${Date.now() - began} ms of its ${timeout} ms budget; ${previous}`;
     if (!(error instanceof Error)) throw new Error(`${String(error)}\n\n${diagnosis}`, { cause: error });
     error.message += `\n\n${diagnosis}`;
     throw error;
@@ -482,6 +495,7 @@ const wrapContext = async (context: BrowserContext, servesShellCatalog: boolean)
  * Failed requests carry their error, and WebKit's internal error names a crashed network process as one cause (#1431).
  * Close waits at most 2 s gracefully and 2 s for a killed local process group; a surviving group fails cleanup.
  * A forced close, a launch pending after 4 s, and a failed launch carry timing evidence (#1473).
+ * A launch fails with its own error after `launchBudgetMs`; a hook that launches keeps at least `launchHookMs` (#3862).
  */
 export const launchBrowser = async ({
   serveShellCatalog = false,

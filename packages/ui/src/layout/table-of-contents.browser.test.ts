@@ -53,7 +53,7 @@ let page: Page;
 beforeAll(async () => {
   browser = await launchBrowser();
   page = await browser.newPage({ viewport: { width: 1000, height: 600 } });
-});
+}, 30_000);
 afterAll(async () => {
   await page?.close();
   await browser?.close();

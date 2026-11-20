@@ -380,10 +380,20 @@ starts beside a browser still shutting down
 ([#1473](https://github.com/k2b-dev/cloud/issues/1473)). A
 browser from `TEST_BROWSER_ENDPOINT` runs elsewhere and only gets the 2 s
 graceful close.
+A launch has its own budget of 20 s (`launchBudgetMs`), which
+`launchBrowser()` passes to Playwright's launch or connect unless the test
+sets `timeout`. A launch normally takes well under 1 s, but a stalled CI
+runner has taken over 5 s. Bun's 5 s hook default is the close budget
+above, so a hook that calls `launchBrowser()` passes at least `launchHookMs`
+(30 s) as its timeout: `}, 30_000);`. The launch's own error then reports
+before the hook times out. Code at the top level of a test file has no
+timeout. `bun run check` (`browser-launch`) fails such a hook that keeps a
+shorter or an unreadable timeout
+([#3862](https://github.com/k2b-dev/cloud/pull/3862)).
 A close that needed the kill and a launch still pending after 4 s print a
 `launchBrowser:` line with their durations next to the failure. A failed
-launch carries its duration in the error. A process group still alive after
-the kill fails the hook with those timings.
+launch carries its duration and budget in the error. A process group still
+alive after the kill fails the hook with those timings.
 `packages/ui/test/browser.browser.test.ts` guards a hung close and the next
 launch. `packages/ui/scripts/browser-process.test.ts` guards zombie-only groups
 and living orphans with real Linux processes.
