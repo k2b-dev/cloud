@@ -519,7 +519,7 @@ export const prompts = Object.assign(sharedPrompts, {
     const open = captureDialogOpen();
     const form = loadedPromptForm() ?? (await loadPromptForm().catch(() => undefined));
     if (!form) {
-      await promptFormUnavailable(config.signal);
+      await promptFormUnavailable(config.signal, open);
       return null;
     }
     const { PromptFormDialog } = form;

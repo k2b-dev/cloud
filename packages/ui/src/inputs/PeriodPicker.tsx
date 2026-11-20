@@ -2,6 +2,7 @@ import { dates } from "@k2b/stdlib";
 import { batch, createComputed, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { prefersMenuSheet } from "../actions/phone-sheet";
+import { captureDialogOpen } from "../feedback/dialog-core";
 import { createFieldMeta, Field, fieldDescribedBy } from "../internal/field";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useDateConfigLocale } from "../intl/locale";
@@ -331,8 +332,10 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
 
   const openSheet = async () => {
     setSheetOpen(true);
+    // The sheet opens with the context of this tap, not of the moment its code arrives.
+    const openDialog = captureDialogOpen();
     const { openDateSheet } = await import("./date-sheet");
-    const result = await openDateSheet<PeriodValue>({
+    const result = await openDateSheet<PeriodValue>(openDialog, {
       title: typeof props.label === "string" ? props.label : (props["aria-label"] ?? t().period),
       subtitle: current() ? joined(current()!) : t().choosePeriod,
       ariaLabel: typeof props.label === "string" ? props.label : (props["aria-label"] ?? t().period),

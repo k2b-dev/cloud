@@ -11,7 +11,7 @@ const until = async (ready: () => boolean) => {
   while (!ready()) await Bun.sleep(10);
 };
 
-type Deferred = { promise: Promise<unknown>; resolve: () => void };
+type Deferred = { promise: Promise<unknown>; resolve: () => void; reject: () => void };
 const loads: Deferred[] = [];
 /** The form's field chunk, held back until the test lets it arrive. */
 const formModule = {
@@ -52,8 +52,12 @@ describe("@k2b/ui prompts whose code loads on demand", () => {
       loadedPromptForm: () => undefined,
       loadPromptForm: () => {
         let resolve = () => {};
-        const promise = new Promise((done) => (resolve = () => done(formModule)));
-        loads.push({ promise, resolve });
+        let reject = () => {};
+        const promise = new Promise((done, fail) => {
+          resolve = () => done(formModule);
+          reject = () => fail(new Error("The chunk request failed"));
+        });
+        loads.push({ promise, resolve, reject });
         return promise;
       },
     }));
@@ -84,6 +88,10 @@ describe("@k2b/ui prompts whose code loads on demand", () => {
     for (const load of loads) load.resolve();
     await Promise.all(loads.map((load) => load.promise));
   };
+  const fail = async () => {
+    for (const load of loads) load.reject();
+    await Promise.allSettled(loads.map((load) => load.promise));
+  };
 
   for (const kind of ["form", "typed confirmation"] as const) {
     const ask = () =>
@@ -113,6 +121,29 @@ describe("@k2b/ui prompts whose code loads on demand", () => {
       await arrive();
       expect(await result).toBe(kind === "form" ? null : undefined);
       expect(dialog()).toBeNull();
+    });
+
+    test(`a ${kind} whose code fails after a navigation shows no message over the new page`, async () => {
+      const { trigger } = page();
+      trigger.focus();
+      const result = ask();
+      navigate();
+      await fail();
+      expect(await result).toBe(kind === "form" ? null : false);
+      expect(dialog()).toBeNull();
+    });
+
+    test(`a ${kind} whose opener left the page returns focus to where it opened`, async () => {
+      const { trigger, elsewhere } = page();
+      trigger.focus();
+      const result = ask();
+      elsewhere.focus();
+      trigger.remove();
+      await arrive();
+      await until(() => dialog() !== null);
+      ui.dialogCore.close();
+      await result;
+      await until(() => dom.document.activeElement === elsewhere);
     });
   }
 

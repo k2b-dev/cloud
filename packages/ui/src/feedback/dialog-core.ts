@@ -720,7 +720,8 @@ export const createDialogCore = () => {
       panelClassName,
       cancelBehavior,
       initialFocus,
-      opener: call.opener,
+      // An opener that left the page while the code loaded hands the return to the focus at opening.
+      opener: call.opener?.isConnected ? call.opener : activeElement instanceof HTMLElement ? activeElement : undefined,
       openerRing: call.openerRing,
       ariaLabel: options.ariaLabel,
       ariaDescribedBy: options.ariaDescribedBy,
