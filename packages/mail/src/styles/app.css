@@ -1094,6 +1094,11 @@
 .k2b-ui .mail-reader-scroll {
   container: mail-reader / size;
 }
+/* A large writing surface keeps a 1 px edge, gray at rest and blue in focus, without a ring and without a hover change
+   (Composer v4); the placeholder, the note, and the quiet rows in its place share it. */
+.k2b-ui :is(.mail-inline-draft, .mail-reply-box-frame) {
+  --mail-compose-edge: 1px;
+}
 .k2b-ui .mail-inline-draft {
   /* Text, attachments, signature, the quote line, and Send start on one edge, 16 px inside. */
   --mail-compose-inset: 1rem;
@@ -1105,10 +1110,10 @@
   padding: 0.5rem var(--mail-compose-inset);
   border-radius: 0.875rem;
   background: var(--k2b-surface);
-  box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
+  box-shadow: inset 0 0 0 var(--mail-compose-edge) var(--k2b-edge);
 }
 .k2b-ui .mail-inline-draft:focus-within {
-  box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge-focus);
+  box-shadow: inset 0 0 0 var(--mail-compose-edge) var(--k2b-edge-focus);
 }
 /* Full screen: the list and details stepped aside; the draft takes the column and the history follows below. */
 .k2b-ui .mail-inline-draft[data-fullscreen] {
@@ -1120,7 +1125,7 @@
 /* A suggestion from Gustav: plum (AI) until a person types or changes anything; then it is an ordinary draft. */
 .k2b-ui .mail-inline-draft[data-suggestion] {
   background: color-mix(in srgb, var(--k2b-ai-surface) 55%, var(--k2b-surface));
-  box-shadow: inset 0 0 0 var(--k2b-frame-width) color-mix(in srgb, var(--k2b-ai-border) 45%, var(--k2b-surface));
+  box-shadow: inset 0 0 0 var(--mail-compose-edge) color-mix(in srgb, var(--k2b-ai-border) 45%, var(--k2b-surface));
 }
 .k2b-ui .mail-inline-draft[data-suggestion] .mail-inline-draft-intent,
 .k2b-ui .mail-inline-draft[data-suggestion] .mail-inline-draft-suggestion-hint,
@@ -2279,7 +2284,7 @@
   padding: 0.5rem 1rem;
   border-radius: 0.875rem;
   background: var(--k2b-surface);
-  box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
+  box-shadow: inset 0 0 0 var(--mail-compose-edge) var(--k2b-edge);
 }
 /* Höhenmodell A: the reply box is as high as its content, up to max(20rem, column − 7rem). Only the person's own input
    measures it again (createComposeFit); then it holds that height, and focus, saving, hints, or text from someone
@@ -2528,10 +2533,10 @@
     padding-inline: var(--mail-compose-inset);
     border-radius: 0.875rem;
     background: var(--k2b-surface);
-    box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge);
+    box-shadow: inset 0 0 0 var(--mail-compose-edge) var(--k2b-edge);
   }
   .k2b-ui .mail-inline-draft.mail-reply-box:focus-within {
-    box-shadow: inset 0 0 0 var(--k2b-frame-width) var(--k2b-edge-focus);
+    box-shadow: inset 0 0 0 var(--mail-compose-edge) var(--k2b-edge-focus);
   }
   .k2b-ui .mail-inline-draft.mail-reply-box::after,
   .k2b-ui .mail-reply-box-head::after {

@@ -63,7 +63,14 @@ export function createComposeFit(parts: {
     if (!frame) frame = requestAnimationFrame(fit);
   };
   const markOwn = (event: Event) => {
-    if (event instanceof KeyboardEvent && (NAVIGATION_KEYS.has(event.key) || event.isComposing)) return;
+    if (
+      event instanceof KeyboardEvent &&
+      (NAVIGATION_KEYS.has(event.key) || event.isComposing || event.ctrlKey || event.metaKey || event.altKey)
+    )
+      return;
+    // A click that only puts the caret or the focus somewhere is no input; one on a control (remove, show all, add) is.
+    if (event.type === "pointerup" && !(event.target instanceof Element && event.target.closest("button, [role='button'], a[href]")))
+      return;
     ownInputAt = performance.now();
     // Typed, pasted, cut, or dropped content fits the box even when its size stays: a short text in the reserved
     // height leaves no hole below it.
