@@ -1119,9 +1119,7 @@ describe("Spaces item detail in a browser", () => {
           );
           expect(await input.getAttribute("placeholder")).toBe("90");
           expect(await input.inputValue()).toBe("");
-          await expect(
-            page.getByText("Der Vorschlag ist noch offen und wird nicht gespeichert.", { exact: true }).isVisible(),
-          ).resolves.toBe(true);
+          expect(await page.getByText("Der Vorschlag ist noch offen und wird nicht gespeichert.", { exact: true }).isVisible()).toBe(true);
           expect(await formBoxes(page)).toEqual(loading);
           await formShot(page, `${name}-${theme}-open`);
 

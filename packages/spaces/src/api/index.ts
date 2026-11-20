@@ -128,10 +128,10 @@ import { InvalidActivityCursorError, type SpaceActivityIdentity } from "../servi
 import { presentActivityOrigins } from "../service/activity-origins";
 import { spaceActivityRow } from "../service/activity-timeline";
 import { resolveByteRange } from "../service/byte-range";
-import { suggestEstimate } from "../service/estimate-suggestion";
 import { loadCalendarEvents, loadCalendarSources } from "../service/calendar-view";
 import type { BoardOrderEntry } from "../service/columns";
 import type { CommentAuthor } from "../service/comments";
+import { suggestEstimate } from "../service/estimate-suggestion";
 import { spacesLive } from "../service/live";
 import { spacesLiveChannels } from "../service/live-channels";
 import { type SpacesMessages, spacesApiErrorMessage, spacesMessages } from "../service/messages";
