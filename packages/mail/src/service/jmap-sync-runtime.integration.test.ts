@@ -22,20 +22,23 @@ import { claimFence } from "./sync-runtime";
 const suite = suiteFor("database", "nats", "valkey");
 const at = new Date("2026-11-20T00:00:00Z");
 const initial: JmapSyncState = { version: 1, emailState: "Email:0", mailboxState: "Mailbox:0", scan: null };
-// The driver pins measured values after the first gate; null intentionally checks ratios only.
+// Measured in the gate, BEGIN and COMMIT included. A quiet commit is the transaction, four locks
+// (resource, binding, connection, mailbox), the checkpoint and the run. A page with changes adds
+// the refs, the folders, one batch statement for its kind, binding usage and the live invalidation.
+// Only a new membership costs per message: the 18 statements of the shared ingestEnvelope.
 const STATEMENT_BUDGET: Record<
   "unchanged" | "statesOnly" | "new1" | "new7" | "flags1" | "flags7" | "remove1" | "remove7" | "folders",
-  number | null
+  number
 > = {
-  unchanged: null,
-  statesOnly: null,
-  new1: null,
-  new7: null,
-  flags1: null,
-  flags7: null,
-  remove1: null,
-  remove7: null,
-  folders: null,
+  unchanged: 8,
+  statesOnly: 8,
+  new1: 31,
+  new7: 139,
+  flags1: 13,
+  flags7: 13,
+  remove1: 14,
+  remove7: 14,
+  folders: 18,
 };
 let sequence = 0;
 const uuid = () => `00000000-003d-4000-8000-${String(++sequence).padStart(12, "0")}`;
@@ -243,9 +246,13 @@ suite("JMAP account commit", () => {
   async function waitForBlockedCommit(blockerPid: number, commits = 1) {
     const deadline = performance.now() + 10_000;
     while (true) {
-      const [row] = await sql<{ blocked: boolean }[]>`SELECT (
-        SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))
-      ) >= ${commits} AS blocked`;
+      // A second waiter on the same row queues behind the first one, not behind the holder.
+      const [row] = await sql<{ blocked: boolean }[]>`WITH RECURSIVE waiting AS (
+        SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+        UNION
+        SELECT activity.pid FROM pg_stat_activity activity JOIN waiting ON waiting.pid = ANY(pg_blocking_pids(activity.pid))
+        WHERE activity.datname = current_database()
+      ) SELECT count(*) >= ${commits} AS blocked FROM waiting`;
       if (row?.blocked) return;
       if (performance.now() >= deadline) throw new Error("locks: account commit did not reach the held row");
       await Bun.sleep(10);
@@ -1088,16 +1095,12 @@ suite("JMAP account commit", () => {
         ),
         "folder batch: no second folder load and no email work",
       ).toBeFalse();
+      // The line names the measured values when a budget fails.
       console.info("JMAP_STATEMENTS", JSON.stringify(measured));
-      expect(measured.new7, "budget: linear ingest upper bound").toBeLessThanOrEqual(
-        measured.unchanged + 7 * (measured.new1 - measured.unchanged),
+      expect(measured, "budget: exact statement counts").toEqual(STATEMENT_BUDGET);
+      expect(measured.new7 - measured.new1, "budget: only the shared ingest grows with new messages").toBe(
+        6 * (measured.new1 - measured.flags1),
       );
-      expect(measured.flags7, "budget: batch flags").toBe(measured.flags1);
-      expect(measured.remove7, "budget: batch removal and keep").toBe(measured.remove1);
-      for (const [key, actual] of Object.entries(measured)) {
-        const expected = Object.entries(STATEMENT_BUDGET).find(([name]) => name === key)?.[1];
-        if (typeof expected === "number") expect(actual, `budget: ${key}`).toBe(expected);
-      }
     } finally {
       await meter.close();
     }
