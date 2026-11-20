@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type Browser, errors } from "playwright";
 import {
   browserName,
@@ -728,6 +731,60 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
         } finally {
           await Promise.all([hung?.close(), next?.close()]);
         }
+      }
+    },
+    20_000,
+  );
+
+  test.skipIf(Boolean(process.env.TEST_BROWSER_ENDPOINT?.trim()))(
+    "a launch that runs out of its budget fails with its own error and leaves no process beside the next launch",
+    async () => {
+      // A browser that starts and never answers, with a child in its group. It keeps the launch pipes open, so after the
+      // timeout Playwright 1.65 waits up to 30 s for its graceful close before it kills it (#3874).
+      const dir = await mkdtemp(join(tmpdir(), "ui-hung-launch-"));
+      const executable = join(dir, "browser");
+      const pidFile = join(dir, "pid");
+      await writeFile(executable, `#!/bin/sh\necho $$ > "${pidFile}"\nsleep 60 &\nwait\n`, { mode: 0o755 });
+      // Groups that survived a failed launch, killed after the test.
+      const living: number[] = [];
+      try {
+        const failedLaunch = async () => {
+          const started = performance.now();
+          const error = await launchBrowser({ executablePath: executable, timeout: 1000 }).then(
+            () => undefined,
+            (failure: unknown) => failure,
+          );
+          const failedMs = performance.now() - started;
+          const group = Number(await readFile(pidFile, "utf8"));
+          // Nothing of the failed launch outlives the error: the launch budget, then at most the 2 s kill wait.
+          const alive = processGroupAlive(group);
+          if (alive) living.push(group);
+          expect(alive).toBe(false);
+          if (!(error instanceof errors.TimeoutError)) throw new Error(`Expected a launch timeout, got ${String(error)}`);
+          expect(failedMs).toBeLessThan(1000 + 2000 + 500);
+          return { message: error.message, group };
+        };
+        const first = await failedLaunch();
+        expect(first.message).toMatch(
+          new RegExp(
+            `\\n\\nlaunchBrowser: ${browserName} launch failed after \\d+ ms of its 1000 ms budget; .+; killed its process group ${first.group}, gone after \\d+ ms$`,
+          ),
+        );
+        // The next launch knows that the one before it failed.
+        const second = await failedLaunch();
+        expect(second.message).toMatch(
+          new RegExp(`; previous launch failed, its cleanup took \\d+ ms, needed a kill; killed its process group ${second.group}, `),
+        );
+        expect(second.group).not.toBe(first.group);
+      } finally {
+        for (const group of living) {
+          try {
+            process.kill(-group, "SIGKILL");
+          } catch (error) {
+            if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+          }
+        }
+        await rm(dir, { recursive: true, force: true });
       }
     },
     20_000,
