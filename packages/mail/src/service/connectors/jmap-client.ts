@@ -137,6 +137,9 @@ function checkHttp(response: JmapResponse): void {
     throw new JmapRateLimitError(retryAfter);
   }
   if (response.status >= 200 && response.status < 300) return;
+  // A refused login stays an HTTP status whatever body the server adds: servers such as Stalwart
+  // answer every error as problem+json, which would otherwise turn it into a request error.
+  if (response.status === 401 || response.status === 403) throw new JmapHttpError(response.status);
   let problem: unknown;
   try {
     problem = JSON.parse(response.body);
