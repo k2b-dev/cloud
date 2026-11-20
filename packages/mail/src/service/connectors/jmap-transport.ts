@@ -126,7 +126,8 @@ function requestOptions(input: JmapRequest, endpoint: ResolvedEndpoint): Request
 function transportError(error: unknown, signal: AbortSignal): JmapTransportError {
   if (signal.aborted) return new JmapTransportError("JMAP_ABORTED");
   if (error instanceof JmapTransportError) return error;
-  // Node and consumer errors may contain headers, URLs or mail data. Retain no cause.
+  // Node and response-reading errors may contain headers or URLs. Retain no cause.
+  // Consumer failures belong to the caller and bypass this normalization.
   return new JmapTransportError("JMAP_TRANSPORT");
 }
 
@@ -151,13 +152,16 @@ export async function consumeJmapDownload<T>(
         const timer = setTimeout(expire, milliseconds);
         return () => clearTimeout(timer);
       });
-    const finish = (result: { value: T } | { error: Error }) => {
+    const finish = (result: { value: T } | { error: unknown }) => {
       if (settled) return;
       settled = true;
       cancelTimer?.();
       input.signal.removeEventListener("abort", abort);
       connection.abort();
-      if (source && !source.destroyed) source.destroy("error" in result ? result.error : undefined);
+      if (source && !source.destroyed) {
+        const error = "error" in result ? result.error : undefined;
+        source.destroy(error === undefined || error instanceof Error ? error : transportError(error, input.signal));
+      }
       if (incoming && !incoming.destroyed) incoming.destroy();
       if (outgoing && !outgoing.destroyed) outgoing.destroy();
       if ("error" in result) reject(result.error);
@@ -165,12 +169,20 @@ export async function consumeJmapDownload<T>(
     };
     const fail = (error: unknown) => finish({ error: transportError(error, input.signal) });
     const abort = () => fail(new JmapTransportError("JMAP_ABORTED"));
+    const consumerFailed = (error: unknown) => {
+      if (input.signal.aborted) abort();
+      else finish({ error }); // First settlement wins, including an earlier transport failure.
+    };
     const deadline = (milliseconds: number) => {
       cancelTimer?.();
       cancelTimer = schedule(() => fail(new JmapTransportError("JMAP_TIMEOUT")), milliseconds);
     };
     // Same idle budget as imap-smtp.ts socketTimeout. Only the caller bounds total duration.
-    const idle = () => deadline(60_000);
+    // Backpressure is caller work, not network inactivity. Resume must rearm even without new data.
+    const idle = () => {
+      if (!settled && incoming && !incoming.isPaused() && !incoming.readableEnded) deadline(60_000);
+      else cancelTimer?.();
+    };
     input.signal.addEventListener("abort", abort, { once: true });
     deadline(15_000); // Existing IMAP/JMAP connection budget, including DNS (itself bounded to 5 s).
     const read = (response: IncomingMessage) => {
@@ -185,6 +197,8 @@ export async function consumeJmapDownload<T>(
         return;
       }
       idle();
+      response.on("pause", () => cancelTimer?.());
+      response.on("resume", idle);
       response.on("data", idle);
       response.once("end", () => cancelTimer?.());
       const status = response.statusCode ?? 0;
@@ -231,9 +245,9 @@ export async function consumeJmapDownload<T>(
       response.pipe(source);
       // Start synchronously so consumers can install their error listener before data arrives.
       try {
-        consume(source).then((value) => finish({ value }), fail);
+        consume(source).then((value) => finish({ value }), consumerFailed);
       } catch (error) {
-        fail(error);
+        consumerFailed(error);
       }
     };
     const start = async () => {

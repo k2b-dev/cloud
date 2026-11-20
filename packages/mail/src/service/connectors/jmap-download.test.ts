@@ -43,9 +43,10 @@ async function collect(source: Readable) {
   return Buffer.concat(chunks);
 }
 function clock() {
-  const timers: Array<{ expire: () => void; milliseconds: number; active: boolean }> = [];
+  let now = 0;
+  const timers: Array<{ expire: () => void; milliseconds: number; due: number; active: boolean }> = [];
   const downloadTimer = (expire: () => void, milliseconds: number) => {
-    const timer = { expire, milliseconds, active: true };
+    const timer = { expire, milliseconds, due: now + milliseconds, active: true };
     timers.push(timer);
     return () => {
       timer.active = false;
@@ -58,7 +59,11 @@ function clock() {
     if (!timer) throw new Error("Missing active timer");
     timer.expire();
   };
-  return { timers, downloadTimer, expire };
+  const advance = (milliseconds: number) => {
+    now += milliseconds;
+    for (const timer of [...timers]) if (timer.active && timer.due <= now) timer.expire();
+  };
+  return { timers, downloadTimer, expire, advance };
 }
 
 test("streams all binary byte values across chunks and keeps the connection until consume settles", async () => {
@@ -89,6 +94,7 @@ test("streams all binary byte values across chunks and keeps the connection unti
 
 test("a paused consumer bounds buffered chunks and backpressures the response", async () => {
   const f = setup();
+  const time = clock();
   const chunk = Buffer.alloc(64 * 1024, 42);
   const total = chunk.length * 128;
   f.fixture.blobs.set(
@@ -110,10 +116,15 @@ test("a paused consumer bounds buffered chunks and backpressures the response", 
       if (!(source instanceof Transform)) throw new Error("Expected bounded download transform");
       expect(source.writableLength).toBeLessThanOrEqual(source.writableHighWaterMark + largestChunk);
       expect(source.readableHighWaterMark).toBeLessThan(total);
-      return (await collect(source)).length;
+      expect(time.timers.every((timer) => !timer.active)).toBe(true);
+      time.advance(120_000); // Longer than the network idle budget, entirely under backpressure.
+      const bytes = await collect(source);
+      expect(bytes.equals(Buffer.alloc(total, 42))).toBe(true);
+      return bytes.length;
     },
     {
       ...f.dependencies,
+      downloadTimer: time.downloadTimer,
       request: (options, callback) =>
         factory(options, (response) => {
           response.on("data", (value: Buffer) => {
@@ -286,19 +297,20 @@ test("caller abort during the body and from consume is a stream error, never a s
   }
 });
 
-test("consumer errors are redacted and close every owned stream", async () => {
+test("consumer errors retain their identity and code and close every owned stream", async () => {
   const f = setup();
   let source: Readable | undefined;
+  const failure = Object.assign(new Error("Hydration claim lost"), { code: "HYDRATION_NOT_CLAIMED" });
   const work = consumeJmapDownload(
     f.input,
     async (value) => {
       source = value;
-      throw new Error("Authorization: private https://secret.invalid");
+      throw failure;
     },
     f.dependencies,
   );
-  await expect(work).rejects.toMatchObject({ code: "JMAP_TRANSPORT", message: "JMAP_TRANSPORT" });
-  await expect(work).rejects.not.toHaveProperty("cause");
+  await expect(work).rejects.toBe(failure);
+  await expect(work).rejects.toMatchObject({ code: "HYDRATION_NOT_CLAIMED" });
   expect(source?.destroyed).toBe(true);
   expect(f.outgoing()?.destroyed).toBe(true);
   expect(f.incoming()?.destroyed).toBe(true);
@@ -442,4 +454,114 @@ test("a completed response keeps the consumer under the caller signal with no id
   expect(time.timers.every((timer) => !timer.active)).toBe(true);
   release.resolve();
   expect(await work).toBe("processed");
+});
+
+test("resuming a backpressured response rearms the idle deadline even without more server data", async () => {
+  const f = setup();
+  const time = clock();
+  const chunk = Buffer.alloc(64 * 1024, 42);
+  const delivered = chunk.length * 4;
+  f.fixture.blobs.set(
+    "blob-one",
+    Array.from({ length: 128 }, () => chunk),
+  );
+  f.fixture.download.afterChunk = async (index) => {
+    if (index === 3) await new Promise(() => {});
+  };
+  const paused = Promise.withResolvers<void>();
+  const rearmed = Promise.withResolvers<void>();
+  let waitingForServer = false;
+  const factory = f.dependencies.request;
+  if (!factory) throw new Error("Missing test factory");
+  await expect(
+    consumeJmapDownload(
+      { ...f.input, maxBytes: chunk.length * 128 },
+      async (source) => {
+        await paused.promise;
+        expect(time.timers.every((timer) => !timer.active)).toBe(true);
+        time.advance(120_000);
+        const drained = Promise.withResolvers<void>();
+        let received = 0;
+        source.on("data", (value: Buffer) => {
+          received += value.length;
+          if (received === delivered) drained.resolve();
+        });
+        const reading = collect(source);
+        void reading.catch(drained.reject);
+        await drained.promise;
+        waitingForServer = true;
+        const response = f.incoming();
+        if (!response) throw new Error("Missing test response");
+        // resume() changes isPaused() before its queued resume event rearms the timer.
+        if (!time.timers.some((timer) => timer.active)) await rearmed.promise;
+        expect(response.readableEnded).toBe(false);
+        expect(time.timers.filter((timer) => timer.active).map((timer) => timer.milliseconds)).toEqual([60_000]);
+        time.advance(60_001);
+        return reading;
+      },
+      {
+        ...f.dependencies,
+        downloadTimer: (expire, milliseconds) => {
+          const cancel = time.downloadTimer(expire, milliseconds);
+          if (waitingForServer && milliseconds === 60_000) rearmed.resolve();
+          return cancel;
+        },
+        request: (options, callback) =>
+          factory(options, (response) => {
+            response.once("pause", () => paused.resolve());
+            callback(response);
+          }),
+      },
+    ),
+  ).rejects.toMatchObject({ code: "JMAP_TIMEOUT" });
+  expect(f.outgoing()?.destroyed).toBe(true);
+  expect(f.incoming()?.destroyed).toBe(true);
+});
+
+for (const reason of ["timeout", "abort"] as const) {
+  test(`the first transport ${reason} wins over a subsequent consumer failure`, async () => {
+    const f = setup();
+    const time = clock();
+    const followed = Promise.withResolvers<void>();
+    const followup = Object.assign(new Error("Parser stopped after source failure"), { code: "HYDRATION_FAILED" });
+    f.fixture.download.afterChunk = async () => new Promise(() => {});
+    const work = consumeJmapDownload(
+      f.input,
+      async (source) => {
+        const failed = once(source, "error");
+        source.once("data", () => {
+          if (reason === "abort") f.controller.abort();
+          else time.expire();
+        });
+        await failed;
+        followed.resolve();
+        throw followup;
+      },
+      { ...f.dependencies, downloadTimer: time.downloadTimer },
+    );
+    await expect(work).rejects.toMatchObject({ code: reason === "abort" ? "JMAP_ABORTED" : "JMAP_TIMEOUT" });
+    await followed.promise;
+    await expect(work).rejects.not.toBe(followup);
+    expect(f.outgoing()?.destroyed).toBe(true);
+    expect(f.incoming()?.destroyed).toBe(true);
+  });
+}
+
+test("a synchronous consumer failure keeps its identity unless the caller has aborted", async () => {
+  for (const abort of [false, true]) {
+    const f = setup();
+    const failure = Object.assign(new Error("Transport changed"), { code: "MAILBOX_TRANSPORT_CHANGED" });
+    const work = consumeJmapDownload(
+      f.input,
+      () => {
+        if (abort) f.controller.abort();
+        throw failure;
+      },
+      f.dependencies,
+    );
+    if (abort) await expect(work).rejects.toMatchObject({ code: "JMAP_ABORTED" });
+    else await expect(work).rejects.toBe(failure);
+    expect(f.outgoing()?.destroyed).toBe(true);
+    expect(f.incoming()?.destroyed).toBe(true);
+  }
 });
