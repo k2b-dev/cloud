@@ -300,7 +300,7 @@
 .k2b-ui .assistant-context-box[data-variant] [data-group="automations"] .assistant-context-box__row:has(> .assistant-context-box__act):is(:hover, :focus-within) .assistant-context-box__trailing { visibility: visible; }
 
 /* Text without a row (empty, loading, failed) stands on the gutter itself. */
-.k2b-ui .assistant-context-box[data-variant="column"] > .assistant-context-box__body > :is(.assistant-context-box__empty, .assistant-context-box__loading, .assistant-context-box__failed) {
+.k2b-ui .assistant-context-box[data-variant] > .assistant-context-box__body > :is(.assistant-context-box__empty, .assistant-context-box__loading, .assistant-context-box__failed) {
   padding-inline: var(--k2b-gutter);
 }
 .k2b-ui .assistant-context-box[data-variant] .assistant-context-box__lines { margin: 0; border-block-start-color: var(--k2b-border); }
