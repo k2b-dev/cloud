@@ -97,7 +97,14 @@ for (const width of [1100, 1440])
         const geometry = await page.evaluate(() => {
           const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
           const round = (value: number) => Math.round(value * 10) / 10;
-          const workspace = box(".k2b-app-workspace");
+          // The workspace's inner edges: a framed workspace draws its 1 px card edge outside them.
+          const root = document.querySelector<HTMLElement>(".k2b-app-workspace")!;
+          const outer = root.getBoundingClientRect();
+          const workspace = {
+            top: outer.top + root.clientTop,
+            right: outer.left + root.clientLeft + root.clientWidth,
+            bottom: outer.top + root.clientTop + root.clientHeight,
+          };
           const detail = box(".k2b-app-workspace__detail");
           const panel = box(".k2b-detail-panel");
           const head = box(".k2b-app-workspace__head");
