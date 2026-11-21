@@ -4,3 +4,34 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Cloud flach: a question is a row of reading text, the list draws the hairline between rows (`k2b-divided`), and an
+   open answer starts on the question's text edge (K2, K5, K11). */
+.faq-entry__question {
+  display: flex;
+  min-height: var(--k2b-h-row);
+  align-items: center;
+  gap: var(--k2b-space-3);
+  padding-block: var(--k2b-space-2);
+  color: var(--ui-text-secondary);
+  font-size: var(--k2b-font-size-body);
+  font-weight: 500;
+  line-height: var(--k2b-h-label);
+  list-style: none;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.faq-entry__question::-webkit-details-marker {
+  display: none;
+}
+
+.faq-entry__question:hover {
+  color: var(--k2b-text);
+}
+
+.faq-entry__answer {
+  padding: 0 0 var(--k2b-space-4) calc(0.875rem + var(--k2b-space-3));
+  color: var(--ui-text-dimmed);
+  font-size: var(--k2b-font-size-body);
+}

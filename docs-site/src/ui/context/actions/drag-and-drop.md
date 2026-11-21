@@ -9,8 +9,10 @@ The library never interprets the reference or moves application data itself.
 
 ```tsx
 import {
-  DragSource, DropTarget, useKeyboardDrag, activeDrag,
-  type DragPayload, type DragSourceProps, type DropTargetProps,
+  DragSource, DropTarget, DropOverlay, useKeyboardDrag, activeDrag, dragStatus,
+  type DragPayload, type DragSourceProps, type DragStatus, type DropTargetProps,
+  type DropOverlayProps, type DropOverlayLevel, type DropOverlayTile,
+  dropOverlayPages, type DropOverlayPageLabels,
 } from "@k2b/ui";
 ```
 
@@ -47,9 +49,12 @@ Elsewhere in a source, native link and image dragging is prevented, and on
 touch-only screens its text is not selectable.
 The drag captures the mouse, so a release over an iframe such as a PDF
 preview still ends it. The source keeps its box and dims; a fixed preview
-with the icon, the label, and the count follows the pointer.
+with the icon, the label, and the count follows the pointer. The preview
+floats with the small overlay shadow and hangs below the pointer, so it never
+covers the target under it. [SortableList](./sortable-list) shows a copy of
+the row instead.
 
-**Touch and pen.** Hold still for `HOLD_MS = 500` ms, then move at least 10 px
+**Touch and pen.** Hold still for `HOLD_MS = 500` ms (a `SortableList` row: 300 ms), then move at least 10 px
 from the original point. Moving 10 px before the hold abandons the press and
 lets the browser scroll. Once held, the page stays still under the finger,
 also for a source without a `GestureMenu`. A platform long press that arrives
@@ -63,7 +68,9 @@ accepting ancestor can take a drop through an incompatible nested target.
 If none accepts, the innermost target shows `data-drop="refused"` and its
 refusal is announced. Other accepting targets show `data-drop="ok"`; the
 current destination shows `data-drop="over"`. Release checks the destination
-again at the final pointer position.
+again at the final pointer position. Only `over` changes the look: a blue
+tint with blue text. `ok` and `refused` keep the calm look; the
+announcement and the status line say where the item can go.
 
 **Autoscroll.** Rest within `AUTOSCROLL_EDGE = 32` px of a scroll container's
 edge to keep scrolling. The first ancestor that can scroll in that direction
@@ -90,7 +97,8 @@ The same handler serves the menu entry and `onDrop`.
 
 `useKeyboardDrag()` is an optional pick-up sequence started from a menu entry
 such as **Move…**. Call its returned function with the payload and the row
-element. The drag is active at once, so targets a host shows only while
+element. The sequence loads on first use and starts a moment later; if it
+cannot load, the live region says so. The drag is active at once, so targets a host shows only while
 dragging take part too. It then visits the enabled, accepting targets a
 pointer could reach (shown, not inert, not behind a modal dialog) in document
 order. With no destination, it announces that no place takes the item.
@@ -111,6 +119,99 @@ returns to the origin, or to its nearest focusable ancestor such as the
 `GestureMenu` group, if it is still connected. When a held finger turns a
 `GestureMenu` into a drag, focus returns from the closed menu to its group.
 Starting another keyboard pickup cancels the previous drag first.
+
+## Drop overlay
+
+`DropOverlay` covers the host's main area with large drop targets while an
+item it takes is dragged, such as "Assign to me" or "Move to folder" for a
+mail. Place it in a positioned box beside the list it serves, not inside a
+`k2b-divided` list; it lies above the list, takes no space, and moves
+nothing. Only its tiles scroll; the area where letting go changes nothing
+stays in view. Each tile says its name to screen readers and in the status
+line; a disabled tile says its reason. Targets elsewhere, such as folders in
+a sidebar, stay `DropTarget`s of the same drag.
+
+```tsx
+<main style={{ position: "relative" }}>
+  <For each={mails()}>
+    {(mail) => (
+      <DragSource threshold={6} touch="none" payload={{ type: "mail", value: mail.id, label: mail.subject }}>
+        <MailRow mail={mail} />
+      </DragSource>
+    )}
+  </For>
+  <DropOverlay
+    accept={["mail"]}
+    hint="Folders on the left work too"
+    level={(id) =>
+      id === "folders"
+        ? { title: "Move to folder", tiles: folders().map((folder) => ({ id: folder.id, label: folder.name, icon: "ti ti-folder", onDrop: (item) => move(item.value, folder.id) })) }
+        : { tiles: [
+            { id: "me", label: "Assign to me", icon: "ti ti-user-plus", onDrop: (item) => assignToMe(item.value) },
+            { id: "folder", label: "Move to folder", icon: "ti ti-folder-symlink", opens: "folders" },
+          ] }
+    }
+  />
+</main>
+```
+
+- **Levels.** `level(id, payload)` returns the tiles of a level, starting with
+  `"root"`, from data the page already has: the overlay asks for nothing over
+  the network. Tiles on the first level are at least 112 px high, others
+  72 px.
+- **Resting.** A tile with `opens` shows a chevron and fills a ring while the
+  pointer rests on it; after 450 ms its level opens, and "Back" returns.
+  Sweeping over it opens nothing, and after a level change resting opens
+  nothing until the pointer has moved, so levels never open by themselves. A tile with `opens` and `onDrop` takes a drop as well, such as
+  "Assign to someone else" opening a person search.
+- **Arming.** New tiles take nothing for 220 ms, so a tile that appears under
+  the pointer is never hit by accident; then the target under the resting
+  pointer is found again.
+- **Nothing happens.** The area "Drop here: nothing happens", the overlay
+  around the tiles, and a tile with `disabled` (its reason shows in place of
+  the description) change nothing, like Escape, leaving the window, or a
+  cancelled pointer.
+- **Touch.** Give the rows `touch="none"`: a finger never drags them.
+  With `onLongPress`, a finger held 500 ms, moving at most 8 px, calls it at
+  the press point, so the host opens the row's menu with the same targets;
+  the release after it never clicks the row. `threshold={6}` starts a mouse
+  drag after 6 px.
+- **Long lists.** `dropOverlayPages(id, tiles, labels)` splits many tiles
+  over levels: the first 11 and "More N", behind it the rest or, when it does
+  not fit one level, ranges of at most 12 in the given order. Ask it first in
+  `level`:
+  ```tsx
+  const people = dropOverlayPages("people", persons().map(toTile), {
+    title: "Assign to someone else · Frequent",
+    moreTitle: "Assign to someone else · More",
+    more: (count) => `More ${count} people`,
+    range: (first, last) => `${first} – ${last}`,
+  });
+  const level = (id: string) => people(id) ?? rootLevel;
+  ```
+- **Cancelled.** `onCancel(payload)` runs when a drag of an item the overlay
+  takes ends without a drop, so the host can say "Cancelled, nothing
+  changed". After a drop, the tile's `onDrop` shows the host's toast with
+  "Undo".
+- **Loading.** The overlay's code loads on demand: while the page is idle
+  after the overlay mounts, and on every press of a drag source. The first
+  drag shows it at once; when loading fails, the live region says so and the
+  menu remains.
+
+The overlay is for the pointer; every target also needs a menu entry. A
+keyboard pickup (`useKeyboardDrag`) offers the tiles of the current level
+that take a drop, never the areas that change nothing. A pen drags like the
+mouse on a source with `touch="none"`. Over the overlay the preview shows
+only its icon and count, as the top line names the item.
+
+## Status line
+
+`dragStatus()` is reactive and defined while a drag or a keyboard pickup
+runs. Its `lead` names what moves ("“Review draft” is being moved", or "3
+items are being moved"); its `detail` says where it goes and how to cancel
+("to “Today” · Esc cancels"). A host's status line shows it in place of its
+key figures, in a box of fixed height, so nothing moves. The same words reach
+screen readers through the live region.
 
 ## Hosts and far-away targets
 
@@ -167,6 +268,9 @@ export type DragPayload<Type extends string = string> = {
 export type DragSourceProps<Type extends string = string> = {
   payload: DragPayload<Type>;
   disabled?: boolean;
+  threshold?: number;
+  touch?: "drag" | "none";
+  onLongPress?: (point: { x: number; y: number }) => void;
   class?: string;
   children: JSX.Element;
 };
@@ -182,6 +286,39 @@ export function DragSource<Type extends string = string>(props: DragSourceProps<
 export function DropTarget<Type extends string = string>(props: DropTargetProps<Type>): JSX.Element;
 export function useKeyboardDrag(): (payload: DragPayload, origin: HTMLElement) => void;
 export function activeDrag(): DragPayload | undefined;
+export type DropOverlayTile = {
+  id: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  leading?: JSX.Element;
+  disabled?: string;
+  opens?: string;
+  onDrop?: (payload: DragPayload) => void;
+};
+export type DropOverlayLevel = { title?: string; tiles: readonly DropOverlayTile[] };
+export type DropOverlayProps = {
+  accept: readonly string[];
+  level: (id: string, payload: DragPayload) => DropOverlayLevel;
+  hint?: string;
+  onCancel?: (payload: DragPayload) => void;
+  class?: string;
+};
+export function DropOverlay(props: DropOverlayProps): JSX.Element;
+export type DropOverlayPageLabels = {
+  title?: string;
+  moreTitle?: string;
+  more: (count: number) => string;
+  range: (first: string, last: string, count: number) => string;
+};
+export function dropOverlayPages(
+  id: string,
+  tiles: readonly DropOverlayTile[],
+  labels: DropOverlayPageLabels,
+  limits?: { first?: number; size?: number },
+): (level: string) => DropOverlayLevel | undefined;
+export type DragStatus = { lead: string; detail: string };
+export function dragStatus(): DragStatus | undefined;
 ```
 
 `type` selects accepting targets; `value` stays opaque. `label` names the item

@@ -306,12 +306,14 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
         const result = await page.evaluate(measure);
         expect(result.overflow).toBeLessThanOrEqual(0);
 
-        // Flat header and footer: no band, no line.
+        // K16, one line one owner: flat bands without a fill; the dialog draws the one hairline above the footer
+        // (and below the header, on the body), the bands draw none of their own.
         expect(result.chrome).toEqual([
           { background: transparent, rules: ["none", "none"] },
-          { background: transparent, rules: ["none", "none"] },
+          { background: transparent, rules: ["solid", "none"] },
         ]);
-        expect(result.inset).toBe(name === "phone" ? 16 : 24);
+        // K5: the text edge, 20 px, 16 px on a phone.
+        expect(result.inset).toBe(name === "phone" ? 16 : 20);
         expect(result.bodyInset).toBe(result.inset);
 
         // No card: the title sits above one tinted group, without an icon.

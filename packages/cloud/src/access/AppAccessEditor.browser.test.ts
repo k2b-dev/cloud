@@ -804,6 +804,10 @@ for (const width of [390, 768, 1440]) {
           await launcher.getByText("No matching apps.", { exact: true }).waitFor();
           expect(await launcher.locator(".launchpad-app").count()).toBe(0);
         }
+        // Escape belongs to the launcher once it is ready: focus is inside it, and no hint or popover in front of it
+        // would take the key first (#3916). Named, so a failure says what held the key.
+        await page.waitForFunction(() => document.querySelector("dialog[open]")?.contains(document.activeElement));
+        expect(await page.evaluate(() => document.querySelector(":popover-open")?.outerHTML.slice(0, 200) ?? null)).toBeNull();
         await page.keyboard.press("Escape");
         await launcher.waitFor({ state: "hidden" });
         await chrome.getByRole("button", { name: "Open global search", exact: true }).click();

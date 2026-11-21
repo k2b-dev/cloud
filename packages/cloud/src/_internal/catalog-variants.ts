@@ -166,9 +166,10 @@ export const catalogVariantSource = async (source: string, path: string, variant
   return result;
 };
 
-/** Cloud's island builds: one per catalog language, chosen by the page's request locale. */
-export const catalogIslandVariants = <T extends { lang?: string }>(): IslandVariants<T> => ({
+/** Cloud's island builds: one per catalog language, chosen by the `lang` a page renders with. */
+export const catalogIslandVariants = (): IslandVariants => ({
   names: variantNames,
-  select: (page) => catalogVariant(page.lang),
+  // Public site templates choose their own options; one without a string `lang` loads the default build.
+  select: (page) => catalogVariant("lang" in page && typeof page.lang === "string" ? page.lang : undefined),
   transform: catalogVariantSource,
 });

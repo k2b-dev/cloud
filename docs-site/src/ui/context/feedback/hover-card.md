@@ -160,8 +160,9 @@ so its text is in the first HTML. `HoverCard.Trigger` names it in
 inside when the page becomes interactive. The card never dismisses a menu or
 another popover. It floats on layer 3 of
 [Layers and shadows](/en/ui/surfaces/elevation): the elevated surface, a light
-1px edge, `--k2b-shadow-float` outside, and no lines inside. The bottom sheet
-uses `--k2b-shadow-sheet` and a backdrop. The card fades in and out unless
+1px edge, 8 px radius, the small overlay shadow `--k2b-shadow-overlay-sm`
+outside, and no lines inside. The bottom sheet has 14 px at its top, uses
+`--k2b-shadow-sheet`, and dims the page by 28 % without blur. The card fades in and out unless
 reduced motion is requested. Do not place a `HoverCard` inside a `p`: the
 card's block content would end the paragraph.
 

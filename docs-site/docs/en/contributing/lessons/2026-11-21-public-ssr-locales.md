@@ -1,0 +1,6 @@
+### Public pages switched to English after their islands loaded
+
+- **What happened:** On a German page rendered with `app.publicSsr()`, a production build showed German `@k2b/ui` placeholders, empty texts and `aria-label`s from the server and English ones once the islands mounted (#3911). Development showed German throughout.
+- **Root cause:** #3813 builds production islands once per catalog language and passes `variants: catalogIslandVariants()` to the app's SSR configuration. `publicSsr()` created a second configuration from only `dev`, `rootDir` and `template`, so its `html()` never selected a variant and always loaded the English build, which keeps only the English part of every catalog. Development ignores variants, which hid the gap.
+- **Error class:** A second configuration of a shared mechanism copies some options by hand and misses one added later, so two consumers of the same build read it differently.
+- **Guard:** `define-app.ts` builds both configurations from one `islandBuild` options object. `public-surface-ssr.test.ts` builds a fixture app in production mode, renders a German public page with a `@k2b/ui` `Select`, checks that it loads and serves the `de` build, and mounts that entry over the server markup to compare the text.

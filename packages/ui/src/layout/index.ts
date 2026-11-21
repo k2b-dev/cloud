@@ -146,6 +146,7 @@ export type { PageTitleProps, PageTrailLink, PageTrailState } from "./PageTitle"
 export { followPageTrail, PAGE_TRAIL_EVENT, PageTitle, PageTrailProvider, readPageTrail, setPageTrail, usePageTrail } from "./PageTitle";
 export type {
   PanelDialogBodyProps,
+  PanelDialogError,
   PanelDialogFooterProps,
   PanelDialogHeaderProps,
   PanelDialogProps,
