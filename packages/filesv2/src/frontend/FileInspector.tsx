@@ -7,6 +7,7 @@ import {
   DescriptionList,
   DetailPanel,
   DetailProperties,
+  type DropdownAction,
   type DropdownItem,
   FileGrid,
   FileTypeIcon,
@@ -67,7 +68,7 @@ export default function FileInspector(props: {
   onShare?: (entry: FileEntry) => void;
   onShareInbox?: (entry: FileEntry) => void;
   /** Commands the host adds at the top of the "…" menu for one entry, such as taking pages out of a PDF. */
-  extraMenu?: (entry: FileEntry) => DropdownItem[];
+  extraMenu?: (entry: FileEntry) => DropdownAction[];
   onChanged: (selectPath?: string | null) => void;
   history?: InspectorHistory;
 }) {

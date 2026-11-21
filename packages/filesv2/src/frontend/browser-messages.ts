@@ -44,7 +44,7 @@ export const browserMessages = i18n.define({
       unknownFolders: "Folder contents are not included in this total.",
       pageItems: (n: number) => `${n} ${n === 1 ? "item" : "items"} loaded`,
       entries: (n: number) => `${n} ${n === 1 ? "item" : "items"}`,
-      folderFact: (n: number) => (n === 1 ? "folder" : "folders"),
+      folderFact: (n: number): string => (n === 1 ? "folder" : "folders"),
       folderKind: "Folder",
       path: "Path",
       newItem: "New",
