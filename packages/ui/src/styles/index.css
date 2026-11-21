@@ -19279,16 +19279,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Targets change colour only, never size. "over" is the target under the
-   pointer: a blue tint, the colour of "this is where it goes" (K7, K8).
-   Other targets that would take the drag stay calm; the announcement and
-   the status line say where it can go. */
+   pointer: the platform fill with blue text, "this is where it goes" (K7,
+   K8). Other targets that would take the drag stay calm; the announcement
+   and the status line say where it can go. */
 .k2b-ui .k2b-drop-target {
   border-radius: var(--k2b-radius-control);
 }
 
 .k2b-ui .k2b-drop-target[data-drop="over"] {
-  background: var(--k2b-info-surface);
-  color: var(--k2b-info-text);
+  background: var(--k2b-selected);
+  color: var(--k2b-action);
 }
 
 /* SortableList (K7): the moved row stays dimmed in its place until it is
@@ -19387,8 +19387,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    data-sortable-column-head; the list marks the column while it is the
    target. */
 .k2b-ui [data-sortable-column][data-sortable-target] [data-sortable-column-head] {
-  background: var(--k2b-info-surface);
-  color: var(--k2b-info-text);
+  background: var(--k2b-selected);
+  color: var(--k2b-action);
 }
 
 .k2b-ui [data-sortable-column][data-sortable-target] [data-sortable-column-head] * {
