@@ -321,8 +321,10 @@ export default function FileList(props: {
                           </span>
                         }
                       >
-                        {/* K15: a file name shortens before its ending; the ending stays. */}
-                        <FileName class="filesv2-list__name" name={row.name} />
+                        {/* K15: a file name shortens before its ending; the ending stays. The row keeps its path as hint. */}
+                        <span class="filesv2-list__name filesv2-list__name--file" title={row.path}>
+                          <FileName name={row.name} />
+                        </span>
                       </Show>
                     }
                   >

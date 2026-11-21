@@ -340,6 +340,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.filesv2-list__name--file {
+  display: flex;
+  min-width: 0;
+}
 .filesv2-list__row[aria-expanded] .filesv2-list__name,
 .filesv2-list__row:has(.filesv2-list__kind) .filesv2-list__name {
   font-weight: 600;

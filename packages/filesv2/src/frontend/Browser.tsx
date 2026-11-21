@@ -1955,6 +1955,8 @@ export default function Browser(props: {
       />
       <AppWorkspace.Content>
         <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
+          {/* The path in the head names the folder; this is the page's one heading for screen readers. */}
+          <h1 class="sr-only">{folderLabel(folder())}</h1>
           <div ref={surface} class="filesv2-browser__surface">
             <FileDropTarget
               label={b().dropInto({ name: folderLabel(folder()) })}
