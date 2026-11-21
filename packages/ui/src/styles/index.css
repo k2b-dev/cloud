@@ -3117,7 +3117,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-field__label-row {
   display: flex;
-  min-height: var(--k2b-h-label, 1.25rem);
+  min-height: var(--k2b-h-label);
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
@@ -3130,17 +3130,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    rule. */
 .k2b-ui .k2b-field__label {
   display: flex;
-  min-height: var(--k2b-h-label, 1.25rem);
+  min-height: var(--k2b-h-label);
   align-items: center;
   color: var(--k2b-text-secondary);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   line-height: 1.25rem;
 }
 
 .k2b-ui .k2b-field__label-row .k2b-button {
   min-height: 0;
-  height: var(--k2b-h-label, 1.25rem);
+  height: var(--k2b-h-label);
   padding-block: 0;
   line-height: 1.25rem;
 }
@@ -3149,7 +3149,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-inline: 0;
   color: var(--k2b-action);
   background: transparent;
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
 }
 
@@ -3164,7 +3164,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-field__error {
   margin: 0;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -3844,11 +3844,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: grid;
   width: 100%;
   min-width: 0;
-  min-height: var(--k2b-h-head, 3.5rem);
+  min-height: var(--k2b-h-head);
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 0.5rem;
-  padding: 0 0.75rem 0 var(--k2b-gutter, 1.25rem);
+  padding: 0 0.75rem 0 var(--k2b-gutter);
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
@@ -3872,7 +3872,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1.25rem;
   flex: 0 0 1.25rem;
   place-items: center;
-  border-radius: var(--k2b-radius-mark, 0.25rem);
+  border-radius: var(--k2b-radius-mark);
   color: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-accent-600)) 14%, var(--k2b-surface));
   font-size: 0.875rem;
@@ -3898,7 +3898,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 0.75rem var(--k2b-gutter, 1.25rem);
+  padding: 0.75rem var(--k2b-gutter);
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
@@ -3922,7 +3922,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3947,7 +3947,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-body, 0.875rem);
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
   line-height: 1.25rem;
   text-overflow: ellipsis;
@@ -3963,7 +3963,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.375rem;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -3989,7 +3989,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Plain meta text reads like the subtitle beside it; badges and buttons keep their own size. */
 .k2b-ui .k2b-detail-panel__meta {
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -4001,7 +4001,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-direction: column;
   gap: 0;
   /* K11: rows and entries of the detail column read at 13 px. */
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   overflow-y: auto;
   scrollbar-gutter: stable;
@@ -4034,7 +4034,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 1;
   margin: 0;
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1rem;
   letter-spacing: normal;
@@ -4060,13 +4060,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-frame="line"] {
-  padding: 0.75rem var(--k2b-gutter, 1.25rem) 1rem;
+  padding: 0.75rem var(--k2b-gutter) 1rem;
   /* One line, one owner: a section draws no outer frame; its container draws
      the hairline between topics (k2b-divided). */
   border: 0;
-  border-radius: var(--k2b-radius-flat, 0);
-  background: var(--k2b-surface);
-  box-shadow: none;
+  border-radius: var(--k2b-radius-flat);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
 }
 
 .k2b-ui .k2b-section[data-size="md"] {
@@ -4074,7 +4074,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-size="md"][data-frame="line"] {
-  padding: 1rem var(--k2b-gutter, 1.25rem);
+  padding: 1rem var(--k2b-gutter);
 }
 
 .k2b-ui
@@ -4158,7 +4158,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
   color: var(--k2b-text);
   font-family: inherit;
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1.25rem;
   letter-spacing: normal;
@@ -4173,7 +4173,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1.25rem;
   flex: 0 0 1.25rem;
   place-items: center;
-  border-radius: var(--k2b-radius-mark, 0.25rem);
+  border-radius: var(--k2b-radius-mark);
   color: var(--k2b-text-subtle);
   font-size: 0.875rem;
 }
@@ -4197,7 +4197,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section[data-size="md"] > .k2b-section__header .k2b-section__title {
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-body, 0.875rem);
+  font-size: var(--k2b-font-size-body);
   line-height: 1.25rem;
 }
 
@@ -4231,7 +4231,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0;
   color: var(--k2b-text-subtle);
   background: transparent;
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   font-weight: 400;
   line-height: 1.25rem;
 }
@@ -4258,7 +4258,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-section__restricted {
   flex: 0 0 auto;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1rem;
   white-space: nowrap;
@@ -4274,7 +4274,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-section__description {
   margin: 0.125rem 0 0;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   font-weight: 400;
   line-height: 1rem;
 }
@@ -4325,9 +4325,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: calc(100% + 2 * var(--k2b-gutter, 1.25rem));
-  margin: -0.75rem calc(-1 * var(--k2b-gutter, 1.25rem)) -1rem;
-  padding: 0.75rem var(--k2b-gutter, 1.25rem) 1rem;
+  width: calc(100% + 2 * var(--k2b-gutter));
+  margin: -0.75rem calc(-1 * var(--k2b-gutter)) -1rem;
+  padding: 0.75rem var(--k2b-gutter) 1rem;
   border-radius: 0;
 }
 
@@ -4545,7 +4545,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A field without a label keeps the empty label row, so its control stays on the row's line. */
 .k2b-ui .k2b-field-grid__row > .k2b-field:not(:has(> .k2b-field__label, > .k2b-field__label-row))::before {
   content: "";
-  height: var(--k2b-h-label, 1.25rem);
+  height: var(--k2b-h-label);
 }
 
 /* K15: fields stack in a column under 360 px; the grid stands inside the
@@ -4578,10 +4578,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-row-group__head {
   display: flex;
   min-width: 0;
-  height: var(--k2b-h-group-head, 2.25rem);
+  height: var(--k2b-h-group-head);
   align-items: center;
   gap: 0.5rem;
-  padding-inline: var(--k2b-gutter, 1.25rem) 0.75rem;
+  padding-inline: var(--k2b-gutter) 0.75rem;
   background: var(--k2b-surface-canvas);
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
@@ -4599,7 +4599,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1.25rem;
   text-overflow: ellipsis;
@@ -4609,7 +4609,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-row-group__count {
   flex: none;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   font-variant-numeric: tabular-nums;
 }
 
@@ -4622,12 +4622,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-row-group__rows {
   min-width: 0;
-}
-
-/* One line, one owner: the group draws the line between its rows, also above
-   an alert cell, whose transparent forced-colours border it replaces. */
-.k2b-ui .k2b-row-group > .k2b-row-group__rows > * + * {
-  border-block-start: 1px solid var(--k2b-border);
 }
 
 /* Area (K17 "Bereich"). Open: a square area of its own, closed above and below
@@ -4663,11 +4657,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-area__head {
   display: grid;
   min-width: 0;
-  height: var(--k2b-h-row, 2.5rem);
+  height: var(--k2b-h-row);
   grid-template-columns: 1.25rem minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0 0.75rem;
-  padding: 0 0.75rem 0 var(--k2b-gutter, 1.25rem);
+  padding: 0 0.75rem 0 var(--k2b-gutter);
 }
 
 .k2b-ui .k2b-area[data-collapsible="true"] > .k2b-area__head {
@@ -4675,7 +4669,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-area[data-open="true"] > .k2b-area__head {
-  height: var(--k2b-h-area-head, 3.5rem);
+  height: var(--k2b-h-area-head);
   grid-template-rows: auto auto;
   align-content: center;
   background: var(--k2b-surface-canvas);
@@ -4688,10 +4682,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 1.25rem;
   grid-row: 1;
   place-items: center;
-  border-radius: var(--k2b-radius-mark, 0.25rem);
+  border-radius: var(--k2b-radius-mark);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -4714,7 +4708,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1.25rem;
   text-overflow: ellipsis;
@@ -4722,13 +4716,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-area[data-open="true"] > .k2b-area__head .k2b-area__name {
-  font-size: var(--k2b-font-size-body, 0.875rem);
+  font-size: var(--k2b-font-size-body);
 }
 
 .k2b-ui .k2b-area__count {
   flex: none;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   font-variant-numeric: tabular-nums;
 }
 
@@ -4773,7 +4767,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   overflow: hidden;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
   white-space: nowrap;
 }
@@ -4783,16 +4777,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-area__body {
   position: relative;
   min-width: 0;
-  padding-inline-start: calc(var(--k2b-gutter, 1.25rem) + 2rem);
+  padding-inline-start: calc(var(--k2b-gutter) + 2rem);
 }
 
 .k2b-ui .k2b-area__body:empty {
   display: none;
-}
-
-/* One line, one owner: the area draws the line between its rows. */
-.k2b-ui .k2b-area > .k2b-area__body > * + * {
-  border-block-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-area__body::before {
@@ -4800,7 +4789,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   position: absolute;
   top: 0;
   bottom: 1.25rem;
-  inset-inline-start: calc(var(--k2b-gutter, 1.25rem) + 0.625rem - 0.5px);
+  inset-inline-start: calc(var(--k2b-gutter) + 0.625rem - 0.5px);
   width: 1px;
   background: var(--k2b-border-strong);
 }
@@ -4811,11 +4800,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-area__empty {
   display: flex;
-  min-height: var(--k2b-h-row, 2.5rem);
+  min-height: var(--k2b-h-row);
   align-items: center;
   margin: 0;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
 }
 
 /* An area in an area: the tree's second and last level, flat on its parent. */
@@ -4846,7 +4835,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 @container k2b-area (max-width: 479.98px) {
   .k2b-ui .k2b-area[data-open="true"] > .k2b-area__head {
     height: auto;
-    min-height: var(--k2b-h-area-head, 3.5rem);
+    min-height: var(--k2b-h-area-head);
     padding-block: 0.5rem;
     row-gap: 0.25rem;
   }
@@ -4872,7 +4861,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    without lines; below 360 px the label stands above its value. */
 .k2b-ui .k2b-fact-group {
   min-width: 0;
-  padding: 0.75rem var(--k2b-gutter, 1.25rem) 0.25rem;
+  padding: 0.75rem var(--k2b-gutter) 0.25rem;
   container: k2b-fact-group / inline-size;
 }
 
@@ -4897,7 +4886,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   line-height: 1.25rem;
   text-overflow: ellipsis;
@@ -4924,7 +4913,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-fact-group__fact > dt {
   padding-block: 0.25rem;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1.25rem;
 }
 
@@ -4937,7 +4926,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   padding-block: 0.25rem;
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   overflow-wrap: anywhere;
 }
@@ -4951,7 +4940,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-column: 1;
   display: block;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   line-height: 1rem;
 }
 
@@ -5120,7 +5109,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group) {
-  padding: 1rem var(--k2b-gutter, 1.25rem);
+  padding: 1rem var(--k2b-gutter);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -5134,7 +5123,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    a preview, stands on the same text edge with the body's 12 px rhythm. An
    alert cell keeps its edge-to-edge tint (K10). */
 .k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, .k2b-notice-card, .k2b-notice-card-container) {
-  margin-inline: var(--k2b-gutter, 1.25rem);
+  margin-inline: var(--k2b-gutter);
 }
 
 .k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group):first-child {
@@ -5574,8 +5563,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1rem;
 }
 
-/* K17: collapsed sections at the end of the column are rows, each closed by
-   a hairline; the group's quiet title stands above them. */
+/* K17: collapsed sections at the end of the column are rows; the titled
+   group divides them (k2b-divided), and its quiet title stands above them. */
 .k2b-ui .k2b-detail-panel__group[data-titled="true"] {
   gap: 0;
 }
@@ -5586,12 +5575,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-detail-panel__group-title {
-  padding: 0 var(--k2b-gutter, 1.25rem) 0.25rem;
+  padding: 0 var(--k2b-gutter) 0.25rem;
 }
 
 .k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-section {
-  padding-inline: var(--k2b-gutter, 1.25rem);
-  border-block-start: 1px solid var(--k2b-border);
+  padding-inline: var(--k2b-gutter);
 }
 
 .k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-section[data-open="true"] {
@@ -12825,7 +12813,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-data-table {
   @apply w-full;
   /* K11: rows and controls read at 13 px. */
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
   border-collapse: collapse;
   /* Digits share one width, so amounts, counts, and dates line up down a column. */
@@ -12843,11 +12831,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* K5: the first and the last column stand on the column's text edge. */
 .k2b-ui .k2b-data-table :is(th, td):first-child {
-  padding-inline-start: var(--k2b-gutter, 1.25rem);
+  padding-inline-start: var(--k2b-gutter);
 }
 
 .k2b-ui .k2b-data-table :is(th, td):last-child {
-  padding-inline-end: var(--k2b-gutter, 1.25rem);
+  padding-inline-end: var(--k2b-gutter);
 }
 
 /* K7: hairlines under the rows, nothing else. The head has no fill: grey
@@ -12856,14 +12844,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    on the same pixels as the body. A body row is 40 px (32 px compact) and
    grows only for content that wraps; the head is 36 px. */
 .k2b-ui .k2b-data-table td:not(.k2b-data-table__fill) {
-  height: var(--k2b-h-row, 2.5rem);
+  height: var(--k2b-h-row);
 }
 
 .k2b-ui .k2b-data-table__head-row > th {
-  height: var(--k2b-h-colhead, 2.25rem);
+  height: var(--k2b-h-colhead);
   padding-block: 0.25rem;
   color: var(--k2b-text-subtle);
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   font-weight: 500;
   line-height: 1rem;
   background: transparent;
@@ -12890,7 +12878,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-data-table__foot-row > td {
-  height: var(--k2b-h-colhead, 2.25rem);
+  height: var(--k2b-h-colhead);
   box-shadow: inset 0 1px 0 var(--k2b-border);
 }
 
@@ -12900,7 +12888,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* Dense rows (K1): 32 px. The fill spacer of a `fillHeight` table keeps taking the spare height. */
 .k2b-ui .k2b-table-wrap[data-density="compact"] .k2b-data-table td:not(.k2b-data-table__fill) {
-  height: var(--k2b-h-row-dense, 2rem);
+  height: var(--k2b-h-row-dense);
 }
 
 .k2b-ui .k2b-data-table td {
@@ -13056,7 +13044,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-data-table td.k2b-data-table__footer-cell {
   padding-block: 0.25rem;
-  font-size: var(--k2b-font-size-meta, 0.75rem);
+  font-size: var(--k2b-font-size-meta);
   color: var(--k2b-text-subtle);
 }
 
@@ -13117,10 +13105,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Groups (K17 "Gruppe"): a 36 px head on the page's quiet ground with the
    group's value in 13 px bold and its count heads each body. */
 .k2b-ui .k2b-data-table__group-row > th {
-  height: var(--k2b-h-group-head, 2.25rem);
+  height: var(--k2b-h-group-head);
   padding-block: 0;
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   font-weight: 600;
   text-align: left;
   /* `--n50`, the quiet ground of the page. */
@@ -13144,9 +13132,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: flex;
   width: 100%;
   height: 100%;
-  min-height: var(--k2b-h-group-head, 2.25rem);
+  min-height: var(--k2b-h-group-head);
   align-items: center;
-  padding: 0 var(--k2b-gutter, 1.25rem);
+  padding: 0 var(--k2b-gutter);
   border: 0;
   color: inherit;
   background: transparent;
@@ -13387,13 +13375,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table__row, .k2b-data-table__foot-row) {
     display: grid;
-    min-height: var(--k2b-h-row-phone, 3.75rem);
+    min-height: var(--k2b-h-row-phone);
     grid-template-columns: minmax(0, 1fr) auto;
     grid-auto-flow: dense;
     align-content: center;
     align-items: center;
     column-gap: 0.75rem;
-    padding: 0.5rem var(--k2b-gutter, 1.25rem);
+    padding: 0.5rem var(--k2b-gutter);
     box-shadow: inset 0 -1px 0 var(--k2b-border);
   }
 
@@ -13424,7 +13412,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table__row, .k2b-data-table__foot-row) > td[data-list="meta"] {
     grid-column: 1;
     color: var(--k2b-text-subtle);
-    font-size: var(--k2b-font-size-meta, 0.75rem);
+    font-size: var(--k2b-font-size-meta);
     line-height: 1rem;
   }
 
@@ -13467,7 +13455,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-log-table {
   @apply overflow-x-auto;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-flat, 0);
+  border-radius: var(--k2b-radius-flat);
   background: var(--k2b-surface);
   box-shadow: none;
 }

@@ -38,7 +38,7 @@ export function RowGroup(props: RowGroupProps): JSX.Element {
             <span class="k2b-row-group__action">{local.action}</span>
           </Show>
         </div>
-        <div class="k2b-row-group__rows">{rows()}</div>
+        <div class="k2b-row-group__rows k2b-divided">{rows()}</div>
       </section>
     </Show>
   );

@@ -29,14 +29,15 @@
  */
 
 /* ---------------------------------------------------------------- Paper -- */
-/* Paper is a frame on a full page (Cloud flat, K2-K4): a hairline, square
-   corners, the page surface, and no shadow. Only what lies above content casts
-   a shadow (K3); a clickable Paper is a card (K17) with the control radius. */
+/* Paper is a frame on a full page (Cloud flat, K2-K4): a hairline and square
+   corners. Surface and shadow come from the island hooks, which the flat
+   tokens leave without a shadow (K3); a clickable Paper is a card (K17) with
+   the control radius. */
 .k2b-ui .k2b-paper {
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-flat, 0);
-  background: var(--k2b-surface);
-  box-shadow: none;
+  border-radius: var(--k2b-radius-flat);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
   transition:
     color 150ms,
     background-color 150ms,
@@ -336,8 +337,8 @@
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
-  background: var(--k2b-surface);
-  box-shadow: none;
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
   font: inherit;
   text-align: start;
   text-decoration: none;
@@ -506,12 +507,12 @@
   --k2b-notice-surface: color-mix(in srgb, var(--k2b-text) 4%, transparent);
   display: block;
   /* K1: a sentence and its consequence make a 52 px cell. */
-  padding: calc(0.5rem - 1px) calc(var(--k2b-gutter, 1.25rem) - 1px);
+  padding: calc(0.5rem - 1px) calc(var(--k2b-gutter) - 1px);
   border: 1px solid transparent;
-  border-radius: var(--k2b-radius-flat, 0);
+  border-radius: var(--k2b-radius-flat);
   color: var(--k2b-text-secondary);
   background: var(--k2b-notice-surface);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
 }
 /* A notice is never a control. A page moves focus to one (tabIndex -1) only to put a result where the person and
@@ -542,7 +543,7 @@
   font-weight: 500;
   line-height: 1.125rem;
 }
-.k2b-ui .k2b-notice-card__description { margin: 0; color: var(--k2b-text-secondary); font-size: var(--k2b-font-size-meta, 0.75rem); line-height: 1rem; }
+.k2b-ui .k2b-notice-card__description { margin: 0; color: var(--k2b-text-secondary); font-size: var(--k2b-font-size-meta); line-height: 1rem; }
 .k2b-ui .k2b-notice-card__body { min-width: 0; }
 /* A Markdown info block's body sits directly in the card and holds flow
    content. Whatever prose spacing the host applies, its outer margins would
@@ -590,10 +591,10 @@
   grid-template-columns: 1.25rem minmax(0, 1fr);
   align-items: center;
   gap: .125rem .75rem;
-  block-size: var(--k2b-h-row-2, 3.25rem);
-  padding: .5rem var(--k2b-gutter, 1.25rem);
+  block-size: var(--k2b-h-row-2);
+  padding: .5rem var(--k2b-gutter);
   border: 0;
-  border-radius: var(--k2b-radius-flat, 0);
+  border-radius: var(--k2b-radius-flat);
 }
 /* The row's grid places the sentence and the consequence itself. */
 .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__text { display: contents; }
@@ -639,11 +640,11 @@
    (32px) makes the row exactly 52px. */
 .k2b-ui .k2b-notice-card[data-row]:not([data-detail]) {
   display: flex;
-  min-height: var(--k2b-h-row-2, 3.25rem);
+  min-height: var(--k2b-h-row-2);
   align-items: center;
   gap: 0.75rem;
-  padding: calc(0.625rem - 1px) calc(var(--k2b-gutter, 1.25rem) - 1px);
-  border-radius: var(--k2b-radius-flat, 0);
+  padding: calc(0.625rem - 1px) calc(var(--k2b-gutter) - 1px);
+  border-radius: var(--k2b-radius-flat);
 }
 .k2b-ui .k2b-notice-card[data-row]:not([data-detail]) > .k2b-notice-card__content { flex: 1 1 auto; }
 .k2b-ui .k2b-notice-card__tile { width: 2rem; height: 2rem; color: var(--k2b-notice-ink); font-size: 1.125rem; }
@@ -709,7 +710,7 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border-radius: var(--k2b-radius-round, 9999px);
+  border-radius: var(--k2b-radius-round);
   color: var(--k2b-text-muted);
   font-size: 1rem;
 }
@@ -737,9 +738,9 @@
 .k2b-ui .k2b-placeholder[data-state="error"] .k2b-placeholder__icon { color: var(--k2b-danger-text); }
 .k2b-ui .k2b-placeholder__title,
 .k2b-ui .k2b-placeholder__description { margin: 0; }
-.k2b-ui .k2b-placeholder__title { color: var(--k2b-text); font-size: var(--k2b-font-size-row, 0.8125rem); font-weight: 600; line-height: 1.25rem; }
-.k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__title { font-size: var(--k2b-font-size-body, 0.875rem); line-height: 1.25rem; }
-.k2b-ui .k2b-placeholder__description { max-width: 35rem; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-row, 0.8125rem); line-height: 1.25rem; }
+.k2b-ui .k2b-placeholder__title { color: var(--k2b-text); font-size: var(--k2b-font-size-row); font-weight: 600; line-height: 1.25rem; }
+.k2b-ui .k2b-placeholder[data-variant="panel"] .k2b-placeholder__title { font-size: var(--k2b-font-size-body); line-height: 1.25rem; }
+.k2b-ui .k2b-placeholder__description { max-width: 35rem; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-row); line-height: 1.25rem; }
 /* An action and "Try again" sit side by side and wrap with the button row gap. */
 .k2b-ui .k2b-placeholder__action { display: flex; flex-wrap: wrap; gap: 0.625rem 0.5rem; margin-top: 0.5rem; }
 .k2b-ui .k2b-placeholder[data-align="center"] .k2b-placeholder__action { justify-content: center; }
@@ -999,7 +1000,7 @@
 }
 .k2b-ui .k2b-status-badge > i { flex: 0 0 auto; font-size: 0.6875rem; }
 /* K4: a state is a round chip with a sign and a word. */
-.k2b-ui .k2b-status-badge[data-variant="chip"] { padding: 0.125rem 0.5rem; border-radius: var(--k2b-radius-round, 9999px); background: var(--k2b-field-surface, var(--k2b-surface-muted)); }
+.k2b-ui .k2b-status-badge[data-variant="chip"] { padding: 0.125rem 0.5rem; border-radius: var(--k2b-radius-round); background: var(--k2b-field-surface, var(--k2b-surface-muted)); }
 .k2b-ui .k2b-status-badge[data-variant="text"] { padding: 0; border-radius: 0; background: transparent; }
 .k2b-ui .k2b-status-badge__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* With `labels`, every possible word shares one cell and the badge keeps the widest: the dot never moves. */

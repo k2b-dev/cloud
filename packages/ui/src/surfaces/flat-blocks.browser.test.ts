@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
+import { layoutProblems } from "../../test/head-overlap";
 
 // Cloud flat (K7, K10, K15, K17): the geometry of the flat building blocks in a real layout engine. All data is invented.
 const ui = resolve(import.meta.dir, "../..");
@@ -86,36 +87,6 @@ const box = (page: Page, selector: string) =>
     const { top, left, width, height, bottom, right } = element.getBoundingClientRect();
     return { top, left, width, height, bottom, right };
   });
-
-/**
- * Visible horizontal lines below a root: top and bottom borders and 1 px inset shadows. Two lines of different
- * elements that touch or stand at most 1 px apart over the same x range read as one double line.
- */
-const doubleLines = (page: Page, root: string) =>
-  page.evaluate((root) => {
-    const lines: { y: number; left: number; right: number; owner: string }[] = [];
-    const visible = (color: string) => !/rgba\(0, 0, 0, 0\)|transparent/.test(color);
-    for (const element of document.querySelectorAll<HTMLElement>(`${root} *`)) {
-      const box = element.getBoundingClientRect();
-      if (box.width === 0 || box.height === 0) continue;
-      const style = getComputedStyle(element);
-      const owner = element.className.toString().split(" ")[0] || element.tagName;
-      if (Number.parseFloat(style.borderTopWidth) > 0 && visible(style.borderTopColor))
-        lines.push({ y: Math.round(box.top), left: box.left, right: box.right, owner });
-      if (Number.parseFloat(style.borderBottomWidth) > 0 && visible(style.borderBottomColor))
-        lines.push({ y: Math.round(box.bottom - 1), left: box.left, right: box.right, owner });
-      for (const [, color, y] of style.boxShadow.matchAll(/(rgba?\([^)]*\)|color\([^)]*\)) 0px (-?1)px 0px 0px inset/g))
-        if (visible(color!)) lines.push({ y: Math.round(y === "1" ? box.top : box.bottom - 1), left: box.left, right: box.right, owner });
-    }
-    const doubles: string[] = [];
-    for (const [i, a] of lines.entries())
-      for (const b of lines.slice(i + 1)) {
-        const gap = Math.abs(a.y - b.y);
-        const overlap = Math.min(a.right, b.right) - Math.max(a.left, b.left);
-        if (gap >= 1 && gap <= 2 && overlap > 4) doubles.push(`${a.owner}@${a.y} + ${b.owner}@${b.y}`);
-      }
-    return doubles;
-  }, root);
 
 describe("Cloud flat building blocks", () => {
   test("a closed area is one 40 px row; an open one has a 56 px head; toggling moves only what lies below", async () => {
@@ -279,9 +250,10 @@ describe("Cloud flat building blocks", () => {
     test(`at ${width} px every line has one owner: a table in a section in the detail column, an alert cell between rows`, async () => {
       const page = await load(width);
       try {
-        expect(await doubleLines(page, "#panel")).toEqual([]);
-        expect(await doubleLines(page, "#list")).toEqual([]);
-        expect(await doubleLines(page, "#areas")).toEqual([]);
+        for (const root of ["#panel", "#list", "#areas"]) {
+          const found = await page.evaluate(layoutProblems, { root });
+          expect({ root, double: found.double, sideways: found.sideways }).toEqual({ root, double: [], sideways: false });
+        }
         // The alert cell has exactly one line before and after it: the list's own divider.
         const around = await page.locator("#list .k2b-notice-card").evaluate((cell) => {
           const style = getComputedStyle(cell);

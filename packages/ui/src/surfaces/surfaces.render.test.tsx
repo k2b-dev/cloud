@@ -203,11 +203,11 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(link).toContain('data-elevated="true"');
     expect(link).toContain('data-interactive="true"');
     expect(link).toContain('aria-label="Projects"');
-    // K2-K4: a frame on a full page is a hairline with square corners and no shadow.
+    // K2-K4: a frame on a full page is a hairline with square corners; the island hooks carry no shadow (K3).
     expect(rule).toContain("border: 1px solid var(--k2b-border)");
-    expect(rule).toContain("border-radius: var(--k2b-radius-flat, 0)");
-    expect(rule).toContain("box-shadow: none");
-    expect(rule).toContain("background: var(--k2b-surface)");
+    expect(rule).toContain("border-radius: var(--k2b-radius-flat)");
+    expect(rule).toContain("box-shadow: var(--k2b-island-shadow)");
+    expect(rule).toContain("background: var(--k2b-island-surface)");
     expect(rule).not.toContain("padding:");
     expect(parityCss).toContain('.k2b-paper[data-elevated="true"]');
     expect(parityCss).toContain("box-shadow: var(--k2b-shadow-frame)");
@@ -536,7 +536,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
       if (/(?:^|;)\s*background:/.test(declarations)) expect(selector).toContain("[data-sign]");
     }
     expect(iconRules.find((rule) => rule.selector.endsWith("\n.k2b-ui .k2b-placeholder__icon"))?.declarations).toContain(
-      "border-radius: var(--k2b-radius-round, 9999px)",
+      "border-radius: var(--k2b-radius-round)",
     );
   });
 
@@ -899,9 +899,8 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
   });
 
   test("keeps the Cloud chrome that earlier ports dropped", () => {
-    // K3: Paper casts no shadow. A key-figure tile and a dashboard panel still read the island hook.
-    expect(parityCss.match(/\.k2b-ui \.k2b-paper \{[^}]*\}/)?.[0]).toContain("box-shadow: none");
-    for (const selector of [".k2b-stat-cell", ".k2b-dashboard-panel"]) {
+    // K3: every island reads the one island hook, which the flat tokens leave without a shadow.
+    for (const selector of [".k2b-paper", ".k2b-stat-cell", ".k2b-dashboard-panel"]) {
       const rule = parityCss.match(new RegExp(`\\.k2b-ui \\${selector} \\{[^}]*\\}`))?.[0] ?? "";
       expect(rule).toContain("box-shadow: var(--k2b-island-shadow)");
     }

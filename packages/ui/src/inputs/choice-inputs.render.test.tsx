@@ -74,8 +74,8 @@ test("fields keep the label row above the control and the help below it", () => 
   expect(described.indexOf("k2b-field__description")).toBeGreaterThan(described.indexOf("<input"));
   expect(plain).toMatch(/^<div class="k2b-field "[^>]*><label [^>]*class="k2b-field__label"/);
   expect(plain).not.toContain("k2b-field__description");
-  expect(cssRule(".k2b-ui .k2b-field__label-row")).toContain("min-height: var(--k2b-h-label, 1.25rem)");
-  expect(cssRule(".k2b-ui .k2b-field__label")).toContain("min-height: var(--k2b-h-label, 1.25rem)");
+  expect(cssRule(".k2b-ui .k2b-field__label-row")).toContain("min-height: var(--k2b-h-label)");
+  expect(cssRule(".k2b-ui .k2b-field__label")).toContain("min-height: var(--k2b-h-label)");
   // No field shares rows with its neighbours any more.
   expect(indexCss).not.toMatch(/\.k2b-field[^{]*\{[^}]*grid-template-rows: subgrid/);
 });

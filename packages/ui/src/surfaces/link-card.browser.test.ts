@@ -104,7 +104,7 @@ for (const width of [1440, 390]) {
         expect(frame.bottom - footer.bottom).toBe(17);
         const style = await page.locator(card).evaluate((node) => ({
           radius: getComputedStyle(node).borderRadius,
-          shadow: getComputedStyle(node).boxShadow !== "none",
+          shadow: !/^(none|rgba\(0, 0, 0, 0\) 0px 0px 0px 0px)$/.test(getComputedStyle(node).boxShadow),
           links: node.querySelectorAll("a, button").length,
           chevron: node.querySelector(".k2b-link-card__chevron") !== null,
         }));

@@ -123,7 +123,7 @@ export function Area(props: AreaProps): JSX.Element {
           <div class="k2b-area__meta">{local.meta}</div>
         </Show>
       </div>
-      <div class="k2b-area__body" id={`${id}-body`} hidden={!open()}>
+      <div class="k2b-area__body k2b-divided" id={`${id}-body`} hidden={!open()}>
         <Show when={hasRows()} fallback={<Show when={local.empty}>{(empty) => <p class="k2b-area__empty">{empty()}</p>}</Show>}>
           {rows()}
         </Show>

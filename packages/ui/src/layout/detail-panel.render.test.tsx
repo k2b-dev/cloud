@@ -214,7 +214,7 @@ describe("DetailPanel", () => {
     // A group's own sections stay together without rules; the column's topics stand borderless on its text edge.
     expect(groupRule).not.toContain("gap: 1px");
     expect(groupRule).not.toContain("border");
-    expect(frame).toContain("padding: 1rem var(--k2b-gutter, 1.25rem)");
+    expect(frame).toContain("padding: 1rem var(--k2b-gutter)");
     expect(frame).toContain("border: 0;");
     expect(frame).toContain("background: transparent");
     expect(separator).toContain("border-top: 1px solid var(--k2b-border)");

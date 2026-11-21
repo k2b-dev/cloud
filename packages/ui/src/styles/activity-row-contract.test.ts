@@ -38,10 +38,13 @@ test("one bleed drives the timeline's margin, row padding, rail and day line, so
 test("an embedded timeline's row surface keeps at least 6px from a framed section's edge", () => {
   const rem = (value: string) => Number.parseFloat(value) * (value.endsWith("rem") ? 16 : 1);
   const bleed = /--k2b-activity-bleed:\s*([\d.]+(?:rem|px))/.exec(body(".k2b-ui :is(.k2b-activity, .k2b-activity-dialog__list)"))?.[1];
-  // The inline padding is the column's text edge, `var(--k2b-gutter, <fallback>)` (K5).
-  const padding = /padding:\s*[\d.]+(?:rem|px)\s+(?:var\(--k2b-gutter,\s*)?([\d.]+(?:rem|px))/.exec(
-    body('.k2b-ui .k2b-section[data-frame="line"]'),
-  )?.[1];
+  // The inline padding is the column's text edge, `var(--k2b-gutter)` (K5): 20 px, 16 px on a phone; the phone value
+  // is the one that must keep the distance.
+  const padding = /padding:\s*[\d.]+(?:rem|px)\s+var\(--k2b-gutter\)/.test(body('.k2b-ui .k2b-section[data-frame="line"]'))
+    ? rules
+        .flatMap((rule) => [...rule.body.matchAll(/--k2b-gutter:\s*([\d.]+px)/g)].map((match) => match[1]!))
+        .sort((a, b) => rem(a) - rem(b))[0]
+    : undefined;
   expect(bleed).toBeDefined();
   expect(padding).toBeDefined();
   expect(rem(padding!) - rem(bleed!)).toBeGreaterThanOrEqual(6);

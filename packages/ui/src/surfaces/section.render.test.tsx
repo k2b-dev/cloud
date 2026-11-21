@@ -34,7 +34,7 @@ describe("Section", () => {
     expect(page).toMatch(/<h2[^>]*>Details<\/h2>/);
     // K17: the symbol sits in a 20 px tile with the mark radius; only an area colour or a tone fills it.
     expect(rule(".k2b-ui .k2b-section__icon")).toContain("width: 1.25rem");
-    expect(rule(".k2b-ui .k2b-section__icon")).toContain("border-radius: var(--k2b-radius-mark, 0.25rem)");
+    expect(rule(".k2b-ui .k2b-section__icon")).toContain("border-radius: var(--k2b-radius-mark)");
     expect(rule(".k2b-ui .k2b-section__icon")).not.toContain("background");
     expect(rule(".k2b-ui .k2b-section__icon[data-color]")).toContain(
       "background: color-mix(in srgb, var(--k2b-section-icon-color) 14%, var(--k2b-surface))",
@@ -95,9 +95,9 @@ describe("Section", () => {
     expect(panel).toContain('data-frame="none"');
     // One line, one owner: a page section draws no outer frame; its container draws the hairline between topics.
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("border: 0;");
-    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("border-radius: var(--k2b-radius-flat, 0)");
-    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("box-shadow: none");
-    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("background: var(--k2b-surface)");
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("border-radius: var(--k2b-radius-flat)");
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("box-shadow: var(--k2b-island-shadow)");
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("background: var(--k2b-island-surface)");
     for (const host of [
       ".k2b-section",
       ".k2b-detail-panel__group",

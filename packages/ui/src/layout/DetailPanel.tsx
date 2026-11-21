@@ -257,7 +257,7 @@ const DetailPanelGroup = (props: DetailPanelGroupProps): JSX.Element => {
   const titleId = `k2b-detail-panel-group-${createUniqueId()}`;
   return (
     <div
-      class={classNames("k2b-detail-panel__group", props.class)}
+      class={classNames(props.title ? "k2b-detail-panel__group k2b-divided" : "k2b-detail-panel__group", props.class)}
       role="group"
       aria-label={props.title ? undefined : props.label}
       aria-labelledby={props.title ? titleId : undefined}

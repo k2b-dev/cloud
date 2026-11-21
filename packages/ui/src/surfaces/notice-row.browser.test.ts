@@ -100,7 +100,7 @@ const measure = (page: Awaited<ReturnType<typeof load>>, id: string) =>
 const gutter = (page: Awaited<ReturnType<typeof load>>) =>
   page.evaluate(() => {
     const probe = document.createElement("div");
-    probe.style.paddingLeft = "var(--k2b-gutter, 1.25rem)";
+    probe.style.paddingLeft = "var(--k2b-gutter)";
     document.querySelector(".k2b-ui")!.append(probe);
     const value = Number.parseFloat(getComputedStyle(probe).paddingLeft);
     probe.remove();
