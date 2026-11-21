@@ -140,6 +140,7 @@ const open = async (id: string, width: number) => {
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
   const errors = pageErrors(page);
+  const unknown: string[] = [];
   await page.addInitScript((at) => {
     const RealDate = Date;
     globalThis.Date = new Proxy(RealDate, {
@@ -179,10 +180,19 @@ const open = async (id: string, width: number) => {
             status: "ok",
             selection: null,
             effectiveDefault: { class: "balanced" },
-            classes: [],
+            classes: [{ class: "balanced", variantId: "standard" }],
             visionModelConfigured: false,
             error: null,
-            options: [],
+            options: [
+              {
+                id: "standard",
+                label: "Standard",
+                variantLabel: "Ausgewogen",
+                description: "",
+                icon: { kind: "mark", text: "AI", color: "0" },
+                classes: ["balanced"],
+              },
+            ],
           },
           models: [
             { id: "standard", label: "Standard", description: "", icon: { kind: "mark", text: "AI", color: "0" }, classes: ["balanced"] },
@@ -232,6 +242,7 @@ const open = async (id: string, width: number) => {
         "/api/ai/tasks": [],
       };
       if (path in empty) return Response.json(empty[path]);
+      unknown.push(`${request.method} ${path}`);
       return Response.json({ message: "unavailable" }, { status: 503 });
     },
   });
@@ -248,6 +259,7 @@ const open = async (id: string, width: number) => {
   return {
     page,
     errors,
+    unknown,
     close: async () => {
       await context.close();
       assets.stop(true);
@@ -267,8 +279,15 @@ for (const width of [1440, 390])
       test(`${name}: nothing overlaps, spills, is cut, or draws a double line`, async () => {
         const view = await open(id, width);
         try {
-          const report = await view.page.evaluate(layoutProblems, { root: "#root", ignore: ".k2b-chat-timeline__latest" });
+          // Screen-reader-only words are cut on purpose; the pill to the newest message floats over the timeline.
+          const report = await view.page.evaluate(layoutProblems, {
+            root: "#root",
+            ignore: ".k2b-chat-timeline__latest, .k2b-sr-only, .sr-only",
+            // K5: the actions under a message are pulled out by 8 px, so the sign, not its 32 px box, stands on the text edge.
+            slack: 8,
+          });
           expect(report.problems).toEqual([]);
+          expect(view.unknown).toEqual([]);
           expect(view.errors).toEqual([]);
         } finally {
           await view.close();
