@@ -6184,4 +6184,14 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   .k2b-ui .k2b-app-workspace__detail:not(:has(.k2b-detail-panel__body)) {
     scrollbar-gutter: stable;
   }
+
+  /* WebKit reserves no gutter until content overflows, so these two keep the
+     always-present track, as the other shared scrollers do above; Chromium
+     draws the same track in the room its gutter already keeps. */
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-app-workspace__drawer,
+    .k2b-ui .k2b-app-workspace__detail:not(:has(.k2b-detail-panel__body)) {
+      overflow-y: scroll;
+    }
+  }
 }
