@@ -311,6 +311,91 @@ test.each([true, false])(
   20_000,
 );
 
+test("an Action that changed after the person was asked is asked once more with a note, then runs", async () => {
+  const f = fixture();
+  const approval = (id: string) => ({
+    status: "approval" as const,
+    id,
+    name: "demo.list",
+    input: {},
+    appName: "Demo",
+    appIcon: "folder",
+    appId: "demo",
+    localId: "list",
+    kind: "action" as const,
+    schemaHash: "fixture",
+    approval: "rememberable" as const,
+    title: "List",
+    review: null,
+    allowAlways: false,
+    scope: null,
+  });
+  f.capability.mockImplementation(async (request, _identity, _caller, options) => ({
+    ...approval(z.object({ id: z.string() }).parse(request).id),
+    ...(options?.changed ? { changed: true as const } : {}),
+  }));
+  const resolve = spyOn(runtimeCapabilities, "resolve")
+    .mockResolvedValueOnce({ status: "changed" })
+    .mockResolvedValueOnce({ status: "completed", result: { ok: true, data: { data: [{ name: "Current", amount: 2 }] } } });
+  try {
+    const result = await f.execute("code_run", {
+      code: 'import {demo} from "@sdk"; export default async()=>(await demo.folder("folder").list({})).data;',
+    });
+    expect(result).toMatchObject({ status: "ready", output: '[{"name":"Current","amount":2}]' });
+    // The person decides twice: the first card, then the current version with its note.
+    expect(f.approve).toHaveBeenCalledTimes(2);
+    expect(f.approve.mock.calls[0]?.[0]).not.toHaveProperty("changed");
+    expect(f.approve.mock.calls[1]?.[0]).toMatchObject({ changed: true });
+    const ids = f.capability.mock.calls.map((call) => z.object({ id: z.string() }).parse(call[0]).id);
+    expect(ids).toHaveLength(2);
+    const [first = "", second = ""] = ids;
+    expect(second).not.toBe(first);
+    // A changed Action is withdrawn, not declined on the person's behalf.
+    expect(resolve.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+      [first, { approved: true }],
+      [second, { approved: true }],
+    ]);
+  } finally {
+    resolve.mockRestore();
+    await f.close();
+  }
+}, 20_000);
+
+test("an Action that changes again while asked ends the run with a sentence instead of asking forever", async () => {
+  const f = fixture();
+  f.capability.mockImplementation(async (request) => ({
+    status: "approval" as const,
+    id: z.object({ id: z.string() }).parse(request).id,
+    name: "demo.list",
+    input: {},
+    appName: "Demo",
+    appIcon: "folder",
+    appId: "demo",
+    localId: "list",
+    kind: "action" as const,
+    schemaHash: "fixture",
+    approval: "rememberable" as const,
+    title: "List",
+    review: null,
+    allowAlways: false,
+    scope: null,
+  }));
+  const resolve = spyOn(runtimeCapabilities, "resolve").mockResolvedValue({ status: "changed" });
+  try {
+    const result = await f.execute("code_run", {
+      code: 'import {demo} from "@sdk"; export default async()=>(await demo.folder("folder").list({})).data;',
+    });
+    expect(f.approve).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("The app changed this action again while you were asked, so nothing has run."),
+    });
+  } finally {
+    resolve.mockRestore();
+    await f.close();
+  }
+}, 20_000);
+
 test("a late approval cannot execute after the runner mailbox has ended", async () => {
   const f = fixture({ remote: true });
   const id = "55555555-5555-4555-8555-555555555555";
