@@ -62,6 +62,11 @@ export async function loadJmapAccountAccess(params: {
   signal: AbortSignal;
   db?: typeof sql;
   transport?: JmapTransportDependencies;
+  /**
+   * Receives the binding, revision and account fingerprint just before the credentials go out, so a
+   * caller can record a refused Session for exactly these (`recordJmapAccountFailure`).
+   */
+  onRead?: (read: { bindingId: string; secretRevision: number; scopeFingerprint: string }) => void;
 }): Promise<JmapAccountAccessResult> {
   if (params.signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
   const db = params.db ?? sql;
@@ -114,6 +119,7 @@ export async function loadJmapAccountAccess(params: {
   if (evidence.data.origin !== origin) return unavailable("account_mismatch");
 
   const authorization = jmapBasicAuthorization(snapshot.runtime.username, snapshot.runtime.secret);
+  params.onRead?.({ bindingId: row.binding_id, secretRevision: snapshot.secretRevision, scopeFingerprint: row.scope_fingerprint });
   const session = await fetchJmapSession({ origin, authorization, signal: params.signal }, params.transport);
   const account = Object.hasOwn(session.accounts, evidence.data.accountId) ? session.accounts[evidence.data.accountId] : undefined;
   if (session.origin !== origin || !account || !Object.hasOwn(account.accountCapabilities, JMAP_MAIL))

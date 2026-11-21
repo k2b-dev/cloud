@@ -5,7 +5,7 @@ section: Operations
 order: 1163
 description: Check whether a mailbox server offers JMAP and which protocols Mail uses.
 tags: [mail, operations, protocols]
-updated: 2026-11-20
+updated: 2026-11-21
 ---
 
 # Mail connectors
@@ -13,6 +13,15 @@ updated: 2026-11-20
 Mail uses IMAP for mailboxes and SMTP for sending. No mailbox uses JMAP yet.
 Mail can internally apply each batch of JMAP account changes in one transaction
 and load a JMAP account's session for a sync run. Only tests call these paths.
+
+A JMAP account syncs in a background job, one bounded pass per turn under the
+same mailbox lease as IMAP work. A quiet account costs no sync run: Mail confirms
+it with one database statement and moves the last sync time at most once a
+minute. When the server limits requests (HTTP 429), every JMAP request of the
+account, body downloads included, waits as long as the server asks, up to
+15 minutes. A refused login (401) asks for a new login, and a refused account
+(403) asks for a new connection; neither repeats until the connection is checked
+again. Only tests queue this job.
 
 Each provider connection has an empty `jmap_origin` column for the JMAP server
 an operator approves later. Mail sends credentials only to that origin and

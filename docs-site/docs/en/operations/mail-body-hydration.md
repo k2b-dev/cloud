@@ -52,7 +52,11 @@ No mailbox uses JMAP yet; only tests call the JMAP path. For a JMAP account,
 Mail streams each message source from the server into the same parser and
 takes the same turns, priorities, and five attempts. Two JMAP messages with
 identical sources stay two messages: Mail may store the source once, but it
-never merges them into one message as it can for two IMAP copies.
+never merges them into one message as it can for two IMAP copies. A JMAP body
+download waits for the account's rate-limit pause, as the account's sync does,
+and a refused login or account stops both until the connection is checked again.
+When the server has no source for a message, Mail asks the account's sync to
+check whether the message is gone.
 
 ## Separate discovery from body delay
 

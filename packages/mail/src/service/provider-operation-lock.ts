@@ -96,6 +96,8 @@ const LEASE_WOKEN_PRESENCE_MS = 2 * 60_000;
 // window ended forgets it.
 const BREAKER_FIRST_WINDOW_MS = 15_000;
 const BREAKER_MAX_WINDOW_MS = 15 * 60_000;
+/** The breaker's longest window; a JMAP rate-limit cooldown waits at most as long (jmap-account-failure.ts). */
+export const PROVIDER_BREAKER_MAX_WINDOW_MS = BREAKER_MAX_WINDOW_MS;
 const BREAKER_JITTER_FRACTION = 0.25;
 
 // What `enterLeaseLineScript` reports about the mailbox's breaker.
@@ -549,12 +551,13 @@ export const providerLeaseWaitedFor = async (
     .catch(() => false);
 };
 
-// KEYS: places, presence. Reports whether present work other than a folder sync is in line.
+// KEYS: places, presence. Reports whether present work other than a folder sync, or its JMAP
+// counterpart the account sync, is in line.
 const otherWorkWaitsScript = `
   local time = redis.call("TIME")
   local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
   for _, waiter in ipairs(redis.call("ZRANGE", KEYS[1], 0, -1)) do
-    if string.sub(waiter, 1, 12) ~= "sync-folder:" then
+    if string.sub(waiter, 1, 12) ~= "sync-folder:" and string.sub(waiter, 1, 18) ~= "sync-jmap-account:" then
       local presentUntil = redis.call("ZSCORE", KEYS[2], waiter)
       if presentUntil and tonumber(presentUntil) >= now then return 1 end
     end

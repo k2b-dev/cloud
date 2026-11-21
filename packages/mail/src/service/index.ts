@@ -29,6 +29,7 @@ import * as focus from "./focus";
 import * as folders from "./folders";
 import * as health from "./health";
 import { imapPushRuntime } from "./imap-push-runtime";
+import { jmapAccountRuntime } from "./jmap-account-job";
 import * as keptConversations from "./kept-conversations";
 import * as listSubscriptions from "./list-subscriptions";
 import * as localTags from "./local-tags";
@@ -66,10 +67,16 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
     await attachmentExtractionRuntime.start();
     await scheduledMailRuntime.start();
+    await jmapAccountRuntime.start();
     await imapPushRuntime.start();
   },
   stop: () =>
-    stopRuntimeResources([() => imapPushRuntime.stop(), () => scheduledMailRuntime.stop(), () => attachmentExtractionRuntime.stop()]),
+    stopRuntimeResources([
+      () => imapPushRuntime.stop(),
+      () => jmapAccountRuntime.stop(),
+      () => scheduledMailRuntime.stop(),
+      () => attachmentExtractionRuntime.stop(),
+    ]),
 });
 
 export const mailRuntime = {

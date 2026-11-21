@@ -560,8 +560,27 @@ export async function commitJmapAccountBatch(
   }
 }
 
+/** A JMAP resource's stored checkpoint and the database time it was read at. */
+export type JmapAccountRead = { state: JmapSyncState | null; now: Date };
+/**
+ * What the account's caller already read under the provider lease, so a pass does not read it
+ * again. The pass's commit checks binding, revision, account and the whole checkpoint anyway.
+ */
+type PreRead = { read?: JmapAccountRead };
+
+/**
+ * The checkpoint a job turn routes on, read without a lock and before any network request:
+ * `null` when the resource is missing or not a JMAP resource. One statement.
+ */
+export async function readJmapAccountCheckpoint(remoteResourceId: string, db: typeof sql = sql): Promise<JmapAccountRead | null> {
+  const [resource] = await db<{ sync_state: unknown; now: Date }[]>`
+    SELECT sync_state, now() AS now FROM mail.remote_resources WHERE id = ${remoteResourceId}::uuid AND connector_kind = 'jmap'
+  `;
+  return resource ? { state: readJmapSyncState(resource.sync_state), now: resource.now } : null;
+}
+
 /** The stored checkpoint and database time, read without a lock; `null` when the account changed. */
-async function readAccountState(params: Account): Promise<{ state: JmapSyncState | null; now: Date } | null> {
+async function readAccountState(params: Account): Promise<JmapAccountRead | null> {
   const db = params.db ?? sql;
   const [resource] = await db<{ sync_state: unknown; secret_revision: number; now: Date }[]>`
     SELECT resource.sync_state, connection.secret_revision, now() AS now FROM mail.remote_resources resource
@@ -601,57 +620,141 @@ async function claimAccountFence(params: Account, kind: "incremental" | "reconci
   return { fence, finish, discard };
 }
 
+const emptyStats = (): Stats => ({ imported: 0, memberships: 0, flagsUpdated: 0, removed: 0, folders: 0, skippedDrafts: 0 });
+
+/**
+ * Confirms in one statement that a quiet account's stored state is what a commit would leave: the
+ * checkpoint the pass started from, an active binding and connection at the credential revision of
+ * the pass without errors, the same account, settled resource and mailbox health and no failed
+ * last run. Anything else takes the fenced commit, which records it. Like `confirmUnchangedFolder`,
+ * the resource's sync time moves on at most once a minute; no fence and no run.
+ */
+async function confirmQuietJmapAccount(params: Account, beforeState: JmapSyncState): Promise<boolean> {
+  const [row] = await (params.db ?? sql)<{ settled: number }[]>`
+    WITH settled AS MATERIALIZED (
+      SELECT resource.id
+      FROM mail.remote_resources resource
+      JOIN mail.mailboxes mailbox ON mailbox.id = resource.mailbox_id
+      JOIN mail.provider_bindings binding ON binding.id = ${params.bindingId}::uuid AND binding.remote_resource_id = resource.id
+      JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+      WHERE resource.id = ${params.remoteResourceId}::uuid
+        AND resource.connector_kind = 'jmap'
+        AND resource.sync_state = ${beforeState}::jsonb
+        AND resource.scope_fingerprint = ${jmapScopeFingerprint(evidenceOf(params))}
+        AND resource.status = 'active'
+        AND resource.last_error_code IS NULL
+        AND resource.last_error_message IS NULL
+        AND binding.state = 'active'
+        AND binding.verified_scope_fingerprint = resource.scope_fingerprint
+        AND binding.verified_secret_revision = ${params.secretRevision}
+        AND binding.last_error_code IS NULL
+        AND binding.last_error_message IS NULL
+        AND connection.connector_kind = 'jmap'
+        AND connection.status = 'active'
+        AND connection.encrypted_secret IS NOT NULL
+        AND connection.secret_revision = ${params.secretRevision}
+        AND connection.last_error_code IS NULL
+        AND connection.last_error_message IS NULL
+        AND mailbox.sync_enabled
+        AND mailbox.deleted_at IS NULL
+        AND mailbox.health = 'active'
+        AND mailbox.health_reason IS NULL
+        -- The account commit's recovery condition: its last finished run failed.
+        AND NOT COALESCE((
+          SELECT terminal.state = 'failed' FROM mail.sync_runs terminal
+          WHERE terminal.remote_resource_id = resource.id AND terminal.state <> 'running'
+            AND NOT (terminal.stats ? 'folderId')
+          ORDER BY terminal.started_at DESC, terminal.id DESC LIMIT 1
+        ), false)
+    ), refreshed AS (
+      UPDATE mail.remote_resources resource
+      SET last_sync_at = now()
+      FROM settled
+      WHERE resource.id = settled.id
+        AND (resource.last_sync_at IS NULL OR resource.last_sync_at < now() - interval '1 minute')
+    )
+    SELECT count(*)::int AS settled FROM settled
+  `;
+  return (row?.settled ?? 0) > 0;
+}
+
+/** Both deltas are empty and neither state moved: a commit would change nothing. */
+const quietBatch = (batch: Batch, beforeState: JmapSyncState): boolean =>
+  batch.kind === "email" &&
+  batch.mailboxState.oldState === beforeState.mailboxState &&
+  batch.mailboxState.newState === beforeState.mailboxState &&
+  batch.delta.oldState === beforeState.emailState &&
+  batch.delta.newState === beforeState.emailState &&
+  !batch.delta.hasMoreChanges &&
+  batch.delta.createdIds.length + batch.delta.updatedIds.length + batch.delta.destroyedIds.length === 0;
+
 /**
  * A single bounded page. Folders always catch up before any email page is read.
  *
  * The caller holds the mailbox's provider lease, as the IMAP sync does: the lease keeps credential,
  * binding and mailbox administration, which lock the mailbox first, away from this commit.
+ *
+ * With `quiet`, the account job's pass, both deltas are read before any fence: a quiet account
+ * (both empty, states unchanged) is confirmed by one statement without a fence or a run, unless a
+ * sync command waits for a fresh checkpoint (`awaited`). Any other account claims the fence and
+ * reads again after the claim, so a completed run covers what the server held when it started. A
+ * read that fails before the fence still leaves a failed run, as the IMAP quiet check does. Without
+ * `quiet`, every pass claims the fence first.
  */
-export async function syncJmapAccountDelta(params: Account & Network): Promise<JmapAccountSyncResult> {
+export async function syncJmapAccountDelta(
+  params: Account & Network & PreRead & { quiet?: { awaited: boolean } },
+): Promise<JmapAccountSyncResult> {
   assertActive(params.signal);
-  const read = await readAccountState(params);
+  const read = params.read ?? (await readAccountState(params));
   if (!read) return { status: "superseded", cause: "account_changed" };
   const beforeState = read.state;
   if (!beforeState || beforeState.mailboxState === null || beforeState.emailState === null) throw new JmapInitialSyncRequiredError();
-  const claimed = await claimAccountFence(params, "incremental");
-  if (!claimed) return { status: "superseded", cause: "account_changed" };
-  const { fence, finish } = claimed;
+  const { mailboxState, emailState } = beforeState;
   let axis: "mailbox" | "email" = "mailbox";
-  try {
-    const folders = await readJmapMailboxDelta(
-      params.session,
-      params.authorization,
-      params.accountId,
-      beforeState.mailboxState,
-      params.signal,
-      params.transport,
-    );
+  const readBatch = async (): Promise<{ batch: Batch; folderPending: boolean }> => {
+    axis = "mailbox";
+    const folders = await readJmapMailboxDelta(params.session, params.authorization, params.accountId, mailboxState, params.signal, params.transport);
     const folderPending =
       folders.hasMoreChanges ||
       folders.created.length + folders.updated.length + folders.destroyedIds.length + folders.notFoundIds.length > 0;
-    if (!folderPending) axis = "email";
-    const batch: Batch = folderPending
-      ? { kind: "mailbox", delta: folders }
-      : {
-          kind: "email",
-          mailboxState: { oldState: folders.oldState, newState: folders.newState },
-          delta: await readJmapEmailDelta(
-            params.session,
-            params.authorization,
-            params.accountId,
-            beforeState.emailState,
-            params.signal,
-            params.transport,
-          ),
-        };
+    if (folderPending) return { batch: { kind: "mailbox", delta: folders }, folderPending };
+    axis = "email";
+    const delta = await readJmapEmailDelta(params.session, params.authorization, params.accountId, emailState, params.signal, params.transport);
+    return { batch: { kind: "email", mailboxState: { oldState: folders.oldState, newState: folders.newState }, delta }, folderPending };
+  };
+  const failed = (error: unknown): JmapAccountSyncResult => {
+    if (error instanceof JmapReconciliationRequiredError) return { status: "reconciliation_required", cause: error.cause, axis };
+    throw error;
+  };
+  if (params.quiet && !params.quiet.awaited) {
+    let quiet: boolean;
+    try {
+      quiet = quietBatch((await readBatch()).batch, beforeState);
+    } catch (error) {
+      // An aborted pass may have lost its lease: it writes nothing.
+      if (!params.signal.aborted) {
+        const code = error instanceof JmapReconciliationRequiredError ? error.code : "JMAP_SYNC_FAILED";
+        await claimAccountFence(params, "incremental")
+          .then((claimed) => claimed?.finish(code, "failed"))
+          .catch(() => undefined);
+      }
+      return failed(error);
+    }
+    if (quiet && (await confirmQuietJmapAccount(params, beforeState)))
+      return { status: "committed", hasMore: false, stats: emptyStats(), hydrationRequested: false };
+  }
+  const claimed = await claimAccountFence(params, "incremental");
+  if (!claimed) return { status: "superseded", cause: "account_changed" };
+  const { fence, finish } = claimed;
+  try {
+    const { batch, folderPending } = await readBatch();
     const result = await commitJmapAccountBatch({ ...params, fence, beforeState, batch });
     if (result.status === "superseded") await finish("JMAP_SYNC_SUPERSEDED", "stale_fence");
     // Even the final folder page leaves the email axis for the next call.
     return result.status === "committed" && folderPending ? { ...result, hasMore: true } : result;
   } catch (error) {
     await finish(error instanceof JmapReconciliationRequiredError ? error.code : "JMAP_SYNC_FAILED", "failed");
-    if (error instanceof JmapReconciliationRequiredError) return { status: "reconciliation_required", cause: error.cause, axis };
-    throw error;
+    return failed(error);
   }
 }
 
@@ -664,10 +767,10 @@ export async function syncJmapAccountDelta(params: Account & Network): Promise<J
  * verify pass confirms or removes them. The caller holds the mailbox's provider lease.
  */
 export async function startJmapAccountScan(
-  params: Account & Network & { reason: JmapAccountScan["reason"] },
+  params: Account & Network & PreRead & { reason: JmapAccountScan["reason"] },
 ): Promise<JmapAccountScanStartResult> {
   assertActive(params.signal);
-  const read = await readAccountState(params);
+  const read = params.read ?? (await readAccountState(params));
   if (!read) return { status: "superseded", cause: "account_changed" };
   const beforeState = read.state;
   const initialized = beforeState !== null && beforeState.emailState !== null && beforeState.mailboxState !== null;
@@ -720,9 +823,9 @@ export const jmapVerifyPageQuery = (db: typeof sql, params: { remoteResourceId: 
  * the next step. Mail deltas keep running between steps; the commit compares the whole checkpoint,
  * so a step read before a delta commit is superseded and read again. Never an arrival.
  */
-export async function syncJmapAccountScan(params: Account & Network): Promise<JmapAccountScanResult> {
+export async function syncJmapAccountScan(params: Account & Network & PreRead): Promise<JmapAccountScanResult> {
   assertActive(params.signal);
-  const read = await readAccountState(params);
+  const read = params.read ?? (await readAccountState(params));
   if (!read) return { status: "superseded", cause: "account_changed" };
   const beforeState = read.state;
   const scan = beforeState?.scan ?? null;

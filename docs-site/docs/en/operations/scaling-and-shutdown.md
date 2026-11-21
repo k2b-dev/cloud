@@ -5,7 +5,7 @@ section: Operations
 order: 1150
 description: Run multiple application instances and shut them down without losing work.
 tags: [scaling, lifecycle, shutdown]
-updated: 2026-11-02
+updated: 2026-11-21
 ---
 
 # Scaling and shutdown
@@ -163,6 +163,13 @@ The other limits in the table deliberately remain per process:
 - Mail's four provider jobs per kind bound local worker occupancy. Distributed
   mailbox leases serialize work on each remote mailbox, while separate
   mailboxes can progress on different replicas.
+- Mail's JMAP account job (`mail:sync-jmap-account`) is one of these kinds. No
+  mailbox uses JMAP yet, and nothing queues the job outside tests. It shares the
+  mailbox's provider lease with IMAP work and runs one bounded pass per turn: a
+  delta ranks like a folder sync, a scan or verify page as background work. On
+  shutdown it takes no new turn; a running turn finishes within the worker
+  drain, or the drain deadline aborts it, and the lease is released either way.
+  An unfinished job comes back from its NATS delivery on another replica.
 
 Every replica also opens its own Postgres pool of up to 10 connections, plus
 the extra pools in the table. Live updates allow 16 sockets per viewer on each

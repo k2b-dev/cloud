@@ -10,6 +10,7 @@ import {
 } from "@k2b/cloud/services";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { JobContext, JobFailureDecision, Worker } from "@k2b/sync";
+import { z } from "zod";
 import { publishMessageReceived } from "../app-events";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
@@ -49,6 +50,8 @@ import {
   requestMailboxHydration,
 } from "./hydration-work";
 import { loadJmapAccountAccess } from "./jmap-account-access";
+import { extendJmapCooldown, type JmapAccountFailureContext, jmapCooldownMs, recordJmapAccountFailure } from "./jmap-account-failure";
+import { classifyJmapFailure } from "./jmap-failure";
 import { classifyJmapSourceFailure, endsJmapBatch, hydrateJmapSource } from "./jmap-hydration";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { enqueueMailInvalidation, mailLive } from "./live";
@@ -102,7 +105,9 @@ const AUTOMATIC_CONVERSATION_CANDIDATES = 10;
 const FLAG_WINDOW_SIZE = 5_000;
 const RECONCILE_WINDOW_SIZE = 5_000;
 const HYDRATION_BATCH_SIZE = 20;
-const SYNC_LEASE_MS = 2 * 60_000;
+export const SYNC_LEASE_MS = 2 * 60_000;
+/** How often a turn that holds the provider lease renews it and its job's lease. */
+export const SYNC_LEASE_HEARTBEAT_MS = 30_000;
 const syncTasks = createRuntimeTaskTracker();
 
 type EnvelopeCursor = {
@@ -191,7 +196,7 @@ const retryAfterMs = (error: unknown, fallback: number): number => {
   return Number.isFinite(value) && value > 0 ? Math.max(1_000, Math.min(value, 60_000)) : fallback;
 };
 
-const extendSyncLease = async (lock: SyncLock, phase: string): Promise<void> => {
+export const extendSyncLease = async (lock: SyncLock, phase: string): Promise<void> => {
   if (await mailProviderOperationMutex().extend(lock, { ttlMs: SYNC_LEASE_MS })) return;
   throw Object.assign(new Error(`Mail sync lease was lost ${phase}`), { code: "SYNC_LEASE_LOST" });
 };
@@ -2761,7 +2766,7 @@ export const syncFolderBatch = async (
   let next: { waiter: string; priority: ProviderLeasePriority } | undefined;
   try {
     batch = await withLeaseHeartbeat<SyncBatchResult>({
-      intervalMs: 30_000,
+      intervalMs: SYNC_LEASE_HEARTBEAT_MS,
       heartbeat: async () => {
         await extendSyncLease(lock, "during background work");
         try {
@@ -3082,10 +3087,16 @@ const parkedFolderSyncInput = (left: string | null): SyncFolderJobInput | null =
 };
 
 /**
- * Starts a parked folder job again with the input it left. A process that stops queues nothing,
- * and the waiter parks again until another release or the scheduler wakes it.
+ * Starts a parked folder job, or a parked JMAP account job, again with the input it left. A
+ * process that stops queues nothing, and the waiter parks again until another release or the
+ * scheduler wakes it. The one handler the lease line calls for every parked waiter.
  */
 const wakeParkedFolderSync = async (waiter: string, left: string): Promise<void> => {
+  if (waiter.startsWith(JMAP_ACCOUNT_WAITER_PREFIX)) {
+    const account = parkedJmapAccountInput(left);
+    if (account && !(await submitJmapAccountJob(account))) throw new Error("Mail is stopping");
+    return;
+  }
   const input = waiter.startsWith("sync-folder:") ? parkedFolderSyncInput(left) : null;
   if (!input) return;
   const submitted = syncTasks.run(() => syncFolderJob().submit({ coalesce: true, key: `folder:${input.folderId}`, input }));
@@ -3095,12 +3106,60 @@ const wakeParkedFolderSync = async (waiter: string, left: string): Promise<void>
 };
 onParkedProviderWaiterWake(wakeParkedFolderSync);
 
+/** Delivery of a provider sync job: the folder job's, which the JMAP account job shares. */
+export const SYNC_FOLDER_DELIVERY = {
+  ackWaitMs: 3 * 60_000,
+  maxAttempts: SYNC_FOLDER_MAX_ATTEMPTS,
+  backoffMs: [5_000, 10_000, 20_000, 40_000],
+} as const;
+
 const syncFolderJob = lazySync((sync) =>
   sync.job<SyncFolderJobInput>({
     id: "mail:sync-folder",
-    delivery: { ackWaitMs: 3 * 60_000, maxAttempts: SYNC_FOLDER_MAX_ATTEMPTS, backoffMs: [5_000, 10_000, 20_000, 40_000] },
+    delivery: { ...SYNC_FOLDER_DELIVERY, backoffMs: [...SYNC_FOLDER_DELIVERY.backoffMs] },
   }),
 );
+
+/**
+ * `mail:sync-jmap-account` (jmap-account-job.ts): one job per JMAP account. `phase` is only the
+ * lease rank the next turn asks with, `delta` as a folder sync and `scan` as background work; the
+ * stored checkpoint decides what the turn does. No secret, Session or message ID goes in.
+ */
+export const jmapAccountJobInputSchema = z.strictObject({ remoteResourceId: z.uuid(), phase: z.enum(["delta", "scan"]) });
+export type JmapAccountJobInput = z.infer<typeof jmapAccountJobInputSchema>;
+export const JMAP_ACCOUNT_WAITER_PREFIX = "sync-jmap-account:";
+export const jmapAccountWaiter = (remoteResourceId: string): string => `${JMAP_ACCOUNT_WAITER_PREFIX}${remoteResourceId}`;
+export const jmapAccountJob = lazySync((sync) =>
+  sync.job<JmapAccountJobInput>({
+    id: "mail:sync-jmap-account",
+    delivery: { ...SYNC_FOLDER_DELIVERY, backoffMs: [...SYNC_FOLDER_DELIVERY.backoffMs] },
+  }),
+);
+
+/** The input a parked account job left, or `null` when it is not one. */
+export const parkedJmapAccountInput = (left: string | null): JmapAccountJobInput | null => {
+  if (!left) return null;
+  try {
+    const input = jmapAccountJobInputSchema.safeParse(JSON.parse(left));
+    return input.success ? input.data : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Queues the account's job, one queued or running per account. Returns false while Mail stops or
+ * is quiesced: it then queues nothing, as for folder syncs.
+ */
+export const submitJmapAccountJob = async (input: JmapAccountJobInput): Promise<boolean> => {
+  const parsed = jmapAccountJobInputSchema.parse(input);
+  const submitted = syncTasks.run(() =>
+    jmapAccountJob().submit({ coalesce: true, key: `account:${parsed.remoteResourceId}`, input: parsed }),
+  );
+  if (!submitted) return false;
+  await submitted;
+  return true;
+};
 
 /** Runs one `mail:sync-folder` attempt and returns its counted outcome. */
 const runSyncFolderJobOutcome = async (
@@ -3420,16 +3479,20 @@ const newestPendingBody = async (mailboxId: string, retry: boolean): Promise<Hyd
 const nextMailboxHydrationTarget = async (mailboxId: string, retry = true): Promise<HydrationTarget | null> =>
   (await newestPendingBody(mailboxId, false)) ?? (retry ? await newestPendingBody(mailboxId, true) : null);
 
+const jmapRateLimited = (retryAfterMs: number): Error =>
+  Object.assign(new Error("JMAP provider rate limited body downloads"), { code: "MAIL_RATE_LIMITED", retryAfterMs });
+
 // A failure that ends the batch without an attempt. A rate limit waits for its Retry-After like an
-// IMAP throttle; any other failure ends the batch, which runs again with the next turn.
-const stopJmapBatch = (error: unknown): never => {
+// IMAP throttle and sets the account's cooldown, which the account job and the next batch wait
+// for. A refused login or account is recorded as the account job records it, for the binding and
+// credentials the batch used (`context`, null before the loader read them). Any other failure ends
+// the batch, which runs again with the next turn.
+const stopJmapBatch = async (resource: string, context: JmapAccountFailureContext | null, error: unknown): Promise<never> => {
   const failure = classifyJmapSourceFailure(error, Date.now());
-  if (failure.kind === "rate_limited") {
-    throw Object.assign(new Error("JMAP provider rate limited body downloads"), {
-      code: "MAIL_RATE_LIMITED",
-      retryAfterMs: failure.retryAfterMs,
-    });
-  }
+  if (failure.kind === "rate_limited") throw jmapRateLimited(await extendJmapCooldown(resource, failure.retryAfterMs));
+  const account = classifyJmapFailure(error, Date.now());
+  if (context && (account?.kind === "auth_required" || account?.kind === "access_denied"))
+    await recordJmapAccountFailure(context, { kind: account.kind });
   throw error;
 };
 
@@ -3515,15 +3578,25 @@ const hydrateJmapSourceBatch = async (params: {
   transport?: JmapTransportDependencies;
 }): Promise<HydrationBatch> => {
   const { message, signal } = params;
+  const resource = message.remote_resource_id;
   const none: HydrationBatch = { hydrated: false, settled: 0, stopped: false, missingFromUid: null, targetError: null };
+  // The account's rate-limit cooldown holds every JMAP request back, this batch's too.
+  const coolingMs = await jmapCooldownMs(resource);
+  if (coolingMs > 0) throw jmapRateLimited(coolingMs);
   const transportFence = await loadMailboxTransportFence(message.remote_resource_id);
   if (!transportFence) {
     throw Object.assign(new Error("Mailbox transport changed before hydration"), { code: "MAILBOX_TRANSPORT_CHANGED" });
   }
   await waitForMailProviderSlot(message.remote_resource_id, signal);
-  const loaded = await loadJmapAccountAccess({ remoteResourceId: message.remote_resource_id, signal, transport: params.transport }).catch(
-    stopJmapBatch,
-  );
+  let context: JmapAccountFailureContext | null = null;
+  const loaded = await loadJmapAccountAccess({
+    remoteResourceId: resource,
+    signal,
+    transport: params.transport,
+    onRead: (read) => {
+      context = { remoteResourceId: resource, ...read };
+    },
+  }).catch((error: unknown) => stopJmapBatch(resource, context, error));
   // An account that cannot run now keeps its bodies as they are.
   if (loaded.status !== "ready") return none;
   const { access } = loaded;
@@ -3558,7 +3631,7 @@ const hydrateJmapSourceBatch = async (params: {
       [...byEmail.keys()],
       signal,
       params.transport,
-    ).catch(stopJmapBatch);
+    ).catch((error: unknown) => stopJmapBatch(resource, context, error));
     for (const emailId of sources.notFoundIds) {
       const candidate = byEmail.get(emailId);
       if (candidate) missing.push(candidate.id);
@@ -3632,7 +3705,7 @@ const hydrateJmapSourceBatch = async (params: {
   } finally {
     await invalidateSettledConversations(message.mailbox_id, settled);
   }
-  if (ending) stopJmapBatch(ending.error);
+  if (ending) await stopJmapBatch(resource, context, ending.error);
   await params.assertProviderLeaseActive();
   await assertMailboxTransportFence(transportFence);
   return { hydrated, settled: settled.size, stopped, missingFromUid: null, targetError, accountDeltaRequired: missing.length > 0 };
@@ -3888,8 +3961,18 @@ export const hydrateMessageBatch = async (
       if ("mailboxId" in ctx.input && (batch.settled > 0 || batch.stopped) && (await newestPendingBody(ctx.input.mailboxId, false))) {
         ctx.resubmit({ delayMs: 0 });
       }
-      // The JMAP account job (Schnitt 5b) runs the delta that shows whether a missing Email is gone.
-      return batch.accountDeltaRequired ? { hydrated: batch.hydrated, accountDeltaRequired: true } : { hydrated: batch.hydrated };
+      // The JMAP account job runs the delta that shows whether a missing Email is gone. A lost
+      // submission only waits for the account's next turn: the missing source is recorded.
+      if (batch.accountDeltaRequired) {
+        await submitJmapAccountJob({ remoteResourceId: message.remote_resource_id, phase: "delta" }).catch((error: unknown) => {
+          log.warn("Mail could not queue a JMAP account delta after a missing source", {
+            remoteResourceId: message.remote_resource_id,
+            code: normalizeSyncErrorCode(error),
+          });
+        });
+        return { hydrated: batch.hydrated, accountDeltaRequired: true };
+      }
+      return { hydrated: batch.hydrated };
     },
   });
 };
