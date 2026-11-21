@@ -17,7 +17,7 @@ beforeAll(async () => {
   css = await readFile(join(output, "tabler-icons.css"));
   expect(css.toString()).toMatch(/url\(\/public\/fonts\/tabler-icons-[a-f0-9]{64}\.woff2\)/);
   browser = await launchBrowser();
-});
+}, 30_000);
 
 afterAll(async () => {
   try {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { routes as honoRoutes } from "../../src/adapter/hono";
@@ -625,5 +625,147 @@ describe("buildIslands() asset manifest", () => {
     rmSync(join(cwd, "App.island.tsx"));
     await buildIslands(options);
     expect(readFileSync(join(outdir, "manifest.json"), "utf8")).toBe("preserved");
+  });
+});
+
+describe("buildIslands() barrel imports", () => {
+  // A side-effect-free package whose root re-exports a sheet that only a lazy module of another island uses.
+  const writeBarrelProject = (cwd: string) => {
+    const pkg = join(cwd, "node_modules", "fixture-ui");
+    writeTempFile(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "fixture-ui", type: "module", sideEffects: false, exports: { ".": "./index.js" } }),
+    );
+    writeTempFile(join(pkg, "index.js"), `export * from "./layout/index.js"; export { used } from "./used.js";`);
+    writeTempFile(join(pkg, "layout", "index.js"), `export { Sheet } from "./Sheet.js"; export { Other } from "./Other.js";`);
+    writeTempFile(
+      join(pkg, "layout", "Sheet.js"),
+      `import { motion } from "../motion.js"; export function Sheet() { return "SHEET_CODE" + motion(); }`,
+    );
+    writeTempFile(join(pkg, "motion.js"), `export function motion() { return "MOTION_CODE"; }`);
+    writeTempFile(join(pkg, "layout", "Other.js"), `export function Other() { return "OTHER_CODE"; }`);
+    writeTempFile(join(pkg, "used.js"), `export function used() { return "USED_CODE"; }`);
+    writeTempFile(join(cwd, "src", "Static.island.tsx"), `import { used } from "fixture-ui"; export default () => <span>{used()}</span>;`);
+    writeTempFile(
+      join(cwd, "src", "Lazy.island.tsx"),
+      `import { used } from "fixture-ui"; export default () => <button onClick={async () => (await import("./sheet")).show()}>{used()}</button>;`,
+    );
+    writeTempFile(join(cwd, "src", "sheet.ts"), `import { Sheet } from "fixture-ui"; export const show = () => console.log(Sheet());`);
+  };
+  const options = (cwd: string, dev = false) => ({
+    pattern: "**/*.{island,client}.tsx",
+    cwd,
+    outdir: join(cwd, "_ssr"),
+    verbose: false,
+    dev,
+  });
+
+  const warnings = async (build: () => Promise<void>): Promise<string[]> => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await build();
+      return warn.mock.calls.map((call) => String(call[0]));
+    } finally {
+      warn.mockRestore();
+    }
+  };
+
+  test("an unused, side-effect-free barrel module stays out of every island's static closure", async () => {
+    const cwd = makeTempRoot();
+    writeBarrelProject(cwd);
+    // The allowed on-demand form: a local module that names what it re-exports.
+    writeTempFile(
+      join(cwd, "src", "OnDemand.island.tsx"),
+      `export default () => <button onClick={async () => (await import("./used-only")).used()}>Load</button>;`,
+    );
+    writeTempFile(join(cwd, "src", "used-only.ts"), `export { used } from "fixture-ui";`);
+    expect(await warnings(() => buildIslands(options(cwd)))).toEqual([]);
+    const outdir = join(cwd, "_ssr");
+    const manifest: AssetManifest = JSON.parse(readFileSync(join(outdir, "manifest.json"), "utf8"));
+    const emitted = [...new Bun.Glob("*.js").scanSync({ cwd: outdir })];
+    expect(emitted.some((file) => readFileSync(join(outdir, file), "utf8").includes("SHEET_CODE"))).toBe(true);
+    for (const island of ["Static", "Lazy", "OnDemand"]) {
+      const closure = manifest.entries[islandIdFromFile(join(cwd, "src", `${island}.island.tsx`), cwd)]!;
+      const code = closure.map((file) => readFileSync(join(outdir, file), "utf8")).join("\n");
+      for (const unused of ["SHEET_CODE", "MOTION_CODE"]) expect(code).not.toContain(unused);
+    }
+  });
+
+  // The premise of the guard below: if Bun stops tying a barrel's modules to static importers, this fails and the
+  // guard can go.
+  test("Bun keeps unused barrel modules in a static closure when the barrel is also imported on demand", async () => {
+    const cwd = makeTempRoot();
+    writeBarrelProject(cwd);
+    const entries = {
+      static: `import { used } from "fixture-ui"; console.log(used());`,
+      dynamic: `import("fixture-ui").then((m) => m.used());`,
+      lazy: `import { used } from "fixture-ui"; console.log(used()); import("./sheet");`,
+    };
+    for (const [name, source] of Object.entries(entries)) writeTempFile(join(cwd, "src", `${name}.js`), source);
+    const outdir = join(cwd, "bun-out");
+    const result = await Bun.build({
+      entrypoints: Object.keys(entries).map((name) => join(cwd, "src", `${name}.js`)),
+      outdir,
+      splitting: true,
+      target: "browser",
+    });
+    expect(result.success).toBe(true);
+    const closure = new Set(["static.js"]);
+    for (const file of closure)
+      for (const edge of new Bun.Transpiler({ loader: "js" }).scanImports(readFileSync(join(outdir, file), "utf8")))
+        if (edge.kind === "import-statement") closure.add(edge.path.replace(/^\.\//, ""));
+    expect([...closure].map((file) => readFileSync(join(outdir, file), "utf8")).join("\n")).toContain("SHEET_CODE");
+  });
+
+  test("allows an on-demand import of an entry that re-exports a single module", async () => {
+    const cwd = makeTempRoot();
+    writeBarrelProject(cwd);
+    const pkg = join(cwd, "node_modules", "fixture-ui");
+    writeTempFile(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "fixture-ui", type: "module", sideEffects: false, exports: { ".": "./index.js", "./sheet": "./sheet.js" } }),
+    );
+    writeTempFile(join(pkg, "sheet.js"), `export { Sheet } from "./layout/Sheet.js";`);
+    writeTempFile(
+      join(cwd, "src", "Sheet.island.tsx"),
+      `import { Sheet } from "fixture-ui/sheet"; export default () => <span>{Sheet()}</span>;`,
+    );
+    writeTempFile(
+      join(cwd, "src", "OnDemand.island.tsx"),
+      `export default () => <button onClick={async () => console.log((await import("fixture-ui/sheet")).Sheet())}>Load</button>;`,
+    );
+    expect(await warnings(() => buildIslands(options(cwd)))).toEqual([]);
+    expect(existsSync(join(cwd, "_ssr", "manifest.json"))).toBe(true);
+  });
+
+  test.each([false, true])("warns about an on-demand import of a statically imported barrel and still builds (dev: %p)", async (dev) => {
+    const cwd = makeTempRoot();
+    writeBarrelProject(cwd);
+    writeTempFile(
+      join(cwd, "src", "OnDemand.island.tsx"),
+      `export default () => <button onClick={async () => (await import("fixture-ui")).used()}>Load</button>;`,
+    );
+    const logged = await warnings(() => buildIslands(options(cwd, dev)));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain(
+      "  src/OnDemand.island.tsx imports fixture-ui on demand\nImport a small module on demand that re-exports only the names it needs",
+    );
+    const id = islandIdFromFile(join(cwd, "src", "OnDemand.island.tsx"), cwd);
+    expect(existsSync(join(cwd, "_ssr", `${id}.js`))).toBe(true);
+  });
+
+  test("warns once when a dependency imports a statically imported barrel on demand", async () => {
+    const cwd = makeTempRoot();
+    writeBarrelProject(cwd);
+    const loader = join(cwd, "node_modules", "fixture-loader");
+    writeTempFile(join(loader, "package.json"), JSON.stringify({ name: "fixture-loader", type: "module", exports: { ".": "./index.js" } }));
+    writeTempFile(join(loader, "index.js"), `export const load = () => import("fixture-ui");`);
+    writeTempFile(
+      join(cwd, "src", "OnDemand.island.tsx"),
+      `import { load } from "fixture-loader"; export default () => <button onClick={async () => (await load()).used()}>Load</button>;`,
+    );
+    const logged = await warnings(() => buildIslands(options(cwd)));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain("node_modules/fixture-loader/index.js imports fixture-ui on demand");
   });
 });

@@ -98,7 +98,7 @@ export async function collectDocumentFolder(options: Options): Promise<Entry[]> 
 export async function downloadDocumentFolder(options: Options): Promise<void> {
   const entries = await collectDocumentFolder(options);
   options.signal.throwIfAborted();
-  const { createZip, downloadFileFromContent } = await import("@k2b/stdlib/browser");
+  const { createZip, downloadFileFromContent } = await import("./document-zip");
   // Stored PDFs are compressed already; avoiding recompression keeps the UI responsive.
   const zip = await createZip(entries, { compressionLevel: 0 });
   options.signal.throwIfAborted();
