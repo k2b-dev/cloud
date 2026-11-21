@@ -49,7 +49,7 @@ const open = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   pages.push(page);
   await page.setContent(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css} body{margin:0} .column{margin-bottom:32px} .column[data-probe^="path"]{padding:0 var(--k2b-gutter)} .narrow{width:340px;box-sizing:border-box}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css} body{margin:0} .column{margin-bottom:32px} .column[data-probe^="path"]{padding:0 var(--k2b-gutter, 20px)} .narrow{width:340px;box-sizing:border-box}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
   );
   await page.addScriptTag({ content: bundle });
   await settled(page);

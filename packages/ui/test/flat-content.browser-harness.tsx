@@ -27,7 +27,7 @@ render(
           <TaskRow
             icon="ti ti-truck-return"
             count={12}
-            text="Retouren aus der Novembersammlung warten im Lager auf die Entscheidung über Weiterverkauf oder Entsorgung"
+            text="Retouren aus der Novembersammlung, der Oktobersammlung und der Sammlung vom Sommerfest warten im Lager in Halle zwei, Regal C bis F, seit mehreren Wochen auf die Entscheidung über Weiterverkauf, Spende an das Sozialkaufhaus oder Entsorgung"
             action="Entscheiden"
             href="#retouren"
           />

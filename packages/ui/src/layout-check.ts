@@ -47,9 +47,10 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
   if (!root) return { overlap: [], spill: [], cut: [], sideways: false, problems: [`no element matches ${options.root}`] };
   const ignore = options.ignore ?? ".k2b-avatar-stack, [data-layout-check='skip']";
   const slack = options.slack ?? 7;
+  // Text for screen readers only (a 1 px clipped box, such as `.k2b-sr-only`) is hidden on purpose, not cut.
   const seen = (element: Element) => {
     const rect = element.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+    return rect.width > 1 && rect.height > 1 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
   };
   // A box that sticks or floats lies above the flow on purpose.
   const inFlow = (element: Element) => !["absolute", "fixed", "sticky"].includes(getComputedStyle(element).position);
