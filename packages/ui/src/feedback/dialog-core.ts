@@ -10,6 +10,12 @@ import { type DialogCall, notePageDisposal, pageDisposals, readDialogCall } from
 import type { FrameMotion } from "./dialog-frame-motion";
 import { isPointInsideToast } from "./toast-hit";
 
+/**
+ * The custom property that lifts a centered dialog frame so its footer stays put (`dialog-foot.ts`). The core clears
+ * it whenever another level shows, so each level starts centered.
+ */
+export const DIALOG_LIFT = "--k2b-dialog-lift";
+
 export type DialogClose<T> = (result?: T) => void;
 
 export type OpenDialogOptions = {
@@ -99,6 +105,8 @@ type DialogState = {
   previousHtmlOverflow?: string;
   mouseDownOnDialog?: boolean;
   connectionObserver?: MutationObserver;
+  /** The level whose presentation the frame shows. */
+  presented?: DialogStackEntry;
 };
 
 const DEFAULT_PANEL_CLASS = "k2b-dialog";
@@ -458,6 +466,9 @@ export const createDialogCore = () => {
   const applyPresentation = (entry: DialogStackEntry) => {
     const dialog = state.element;
     if (!dialog || state.stack[state.stack.length - 1] !== entry) return;
+    // Each level starts centered: a lift that kept another level's footer in place does not carry over (K16).
+    if (state.presented !== entry) dialog.style.removeProperty(DIALOG_LIFT);
+    state.presented = entry;
     if (dialog.className !== entry.panelClassName) dialog.className = entry.panelClassName;
     applyUiScope(dialog, entry.uiScope);
     const position = entry.position;
@@ -589,6 +600,7 @@ export const createDialogCore = () => {
       if (dialog.open && typeof dialog.close === "function") dialog.close();
       else dialog.removeAttribute("open");
       state.element = undefined;
+      state.presented = undefined;
       stopConnectionObserver();
       unlockPageScroll();
       let left = false;
@@ -622,6 +634,7 @@ export const createDialogCore = () => {
     state.motion?.stop();
     state.motion = undefined;
     state.element = undefined;
+    state.presented = undefined;
     stopConnectionObserver();
     dialog?.remove();
     unlockPageScroll();

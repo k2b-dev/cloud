@@ -5809,13 +5809,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 100%;
   color: var(--k2b-text);
   background: var(--k2b-surface);
-  --k2b-panel-dialog-inset: 1.5rem;
+  /* K5: the text edge, 20 px, 16 px on a phone. */
+  --k2b-panel-dialog-inset: var(--k2b-gutter);
 }
 
-/* Phones keep more width for the fields. */
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-panel-dialog {
-    --k2b-panel-dialog-inset: 1rem;
+    --k2b-panel-dialog-inset: var(--k2b-gutter);
   }
 }
 
@@ -5823,13 +5823,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    white section cards, so header and footer share that grey. */
 .k2b-ui .k2b-panel-dialog[data-surface="floating"] {
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-dialog);
+  border-radius: var(--k2b-radius-overlay);
   background: var(--k2b-surface-muted);
 }
 
-/* Header and footer sit flat on the dialog surface, outside the scrolling
-   body. No band and no line: the body's scroll fade is the only cue that
-   content continues under them. */
+/* K16: inside, a dialog is flat. Header and footer are bands outside the
+   scrolling body, each set off by one hairline from edge to edge. */
 .k2b-ui .k2b-panel-dialog__header,
 .k2b-ui .k2b-panel-dialog__footer {
   @apply flex shrink-0 items-center;
@@ -5837,19 +5836,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-panel-dialog__header {
-  min-height: 3.25rem;
-  padding: 1.25rem 1.25rem 1rem var(--k2b-panel-dialog-inset, 1.5rem);
-  align-items: flex-start;
-}
-
-.k2b-ui .k2b-panel-dialog__header[data-has-subtitle="false"] {
+  box-sizing: border-box;
+  min-height: var(--k2b-h-head);
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem 0.5rem var(--k2b-panel-dialog-inset, 1.25rem);
   align-items: center;
 }
 
-@media (max-width: 47.999rem) {
-  .k2b-ui .k2b-panel-dialog__header {
-    padding: 1rem 0.75rem 0.75rem var(--k2b-panel-dialog-inset, 1.5rem);
-  }
+/* One line, one owner: the dialog draws the hairline between its bands
+   (header, tabs, content, footer), as `k2b-divided` does, also where an app
+   wraps them in an element of its own; no band draws its own, so two lines
+   never meet. A sheet's grip is no band. Over a picture the header floats as
+   glass chips and there are no lines. */
+.k2b-ui
+  .k2b-panel-dialog:not([data-media])
+  :is(.k2b-panel-dialog__header, .k2b-panel-dialog__tabs, .k2b-panel-dialog__body, .k2b-panel-dialog__footer):not([hidden])
+  ~ :is(.k2b-panel-dialog__tabs, .k2b-panel-dialog__body, .k2b-panel-dialog__footer):not([hidden]) {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 /* The header icon sits in a soft chip of the app accent hook. */
@@ -5887,19 +5890,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    content; the native hint shows the cut name. */
 .k2b-ui .k2b-panel-dialog__heading h2 {
   overflow: hidden;
-  font-size: 1.25rem;
+  /* K11: a title in a head is 14 px. */
+  font-size: var(--k2b-font-size-body);
   font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.018em;
+  line-height: 1.25rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .k2b-ui .k2b-panel-dialog__heading p {
-  margin-top: 0.375rem;
   color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-  line-height: 1.5;
+  font-size: var(--k2b-font-size-meta);
+  line-height: 1rem;
   overflow-wrap: anywhere;
 }
 
@@ -5913,12 +5915,64 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply justify-between;
   flex-wrap: wrap;
   gap: 0.5rem;
-  padding: 0.75rem var(--k2b-panel-dialog-inset, 1.5rem) 1.25rem;
+  padding: 0.75rem var(--k2b-panel-dialog-inset, 1.25rem);
+}
+
+/* K10, K16: an error in a dialog is the tinted, square cell right above the
+   footer's buttons, edge to edge: sign, what failed, what follows. It is the
+   footer's first row, under the footer's own line, so it moves with the
+   footer; the dialog grows upwards (`dialog-foot.ts`). */
+.k2b-ui .k2b-panel-dialog__footer > .k2b-panel-dialog__error {
+  display: grid;
+  box-sizing: border-box;
+  flex: none;
+  width: calc(100% + 2 * var(--k2b-panel-dialog-inset, 1.25rem));
+  max-width: none;
+  min-height: var(--k2b-h-status);
+  grid-template-columns: 1rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  /* The footer's 0.75rem above and its row gap below are the cell's; 0.25rem more keeps 0.75rem to the buttons. */
+  margin: -0.75rem calc(-1 * var(--k2b-panel-dialog-inset, 1.25rem)) 0.25rem;
+  padding: 0.5rem var(--k2b-panel-dialog-inset, 1.25rem);
+  color: var(--k2b-text);
+  background: var(--k2b-danger-surface);
+  font-size: var(--k2b-font-size-row);
+  line-height: 1.25rem;
+}
+
+.k2b-ui[data-theme="dark"] .k2b-panel-dialog__error,
+.k2b-ui.k2b-dark .k2b-panel-dialog__error,
+.dark .k2b-ui .k2b-panel-dialog__error {
+  background: color-mix(in srgb, var(--k2b-danger-surface) 55%, transparent);
+}
+
+.k2b-ui .k2b-panel-dialog__error > i {
+  color: var(--k2b-danger-text);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-panel-dialog__error-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-panel-dialog__error-copy > strong {
+  display: block;
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-panel-dialog__error-copy > p {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: var(--k2b-font-size-meta);
+  line-height: 1rem;
 }
 
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-panel-dialog__footer {
-    padding-bottom: 1rem;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -5935,8 +5989,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-panel-dialog__body {
   @apply flex min-h-0 flex-1 flex-col overflow-y-auto;
+  /* With a section's own 1rem, sections stand 24 px apart (K1). */
   gap: 0.5rem;
-  padding: 0.25rem var(--k2b-panel-dialog-inset, 1.5rem) 1.5rem;
+  padding: 1rem var(--k2b-panel-dialog-inset, 1.25rem);
 }
 
 .k2b-ui [data-k2b-follow-content] .k2b-panel-dialog__body {
@@ -7544,7 +7599,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   inset: unset;
   display: none;
   flex-direction: column;
-  gap: 0.125rem;
+  /* K16: rows reach every edge of the menu; the radius clips a marked first or last row. */
+  gap: 0;
   /* Menus size to their longest entry, so callers need not know a width:
      never narrower than the compact default, never wider than the viewport.
      Entries wrap there instead of truncating. */
@@ -7553,13 +7609,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-width: calc(100vw - 2rem);
   max-height: min(24rem, 80dvh);
   overflow: auto;
-  padding: 0.25rem;
+  padding: 0;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-overlay);
   margin: 0;
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-sm);
   /* Selection and action menus close synchronously. Host-level popover
      transitions must not retain a stale top-layer frame after hidePopover. */
   transition: none;
@@ -7571,13 +7627,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-dropdown__item {
   display: flex;
-  min-height: 2rem;
+  min-height: var(--k2b-h-control);
   align-items: center;
   gap: 0.625rem;
   width: 100%;
-  padding: 0.4375rem 0.75rem;
+  padding: 0.5rem 0.75rem;
   border: 0;
-  border-radius: 0.375rem;
+  border-radius: 0;
   color: var(--k2b-text-secondary);
   background: transparent;
   font-size: 0.8125rem;
@@ -7590,15 +7646,55 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     color 150ms ease-out;
 }
 
+/* K8: a marked row in a menu is grey; a blue tint would say "your turn". */
 .k2b-ui .k2b-dropdown__item:hover,
 .k2b-ui .k2b-dropdown__item:focus-visible {
   color: var(--k2b-text);
-  background: var(--k2b-hover);
+  background: var(--k2b-surface-muted);
   outline: none;
 }
 
 .k2b-ui .k2b-dropdown__item[data-danger="true"] {
   color: var(--k2b-danger-text);
+}
+
+/* K16: "▸" marks a row that opens a menu beside it; the row stays marked while its menu is open. */
+.k2b-ui .k2b-dropdown__more {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-dropdown__item--submenu[data-open="true"] {
+  color: var(--k2b-text);
+  background: var(--k2b-surface-muted);
+}
+
+/* A submenu row and its menu share an element without a role; it takes no box of its own. */
+.k2b-ui .k2b-dropdown__subgroup {
+  display: contents;
+}
+
+.k2b-ui [dir="rtl"] .k2b-dropdown__more,
+.k2b-ui .k2b-dropdown__more:dir(rtl) {
+  transform: scaleX(-1);
+}
+
+/* A submenu is a menu like the one it opens from, in the top layer beside its row. */
+.k2b-ui .k2b-dropdown__submenu {
+  min-width: min(13.5rem, 100vw - 2rem);
+}
+
+/* On a phone a submenu takes the sheet's place; its first row leads back, a band with a hairline below. */
+.k2b-ui .k2b-dropdown__back {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+
+/* The sheet's menu draws the line below its back row. */
+.k2b-ui .k2b-gesture-menu__sheet-menu > .k2b-dropdown__back + :not([hidden]) {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-dropdown__item[data-danger="true"]:is(:hover, :focus-visible) {
@@ -7610,9 +7706,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: not-allowed;
 }
 
-/* Menu items sit 0.125rem apart, so a tap area beyond an item would take taps
-   from its neighbour. On touch devices the item itself grows to 2.75rem
-   (44 px) instead; the opt-in touch variant keeps its larger rows. */
+/* Menu rows touch each other, so a tap area beyond a row would take taps from
+   its neighbour. On touch devices the row itself grows to 2.75rem (44 px)
+   instead; the opt-in touch variant keeps its larger rows. */
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-dropdown__item {
     min-height: 2.75rem;
@@ -7693,14 +7789,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dropdown__section {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: 0;
 }
 
-/* Cloud separates menu sections with spacing only (`menu-section` = mt-1 pt-1);
-   no rule line. */
-.k2b-ui .k2b-dropdown__section[data-divided="true"] {
-  padding-top: 0.25rem;
-  margin-top: 0.25rem;
+/* K2, K16, one line one owner: the menu draws one hairline from edge to edge
+   above every section that is not its first child; rows and sections draw
+   none, so no line meets the menu's own edge. */
+.k2b-ui :is(.k2b-dropdown__menu, .k2b-context-menu, .k2b-gesture-menu__sheet-menu, .k2b-dropdown__list) > :not([hidden]) ~ .k2b-dropdown__section,
+.k2b-ui .k2b-context-menu > .k2b-context-menu__title + :not([hidden]) {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-dropdown__label {
@@ -7718,6 +7815,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dropdown__row {
   display: flex;
   gap: 2px;
+  /* A control inside the menu, on the text edge of its rows. */
+  margin: 0.375rem 0.75rem;
   padding: 3px;
   border-radius: calc(var(--k2b-radius-control) + 3px);
   background: var(--k2b-tray);
@@ -7754,7 +7853,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-auto-columns: minmax(0, 1fr);
   grid-auto-flow: column;
   gap: 0.375rem;
-  padding: 0.25rem 0.25rem 0.375rem;
+  padding: 0.375rem 0.75rem;
 }
 
 .k2b-ui .k2b-dropdown__tiles > .k2b-dropdown__item {
@@ -7836,13 +7935,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dropdown__pair {
   display: flex;
   align-items: center;
-  border-radius: 0.375rem;
+  border-radius: 0;
   transition: background-color 150ms ease-out;
 }
 
 .k2b-ui .k2b-dropdown__pair:hover,
 .k2b-ui .k2b-dropdown__pair:focus-within {
-  background: var(--k2b-hover);
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item {
@@ -7918,8 +8017,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dropdown__menu[data-variant="touch"] {
   min-width: min(18rem, 100vw - 2rem);
   max-height: min(32rem, 80dvh);
-  padding: 0.5rem;
-  gap: 0.25rem;
 }
 
 /* `Dropdown`'s `width` prop sets `--k2b-dropdown-width` to an exact CSS
@@ -7959,10 +8056,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.875rem;
 }
 
-.k2b-ui :is(.k2b-dropdown__menu[data-variant="touch"], .k2b-gesture-menu__sheet-menu) .k2b-dropdown__section {
-  gap: 0.25rem;
-}
-
 .k2b-ui :is(.k2b-dropdown__menu[data-variant="touch"], .k2b-gesture-menu__sheet-menu) .k2b-dropdown__label {
   padding: 0.75rem 1rem 0.375rem;
   font-size: 0.75rem;
@@ -7979,21 +8072,27 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: 0;
   overflow: auto;
 }
 
+/* The search field is the menu's head band; the menu draws the hairline below it. */
 .k2b-ui .k2b-dropdown__search {
   display: flex;
-  min-height: 2.25rem;
+  min-height: var(--k2b-h-control);
   flex: 0 0 auto;
   align-items: center;
   gap: 0.5rem;
-  padding: 0 0.625rem;
-  margin-bottom: 0.25rem;
-  border-radius: var(--k2b-radius-control);
+  padding: 0 0.75rem;
+  margin: 0;
+  border-radius: 0;
   color: var(--k2b-text-muted);
-  background: var(--k2b-surface-muted);
+  background: transparent;
+}
+
+/* The menu draws the line between its search band and the entries. */
+.k2b-ui :is(.k2b-dropdown__menu, .k2b-gesture-menu__sheet-menu)[data-search] > .k2b-dropdown__search ~ .k2b-dropdown__list {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-dropdown__search:focus-within {
@@ -8019,7 +8118,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-dropdown__item[data-active] {
   color: var(--k2b-text);
-  background: var(--k2b-hover);
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-dropdown__empty {
@@ -8031,6 +8130,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-gesture-menu__sheet-menu .k2b-dropdown__search {
   min-height: 2.75rem;
+  padding-inline: var(--k2b-panel-dialog-inset, 1rem);
 }
 
 /* Phones zoom into fields below 16px. */
@@ -13236,10 +13336,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline: none;
   resize: none;
   border: 1px solid color-mix(in srgb, var(--k2b-window-accent, var(--k2b-border-strong)) 28%, var(--k2b-border-strong));
-  border-radius: var(--k2b-radius-dialog);
+  border-radius: var(--k2b-radius-overlay);
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-sm);
 }
 
 /* The title bar is the one tinted band of the window, as tall as the bar a minimized window becomes. */
@@ -13262,7 +13362,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* A minimized window is its title bar: the whole bar restores it. */
 .k2b-ui .k2b-floating-window[data-state="minimized"] {
-  box-shadow: var(--k2b-shadow-toast);
+  box-shadow: var(--k2b-shadow-overlay-sm);
 }
 
 .k2b-ui .k2b-floating-window[data-state="minimized"] > header {
@@ -18332,10 +18432,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: auto;
   padding: 0;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-overlay);
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-sm);
   outline: none;
 }
 
@@ -18354,7 +18454,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-height: calc(100dvh - 3rem);
   padding-bottom: env(safe-area-inset-bottom);
   border-width: 1px 0 0;
-  border-radius: var(--k2b-radius-surface) var(--k2b-radius-surface) 0 0;
+  border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
+  box-shadow: var(--k2b-shadow-sheet);
 }
 
 .k2b-ui .k2b-anchored-popover[data-sheet]::backdrop {
@@ -19090,15 +19191,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-width: calc(100vw - 1rem);
   max-height: min(24rem, calc(100dvh - 1rem));
   flex-direction: column;
-  gap: 0.125rem;
+  gap: 0;
   overflow: auto;
-  padding: 0.25rem;
+  padding: 0;
   border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-overlay);
   margin: 0;
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-sm);
 }
 
 .k2b-ui.k2b-context-menu .k2b-dropdown__section {
@@ -19202,10 +19303,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   -webkit-touch-callout: default;
 }
 
+/* K16: in a phone sheet the rows reach the sheet's edges too, 44 px high, in
+ * the 13 px of every menu row (K11), on the sheet's text edge. */
 .k2b-ui .k2b-gesture-menu__sheet-menu {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0;
+  margin-inline: calc(-1 * var(--k2b-panel-dialog-inset, 1rem));
+}
+
+.k2b-ui .k2b-gesture-menu__sheet-menu[role] .k2b-dropdown__item {
+  min-height: 2.75rem;
+  gap: 0.625rem;
+  padding: 0.5rem var(--k2b-panel-dialog-inset, 1rem);
+  font-size: var(--k2b-font-size-row);
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-gesture-menu__sheet-menu[role] .k2b-dropdown__item > i {
+  font-size: 1rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -21325,7 +21441,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-width: 100%;
   max-height: min(92dvh, var(--k2b-dialog-available-height));
   border-bottom: 0;
-  border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
+  /* K16: a sheet has the app card's 14 px at the top and casts its shadow upwards. */
+  border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
+  box-shadow: var(--k2b-shadow-sheet);
   overflow: clip;
   animation: k2b-bottom-sheet-enter 160ms ease-out;
 }
@@ -21356,15 +21474,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface);
   transform: translate3d(0, var(--k2b-sheet-footer-y, 0px), 0);
 }
-/* A sheet only dims what lies behind it, without blur, so a drag stays
- * smooth; the dim follows the sheet below its lowest rest. */
+/* A sheet dims what lies behind it like a dialog, without blur (K16); the dim
+ * follows the sheet below its lowest rest. */
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame:not(.is-adaptive)::backdrop {
-  backdrop-filter: none;
   opacity: var(--k2b-sheet-dim, 1);
 }
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive::backdrop {
-    backdrop-filter: none;
     opacity: var(--k2b-sheet-dim, 1);
   }
 }
@@ -21382,27 +21498,42 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
   padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 }
+/* K13, K16: the grip sits 8 px below the sheet's edge in a 16 px band; its
+ * 44 px touch area reaches over the middle of the header below it. */
 .k2b-ui .k2b-bottom-sheet__handle {
+  position: relative;
+  z-index: 1;
   display: grid;
-  flex: 0 0 32px;
-  place-items: center;
+  flex: 0 0 1rem;
+  place-items: start center;
   width: 100%;
-  min-height: 44px;
-  padding: 0;
+  min-height: 1rem;
+  padding: 0.5rem 0 0;
   border: 0;
   background: transparent;
   cursor: grab;
   touch-action: none;
 }
+.k2b-ui .k2b-bottom-sheet__handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 calc(50% - 3rem) -1.75rem;
+}
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-bottom-sheet-frame .k2b-panel-dialog__header {
+    min-height: 3rem;
+  }
+}
 .k2b-ui .k2b-bottom-sheet__handle:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: calc(-2 * var(--k2b-focus-width));
 }
+/* K13: the grip that says a finger can pull the sheet, 32 x 5 px and round. */
 .k2b-ui .k2b-bottom-sheet__handle > span {
-  width: 2.5rem;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--k2b-border-strong);
+  width: 2rem;
+  height: 5px;
+  border-radius: var(--k2b-radius-round);
+  background: var(--k2b-neutral-400);
 }
 @keyframes k2b-bottom-sheet-enter {
   from { transform: translate(-50%, 24px); opacity: 0; }
@@ -21415,14 +21546,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
  * no bottom safe area, and keeps a width that fits a decision or a short form. */
 @media (min-width: 48rem) {
   .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive {
-    top: 50%;
+    top: calc(50% - var(--k2b-dialog-lift, 0px));
     bottom: auto;
     transform: translate(-50%, -50%);
     width: min(var(--k2b-dialog-available-width), 32rem);
     max-height: min(86dvh, var(--k2b-dialog-available-height));
-    border-bottom: 1px solid var(--k2b-border-strong);
-    border-radius: var(--k2b-radius-dialog);
-    box-shadow: var(--k2b-shadow-float);
+    border-bottom: 1px solid var(--k2b-border);
+    border-radius: var(--k2b-radius-overlay);
+    box-shadow: var(--k2b-shadow-overlay-lg);
     /* As a dialog it rises and fades like every dialog (feedback-parity.css), not as a sheet. */
     animation: none;
     opacity: 0;
@@ -21475,7 +21606,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     padding-bottom: 0;
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
-    padding-bottom: 1.25rem;
+    padding-bottom: 0.75rem;
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive .k2b-bottom-sheet__handle {
     display: none;

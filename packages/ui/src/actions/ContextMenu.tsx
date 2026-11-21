@@ -32,11 +32,8 @@ const focusableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
   menu
     ? Array.from(
         menu.querySelectorAll<HTMLElement>(
-          [
-            "[role='menuitem']:not([aria-disabled='true'])",
-            "[role='menuitemcheckbox']:not([aria-disabled='true'])",
-            "[role='menuitemradio']:not([aria-disabled='true'])",
-          ].join(", "),
+          // An open submenu inside the menu holds its own entries.
+          ":is([role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio']):not([aria-disabled='true'], .k2b-dropdown__submenu *)",
         ),
       )
     : [];

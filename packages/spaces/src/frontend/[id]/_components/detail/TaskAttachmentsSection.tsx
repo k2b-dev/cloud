@@ -82,7 +82,7 @@ export default function TaskAttachmentsSection(props: {
   );
 
   const transformImage = async (file: File): Promise<File> => {
-    const { img } = await import("@k2b/stdlib/browser");
+    const { img } = await import("./image-tools");
     const source = await img.create(file);
     const longest = Math.max(source.width, source.height);
     const resized =
