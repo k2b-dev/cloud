@@ -1115,6 +1115,106 @@ describe("capability API", () => {
     }
   });
 
+  test("until 0.86, an older app's presentation table becomes a view or is dropped, with one warning per capability", async () => {
+    const link = z.object({ href: z.string(), title: z.string() }).strict();
+    const row = z.object({ name: z.string(), stock: z.string(), links: z.array(link).optional() }).strict();
+    const listing = compileCapabilities(
+      "stock",
+      defineCapabilities({
+        protocolVersion: 2,
+        types: { item: { title: "Item", description: "One stock item." } },
+        queries: {
+          list: {
+            title: "List stock",
+            description: "List stock items.",
+            input: z.object({}).strict(),
+            data: z.object({ items: z.array(row) }).strict(),
+            openWorld: false,
+            run: async () => ok({ data: { items: [] } }),
+          },
+        },
+      }),
+    );
+    const stock: CapabilityRegistryEntry = { ...entry("stock"), manifest: listing.manifest };
+    const data = { items: [{ name: "Cable", stock: "42.0000" }] };
+    const table = {
+      kind: "table",
+      rowsPath: ["items"],
+      columns: [
+        { path: ["name"], label: "Item" },
+        { path: ["stock"], label: "Stock", format: "number" },
+      ],
+    };
+    const columns = [
+      { path: ["c0"], label: "Item" },
+      { path: ["c1"], label: "Stock", type: "number" },
+    ];
+    const call = async (
+      result: unknown,
+      getApp: CapabilityRouteDependencies["getApp"] = async () => ({ ...summary(stock), routes: ["/app/stock"] }),
+    ) => {
+      const routes = createCapabilityRoutes({
+        getCapability: async () => stock,
+        getApp,
+        authenticate,
+        fetch: async () => Response.json(result),
+      });
+      return routes.request("/capabilities/v1/queries/stock/list", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: {} }),
+      });
+    };
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      // The table Cloud shows for stored results, titled with the capability.
+      const mapped = await call({ data, summary: "1 item", presentation: table });
+      expect(mapped.status).toBe(200);
+      expect(await mapped.json()).toEqual({
+        data,
+        summary: "1 item",
+        view: { version: 1, blocks: [{ kind: "Table", title: "List stock", columns, rows: [{ c0: "Cable", c1: "42.0000" }] }] },
+      });
+      const linked = { items: [{ ...data.items[0], links: [{ href: "/app/stock/items/1", title: "Open" }] }] };
+      const withLinks = await call({ data: linked, presentation: { ...table, rowLinksPath: ["links"] } });
+      expect(withLinks.status).toBe(200);
+      expect(await withLinks.json()).toMatchObject({
+        view: { blocks: [{ rows: [{ c0: "Cable", c1: "42.0000", href: "/app/stock/items/1" }], rowHref: ["href"] }] },
+      });
+
+      // An existing view wins; a table without rows, an unknown kind, a foreign row link, or an app registration
+      // Core cannot read loses only the hint, never the result.
+      const view = { version: 1, blocks: [{ kind: "Text", text: "Stock" }] };
+      const foreign = { items: [{ ...data.items[0], links: [{ href: "/app/other/1", title: "Open" }] }] };
+      for (const [result, expected, getApp] of [
+        [{ data, view, presentation: table }, { data, view }, undefined],
+        [{ data, presentation: { ...table, rowsPath: ["missing"] } }, { data }, undefined],
+        [{ data, presentation: { kind: "chart" } }, { data }, undefined],
+        [{ data: foreign, presentation: { ...table, rowLinksPath: ["links"] } }, { data: foreign }, undefined],
+        [{ data, presentation: table }, { data }, async () => Promise.reject(new Error("registry down"))],
+      ] as const) {
+        const dropped = await call(result, getApp);
+        expect(dropped.status).toBe(200);
+        expect(await dropped.json()).toEqual(expected);
+      }
+      // Every other unknown field still fails the strict result check.
+      const unknown = await call({ data, presentation: table, layout: "grid" });
+      expect(unknown.status).toBe(502);
+      expect(await unknown.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
+
+      const warnings = warn.mock.calls.filter((args) => args[1] === "Capability result uses the deprecated presentation field");
+      expect(warnings).toEqual([
+        [
+          "[capabilities]",
+          "Capability result uses the deprecated presentation field",
+          { appId: "stock", kind: "queries", capabilityId: "list", outcome: "mapped", removedIn: "0.86" },
+        ],
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test("preserves structured throttling errors from the owning app", async () => {
     const routes = createCapabilityRoutes({
       getCapability: async () => entry(),

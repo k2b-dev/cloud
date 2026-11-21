@@ -111,13 +111,16 @@ import { withMandateIssueAuthority } from "../services/mandates";
 import * as settings from "../services/settings";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
+import { DEFAULT_LOCALE } from "../shared/locale";
 import { authenticateSignedAppRequest } from "./authenticate-app-request";
 import { dispatchCapabilityStream, inspectCodeStream, rebindCodeWriteStream, sealCapabilityStream } from "./capability-streams";
+import { acceptLegacyPresentation, LEGACY_PRESENTATION_REMOVED_IN } from "./legacy-presentation";
 
 // Approved reader-check budget, shared across targets for each calling application.
 export const APP_QUERY_REQUESTS_PER_MINUTE = 1_501;
 const appQueryLimit = ratelimit({ id: "app-queries", limit: APP_QUERY_REQUESTS_PER_MINUTE, windowSecs: 60 });
 const log = logger("capabilities");
+const legacyPresentationWarnings = new Set<string>();
 const DEFAULT_CATALOG_LIMIT = 10;
 const MAX_CATALOG_LIMIT = 25;
 const MAX_SCHEMA_VALIDATORS = 512;
@@ -1018,6 +1021,43 @@ const runCapabilityDispatch = async (
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.invalidCapabilityError({ appId: params.appId }), 502);
     return settle(invalid, "uncertain");
+  }
+
+  const legacyBody = upstreamBody.data;
+  if (!params.review && legacyBody !== null && typeof legacyBody === "object" && Object.hasOwn(legacyBody, "presentation")) {
+    let appPrefixes: readonly string[] | null = null;
+    try {
+      const app = await deadline.wait(() => (params.dependencies?.getApp ?? getApp)(params.appId));
+      if (app?.id === params.appId) appPrefixes = app.routes;
+    } catch {
+      /* Without the registration the table is dropped, never the result. */
+    }
+    const legacy = acceptLegacyPresentation(legacyBody, {
+      appId: params.appId,
+      appPrefixes,
+      title: () => {
+        const presented = resolveCapabilityManifestPresentation(
+          entry.manifest,
+          entry.presentation,
+          params.locale ?? preferredLocale(params.request.headers) ?? DEFAULT_LOCALE,
+        );
+        const operations = params.kind === "queries" ? presented.queries : presented.actions;
+        return operations.find((candidate) => candidate.localId === params.capabilityId)?.title ?? operation.title;
+      },
+    });
+    upstreamBody = { ok: true, data: legacy.body };
+    const warning = `${params.appId}\0${params.kind}\0${params.capabilityId}`;
+    // One warning per registered capability and process; the set is bounded by the registry, not by requests.
+    if (legacy.outcome && !legacyPresentationWarnings.has(warning)) {
+      legacyPresentationWarnings.add(warning);
+      log.warn("Capability result uses the deprecated presentation field", {
+        appId: params.appId,
+        kind: params.kind,
+        capabilityId: params.capabilityId,
+        outcome: legacy.outcome,
+        removedIn: LEGACY_PRESENTATION_REMOVED_IN,
+      });
+    }
   }
 
   const reviewContext = {

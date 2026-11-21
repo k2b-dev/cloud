@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-19
+updated: 2026-11-21
 ---
 
 # Deprecations and migrations
@@ -76,9 +76,20 @@ compatibility path for writers.
 **Operators:** open approvals and stored conversations stay valid. Cloud converts
 stored reviews with `preview` or `content` and stored table presentations into
 blocks when it reads them; their digests do not change, and converted drafts are
-not editable. Upgrade every application that returns reviews or table
-presentations together with Core: an older app that still sends `preview`,
-`content`, or `presentation` gets an invalid-response error after the upgrade.
+not editable. Upgrade every application that returns reviews together with Core:
+an older app that still sends `preview` or `content` gets an invalid-response
+error after the upgrade.
+
+Until Cloud 0.86, Core still accepts `presentation` from an app built on an
+older `@k2b/cloud`. When the result has no `view`, Core replaces the table with
+the same table view it shows for stored results, titled with the capability's
+title. When the result already has a `view`, or the table does not fit a result
+view, Core drops it and returns the result without it. Core logs one warning
+per app and capability in each Core process: `Capability result uses the
+deprecated presentation field`, with `appId`, `kind`, `capabilityId`,
+`outcome` (`mapped` or `dropped`), and `removedIn`. The warning never contains
+result data. Use it to find the apps to upgrade. From 0.86 on, such a result is
+an invalid response again.
 
 ## Code SDK declarations are simpler
 
