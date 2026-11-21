@@ -1,3 +1,4 @@
+import type { SQL } from "bun";
 import { coreSettings } from "../services";
 import {
   type AiModelRequest,
@@ -19,7 +20,7 @@ export { providerRequiresCredential, providerSupportsCredential };
 export const aiSettingsFailure = (code: AiSettingsError["code"], message: string, fields?: AiSettingsError["fields"]): never => {
   throw Object.assign(new Error(message), { aiError: { code, message, ...(fields ? { fields } : {}) } satisfies AiSettingsError });
 };
-export const readAiSettingsState = async (): Promise<AiSettingsState> => {
+export const readAiSettingsState = async (db?: SQL): Promise<AiSettingsState> => {
   const [
     enabled,
     globalInstructions,
@@ -30,14 +31,14 @@ export const readAiSettingsState = async (): Promise<AiSettingsState> => {
     profiles,
     assignments,
   ] = await Promise.all([
-    coreSettings.get<boolean>("ai.enabled"),
-    coreSettings.get<string>("ai.global_instructions"),
-    coreSettings.get<string>("ai.local_client_instructions"),
-    coreSettings.get<string>("ai.compaction_instructions"),
-    coreSettings.get<number>("ai.max_tool_result_chars"),
-    coreSettings.get<string>(AI_FIRECRAWL_API_KEY_SETTING_KEY),
-    readAiModelProfiles(),
-    aiModelCatalog.assignments(),
+    coreSettings.get<boolean>("ai.enabled", db),
+    coreSettings.get<string>("ai.global_instructions", db),
+    coreSettings.get<string>("ai.local_client_instructions", db),
+    coreSettings.get<string>("ai.compaction_instructions", db),
+    coreSettings.get<number>("ai.max_tool_result_chars", db),
+    coreSettings.get<string>(AI_FIRECRAWL_API_KEY_SETTING_KEY, db),
+    readAiModelProfiles(db),
+    aiModelCatalog.assignments(db),
   ]);
   return {
     ok: true,

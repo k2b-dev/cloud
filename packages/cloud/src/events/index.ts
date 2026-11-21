@@ -14,3 +14,4 @@ export {
 export { appEvents } from "./app-events";
 export type { LiveChannel, LiveViewer } from "./live";
 export { defineLive } from "./live";
+export { LIVE_LIMITS } from "./live-limits";

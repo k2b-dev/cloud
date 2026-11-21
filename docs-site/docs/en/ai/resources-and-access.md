@@ -31,9 +31,8 @@ ref or display metadata is returned. Missing readers, denied access, invalid
 answers, failures, and timeouts omit that ref. Stored marker titles, icons,
 and links are never returned. A reader must return its own matching ref with
 a current title. Skills are looked up by the sent short IDs through the
-current Skills visibility; disabled Skills are omitted. Studio apps use the
-authorized `code_read` path for ordinary user sessions; credentials whose
-restrictions that path cannot preserve omit Studio refs. If the sent history
+current Skills visibility; disabled Skills are omitted. Retired Studio references
+are omitted. If the sent history
 itself cannot be read, the request fails instead of answering with no
 references, so the slash menu asks again at its next opening.
 

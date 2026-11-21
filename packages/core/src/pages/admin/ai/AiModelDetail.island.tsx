@@ -194,6 +194,21 @@ export default function AiModelDetail(props: {
 
   const providerState = () => aiProviderState(props.provider);
   const audio = () => draft().kind === "transcription" || draft().kind === "live-transcription";
+  const limitsMissing = () => {
+    const value = draft();
+    if (value.kind !== "chat") return false;
+    const priced = value.priced && ((value.inputPerMillion ?? 0) > 0 || (value.outputPerMillion ?? 0) > 0);
+    const missing = (output: number | null | undefined) =>
+      !value.contextWindow || !(output ?? value.maxOutputTokens ?? base().outputTokenLimit);
+    return (
+      (priced && missing(null)) ||
+      base().variants.some(
+        (variant) =>
+          (variant.pricing ? variant.pricing.inputPerMillion > 0 || variant.pricing.outputPerMillion > 0 : priced) &&
+          missing(variant.maxOutputTokens),
+      )
+    );
+  };
   const unit = () => props.accountingUnit ?? "EUR";
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
   const dirty = () => JSON.stringify(draft()) !== JSON.stringify(toDraft(base()));
@@ -227,7 +242,11 @@ export default function AiModelDetail(props: {
         value.priced &&
         value.inputPerMillion !== null &&
         value.outputPerMillion !== null
-          ? { inputPerMillion: value.inputPerMillion, outputPerMillion: value.outputPerMillion }
+          ? {
+              ...base().pricing,
+              inputPerMillion: value.inputPerMillion,
+              outputPerMillion: value.outputPerMillion,
+            }
           : null,
       enabled: value.enabled,
     };
@@ -549,6 +568,24 @@ export default function AiModelDetail(props: {
                 />
               </div>
               <p class="text-xs text-(--k2b-text-muted)">{example()}</p>
+            </Show>
+            <Show
+              when={
+                draft().kind === "chat" &&
+                (!draft().priced ||
+                  draft().inputPerMillion === null ||
+                  draft().outputPerMillion === null ||
+                  !((draft().inputPerMillion ?? 0) > 0 || (draft().outputPerMillion ?? 0) > 0))
+              }
+            >
+              <NoticeCard tone="neutral" icon="ti ti-info-circle">
+                <p>{t().automationPriceRequired}</p>
+              </NoticeCard>
+            </Show>
+            <Show when={limitsMissing()}>
+              <NoticeCard tone="warning" icon="ti ti-alert-triangle">
+                <p>{t().modelLimitsRequired}</p>
+              </NoticeCard>
             </Show>
           </Show>
         </Section>

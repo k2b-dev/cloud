@@ -14,7 +14,11 @@ export class AiProviderError extends Error {
 }
 
 /** Keep only the adapter's typed control signals. Text and diagnostic payloads are untrusted. */
-const providerIssue = (issue: NessiIssue, tools: Parameters<Provider["stream"]>[0]["tools"]): NessiIssue => {
+const providerIssue = (
+  issue: NessiIssue,
+  tools: Parameters<Provider["stream"]>[0]["tools"],
+  shownCallIds: ReadonlySet<string>,
+): NessiIssue => {
   switch (issue.kind) {
     case "provider_error":
       return {
@@ -47,6 +51,8 @@ const providerIssue = (issue: NessiIssue, tools: Parameters<Provider["stream"]>[
       return {
         kind: issue.kind,
         reason: toolStreamReason(issue.reason),
+        // Only a call id this stream already showed, so the chat can take back that call's preview.
+        ...(issue.callId !== undefined && shownCallIds.has(issue.callId) ? { callId: issue.callId } : {}),
         // Use the application-declared name, never an arbitrary provider diagnostic.
         name: tools?.find((tool) => tool.name === issue.name)?.name,
         message: "AI provider returned an incomplete or invalid tool call.",
@@ -85,6 +91,7 @@ export const withProviderErrors = (provider: Provider, providerId?: string): Pro
     const failure = (fallback: unknown) =>
       transport?.status ? { status: transport.status } : transportFailed(transport) ? new TypeError() : fallback;
     let iterator: AsyncIterator<StreamEvent> | undefined;
+    const shownCallIds = new Set<string>();
     try {
       const activeIterator = provider.stream(observeTransport(request, (report) => (transport = report)))[Symbol.asyncIterator]();
       iterator = activeIterator;
@@ -108,7 +115,8 @@ export const withProviderErrors = (provider: Provider, providerId?: string): Pro
           failed = true;
           if (providerId && !request.signal?.aborted) await recordAiProviderStatus(providerId, classifyProviderFailure(failure({})));
         }
-        yield event.type === "issue" ? { type: "issue", issue: providerIssue(event.issue, request.tools) } : event;
+        if (event.type === "tool_args_delta") shownCallIds.add(event.callId);
+        yield event.type === "issue" ? { type: "issue", issue: providerIssue(event.issue, request.tools, shownCallIds) } : event;
       }
       if (providerId && !failed && !request.signal?.aborted)
         await recordAiProviderStatus(providerId, { status: "ok", message: "The provider connection works." });

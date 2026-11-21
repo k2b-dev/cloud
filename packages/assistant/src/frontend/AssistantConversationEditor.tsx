@@ -221,8 +221,6 @@ function EditConversationForm(props: EditConversationFormProps) {
   const archive = mutation.create<boolean, void>({
     mutation: async () => {
       if (props.archiveDisabled) return false;
-      // Archiving pauses the chat's running routines, so the question names them before anything changes.
-      // Without the list the question still says so; archiving itself does not depend on it.
       const confirmed = await confirmAssistantArchive(props.conversation, locale(), props.queuedMessageCount?.());
       if (!confirmed) return false;
 

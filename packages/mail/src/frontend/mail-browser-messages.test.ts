@@ -9,12 +9,10 @@ import { mailReaderMessages } from "./_components/mail-reader-messages";
 import { mailPresetDescriptionMessages, mailRemainingMessages } from "./_components/mail-remaining-messages";
 import { mailSettingsMessages } from "./_components/mail-settings-messages";
 import { mailSidebarMessages } from "./_components/mail-sidebar-messages";
-import { mailAutomationPageMessages } from "./mail-automation-page-messages";
 import { mailOverviewMessages } from "./mail-overview-messages";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
 
 const catalogs = [
-  mailAutomationPageMessages,
   mailOverviewMessages,
   mailSidebarMessages,
   mailMailboxDetailsMessages,
@@ -62,11 +60,5 @@ describe("Mail browser message catalogs", () => {
       expect(shared.length).toBeGreaterThan(0);
       for (const key of shared) expect([locale, key, String(remaining[key])]).toEqual([locale, key, String(view[key])]);
     }
-  });
-
-  test("keeps technical workflow terms exact", () => {
-    const messages = mailAutomationPageMessages.resolve(["de"]).t;
-    expect(messages.workflowsDescription).toContain("YAML");
-    expect(messages.createIncomingAutomationDescription).toContain("KI-Ausgaben");
   });
 });

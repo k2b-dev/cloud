@@ -131,21 +131,25 @@ export const invalidateDraftLeaseAfterSend = async (draftId: string): Promise<Re
   }
 };
 
+const leaseHolderMayEdit = async (holder: DraftLeaseHolder, mailboxId: string, draftId: string): Promise<boolean> => {
+  if (holder.kind !== "user") return true;
+  const user = await accounts.users.get({ id: holder.id });
+  return Boolean(
+    user &&
+      (
+        await requireDraftAccess(
+          { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } },
+          mailboxId,
+          draftId,
+          "write",
+        )
+      ).ok,
+  );
+};
+
 const currentValidEntry = async (mailboxId: string, draftId: string) => {
   const entry = await currentEntry(draftId);
-  if (!entry || entry.value.holder.kind !== "user") return entry;
-  const user = await accounts.users.get({ id: entry.value.holder.id });
-  const active =
-    user &&
-    (
-      await requireDraftAccess(
-        { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } },
-        mailboxId,
-        draftId,
-        "write",
-      )
-    ).ok;
-  if (active) return entry;
+  if (!entry || (await leaseHolderMayEdit(entry.value.holder, mailboxId, draftId))) return entry;
   await removeEntry(draftId, entry.value);
   return null;
 };
@@ -268,14 +272,20 @@ export const requireDraftLeaseAvailable = async (params: {
   if (mode?.edit_mode === "shared") return ok();
   const holder = holderFromContext(params.context);
   try {
-    return await withLeaseState(params.draftId, async () => {
-      const current = await currentValidEntry(params.mailboxId, params.draftId);
-      if (!current || sameHolder(current.value.holder, holder)) return ok();
-      return fail({
-        code: DRAFT_LEASE_ERROR_CODES.HELD,
-        message: `This draft is being edited by ${current.value.holder.displayName}`,
-        status: 409 as const,
-      });
+    // This gate observes the lease; it does not acquire or change it. Concurrent upload preparations must not
+    // contend on the state mutex. As before, the observation grants no lease and the mutation checks its revision.
+    // Cleanup of a revoked holder stays with currentValidEntry's callers under the state mutex.
+    const current = await currentEntry(params.draftId);
+    if (
+      !current ||
+      sameHolder(current.value.holder, holder) ||
+      !(await leaseHolderMayEdit(current.value.holder, params.mailboxId, params.draftId))
+    )
+      return ok();
+    return fail({
+      code: DRAFT_LEASE_ERROR_CODES.HELD,
+      message: `This draft is being edited by ${current.value.holder.displayName}`,
+      status: 409 as const,
     });
   } catch {
     return fail(err.internal("Failed to verify the draft editing lease"));

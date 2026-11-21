@@ -599,6 +599,10 @@ describe("choosing files in a browser", () => {
       expect((await boxIn(page, ".cloud-file-chooser__add"))!.right).toBe(12);
 
       await source(page, "Drive").click();
+      // A completed click does not mean the root listing has reached the fixture. Wait until it renders before
+      // holding folder requests; otherwise listGate can block the root that supplies Home, which we need to open it.
+      await page.locator('dialog .cloud-file-dialog__list:not([aria-busy="true"])').waitFor();
+      expect(await rowNames(page)).toEqual(["Home", "Team", "Broken"]);
       let release!: () => void;
       listGate = new Promise((resolve) => {
         release = resolve;

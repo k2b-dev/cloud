@@ -136,6 +136,8 @@ describe("GlobalSearchDialog query lifecycle", () => {
     const requests: Array<{ signal: AbortSignal; response: ReturnType<typeof deferred<Response>> }> = [];
     globalThis.fetch = ((_input: string | URL | Request, init?: RequestInit) => {
       if (String(_input).includes("/capabilities/v1/catalog")) return Promise.resolve(commandCatalogResponse());
+      // The preview of the active hit asks its reader; without a view the search facts stay.
+      if (String(_input).includes("/api/search/preview")) return Promise.resolve(Response.json({ view: null }));
       const response = deferred<Response>();
       requests.push({ signal: init?.signal as AbortSignal, response });
       return response.promise;

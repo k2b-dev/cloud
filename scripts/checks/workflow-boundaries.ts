@@ -44,8 +44,13 @@ export const checkSource = (file: string, source: string, workspaceRoot: string)
           ? specifier
           : resolve(workspaceRoot, specifier);
     if (retainedMailFiles.has(path)) {
-      // The current release still installs rule fencing tables before old effects drain.
-      if (path === "packages/mail/src/migrate.ts" && localMailTarget === resolve(mailRoot, "service/workflow-effect-order-schema"))
+      // Startup preserves the rule fencing schema and upgrades stored target policies before old effects drain.
+      if (
+        path === "packages/mail/src/migrate.ts" &&
+        ["service/workflow-effect-order-schema", "service/incoming-automation-targets-migrate"].some(
+          (migration) => localMailTarget === resolve(mailRoot, migration),
+        )
+      )
         return false;
       const local = relative(mailRoot, localMailTarget).replaceAll("\\", "/");
       if (

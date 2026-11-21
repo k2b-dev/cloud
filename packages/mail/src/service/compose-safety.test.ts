@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { composeSafetyApprovalSchema } from "../contracts";
 import type { ComposeSafetySource } from "./compose-safety";
-import { evaluateComposeSafety } from "./compose-safety";
+import { evaluateComposeSafety, validateComposeSafetyEdits } from "./compose-safety";
 
 const markComposeTemplateSegment = (source: string): string => `\u2063${source}\u2064`;
 
@@ -136,6 +136,63 @@ describe("compose safety", () => {
     expect(evaluateComposeSafety(source({ config: { internalDomains: [], largeRecipientThreshold: 20 } })).fingerprint).not.toBe(
       initial.fingerprint,
     );
+  });
+});
+
+describe("approval edits and compose safety", () => {
+  const approval = (review: ReturnType<typeof evaluateComposeSafety>) => ({
+    revision: review.revision,
+    fingerprint: review.fingerprint,
+    warningIds: review.warnings.map((warning) => warning.id),
+  });
+
+  test.each([{ subject: "" }, { body: "Please see the attachment." }, { body: "[https://example.org](https://other.example)" }])(
+    "refuses a newly introduced warning: %j",
+    (edits) => {
+      const base = evaluateComposeSafety(source());
+      const edited = evaluateComposeSafety(source(edits));
+      expect(validateComposeSafetyEdits(base, edited, approval(base))).toMatchObject({
+        ok: false,
+        error: { code: "CONFLICT", status: 409 },
+      });
+      expect(validateComposeSafetyEdits(base, edited, undefined).ok).toBeFalse();
+    },
+  );
+
+  test("accepts edits retaining or removing the approved warnings", () => {
+    const base = evaluateComposeSafety(source({ subject: "" }));
+    for (const edits of [
+      { subject: "", body: "Revised text" },
+      { subject: "Revised subject", body: "Revised text" },
+    ]) {
+      const edited = evaluateComposeSafety(source(edits));
+      expect(edited.fingerprint).not.toBe(base.fingerprint);
+      expect(validateComposeSafetyEdits(base, edited, approval(base))).toEqual({ ok: true, data: edited });
+    }
+  });
+
+  test("does not trade one approved warning for a new warning", () => {
+    const base = evaluateComposeSafety(source({ subject: "" }));
+    const edited = evaluateComposeSafety(source({ body: "See attachment." }));
+    expect(validateComposeSafetyEdits(base, edited, approval(base)).ok).toBeFalse();
+  });
+
+  test("binds approved warning IDs to the base revision and fingerprint", () => {
+    const base = evaluateComposeSafety(source({ subject: "" }));
+    for (const invalid of [
+      undefined,
+      { ...approval(base), revision: base.revision + 1 },
+      { ...approval(base), fingerprint: "0".repeat(64) },
+      { ...approval(base), warningIds: [] },
+    ]) {
+      expect(validateComposeSafetyEdits(base, base, invalid).ok).toBeFalse();
+    }
+  });
+
+  test("ordinary edits without warnings need no safety approval", () => {
+    const base = evaluateComposeSafety(source());
+    const edited = evaluateComposeSafety(source({ subject: "Revised", body: "Revised text" }));
+    expect(validateComposeSafetyEdits(base, edited, undefined)).toEqual({ ok: true, data: edited });
   });
 });
 

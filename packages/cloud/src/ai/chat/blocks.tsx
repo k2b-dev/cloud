@@ -1,17 +1,16 @@
-import { dates } from "@k2b/stdlib";
-import { mutation } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, Chat, isStructuredDataValue, MarkdownView, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
+import { ButtonLink, Chat, isStructuredDataValue, StructuredDataPreview, useLocale } from "@k2b/ui";
 import { createSignal, createUniqueId, For, type JSX, Match, Show, Switch, untrack } from "solid-js";
 import { CloudChartBlock } from "#chat-charts";
-import { capabilityApprovalReason, capabilityApprovalReasonLabel } from "../../_internal/capability-sentences";
-import { capabilityReviewView } from "../../capabilities/reviews";
-import type { CapabilityActionReview } from "../../contracts/capabilities";
+import { FeatCodeMark } from "../../code/FeatCodeMark";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
-import { hasCapabilityTable } from "./capability-result";
-import { CapabilityTablePreview } from "./capability-table";
+import { hasCapabilityView } from "./capability-result";
+import { CapabilityViewBlock, gustavOrigin, gustavViewBlock, isKeyFigureView } from "./capability-view";
+import { CodeRunStepBody, isCodeRunStep } from "./code-run-step";
+import { isCodeStepResult } from "./code-step-words";
+import { CodeStepBody, CodeStepResult, hasCodeStepView } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -23,10 +22,10 @@ import {
   formatToolDetailText,
   isCardToolName,
   isChartToolName,
+  isFeatCodeTool,
   isRecord,
   isSurveyToolName,
   isTextEditorToolName,
-  jsonPreview,
   memoryToolPresentation,
   viewedChatImage,
 } from "./message-utils";
@@ -36,30 +35,15 @@ import { ToolActionView } from "./tool-action";
 import { AiToolActivity } from "./tool-disclosure";
 import { isFailedTool } from "./tool-groups";
 import type { AiTurnActionState } from "./turn-layout";
+import { submittedCodeVersion } from "./turn-layout";
 import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEditorBlock, CloudTextEditorResultBlock } from "./visual-tools";
 import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock, WebsiteReceipts, websiteReceipts } from "./web-tools";
 
+/** feat/code tools draw the feat/code sign in the row's colour; an app's own icon still wins. */
+const featCodeLeading = (name: string, appIcon?: string | null): JSX.Element | undefined =>
+  !appIcon && isFeatCodeTool(name) ? <FeatCodeMark variant="glyph" tone="current" decorative /> : undefined;
+
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
-type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
-
-const reviewDetailText = (detail: ReviewDetail, locale: string): string => {
-  if (detail.format === "date")
-    return /^\d{4}-\d{2}-\d{2}$/.test(detail.value)
-      ? dates.formatDate(`${detail.value}T12:00:00.000Z`, { locale, timeZone: "UTC" })
-      : dates.formatDate(detail.value, { locale });
-  if (detail.format === "date-time") return dates.formatDateTime(detail.value, { locale });
-  return detail.value;
-};
-
-function ReviewDetailValue(props: { detail: ReviewDetail }) {
-  const locale = useLocale();
-  const value = () => reviewDetailText(props.detail, locale());
-  return (
-    <Show when={props.detail.format} fallback={value()}>
-      <time dateTime={props.detail.value}>{value()}</time>
-    </Show>
-  );
-}
 
 // All state branches below live in reactive JSX (Show/Switch), never in the
 // component body: blocks are born empty/running and mutate in place while the
@@ -162,6 +146,7 @@ function ToolResultDisclosure(props: {
   result: unknown;
   isError: boolean;
   icon?: string;
+  leading?: JSX.Element;
   accent?: string;
   labelOnError?: string;
   errorLabel?: string;
@@ -173,6 +158,7 @@ function ToolResultDisclosure(props: {
     <AiToolActivity
       blockId={props.blockId}
       icon={props.icon ?? (props.isError ? "ti ti-alert-circle" : aiToolIcon(props.toolName))}
+      leading={props.leading}
       label={props.isError ? (props.errorLabel ?? t().toolFailed({ title: props.labelOnError ?? props.name })) : props.name}
       description={props.isError ? props.errorDescription : undefined}
       tone={props.isError ? "danger" : "neutral"}
@@ -187,265 +173,6 @@ function ToolResultDisclosure(props: {
         <ToolDetail title={t().response} toolName={props.toolName} value={props.result} />
       </div>
     </AiToolActivity>
-  );
-}
-
-/** A decision the server accepted, for the call it answered. */
-export type AiApprovalDecision = { callId: string; approved: boolean };
-
-/**
- * The pending approval: a calm tinted card that says what will happen, with its fields and the decision. `onDecided`
- * hears an accepted decision with the call it answered, so the turn can show its receipt in the card's place right away.
- */
-export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onDecided?: (decision: AiApprovalDecision) => void }) {
-  const actions = useAiChatActions();
-  const locale = useLocale();
-  const timeZone = useReaderTimeZone();
-  const t = () => aiChatMessages(locale());
-  const review = () => (props.block.approval?.review ? capabilityReviewView(props.block.approval.review, { timeZone }) : undefined);
-  const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
-  const pending = () => props.block.status === "awaiting_approval";
-  const actionDisabled = () => actions.actionDisabled?.() ?? false;
-  const [submitted, setSubmitted] = createSignal(false);
-  const [detailsOpen, setDetailsOpen] = createSignal(false);
-  // The call this card answered: a later approval for the same block may already have arrived when the server accepts.
-  let decision: AiApprovalDecision | null = null;
-  const approval = mutation.create<void, { approved: boolean; remember?: "chat" | "always" }>({
-    mutation: async (input) => {
-      if (!actions.onApproval) throw new Error("Approval is unavailable.");
-      await actions.onApproval(request(), input);
-    },
-    onSuccess: () => {
-      setSubmitted(true);
-      if (decision) props.onDecided?.(decision);
-    },
-  });
-  const submit = (input: { approved: boolean; remember?: "chat" | "always" }) => {
-    if (actionDisabled() || approval.loading()) return;
-    decision = { callId: props.block.callId, approved: input.approved };
-    void approval.mutate(input);
-  };
-  // The heading says what will happen in the owning app's words; the app or the assistant name stays beside it.
-  const title = () =>
-    toolSubject(props.block, locale(), timeZone) ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale());
-  const ownerName = () => props.block.presentation?.appName ?? t().assistant;
-  const capability = () => props.block.presentation?.kind === "capability";
-  // The model's own reason, labelled as such, only where Cloud offered it; it adds to the app's sentence and never replaces it.
-  const reason = () => (props.block.presentation?.approvalReason ? capabilityApprovalReason(props.block.args) : null);
-  const description = () => {
-    const reviewMessage = review()?.message.trim();
-    if (reviewMessage) return reviewMessage;
-    // An app Action's approval text repeats its heading and reason for text-only readers; the card shows them itself.
-    if (capability()) return null;
-    const message = props.block.approval?.message?.trim();
-    if (!message) return null;
-    const duplicateTitle = props.block.presentation ? `${props.block.presentation.appName}: ${props.block.presentation.title}` : "";
-    const withoutDuplicateTitle =
-      duplicateTitle && (message === duplicateTitle || message.startsWith(`${duplicateTitle}\n`))
-        ? message.slice(duplicateTitle.length).trim()
-        : message;
-    if (/^Review the validated arguments below before running this action\.$/i.test(withoutDuplicateTitle)) return null;
-    return withoutDuplicateTitle || null;
-  };
-  const reviewLines = () =>
-    (props.block.approval?.review ? "" : (description() ?? ""))
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
-        return match ? { label: match[1], value: match[2] } : { value: line };
-      });
-  const inlineReviewDetails = () => (review()?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");
-  const blockReviewDetails = () => (review()?.details ?? []).filter((detail) => detail.display === "block");
-  const reviewLinks = () => review()?.links ?? [];
-  const reviewLinkTitle = (rel: "open" | "edit" | "status" | "preview" | "download") =>
-    ({
-      open: t().openIn({ app: ownerName() }),
-      edit: t().editIn({ app: ownerName() }),
-      status: t().statusIn({ app: ownerName() }),
-      preview: t().preview,
-      download: t().download,
-    })[rel];
-  const detailData = () => (isStructuredDataValue(props.block.args) ? props.block.args : undefined);
-  const detailsId = `approval-details-${props.block.callId}`;
-  return (
-    <section class="ai-approval" aria-label={t().approvalRequired({ title: title() })}>
-      <div class="ai-approval__head">
-        <i class={`ai-approval__icon ${aiToolIcon(props.block.name, props.block.presentation?.appIcon)}`} aria-hidden="true" />
-        <div class="min-w-0">
-          <h3 class="ai-approval__title">{title()}</h3>
-          <p class="ai-approval__sub">
-            {ownerName()} · {t().approvalRunsAfter}
-          </p>
-        </div>
-      </div>
-      <Show when={reviewLines().length > 0}>
-        <div class="ai-approval__text">
-          <For each={reviewLines()}>
-            {(line) => (
-              <p class="whitespace-pre-wrap">
-                <Show when={line.label}>{(label) => <strong class="ai-approval__label">{label()}: </strong>}</Show>
-                {line.value}
-              </p>
-            )}
-          </For>
-        </div>
-      </Show>
-      <Show when={props.block.approval?.review}>
-        <p class="ai-approval__text whitespace-pre-wrap">{description()}</p>
-        <Show when={inlineReviewDetails().length > 0}>
-          <dl class="ai-approval__fields">
-            <For each={inlineReviewDetails()}>
-              {(detail) => (
-                <>
-                  <dt>{detail.label}</dt>
-                  <dd class="whitespace-pre-wrap">
-                    <ReviewDetailValue detail={detail} />
-                  </dd>
-                </>
-              )}
-            </For>
-          </dl>
-        </Show>
-        <For each={blockReviewDetails()}>
-          {(detail) => (
-            <section class="ai-approval__text min-w-0" aria-label={detail.label}>
-              <h4 class="ai-approval__label mb-1">{detail.label}</h4>
-              <Show
-                when={detail.format === "markdown"}
-                fallback={
-                  <pre
-                    class="ai-approval__preview whitespace-pre-wrap break-words font-sans"
-                    role="region"
-                    tabIndex={0}
-                    aria-label={t().contentOf({ label: detail.label })}
-                  >
-                    <ReviewDetailValue detail={detail} />
-                  </pre>
-                }
-              >
-                <div class="ai-approval__preview" role="region" tabIndex={0} aria-label={detail.label}>
-                  <MarkdownView class="cloud-ai-approval-detail" markdown={detail.value} headingScale="compact" allowImages={false} />
-                </div>
-              </Show>
-            </section>
-          )}
-        </For>
-      </Show>
-      <Show when={reason()}>
-        {(text) => (
-          <p class="ai-approval__text whitespace-pre-wrap">
-            <strong class="ai-approval__label">{capabilityApprovalReasonLabel(locale())}: </strong>
-            {text()}
-          </p>
-        )}
-      </Show>
-      <Show when={detailsOpen()}>
-        <div id={detailsId} class="w-full min-w-0" role="region" aria-label={t().detailsFor({ title: title() })}>
-          <Show when={detailData()} fallback={<pre class="ai-approval__preview text-[11px]">{jsonPreview(props.block.args)}</pre>}>
-            {(data) => <StructuredDataPreview data={data()} class="w-full" />}
-          </Show>
-        </div>
-      </Show>
-      {/* The decision continues the card below its content: spacing, not a line or a band, sets it apart. */}
-      <footer class="ai-approval__foot" data-ai-approval-footer>
-        {/* Present from the start, so screen readers announce progress after the decision buttons leave. */}
-        <span class="k2b-sr-only" role="status" aria-live="polite">
-          {approval.loading() ? t().submitting : submitted() ? t().submitted : ""}
-        </span>
-        <Show when={reviewLinks().length > 0}>
-          <nav class="flex flex-wrap gap-1" aria-label={t().linksFor({ title: title() })}>
-            <For each={reviewLinks()}>
-              {(link) => (
-                <ButtonLink href={link.href} target="_blank" rel="noopener noreferrer" size="xs" variant="ghost">
-                  {link.title ?? reviewLinkTitle(link.rel)}
-                </ButtonLink>
-              )}
-            </For>
-          </nav>
-        </Show>
-        <Show when={approval.error()}>
-          <p class="text-xs text-red-700 dark:text-red-300" role="alert">
-            {t().approvalFailed}
-          </p>
-        </Show>
-        <div class="ai-approval__actions">
-          <Show
-            when={pending()}
-            fallback={
-              <span class="ai-approval__state">
-                {title()} · {props.block.status === "rejected" ? t().rejected : t().approved}
-              </span>
-            }
-          >
-            <Show when={actions.onApproval} fallback={<span class="ai-approval__state">{t().approvalUnavailable}</span>}>
-              <Show
-                when={!actionDisabled()}
-                fallback={
-                  <span class="ai-approval__state">
-                    <i class="ti ti-player-stop" aria-hidden="true" />
-                    {t().stoppingResponse}
-                  </span>
-                }
-              >
-                <Show
-                  when={!submitted()}
-                  fallback={
-                    <span class="ai-approval__state">
-                      <i class="ti ti-check" aria-hidden="true" />
-                      {t().submitted}
-                    </span>
-                  }
-                >
-                  {/* The buttons stay while the decision is sent, so the card does not change its height before it
-                      becomes its receipt. */}
-                  <Button size="sm" variant="ghost" disabled={approval.loading()} onClick={() => submit({ approved: false })}>
-                    {t().reject}
-                  </Button>
-                  <SplitButton
-                    size="sm"
-                    variant="ai"
-                    loading={approval.loading()}
-                    onClick={() => submit({ approved: true })}
-                    menuLabel={t().moreOptions({ title: title() })}
-                    menuPosition="bottom-right"
-                    items={[
-                      {
-                        label: detailsOpen() ? t().hideDetails : t().details,
-                        icon: detailsOpen() ? "ti ti-eye-off" : "ti ti-eye",
-                        action: () => setDetailsOpen((open) => !open),
-                      },
-                      // The narrower chat reach comes first: it ends with this chat.
-                      ...(props.block.approval?.allowChat
-                        ? [
-                            {
-                              label: props.block.approval.website ? t().allowWebsiteForChat : t().chatApprove,
-                              icon: props.block.approval.website ? "ti ti-world-check" : "ti ti-message-check",
-                              action: () => submit({ approved: true, remember: "chat" }),
-                            },
-                          ]
-                        : []),
-                      ...(props.block.approval?.allowAlways
-                        ? [
-                            {
-                              label: t().alwaysApprove,
-                              icon: "ti ti-shield-check",
-                              action: () => submit({ approved: true, remember: "always" }),
-                            },
-                          ]
-                        : []),
-                    ]}
-                  >
-                    {title()}
-                  </SplitButton>
-                </Show>
-              </Show>
-            </Show>
-          </Show>
-        </div>
-      </footer>
-    </section>
   );
 }
 
@@ -475,6 +202,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
         fallback={
           <Chat.Activity
             icon={aiToolIcon(props.block.name, presentation().appIcon)}
+            leading={featCodeLeading(props.block.name, presentation().appIcon)}
             label={label()}
             tone="ai"
             accent={presentation().appAccent}
@@ -487,6 +215,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
           fallback={
             <Chat.Activity
               icon={aiToolIcon(props.block.name, presentation().appIcon)}
+              leading={featCodeLeading(props.block.name, presentation().appIcon)}
               label={t().toolFailed({ title: label() })}
               description={capabilityErrorDescription(props.block.result) || t().actionNotCompleted}
               tone="danger"
@@ -502,6 +231,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
                 name={label()}
                 labelOnError={label()}
                 icon={aiToolIcon(props.block.name, presentation().appIcon)}
+                leading={featCodeLeading(props.block.name, presentation().appIcon)}
                 accent={presentation().appAccent}
                 toolName={props.block.name}
                 args={props.block.args}
@@ -512,6 +242,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
           >
             <Chat.Activity
               icon={aiToolIcon(props.block.name, presentation().appIcon)}
+              leading={featCodeLeading(props.block.name, presentation().appIcon)}
               label={summary()}
               accent={presentation().appAccent}
               trailing={
@@ -557,14 +288,6 @@ export function SurveyToolView(props: { turnId: string; block: ToolBlock; active
     props.block.status === "completed" && isRecord(props.block.result) && props.block.result.submitted === true ? props.block.result : null;
   return (
     <Switch fallback={<CloudSurveyBlock args={props.block.args} disabled />}>
-      <Match when={props.block.status === "awaiting_client"}>
-        <CloudSurveyBlock
-          args={props.block.args}
-          disabled={!submit || actions.actionDisabled?.()}
-          disabledLabel={actions.actionDisabled?.() ? aiChatMessages(locale()).stoppingResponse : undefined}
-          onSubmit={submit ? (result) => submit(request(), result) : undefined}
-        />
-      </Match>
       <Match when={submittedResult()}>
         {(result) => (
           // biome-ignore lint/a11y/useValidAriaRole: Chat.Message uses a conversation role, not an ARIA role.
@@ -572,6 +295,19 @@ export function SurveyToolView(props: { turnId: string; block: ToolBlock; active
             <CloudSurveyResultBlock args={props.block.args} result={result()} />
           </Chat.Message>
         )}
+      </Match>
+      {/* The turn ended without an answer: the question can never be answered here again, so its choices are gone and
+          one sentence says so. Why the turn ended stands in its notice below. */}
+      <Match when={!props.active}>
+        <CloudSurveyBlock args={props.block.args} unanswered />
+      </Match>
+      <Match when={props.block.status === "awaiting_client"}>
+        <CloudSurveyBlock
+          args={props.block.args}
+          disabled={!submit || actions.actionDisabled?.()}
+          disabledLabel={actions.actionDisabled?.() ? aiChatMessages(locale()).stoppingResponse : undefined}
+          onSubmit={submit ? (result) => submit(request(), result) : undefined}
+        />
       </Match>
     </Switch>
   );
@@ -680,7 +416,8 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
             toolName={props.block.name}
             args={props.block.args}
             result={props.block.result}
-            isError={Boolean(props.block.isError)}
+            isError={isFailedTool(props.block)}
+            leading={isFailedTool(props.block) ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
             errorLabel={fetchError()?.label}
             errorDescription={fetchError()?.description}
           />
@@ -688,6 +425,11 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
       >
         {/* A question, and every outcome of an app Action, is one card v4 element. */}
         <Match when={actionState()}>{(state) => <ToolActionView block={props.block} turnId={props.turnId} state={state()} />}</Match>
+        <Match when={isCodeRunStep(props.block.name)}>
+          <Chat.Activity label={displayToolName(props.block.name, locale())} icon={aiToolIcon(props.block.name)}>
+            <CodeRunStepBody block={props.block} />
+          </Chat.Activity>
+        </Match>
         <Match when={props.block.presentation?.kind === "capability"}>
           <CapabilityToolView block={props.block} />
         </Match>
@@ -708,6 +450,20 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         <Match when={props.block.name === "fetch_file" && !props.block.isError}>
           <FetchFileToolBlock block={props.block} />
         </Match>
+        {/* A lasting Code step says in words what it did; its input and output stay with the model and `cld`. */}
+        <Match when={hasCodeStepView(props.block.name) && status() !== "running" && status() !== "awaiting_client"}>
+          <Chat.Activity
+            label={displayToolName(props.block.name, locale())}
+            icon={aiToolIcon(props.block.name)}
+            leading={isFailedTool(props.block) ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
+            tone={isFailedTool(props.block) ? "danger" : undefined}
+          >
+            <CodeStepBody block={props.block} />
+          </Chat.Activity>
+          <Show when={isCodeStepResult(props.block)}>
+            <CodeStepResult block={props.block} />
+          </Show>
+        </Match>
         <Match when={props.block.name === "memory"}>
           <MemoryToolView block={props.block} />
         </Match>
@@ -716,8 +472,30 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         >
           <SpecializedBuiltinToolBlock block={props.block} />
         </Match>
+        {/* Gustav's key figure and chart stand under Cloud's head as the same blocks an app's result uses, from the first
+            frame; older stored ones without a view keep their own drawing. */}
+        <Match when={isCardToolName(props.block.name) && gustavViewBlock(props.block)}>
+          {(shown) => (
+            <CapabilityViewBlock
+              block={shown()}
+              turnId={props.turnId}
+              live={props.active ?? false}
+              {...gustavOrigin(props.block, locale(), aiChatMessages(locale()).keyFigures)}
+            />
+          )}
+        </Match>
         <Match when={isCardToolName(props.block.name) && !props.block.isError}>
           <CloudCardBlock args={props.block.args} />
+        </Match>
+        <Match when={isChartToolName(props.block.name) && gustavViewBlock(props.block)}>
+          {(shown) => (
+            <CapabilityViewBlock
+              block={shown()}
+              turnId={props.turnId}
+              live={props.active ?? false}
+              {...gustavOrigin(props.block, locale(), isKeyFigureView(shown().view) ? aiChatMessages(locale()).keyFigures : undefined)}
+            />
+          )}
         </Match>
         <Match when={isChartToolName(props.block.name) && !props.block.isError}>
           <CloudChartBlock args={props.block.args} completed={status() === "completed"} />
@@ -729,17 +507,19 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
           <TextEditorToolView turnId={props.turnId} block={props.block} active={props.active} />
         </Match>
         <Match when={status() === "running" || status() === "awaiting_client"}>
-          <Chat.Activity label={displayToolName(props.block.name, locale())} icon={aiToolIcon(props.block.name)} busy />
+          <Chat.Activity
+            label={displayToolName(props.block.name, locale())}
+            icon={aiToolIcon(props.block.name)}
+            leading={featCodeLeading(props.block.name)}
+            busy
+          />
         </Match>
       </Switch>
       <Show when={websiteReceipts(props.block).length > 0}>
         <WebsiteReceipts block={props.block} />
       </Show>
-      <Show when={hasCapabilityTable(props.block)}>
-        <CapabilityTablePreview
-          result={props.block.result}
-          label={props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
-        />
+      <Show when={hasCapabilityView(props.block) && !isChartToolName(props.block.name) && !isCardToolName(props.block.name)}>
+        <CapabilityViewBlock block={props.block} turnId={props.turnId} live={props.active ?? false} />
       </Show>
     </>
   );
@@ -837,18 +617,24 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           : null;
     return outcome ?? toolSubject(props.block, locale(), timeZone);
   };
+  // A lasting Code step names no file: the person does not read the source.
   const detail = () =>
-    sentence() ? undefined : [args().path, args().name, args().query, args().title].find((value) => typeof value === "string");
+    sentence() || hasCodeStepView(props.block.name) || isCodeRunStep(props.block.name)
+      ? undefined
+      : [args().path, args().name, args().query, args().title].find((value) => typeof value === "string");
   const waiting = () => props.block.status === "awaiting_client" || props.block.status === "awaiting_approval";
   const state = () =>
     waiting() ? t().stepWaiting : props.block.status === "rejected" ? t().stepRejected : isFailedTool(props.block) ? t().stepFailed : "";
   const finished = () => props.block.status === "completed" && !props.block.isError;
   const check = () => (finished() ? codeCheckOutcome(props.block.name, props.block.result) : null);
+  const submitted = () => {
+    const version = submittedCodeVersion(props.block);
+    return version ? t().codeSubmittedVersion({ number: version.number }) : undefined;
+  };
   const outcome = () => {
     const value = check();
     if (!value) return "";
-    const result = value.passed ? t().checkPassed : value.errors > 0 ? t().checkFindings({ count: value.errors }) : t().checkNotPassed;
-    return value.warnings > 0 ? `${result} · ${t().checkWarnings({ count: value.warnings })}` : result;
+    return value.passed ? t().checkPassed : value.errors > 0 ? t().checkFindings({ count: value.errors }) : t().checkNotPassed;
   };
   const actions = useAiChatActions();
   /** Only a host that resolves chat file URLs shows the image; without one there is no preview, not an empty box. */
@@ -857,8 +643,11 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     const src = viewed ? actions.fileUrl?.(viewed.path) : null;
     return viewed && src ? { ...viewed, src } : null;
   };
+  // Every failed step shows the error sign in danger tone in the same icon slot; the row stays folded and quiet.
+  const failed = () => !waiting() && props.block.status !== "rejected" && isFailedTool(props.block);
   const icon = () => {
     if (waiting()) return "ti ti-clock";
+    if (failed()) return "ti ti-alert-circle";
     const value = check();
     if (value) return value.passed ? "ti ti-circle-check" : "ti ti-alert-triangle";
     return aiToolIcon(props.block.name, props.block.presentation?.appIcon);
@@ -867,7 +656,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     <>
       <AiToolActivity
         blockId={props.block.id}
-        label={sentence() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
+        label={sentence() ?? props.block.presentation?.title ?? submitted() ?? displayToolName(props.block.name, locale())}
         description={[
           props.block.status === "running" ? (props.block.progress ?? "") : "",
           typeof detail() === "string" ? String(detail()) : "",
@@ -877,10 +666,12 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           .filter(Boolean)
           .join(" · ")}
         icon={icon()}
+        leading={waiting() || check() || failed() ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
+        tone={failed() ? "danger" : "neutral"}
         busy={props.busy && props.block.status === "running"}
         bodyInset={false}
-        renderBody={() => (
-          <div class="flex min-w-0 flex-col gap-2">
+        renderBody={() => {
+          const inputOutput = () => (
             <div
               class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
               tabIndex={0}
@@ -890,12 +681,25 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
               <ToolDetail title={t().input} toolName={props.block.name} value={props.block.args} />
               <ToolDetail title={t().output} toolName={props.block.name} value={props.block.result} />
             </div>
-            {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
-            <Show when={image()}>
-              {(viewed) => <StepImage path={viewed().path} src={viewed().src} description={viewed().description} />}
-            </Show>
-          </div>
-        )}
+          );
+          return (
+            <div class="flex min-w-0 flex-col gap-2">
+              {/* Lasting Code steps say what they did in words; their input and output stay with the model and `cld`. */}
+              <Switch fallback={inputOutput()}>
+                <Match when={isCodeRunStep(props.block.name)}>
+                  <CodeRunStepBody block={props.block} />
+                </Match>
+                <Match when={hasCodeStepView(props.block.name)}>
+                  <CodeStepBody block={props.block} />
+                </Match>
+              </Switch>
+              {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
+              <Show when={image()}>
+                {(viewed) => <StepImage path={viewed().path} src={viewed().src} description={viewed().description} />}
+              </Show>
+            </div>
+          );
+        }}
       />
       {/* Each request a website approval let through is a step of its own, with its full URL. */}
       <Show when={websiteReceipts(props.block).length > 0}>

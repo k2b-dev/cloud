@@ -116,8 +116,6 @@ window.mountReader = (locale) => {
             onManageTags={noop}
             onMergeConversation={noop}
             onReassignMessage={noop}
-            automationTrace={[]}
-            onUndoAutomation={noop}
             onAssignConversation={noop}
             onAssignConversationToMe={noop}
             assignment={null}

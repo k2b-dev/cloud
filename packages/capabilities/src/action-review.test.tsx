@@ -99,19 +99,35 @@ describe("capability action review", () => {
       sentence: { action: "Send {subject}", running: "Sending {subject}", done: "Queued {subject}", confirm: "Send", decline: "Keep" },
       slots: { subject: { kind: "object", title: "Meeting" } },
       ask: "sends",
-      preview: {
-        kind: "message",
-        from: { name: "Ops", address: "ops@example.com" },
-        to: [{ name: "Lea", address: "lea@example.com" }],
-        cc: [{ address: "cc@example.com" }],
-        bcc: [{ address: "bcc@example.com" }],
-        subject: "Meeting",
-        body: "Hello",
-        format: "plain",
-        attachments: [{ name: "meeting.pdf" }],
+      consequences: [{ text: "The recipient can read the attachment." }],
+      links: [{ rel: "edit", href: "/app/mail/draft" }],
+      view: {
+        version: 1,
+        blocks: [
+          {
+            kind: "Draft",
+            context: [
+              { label: "From", value: "Ops <ops@example.com>" },
+              { label: "To", value: "Lea <lea@example.com>" },
+              { label: "Cc", value: "cc@example.com" },
+              { label: "Bcc", value: "bcc@example.com" },
+              { label: "Attachments", value: "meeting.pdf" },
+            ],
+            fields: [
+              { name: "subject", label: "Subject", type: "text", value: "Meeting" },
+              { name: "body", label: "Body", type: "textarea", value: "Hello" },
+            ],
+          },
+        ],
       },
     };
     const html = renderToString(() => createComponent(ActionReviewContent, { review }));
+    expect(html).toContain('class="cloud-blocks__draft"');
+    expect(html.toLowerCase()).toContain('readonly="true"');
+    expect(html).toContain("The recipient can read the attachment.");
+    expect(html).toContain('href="/app/mail/draft"');
+    expect(html).toContain(">Edit</a>");
+    expect(html).not.toContain("Edit in ");
     for (const value of ["Send", "Meeting", "ops@example.com", "lea@example.com", "cc@example.com", "bcc@example.com", "meeting.pdf"])
       expect(html).toContain(value);
   });

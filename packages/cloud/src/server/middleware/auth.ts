@@ -38,6 +38,11 @@ export type InvocationProvenance = {
   mandateRevision?: number;
   workloadType?: string;
   workloadId?: string;
+  workloadRun?: string;
+  /** Verified attempt fence for Core-owned model loops; never caller input. */
+  workloadGeneration?: number;
+  /** Immutable occurrence coordinates supplied by the admitted Code run; null for other triggers. */
+  workloadTrigger?: { type: string; subject: { type: string; id: string }; place?: { type: string; id: string } } | null;
   /** Read-only visibility check for a currently claimed resource event. */
   workloadEvent?: string;
 };

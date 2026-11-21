@@ -15,7 +15,7 @@ const load = async () => {
     const { ChatDetailsDialog } = await import("./ChatDetailsDialog");
     const { LeaveChatDialog } = await import("./LeaveChatDialog");
     const { default: MemberPicker } = await import("./MemberPicker");
-    const { default: ChatInfoPanel } = await import("./ChatInfoPanel");
+    const { default: ChatInfoPanel, ChatMemberRow } = await import("./ChatInfoPanel");
     const { ChatRequestError } = await import("./chat-store");
     return {
       ChatRequestError,
@@ -27,6 +27,7 @@ const load = async () => {
       LeaveChatDialog,
       MemberPicker,
       ChatInfoPanel,
+      ChatMemberRow,
     };
   } finally {
     dom.cleanup();
@@ -1140,16 +1141,77 @@ describe("chat dialogs and info", () => {
       expect(onChange.mock.calls).toEqual([[[{ principal: nora.principal, displayName: "Nora" }]]]);
       expect(fetched).toEqual([]);
     });
-    test(`full-account picker renders the platform user/group/service-account search in ${locale}`, async () => {
+    test(`full-account picker accepts Code and ordinary service accounts in ${locale}`, async () => {
       const people = mock<ChatDialogStore["people"]>(unexpected);
-      await mount(locale, () =>
-        createComponent(modules!.MemberPicker, { guest: false, chosen: [], excluded: [], people, onChange: () => {} }),
+      const agentId = "55555555-5555-4555-8555-555555555555";
+      const fetched = Promise.withResolvers<void>();
+      globalThis.fetch = Object.assign(
+        async () => {
+          fetched.resolve();
+          return Response.json({
+            items: [
+              { id: "66666666-6666-4666-8666-666666666666", name: "Code account", kind: "code" },
+              { id: agentId, name: "Agent account", kind: "agent" },
+            ].map((account) => ({
+              kind: "service_account",
+              serviceAccount: { ...account, status: "active", appId: null, resourceType: null, resourceId: null },
+            })),
+          });
+        },
+        { preconnect: originalFetch.preconnect },
       );
-      expect(input("input").placeholder).toBe(
-        locale === "en" ? "Add user, group, agent, or service account…" : "Benutzer, Gruppe, Agenten oder Dienstkonto hinzufügen…",
-      );
+      const onChange = mock<Parameters<NonNullable<typeof modules>["MemberPicker"]>[0]["onChange"]>();
+      await mount(locale, () => createComponent(modules!.MemberPicker, { guest: false, chosen: [], excluded: [], people, onChange }));
+      expect(input("input").placeholder).toBe(locale === "en" ? "Add user, group, or agent…" : "Benutzer, Gruppe oder Agenten hinzufügen…");
+      type(input("input"), "account");
+      await fetched.promise;
+      await settle();
+      expect([...dom.document.querySelectorAll('[role="option"]')].map((option) => option.textContent?.trim())).toEqual([
+        expect.stringContaining("Code account"),
+        expect.stringContaining("Agent account"),
+      ]);
+      expect(dom.document.body.textContent).toContain("Code account");
+      const option = dom.document.querySelector<HTMLButtonElement>('[role="option"]');
+      if (!option) throw new Error("Missing ordinary service-account option");
+      option.click();
+      expect(onChange.mock.calls).toEqual([
+        [
+          [
+            {
+              principal: { type: "service_account", serviceAccountId: "66666666-6666-4666-8666-666666666666" },
+              displayName: "Code account",
+              serviceAccountKind: "code",
+            },
+          ],
+        ],
+      ]);
       expect(people).not.toHaveBeenCalled();
     });
+    test(`a Code member offers only View/Edit and retains the ordinary update callback in ${locale}`, async () => {
+      const onPermission = mock<(permission: "read" | "write" | "admin") => void>();
+      await mount(locale, () =>
+        createComponent(modules!.ChatMemberRow, {
+          member: { ...nora, principal: { type: "service_account", serviceAccountId: personId }, serviceAccountKind: "code" },
+          own: false,
+          manager: true,
+          locked: false,
+          disabled: false,
+          onPermission,
+          onRemove: () => {},
+        }),
+      );
+      expect(dom.root.textContent).toContain(t.codeAuthority);
+      button(t.permissionFor({ name: nora.displayName })).click();
+      await settle();
+      const options = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
+      expect(options).toHaveLength(2);
+      expect(options.some((option) => option.textContent?.includes(t.permissionManage))).toBe(false);
+      const read = options.find((option) => option.textContent?.includes(t.permissionRead));
+      if (!read) throw new Error("Missing View option");
+      read.click();
+      expect(onPermission.mock.calls).toEqual([["read"]]);
+    });
+
     test(`info search debounces q, and Show more sends its cursor and appends in ${locale}`, async () => {
       const second = { ...nora, accessId: "44444444-4444-4444-8444-444444444444", displayName: "Noah" };
       const cursor = JSON.stringify({ name: "nora", id: nora.accessId });

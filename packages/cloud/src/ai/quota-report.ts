@@ -1,6 +1,6 @@
 import { sql } from "../runtime/clients";
 
-import { resolveDisplayNames } from "../server/services/access";
+import { resolveDisplayNames } from "../server/services/access-display";
 import { recursiveGroupIdsSubquery } from "../services/accounts/group-sql";
 import { toPgTextArray } from "../services/postgres";
 import { hasBillableAiPricing } from "../shared/ai-costs";

@@ -436,6 +436,9 @@ export const create = async (params: {
     spaceId: row.id,
     principal: { type: "user", userId: creatorId },
     permission: "admin",
+  }).catch(async (error: unknown) => {
+    await sql`DELETE FROM spaces.spaces WHERE id = ${row.id}::uuid`;
+    throw error;
   });
   if (!access.ok) {
     await sql`

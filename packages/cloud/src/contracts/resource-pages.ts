@@ -76,6 +76,24 @@ export const resourcePageIssue = (path: string, prefixes?: readonly string[], ap
   }
 };
 
+/**
+ * The page of one resource when its type's pattern needs nothing but the ID, such as `/app/spaces/:id`. A pattern that
+ * also captures something else (`/app/spaces/:space?item=:id`) cannot be filled from a reference alone, so it is null.
+ */
+export const cloudResourcePageHref = (path: string, id: string): string | null => {
+  try {
+    const pattern = parsePattern(path);
+    if ([...pattern.segments, ...pattern.query.map(([, value]) => value)].some((part) => "capture" in part && part.capture !== "id"))
+      return null;
+    const fill = (part: Part) => ("literal" in part ? part.literal : id);
+    const pathname = `/${pattern.segments.map((part) => encodeURIComponent(fill(part))).join("/")}`;
+    const search = new URLSearchParams(pattern.query.map(([key, part]) => [key, fill(part)])).toString();
+    return search ? `${pathname}?${search}` : pathname;
+  } catch {
+    return null;
+  }
+};
+
 export type CloudResourcePage = { type: string; path: string; prefixes: readonly string[] };
 
 /** Required query keys outrank literal path segments. Equal best scores for different refs are ambiguous. */

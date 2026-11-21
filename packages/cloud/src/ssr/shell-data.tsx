@@ -22,7 +22,7 @@ export type ShellData = {
   /** Signed-in pages: the start page that `/` opens, for the phone bar's Home. */
   home?: string;
   legalLinks: AppLaunchpadLegalLink[];
-  /** Signed-in pages: the person, for the profile menu and the phone menu's profile actions. */
+  /** Signed-in pages, including focus mode: the person, for profile actions and shared dialogs' "You" mark. */
   profile?: {
     userId?: string;
     name: string;

@@ -1,0 +1,1190 @@
+import { afterAll, beforeAll, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import * as cloudRuntime from "@k2b/cloud";
+import { sql } from "@k2b/cloud";
+import * as catalog from "@k2b/cloud/capabilities/server";
+import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
+import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { aiCapabilities } from "../capabilities";
+import { migrate as migrateAppEvents } from "../migrate/core/app-events";
+import { migrate as migrateAudit } from "../migrate/core/audit";
+import { migrate as migrateAuth } from "../migrate/core/auth";
+import { migrate as migrateCode } from "../migrate/core/code";
+import { migrate as migrateActivation } from "../migrate/core/code-activation";
+import { migrate as migratePolicy } from "../migrate/core/code-policy";
+import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
+import { migrate as migrateEvents } from "../migrate/core/events";
+import * as access from "./access";
+import { readCodeAdminVersionSource } from "./admin";
+import { clearCodeAttentionCache, readCodeAttention } from "./attention";
+import { codeAuthoringServices } from "./authoring";
+import { type Code, codeQueryContracts } from "./contracts";
+import { codeOwnerCatalogFixture } from "./owner-registration.fixture";
+import { loadCodeActivityReadModel, readCodeActivityData } from "./read-model/activity";
+import { codeReadModelFixtureManifest } from "./read-model/fixtures";
+import { loadCodeRunReadModel } from "./read-model/run";
+import { CODE_SETTINGS, codeSettings } from "./settings";
+import { loadCodeSourceTab } from "./source-tab";
+import {
+  addCodeShare,
+  appendCodeCall,
+  codeBundleHash,
+  codeSourceHash,
+  createCode,
+  createCodeVersion,
+  expireCodeRuns,
+  finishCodeCall,
+  insertCodeRun,
+  listCodeRuns,
+  listCodes,
+  readCode,
+  readCodeRun,
+  readCodeVersion,
+  removeCodeShare,
+} from "./store";
+import { diffCodeVersion, readCodeVersionDiff } from "./versions";
+
+const ids = {
+  owner: "11111111-1111-4111-8111-111111111111",
+  editor: "22222222-2222-4222-8222-222222222222",
+  reader: "33333333-3333-4333-8333-333333333333",
+  stranger: "44444444-4444-4444-8444-444444444444",
+  admin: "55555555-5555-4555-8555-555555555555",
+  creator: "66666666-6666-4666-8666-666666666666",
+};
+const actualReadCodeOwner = access.readCodeOwner;
+const fixed = new Date("2026-10-31T12:00:00.000Z");
+const person = (id: string, admin = false): User => ({
+  id,
+  uid: id,
+  roles: admin ? ["admin"] : ["user"],
+  provider: "local",
+  profile: "user",
+  givenname: "Code",
+  sn: "Test",
+  displayName: "Code Test",
+  mail: null,
+  avatarHash: null,
+  ipa: null,
+  accountExpires: null,
+  lastLoginLocal: null,
+  memberofGroup: [],
+  memberofGroupIds: [],
+  manages: [],
+  managesGroupIds: [],
+});
+const authority = (id: string, admin = false): RequestAuthority => ({
+  actor: { kind: "user", user: person(id, admin) },
+  accessSubject: { type: "user", userId: id },
+  credentialKind: "session",
+  scopes: [],
+});
+const context = (id: string, admin = false): CapabilityExecutionContext => ({
+  authority: authority(id, admin),
+  actor: authority(id, admin).actor,
+  accessSubject: { type: "user", userId: id },
+  user: person(id, admin),
+  locale: "en",
+  requestId: "code-test",
+  origin: "http",
+  signal: new AbortController().signal,
+});
+const ctx = (id: string, admin = false): access.CodeContext => ({ authority: authority(id, admin), locale: "en" });
+
+// Each database is private to this suite; integration runs only with explicit CLOUD_TEST_DATABASE_URL in CI.
+databaseSuite()("Core Code data and Query authorization", () => {
+  let database: Awaited<ReturnType<typeof useFreshDatabase>>;
+  let code: Code;
+  let versionId: string;
+  let runId: string;
+  let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
+  const ownerState = new Map<string, { title: string; admin: boolean }>();
+  let ownerSpy: ReturnType<typeof spyOn<typeof access, "readCodeOwner">>;
+  let catalogSpy: ReturnType<typeof spyOn<typeof catalog, "getCapabilityCatalogApp">>;
+  const originalCatalog = catalog.getCapabilityCatalogApp;
+  const ownerCatalog = codeOwnerCatalogFixture("example", "mailbox");
+  const fixtureCatalog: typeof catalog.getCapabilityCatalogApp = async (appId, ...rest) =>
+    appId === "example" ? { ok: true, data: ownerCatalog } : originalCatalog(appId, ...rest);
+  beforeAll(async () => {
+    setSystemTime(fixed);
+    database = await useFreshDatabase("core_code");
+    await migrateAuth();
+    await migrateAudit();
+    await migrateEvents();
+    await migrateAppEvents();
+    await migrateCode();
+    await migrateActivation(); // Forward on an empty identity database.
+    await migratePolicy(); // Pause attribution reads the policy migration's reason columns.
+    for (const [name, id] of Object.entries(ids))
+      await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${name},'local','user',${name === "admin"})`;
+    // Forward migration over an already populated identity database.
+    await migrateCode();
+    // The public run list also reads event admission receipts from the scheduling schema.
+    await migrateScheduling();
+    settingsSpy = spyOn(codeSettings, "get").mockImplementation(async (key) => {
+      const definition = Object.entries(CODE_SETTINGS).find(([name]) => name === key)?.[1];
+      if (!definition) throw new Error(`Unexpected setting ${key}`);
+      return definition.default;
+    });
+    ownerState.set(ids.admin, { title: "Mailbox today", admin: true });
+    catalogSpy = spyOn(catalog, "getCapabilityCatalogApp").mockImplementation(fixtureCatalog);
+    ownerSpy = spyOn(access, "readCodeOwner").mockImplementation(async (owner, context) => {
+      if (owner.kind === "person")
+        return owner.userId === (context.authority.accessSubject.type === "user" ? context.authority.accessSubject.userId : null)
+          ? { title: "Person", admin: true }
+          : null;
+      const user = context.authority.accessSubject.type === "user" ? context.authority.accessSubject.userId : "";
+      return ownerState.get(user) ?? { title: "Mailbox today", admin: false };
+    });
+    code = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Monday report" }, ctx(ids.owner));
+    const version = await createCodeVersion(
+      {
+        codeId: code.id,
+        sourceFiles: { "code.ts": "export default 'source';" },
+        bundle: "export default 'bundle';",
+        manifest: { phase: 1 },
+        baseVersionId: null,
+      },
+      ctx(ids.owner),
+    );
+    versionId = version.id;
+    await addCodeShare(code.id, { type: "user", userId: ids.editor }, "editor", ctx(ids.owner));
+    await addCodeShare(code.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.owner));
+    runId = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "weekly", input: { private: "run input" } });
+    await sql`UPDATE code.runs SET state='running',started_at=${fixed} WHERE id=${runId}::uuid`;
+    await sql.begin(async (tx) => {
+      const first = await appendCodeCall(
+        { runId, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: { private: "call input" } } },
+        tx,
+      );
+      await finishCodeCall({ runId, ordinal: first, state: "succeeded", result: { private: "call result" }, endedAt: fixed }, tx);
+      const second = await appendCodeCall(
+        {
+          runId,
+          kind: "action",
+          call: { capability: "example.item.update", target: { type: "example.item", id: "item" }, refs: {}, input: {} },
+        },
+        tx,
+      );
+      await finishCodeCall({ runId, ordinal: second, state: "failed", result: { error: "refused" }, endedAt: fixed }, tx);
+    });
+  });
+  beforeEach(() => {
+    // One spy owns this export for the suite; temporary catalogs only replace its implementation.
+    catalogSpy.mockImplementation(fixtureCatalog);
+  });
+  afterAll(async () => {
+    ownerSpy?.mockRestore();
+    catalogSpy?.mockRestore();
+    settingsSpy?.mockRestore();
+    await database?.drop();
+    setSystemTime();
+  });
+
+  test("activation attribution and pause dates are transactional read/list data with directory visibility", async () => {
+    const automation = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Dates" }, ctx(ids.owner));
+    const version = await createCodeVersion(
+      { codeId: automation.id, sourceFiles: { "code.ts": "export default 1" }, bundle: "1", manifest: {}, baseVersionId: null },
+      ctx(ids.owner),
+    );
+    await addCodeShare(automation.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.owner));
+    const at = new Date("2026-10-30T09:00:00Z");
+    await sql`UPDATE auth.users SET display_name='Visible activator' WHERE id=${ids.owner}::uuid`;
+    await sql.begin(async (tx) => {
+      await tx`UPDATE code.codes SET state='active',active_version_id=${version.id}::uuid WHERE id=${automation.id}`;
+      await tx`INSERT INTO code.activations(id,code_id,version_id,activating_person,locale,cloud_admin,state,updated_at)
+        VALUES(gen_random_uuid(),${automation.id},${version.id}::uuid,${ids.owner}::uuid,'en',false,'active',${at})`;
+    });
+    expect((await readCode(automation.id, ctx(ids.reader))).code).toMatchObject({
+      activatedAt: at.toISOString(),
+      activatedBy: { name: "Visible activator" },
+      pausedAt: null,
+    });
+    const guest = ctx(ids.reader);
+    if (guest.authority.actor.kind === "user") guest.authority.actor.user.roles = [];
+    expect((await readCode(automation.id, guest)).code.activatedBy).toBeNull();
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${automation.id}`;
+    const paused = (await readCode(automation.id, ctx(ids.owner))).code.pausedAt;
+    expect((await readCode(automation.id, ctx(ids.reader))).code.pausedBy).toBeNull();
+    await sql`UPDATE code.codes SET pause_reason='manual' WHERE id=${automation.id}`;
+    // Match the exact current transaction timestamp, including sub-millisecond database precision.
+    await sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,created_at)
+      SELECT 'core.code.paused','allowed',${ids.owner}::uuid,'code',id,paused_at FROM code.codes WHERE id=${automation.id}`;
+    expect((await readCode(automation.id, ctx(ids.reader))).code.pausedBy).toEqual({ name: "Visible activator" });
+    expect((await readCode(automation.id, guest)).code.pausedBy).toBeNull();
+    await sql`UPDATE code.codes SET pause_reason='policy_changed' WHERE id=${automation.id}`;
+    expect((await readCode(automation.id, ctx(ids.reader))).code.pausedBy).toBeNull();
+    expect(paused).not.toBeNull();
+    await sql`UPDATE code.codes SET title='Still paused' WHERE id=${automation.id}`;
+    expect((await listCodes({ limit: 20 }, ctx(ids.owner))).items.find((item) => item.id === automation.id)?.pausedAt).toBe(paused);
+    await sql`UPDATE code.codes SET state='active' WHERE id=${automation.id}`;
+    expect((await readCode(automation.id, ctx(ids.owner))).code.pausedAt).toBeNull();
+    await sql`DELETE FROM code.codes WHERE id=${automation.id}`;
+  });
+  test("confirmed result evidence is stored with the call and reader names never leak through effects", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "effect-words", input: null });
+    await sql`UPDATE code.runs SET created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+    const target = { type: "fictional.task", id: "private-task-id" };
+    const effect = {
+      forms: {
+        de: { text: "{target} angelegt", kind: "Aufgabe", targetType: target.type, countText: "Aufgaben angelegt" },
+        en: { text: "Created {target}", kind: "task", targetType: target.type, countText: "Tasks created" },
+      },
+      refs: [target],
+    };
+    const ordinal = await sql.begin((tx) =>
+      appendCodeCall({ runId: id, kind: "action", call: { capability: "fictional.create", target: null, refs: {}, input: {} } }, tx),
+    );
+    await expect(
+      sql.begin(async (tx) => {
+        await finishCodeCall(
+          { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, effect, endedAt: fixed },
+          tx,
+        );
+        throw new Error("rollback effect");
+      }),
+    ).rejects.toThrow("rollback effect");
+    expect((await sql`SELECT effect FROM code.calls WHERE run_id=${id}::uuid`)[0]?.effect).toBeNull();
+    await sql.begin((tx) =>
+      finishCodeCall(
+        { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, effect, endedAt: fixed },
+        tx,
+      ),
+    );
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
+    const timeZone = spyOn(coreSettings, "get").mockResolvedValue("UTC");
+    catalogSpy.mockImplementation(async (app, ...rest) =>
+      app === "fictional"
+        ? {
+            ok: true as const,
+            data: {
+              appId: app,
+              appName: "Fictional",
+              appIcon: "ti ti-list",
+              appDescription: "Fixture",
+              manifest: {
+                protocolVersion: 2,
+                appId: app,
+                manifestHash: "a".repeat(64),
+                types: [{ localId: "task", title: "Task", description: "Task", reader: "read" }],
+                queries: [
+                  {
+                    localId: "read",
+                    title: "Read task",
+                    description: "Read task",
+                    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+                    dataSchema: { type: "object" },
+                    schemaHash: "a".repeat(64),
+                    openWorld: false,
+                  },
+                ],
+                actions: [
+                  {
+                    localId: "create",
+                    title: "Create task",
+                    description: "Create task",
+                    inputSchema: { type: "object" },
+                    dataSchema: { type: "object" },
+                    schemaHash: "a".repeat(64),
+                    openWorld: false,
+                    destructive: false,
+                    idempotency: "none",
+                  },
+                ],
+                commands: [],
+              },
+            },
+          }
+        : fixtureCatalog(app, ...rest),
+    );
+    const reader = spyOn(catalog, "invokeCapabilityWithDataSchema").mockImplementation(async (_invocation, schema, caller) => {
+      const subject = caller.authority?.accessSubject;
+      if (subject?.type !== "user" || subject.userId !== ids.reader)
+        return { ok: false as const, error: { code: "FORBIDDEN", message: "Hidden", status: 403 } };
+      return {
+        ok: true as const,
+        data: {
+          data: schema.parse({ view: { title: "Private delivery", permission: "read" } }),
+          links: [{ rel: "open" as const, href: "/fictional/task" }],
+        },
+      };
+    });
+    try {
+      const runWords = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
+      expect(runWords.title).toBe("Created task “Private delivery”");
+      expect(runWords.untilThen.items.map((item) => item.text)).toEqual(["Created task “Private delivery”"]);
+      const named = await loadCodeActivityReadModel({ codeId: code.id, day: "2026-10-31", timeZone: "UTC" }, ctx(ids.reader));
+      expect(named.counters.items.find((item) => item.key === "fictional.create")).toMatchObject({ count: 1, text: "Tasks created" });
+      expect(named.recent.find((item) => item.runId === id)).toMatchObject({
+        text: "Created task",
+        target: { ref: target, text: "Created task “{name}”" },
+        app: "Fictional",
+        at: fixed.toISOString(),
+      });
+      expect(JSON.stringify(named.recent)).not.toMatch(/Private delivery|fictional\/task/);
+      const childReader = mock(async () => {
+        throw new Error("Recent effects must not spend a child Query");
+      });
+      const deferred = await loadCodeActivityReadModel(
+        { codeId: code.id, day: "2026-10-31", timeZone: "UTC" },
+        {
+          ...ctx(ids.reader),
+          authority: { ...ctx(ids.reader).authority, credentialKind: "invocation", scopes: ["core:read"] },
+          query: childReader,
+        },
+      );
+      expect(deferred.recent.find((item) => item.runId === id)?.target).toEqual({ ref: target, text: "Created task “{name}”" });
+      expect(childReader).not.toHaveBeenCalled();
+      reader.mockImplementation(async () => ({ ok: false as const, error: { code: "FORBIDDEN", message: "Hidden", status: 403 } }));
+      const hidden = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.editor));
+      expect(hidden.title).toBe("Created task");
+      expect(JSON.stringify(hidden)).not.toMatch(/Private delivery|private-task-id|fictional\/task/);
+    } finally {
+      timeZone.mockRestore();
+      reader.mockRestore();
+      catalogSpy.mockImplementation(fixtureCatalog);
+      await sql`DELETE FROM code.runs WHERE id=${id}::uuid`;
+    }
+  });
+
+  test("temporary effect catalogs retain the registered Code owner fixture", async () => {
+    expect(await catalog.getCapabilityCatalogApp("example", "en", authority(ids.admin, true))).toEqual({ ok: true, data: ownerCatalog });
+  });
+
+  test("counter wording comes only from succeeded effects in the counted run week", async () => {
+    const runs: string[] = [];
+    const insert = async (at: Date, label: string, state: "succeeded" | "failed") => {
+      const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "wording-guard", input: null });
+      runs.push(id);
+      await sql`UPDATE code.runs SET created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+      const effect = {
+        forms: { en: { text: "Created {target}", kind: "task", targetType: "fictional.task", countText: label } },
+        refs: [],
+      };
+      const ordinal = await sql.begin((tx) =>
+        appendCodeCall({ runId: id, kind: "action", call: { capability: "fictional.create", target: null, refs: {}, input: {} } }, tx),
+      );
+      await sql.begin((tx) =>
+        finishCodeCall(
+          { runId: id, ordinal, state, result: { ok: state === "succeeded", data: null }, confirmedEffect: true, effect, endedAt: at },
+          tx,
+        ),
+      );
+      // Even a malformed historical flag cannot make a failed call's prose into result evidence.
+      if (state === "failed") await sql`UPDATE code.calls SET confirmed_effect=true WHERE run_id=${id}::uuid`;
+      await sql`UPDATE code.runs SET state=${state},ended_at=${at} WHERE id=${id}::uuid`;
+    };
+    try {
+      await insert(fixed, "Tasks created", "succeeded");
+      await insert(new Date(+fixed + 7 * 86400000), "Next week's wording", "succeeded");
+      await insert(new Date(+fixed + 60000), "Failed call wording", "failed");
+      const data = await readCodeActivityData({ codeId: code.id, day: "2026-10-31", timeZone: "UTC" });
+      expect(data.counters.find((item) => item.automationKey === "wording-guard")).toMatchObject({
+        count: 1,
+        evidence: { forms: { en: { countText: "Tasks created" } } },
+      });
+    } finally {
+      for (const id of runs) await sql`DELETE FROM code.runs WHERE id=${id}::uuid`;
+      await sql`DELETE FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='wording-guard'`;
+    }
+  });
+
+  test("large runs bound effect rows without misreporting sampled fallback counts", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "many-effects", input: null });
+    await sql`UPDATE code.runs SET created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+    await sql.begin(async (tx) => {
+      for (let index = 0; index < 120; index++) {
+        const ordinal = await appendCodeCall(
+          { runId: id, kind: "action", call: { capability: "fictional.unknown", target: null, refs: {}, input: {} } },
+          tx,
+        );
+        await finishCodeCall(
+          { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, endedAt: fixed },
+          tx,
+        );
+      }
+    });
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
+    const timeZone = spyOn(coreSettings, "get").mockResolvedValue("UTC");
+    try {
+      const words = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
+      expect(words.untilThen.items).toHaveLength(50);
+      expect(words.untilThen.items.every((item) => item.text === "Unavailable action · 1 time")).toBe(true);
+      expect(words.untilThen.more).toBe(70);
+    } finally {
+      timeZone.mockRestore();
+      await sql`DELETE FROM code.runs WHERE id=${id}::uuid`;
+    }
+  });
+
+  test("confirmed weekly effects settle atomically once per run, excluding replays and unknown results", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "activity", input: null });
+    await sql`UPDATE code.runs SET state='running',created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+    await sql.begin(async (tx) => {
+      for (const replayed of [false, true]) {
+        const ordinal = await appendCodeCall(
+          { runId: id, kind: "action", call: { capability: "example.item.update", target: null, refs: {}, input: { requested: 900 } } },
+          tx,
+        );
+        await finishCodeCall(
+          { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, replayed, endedAt: fixed },
+          tx,
+        );
+      }
+      const ordinal = await appendCodeCall(
+        { runId: id, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: {} } },
+        tx,
+      );
+      await finishCodeCall(
+        { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, endedAt: fixed },
+        tx,
+      );
+    });
+    // An aborted settlement must not leave a weekly counter behind.
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
+        throw new Error("rollback settlement");
+      }),
+    ).rejects.toThrow("rollback settlement");
+    expect(await sql`SELECT 1 FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='activity'`).toHaveLength(0);
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
+    await sql`UPDATE code.runs SET outcome=NULL WHERE id=${id}::uuid`;
+    const [counter] = await sql<
+      { counts: Record<string, number> }[]
+    >`SELECT counts FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='activity'`;
+    expect(counter?.counts).toEqual({ "example.item.update": 1 });
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(async () => {
+        const data = await readCodeActivityData({ codeId: code.id, day: "2026-10-31", timeZone: "Europe/Berlin" });
+        expect(data.recent.length).toBeLessThanOrEqual(6);
+        expect(data.counters.find((row) => row.automationKey === "activity")?.count).toBe(1);
+        expect(data.marks.length).toBeLessThanOrEqual(200);
+      });
+      expect(statements).toHaveLength(1);
+    } finally {
+      await meter.close();
+    }
+  });
+
+  test("the complete Code activity loader has three statements for a personal Code, independent of run volume", async () => {
+    const empty = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Meter fixture" }, ctx(ids.owner));
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(() =>
+        loadCodeActivityReadModel({ codeId: empty.id, day: "2026-11-16", timeZone: "Europe/Berlin" }, ctx(ids.owner)),
+      );
+      expect(statements).toHaveLength(3);
+      const monday = await readCodeActivityData({ codeId: empty.id, day: "2026-11-16", timeZone: "Europe/Berlin" });
+      expect(monday.week.toISOString()).toBe("2026-11-16T00:00:00.000Z");
+    } finally {
+      await meter.close();
+      await sql`DELETE FROM code.codes WHERE id=${empty.id}`;
+    }
+  });
+  test("forward migration is idempotent on a filled DB and preserves pre-existing accounts", async () => {
+    const before = await sql`SELECT * FROM code.codes ORDER BY id`;
+    // Upgrade a database that already applied the earlier pre-release four-kind constraint.
+    await sql`ALTER TABLE code.calls DROP CONSTRAINT calls_refusal_kind_check`;
+    await sql`ALTER TABLE code.calls ADD CONSTRAINT calls_refusal_kind_check
+      CHECK (refusal_kind IN ('target_refused','policy','app_not_allowed','bridge'))`;
+    await migrateCode();
+    await migrateCode();
+    expect(await sql`SELECT * FROM code.codes ORDER BY id`).toEqual(before);
+    expect(await sql`SELECT id FROM auth.users`).toHaveLength(6);
+    expect(await sql`SELECT * FROM code.versions WHERE id=${versionId}::uuid`).toHaveLength(1);
+  });
+  test("all five Query contracts enforce editor, reader, unrelated and Cloud-admin visibility", async () => {
+    for (const [id, admin, allowed] of [
+      [ids.owner, false, true],
+      [ids.editor, false, true],
+      [ids.reader, false, true],
+      [ids.stranger, false, false],
+      [ids.admin, true, true],
+    ] as const) {
+      const c = context(id, admin);
+      const list = await aiCapabilities.queries["code.list"].run({ limit: 20 }, c);
+      expect(list.ok).toBe(true);
+      if (list.ok) expect(list.data.data.items.some((item) => item.id === code.id)).toBe(allowed);
+      const read = await aiCapabilities.queries["code.read"].run({ codeId: code.id }, c);
+      const version = await aiCapabilities.queries["code.version.read"].run(
+        { codeId: code.id, versionId, offset: 0, length: 100, content: { kind: "source", path: "code.ts" } },
+        c,
+      );
+      const runs = await aiCapabilities.queries["code.run.list"].run({ codeId: code.id, limit: 20 }, c);
+      const run = await aiCapabilities.queries["code.run.read"].run({ codeId: code.id, runId, cursor: 0, offset: 0, length: 16384 }, c);
+      for (const response of [read, runs, run]) expect(response.ok).toBe(allowed);
+      expect(version.ok).toBe(id === ids.owner || id === ids.editor);
+      if (run.ok) {
+        expect(codeQueryContracts.runRead.data.safeParse(run.data.data).success).toBe(true);
+        if (id === ids.reader || id === ids.admin) {
+          expect(run.data.data.contents).toBeNull();
+          expect(JSON.stringify(run)).not.toContain("private");
+        } else {
+          expect(run.data.data.contents?.input).toEqual({ private: "run input" });
+          expect(run.data.data.contents?.calls[0]?.ordinal).toBe(1);
+          expect(run.data.data.contents?.nextCursor).toBe(1);
+        }
+      }
+      if (runs.ok) {
+        expect(runs.data.data.eventDeliveries).toEqual([]);
+        expect(JSON.stringify(runs)).not.toContain("private");
+      }
+      if (version.ok) expect(version.data.data.content?.text).toBe("export default 'source';");
+    }
+    const second = await aiCapabilities.queries["code.run.read"].run(
+      { codeId: code.id, runId, cursor: 1, offset: 0, length: 16384 },
+      context(ids.owner),
+    );
+    expect(second.ok && second.data.data.contents?.calls[0]?.ordinal).toBe(2);
+  });
+  test("source, bundles, diffs and CLI pulls require editorship; only the admin review source reader is exempt", async () => {
+    for (const viewer of [ctx(ids.reader), ctx(ids.admin, true)]) {
+      expect((await readCode(code.id, viewer)).permission).toBe("reader");
+      for (const content of [{ kind: "source" as const, path: "code.ts" }, { kind: "bundle" as const }])
+        await expect(readCodeVersion({ codeId: code.id, versionId, content, offset: 0, length: 100 }, viewer)).rejects.toMatchObject({
+          code: "NOT_FOUND",
+        });
+      await expect(diffCodeVersion({ codeId: code.id, versionId }, viewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(
+        readCodeVersionDiff({ codeId: code.id, versionId, comparisonVersionId: null, offset: 0, length: 100 }, viewer),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(codeAuthoringServices.pull({ codeId: code.id }, viewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(loadCodeSourceTab({ codeId: code.id }, viewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      const show = await codeAuthoringServices.show({ codeId: code.id }, viewer);
+      expect(JSON.stringify(show)).not.toContain("export default");
+    }
+    await expect(readCodeAdminVersionSource(code.id, versionId, ctx(ids.reader))).rejects.toThrow();
+    expect((await readCodeAdminVersionSource(code.id, versionId, ctx(ids.admin, true))).files[0]?.lines[0]?.text).toContain(
+      "export default",
+    );
+    const readScopedEditor = {
+      ...ctx(ids.editor),
+      authority: { ...ctx(ids.editor).authority, credentialKind: "oauth" as const, scopes: ["core:read"] },
+    };
+    expect(
+      (
+        await readCodeVersion(
+          { codeId: code.id, versionId, content: { kind: "source", path: "code.ts" }, offset: 0, length: 100 },
+          readScopedEditor,
+        )
+      ).content?.text,
+    ).toContain("export default");
+  });
+  test("confirmed NUL results finish, late confirmations update the same weekly snapshot once", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "late-effect", input: null });
+    await sql`UPDATE code.runs SET state='running',created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+    const ordinal = await sql.begin(async (tx) =>
+      appendCodeCall({ runId: id, kind: "action", call: { capability: "example.item.update", target: null, refs: {}, input: {} } }, tx),
+    );
+    await sql`UPDATE code.calls SET state='uncertain',ended_at=${fixed} WHERE run_id=${id}::uuid`;
+    await sql`UPDATE code.runs SET state='failed',ended_at=${fixed} WHERE id=${id}::uuid`;
+    await finishCodeCall(
+      {
+        runId: id,
+        ordinal,
+        state: "succeeded",
+        result: { ok: true, data: "\u0000" },
+        confirmedEffect: true,
+        effect: { forms: {}, refs: [{ type: "example.item", id: "\u0000" }] },
+        endedAt: fixed,
+      },
+      sql,
+    );
+    await sql`UPDATE code.runs SET outcome='late' WHERE id=${id}::uuid`;
+    const [row] = await sql<
+      { counts: Record<string, number> }[]
+    >`SELECT counts FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='late-effect'`;
+    expect(row?.counts).toEqual({ "example.item.update": 1 });
+    const [call] = await sql`SELECT state,confirmed_effect FROM code.calls WHERE run_id=${id}::uuid`;
+    expect(call).toEqual({ state: "succeeded", confirmed_effect: true });
+  });
+  test("real structured application failures distinguish refusal from unknown and hide both counts from readers", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "failure-words", input: null });
+    await sql`UPDATE code.runs SET state='running',created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+    await sql.begin(async (tx) => {
+      for (const error of [
+        { code: "CONFLICT", status: 409 },
+        { code: "code_result_unknown", status: 503 },
+      ]) {
+        const ordinal = await appendCodeCall(
+          { runId: id, kind: "action", call: { capability: "example.item.update", target: null, refs: {}, input: {} } },
+          tx,
+        );
+        await finishCodeCall({ runId: id, ordinal, state: "failed", result: { ok: false, error }, endedAt: fixed }, tx);
+      }
+    });
+    await sql`UPDATE code.runs SET state='failed',ended_at=${fixed} WHERE id=${id}::uuid`;
+    const timeZone = spyOn(coreSettings, "get").mockResolvedValue("Europe/Berlin");
+    try {
+      const editor = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.owner));
+      expect(editor.untilThen.items.map((row) => row.text)).toEqual(["1 call refused", "1 call with an unknown outcome"]);
+      const reader = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
+      expect(JSON.stringify(reader.untilThen)).not.toContain("call refused");
+      expect(JSON.stringify(reader.untilThen)).not.toContain("unknown outcome");
+    } finally {
+      timeZone.mockRestore();
+    }
+  });
+  test("A3a commits the first target refusal with its call and restricts target coordinates to editors", async () => {
+    const refusedRun = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "weekly", input: null });
+    const target = { type: "example.item", id: "runtime-refused-target-id" };
+    await sql.begin(async (tx) => {
+      for (let n = 0; n < 4; n++)
+        await appendCodeCall(
+          {
+            runId: refusedRun,
+            kind: "action",
+            call: { capability: "example.item.update", target, refs: {}, input: { large: "x".repeat(17000) } },
+          },
+          tx,
+        );
+    });
+    await sql.begin(async (tx) => {
+      await finishCodeCall(
+        { runId: refusedRun, ordinal: 4, state: "failed", result: { ok: false }, refusalKind: "approval", endedAt: fixed },
+        tx,
+      );
+      const [run] = await tx`SELECT first_refused_call_ordinal FROM code.runs WHERE id=${refusedRun}::uuid`;
+      expect(run?.first_refused_call_ordinal).toBeNull();
+    });
+    const interrupted = new Error("crash before commit");
+    await expect(
+      sql.begin(async (tx) => {
+        await finishCodeCall(
+          { runId: refusedRun, ordinal: 2, state: "failed", result: { ok: false }, refusalKind: "target_refused", endedAt: fixed },
+          tx,
+        );
+        // Both facts are visible inside the same transaction, before runner completion.
+        const [run] = await tx`SELECT first_refused_call_ordinal FROM code.runs WHERE id=${refusedRun}::uuid`;
+        expect(run?.first_refused_call_ordinal).toBe(2);
+        throw interrupted;
+      }),
+    ).rejects.toBe(interrupted);
+    const [rolledBack] =
+      await sql`SELECT r.first_refused_call_ordinal,c.state,c.refusal_kind FROM code.runs r JOIN code.calls c ON c.run_id=r.id
+      WHERE r.id=${refusedRun}::uuid AND c.ordinal=2`;
+    expect(rolledBack).toMatchObject({ first_refused_call_ordinal: null, state: "running", refusal_kind: null });
+    await sql.begin(async (tx) => {
+      for (const ordinal of [3, 2])
+        await finishCodeCall(
+          {
+            runId: refusedRun,
+            ordinal,
+            state: "failed",
+            result: { ok: false },
+            refusalKind: "target_refused",
+            endedAt: fixed,
+          },
+          tx,
+        );
+      await finishCodeCall(
+        { runId: refusedRun, ordinal: 1, state: "failed", result: { ok: false }, refusalKind: "policy", endedAt: fixed },
+        tx,
+      );
+    });
+    // No completion update is needed: a crashed/running run already carries the fact.
+    for (const id of [ids.owner, ids.editor, ids.reader, ids.admin]) {
+      const c = context(id, id === ids.admin);
+      const response = await aiCapabilities.queries["code.run.read"].run(
+        { codeId: code.id, runId: refusedRun, cursor: 0, offset: 0, length: 16384 },
+        c,
+      );
+      if (!response.ok) throw new Error("run query failed");
+      expect(codeQueryContracts.runRead.data.safeParse(response.data.data).success).toBe(true);
+      expect(response.data.data.run.firstRefusedCallOrdinal).toBe(2);
+      if (id === ids.reader || id === ids.admin) {
+        expect(response.data.data.contents).toBeNull();
+        expect(JSON.stringify(response)).not.toContain(target.id);
+      } else {
+        // The refused call is outside this call page and its full input is chunked.
+        expect(response.data.data.contents?.calls[0]).toMatchObject({ ordinal: 1, refusalKind: "policy", call: null, callChunked: true });
+        expect(response.data.data.contents?.firstRefusedCall).toEqual({
+          ordinal: 2,
+          kind: "action",
+          capability: "example.item.update",
+          target,
+        });
+      }
+      const list = await aiCapabilities.queries["code.run.list"].run({ codeId: code.id, limit: 20 }, c);
+      if (!list.ok) throw new Error("run list failed");
+      expect(list.data.data.items.find((item) => item.id === refusedRun)?.firstRefusedCallOrdinal).toBe(2);
+      expect(JSON.stringify(list)).not.toContain(target.id);
+    }
+  });
+
+  test("a Code account itself sees none of the five Queries, even with an accidental direct grant", async () => {
+    const resource = await createCode(
+      { owner: { kind: "resource", ref: { type: "example.mailbox", id: "own-account" } }, title: "Resource" },
+      ctx(ids.admin, true),
+    );
+    const [account] = await sql<
+      { id: string; name: string; created_at: Date }[]
+    >`SELECT id,name,created_at FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`;
+    if (!account) throw new Error("Missing account");
+    const actor: RequestAuthority["actor"] = {
+      kind: "service_account",
+      serviceAccount: {
+        id: account.id,
+        name: account.name,
+        kind: "code",
+        status: "active",
+        delegatedUserId: null,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+        createdBy: ids.admin,
+        createdAt: account.created_at.toISOString(),
+      },
+      delegatedUser: null,
+      scopes: [],
+      credentialId: "test",
+      credentialExpiresAt: null,
+    };
+    const codeContext: CapabilityExecutionContext = {
+      ...context(ids.owner),
+      authority: {
+        actor,
+        accessSubject: { type: "service_account", serviceAccountId: account.id },
+        credentialKind: "invocation",
+        scopes: [],
+      },
+      actor,
+      accessSubject: { type: "service_account", serviceAccountId: account.id },
+      user: null,
+    };
+    const [grant] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(service_account_id,permission) VALUES(${account.id}::uuid,'write') RETURNING id`;
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.id},${grant!.id}::uuid)`;
+    expect((await aiCapabilities.queries["code.list"].run({ limit: 20 }, codeContext)).ok).toBe(false);
+    expect((await aiCapabilities.queries["code.read"].run({ codeId: code.id }, codeContext)).ok).toBe(false);
+    expect(
+      (await aiCapabilities.queries["code.version.read"].run({ codeId: code.id, versionId, offset: 0, length: 100 }, codeContext)).ok,
+    ).toBe(false);
+    expect((await aiCapabilities.queries["code.run.list"].run({ codeId: code.id, limit: 20 }, codeContext)).ok).toBe(false);
+    expect(
+      (await aiCapabilities.queries["code.run.read"].run({ codeId: code.id, runId, cursor: 0, offset: 0, length: 16384 }, codeContext)).ok,
+    ).toBe(false);
+    await sql`DELETE FROM code.codes WHERE id=${resource.id}`;
+    expect(await sql`SELECT id FROM auth.service_accounts WHERE id=${account.id}::uuid`).toHaveLength(0);
+  });
+  test("live resource admins are default editors, removed admins lose access, ordinary owner readers get no Code rights", async () => {
+    const resource = await createCode(
+      { owner: { kind: "resource", ref: { type: "example.mailbox", id: "live-admin" } }, title: "Resource" },
+      ctx(ids.admin, true),
+    );
+    expect(resource.serviceAccountHandle).toMatch(/^code-[0123456789abcdefghjkmnpqrstvwxyz]{10}$/);
+    expect((await sql`SELECT handle,title FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`)[0]).toEqual({
+      handle: resource.serviceAccountHandle,
+      title: "Mailbox today",
+    });
+    ownerState.set(ids.stranger, { title: "Renamed mailbox", admin: true });
+    expect((await readCode(resource.id, ctx(ids.stranger))).permission).toBe("editor");
+    expect((await sql`SELECT title FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`)[0]!.title).toBe(
+      "Renamed mailbox",
+    );
+    expect(await access.codeAccountDisplayName(resource, { ...ctx(ids.stranger), locale: "de" })).not.toContain("Renamed mailbox");
+    ownerState.set(ids.stranger, { title: "Renamed again", admin: false });
+    expect(await access.codeAccountDisplayName(resource, { ...ctx(ids.stranger), locale: "DE-at" })).not.toContain("Renamed again");
+    await expect(readCode(resource.id, ctx(ids.stranger))).rejects.toThrow("Code not found");
+    ownerState.delete(ids.stranger);
+    expect(await sql<{ name: string }[]>`SELECT name FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`).toEqual([
+      { name: "code:example.mailbox:live-admin" },
+    ]);
+  });
+  test("each resource/app has at most one Code; a person can have several, with isolated version/run identities", async () => {
+    const input = { owner: { kind: "app" as const, appId: "example" }, title: "App Code" };
+    const [a, b] = await Promise.allSettled([createCode(input, ctx(ids.admin, true)), createCode(input, ctx(ids.admin, true))]);
+    expect([a, b].filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const personal = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Another" }, ctx(ids.owner));
+    expect(personal.id).not.toBe(code.id);
+    expect(personal.serviceAccountId).toBeNull();
+    await expect(readCodeVersion({ codeId: personal.id, versionId, offset: 0, length: 100 }, ctx(ids.owner))).rejects.toThrow("not found");
+    await expect((async () => await sql`UPDATE code.codes SET id='c_changed' WHERE id=${personal.id}`)()).rejects.toThrow("immutable");
+  });
+  test("page projections stay authorized and pinned to the requested immutable version", async () => {
+    const own = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Page links" }, ctx(ids.owner));
+    const first = await createCodeVersion(
+      {
+        codeId: own.id,
+        sourceFiles: { "code.ts": "export default 1" },
+        bundle: "1",
+        baseVersionId: null,
+        manifest: {
+          ...codeReadModelFixtureManifest,
+          entrypoints: [
+            {
+              kind: "route",
+              entrypoint: "home",
+              file: "code.ts",
+              line: 1,
+              cron: null,
+              route: { method: "GET", path: "/", public: false, page: true },
+            },
+          ],
+        },
+      },
+      ctx(ids.owner),
+    );
+    const second = await createCodeVersion(
+      {
+        codeId: own.id,
+        sourceFiles: { "code.ts": "export default 2" },
+        bundle: "2",
+        baseVersionId: first.id,
+        manifest: { ...codeReadModelFixtureManifest, entrypoints: [] },
+      },
+      ctx(ids.owner),
+    );
+    const input = { codeId: own.id, versionId: first.id, offset: 0, length: 100, content: { kind: "manifest" as const } };
+    const german = await readCodeVersion(input, { ...ctx(ids.owner), locale: "de-AT" });
+    expect(german.pages).toEqual({
+      versionId: first.id,
+      homeUrl: `/code/${own.id}/`,
+      pages: [{ entrypoint: "home", title: null, path: "/", isRoot: true, href: `/code/${own.id}/` }],
+    });
+    expect((await readCodeVersion(input, ctx(ids.owner))).pages).toEqual(german.pages);
+    await addCodeShare(own.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.owner));
+    expect((await readCodeVersion(input, ctx(ids.reader))).pages).toEqual(german.pages);
+    expect((await readCodeVersion({ ...input, versionId: second.id }, ctx(ids.owner))).pages).toEqual({
+      versionId: second.id,
+      homeUrl: null,
+      pages: [],
+    });
+    expect((await readCodeVersion({ ...input, content: undefined }, ctx(ids.owner))).pages).toBeNull();
+    await expect(readCodeVersion(input, ctx(ids.stranger))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(readCodeVersion({ ...input, codeId: code.id }, ctx(ids.owner))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const query = await aiCapabilities.queries["code.version.read"].run(input, { ...context(ids.owner), locale: "de" });
+    expect(query.ok).toBe(true);
+    if (query.ok) expect(codeQueryContracts.versionRead.data.parse(query.data.data).pages).toEqual(german.pages);
+  });
+  test("versions preserve exact UTF-8 source/bundle and hashes, reject stale base and in-place changes", async () => {
+    const version = await readCodeVersion(
+      { codeId: code.id, versionId, offset: 0, length: 100, content: { kind: "bundle" } },
+      ctx(ids.editor),
+    );
+    expect(version.content?.text).toBe("export default 'bundle';");
+    expect(version.version.sourceHash).toBe(codeSourceHash({ "code.ts": "export default 'source';" }));
+    expect(version.version.bundleHash).toBe(codeBundleHash("export default 'bundle';"));
+    await expect((async () => await sql`UPDATE code.versions SET bundle='changed' WHERE id=${versionId}::uuid`)()).rejects.toThrow(
+      "immutable",
+    );
+    await expect((async () => await sql`UPDATE code.versions SET manifest='{}'::jsonb WHERE id=${versionId}::uuid`)()).rejects.toThrow(
+      "immutable",
+    );
+    await expect(
+      createCodeVersion(
+        { codeId: code.id, sourceFiles: { "code.ts": "new" }, bundle: "new", manifest: null, baseVersionId: null },
+        ctx(ids.editor),
+      ),
+    ).rejects.toThrow("newer");
+    await expect(
+      createCodeVersion(
+        { codeId: code.id, sourceFiles: { "code.ts": "x".repeat(1_048_577) }, bundle: "new", manifest: null, baseVersionId: versionId },
+        ctx(ids.editor),
+      ),
+    ).rejects.toThrow("storage limits");
+  });
+  test("sharing uses normal grant precedence and revocation; readers cannot share or save versions", async () => {
+    const grant = await addCodeShare(code.id, { type: "user", userId: ids.stranger }, "editor", ctx(ids.editor));
+    expect((await readCode(code.id, ctx(ids.stranger))).permission).toBe("editor");
+    await removeCodeShare(code.id, grant, ctx(ids.owner));
+    await expect(readCode(code.id, ctx(ids.stranger))).rejects.toThrow();
+    await expect(addCodeShare(code.id, { type: "user", userId: ids.stranger }, "reader", ctx(ids.reader))).rejects.toThrow();
+    await expect(
+      createCodeVersion(
+        { codeId: code.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: versionId },
+        ctx(ids.reader),
+      ),
+    ).rejects.toThrow();
+  });
+  test("creator deletion erases attribution without deleting resource Code, its account or immutable versions", async () => {
+    ownerState.set(ids.creator, { title: "Survives", admin: true });
+    const resource = await createCode(
+      { owner: { kind: "resource", ref: { type: "example.mailbox", id: "creator-deletion" } }, title: "Survives" },
+      ctx(ids.creator, true),
+    );
+    const version = await createCodeVersion(
+      { codeId: resource.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: null },
+      ctx(ids.creator, true),
+    );
+    ownerState.delete(ids.creator);
+    await sql`DELETE FROM auth.users WHERE id=${ids.creator}::uuid`;
+    expect(await sql<{ created_by: string | null }[]>`SELECT created_by FROM code.codes WHERE id=${resource.id}`).toEqual([
+      { created_by: null },
+    ]);
+    expect(await sql<{ created_by: string | null }[]>`SELECT created_by FROM code.versions WHERE id=${version.id}::uuid`).toEqual([
+      { created_by: null },
+    ]);
+    expect(
+      await sql<{ created_by: string | null }[]>`SELECT created_by FROM auth.service_accounts WHERE id=${resource.serviceAccountId}::uuid`,
+    ).toEqual([{ created_by: null }]);
+  });
+  test("run storage limits apply to calls and results; retention starts at end, cascades calls and preserves versions", async () => {
+    const old = new Date("2026-09-01T00:00:00.000Z");
+    await sql`UPDATE code.runs SET created_at=${old},started_at=${old},state='succeeded',ended_at=${new Date("2026-10-01T12:00:00.000Z")} WHERE id=${runId}::uuid`;
+    const active = await insertCodeRun({ codeId: code.id, versionId, trigger: "schedule", entrypoint: "still-running", input: null });
+    await sql`UPDATE code.runs SET created_at=${old},state='running' WHERE id=${active}::uuid`;
+    await expect(
+      sql.begin(async (tx) => {
+        await appendCodeCall(
+          {
+            runId: active,
+            kind: "query",
+            call: { capability: "example.item.read", target: null, refs: {}, input: { large: "x".repeat(32768) } },
+          },
+          tx,
+        );
+      }),
+    ).rejects.toThrow("storage limit");
+    await sql`INSERT INTO code.ai_daily_budget(day,scope_kind,scope_key,reference_cost) VALUES
+      ('2026-09-30','code',${code.id},1),('2026-10-01','code',${code.id},2),('2026-10-02','code',${code.id},3),
+      ('2026-09-30','owner',${ids.owner},4)`;
+    expect(await expireCodeRuns({ now: new Date("2026-10-31T11:59:59.000Z"), limit: 100 })).toBe(0);
+    expect(
+      await sql<{ day: string; cost: number }[]>`SELECT day::text AS day,reference_cost::int AS cost FROM code.ai_daily_budget
+      WHERE scope_kind='code' AND scope_key=${code.id} ORDER BY day`,
+    ).toEqual([
+      { day: "2026-10-01", cost: 2 },
+      { day: "2026-10-02", cost: 3 },
+    ]);
+    expect(await sql`SELECT scope_key FROM code.ai_daily_budget WHERE scope_kind='owner' AND scope_key=${ids.owner}`).toHaveLength(0);
+    expect(await expireCodeRuns({ now: fixed, limit: 100 })).toBe(1);
+    expect(await sql`SELECT * FROM code.calls WHERE run_id=${runId}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT * FROM code.runs WHERE id=${active}::uuid`).toHaveLength(1);
+    expect(await sql`SELECT * FROM code.versions WHERE id=${versionId}::uuid`).toHaveLength(1);
+  });
+  test("personal creation stays with its person; non-person owners must exist even for administrators", async () => {
+    await expect(
+      createCode({ owner: { kind: "person", userId: ids.owner }, title: "Other person" }, ctx(ids.admin, true)),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    ownerSpy.mockResolvedValueOnce(null);
+    await expect(
+      createCode({ owner: { kind: "resource", ref: { type: "example.mailbox", id: "missing" } }, title: "Missing" }, ctx(ids.admin, true)),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    ownerSpy.mockResolvedValueOnce(null);
+    await expect(createCode({ owner: { kind: "app", appId: "missing" }, title: "Missing" }, ctx(ids.admin, true))).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+  test("creation requires actual owner administration even for Cloud administrators", async () => {
+    ownerSpy.mockResolvedValueOnce({ title: "Existing owner", admin: false });
+    await expect(
+      createCode({ owner: { kind: "resource", ref: { type: "example.mailbox", id: "not-admin" } }, title: "Denied" }, ctx(ids.admin, true)),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+  test("shares upsert one principal and permission changes take effect", async () => {
+    const first = await addCodeShare(code.id, { type: "user", userId: ids.editor }, "reader", ctx(ids.owner));
+    const second = await addCodeShare(code.id, { type: "user", userId: ids.editor }, "editor", ctx(ids.owner));
+    expect(second).toBe(first);
+    expect(
+      await sql`SELECT a.id FROM code.shares j JOIN auth.access a ON a.id=j.access_id WHERE j.code_id=${code.id} AND a.user_id=${ids.editor}::uuid`,
+    ).toHaveLength(1);
+    expect((await readCode(code.id, ctx(ids.editor))).permission).toBe("editor");
+  });
+  test("Cloud administration gives reader visibility; writes and run contents require normal editor rights", async () => {
+    const personal = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Own authority" }, ctx(ids.owner));
+    expect((await readCode(personal.id, ctx(ids.admin, true))).permission).toBe("reader");
+    const version = { codeId: personal.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: null };
+    await expect(createCodeVersion(version, ctx(ids.admin, true))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(addCodeShare(personal.id, { type: "user", userId: ids.stranger }, "editor", ctx(ids.admin, true))).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    const grant = await addCodeShare(personal.id, { type: "user", userId: ids.admin }, "editor", ctx(ids.owner));
+    expect((await createCodeVersion(version, ctx(ids.admin, true))).codeId).toBe(personal.id);
+    await removeCodeShare(personal.id, grant, ctx(ids.owner));
+    expect((await readCode(personal.id, ctx(ids.admin, true))).permission).toBe("reader");
+  });
+  test("a provider outage preserves explicit reader visibility", async () => {
+    const resource = await createCode(
+      { owner: { kind: "resource", ref: { type: "example.mailbox", id: "reader-outage" } }, title: "Readable" },
+      ctx(ids.admin, true),
+    );
+    await addCodeShare(resource.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.admin, true));
+    ownerSpy.mockRejectedValueOnce(new access.CodeOwnerUnavailableError("Provider offline"));
+    expect((await readCode(resource.id, ctx(ids.reader))).permission).toBe("reader");
+    ownerSpy.mockRejectedValueOnce(new access.CodeOwnerUnavailableError("Provider offline"));
+    await expect(
+      createCodeVersion(
+        { codeId: resource.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: null },
+        ctx(ids.reader),
+      ),
+    ).rejects.toBeInstanceOf(access.CodeOwnerUnavailableError);
+  });
+  test("the Code page names people through a real array query, and guests only themselves", async () => {
+    const { loadPeople } = await import("@k2b/cloud/ssr/code-page/load");
+    const member = await loadPeople([ids.owner, ids.reader], { id: ids.owner, directory: true });
+    expect([...member.keys()].sort()).toEqual([ids.owner, ids.reader].sort());
+    const guest = await loadPeople([ids.owner, ids.reader], { id: ids.reader, directory: false });
+    expect([...guest.keys()]).toEqual([ids.reader]);
+  });
+  test("owner attention lists only readable Code and flags a failed newest run per entrypoint", async () => {
+    clearCodeAttentionCache();
+    const owner = { kind: "resource" as const, ref: { type: "example.mailbox", id: "attention" } };
+    const resource = await createCode({ owner, title: "Attention" }, ctx(ids.admin, true));
+    const version = await createCodeVersion(
+      { codeId: resource.id, sourceFiles: { "code.ts": "x" }, bundle: "x", manifest: null, baseVersionId: null },
+      ctx(ids.admin, true),
+    );
+    await addCodeShare(resource.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.admin, true));
+    const finish = async (entrypoint: string, state: "succeeded" | "failed", at: string) => {
+      const id = await insertCodeRun({ codeId: resource.id, versionId: version.id, trigger: "schedule", entrypoint, input: null });
+      await sql`UPDATE code.runs SET state=${state},created_at=${new Date(at)},started_at=${new Date(at)},ended_at=${new Date(at)} WHERE id=${id}::uuid`;
+    };
+    // "sort" failed before but succeeded since; "deliver" failed last.
+    await finish("sort", "failed", "2026-10-31T08:00:00.000Z");
+    await finish("sort", "succeeded", "2026-10-31T09:00:00.000Z");
+    await finish("deliver", "succeeded", "2026-10-31T08:00:00.000Z");
+    await finish("deliver", "failed", "2026-10-31T09:00:00.000Z");
+    expect(await readCodeAttention({ owner }, ctx(ids.reader))).toEqual({ items: [{ codeId: resource.id, reasons: ["run_failed"] }] });
+    expect(await readCodeAttention({ owner }, ctx(ids.stranger))).toEqual({ items: [] });
+    // Core keeps the reasons briefly: a newer success shows after the cache, never as an error.
+    await finish("deliver", "succeeded", "2026-10-31T10:00:00.000Z");
+    expect((await readCodeAttention({ owner }, ctx(ids.reader))).items[0]?.reasons).toEqual(["run_failed"]);
+    clearCodeAttentionCache();
+    expect((await readCodeAttention({ owner }, ctx(ids.reader))).items[0]?.reasons).toEqual([]);
+  });
+  test("unfiltered lists avoid remote owner scans; exact owners check live administration", async () => {
+    const resource = await createCode(
+      { owner: { kind: "resource", ref: { type: "example.mailbox", id: "list-admin" } }, title: "Resource" },
+      ctx(ids.admin, true),
+    );
+    ownerState.set(ids.stranger, { title: "Mailbox", admin: true });
+    ownerSpy.mockClear();
+    const unfiltered = await listCodes({ limit: 20 }, ctx(ids.stranger));
+    expect(unfiltered.items.some((item) => item.id === resource.id)).toBe(false);
+    expect(ownerSpy).not.toHaveBeenCalled();
+    const adminList = await listCodes({ limit: 20 }, ctx(ids.admin, true));
+    expect(adminList.items.some((item) => item.id === resource.id)).toBe(true);
+    expect(ownerSpy).not.toHaveBeenCalled();
+    const filtered = await listCodes({ owner: resource.owner, limit: 20 }, ctx(ids.stranger));
+    expect(filtered.items.some((item) => item.id === resource.id)).toBe(true);
+    ownerState.delete(ids.stranger);
+  });
+  test("JSON admission measures Postgres whitespace, rejects NUL and leaves no partial run", async () => {
+    const input = Array.from({ length: 12000 }, () => 0); // 24001 compact bytes; 36000 jsonb bytes.
+    await expect(insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "boundary", input })).rejects.toMatchObject({
+      code: "BAD_INPUT",
+    });
+    const invalidInputs: Record<string, string>[] = [{ value: "bad\u0000" }, { ["bad\u0000"]: "key" }, { value: "\ud800" }];
+    for (const input of invalidInputs)
+      await expect(
+        insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "invalid-text", input }),
+      ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    for (const [sourceFiles, bundle] of [
+      [{ "code.ts": "bad\u0000" }, "good"],
+      [{ "code.ts": "good" }, "bad\u0000"],
+    ] as const)
+      await expect(
+        createCodeVersion({ codeId: code.id, sourceFiles, bundle, manifest: null, baseVersionId: versionId }, ctx(ids.owner)),
+      ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    expect(await sql`SELECT id FROM code.runs WHERE entrypoint IN ('boundary','invalid-text')`).toHaveLength(0);
+  });
+  test("valid large results finish and remain readable in full through bounded chunks", async () => {
+    const largeRun = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "large-result", input: null });
+    const result = {
+      rows: "ä😀".repeat(20000),
+      numbers: Array.from({ length: 1000 }, () => 1e100),
+      escaped: "NUL\u0000",
+      surrogate: "\ud800",
+    };
+    await sql.begin(async (tx) => {
+      const ordinal = await appendCodeCall(
+        { runId: largeRun, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: {} } },
+        tx,
+      );
+      await finishCodeCall({ runId: largeRun, ordinal, state: "succeeded", result, endedAt: fixed }, tx);
+    });
+    const [saved] = await sql<{ state: string; result: unknown }[]>`SELECT state,result FROM code.calls WHERE run_id=${largeRun}::uuid`;
+    expect(saved).toEqual({ state: "succeeded", result });
+    const page = await readCodeRun({ codeId: code.id, runId: largeRun }, ctx(ids.owner));
+    expect(page.contents?.calls[0]).toMatchObject({ result: null, resultChunked: true, state: "succeeded" });
+    let offset: number | null = 0;
+    let text = "";
+    while (offset !== null) {
+      const chunk = await readCodeRun(
+        { codeId: code.id, runId: largeRun, content: { kind: "result", ordinal: 1 }, offset },
+        ctx(ids.owner),
+      );
+      expect(codeQueryContracts.runRead.data.safeParse(chunk).success).toBe(true);
+      expect(Buffer.byteLength(JSON.stringify(chunk))).toBeLessThan(262144);
+      if (!chunk.contents?.content) throw new Error("Missing result chunk");
+      text += chunk.contents.content.text;
+      offset = chunk.contents.content.nextOffset;
+    }
+    expect(JSON.parse(text)).toEqual(result);
+    expect(
+      (await readCodeRun({ codeId: code.id, runId: largeRun, content: { kind: "result", ordinal: 1 } }, ctx(ids.reader))).contents,
+    ).toBeNull();
+  });
+  test("out-of-contract results finish visibly instead of leaving calls running", async () => {
+    const run = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "bad-result", input: null });
+    for (const result of ["x".repeat(262145)]) {
+      await sql.begin(async (tx) => {
+        const ordinal = await appendCodeCall(
+          { runId: run, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: {} } },
+          tx,
+        );
+        await finishCodeCall({ runId: run, ordinal, state: "succeeded", result, endedAt: fixed }, tx);
+      });
+    }
+    const calls = await sql<
+      { state: string; result: { code: string } }[]
+    >`SELECT state,result FROM code.calls WHERE run_id=${run}::uuid ORDER BY ordinal`;
+    expect(calls.map((call) => call.state)).toEqual(["succeeded"]);
+    expect(calls.map((call) => call.result.code)).toEqual(["code_result_exceeds_capability_contract"]);
+  });
+  test("run keyset pages keep exact microseconds and ignore newer insertions", async () => {
+    const a = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "keyset-a", input: null });
+    const b = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "keyset-b", input: null });
+    await sql`UPDATE code.runs SET created_at='2026-10-30T12:00:00.000002Z' WHERE code_id=${code.id}`;
+    await sql`UPDATE code.runs SET created_at='2026-10-30T12:00:00.000003Z' WHERE id=${a}::uuid`;
+    const first = await listCodeRuns({ codeId: code.id, limit: 1 }, ctx(ids.owner));
+    expect(first.items[0]?.id).toBe(a);
+    expect(first.nextCursor).toContain("000003Z");
+    const newer = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "keyset-new", input: null });
+    const second = await listCodeRuns({ codeId: code.id, limit: 50, cursor: first.nextCursor! }, ctx(ids.owner));
+    expect(second.items.some((item) => item.id === b)).toBe(true);
+    expect(second.items.some((item) => item.id === a || item.id === newer)).toBe(false);
+  });
+  test("immutable versions reject individual deletion while owning Code still exists", async () => {
+    await expect((async () => await sql`DELETE FROM code.versions WHERE id=${versionId}::uuid`)()).rejects.toThrow("immutable version");
+  });
+  test("an application administrator with a read-only credential can read its Code ownership", async () => {
+    const registry = spyOn(cloudRuntime, "getApp").mockResolvedValue({
+      id: "scope-app",
+      name: "Scope App",
+      icon: "ti ti-code",
+      description: "Fixture",
+      routes: ["/scope-app"],
+      baseUrl: "http://scope-app.test",
+      access: { kind: "grants" },
+    });
+    try {
+      await sql`INSERT INTO auth.app_access_state(app_id) VALUES('scope-app')`;
+      const [grant] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.access(user_id,permission) VALUES(${ids.owner}::uuid,'admin') RETURNING id`;
+      if (!grant) throw new Error("Missing admin grant");
+      await sql`INSERT INTO auth.app_access(app_id,access_id) VALUES('scope-app',${grant.id}::uuid)`;
+      const readOnly: access.CodeContext = { authority: { ...authority(ids.owner), credentialKind: "oauth", scopes: ["core:read"] } };
+      expect(await actualReadCodeOwner({ kind: "app", appId: "scope-app" }, readOnly)).toEqual({ title: "Scope App", admin: true });
+      expect(() => access.codePerson(readOnly, true)).toThrow("Credential");
+    } finally {
+      registry.mockRestore();
+    }
+  });
+  test("final Code deletion cascades versions, runs and access entries", async () => {
+    const grants = await sql<{ access_id: string }[]>`SELECT access_id FROM code.shares WHERE code_id=${code.id}`;
+    // Owner deletion enters the durable lifecycle; this storage suite covers its final owned-record deletion.
+    await sql`DELETE FROM code.codes WHERE id=${code.id}`;
+    expect(await sql`SELECT id FROM code.codes WHERE id=${code.id}`).toHaveLength(0);
+    expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
+    expect(await sql`SELECT id FROM code.runs WHERE code_id=${code.id}`).toHaveLength(0);
+    for (const grant of grants) expect(await sql`SELECT id FROM auth.access WHERE id=${grant.access_id}::uuid`).toHaveLength(0);
+  });
+});

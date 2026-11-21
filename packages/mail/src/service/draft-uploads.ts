@@ -95,6 +95,7 @@ export const createDraftAttachmentUpload = async (params: {
   mailboxId: string;
   draftId: string;
   input: CreateDraftAttachmentUpload;
+  capability?: { uploadId: string; expectedRevision: number };
 }): Promise<Result<DraftAttachmentUpload>> => {
   const parsed = createDraftAttachmentUploadSchema.safeParse(params.input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid attachment upload"));
@@ -102,6 +103,21 @@ export const createDraftAttachmentUpload = async (params: {
   if (!size.ok) return size;
   const actor = uploadActor(params.context);
   if (!actor) return fail(err.forbidden("Draft upload actor is invalid"));
+  if (params.capability) {
+    const existing = await capabilityAttachmentUpload({ ...params, uploadId: params.capability.uploadId });
+    if (existing.ok) {
+      const { upload, expectedRevision } = existing.data;
+      if (
+        expectedRevision !== params.capability.expectedRevision ||
+        upload.filename !== sanitizeFilename(parsed.data.filename) ||
+        upload.contentType !== sanitizeContentType(parsed.data.contentType) ||
+        upload.byteLength !== parsed.data.byteLength
+      )
+        return conflict("Attachment upload key was used with different input");
+      return ok(upload);
+    }
+    if (existing.error.status !== 404) return existing;
+  }
   const lease = await requireDraftLeaseAvailable({ context: params.context, mailboxId: params.mailboxId, draftId: params.draftId });
   if (!lease.ok) return lease;
   try {
@@ -109,14 +125,43 @@ export const createDraftAttachmentUpload = async (params: {
       const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const draftId = params.draftId;
-      const [draft] = await tx<{ id: string; state: string }[]>`
-        SELECT id, state FROM mail.drafts
+      const [draft] = await tx<{ id: string; state: string; revision: number }[]>`
+        SELECT id, state, revision FROM mail.drafts
         WHERE id = ${draftId}::uuid AND mailbox_id = ${params.mailboxId}::uuid AND origin = 'user'
         FOR UPDATE
       `;
       if (!draft) return fail(err.notFound("Draft"));
       const writable = await requireDraftContentWrite({ db: tx, context: params.context, draftId });
       if (!writable.ok) return writable;
+      if (params.capability) {
+        const [existing] = await tx<(DbUpload & { capability_revision: number; creator_kind: string; creator_id: string })[]>`
+          SELECT ${uploadColumns()}, upload.capability_revision, upload.creator_kind, upload.creator_id
+          FROM mail.draft_attachment_uploads upload WHERE upload.id = ${params.capability.uploadId}::uuid
+        `;
+        if (existing) {
+          if (
+            existing.draft_id !== draftId ||
+            existing.creator_kind !== actor.kind ||
+            existing.creator_id !== actor.id ||
+            Number(existing.capability_revision) !== params.capability.expectedRevision ||
+            existing.filename !== sanitizeFilename(parsed.data.filename) ||
+            existing.content_type !== sanitizeContentType(parsed.data.contentType) ||
+            Number(existing.byte_length) !== parsed.data.byteLength
+          )
+            return conflict("Attachment upload key was used with different input");
+          return ok(mapUpload(existing));
+        }
+        if (Number(draft.revision) !== params.capability.expectedRevision) return conflict("Draft changed before attachment upload");
+        const [totals] = await tx<{ count: string; bytes: string }[]>`
+          SELECT count(*) AS count, COALESCE(sum(byte_length), 0) AS bytes
+          FROM mail.draft_attachments WHERE draft_id = ${draftId}::uuid AND removed_at IS NULL
+        `;
+        const capacity = draftAttachmentCapacity({
+          count: Number(totals?.count ?? 0) + 1,
+          bytes: Number(totals?.bytes ?? 0) + parsed.data.byteLength,
+        });
+        if (!capacity.ok) return capacity;
+      }
       if (draft.state !== "draft") return fail(err.badInput("Draft can no longer accept attachments"));
 
       const temporaryHash = sha256Text(`pending-upload:${crypto.randomUUID()}`);
@@ -128,8 +173,10 @@ export const createDraftAttachmentUpload = async (params: {
       if (!blob) return fail(err.internal("Attachment upload allocation failed"));
       const [upload] = await tx<DbUpload[]>`
         INSERT INTO mail.draft_attachment_uploads AS upload (
-          draft_id, blob_id, filename, content_type, byte_length, state, creator_kind, creator_id
+          id, capability_revision, draft_id, blob_id, filename, content_type, byte_length, state, creator_kind, creator_id
         ) VALUES (
+          ${params.capability?.uploadId ?? crypto.randomUUID()}::uuid,
+          ${params.capability?.expectedRevision ?? null},
           ${draftId}::uuid,
           ${blob.id}::uuid,
           ${sanitizeFilename(parsed.data.filename)},
@@ -565,13 +612,17 @@ export const uploadDraftAttachmentStream = async (params: {
   contentType: string;
   byteLength: number;
   stream: Readable;
+  uploadId?: string;
+  signal?: AbortSignal;
 }): Promise<Result<MailDraft>> => {
-  const created = await createDraftAttachmentUpload({
-    context: params.context,
-    mailboxId: params.mailboxId,
-    draftId: params.draftId,
-    input: { filename: params.filename, contentType: params.contentType, byteLength: params.byteLength },
-  });
+  const created = params.uploadId
+    ? await getDraftAttachmentUpload({ ...params, uploadId: params.uploadId })
+    : await createDraftAttachmentUpload({
+        context: params.context,
+        mailboxId: params.mailboxId,
+        draftId: params.draftId,
+        input: { filename: params.filename, contentType: params.contentType, byteLength: params.byteLength },
+      });
   if (!created.ok) {
     params.stream.destroy();
     return created;
@@ -588,6 +639,7 @@ export const uploadDraftAttachmentStream = async (params: {
   try {
     let pending: Buffer<ArrayBufferLike> = Buffer.alloc(0);
     for await (const value of params.stream) {
+      params.signal?.throwIfAborted();
       const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value as Uint8Array);
       let offset = 0;
       if (pending.byteLength > 0) {
@@ -653,6 +705,7 @@ export const uploadDraftAttachmentStream = async (params: {
       await cancel();
       return fail(err.badInput("Attachment byte count did not match Content-Length"));
     }
+    params.signal?.throwIfAborted();
     const finalized = await finalizeDraftAttachmentUpload({
       context: params.context,
       mailboxId: params.mailboxId,
@@ -667,4 +720,56 @@ export const uploadDraftAttachmentStream = async (params: {
     await cancel();
     return fail(err.internal("Failed to stream draft attachment"));
   }
+};
+
+/** Capability streams use the existing durable upload row and its committed revision as their receipt. */
+export const capabilityAttachmentUpload = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  draftId: string;
+  uploadId: string;
+}) => {
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write");
+  if (!allowed.ok) return allowed;
+  const actor = uploadActor(params.context);
+  if (!actor) return fail(err.forbidden("Draft upload actor is invalid"));
+  const [row] = await sql<(DbUpload & { capability_revision: string | number; finalized_revision: string | number | null })[]>`
+    SELECT ${uploadColumns()}, upload.capability_revision, upload.finalized_revision
+    FROM mail.draft_attachment_uploads upload JOIN mail.drafts draft ON draft.id = upload.draft_id
+    WHERE upload.id = ${params.uploadId}::uuid AND upload.draft_id = ${params.draftId}::uuid
+      AND draft.mailbox_id = ${params.mailboxId}::uuid AND draft.origin = 'user'
+      AND upload.creator_kind = ${actor.kind} AND upload.creator_id = ${actor.id}::uuid
+      AND upload.capability_revision IS NOT NULL
+  `;
+  return row
+    ? ok({
+        upload: mapUpload(row),
+        expectedRevision: Number(row.capability_revision),
+        finalizedRevision: row.finalized_revision === null ? null : Number(row.finalized_revision),
+      })
+    : fail(err.notFound("Draft attachment upload"));
+};
+
+/** Claim once without reserving a pool connection while bytes arrive. Abandoned writes are explicitly cancelled. */
+export const claimCapabilityAttachmentWrite = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  draftId: string;
+  uploadId: string;
+}): Promise<Result<void>> => {
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write");
+  if (!allowed.ok) return allowed;
+  const actor = uploadActor(params.context);
+  if (!actor) return fail(err.forbidden("Draft upload actor is invalid"));
+  const [claimed] = await sql<{ id: string }[]>`
+    UPDATE mail.draft_attachment_uploads upload SET capability_write_started = true
+    FROM mail.drafts draft
+    WHERE upload.id = ${params.uploadId}::uuid AND upload.draft_id = ${params.draftId}::uuid
+      AND draft.id = upload.draft_id AND draft.mailbox_id = ${params.mailboxId}::uuid AND draft.origin = 'user'
+      AND upload.creator_kind = ${actor.kind} AND upload.creator_id = ${actor.id}::uuid
+      AND upload.capability_revision IS NOT NULL AND NOT upload.capability_write_started
+      AND upload.state IN ('uploading', 'uploaded')
+    RETURNING upload.id
+  `;
+  return claimed ? ok() : conflict("Attachment transfer already started; check its status or cancel it");
 };

@@ -2,6 +2,7 @@ import type { ChatCommand, ChatDictationState, ChatMention, ChatTask } from "@k2
 import {
   Button,
   Chat,
+  ChatDecisionField,
   type ChatDecisionState,
   type ChatTimelineItem,
   CodeDisplay,
@@ -12,6 +13,7 @@ import {
   ProgressBar,
   ReferenceChip,
   rememberEmoji,
+  SegmentedControl,
   Toolbar,
 } from "@k2b/ui";
 import { createSignal, For, type JSX, onCleanup } from "solid-js";
@@ -529,14 +531,7 @@ const StepRowsDemo = () => (
     defaultOpen
     label={<><Chat.Activity.Toggle>3 of 4 tasks</Chat.Activity.Toggle> created in <ReferenceChip kind="place" title="Team Ops" href="#chat-step-rows" /></>}
   >
-    <Chat.Preview>
-      <Chat.Preview.Lines label="Tasks">
-        <Chat.Preview.Line icon="ti ti-check" meta="Created">Check inventory</Chat.Preview.Line>
-        <Chat.Preview.Line icon="ti ti-check" meta="Created">Plan deliveries</Chat.Preview.Line>
-        <Chat.Preview.Line icon="ti ti-check" meta="Created">Prepare the workshop</Chat.Preview.Line>
-        <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">Schedule pickup could not be created. Try again.</Chat.Preview.Line>
-      </Chat.Preview.Lines>
-    </Chat.Preview>
+    <p>Created Check inventory, Plan deliveries, and Prepare the workshop. Schedule pickup could not be created. Try again.</p>
   </Chat.Activity>
   <Chat.Activity busy icon="ti ti-loader-2 k2b-spin" label="Creating 4 tasks in Team Ops …" />
 </div>`}
@@ -561,22 +556,7 @@ const StepRowsDemo = () => (
           </>
         }
       >
-        <Chat.Preview>
-          <Chat.Preview.Lines label="Tasks">
-            <Chat.Preview.Line icon="ti ti-check" meta="Created">
-              Check inventory
-            </Chat.Preview.Line>
-            <Chat.Preview.Line icon="ti ti-check" meta="Created">
-              Plan deliveries
-            </Chat.Preview.Line>
-            <Chat.Preview.Line icon="ti ti-check" meta="Created">
-              Prepare the workshop
-            </Chat.Preview.Line>
-            <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">
-              Schedule pickup could not be created. Try again.
-            </Chat.Preview.Line>
-          </Chat.Preview.Lines>
-        </Chat.Preview>
+        <p>Created Check inventory, Plan deliveries, and Prepare the workshop. Schedule pickup could not be created. Try again.</p>
       </Chat.Activity>
       <Chat.Activity busy icon="ti ti-loader-2 k2b-spin" label="Creating 4 tasks in Team Ops …" />
     </div>
@@ -603,18 +583,11 @@ const MailDecisionDemo = () => {
       description="Review the actual draft, then answer. Sending collapses the question immediately; completion keeps the next paragraph still."
       code={`<Chat.Decision
   state={state()}
+  kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+  source={{ name: "Mail", icon: "ti ti-mail" }}
   sentence={<>Send <ReferenceChip kind="object" title="Workshop delivery" href="#draft" /> to <ReferenceChip kind="person" name="Lea Berg" />?</>}
   reason={{ text: "You asked to check mail before sending." }}
-  preview={<Chat.Preview>
-    <Chat.Preview.Header rows={[
-      { label: "To", people: [{ name: "Lea Berg", address: "lea@example.com" }] },
-      { label: "Bcc", emphasis: true, people: [{ address: "archive@example.com" }] },
-    ]} note="Sends immediately after your answer." />
-    <Chat.Preview.Title meta="Draft · version 3">Workshop delivery</Chat.Preview.Title>
-    <Chat.Preview.Excerpt>Hello Lea, the report is ready for Friday.</Chat.Preview.Excerpt>
-    <Chat.Preview.Line icon="ti ti-file-type-pdf" meta="PDF · 240 KB">Delivery report.pdf</Chat.Preview.Line>
-    <Chat.Preview.ReadMore href="#draft">Read full draft</Chat.Preview.ReadMore>
-  </Chat.Preview>}
+  details={{ label: "Details from Mail", content: <p>Hello Lea, the delivery is ready for Friday. The attached report includes the revised quantities.</p> }}
   confirm={{ label: "Send to Lea", icon: "ti ti-send", onSelect: send }}
   decline={{ label: "Keep draft", onSelect: () => { setCurrent("declined"); setState("decided"); } }}
   outcome={<Chat.Outcome current={current()} lines={{
@@ -626,6 +599,8 @@ const MailDecisionDemo = () => {
     >
       <Chat.Decision
         state={state()}
+        kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+        source={{ name: "Mail", icon: "ti ti-mail" }}
         sentence={
           <>
             Send <ReferenceChip kind="object" title="Workshop delivery" icon="ti ti-mail" href="#draft" /> to{" "}
@@ -633,42 +608,11 @@ const MailDecisionDemo = () => {
           </>
         }
         reason={{ text: "You asked to check mail before sending." }}
-        preview={
-          <Chat.Preview>
-            <Chat.Preview.Header
-              rows={[
-                { label: "From", people: [{ name: "Robin Example", address: "robin@example.com" }] },
-                { label: "To", people: [{ name: "Lea Berg", address: "lea@example.com" }] },
-                { label: "Cc", people: [{ name: "Tom Weber", address: "tom@example.com" }] },
-                { label: "Bcc", emphasis: true, people: [{ address: "archive@example.com" }] },
-              ]}
-              note="Sends immediately after your answer."
-            />
-            <Chat.Preview.Title meta="Draft · version 3">Workshop delivery</Chat.Preview.Title>
-            <Chat.Preview.Excerpt>
-              {
-                "Hello Lea,\nThe delivery is ready for Friday.\nThe report includes the revised quantities.\nPlease check the attached list."
-              }
-            </Chat.Preview.Excerpt>
-            <Chat.Preview.Line icon="ti ti-file-type-pdf" accent="var(--k2b-reference-pdf)" meta="PDF · 240 KB">
-              Delivery report.pdf
-            </Chat.Preview.Line>
-            <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">
-              The draft includes outside content.
-            </Chat.Preview.Line>
-            <Chat.Preview.ReadMore href="#chat-mail-decision" title="Open this version of the draft">
-              Read full draft
-            </Chat.Preview.ReadMore>
-            <Chat.Preview.Lines label="What happens next">
-              <Chat.Preview.Line icon="ti ti-send" mark="added">
-                Lea receives the revised report.
-              </Chat.Preview.Line>
-              <Chat.Preview.Line icon="ti ti-x" mark="removed" tone="muted">
-                The previous attachment is removed.
-              </Chat.Preview.Line>
-            </Chat.Preview.Lines>
-          </Chat.Preview>
-        }
+        meta={[{ text: "Expires in 9 min", icon: "ti ti-clock" }]}
+        details={{
+          label: "Details from Mail",
+          content: <p>Hello Lea, the delivery is ready for Friday. The attached report includes the revised quantities.</p>,
+        }}
         confirm={{ label: "Send to Lea", icon: "ti ti-send", onSelect: send }}
         decline={{
           label: "Keep draft",
@@ -703,6 +647,142 @@ const MailDecisionDemo = () => {
   );
 };
 
+const fieldLines = {
+  safe: { text: "Not in the chat history; nobody sees the value again.", icon: "ti ti-shield-lock" },
+  held: { text: "Open in another window. Answer there.", icon: "ti ti-devices" },
+  empty: { text: "Paste the key first.", icon: "ti ti-alert-circle", tone: "danger" },
+  failed: { text: "Saving failed. Try again; your value stays in the field.", icon: "ti ti-alert-circle", tone: "danger" },
+  conflict: { text: "Changed meanwhile. Use your value anyway?", icon: "ti ti-alert-triangle", tone: "warning" },
+} as const;
+const fieldFaces = {
+  save: { label: "Save securely", icon: "ti ti-lock" },
+  saving: { label: "Saving …", icon: "ti ti-loader-2 k2b-spin" },
+  retry: { label: "Try again", icon: "ti ti-refresh" },
+  force: { label: "Replace anyway" },
+} as const;
+const fieldStates = {
+  open: { line: "safe", face: "save" },
+  saving: { line: "safe", face: "saving", locked: true },
+  error: { line: "empty", face: "save", invalid: true },
+  failed: { line: "failed", face: "retry" },
+  locked: { line: "held", face: "save", locked: true },
+  conflict: { line: "conflict", face: "force" },
+} as const satisfies Record<string, { line: keyof typeof fieldLines; face: keyof typeof fieldFaces; invalid?: boolean; locked?: boolean }>;
+type FieldDemoState = keyof typeof fieldStates;
+
+const DecisionFieldDemo = () => {
+  const [view, setView] = createSignal<FieldDemoState>("open");
+  const [state, setState] = createSignal<ChatDecisionState>("open");
+  const [outcome, setOutcome] = createSignal("saved");
+  // The value lives only here, in the host, and never leaves the field.
+  const [value, setValue] = createSignal("");
+  const row = () => fieldStates[view()];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(timer));
+  const show = (next: FieldDemoState) => {
+    clearTimeout(timer);
+    setState("open");
+    setView(next);
+  };
+  const save = () => {
+    if (!value()) return show("error");
+    show("saving");
+    return new Promise<void>((done) => {
+      timer = setTimeout(() => {
+        setValue("");
+        setOutcome("saved");
+        setState("decided");
+        done();
+      }, 1200);
+    });
+  };
+  return (
+    <DemoCard
+      id="chat-decision-field"
+      chip={{ kind: "component", name: "Chat.Decision", from: "@k2b/ui" }}
+      description="A question that asks for one value. Every state keeps one geometry; the value stays with the host."
+      code={`<Chat.Decision
+  state={state()}
+  kind={{ label: "Secret", icon: "ti ti-key" }}
+  sentence={<>Add <strong>Parcel_API</strong>?</>}
+  entry={<ChatDecisionField
+    facts={[
+      { text: "Stays only for you in this chat until you remove it", icon: "ti ti-message-circle" },
+      { text: "Goes only to api.parcel.example", icon: "ti ti-world" },
+    ]}
+    label="Value for Parcel_API" value={value()} onValueChange={setValue}
+    placeholder="Paste the key" revealLabel="Show value"
+    lines={{ safe: { text: "Not in the chat history …", icon: "ti ti-shield-lock" }, empty: { … } }}
+    current={current()} invalid={invalid()} disabled={heldElsewhere()}
+    confirm={{ label: "Save securely", icon: "ti ti-lock", alternates: [{ label: "Saving …" }, { label: "Try again" }], onSelect: save }}
+    decline={{ label: "Decline", onSelect: decline }}
+  />}
+  outcome={<Chat.Outcome current="saved" lines={{ saved: { tone: "done", text: "Secret Parcel_API saved" } }} />}
+/>`}
+    >
+      <SegmentedControl
+        ariaLabel="Field state"
+        value={view()}
+        onValueChange={(next) => show(next as FieldDemoState)}
+        options={(Object.keys(fieldStates) as FieldDemoState[]).map((value) => ({
+          value,
+          label: value[0]!.toUpperCase() + value.slice(1),
+        }))}
+      />
+      <Chat.Decision
+        state={state()}
+        kind={{ label: "Secret", icon: "ti ti-key" }}
+        sentence={
+          <>
+            Add <strong>Parcel_API</strong>?
+          </>
+        }
+        entry={
+          <ChatDecisionField
+            facts={[
+              { text: "Stays only for you in this chat until you remove it", icon: "ti ti-message-circle" },
+              { text: "Goes only to api.parcel.example; every request with it asks you first", icon: "ti ti-world" },
+            ]}
+            label="Value for Parcel_API"
+            value={value()}
+            onValueChange={(next) => {
+              setValue(next);
+              if ("invalid" in row()) setView("open");
+            }}
+            placeholder="Paste the key"
+            revealLabel="Show value"
+            lines={fieldLines}
+            current={row().line}
+            invalid={"invalid" in row()}
+            disabled={"locked" in row()}
+            confirm={{ ...fieldFaces[row().face], alternates: Object.values(fieldFaces), onSelect: save }}
+            decline={{
+              label: "Decline",
+              onSelect: () => {
+                setValue("");
+                setOutcome("declined");
+                setState("decided");
+              },
+            }}
+          />
+        }
+        outcome={
+          <Chat.Outcome
+            current={outcome()}
+            lines={{
+              saved: { tone: "done", text: "Secret Parcel_API saved", time: "19:42" },
+              declined: { tone: "off", text: "Secret Parcel_API declined", time: "19:43" },
+            }}
+          />
+        }
+      />
+      <Button size="sm" variant="subtle" onClick={() => show("open")}>
+        Ask again
+      </Button>
+    </DemoCard>
+  );
+};
+
 const DecisionPoliciesDemo = () => {
   const [deleteResult, setDeleteResult] = createSignal("done");
   const [deleted, setDeleted] = createSignal(false);
@@ -712,26 +792,32 @@ const DecisionPoliciesDemo = () => {
   return (
     <DemoCard
       id="chat-decision-policies"
-      chip={{ kind: "component", name: "Chat.Preview", from: "@k2b/ui" }}
-      description="Deletion, unavailable answers, a host-owned remember policy, and a routine with visible changes. Each question has its own answer."
+      chip={{ kind: "component", name: "Chat.Decision", from: "@k2b/ui" }}
+      description="Deletion, unavailable answers, a host-owned remember policy, and a routine schedule change. Each question has its own answer."
       code={`<Chat.Decision state={deleted() ? "decided" : "open"}
+  kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+  source={{ name: "Files", icon: "ti ti-folder" }}
   sentence="Delete the old report?"
   reason={{ text: "This permanently deletes the file.", tone: "danger", icon: "ti ti-trash" }}
-  confirm={{ label: "Delete report", variant: "danger", onSelect: () => { setDeleted(true); } }}
+  confirm={{ label: "Delete report", onSelect: () => { setDeleted(true); } }}
   decline={{ label: "Keep report", onSelect: keepReport }}
   outcome={<Chat.Outcome current="done" lines={{ done: { tone: "done", text: "Deleted the old report." } }} />}
-/>
-<Chat.Preview.Sentence>Every <Chat.Mark change="added">Friday</Chat.Mark>, send the report.</Chat.Preview.Sentence>
-<Chat.Preview.People people={[{ name: "Lea Berg" }, { name: "Tom Weber" }]}>Lea Berg and Tom Weber</Chat.Preview.People>`}
+/>`}
     >
       <div style={{ display: "grid", gap: "2rem" }}>
         <Chat.Decision
           state={deleted() ? "decided" : "open"}
+          kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+          source={{ name: "Files", icon: "ti ti-folder" }}
+          status={{
+            label: deleteResult() === "kept" ? "Declined" : "Done",
+            icon: "ti ti-circle-check",
+            tone: deleteResult() === "kept" ? "off" : "done",
+          }}
           sentence="Delete the old report?"
           reason={{ text: "This permanently deletes the file.", tone: "danger", icon: "ti ti-trash" }}
           confirm={{
             label: "Delete report",
-            variant: "danger",
             onSelect: () => {
               setDeleted(true);
             },
@@ -752,6 +838,8 @@ const DecisionPoliciesDemo = () => {
         />
         <Chat.Decision
           state={disabledDeclined() ? "decided" : "open"}
+          kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+          source={{ name: "Mail", icon: "ti ti-mail" }}
           sentence="Send the draft to Lea?"
           reason={{ text: "You asked to check first." }}
           unavailable={{ text: "Lea no longer has access to the attachment.", tone: "warning", icon: "ti ti-lock" }}
@@ -767,11 +855,12 @@ const DecisionPoliciesDemo = () => {
         />
         <Chat.Decision
           state={policy() === "open" ? "open" : "decided"}
+          kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+          source={{ name: "Files", icon: "ti ti-folder" }}
           sentence="Ask before sharing the report?"
           reason={{ text: "Choose the policy for this chat." }}
           confirm={{
             label: "Ask first",
-            variant: "primary",
             onSelect: () => {
               setPolicy("ask");
             },
@@ -801,26 +890,19 @@ const DecisionPoliciesDemo = () => {
         />
         <Chat.Decision
           state={routine() === "open" ? "open" : "decided"}
+          kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+          source={{ name: "Code", icon: "ti ti-code" }}
           sentence="Change the weekly report routine?"
           reason={{ text: "Check the new schedule and permissions." }}
-          preview={
-            <Chat.Preview>
-              <Chat.Preview.Title>Weekly report</Chat.Preview.Title>
-              <Chat.Preview.Sentence>
-                Every <Chat.Mark change="removed">Monday</Chat.Mark> <Chat.Mark change="added">Friday</Chat.Mark>, send the report to{" "}
-                <ReferenceChip kind="person" name="Lea Berg" />.
-              </Chat.Preview.Sentence>
-              <Chat.Preview.People people={[{ name: "Lea Berg" }, { name: "Tom Weber" }]}>Lea Berg and Tom Weber</Chat.Preview.People>
-              <Chat.Preview.Lines label="Routine permissions">
-                <Chat.Preview.Line icon="ti ti-send" mark="added">
-                  May send the weekly report.
-                </Chat.Preview.Line>
-                <Chat.Preview.Line icon="ti ti-lock" tone="muted">
-                  Cannot delete files.
-                </Chat.Preview.Line>
-              </Chat.Preview.Lines>
-            </Chat.Preview>
-          }
+          details={{
+            label: "Details from Code",
+            content: (
+              <p>
+                Weekly report: move the schedule from Monday to Friday and send to Lea Berg and Tom Weber. May send the report; cannot
+                delete files.
+              </p>
+            ),
+          }}
           confirm={{
             label: "Change routine",
             onSelect: () => {
@@ -865,6 +947,9 @@ const OutcomeStatesDemo = () => {
         <Chat.Outcome current="declined" lines={{ declined: { tone: "off", text: "Kept the draft.", detail: "You declined." } }} />
         <Chat.Decision
           state={expired()}
+          kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+          source={{ name: "Mail", icon: "ti ti-mail" }}
+          status={{ label: "Expired", icon: "ti ti-clock-x", tone: "off" }}
           sentence="Send the report now?"
           reason={{ text: "The previous question expired." }}
           confirm={{
@@ -1072,6 +1157,7 @@ const demos: DemoSection = {
       <StepListDemo />
       <StepRowsDemo />
       <MailDecisionDemo />
+      <DecisionFieldDemo />
       <DecisionPoliciesDemo />
       <OutcomeStatesDemo />
       <ReferenceChipsDemo />

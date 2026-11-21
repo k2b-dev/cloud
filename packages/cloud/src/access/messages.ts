@@ -1,9 +1,16 @@
 import { i18n } from "@k2b/stdlib";
 
+/** Quoted names as one list: „a“, „b“ und „c“. */
+const quoteList = (names: string[], and: string, open: string, close: string) => {
+  const quoted = names.map((name) => `${open}${name}${close}`);
+  return quoted.length < 2 ? quoted.join("") : `${quoted.slice(0, -1).join(", ")} ${and} ${quoted.at(-1)}`;
+};
+
 export const accessMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      codeAccessAuthority: "Anyone who edits the Code acts with this permission.",
       newPermission: "Permission for new entry",
       saved: "Saved",
       saving: "Saving",
@@ -33,8 +40,8 @@ export const accessMessages = i18n.define({
       standaloneServiceAccount: "Agent (API key only)",
       agentServiceAccount: "Agent",
       noDirectGrants: "No direct access granted yet.",
-      addAll: "Add user, group, agent, service account, or audience…",
-      addService: "Add user, group, agent, or service account…",
+      addAll: "Add user, group, agent, or audience…",
+      addService: "Add user, group, or agent…",
       addAudience: "Add user, group, or audience…",
       addBasic: "Add user or group…",
       anyoneWithLink: "Anyone with the link",
@@ -94,8 +101,40 @@ export const accessMessages = i18n.define({
       neverExpires: "Never expires",
       used: ({ date }: { date: string }) => `Used ${date}`,
       neverUsed: "Never used",
+      codeServiceAccount: "Service account",
+      codeWithAccess: "Code with access",
+      codeOf: ({ title }: { title: string }) => `Code of ${title}`,
+      codeHiddenOwner: "Code whose owner you can't see",
+      codeHint: "Code gets access only when someone switches it on, never here. After removal, its calls here fail.",
+      searchNobody: "No person and no group found.",
+      searchNeverCode: "Code is never listed here. It gets access when someone who manages both the Code and this place switches it on.",
+      codeLoading: "Loading code with access…",
+      codeLoadFailed: "Code with access couldn't be loaded. The people above are correct.",
+      codeRemove: "Remove",
+      codeRemoveLabel: ({ name }: { name: string }) => `Remove access for “${name}”`,
+      codeRemoveTitle: ({ name }: { name: string }) => `Remove access for “${name}”?`,
+      codeRemoveBody:
+        "The code can then no longer act here; its runs fail until someone switches it on again. What it already created stays.",
+      codeRemoveBodyFor: ({ names }: { names: string[] }) =>
+        `${quoteList(names, "and", "“", "”")} can then no longer act here; ${names.length > 1 ? "their" : "its"} runs fail until someone switches the code on again. What already exists stays.`,
+      codeUsedFor: ({ names }: { names: string[] }) => `for ${quoteList(names, "and", "“", "”")}`,
+      codeRemoveRestore: ({ owner, level }: { owner: string; level: string }) =>
+        `Only someone who manages ${owner} and has “${level}” here can switch it on again.`,
+      codeRemoveRestoreHidden: ({ level }: { level: string }) =>
+        `Only someone who manages the code's owner and has “${level}” here can switch it on again.`,
+      codeRemoved: ({ name }: { name: string }) => `Removed access for ${name}`,
+      codeRemoveFailed: "The access couldn't be removed.",
+      codeRemoveForbidden: "You no longer manage this, so you can't remove the access.",
+      codeNotRemoved: "Not removed. The access may already be gone, or you no longer manage this. Reload to see the current state.",
+      codeActivatedBy: ({ name, date }: { name: string; date: string }) => `switched on by ${name} on ${date}`,
+      codeActivatedOn: ({ date }: { date: string }) => `switched on on ${date}`,
+      codeReader: "Reader",
+      codeReaderDescription: "Sees the code, its versions and runs, without run contents.",
+      codeEditor: "Editor",
+      codeEditorDescription: "Sees and changes the code and its database and submits versions.",
     },
     de: {
+      codeAccessAuthority: "Wer den Code bearbeitet, handelt mit diesem Recht.",
       newPermission: "Recht für neuen Eintrag",
       saved: "Gespeichert",
       saving: "Wird gespeichert",
@@ -125,8 +164,8 @@ export const accessMessages = i18n.define({
       standaloneServiceAccount: "Agent (nur API Key)",
       agentServiceAccount: "Agent",
       noDirectGrants: "Noch kein direkter Zugriff erteilt.",
-      addAll: "Benutzer, Gruppe, Agenten, Dienstkonto oder Zielgruppe hinzufügen…",
-      addService: "Benutzer, Gruppe, Agenten oder Dienstkonto hinzufügen…",
+      addAll: "Benutzer, Gruppe, Agenten oder Zielgruppe hinzufügen…",
+      addService: "Benutzer, Gruppe oder Agenten hinzufügen…",
       addAudience: "Benutzer, Gruppe oder Zielgruppe hinzufügen…",
       addBasic: "Benutzer oder Gruppe hinzufügen…",
       anyoneWithLink: "Alle mit dem Link",
@@ -186,6 +225,37 @@ export const accessMessages = i18n.define({
       neverExpires: "Läuft nicht ab",
       used: ({ date }) => `Verwendet ${date}`,
       neverUsed: "Noch nie verwendet",
+      codeServiceAccount: "Dienstkonto",
+      codeWithAccess: "Code mit Zugriff",
+      codeOf: ({ title }) => `Code von ${title}`,
+      codeHiddenOwner: "Code, dessen Besitzer du nicht sehen kannst",
+      codeHint: "Code bekommt Zugriff nur beim Einschalten, nie hier. Nach dem Entfernen scheitern seine Aufrufe hier.",
+      searchNobody: "Keine Person und keine Gruppe gefunden.",
+      searchNeverCode:
+        "Code steht hier nie zur Auswahl. Er bekommt Zugriff, wenn ihn jemand einschaltet, der den Code und dieses Ziel verwaltet.",
+      codeLoading: "Code mit Zugriff wird geladen…",
+      codeLoadFailed: "Code mit Zugriff konnte nicht geladen werden. Die Personen oben stimmen.",
+      codeRemove: "Entfernen",
+      codeRemoveLabel: ({ name }) => `Zugriff von „${name}“ entfernen`,
+      codeRemoveTitle: ({ name }) => `Zugriff von „${name}“ entfernen?`,
+      codeRemoveBody:
+        "Der Code kann hier dann nichts mehr tun; seine Läufe scheitern, bis jemand neu einschaltet. Was er schon angelegt hat, bleibt.",
+      codeRemoveBodyFor: ({ names }) =>
+        `${quoteList(names, "und", "„", "“")} ${names.length > 1 ? "können" : "kann"} hier dann nichts mehr tun; ${names.length > 1 ? "ihre" : "seine"} Läufe scheitern, bis jemand neu einschaltet. Was es schon gibt, bleibt.`,
+      codeUsedFor: ({ names }) => `für ${quoteList(names, "und", "„", "“")}`,
+      codeRemoveRestore: ({ owner, level }) => `Wieder einschalten kann, wer ${owner} verwaltet und hier „${level}“ hat.`,
+      codeRemoveRestoreHidden: ({ level }) => `Wieder einschalten kann, wer den Besitzer des Codes verwaltet und hier „${level}“ hat.`,
+      codeRemoved: ({ name }) => `Zugriff von ${name} entfernt`,
+      codeRemoveFailed: "Der Zugriff konnte nicht entfernt werden.",
+      codeRemoveForbidden: "Du verwaltest das hier nicht mehr und kannst den Zugriff deshalb nicht entfernen.",
+      codeNotRemoved:
+        "Nicht entfernt. Vielleicht ist der Zugriff schon weg oder du verwaltest das hier nicht mehr. Lade neu, um den aktuellen Stand zu sehen.",
+      codeActivatedBy: ({ name, date }) => `eingeschaltet von ${name} am ${date}`,
+      codeActivatedOn: ({ date }) => `eingeschaltet am ${date}`,
+      codeReader: "Leser",
+      codeReaderDescription: "Sieht Code, Versionen und Läufe, ohne Inhalte der Läufe.",
+      codeEditor: "Bearbeiter",
+      codeEditorDescription: "Sieht und ändert Code und Datenbank und reicht Versionen ein.",
     },
   },
 });

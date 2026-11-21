@@ -160,7 +160,9 @@ export default function MailReplyBox(props: {
   const [noteSaving, setNoteSaving] = createSignal(false);
   // Above the conversation the box opens at one reserved height, from placeholder to loaded draft, so a late draft,
   // signature, or suggestion never moves the messages below it (#3297). The person's own input fits it to its content
-  // (createComposeFit in the composer); focus and content from outside never change it.
+  // (createComposeFit in the composer); focus and content from outside never change it. A press never grows it either,
+  // so Send and the quote card stay under the pointer and the first click lands (#3859; guarded by the Mail shell test
+  // "one click on Send sends an untouched suggestion …").
   const [noteError, setNoteError] = createSignal<string | null>(null);
   const [noteMinHeight, setNoteMinHeight] = createSignal<number | null>(null);
   const [mount, setMount] = createSignal<Mount | null>(null);

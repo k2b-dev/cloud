@@ -70,6 +70,46 @@ const places = (markup: string) =>
 const visibleText = (markup: string) => markup.replace(/<span[^>]*role="tooltip"[^>]*>[^<]*<\/span>/g, "").replace(/<[^>]+>/g, " ");
 
 describe("queued messages", () => {
+  test.each([
+    { locale: "de", name: "Wecker" },
+    { locale: "en", name: "Alarm" },
+  ])("an alarm keeps its own sign and planned time in $locale", ({ locale, name }) => {
+    const markup = html(
+      {
+        timeZone: "Europe/Berlin",
+        entries: [
+          {
+            id: "alarm-message",
+            text: "Prüfe die Anzahlung",
+            origin: { kind: "wakeup", id: "alarm1", name, scheduledAt: "2026-11-18T15:00:00.000Z" },
+            state: "pending",
+            authorIsViewer: false,
+          },
+        ],
+      },
+      locale,
+    );
+    expect(visibleText(markup)).toContain(`${name} 16:00`);
+    expect(markup).toContain("assistant-queue__sign ti ti-alarm");
+    expect(markup).toContain('data-kind="wakeup"');
+    expect(places(markup)[0]).toEqual(["slot", locale === "de" ? "Jetzt senden" : "Send now", locale === "de" ? "Entfernen" : "Remove"]);
+  });
+
+  // QU replaces AssistantQueuedMessages; keep feat/code's distinct infrastructure failure states in its successor.
+  test("a pending infrastructure failure names the automatic retry and keeps removal available", () => {
+    const markup = html({ entries: [{ ...ENTRIES[0]!, state: "failed", error: "dispatch_failed", retrying: true }] }, "en");
+    expect(visibleText(markup)).toContain("Could not start. Retrying shortly.");
+    expect(places(markup)[0]).toEqual(["Edit", "Send again", "Remove"]);
+    expect(visibleText(markup)).not.toContain("Please retry or remove");
+  });
+
+  test("an expired infrastructure failure asks for retry or removal without promising an automatic attempt", () => {
+    const markup = html({ entries: [{ ...ENTRIES[0]!, state: "failed", error: "dispatch_failed", retrying: false }] }, "en");
+    expect(visibleText(markup)).toContain("Could not start. Please retry or remove.");
+    expect(places(markup)[0]).toEqual(["Edit", "Send again", "Remove"]);
+    expect(visibleText(markup)).not.toContain("Retrying shortly");
+  });
+
   test("rows keep the order of arrival with three sign buttons in fixed places", () => {
     const markup = html();
     expect([...markup.matchAll(/data-entry="([^"]+)"/g)].map((match) => match[1])).toEqual(["q1", "q2", "q3"]);
@@ -116,5 +156,10 @@ describe("queued messages", () => {
     const markup = html({ layout: "chip" });
     expect(markup).not.toContain('class="assistant-queue__head"');
     expect(visibleText(markup).replace(/\s+/g, " ")).toContain("Vorgemerkt · 3");
+  });
+
+  test("the list's head says that the entries go in order, in German and English", () => {
+    expect(html()).toContain('<span class="assistant-queue__hint">Der Reihe nach.</span>');
+    expect(html({}, "en")).toContain('<span class="assistant-queue__hint">In order.</span>');
   });
 });

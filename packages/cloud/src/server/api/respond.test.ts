@@ -3,6 +3,13 @@ import { Hono } from "hono";
 import { respond } from "./respond";
 
 describe("respond", () => {
+  test("retains a service error's explicit retry flag", async () => {
+    const error = { code: "CONFLICT", message: "Try again.", status: 409 as const, retryable: true };
+    const app = new Hono().post("/", (c) => respond(c, { ok: false, error }));
+    const response = await app.request("/", { method: "POST" });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ code: "CONFLICT", message: "Try again.", retryable: true });
+  });
   test("returns the accepted state for durable work", async () => {
     const app = new Hono().post("/", (c) => respond(c, { ok: true, data: { status: "writing" } }, 202));
     const response = await app.request("/", { method: "POST" });

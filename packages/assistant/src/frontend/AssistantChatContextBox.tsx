@@ -145,6 +145,7 @@ function BoxGroup(props: {
   onAll: () => void;
 }) {
   const copy = useCopy();
+  const [unfolded, setUnfolded] = createSignal(false);
   return (
     <section class="assistant-context-box__group" aria-label={props.group.label} data-group={props.group.key}>
       <h3 class="assistant-context-box__label">
@@ -165,8 +166,26 @@ function BoxGroup(props: {
       </h3>
       <Show when={props.group.rows.length} fallback={<p class="assistant-context-box__none">{copy().boxNone}</p>}>
         <ul class="assistant-context-box__rows">
-          <For each={props.group.rows}>{(row) => <BoxRow row={row} actions={props.actions} downloadHref={props.downloadHref} />}</For>
+          <For each={unfolded() ? [...props.group.rows, ...(props.group.rest ?? [])] : props.group.rows}>
+            {(row) => <BoxRow row={row} actions={props.actions} downloadHref={props.downloadHref} />}
+          </For>
         </ul>
+      </Show>
+      <Show when={!unfolded() && props.group.rest?.length}>
+        {(count) => (
+          <button
+            type="button"
+            class="assistant-context-box__unfold"
+            onClick={(event) => {
+              // The button leaves; the focus goes on to the first row it unfolded.
+              const list = event.currentTarget.previousElementSibling;
+              setUnfolded(true);
+              list?.querySelectorAll<HTMLElement>(".assistant-context-box__main")[props.group.rows.length]?.focus();
+            }}
+          >
+            {copy().boxMore({ count: count() })}
+          </button>
+        )}
       </Show>
     </section>
   );
@@ -195,11 +214,14 @@ export function AssistantChatContextBox(props: {
     return chatId ? conversationFileSource("/api/ai", chatId) : null;
   });
   const downloadHref = (path: string) => files()?.downloadHref?.(path) ?? undefined;
+  // The chat whose box showed content in this page view; its box keeps its lines when that content goes.
+  const [filledChat, setFilledChat] = createSignal<string | null>(null);
   const model = createMemo(() => {
     const snapshot = held.shown();
     if (!snapshot) return null;
     const t = copy();
     return buildContextBoxModel(snapshot, {
+      filled: untrack(filledChat) === snapshot.chatId,
       locale: locale(),
       // Whole kilobytes keep the place at the row's end narrow.
       formatSize: (bytes) => formatFileViewSize(bytes < 1024 * 1024 ? Math.round(bytes / 1024) * 1024 : bytes, locale()),
@@ -212,6 +234,10 @@ export function AssistantChatContextBox(props: {
         showInChat: t.showInChat,
       },
     });
+  });
+  createEffect(() => {
+    const chatId = held.shown()?.chatId;
+    if (chatId && model()?.empty === false) setFilledChat(chatId);
   });
   const fresh = () => held.pending() > 0 || held.changed();
   return (

@@ -32,6 +32,7 @@ export default ssr<AuthContext>(async (c) => {
     actor: c.get("actor"),
     accessSubject: c.get("accessSubject"),
     requestId: c.req.header("x-request-id") ?? null,
+    locale: getLocale(c),
   };
   const currentUserEmail = (context.actor.kind === "user" ? context.actor.user : context.actor.delegatedUser)?.mail ?? null;
   const currentActor =

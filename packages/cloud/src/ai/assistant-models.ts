@@ -1,3 +1,4 @@
+import type { SQL } from "bun";
 import type { AccessSubject, RequestActor } from "../server";
 import {
   AI_MODEL_CLASSES,
@@ -144,13 +145,14 @@ export const selectAssistantAiModel = async (
   model?: AiModelRequest,
   policy: AiModelPolicy = personalAiModelPolicy,
   providedState?: AiSettingsState,
+  db?: SQL,
 ): Promise<AiModelRequest> => {
-  const state = providedState ?? (await readAiSettingsState());
+  const state = providedState ?? (await readAiSettingsState(db));
   const stored = !model && subject?.type === "user" ? (await aiUserPrefs.get(subject.userId)).selection : null;
   const selection = stored && "id" in stored && !state.profiles.some((profile) => profile.id === stored.id) ? null : stored;
   const requested = model ?? selection ?? { class: "balanced" };
   const profile = selectAiModelProfile(state, policy, requested);
-  await aiModelAccess.assertAllowed(profile.modelId, subject);
+  await aiModelAccess.assertAllowed(profile.modelId, subject, db);
   resolveAiModelRef(state, requested);
   return requested;
 };

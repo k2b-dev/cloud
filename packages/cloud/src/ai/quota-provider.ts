@@ -28,7 +28,9 @@ const callLifecycle = {
 export function inferenceProvider(
   provider: Provider,
   profile: AiModelProfile,
-  context: AiCallContext,
+  context: AiCallContext & {
+    onUsage?: (usage: { input: number; output: number; cacheRead?: number; estimated?: boolean } | undefined) => void;
+  },
   lifecycle = callLifecycle,
 ): Provider {
   // createAiProvider normalizes adapter diagnostics before trusted dispatch guards wrap it.
@@ -57,7 +59,16 @@ export function inferenceProvider(
       for (;;) {
         request.signal?.throwIfAborted();
         try {
-          return await lifecycle.begin(profile, ctx, inputTokens, aiOutputBudget(profile, inputTokens, request), provider.contextWindow);
+          return await lifecycle.begin(
+            profile,
+            ctx,
+            inputTokens,
+            aiOutputBudget(profile, inputTokens, request),
+            provider.contextWindow,
+            request.messages.some(
+              (message) => message.role === "user" && message.content.some((part) => typeof part !== "string" && part.type === "file"),
+            ),
+          );
         } catch (error) {
           if (!(error instanceof AiBackgroundAdmissionError) || !error.retryable || Date.now() >= deadline) throw error;
           await delay(1_000, undefined, { signal: request.signal });
@@ -92,11 +103,14 @@ export function inferenceProvider(
     stream: async function* (request) {
       const call = await begin(request, context);
       const id = call.id;
-      let usage: { input: number; output: number; estimated?: boolean } | undefined;
+      let usage: { input: number; output: number; cacheRead?: number; estimated?: boolean } | undefined;
       let completed = false;
       let failed = false;
       let error: string | undefined;
       const outputBlocks = new Map<string, number>();
+      /** Argument characters a call showed as previews, until its final block ends; and the call of each tool block. */
+      const previewChars = new Map<string, number>();
+      const toolBlockCalls = new Map<string, string>();
       let generated = false;
       const requestStartedAt = Date.now();
       let transport: TransportReport | undefined;
@@ -112,10 +126,17 @@ export function inferenceProvider(
             failed = true;
             error ??= event.issue.message;
           }
-          if ((event.type === "block_start" || event.type === "block_delta") && firstBlockAt === undefined) firstBlockAt = Date.now();
+          if (
+            (event.type === "block_start" || event.type === "block_delta" || event.type === "tool_args_delta") &&
+            firstBlockAt === undefined
+          )
+            firstBlockAt = Date.now();
           if (event.type === "block_delta") outputBlocks.set(event.blockId, (outputBlocks.get(event.blockId) ?? 0) + event.delta.length);
+          if (event.type === "tool_args_delta") previewChars.set(event.callId, (previewChars.get(event.callId) ?? 0) + event.delta.length);
+          if (event.type === "block_start" && event.kind === "tool_call" && event.callId) toolBlockCalls.set(event.blockId, event.callId);
           if (event.type === "block_end") {
             const block = event.block;
+            if (block.type === "tool_call") previewChars.delete(block.id);
             const size =
               block.type === "text"
                 ? block.text.length
@@ -124,7 +145,13 @@ export function inferenceProvider(
                   : block.name.length + JSON.stringify(block.args).length;
             outputBlocks.set(event.blockId, size);
           }
-          if (event.type === "block_start" || event.type === "block_delta" || event.type === "block_end") generated = true;
+          if (
+            event.type === "block_start" ||
+            event.type === "block_delta" ||
+            event.type === "block_end" ||
+            event.type === "tool_args_delta"
+          )
+            generated = true;
           // A provider that refused the request, or never received it, did not process it.
           if (
             event.type === "issue" &&
@@ -139,10 +166,16 @@ export function inferenceProvider(
               failed = true;
               error ??= `The provider finished with ${event.finishReason}.`;
             }
-            const { input, output } = event.usage;
+            const { input, output, cacheRead } = event.usage;
             // Some adapters synthesize all-zero usage when the endpoint reports none.
             if (Number.isSafeInteger(input) && Number.isSafeInteger(output) && input >= 0 && output >= 0 && input + output > 0)
-              usage = { input, output };
+              usage = {
+                input,
+                output,
+                ...(cacheRead !== undefined && Number.isSafeInteger(cacheRead) && cacheRead >= 0 && cacheRead <= input
+                  ? { cacheRead }
+                  : {}),
+              };
           }
           yield event;
         }
@@ -174,9 +207,15 @@ export function inferenceProvider(
                 (request.systemPrompt?.length ?? 0) +
                 JSON.stringify(request.tools ?? []).length +
                 JSON.stringify(request.responseFormat ?? {}).length;
+              // A call's arguments count once: as its final block, or as previews where they reached further.
+              const canonical = new Map([...toolBlockCalls].map(([blockId, callId]) => [callId, outputBlocks.get(blockId) ?? 0]));
+              const previewOnly = [...previewChars].reduce(
+                (sum, [callId, size]) => sum + Math.max(0, size - (canonical.get(callId) ?? 0)),
+                0,
+              );
               usage = {
                 input: estimateTokens(messages) + Math.ceil(instructionSize / 4),
-                output: Math.ceil(Array.from(outputBlocks.values()).reduce((sum, size) => sum + size, 0) / 4),
+                output: Math.ceil((Array.from(outputBlocks.values()).reduce((sum, size) => sum + size, 0) + previewOnly) / 4),
                 estimated: true,
               };
             }
@@ -191,6 +230,12 @@ export function inferenceProvider(
             });
           } catch {
             log.warn("Chat usage booking failed", { code: "quota_booking_failed", turnId: context.turnId, callId: id });
+          }
+          // Observe the same canonical usage even if its ledger write fails. Never retry inference for an observer.
+          try {
+            context.onUsage?.(usage);
+          } catch {
+            log.warn("AI usage observer failed", { callId: id });
           }
         }
       }

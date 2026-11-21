@@ -188,7 +188,7 @@ describe("public capability client", () => {
 });
 
 test("full review reader uses only Cloud snapshot routes and preserves complete content", async () => {
-  const content = { kind: "page" as const, title: "Full", body: "x".repeat(300_000), format: "plain" as const };
+  const content = { version: 1 as const, blocks: [{ kind: "Text" as const, text: "x".repeat(300000) }] };
   const ref = { href: "/api/approvals/11111111-1111-4111-8111-111111111111/content", digest: "a".repeat(64) };
   let calls = 0;
   const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
@@ -225,4 +225,22 @@ test("full review reader fails closed on oversize and catches cancellation durin
     ok: false,
     error: { code: "REQUEST_CANCELLED" },
   });
+});
+
+test("public clients keep target and refs beside input for review and execution", async () => {
+  const coordinates = {
+    target: { type: "demo.book", id: "source" },
+    refs: { destinationId: { type: "demo.book", id: "destination" } },
+    input: { id: "contact" },
+  };
+  const bodies: unknown[] = [];
+  const options = {
+    fetch: async (url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return String(url).endsWith("/review") ? Response.json({ message: "Move contact." }) : Response.json({ data: {} });
+    },
+  };
+  expect((await reviewCapabilityAction({ appId: "demo", capabilityId: "move", ...coordinates }, options)).ok).toBe(true);
+  expect((await invokeCapability({ appId: "demo", capabilityId: "move", kind: "action", ...coordinates }, options)).ok).toBe(true);
+  expect(bodies).toEqual([coordinates, coordinates]);
 });

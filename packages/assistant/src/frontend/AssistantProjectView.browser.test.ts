@@ -58,7 +58,7 @@ const html = renderToString(() =>
       return createComponent(AssistantProjectView, {
         project,
         initialPage: page,
-        initialContext: { projectId: project.id, apps: empty, skills: empty, knowledge: [], files: [], references: [] },
+        initialContext: { projectId: project.id, skills: empty, knowledge: [], files: [], references: [] },
         onOpenConversation: async () => true,
         composer: "Composer",
       });

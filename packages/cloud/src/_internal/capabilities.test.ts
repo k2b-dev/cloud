@@ -4,7 +4,9 @@ import { z } from "zod";
 import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_MAX_RESULT_BYTES,
+  type CapabilityActionCallReview,
   type CapabilityActionManifest,
+  type CapabilityActionPolicy,
   type CapabilityDefinitions,
   type CapabilityErrorStatus,
   type CapabilityManifest,
@@ -23,8 +25,10 @@ import {
   capabilityHash,
   capabilityManifestEvolutionIssues,
   compileCapabilities,
+  compileCapabilityPresentation,
   invokeCompiledCapability,
   parseCapabilityManifest,
+  resolveCapabilityActionWording,
   resolveCapabilityManifestPresentation,
   reviewCompiledCapability,
   serializeCapabilityProviderResult,
@@ -693,6 +697,28 @@ describe("capability v1 compilation", () => {
     });
   });
 
+  test("accepts exactly 400 KiB of manifest and rejects one additional byte", () => {
+    const definitions = (padding: number) =>
+      defineCapabilities({
+        protocolVersion: 2,
+        queries: {
+          read: {
+            title: "Read fixture",
+            description: "Returns a fixed payload to measure the manifest boundary.",
+            input: z.object({}).strict(),
+            data: z.object({ text: z.literal("x".repeat(padding)) }).strict(),
+            openWorld: false,
+            run: async () => ok({ data: { text: "x".repeat(padding) } }),
+          },
+        },
+      });
+    const baseline = Buffer.byteLength(JSON.stringify(compileCapabilities("example", definitions(0)).manifest));
+    const padding = 400 * 1024 - baseline;
+    const accepted = compileCapabilities("example", definitions(padding));
+    expect(Buffer.byteLength(JSON.stringify(accepted.manifest))).toBe(409600);
+    expect(() => compileCapabilities("example", definitions(padding + 1))).toThrow("manifest exceeds the 409600-byte");
+  });
+
   test("rejects manifests that are too large for the bounded live registry", () => {
     const fields = Object.fromEntries(
       Array.from({ length: 20 }, (_, index) => [`field_${index}`, z.string().describe(`Documented field ${index}. ${"x".repeat(100)}`)]),
@@ -712,7 +738,7 @@ describe("capability v1 compilation", () => {
     );
 
     expect(() => compileCapabilities("example", defineCapabilities({ protocolVersion: 2, queries }))).toThrow(
-      "manifest exceeds the 262144-byte",
+      "manifest exceeds the 409600-byte",
     );
   });
 
@@ -823,22 +849,25 @@ describe("capability v1 compilation", () => {
       run: async () => ok({ data: [] }),
     };
     const manifest = compileCapabilities("example", defineCapabilities({ protocolVersion: 2, queries: { search } })).manifest;
-    const untypedView = CloudResourceViewSchema.extend({
+    const untypedView = CloudResourceViewSchema.omit({ group: true }).extend({
       metadata: z
         .array(z.object({ label: z.string().min(1).max(120), value: z.string().max(1000) }).strict())
         .max(20)
         .optional()
         .describe("Small structured metadata shown with the result."),
     });
-    for (const view of [untypedView, untypedView.omit({ context: true, status: true })]) {
+    for (const view of [CloudResourceViewSchema.omit({ group: true }), untypedView, untypedView.omit({ context: true, status: true })]) {
       const copy = structuredClone(manifest);
       const query = copy.queries[0]!;
       query.dataSchema = projectSchema(z.array(view).max(100), "Universal Search data", "output");
       query.schemaHash = capabilityHash({ inputSchema: query.inputSchema, dataSchema: query.dataSchema });
       const { manifestHash: _previous, ...base } = copy;
-      expect(parseCapabilityManifest({ ...base, manifestHash: capabilityHash(base) }, "example").queries[0]?.universalSearch).toEqual(
-        search.universalSearch,
-      );
+      const sent = { ...base, manifestHash: capabilityHash(base) };
+      const parsed = parseCapabilityManifest(sent, "example");
+      expect(parsed.manifestHash).toBe(sent.manifestHash);
+      expect(parsed.queries[0]?.dataSchema).toEqual(query.dataSchema);
+      expect(parsed.queries[0]?.schemaHash).toBe(query.schemaHash);
+      expect(parsed.queries[0]?.universalSearch).toEqual(search.universalSearch);
     }
     // The data schema the release before `format` declared; the untyped view above must reproduce it.
     expect(capabilityHash(projectSchema(z.array(untypedView).max(100), "Universal Search data", "output"))).toBe(
@@ -1830,4 +1859,177 @@ test("capability execution caps OAuth actions even for direct and delegated call
       if (!allowed) expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
     }
   }
+});
+
+describe("Code version call reviews", () => {
+  const sentence = { action: "Change task", running: "Changing task", done: "Changed task", confirm: "Change", decline: "Cancel" };
+  for (const scenario of [
+    "silent",
+    "call asks",
+    "no scope",
+    "review fails",
+    "no review",
+    "deletes",
+    "sends",
+    "unattended false",
+    "routines false",
+  ] as const) {
+    test(`${scenario} is checked before an unattended effect and leaves chat execution unchanged`, async () => {
+      const run = mock(async () => ok({ data: {} }));
+      const policy: CapabilityActionPolicy =
+        scenario === "deletes" || scenario === "sends"
+          ? { ask: scenario }
+          : { silent: "shared", ...(scenario === "routines false" ? { routines: false } : {}) };
+      const reviewed: CapabilityActionCallReview = {
+        locale: "en",
+        sentence,
+        slots: {},
+        ...(scenario !== "no scope" ? { scope: "task:one" } : {}),
+        ...(scenario === "call asks" ? { ask: "involves_people" } : {}),
+      };
+      const review = mock(async (_input: unknown, _context: unknown) =>
+        scenario === "review fails" ? fail({ code: "FORBIDDEN", message: "No access", status: 403 as const }) : ok(reviewed),
+      );
+      const compiled = compileCapabilities("example", {
+        protocolVersion: 2,
+        actions: {
+          change: {
+            title: "Change task",
+            description: "Change one task.",
+            input: z.object({}).strict(),
+            data: z.object({}).strict(),
+            destructive: scenario === "deletes",
+            openWorld: scenario === "sends",
+            idempotency: "required",
+            ...(scenario === "no review" ? {} : { policy, review }),
+            ...(scenario === "unattended false" ? { unattended: false } : {}),
+            run,
+          },
+        },
+      });
+      const args = {
+        compiled,
+        kind: "action" as const,
+        localId: "change",
+        input: {},
+        expectedSchemaHash: compiled.manifest.actions[0]!.schemaHash,
+      };
+      const codeContext = {
+        ...context,
+        idempotencyKey: "one",
+        actor: {
+          ...context.actor,
+          delegation: {
+            kind: "invocation" as const,
+            callingAppId: "core",
+            credentialKind: "mandate" as const,
+            invocationId: "invocation-one",
+            workloadType: "code.version",
+            workloadId: "version-one",
+          },
+        },
+      };
+      const result = await invokeCompiledCapability({ ...args, context: codeContext });
+      const allowed = scenario === "silent" || scenario === "no scope";
+      expect(result.ok).toBe(allowed);
+      expect(run).toHaveBeenCalledTimes(allowed ? 1 : 0);
+      if (scenario !== "no review") {
+        if (["silent", "call asks", "no scope", "review fails"].includes(scenario)) {
+          expect(review).toHaveBeenCalledTimes(1);
+          expect(review.mock.calls[0]).toEqual([{}, expect.objectContaining({ idempotencyKey: undefined })]);
+        }
+      }
+      // Interactive execution remains behind its existing Cloud approval flow.
+      expect((await invokeCompiledCapability({ ...args, context: { ...context, idempotencyKey: "two" } })).ok).toBe(true);
+      expect(run).toHaveBeenCalledTimes(allowed ? 2 : 1);
+    });
+  }
+});
+
+test("resource manager audiences use a paged app-only query without a person session", async () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  let page: unknown;
+  const definitions = defineCapabilities({
+    protocolVersion: 2,
+    queries: example().queries,
+    types: {
+      item: {
+        title: "Item",
+        description: "One item.",
+        reader: "get",
+        access: {
+          managers: (input, caller) => {
+            expect(caller.actor).toEqual({ kind: "app", appId: "notice-sender" });
+            expect(caller.accessSubject).toEqual({ type: "none" });
+            page = input;
+            return [id];
+          },
+        },
+      },
+    },
+  });
+  const compiled = compileCapabilities("example", definitions);
+  const operation = compiled.queries.get("item.managers")!;
+  expect(operation.manifest.appOnly).toBe(true);
+  const result = await invokeCompiledCapability({
+    compiled,
+    kind: "query",
+    localId: "item.managers",
+    expectedSchemaHash: operation.manifest.schemaHash,
+    input: { id: "thing", userId: id, limit: 1 },
+    context: {
+      actor: { kind: "app", appId: "notice-sender" },
+      accessSubject: { type: "none" },
+      user: null,
+      locale: "en",
+      origin: "app",
+      requestId: "managers",
+      signal: new AbortController().signal,
+    },
+  });
+  expect(result).toMatchObject({ ok: true, data: { data: { userIds: [id] } } });
+  expect(page).toEqual({ id: "thing", userId: id, limit: 1 });
+  const person = await invokeCompiledCapability({
+    compiled,
+    kind: "query",
+    localId: "item.managers",
+    expectedSchemaHash: operation.manifest.schemaHash,
+    input: { id: "thing" },
+    context,
+  });
+  expect(person).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+});
+
+test("result forms are translated, target-bound presentation for confirmed effects, including third-party Actions", () => {
+  const { manifest } = compileCapabilities("example", example());
+  const catalog = {
+    baseLocale: "en",
+    results: { rename: { text: "Updated {target}", targetType: "item", kind: "item", countText: "Items updated" } },
+    translations: {
+      de: {
+        actions: { rename: { result: { text: "{target} geändert", targetType: "item", kind: "Eintrag", countText: "Einträge geändert" } } },
+      },
+    },
+  };
+  const compiled = compileCapabilityPresentation(manifest, catalog);
+  const action = manifest.actions.find((action) => action.localId === "rename")!;
+  expect(resolveCapabilityActionWording(action, compiled, "de-DE").result).toEqual(catalog.translations.de.actions.rename.result);
+  expect(resolveCapabilityActionWording(action, compiled, "en").result).toEqual(catalog.results.rename);
+  for (const text of ["{input.secret} changed", "{target} {target}", "Changed\n{target}"]) {
+    const bad = { ...catalog, results: { rename: { ...catalog.results.rename, text } } };
+    expect(() => compileCapabilityPresentation(manifest, bad)).toThrow();
+    expect(compileCapabilityPresentation(manifest, bad, "reader")?.results).toBeUndefined();
+  }
+  expect(() => compileCapabilityPresentation(manifest, { ...catalog, results: { unknown: catalog.results.rename } })).toThrow();
+  for (const countText of ["{target} changed", "", "Bad\nlabel"]) {
+    expect(() =>
+      compileCapabilityPresentation(manifest, { ...catalog, results: { rename: { ...catalog.results.rename, countText } } }),
+    ).toThrow();
+  }
+  const badTranslation = {
+    ...catalog,
+    translations: { de: { actions: { rename: { result: { ...catalog.results.rename, targetType: "unknown" } } } } },
+  };
+  expect(() => compileCapabilityPresentation(manifest, badTranslation)).toThrow();
+  expect(compileCapabilityPresentation(manifest, badTranslation, "reader")?.translations.de?.actions?.rename).toBeUndefined();
 });

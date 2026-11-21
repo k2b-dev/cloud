@@ -1,5 +1,5 @@
 import { expect, mock, test } from "bun:test";
-import { closePanel, openPanel, type PanelRequest } from "./panel";
+import { askPanelConsent, closePanel, openPanel, type PanelRequest } from "./panel";
 
 test("the event bridge returns synchronous acceptance and filters search without module state", () => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -76,8 +76,39 @@ for (const embedded of [false, true]) {
   }
 }
 
+for (const embedded of [false, true]) {
+  for (const providerPage of [false, true]) {
+    test(`askPanelConsent only asks the parent shell from an embedded provider page (embedded=${embedded}, provider=${providerPage})`, () => {
+      const keys = ["window", "document", "location"] as const;
+      const previous = keys.map((key) => Object.getOwnPropertyDescriptor(globalThis, key));
+      const browser = new EventTarget();
+      const postMessage = mock((_message: unknown, _targetOrigin: string) => {});
+      Object.defineProperty(browser, "parent", { value: embedded ? { postMessage } : browser });
+      Object.defineProperties(globalThis, {
+        window: { configurable: true, value: browser },
+        document: { configurable: true, value: { querySelector: () => (providerPage ? {} : null) } },
+        location: { configurable: true, value: { origin: "https://cloud.test" } },
+      });
+      try {
+        askPanelConsent();
+        // The message carries no answer: only the person answers, in the shell's slot.
+        expect(postMessage.mock.calls).toEqual(
+          embedded && providerPage ? [[{ type: "cloud.panel.consent.ask", v: 1 }, "https://cloud.test"]] : [],
+        );
+      } finally {
+        keys.forEach((key, index) => {
+          const descriptor = previous[index];
+          if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+          else Reflect.deleteProperty(globalThis, key);
+        });
+      }
+    });
+  }
+}
+
 test("the public browser module exposes the documented panel operations", async () => {
   expect(Object.keys(await import("./panel")).sort()).toEqual([
+    "askPanelConsent",
     "closePanel",
     "getContext",
     "onContextChange",

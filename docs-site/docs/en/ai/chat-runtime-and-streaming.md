@@ -20,6 +20,9 @@ Interactive submissions and retries enforce the caller's
 The model list and status return only permitted models. A denied explicit model
 selection returns HTTP 403 before a retry changes the conversation.
 
+[Scheduled chat messages](/en/docs/ai/chat-alarms) use this same queue and send
+receipt contract for one-off and recurring Gustav alarms.
+
 ## Queue follow-up messages
 
 Add a client-generated UUID `queueId` to `POST /api/ai/conversations/:id/turns`
@@ -28,21 +31,70 @@ that draft revision and preserves its text, resource references, model selection
 and exact attachment bytes. Repeating the same `queueId` is idempotent, including
 after the message has started. A later composer draft remains independent.
 
-The personal composer queue accepts up to 20 pending or failed messages per
-conversation. Queued attachment snapshots share a 250 MiB budget. The existing turn worker processes messages in
+Each conversation accepts up to 20 pending or failed person messages. Queued attachment
+snapshots share a 250 MiB budget. The existing turn worker processes messages in
 acceptance order, one active turn per conversation. Queues survive navigation,
 reloads and worker restarts. Completion, failure or cancellation of a turn allows
-the next queued message to start; a dispatch failure keeps the failed entry at the
-head until the user retries or removes it. Approval waits keep the current turn
-active and do not advance the queue.
+the next queued message to start. A final refusal keeps a person's failed entry at
+the head until the person retries or removes it. A final automation refusal releases
+its place immediately. Transient infrastructure errors remain pending as described
+below. Approval waits keep the current turn active and do not advance the queue.
+
+`AUTOMATION_QUEUE_LIMIT = 32` bounds pending automation entries separately from
+the person's composer capacity. `AUTOMATION_QUEUE_SOURCE_LIMIT = 1` prevents a
+Code or source chat from filling the queue while its previous message waits.
+Both constants are exported from `@k2b/cloud/ai/runtime`. The capacity check and
+FIFO ordering share the conversation lock. Automation sends return `chat_busy`
+when either automation limit is reached.
+
+`enqueueAutomationChatMessage` is the trusted host's draft-free insertion path;
+composer submission continues through `enqueueChatMessage`. On dequeue, Cloud
+reads the current payload and revision under the conversation lock.
+`submitChatTurn` consumes that stored payload and rejects a mismatched
+`queuedMessageRevision`. Core registers `validateQueuedChatStart` on the first
+`startAiRuntime` call. Its `expiredReason` hook supplies a scalar SQL expression
+wrapped in `{ expression }` (SQL queries are thenable). One bounded statement
+marks pending expired or invalid Code entries `failed` independently of FIFO and deletes their
+input, context and attachments. Pending Code entries expire at their accepted budget day's end;
+retry never revives them. A final refusal keeps its status and reason through later day changes
+and archiving. Before promotion it checks current ownership, source
+authority, enabled Code, model access and allowances. Automation work fails
+closed when that host policy is absent: entries remain pending until the host
+registers its policy, including across runtime shutdown. The validator uses the
+supplied database executor for account, Project, settings, model-access and
+quota reads. It checks Project access without loading Project content. One
+model-catalog snapshot serves both the validator and quota check. These services
+accept optional transaction executors so a dequeue
+never needs another pool connection while holding its chat lock. Settings
+reads with an executor bypass the cache and read the stored value and defaults. Composer
+entries instead prefetch cached settings and a catalog snapshot before taking the chat lock.
+Code starts lock chat, owner and Code in that order, taking the Code row with `NOWAIT` to avoid
+waiting for a reviewer that holds Code before chat.
+
+Only typed quota, settings and source-policy refusals are final. Unknown start errors keep the
+entry pending with visible `dispatch_failed` and log each failed attempt's reason and error class.
+`quota_checked_at` also schedules these retries at least 15 seconds apart; it never proves that
+quota admission succeeded. They end at the existing 30-minute queued-turn start deadline,
+measured from acceptance, or earlier at a Code's budget-day end. The person can remove the entry;
+a final person failure keeps FIFO until the person retries or removes it.
+
+`ai.chat.send` stores an immutable admission in `ai.chat_send_receipts`: account,
+operation, key hash, input hash, original destination, origin, initiator and
+queue ID. Turn state is read from the associated turns; retries retain the send
+ID. Queue payload cleanup and conversation deletion do not remove the receipt.
+Receipts are durable evidence and status references, retained for the account's lifetime;
+24-hour idempotency does not expire that evidence. Account deletion removes its receipts.
+Replay reads it before resolving today's destination or checking allowances,
+so it never redirects an accepted message. The caller's current authority is
+checked first: paused Code or an ended run gets no receipt back. Read current state with
+`ai.chat.read({ id: originalChatId, message: sendId })`.
 
 A person's **Stop** holds the foreground queue, even if the response just
 finished. Every entry, including those of automations, stays queued. Send now
 starts only its own entry; a later Stop withdraws that request and leaves the
 entry waiting. A new message from the person resumes the queue in its order;
-a message from an automation or another chat does not. Stopping a routine's
-background turn does not hold the foreground queue. Routines continue on their
-schedule after a Stop.
+a message from an automation or another chat does not. Stop does not change
+a Code schedule.
 
 A direct submission cannot overtake waiting entries: it returns HTTP 409 with
 `code: "queue_waiting"` and leaves the draft intact. The web chat and PWA then
@@ -67,7 +119,10 @@ Code; the personal queue described here is available independently.
 The owner-authorized queue API provides:
 
 - `GET /conversations/:id/queue`: ordered pending and failed entries, including
-  `id`, `text`, `content`, `origin`, `state`, `createdAt`, and `authorIsViewer`.
+  `id`, `text`, `content`, `origin`, `state`, `createdAt`, and `authorIsViewer`,
+  plus `error` (a stable code such as `dispatch_failed`, or `null`) and
+  `retrying` (`true` while Cloud starts the entry again by itself; `state` then
+  reads `failed`). `AiQueuedMessageSchema` parses all of these fields.
   The display states are `pending`, `sending`, and `failed`; storage keeps its
   existing `pending`, `failed`, `submitted`, and `cancelled` statuses.
 - `PATCH /conversations/:id/queue/:messageId` with `{ text }`: edit the person's
@@ -88,7 +143,7 @@ The archive dialog warns that waiting messages will be discarded. It names the
 count when known; otherwise it uses a general warning. The Cloud app archives
 chats with an empty queue directly and offers Undo. Waiting entries require
 confirmation; if the queue cannot be read, confirmation uses the general
-warning. Routine warnings appear only when this confirmation is needed.
+warning.
 Restoring the chat does not recover discarded messages or their queued
 attachments.
 
@@ -146,11 +201,18 @@ old work. It must check an uncertain effect before repeating it.
 ### Preserve writer identity and live state
 
 Queue entries and history messages carry server-authored provenance.
-`origin.kind` is `person`, `automation`, or `chat`, with a stable ID and a
-resolved display name. Chat and automation links appear only when the viewer
+A message an automation or another chat sent with `context` stores the
+instruction and the data in one text part for the model. Reads show them apart:
+the message's `text` is the instruction, and history messages carry the data
+as `meta.sourceContext`. A queue entry's `text` is its instruction alone.
+`origin.kind` is `person`, `automation`, `chat`, or `wakeup`, with a stable ID and a
+resolved display name. Personal Code stores its automation origin with
+`resource: { type: "core.code", id }`; Code's own reader then names and links it
+for each viewer who may read it. Without a readable name the projection says
+`named: false` and `name` is only “Automation”, so surfaces read “From an
+automation” instead of naming it. Chat and automation links appear only when the viewer
 can open the target. Durable provenance stores IDs, never translated names or
-display links. The existing inter-chat delivery path also records its source
-chat. Its delivery lifecycle is unchanged.
+display links.
 
 The admission limit is defined by `AI_MESSAGE_QUEUE_LIMIT` for the existing
 personal composer queue. Platform adapters supply provenance through the
@@ -167,16 +229,55 @@ interruption signals execute no SQL; the integration budget is pinned with
 `AiMessageOrigin`, `AiQueuedMessage`, `AiSendQueuedMessageResult`, and
 `AiQueueLiveEvent`.
 
-Queued text, steering, and client tool results run as the person and session
-that started the turn or queued the entry. A session of the Cloud app may
-therefore edit only entries queued in the app, and steer or answer tool requests
-only in turns started there; others answer `403` with code `FORBIDDEN`. A browser
-session, `cld`, and other clients keep their access.
+Text from a source without a signed-in session restricts the turn it enters:
+a queued message, a queue edit, a steer or a tool result sent with `cld`, an API
+key or another delegated credential. The text is still accepted and the turn
+keeps running, but it loses rights that need a person's session, such as
+writing to another chat with `ai.chat.send`. An approval without text does not
+restrict the turn.
 
-The Cloud app can send Assistant messages to another chat only from app-started
-turns. An Assistant message sent from an app-started turn to another chat keeps the
-app session's restrictions in the target turn, including when delivery waits
-for that chat to become idle. It never gains the installation `admin` role.
+Queued text, steering, client tool results, and edited action drafts run as
+the person and session that started the turn or queued the entry. A session of
+the Cloud app may therefore edit, retry, or send now only entries queued in the
+app, and steer, answer tool requests, or edit an action's draft only in turns
+started there; others answer `403` with code `FORBIDDEN`. Automation entries
+never come from the app, so the app cannot edit, retry, or send them now.
+Removing an entry adds no text, so the app may remove any entry, automation
+entries included. A browser session, `cld`, and other clients keep their
+access. The Cloud app cannot write to another chat with `ai.chat.send` or create
+one with `ai.chat.create`; both answer `source_restricted`.
+
+## List place chats
+
+A place chat belongs to the person who sent its first message. Opening a place
+never creates a chat. There is one active chat per person and place; starting
+over archives it, and the next message creates its replacement.
+
+`GET /api/ai/conversations` and `/api/ai/conversations/page` accept `place`:
+
+| Value | Chats returned |
+| --- | --- |
+| `none` (default) | Chats without a place. |
+| `any` | Chats bound to a place. |
+| `<type>:<id>` | Chats bound to that exact resource reference. |
+
+The filter combines with the existing search, status, archive, and Project
+filters. Both endpoints return `place: { ref: { type, id }, title }` for place
+chats and `place: null` for ordinary chats. The title is the stored snapshot;
+listing a chat does not call the place provider. The place is also indexed as
+a conversation resource, so the existing exact `refs` filter can find it.
+
+`GET /api/ai/conversations/counts` returns `{ unread, needsAttention, places:
+{ total, unread, needsAttention } }` for the current person's non-archived chats.
+The first two counts include place chats; `places` gives their separate counts.
+Search presents place chats in **At places** (**An Orten** in German).
+The `ai.chats.search` and `ai.chats.resources` tools exclude place chats unless
+their `place` input gives an exact resource reference. Cross-chat resource
+listing at `GET /api/ai/resources` also excludes place chats; resources in a
+known chat remain available through its own resource endpoint.
+
+Use `cld assistant chats list --place any` or `--place example.conversation:Marta1`
+to list place chats. The default excludes them; table output has a `place` column.
 
 ## Observe work across conversations
 
@@ -196,8 +297,9 @@ per-conversation socket is required.
 Use the existing Core log and trace views. Filter logs by `ai:runtime`,
 `ai:message-queue`, `ai:executor`, `ai:files`, or `ai:transcription`. AI live
 updates log under `events:live` with the application ID `core`.
-Queue dispatch errors carry `conversationId`, `messageId` and
-`queue_dispatch_failed`. Heartbeat, recovery and completion-publication warnings
+Queue start failures carry `conversationId`, `messageId`, the stable refusal `code`
+(or `dispatch_failed`), and `errorType`. Each failed attempt is logged, including
+the transition to the retry deadline. Heartbeat, recovery and completion-publication warnings
 carry conversation and turn IDs. A heartbeat warning is emitted once per failure
 streak; recovery uses the existing durable turn state.
 
@@ -256,8 +358,8 @@ archived conversation is unavailable; the request never creates a replacement.
 Project access is checked again on replay. Use a new UUID only for a new,
 deliberate creation. Without `requestId`, each request creates a conversation.
 
-The structured composer draft contains text, exact stored-file versions, and
-zero or more Cloud resource refs. Save it with `PUT
+The structured composer draft contains text, exact stored-file versions,
+zero or more Cloud resource refs, and up to ten quotes. Save it with `PUT
 /api/ai/conversations/:id/draft` and an `expectedRevision`. Identical autosaves
 are idempotent; stale writes return a conflict. In the browser controller, a
 failed `saveDraft`, `send`, or `queueMessage` answers `null` or `false`.
@@ -278,6 +380,31 @@ when the request sends none, and the original selected local Skills when a
 local client retries. Background and mandate runs do not
 receive local client context. The transaction consumes and clears exactly that revision, so
 text and attachments cannot drift between save and send.
+
+A quote is `{ type: "quote", messageId, text }`: a passage of an earlier message
+in the same conversation, named by that message's public id. `text` holds at
+most 2,000 characters, and quotes count towards the draft's 20,000 characters.
+`from` is optional and only a hint for the composer. When the turn is submitted,
+Cloud checks that the message is in the conversation and that `text` stands in
+its visible text, compared without whitespace. An answer's visible text is the
+rendered Markdown of all text in its turn. Cloud checks answers of up to 50,000
+characters, counting a blank line between the turn's messages; that is as much as
+it keeps of one message for search. Cloud then sets `from` from that message:
+`assistant` for an answer, `user` for the person's own message, `automation` for
+a message an automation sent. A quote that fails returns HTTP 400, nothing is
+sent, and the response carries a stable `code` with a message in the request's
+language: `quote_missing` (the message is not in the conversation),
+`quote_not_quotable` (not an answer or a user message), `quote_mismatch` (the
+passage is not in the message), or `quote_too_long` (the answer is longer than
+50,000 characters). The user message keeps the checked quotes in `meta.quotes`, the
+only source a client reads them from. The model reads each quote as a text part
+Cloud writes. Text never counts as a quote: Cloud breaks quote markers in sent,
+edited, and steered text, and again in every user message it gives a model,
+unless `meta.quotes` holds that quote. Background models that read a chat, such as
+titles, search summaries, and memory learning, read only the person's own words,
+without quotes. Editing a queued message and retrying a
+message keep the checked quotes and apply the same bounds; the bounds count the
+person's words and the quoted passages, not attached items.
 
 If a turn response is lost, retain the confirmed draft revision and the exact
 submit options. `GET /api/ai/conversations/:id/submission/:draftRevision` returns
@@ -346,16 +473,14 @@ schemas are deferred. These built-ins provide no arbitrary code execution,
 host access, or network access beyond the explicit web tools. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals).
 
-The default tool source also offers the server-run Code Mode tools `code_run`,
-`code_action`, `code_inspect`, `code_stop`, `code_export`, `code_present`, and `code_check`
-in every turn, whichever client submits it, including API
-clients, `cld assistant --detach`, and routines (scheduled tasks). They load on demand
-and run JavaScript in an isolated Assistant-owned host. That code can call
-Cloud capabilities, databases, and external HTTPS endpoints with the user's
-permissions; each call keeps its normal approvals or, in a routine, its
-routine grants. See
-[Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
-and [Advertise connected client tools](/en/docs/ai/chat-interface#advertise-connected-client-tools).
+The default tool source offers `code_run`, `code_inspect`, `code_stop` and
+`code_export` on the server, including API and detached CLI clients. Scripts
+execute on the Code runner under the turn's authority and approvals. `code_secret`
+uses the trusted web UI. Native views and chat files remain available; Studio
+app tools and app databases have been retired. See
+[Chat code execution](/en/docs/ai/chat-interface#chat-code-execution). Scheduled
+chat routines are retired; see [Routines became Code](/en/docs/operations/routines-to-code).
+
 
 The `text_editor` frontend interaction lets the model provide one complete
 plain-text or Markdown draft for the user to revise. The browser presents both
@@ -391,20 +516,18 @@ work from model text or trigger language-dependent automatic retries.
 
 ### Conversation titles
 
-A title given at creation, such as the localized "New chat" of the web chat,
-stays a default title. A chat created without a title gets the same default in
-the request locale, so `cld assistant chats create` names a chat "Neuer Chat"
-for a German caller. The first message's text replaces it, and enrichment may
-rename it. Renaming through `PATCH /api/ai/conversations/:id` marks the title as
-the user's (`titleSource: "user"`). Neither the first message nor enrichment
-replaces that title, for web and API clients alike. Renaming to the current title
-changes nothing.
+An explicit title at creation belongs to the person (`titleSource: "user"`),
+including a title equal to "New chat". The first message and enrichment preserve it.
+Without a title, the chat gets the localized default in the request locale:
+"Neuer Chat" for a German caller. The first message replaces that default,
+and enrichment may rename it.
 
-The CLI is one consumer of this rule. `--title` on `cld assistant -p` and
-`cld assistant chats create` creates the chat and then renames it through this
-endpoint. The CLI trims the title and checks the 1 to 120 character limit before
-creating anything. A `--title` equal to the default title the chat got keeps
-automatic naming.
+Renaming through `PATCH /api/ai/conversations/:id` also marks a changed title as
+the person's. Renaming to the current title changes nothing.
+
+`--title` on `cld assistant -p` and `cld assistant chats create` passes the title
+in the creation request. The CLI trims it and checks the 1 to 120 character
+limit before creating anything.
 
 ## Chat route groups
 
@@ -462,7 +585,7 @@ it does not infer resource identity from prose.
 ## Runtime ownership
 
 Core mounts `/api/ai`, migrates the AI schema, and exclusively owns the
-conversation workers, maintenance, routines, and durable
+conversation workers, maintenance, and durable
 continuations. Applications must not start a second AI conversation runtime.
 They publish domain Capabilities, launch a personal conversation through
 `launchAssistant()`, or use `runAiStructured()` for bounded server/workflow AI.
@@ -519,7 +642,10 @@ shows. These helpers do not initialize
 Cloud server services. Import AI types with `import type` from
 `@k2b/cloud/ai`. Solid applications should use
 `createAiChatController()` from `@k2b/cloud/ai/solid`; it subscribes to the
-visible conversation over SSE. Changing chats closes the previous stream and
+visible conversation over SSE. To reconcile a previous creation request without
+changing the visible chat, call `createConversation(input, { activate: false })`.
+The result is cached while a foreground chat load and its stream stay active.
+Changing chats closes the previous stream and
 opens one for the new chat; every connection, including a reconnect, starts
 from a fresh authorized state snapshot. Assistant, the CLI, and low-level
 consumers all use `/conversations/:id/stream`. Over HTTP/1.1 each open
@@ -573,7 +699,7 @@ event. The client then reconnects and continues from a fresh state snapshot.
 The controller folds the stream into one projection and exposes the
 active conversation's history, send, steer, abort, retry, fork, compaction,
 approval, and frontend-tool actions. Do not put conversation and Project lists,
-metadata, Sources, files, routines, Project context, or access changes
+metadata, Sources, files, Project context, or access changes
 into turn events. Those are durable server projections and refresh through
 [Realtime UI](/en/docs/frontend/realtime-ui).
 
@@ -585,7 +711,7 @@ interval (1.5 seconds in production). A result within that window continues in
 the same lease, without another claim or rebuilding the turn, and does not
 count as a resumed attempt. Otherwise the turn suspends and enqueues a
 continuation as before, including when the result arrives as the wait ends.
-Other client tools such as `code_open` and `code_secret`, human interactions
+Other client tools such as `code_secret`, human interactions
 such as `survey` and `text_editor`, and all approvals suspend immediately.
 
 `POST /conversations/:id/turns/:turnId/actions/:callId` validates results of
@@ -619,6 +745,10 @@ tables write each update in the transaction of the change, keyed
 written for every user who can read the Project at that moment, including
 nested groups and grants to all signed-in people; a grant change reaches the
 readers before and after it. A conversation change reaches only its owner.
+A Cloud administrator's decision on a submitted Code version writes
+`code-versions` for the person who submitted it, in the decision's
+transaction, so the version card in the chat shows the decision without
+polling.
 
 A socket follows only its own user's key, and its credential is checked again
 every 10 seconds; an ended session closes it with `1008`. A third-party UI
@@ -651,11 +781,47 @@ Project context can be shared through normal Cloud access grants, but each
 conversation remains owned by its creator and only appears in that user's
 updates and queries.
 
+### Code decision activity
+
+`meta.codeDecision` identifies a factual timeline entry with `codeId`,
+`versionId`, `number`, `outcome`, `person:{id,name}`, `anchor`, `at` and optional
+`nextRunAt`. Outcomes are `approved`, `changes_requested`, `rejected` and
+`activated`. Decision and activation are separate historical rows. They have
+no turn and never join the active assistant answer. The host can render their
+card link through `AiChatActions.renderCodeDecision`.
+
+Core records each delivery intent in the decision or activation transaction.
+A worker appends it once to the original author's chat while holding the chat
+lock, after its active turn finishes. It rechecks current management and chat
+ownership before delivery. The write updates `background_received_at` and
+invalidates `conversation-detail` and `code-versions`; cards keep listening
+when ready and during a revision. Navigation targets the card's
+`code-version-<versionId>` DOM anchor rather than the submission tool call.
+Renewing an expired request keeps the first card's anchor, including for its
+new version's waiting item, event and notification. Model history receives a fixed historical
+fact without names, titles or administrator instructions.
+
+The following `codeReviewStart` message marks the start of the automatic
+revision. Its localized sentence says that Gustav is revising the version;
+it does not repeat the administrator's decision or name. Render the decision
+once, followed by this separate start of the review turn.
+
+A host can use `appendAiBackgroundMessages` from `@k2b/cloud/ai/runtime` for a
+bounded batch under its destination chat locks. It assigns message order and
+updates chat markers in one statement; the caller owns durable deduplication
+and admission. `registerAiTurnAbortHandler` lets the host close its durable
+review submission gate before a review turn's cancellation becomes visible.
+The disposer removes that handler; ordinary turns do not invoke it.
+
 ### List the person's open questions
 
 Use `listAiOpenQuestions` from `@k2b/cloud/ai` on the server to seed a personal
 chat overview. Resolve `ownerUserId` from the authenticated user; the read
-includes only that person's pending approvals in chats they own.
+includes that person's pending approvals in chats they own. An independently
+deployed application passes a `caller` with the person's own credentials to
+read Core's other waiting sources through its authorized `ai.open_questions`
+Query. Only Core-owned code may pass `authority` for in-process dispatch; that
+authority must name the same person.
 
 ```ts
 import { listAiOpenQuestions } from "@k2b/cloud/ai";
@@ -666,13 +832,42 @@ const questions = await listAiOpenQuestions({
   ownerUserId: user.id,
   locale: getLocale(c),
   timeZone: getTimeZone(c),
+  caller: {
+    cookie: c.req.header("cookie"),
+    authorization: c.req.header("authorization"),
+    locale: getLocale(c),
+    signal: c.req.raw.signal,
+  },
 });
 ```
 
-`AiOpenQuestions` contains at most 20 `items`, newest first, and a `count` of
-all matching questions. Each `AiOpenQuestion` carries its `kind` (today
-`approval`; a further source of things that wait for the person adds its own
-kind, and Assistant gives each kind its sign in "Waiting for you"), the approval ID, chat
+`AiOpenQuestions` contains at most 20 `items`, oldest first, and a `count` of
+all matching questions, independent of the current page. The bound comes from
+`APPROVALS_PAGE_SIZE`. When more entries remain, `nextCursor` contains the last
+item's `{ createdAt, id }`; pass it unchanged as `cursor` to read the next page,
+keeping the same `kind` filter. An absent `nextCursor` ends the list. Ordering
+uses creation time at millisecond precision, then ID, so timestamp ties and a
+resolved cursor entry do not skip other questions. The cursor carries no access:
+every page rechecks the same owner and permissions. Cursor IDs are limited to
+100 characters; IDs use code-point ordering, matching PostgreSQL `COLLATE "C"`.
+
+SSR supplies the first page. An island can call Core's `ai.open_questions`
+Query with `{ timeZone, cursor }` on **Load more** and validate its answer with
+`AiOpenQuestionsSchema` from the browser-safe
+`@k2b/cloud/contracts/open-questions` entry point. Keep the existing rows visible
+while loading, and offer a retry on failure. When a section displays only some
+question kinds, one click can cross pages that add no visible entries until a
+new entry appears or the feed ends. Bound that traversal by the snapshot's
+`count` and `APPROVALS_PAGE_SIZE`. Do not read every page on startup.
+
+A live snapshot must not discard previously loaded rows. Re-read the already
+loaded range through the same authorized Query, retain the last good rows until
+that read succeeds, and remove resolved entries and duplicates of the first
+page. Offer a retry when reconciliation fails. After loading new entries, move
+focus to the first new entry's action, including when the last page removes the
+load-more button.
+
+Each `AiOpenQuestion` carries its ID, required `kind`, chat
 short ID and current title, tool-block `anchor`, short plain text, app
 presentation, and ISO creation time. The short text uses the review's `short`
 template when provided, otherwise its action sentence, rendered like the card's
@@ -681,6 +876,15 @@ time labels. Legacy reviews and calls without a review keep the card's literal
 question text. Missing or unreadable tool blocks fall back to the first line of
 the request sentence and a tool anchor; one damaged question does not prevent
 the others from loading.
+
+Kinds are `approval`, `code_activate`, `code_changes`, `code_expired` and
+`code_attention`. A Code change appears only when no automatic revision is
+queued or running; withdrawn, replaced or activated versions leave the list.
+Operational attention names a missing Secret, access, mandate or chat and
+carries an `href` to the Code page, plus `reason` (`secret`, `access`,
+`mandate` or `chat_missing`) so the page can name the way out. Entries without a chat use an empty `conversationId`
+and `anchor`. Use this same snapshot for the page, sidebar and badge. Domain
+notification senders reuse the source's text and target.
 
 `short` is limited to 160 Unicode code points and `conversationTitle` to 200.
 Truncated values end with `…`, included in the limit, without splitting a code
@@ -786,57 +990,9 @@ audio, or transcripts in logs. Filter Logs by `ai:transcription` or `ai:dictatio
 dictation worker entries also include the dictation ID, model profile, attempt,
 and retry decision. Dictations are not workflow runs.
 
-### Assistant routines
+### Retired Assistant routines
 
-A routine belongs to one chat and runs as that chat's owner. Creating
-it stores a confirmed [mandate](/en/docs/identity/background-mandates) whose
-`grants` list names every capability the routine may call. In a background run,
-every app capability needs a matching grant, Queries included, such as the
-reader Query behind a Project reference. A routine without grants can use only
-built-in tools such as chat files. Fixed input values must
-match exactly, and the owner's current access still applies to each call.
-
-A background run cannot ask for approval. Remembered approvals from the chat
-do not apply, and an operation that needs an approval or a browser fails the
-run, which moves the routine to `needs_attention`. A display-only `clientView()`
-tool such as `chart` needs neither: Cloud answers it, and the run's transcript
-shows it. Action grants are accepted only
-for Actions whose manifest declares `approval: "rememberable"` or `"none"`;
-Actions that ask for every call cannot be scheduled. Before each run, Core
-checks that the owner is active, the chat is not archived, and the mandate is
-confirmed and unchanged.
-
-Finished routine runs and their run evidence expire after
-[90 days](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days);
-the result messages delivered into the chat stay.
-
-### Scheduled Code Mode
-
-Scheduled turns can run Code Mode without a user tab. Core binds each call and
-capability callback to the persisted turn and its confirmed routine mandate.
-Foreground activity in the same chat does not share the scheduled host. Routine
-revocation, expiry, revision changes and cancellation deny subsequent requests.
-The normal capability dispatcher still checks current user access, fixed inputs
-and action approval policy; remembered foreground approvals never authorize a
-scheduled action. Always-approval actions remain unavailable.
-
-Scheduled code supports computation, chat files, AI helpers, presentations and
-exports, shared app storage, HTTP and RSQL. A task has one reviewed `grants` list:
-capability query/action entries, `{kind:"http",fixedInput:{origin,url,method}}`
-and `{kind:"database",fixedInput:{resourceId,operation,table}}`. All fixed fields
-are optional; omitted fields remain unrestricted. HTTP origins match exactly,
-not by suffix; URL restrictions match the full URL. Database operations match
-exactly. Flat `cloud.db` operations `list`, `get`, `insert`, `update`, and `delete` match grants `rows.list`, `rows.get`, `rows.insert`, `rows.update`, and `rows.delete`; `query` matches `query`.
-Runtime `cloud.db` calls need no `connect` grant; `code_database`
-`tables.create` provisions the database under its `tables.create` grant. Resource
-permissions and the HTTP service's public-HTTPS/secret-binding checks still apply.
-HTTP authority is rechecked against the stored request immediately before sending.
-The same access review and task-detail presentation show all three grant types.
-
-Tasks cannot open interactive dialogs, collect new secrets or use capability
-binary streams. Missing grants return an error for repair in the normal chat.
-AI helper usage is charged as background
-work and attributed to the scheduled turn.
+Scheduled chat routines are retired. See [Routines became Code](/en/docs/operations/routines-to-code) for export and rebuild instructions. Existing transcript text remains readable without run controls.
 
 ### Background Assistant tabs
 
@@ -844,11 +1000,9 @@ Hiding the browser tab does not close the visible conversation's SSE stream,
 so a turn keeps streaming and its frontend tools keep running. The live socket
 closes while the tab is hidden and replays the missed updates when it returns.
 This does not override browser suspension, operating-system sleep, reload, or
-closing the tab. Agent Code Mode execution uses an Assistant-owned isolated Chromium host,
-so changing or closing the user tab does not pause code or simulated UI actions.
-The interactive Studio preview remains browser-owned. Opening an app, selecting
-local files, entering secrets and answering approval prompts still need a user
-client.
+closing the tab. Agent code execution uses the Code runner, so changing or
+closing the tab does not stop it. Entering secrets and answering approval
+prompts still require a client.
 
 When code in that host calls a capability Action or sends an external HTTP
 request, the chat approval names the app and Action, repeats the owning app's
@@ -952,7 +1106,12 @@ A loop that ends normally but whose final response has no text and no tool call
 right after a round with a failed tool call fails with `tool_failed`;
 rejected approvals do not count as failures. Worker recovery restores this
 state from the latest stored assistant round, including repaired malformed
-calls. A later text answer still completes the turn.
+calls. A later text answer still completes the turn. A loop that ends normally
+also fails with `provider_stopped` when its final response has no text and no
+tool call and the whole turn shows no text, result, or action. A pause from
+the turn's safety budget is a visible ending and keeps the turn completed. The stored
+status, the completion line in a chat that delegated the work, and `cld` then
+report a failure, not a success that nobody can read.
 
 Each model `turn_start` has one `turn_end`, including errors and cancellation.
 `turn_end` carries the partial assistant message with `stopReason: "error"` or
@@ -969,7 +1128,7 @@ stable and never translated; clients word it in their reader's language:
 
 | `code` | Meaning | A new message can continue |
 | --- | --- | --- |
-| `provider_stopped` | The provider ended the answer early, for example a gateway error, malformed tool call, content filter or refusal | yes |
+| `provider_stopped` | The provider ended the answer early, for example a gateway error, malformed tool call, content filter or refusal, or the turn ended without any text, result, or action | yes |
 | `tool_failed` | A tool call failed and the model's next response ended without text or a tool call | yes |
 | `model_unavailable` | The model service failed or timed out, also after its retries | yes |
 | `quota_exhausted` | The user's AI usage limit for the period is used up, or its usage could not be measured | no |
@@ -1071,6 +1230,130 @@ reason `step_limit` instead of continuing without them. Each hint logs the warni
 and each switch to the final answer logs `AI turn answers without further
 tools`, both under `ai:executor` with the conversation and turn IDs.
 
+### Automatic turn safety budget
+
+Only turns with an explicit non-person trigger (such as an automation or another
+chat) have the automatic input, call and output allowance. Missing triggers,
+including legacy turns, keep person limits. Agents and service accounts, also
+with a delegated user, are treated like people unless an explicit non-person
+trigger says otherwise. Code review revisions retain `CODE_AUTHORING_TURN_BUDGET`;
+they acquire neither an automatic inference allocation nor its per-call output
+ceiling or 32k compaction threshold.
+`AUTOMATION_TURN_BUDGET` allows 192,000 cumulative input tokens, 12 model
+attempts and 12,000 output tokens, with at most 4,096 output tokens per call,
+regardless of the model's price. The values come from a measurement of twenty
+briefings and thirty number posts on 16 November 2026: the largest briefing
+read 178,000 input tokens in nine calls. Chat calls, transient provider
+retries and automatic compaction share the allowance. Worker recovery reads
+the whole turn's usage once; a recovered call without usage reserves 64,000
+input tokens and the per-call output ceiling. Admission uses the same
+conservative request estimate as the authoring guard and keeps higher reported
+usage. These are safety estimates, not an exact provider invoice ceiling.
+Steering by a person does not reset the trigger or refill the allowance.
+
+At the limit Cloud persists a localized stop notice without another model
+call. Existing results remain visible. Continuing requires the person's
+explicit follow-up through the normal send path; reload and reconnect do not
+restart the work. A number post reads the whole chat history, so automatic
+turns compact a history above 32,000 estimated tokens even when the model has
+a larger context window. Turns a person starts keep the model's normal
+compaction threshold. Archived messages stay visible, but cannot be retried in
+place.
+
+### Code authoring safety budget
+
+For a turn started by a person or a Code-review revision, invoking a lasting Code
+authoring tool or selecting the authoring Skill allows at most 90 model attempts, followed by at most
+one tool-free closing attempt after all existing drafts are submitted. Priced
+models on Assistant chat turns with an effective finite cost limit have no additional cumulative
+input-token limit. All other models admit at most 5,760,000 cumulative input tokens,
+including instructions, conversation and tool schemas. Provider retries and
+automatic compaction share the turn's attempt and, when applicable, token allowance. Previously loaded tools alone do not activate
+the allowance in a later turn. Admission reserves the input estimate; reported input replaces it when higher. These
+estimates use the same four-characters-per-token convention as AI accounting,
+so they are a safety budget rather than an exact provider invoice ceiling.
+
+The same Code authoring error gets an initial attempt and two retries.
+Different diagnostic codes, source locations, messages, and assertion paths
+are separate errors; an undifferentiated failed check is not an error identity.
+Changing a fixture title, source text, or switching between test and simulation
+does not reset that error count. Successful fixtures that deliberately test
+an error do not count as failures. A response containing several checks cannot
+run more identical failing checks than this allowance.
+
+When all drafts in the turn have been submitted, reaching an authoring
+bound permits exactly one closing model call without tools. Gustav describes the
+submitted work and any requested work not yet started. Cost admission still applies;
+without an effective finite cost allowance, the closing request must fit the remaining
+token allowance. Only a successful closing answer removes the pause notice. A later
+edit, another unfinished draft, or insufficient closing allowance still requires a pause.
+A tool call, provider failure or rejected cost admission during that closing attempt
+persists the pause receipt and completes the turn. Cancellation keeps its normal abort behavior.
+Automatic turns retain their own input, output and call allocation; a closing
+answer never extends that allocation.
+
+At a bound with unfinished work, Gustav completes the current tool, skips remaining authoring tools
+in that response when the repair allowance is spent, and ends with a short
+persisted receipt in the chat. Assistant renders it in English or German as one
+neutral notice: one sentence says Gustav is taking a break; a quiet line names
+the reason (the same problem repeated, the step limit or the work allowance)
+and whether a draft or version is saved. The pause has no checklist.
+The receipt contains counts, so it does not
+invent a saved version's number. This summary comes from settled tool results,
+not model prose; a later draft edit invalidates earlier passing checks. No
+additional model call writes the notice. Saved results and the server-held
+draft remain available. The receipt describes the state at the stop, rather
+than promising indefinite draft retention. Forks omit this conversation-bound
+receipt because they do not copy its draft. **Continue** starts a new turn through the normal
+message send path only after a click; rendering, reconnecting and reloading
+never resume work. The action is disabled during other work and while sending;
+a failed send keeps the notice with a retry explanation. Sending, failure and
+temporary blocking use the quiet line's reserved space, keeping the card and
+its action in place. On narrow chat columns the action fills the row below
+the text and remains neutral with an outline in every width. Its place stays
+reserved while the receipt belongs to the newest turn, including before turn-end.
+A newer message or turn makes the receipt historical and releases that space;
+a historical pause offers no continuation action. Stopping does not
+submit or activate the draft. Hosts of `createAiChatTimeline` provide localized
+presentation with `AiChatActions.renderCodeAuthoringStop`, whose reactive third
+argument reports whether a newer message or turn has superseded the receipt, and use
+`useAiChatActions()` from `@k2b/cloud/ai/ui` for the shared continuation action.
+Worker recovery restores provider usage and check failures for the whole turn,
+including archived messages. Missing provider input usage reserves 64,000
+estimated tokens per call on recovery, rather than spending the entire turn
+allowance. Steering does not refill this safety budget.
+
+These are authoring limits, separate from the configured Assistant cost
+allowances, which still apply to every provider call. The F7 per-attempt and
+daily AI allowances apply to AI invoked **by saved Code**. They do not fund
+Gustav's interactive authoring, and an unpriced model supplies no conversion
+from those monetary allowances to authoring tokens.
+
+The attempt allocation uses the default 30-minute turn and the provider's
+60-second first-byte timeout as reference windows: one call and the existing
+two malformed-response repair attempts per window give `30 × 3 = 90` attempts.
+This is an operational capacity allocation; streaming calls can take longer or
+shorter than a minute, and the configured turn deadline still applies. Models
+without an effective cost limit receive 90 half-reference-window inputs: `90 × 64,000 =
+5,760,000` tokens. A half-window also estimates a recovered call without usage
+and reserves room before compaction, whose source is bounded to 60,000 characters.
+The repeated-error allowance remains an initial attempt plus two retries.
+The token allowance is lifted only when `aiQuotas.assertAllowed` confirms a finite
+cost limit without bypass for the executed model and subject. Disabled cost limits,
+unlimited grants, bypasses, free models and missing prices retain the 5,760,000-token
+allowance. A missing turn trigger follows the person allocation, including service
+accounts and agents acting for a delegated user; review revisions do too.
+
+After a successful check of a Code's draft, later requests replace its earlier
+SDK dumps with a short reload note. The complete results stay in conversation
+history. Gustav can request fresh signatures when editing again. Normal model
+compaction remains available for earlier turns and smaller context windows,
+subject to the same authoring allowance. Authoring asks for compaction when
+history exceeds the half-window reserve, so a model with a large window does
+not wait until history alone exceeds the turn allowance. There is no separate fixed request
+ceiling that could permanently block a long conversation. The representative
+context regression fixture pins requests below the 32,000-token planning size.
+
 ### Transient provider failures
 
 A chat turn, including one that runs scheduled or in the background, repeats a
@@ -1133,24 +1416,149 @@ Direct interactive Assistant submissions check optional cost allowances before
 consuming the draft or promoting a queued message. Each subsequent direct model
 round checks again. API rejection uses HTTP 429 with `quota_exhausted` or
 `quota_usage_unknown`; model access is still checked independently. A blocked
-queue head retains its content and attachments for later dispatch. Already
+person queue head retains its content and attachments for later dispatch.
+Automation queue entries fail permanently on a quota refusal and release their
+place. Already
 running provider calls may finish and exceed the allowance.
 
 The feature is disabled by default and does not limit generic application AI,
 workflow or background inference. See [Assistant limits](/en/docs/ai/usage-and-feedback#set-assistant-budgets)
 for accounting, wildcard precedence and reset behavior.
 
-### HTML app self-tests
+## Register host-owned tools
 
-`code_check` is a server-managed tool available to web, CLI, API and background
-turns. Write main-flow steps in the app's `steps.json`, check, inspect every
-screenshot with `view_image`, and fix before showing or publishing. The agent's
-open/present/publish operations require a passing check for the current source,
-steps and table definitions in that user/conversation. Human Studio publication
-and scripts have no check gate. The self-test is not a security mechanism.
+The process that owns the AI worker can pass `tools: readonly AiRuntimeTool[]`
+to its first `startAiRuntime` call from `@k2b/cloud/ai/runtime`. These tools
+join default Assistant turns; a matching name replaces that default tool.
+The conversation's fixed `allowedTools` ceiling still applies, and deferred
+tools use the existing `load_tools` discovery. Later reference-counted starts
+do not replace the worker's configuration. Custom tool sources are unchanged.
 
-Desktop and phone run a saved app on separate disposable copies of its data;
-one-off apps have no storage, as in their chat card. AI runs for real; HTTP and
-capability effects are unavailable, and background checks reject all
-capabilities. See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
-for step matching, copy/output budgets, cancellation and the report contract.
+This advanced host seam lets Core register its permission-aware Code services
+without importing application contracts into the platform. Every tool must
+recheck its own authority. `resolveAiCapabilityActor` from `@k2b/cloud/ai`
+resolves the current conversation owner's user-backed session authority from
+a persisted actor and the conversation store, including account status and
+mobile-session limits. It is for the trusted runtime host, not an application
+credential exchange. `createCodeSourceTool` from `@k2b/cloud/ai/tools` exposes a retained chat/Project
+file tool through its authenticated transport.
+
+For a result that starts no model turn, trusted hosts share
+`appendAiBackgroundMessage(db, { conversationId, text, meta? })` from
+`@k2b/cloud/ai/runtime`. Call it only inside an authorized transaction holding
+the destination conversation's row lock. It appends the assistant message and
+marks the conversation unread. The host owns idempotency and notification
+recovery in that same transaction. This helper is for host-authored notices.
+Code writes through `ai.chat.send`, which always admits a normal chat turn.
+
+Trusted hosts may pass their open database transaction as the second argument
+to `aiConversations.submitChatTurn(input, db)` to commit a turn and a
+host-owned receipt together. Hold the authorized conversation lock first and
+enqueue with `enqueueExistingAiTurn` only after committing. Core uses this seam
+for queue promotion. `runConfig.writerOrigin` attributes the writer; names and
+links are resolved when displaying it. It grants no authority. The separate
+`runConfig.turnTrigger` records the immutable initiator (`person`, `automation`
+or `chat`, plus stable ID). The trusted host sets both fields. Queue promotion,
+resume and `code_run` retain the trigger. Retry and edit start a new turn from
+the current actor: a user actor gets a person trigger; other actors omit it and
+keep person budget limits. A plain retry keeps the writer, while editing makes
+the message the person's own. The send receipt stays, but Code budget attribution
+is cleared. For send authority, the chain rule reads only the recorded
+`turnTrigger`; a missing trigger never grants person-initiated send authority.
+`sourceRestricted` retains a limited entry point; app sessions and source chats with `allowedTools` cannot use
+`send` to widen authority. `runConfig.send` identifies the accepted queue entry
+and its account-scoped idempotency key, independently of the queue's personal
+author field.
+The optional host-owned `runConfig.codeOrigin` is copied to the user message
+and turn record for attribution; it grants no tool authority.
+
+### Durable delegated completion
+
+The normal terminal-turn transaction writes a `meta.chatDone` activity into the
+source chat, keyed by the original source and target turn UUIDs. Its immutable
+send receipt records the verified source coordinates. Public short-ID reuse
+cannot redirect delivery. Success, failure and abort each retain their status;
+deleted or archived sources receive no activity. An archived source stays skipped
+even if it is restored later. A queued request removed, archived, or refused
+before starting records the same terminal fact, keyed by source turn and send
+receipt; its target turn is null. Receipts accepted before this
+source snapshot existed are not reconstructed from public identifiers.
+
+The runtime's bounded sweep repairs missed activities after terminal events have
+been published. Concurrent repairs share the unique key. A busy source is
+deferred rather than blocking the target's completion. The activity and its
+recovery marker commit together. The source lookup and insert share a savepoint,
+so a source-side database error cannot undo target completion. Such errors leave
+the marker unset and log only the error code and work coordinates. Recovery stops
+after five failed attempts for that item; a busy source consumes no attempt.
+Existing live invalidations deliver the new history; no per-event lookup or extra
+turn is needed. The owner's authorized snapshot batches target names, answer
+previews (first line, at most 320 characters), and exact turn/message validation
+in the existing origin query. Normal retries preserve the old activity and add a
+new one for the new target turn; an old link cannot select a reused sequence.
+Model context excludes these activities.
+
+## Host admission and terminal bookkeeping
+
+The first `startAiRuntime` call from `@k2b/cloud/ai/runtime` can register
+`beforeChatTurn: AiChatTurnAdmission` and `onSweep`. The admission callback runs
+after current model resolution and access validation, before any model request.
+It receives `turnId`, `conversationId`, `leaseOwner`, the persisted `runConfig`
+and the executed `profile`, plus the execution `signal` for turn cancellation. The host must fence its transaction against the
+current running turn lease. A Code-attributed turn without this callback fails
+closed. Core uses it for policy and whole-turn daily cost reservations.
+The callback may return `{ systemPrompt }`: host-owned instructions appended
+to this attempt’s prompt before its first model request. They are rebuilt on
+resumption and do not enter stored history. Core uses this for the current,
+authorized page links of Code associated with the chat. Its optional page read
+uses the standard 10-second request read budget and the execution signal;
+failures warn and continue without this additional context. The full page
+instruction is bounded by the existing 32 KiB Assistant place-context envelope,
+with complete entries and a count of omitted pages.
+
+`onTurnFinalized` runs after durable completion. `onSweep` independently recovers
+host bookkeeping when a terminal callback was missed, even if the platform sweep
+fails. Callbacks must be idempotent across worker retries and process restarts.
+`AiTurnFailure` carries a stable public turn-error code and a private diagnostic
+message. The exported `AUTOMATION_TURN_BUDGET` defines the shared 192,000-input,
+12-call and 12,000-output allocation, including retries and compaction; it grants
+no authority.
+
+The host installs `runConfig.inferenceBudget` in the same fenced transaction as
+its durable cost reservation. Provider admission rereads this snapshot under
+the existing accounting lock. It binds model identity, prices, context/output
+ceilings, total input and call allocation. All inference attributed to that turn
+shares it, including structured/vision tool attempts; output is clamped to the
+reserved ceiling and unreserved models fail before dispatch. Core preserves the
+framework's source-turn attribution on nested generation/decision capabilities.
+Callers must retain that attribution when starting related inference. The
+ordinary unbounded-person accounting path keeps its existing statement count;
+a bounded turn adds one aggregate per provider attempt, never per stream event.
+
+Code-attributed turns pin nested inference to the admitted model and output
+ceiling. A tool that needs another profile, or System One's uncapped output,
+is refused before inference rather than spending outside the reservation.
+Answering a choice starts a new person-triggered turn; its Query uses that new
+turn's invocation lease. Background memory learning skips turns with a bounded
+inference allocation, so it cannot reopen their ended reservation. Normal personal calls without a source
+turn keep the optional nested-invocation lease behavior.
+
+Host admission failures use general `host_budget_*` or `host_rejected` codes.
+The host supplies the final localized `AiTurnFailure.userMessage`; Cloud stores
+it as `AiTurnError.message` and renders it without interpreting host domains.
+A failed call without response bytes uses zero or its recorded estimate; other
+unknown usage stays fail-closed. Provider diagnostics remain log-only. Third-party hosts can supply their own
+explanations through the same contract.
+
+### Idempotent empty-chat creation
+
+Core's `ai.chat.create` Action and `POST /api/ai/conversations` share
+`aiConversations.createConversation`. A stable `requestId` claims one durable
+`ai.conversation_creations` receipt per owner, with normalized input hash.
+Concurrent retries return the same active chat. Conflicting input fails;
+archiving or deleting the original never creates a replacement.
+`AiConversationCreationError` from `@k2b/cloud/ai/runtime` distinguishes
+`conflict`, `unavailable` and `project_unavailable` for hosts translating transport errors.
+Core derives a domain-separated UUIDv8 from owner, operation and idempotency key;
+it checks full source authority and current Project read access before invoking
+the service. Creation writes an empty chat and does not submit an AI turn.

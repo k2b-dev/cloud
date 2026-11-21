@@ -22,7 +22,7 @@ Mail always removes active scripts from HTML mail. It blocks remote images until
 
 A Cloud administrator can block an exact sender, a sender domain and its subdomains, or a link domain and its subdomains. Mail then marks matching messages as blocked and turns off their links and attachments in the reader. This is stronger than a warning, and Mail uses it only for explicit organization rules.
 
-This protection is limited to the Mail reader on purpose. It does not move messages at the provider or start, cancel, or duplicate automation runs. When messages must also be moved, tagged, or excluded from an automatic reply, set up an incoming automation separately.
+This protection is limited to the Mail reader on purpose. It does not move messages at the provider or start, cancel, or duplicate automation runs. To move or tag arriving messages, create and review mailbox Code. Automatic replies have been removed.
 
 ## Report a suspicious message {icon="flag"}
 

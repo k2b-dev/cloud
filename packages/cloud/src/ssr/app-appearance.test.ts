@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { appIds } from "../../../../scripts/workspace";
+import { httpAppIds } from "../../../../scripts/workspace";
 import type { AppAppearance, RuntimeAppMeta } from "../contracts/app";
 import { appAccentStyle, appAppearanceStyle, appBarGrounds, appBarIconStyle, resolveCurrentApp } from "./app-appearance";
 import { contrastRatio, mixHex } from "./app-color";
@@ -14,7 +14,7 @@ const globalCss = readFileSync(resolve(import.meta.dir, "../styles/global.css"),
 const isHex = (value: string | undefined): value is HexColor => /^#[\da-f]{6}$/.test(value ?? "");
 
 /** Each built-in app's declared appearance, read from its config as declared. */
-const builtInAppearances = appIds().flatMap((id) => {
+const builtInAppearances = httpAppIds().flatMap((id) => {
   const config = readFileSync(resolve(workspaceRoot, `packages/${id}/src/config.ts`), "utf8");
   const start = config.search(/\bappearance:\s*\{/);
   if (start < 0) return [];

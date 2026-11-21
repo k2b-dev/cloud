@@ -1,0 +1,90 @@
+[
+  {
+    "operation": "mail.conversation.list",
+    "target": {
+      "type": "mail.mailbox",
+      "id": "ExBox1"
+    },
+    "replies": [
+      {
+        "ok": true,
+        "data": [],
+        "page": {
+          "hasMore": true,
+          "nextCursor": "opaque-fixture-cursor"
+        }
+      },
+      {
+        "ok": true,
+        "data": [],
+        "page": {
+          "hasMore": false
+        }
+      }
+    ]
+  },
+  {
+    "operation": "core.ai.chat.send",
+    "target": {
+      "type": "core.ai.chat",
+      "id": "ExMndy"
+    },
+    "input": {
+      "text": "Review my inbox conversations needing action in the Review mailbox. Use our earlier decisions in this chat to choose which conversations need closer reading and decide the next steps. Read messages as needed, explain your recommendations, and report here. Ask for my approval before making any changes."
+    },
+    "replies": [
+      {
+        "ok": true,
+        "data": {
+          "id": "44bd0000-0000-4000-8000-000000000009",
+          "chatId": "ExMndy",
+          "status": "queued",
+          "reason": null,
+          "origin": {
+            "kind": "automation",
+            "id": "c_fixture"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "operation": "core.ai.chat.read",
+    "input": {
+      "id": "ExMndy",
+      "message": "44bd0000-0000-4000-8000-000000000009"
+    },
+    "replies": [
+      {
+        "ok": true,
+        "data": {
+          "chat": {
+            "id": "ExMndy",
+            "title": "Monday inbox review",
+            "description": "",
+            "status": "needs_attention",
+            "archived": false,
+            "createdAt": "2030-01-07T09:00:00Z",
+            "updatedAt": "2030-01-07T09:00:00Z"
+          },
+          "view": {
+            "title": "Monday inbox review",
+            "permission": "write"
+          },
+          "messages": [],
+          "message": {
+            "id": "44bd0000-0000-4000-8000-000000000009",
+            "chatId": "ExMndy",
+            "status": "waiting",
+            "reason": null,
+            "origin": {
+              "kind": "automation",
+              "id": "c_fixture"
+            }
+          }
+        }
+      }
+    ],
+    "target": null
+  }
+]

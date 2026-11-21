@@ -509,6 +509,13 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     }
     if (col.type === "flow" && col.format?.currency && Number.isFinite(Number(value)))
       return <FlowAmount value={Number(value)} currency={col.format.currency} decimals={col.format.decimals} />;
+    // A negative amount is money going out: it reads in the danger ink, the sign stays for readers without colour.
+    if (col.type === "amount" && Number(value) < 0)
+      return (
+        <span class="k2b-data-table__amount" data-negative="">
+          {tableCellText(value, col, locale())}
+        </span>
+      );
     if (col.type === "delta" && Number.isFinite(Number(value)))
       return <DeltaBadge delta={{ value: Number(value), unit: col.delta?.unit, better: col.delta?.better }} />;
     if (col.type === "bar") {

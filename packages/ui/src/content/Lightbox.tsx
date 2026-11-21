@@ -68,6 +68,11 @@ export type LightboxItem = {
   open?: { label?: string; onOpen: () => void };
   /** More commands for this file, before Download. */
   actions?: readonly LightboxAction[];
+  /**
+   * Anything else shown large, such as a chart or table the page already holds: drawn on a surface on the stage,
+   * instead of a file. The caller passes what it already has, so nothing loads again.
+   */
+  content?: () => JSX.Element;
 };
 
 export type LightboxProps = {
@@ -80,7 +85,7 @@ export type LightboxProps = {
   actions?: (item: LightboxItem) => JSX.Element;
 };
 
-type Kind = "image" | "pdf" | "office" | "video" | "audio" | "text" | "none";
+type Kind = "image" | "pdf" | "office" | "video" | "audio" | "text" | "content" | "none";
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3] as const;
 const SWIPE = 60;
 const PULL_CLOSE = 110;
@@ -91,6 +96,7 @@ const SPREADSHEET = /\.(xlsx?|ods|csv)$/i;
 const BESIDE = ".k2b-lightbox__content, .k2b-lightbox__pdf, .k2b-pdf-viewer__document, .k2b-pdf-viewer__pages, .k2b-pdf-viewer__stack";
 
 const kindOf = (item: LightboxItem): Kind => {
+  if (item.content) return "content";
   if (item.preview) return "office";
   const kind = getFileViewPreviewKind(item.file ?? { path: item.name });
   if (kind === "image" || kind === "video" || kind === "audio") return item.src ? kind : "none";
@@ -103,6 +109,9 @@ const zoomable = (kind: Kind) => kind === "image" || kind === "pdf" || kind === 
 const interactive = (target: EventTarget | null) =>
   target instanceof Element &&
   Boolean(target.closest("button, a[href], input, textarea, select, video, audio, [contenteditable=''], [contenteditable=true]"));
+/** A field keeps every key but Escape: typing in a view's search never steps to the next item or zooms. */
+const field = (target: EventTarget | null) =>
+  target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable=''], [contenteditable=true]"));
 /** A focused video or audio file keeps its keys: the arrows seek there instead of stepping to the next file. */
 const media = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("video, audio"));
 const bytes = (content: FileViewContent) =>
@@ -178,6 +187,7 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
       (target === document.body && Array.from(document.querySelectorAll("dialog[open]")).every((open) => open === dialog)));
   const keys = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || !ownsKey(event.target)) return;
+    if (event.key !== "Escape" && field(event.target)) return;
     const handled = (() => {
       switch (event.key) {
         case "Escape":
@@ -318,7 +328,14 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
           {/* Keyed by position and item: each file mounts its own stage and starts its own loading. */}
           <Show keyed when={item()}>
             {(shown) => (
-              <LightboxStage item={shown} kind={untrack(kind)} zoom={zoom} onPages={setPages} onPage={setPage} onTitle={setTitle} />
+              <Show
+                when={shown.content}
+                fallback={
+                  <LightboxStage item={shown} kind={untrack(kind)} zoom={zoom} onPages={setPages} onPage={setPage} onTitle={setTitle} />
+                }
+              >
+                {(content) => <div class="k2b-lightbox__view">{content()()}</div>}
+              </Show>
             )}
           </Show>
         </div>

@@ -22,7 +22,6 @@ import { normalizeEmailAddress } from "./address-normalization";
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
 import { queueSenderVerification } from "./commands";
 import { resolveRoleFolder } from "./folders";
-import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { attemptSenderVerification } from "./sender-verification";
 
@@ -333,17 +332,6 @@ export const createSenderIdentity = async (params: {
       const draftsFolderId =
         parsed.data.draftsFolderId === undefined ? await roleFolderId(params.mailboxId, "drafts", tx) : parsed.data.draftsFolderId;
       const fromAddress = normalizeEmailAddress(parsed.data.fromAddress) ?? parsed.data.fromAddress.trim().toLowerCase();
-      const existingIdentities = await tx<{ from_address: string }[]>`
-        SELECT from_address
-        FROM mail.sender_identities
-        WHERE mailbox_id = ${params.mailboxId}::uuid AND status <> 'disabled'
-      `;
-      const safe = await validateDestructiveIncomingAutomationsForMailbox({
-        mailboxId: params.mailboxId,
-        identityAddresses: [...existingIdentities.map((identity) => identity.from_address), fromAddress],
-        db: tx,
-      });
-      if (!safe.ok) return safe;
       if (!(await foldersBelongToMailbox(params.mailboxId, [sentFolderId, draftsFolderId], tx))) {
         return fail(err.badInput("Sender identity folder mapping does not belong to this mailbox"));
       }
@@ -398,7 +386,7 @@ export const createSenderIdentity = async (params: {
               ? (normalizeEmailAddress(parsed.data.envelopeSender) ?? parsed.data.envelopeSender.trim().toLowerCase())
               : null
           },
-          ${parsed.data.authenticationPolicy.automation},
+          ${"disabled"},
           ${sentFolderId}::uuid,
           ${draftsFolderId}::uuid,
           ${isDefault},
@@ -432,7 +420,6 @@ export const createSenderIdentity = async (params: {
           metadata: {
             mailboxId: params.mailboxId,
             fromAddress: created.from_address,
-            authenticationPolicy: parsed.data.authenticationPolicy,
           },
         },
         tx,
@@ -481,7 +468,6 @@ export const updateSenderIdentity = async (params: {
         FOR UPDATE OF si
       `;
       if (!current) return fail(err.notFound("Sender identity"));
-      const nextPolicy = parsed.data.authenticationPolicy ?? { automation: current.automation_policy };
       const sentFolderId =
         parsed.data.sentFolderId === undefined
           ? current.sent_folder_id
@@ -533,20 +519,6 @@ export const updateSenderIdentity = async (params: {
         envelopeSender !== current.envelope_sender ||
         sentFolderId !== current.sent_folder_id ||
         draftsFolderId !== current.drafts_folder_id;
-      const automationPolicyChanged = nextPolicy.automation !== current.automation_policy;
-      if (fromAddress !== current.from_address) {
-        const identities = await tx<{ id: string; from_address: string }[]>`
-          SELECT id, from_address
-          FROM mail.sender_identities
-          WHERE mailbox_id = ${params.mailboxId}::uuid AND status <> 'disabled'
-        `;
-        const safe = await validateDestructiveIncomingAutomationsForMailbox({
-          mailboxId: params.mailboxId,
-          identityAddresses: identities.map((identity) => (identity.id === current.id ? fromAddress : identity.from_address)),
-          db: tx,
-        });
-        if (!safe.ok) return safe;
-      }
       if (parsed.data.isDefault === true) {
         await tx`
           UPDATE mail.sender_identities
@@ -583,7 +555,6 @@ export const updateSenderIdentity = async (params: {
           default_read_receipt = ${parsed.data.defaultReadReceipt ?? current.default_read_receipt},
           vcard = ${parsed.data.vcard === undefined ? current.vcard : parsed.data.vcard},
           envelope_sender = ${envelopeSender},
-          automation_policy = ${nextPolicy.automation},
           sent_folder_id = ${sentFolderId}::uuid,
           drafts_folder_id = ${draftsFolderId}::uuid,
           is_default = ${parsed.data.isDefault ?? current.is_default},
@@ -610,7 +581,6 @@ export const updateSenderIdentity = async (params: {
             mailboxId: params.mailboxId,
             fromAddress: reloaded.from_address,
             providerRelevantChanged,
-            automationPolicyChanged,
           },
         },
         tx,
@@ -766,7 +736,6 @@ export const setupDefaultSender = async (params: {
         displayName: parsed.data.displayName ?? "",
         fromAddress: binding.email,
         defaultCc: [],
-        authenticationPolicy: { automation: "mailbox" },
         sentFolderId,
         draftsFolderId,
         isDefault: true,

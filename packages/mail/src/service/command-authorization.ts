@@ -194,23 +194,7 @@ const commandPrincipalAuthorization = async (
   db: SqlClient = sql,
 ): Promise<boolean | MailboxAccess> => {
   if (command.access_subject_kind === "system") {
-    if (command.actor_kind === "system") return true;
-    if (command.actor_kind !== "workflow" || !command.actor_id) return false;
-    const [workflow] = await db<{ authorized: boolean }[]>`
-      SELECT EXISTS (
-        SELECT 1
-        FROM workflows.version version
-        JOIN workflows.workflow workflow
-          ON workflow.id = version.workflow_id
-         AND workflow.active_version_id = version.id
-        JOIN mail.workflow_profile profile
-          ON profile.id = workflow.id
-         AND profile.enabled
-        WHERE profile.mailbox_id = ${command.mailbox_id}::uuid
-          AND version.id = ${command.actor_id}::uuid
-      ) AS authorized
-    `;
-    return workflow?.authorized === true;
+    return command.actor_kind === "system";
   }
   if (!(await serviceAccountActorAllowed(command, permission, db))) return false;
   if (!(await accessSubjectIsActive(command, db))) return false;

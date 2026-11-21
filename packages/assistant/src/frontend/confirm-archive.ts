@@ -1,6 +1,5 @@
 import type { AiConversation } from "@k2b/cloud/ai";
 import { prompts } from "@k2b/ui";
-import { assistantApi } from "../api/client";
 import { assistantCopyFor } from "./ui-copy";
 
 /** Shared archive confirmation, loaded only when needed on the phone. Unknown queue counts stay explicit. */
@@ -11,17 +10,17 @@ export const confirmAssistantArchive = async (
 ) => {
   const copy = assistantCopyFor(locale);
   const text = (value: string) => copy.text({ value });
-  const routines = await assistantApi.listChatTasks({ chatId: conversation.id, state: "active", limit: 100 }).catch(() => null);
-  const message =
-    routines === null
-      ? copy.archiveChatAnyRoutines
-      : routines.length
-        ? copy.archiveChatRoutines({ names: routines.map((routine) => routine.name) })
-        : copy.archiveChat({ title: conversation.title });
-  return prompts.confirm([message, copy.archiveQueuedMessages({ count: queuedMessageCount })].filter(Boolean).join("\n\n"), {
-    title: routines?.length !== 0 ? copy.archiveChat({ title: conversation.title }) : text("Archive chat"),
-    icon: "ti ti-archive",
-    confirmText: text(routines?.length ? "Archive anyway" : "Archive"),
-    cancelText: text("Cancel"),
-  });
+  // The chat's alarms rest while it is archived; the dialog names them first (Gustav alarms v1, 12).
+  const alarms = await import("./wakeups").then((module) => module.restingWakeups(conversation.id, locale)).catch(() => "");
+  return prompts.confirm(
+    [copy.archiveChat({ title: conversation.title }), copy.archiveQueuedMessages({ count: queuedMessageCount }), alarms]
+      .filter(Boolean)
+      .join("\n\n"),
+    {
+      title: text("Archive chat"),
+      icon: "ti ti-archive",
+      confirmText: text("Archive"),
+      cancelText: text("Cancel"),
+    },
+  );
 };

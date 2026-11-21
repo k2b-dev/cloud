@@ -143,10 +143,11 @@ export const waitingFixture = {
       activeTurn: turn(["mail", "del"]),
       server: { quiet: false, label: "Wartet auf dich", entries: [mail.short, del.short, inOther(routine)] },
     },
+    // This chat's only question is in view at its end; the other chat's question keeps the row (v12 3m).
     two: {
       questions: questions([del, routine]),
       activeTurn: turn(["del"]),
-      server: { quiet: false, label: "Wartet auf dich", entries: [del.short, inOther(routine)] },
+      server: { quiet: false, label: "Wartet auf dich", entries: [inOther(routine)] },
     },
     // A chat opens at its end, where its only question's answers are: the row keeps its place, hidden.
     oneHere: {

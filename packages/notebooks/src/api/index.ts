@@ -32,7 +32,7 @@ import {
   respond,
   setRequestTimeout,
 } from "@k2b/cloud/server";
-import { isStandaloneServiceAccountKind, settings, settingsService } from "@k2b/cloud/services";
+import { serviceAccountUsesOwnGrants, settings, settingsService } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import {
   GeoMapSnapshotAssetError,
@@ -862,7 +862,7 @@ const getNotebookAccessSubject = (c: Context<AuthContext>) => {
 const getCollectionNotebookBinding = (subject: ReturnType<typeof getNotebookAccessSubject>, locale?: string): Result<string | null> => {
   if (!subject.serviceAccountId) return ok(null);
   // A standalone or agent account acts under its own grants, capped by its credential scopes.
-  if (subject.serviceAccount && isStandaloneServiceAccountKind(subject.serviceAccount.kind)) {
+  if (subject.serviceAccount && serviceAccountUsesOwnGrants(subject.serviceAccount.kind)) {
     return subject.serviceAccount.id === subject.serviceAccountId &&
       hasPermission(permissionFromScopes(subject.serviceAccountScopes), "read")
       ? ok(null)
@@ -3540,7 +3540,11 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       notebookId = notebook!.id;
 
-      const entries = await notebooksService.notebook.access.list({ notebookId });
+      const viewer = getNotebookAccessSubject(c).user;
+      const entries = await notebooksService.notebook.access.list({
+        notebookId,
+        display: { canManageTarget: true, cloudAdmin: Boolean(viewer && hasRole(viewer, "admin")), locale: getLocale(c) },
+      });
       return respond(c, ok(entries.items));
     },
   )
@@ -3572,7 +3576,10 @@ const app = new Hono<AuthContext>()
         }
         if (!hasPermission(minPermission(member, permission), "read")) return respond(c, fail(err.forbidden(messages(c).accessDenied)));
       }
-      const entries = await notebooksService.notebook.access.list({ notebookId: notebook!.id });
+      const entries = await notebooksService.notebook.access.list({
+        notebookId: notebook!.id,
+        display: { permission, locale: getLocale(c) },
+      });
       return respond(c, ok(entries.items.map(toAccessMember)));
     },
   )

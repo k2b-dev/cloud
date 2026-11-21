@@ -36,7 +36,9 @@ const failureReason = (block: ToolBlock, t: Messages): string => {
       ? t.stepNotFound
       : kind === "timeout"
         ? t.stepTimedOut
-        : t.stepDidNotWork;
+        : kind === "limit"
+          ? t.stepLimit
+          : t.stepDidNotWork;
 };
 
 /** The details of one step, for the card behind the ⓘ at the end of its row. */
@@ -104,6 +106,7 @@ export const stepOutcome = (
   if (failure === "unknown" && check?.state === "not_done") return { word: t.stepOutcomeNotDone, tone: "danger" };
   if (failure === "unknown") return { word: t.stepOutcomeUnclear, tone: "warning" };
   if (failure === "denied") return { word: t.stepOutcomeNoAccess, tone: "warning" };
+  if (failure === "limit") return { word: t.stepOutcomeLimit, tone: "danger" };
   return failure ? { word: t.stepOutcomeFailed, tone: "danger" } : null;
 };
 

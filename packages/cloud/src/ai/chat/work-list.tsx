@@ -1,9 +1,10 @@
 import { Chat, useLocale } from "@k2b/ui";
 import { createMemo, For, Match, Show, Switch, untrack } from "solid-js";
+import { FeatCodeMark } from "../../code/FeatCodeMark";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
 import { CompactionBlockView, CompactToolRow } from "./blocks";
-import { aiToolIcon, displayToolName } from "./message-utils";
+import { aiToolIcon, displayToolName, isFeatCodeTool } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import { AiToolActivity } from "./tool-disclosure";
@@ -89,6 +90,11 @@ function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry
       meta={aiChatMessages(locale()).repeatCount({ count: tools().length })}
       icon={aiToolIcon(first().name, first().presentation?.appIcon)}
       accent={first().presentation?.appAccent}
+      leading={
+        !first().presentation?.appIcon && isFeatCodeTool(first().name) ? (
+          <FeatCodeMark variant="glyph" tone="current" decorative />
+        ) : undefined
+      }
       busy={props.active && tools().at(-1)?.status === "running"}
       renderBody={() => <WorkEntries entries={props.entries} active={props.active} />}
     />

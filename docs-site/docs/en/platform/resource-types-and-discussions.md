@@ -159,6 +159,50 @@ A discussions role works without reader checks. Push consumers require
 `access.readable` on both the item and container Types; otherwise they must
 report that push is not configured. The role itself grants no access.
 
+## Resolve managers for background notices
+
+A resource Type can declare `access.managers(input, context)` alongside its
+reader checks. The platform generates an app-only `<type>.managers` Query;
+it uses the calling application's workload identity and never a recipient's
+browser session. The same `resources:readers` admission and app-query rate
+limit apply. This Query returns identifiers, never resource content or titles.
+
+`ResourceManagersInputSchema` accepts `{ id, afterId?, userId?, limit? }`.
+Return at most `limit` human user UUIDs (default and maximum 50), ordered by
+UUID and strictly after `afterId`. `ResourceManagersDataSchema` wraps them as
+`{ userIds }`. With `userId`, return that person only if they still manage the
+resource. Resolve current direct and recursive group administration grants;
+assignment or read-only access does not confer management. Unknown or deleted
+resources return an empty list. The platform rejects pages outside the input
+bounds. Call `listResourceManagers` from `@k2b/cloud/capabilities/server` and
+continue while a page is full. A missing provider throws so durable callers
+can retry rather than silently dropping recipients. A healthy provider without
+this optional Query returns an empty manager list; Code's explicit editors
+still receive their notices. Types declared in `code.owners` should implement
+this callback so their owner administrators receive notices too.
+
+Apply the application's account-profile policy before pagination too. For
+example, Mail excludes guests even when a stored group grant names them.
+`listAccessRecipientUserIds` from `@k2b/cloud/server` expands direct and
+recursive group grants and grants to all signed-in people for background
+recipients. It accepts `accessIds`, `afterId?`, `userId?`, `limit` (maximum 50)
+and `minimumPermission` (`admin` by default, or `write`). It returns member
+profile UUIDs; the sender rechecks account eligibility before delivery. A
+provider with precedence or deny rules must narrow candidates through its own
+permission resolver before pagination. `listUsersWithAccess` remains the
+share/member picker and does not expand all-signed-in grants.
+
+Built-in projections cover Spaces and items, Notebooks and notes, Contacts
+books, Grids and Pulse bases, ordinary Chat conversations, Venue venues and
+Files machine storage and templates. Child resources inherit their parent's
+grants. Grids applies its own grant precedence; Chat discoverability grants
+nothing. Files administration surfaces use installation administrators.
+
+Core uses this contract to notify Code owner administrators after a decision,
+and rechecks each recipient's current management before delivery. The sender
+also checks account eligibility. Code's explicit editors and personal or app
+owners are resolved from their own grants without cross-application calls.
+
 ## Check current principal readability
 
 Each Type may independently provide
@@ -173,7 +217,14 @@ The platform generates `<typeLocalId>.readable`, with fixed
 `ResourceReadableInputSchema` and `ResourceReadableDataSchema`:
 `{ id, container?, principals } → { readable }`. For a contained Type, the
 generated input requires `container`, fixes its Type to the declared local
-container Type, and leaves its ID opaque. Do not declare this Query yourself;
+container Type, and leaves its ID opaque. The one exception is a contained
+event place without `access.readable`: its derived reader checks the place
+itself and has no `container` input. Asking it without a container is reserved
+for Code's event-place check. This is a convention: the provider cannot tell
+Core from another caller with `resources:readers`, and the
+`event-place-exception` repository check rejects other mentions of the
+option outside tests in this repository; it does not see test files or a key
+built from strings (see [App events](/en/docs/platform/app-events)). Do not declare this Query yourself;
 a name collision fails startup. Before calling application code, the platform
 filters candidates through the shared current-account resolver: users must exist, be unexpired,
 not be locked in FreeIPA, and belong to an enabled account category; service accounts must exist and

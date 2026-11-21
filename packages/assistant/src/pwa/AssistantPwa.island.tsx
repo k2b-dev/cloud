@@ -39,12 +39,36 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  lazy,
+  Match,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js";
 import { assistantApi } from "../api/client";
+import type { CodeVersionCardEntry } from "../code-version-cards";
+import AssistantAuthoringStop from "../frontend/AssistantAuthoringStop";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
 import { createAssistantDictation } from "../frontend/assistant-dictation";
-import { createAssistantLiveHub, followAssistantLive, matchesAssistantInvalidation } from "../frontend/assistant-live";
+import {
+  AssistantLiveProvider,
+  createAssistantLiveHub,
+  followAssistantLive,
+  matchesAssistantInvalidation,
+} from "../frontend/assistant-live";
 import { audioMessages } from "../frontend/audio-messages";
+import { AssistantCodeDecisionEntry } from "../frontend/code-decision-deferred";
+import { AssistantCodeVersionCard } from "../frontend/code-version-card-deferred";
+import { createCodeVersionCardStore } from "../frontend/code-version-card-store";
 import { assistantMessages } from "../frontend/messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
@@ -52,10 +76,11 @@ import { pwaMessages } from "./messages";
 import { createOnline } from "./online";
 import { addressHref, allChatsHref, newChatHref, type PwaAddress, pwaAddress, startHref } from "./paths";
 import { ChatRows, SkeletonRows } from "./rows";
-import { type StoredChatFile, uploadChatFile } from "./upload";
+import type { StoredChatFile } from "./upload";
 
 /** How many chats the start lists; the rest are one step away. */
 const RECENT = 6;
+const TurnErrorAction = lazy(() => import("../frontend/AssistantTurnErrorAction"));
 /** The draft of the field on the start and of a new chat. */
 const NEW_DRAFT = "new";
 
@@ -68,6 +93,7 @@ type Detail = {
 };
 
 export type AssistantPwaProps = {
+  initialCodeVersionCards?: CodeVersionCardEntry[];
   userId: string;
   /** The part's name and icon from the app's presentation. */
   name: string;
@@ -154,6 +180,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
 
   // ---- live updates, as on the web
   const liveHub = createAssistantLiveHub();
+  const codeVersionCards = createCodeVersionCardStore(liveHub, props.initialCodeVersionCards);
   onMount(() => {
     const unregisterList = liveHub.register({
       matches: matchesAssistantInvalidation(["conversation-list"]),
@@ -362,9 +389,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     let target = chat.activeConversationId();
     if (!target) {
       setCreating(true);
-      const created = await chat
-        .createConversation({ requestId: crypto.randomUUID(), title: t().newChat })
-        .finally(() => setCreating(false));
+      const created = await chat.createConversation({ requestId: crypto.randomUUID() }).finally(() => setCreating(false));
       if (!created) {
         setNotice(t().createFailed);
         return false;
@@ -418,19 +443,24 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       setUpload(record.id, { state: "waiting" });
       return;
     }
-    const done = uploadChatFile(conversationId, record.file, (progress) => {
-      const current = uploads()[record.id];
-      if (current?.state === "uploading") setUpload(record.id, { ...current, progress });
-    }).then(
-      (file) => {
-        if (uploads()[record.id]) setUpload(record.id, { state: "done", file });
-        return file;
-      },
-      () => {
-        if (uploads()[record.id]) setUpload(record.id, { state: navigator.onLine ? "failed" : "waiting" });
-        return null;
-      },
-    );
+    const done = importOnDemand(() => import("./upload"))
+      .then((upload) => {
+        if (!upload) throw new Error("upload_module_unavailable");
+        return upload.uploadChatFile(conversationId, record.file, (progress) => {
+          const current = uploads()[record.id];
+          if (current?.state === "uploading") setUpload(record.id, { ...current, progress });
+        });
+      })
+      .then(
+        (file) => {
+          if (uploads()[record.id]) setUpload(record.id, { state: "done", file });
+          return file;
+        },
+        () => {
+          if (uploads()[record.id]) setUpload(record.id, { state: navigator.onLine ? "failed" : "waiting" });
+          return null;
+        },
+      );
     setUpload(record.id, { state: "uploading", progress: 0, done });
   };
   onMount(() => {
@@ -525,9 +555,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       if (key !== NEW_DRAFT) return recordingTarget() ? { key, target: key } : null;
       // A recording needs its chat first, as sending does; the field's text and files move along into it.
       setCreating(true);
-      const created = await chat
-        .createConversation({ requestId: crypto.randomUUID(), title: t().newChat })
-        .finally(() => setCreating(false));
+      const created = await chat.createConversation({ requestId: crypto.randomUUID() }).finally(() => setCreating(false));
       if (!created) {
         setNotice(t().createFailed);
         return null;
@@ -636,18 +664,23 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       local: chat.activeConversationId() && !chat.loadingConversation() ? (chat.activeTurn()?.blocks ?? []) : null,
     }),
   );
-  // The strip stays quiet only while the one open question's answers are in view, as on the web.
+  // The strip leaves this chat's one entry out while its answers are in view, as on the web.
   const [timelineViewport, setTimelineViewport] = createSignal<HTMLElement>();
   const [timelineContent, setTimelineContent] = createSignal<HTMLElement>();
   let scrollToAnchor: (anchor: string) => boolean = () => false;
   const waitingFocus = createWaitingQuestionFocus({
     onlyHere: () => waiting().onlyHere,
+    atEnd: () => waiting().onlyHereAtEnd,
     viewport: timelineViewport,
     content: timelineContent,
     scrollToAnchor: (anchor) => scrollToAnchor(anchor),
     gone: () => void reloadList(true).catch(() => undefined),
   });
-  const jump = (question: Pick<AiOpenQuestion, "conversationId" | "anchor">) => {
+  const jump = (question: Pick<AiOpenQuestion, "conversationId" | "anchor" | "href">) => {
+    if (question.href) {
+      window.location.assign(question.href);
+      return;
+    }
     const here = chat.activeConversationId() === question.conversationId;
     if (!here) go({ level: "chat", id: question.conversationId });
     void waitingFocus.focus(question.anchor, () => chat.activeConversationId() === question.conversationId);
@@ -752,7 +785,8 @@ export default function AssistantPwa(props: AssistantPwaProps) {
             <AssistantWaitingStrip
               view={waiting()}
               conversationId={chat.activeConversationId()}
-              quiet={waitingFocus.quiet()}
+              quiet={waitingFocus.inView() !== null && waiting().total === 1}
+              inView={waitingFocus.inView()}
               onJump={jump}
               onShowMore={showMoreQuestions}
               more={{ label: waitingMoreLabel(), always: false }}
@@ -972,8 +1006,28 @@ export default function AssistantPwa(props: AssistantPwaProps) {
               <Match when={true}>
                 <AiChatActionsProvider
                   actions={{
+                    renderTurnErrorAction: (error) => (props.canConfigure ? <TurnErrorAction error={error} canConfigure /> : undefined),
+                    // The same version card as the workspace: on a phone it says where switching on works.
+                    renderCodeAuthoringStop: (state, continuable, superseded) => (
+                      <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />
+                    ),
+                    renderCodeDecision: (entry) => (
+                      <AssistantCodeDecisionEntry entry={entry} messages={chat.messages} timeZone={props.timeZone} />
+                    ),
+                    renderCodeVersion: (version) => (
+                      <AssistantLiveProvider value={liveHub}>
+                        <AssistantCodeVersionCard
+                          store={codeVersionCards}
+                          {...version}
+                          timeZone={props.timeZone}
+                          onAsk={(text) => void send({ intent: "send", text, attachments: [] }, false)}
+                        />
+                      </AssistantLiveProvider>
+                    ),
                     actionDisabled: () => chat.runStatus() === "stopping",
                     onCheckAction: (request) => chat.checkAction(request),
+                    onEditDraft: (request, values, digest) => chat.editDraft(request, values, digest),
+                    onChoice: (request, blockId, ids) => chat.submitChoice(request, blockId, ids),
                     onShowQuestion: (anchor) => {
                       const conversationId = chat.activeConversationId();
                       if (conversationId) jump({ conversationId, anchor });
@@ -985,12 +1039,19 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                       chat.setError(null);
                       throw new Error(reason);
                     },
+                    // Questions in the chat are answered here as in the workspace.
+                    onFrontendToolResult: async (request, result) => {
+                      if (await chat.submitFrontendToolResult(request, result)) return;
+                      const reason = chat.error() ?? t().retry;
+                      chat.setError(null);
+                      throw new Error(reason);
+                    },
                     onRetryMessage: async (entry, input) => {
                       if (!(await chat.retryUserMessage(entry.id, { ...input, model: selectedModel() })))
                         throw new Error(chat.error() ?? t().retry);
                     },
                     onContinueTurn: async (message) => {
-                      await send({ intent: "send", text: message, attachments: [] }, false);
+                      if (!(await send({ intent: "send", text: message, attachments: [] }, false))) throw new Error(t().retry);
                     },
                     fileUrl: chat.fileContentUrl,
                   }}

@@ -100,6 +100,20 @@ export const defineLivePublisher = <const Event extends z.ZodType>(definition: {
   const { appId, event } = definition;
   if (!dispatchers.has(appId)) dispatchers.set(appId, null);
   return {
+    /** Best-effort, committed observations over NATS, without an outbox write.
+     * Call only after the owning transaction commits. Reconnects recover from
+     * the authorized snapshot; this is not a durable effect delivery mechanism.
+     * Use a separate key and channel for data with stricter read permissions.
+     */
+    publishTransient: async (input: { key: string; data: z.input<Event>; idempotencyKey?: string }): Promise<void> => {
+      const data: unknown = JSON.parse(JSON.stringify(input.data));
+      event.parse(data);
+      await liveTopics()(appId).publish({
+        data: { v: 1, k: input.key, d: data },
+        orderingKey: input.key,
+        idempotencyKey: input.idempotencyKey,
+      });
+    },
     /**
      * Writes one update in `tx`, the transaction that makes the change: a
      * rollback writes nothing, a commit publishes it at least once. Data above

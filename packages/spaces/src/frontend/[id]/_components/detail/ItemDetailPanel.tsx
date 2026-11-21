@@ -79,6 +79,7 @@ import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughW
 import CommentsSection from "./CommentsSection";
 import DependencyList from "./DependencyList";
 import EventInvitations from "./EventInvitations";
+import ItemHistorySection from "./ItemHistorySection";
 import ItemLinksSection from "./ItemLinksSection";
 import TaskAttachmentsSection from "./TaskAttachmentsSection";
 import TaskChecklistSection from "./TaskChecklistSection";
@@ -109,6 +110,8 @@ type Props = {
   /** Who has access to the space; `null` for people who may not read it, such as public-link readers. */
   access: { members: readonly AccessMember[]; state: "ready" | "loading" | "error"; retry: () => void } | null;
   mailIntegrationAvailable: boolean;
+  /** Whether the edit form asks the assistant for a task estimate; decided on the server for this person. */
+  estimateSuggestions?: boolean;
   scrollPreserveKey: string;
 };
 
@@ -623,6 +626,7 @@ export default function ItemDetailPanel(props: Props) {
         tags: props.tags,
         dateConfig: props.dateConfig,
         currentUserId: props.currentUserId,
+        estimateSuggestion: Boolean(props.estimateSuggestions) && !isEvent(),
       });
       if (saved) reconcileAfterWrite();
     } finally {
@@ -1181,6 +1185,10 @@ export default function ItemDetailPanel(props: Props) {
               add="always"
               class="spaces-item-reactions"
             />
+          </Show>
+
+          <Show when={props.commentTarget.itemId} keyed>
+            {(itemId) => <ItemHistorySection spaceId={props.spaceId} itemId={itemId} dateConfig={props.dateConfig} />}
           </Show>
 
           <Show when={props.canWrite || commentsPage().total > 0}>

@@ -14,10 +14,11 @@ import { assertPrivateDatabase } from "../../test/private-database";
 import { bindings } from "../data/bases";
 import { operations, ROOT_LOCK_WAIT_MS, withRootLock, withUploadLock } from "../data/operations";
 import { resolveEntryRefId } from "../data/references";
+import { markdownRevision } from "../document-assets";
 import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
 import { entryRefId, stableEntryRefId } from "../resource-ref";
-import { createFilesService } from ".";
+import { createFilesService, FilesError } from ".";
 import { systemCall } from "./activity";
 import { connectFilegate } from "./filegate-facade";
 import { createTemplateService } from "./templates";
@@ -746,6 +747,7 @@ suite("Files service and durable bindings", () => {
     await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
     await migratePosix();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id))`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.service_account_groups(service_account_id uuid,group_id uuid)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.ipa_user_effective_groups(user_id uuid,group_name text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS settings.entries(key text PRIMARY KEY,value text)`.simple();
@@ -856,6 +858,63 @@ suite("Files service and durable bindings", () => {
     } finally {
       read.mockRestore();
       retry.mockRestore();
+    }
+  });
+  test("an entry's picture rechecks read access on every request and answers every refusal like a missing entry", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/vase.jpg", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/notes.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/Photos", 1001, 2001, "0750");
+    const bob = await user("bob", "ipa");
+    directory("freeipa", "users/bob");
+    directory("freeipa", "users/bob/vase.jpg", 1001, 2001, "0640", false);
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const bobBase = (await service.bases(testCall(bob))).items[0]!.id;
+    const read = spyOn(previews, "read").mockImplementation(async () => ({
+      state: "ready",
+      body: new Blob(["webp"]),
+      type: "image/webp",
+      bytes: 4,
+    }));
+    const signal = new AbortController().signal;
+    const refusal = async (id: string) => {
+      const error = await service.entryImage(testCall(actor), { id, rev: "r" }, signal).then(
+        () => null,
+        (failure: unknown) => failure,
+      );
+      expect(error).toBeInstanceOf(FilesError);
+      const { name, code, status, message } = error as FilesError;
+      return { name, code, status, message };
+    };
+    try {
+      const entry = (await service.list(testCall(actor), { baseId })).items.find((item) => item.name === "vase.jpg")!;
+      const id = entryRefId(baseId, "vase.jpg")!;
+      const allowed = await service.entryImage(testCall(actor), { id, rev: markdownRevision(entry) }, signal);
+      expect(allowed).toMatchObject({ result: { state: "ready", type: "image/webp" }, immutable: true });
+      expect(read.mock.calls[0]?.[0]).toMatchObject({ key: `${baseId}:vase.jpg`, locator: JSON.stringify({ baseId, path: "vase.jpg" }) });
+      expect(read.mock.calls[0]?.[1]).toBe("large");
+      expect((await service.entryImage(testCall(actor), { id, rev: "stale" }, signal)).immutable).toBe(false);
+      const missing = await refusal(entryRefId(baseId, "absent.jpg")!);
+      expect(missing).toEqual({ name: "FilesError", code: "not_found", status: 404, message: "not_found" });
+      // Another person's storage, a document, a folder, and an unknown ref read exactly like a missing picture.
+      expect(await refusal(entryRefId(bobBase, "vase.jpg")!)).toEqual(missing);
+      expect(await refusal(entryRefId(baseId, "notes.txt")!)).toEqual(missing);
+      expect(await refusal(entryRefId(baseId, "Photos")!)).toEqual(missing);
+      expect(await refusal(`p:${"0".repeat(64)}`)).toEqual(missing);
+      expect(read).toHaveBeenCalledTimes(2);
+      // Access ends on the next request: the ordinary preview says forbidden, the picture says only that there is none.
+      directory("freeipa", "users/alice/vase.jpg", 999, 999, "0600", false);
+      await expect(
+        service.preview(testCall(actor), { baseId, path: "vase.jpg", rev: markdownRevision(entry), size: "large" }, signal),
+      ).rejects.toMatchObject({ code: "forbidden" });
+      expect(await refusal(id)).toEqual(missing);
+      directory("freeipa", "users/alice/vase.jpg", 1001, 2001, "0640", false);
+      directory("freeipa", "users/alice", 999, 999, "0700");
+      expect(await refusal(id)).toEqual(missing);
+      expect(read).toHaveBeenCalledTimes(2);
+    } finally {
+      read.mockRestore();
     }
   });
   test("indexed FreeIPA search uses Unix execution, rejects unreadable trees, hides trash and reports scan limits", async () => {
@@ -3221,6 +3280,38 @@ suite("Files service and durable bindings", () => {
     privateSession(expired.id)!.state = "expired";
     await service.abortUpload(testCall(actor), { baseId, id: expired.id });
     expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${expired.id}`)[0]!.state).toBe("expired");
+  });
+  test("root targets preserve access to readable descendants below a traverse-only FreeIPA root", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice", 1001, 2001, "0110");
+    directory("freeipa", "users/alice/Shared");
+    const base = (await service.bases(testCall(actor))).items[0]!;
+    const id = entryRefId(base.id, "")!;
+    expect(await service.rootLocation(testCall(actor), id)).toEqual({ baseId: base.id });
+    await expect(
+      service.rootLocation(testCall(actor), stableEntryRefId(base.id, "11111111-1111-4111-8111-111111111111")!),
+    ).rejects.toMatchObject({
+      code: "root_target_required",
+    });
+    await expect(service.folderLocation(testCall(actor), id)).rejects.toMatchObject({ code: "forbidden" });
+    expect((await service.list(testCall(actor), { baseId: base.id, path: "Shared" })).path).toBe("Shared");
+    await expect(service.rootLocation(testCall(actor), entryRefId(base.id, "Shared")!)).rejects.toMatchObject({
+      code: "root_target_required",
+    });
+  });
+  test("root entry refs resolve through the canonical reader with current storage permissions", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const base = (await service.bases(testCall(actor))).items[0]!;
+    const id = entryRefId(base.id, "")!;
+    const root = await service.entryById(testCall(actor), id);
+    expect(root).toMatchObject({
+      base: { id: base.id },
+      entry: { path: "", directory: true, name: base.name, resourceId: id },
+      resourceId: id,
+    });
+    directory("freeipa", "users/alice", 1001, 2001, "0000");
+    await expect(service.entryById(testCall(actor), id)).rejects.toMatchObject({ code: "forbidden" });
   });
   test("long resource references persist complete paths without bypassing current rights", async () => {
     const actor = await user("alice", "ipa");

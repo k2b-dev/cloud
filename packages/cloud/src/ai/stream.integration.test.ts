@@ -1,13 +1,18 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
 import { createSync, type Sync } from "@k2b/sync";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
+import * as registry from "../_internal/registry";
+import { appAccess } from "../contracts/app-access";
 import { sql } from "../runtime/clients";
 import { latestTopicCursor } from "../services/topic-cursor";
 import { migrateCloudAi } from "./migrate";
 import type { AiStreamEvent, AiTurnBlock, AiWireEvent } from "./protocol";
+import { publicAiStoredMessages } from "./public-projection";
+import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
 import {
   type AiLiveTopicEvent,
@@ -70,12 +75,12 @@ const startTurn = async (chat: AiConversation, text = "Build the report") => {
 };
 
 /** Follow a conversation's stream and read its events one by one. */
-const follow = (chat: AiConversation) => {
+const follow = (chat: AiConversation, originViewer: { locale: string; userId?: string | null } = { locale: "en" }) => {
   const abort = new AbortController();
   const events: AiStreamEvent[] = [];
   let wake: (() => void) | undefined;
   void (async () => {
-    for await (const event of streamAiConversationEvents({ conversation: chat, signal: abort.signal })) {
+    for await (const event of streamAiConversationEvents({ conversation: chat, originViewer, signal: abort.signal })) {
       events.push(event);
       wake?.();
     }
@@ -124,6 +129,242 @@ suite("AI conversation stream repair", () => {
         await connection.request(`$JS.API.STREAM.DELETE.${name}`, new Uint8Array(), { timeout: 5_000 });
     unbindProcessSync();
     await connection.drain();
+  });
+
+  test("all public reads combine private thinking Code and viewer-safe writer labels", async () => {
+    const chat = await createChat();
+    const { turn, save, event } = await startTurn(chat);
+    const thinking = "INTERNAL_INSTRUCTION code_Open42 22222222-2222-4222-8222-222222222222";
+    const source = "export default () => 'sync59-private-source'";
+    const blocks: AiTurnBlock[] = [
+      { id: "thought", kind: "thinking", text: thinking },
+      { id: "tool-run", kind: "tool", callId: "run", name: "code_run", args: { code: source }, status: "running" },
+    ];
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, modelId: "fixture" });
+    await store.append({
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking, signature: "sync59-signature", redacted: "sync59-redacted" },
+        { type: "tool_call", id: "run", name: "code_run", args: { code: source } },
+      ],
+    });
+    await store.append({
+      role: "tool_result",
+      callId: "check",
+      name: "code_check",
+      result: {
+        project: { files: { "code.ts": source } },
+        result: { ok: false, diagnostics: [{ code: "TS2322", message: "PRIVATE_C5_DIAGNOSTIC", file: "code.ts", line: 1 }] },
+      },
+    });
+    const app = spyOn(registry, "getApp").mockResolvedValue({
+      id: "notebooks",
+      name: "Notebooks",
+      description: "Notes",
+      icon: "ti ti-app",
+      baseUrl: "http://notebooks.test",
+      routes: [],
+      access: appAccess.signedIn(),
+      presentation: { baseLocale: "en", translations: { de: { name: "Notizbücher" } } },
+    });
+    cleanup.push(async () => app.mockRestore());
+    await sql`UPDATE ai.messages SET meta=${JSON.stringify({ toolPresentations: { run: { kind: "capability", appId: "notebooks", appName: "Stored name", appIcon: "ti ti-app", title: "Notiz erstellen", capabilityKind: "action" } }, toolReviews: { run: { ...reviewFixture(), locale: "de" } } })}::text::jsonb
+      WHERE conversation_id=${chat.id}::uuid AND role='assistant'`;
+    for (const origin of [
+      { kind: "person", id: chat.createdByUserId },
+      { kind: "chat", id: chat.shortId, turnId: turn.shortId },
+      { kind: "automation", id: "c_private" },
+    ]) {
+      await sql`INSERT INTO ai.messages(short_id,conversation_id,seq,kind,role,message,search_text,loop_id,meta)
+        SELECT ${createAiShortId()},${chat.id}::uuid,COALESCE(max(seq),0)+1,'message','user',
+          '{"role":"user","content":[{"type":"text","text":"Attributed"}]}'::jsonb,'Attributed',${turn.id},
+          ${JSON.stringify({ writerOrigin: origin })}::text::jsonb FROM ai.messages WHERE conversation_id=${chat.id}::uuid`;
+    }
+    await save(blocks, 1);
+    const expectPublic = (value: unknown) => {
+      for (const forbidden of [thinking, source, "sync59-signature", "sync59-redacted", "PRIVATE_C5_DIAGNOSTIC", "writerOrigin"])
+        expect(JSON.stringify(value)).not.toContain(forbidden);
+    };
+    const stream = follow(chat);
+    const initial = expectState(await stream.next());
+    expectPublic(initial);
+    const assertAuthors = (messages: typeof initial.messages) => {
+      const origins = messages.flatMap((message) => (message.meta?.origin ? [message.meta.origin] : []));
+      expect(origins).toContainEqual(expect.objectContaining({ kind: "person", name: "AI Stream" }));
+      // An automation origin without a resource (written before #3665) and without a service account has no name any
+      // reader may see: it is marked unnamed, so surfaces say "From an automation" instead of showing "Automation" as a name.
+      expect(origins).toContainEqual({ kind: "automation", id: "c_private", name: "Automation", named: false });
+      expect(origins.find((origin) => origin.kind === "chat")?.href).toBeUndefined();
+      expect(messages.find((message) => message.message.role === "assistant")?.meta?.toolPresentations?.run?.appName).toBe("Notizbücher");
+    };
+    assertAuthors(initial.messages);
+    const page = await aiConversations.listMessagesPage({ conversationId: chat.id });
+    const paged = await publicAiStoredMessages(page.messages, chat, undefined, { locale: "en" });
+    expectPublic(paged);
+    assertAuthors(paged);
+    const authorized = await publicAiStoredMessages(page.messages, chat, chat.createdByUserId, {
+      locale: "en",
+      userId: chat.createdByUserId,
+    });
+    const chatOrigin = authorized.flatMap((message) => (message.meta?.origin?.kind === "chat" ? [message.meta.origin] : []))[0];
+    expect(chatOrigin?.href).toBe(`/app/assistant?conversation=${chat.shortId}`);
+    expect(initial.activeTurn?.blocks).toMatchObject([{ kind: "thinking", text: "" }, { args: {} }]);
+    const meter = await meterSql();
+    const interrupted = Promise.withResolvers<void>();
+    const stopControl = await subscribeAiTurnInterrupts({ conversationId: chat.id, turnId: turn.id, onInterrupt: interrupted.resolve });
+    try {
+      const statements = await meter.during(async () => {
+        await publishAiTurnInterrupt({ conversationId: chat.id, turnId: turn.id, requestId: crypto.randomUUID() });
+        await interrupted.promise;
+        await publishAiWireEvent(event(2, { type: "block_delta", blockId: "thought", blockKind: "thinking", delta: thinking }));
+        expect(await stream.next()).toMatchObject({ type: "block_delta", delta: "" });
+      });
+      expect(statements).toEqual([]);
+    } finally {
+      await stopControl();
+      await meter.close();
+    }
+    // Bypass today's publisher to represent retained events from a worker before either public filter.
+    const retained = async (data: AiWireEvent) => {
+      await aiStreamTopic().publish({ tenantId: chat.id, orderingKey: turn.id, data });
+    };
+    await retained(event(3, { type: "turn_started", blocks, modelId: "fixture", providerModel: "fixture" }));
+    expectPublic(await stream.next());
+    const message = (await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id }))[1]!;
+    await retained(event(4, { type: "message_saved", message }));
+    expectPublic(await stream.next());
+    const attributed = page.messages.find((message) => message.meta?.writerOrigin?.kind === "automation")!;
+    await retained(event(5, { type: "message_saved", message: attributed }));
+    const saved = await stream.next();
+    expectPublic(saved);
+    expect(saved).toMatchObject({ type: "message_saved", message: { meta: { origin: { name: "Automation" } } } });
+    // A sequence hole holds the event back until the stored snapshot covers it.
+    await save(blocks, 7);
+    await retained(event(7, { type: "block_set", block: blocks[0]! }));
+    const held = expectState(await stream.next());
+    expectPublic(held);
+    assertAuthors(held.messages);
+    const reconnect = expectState(await follow(chat).next());
+    expectPublic(reconnect);
+    assertAuthors(reconnect.messages);
+    await retained(event(8, { type: "turn_finished", status: "completed", error: null, messages: page.messages }));
+    const finished = await stream.next();
+    expect(finished.type).toBe("turn_finished");
+    expectPublic(finished);
+    if (finished.type === "turn_finished") assertAuthors(finished.messages ?? []);
+    const canonical = JSON.stringify(await store.load());
+    for (const original of [thinking, source, "sync59-signature", "sync59-redacted"]) expect(canonical).toContain(original);
+  });
+
+  test("Code source stays out of the initial snapshot, live step and resumed baseline", async () => {
+    const chat = await createChat();
+    const { save, event } = await startTurn(chat);
+    const source = "export default async () => cloud.spaces.task.create({ title: 'Delivery' })";
+    const block: AiTurnBlock = { id: "tool-run", kind: "tool", callId: "run", name: "code_run", args: { code: source }, status: "running" };
+    await save([block], 1);
+    const stream = follow(chat);
+    const initial = expectState(await stream.next());
+    expect(initial.activeTurn?.blocks[0]).toMatchObject({ args: {} });
+    expect(JSON.stringify(initial)).not.toContain(source);
+    await publishAiWireEvent(event(2, { type: "block_set", block }));
+    expect(JSON.stringify(await stream.next())).not.toContain(source);
+    await publishAiWireEvent(event(3, { type: "turn_started", blocks: [block], modelId: "fixture", providerModel: "fixture" }));
+    expect(JSON.stringify(await stream.next())).not.toContain(source);
+  });
+
+  test("lasting Code source and raw diagnostics stay out of SSE history, live results and resumed baselines", async () => {
+    const chat = await createChat();
+    const { turn, save, event } = await startTurn(chat);
+    const source = "export default () => 'sse-source-fixture'";
+    const literal = "sse-diagnostic-source-fixture";
+    const diagnostic = {
+      code: "TS2322",
+      message: `Type '"${literal}"' is not assignable to type '"allowed"'.`,
+      file: "code.ts",
+      line: 1,
+      column: 7,
+    };
+    const words = {
+      notices: [{ severity: "block", text: "The draft needs a correction.", consequence: "This version cannot be submitted." }],
+      mayDo: [],
+    };
+    const blocks: AiTurnBlock[] = [
+      {
+        id: "tool-write",
+        kind: "tool",
+        callId: "write",
+        name: "code_write",
+        args: { path: "code.ts", content: source },
+        status: "completed",
+      },
+      ...["code_read", "code_pull"].map(
+        (name): AiTurnBlock => ({
+          id: `tool-${name}`,
+          kind: "tool",
+          callId: name,
+          name,
+          args: { codeId: "ABCDEF" },
+          status: "completed",
+          result: { version: 1, files: { "code.ts": source } },
+        }),
+      ),
+      ...["code_check", "code_test", "code_simulate"].map((name): AiTurnBlock => {
+        const checked = { ok: false, diagnostics: [diagnostic], warnings: [diagnostic] };
+        return {
+          id: `tool-${name}`,
+          kind: "tool",
+          callId: name,
+          name,
+          args: { codeId: "ABCDEF" },
+          status: "completed",
+          result: name === "code_check" ? { version: 1, result: checked, words } : { version: 1, ...checked, words },
+        };
+      }),
+    ];
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, modelId: "fixture" });
+    await store.append({
+      role: "assistant",
+      content: [
+        { type: "tool_call", id: "write", name: "code_write", args: { path: "code.ts", content: source } },
+        ...["code_read", "code_pull", "code_check", "code_test", "code_simulate"].map((name) => ({
+          type: "tool_call" as const,
+          id: name,
+          name,
+          args: { codeId: "ABCDEF" },
+        })),
+      ],
+    });
+    for (const block of blocks) {
+      if (block.kind === "tool" && block.result !== undefined)
+        await store.append({ role: "tool_result", callId: block.callId, name: block.name, result: block.result });
+    }
+    await save(blocks, 1);
+    const stream = follow(chat);
+    const expectPublic = (value: unknown) => {
+      const serialized = JSON.stringify(value);
+      expect(serialized).not.toContain(source);
+      expect(serialized).not.toContain(literal);
+    };
+    const initial = expectState(await stream.next());
+    expectPublic(initial);
+    expect(initial.activeTurn?.blocks.find((block) => block.kind === "tool" && block.name === "code_check")).toMatchObject({
+      result: { result: { diagnostics: [{ code: "TS2322", file: "code.ts", line: 1, column: 7 }], warnings: [{ code: "TS2322" }] }, words },
+    });
+    for (const [index, block] of blocks.entries()) {
+      await publishAiWireEvent(event(index + 2, { type: "block_set", block }));
+      expectPublic(await stream.next());
+    }
+    await publishAiWireEvent(event(blocks.length + 2, { type: "turn_started", blocks, modelId: "fixture", providerModel: "fixture" }));
+    expectPublic(await stream.next());
+    const message = (await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id })).find(
+      (message) => message.message.role === "tool_result" && message.message.name === "code_check",
+    );
+    if (!message) throw new Error("Expected a canonical message");
+    await publishAiWireEvent(event(blocks.length + 3, { type: "message_saved", message }));
+    expectPublic(await stream.next());
+    const canonical = JSON.stringify(await store.load());
+    expect(canonical).toContain(source);
+    expect(canonical).toContain(literal);
   });
 
   test("ordinary live deltas and worker interruption delivery execute zero SQL statements (DATA-13)", async () => {

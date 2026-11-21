@@ -35,22 +35,26 @@ const content: AiDraftContentPart[] = [{ type: "text", text: own.text }];
 const flush = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 /** The queue as the chat mounts it, with a host that records what the queue asks of the chat. */
-const mount = (options: { draft?: boolean } = {}) => {
+const mount = (options: { draft?: boolean; content?: AiDraftContentPart[] } = {}) => {
   const dom = createDomTestHarness();
   cleanup.push(dom.cleanup);
   const calls: string[] = [];
+  const fieldContents: (readonly AiDraftContentPart[])[] = [];
   const [entries, setEntries] = createSignal<readonly AssistantQueueEntry[]>([own, automation]);
   const [sendingId, setSendingId] = createSignal<string | null>(null);
   const [failedIds, setFailedIds] = createSignal<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = createSignal(false);
   const host: AssistantQueueHost = {
     conversationId: () => "chat01",
-    content: (id) => (id === own.id ? content : undefined),
+    content: (id) => (id === own.id ? (options.content ?? content) : undefined),
     reload: async () => {
       calls.push("reload");
     },
     hasDraft: () => options.draft ?? false,
-    putIntoField: (id, parts) => calls.push(`field:${id}:${parts.map((part) => (part.type === "text" ? part.text : "")).join("")}`),
+    putIntoField: (id, parts) => {
+      calls.push(`field:${id}:${parts.map((part) => (part.type === "text" ? part.text : "")).join("")}`);
+      fieldContents.push(parts);
+    },
     fail: (message) => calls.push(`fail:${message}`),
     sendingId,
     setSendingId,
@@ -71,7 +75,7 @@ const mount = (options: { draft?: boolean } = {}) => {
   );
   const button = (id: string, name: string) =>
     dom.root.querySelector<HTMLButtonElement>(`[data-entry="${id}"] button[aria-label="${name}"]`)!;
-  return { dom, calls, button, sendingId, failedIds, busy, setEntries };
+  return { dom, calls, fieldContents, button, sendingId, failedIds, busy, setEntries };
 };
 
 test("Send now holds the ring until Cloud answers, then reads the queue again", async () => {
@@ -142,4 +146,19 @@ test("Edit moves one's own entry into the field, and asks first when the field h
   await flush();
   expect(cancel).toHaveBeenCalledWith("chat01", "q1");
   expect(empty.calls).toEqual([`field:chat01:${own.text}`, "reload"]);
+});
+
+test("Edit returns checked quotes together with the person's words to the composer", async () => {
+  const cancel = spyOn(assistantApi, "cancelQueuedMessage").mockResolvedValue(undefined);
+  cleanup.push(() => cancel.mockRestore());
+  const quoted: AiDraftContentPart[] = [
+    { type: "quote", messageId: "Ans001", from: "assistant", text: "Der offene Betrag ist 300 €." },
+    { type: "text", text: own.text },
+  ];
+  const { button, fieldContents, calls } = mount({ content: quoted });
+  button("q1", "Bearbeiten").click();
+  await flush();
+  expect(cancel).toHaveBeenCalledWith("chat01", "q1");
+  expect(fieldContents).toEqual([quoted]);
+  expect(calls).toEqual([`field:chat01:${own.text}`, "reload"]);
 });

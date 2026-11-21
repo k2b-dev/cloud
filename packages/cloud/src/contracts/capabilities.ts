@@ -1,3 +1,4 @@
+import { CodeSdkExportNameSchema } from "./code-sdk-names";
 import {
   CapabilityQualifiedIdSchema,
   type CloudResourceRef,
@@ -22,11 +23,16 @@ import {
   CapabilityStreamPolicySchema,
   CapabilityStreamSchema,
 } from "./capability-streams";
+import type { CapabilityCodeDefinition } from "./code-owner";
+import { CapabilityCodeManifestSchema } from "./code-owner";
 import { RESOURCE_PAGE_MAX_LENGTH, RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "./resource-pages";
 
 export * from "./capability-streams";
 
 import { z } from "zod";
+import { assertViewData, BoundViewSchema, checkViewBinding, ViewSchema } from "#block-view-schema";
+import { blockDataAtPath } from "../blocks/path";
+import type { BlockView } from "../blocks/schema";
 import type { RequestAuthority } from "../server/middleware/auth";
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "./app-events";
 import { CommandPathSchema } from "./commands";
@@ -36,7 +42,7 @@ import { AuthenticatedPrincipalSchema } from "./shared";
 
 export const CAPABILITY_PROTOCOL_VERSION = 2 as const;
 export const CAPABILITY_MAX_REQUEST_BYTES = 256 * 1024;
-export const CAPABILITY_MAX_RESULT_BYTES = 256 * 1024;
+export { CAPABILITY_MAX_RESULT_BYTES } from "./capability-limits";
 export const CAPABILITY_MAX_CATALOG_BYTES = 2 * 1024 * 1024;
 export const CAPABILITY_APP_ID_MAX_LENGTH = 80;
 
@@ -72,7 +78,7 @@ export const capabilityIdempotencyConflict = (
  * Cloud surface a capability invocation came from. The dispatcher resolves it
  * once, records it on the execution row, and forwards it to the owning app.
  */
-export const CAPABILITY_ORIGINS = ["assistant", "mcp", "http", "app"] as const;
+export const CAPABILITY_ORIGINS = ["assistant", "mcp", "http", "app", "choice"] as const;
 export type CapabilityOrigin = (typeof CAPABILITY_ORIGINS)[number];
 export const CapabilityOriginSchema = z.enum(CAPABILITY_ORIGINS);
 
@@ -98,6 +104,51 @@ export const CapabilityLocalIdSchema = z
   .min(1)
   .max(100)
   .regex(CAPABILITY_LOCAL_ID_PATTERN, "Use a stable lower-case capability id");
+
+/**
+ * Canonical capability call shared by review, approval, execution and retry checks.
+ * `capability` is the qualified ID (never the transport's `__` tool name).
+ * An app-wide operation has a null target. Refs contain single resources only.
+ */
+export type NormalizedCapabilityCall<Input = unknown> = {
+  capability: string;
+  target: CloudResourceRef | null;
+  refs: Readonly<Record<string, CloudResourceRef>>;
+  input: Input;
+};
+
+/** Resource coordinates travel beside the domain input on every invocation transport. */
+export const CapabilityInvocationBodySchema = z
+  .object({
+    input: z.unknown(),
+    target: CloudResourceRefSchema.optional(),
+    refs: z.record(z.string(), CloudResourceRefSchema).optional(),
+  })
+  .strict()
+  .refine((body) => Object.hasOwn(body, "input"), { path: ["input"], message: "Input is required" });
+export type CapabilityInvocationBody = z.infer<typeof CapabilityInvocationBodySchema>;
+
+/** JSON form of NormalizedCapabilityCall, suitable for durable approval and execution snapshots. */
+export const NormalizedCapabilityCallSchema = z
+  .object({
+    // App ID (80), separator, and local operation ID (100), including legacy maximum-length calls.
+    capability: z
+      .string()
+      .min(3)
+      .max(CAPABILITY_APP_ID_MAX_LENGTH + 1 + 100)
+      .regex(/^[a-z][a-z0-9-]*\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/),
+    target: CloudResourceRefSchema.nullable(),
+    refs: z.record(z.string(), CloudResourceRefSchema),
+    input: z.unknown(),
+  })
+  .strict()
+  .refine((call) => Object.hasOwn(call, "input"), { path: ["input"], message: "Input is required" });
+
+/** A fixed target type and named, single additional targets, all declared by the same app. */
+export type CapabilityTargetDefinition = {
+  target?: string;
+  refs?: Readonly<Record<string, string>>;
+};
 
 export { cloudResourceHref } from "./resource-href";
 
@@ -132,6 +183,16 @@ export const ResourceReadableInputSchema = z
   .strict();
 export type ResourceReadableInput = z.output<typeof ResourceReadableInputSchema>;
 export const ResourceReadableDataSchema = z.object({ readable: z.array(ResourcePrincipalSchema).max(500) }).strict();
+/** Bounded audience of current human resource managers, for app-owned background notifications. */
+export const ResourceManagersInputSchema = z
+  .object({
+    id: CloudResourceRefSchema.shape.id,
+    afterId: z.uuid().optional().describe("Exclusive last user UUID from the preceding page; results are ordered by UUID."),
+    userId: z.uuid().optional().describe("Check only this recipient again immediately before delivery."),
+    limit: z.number().int().min(1).max(50).default(50).describe("Maximum current human managers in this page."),
+  })
+  .strict();
+export const ResourceManagersDataSchema = z.object({ userIds: z.array(z.uuid()).max(50) }).strict();
 
 // Consumer permalinks may encode all 512 UTF-16 units of an id (up to 4,608 characters).
 export const CloudResourceHrefSchema = z.string().min(1).max(8192).regex(CLOUD_PATH_PATTERN);
@@ -209,9 +270,11 @@ export const CAPABILITY_REACHES = ["you", "draft", "shared"] as const;
 export type CapabilityReach = (typeof CAPABILITY_REACHES)[number];
 export const CAPABILITY_ACTION_OUTCOMES = ["running", "done", "rejected", "not_run", "unknown"] as const;
 export type CapabilityActionOutcome = (typeof CAPABILITY_ACTION_OUTCOMES)[number];
-export const CAPABILITY_MAX_REVIEW_BYTES = 32 * 1024;
+export { CAPABILITY_MAX_REVIEW_BYTES, CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "./capability-limits";
+
+import { CAPABILITY_MAX_REVIEW_BYTES, CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "./capability-limits";
 /** Full review text and metadata, separate from the compact card and ordinary capability results. */
-export const CAPABILITY_MAX_REVIEW_CONTENT_BYTES = 16 * 1024 * 1024;
+
 export const CAPABILITY_MAX_REVIEW_RESPONSE_BYTES = CAPABILITY_MAX_REVIEW_CONTENT_BYTES + CAPABILITY_MAX_REVIEW_BYTES + 11;
 export const CapabilityActionPolicySchema = z.union([
   z.object({ silent: z.enum(CAPABILITY_REACHES), routines: z.literal(false).optional() }).strict(),
@@ -219,17 +282,15 @@ export const CapabilityActionPolicySchema = z.union([
 ]);
 export type CapabilityActionPolicy = z.infer<typeof CapabilityActionPolicySchema>;
 
-const reviewLine = (max: number, min = 1) =>
+const reviewLine = (max: number, min = 1, allowJoiner = false) =>
   z
     .string()
     .min(min)
     .max(max)
-    .refine((text) => !/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(text), "Contains unsafe characters");
-const reviewBlock = (max: number) =>
-  z
-    .string()
-    .max(max)
-    .refine((text) => !/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(text.replace(/[\n\t]/g, "")), "Contains unsafe characters");
+    .refine(
+      (text) => !/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(allowJoiner ? text.replaceAll("\u200d", "") : text),
+      "Contains unsafe characters",
+    );
 export const CapabilityPersonSchema = z
   .object({ name: reviewLine(200).optional(), address: reviewLine(320).optional(), userId: z.uuid().optional() })
   .strict()
@@ -286,7 +347,7 @@ export const CapabilitySlotSchema = z.discriminatedUnion("kind", [
         .strict(),
     })
     .strict(),
-  z.object({ kind: z.literal("text"), value: reviewLine(200) }).strict(),
+  z.object({ kind: z.literal("text"), value: reviewLine(200, 1, true) }).strict(),
 ]);
 export type CapabilitySlot = z.infer<typeof CapabilitySlotSchema>;
 const reviewSlots = z
@@ -329,204 +390,6 @@ export const CapabilityConsequenceSchema = z
   .strict()
   .superRefine(sentenceRefinement);
 export type CapabilityConsequence = z.infer<typeof CapabilityConsequenceSchema>;
-const previewPeople = (max: number) => z.array(CapabilityPersonSchema).max(max);
-const extraCount = z.number().int().min(0).max(100_000);
-const previewZone = reviewLine(200).refine((zone) => {
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: zone });
-    return true;
-  } catch {
-    return false;
-  }
-}, "Invalid time zone");
-export const CapabilityPreviewSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("message"),
-      from: CapabilityPersonSchema.optional(),
-      to: previewPeople(50),
-      cc: previewPeople(50).optional(),
-      bcc: previewPeople(50).optional(),
-      more: z.object({ to: extraCount.optional(), cc: extraCount.optional(), bcc: extraCount.optional() }).strict().optional(),
-      subject: reviewLine(998, 0),
-      body: reviewBlock(10_000),
-      format: z.enum(["plain", "markdown"]),
-      truncated: z.boolean().optional(),
-      attachments: z
-        .array(
-          z
-            .object({ name: reviewLine(255), size: z.number().int().nonnegative().optional(), ref: CloudResourceRefSchema.optional() })
-            .strict(),
-        )
-        .max(50)
-        .optional(),
-      moreAttachments: extraCount.optional(),
-      sendAt: reviewTime.optional(),
-      warnings: z.array(reviewLine(300)).max(5).optional(),
-    })
-    .strict()
-    .refine(
-      (preview) =>
-        preview.to.length +
-          (preview.cc?.length ?? 0) +
-          (preview.bcc?.length ?? 0) +
-          (preview.more?.to ?? 0) +
-          (preview.more?.cc ?? 0) +
-          (preview.more?.bcc ?? 0) >
-        0,
-      "A message needs a recipient",
-    ),
-  z
-    .object({
-      kind: z.literal("event"),
-      title: reviewLine(200),
-      start: z.union([reviewDay, reviewTime]),
-      end: z.union([reviewDay, reviewTime]).optional(),
-      allDay: z.boolean().optional(),
-      timeZone: previewZone.optional(),
-      place: reviewLine(200).optional(),
-      location: reviewLine(200).optional(),
-      recurrence: reviewLine(200).optional(),
-      attendees: previewPeople(50).optional(),
-      description: reviewBlock(2000).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("task"),
-      title: reviewLine(200),
-      place: reviewLine(200).optional(),
-      due: z.union([reviewDay, reviewTime]).optional(),
-      assignees: previewPeople(20).optional(),
-      status: reviewLine(60).optional(),
-      checklist: z
-        .array(z.object({ label: reviewLine(200), done: z.boolean() }).strict())
-        .max(20)
-        .optional(),
-      tags: z.array(reviewLine(60)).max(10).optional(),
-      description: reviewBlock(2000).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("page"),
-      title: reviewLine(200),
-      place: reviewLine(200).optional(),
-      body: reviewBlock(10_000),
-      format: z.enum(["plain", "markdown"]),
-      truncated: z.boolean().optional(),
-      changes: z
-        .array(z.object({ change: z.enum(["added", "removed"]), text: reviewBlock(2000) }).strict())
-        .max(20)
-        .optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("file"),
-      name: reviewLine(255),
-      place: reviewLine(200).optional(),
-      path: reviewLine(1024).optional(),
-      size: z.number().int().nonnegative().optional(),
-      mediaType: reviewLine(120).optional(),
-      to: reviewLine(1024).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("rule"),
-      when: CapabilitySentenceSchema,
-      does: reviewBlock(4000),
-      may: z.array(CapabilityConsequenceSchema).max(12),
-      seesChat: z.boolean(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("fields"),
-      rows: z
-        .array(
-          z
-            .object({
-              label: reviewLine(60),
-              value: reviewBlock(2000),
-              before: reviewBlock(2000).optional(),
-              format: z.enum(["date", "date-time"]).optional(),
-            })
-            .strict()
-            .superRefine((row, context) => {
-              const schema =
-                row.format === "date" ? CapabilityReviewDateSchema : row.format === "date-time" ? CapabilityReviewDateTimeSchema : null;
-              for (const key of ["value", "before"] as const)
-                if (row[key] !== undefined && schema?.safeParse(row[key]).success === false)
-                  context.addIssue({ code: "custom", path: [key], message: "Invalid date or time" });
-            }),
-        )
-        .min(1)
-        .max(12),
-    })
-    .strict(),
-]);
-export type CapabilityPreview = z.infer<typeof CapabilityPreviewSchema>;
-/** Complete passive content; no attachment bytes, HTML, omitted entries, or silently shortened strings. */
-// Construct complete review validators in pure calls: unrelated browser consumers of resource refs do not need them.
-export const CapabilityReviewContentSchema = /* @__PURE__ */ (() => {
-  const fullReviewPerson = z
-    .object({
-      name: z.string().max(200).optional(),
-      address: z.string().max(320).optional(),
-      userId: z.uuid().optional(),
-    })
-    .strict()
-    .refine((person) => person.name !== undefined || person.address !== undefined, "A person needs a name or address");
-  return z
-    .discriminatedUnion("kind", [
-      z
-        .object({
-          kind: z.literal("message"),
-          baseRevision: z.number().int().nonnegative().optional(),
-          from: fullReviewPerson.optional(),
-          to: z.array(fullReviewPerson).max(600),
-          cc: z.array(fullReviewPerson).max(600).optional(),
-          bcc: z.array(fullReviewPerson).max(600).optional(),
-          subject: z.string().max(998),
-          body: z.string().max(CAPABILITY_MAX_REVIEW_CONTENT_BYTES),
-          format: z.literal("plain"),
-          attachments: z
-            .array(
-              z
-                .object({
-                  name: z.string().min(1).max(255),
-                  size: z.number().int().nonnegative().optional(),
-                  ref: CloudResourceRefSchema.optional(),
-                })
-                .strict(),
-            )
-            .max(202)
-            .optional(),
-          sendAt: reviewTime.optional(),
-          warnings: z.array(z.string().max(300)).max(7).optional(),
-        })
-        .strict(),
-      z
-        .object({
-          kind: z.literal("page"),
-          baseRevision: z.number().int().nonnegative().optional(),
-          title: z.string().max(200),
-          place: z.string().max(200).optional(),
-          body: z.string().max(CAPABILITY_MAX_REVIEW_CONTENT_BYTES),
-          format: z.literal("plain"),
-        })
-        .strict(),
-    ])
-    .superRefine((content, ctx) => {
-      if (content.kind === "message" && content.to.length + (content.cc?.length ?? 0) + (content.bcc?.length ?? 0) > 600)
-        ctx.addIssue({ code: "custom", message: "Full review content exceeds 600 recipients" });
-      if (new TextEncoder().encode(JSON.stringify(content)).byteLength > CAPABILITY_MAX_REVIEW_CONTENT_BYTES)
-        ctx.addIssue({ code: "custom", message: "Full review content exceeds 16 MiB" });
-    });
-})();
-export type CapabilityReviewContent = z.infer<typeof CapabilityReviewContentSchema>;
 /** Cloud supplies this after storing a review. It is a locator, never an authorization token. */
 export const CapabilityReviewContentRefSchema = /* @__PURE__ */ (() =>
   z
@@ -558,8 +421,7 @@ export const CapabilityActionCallReviewSchema = /* @__PURE__ */ (() =>
         })
         .strict(),
       slots: reviewSlots.readonly(),
-      preview: CapabilityPreviewSchema.optional(),
-      content: CapabilityReviewContentSchema.optional(),
+      view: ViewSchema.optional(),
       consequences: z.array(CapabilityConsequenceSchema).max(6).optional(),
       ask: z.enum(CAPABILITY_ASK_REASONS).optional(),
       reach: z.enum(CAPABILITY_REACHES).optional(),
@@ -585,28 +447,48 @@ export const CapabilityActionCallReviewSchema = /* @__PURE__ */ (() =>
 export type CapabilityActionCallReview = z.infer<typeof CapabilityActionCallReviewSchema>;
 export type CapabilityActionReviewData = CapabilityActionCallReview | CapabilityActionReview;
 export const CapabilityActionReviewDataSchema = /* @__PURE__ */ (() =>
-  z
-    .unknown()
-    .transform((value, ctx) => {
-      const schema =
-        value !== null && typeof value === "object" && Object.hasOwn(value, "sentence")
-          ? CapabilityActionCallReviewSchema
-          : CapabilityActionReviewSchema;
-      const parsed = schema.safeParse(value);
-      if (parsed.success) return parsed.data;
-      for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
-      return z.NEVER;
-    })
-    .pipe(z.union([CapabilityActionCallReviewSchema, CapabilityActionReviewSchema])))();
+  z.unknown().transform((value, ctx) => {
+    const schema =
+      value !== null && typeof value === "object" && Object.hasOwn(value, "sentence")
+        ? CapabilityActionCallReviewSchema
+        : CapabilityActionReviewSchema;
+    const parsed = schema.safeParse(value);
+    if (parsed.success) return parsed.data;
+    for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+    return z.NEVER;
+  }))();
 /** Compact Cloud presentation. Providers return the strict review above, never a client-supplied content locator. */
-export const CapabilityActionReviewPresentationSchema = /* @__PURE__ */ (() =>
+export type CapabilityActionReviewPresentation =
+  | CapabilityActionReview
+  | (CapabilityActionCallReview & {
+      contentRef?: CapabilityReviewContentRef;
+      draft?: { editable: boolean; fields: string[] };
+      incomplete?: boolean;
+    });
+/**
+ * A bound view as Cloud presents it. Published JSON schemas (the approvals API) describe it as an object, because the
+ * chart rules inside transform values; Zod readers still check it completely and keep the value as Cloud sent it.
+ */
+export const PresentedViewSchema = /* @__PURE__ */ (() =>
+  z.record(z.string(), z.unknown()).superRefine((value, ctx) => {
+    const parsed = BoundViewSchema.safeParse(value);
+    if (!parsed.success)
+      for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+  }) as unknown as z.ZodType<z.output<typeof BoundViewSchema>>)();
+
+export const CapabilityActionReviewPresentationSchema: z.ZodType<CapabilityActionReviewPresentation> = /* @__PURE__ */ (() =>
   z.union([
-    CapabilityActionCallReviewSchema.safeExtend({ contentRef: CapabilityReviewContentRefSchema.optional() }),
+    CapabilityActionCallReviewSchema.safeExtend({
+      view: PresentedViewSchema.optional(),
+      contentRef: CapabilityReviewContentRefSchema.optional(),
+      draft: z.strictObject({ editable: z.boolean(), fields: z.array(z.string()) }).optional(),
+      incomplete: z.boolean().optional(),
+    }),
     CapabilityActionReviewSchema,
   ]))();
-export type CapabilityActionReviewPresentation = z.infer<typeof CapabilityActionReviewPresentationSchema>;
+
 export const CapabilityActionReceiptSchema = z
-  .object({ ...sentenceShape, preview: CapabilityPreviewSchema.optional() })
+  .object({ ...sentenceShape })
   .strict()
   .superRefine(sentenceRefinement);
 export type CapabilityActionReceipt = z.infer<typeof CapabilityActionReceiptSchema>;
@@ -634,37 +516,13 @@ export type CapabilityPage = z.infer<typeof CapabilityPageSchema>;
 export const capabilityPage = (nextCursor?: string | null): CapabilityPage =>
   nextCursor === undefined || nextCursor === null ? { hasMore: false } : { hasMore: true, nextCursor };
 
-// Presentation work is bounded independently of the result's byte envelope.
-const CapabilityDataPathSchema = z.array(z.string().max(500)).max(16);
-export const CapabilityTablePresentationSchema = z
-  .object({
-    kind: z.literal("table"),
-    rowsPath: CapabilityDataPathSchema,
-    columns: z
-      .array(
-        z
-          .object({
-            path: CapabilityDataPathSchema,
-            label: z.string().max(500),
-            format: z.enum(["text", "number", "date", "datetime"]).optional(),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(100),
-    rowLinksPath: CapabilityDataPathSchema.optional(),
-  })
-  .strict();
-export type CapabilityTablePresentation = z.infer<typeof CapabilityTablePresentationSchema>;
-
-/** Resolve own JSON properties only. Paths are data, never expressions. */
+/** Resolve literal own JSON properties; unsafe paths and accessors never run. */
 export const capabilityDataAtPath = (data: unknown, path: readonly string[]): unknown => {
-  let value = data;
-  for (const segment of path) {
-    if (value === null || typeof value !== "object" || !Object.hasOwn(value, segment)) return undefined;
-    value = Object.getOwnPropertyDescriptor(value, segment)?.value;
+  try {
+    return blockDataAtPath(data, path);
+  } catch {
+    return undefined;
   }
-  return value;
 };
 
 export type CapabilityResult<T> = {
@@ -676,7 +534,7 @@ export type CapabilityResult<T> = {
   refs?: CloudResourceReference[];
   page?: CapabilityPage;
   links?: CapabilitySemanticLink[];
-  presentation?: CapabilityTablePresentation;
+  view?: BlockView;
 };
 
 // Published JSON schemas (Core's result check, each MCP tool's outputSchema) describe a receipt as an opaque object,
@@ -686,40 +544,47 @@ const resultSchema = <T extends z.ZodType>(
   data: T,
   options: { consumer?: boolean; opaqueReceipt: boolean },
 ): z.ZodType<CapabilityResult<z.output<T>>> =>
-  z
-    .object({
-      data,
-      stream: CapabilityStreamSchema.optional(),
-      summary: z.string().trim().min(1).max(500).optional(),
-      refs: z
-        .array(options.consumer ? LinkedCloudResourceReferenceSchema.strip() : CloudResourceReferenceSchema)
-        .max(100)
-        .optional(),
-      page: CapabilityPageSchema.optional(),
-      links: z.array(CapabilitySemanticLinkSchema).max(20).optional(),
-      receipt: options.opaqueReceipt
-        ? z.record(z.string(), z.unknown()).optional()
-        : options.consumer
-          ? CapabilityActionReceiptSchema.optional().catch(undefined)
-          : CapabilityActionReceiptSchema.optional(),
-      presentation: options.consumer
-        ? CapabilityTablePresentationSchema.optional().catch(undefined)
-        : CapabilityTablePresentationSchema.optional(),
-    })
-    .strict()
-    .superRefine((result, context) => {
-      if (
-        !options.consumer &&
-        result.presentation &&
-        !Array.isArray(capabilityDataAtPath(capabilityDataAtPath(result, ["data"]), result.presentation.rowsPath))
-      ) {
-        context.addIssue({
-          code: "custom",
-          path: ["presentation", "rowsPath"],
-          message: "Table rowsPath must reference an array in data.",
-        });
+  z.preprocess(
+    (value, context) => {
+      if (value && typeof value === "object" && Object.getOwnPropertyDescriptor(value, "view") !== undefined) {
+        try {
+          assertViewData(value);
+        } catch {
+          context.addIssue({ code: "custom", message: "Invalid capability block data" });
+          return z.NEVER;
+        }
       }
-    }) as unknown as z.ZodType<CapabilityResult<z.output<T>>>;
+      return value;
+    },
+    z
+      .object({
+        data,
+        stream: CapabilityStreamSchema.optional(),
+        summary: z.string().trim().min(1).max(500).optional(),
+        refs: z
+          .array(options.consumer ? LinkedCloudResourceReferenceSchema.strip() : CloudResourceReferenceSchema)
+          .max(100)
+          .optional(),
+        page: CapabilityPageSchema.optional(),
+        links: z.array(CapabilitySemanticLinkSchema).max(20).optional(),
+        receipt: options.opaqueReceipt
+          ? z.record(z.string(), z.unknown()).optional()
+          : options.consumer
+            ? CapabilityActionReceiptSchema.optional().catch(undefined)
+            : CapabilityActionReceiptSchema.optional(),
+        view: options.opaqueReceipt ? z.record(z.string(), z.unknown()).optional() : ViewSchema.optional(),
+      })
+      .strict()
+      .superRefine((result, context) => {
+        if (!options.opaqueReceipt && result.view) {
+          try {
+            checkViewBinding(result.view, capabilityDataAtPath(result, ["data"]));
+          } catch {
+            context.addIssue({ code: "custom", path: ["view"], message: "Invalid capability block view" });
+          }
+        }
+      }),
+  ) as unknown as z.ZodType<CapabilityResult<z.output<T>>>;
 
 export const capabilityResultSchema = <T extends z.ZodType>(
   data: T,
@@ -779,6 +644,7 @@ export const CloudResourceViewSchema = z
   .object({
     ref: CloudResourceRefSchema.describe("Stable identity of the result."),
     title: z.string().min(1).max(500).describe("Primary result label."),
+    group: z.string().min(1).max(120).optional().describe("Localized result group within this app, such as At places."),
     preview: z.string().max(2000).optional().describe("Short plain-text result preview."),
     icon: z.string().min(1).max(120).optional().describe("Optional presentation icon."),
     context: CloudResourceReferenceSchema.shape.context,
@@ -810,7 +676,7 @@ export type UniversalSearchData = z.infer<typeof UniversalSearchDataSchema>;
 export type CapabilityExecutionContext = {
   /** One read-only cross-app dependency under this invocation, through Core. */
   query?: <T extends z.ZodType>(
-    invocation: { appId: string; capabilityId: string; input: unknown; signal?: AbortSignal },
+    invocation: CapabilityInvocationBody & { appId: string; capabilityId: string; signal?: AbortSignal },
     dataSchema: T,
   ) => Promise<import("../capabilities/types").CapabilityClientResult<z.output<T>>>;
   /**
@@ -822,6 +688,10 @@ export type CapabilityExecutionContext = {
   actor: RequestActor;
   accessSubject: AccessSubject;
   user: User | null;
+  /** Validated resource named by the operation's target declaration; absent for app-wide calls. */
+  target?: CloudResourceRef;
+  /** Validated additional targets. These references grant no authority. */
+  refs?: Readonly<Record<string, CloudResourceRef>>;
   idempotencyKey?: string;
   /**
    * Canonical BCP 47 locale of the originating request, transported as
@@ -848,10 +718,42 @@ export type CapabilityExecutionContext = {
 export const CAPABILITY_RESOURCE_COLORS = ["blue", "emerald", "violet", "orange", "red", "amber", "zinc", "cyan", "rose"] as const;
 export type CapabilityResourceColor = (typeof CAPABILITY_RESOURCE_COLORS)[number];
 
+/** Final localized labels for a resource owner's credentialless Code account; never an owner title. */
+export const CodeAccountTypeLabelsSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(500),
+  })
+  .strict();
+export type CodeAccountTypeLabels = z.infer<typeof CodeAccountTypeLabelsSchema>;
+
+export type CapabilityAssistantDefinition = {
+  provider: string;
+  tools: readonly string[];
+  skills: readonly string[];
+};
+
+export const CapabilityAssistantSchema = z
+  .object({
+    provider: CapabilityLocalIdSchema,
+    tools: z.array(CapabilityLocalIdSchema),
+    skills: z.array(
+      z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    ),
+  })
+  .strict();
+
 /** How a list counts resources of a type, as nouns in the presentation's base locale: `{ one: "mail", other: "mails" }`. */
 export type CapabilityResourceTypeCount = { one: string; other: string };
 
 export type CapabilityResourceTypeDefinition = {
+  /** Additional context and fixed-target tools for a person's chat at this resource. */
+  assistant?: CapabilityAssistantDefinition;
+  codeAccount?: CodeAccountTypeLabels;
   title: string;
   description: string;
   /** The type's noun after a number, such as "3 mails"; translate it with `presentation.translations[locale].types`. */
@@ -863,6 +765,11 @@ export type CapabilityResourceTypeDefinition = {
   /** Local type in the same application. Describes containment, never inherited authority. */
   container?: string;
   access?: {
+    /** Enumerate a bounded page of human managers from current domain grants; never read resource content. */
+    managers?: (
+      input: z.output<typeof ResourceManagersInputSchema>,
+      context: CapabilityAppExecutionContext,
+    ) => readonly string[] | Promise<readonly string[]>;
     /** Return only readable input principals, using current grants and account status, never credential scopes. */
     readable?: (
       input: ResourceReadableInput,
@@ -910,7 +817,18 @@ export type CapabilityActionSentences = {
   notRun?: string;
 };
 
+/** Evidence-backed result wording. Only {target} is substituted, through the caller's resource reader. */
+export type CapabilityActionResultForm = {
+  text: string;
+  targetType: string;
+  kind: string;
+  /** Plural past-tense label beside a separate confirmed-effect count; no target names or tokens. */
+  countText?: string;
+};
+
 export type CapabilityOperationPresentationTranslation = {
+  /** Past-tense result for one confirmed effect; targetType is an app-local Type. */
+  result?: CapabilityActionResultForm;
   title?: string;
   description?: string;
   /** Human descriptions keyed by a stable dotted field path such as `filter.tags[]`. */
@@ -927,7 +845,9 @@ export type CapabilityOperationPresentationTranslation = {
 
 export type CapabilityPresentationTranslation = {
   events?: Readonly<Record<string, { title?: string; description?: string }>>;
-  types?: Readonly<Record<string, { title?: string; description?: string; count?: CapabilityResourceTypeCount }>>;
+  types?: Readonly<
+    Record<string, { title?: string; description?: string; codeAccount?: CodeAccountTypeLabels; count?: CapabilityResourceTypeCount }>
+  >;
   /** The file provider's `title` in this locale; only for a provider that declares a `title`. */
   fileProvider?: { title?: string };
   queries?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
@@ -944,6 +864,8 @@ export type CapabilityPresentationTranslation = {
 };
 
 export type CapabilityPresentationCatalog = {
+  /** Base-locale result forms keyed by Action local ID. */
+  results?: Readonly<Record<string, CapabilityActionResultForm>>;
   /** Locale of the complete Type, Query, Action, search-tag, and schema presentation. */
   baseLocale: string;
   /** @deprecated removed with the next major; return per-call review forms. */
@@ -965,6 +887,10 @@ export type CapabilityAppExecutionContext = {
   user: null;
   authority?: never;
   query?: never;
+  /** Validated resource named by the operation's target declaration; absent for app-wide calls. */
+  target?: CloudResourceRef;
+  /** Validated additional targets. These references grant no authority. */
+  refs?: Readonly<Record<string, CloudResourceRef>>;
   idempotencyKey?: string;
   locale: string;
   requestId: string;
@@ -982,7 +908,19 @@ export type CapabilityAppHandler<Input extends z.ZodType, Data extends z.ZodType
   ) => CapabilityInvocationResult<z.output<Data>> | Promise<CapabilityInvocationResult<z.output<Data>>>;
 };
 
-export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
+export type CapabilityQueryDefinition<
+  Input extends z.ZodType = z.ZodType<any>,
+  Data extends z.ZodType = z.ZodType<any>,
+> = CapabilityTargetDefinition & {
+  /**
+   * Title-only projection of a resource reader for Code owner/target checks.
+   * Required for Code owners and resource targets. Use the supplied read-only
+   * transaction and return null for a deleted resource. The framework exposes
+   * only this title to Core with account-bound authority, never reader data or
+   * a person's authority. It also distinguishes deleted normalized targets from
+   * access refusals before Code calls run.
+   */
+  codeResourceTitle?: (tx: import("bun").SQL, id: string) => string | null | Promise<string | null>;
   appOnly?: never;
   app?: CapabilityAppHandler<Input, Data>;
   title: string;
@@ -1001,7 +939,14 @@ export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, 
 export type CapabilityIdempotencyPolicy = "none" | "required";
 export type CapabilityActionApprovalPolicy = "rememberable" | "none";
 
-export type CapabilityActionDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
+export type CapabilityActionDefinition<
+  Input extends z.ZodType = z.ZodType<any>,
+  Data extends z.ZodType = z.ZodType<any>,
+> = CapabilityTargetDefinition & {
+  /** Excludes this Action from resource-owned Code; personal Code retains person authority. */
+  code?: false;
+  /** This Action cannot execute under any background mandate. */
+  unattended?: false;
   appOnly?: never;
   app?: CapabilityAppHandler<Input, Data>;
   title: string;
@@ -1072,7 +1017,10 @@ export type CapabilityDiscussionsDeclaration = { item: string; containers: strin
 
 export type CapabilityDefinitions = {
   protocolVersion: typeof CAPABILITY_PROTOCOL_VERSION;
+  /** Optional SDK module export; capability and event IDs keep the app ID. */
+  sdkExportName?: string;
   presentation?: CapabilityPresentationCatalog;
+  code?: CapabilityCodeDefinition;
   types?: CapabilityDefinitionCatalog<CapabilityResourceTypeDefinition>;
   queries?: CapabilityDefinitionCatalog<CapabilityQueryDefinition>;
   actions?: CapabilityDefinitionCatalog<CapabilityActionDefinition>;
@@ -1105,6 +1053,8 @@ export function defineCapabilities(definitions: CapabilityDefinitions): Capabili
 
 export const CapabilityResourceTypeManifestSchema = z
   .object({
+    assistant: CapabilityAssistantSchema.optional(),
+    codeAccount: CodeAccountTypeLabelsSchema.optional(),
     localId: CapabilityLocalIdSchema,
     title: z.string().min(1).max(120),
     description: z.string().min(1).max(500),
@@ -1132,6 +1082,8 @@ const CapabilityOperationManifestBaseSchema = z
     localId: CapabilityLocalIdSchema,
     title: z.string().min(1).max(120),
     description: z.string().min(1).max(1000),
+    target: CapabilityLocalIdSchema.optional(),
+    refs: z.record(z.string().min(1).max(100), CapabilityLocalIdSchema).optional(),
     inputSchema: z.record(z.string(), z.unknown()),
     dataSchema: z.record(z.string(), z.unknown()),
     stream: CapabilityStreamPolicySchema.optional(),
@@ -1150,6 +1102,8 @@ export const CapabilityQueryManifestSchema = CapabilityOperationManifestBaseSche
 }).strict();
 
 export const CapabilityActionManifestSchema = CapabilityOperationManifestBaseSchema.extend({
+  code: z.literal(false).optional(),
+  unattended: z.literal(false).optional(),
   destructive: z.boolean(),
   openWorld: z.boolean(),
   idempotency: z.enum(["none", "required"]),
@@ -1196,6 +1150,7 @@ export const CapabilityEventManifestSchema = z
     dataSchema: z.record(z.string(), z.unknown()),
     schemaHash: z.string().regex(/^[a-f0-9]{64}$/),
     automation: z.literal(false).optional(),
+    catchup: CapabilityLocalIdSchema.optional(),
   })
   .strict();
 export type CapabilityEventManifest = z.infer<typeof CapabilityEventManifestSchema>;
@@ -1288,7 +1243,11 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
   const subscribes = sent.subscribes === undefined ? undefined : readEntries(sent.subscribes, CapabilitySubscriptionManifestSchema);
   if (events === null || subscribes === null) return value;
   const typeIds = new Set(types.map((type) => type.localId));
-  const readableQueries = queries.filter((query) => query.universalSearch?.scopeTypes?.every((type) => typeIds.has(type)) ?? true);
+  const targetsReadable = (operation: CapabilityTargetDefinition) =>
+    (!operation.target || typeIds.has(operation.target)) && Object.values(operation.refs ?? {}).every((type) => typeIds.has(type));
+  const readableQueries = queries.filter(
+    (query) => targetsReadable(query) && (query.universalSearch?.scopeTypes?.every((type) => typeIds.has(type)) ?? true),
+  );
   const queryIds = new Set(readableQueries.map((query) => query.localId));
   const policies: Record<string, CapabilityActionPolicy> = {};
   const sentPolicies = sent.policies;
@@ -1301,6 +1260,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
   )
     return value;
   const readableActions = actions.filter((action) => {
+    if (!targetsReadable(action)) return false;
     if (!sentPolicies || typeof sentPolicies !== "object" || !Object.hasOwn(sentPolicies, action.localId)) return true;
     const parsed = CapabilityActionPolicySchema.safeParse(Object.getOwnPropertyDescriptor(sentPolicies, action.localId)?.value);
     if (!parsed.success) return false;
@@ -1318,6 +1278,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     resourceTypes: sentModels,
     discussions: sentDiscussions,
     appStatus: sentAppStatus,
+    code: sentCode,
     ...rest
   } = sent;
   const models = readEntries(sentModels ?? [], CapabilityResourceTypeModelSchema) ?? [];
@@ -1367,6 +1328,12 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     readableActions.some((action) => action.localId === statusRole.data.forget)
       ? statusRole.data
       : undefined;
+  const codeRole = CapabilityCodeManifestSchema.safeParse(sentCode);
+  const code =
+    codeRole.success &&
+    codeRole.data.owners.every((id) => types.some((type) => type.localId === id && type.reader && queryIds.has(type.reader)))
+      ? codeRole.data
+      : undefined;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
   const calendar = CapabilityCalendarSourceManifestSchema.safeParse(sentCalendarSource);
   const pageCounts = new Map<string, number>();
@@ -1386,6 +1353,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     ...rest,
     ...(sentModels !== undefined ? { resourceTypes } : {}),
     ...(discussions ? { discussions } : {}),
+    ...(code ? { code } : {}),
     ...(appStatus ? { appStatus } : {}),
     ...(sentPages !== undefined ? { resourcePages } : {}),
     ...(provider.success ? { fileProvider: provider.data } : {}),
@@ -1421,6 +1389,7 @@ export const CapabilityManifestSchema = z.preprocess(
   z.object({
     protocolVersion: z.literal(CAPABILITY_PROTOCOL_VERSION),
     appId: CapabilityAppIdSchema,
+    sdkExportName: CodeSdkExportNameSchema.optional(),
     manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
     types: z.array(CapabilityResourceTypeManifestSchema).max(MAX_MANIFEST_ENTRIES),
     queries: z.array(CapabilityQueryManifestSchema).max(MAX_MANIFEST_ENTRIES),
@@ -1430,6 +1399,7 @@ export const CapabilityManifestSchema = z.preprocess(
     fileProvider: CapabilityFileProviderManifestSchema.optional(),
     calendarSource: CapabilityCalendarSourceManifestSchema.optional(),
     discussions: CapabilityDiscussionsManifestSchema.optional(),
+    code: CapabilityCodeManifestSchema.optional(),
     appStatus: CapabilityAppStatusManifestSchema.optional(),
     resourceTypes: z.array(CapabilityResourceTypeModelSchema).max(MAX_MANIFEST_ENTRIES).optional(),
     policies: z.record(CapabilityLocalIdSchema, CapabilityActionPolicySchema).optional(),

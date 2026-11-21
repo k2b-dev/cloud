@@ -40,6 +40,8 @@ export type RunLogProps = {
   entries: readonly (RunEntry | { kind: string })[];
   /** Milliseconds supplied by the host. No clock runs inside RunLog. */
   duration?: number;
+  /** Output timestamps use this zone; omitted means the runtime's local zone. */
+  timeZone?: string;
   meta?: JSX.Element;
   size?: "full" | "compact";
   /** Initial disclosure state; a changed value also updates the disclosure. */
@@ -206,7 +208,7 @@ function RunActions(props: { actions: readonly RunLogAction[] }) {
 export function RunLog(props: RunLogProps): JSX.Element {
   const t = useRunLogMessages();
   const locale = useLocale();
-  const time = createMemo(() => new Intl.DateTimeFormat(locale(), { timeStyle: "medium" }));
+  const time = createMemo(() => new Intl.DateTimeFormat(locale(), { timeStyle: "medium", timeZone: props.timeZone }));
   const bodyId = createUniqueId();
   const outputId = createUniqueId();
   const [expanded, setExpanded] = createSignal(false);

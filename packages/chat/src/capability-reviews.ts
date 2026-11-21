@@ -69,13 +69,18 @@ export const discussionReview = (
     locale: language,
     sentence: sentences[language][operation],
     slots: { item: { kind: "object", title: label, ...(item ? { ref: item } : {}) } },
-    // Quoted passages stand above the text, as the message will show them.
-    content: {
-      kind: "page",
-      title: label,
-      body: quotes.length ? `${quotes.map((quote) => `> ${quote.text} — ${quote.author}`).join("\n")}\n\n${body}` : body,
-      format: "plain",
-      ...(revision === undefined ? {} : { baseRevision: revision }),
+    view: {
+      version: 1,
+      blocks: [
+        ...quotes.map((quote) => ({ kind: "Text" as const, text: `> ${quote.text} — ${quote.author}` })),
+        operation === "delete"
+          ? { kind: "Text", text: body }
+          : {
+              kind: "Draft",
+              context: [{ label: language === "de" ? "Ort" : "Place", value: label }],
+              fields: [{ name: "body", label: language === "de" ? "Text" : "Body", type: "textarea", value: body }],
+            },
+      ],
     },
     ...(operation === "post" ? { reach: "shared" as const } : {}),
   };

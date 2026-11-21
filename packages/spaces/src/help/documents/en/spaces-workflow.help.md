@@ -89,6 +89,15 @@ Under **Blocked by**, every blocking task shows its title and state: a lock for 
 
 **Blocks** lists the tasks that wait for this one. From five entries on, a list shows three, open tasks first, and folds the rest behind **N more**. Without **Edit** access, you see the same values without the edit actions.
 
+## Let Gustav estimate the duration {icon="sparkles"}
+
+When you may use Gustav, the complete form of a task asks Gustav for an estimate. Gustav reads only the title, the description, and the checklist of the task.
+
+- The estimate shows in the empty **Estimated duration** field. It is a suggestion, not a value: Spaces does not save it until you select **Accept** or **Accept all**.
+- Type your own minutes, and your value stays. Leave the field empty, and the task keeps no estimate.
+- **unsure** means that the task text leaves the scope open. Point at it to read why.
+- Each estimate counts against your Gustav allowance. For the same task text, Spaces does not ask again for a day.
+
 ## Work through the day {icon="route"}
 
 :::steps
@@ -98,6 +107,8 @@ Under **Blocked by**, every blocking task shows its title and state: a lock for 
 4. **Add context:** Use comments for discussion. Use notes for current instructions or lasting context.
 5. **Close finished work:** Move completed items out of active views, so open lists stay useful.
 :::
+
+A card's **History** shows who created and changed it, also when that was Code, such as "Created by Code of info@". If you may read that Code, its name leads to it and **Open run** to the run.
 
 You can edit or delete your own comment for 10 minutes after you post it. Comments of other people stay unchanged, even for people with **Manage** access.
 

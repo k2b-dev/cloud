@@ -34,7 +34,7 @@ services:
       retries: 10
 
   rsql:
-    image: ghcr.io/k2b-dev/rsql:1.0.0
+    image: ghcr.io/k2b-dev/rsql:1.1.0
     restart: unless-stopped
     env_file: ./.local/rsql/credentials.env
     volumes:

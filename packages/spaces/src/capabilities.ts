@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { sql } from "@k2b/cloud";
+import type { BlockView } from "@k2b/cloud/blocks";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CalendarEventsDataSchema,
@@ -21,11 +22,12 @@ import {
   type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
-import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { actorWorkload, hasPermission, type PermissionLevel } from "@k2b/cloud/server";
+import { type AuditActor, audit, serviceAccountUsesOwnGrants } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { spacesEvents } from "./app-events";
@@ -301,7 +303,7 @@ const scopedSpaceId = (context: CapabilityExecutionContext, required: Permission
       : capabilityFail(context, err.forbidden("Access denied"), "accessDenied");
   }
   // A standalone or agent account acts under its own grants, capped by its credential scopes.
-  if (isStandaloneServiceAccountKind(account.kind)) {
+  if (serviceAccountUsesOwnGrants(account.kind)) {
     return context.accessSubject.type === "service_account" &&
       context.accessSubject.serviceAccountId === account.id &&
       hasPermission(permissionFromScopes(context.actor.scopes), required)
@@ -350,12 +352,14 @@ const requireItemUuid = async (
   internalId: string,
   context: CapabilityExecutionContext,
   required: PermissionLevel = "read",
-  viewer?: ReactionViewer,
+  options: { in?: string; viewer?: ReactionViewer } = { in: context.target?.id },
 ) => {
-  const item = await spacesService.item.get({ id: internalId, viewer });
+  const item = await spacesService.item.get({ id: internalId, viewer: options.viewer });
   if (!item) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
   const access = await requireSpaceUuid(item.spaceId, context, required);
-  if (!access.ok) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
+  const inSpace = options.in ?? context.target?.id;
+  if (!access.ok || (inSpace !== undefined && access.data.space.id !== inSpace))
+    return capabilityFail(context, err.notFound("Item"), "itemNotFound");
   const [publicItem] = await spacesPublicResources.projectItems([item]);
   return publicItem
     ? ok({
@@ -373,11 +377,11 @@ const requireItem = async (
   itemId: string,
   context: CapabilityExecutionContext,
   required: PermissionLevel = "read",
-  viewer?: ReactionViewer,
+  options: { in?: string; viewer?: ReactionViewer } = { in: context.target?.id },
 ) => {
   const internalId = await spacesPublicResources.resolvePublicId("items", itemId);
   return internalId
-    ? requireItemUuid(internalId, context, required, viewer)
+    ? requireItemUuid(internalId, context, required, options)
     : capabilityFail(context, err.notFound("Item"), "itemNotFound");
 };
 
@@ -436,7 +440,7 @@ const reviewItemCreate = async (
   context: CapabilityExecutionContext,
 ) => {
   const t = spacesMessages(context.locale);
-  const access = await requireSpace(input.spaceId, context, "write");
+  const access = await requireSpace(context.target?.id ?? "", context, "write");
   if (!access.ok) return access;
   // A task without a column lands in the first open one; the person sees which before approving.
   const defaultColumn =
@@ -498,7 +502,7 @@ const reviewItemCreate = async (
         ...(input.timeZone ? [{ label: context.locale?.startsWith("de") ? "Zeitzone" : "Time zone", value: input.timeZone }] : []),
         ...("noDate" in input && input.noDate ? [{ label: t.deadline, value: t.clearDeadline }] : []),
       ],
-      scope: spaceApprovalScope(input.spaceId),
+      scope: spaceApprovalScope(context.target?.id ?? ""),
       ...(!rememberable ? { ask: input.assigneeIds?.length ? ("involves_people" as const) : ("app_asks" as const) } : {}),
     }),
   );
@@ -538,11 +542,11 @@ const boundReactionNames = (reactions: SpaceItemReaction[]) =>
   }));
 
 const mapRelations = (item: SpaceItem) => ({
-  reactions: item.reactions && boundReactionNames(item.reactions),
+  ...(item.reactions ? { reactions: boundReactionNames(item.reactions) } : {}),
   assignees: (item.assignees ?? []).slice(0, 100).map((entry) => ({
     id: entry.id,
     kind: entry.kind,
-    serviceAccountKind: entry.serviceAccountKind,
+    ...(entry.serviceAccountKind ? { serviceAccountKind: entry.serviceAccountKind } : {}),
     displayName: truncateText(entry.displayName, 200).text,
   })),
   tags: (item.tags ?? [])
@@ -1100,7 +1104,7 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
 };
 
 const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: CapabilityExecutionContext) => {
-  const resolved = await requireItem(input.id, context, "read", reactionViewer(context));
+  const resolved = await requireItem(input.id, context, "read", { viewer: reactionViewer(context), in: context.target?.id });
   if (!resolved.ok) return resolved;
   const data = isEvent(resolved.data.item)
     ? mapEvent(resolved.data.item)
@@ -1130,7 +1134,56 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
   const column = data.kind === "task" && !data.completedAt ? await spacesService.column.get({ id: resolved.data.internalColumnId }) : null;
   const status = data.kind === "task" ? (data.completedAt ? t.done : column?.name)?.replace(/\s+/g, " ").trim() : undefined;
   const resourceContext = `${place.slice(0, 200 - (fact ? fact.length + 3 : 0))}${fact ? ` · ${fact}` : ""}`;
+  const view: BlockView | undefined =
+    data.kind === "task"
+      ? {
+          version: 1,
+          blocks: [
+            {
+              // The task's own name heads the block; a fact the task does not have is left out instead of reading "None".
+              kind: "Detail",
+              title: [...(data.title.replace(/\s+/g, " ").trim() || t.task)].slice(0, 160).join(""),
+              items: [
+                {
+                  label: t.previewStatus,
+                  value: data.completedAt ? "done" : "open",
+                  type: "status",
+                  states: {
+                    open: { label: column?.name.replace(/\s+/g, " ").trim().slice(0, 80) || t.previewOpen, tone: "info" },
+                    done: { label: t.done, tone: "ok" },
+                  },
+                },
+                ...(data.deadline
+                  ? [
+                      {
+                        label: t.deadline,
+                        value: isDateOnlyDeadline(data.deadline)
+                          ? dates.formatDate(data.deadline, { ...dateConfig, timeZone: "UTC" })
+                          : dates.formatDateTime(data.deadline, dateConfig),
+                      },
+                    ]
+                  : []),
+                // Use the same three-name preview as task summaries; all relations remain in data.
+                ...(data.assignees.length
+                  ? [
+                      {
+                        label: t.assignees,
+                        value:
+                          i18n.formatList(
+                            data.assignees.slice(0, 3).map((entry) => entry.displayName),
+                            context.locale,
+                          ) + (data.assignees.length > 3 ? t.previewMoreAssignees({ count: data.assignees.length - 3 }) : ""),
+                      },
+                    ]
+                  : []),
+                { label: t.space, value: resolved.data.space.name },
+              ],
+            },
+          ],
+        }
+      : undefined;
   const result = {
+    ...(view ? { view } : {}),
     data: {
       ...data,
       view: {
@@ -1234,10 +1287,15 @@ const capabilityAuditActor = (context: CapabilityExecutionContext): AuditActor =
         roles: context.actor.scopes,
       };
 
-const spaceActivityActor = (context: CapabilityExecutionContext) =>
-  context.actor.kind === "user"
-    ? ({ kind: "user", id: context.actor.user.id } as const)
-    : ({ kind: "service_account", id: context.actor.serviceAccount.id } as const);
+const spaceActivityActor = (context: CapabilityExecutionContext) => {
+  const origin = actorWorkload(context.actor);
+  return {
+    ...(context.actor.kind === "user"
+      ? ({ kind: "user", id: context.actor.user.id } as const)
+      : ({ kind: "service_account", id: context.actor.serviceAccount.id } as const)),
+    ...(origin ? { origin } : {}),
+  };
+};
 
 const actionAudit = (context: CapabilityExecutionContext, actionId: string, targetType: string, targetId: string) => ({
   action: `spaces.capability.${actionId}`,
@@ -1690,7 +1748,8 @@ const requireTemplate = async (templateId: string, context: CapabilityExecutionC
   const template = internalId ? await spacesService.template.get({ id: internalId }) : null;
   if (!template) return capabilityFail(context, err.notFound("Template"), "templateNotFound");
   const access = await requireSpaceUuid(template.spaceId, context, required);
-  if (!access.ok) return capabilityFail(context, err.notFound("Template"), "templateNotFound");
+  if (!access.ok || (context.target !== undefined && access.data.space.id !== context.target.id))
+    return capabilityFail(context, err.notFound("Template"), "templateNotFound");
   const [publicTemplate] = await spacesPublicResources.projectTemplates([template]);
   if (!publicTemplate) return capabilityFail(context, err.notFound("Template"), "templateNotFound");
   return ok({ template: publicTemplate, internal: template, space: access.data.space, internalSpaceId: template.spaceId });
@@ -1749,10 +1808,10 @@ const createdSummary = (
 };
 
 const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, context: CapabilityExecutionContext) =>
-  audited(actionAudit(context, "task.create", "space", input.spaceId), async () => {
-    const access = await requireSpace(input.spaceId, context, "write");
+  audited(actionAudit(context, "task.create", "space", context.target?.id ?? ""), async () => {
+    const access = await requireSpace(context.target?.id ?? "", context, "write");
     if (!access.ok) return access;
-    const { spaceId, templateId, date, timeZone, noDate, columnId: requestedColumnId, ...explicit } = input;
+    const { templateId, date, timeZone, noDate, columnId: requestedColumnId, ...explicit } = input;
     const filled = await fillFromTemplate(
       { templateId, date, timeZone, noDate, at: explicit.deadline },
       "task",
@@ -1796,7 +1855,7 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
 
 const runTaskUpdate = async (input: z.infer<typeof TaskUpdateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "task.update", "space_item", input.itemId), async () => {
-    const resolved = await requireItem(input.itemId, context, "write");
+    const resolved = await requireItem(input.itemId, context, "write", { in: context.target?.id });
     if (!resolved.ok) return resolved;
     if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
     const { itemId, ...data } = input;
@@ -1840,10 +1899,10 @@ const runTaskSetCompleted = async (input: z.infer<typeof TaskSetCompletedInputSc
   });
 
 const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, context: CapabilityExecutionContext) =>
-  audited(actionAudit(context, "event.create", "space", input.spaceId), async () => {
-    const access = await requireSpace(input.spaceId, context, "write");
+  audited(actionAudit(context, "event.create", "space", context.target?.id ?? ""), async () => {
+    const access = await requireSpace(context.target?.id ?? "", context, "write");
     if (!access.ok) return access;
-    const { spaceId, templateId, date, timeZone, ...explicit } = input;
+    const { templateId, date, timeZone, ...explicit } = input;
     const filled = await fillFromTemplate({ templateId, date, timeZone, at: explicit.startsAt }, "event", access.data.internalId, context);
     if (!filled.ok) return filled;
     const [columnIds, tagIds] = await Promise.all([
@@ -1973,10 +2032,10 @@ const templateInputTags = async (internalSpaceId: string, tagIds: string[] | und
 };
 
 const runTemplateCreate = async (input: z.infer<typeof TemplateCreateInputSchema>, context: CapabilityExecutionContext) =>
-  audited(actionAudit(context, "template.create", "space", input.spaceId), async () => {
-    const access = await requireSpace(input.spaceId, context, "write");
+  audited(actionAudit(context, "template.create", "space", context.target?.id ?? ""), async () => {
+    const access = await requireSpace(context.target?.id ?? "", context, "write");
     if (!access.ok) return access;
-    const { spaceId, ...data } = input;
+    const data = input;
     const tagIds = await templateInputTags(access.data.internalId, data.tagIds, context);
     if (!tagIds.ok) return tagIds;
     return templateMutationResult(
@@ -2019,14 +2078,14 @@ const runTemplateDelete = async (input: z.infer<typeof TemplateDeleteInputSchema
   });
 
 const reviewTemplate = async (
-  input: { spaceId?: string; templateId?: string; name?: string; dateRule?: TemplateDateRule; timeOfDay?: string | null },
+  input: { templateId?: string; name?: string; dateRule?: TemplateDateRule; timeOfDay?: string | null },
   context: CapabilityExecutionContext,
   operation: "create" | "update" | "delete",
 ) => {
   const t = spacesMessages(context.locale);
   const target = input.templateId
     ? await requireTemplate(input.templateId, context, "write")
-    : await requireSpace(input.spaceId ?? "", context, "write");
+    : await requireSpace(context.target?.id ?? "", context, "write");
   if (!target.ok) return target;
   const space = target.data.space;
   const existing = "template" in target.data ? target.data.template : null;
@@ -2106,7 +2165,7 @@ const runItemDelete = async (input: z.infer<typeof ItemDeleteInputSchema>, conte
 /** Comments are written by the user behind the call or by a standalone or agent account under its own name. */
 const commentAuthor = (context: CapabilityExecutionContext): CommentAuthor | null => {
   if (context.user) return { kind: "user", id: context.user.id };
-  return context.actor.kind === "service_account" && isStandaloneServiceAccountKind(context.actor.serviceAccount.kind)
+  return context.actor.kind === "service_account" && serviceAccountUsesOwnGrants(context.actor.serviceAccount.kind)
     ? { kind: "service_account", id: context.actor.serviceAccount.id }
     : null;
 };
@@ -2256,10 +2315,10 @@ const runCalendarInvitationImport = async (
   input: z.infer<typeof CalendarInvitationImportCapabilityInputSchema>,
   context: CapabilityExecutionContext,
 ) =>
-  audited(actionAudit(context, "calendar-invitation.import", "space", input.spaceId), async () => {
+  audited(actionAudit(context, "calendar-invitation.import", "space", context.target?.id ?? ""), async () => {
     if (!context.user)
       return capabilityFail(context, err.forbidden("Importing an invitation requires a user-backed actor"), "invitationImportNeedsUser");
-    const access = await requireSpace(input.spaceId, context, "write");
+    const access = await requireSpace(context.target?.id ?? "", context, "write");
     if (!access.ok) return access;
     const result = await spacesService.calendarInvitations.importCalendarInvitation({
       input: { ...input, spaceId: access.data.internalId },
@@ -2343,6 +2402,13 @@ const runEventInvitationPrepare = async (input: z.infer<typeof EventInvitationPr
 
 const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCommitInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "event.invitation.commit", "calendar_invitation_delivery", input.deliveryId), async () => {
+    const delivery = await spacesService.calendarInvitations.getEventInvitationCommitContext({
+      deliveryId: input.deliveryId,
+      subject: context.accessSubject,
+    });
+    if (!delivery.ok) return delivery;
+    const item = await requireItemUuid(delivery.data.itemId, context, "write");
+    if (!item.ok) return item;
     const result = await spacesService.calendarInvitations.commitEventInvitationAttachment({
       deliveryId: input.deliveryId,
       subject: context.accessSubject,
@@ -2409,7 +2475,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "A permission-scoped collaboration space.",
       icon: "ti ti-layout-kanban",
       reader: "space.read",
-      access: { readable: readableSpace },
+      access: { readable: readableSpace, managers: (input) => listSpaceManagers(input) },
       pages: ["/app/spaces/:id"],
     },
     item: {
@@ -2419,7 +2485,7 @@ export const spacesCapabilities = defineCapabilities({
       color: "emerald",
       reader: "item.read",
       container: "space",
-      access: { readable: readableItem },
+      access: { readable: readableItem, managers: (input) => listSpaceManagers(input, true) },
       pages: ["/app/spaces/:space?item=:id"],
     },
     comment: {
@@ -2560,7 +2626,8 @@ export const spacesCapabilities = defineCapabilities({
         const access = await workQueryContext({ assignedTo: "all" }, context, true);
         if (!access.ok) return access;
         try {
-          return ok({ data: await listSourceCalendars(input, access.data) });
+          const data = await listSourceCalendars(input, access.data);
+          return ok({ data, page: capabilityPage(data.next) });
         } catch (error) {
           if (error instanceof CalendarSourceError) return fail({ ...err.badInput("Invalid calendar cursor"), code: error.code });
           throw error;
@@ -2578,7 +2645,8 @@ export const spacesCapabilities = defineCapabilities({
         const access = await workQueryContext({ assignedTo: "all" }, context, true);
         if (!access.ok) return access;
         try {
-          return ok({ data: await readSourceEvents(input, access.data) });
+          const data = await readSourceEvents(input, access.data);
+          return ok({ data, page: capabilityPage(data.next) });
         } catch (error) {
           if (error instanceof CalendarSourceError) return fail({ ...err.badInput("Calendar data could not be read"), code: error.code });
           if (error instanceof CalendarReadLimitError)
@@ -2634,6 +2702,10 @@ export const spacesCapabilities = defineCapabilities({
       run: runSpaceList,
     },
     "space.read": {
+      codeResourceTitle: async (tx: SQL, id: string) => {
+        const [space] = await tx<{ name: string }[]>`SELECT name FROM spaces.spaces WHERE short_id=${id}`;
+        return space?.name ?? null;
+      },
       title: "Read space",
       description:
         "Read one spaces.space ref returned by space.list or space.search, including column and tag IDs required by filtered lists and item Actions.",
@@ -2761,7 +2833,7 @@ export const spacesCapabilities = defineCapabilities({
     "calendar-destination.list": {
       title: "List calendar destinations",
       description:
-        "List writable destination Spaces after calendar-invitation.preview finds no linked event. Pass a returned spaceId to calendar-invitation.import.",
+        "List writable destination Spaces after calendar-invitation.preview finds no linked event. Pass a returned ID as the space target to calendar-invitation.import.",
       input: CalendarDestinationListInputSchema,
       data: CalendarDestinationListDataSchema,
       openWorld: false,
@@ -2779,6 +2851,7 @@ export const spacesCapabilities = defineCapabilities({
   },
   actions: {
     "task.claim": {
+      target: "space",
       title: "Claim task work",
       description:
         "Claim an open unblocked task for one worker. Claiming as a person or a service account other than a personal automation key also assigns you to the task. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict. Claims coordinate work and do not lock it: any writer can take one over, and progress, release or completion with the ended claimId then returns 409 'Task claim is no longer active'.",
@@ -2811,6 +2884,7 @@ export const spacesCapabilities = defineCapabilities({
         }),
     },
     "task.release": {
+      target: "space",
       title: "Release task work",
       description:
         "Release your current claim using its exact claimId; you stay assigned. With force, release another worker's exact claim and remove them from the assignees; any writer may, and task activity records who took it over. Progress and completion results remain available.",
@@ -2843,6 +2917,7 @@ export const spacesCapabilities = defineCapabilities({
         }),
     },
     "task.progress": {
+      target: "space",
       title: "Progress task work",
       description:
         "Save a full progress and handoff note under the actual user or service account identity. Supply the current claimId when claimed; the previous note remains in task activity.",
@@ -2875,6 +2950,7 @@ export const spacesCapabilities = defineCapabilities({
         }),
     },
     "task.checklist.create": {
+      target: "space",
       title: "Add task checklist entry",
       description: "Append one simple checklist label to a writable task.",
       input: TaskChecklistCreateInputSchema,
@@ -2887,6 +2963,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runChecklistCreate,
     },
     "task.checklist.update": {
+      target: "space",
       title: "Update task checklist entry",
       description: "Change only the supplied label or completed state of an entry returned by task.checklist.list.",
       input: TaskChecklistUpdateInputSchema,
@@ -2899,6 +2976,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runChecklistUpdate,
     },
     "task.checklist.delete": {
+      target: "space",
       title: "Delete task checklist entry",
       description: "Remove one checklist entry from a writable task; the task itself is preserved.",
       input: TaskChecklistDeleteInputSchema,
@@ -2910,6 +2988,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runChecklistDelete,
     },
     "item.reference.add": {
+      target: "space",
       title: "Link a Cloud resource",
       description: "Link one stable Cloud resource reference to a writable Space item.",
       input: ItemResourceReferenceAddInputSchema,
@@ -2939,6 +3018,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runItemReferenceAdd,
     },
     "item.reference.remove": {
+      target: "space",
       title: "Unlink a Cloud resource",
       description: "Remove one Cloud resource reference from a writable Space item, including dangling references.",
       input: ItemResourceReferenceRemoveInputSchema,
@@ -2964,6 +3044,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runItemReferenceRemove,
     },
     "item.tags.set": {
+      target: "space",
       title: "Set item tags",
       description: "Replace the tags on one writable task or event without changing its other fields.",
       input: ItemTagsSetInputSchema,
@@ -2990,6 +3071,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runItemTagsSet,
     },
     "task.blocker.add": {
+      target: "space",
       title: "Add task blocker",
       description: "Mark one task in the same Space as a blocker of another task.",
       input: TaskDependencyInputSchema,
@@ -3023,6 +3105,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runTaskDependencyAdd,
     },
     "task.blocker.remove": {
+      target: "space",
       title: "Remove task blocker",
       description: "Remove one blocker relationship between two tasks.",
       input: TaskDependencyInputSchema,
@@ -3056,6 +3139,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runTaskDependencyRemove,
     },
     "template.create": {
+      target: "space",
       title: "Create template",
       description:
         "Create a template for new tasks or events in a Space the actor can write to. Names are unique per Space and kind. A weekdays rule proposes the next matching days, an offset rule today plus days.",
@@ -3069,6 +3153,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runTemplateCreate,
     },
     "template.update": {
+      target: "space",
       title: "Update template",
       description:
         "Change selected fields of a template returned by template.list; tag and assignee lists are replaced. Items created earlier stay unchanged. Requires Space write access.",
@@ -3082,6 +3167,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runTemplateUpdate,
     },
     "template.delete": {
+      target: "space",
       title: "Delete template",
       description: "Delete one template. Items created from it stay. Requires Space write access.",
       input: TemplateDeleteInputSchema,
@@ -3093,6 +3179,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runTemplateDelete,
     },
     "task.create": {
+      target: "space",
       title: "Create task",
       description:
         "Create one task in an explicitly selected writable Space. Without columnId it goes to the Space's first open column, the first one in board order that is not marked done; name a column only when the user asks for one. With templateId the template fills every field left out, including its checklist, and date picks the due day from template.list proposals.",
@@ -3106,6 +3193,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runTaskCreate,
     },
     "task.update": {
+      target: "space",
       title: "Update task",
       description:
         "Update selected fields of an existing task without converting its item kind. Prefer addAssigneeIds/removeAssigneeIds for individual assignments. With title, carry the exact expectedTitle from item.read; TITLE_CONFLICT requires reading and reviewing again.",
@@ -3174,6 +3262,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runTaskUpdate,
     },
     "task.set-completed": {
+      target: "space",
       title: "Set task completion",
       description: "Complete an unblocked task or reopen one task using the Space workflow columns.",
       input: TaskSetCompletedInputSchema,
@@ -3206,6 +3295,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runTaskSetCompleted,
     },
     "event.create": {
+      target: "space",
       title: "Create calendar event",
       description:
         "Create one calendar event in a writable Space, with an explicit valid time range or with templateId and a date from template.list proposals; the template fills every field left out.",
@@ -3219,6 +3309,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runEventCreate,
     },
     "event.update": {
+      target: "space",
       title: "Update event",
       description: "Update selected event fields without converting its item kind.",
       input: EventUpdateInputSchema,
@@ -3292,6 +3383,8 @@ export const spacesCapabilities = defineCapabilities({
       run: runEventUpdate,
     },
     "event.invitation.prepare": {
+      target: "space",
+      code: false,
       title: "Prepare event invitation",
       description:
         "Prepare an idempotent iCalendar invitation for a writable Space event. Mail identifiers are opaque correlation values and grant no Space access.",
@@ -3303,6 +3396,8 @@ export const spacesCapabilities = defineCapabilities({
       run: runEventInvitationPrepare,
     },
     "event.invitation.commit": {
+      target: "space",
+      code: false,
       title: "Commit event invitation",
       description: "Record that a prepared event invitation was attached to its correlated Mail draft after rechecking Space event access.",
       input: EventInvitationCommitInputSchema,
@@ -3334,6 +3429,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runEventInvitationCommit,
     },
     "item.delete": {
+      target: "space",
       title: "Delete Space item",
       description: "Permanently delete one task or event from a writable Space.",
       input: ItemDeleteInputSchema,
@@ -3357,6 +3453,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runItemDelete,
     },
     "reaction.add": {
+      target: "space",
       title: "Add reaction",
       description: "Add your own emoji reaction on an item in a writable Space. No notifications or activity.",
       input: ReactionInputSchema,
@@ -3406,6 +3503,7 @@ export const spacesCapabilities = defineCapabilities({
         }),
     },
     "reaction.remove": {
+      target: "space",
       title: "Remove reaction",
       description: "Remove your own emoji reaction on an item in a writable Space. No notifications or activity.",
       input: ReactionInputSchema,
@@ -3455,6 +3553,7 @@ export const spacesCapabilities = defineCapabilities({
         }),
     },
     "comment.create": {
+      target: "space",
       title: "Create comment",
       description: "Add a comment to an item or recurring occurrence in a writable Space.",
       input: CommentCreateInputSchema,
@@ -3485,6 +3584,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runCommentCreate,
     },
     "comment.update": {
+      target: "space",
       title: "Update comment",
       description: "Update the current user's own comment within 10 minutes in a writable Space.",
       input: CommentUpdateInputSchema,
@@ -3513,6 +3613,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runCommentUpdate,
     },
     "comment.delete": {
+      target: "space",
       title: "Delete comment",
       description: "Delete the current user's own comment within the existing ten-minute window.",
       input: CommentDeleteInputSchema,
@@ -3539,6 +3640,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runCommentDelete,
     },
     "calendar-invitation.import": {
+      target: "space",
       title: "Import calendar invitation",
       description:
         "Idempotently create, update, or cancel the matching event in an explicitly selected writable Space. Mail identifiers are opaque correlation values and grant no Space access.",
@@ -3557,7 +3659,7 @@ export const spacesCapabilities = defineCapabilities({
             err.forbidden("Importing an invitation requires a user-backed actor"),
             "invitationImportNeedsUser",
           );
-        const access = await requireSpace(input.spaceId, context, "write");
+        const access = await requireSpace(context.target?.id ?? "", context, "write");
         if (!access.ok) return access;
         const preview = await spacesService.calendarInvitations.previewCalendarInvitation(input);
         if (!preview.ok) return preview;
@@ -3573,7 +3675,7 @@ export const spacesCapabilities = defineCapabilities({
         const consequence = decision === "create" ? t.importCreate : decision === "unchanged" ? t.importKeep : t.importUpdate;
         return ok({
           message: t.reviewImportInvitation({ action: consequence, title: preview.data.invitation.title, space: access.data.space.name }),
-          approvalScope: spaceApprovalScope(input.spaceId),
+          approvalScope: spaceApprovalScope(context.target?.id ?? ""),
           details: [
             { label: t.space, value: access.data.space.name },
             { label: t.event, value: preview.data.invitation.title },
@@ -3587,6 +3689,7 @@ export const spacesCapabilities = defineCapabilities({
       run: runCalendarInvitationImport,
     },
     "calendar-invitation.response.commit": {
+      code: false,
       title: "Commit calendar response draft",
       description: "Record the correlated Mail draft after mail.draft.create succeeds and recheck access to the linked Space event.",
       input: CalendarInvitationResponseCommitCapabilityInputSchema,
@@ -3620,3 +3723,5 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
 });
+
+import { listSpaceManagers } from "./service/manager-recipients";

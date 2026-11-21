@@ -1,0 +1,275 @@
+import { getApp, sql } from "@k2b/cloud";
+import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
+import {
+  type CapabilityExecutionContext,
+  CloudResourceReaderViewSchema,
+  cloudResourceRefAppId,
+  resolveCapabilityResourceReader,
+} from "@k2b/cloud/contracts";
+import type { LiveViewer } from "@k2b/cloud/events";
+import {
+  codeAccountPresenter,
+  getEffectivePermission,
+  getEffectivePermissions,
+  type RequestAuthority,
+  userFromActor,
+} from "@k2b/cloud/server";
+import { logger } from "@k2b/cloud/services";
+import type { SQL } from "bun";
+import { z } from "zod";
+import type { Code, CodeOwner, CodePermission } from "./contracts";
+
+/** All Code reads and writes retain the caller's credential ceiling. No ambient user field is authority. */
+export type CodeContext = {
+  authority: RequestAuthority;
+  locale?: string;
+  signal?: AbortSignal;
+  requestId?: string;
+  /** Under a capability invocation, the one way to ask another app: an invocation cannot be exchanged for a new one. */
+  query?: CapabilityExecutionContext["query"];
+  /** Authenticated submission provenance; chat tools set this from their actual conversation. */
+  submissionOrigin?: import("./review-contracts").CodeSubmissionOrigin;
+  /** Set only by the authenticated, scoped review turn. Checked under the Code lock at submit. */
+  reviewTurn?: { versionId: string; turnId: string };
+  /** One read-model load may reuse its owner reader answer for the same target, never another identity or request. */
+  ownerReaderAnswer?: { ref: { type: string; id: string }; title: string; admin: boolean; href?: string } | null;
+};
+export class CodeDataError extends Error {
+  constructor(
+    readonly code: "FORBIDDEN" | "NOT_FOUND" | "BAD_INPUT" | "CONFLICT" | "code_guests_cannot_author",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+/** An owner provider could not answer; existing reader grants remain usable. */
+export class CodeOwnerUnavailableError extends Error {}
+
+/** Code accounts themselves have no management/query surface, even if accidentally given a grant. */
+export const codePerson = (context: CodeContext, write = false) => {
+  const { authority } = context;
+  context.signal?.throwIfAborted();
+  const user = userFromActor(authority.actor);
+  if (
+    !user ||
+    authority.accessSubject.type !== "user" ||
+    authority.accessSubject.userId !== user.id ||
+    (authority.actor.kind === "service_account" &&
+      (authority.actor.serviceAccount.kind === "code" || authority.actor.serviceAccount.status !== "active"))
+  )
+    throw new CodeDataError("FORBIDDEN", "Code requires a person.");
+  const credential = authority.credentialKind === "invocation" ? authority.actor.delegation?.credentialKind : authority.credentialKind;
+  const scopes = authority.scopes;
+  if (
+    credential !== "session" &&
+    credential !== "mandate" &&
+    !(
+      credential === "api_key" &&
+      authority.actor.kind === "service_account" &&
+      authority.actor.serviceAccount.kind === "user_delegated" &&
+      scopes.length === 0
+    ) &&
+    !scopes.some((scope) =>
+      (write
+        ? ["write", "admin", "core:write", "core:admin", "core:*"]
+        : ["read", "write", "admin", "core:read", "core:write", "core:admin", "core:*"]
+      ).includes(scope),
+    )
+  )
+    throw new CodeDataError("FORBIDDEN", "Credential does not allow Code access.");
+  return user;
+};
+
+/** Resolve the resource's current title and permission through its canonical reader under this exact authority. */
+export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Promise<{ title: string; admin: boolean } | null> => {
+  if (owner.kind === "person") {
+    const user = codePerson(context);
+    return user.id === owner.userId ? { title: user.displayName || user.uid, admin: true } : null;
+  }
+  if (owner.kind === "app") {
+    const app = await getApp(owner.appId);
+    if (!app) return null;
+    const entries =
+      app.access?.kind === "grants"
+        ? await sql<{ access_id: string }[]>`SELECT j.access_id FROM auth.app_access j JOIN auth.access a ON a.id=j.access_id
+        WHERE j.app_id=${app.id}`
+        : [];
+    const permission = await getEffectivePermission({
+      accessIds: entries.map((entry) => entry.access_id),
+      subject: context.authority.accessSubject,
+    });
+    return { title: app.name, admin: permission === "admin" };
+  }
+  const previous = context.ownerReaderAnswer;
+  if (previous && previous.ref.type === owner.ref.type && previous.ref.id === owner.ref.id)
+    return { title: previous.title, admin: previous.admin };
+  const appId = cloudResourceRefAppId(owner.ref);
+  const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority);
+  if (!catalog.ok) {
+    if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(catalog.error.code)) return null;
+    throw new CodeOwnerUnavailableError("Code owner provider unavailable");
+  }
+  const reader = catalog.data && resolveCapabilityResourceReader(catalog.data.manifest, owner.ref);
+  if (!reader) return null;
+  const schema = z.object({ view: CloudResourceReaderViewSchema });
+  const result =
+    context.authority.credentialKind === "invocation" && context.query
+      ? await context.query({ appId, capabilityId: reader.localId, input: { id: owner.ref.id }, signal: context.signal }, schema)
+      : await invokeCapabilityWithDataSchema({ appId, capabilityId: reader.localId, kind: "query", input: { id: owner.ref.id } }, schema, {
+          authority: context.authority,
+          locale: context.locale,
+          signal: context.signal,
+        });
+  if (!result.ok) {
+    if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(result.error.code)) return null;
+    throw new CodeOwnerUnavailableError("Code owner reader unavailable");
+  }
+  const href = result.data.links?.find((link) => link.rel === "open")?.href;
+  if (context.ownerReaderAnswer !== undefined)
+    context.ownerReaderAnswer = {
+      ref: owner.ref,
+      title: result.data.data.view.title,
+      admin: result.data.data.view.permission === "admin",
+      ...(href ? { href } : {}),
+    };
+  return { title: result.data.data.view.title, admin: result.data.data.view.permission === "admin" };
+};
+
+/** Who looks at a Code page, as hosting resolved the request; any part is missing for a visitor without an account. */
+export type CodePageViewerAuthority = Partial<Pick<RequestAuthority, "actor" | "accessSubject" | "credentialKind">>;
+
+/** A member of this Cloud on a Code page: a signed-in person in their own browser session who is not a guest. */
+export const isCodePageMember = ({ actor, accessSubject, credentialKind }: CodePageViewerAuthority): boolean =>
+  credentialKind === "session" &&
+  actor?.kind === "user" &&
+  accessSubject?.type === "user" &&
+  accessSubject.userId === actor.user.id &&
+  actor.user.profile !== "guest";
+
+/**
+ * F26: members may read the name of the person who owns a Code page they open, on its label and its card. Visitors
+ * without an account, guests and workload credentials never do. This is the only way a person's name reaches someone
+ * else; `readCodeOwner` keeps naming a person only to that person, also to readers of the Code.
+ */
+export const codePageOwnerPersonName = (viewer: CodePageViewerAuthority, name: string | null): string | null =>
+  isCodePageMember(viewer) && name ? name : null;
+
+/** Default editors are the personal owner or live owner administrators; explicit shares add editors/readers.
+ * Unfiltered lists skip owner providers; edits fail visibly when live owner authority cannot be checked.
+ */
+export const codePermission = async (
+  code: Code,
+  context: CodeContext,
+  db: SQL = sql,
+  ownerCheck: "read" | "edit" | "skip" = "read",
+  readOwner: typeof readCodeOwner = readCodeOwner,
+): Promise<CodePermission | null> => {
+  const user = codePerson(context);
+  const cloudAdmin = user.roles.includes("admin");
+  if (code.owner.kind === "person" && code.owner.userId === user.id) return "editor";
+  const entries = await db<{ access_id: string }[]>`SELECT access_id FROM code.shares WHERE code_id = ${code.id}`;
+  const permission = await getEffectivePermission(
+    {
+      accessIds: entries.map((row) => row.access_id),
+      subject: context.authority.accessSubject,
+    },
+    db,
+  );
+  if (permission === "write" || permission === "admin") return "editor";
+  if (code.owner.kind !== "person" && ownerCheck !== "skip") {
+    try {
+      const owner = await readOwner(code.owner, context);
+      if (owner?.admin) return "editor";
+    } catch (error) {
+      if (!(error instanceof CodeOwnerUnavailableError) || ownerCheck === "edit" || (permission !== "read" && !cloudAdmin)) throw error;
+      logger("core:code-owner").warn("Code owner unavailable; retaining existing reader access", { codeId: code.id });
+    }
+  }
+  return permission === "read" || cloudAdmin ? "reader" : null;
+};
+/** Missing and inaccessible Code have the same result. */
+export const requireCodePermission = async (
+  code: Code,
+  context: CodeContext,
+  editor = false,
+  db: SQL = sql,
+  readOwner: typeof readCodeOwner = readCodeOwner,
+): Promise<CodePermission> => {
+  const permission = await codePermission(code, context, db, editor ? "edit" : "read", readOwner);
+  if (!permission || (editor && permission !== "editor")) throw new CodeDataError("NOT_FOUND", "Code not found.");
+  if (editor) codePerson(context, true);
+  return permission;
+};
+
+/**
+ * Admission and reauthorization use the same owner reader as codePermission("read"), never event delivery.
+ * Owner administration has no complete Core access feed; the channel opts into the live engine's
+ * ten-second reauthorize sweep (LIVE_LIMITS.sweepMs) to pick up its revocation.
+ */
+export const codeLiveReaders = async (
+  code: Code,
+  viewers: readonly LiveViewer[],
+  readOwner: typeof readCodeOwner = readCodeOwner,
+  editorsOnly = false,
+): Promise<ReadonlySet<string>> => {
+  const allowed = new Set<string>();
+  const shared: { viewer: LiveViewer; context: CodeContext }[] = [];
+  for (const viewer of viewers) {
+    try {
+      const context: CodeContext = {
+        authority: {
+          actor: viewer.actor,
+          accessSubject: viewer.accessSubject,
+          scopes: [...viewer.scopes],
+          // LiveViewer's ID distinguishes sessions from scope-limited credentials, even with empty scopes.
+          credentialKind:
+            viewer.actor.kind === "service_account"
+              ? viewer.actor.oauthClientId
+                ? "oauth"
+                : "api_key"
+              : viewer.id.includes(":scopes=")
+                ? "oauth"
+                : "session",
+        },
+      };
+      const user = codePerson(context);
+      if ((code.owner.kind === "person" && code.owner.userId === user.id) || (!editorsOnly && user.roles.includes("admin")))
+        allowed.add(viewer.id);
+      else shared.push({ viewer, context });
+    } catch (error) {
+      if (!(error instanceof CodeDataError)) throw error;
+    }
+  }
+  const permissions = await getEffectivePermissions({
+    accessIds: sql`SELECT access_id FROM code.shares WHERE code_id=${code.id}`,
+    subjects: shared.map(({ viewer }) => viewer.accessSubject),
+  });
+  // Bound owner-provider fan-out per batch to the live engine's eight-call authorization budget.
+  const ownerReadConcurrency = 8;
+  for (let start = 0; start < shared.length; start += ownerReadConcurrency) {
+    await Promise.all(
+      shared.slice(start, start + ownerReadConcurrency).map(async ({ viewer, context }, offset) => {
+        if ((editorsOnly ? ["write", "admin"] : ["read", "write", "admin"]).includes(permissions[start + offset] ?? "none")) {
+          allowed.add(viewer.id);
+          return;
+        }
+        if (code.owner.kind === "person") return;
+        try {
+          if ((await readOwner(code.owner, context))?.admin) allowed.add(viewer.id);
+        } catch (error) {
+          // Existing reader grants were retained above; an unavailable owner cannot grant new access.
+          if (!(error instanceof CodeOwnerUnavailableError)) throw error;
+        }
+      }),
+    );
+  }
+  return allowed;
+};
+/** Outside a locally authorized target rights list, resource Code is named only by its type. */
+export const codeAccountDisplayName = async (code: Code, context: CodeContext): Promise<string | null> => {
+  codePerson(context);
+  if (!code.serviceAccountId) return null;
+  const [account] = await sql<{ name: string; title: string | null; status: string }[]>`
+    SELECT name,title,status FROM auth.service_accounts WHERE id=${code.serviceAccountId}::uuid AND kind='code'`;
+  return account ? (await codeAccountPresenter({ locale: context.locale })(account)).displayName : null;
+};

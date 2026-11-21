@@ -112,6 +112,28 @@ describe('Box "In this chat", server render', () => {
     expect(html.match(/>Alle anzeigen</g)?.length).toBe(1);
   });
 
+  test("the chat's alarms: plain plum signs, the three next with their time, the rest unfolds in place", () => {
+    const wakeups: AssistantChatContextGroup = {
+      key: "wakeups",
+      label: "Wecker",
+      count: 5,
+      unfold: true,
+      rows: ["Antwort prüfen", "Posteingang zusammenfassen", "Lieferavis nachfassen", "Wochenplan vorlesen", "Rückruf vorbereiten"].map(
+        (title, index) => ({ key: `wakeup:w${index}`, icon: "ti ti-alarm", title, word: `1${index}:00`, wakeup: `w${index}` }),
+      ),
+    };
+    const html = renderBox(sidebarSnapshot({ groups: [wakeups] }));
+    expect(html).toContain(">Wecker<");
+    expect(html).toContain("Lieferavis nachfassen");
+    expect(html).not.toContain("Wochenplan vorlesen");
+    expect(html).toContain(">2 weitere anzeigen<");
+    expect(html).not.toContain(">Alle anzeigen<");
+    expect(html).toMatch(/data-row="wakeup:w0"[\s\S]*?class="assistant-context-box__icon ti ti-alarm"/);
+    expect(renderBox(sidebarSnapshot({ groups: [{ ...wakeups, count: 2, rows: wakeups.rows.slice(0, 2) }] }))).not.toContain(
+      "weitere anzeigen",
+    );
+  });
+
   test("never draws more than ten rows", () => {
     const results = Array.from({ length: 8 }, (_, index) => fileResult(`/r${index}.pdf`, { at: minutesAgo(index + 1), turn: "t", seq: 1 }));
     const groups = ["g1", "g2", "g3"].map((key) => ({ ...automations, key, label: key }));

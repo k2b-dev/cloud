@@ -36,6 +36,7 @@ export type {
   AiChatActions,
   AiTurnActionRequest,
 } from "./chat/message-actions";
+export { useAiChatActions } from "./chat/message-actions";
 export type {
   AiForkMessageInput,
   AiRetryMessageInput,
@@ -49,6 +50,8 @@ export {
   type AiChatTurnNavigatorProps,
   createAiChatTimeline,
 } from "./chat/presentation";
+export { CloudViewFile } from "./chat/view-block";
+export type { AiWakeupLineInput, AiWakeupLinePlan } from "./chat/wakeup-plan";
 
 export const aiLatestUsage = latestUsage;
 export const aiLatestLoopUsage = latestLoopUsage;

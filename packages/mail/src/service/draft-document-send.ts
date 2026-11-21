@@ -1,22 +1,38 @@
 import { sql } from "@k2b/cloud";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { SharedTextBoundaryError, type SharedTextRoomFreeze } from "@k2b/cloud/shared-text";
 import { isServiceError } from "@k2b/stdlib";
 import { ConflictError } from "@k2b/sync";
-import type { ActorCommandInput } from "../contracts";
+import type { ActorCommandInput, ComposeSafetyApproval } from "../contracts";
 import { requireDraftAccess } from "./access";
-import type { MailRequestContext } from "./auth";
-import { draftDocumentStreamFull, isDraftDocumentStreamFull, mailDraftDocumentLog } from "./draft-document-log";
+import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { sha256Json } from "./canonical";
+import { reviewDraftComposeSafety, validateComposeSafetyEdits, validateDraftComposeSafety } from "./compose-safety";
+import { draftDocumentStreamFull, isDraftDocumentStreamFull, mailDraftDocumentLog, withDraftDocumentCommit } from "./draft-document-log";
 import { mailDraftRoom } from "./draft-document-room";
 import { sameDraftDocumentState } from "./draft-document-state";
-import { readDraftDocument } from "./draft-documents";
+import { lockDraftDocumentInTransaction, readDraftDocument } from "./draft-documents";
+import { loadSendContent } from "./send-content";
 
 const log = logger("mail:draft-document-send");
+/** The same value without `null` members, so two storage forms of one message compare equal. */
+const withoutNulls = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(withoutNulls)
+    : value !== null && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([, entry]) => entry !== null)
+            .map(([key, entry]) => [key, withoutNulls(entry)]),
+        )
+      : value;
 const changed = () =>
   Object.assign(new Error("Draft changed before sending; review it again"), { code: "SEND_CONTENT_CHANGED", status: 409 });
-export type FrozenDraftSends = ReadonlyMap<string, SharedTextRoomFreeze>;
+type EditedDraftSend = { revision: number; contentHash: string; safetyApproval: ComposeSafetyApproval };
+export type FrozenDraftSends = ReadonlyMap<string, SharedTextRoomFreeze & { edited?: EditedDraftSend }>;
 
-/** Freeze before acquiring SQL row locks: flushNow itself commits a snapshot. */
+/** Freeze after committing approval edits and before the send transaction takes SQL locks. */
 export const withFrozenDraftSends = async <T>(
   params: {
     context: MailRequestContext | null;
@@ -25,8 +41,9 @@ export const withFrozenDraftSends = async <T>(
   },
   operation: (frozen: FrozenDraftSends) => Promise<T>,
 ): Promise<T> => {
-  const frozen = new Map<string, SharedTextRoomFreeze>();
+  const frozen = new Map<string, SharedTextRoomFreeze & { edited?: EditedDraftSend }>();
   try {
+    const deadline = Date.now() + REQUEST_IDLE_TIMEOUT_SECONDS * 1000;
     for (const input of params.inputs) {
       if (input.kind !== "send" || frozen.has(input.draftId)) continue;
       // Undo restores an editable draft, but retrying its old command must not
@@ -43,6 +60,96 @@ export const withFrozenDraftSends = async <T>(
       if (!access.ok) throw access.error;
       const initialized = await readDraftDocument({ context: params.context, mailboxId: params.mailboxId, draftId: input.draftId });
       if (!initialized.ok) throw initialized.error;
+      const context = params.context;
+      const edited =
+        input.subject === undefined && input.body === undefined
+          ? undefined
+          : await withDraftDocumentCommit(async (db) => {
+              // This transaction ends before the room freeze, whose flush takes SQL locks.
+              const locked = await lockDraftDocumentInTransaction({ db, context, mailboxId: params.mailboxId, draftId: input.draftId });
+              if (!locked.ok) throw locked.error;
+              const projected = await locked.data.project();
+              if (!projected.ok) throw projected.error;
+              if (projected.data.revision !== input.expectedDraftRevision) throw changed();
+              const base = await loadSendContent({
+                db,
+                context,
+                mailboxId: params.mailboxId,
+                draftId: input.draftId,
+                expectedRevision: input.expectedDraftRevision,
+                senderIdentityId: input.senderIdentityId,
+                actor: actorRefFromRequest(context),
+                lock: true,
+                edits: { subject: input.subject, body: input.body },
+              });
+              if (!base.ok) throw base.error;
+              if (base.data.contentHash !== input.expectedContentHash) throw changed();
+              const safety = await validateDraftComposeSafety({
+                db,
+                mailboxId: params.mailboxId,
+                draftId: input.draftId,
+                expectedRevision: input.expectedDraftRevision,
+                subject: input.subject,
+                body: input.body,
+                approval: input.safetyApproval,
+              });
+              if (!safety.ok) throw safety.error;
+              const current = await locked.data.read();
+              if (!current.ok) throw current.error;
+              const saved = await locked.data.writeRevision({
+                expectedRevision: input.expectedDraftRevision,
+                generation: locked.data.generation,
+                content: { ...current.data.durable.content, subject: base.data.snapshot.subject, body: base.data.snapshot.body },
+                deadline,
+              });
+              if (!saved.ok) throw saved.error;
+              if (saved.data.status !== "accepted") throw changed();
+              // The published edit remains saved if a later freeze/send fails. Never send
+              // peer changes merged during the write unless they were also reviewed.
+              // The shared document stores addresses in its own canonical form (an absent name becomes null), so
+              // compare what is sent, not how it is stored, and bind the send to the saved revision's own hash.
+              const after = await loadSendContent({
+                db,
+                context,
+                mailboxId: params.mailboxId,
+                draftId: input.draftId,
+                expectedRevision: saved.data.revision,
+                senderIdentityId: input.senderIdentityId,
+                actor: actorRefFromRequest(context),
+              });
+              if (!after.ok) throw after.error;
+              if (
+                sha256Json(withoutNulls({ ...base.data.snapshot, revision: 0 })) !==
+                sha256Json(withoutNulls({ ...after.data.snapshot, revision: 0 }))
+              )
+                throw changed();
+              const contentHash = after.data.contentHash;
+              const reviewed = await reviewDraftComposeSafety({
+                db,
+                context,
+                mailboxId: params.mailboxId,
+                draftId: input.draftId,
+                expectedRevision: saved.data.revision,
+              });
+              if (!reviewed.ok) throw reviewed.error;
+              if (reviewed.data.contentHash !== contentHash) throw changed();
+              // Mailbox safety settings can change independently of the locked draft.
+              const stillApproved = validateComposeSafetyEdits(safety.data, reviewed.data, {
+                revision: safety.data.revision,
+                fingerprint: safety.data.fingerprint,
+                warningIds: safety.data.warnings.map((warning) => warning.id),
+              });
+              if (!stillApproved.ok) throw stillApproved.error;
+              return {
+                revision: saved.data.revision,
+                contentHash,
+                safetyApproval: {
+                  revision: reviewed.data.revision,
+                  fingerprint: reviewed.data.fingerprint,
+                  warningIds: reviewed.data.warnings.map((warning) => warning.id),
+                },
+              };
+            });
       const state = await mailDraftRoom.freeze(input.draftId).catch((error: unknown) => {
         // A typed rejection may itself have a low-level cause (e.g. StoreFullError).
         // Classify it before inspecting an app snapshot rejection wrapped as cause.
@@ -79,9 +186,13 @@ export const withFrozenDraftSends = async <T>(
         );
       });
       if (!state) throw changed();
-      frozen.set(input.draftId, state);
+      frozen.set(input.draftId, { ...state, edited });
       const [reviewed] = await sql<{ revision: number }[]>`SELECT revision FROM mail.drafts WHERE id = ${input.draftId}::uuid`;
-      if (!reviewed || (Number(row.revision) === input.expectedDraftRevision && Number(reviewed.revision) !== input.expectedDraftRevision))
+      if (edited && Number(reviewed?.revision) !== edited.revision) throw changed();
+      if (
+        !edited &&
+        (!reviewed || (Number(row.revision) === input.expectedDraftRevision && Number(reviewed.revision) !== input.expectedDraftRevision))
+      )
         throw changed();
     }
     return await operation(frozen);

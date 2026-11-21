@@ -16,6 +16,7 @@ export type {
   ResourceAccessAdapter,
 } from "./access";
 export {
+  AccessMutationBusyError,
   buildAccessPrincipalCondition,
   buildAccessPrincipalTierConditions,
   createAccess,
@@ -28,9 +29,10 @@ export {
   getEffectivePermissions,
   getMemberPermission,
   hasPermission,
+  listAccessRecipientUserIds,
   listUsersWithAccess,
+  lockAccessMutationAuthority,
   PERMISSION_LEVELS,
-  resolveDisplayNames,
   updateAccess,
 } from "./access";
 export { freeipa } from "./freeipa";

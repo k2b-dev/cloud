@@ -37,6 +37,7 @@ type DbProviderConnection = {
   authenticated_principal: string | null;
   limit_snapshot: unknown;
   jmap_detected: boolean | null;
+  jmap_origin: string | null;
   last_verified_at: Date | string | null;
   last_error_code: string | null;
   last_error_message: string | null;
@@ -64,6 +65,7 @@ const connectionColumns = () => sql`
   pc.authenticated_principal,
   pc.limit_snapshot,
   pc.jmap_detected,
+  pc.jmap_origin,
   pc.last_verified_at,
   pc.last_error_code,
   pc.last_error_message,
@@ -690,7 +692,18 @@ export const loadProviderConnectionRuntime = async (connectionId: string): Promi
 export const loadProviderConnectionRuntimeSnapshot = async (
   connectionId: string,
 ): Promise<{ runtime: ProviderConnectionInput; secretRevision: number }> => {
-  const row = await loadConnectionRow(connectionId);
+  const { runtime, secretRevision } = await loadRuntimeSnapshot(connectionId, sql);
+  return { runtime, secretRevision };
+};
+
+/** The runtime snapshot and, from the same row read, the connector kind and the approved JMAP origin. */
+export const loadJmapConnectionRuntimeSnapshot = (connectionId: string, db: SqlClient = sql) => loadRuntimeSnapshot(connectionId, db);
+
+const loadRuntimeSnapshot = async (
+  connectionId: string,
+  db: SqlClient,
+): Promise<{ runtime: ProviderConnectionInput; secretRevision: number; connectorKind: ConnectorKind; jmapOrigin: string | null }> => {
+  const row = await loadConnectionRow(connectionId, db);
   if (!row || row.status === "revoked" || !row.encrypted_secret)
     throw Object.assign(new Error("Provider connection is unavailable"), { code: "CONNECTION_UNAVAILABLE" });
   let secret: ProviderSecret;
@@ -712,5 +725,7 @@ export const loadProviderConnectionRuntimeSnapshot = async (
       secret,
     ),
     secretRevision: row.secret_revision,
+    connectorKind: row.connector_kind,
+    jmapOrigin: row.jmap_origin,
   };
 };

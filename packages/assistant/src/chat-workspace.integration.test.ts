@@ -3,8 +3,8 @@ import { sql } from "@k2b/cloud";
 import { aiConversations } from "@k2b/cloud/ai";
 import { createPanesLayout } from "@k2b/ui";
 import { databaseSuite, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
-import { migrateArtifacts } from "./artifacts/migrate";
-import { testIdentity } from "./artifacts/test-identity";
+import { migrateChatCode } from "./chat-code/migrate";
+import { testIdentity } from "./chat-code/test-identity";
 import type { ChatWorkspaceState } from "./chat-workspace";
 import { loadAssistantChatWorkspace, saveAssistantChatWorkspace } from "./chat-workspace-service";
 
@@ -20,8 +20,8 @@ databaseSuite()("personal chat workspace persistence", () => {
   };
   beforeAll(async () => {
     database = await useMigratedDatabase("assistant_chat_workspaces");
-    await migrateArtifacts();
-    await migrateArtifacts();
+    await migrateChatCode();
+    await migrateChatCode();
     for (const who of [owner, other])
       await sql`INSERT INTO auth.users(id,uid,provider,profile,display_name)
         VALUES(${who.user.id}::uuid,${who.user.id},'local','user','Workspace test')`;

@@ -3,6 +3,48 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.83.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.82.0...cloud-v0.83.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **code:** Studio apps, Mail rules and automatic replies, and routines in their old form are removed. Export Mail rules and routines before the upgrade; Gustav rebuilds them as Code. See "Upgrade to Code": https://github.com/k2b-dev/cloud/blob/main/docs-site/docs/en/operations/upgrade-to-code.md
+
+### Features
+
+* **cloud:** accept stdlib service error statuses ([#3806](https://github.com/k2b-dev/cloud/issues/3806)) ([09a9c2f](https://github.com/k2b-dev/cloud/commit/09a9c2f9a234516a353dea616d36c1613e04f98a))
+* **cloud:** apps can color only their icon with appearance.iconColor ([#3811](https://github.com/k2b-dev/cloud/issues/3811)) ([3b9753c](https://github.com/k2b-dev/cloud/commit/3b9753cba2c1f502f0e1389e82c4c58c1f499ac0))
+* **code:** Gustav writes and runs Code for people, mailboxes and other apps ([#3010](https://github.com/k2b-dev/cloud/issues/3010)) ([d3ec882](https://github.com/k2b-dev/cloud/commit/d3ec88209d488af76a4db6e19db21be7cf2c5b5e))
+* **mail:** apply JMAP changes in one account commit ([#3816](https://github.com/k2b-dev/cloud/issues/3816)) ([ed4e53b](https://github.com/k2b-dev/cloud/commit/ed4e53b163b59b3728c9b36fd724cf5d11223235))
+* **mail:** Gustav and the CLI reply with the original message, as Mail does ([#3790](https://github.com/k2b-dev/cloud/issues/3790)) ([b3edebc](https://github.com/k2b-dev/cloud/commit/b3edebc22b5a7d67d8c96c83f19f5f88574d6910))
+* **mail:** read complete JMAP account scans ([#3856](https://github.com/k2b-dev/cloud/issues/3856)) ([859b294](https://github.com/k2b-dev/cloud/commit/859b294bc1ef58867c817cd253bcdfcc46e20a42))
+* **mail:** stream JMAP message sources ([#3815](https://github.com/k2b-dev/cloud/issues/3815)) ([c3d1927](https://github.com/k2b-dev/cloud/commit/c3d1927da6eb72687dfffa785102d1d4c08eab77))
+* **ssr:** load islands with only the page language's catalogs ([#3813](https://github.com/k2b-dev/cloud/issues/3813)) ([e39e932](https://github.com/k2b-dev/cloud/commit/e39e932c555d1db7e734cc932a52fe3a75ca7bc2))
+
+
+### Bug Fixes
+
+* **ai:** app sessions act only on turns they may start ([8f96896](https://github.com/k2b-dev/cloud/commit/8f968960ad363b02e475b4d738cdd999ad6aa5b4))
+* **cloud:** a shared text reconnect refused after the sign-in expired asks to sign in ([#3857](https://github.com/k2b-dev/cloud/issues/3857)) ([f7eb8a6](https://github.com/k2b-dev/cloud/commit/f7eb8a6f41cbca7ef7ff2f504aeea1541c002062))
+* **cloud:** an expired sign-in on a shared text socket asks to sign in again ([#3853](https://github.com/k2b-dev/cloud/issues/3853)) ([7da4132](https://github.com/k2b-dev/cloud/commit/7da4132354d1f7f22198830437ea25fe86b1c1ec))
+* **cloud:** the privacy screen covers every pixel evenly ([#3858](https://github.com/k2b-dev/cloud/issues/3858)) ([8f96896](https://github.com/k2b-dev/cloud/commit/8f968960ad363b02e475b4d738cdd999ad6aa5b4))
+* **mail:** accept JMAP change lists that repeat an id ([#3861](https://github.com/k2b-dev/cloud/issues/3861)) ([299f493](https://github.com/k2b-dev/cloud/commit/299f49316040d1f0cd5b16f0f58ae622a61c5e08))
+* **mail:** chip labels and calendar bars show their descenders ([#3834](https://github.com/k2b-dev/cloud/issues/3834)) ([a624e0e](https://github.com/k2b-dev/cloud/commit/a624e0e75ebf61c42d638964fb56f2f3aeda9210))
+* **mail:** explain draft capability rejections in the request language ([#3793](https://github.com/k2b-dev/cloud/issues/3793)) ([4c2f3aa](https://github.com/k2b-dev/cloud/commit/4c2f3aaa352e18bf789615df8ca03faac3e02df8))
+* **mail:** keep typed search text when an earlier search answers ([#3838](https://github.com/k2b-dev/cloud/issues/3838)) ([5d3cdff](https://github.com/k2b-dev/cloud/commit/5d3cdffdb233899be2ebe0ac28bef2f355b83b59))
+* **mail:** Mod+Enter waits whenever the Send button does ([#3830](https://github.com/k2b-dev/cloud/issues/3830)) ([80377c4](https://github.com/k2b-dev/cloud/commit/80377c4fc4a126e7602e722995f991baaf77ef87))
+* **mail:** Send without recipients marks the To field instead of failing quietly ([#3826](https://github.com/k2b-dev/cloud/issues/3826)) ([8b3ace7](https://github.com/k2b-dev/cloud/commit/8b3ace7d2c1acc36c9e16d6278ad0d2a5dfaf9e8))
+* **mail:** Try again says why Send waits instead of doing nothing ([#3835](https://github.com/k2b-dev/cloud/issues/3835)) ([e488548](https://github.com/k2b-dev/cloud/commit/e488548e414591382289375690b04365bba4932a))
+* **ui:** accept @k2b/ssr 0.23 as a peer ([#3891](https://github.com/k2b-dev/cloud/issues/3891)) ([30b3c9e](https://github.com/k2b-dev/cloud/commit/30b3c9eb2b394b0f39b0ec6abacd2f82ae5964c8))
+* **ui:** dialogs that load their code first open with the context of their call ([#3832](https://github.com/k2b-dev/cloud/issues/3832)) ([8b97195](https://github.com/k2b-dev/cloud/commit/8b971959657d98cb0f66d4f688314030a729591a))
+* **ui:** the QR scanner restarts a camera picture that freezes on its first frame ([#3842](https://github.com/k2b-dev/cloud/issues/3842)) ([a99e8d1](https://github.com/k2b-dev/cloud/commit/a99e8d1a7feed93fbe4b86a02b6f65504772bfb2)), closes [#3421](https://github.com/k2b-dev/cloud/issues/3421) [#3364](https://github.com/k2b-dev/cloud/issues/3364) [#3713](https://github.com/k2b-dev/cloud/issues/3713) [#3452](https://github.com/k2b-dev/cloud/issues/3452)
+
+
+### Performance Improvements
+
+* **grids:** a table page sends its rows once and loads barcode drawing on demand ([#3863](https://github.com/k2b-dev/cloud/issues/3863)) ([7d53a3b](https://github.com/k2b-dev/cloud/commit/7d53a3b1e114801f21fc4d8597ade01bb94c1b9c))
+* **ui:** load form prompt fields on demand ([#3783](https://github.com/k2b-dev/cloud/issues/3783)) ([336de46](https://github.com/k2b-dev/cloud/commit/336de46b094744ebcf96a14a81cfcf59d146fbf7))
+
 ## [0.82.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.81.0...cloud-v0.82.0) (2026-11-19)
 
 

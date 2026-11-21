@@ -10,6 +10,7 @@ import {
   grantMailboxAccess,
   listMailboxAccess,
   listMailboxAccessMembers,
+  listMailboxManagers,
   type MailboxAccess,
   requireMailboxAccess,
   requireMailboxPermission,
@@ -20,7 +21,7 @@ import {
 } from "./access";
 import type { MailRequestContext } from "./auth";
 import { mailLiveChannels } from "./live-channels";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, updateMailbox } from "./mailboxes";
 
 const suite = suiteFor("database", "nats");
 
@@ -102,6 +103,30 @@ suite("mail access to assigned conversations", () => {
     conversations.push(await createConversation("Assigned"), await createConversation("Not assigned"));
   });
 
+  test("background notices enumerate only full mailbox administrators and recheck revocation", async () => {
+    expect(await listMailboxManagers(mailboxId, { limit: 50 })).toEqual([owner.id]);
+    const granted = await grantMailboxAccess({
+      context: owner.context,
+      mailboxId,
+      principal: { type: "group", groupId },
+      permission: "admin",
+    });
+    expect(granted.ok).toBe(true);
+    try {
+      expect(await listMailboxManagers(mailboxId, { limit: 50 })).toEqual([owner.id, groupMember.id].sort());
+      expect(await listMailboxManagers(mailboxId, { userId: outsider.id, limit: 1 })).toEqual([]);
+      const first = await listMailboxManagers(mailboxId, { limit: 1 });
+      expect(await listMailboxManagers(mailboxId, { afterId: first[0], limit: 1 })).toHaveLength(1);
+      await sql`UPDATE auth.users SET profile='guest' WHERE id=${groupMember.id}::uuid`;
+      expect(await listMailboxManagers(mailboxId, { userId: groupMember.id, limit: 1 })).toEqual([]);
+      expect(await listMailboxManagers(mailboxId, { limit: 1 })).toEqual([owner.id]);
+    } finally {
+      await sql`UPDATE auth.users SET profile='user' WHERE id=${groupMember.id}::uuid`;
+      if (granted.ok) await revokeMailboxAccess({ context: owner.context, mailboxId, accessId: granted.data.id });
+    }
+    expect(await listMailboxManagers(mailboxId, { userId: groupMember.id, limit: 1 })).toEqual([]);
+  });
+
   afterAll(async () => {
     if (mailboxId) await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     await sql`
@@ -111,6 +136,28 @@ suite("mail access to assigned conversations", () => {
     `;
     await sql`DELETE FROM auth.groups WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${groupIds}::jsonb))`;
     await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
+  });
+
+  test("renaming a mailbox refreshes its Code account title without changing its identifier or grants", async () => {
+    const [mailbox] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id=${mailboxId}::uuid`;
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,handle,title)
+      VALUES(${`code:mail.mailbox:${mailbox!.short_id}`},'code','code-7k2q9m4xwt','Old mailbox') RETURNING id`;
+    const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id,permission)
+      VALUES(${account!.id}::uuid,'write') RETURNING id`;
+    try {
+      const result = await updateMailbox({ context: owner.context, mailboxId, name: "Renamed mailbox" });
+      expect(result.ok).toBe(true);
+      expect((await sql`SELECT title,handle FROM auth.service_accounts WHERE id=${account!.id}::uuid`)[0]).toEqual({
+        title: "Renamed mailbox",
+        handle: "code-7k2q9m4xwt",
+      });
+      expect((await sql`SELECT service_account_id,permission FROM auth.access WHERE id=${grant!.id}::uuid`)[0]).toEqual({
+        service_account_id: account!.id,
+        permission: "write",
+      });
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+    }
   });
 
   test("an assigned-only grant is no mailbox-wide permission, and resolves to its person's assignments", async () => {

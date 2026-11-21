@@ -6,18 +6,20 @@ import {
   DateRangePicker,
   type DateRangeValue,
   DateTimePicker,
+  type FieldSuggestion,
   MultiSelectInput,
   NumberInput,
   PanelDialog,
   prompts,
   SegmentedControl,
   Select,
+  SuggestionGroup,
   Switch,
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
-import type { SpaceItemAssignee } from "@/contracts";
+import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { ESTIMATE_STEP_MINUTES, type EstimateSuggestionResult, type SpaceItemAssignee } from "@/contracts";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import {
   defaultTemplateDate,
@@ -122,6 +124,60 @@ export default function ItemForm(props: ItemFormProps) {
   const [showFullEditor, setShowFullEditor] = createSignal(!props.quickCreate || isEditMode());
   const [checklist, setChecklist] = createSignal<string[]>(props.defaults?.checklist ?? []);
   const [assignCreator, setAssignCreator] = createSignal(props.defaults?.assignCreator ?? false);
+
+  // ---------- Estimate suggestion (edit only) ----------
+  // The assistant's estimate is offered in the estimate field, never set as its value: the person accepts it, types
+  // their own, or leaves the field empty, and an open suggestion is not saved.
+  const loadEstimate = isEditMode() && !initialIsEvent() ? props.loadEstimateSuggestion : undefined;
+  const [estimate, setEstimate] = createSignal<EstimateSuggestionResult | "loading">("loading");
+  const [estimateAccepted, setEstimateAccepted] = createSignal(false);
+  let estimateRequest: AbortController | undefined;
+  const requestEstimate = async () => {
+    if (!loadEstimate) return;
+    estimateRequest?.abort();
+    const request = new AbortController();
+    estimateRequest = request;
+    setEstimate("loading");
+    try {
+      const result = await loadEstimate(request.signal);
+      if (!request.signal.aborted) setEstimate(result);
+    } catch {
+      if (!request.signal.aborted) setEstimate({ state: "failed", reason: "error" });
+    }
+  };
+  onMount(() => void requestEstimate());
+  onCleanup(() => estimateRequest?.abort());
+  const estimateSuggestion = (): FieldSuggestion<number> | undefined => {
+    const result = estimate();
+    if (result === "loading") return { id: "estimate", state: "loading" };
+    if (result.state === "none") return undefined;
+    if (result.state === "failed")
+      return { id: "estimate", state: "error", onRetry: result.reason === "error" ? () => void requestEstimate() : undefined };
+    const { id, minutes, confidence, reason } = result.suggestion;
+    return { id, state: "ready", value: minutes, confidence, reason: reason ?? undefined, accepted: estimateAccepted() };
+  };
+  const acceptEstimate = () => {
+    const current = estimate();
+    if (current === "loading" || current.state !== "ready") return;
+    setEstimatedDurationMinutes(current.suggestion.minutes);
+    setEstimateAccepted(true);
+  };
+  const estimateTitle = () => {
+    const result = estimate();
+    if (result === "loading") return t.estimateSuggestionLoading;
+    if (result.state === "ready") return t.estimateSuggestionReady;
+    if (result.state === "none") return t.estimateSuggestionNone;
+    return result.reason === "allowance"
+      ? t.estimateSuggestionAllowance
+      : result.reason === "unavailable"
+        ? t.estimateSuggestionUnavailable
+        : t.estimateSuggestionFailed;
+  };
+  /** An open suggestion is one the empty field still shows; saving keeps the field empty. */
+  const estimateOpen = () => {
+    const result = estimate();
+    return result !== "loading" && result.state === "ready" && estimatedDurationMinutes() === null && !estimateAccepted();
+  };
 
   // ---------- Templates (create only) ----------
   const timeZone = () => props.dateConfig?.timeZone ?? browserTimeZone();
@@ -483,6 +539,20 @@ export default function ItemForm(props: ItemFormProps) {
     }
   };
 
+  /** The assistant's line heads the general fields when it may suggest an estimate; otherwise they render as before. */
+  const EstimateGroup = (group: { children: JSX.Element }) => (
+    <Show when={loadEstimate} fallback={group.children}>
+      <SuggestionGroup
+        class="spaces-item-form__suggestions"
+        source={t.estimateSuggestionSource}
+        title={estimateTitle()}
+        onAcceptAll={acceptEstimate}
+      >
+        {group.children}
+      </SuggestionGroup>
+    </Show>
+  );
+
   return (
     <PanelDialog>
       <form
@@ -547,78 +617,82 @@ export default function ItemForm(props: ItemFormProps) {
             when={quickCreate()}
             fallback={
               <>
-                <PanelDialog.Section title={t.general} subtitle={t.generalDescription} icon="ti ti-info-circle">
-                  <TextInput
-                    label={t.title}
-                    description={!isEditMode() ? t.titleDescription : undefined}
-                    placeholder={t.titlePlaceholder}
-                    icon="ti ti-text-caption"
-                    value={title}
-                    onValueChange={(v) => {
-                      setTitle(v);
-                      setError("");
-                    }}
-                    required
-                  />
-                  <TextInput
-                    label={t.description}
-                    description={!isEditMode() ? t.descriptionHint : undefined}
-                    placeholder={t.markdownDescriptionPlaceholder}
-                    value={description}
-                    onValueChange={setDescription}
-                    markdown
-                  />
-                  <Show when={!isEvent()}>
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <DateTimePicker
-                        label={t.deadline}
-                        description={!isEditMode() ? t.deadlineDescription : undefined}
-                        value={() => deadline() || null}
-                        onValueChange={changeDeadline}
-                        dateConfig={props.dateConfig}
-                        presets={deadlinePresets(props.dateConfig)}
-                        optionalTime
-                        defaultTime={DEADLINE_DEFAULT_TIME}
-                        clearable
-                      />
-                      <NumberInput
-                        label={t.estimatedDuration}
-                        description={!isEditMode() ? t.estimatedDurationDescription : undefined}
-                        value={estimatedDurationMinutes}
-                        onValueChange={setEstimatedDurationMinutes}
-                        min={1}
-                        max={2_147_483_647}
-                        step={15}
-                        suffix="min"
-                        allowNegative={false}
-                        clearable
-                      />
-                    </div>
-                  </Show>
-
-                  <Show when={isEvent()}>
-                    <DateRangePicker
-                      withTime={!allDay()}
-                      label={t.schedule}
-                      description={!isEditMode() ? (allDay() ? t.calendarDaysDescription : t.eventTimesDescription) : undefined}
-                      value={eventRange}
-                      onValueChange={changeEventRange}
-                      dateConfig={props.dateConfig}
-                      datePresets={scheduleDatePresets(props.dateConfig)}
-                      durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}
+                <EstimateGroup>
+                  <PanelDialog.Section title={t.general} subtitle={t.generalDescription} icon="ti ti-info-circle">
+                    <TextInput
+                      label={t.title}
+                      description={!isEditMode() ? t.titleDescription : undefined}
+                      placeholder={t.titlePlaceholder}
+                      icon="ti ti-text-caption"
+                      value={title}
+                      onValueChange={(v) => {
+                        setTitle(v);
+                        setError("");
+                      }}
                       required
-                      clearable
                     />
-                    <CheckboxCard
-                      label={t.allDayEvent}
-                      description={t.allDayEventDescription}
-                      icon="ti ti-calendar"
-                      variant="input"
-                      value={allDay}
-                      onValueChange={handleAllDayChange}
+                    <TextInput
+                      label={t.description}
+                      description={!isEditMode() ? t.descriptionHint : undefined}
+                      placeholder={t.markdownDescriptionPlaceholder}
+                      value={description}
+                      onValueChange={setDescription}
+                      markdown
                     />
-                  </Show>
-                </PanelDialog.Section>
+                    <Show when={!isEvent()}>
+                      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <DateTimePicker
+                          label={t.deadline}
+                          description={!isEditMode() ? t.deadlineDescription : undefined}
+                          value={() => deadline() || null}
+                          onValueChange={changeDeadline}
+                          dateConfig={props.dateConfig}
+                          presets={deadlinePresets(props.dateConfig)}
+                          optionalTime
+                          defaultTime={DEADLINE_DEFAULT_TIME}
+                          clearable
+                        />
+                        <NumberInput
+                          label={t.estimatedDuration}
+                          description={!isEditMode() ? t.estimatedDurationDescription : undefined}
+                          value={estimatedDurationMinutes}
+                          onValueChange={setEstimatedDurationMinutes}
+                          min={ESTIMATE_STEP_MINUTES}
+                          max={2_147_483_647}
+                          step={ESTIMATE_STEP_MINUTES}
+                          suffix="min"
+                          allowNegative={false}
+                          clearable
+                          suggestion={estimateSuggestion}
+                          onSuggestionAccept={() => setEstimateAccepted(true)}
+                        />
+                      </div>
+                    </Show>
+
+                    <Show when={isEvent()}>
+                      <DateRangePicker
+                        withTime={!allDay()}
+                        label={t.schedule}
+                        description={!isEditMode() ? (allDay() ? t.calendarDaysDescription : t.eventTimesDescription) : undefined}
+                        value={eventRange}
+                        onValueChange={changeEventRange}
+                        dateConfig={props.dateConfig}
+                        datePresets={scheduleDatePresets(props.dateConfig)}
+                        durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}
+                        required
+                        clearable
+                      />
+                      <CheckboxCard
+                        label={t.allDayEvent}
+                        description={t.allDayEventDescription}
+                        icon="ti ti-calendar"
+                        variant="input"
+                        value={allDay}
+                        onValueChange={handleAllDayChange}
+                      />
+                    </Show>
+                  </PanelDialog.Section>
+                </EstimateGroup>
 
                 <Show when={isEvent()}>
                   <PanelDialog.Section title={t.repeat} subtitle={t.repeatDescription} icon="ti ti-repeat">
@@ -916,6 +990,12 @@ export default function ItemForm(props: ItemFormProps) {
             <Button type="button" variant="ghost" size="sm" onClick={() => setShowFullEditor(true)}>
               {t.moreOptions}
             </Button>
+          </Show>
+          {/* Two lines beside the buttons, reserved from the first frame, so the footer keeps its height when the note shows. */}
+          <Show when={loadEstimate}>
+            <p class="spaces-item-form__open-suggestion" aria-live="polite">
+              {estimateOpen() ? t.estimateSuggestionUnsaved : ""}
+            </p>
           </Show>
           <div class="ml-auto flex items-center gap-2">
             <Button type="button" variant="secondary" size="sm" onClick={props.onCancel} disabled={submitting()}>

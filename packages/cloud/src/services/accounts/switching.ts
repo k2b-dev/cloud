@@ -1,6 +1,7 @@
 import type { UserProfile, UserProvider } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import * as settings from "../settings";
+import { ordinaryAccountIdentity } from "./identity";
 import type { IpaAccountTransitionPolicy } from "./model";
 
 type SqlExecutor = typeof sql;
@@ -80,8 +81,7 @@ export const transitionIpaUserToLocal = async (params: {
 
   await db`
     UPDATE auth.users
-    SET provider = 'local',
-        profile = ${params.targetProfile},
+    SET ${ordinaryAccountIdentity({ provider: "local", profile: params.targetProfile })},
         admin = false,
         account_expires = ${params.accountExpires}
     WHERE id = ${params.userId}::uuid

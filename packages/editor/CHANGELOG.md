@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.13.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.12.2...npm-editor-v0.13.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **code:** Studio apps, Mail rules and automatic replies, and routines in their old form are removed. Export Mail rules and routines before the upgrade; Gustav rebuilds them as Code. See "Upgrade to Code": https://github.com/k2b-dev/cloud/blob/main/docs-site/docs/en/operations/upgrade-to-code.md
+
+### Features
+
+* **cloud:** accept stdlib service error statuses ([#3806](https://github.com/k2b-dev/cloud/issues/3806)) ([09a9c2f](https://github.com/k2b-dev/cloud/commit/09a9c2f9a234516a353dea616d36c1613e04f98a))
+* **code:** Gustav writes and runs Code for people, mailboxes and other apps ([#3010](https://github.com/k2b-dev/cloud/issues/3010)) ([d3ec882](https://github.com/k2b-dev/cloud/commit/d3ec88209d488af76a4db6e19db21be7cf2c5b5e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.62.0 to 0.63.0
+
 ## [0.12.2](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.12.1...npm-editor-v0.12.2) (2026-11-19)
 
 

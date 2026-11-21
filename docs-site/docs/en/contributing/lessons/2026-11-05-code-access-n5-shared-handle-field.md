@@ -1,0 +1,6 @@
+### Files added service accounts by handle through an older flow, and an admin hint inherited a larger size
+
+- **What happened:** Files machine storage asked for a Code handle with its own Find and Add buttons and showed the hit as a bare name, while the shared access dialog looked the handle up as it was typed and showed the Code icon, the description and the Service account mark. In Administration › Code, the hint under a refused call rendered at 15 px instead of the page's 14 px.
+- **Root cause:** The access dialog and `ServiceAccountLookup` each kept their own copy of the handle field, and only the dialog's copy followed the approved mockup. `.cloud-code__quiet` set no font size and inherited it from `.cloud-code`, which Administration › Code does not render around the notice.
+- **Error class:** Two copies of one shared interaction drift apart; a shared class depends on an ancestor that not every consumer renders.
+- **Guard:** The dialog and `ServiceAccountLookup` now render the one `ServiceAccountHandleField`; `MachineStorage.browser.test.ts` checks the hit's icon, description and mark at 1280 and 390 px, and `CodeArea.browser.test.ts` compares the hint's size with the notice text.

@@ -251,6 +251,9 @@ export const create = async (input: CreateBaseInput, actorId: string | null, loc
       principal: { type: "user", userId: actorId },
       permission: "admin",
       actorId,
+    }).catch(async (error: unknown) => {
+      await sql`DELETE FROM grids.bases WHERE id = ${base.id}::uuid`;
+      throw error;
     });
     if (!granted.ok) {
       // Hard delete (not soft) — there's no audit value in keeping a

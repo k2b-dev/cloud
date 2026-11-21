@@ -41,7 +41,9 @@ const fixture = async () => {
   });
   const add = async (text: string, origin: AiStoredMessageOrigin = { kind: "person", id: user!.id }) => {
     const id = crypto.randomUUID();
-    await enqueueChatMessage(id, input(text, origin), [{ type: "text", text }]);
+    const submission = input(text, origin);
+    if (origin.kind !== "person") submission.runConfig.send = { id, accountId: user!.id, keyHash: id, requestHash: id };
+    await enqueueChatMessage(id, submission, [{ type: "text", text }]);
     return id;
   };
   const [turn] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id, conversation_id, status)
@@ -55,9 +57,13 @@ const fixture = async () => {
   };
   const jobs: Array<{ conversationId: string; turnId: string }> = [];
   const drain = () =>
-    drainQueuedMessages(async (job) => {
-      jobs.push(job);
-    }, chat.id);
+    drainQueuedMessages(
+      async (job) => {
+        jobs.push(job);
+      },
+      chat.id,
+      async (submission) => submission, // Fixture host; real Code admission is exercised in ai-chat-send.integration.test.ts.
+    );
   const started = async () =>
     (
       await sql<
@@ -98,44 +104,6 @@ integration("a held queue stays waiting even when its stored Stop timestamp is e
     expect(await f.started()).toBe(0);
     expect((await listQueuedMessages(f.chat.id)).map(({ id }) => id)).toEqual([f.person, f.automation]);
   } finally {
-    await f.close();
-  }
-});
-
-integration("inter-chat work waits after Stop and leaves the background batch until the person resumes", async () => {
-  const f = await fixture();
-  const source = await aiConversations.createConversation({ ownerUserId: f.userId });
-  try {
-    const turn = await aiConversations.createCompactionTurn({
-      conversationId: source.id,
-      modelId: "fixture",
-      runConfig: { kind: "compact" },
-    });
-    const created = await aiConversations.createInterChatMessage({
-      sourceConversationId: source.id,
-      sourceTurnId: turn.id,
-      sourceCallId: "hold-delivery",
-      targetChatId: f.chat.shortId,
-      actorUserId: f.userId,
-      text: "Please check the stock.",
-      idempotencyKey: `hold-delivery-${source.id}`,
-    });
-    if (!created.ok) throw new Error("Fixture inter-chat message was not created");
-    await f.stop();
-    expect((await aiConversations.listPendingInterChatMessages()).map(({ id }) => id)).not.toContain(created.message.id);
-    expect(
-      await aiConversations.deliverInterChatMessage({
-        messageId: created.message.id,
-        modelId: "fixture",
-        runConfig: { kind: "chat", input: "Please check the stock.", toolSource: { kind: "none" } },
-        userMessage: { role: "user", content: [{ type: "text", text: "Please check the stock." }] },
-      }),
-    ).toEqual({ delivered: false, reason: "busy" });
-    expect(await f.started()).toBe(0);
-    await f.add("Jetzt bitte weiter.");
-    expect((await aiConversations.listPendingInterChatMessages()).map(({ id }) => id)).toContain(created.message.id);
-  } finally {
-    await sql`DELETE FROM ai.conversations WHERE id=${source.id}::uuid`;
     await f.close();
   }
 });
@@ -200,7 +168,7 @@ integration("a new message of the person resumes the queue in its order; an auto
   const f = await fixture();
   try {
     await f.stop();
-    await f.add("Neue Prüfung", { kind: "automation", id: "fictional-automation", runId: "fictional-run-2" });
+    await f.add("Neue Prüfung", { kind: "automation", id: "fictional-automation-2", runId: "fictional-run-2" });
     await f.drain();
     expect(f.jobs).toEqual([]);
     const mine = await f.add("Und jetzt bitte weiter.");
@@ -278,9 +246,20 @@ integration("archiving a chat with queued entries lets them lapse (#108)", async
     ]);
     const files = await sql`SELECT message_id FROM ai.queued_message_files WHERE message_id=${f.person}::uuid`;
     expect(files).toEqual([]);
-    const retained = await sql`SELECT id FROM ai.queued_messages WHERE conversation_id=${f.chat.id}::uuid
-      AND (submission <> '{}'::jsonb OR content <> '[]'::jsonb)`;
-    expect(retained).toEqual([]);
+    const retained =
+      await sql`SELECT submission,content FROM ai.queued_messages WHERE conversation_id=${f.chat.id}::uuid ORDER BY position`;
+    expect(retained).toEqual([
+      { submission: {}, content: [] },
+      {
+        submission: {
+          runConfig: {
+            send: { id: f.automation, accountId: f.userId, keyHash: f.automation, requestHash: f.automation },
+            turnTrigger: null,
+          },
+        },
+        content: [],
+      },
+    ]);
     await expect(aiConversations.submitChatTurn(f.input("Too late", { kind: "person", id: f.userId }))).rejects.toBeInstanceOf(
       AiMessageQueueConflict,
     );
@@ -355,7 +334,7 @@ integration("a later Stop withdraws an in-flight Send now and leaves its entry w
   }
 });
 
-integration("a late Stop holds a completed foreground turn's queue, but stopping a background routine does not", async () => {
+integration("a late Stop holds a completed foreground turn's queue, and a retired routine cannot regain authority", async () => {
   const f = await fixture();
   try {
     await f.finish(f.turnId);
@@ -365,11 +344,12 @@ integration("a late Stop holds a completed foreground turn's queue, but stopping
     await f.drain();
     expect(f.jobs).toEqual([]);
     await f.add("Resume before background Stop");
-    const [background] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id,conversation_id,status,run_config)
-      VALUES(${testShortId()},${f.chat.id}::uuid,'running','{"kind":"chat","background":{}}'::jsonb) RETURNING id`;
-    expect((await aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: background!.id, reason: "user" })).found).toBe(
-      true,
-    );
+    await expect(
+      sql`INSERT INTO ai.turns(short_id,conversation_id,status,run_config)
+      VALUES(${testShortId()},${f.chat.id}::uuid,'running','{"kind":"chat","background":{}}'::jsonb)`.execute(),
+    ).rejects.toThrow("Scheduled chat routines are retired");
+    const [resumed] = await sql`SELECT queue_held_at FROM ai.conversations WHERE id=${f.chat.id}::uuid`;
+    expect(resumed).toEqual({ queue_held_at: null });
     await f.drain();
     expect(f.jobs).toHaveLength(1);
   } finally {

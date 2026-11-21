@@ -5,7 +5,6 @@ import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiStoredMessage, 
 import { aiOpenQuestionFixture, aiQuestionFixtures } from "@k2b/cloud/ai/testing";
 import type { Browser, Page, Route } from "playwright";
 import { browserName, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
-import { appAssetResponse, appAssetsJson } from "../artifacts/html/test-assets";
 import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 
 // "Waiting for you" is layout and focus: its reserved row, whether it shows while a card's answers are in view, a
@@ -269,7 +268,6 @@ let assets: ReturnType<typeof Bun.serve>;
 let css: string;
 let script: string;
 beforeAll(async () => {
-  const chartParts = await appAssetResponse(await appAssetsJson(), "/chart-parts").text();
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
@@ -321,8 +319,6 @@ beforeAll(async () => {
     port: 0,
     fetch(request) {
       const path = new URL(request.url).pathname;
-      if (path === "/api/assistant/artifacts/runtime/chart-parts")
-        return new Response(chartParts, { headers: { "content-type": "application/json" } });
       if (path === "/harness.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
       if (path === "/harness.css") return new Response(css, { headers: { "content-type": "text/css" } });
       if (path.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", path.slice(4))));
@@ -406,6 +402,8 @@ const open = async (
     // The chat's stream stays open and quiet.
     if (url.pathname.endsWith("/stream")) return;
     if (url.pathname === "/api/approvals") return route.fulfill({ json: { items: [], nextCursor: null, count: 0, elsewhere: 0 } });
+    if (url.pathname === "/api/capabilities/v1/queries/core/code.attention.list")
+      return route.fulfill({ json: { data: { items: [], nextCursor: null } } });
     if (url.pathname === "/api/capabilities/v1/catalog")
       return route.fulfill({ json: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
     // The rest of the chat's own loads answer empty, so the page shows nothing but the chat.
@@ -489,7 +487,7 @@ const changed = (page: Page, conversationId: string | null) =>
 /** Scrolls the chat's timeline: the scrollable ancestor of its first message. */
 const scrollTimeline = (page: Page, to: "top" | "end") =>
   page
-    .locator(".k2b-chat-decision")
+    .locator(".cloud-approval-frame")
     .first()
     .evaluate((card, to) => {
       let scroller: HTMLElement | null = card.parentElement;
@@ -501,7 +499,7 @@ const scrollTimeline = (page: Page, to: "top" | "end") =>
 const focusedSentence = (page: Page) =>
   page.evaluate(() => {
     const active = document.activeElement;
-    return active?.classList.contains("k2b-chat-decision__sentence")
+    return active?.classList.contains("k2b-notice-card__title")
       ? (active.closest("[data-chat-anchor]")?.getAttribute("data-chat-anchor") ?? "")
       : null;
   });
@@ -634,11 +632,12 @@ describe("Waiting for you", () => {
               ["/app/assistant?conversation=Urlb42", null],
             ]);
 
-          // Two pending: the mail was answered elsewhere; the row and the field stay where they were.
+          // Two pending: the mail was answered elsewhere; the row and the field stay where they were. This chat's one
+          // question stands at its end with its answers in view, so the row shows only the other chat's (v12 3m).
           state.scenario = "two";
           await changed(page, "Wart42");
-          await until(page, async () => (await entries(page)).length === 2, "two entries");
-          expect(await entries(page)).toEqual([short("de", "del"), `${short("de", "routine")} in Team Ops Wochenplanung`]);
+          await until(page, async () => (await entries(page)).length === 1, "one entry");
+          expect(await entries(page)).toEqual([`${short("de", "routine")} in Team Ops Wochenplanung`]);
           expect(await rect(page, "nav.assistant-waiting")).toEqual(row);
           expect((await rect(page, ".k2b-chat-composer")).top).toBe(composerTop);
 
@@ -660,7 +659,7 @@ describe("Waiting for you", () => {
     test(`one question here at ${view.name}: the row keeps its place hidden while its answers are in view`, async () => {
       const { page, errors, unrouted, close } = await open(view, { locale: "de", scenario: "one" });
       try {
-        await page.locator(".k2b-chat-decision__answers").first().waitFor();
+        await page.locator(".k2b-notice-card__actions").first().waitFor();
         await strip(page).waitFor({ state: "attached" });
         await settle(page);
         // The chat opens at its end, where the answers are.
@@ -704,13 +703,14 @@ describe("Waiting for you", () => {
         await page.waitForURL(/\?conversation=Tops42&question=tool-routine-1$/);
         await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence of the other chat focused");
         await settled(page);
-        // The sentence is in view, and the open chat's question now leads the row; the others name their chat.
-        const sentence = await rect(page, '[data-chat-anchor="tool-routine-1"] .k2b-chat-decision__sentence');
+        // The sentence is in view. The open chat's only question has its answers in view, so it leaves the row (v12 3m);
+        // the others name their chat.
+        const sentence = await rect(page, '[data-chat-anchor="tool-routine-1"] .k2b-notice-card__title');
         expect(sentence.top).toBeGreaterThanOrEqual(0);
         expect(sentence.bottom).toBeLessThanOrEqual((await rect(page, "nav.assistant-waiting")).top);
         // Its question ends the chat, so the chat stays at its end and keeps following.
         expect(await page.getByText("Zur neuesten Nachricht").count()).toBe(0);
-        const there = [short("de", "routine"), `${short("de", "mail")} in Wartung Oktober`, `${short("de", "del")} in Wartung Oktober`];
+        const there = [`${short("de", "mail")} in Wartung Oktober`, `${short("de", "del")} in Wartung Oktober`];
         expect(await entries(page)).toEqual(there);
 
         await page.reload();
@@ -739,7 +739,7 @@ describe("Waiting for you", () => {
         await page.reload();
         await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "earlier sentence focused after reload");
         await settled(page);
-        const earlier = await rect(page, '[data-chat-anchor="tool-mail-1"] .k2b-chat-decision__sentence');
+        const earlier = await rect(page, '[data-chat-anchor="tool-mail-1"] .k2b-notice-card__title');
         expect(earlier.top).toBeGreaterThanOrEqual(0);
         expect(earlier.bottom).toBeLessThanOrEqual((await rect(page, "nav.assistant-waiting")).top);
 
@@ -815,12 +815,19 @@ describe("Waiting for you", () => {
         }, band);
         // Text of the conversation lies behind the band, so the comparison below means something.
         expect(behind).toBe(true);
+        // Only what lies behind the row counts: the row itself steps out of the picture, keeping its place and the mask, so
+        // the browser's text rendering of its chips, which can change with what lies under them, compares nothing.
+        await page.addStyleTag({ content: "nav.assistant-waiting { visibility: hidden !important; }" });
+        await settled(page);
         const shown = await page.screenshot({ clip: band });
         await page.addStyleTag({ content: ".k2b-chat-timeline__content { visibility: hidden !important; }" });
         await settled(page);
         const without = await page.screenshot({ clip: band });
         expect(shown.equals(without)).toBe(true);
-        await page.evaluate(() => document.querySelector("style:last-of-type")?.remove());
+        await page.evaluate(() => {
+          document.querySelector("style:last-of-type")?.remove();
+          document.querySelector("style:last-of-type")?.remove();
+        });
         await settled(page);
 
         // The same place without a row: a floating control never jumps with another one.
@@ -885,7 +892,8 @@ describe("Waiting for you", () => {
         await strip(page).waitFor();
         const row = await rect(page, "nav.assistant-waiting");
         const field = await rect(page, ".k2b-chat-composer");
-        await page.locator("textarea").first().focus();
+        // The composer's field: an approval card above it can hold a text field of its own.
+        await page.locator(".k2b-chat-composer textarea").first().focus();
         await page.keyboard.type("/");
         const list = page.locator('.k2b-chat-composer-accessory[data-commands] [role="listbox"]');
         await list.waitFor();

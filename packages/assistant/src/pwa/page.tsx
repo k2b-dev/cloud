@@ -1,10 +1,13 @@
 import { aiConversations, assistantAiSettingsState, getLiveDictationStatus, loadAiStreamState } from "@k2b/cloud/ai";
 import { aiLive } from "@k2b/cloud/ai/live";
+import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import { type AuthContext, expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { getLocalizedRuntimeContext, PwaLayout } from "@k2b/cloud/ssr";
 import type { Context } from "hono";
+import type { CodeQueryInvoke } from "../code-summary";
+import { chatCodeVersionRefs, loadCodeVersionCards } from "../code-version-cards";
 import { app, ssr } from "../config";
-import { loadAssistantSidebarSnapshot } from "../sidebar";
+import { loadAssistantSidebarSnapshot, openQuestionsCaller } from "../sidebar";
 import { ALL_CHATS_PAGE } from "./AllChats";
 import AssistantPwa, { type AssistantPwaProps } from "./AssistantPwa.island";
 import { pwaMessages } from "./messages";
@@ -29,7 +32,7 @@ const render = async <E extends AuthContext>(c: Context<E>, address: PwaAddress)
     assistantAiSettingsState({ type: "user", userId: user.id }),
     getLiveDictationStatus(c.get("accessSubject")),
     // A list that fails to load leaves the rest of the part usable; the island offers to try again.
-    loadAssistantSidebarSnapshot(identity, { locale, timeZone }).catch(() => null),
+    loadAssistantSidebarSnapshot(identity, { locale, timeZone, caller: openQuestionsCaller(c) }).catch(() => null),
     aiConversations
       .listConversationsPage({ ownerUserId: user.id, page: 1, perPage: 1 })
       .then((page) => page.total)
@@ -42,7 +45,7 @@ const render = async <E extends AuthContext>(c: Context<E>, address: PwaAddress)
   const conversation = record ? { ...record, unreadCompletion: false } : null;
   const [detail, timeline] = conversation
     ? await Promise.all([
-        loadAiStreamState(conversation, c.get("actor").kind === "user" ? user.id : null, { locale }),
+        loadAiStreamState(conversation, c.get("actor").kind === "user" ? user.id : null, { locale, userId: user.id }),
         aiConversations.listConversationTimeline({ conversationId: conversation.id }),
       ])
     : [null, []];
@@ -69,7 +72,19 @@ const render = async <E extends AuthContext>(c: Context<E>, address: PwaAddress)
                 .catch(() => null),
         ]).then(([page, archived]) => ({ query: address.query, page, archived }))
       : null;
+  const invokeCode: CodeQueryInvoke = (invocation, schema) =>
+    invokeCapabilityWithDataSchema(invocation, schema, {
+      cookie: c.req.header("cookie"),
+      authorization: c.req.header("authorization"),
+      locale,
+      signal: c.req.raw.signal,
+      requestId: c.req.header("x-request-id"),
+    });
+  const initialCodeVersionCards = detail
+    ? await loadCodeVersionCards(invokeCode, chatCodeVersionRefs(detail.messages, detail.activeTurn))
+    : [];
   const props: AssistantPwaProps = {
+    initialCodeVersionCards,
     userId: user.id,
     name: part.name,
     icon: part.icon,

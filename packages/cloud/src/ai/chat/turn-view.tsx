@@ -17,25 +17,36 @@ import {
 } from "solid-js";
 import { CloudChartBlock } from "#chat-charts";
 import { AiWorkSteps, preloadAiWorkSteps } from "#chat-work-list";
+import { AnswerBlocks } from "../../blocks/block-actions";
+import { FeatCodeMark } from "../../code/FeatCodeMark";
 import { markdown } from "../../shared";
-import { type ChatTaskReason, chatTaskReasonSentence, chatTaskReasonState, chatTaskStopSentence } from "../chat-task-reasons";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
 import { AiAnswerSources, answerSources } from "./answer-sources";
 import { SurveyToolView, TextEditorToolView } from "./blocks";
-import { CapabilityTablePreview } from "./capability-table";
+import { hasCapabilityView } from "./capability-result";
+import { CapabilityViewBlock, gustavOrigin, gustavViewBlock, isKeyFigureView, keyFigureGroup } from "./capability-view";
+import { codeStepWords } from "./code-step-words";
+import { CodeStepResult } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
-import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord, isSurveyToolName } from "./message-utils";
+import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isFeatCodeTool, isRecord, isSurveyToolName } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import type { AiStopNotice } from "./stop-notice";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
 import { aiTurnErrorCanContinue } from "./turn-error";
-import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
+import {
+  type AiTurnAction,
+  type AiTurnLayout,
+  type AiTurnPhase,
+  type AiTurnResult,
+  isKeyFigureResult,
+  submittedCodeVersion,
+} from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 import type { AiWorkContextValue } from "./work-steps";
 import { workStepLine, workStepParts, workSummary } from "./work-summary";
@@ -50,6 +61,8 @@ export type AiTurnDuration = { workedMs: number; waitingMs: number | null };
 export type AiTurnSegment = {
   /** Timeline item id: the same for the live turn and its history. */
   id: string;
+  /** Public id of the stored message that holds this segment's answer; a quote of the answer names it. */
+  quoteSource?: string;
   turnId: string;
   phase: AiTurnPhase;
   layout: AiTurnLayout;
@@ -64,7 +77,7 @@ export type AiTurnSegment = {
   scheduledTask?: {
     taskId: string;
     occurrenceId: string;
-    reason?: ChatTaskReason;
+    reason?: { code: string; at: string; action?: string };
     reasonOnly?: true;
     stop?: { cause: "paused" | "deleted"; done: string[] };
   } | null;
@@ -85,6 +98,8 @@ export type AiTurnSegment = {
   stopNotice?: AiStopNotice | null;
   /** The turn is the chat's newest and nothing runs, so a new message can pick up its work. */
   continuable?: boolean;
+  /** A newer message or another active turn has overtaken this stored segment. */
+  superseded?: boolean;
 };
 
 const isLive = (phase: AiTurnPhase) => phase === "running" || phase === "waiting";
@@ -136,6 +151,20 @@ export const liveStepLabel = (block: AiTurnBlock | null, t: Messages, stepMs = 0
   return `${stepPhrase(block, t, false)} · ${formatWorkDuration(stepMs, t)}`;
 };
 
+/** Lasting Code steps say what happens; their row names in tool-names.ts say the same. */
+const CODE_AUTHORING_STEPS: Partial<Record<string, keyof Messages & `stepCode${string}`>> = {
+  code_init: "stepCodeInit",
+  code_pull: "stepCodeRead",
+  code_read: "stepCodeRead",
+  code_sdk: "stepCodeSdk",
+  code_write: "stepCodeWrite",
+  code_check: "stepCodeCheck",
+  code_test: "stepCodeTest",
+  code_simulate: "stepCodeSimulate",
+  code_submit: "stepCodeSubmit",
+  code_diff: "stepCodeDiff",
+};
+
 const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean): string => {
   if (!block || block.kind === "thinking" || block.kind === "steer_applied" || block.kind === "steer_message") return t.stepThinking;
   if (block.kind === "text") return t.stepWriting;
@@ -152,13 +181,12 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (name === "write_file") return withTarget(t.stepWritingFile);
   if (name === "todo_write") return t.stepPlan;
   if (name === "present") return withTarget(t.stepDeliveringFile);
-  if (name === "code_present") return withTarget(t.stepPreparingView);
   if (isCardToolName(name)) return t.stepPreparingCard;
   if (isChartToolName(name)) return t.stepPreparingChart;
-  if (["code_write", "code_import", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
-    return withTarget(t.stepWritingCode);
-  if (["code_run", "code_action", "code_sql"].includes(name)) return withTarget(t.stepRunningCode);
-  if (name === "code_check") return t.stepCheckingApp;
+  const authoring = CODE_AUTHORING_STEPS[name];
+  // Lasting Code steps name what happens, never a file: the person does not read the source.
+  if (authoring) return t[authoring];
+  if (name === "code_run") return withTarget(t.stepRunningCode);
   if (name === "code_inspect") return t.stepCheckingRun;
   if (name.startsWith("code_")) return t.stepCode;
   if (["markdown_to_pdf", "html_to_pdf"].includes(name)) return withTarget(t.stepPdf);
@@ -204,7 +232,8 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const duration = segment().duration();
     return !segment().earlier && duration && duration.workedMs > 0 ? duration.workedMs : null;
   };
-  const summary = createMemo(() => (isLive(segment().phase) ? "" : workSummary(layout().work, locale())));
+  const readerTimeZone = useReaderTimeZone();
+  const summary = createMemo(() => (isLive(segment().phase) ? "" : workSummary(layout().work, locale(), readerTimeZone)));
   const ending = () => {
     const phase = segment().phase;
     if (phase === "stopped") return segment().queueInterrupted ? "paused" : "stopped";
@@ -234,22 +263,21 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     if (working()) return liveStepLabel(layout().current, t(), stepMs());
     if (waiting()) return layout().waitingFor === "approval" ? t().waitingForApproval : t().waitingForAnswer;
     if (summary()) return summary();
-    const duration = worked();
-    const short = duration === null ? "" : formatWorkDuration(duration, t());
-    if (ending() === "stopped") return t().workedStopped({ duration: short });
-    if (ending() === "paused") return t().workedPaused({ duration: short });
-    // A failed turn with a stored reason says it in its notice; the line then reads like any finished turn.
-    if (ending() === "failed") return t().workedInterrupted({ duration: short });
-    return short ? t().workedFor({ duration: short }) : t().worked;
+    // The time stands right in its own column (Feinschliff 4); without a confirmed outcome the sentence says only how the
+    // turn ended. A failed turn with a stored reason says it in its notice; the line then reads like any finished turn.
+    if (ending() === "stopped") return t().workedStopped({ duration: "" });
+    if (ending() === "paused") return t().workedPaused({ duration: "" });
+    if (ending() === "failed") return t().workedInterrupted({ duration: "" });
+    return t().worked;
   };
-  /** In meta after a finished turn: its steps, what did not go through, and how it ended. */
+  /** Right of a finished turn's sentence, in its own column: its steps, what did not go through, and how it ended. */
   const stepParts = () => {
     if (isLive(segment().phase) || (!layout().steps && !summary())) return null;
     const parts = workStepParts(layout().work, layout().steps, locale());
     const words = { stopped: t().workEndedStopped, paused: t().workEndedPaused, failed: t().workEndedInterrupted };
     const end = ending();
     const ended = summary() && end ? words[end] : "";
-    return { count: parts.count, issues: ended ? [...parts.issues, { text: ended }] : parts.issues };
+    return { count: parts.count, issues: ended ? [...parts.issues, { text: ended, tone: "neutral" }] : parts.issues };
   };
   const ariaLabel = () => {
     if (isLive(segment().phase)) return undefined;
@@ -284,7 +312,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     if ((working() || reconnecting()) && duration) return Math.max(1000, duration.workedMs);
     if (waiting() && duration?.waitingMs !== null && duration?.waitingMs !== undefined) return duration.waitingMs;
     const total = worked();
-    return summary() && total !== null ? total : null;
+    return total !== null ? total : null;
   };
   // The column holds the short form; its title spells it out, "for 12 minutes" while the turn waits.
   const time = () => {
@@ -457,14 +485,46 @@ function CapabilityResultRow(props: { block: ToolBlock }) {
   );
 }
 
-function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; receipt: Accessor<boolean> }) {
-  const locale = useLocale();
+function AiTurnResultView(props: {
+  result: Accessor<AiTurnResult | undefined>;
+  receipt: Accessor<boolean>;
+  turnId: string;
+  /** The response that produced the result still runs; a choice in it waits until it ends. */
+  live: boolean;
+}) {
   const actions = useAiChatActions();
+  const locale = useLocale();
   const block = () => props.result()?.block;
   return (
     <Show when={block()}>
       {(current) => (
         <Switch>
+          {/* Gustav's own chart and key figures stand under Cloud's head like an app's result; older ones without a
+              view keep their own drawing below. */}
+          <Match when={isChartToolName(current().name) && gustavViewBlock(current())}>
+            {(shown) => (
+              <CapabilityViewBlock
+                block={shown()}
+                turnId={props.turnId}
+                live={props.live}
+                {...gustavOrigin(current(), locale(), isKeyFigureView(shown().view) ? aiChatMessages(locale()).keyFigures : undefined)}
+              />
+            )}
+          </Match>
+          <Match when={isKeyFigureResult(current())}>
+            <CapabilityViewBlock
+              block={keyFigureGroup(
+                (props.result()?.group ?? [current()]).flatMap((entry) => {
+                  const shown = gustavViewBlock(entry);
+                  return shown ? [shown] : [];
+                }),
+              )}
+              turnId={props.turnId}
+              live={props.live}
+              {...gustavOrigin(current(), locale(), aiChatMessages(locale()).keyFigures)}
+              data={(props.result()?.group ?? [current()]).map((entry) => entry.args)}
+            />
+          </Match>
           <Match when={current().name === "map"}>
             <AiMapToolBlock block={current()} />
           </Match>
@@ -484,6 +544,16 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
               }
             </Show>
           </Match>
+          <Match when={["code_check", "code_test", "code_simulate"].includes(current().name) && codeStepWords(current())}>
+            <CodeStepResult block={current()} />
+          </Match>
+          <Match when={submittedCodeVersion(current())}>
+            {(version) => (
+              <Show keyed when={version().versionId}>
+                {(_versionId: string) => untrack(() => actions.renderCodeVersion?.(version()))}
+              </Show>
+            )}
+          </Match>
           <Match when={isCardToolName(current().name)}>
             <CloudCardBlock args={current().args} />
           </Match>
@@ -491,13 +561,16 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
             <CloudChartBlock args={current().args} completed={current().status === "completed"} />
           </Match>
           <Match when={true}>
-            <Show when={!props.receipt()}>
-              <CapabilityResultRow block={current()} />
+            <Show
+              when={hasCapabilityView(current())}
+              fallback={
+                <Show when={!props.receipt()}>
+                  <CapabilityResultRow block={current()} />
+                </Show>
+              }
+            >
+              <CapabilityViewBlock block={current()} turnId={props.turnId} live={props.live} />
             </Show>
-            <CapabilityTablePreview
-              result={current().result}
-              label={current().presentation?.title ?? displayToolName(current().name, locale())}
-            />
           </Match>
         </Switch>
       )}
@@ -540,6 +613,7 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
                   <Chat.Activity
                     label={current().block.presentation?.title ?? displayToolName(current().block.name, locale())}
                     icon={aiToolIcon(current().block.name)}
+                    leading={isFeatCodeTool(current().block.name) ? <FeatCodeMark variant="glyph" tone="current" decorative /> : undefined}
                     busy={current().block.status === "awaiting_client"}
                   />
                 }
@@ -581,37 +655,60 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean; a
       setContinuing(false);
     }
   };
+  // A turn that reached its work limit only pauses: a note from Cloud in grey, not a warning (Pause v10).
+  const paused = () => props.notice.kind === "code_authoring" || props.notice.kind === "automation";
+  const offered = () => props.continuable && Boolean(actions.onContinueTurn);
+  // One form with the error notice (v12, 05): the sign of its tone, what happened, what stays, and a real answer.
   return (
     <NoticeCard
-      tone="warning"
+      tone={paused() ? "neutral" : "warning"}
+      icon={paused() ? "ti ti-player-pause" : "ti ti-alert-triangle"}
+      layout="card"
       class="ai-turn__notice"
       title={
         props.notice.kind === "output_limit"
           ? t().outputLimitReached
-          : props.notice.kind === "no_answer"
-            ? t().noAnswerTitle
-            : t().turnErrorTitle
+          : props.notice.kind === "code_authoring" || props.notice.kind === "automation"
+            ? t().authoringTurnStopped
+            : props.notice.kind === "no_answer"
+              ? t().noAnswerTitle
+              : t().turnErrorTitle
       }
       detail={
         props.notice.kind === "output_limit" && props.notice.reasoning
           ? t().outputLimitReasoning
           : props.notice.kind === "no_answer"
             ? t().noAnswerDetail
-            : undefined
+            : // Without the button, the pause still says how the work goes on.
+              paused() && !offered()
+              ? `${t().keptSoFar} ${t().turnErrorContinueHint}`
+              : t().keptSoFar
+      }
+      actions={
+        <>
+          <Show when={offered()}>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={continuing()}
+              disabled={actions.actionDisabled?.()}
+              onClick={() => void continueAnswer()}
+            >
+              <i class="ti ti-player-play" aria-hidden="true" />
+              {props.notice.kind === "no_answer" || paused() ? t().continueTurn : t().continueAnswer}
+            </Button>
+          </Show>
+          <Show when={props.notice.kind === "no_answer" && props.answerAgain}>
+            {(again) => (
+              <Button variant="secondary" size="sm" disabled={actions.actionDisabled?.()} onClick={() => void again()()}>
+                <i class="ti ti-refresh" aria-hidden="true" />
+                {t().actionAnswerAgain}
+              </Button>
+            )}
+          </Show>
+        </>
       }
     >
-      <Show when={props.continuable && actions.onContinueTurn}>
-        <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueAnswer()}>
-          <i class="ti ti-player-play" aria-hidden="true" /> {props.notice.kind === "no_answer" ? t().continueTurn : t().continueAnswer}
-        </Button>
-      </Show>
-      <Show when={props.notice.kind === "no_answer" && props.answerAgain}>
-        {(again) => (
-          <Button variant="text" size="sm" disabled={actions.actionDisabled?.()} onClick={() => void again()()}>
-            <i class="ti ti-refresh" aria-hidden="true" /> {t().actionAnswerAgain}
-          </Button>
-        )}
-      </Show>
       <Show when={failed()}>
         <p role="alert">{t().continueAnswerFailed}</p>
       </Show>
@@ -640,15 +737,26 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean; ke
       icon="ti ti-alert-circle"
       layout="card"
       class="ai-turn__notice"
-      title={t().turnInterrupted({ reason: t().turnErrorReason(props.error) })}
-      detail={props.kept ? t().keptSoFar : undefined}
-    >
-      <Show when={canContinue()}>
-        <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueTurn()}>
-          <i class="ti ti-player-play" aria-hidden="true" /> {t().continueTurn}
-        </Button>
-      </Show>
-    </NoticeCard>
+      title={t().turnErrorTitle}
+      detail={[t().turnErrorReason(props.error), props.kept ? t().keptSoFar : ""].filter(Boolean).join(" ")}
+      actions={
+        <>
+          {actions.renderTurnErrorAction?.(props.error)}
+          <Show when={canContinue()}>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={continuing()}
+              disabled={actions.actionDisabled?.()}
+              onClick={() => void continueTurn()}
+            >
+              <i class="ti ti-player-play" aria-hidden="true" />
+              {t().continueTurn}
+            </Button>
+          </Show>
+        </>
+      }
+    />
   );
 }
 
@@ -661,6 +769,8 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean; ke
  */
 function AiTurnText(props: {
   blocks: Accessor<Extract<AiTurnBlock, { kind: "text" }>[]>;
+  /** The stored message a quote of this answer names; none for a turn the server has not stored yet. */
+  quoteSource: Accessor<string | undefined>;
   live: Accessor<boolean>;
   /** The turn has work steps, so its live text is a status rather than the answer itself. */
   folding: Accessor<boolean>;
@@ -740,6 +850,9 @@ function AiTurnText(props: {
       ref={element}
       class="ai-turn__text"
       classList={{ "ai-turn__text--status": quiet() }}
+      // The finished answer, which the person may quote; a status, a note between steps, or a broken-off text is none.
+      data-answer={props.completed() && !quiet() ? "" : undefined}
+      data-quote-source={props.completed() && !quiet() ? props.quoteSource() : undefined}
       aria-live={status() ? "off" : undefined}
       style={minHeight() ? { "min-height": `${minHeight()}px` } : undefined}
     >
@@ -754,13 +867,14 @@ function AiTurnText(props: {
  * turn becomes history.
  */
 export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosureState: AiToolDisclosureState }): JSX.Element {
+  const hostActions = useAiChatActions();
   const locale = useLocale();
-  const timeZone = useReaderTimeZone();
-  const chatActions = useAiChatActions();
   const layout = () => props.segment().layout;
   const results = createMemo(() => new Map(layout().results.map((result) => [result.id, result])));
   const isMapFollowup = (id: string) => {
     const block = results().get(id)?.block;
+    // A submitted version is what the person acts on after reading the answer.
+    if (block?.name === "code_submit") return true;
     return (
       block?.name === "map" &&
       typeof block.result === "object" &&
@@ -818,107 +932,130 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
   );
   return (
     <AiToolDisclosureProvider state={props.disclosureState}>
-      <div class="ai-turn">
-        <Show when={props.segment().scheduledTask}>
-          {(task) => (
-            <Button
-              variant="ghost"
-              size="xs"
-              class="self-start"
-              onClick={() => chatActions.onOpenScheduledTaskRun?.(task().taskId, task().occurrenceId)}
-              disabled={!chatActions.onOpenScheduledTaskRun}
-            >
-              <i class="ti ti-calendar-time" aria-hidden="true" /> {aiChatMessages(locale()).backgroundRun}
-            </Button>
-          )}
-        </Show>
-        {/* A turn that "Send now" interrupted says "paused" in its summary line, also without steps: no system line. */}
-        <Show when={layout().showWork || (props.segment().queueInterrupted && !props.segment().earlier)}>
-          {/* The live label and clock change every second; the conversation log must not read them out. */}
-          <div class="ai-turn__work" aria-live="off">
-            <AiWorkLine segment={props.segment} />
-          </div>
-        </Show>
-        <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
-        <Show when={props.segment().scheduledTask?.stop}>
-          {(stop) => (
+      {/* The blocks of this answer, of any origin: Maximize steps through all of them in one Lightbox. */}
+      <AnswerBlocks>
+        <div class="ai-turn">
+          <Show when={props.segment().scheduledTask}>
+            <Chat.Activity icon="ti ti-calendar-time" label={aiChatMessages(locale()).backgroundRun} />
+          </Show>
+          {/* Send now keeps its paused summary visible even without work steps. */}
+          <Show when={layout().showWork || (props.segment().queueInterrupted && !props.segment().earlier)}>
+            {/* The live label and clock change every second; the conversation log must not read them out. */}
+            <div class="ai-turn__work" aria-live="off">
+              <AiWorkLine segment={props.segment} />
+            </div>
+          </Show>
+          <For each={resultIds()}>
+            {(id) => (
+              <AiTurnResultView
+                result={() => results().get(id)}
+                receipt={() => actions().has(id)}
+                turnId={props.segment().turnId}
+                live={isLive(props.segment().phase)}
+              />
+            )}
+          </For>
+
+          <Show when={layout().text.length > 0}>
+            <AiTurnText
+              blocks={() => layout().text}
+              live={live}
+              folding={() => layout().steps > 0}
+              quiet={() => layout().textIsStatus}
+              earlier={() => props.segment().earlier}
+              completed={() => props.segment().phase === "completed"}
+              quoteSource={() => props.segment().quoteSource}
+            />
+          </Show>
+          <Show when={!live() && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
+            <AiAnswerSources sources={sources()} />
+          </Show>
+          <For each={mapFollowupIds()}>
+            {(id) => (
+              <AiTurnResultView
+                result={() => results().get(id)}
+                receipt={() => false}
+                turnId={props.segment().turnId}
+                live={isLive(props.segment().phase)}
+              />
+            )}
+          </For>
+
+          <Show
+            when={
+              !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly && props.segment().scheduledTask?.reason
+            }
+          >
+            {(reason) => (
+              <Chat.Activity
+                icon="ti ti-alert-triangle"
+                tone="warning"
+                wrap
+                label={aiChatMessages(locale()).routineHistoryReason(reason())}
+              />
+            )}
+          </Show>
+          <For each={actionIds()}>
+            {(id) => <AiTurnActionView action={() => actions().get(id)} turnId={props.segment().turnId} phase={props.segment().phase} />}
+          </For>
+          <Show when={props.segment().reconnect === "row"}>
+            {/* Calm by design: no busy sweep while the turn reconnects. */}
+            <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
+          </Show>
+          <Show when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().stoppedByPerson}>
+            {/* Calm by design: the person stopped it, so this is a quiet line, not a warning. */}
             <Chat.Activity
-              class="ai-turn__routine-line"
+              class="ai-turn__stopped"
               wrap
               icon="ti ti-player-stop"
-              label={chatTaskStopSentence(stop().done, locale())}
+              label={layout().text.length > 0 ? aiChatMessages(locale()).stoppedTextStays : aiChatMessages(locale()).stoppedByYou}
+              trailing={
+                <Show when={props.segment().answerAgain}>
+                  {(again) => (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      loading={answering()}
+                      onClick={() => void answerAgain(again())}
+                      disabled={hostActions.actionDisabled?.()}
+                    >
+                      <i class="ti ti-refresh" aria-hidden="true" /> {aiChatMessages(locale()).actionAnswerAgain}
+                    </Button>
+                  )}
+                </Show>
+              }
             />
-          )}
-        </Show>
-        <Show when={layout().text.length > 0 && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
-          <AiTurnText
-            blocks={() => layout().text}
-            live={live}
-            folding={() => layout().steps > 0}
-            quiet={() => layout().textIsStatus}
-            earlier={() => props.segment().earlier}
-            completed={() => props.segment().phase === "completed"}
-          />
-        </Show>
-        <Show when={!live() && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
-          <AiAnswerSources sources={sources()} />
-        </Show>
-        <For each={mapFollowupIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => false} />}</For>
-        <Show when={props.segment().scheduledTask?.stop ? undefined : props.segment().scheduledTask?.reason}>
-          {(reason) => (
-            <Chat.Activity
-              class="ai-turn__routine-line"
-              wrap
-              icon={chatTaskReasonState(reason().code) === "paused" ? "ti ti-player-pause" : "ti ti-alert-triangle"}
-              tone={chatTaskReasonState(reason().code) === "paused" ? "neutral" : "warning"}
-              label={chatTaskReasonSentence(reason(), { locale: locale(), timeZone })}
-            />
-          )}
-        </Show>
-        <For each={actionIds()}>
-          {(id) => <AiTurnActionView action={() => actions().get(id)} turnId={props.segment().turnId} phase={props.segment().phase} />}
-        </For>
-        <Show when={props.segment().reconnect === "row"}>
-          {/* Calm by design: no busy sweep while the turn reconnects. */}
-          <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
-        </Show>
-        <Show when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().stoppedByPerson}>
-          {/* Calm by design: the person stopped it, so this is a quiet line, not a warning. */}
-          <Chat.Activity
-            class="ai-turn__stopped"
-            wrap
-            icon="ti ti-player-stop"
-            label={layout().text.length > 0 ? aiChatMessages(locale()).stoppedTextStays : aiChatMessages(locale()).stoppedByYou}
-            trailing={
-              <Show when={props.segment().answerAgain}>
-                {(again) => (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    loading={answering()}
-                    onClick={() => void answerAgain(again())}
-                    disabled={chatActions.actionDisabled?.()}
-                  >
-                    <i class="ti ti-refresh" aria-hidden="true" /> {aiChatMessages(locale()).actionAnswerAgain}
-                  </Button>
-                )}
+          </Show>
+          <Show when={notice()}>
+            {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} kept={kept()} />}
+          </Show>
+          <Show when={props.segment().stopNotice}>
+            {(notice) => (
+              <Show
+                when={notice().kind === "code_authoring" && hostActions.renderCodeAuthoringStop}
+                fallback={
+                  <AiTurnStopNotice
+                    notice={notice()}
+                    continuable={props.segment().continuable === true}
+                    answerAgain={props.segment().answerAgain}
+                  />
+                }
+              >
+                {untrack(() => {
+                  const current = notice();
+                  return current.kind === "code_authoring"
+                    ? hostActions.renderCodeAuthoringStop?.(
+                        current.state,
+                        () => props.segment().continuable === true,
+                        () => props.segment().superseded === true,
+                      )
+                    : null;
+                })}
               </Show>
-            }
-          />
-        </Show>
-        <Show when={notice()}>
-          {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} kept={kept()} />}
-        </Show>
-        <Show when={props.segment().stopNotice}>
-          {(notice) => (
-            <AiTurnStopNotice
-              notice={notice()}
-              continuable={props.segment().continuable === true}
-              answerAgain={props.segment().answerAgain}
-            />
-          )}
-        </Show>
-      </div>
+            )}
+          </Show>
+        </div>
+      </AnswerBlocks>
     </AiToolDisclosureProvider>
   );
 }

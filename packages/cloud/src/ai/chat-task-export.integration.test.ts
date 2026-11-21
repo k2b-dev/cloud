@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
-import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import type { UserRequestActor } from "../contracts/shared";
 import { sql } from "../runtime/clients";
 import { accounts } from "../services/accounts";
 import { ChatTaskExportForbiddenError, exportChatTasks } from "./chat-task-export";
-import { aiChatTasks } from "./chat-tasks";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
+import { createArchivedTaskExportFixture } from "./testing";
 
 // No inference, scheduler or provider is needed to export a definition.
 databaseSuite()("routine definition export", () => {
@@ -16,7 +16,9 @@ databaseSuite()("routine definition export", () => {
   let admin: UserRequestActor;
   let conversationId = "";
   let chatId = "";
+  let database: Awaited<ReturnType<typeof useMigratedDatabase>> | undefined;
   beforeAll(async () => {
+    database = await useMigratedDatabase("archived_routine_export");
     setSystemTime(new Date("2026-11-07T00:00:00.000Z"));
     await migrateCloudAi();
     const actor = async (uid: string, isAdmin = false): Promise<UserRequestActor> => {
@@ -33,26 +35,15 @@ databaseSuite()("routine definition export", () => {
     const conversation = await aiConversations.createConversation({ ownerUserId: owner.user.id, title: "Weekly report" });
     conversationId = conversation.id;
     chatId = conversation.shortId;
-    const task = await aiChatTasks.create({
-      userId: owner.user.id,
-      chatId,
-      prompt: "Summarize my mailbox and report here.",
-      schedule: { kind: "cron", cron: "0 9 * * 1" },
-      timezone: "Europe/Berlin",
-      grants: [{ kind: "http", fixedInput: { origin: "https://example.test", method: "GET" } }],
-    });
-    if (!task) throw new Error("Missing fixture task");
-    await aiChatTasks.setState({ userId: owner.user.id, taskId: task.shortId, state: "paused" });
+    expect((await exportChatTasks(owner)).items).toEqual([]);
     // More than the ordinary list's 100-task limit; use deterministic identities.
-    await sql`INSERT INTO ai.chat_tasks(id, short_id, conversation_id, sponsor_user_id, prompt, schedule_kind, cron, timezone, state)
-      SELECT ('44bc0000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'Ex' || lpad(n::text, 4, '0'),
-        ${conversationId}::uuid, ${owner.user.id}::uuid, 'Historical definition', 'cron', '0 9 * * 1', 'Europe/Berlin', 'completed'
-      FROM generate_series(1, 101) n`;
+    await createArchivedTaskExportFixture(sql, { conversationId, ownerUserId: owner.user.id, shortId: "ExTask", extraRows: 101 });
   });
   afterAll(async () => {
     if (conversationId) await sql`DELETE FROM ai.conversations WHERE id = ${conversationId}::uuid`;
     for (const id of users) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
     setSystemTime();
+    await database?.drop();
   });
   test("exports every state with schedule, timezone, grants and mandate summary", async () => {
     const entries = [];

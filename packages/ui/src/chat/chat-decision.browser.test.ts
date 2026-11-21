@@ -43,10 +43,10 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width = 1440, dark = false, timelineWidth?: "narrow" | "wide") => {
+const open = async (width = 1440, dark = false, timelineWidth?: "narrow" | "wide", facts = false, pending = false) => {
   const page = await browser.newPage({ viewport: { width, height: 1100 } });
   await page.setContent(
-    `<!doctype html><html${timelineWidth ? ` data-timeline-width="${timelineWidth}"` : ""}><head><style>${css}
+    `<!doctype html><html${timelineWidth ? ` data-timeline-width="${timelineWidth}"` : ""}${facts ? " data-facts" : ""}${pending ? " data-pending" : ""}><head><style>${css}
       html { font-size:16px; } body { margin:0; font-family:Arial,sans-serif; }
       main { max-width:720px; margin:24px; }
     </style></head><body class="k2b-ui${dark ? " k2b-dark" : ""}"><div id="root"></div></body></html>`,
@@ -96,11 +96,11 @@ test("confirm collapses immediately, focuses and announces the outcome, and fini
   }
 });
 
-test("Tab to decline and Enter transfers focus to the declined outcome", async () => {
+test("Shift+Tab to decline, which comes before the filled answer, and Enter transfers focus to the declined outcome", async () => {
   const page = await open();
   try {
     await page.getByRole("button", { name: "Send to Lea", exact: true }).focus();
-    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
     expect(await page.getByRole("button", { name: "Keep draft", exact: true }).evaluate((e) => e === document.activeElement)).toBe(true);
     await page.keyboard.press("Enter");
     expect(await focusedOutcome(page)).toBe(true);
@@ -130,49 +130,55 @@ test("an expired outcome action reopens and focuses the question sentence", asyn
 });
 
 for (const width of [1440, 390])
-  test(`question alignment, spacing, typography and 44px answer targets at ${width}px`, async () => {
+  test(`question alignment, spacing, typography and normal-size answers at ${width}px`, async () => {
     const page = await open(width);
     try {
       const metrics = await page.evaluate(() => {
         const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-        const left = box(".k2b-chat-decision").left;
+        // The content edge: 1px edge (transparent on the tint) and 16px padding.
+        const left = box(".k2b-chat-decision").left + 17;
         const sentence = box(".k2b-chat-decision__sentence");
         const reason = box(".k2b-chat-decision__reason");
-        const preview = box(".k2b-chat-preview");
-        const answers = box(".k2b-chat-decision__answers");
+        const details = box(".k2b-chat-decision__details");
+        // The answer row sticks to the bottom of the view; its own padding keeps the buttons 14px under the details.
+        const answers = box(".k2b-chat-decision__buttons");
         const style = getComputedStyle(document.querySelector(".k2b-chat-decision__sentence")!);
         return {
-          indent: Array.from(document.querySelectorAll(".k2b-chat-line__text, .k2b-chat-activity__copy strong")).map(
-            (e) => e.getBoundingClientRect().left - left,
+          indent: Array.from(document.querySelectorAll(".k2b-chat-decision__reason .k2b-chat-line__text")).map(
+            (e) => e.getBoundingClientRect().left - box(".k2b-chat-decision").left - 17,
           ),
           flush: [
+            ".k2b-chat-decision__head",
             ".k2b-chat-decision__sentence",
-            ".k2b-chat-preview__title-line",
+            ".k2b-chat-decision__details",
             ".k2b-chat-decision__answers",
-            ".k2b-chat-decision__answer",
-            ...Array.from(document.querySelectorAll(".k2b-chat-preview__header dl > div")).map(
-              (_, i) => `.k2b-chat-preview__header dl > div:nth-child(${i + 1})`,
-            ),
           ].map((selector) => box(selector).left - left),
-          gaps: [reason.top - sentence.bottom, preview.top - reason.bottom, answers.top - preview.bottom],
+          gaps: [reason.top - sentence.bottom, details.top - reason.bottom, answers.top - details.bottom],
           heights: Array.from(document.querySelectorAll(".k2b-chat-decision__answer")).map((e) => e.getBoundingClientRect().height),
           size: style.fontSize,
           weight: style.fontWeight,
+          ground: getComputedStyle(document.querySelector(".k2b-chat-decision")!).backgroundColor,
+          detailsGround: getComputedStyle(document.querySelector(".k2b-chat-decision__details")!).backgroundColor,
         };
       });
-      expect(metrics.indent.length).toBe(8); // two reasons, four decision preview lines, the later-marked line, activity
+      expect(metrics.indent.length).toBe(2);
       for (const indent of metrics.indent) expect(Math.abs(indent - 24)).toBeLessThanOrEqual(0.5);
       for (const left of metrics.flush) expect(Math.abs(left)).toBeLessThanOrEqual(0.5);
-      for (const [index, expected] of [4, 20, 20].entries()) expect(Math.abs(metrics.gaps[index]! - expected)).toBeLessThanOrEqual(0.5);
-      for (const height of metrics.heights) expect(height).toBeGreaterThanOrEqual(44);
-      expect(metrics.size).toBe(width === 1440 ? "18px" : "17px");
+      for (const [index, expected] of [2, 14, 14].entries()) expect(Math.abs(metrics.gaps[index]! - expected)).toBeLessThanOrEqual(0.5);
+      // Answers are the library's normal button (32 px); a touch screen gives them a 44 px hit area (touch-targets test).
+      // A long label wraps inside its button and makes it taller; a one-line answer is exactly 32 px.
+      for (const height of metrics.heights) expect(height).toBeGreaterThanOrEqual(32);
+      expect(metrics.heights.slice(0, 2)).toEqual([32, 32]);
+      expect(metrics.size).toBe("18px");
       expect(metrics.weight).toBe("400");
+      // The AI tint carries the question; the details lie on the surface colour.
+      expect(metrics.ground).not.toBe(metrics.detailsGround);
       await page.getByRole("button", { name: "Send to Lea", exact: true }).click();
       expect(
         await activeOutcome(page).evaluate(
           (e) => e.getBoundingClientRect().left - document.querySelector(".k2b-chat-decision")!.getBoundingClientRect().left,
         ),
-      ).toBe(24);
+      ).toBe(17);
     } finally {
       await page.close();
     }
@@ -200,7 +206,7 @@ test("390px has no horizontal overflow, even with long chip titles and mail addr
   }
 });
 
-test("dark question, done icon and added marks use the inherited dark tokens", async () => {
+test("dark question and done icon use the inherited dark tokens", async () => {
   const page = await open(1440, true);
   try {
     const colors = await page.evaluate(() => {
@@ -212,16 +218,12 @@ test("dark question, done icon and added marks use the inherited dark tokens", a
         return getComputedStyle(probe).color;
       };
       const sentence = getComputedStyle(document.querySelector(".k2b-chat-decision__sentence")!).color;
-      const mark = getComputedStyle(document.querySelector('.k2b-chat-mark[data-change="added"]')!).backgroundColor;
       const expectedText = color(root.getPropertyValue("--k2b-text"));
-      probe.style.backgroundColor = `color-mix(in srgb, ${root.getPropertyValue("--k2b-ai-accent")} 22%, transparent)`;
-      const expectedMark = getComputedStyle(probe).backgroundColor;
       const expectedSuccess = color(root.getPropertyValue("--k2b-success-text"));
       probe.remove();
-      return { sentence, mark, expectedText, expectedMark, expectedSuccess };
+      return { sentence, expectedText, expectedSuccess };
     });
     expect(colors.sentence).toBe(colors.expectedText);
-    expect(colors.mark).toBe(colors.expectedMark);
     await page.getByRole("button", { name: "Send to Lea", exact: true }).click();
     await page.evaluate(() => window.__finish());
     expect(await page.locator(".k2b-chat-outcome__icon i").evaluate((e) => getComputedStyle(e).color)).toBe(colors.expectedSuccess);
@@ -244,19 +246,6 @@ test("a rejected outcome action reaches onActionError instead of going unhandled
     expect(await page.evaluate(() => window.__calls)).toBe(1);
     expect(await page.evaluate(() => window.__errors)).toEqual(["Error: offline"]);
     expect(unhandled).toEqual([]);
-  } finally {
-    await page.close();
-  }
-});
-
-test("marking a line later keeps its retained children in place", async () => {
-  const page = await open();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  try {
-    await page.evaluate(() => window.__mark());
-    expect(errors).toEqual([]);
-    expect(await page.locator('.k2b-chat-mark[data-change="added"] #retained').textContent()).toBe("Retained words");
   } finally {
     await page.close();
   }
@@ -372,9 +361,95 @@ for (const timelineWidth of ["narrow", "wide"] as const)
       }));
       expect(metrics.window).toBe(1440);
       expect(metrics.timeline).toBe((timelineWidth === "narrow" ? 22 : 60) * 16);
-      expect(metrics.sentence).toBe(timelineWidth === "narrow" ? "17px" : "18px");
+      expect(metrics.sentence).toBe("18px");
+      // The decision follows its own width: narrow, the answers share the row.
       expect(metrics.answers).toEqual(timelineWidth === "narrow" ? ["1", "1"] : ["0", "0"]);
     } finally {
       await page.close();
     }
   });
+
+for (const width of [1440, 390])
+  test(`a short fact stays whole next to three answers, and status chips keep 12 px at ${width}px`, async () => {
+    const page = await open(width, false, undefined, true);
+    try {
+      await settled(page);
+      const metrics = await page.evaluate(() => {
+        const card = document.querySelector(".three-answers")!;
+        const meta = card.querySelector<HTMLElement>(".k2b-chat-decision__meta")!;
+        const fact = card.querySelector<HTMLElement>(".k2b-chat-decision__fact")!;
+        const answers = Array.from(card.querySelectorAll(".k2b-chat-decision__answer")).map((node) => node.getBoundingClientRect());
+        const box = card.getBoundingClientRect();
+        return {
+          fact: fact.textContent,
+          clipped: fact.scrollWidth - fact.clientWidth,
+          metaVisible: meta.getBoundingClientRect().width >= fact.getBoundingClientRect().width - 0.5,
+          metaHeight: meta.getBoundingClientRect().height,
+          metaSize: getComputedStyle(meta).fontSize,
+          answersInside: answers.every((answer) => answer.left >= box.left - 0.5 && answer.right <= box.right + 0.5),
+          heights: answers.map((answer) => answer.height),
+          badge: getComputedStyle(card.querySelector(".k2b-status-badge")!).fontSize,
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+      });
+      expect(metrics.fact).toBe("Applies to exactly version 3");
+      expect(metrics.clipped).toBeLessThanOrEqual(0);
+      expect(metrics.metaVisible).toBe(true);
+      // One line of 12 px text.
+      expect(metrics.metaHeight).toBeLessThanOrEqual(20);
+      expect(metrics.metaSize).toBe("12px");
+      expect(metrics.answersInside).toBe(true);
+      for (const height of metrics.heights) expect(height).toBe(32);
+      expect(metrics.badge).toBe("12px");
+      expect(metrics.overflow).toBeLessThanOrEqual(0);
+    } finally {
+      await page.close();
+    }
+  });
+
+test("an answer that still runs takes no second press, held key, Space or double click, and moves nothing", async () => {
+  const page = await open(1440, false, undefined, false, true);
+  try {
+    const confirm = page.getByRole("button", { name: "Turn on version 5", exact: true });
+    const row = () =>
+      page.evaluate(() =>
+        Array.from(document.querySelectorAll(".k2b-chat-decision__answers, .k2b-chat-decision__answer")).map((e) => {
+          const { x, y, width, height } = e.getBoundingClientRect();
+          return { x, y, width, height };
+        }),
+      );
+    await settled(page);
+    const before = await row();
+    await confirm.focus();
+    // A held Enter repeats its keydown; each one is a click on a native button.
+    await page.keyboard.down("Enter");
+    await page.keyboard.down("Enter");
+    await page.keyboard.down("Enter");
+    await page.keyboard.up("Enter");
+    await page.keyboard.press("Space");
+    // The other answers say they take no press; a person can still press them. `force` skips Playwright's wait for them.
+    await page.getByRole("button", { name: "Keep version 4", exact: true }).dblclick({ force: true });
+    await page.getByRole("button", { name: "Withdraw", exact: true }).click({ force: true });
+    expect(await page.evaluate(() => window.__answers)).toEqual(["confirm"]);
+    expect(await confirm.getAttribute("aria-busy")).toBe("true");
+    expect(await page.getByRole("button", { name: "Keep version 4", exact: true }).getAttribute("aria-disabled")).toBe("true");
+    // Waiting moves nothing and keeps the answers in the focus order.
+    await settled(page);
+    expect(await row()).toEqual(before);
+    await confirm.focus();
+    expect(await confirm.evaluate((e) => e === document.activeElement)).toBe(true);
+
+    // A failure gives the answers back once; the next answer is taken.
+    await page.evaluate(() => window.__settle(true));
+    await page.waitForFunction(() => !document.querySelector(".k2b-chat-decision__answer[aria-disabled]"));
+    expect(await page.evaluate(() => window.__errors)).toEqual(["Error: offline"]);
+    expect(await confirm.evaluate((e) => e === document.activeElement)).toBe(true);
+    await page.keyboard.press("Enter");
+    expect(await page.evaluate(() => window.__answers)).toEqual(["confirm", "confirm"]);
+    await page.evaluate(() => window.__settle());
+    await page.waitForFunction(() => !document.querySelector(".k2b-chat-decision__answer[aria-disabled]"));
+    expect(await row()).toEqual(before);
+  } finally {
+    await page.close();
+  }
+});

@@ -157,7 +157,7 @@ function MemoryLearningActivity(props: { close: () => void }) {
     <PanelDialog>
       <PanelDialog.Header
         title={text("Personalization learning activity")}
-        subtitle={text("See when Assistant learned from completed private-chat turns, consolidated workflows, and exactly what changed.")}
+        subtitle={text("See when Gustav learned from completed private-chat turns, consolidated workflows, and exactly what changed.")}
         icon="ti ti-history"
         close={props.close}
         closeLabel={text("Close personalization learning activity")}
@@ -186,7 +186,7 @@ function MemoryLearningActivity(props: { close: () => void }) {
             density="compact"
             surface="paper"
             ariaLabel={text("Personalization learning runs")}
-            empty={text("No learning runs yet. Activity appears after Assistant checks a completed private-chat turn.")}
+            empty={text("No learning runs yet. Activity appears after Gustav checks a completed private-chat turn.")}
             renderCell={({ row, col, value, render }) => {
               if (col.id === "conversation") {
                 return row.conversationId ? (

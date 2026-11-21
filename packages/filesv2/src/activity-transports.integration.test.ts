@@ -92,7 +92,7 @@ suiteFor("database")("history projection through API, CLI and Assistant", () => 
     expect(page.items[0]?.after.visibility).toBe("full");
     expect(JSON.stringify(page)).not.toContain("must-not-escape");
     const capability = await filesCapabilities.queries["activity.list"].run({}, context);
-    expect(capability).toEqual({ ok: true, data: { data: page } });
+    expect(capability).toEqual({ ok: true, data: { data: page, page: { hasMore: false } } });
     const lines: string[] = [];
     const ctx: CloudCliContext = {
       args: ["history"],

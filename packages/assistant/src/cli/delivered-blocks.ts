@@ -111,7 +111,8 @@ async function printView(ctx: CloudCliContext, result: unknown, conversationId: 
               }))
             : cloudAiDetailsRows(view, locale).map((row) => ({
                 label: row.label,
-                value: row.ref ? `${row.text} (${row.ref.type}:${row.ref.id})` : row.text,
+                // A reference prints as in a table below: its title, else its id, then its handle for `cld`.
+                value: row.ref ? `${row.ref.title ?? row.ref.id} (${row.ref.type}:${row.ref.id})` : row.text,
               }));
         ctx.table(
           rows.map((row) => ({ label: terminalSafeText(row.label), value: terminalSafeText(row.value) })),

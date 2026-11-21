@@ -16,6 +16,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { AiTurnBlockView, AiChatActionsProvider } = await import("@k2b/cloud/ai/ui");
 const { LocaleProvider } = await import("@k2b/ui");
+const { ApprovalDetails } = await import("@k2b/cloud/approvals/ui");
 
 const source: SendReviewSource = {
   contentHash: "a".repeat(64),
@@ -62,6 +63,13 @@ const renderReview = (review: CapabilityActionCallReview, action = "draft.send")
       },
     }),
   );
+// The compact card defers the complete proposal; its public renderer still shows every review fact in the dialog.
+const renderDetails = (review: CapabilityActionCallReview, action = "draft.send") =>
+  renderToString(() =>
+    createComponent(ApprovalDetails, {
+      card: approvalCard({ review, sentence: "", action, appName: "Mail" }, review.locale, "UTC"),
+    }),
+  );
 const visibleText = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
 
 describe("Mail reviews through the public Cloud card renderer", () => {
@@ -78,19 +86,27 @@ describe("Mail reviews through the public Cloud card renderer", () => {
         );
         const html = renderReview(review);
         const text = visibleText(html);
+        const details = renderDetails(review);
+        const detailText = visibleText(details);
+        expect(html).toContain(`aria-label="${locale === "de" ? "Freigabe" : "Approval"} · Mail"`);
+        expect(text).toContain(locale === "de" ? "Alles ansehen" : "See everything");
+        expect(html).not.toContain("cloud-action-details");
         for (const address of ["valentin@example.com", "lea@example.com", "mira@example.com", "tom@example.com"])
-          expect(html).toContain(address);
-        for (const label of [locale === "de" ? "Von" : "From", locale === "de" ? "An" : "To", "Cc", "Bcc"]) expect(text).toContain(label);
+          expect(details).toContain(address);
+        for (const label of [locale === "de" ? "Von" : "From", locale === "de" ? "An" : "To", "Cc", "Bcc"])
+          expect(detailText).toContain(label);
         expect(text).toMatch(locale === "de" ? /Mail Update an (?:LB )?Lea Berg/ : /Send the email Update to (?:LB )?Lea Berg/);
         expect(text).toContain("Update");
         expect(text).toContain("Lea Berg");
-        expect(html).toContain("k2b-reference");
-        expect(text).toContain("plan.pdf");
-        expect(text).toContain("calendar.ics");
-        expect(html).toContain(`<b>${warning.title}</b>`);
-        expect(text).toContain(locale === "de" ? "An Lea Berg senden" : "Send to Lea Berg");
+        expect(details).toContain("k2b-reference");
+        expect(detailText).toContain("plan.pdf");
+        expect(detailText).toContain("calendar.ics");
+        expect(detailText).toContain(warning.title);
+        expect(detailText).toContain(warning.description);
+        expect(review.sentence.confirm).toBe(locale === "de" ? "Senden" : "Send");
+        expect(text).toContain(locale === "de" ? "Senden" : "Send");
         expect(text).toContain(locale === "de" ? "Nicht senden" : "Don't send");
-        if (scheduled) expect(html).toContain("2026-10-20T06:00:00.000Z");
+        if (scheduled) expect(details).toContain("2026-10-20T06:00:00.000Z");
         const plain = actionCardText(approvalCard({ review, sentence: "", action: "draft.send", appName: "Mail" }, locale, "UTC"));
         for (const address of ["valentin@example.com", "lea@example.com", "mira@example.com", "tom@example.com"])
           expect(JSON.stringify(plain)).toContain(address);
@@ -100,14 +116,14 @@ describe("Mail reviews through the public Cloud card renderer", () => {
       const review = mailActionReviews["draft.discard"](
         locale,
         { draft: reviewObject("Update", { type: "mail.draft", id: source.draftId }) },
-        { preview: draftPreview(source.draft, locale), links: [{ rel: "open", href: source.href }] },
+        { view: draftPreview(source.draft, locale), links: [{ rel: "open", href: source.href }] },
       );
       const html = renderReview(review, "draft.discard");
       const text = visibleText(html);
       expect(text).toContain(locale === "de" ? "Update löschen" : "Delete Update");
       expect(text).toContain(locale === "de" ? "Behalten" : "Keep it");
-      expect(html).toMatch(/(?:danger|destructive)/);
-      expect(html).toContain("plan.pdf");
+      expect(text).toContain(locale === "de" ? "nicht zurückholen" : "can't bring it back");
+      expect(renderDetails(review, "draft.discard")).toContain("plan.pdf");
       expect(text).not.toContain(locale === "de" ? "gesendet" : "sent");
     });
 });

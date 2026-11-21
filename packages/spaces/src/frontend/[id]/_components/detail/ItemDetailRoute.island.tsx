@@ -35,6 +35,8 @@ type Props = {
   /** Whether the person may read who has access to the space; decided on the server. */
   accessVisible: boolean;
   mailIntegrationAvailable: boolean;
+  /** Whether the edit form asks the assistant for a task estimate; decided on the server for this person. */
+  estimateSuggestions?: boolean;
 };
 
 type DetailHistory = "push" | "replace" | "none";
@@ -381,6 +383,7 @@ export default function ItemDetailRoute(props: Props) {
                   : null
               }
               mailIntegrationAvailable={props.mailIntegrationAvailable}
+              estimateSuggestions={props.estimateSuggestions}
               scrollPreserveKey={scrollKey()}
             />
           )}

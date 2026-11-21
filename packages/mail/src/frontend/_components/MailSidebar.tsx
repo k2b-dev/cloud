@@ -1,5 +1,8 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
+// Its own entry: the mailbox island must not load the Code page.
+import { CodeNavStatus, codeNavAttentionLabel } from "@k2b/cloud/ssr/code-nav-status";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
@@ -49,6 +52,11 @@ export type MailSidebarOpenMailbox = {
   /** Moves the conversation of the dragged list row, identified by the row's item ID. */
   onMoveConversation: (input: { itemId: string; destinationFolderId: string }) => void | Promise<void>;
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
+  /**
+   * The mailbox's Code page. Only people who manage the mailbox and people with access to its Code get the entry;
+   * `attention` marks paused Code or removed access.
+   */
+  code?: { active: boolean; attention?: boolean };
 };
 
 const PRIMARY_FOLDER_ROLES = new Set(["inbox", "drafts", "sent"]);
@@ -318,7 +326,7 @@ export default function MailSidebar(
   /** A folder, Scheduled, or Send problems is open: the sidebar marks that row instead of the mailbox. */
   const placeActive = () => {
     const current = openMailbox();
-    return Boolean(current && (current.scheduledMode || activeFolderId() || sendProblemsActive()));
+    return Boolean(current && (current.scheduledMode || activeFolderId() || sendProblemsActive() || current.code?.active));
   };
   const moreOpen = () => moreExpanded() || secondaryFolders().some((folder) => activeFolderId() === folder.id);
   const expandedFolderIds = () => customFolderBranchIds().filter((id) => !collapsedFolders().has(id));
@@ -467,6 +475,21 @@ export default function MailSidebar(
         </AppWorkspace.SidebarItem>
       </Show>
       {primaryFolderItems("sent")}
+      <Show when={open().code}>
+        {(code) => (
+          <AppWorkspace.SidebarItem
+            href={`/app/mail/${open().mailboxId}/code`}
+            active={code().active}
+            meta={code().attention ? <CodeNavStatus attention /> : undefined}
+            viewTransitionName="mail-code"
+          >
+            <AppWorkspace.SidebarItemIcon>
+              <FeatCodeMark variant="glyph" tone="current" decorative />
+            </AppWorkspace.SidebarItemIcon>
+            <AppWorkspace.SidebarItemLabel>{messages().code}</AppWorkspace.SidebarItemLabel>
+          </AppWorkspace.SidebarItem>
+        )}
+      </Show>
       <Show when={secondaryFolders().length > 0}>
         <AppWorkspace.SidebarItem
           icon={`ti ${moreOpen() ? "ti-chevron-down" : "ti-chevron-right"}`}
@@ -693,6 +716,18 @@ export default function MailSidebar(
           ]
         : []),
       ...primary("sent").map((folder) => folderEntry(open, { folder, children: [] })),
+      ...(open.code
+        ? [
+            {
+              id: "code",
+              label: messages().code,
+              href: `/app/mail/${open.mailboxId}/code`,
+              icon: "ti ti-code",
+              active: open.code.active,
+              description: open.code.attention ? codeNavAttentionLabel(locale()) : undefined,
+            },
+          ]
+        : []),
       ...(secondaryFolders().length > 0
         ? [
             {

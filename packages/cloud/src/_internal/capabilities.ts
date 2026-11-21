@@ -1,19 +1,26 @@
+import { capabilityToolInputSchema, normalizeCapabilityCall } from "../capabilities/calls";
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "../contracts/app-events";
 import { appStatusIssues } from "../contracts/app-status";
+import { AssistantPlaceSchema, assistantPlaceIssues } from "../contracts/assistant-place";
+import type { CapabilityInvocationBody } from "../contracts/capabilities";
 import {
   CapabilityAppStatusManifestSchema,
+  CapabilityAssistantSchema,
   type CapabilityEventManifest,
   CapabilityEventManifestSchema,
   CapabilityQualifiedIdSchema,
   type CapabilitySubscriptionManifest,
   CapabilitySubscriptionManifestSchema,
+  CodeAccountTypeLabelsSchema,
 } from "../contracts/capabilities";
 import { RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "../contracts/resource-pages";
+import { sql } from "../runtime/clients";
 import { hasOAuthScope } from "../server/oauth-scope";
 import { capabilityMessages } from "../shared/capability-messages";
 import { assertAppEventDeclarationSize, assertBoundedAppEventSchema, compileAppEventSchema } from "./app-event-schemas";
 import { capabilityVia } from "./capability-origin";
 import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
+import { validateCodeOwners } from "./code-access";
 
 export { capabilityHash } from "./capability-schemas";
 
@@ -62,6 +69,8 @@ import {
   CloudResourceViewSchema,
   capabilityActionPolicy,
   capabilityResultSchema,
+  ResourceManagersDataSchema,
+  ResourceManagersInputSchema,
   ResourceReadableDataSchema,
   ResourceReadableInputSchema,
   UniversalSearchDataSchema,
@@ -80,13 +89,25 @@ import {
   parseCapabilitySentence,
   resolveCapabilityActionSentences,
 } from "./capability-sentences";
+import { eventPlaceReader } from "./event-place-reader";
 import { activeResourcePrincipals } from "./resource-principals";
 
 /** App-only queries never enter a person catalog. */
-export const isPersonVisibleCapabilityQuery = (query: CapabilityQueryManifest): boolean => query.appOnly !== true;
+export const isPersonVisibleCapabilityQuery = (query: CapabilityQueryManifest): boolean =>
+  query.appOnly !== true && !query.localId.startsWith("code.access.");
+
+/** Platform access controls are available only to explicit Core editors, never general-purpose tools. */
+export const isPersonVisibleCapabilityAction = (action: CapabilityActionManifest): boolean => !action.localId.startsWith("code.access.");
 
 type JsonSchema = Record<string, unknown>;
-const MAX_CAPABILITY_MANIFEST_BYTES = 256 * 1024;
+/**
+ * CAPABILITY_REGISTRY_CONFIG caps the complete JSON record at 512 KiB (524,288 B).
+ * Measured with Core's complete presentation and the maximum 80-byte appId (2026-11-18):
+ * record minus manifest = 68,743 B. A 400 KiB manifest gives 409,600 + 68,743 = 478,343 B,
+ * leaving 45,945 B below the registry cap (112 KiB reserved for the whole envelope).
+ * Presentation varies by app; Sync still enforces the complete-record cap independently.
+ */
+const MAX_CAPABILITY_MANIFEST_BYTES = 400 * 1024;
 
 /**
  * The producer side of the shared manifest shape: an app registers exactly the fields and entries its
@@ -102,7 +123,9 @@ const StrictCapabilityManifestSchema = CapabilityManifestSchema.out.strict();
 type DefinedFields<T> = Readonly<Record<keyof T, true>>;
 const DECLARATION_FIELDS = {
   protocolVersion: true,
+  sdkExportName: true,
   presentation: true,
+  code: true,
   types: true,
   queries: true,
   actions: true,
@@ -129,6 +152,8 @@ const FILE_PROVIDER_FIELDS = {
   icon: true,
 } satisfies DefinedFields<CapabilityFileProviderDeclaration>;
 const TYPE_FIELDS = {
+  assistant: true,
+  codeAccount: true,
   title: true,
   description: true,
   count: true,
@@ -140,6 +165,8 @@ const TYPE_FIELDS = {
   access: true,
 } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
 const QUERY_FIELDS = {
+  target: true,
+  refs: true,
   app: true,
   appOnly: true,
   title: true,
@@ -149,9 +176,14 @@ const QUERY_FIELDS = {
   openWorld: true,
   stream: true,
   universalSearch: true,
+  codeResourceTitle: true,
   run: true,
 } satisfies DefinedFields<CapabilityQueryDefinition>;
 const ACTION_FIELDS = {
+  target: true,
+  refs: true,
+  code: true,
+  unattended: true,
   app: true,
   title: true,
   description: true,
@@ -219,6 +251,8 @@ export type CompiledAppEvent = { definition: AppEventDefinition; manifest: Capab
 export type CompiledAppEventSubscription = { definition: AppEventSubscriptionDefinition; manifest: CapabilitySubscriptionManifest };
 
 export type CompiledCapabilities = {
+  appId: string;
+  appPrefixes: readonly string[];
   events: ReadonlyMap<string, CompiledAppEvent>;
   subscribes: ReadonlyMap<string, CompiledAppEventSubscription>;
   manifest: CapabilityManifest;
@@ -407,6 +441,35 @@ const readActionSentences = (value: unknown, operation: CapabilityActionManifest
   }
 };
 
+const readResultForm = (value: unknown, label: string): import("../contracts/capabilities").CapabilityActionResultForm => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const form = value as Record<string, unknown>;
+  if (
+    Object.keys(form).some((key) => key !== "text" && key !== "targetType" && key !== "kind" && key !== "countText") ||
+    typeof form.text !== "string" ||
+    typeof form.targetType !== "string" ||
+    typeof form.kind !== "string" ||
+    !/^[a-z][a-z0-9._-]*$/.test(form.targetType) ||
+    /[{}]/.test(form.text.replace("{target}", "")) ||
+    /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.text)
+  )
+    throw new Error(`${label} needs text with at most one {target} and an app-local targetType`);
+  assertText(form.text, `${label}.text`, 200);
+  assertText(form.kind, `${label}.kind`, 80);
+  if (/[{}\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.kind)) throw new Error(`${label}.kind must be plain text`);
+  if (form.countText !== undefined) {
+    if (typeof form.countText !== "string" || /[{}\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.countText))
+      throw new Error(`${label}.countText must be plain text`);
+    assertText(form.countText, `${label}.countText`, 200);
+  }
+  return {
+    text: form.text.trim(),
+    targetType: form.targetType,
+    kind: form.kind.trim(),
+    ...(typeof form.countText === "string" ? { countText: form.countText.trim() } : {}),
+  };
+};
+
 const compileOperationPresentation = (
   value: unknown,
   operation: CapabilityQueryManifest | CapabilityActionManifest | CapabilityCommandManifest,
@@ -418,7 +481,7 @@ const compileOperationPresentation = (
   const allowed = new Set(
     "path" in operation
       ? ["title", "description", "input", "keywords"]
-      : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences"] : ["doneTitle"])],
+      : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences", "result"] : ["doneTitle"])],
   );
   const extra = Object.keys(translation).find((key) => !allowed.has(key));
   if (strict && extra) throw new Error(`${label} contains unsupported field "${extra}"`);
@@ -484,6 +547,7 @@ const compileOperationPresentation = (
     ...(searchTags ? { searchTags } : {}),
     ...(doneTitle && !("path" in operation) && !isAction(operation) ? { doneTitle } : {}),
     ...(sentences ? { sentences } : {}),
+    ...(translation.result !== undefined && isAction(operation) ? { result: readResultForm(translation.result, `${label}.result`) } : {}),
   };
 };
 
@@ -516,7 +580,9 @@ export const compileCapabilityPresentation = (
   const catalog = value as Record<string, unknown>;
   if (
     strict &&
-    Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "sentences" && key !== "doneTitles" && key !== "translations")
+    Object.keys(catalog).some(
+      (key) => key !== "baseLocale" && key !== "sentences" && key !== "results" && key !== "doneTitles" && key !== "translations",
+    )
   ) {
     throw new Error("Capability presentation contains unsupported fields");
   }
@@ -568,6 +634,24 @@ export const compileCapabilityPresentation = (
       }),
     );
   }
+  if (catalog.results !== undefined && (!catalog.results || typeof catalog.results !== "object" || Array.isArray(catalog.results))) {
+    if (strict) throw new Error("Capability presentation results must be an object");
+  }
+  const results: NonNullable<CapabilityPresentationCatalog["results"]> = Object.fromEntries(
+    Object.entries(
+      catalog.results && typeof catalog.results === "object" && !Array.isArray(catalog.results) ? catalog.results : {},
+    ).flatMap(([localId, value]) => {
+      try {
+        if (!manifest.actions.some((action) => action.localId === localId)) throw new Error(`Unknown result Action ${localId}`);
+        const form = readResultForm(value, `Action ${localId}.result`);
+        if (!manifest.types.some((type) => type.localId === form.targetType)) throw new Error(`Unknown result Type ${form.targetType}`);
+        return [[localId, form]];
+      } catch (error) {
+        if (strict) throw error;
+        return [];
+      }
+    }),
+  );
   const translations: Record<string, CapabilityPresentationTranslation> = {};
   for (const [locale, rawTranslation] of Object.entries(catalog.translations as Record<string, unknown>)) {
     const canonical = canonicalLocale(locale);
@@ -610,7 +694,9 @@ export const compileCapabilityPresentation = (
     const translatedTypes = compileGroup(raw.types, types, "Resource type", (entry, definition, label) => {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label} must be an object`);
       const copy = entry as Record<string, unknown>;
-      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description" && key !== "count");
+      const extraField = Object.keys(copy).find(
+        (key) => key !== "title" && key !== "description" && key !== "codeAccount" && key !== "count",
+      );
       if (strict && extraField) throw new Error(`${label} contains unsupported field "${extraField}"`);
       if (copy.title !== undefined) {
         if (typeof copy.title !== "string") throw new Error(`${label}.title must be text`);
@@ -630,6 +716,7 @@ export const compileCapabilityPresentation = (
               .parse(copy.count);
       if (count && !definition.count) throw new Error(`${label}.count needs a count on the resource type`);
       return {
+        ...(copy.codeAccount !== undefined ? { codeAccount: CodeAccountTypeLabelsSchema.parse(copy.codeAccount) } : {}),
         ...(copy.title ? { title: String(copy.title).trim() } : {}),
         ...(copy.description ? { description: String(copy.description).trim() } : {}),
         ...(count ? { count } : {}),
@@ -642,8 +729,16 @@ export const compileCapabilityPresentation = (
       });
       return (strict ? parsed.strict() : parsed).parse(entry);
     });
-    const operationPresentation = (entry: unknown, operation: Parameters<typeof compileOperationPresentation>[1], label: string) =>
-      compileOperationPresentation(entry, operation, label, strict);
+    const operationPresentation = (entry: unknown, operation: Parameters<typeof compileOperationPresentation>[1], label: string) => {
+      const copy = compileOperationPresentation(entry, operation, label, strict);
+      if (
+        copy.result &&
+        (!types.has(copy.result.targetType) ||
+          (results[operation.localId] && results[operation.localId]!.targetType !== copy.result.targetType))
+      )
+        throw new Error(`${label}.result must retain its declared result Type`);
+      return copy;
+    };
     const translatedQueries = compileGroup(raw.queries, queries, "Query", operationPresentation);
     const translatedActions = compileGroup(raw.actions, actions, "Action", operationPresentation);
     const translatedCommands = compileGroup(raw.commands, commands, "Command", operationPresentation);
@@ -670,6 +765,7 @@ export const compileCapabilityPresentation = (
   }
   return {
     baseLocale,
+    ...(Object.keys(results).length ? { results } : {}),
     ...(sentences && Object.keys(sentences).length > 0 ? { sentences } : {}),
     ...(doneTitles && Object.keys(doneTitles).length > 0 ? { doneTitles } : {}),
     translations,
@@ -781,6 +877,12 @@ const compileOperationSchemas = (definition: QueryDefinition | CapabilityActionD
     schemaHash: capabilityHash({
       inputSchema,
       dataSchema,
+      ...(definition.target !== undefined ? { target: definition.target } : {}),
+      ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
+      ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
+      ...("unattended" in definition && definition.unattended !== undefined
+        ? { unattended: z.literal(false).parse(definition.unattended) }
+        : {}),
       ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...("appOnly" in definition && definition.appOnly !== undefined ? { appOnly: definition.appOnly } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
@@ -807,11 +909,6 @@ export const compileCapabilities = (
   if (definitions.appStatus !== undefined) CapabilityAppStatusManifestSchema.parse(definitions.appStatus);
   if (definitions.discussions !== undefined) CapabilityDiscussionsManifestSchema.parse(definitions.discussions);
   for (const [localId, type] of Object.entries(definitions.types ?? {})) {
-    if (type.access !== undefined) {
-      assertDefinedFields(type.access, { readable: true }, `Resource type ${localId} access`);
-      if (type.access.readable !== undefined && typeof type.access.readable !== "function")
-        throw new Error(`Resource type ${localId} access.readable must be a function`);
-    }
     const visited = new Set([localId]);
     let container = type.container;
     while (container !== undefined) {
@@ -825,6 +922,10 @@ export const compileCapabilities = (
     }
   }
 
+  validateCodeOwners(definitions);
+  for (const key of [...Object.keys(definitions.queries ?? {}), ...Object.keys(definitions.actions ?? {})]) {
+    if (key.startsWith("code.access.")) throw new Error(`Declared capability ${key} collides with the reserved Code access namespace`);
+  }
   const localIds = new Set<string>();
   const registerLocalId = (localId: string, kind: string): void => {
     assertLocalId(localId, kind);
@@ -852,10 +953,12 @@ export const compileCapabilities = (
         localId,
         title: definition.title.trim(),
         description: definition.description.trim(),
+        ...(definition.codeAccount ? { codeAccount: CodeAccountTypeLabelsSchema.parse(definition.codeAccount) } : {}),
         ...(definition.count ? { count: typeCount(definition.count, localId) } : {}),
         ...(definition.icon ? { icon: definition.icon } : {}),
         ...(definition.color !== undefined ? { color: z.enum(CAPABILITY_RESOURCE_COLORS).parse(definition.color) } : {}),
         ...(definition.reader !== undefined ? { reader: CapabilityLocalIdSchema.parse(definition.reader) } : {}),
+        ...(definition.assistant !== undefined ? { assistant: CapabilityAssistantSchema.parse(definition.assistant) } : {}),
       };
     });
   const typeIds = new Set(types.map((type) => qualifiedId(appId, type.localId)));
@@ -864,19 +967,49 @@ export const compileCapabilities = (
     if (Object.hasOwn(definition, "appOnly")) throw new Error(`Query ${localId}: appOnly is reserved for platform-generated reader checks`);
   const generated: Record<string, AppQueryDefinition> = {};
   for (const [localId, type] of Object.entries(definitions.types ?? {})) {
-    const readable = type.access?.readable;
+    const managers = type.access?.managers;
+    if (managers) {
+      const queryId = `${localId}.managers`;
+      if (Object.hasOwn(definitions.queries ?? {}, queryId)) throw new Error(`Generated Query ${queryId} collides with a declared Query`);
+      generated[queryId] = {
+        title: "Resolve resource notification managers",
+        description: `Resolve current human managers of ${type.title} for background notices without impersonating them.`,
+        input: ResourceManagersInputSchema,
+        data: ResourceManagersDataSchema,
+        openWorld: false,
+        appOnly: true,
+        run: async (value: unknown, context) => {
+          if (!isAppCapabilityContext(context))
+            return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
+          const input = ResourceManagersInputSchema.parse(value);
+          const userIds = [...new Set(await managers(input, context))];
+          if (
+            userIds.length > input.limit ||
+            userIds.some((id) => (input.afterId && id <= input.afterId) || (input.userId && id !== input.userId))
+          )
+            throw new Error(`Resource type ${localId} managers returned an invalid page`);
+          return { ok: true, data: { data: ResourceManagersDataSchema.parse({ userIds: userIds.sort() }) } };
+        },
+      };
+    }
+    const explicit = type.access?.readable;
+    const readable = explicit ?? eventPlaceReader(definitions, localId);
     if (!readable) continue;
     const queryId = `${localId}.readable`;
     if (Object.hasOwn(definitions.queries ?? {}, queryId)) throw new Error(`Generated Query ${queryId} collides with a declared Query`);
     const container = type.container;
-    const input = container
-      ? ResourceReadableInputSchema.extend({
-          container: ResourceReadableInputSchema.shape.container
-            .unwrap()
-            .extend({ type: z.literal(qualifiedId(appId, container)).describe("Declared container type.") })
-            .describe("Expected current container of the resource."),
-        })
-      : ResourceReadableInputSchema;
+    // A derived reader for a contained event place checks the place itself, a question reserved for Code's event-place
+    // check (#3539), so its input has no container; a check that names one is refused instead of answered without it.
+    const input = !container
+      ? ResourceReadableInputSchema
+      : !explicit
+        ? ResourceReadableInputSchema.omit({ container: true })
+        : ResourceReadableInputSchema.extend({
+            container: ResourceReadableInputSchema.shape.container
+              .unwrap()
+              .extend({ type: z.literal(qualifiedId(appId, container)).describe("Declared container type.") })
+              .describe("Expected current container of the resource."),
+          });
     generated[queryId] = {
       title: "Check resource readers",
       description: `Check current principal readability of ${type.title} without granting content access.`,
@@ -918,6 +1051,13 @@ export const compileCapabilities = (
     if (definition.stream?.direction === "write" && "idempotency" in definition && definition.idempotency !== "required")
       throw new Error(`${label}: write streams require idempotency`);
     const schemas = compileOperationSchemas(definition, label);
+    if (definition.target !== undefined && !typeIds.has(qualifiedId(appId, definition.target)))
+      throw new Error(`${label} target must name a declared type of the same app: ${definition.target}`);
+    for (const [field, type] of Object.entries(definition.refs ?? {})) {
+      if (!field || field.length > 100 || !typeIds.has(qualifiedId(appId, type)))
+        throw new Error(`${label} ref ${field} must name a declared type of the same app: ${type}`);
+    }
+
     if (definition.universalSearch) {
       const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
       const expectedData = projectSchema(UniversalSearchDataSchema, "Universal Search data", "output");
@@ -935,6 +1075,12 @@ export const compileCapabilities = (
       inputSchema: schemas.inputSchema,
       dataSchema: schemas.dataSchema,
       schemaHash: schemas.schemaHash,
+      ...(definition.target !== undefined ? { target: definition.target } : {}),
+      ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
+      ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
+      ...("unattended" in definition && definition.unattended !== undefined
+        ? { unattended: z.literal(false).parse(definition.unattended) }
+        : {}),
       ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       openWorld: definition.openWorld,
@@ -944,6 +1090,12 @@ export const compileCapabilities = (
     for (const type of manifest.universalSearch?.scopeTypes ?? []) {
       if (!typeIds.has(qualifiedId(appId, type))) throw new Error(`${label} declares an unknown search scope type ${type}`);
     }
+    if (
+      (manifest.target !== undefined || manifest.refs !== undefined) &&
+      (manifest.universalSearch || capabilityQueryChecksActionOutcome(manifest))
+    )
+      throw new Error(`${label}: platform search and Action-check contracts do not supply target or refs`);
+    capabilityToolInputSchema(manifest);
     queries.set(localId, {
       definition,
       manifest,
@@ -951,14 +1103,18 @@ export const compileCapabilities = (
     });
   }
   for (const type of types) {
+    if (definitions.types?.[type.localId]?.access && !type.reader)
+      throw new Error(`Resource type ${type.localId}: access requires a reader`);
     if (!type.reader) continue;
     const reader = queries.get(type.reader);
     if (!reader) throw new Error(`Resource type ${type.localId} reader ${type.reader} must name an existing Query`);
     if (reader.manifest.appOnly) throw new Error(`Resource type ${type.localId} reader cannot be app-only`);
+    if (reader.manifest.target !== undefined || reader.manifest.refs !== undefined)
+      throw new Error(`Resource type ${type.localId} reader contract does not supply target or refs`);
     assertCanonicalReaderInput(reader.manifest.inputSchema, `Resource type ${type.localId} reader ${type.reader} input`);
   }
   const actions = new Map<string, CompiledCapabilityAction>();
-  for (const [localId, definition] of Object.entries(definitions.actions ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [localId, definition] of Object.entries({ ...definitions.actions }).sort(([left], [right]) => left.localeCompare(right))) {
     registerLocalId(localId, "Action");
     const label = `Action ${localId}`;
     assertDefinedFields(definition, ACTION_FIELDS, label);
@@ -1013,6 +1169,13 @@ export const compileCapabilities = (
     if (definition.stream?.direction === "write" && "idempotency" in definition && definition.idempotency !== "required")
       throw new Error(`${label}: write streams require idempotency`);
     const schemas = compileOperationSchemas(definition, label);
+    if (definition.target !== undefined && !typeIds.has(qualifiedId(appId, definition.target)))
+      throw new Error(`${label} target must name a declared type of the same app: ${definition.target}`);
+    for (const [field, type] of Object.entries(definition.refs ?? {})) {
+      if (!field || field.length > 100 || !typeIds.has(qualifiedId(appId, type)))
+        throw new Error(`${label} ref ${field} must name a declared type of the same app: ${type}`);
+    }
+
     const manifest = {
       localId,
       title: definition.title.trim(),
@@ -1020,6 +1183,12 @@ export const compileCapabilities = (
       inputSchema: schemas.inputSchema,
       dataSchema: schemas.dataSchema,
       schemaHash: schemas.schemaHash,
+      ...(definition.target !== undefined ? { target: definition.target } : {}),
+      ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
+      ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
+      ...("unattended" in definition && definition.unattended !== undefined
+        ? { unattended: z.literal(false).parse(definition.unattended) }
+        : {}),
       ...(definition.app ? { appPermission: definition.app.permission } : {}),
       ...(definition.stream ? { stream: { direction: definition.stream.direction, maxBytes: definition.stream.maxBytes } } : {}),
       destructive: definition.destructive,
@@ -1034,6 +1203,7 @@ export const compileCapabilities = (
           : {}),
       ...(definition.review ? { review: true as const } : {}),
     } satisfies CapabilityActionManifest;
+    capabilityToolInputSchema(manifest);
     actions.set(localId, {
       definition,
       manifest,
@@ -1072,6 +1242,7 @@ export const compileCapabilities = (
         place: true,
         schema: true,
         automation: true,
+        catchup: true,
       } satisfies DefinedFields<AppEventDefinition>,
       `Event ${localId}`,
     );
@@ -1079,6 +1250,7 @@ export const compileCapabilities = (
     if (definition.place && !types.some((type) => type.localId === definition.place && type.reader))
       throw new Error(`Event ${localId} place must reference a local Type with a reader`);
     const schemas = compileAppEventSchema(definition.schema, `Event ${localId} data`);
+    if (definition.catchup && !queries.has(definition.catchup)) throw new Error(`Event ${localId} catchup must reference a local Query`);
     assertAppEventDeclarationSize(appId, localId, definition, schemas.dataSchema);
     const manifest = CapabilityEventManifestSchema.parse({
       localId,
@@ -1089,6 +1261,7 @@ export const compileCapabilities = (
       ...(definition.place !== undefined ? { place: definition.place } : {}),
       ...schemas,
       ...(definition.automation !== undefined ? { automation: definition.automation } : {}),
+      ...(definition.catchup !== undefined ? { catchup: definition.catchup } : {}),
     });
     events.set(localId, { definition, manifest });
   }
@@ -1122,7 +1295,7 @@ export const compileCapabilities = (
     const model: CapabilityResourceTypeModel = {
       type: type.localId,
       ...(declaration?.container ? { container: declaration.container } : {}),
-      ...(declaration?.access?.readable ? { readable: true } : {}),
+      ...(generated[`${type.localId}.readable`] ? { readable: true } : {}),
     };
     const reader = type.reader ? queries.get(type.reader) : undefined;
     if (
@@ -1135,11 +1308,20 @@ export const compileCapabilities = (
   });
   const manifestBase = {
     ...(resourceTypes.length ? { resourceTypes } : {}),
+    ...(definitions.code
+      ? {
+          code: {
+            owners: [...(definitions.code?.owners ?? [])].sort(),
+            ...(definitions.code?.pages ? { pages: { ...definitions.code.pages } } : {}),
+          },
+        }
+      : {}),
     ...(definitions.appStatus ? { appStatus: definitions.appStatus } : {}),
     ...(definitions.discussions ? { discussions: definitions.discussions } : {}),
     ...(resourcePages.length ? { resourcePages } : {}),
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
     appId,
+    ...(definitions.sdkExportName === undefined ? {} : { sdkExportName: definitions.sdkExportName }),
     types,
     queries: [...queries.values()].map((entry) => entry.manifest),
     actions: [...actions.values()].map((entry) => entry.manifest),
@@ -1166,6 +1348,18 @@ export const compileCapabilities = (
     ...manifestBase,
     manifestHash: capabilityHash(manifestBase),
   });
+  // Exact schema identity is a producer check; deployed consumers allow compatible versions.
+  for (const type of manifest.types) {
+    if (!type.assistant) continue;
+    const provider = manifest.queries.find((query) => query.localId === type.assistant!.provider);
+    if (
+      provider &&
+      capabilityHash(provider.dataSchema) !== capabilityHash(projectSchema(AssistantPlaceSchema, "Assistant place", "output"))
+    )
+      throw new Error(`Resource type ${type.localId}: assistant provider data must be AssistantPlaceSchema`);
+  }
+  const placeIssues = assistantPlaceIssues(manifest);
+  if (placeIssues.length) throw new Error(`assistant: ${placeIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
   const statusIssues = appStatusIssues(manifest);
   if (statusIssues.length) throw new Error(`appStatus: ${statusIssues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`);
   const discussionIssues = discussionsIssues(manifest);
@@ -1189,7 +1383,7 @@ export const compileCapabilities = (
     throw new Error(`Capability manifest exceeds the ${MAX_CAPABILITY_MANIFEST_BYTES}-byte registry limit`);
   }
   const presentation = compileCapabilityPresentation(manifest, definitions.presentation);
-  return { manifest, presentation, typeIds, queries, actions, events, subscribes };
+  return { appId, appPrefixes: routes ?? [], manifest, presentation, typeIds, queries, actions, events, subscribes };
 };
 
 const applySchemaPresentation = (schema: Record<string, unknown>, descriptions: Readonly<Record<string, string>> | undefined) => {
@@ -1275,6 +1469,7 @@ export const resolveCapabilityActionWording = (
   const inputDescriptions = Object.assign({}, ...overlays.map((translation) => translation.actions?.[operation.localId]?.input ?? {}));
   const sentences = resolveCapabilityActionSentences(operation.localId, catalog, requestedLocale);
   return {
+    result: overlays.reduce((form, overlay) => overlay.actions?.[operation.localId]?.result ?? form, catalog?.results?.[operation.localId]),
     title: resolveCapabilityOperationTitle(operation, "actions", catalog, requestedLocale),
     ...(sentences ? { sentences } : {}),
     fields: capabilitySentenceFields({
@@ -1298,6 +1493,7 @@ export const resolveCapabilityManifestPresentation = (
     const manifestBase = {
       protocolVersion: current.protocolVersion,
       appId: current.appId,
+      ...(current.sdkExportName === undefined ? {} : { sdkExportName: current.sdkExportName }),
       types: current.types.map((type) => {
         const copy = translation.types?.[type.localId];
         return copy
@@ -1305,6 +1501,7 @@ export const resolveCapabilityManifestPresentation = (
               ...type,
               title: copy.title ?? type.title,
               description: copy.description ?? type.description,
+              ...(copy.codeAccount ? { codeAccount: copy.codeAccount } : {}),
               ...(copy.count && type.count ? { count: copy.count } : {}),
             }
           : type;
@@ -1367,6 +1564,7 @@ export const resolveCapabilityManifestPresentation = (
         : {}),
       ...(current.subscribes ? { subscribes: current.subscribes } : {}),
       ...(current.resourceTypes ? { resourceTypes: current.resourceTypes } : {}),
+      ...(current.code ? { code: current.code } : {}),
       ...(current.appStatus ? { appStatus: current.appStatus } : {}),
       ...(current.discussions ? { discussions: current.discussions } : {}),
       ...(current.resourcePages ? { resourcePages: current.resourcePages } : {}),
@@ -1410,9 +1608,20 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
     throw new Error(`Operation ${operation.localId} write streams require an idempotent Action`);
   }
   if ("appOnly" in operation && operation.appOnly !== undefined && operation.stream) throw new Error("App-only queries cannot use streams");
+  capabilityToolInputSchema(operation);
+  if (
+    !("idempotency" in operation) &&
+    (operation.target !== undefined || operation.refs !== undefined) &&
+    (operation.appOnly || operation.universalSearch || capabilityQueryChecksActionOutcome(operation))
+  )
+    throw new Error("Platform search and Action-check contracts do not supply target or refs");
   const expectedSchemaHash = capabilityHash({
     inputSchema: operation.inputSchema,
     dataSchema: operation.dataSchema,
+    ...(operation.target !== undefined ? { target: operation.target } : {}),
+    ...(operation.refs !== undefined ? { refs: operation.refs } : {}),
+    ...("code" in operation && operation.code !== undefined ? { code: operation.code } : {}),
+    ...("unattended" in operation && operation.unattended !== undefined ? { unattended: operation.unattended } : {}),
     ...(operation.appPermission ? { appPermission: operation.appPermission } : {}),
     ...("appOnly" in operation && operation.appOnly !== undefined ? { appOnly: operation.appOnly } : {}),
     ...(operation.stream ? { stream: operation.stream } : {}),
@@ -1430,14 +1639,15 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
 };
 
 /**
- * The Universal Search data schemas a live manifest may declare: the current one, the one before metadata gained
- * `format`, and the one before results gained `context` and `status`, so an app built by an earlier release keeps its
- * search while Core is already newer. Its results still parse, because the newer fields are optional.
+ * Accept the current search schema and the earlier versions before `group`, metadata `format`, and result
+ * `context`/`status`. Project each historical shape without newer fields, preserving the app's original hashes.
+ * Results still parse, because the newer fields are optional.
  */
 let searchDataHashes: string[] | undefined;
 const universalSearchDataHashes = () => {
   if (searchDataHashes) return searchDataHashes;
-  const untypedMetadata = CloudResourceViewSchema.extend({
+  const withoutGroup = CloudResourceViewSchema.omit({ group: true });
+  const untypedMetadata = withoutGroup.extend({
     metadata: z
       .array(z.object({ label: z.string().min(1).max(120), value: z.string().max(1000) }).strict())
       .max(20)
@@ -1446,6 +1656,7 @@ const universalSearchDataHashes = () => {
   });
   searchDataHashes = [
     UniversalSearchDataSchema,
+    z.array(withoutGroup).max(100),
     z.array(untypedMetadata).max(100),
     z.array(untypedMetadata.omit({ context: true, status: true })).max(100),
   ].map((schema) => capabilityHash(projectSchema(schema, "Universal Search data", "output")));
@@ -1506,7 +1717,12 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
     ...manifest,
     types: manifest.types.map((type) => {
       const reader = type.reader === undefined ? undefined : queries.get(type.reader);
-      if (!reader || passes(() => assertCanonicalReaderInput(reader.inputSchema, `Resource type ${type.localId} reader input`)))
+      if (
+        !reader ||
+        (reader.target === undefined &&
+          reader.refs === undefined &&
+          passes(() => assertCanonicalReaderInput(reader.inputSchema, `Resource type ${type.localId} reader input`)))
+      )
         return type;
       const { reader: _unusable, ...withoutReader } = type;
       return withoutReader;
@@ -1690,6 +1906,8 @@ export const capabilityManifestEvolutionIssues = (previous: CapabilityManifest, 
       if (!currentSearchTokens.has(token)) issues.push(`Query ${operation.localId} removed Universal Search token ${token}`);
     }
     issues.push(...schemaEvolutionIssues(operation.inputSchema, current.inputSchema, `Query ${operation.localId} input`, "input"));
+    if (operation.target !== current.target || !sameSchema(operation.refs ?? {}, current.refs ?? {}))
+      issues.push(`Query ${operation.localId} changed its target contract`);
     issues.push(...schemaEvolutionIssues(operation.dataSchema, current.dataSchema, `Query ${operation.localId} data`, "data"));
   }
   for (const operation of previous.actions) {
@@ -1705,6 +1923,10 @@ export const capabilityManifestEvolutionIssues = (previous: CapabilityManifest, 
     if (operation.idempotency !== current.idempotency) issues.push(`Action ${operation.localId} idempotency changed`);
     if (operation.review && !current.review) issues.push(`Action ${operation.localId} review was removed`);
     issues.push(...schemaEvolutionIssues(operation.inputSchema, current.inputSchema, `Action ${operation.localId} input`, "input"));
+    if (operation.target !== current.target || !sameSchema(operation.refs ?? {}, current.refs ?? {}))
+      issues.push(`Action ${operation.localId} changed its target contract`);
+    if (operation.unattended !== current.unattended) issues.push(`Action ${operation.localId} changed unattended availability`);
+    if (operation.code !== current.code) issues.push(`Action ${operation.localId} changed Code availability`);
     issues.push(...schemaEvolutionIssues(operation.dataSchema, current.dataSchema, `Action ${operation.localId} data`, "data"));
   }
   return issues;
@@ -1723,6 +1945,9 @@ const resultRefs = (result: unknown): Array<{ type: string; id: string }> => {
 };
 
 const compiledReviewContext = (compiled: CompiledCapabilities, localId: string) => ({
+  appId: compiled.appId,
+  appPrefixes: compiled.appPrefixes,
+  inputSchema: compiled.actions.get(localId)?.manifest.inputSchema,
   policy: capabilityActionPolicy(compiled.manifest, localId),
   approval: compiled.actions.get(localId)?.manifest.approval,
   queries: compiled.manifest.queries,
@@ -1751,12 +1976,37 @@ export const validateCapabilityResult = (
   const nestedReceipt = field(field(result, "data"), "receipt");
   if (!("idempotency" in operation.manifest) && nestedReceipt !== undefined && capabilityQueryChecksActionOutcome(operation.manifest))
     receiptIssues.push(...capabilityActionReceiptIssues(nestedReceipt, links));
-  if (!parsed.success || receiptIssues.length > 0) {
+  const paginationIssues: string[] = [];
+  if (!("idempotency" in operation.manifest)) {
+    const properties = field(operation.manifest.dataSchema, "properties");
+    const data = field(result, "data");
+    const stringSchema = (schema: unknown): boolean => {
+      const type = field(schema, "type");
+      if (type === "string" || (Array.isArray(type) && type.includes("string"))) return true;
+      const anyOf = field(schema, "anyOf");
+      return Array.isArray(anyOf) && anyOf.some(stringSchema);
+    };
+    const cursorKey = ["next", "nextCursor"].find((key) => stringSchema(field(properties, key)));
+    const inputCursor = field(field(operation.manifest.inputSchema, "properties"), "cursor");
+    if (cursorKey || stringSchema(inputCursor)) {
+      const next = cursorKey ? field(data, cursorKey) : undefined;
+      const page = field(result, "page");
+      if (page === undefined) paginationIssues.push("Paginated queries must return page");
+      if (
+        (typeof next === "string" && (field(page, "hasMore") !== true || field(page, "nextCursor") !== next)) ||
+        (next === null && field(page, "hasMore") !== false)
+      )
+        paginationIssues.push("Paginated queries must return page matching their continuation cursor");
+    }
+  }
+  if (!parsed.success || receiptIssues.length > 0 || paginationIssues.length > 0) {
     try {
       onInvalidResult?.(
         new Error(
           `Capability ${operation.manifest.localId} returned data outside its registered schema: ${JSON.stringify(
-            parsed.success ? receiptIssues : parsed.error.issues.map(({ code, path, message }) => ({ code, path, message })),
+            parsed.success
+              ? [...receiptIssues, ...paginationIssues]
+              : parsed.error.issues.map(({ code, path, message }) => ({ code, path, message })),
           )}`,
         ),
       );
@@ -1833,10 +2083,28 @@ const isAppCapabilityContext = (
   context: CapabilityExecutionContext | CapabilityAppExecutionContext,
 ): context is CapabilityAppExecutionContext => context.actor.kind === "app";
 
+const callContext = (appId: string, operation: CapabilityQueryManifest | CapabilityActionManifest, params: CapabilityInvocationBody) => {
+  try {
+    const call = normalizeCapabilityCall(appId, operation, { input: params.input, target: params.target, refs: params.refs });
+    return { ok: true as const, target: call.target ?? undefined, refs: call.refs };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: {
+        code: "VALIDATION_FAILED",
+        message: error instanceof Error ? error.message : "Invalid capability target",
+        status: 400 as const,
+      },
+    };
+  }
+};
+
 export const invokeCompiledCapability = async (params: {
   compiled: CompiledCapabilities;
   kind: "query" | "action";
   localId: string;
+  target?: CapabilityInvocationBody["target"];
+  refs?: CapabilityInvocationBody["refs"];
   input: unknown;
   expectedSchemaHash: string | null;
   context: CapabilityExecutionContext | CapabilityAppExecutionContext;
@@ -1857,6 +2125,13 @@ export const invokeCompiledCapability = async (params: {
   }
   if (!isAppCapabilityContext(params.context) && "appOnly" in operation.definition && operation.definition.appOnly !== undefined)
     return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
+  if (
+    "unattended" in operation.manifest &&
+    operation.manifest.unattended === false &&
+    params.context.actor.kind !== "app" &&
+    (params.context.actor.delegation?.credentialKind === "mandate" || params.context.actor.delegation?.workloadType)
+  )
+    return { ok: false, error: { code: "FORBIDDEN", message: "This Action cannot execute unattended", status: 403 } };
   if (params.expectedSchemaHash !== operation.manifest.schemaHash) {
     return {
       ok: false,
@@ -1868,8 +2143,12 @@ export const invokeCompiledCapability = async (params: {
       },
     };
   }
+  const coordinates = callContext(params.compiled.manifest.appId, operation.manifest, params);
+  if (!coordinates.ok) return coordinates;
   let context: CapabilityExecutionContext | CapabilityAppExecutionContext = {
     ...params.context,
+    target: coordinates.target,
+    refs: coordinates.refs,
     via: capabilityVia(params.context.origin),
   };
   if (params.kind === "action") {
@@ -1945,6 +2224,34 @@ export const invokeCompiledCapability = async (params: {
   // cross into application code for the first time with an aborted invocation.
   if (context.signal.aborted) return cancelledInvocation(context.locale);
   try {
+    if (
+      context.actor.kind === "service_account" &&
+      context.actor.serviceAccount.kind === "code" &&
+      context.actor.delegation?.workloadType === "code.version"
+    ) {
+      for (const ref of [context.target, ...Object.values(context.refs ?? {})]) {
+        if (!ref) continue;
+        const localType = ref.type.slice(params.compiled.manifest.appId.length + 1);
+        const type = params.compiled.manifest.types.find((type) => type.localId === localType);
+        const reader = type?.reader && params.compiled.queries.get(type.reader);
+        if (!reader || !reader.definition.codeResourceTitle) continue;
+        const title = await sql.begin(async (tx) => {
+          await tx`SET TRANSACTION READ ONLY`;
+          return z
+            .string()
+            .min(1)
+            .max(500)
+            .nullable()
+            .parse(await reader.definition.codeResourceTitle!(tx, ref.id));
+        });
+        if (title === null)
+          return {
+            ok: false,
+            error: { code: "CODE_TARGET_DELETED", message: capabilityMessages(context.locale).codeTargetDeleted, status: 404 },
+          };
+      }
+    }
+    if (context.signal.aborted) return cancelledInvocation(context.locale);
     let invoked: CapabilityInvocationResult<unknown>;
     if (isAppCapabilityContext(context)) {
       const definition = operation.definition;
@@ -1957,6 +2264,25 @@ export const invokeCompiledCapability = async (params: {
       }
     } else {
       if (operation.definition.appOnly) return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
+      if (params.kind === "action" && context.actor.delegation?.workloadType === "code.version") {
+        // Version consent never widens a call that the owning app requires a person to confirm.
+        const policy = capabilityActionPolicy(params.compiled.manifest, params.localId);
+        if (
+          !policy ||
+          !("silent" in policy) ||
+          policy.routines === false ||
+          ("unattended" in operation.manifest && operation.manifest.unattended === false)
+        )
+          return { ok: false, error: { code: "CODE_UNATTENDED_FORBIDDEN", message: "This Action cannot execute unattended", status: 403 } };
+        const reviewed = await reviewCompiledCapability({
+          ...params,
+          context: { ...context, idempotencyKey: undefined },
+        });
+        if (!reviewed.ok) return reviewed;
+        if (!("sentence" in reviewed.data) || reviewed.data.ask !== undefined)
+          return { ok: false, error: { code: "CODE_UNATTENDED_FORBIDDEN", message: "This call requires confirmation", status: 403 } };
+        if (context.signal.aborted) return cancelledInvocation(context.locale);
+      }
       invoked = await operation.definition.run(input.data, context);
     }
     if (!invoked.ok) {
@@ -2001,6 +2327,8 @@ export const invokeCompiledCapability = async (params: {
 export const reviewCompiledCapability = async (params: {
   compiled: CompiledCapabilities;
   localId: string;
+  target?: CapabilityInvocationBody["target"];
+  refs?: CapabilityInvocationBody["refs"];
   input: unknown;
   expectedSchemaHash: string | null;
   context: CapabilityExecutionContext;
@@ -2038,6 +2366,8 @@ export const reviewCompiledCapability = async (params: {
       },
     };
   }
+  const coordinates = callContext(params.compiled.manifest.appId, operation.manifest, params);
+  if (!coordinates.ok) return coordinates;
   const input = operation.definition.input.safeParse(params.input);
   if (!input.success) {
     return {
@@ -2054,6 +2384,8 @@ export const reviewCompiledCapability = async (params: {
   try {
     const reviewed = await operation.definition.review(input.data, {
       ...params.context,
+      target: coordinates.target,
+      refs: coordinates.refs,
       via: capabilityVia(params.context.origin),
     });
     if (!reviewed.ok) {

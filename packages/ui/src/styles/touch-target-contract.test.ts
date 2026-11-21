@@ -75,14 +75,9 @@ describe("@k2b/ui touch targets", () => {
         [...cssDeclarations(rule.body).keys()].some((property) => /^(?:width|height|min-|max-|padding|margin|font-size)/.test(property)),
       )
       .map((rule) => rule.selector);
-    // Stacked action rows have no room for a tap area beyond their box, so the row itself grows to 2.75rem. The quiet
-    // answer of a chat question wraps flush under the two answers for the same reason; it has no visible box to grow.
-    expect(resized).toEqual([
-      ".k2b-ui .k2b-button.k2b-detail-panel__action",
-      ".k2b-ui .k2b-detail-panel__action-row .k2b-button",
-      ".k2b-ui .k2b-button.k2b-chat-decision__remember",
-    ]);
-    expect([...declarations(".k2b-ui .k2b-button.k2b-chat-decision__remember").entries()]).toEqual([["min-height", ["2.75rem"]]]);
+    // Stacked action rows have no room for a tap area beyond their box, so the row itself grows to 2.75rem. A chat
+    // question's "remember" is a checkbox with the checkbox's own touch area, not a quiet button any more.
+    expect(resized).toEqual([".k2b-ui .k2b-button.k2b-detail-panel__action", ".k2b-ui .k2b-detail-panel__action-row .k2b-button"]);
     const row = declarations(".k2b-ui .k2b-button.k2b-detail-panel__action");
     expect([...row.entries()]).toEqual([["min-height", ["2.75rem"]]]);
     expect([...declarations(".k2b-ui .k2b-detail-panel__action-row .k2b-button").entries()]).toEqual([["min-height", ["2.75rem"]]]);

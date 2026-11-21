@@ -116,7 +116,7 @@ export const appActionSummary = (view: AppActionView): AppActionSummary => ({
 /** Whether a pending approval can wake a device under the same mapping used by its inbox and detail view. */
 export const deviceOffersApproval = async (approvalId: string): Promise<boolean> => {
   const request = await get(approvalId);
-  if (!request) return false;
+  if (!request || !request.approverUserId) return false;
   const { items } = await listPending({ approverUserId: request.approverUserId, id: approvalId, limit: 1 });
   const row = items[0];
   if (!row) return false;

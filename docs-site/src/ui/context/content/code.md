@@ -1,6 +1,6 @@
 # Code
 
-`CodeDisplay` renders highlighted, selectable source with optional title, line numbers, and copy action. The application owns the source text and its trust boundary.
+`CodeDisplay` renders highlighted, selectable source with optional title, line numbers, and copy action. `CodeDiff` shows a change between two versions line by line. The application owns the source text and its trust boundary.
 
 ## Use code
 
@@ -16,7 +16,7 @@ import {
 } from "@k2b/ui";
 ```
 
-`CodeDisplayLanguage` supports TypeScript, JavaScript, script, SQL, Markdown, and plain text modes. Line numbers and copy are enabled by default and can be disabled independently.
+`CodeDisplayLanguage` supports TypeScript, JavaScript, script, SQL, Markdown, and plain text modes. TypeScript, JavaScript, and script use the linear `@k2b/stdlib` code preset (`highlight.presets.code`, classes `hl-comment`, `hl-string`, `hl-number`, `hl-keyword`, `hl-operator`), coloured with the `--k2b-code-*` tokens; operators keep the text colour. A comment or template string across lines stays highlighted on every line. Line numbers and copy are enabled by default and can be disabled independently.
 
 ## API reference
 
@@ -25,11 +25,13 @@ type CodeDisplayLanguage = "ts" | "tsx" | "js" | "jsx" | "script" | "markdown" |
 
 type CodeDisplayProps = {
   code: string; title?: string; language?: CodeDisplayLanguage; copy?: boolean; lineNumbers?: boolean;
-  class?: string;
+  startLine?: number; class?: string;
 };
 ```
 
-Defaults: `language="text"`, `copy=true`, `lineNumbers=true`. Set `copy={false}` or `lineNumbers={false}` independently.
+Defaults: `language="text"`, `copy=true`, `lineNumbers=true`, `startLine=1`. Set `copy={false}` or `lineNumbers={false}` independently.
+Pass `startLine` when the code is an excerpt of a longer file, such as the end of a file that is still being written: line numbers then match the whole file.
+The number column widens past 999 lines. The display is a column whose body scrolls, so a host that caps its height keeps the title and copy action in place.
 
 ## Accessibility
 
@@ -46,5 +48,110 @@ Highlighting renders on the server. Copy requires browser code and the Clipboard
   title="health.ts"
   language="ts"
   code={`export const health = () => ({ ok: true });`}
+/>
+```
+
+## Code differences
+
+`CodeDiff` shows a read-only change between two versions of one or more files, line by line. The application computes the rows (for example on the server); the component counts line numbers, folds unchanged regions, and renders large files page by page. It has its own entry, `@k2b/ui/code-diff`, so only pages that show code load it.
+
+```tsx
+import {
+  CodeDiff,
+  type CodeDiffFile,
+  type CodeDiffLine,
+  type CodeDiffLineAction,
+  type CodeDiffLineKind,
+  type CodeDiffLocation,
+  type CodeDiffProps,
+} from "@k2b/ui/code-diff";
+```
+
+```ts
+type CodeDiffLineKind = "same" | "add" | "del";
+type CodeDiffLine = { kind: CodeDiffLineKind; text: string };
+type CodeDiffFile = { path: string; lines: readonly CodeDiffLine[]; language?: CodeDisplayLanguage };
+type CodeDiffLocation = { path: string; line: number; side?: "new" | "old" };
+
+type CodeDiffProps = {
+  files: readonly CodeDiffFile[];
+  mark?: CodeDiffLocation;
+  file?: string; onFileChange?: (path: string) => void;
+  status?: "loading" | "error"; errorDescription?: JSX.Element; onRetry?: () => void;
+  label?: string; toolbarStart?: JSX.Element; class?: string;
+};
+```
+
+- **Rows:** each file lists its whole content in order. `same` is in both versions, `add` only in the new one, `del` only in the old one. Old and new line numbers are counted from the rows.
+- **Layout:** one column with old number, new number, sign, and code. Added lines carry the success fill and `+`, removed lines the danger fill and `−`. Long lines stay one line and scroll sideways inside the code surface; the page never widens, and fills reach the end of the longest line. Below 30rem of its own width the number columns narrow.
+- **Height:** set `--k2b-code-diff-height` on the component or an ancestor (for example `class="[--k2b-code-diff-height:35rem]"`) to give the code surface a fixed height. The code then scrolls inside it, and loading, failure, and "The code is unchanged" keep the same height, so switching files or versions moves nothing around it. The surface is a stop in the tab order, so keyboard users can scroll it.
+- **Toolbar:** `toolbarStart` puts the application's controls, such as a version picker, at the start of the file row, before the file names. It stays in place while the code loads or fails. On a narrow component the file names wrap below it.
+- **Folding:** three unchanged lines stay around every change; longer unchanged runs fold into one row ("9 unchanged lines") that opens in place. A file without changes is one fold.
+- **Files:** with more than one file, tabs name each file: the chosen one strong on a muted fill, the others as plain text. Assistive technology also hears `+added −removed`, `unchanged`, or the line count of a new file; a file without rows (not loaded yet) has no summary. The choice is internal unless `file` and `onFileChange` control it, for example from the URL. The file names stay while the code loads or fails.
+- **New files:** a file whose rows are all `add` has no predecessor. It shows as whole code with one number column, without fills or signs. Say in the surrounding text why the whole code is shown.
+- **Marking a line:** `mark` switches to its file (also when that file arrives later), opens the fold around the line, renders the pages up to it, marks it with the info fill and an inset bar, and centres it in its nearest scrolling container; outer containers and the page do not move. A new `mark` object is a new request: marking the same line again brings it back after the person scrolled away. Use `side: "old"` for a removed line. The server render already shows the marked line. What a mark revealed stays open when the mark goes away, and the person can still choose another file.
+- **Pages:** 400 rows render at first; "Show 400 more lines" adds the next page and moves focus to its first row.
+- **States:** `status="loading"` keeps the code surface with skeleton rows and one status label. `status="error"` shows "The code could not be loaded", the application's `errorDescription`, and "Try again" when `onRetry` is set; without `onRetry` there is no retry, for a failure that trying again cannot fix. Code without any change shows "The code is unchanged".
+
+Headings, version names, and the explanation of what a reviewer decides belong to the application around the component.
+
+### Accessibility
+
+The code is a labelled region ("Code difference, read only · index.ts"). Screen readers hear "Added, line 13:" or "Removed, line 11:" before every changed line and "Marked line." before the marked one; numbers and signs are hidden from them and from text selection. Fold rows and "Show more" are buttons; focus moves to the first revealed row. File tabs follow the `Tabs` keyboard model and control the code as their tab panel, which takes keyboard focus. Comments and every other syntax colour keep 4.5:1 on the muted, success, danger, and info fills.
+
+### Example
+
+```tsx
+<CodeDiff
+  files={[{ path: "reply.ts", lines: [
+    { kind: "same", text: "const text = await ai.write({ prompt });" },
+    { kind: "del", text: "await draft.create({ text });" },
+    { kind: "add", text: "await message.reply({ text });" },
+  ] }]}
+  mark={{ path: "reply.ts", line: 2 }}
+/>
+```
+
+### Line actions and content below a line
+
+A review that comments on lines gives `CodeDiff` one action per line and a place below a line. The component knows
+nothing about comments: the host decides what the action does and what the place shows.
+
+```ts
+type CodeDiffLineAction = {
+  label: (location: CodeDiffLocation) => string; // "Comment on line 3": name and tooltip
+  onSelect: (location: CodeDiffLocation) => void;
+};
+
+// Further CodeDiffProps
+lineAction?: CodeDiffLineAction;
+slotLines?: readonly CodeDiffLocation[]; // lines of the new version with content below them
+lineSlot?: (location: CodeDiffLocation) => JSX.Element;
+```
+
+- **Place:** with `lineAction` or `lineSlot`, every line gets a fixed place between the line number and the code
+  (in a difference: old number, new number, place, sign, code). The place is always there, so nothing moves when the
+  action shows. Locations passed to the host use the line number of the new version with `side: "new"`. Removed lines
+  have no action and no place for content.
+- **Action:** a small filled `+` appears while the pointer is over the line or the action has focus, with the label
+  as tooltip. On touch (`pointer: coarse`) lines are 30 px high and the action is 32 × 28 px and always visible, without
+  a tooltip.
+- **Content below a line:** a line in `slotLines` shows `lineSlot(location)` directly below it, at the width of the
+  view and flush with the place of the action, at most 40rem wide; it stays in view while long lines scroll sideways.
+  The line keeps a small mark in the place of the action and a light tint. Such a line never folds away, and its
+  page renders. `lineSlot` runs once while the line stays listed, outside any tracking scope: the content keeps its
+  own state, such as an open reply field, and reads its own data. Adding content moves only the rows below it.
+- **Unchanged file:** a file without changes but with listed lines shows "This file is unchanged. The commented lines
+  follow." and only those lines with their content, so nothing listed disappears in any view.
+- **Keyboard:** the code is one tab stop. Tab reaches the action of one line; ↑, ↓, Home and End move the real focus
+  from line to line and skip removed lines; ← and → scroll long lines; Enter or Space selects. Each action carries
+  `data-action-line` with its line number, so a host returns the focus to it after closing its content.
+
+```tsx
+<CodeDiff
+  files={files}
+  lineAction={{ label: ({ line }) => `Comment on line ${line}`, onSelect: (location) => openThread(location) }}
+  slotLines={threadLines()}
+  lineSlot={(location) => <LineThread location={location} />}
 />
 ```

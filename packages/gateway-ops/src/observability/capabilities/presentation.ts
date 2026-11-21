@@ -20,6 +20,8 @@ export const ORIGIN_ICON: Record<CapabilityOrigin, string> = {
   mcp: "ti ti-plug-connected",
   http: "ti ti-world",
   app: "ti ti-app-window",
+  /** A query a person's choice in a capability view started. */
+  choice: "ti ti-hand-click",
 };
 
 /** A call slower than this is worth looking at even when it succeeded. */
