@@ -233,6 +233,8 @@ describe("flat overlays (K16)", () => {
     const page = await load(1024, 768, "end");
     try {
       await page.locator(".trigger").click();
+      await page.locator(".k2b-dropdown__menu:popover-open").waitFor();
+      await settled(page);
       const menuBox = await box(page, ".k2b-dropdown__menu:popover-open");
       await page.getByRole("menuitem", { name: "From template" }).click();
       const submenu = page.getByRole("menu", { name: "From template" });
