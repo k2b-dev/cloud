@@ -1,7 +1,7 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, type Signal, untrack } from "solid-js";
+import type { DropdownSection } from "./Dropdown";
 import { activeDrag, announce, bindDragSource, registerDropTarget, setDragStatus } from "./drag-and-drop";
 import { type DragAndDropMessages, useDragAndDropMessages } from "./drag-and-drop-messages";
-import type { DropdownSection } from "./Dropdown";
 import { PHONE_SHEET_QUERY } from "./phone-sheet";
 import { type SortableListMessages, useSortableListMessages } from "./sortable-list-messages";
 import { clampIndex, gapAt, gapForIndex, indexForGap, placeCount } from "./sortable-place";
@@ -84,9 +84,16 @@ type Lift = {
 };
 
 const groups = new Map<string, Set<Entry>>();
-/** Changes when a list joins or leaves a group, so a move menu built before the lists mounted updates. */
-const [registry, touchRegistry] = createSignal(undefined, { equals: false });
-const [lift, setLift] = createSignal<Lift>();
+/**
+ * Made on first use, so the module has no side effects and a bundle that imports `@k2b/ui` without SortableList drops
+ * it. `registry` changes when a list joins or leaves a group, so a move menu built before the lists mounted updates.
+ */
+let shared: { registry: Signal<undefined>; lift: Signal<Lift | undefined> } | undefined;
+const sharedState = () => (shared ??= { registry: createSignal(undefined, { equals: false }), lift: createSignal<Lift>() });
+const registry = () => sharedState().registry[0]();
+const touchRegistry = () => sharedState().registry[1]();
+const lift = () => sharedState().lift[0]();
+const setLift = (next: Lift | undefined) => sharedState().lift[1](next);
 /** The pointer's last place: the engine ends the drag, and with it `lift`, before it calls `drop`. */
 let pointerPlan: Lift | undefined;
 /** Ends the keyboard lift in progress without a drop. */
@@ -98,7 +105,8 @@ const listsOf = (group: string): Entry[] => {
     .filter((entry) => entry.list.isConnected)
     .sort((a, b) => (a.area.compareDocumentPosition(b.area) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
 };
-const find = (group: string, key: string | undefined) => (key === undefined ? undefined : listsOf(group).find((entry) => entry.key === key));
+const find = (group: string, key: string | undefined) =>
+  key === undefined ? undefined : listsOf(group).find((entry) => entry.key === key);
 const placesIn = (entry: Entry, key: string) => placeCount(entry.keys().length, entry.keys().includes(key));
 /** Where the row lands in `entry`: the sorted place, or the one the gap shows. */
 const landing = (entry: Entry, state: Lift, gap: number) => {
@@ -107,7 +115,11 @@ const landing = (entry: Entry, state: Lift, gap: number) => {
   if (sorted) return clampIndex(sorted(state.key, state.from), count);
   return clampIndex(indexForGap(gap, entry.keys().indexOf(state.key)), count);
 };
-const place = (entry: Entry, state: Lift, index: number) => ({ position: index + 1, count: placesIn(entry, state.key), list: entry.label() });
+const place = (entry: Entry, state: Lift, index: number) => ({
+  position: index + 1,
+  count: placesIn(entry, state.key),
+  list: entry.label(),
+});
 const showStatus = (state: Lift) => {
   const entry = find(state.group, state.to);
   const lead = state.messages.statusLead({ label: state.label, count: 1 });
@@ -231,7 +243,14 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
     }
     const rows = [...list.children].filter((row): row is HTMLLIElement => row instanceof HTMLLIElement);
     const boxes = rows.map((row) => row.getBoundingClientRect());
-    const index = landing(entry, state, gapAt(boxes.map((box) => box.bottom), point.y));
+    const index = landing(
+      entry,
+      state,
+      gapAt(
+        boxes.map((box) => box.bottom),
+        point.y,
+      ),
+    );
     // Where the line is, so the preview hangs below it; in a sorted list it may be far from the pointer.
     const gap = gapForIndex(index, keys().indexOf(state.key));
     const lineY = boxes[gap]?.top ?? boxes.at(-1)?.bottom ?? list.getBoundingClientRect().top;
@@ -251,8 +270,8 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
 
   onMount(() => {
     area = list.closest<HTMLElement>("[data-sortable-column]") ?? list;
-    let members = groups.get(group);
-    if (!members) groups.set(group, (members = new Set()));
+    const members = groups.get(group) ?? new Set<Entry>();
+    groups.set(group, members);
     members.add(entry);
     touchRegistry();
     const read = () => ({
@@ -299,7 +318,17 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
     if (props.disabled) return;
     endKeyboard?.();
     const fromIndex = keys().indexOf(key);
-    const state: Lift = { group, key, label, from: listKey, fromIndex, to: listKey, index: fromIndex, keyboard: true, messages: dragMessages() };
+    const state: Lift = {
+      group,
+      key,
+      label,
+      from: listKey,
+      fromIndex,
+      to: listKey,
+      index: fromIndex,
+      keyboard: true,
+      messages: dragMessages(),
+    };
     setLift(state);
     showStatus(state);
     announce(list, messages().lifted({ label, ...place(entry, state, fromIndex) }));
@@ -362,7 +391,8 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
         endKeyboard?.();
         const moved = commit(state);
         const to = find(group, state.to);
-        if (to && state.index !== undefined) announce(list, to.messages().dropped({ label: state.label, ...place(to, state, state.index) }));
+        if (to && state.index !== undefined)
+          announce(list, to.messages().dropped({ label: state.label, ...place(to, state, state.index) }));
         if (moved) queueMicrotask(() => refocus(group, state.key));
         break;
       }

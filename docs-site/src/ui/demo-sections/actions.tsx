@@ -9,9 +9,9 @@ import {
   CopyButton,
   Disclosure,
   DragSource,
-  dragStatus,
   Dropdown,
   DropTarget,
+  dragStatus,
   FilterChip,
   FilterToggle,
   GestureMenu,
@@ -827,7 +827,11 @@ const boardColumns = [
 const priorityIcon = { high: "ti ti-arrow-up", normal: "ti ti-minus", low: "ti ti-arrow-down" };
 
 const SortableBoardDemo = () => {
-  const [board, setBoard] = createSignal<Record<string, string[]>>({ open: ["c1", "c2", "c3", "c4"], doing: ["c5", "c6", "c7"], done: ["c8", "c9"] });
+  const [board, setBoard] = createSignal<Record<string, string[]>>({
+    open: ["c1", "c2", "c3", "c4"],
+    doing: ["c5", "c6", "c7"],
+    done: ["c8", "c9"],
+  });
   const moveMenu = useSortableMoveMenu("ui-demo-board");
   const byTitle = (key: string) =>
     board().done.filter((other) => other !== key && boardCards[other]!.title.localeCompare(boardCards[key]!.title) < 0).length;
@@ -838,7 +842,10 @@ const SortableBoardDemo = () => {
       to.splice(index, 0, key);
       return { ...next, [move.to]: to };
     });
-    if (move.from !== move.to) toast(`Moved to ${boardColumns.find((column) => column.key === move.to)?.label}`, { action: { label: "Undo", variant: "ghost", onClick: move.undo } });
+    if (move.from !== move.to)
+      toast(`Moved to ${boardColumns.find((column) => column.key === move.to)?.label}`, {
+        action: { label: "Undo", variant: "ghost", onClick: move.undo },
+      });
   };
   return (
     <DemoCard
@@ -883,7 +890,11 @@ const SortableBoardDemo = () => {
                   return (
                     <div class="ui-sortable-board__card">
                       {handle}
-                      <i class={`${priorityIcon[card().priority]} ui-sortable-board__priority`} data-priority={card().priority} aria-hidden="true" />
+                      <i
+                        class={`${priorityIcon[card().priority]} ui-sortable-board__priority`}
+                        data-priority={card().priority}
+                        aria-hidden="true"
+                      />
                       <span class="ui-sortable-board__title">{card().title}</span>
                       <Dropdown.Root items={menu()} label={`${card().title}: actions`}>
                         <Dropdown.Trigger iconOnly label={`${card().title}: more actions`}>

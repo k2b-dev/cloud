@@ -197,7 +197,9 @@ describe(`sortable list in ${browserName}`, () => {
       expect(during.previewTop).toBeGreaterThan(pointer.y);
       expect(await boxes(page)).toEqual(before);
       await page.mouse.up();
-      await page.waitForFunction(() => !document.querySelector(".k2b-drag-preview, [data-drop], [data-sortable-dragging], [data-sortable-line]"));
+      await page.waitForFunction(
+        () => !document.querySelector(".k2b-drag-preview, [data-drop], [data-sortable-dragging], [data-sortable-line]"),
+      );
       expect(await order(page)).toEqual(["beta", "gamma", "alpha", "delta"]);
       // A press on the row's text is not a grip: it starts nothing.
       const name = await center(page, ".name >> nth=0");
@@ -277,7 +279,9 @@ describe(`sortable list in ${browserName}`, () => {
       await lift(page, "d1");
       const scroll = (await page.locator('[data-column="open"] .scroll').boundingBox())!;
       await page.mouse.move(scroll.x + scroll.width / 2, scroll.y + scroll.height - 6, { steps: 3 });
-      await page.waitForFunction(() => document.querySelector('[data-column="open"] .scroll')!.scrollTop > 100, undefined, { timeout: 4000 });
+      await page.waitForFunction(() => document.querySelector('[data-column="open"] .scroll')!.scrollTop > 100, undefined, {
+        timeout: 4000,
+      });
       await page.mouse.up();
       await page.waitForFunction(() => !document.querySelector(".k2b-drag-preview"));
       const after = await board(page);
@@ -390,9 +394,9 @@ describe(`sortable list in ${browserName}`, () => {
       await page.mouse.up();
       expect(await page.locator(".k2b-drag-preview").count()).toBe(0);
       const section = await page.evaluate(() => {
-        const menu = (window as unknown as { moveMenu: (key: string) => { sectionLabel: string; items: { label: string; action: () => void }[] } }).moveMenu(
-          "o1",
-        );
+        const menu = (
+          window as unknown as { moveMenu: (key: string) => { sectionLabel: string; items: { label: string; action: () => void }[] } }
+        ).moveMenu("o1");
         const labels = menu.items.map((item) => item.label);
         menu.items[0]!.action();
         return { title: menu.sectionLabel, labels };
