@@ -49,9 +49,28 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
   if (!root) return { overlap: [], spill: [], cut: [], double: [], sideways: false, problems: [`no element matches ${options.root}`] };
   const ignore = options.ignore ?? ".k2b-avatar-stack, [data-layout-check='skip']";
   const slack = options.slack ?? 7;
+  // A visually hidden box (1 px, clipped, such as `.k2b-sr-only` or a head the sidebar makes redundant) keeps its
+  // content for screen readers on purpose; nothing inside it is laid out for the eye.
+  const hidden = new Map<Element, boolean>();
+  const visuallyHidden = (element: Element | null): boolean => {
+    if (!element || element === document.documentElement) return false;
+    const known = hidden.get(element);
+    if (known !== undefined) return known;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    const clipped = (style.clipPath === "inset(50%)" || style.clip === "rect(0px, 0px, 0px, 0px)") && (rect.width <= 1 || rect.height <= 1);
+    const result = clipped || visuallyHidden(element.parentElement);
+    hidden.set(element, result);
+    return result;
+  };
   const seen = (element: Element) => {
     const rect = element.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0 && element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      element.checkVisibility({ visibilityProperty: true, opacityProperty: true }) &&
+      !visuallyHidden(element)
+    );
   };
   // A box that sticks or floats lies above the flow on purpose.
   const inFlow = (element: Element) => !["absolute", "fixed", "sticky"].includes(getComputedStyle(element).position);

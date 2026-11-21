@@ -366,18 +366,22 @@ dragging turn grip and line blue. None of it changes the line's place or
 width, so nothing moves. A line without a grip is fixed. Tablets and phones
 have no grip and no draggable edge.
 
-Because the line marks both edges of a column, a column keeps the same space
-inside both side edges, as the sidebar does. A level body and a
-`surface="navigation"` pane keep 0.5 rem on each side: a row's fill, hover, and
-selection stop 0.5 rem before either edge, and a group title and row text line
-up with the level head's 1 rem. With a mouse, the end space is the column's
+A level head is 56 px tall like the workspace head (K1), and its text starts
+on the column's text edge (`--k2b-gutter`, 20 px, 16 px on a phone). A level
+body adds no inset: rows and their hairlines reach both column edges (K2), and
+each row starts its text on the text edge itself. A page level's body starts
+its content on the text edge.
+
+Navigation groups keep the sidebar's inset. A level whose body holds
+`SidebarSection` groups and a `surface="navigation"` pane keep 0.5 rem on each
+side: a row's fill, hover, and selection stop 0.5 rem before either edge, and a
+group title, row text, and the level head line up 1 rem from the edge. With a mouse, the end space is the column's
 fixed 0.5 rem scroll track, so a classic scrollbar never widens one side. The
 track is there before anything overflows, so Safari, which reserves no gutter,
 shows the same space and nothing moves when a column starts to scroll. On a
 touch screen, overlay scrollbars take no room and the padding stays on both
-sides. Content in a level adds only its own space beyond the 0.5 rem, for
-example `px-2` for text that lines up with the head; it never cancels the inset
-with a negative margin. Firefox has no fixed track: it keeps the padding
+sides. Content in a navigation level adds only its own space beyond the
+0.5 rem; it never cancels the inset with a negative margin. Firefox has no fixed track: it keeps the padding
 on both sides and adds its own classic scrollbar, if any, at the end. A `MainPane` outside levels without a surface adds no
 inset; its content owns its edges, like `Main`.
 
