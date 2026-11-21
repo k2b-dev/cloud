@@ -208,9 +208,14 @@ test("built-in SDK paths use camelCase and the Files export while preserving cap
   for (const [capability, methodPath] of [
     ["spaces.task.set-completed", ["task", "setCompleted"]],
     ["grids.record.upsert-external", ["record", "upsertExternal"]],
-    ["pulse.saved_query.list", ["savedQuery", "list"]],
+    ["pulse.base.saved_query.list", ["savedQuery", "list"]],
+    ["pulse.base.sql.run", ["sql", "run"]],
   ] as const)
     expect(sdk.manifest.operations.find((op) => op.capability === capability)?.methodPath).toEqual([...methodPath]);
+  // G1: Code reads Pulse only through a base target that Cloud checks for each visitor.
+  for (const capability of ["pulse.sql.run", "pulse.saved_query.list", "pulse.source.list", "pulse.alert.list", "pulse.alert.read"])
+    expect(sdk.manifest.omitted).toContainEqual(expect.objectContaining({ capability, reason: "code_false" }));
+  expect(typeof loaded.pulse.base("Base01").sql.run).toBe("function");
   expect(sdk.manifest.events.filter((event) => event.type.startsWith("filesv2.")).length).toBeGreaterThan(0);
   expect(sdk.manifest.events.some((event) => event.type.startsWith("files."))).toBe(false);
   for (const suffix of ["", ".batch"]) {

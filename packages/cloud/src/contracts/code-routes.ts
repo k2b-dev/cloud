@@ -22,12 +22,8 @@ export const CodeRouteSchema = z
         "The checker found a reachable ctx.page call, or proved this handler returns data. Absent when unknown or on older versions.",
       ),
     layout: z.literal("plain").optional().describe("Pages of this route render without the Cloud layout; omitted, they render inside it."),
-    audience: z
-      .literal("owner-data")
-      .optional()
-      .describe(
-        "Omitted, Cloud delivers the route only to visitors who may read every resource it read. owner-data turns that check off: everyone who opens the route sees data read with the owner's rights.",
-      ),
+    // Kept short: Core's capability manifest repeats this schema and sits near the registry limit.
+    audience: z.literal("owner-data").optional().describe("Turns off the visitor read check (G1)."),
   })
   .strict();
 export type CodeRoute = z.infer<typeof CodeRouteSchema>;

@@ -5,13 +5,38 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-19
+updated: 2026-11-21
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## Code pages check what they read
+
+A Code route now delivers its answer only to a visitor who may read every
+resource the route read: the target and refs of each succeeded Query and each
+resource read through its type reader. Other visitors get **No access**
+(`403 code_page_access_denied`). Before, every signed-in member saw what the
+owner's account could read.
+
+- A page that should show the owner's data to everyone who opens it declares
+  `{ audience: "owner-data" }` on the route. The change needs a new version and
+  its approval; the administrators see the option in the review.
+- A public route that reads a resource needs `audience: "owner-data"`. Pulse
+  keeps bases, sources and dashboards off public routes entirely
+  (`code.noPublicRoutes`).
+- Code reads Pulse only through a `pulse.base` target:
+  `pulse.base(id).sql.run(...)`, `.source.list`, `.alert.list`, `.alert.read`
+  and `.savedQuery.list`. The app-wide forms with `baseId` keep working for
+  people, the CLI, the API and Gustav, but the Code SDK no longer offers them
+  and the bridge refuses them with `code_disabled`. Replace
+  `pulse.sql.run({ baseId, sql })` with `pulse.base(baseId).sql.run({ sql })`.
+- `sql.run` and `base.sql.run` return a cursor for the next page; use `ORDER BY`
+  so pages stay stable.
+
+See [Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read).
 
 ## One compact approval frame
 
