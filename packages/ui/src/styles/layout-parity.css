@@ -3794,9 +3794,10 @@ html {
       overflow-y: scroll;
     }
 
-    /* The detail header keeps the body's track without scrolling, so its
-       trailing controls end on the body's trailing edge. */
-    .k2b-ui .k2b-detail-panel__header {
+    /* The detail's 56 px bar keeps the body's track without scrolling, so
+       its trailing controls end on the body's trailing edge. The first
+       section below it keeps the full width, so its line runs edge to edge. */
+    .k2b-ui .k2b-detail-panel__header-main {
       overflow-x: hidden;
       overflow-y: scroll;
     }
