@@ -1778,6 +1778,7 @@ export default function Browser(props: {
   ];
   /** The folder at a level of the path: 0 is the storage itself. */
   const pathAt = (index: number) => folder().split("/").filter(Boolean).slice(0, index).join("/");
+  const pageError = () => (props.error && !loadingMore() && !moreError() ? props.error : undefined);
   const folderCount = () => props.directory.items.filter((entry) => entry.directory).length;
   /** The current order in words, such as "Folders first, Name", for the chip in the status row. */
   const sortSummary = () =>
@@ -2010,8 +2011,17 @@ export default function Browser(props: {
                 </span>
               }
               facts={!searching() && folderCount() > 0 ? [{ value: folderCount(), label: b().folderFact(folderCount()) }] : undefined}
+              // K10: a failed refresh concerns the whole page; it stands in the status row in the key figures' place, the
+              // lead statement and the list stay, and Refresh names the way on.
+              state={pageError() ? { label: <span role="alert">{pageError()}</span>, tone: "danger", icon: "ti ti-refresh" } : undefined}
               filters={
                 <>
+                  <Show when={pageError()}>
+                    <Button size="sm" variant="secondary" onClick={props.onRetry}>
+                      <i class="ti ti-refresh" aria-hidden="true" />
+                      {t().refresh}
+                    </Button>
+                  </Show>
                   <Show when={search()}>
                     {(current) => (
                       <div class="filesv2-search-filters" role="group" aria-label={b().searchFilters}>
@@ -2181,7 +2191,7 @@ export default function Browser(props: {
                   : undefined
               }
             />
-            <Show when={props.notice || props.issues?.length || (props.error && !loadingMore() && !moreError())}>
+            <Show when={props.notice || props.issues?.length}>
               <div class="filesv2-browser__notes">
                 <Show when={props.notice}>
                   <InlineGuidance tone="info">{props.notice}</InlineGuidance>
@@ -2194,14 +2204,6 @@ export default function Browser(props: {
                     </InlineGuidance>
                   )}
                 </For>
-                <Show when={props.error && !loadingMore() && !moreError()}>
-                  <InlineGuidance tone="danger" role="alert">
-                    {props.error}{" "}
-                    <Button size="xs" variant="text" onClick={props.onRetry}>
-                      {b().retry}
-                    </Button>
-                  </InlineGuidance>
-                </Show>
               </div>
             </Show>
             <Show when={view().view !== "tree" && props.directory.readme}>

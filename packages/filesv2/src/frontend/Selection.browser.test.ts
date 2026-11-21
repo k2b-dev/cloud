@@ -612,8 +612,9 @@ describe("Files folder states", () => {
     try {
       // The folder is empty: the parent row, then the quiet empty state without a box (K10).
       expect(await tab.getByText("This folder is empty").first().isVisible()).toBe(true);
-      // A failed refresh says so under the status row and offers the way on.
-      expect(await tab.getByRole("alert").textContent()).toContain("The folder could not be loaded again.");
+      // A failed refresh says so in the status row, in the key figures' place, and offers the way on (K10).
+      expect(await tab.locator(".k2b-status-row").getByRole("alert").textContent()).toContain("The folder could not be loaded again.");
+      expect(await tab.locator(".k2b-status-row").getByRole("button", { name: "Refresh" }).count()).toBe(1);
       await tab.locator(".filesv2-list__row--up").focus();
       await settled(tab);
       if (shots) await tab.screenshot({ path: `${shots}/folder-empty-light-1440.png` });

@@ -609,7 +609,7 @@
     width: 10rem;
   }
 }
-@container k2b-head (width < 44rem) {
+@container k2b-head (width < 50rem) {
   .k2b-ui .filesv2-search {
     flex-basis: 7.5rem;
     width: 7.5rem;
