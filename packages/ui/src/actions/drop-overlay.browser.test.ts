@@ -164,6 +164,59 @@ describe(`drop overlay in ${browserName}`, () => {
     }
   });
 
+  test("while the overlay still loads, the first drag has no gap: the preview follows at once, the overlay comes when ready, nothing shifts", async () => {
+    // The chunk takes 1.5 s, so it is still on its way when the drag starts right after the page loads.
+    const { page, context, overlayLoaded } = await open({ delay: 1500 });
+    try {
+      let arrived = false;
+      void overlayLoaded.then(() => {
+        arrived = true;
+      });
+      await settled(page);
+      const row = await center(page, ".row");
+      await page.mouse.move(row.x, row.y);
+      await page.mouse.down();
+      await page.mouse.move(row.x + 7, row.y);
+      const at = () =>
+        page.evaluate(() => {
+          const preview = document.querySelector<HTMLElement>(".k2b-drag-preview");
+          return (/translate3d\(([-\d.]+)px, ([-\d.]+)px/.exec(preview?.style.transform ?? "") ?? []).slice(1).map(Math.round);
+        });
+      // The preview is part of the static engine: it is there and at the pointer before the overlay code arrives.
+      await page.locator(".k2b-drag-preview").waitFor();
+      expect(arrived).toBe(false);
+      expect(await page.locator(".k2b-drop-overlay").count()).toBe(0);
+      const [x0, y0] = await at();
+      expect(Math.abs(x0! - (row.x + 7))).toBeLessThanOrEqual(1);
+      expect(Math.abs(y0! - row.y)).toBeLessThanOrEqual(1);
+      for (const step of [40, 80, 120]) {
+        await page.mouse.move(row.x + step, row.y + step / 4);
+        // WebKit reports whole pixels, so the preview counts as at the pointer within 1 px.
+        await page.waitForFunction(
+          (expected) => {
+            const preview = document.querySelector<HTMLElement>(".k2b-drag-preview");
+            const [x, y] = (/translate3d\(([-\d.]+)px, ([-\d.]+)px/.exec(preview?.style.transform ?? "") ?? []).slice(1).map(Number);
+            return x !== undefined && y !== undefined && Math.abs(x - expected.x) <= 1 && Math.abs(y - expected.y) <= 1;
+          },
+          { x: row.x + step, y: row.y + step / 4 },
+        );
+      }
+      // The overlay appears once its code is there, during the same drag, and nothing shifted meanwhile.
+      await page.locator(".k2b-drop-overlay").waitFor({ timeout: 4000 });
+      expect(arrived).toBe(true);
+      const [x1, y1] = await at();
+      expect(Math.abs(x1! - (row.x + 120))).toBeLessThanOrEqual(1);
+      expect(Math.abs(y1! - (row.y + 30))).toBeLessThanOrEqual(1);
+      expect(await page.evaluate(() => (window as unknown as { shift: number }).shift)).toBe(0);
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      await clean(page);
+      expect(await drops(page)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("new tiles take nothing while arming; after it, the target under the pointer is found again", async () => {
     const { page, context } = await open();
     try {
