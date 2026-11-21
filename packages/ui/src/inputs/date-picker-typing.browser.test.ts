@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled, touchTargetMin } from "../../test/browser";
 
 declare global {
   interface Window {
@@ -314,8 +314,10 @@ describe("typed date field", () => {
       await toggle.tap();
       const sheet = page.locator("dialog[open] .k2b-date-sheet");
       await sheet.waitFor();
+      // Measure the sheet at rest: while it opens, a transform scales the day's box below its size.
+      await settled(page);
       const day = sheet.locator('[data-date-day="2026-11-20"]');
-      expect((await day.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      expect((await day.boundingBox())!.height).toBeGreaterThanOrEqual(touchTargetMin);
       await day.tap();
       // The day is saved with the tap; focus returns to the toggle once the sheet and its history entry are gone.
       expect(await input.inputValue()).toBe("20.11.2026");

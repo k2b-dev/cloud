@@ -11137,18 +11137,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-danger-text);
 }
 
-/* Days on the phone sheet are full touch targets. */
+/* Days on the phone sheet are full touch targets: 44 px in px, so no rem or token math lands a hair below (#3917). */
 .k2b-ui .k2b-date-sheet .k2b-date-calendar__header {
-  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
 }
 
 .k2b-ui .k2b-date-sheet .k2b-date-calendar__nav {
-  min-width: 2.75rem;
-  min-height: 2.75rem;
+  min-inline-size: 44px;
+  min-block-size: 44px;
 }
 
 .k2b-ui .k2b-date-sheet .k2b-date-grid button {
-  min-height: 2.75rem;
+  min-block-size: 44px;
   font-size: 0.9375rem;
 }
 
