@@ -635,7 +635,8 @@ export const dashboardCapabilities = defineCapabilities({
         .strict(),
       data: z.array(Summary),
       openWorld: false,
-      code: false,
+      // G1 checks the base named in baseId for the visitor of a Code page, like a target.
+      inputRefs: { baseId: "base" },
       async run(input, context) {
         const offset = input.cursor === undefined ? 0 : Number(input.cursor);
         if (!Number.isSafeInteger(offset)) return fail(err.badInput("Invalid dashboard cursor"));
@@ -656,7 +657,6 @@ export const dashboardCapabilities = defineCapabilities({
         .strict(),
       data: DashboardSchema,
       openWorld: false,
-      code: false,
       async run(input, context) {
         const result = await readDashboardResource({ ...identity(context), id: input.id });
         if (!result.ok) return result;
@@ -848,7 +848,8 @@ export const pulseCapabilities = defineCapabilities({
       input: AlertListInputSchema,
       data: AlertListDataSchema,
       openWorld: false,
-      code: false,
+      // G1 checks the base named in baseId for the visitor of a Code page, like a target.
+      inputRefs: { baseId: "base" },
       run: (input, context) => runAlertList(input, input.baseId, context),
     },
     "alert.read": {
@@ -857,7 +858,8 @@ export const pulseCapabilities = defineCapabilities({
       input: AlertReadInputSchema,
       data: AlertDataSchema,
       openWorld: false,
-      code: false,
+      // G1 checks the base named in baseId for the visitor of a Code page, like a target.
+      inputRefs: { baseId: "base" },
       run: (input, context) => runAlertRead(input, input.baseId, context),
     },
     "sql.run": {
@@ -867,7 +869,8 @@ export const pulseCapabilities = defineCapabilities({
       input: SqlRunPagedInputSchema,
       data: SqlRunDataSchema,
       openWorld: false,
-      code: false,
+      // G1 checks the base named in baseId for the visitor of a Code page, like a target.
+      inputRefs: { baseId: "base" },
       run: (input, context) => runSql(input, input.baseId, context),
     },
     "saved_query.list": {
@@ -876,11 +879,12 @@ export const pulseCapabilities = defineCapabilities({
       input: SavedQueryListInputSchema,
       data: SavedQueryListDataSchema,
       openWorld: false,
-      code: false,
+      // G1 checks the base named in baseId for the visitor of a Code page, like a target.
+      inputRefs: { baseId: "base" },
       run: (input, context) => runSavedQueryList(input, input.baseId, context),
     },
-    // P1: the same reads with the base as target. Code reads Pulse only this way, so Cloud checks each base for the
-    // visitor of a Code page (G1); the app-wide forms above carry `code: false`.
+    // P1: the same reads with the base as target, recommended for Code. Cloud checks the base for the visitor of a
+    // Code page (G1) in both forms: the app-wide forms above name it in `inputRefs`.
     "base.alert.list": {
       target: "base",
       title: "List alert rules of a Pulse base",
@@ -962,7 +966,8 @@ export const pulseCapabilities = defineCapabilities({
       input: SourceListInputSchema,
       data: SourceListDataSchema,
       openWorld: false,
-      code: false,
+      // G1 checks the base named in baseId for the visitor of a Code page, like a target.
+      inputRefs: { baseId: "base" },
       run: (input, context) => runSourceList(input, input.baseId, context),
     },
     "source.read": {

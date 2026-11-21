@@ -57,7 +57,7 @@ suiteFor("database")("Code route reads for the visitor check (G1)", () => {
     await database?.drop();
   });
 
-  test("succeeded Queries name themselves, their targets, refs and reader ids once; writes, failures and other runs do not count", async () => {
+  test("succeeded Queries name themselves, their targets, refs and short input strings once; writes, failures and other runs do not count", async () => {
     const base = { type: "pulse.base", id: "Base01" };
     await call(runId, "query", "pulse.base.sql.run", base, { sql: "SELECT 1" }, "succeeded");
     await call(runId, "query", "pulse.base.sql.run", base, { sql: "SELECT 2" }, "succeeded");
@@ -65,26 +65,40 @@ suiteFor("database")("Code route reads for the visitor check (G1)", () => {
       view: { type: "grids.view", id: "V1" },
     });
     await call(runId, "query", "pulse.source.read", null, { id: "Src001" }, "succeeded");
-    await call(runId, "query", "pulse.base.list", null, { query: "x" }, "succeeded");
+    await call(runId, "query", "pulse.base.list", null, { query: "x", limit: 5 }, "succeeded");
+    await call(runId, "query", "pulse.sql.run", null, { baseId: "Base02", sql: "SELECT 1", note: "y".repeat(600) }, "succeeded");
     await call(runId, "query", "pulse.base.sql.run", { type: "pulse.base", id: "Failed" }, { sql: "x" }, "failed");
     await call(runId, "query", "pulse.base.sql.run", { type: "pulse.base", id: "Pending" }, { sql: "x" }, "running");
     await call(runId, "action", "pulse.saved_query.save", { type: "pulse.base", id: "Write1" }, { name: "n", sql: "x" }, "succeeded");
     await call(otherRunId, "query", "pulse.base.sql.run", { type: "pulse.base", id: "Other1" }, { sql: "x" }, "succeeded");
     const [row] = await sql<{ reads: unknown }[]>`SELECT (${codeRunReadsQuery(runId)}) AS reads`;
     const reads = parseCodeRouteReads(row!.reads);
-    const key = (read: (typeof reads)[number]) => JSON.stringify(read);
+    // Postgres orders jsonb keys by length; compare with sorted keys.
+    const canonical = (value: unknown): unknown =>
+      value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([k, v]) => [k, canonical(v)]),
+          )
+        : value;
+    const key = (read: unknown) => JSON.stringify(canonical(read));
     expect(reads.map(key).sort()).toEqual(
       [
         { kind: "target", ref: base },
         { kind: "target", ref: { type: "grids.table", id: "T1" } },
         { kind: "target", ref: { type: "grids.view", id: "V1" } },
-        { kind: "reader", capability: "pulse.source.read", id: "Src001" },
+        { kind: "input", capability: "pulse.source.read", fields: { id: "Src001" } },
+        { kind: "input", capability: "pulse.base.list", fields: { query: "x" } },
+        // Strings longer than a resource ID (here 600 characters) cannot name a resource and stay out.
+        { kind: "input", capability: "pulse.sql.run", fields: { baseId: "Base02", sql: "SELECT 1" } },
         { kind: "query", capability: "pulse.base.sql.run" },
         { kind: "query", capability: "grids.row.list" },
         { kind: "query", capability: "pulse.source.read" },
         { kind: "query", capability: "pulse.base.list" },
+        { kind: "query", capability: "pulse.sql.run" },
       ]
-        .map((read) => JSON.stringify(read))
+        .map(key)
         .sort(),
     );
     const [empty] = await sql<{ reads: unknown }[]>`SELECT (${codeRunReadsQuery("77777777-7777-4777-8777-777777777777")}) AS reads`;

@@ -70,27 +70,32 @@ export const getCapabilityCatalogApp = async (
 };
 
 /**
- * Live registry facts for the read check of Code route hosting (G1): which Query reads which resource type, and
- * whether the app keeps its data off public Code routes. No presentation, no authority; `null` for an unknown app.
+ * Live registry facts for the read check of Code route hosting (G1): which input fields of each app-wide Query name a
+ * resource it reads (a type's reader with `id`, and declared `inputRefs`), each type's reader, and whether the app keeps
+ * its data off public Code routes. No presentation, no authority; `null` for an unknown app.
  */
 export const getCapabilityCodeReadFacts = async (
   appId: string,
 ): Promise<{
-  readers: Readonly<Record<string, string>>;
+  /** Qualified Query ID → input field → qualified resource type. */
+  inputRefs: Readonly<Record<string, Readonly<Record<string, string>>>>;
   typeReaders: Readonly<Record<string, string>>;
   publicRoutes: boolean;
 } | null> => {
   const capability = await getCapability(appId);
   if (!capability) return null;
   const queries = new Set(capability.manifest.queries.map((query) => query.localId));
-  const readers: Record<string, string> = {};
+  const inputRefs: Record<string, Record<string, string>> = {};
   const typeReaders: Record<string, string> = {};
   for (const type of capability.manifest.types) {
     if (!type.reader || !queries.has(type.reader)) continue;
-    readers[`${appId}.${type.reader}`] ??= `${appId}.${type.localId}`;
+    (inputRefs[`${appId}.${type.reader}`] ??= {}).id ??= `${appId}.${type.localId}`;
     typeReaders[`${appId}.${type.localId}`] = type.reader;
   }
-  return { readers, typeReaders, publicRoutes: capability.manifest.code?.publicRoutes !== false };
+  for (const query of capability.manifest.queries)
+    for (const [field, type] of Object.entries(query.inputRefs ?? {}))
+      (inputRefs[`${appId}.${query.localId}`] ??= {})[field] = `${appId}.${type}`;
+  return { inputRefs, typeReaders, publicRoutes: capability.manifest.code?.publicRoutes !== false };
 };
 
 /**

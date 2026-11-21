@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout } from "bun:test";
 import { sql } from "@k2b/cloud";
-import { assertResourceOpenLink } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { type CapabilityExecutionContext, type CapabilityQueryDefinition, capabilityResultSchema, type User } from "@k2b/cloud/contracts";
 import { testFor } from "../../../scripts/fixtures/test-infra";
 import { pulseCapabilities } from "./capabilities";
@@ -230,5 +230,42 @@ postgresTest("reads only bases and sources visible to the current access subject
     await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
     if (accessId) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
     await sql`DELETE FROM auth.users WHERE id IN (${user.id}::uuid, ${otherUserRow.id}::uuid)`;
+  }
+});
+
+postgresTest("G1 provider half: the old sql.run form names its base, and the base reader answers as the visitor", async () => {
+  // Core resolves `baseId` of sql.run through the compiled manifest's inputRefs and asks the type's reader as the
+  // visitor (packages/core/src/code/page-reads.ts). This checks Pulse's side of that chain against real grants.
+  const manifest = compileCapabilityManifest("pulse", pulseCapabilities);
+  expect(manifest.queries.find((query) => query.localId === "sql.run")?.inputRefs).toEqual({ baseId: "base" });
+  expect(manifest.queries.find((query) => query.localId === "sql.run")?.code).toBeUndefined();
+  expect(manifest.types.find((type) => type.localId === "base")?.reader).toBe("base.read");
+  const suffix = crypto.randomUUID();
+  const baseId = crypto.randomUUID();
+  const baseShortId = newShortId();
+  const [visitorRow] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, mail)
+      VALUES (${`pulse-g1-${suffix}`}, 'local', 'user', 'Pulse G1 visitor', ${`pulse-g1-${suffix}@example.test`})
+      RETURNING id
+    `;
+  if (!visitorRow) throw new Error("Failed to create the G1 visitor");
+  const visitor = userContext(testUser(visitorRow.id, `g1-${suffix}`));
+  let accessId: string | null = null;
+  try {
+    await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Protected telemetry')`;
+    await seedActiveBaseStore(baseId);
+    // Without read access: the reader refuses, so Core shows "No access" instead of the page.
+    expect(await invoke("base.read", { id: baseShortId }, visitor)).toMatchObject({ ok: false, error: { status: 403 } });
+    const [access] = await sql<{ id: string }[]>`
+        INSERT INTO auth.access (user_id, permission) VALUES (${visitorRow.id}::uuid, 'read') RETURNING id
+      `;
+    accessId = access!.id;
+    await sql`INSERT INTO pulse.base_access (base_id, access_id) VALUES (${baseId}::uuid, ${accessId}::uuid)`;
+    // With read access: the reader answers, so Core delivers the page with the data.
+    expect(await invoke("base.read", { id: baseShortId }, visitor)).toMatchObject({ ok: true, data: { data: { id: baseShortId } } });
+  } finally {
+    await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
+    if (accessId) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
+    await sql`DELETE FROM auth.users WHERE id = ${visitorRow.id}::uuid`;
   }
 });

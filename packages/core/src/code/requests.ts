@@ -6,7 +6,12 @@ import {
   type CodeRouteResponse,
   CodeRouteResponseSchema,
 } from "@k2b/cloud/code";
-import { CloudResourceRefSchema, type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import {
+  CLOUD_RESOURCE_ID_MAX_LENGTH,
+  CloudResourceRefSchema,
+  type CodeCheckedVersionManifest,
+  CodeCheckedVersionManifestSchema,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CodeDataError } from "./access";
 import { codeAdmissionLock } from "./admission";
@@ -54,21 +59,22 @@ export async function codeRequestVersion(
   };
 }
 /**
- * One read of a finished route run (G1): the target or a ref of a succeeded Query, the id a succeeded Query passed to
- * an operation that may be its type's reader (hosting decides which are readers), and each succeeded Query itself,
- * which a public route may call only with owner-data.
+ * One read of a finished route run (G1): the target or a ref of a succeeded Query, the short string input fields of a
+ * succeeded app-wide Query (hosting keeps those that name a resource: a type reader's `id`, declared `inputRefs`), and
+ * each succeeded Query itself, which a public route may call only with owner-data.
  */
 export type CodeRouteRead =
   | { kind: "target"; ref: { type: string; id: string } }
-  | { kind: "reader"; capability: string; id: string }
+  /** Top-level string input fields of an app-wide Query; hosting keeps those that name a resource (`inputRefs`). */
+  | { kind: "input"; capability: string; fields: Readonly<Record<string, string>> }
   | { kind: "query"; capability: string };
 /** The route's answer and what it read on the way; hosting checks the reads for the visitor before it delivers. */
 export type CodeRouteAnswer = CodeRouteResponse & { reads: readonly CodeRouteRead[] };
 
 /**
  * G1: what a run read, as one subquery for a larger statement. Only succeeded Queries can have put data into the answer:
- * their target, each ref, the `id` of an app-wide Query (hosting keeps it when the Query is a type's reader), and the
- * Query itself.
+ * their target, each ref, the string input fields of an app-wide Query that could be a resource ID (longer strings such
+ * as SQL cannot), and the Query itself.
  * Actions are writes and stay outside; the run's call budget bounds the rows.
  */
 export const codeRunReadsQuery = (runId: string) => sql`SELECT COALESCE(jsonb_agg(DISTINCT x.read),'[]'::jsonb) FROM code.calls c
@@ -76,8 +82,11 @@ export const codeRunReadsQuery = (runId: string) => sql`SELECT COALESCE(jsonb_ag
     SELECT jsonb_build_object('kind','target','ref',c.call->'target') AS read WHERE jsonb_typeof(c.call->'target')='object'
     UNION ALL SELECT jsonb_build_object('kind','target','ref',ref.value) FROM jsonb_each(
       CASE WHEN jsonb_typeof(c.call->'refs')='object' THEN c.call->'refs' ELSE '{}'::jsonb END) ref
-    UNION ALL SELECT jsonb_build_object('kind','reader','capability',c.call->>'capability','id',c.call->'input'->>'id')
-      WHERE jsonb_typeof(c.call->'target')='null' AND jsonb_typeof(c.call->'input'->'id')='string'
+    UNION ALL SELECT jsonb_build_object('kind','input','capability',c.call->>'capability','fields',f.fields)
+      FROM (SELECT jsonb_object_agg(e.key,e.value) AS fields FROM jsonb_each(
+        CASE WHEN jsonb_typeof(c.call->'input')='object' THEN c.call->'input' ELSE '{}'::jsonb END) e
+        WHERE jsonb_typeof(e.value)='string' AND length(e.value#>>'{}')<=${CLOUD_RESOURCE_ID_MAX_LENGTH}) f
+      WHERE jsonb_typeof(c.call->'target')='null' AND f.fields IS NOT NULL
     UNION ALL SELECT jsonb_build_object('kind','query','capability',c.call->>'capability')
   ) x
   WHERE c.run_id=${runId}::uuid AND c.kind='query' AND c.state='succeeded'`;
@@ -86,7 +95,7 @@ export const parseCodeRouteReads = (value: unknown): CodeRouteRead[] => CodeRout
 const CodeRouteReadsSchema = z.array(
   z.union([
     z.object({ kind: z.literal("target"), ref: CloudResourceRefSchema }),
-    z.object({ kind: z.literal("reader"), capability: z.string().min(1), id: CloudResourceRefSchema.shape.id }),
+    z.object({ kind: z.literal("input"), capability: z.string().min(1), fields: z.record(z.string(), z.string()) }),
     z.object({ kind: z.literal("query"), capability: z.string().min(1) }),
   ]),
 );

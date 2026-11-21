@@ -37,9 +37,12 @@ test("declares SQL and saved query capabilities with base and source readers", (
     "source.read",
     "sql.run",
   ]);
-  // G1: Code reads base data only through a pulse.base target, which Cloud checks for each page visitor.
-  for (const id of ["alert.list", "alert.read", "dashboard.list", "dashboard.read", "saved_query.list", "source.list", "sql.run"] as const)
-    expect(pulseCapabilities.queries[id].code).toBe(false);
+  // G1: every Query that reads one base names it, as a target or as baseId (inputRefs), so Cloud checks it for each
+  // visitor of a Code page. The app-wide forms stay available to Code until the removal release.
+  for (const id of ["alert.list", "alert.read", "dashboard.list", "saved_query.list", "source.list", "sql.run"] as const) {
+    expect(pulseCapabilities.queries[id].inputRefs).toEqual({ baseId: "base" });
+    expect(pulseCapabilities.queries[id].code).toBeUndefined();
+  }
   for (const id of [
     "base.alert.list",
     "base.alert.read",

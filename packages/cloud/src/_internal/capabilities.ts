@@ -178,6 +178,7 @@ const QUERY_FIELDS = {
   universalSearch: true,
   codeResourceTitle: true,
   code: true,
+  inputRefs: true,
   run: true,
 } satisfies DefinedFields<CapabilityQueryDefinition>;
 const ACTION_FIELDS = {
@@ -1058,6 +1059,11 @@ export const compileCapabilities = (
       if (!field || field.length > 100 || !typeIds.has(qualifiedId(appId, type)))
         throw new Error(`${label} ref ${field} must name a declared type of the same app: ${type}`);
     }
+    for (const [field, type] of Object.entries(definition.inputRefs ?? {})) {
+      const property = (schemas.inputSchema.properties as Record<string, { type?: unknown }> | undefined)?.[field];
+      if (!typeIds.has(qualifiedId(appId, type)) || property?.type !== "string")
+        throw new Error(`${label} inputRefs ${field} must be a string input field naming a declared type of the same app: ${type}`);
+    }
 
     if (definition.universalSearch) {
       const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
@@ -1079,6 +1085,7 @@ export const compileCapabilities = (
       ...(definition.target !== undefined ? { target: definition.target } : {}),
       ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
       ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
+      ...(definition.inputRefs !== undefined ? { inputRefs: { ...definition.inputRefs } } : {}),
       ...("unattended" in definition && definition.unattended !== undefined
         ? { unattended: z.literal(false).parse(definition.unattended) }
         : {}),

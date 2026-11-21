@@ -626,8 +626,9 @@ visitor who may read every resource the route read. Cloud collects these reads
 from the run itself, also for IDs the route chose at runtime:
 
 - the target and each ref of a Query that succeeded;
-- a resource whose type reader the route called, for example `pulse.base.read`
-  with an `id`.
+- a resource that an app-wide Query names in its input: the `id` of a type's
+  reader such as `pulse.base.read`, and fields the app declares as
+  `inputRefs`, such as `baseId` of `pulse.sql.run`.
 
 Before the answer leaves, Cloud asks each type's reader with the visitor's own
 access. If one says no, the visitor gets the shared **No access** page and a

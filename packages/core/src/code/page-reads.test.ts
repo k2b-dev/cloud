@@ -15,16 +15,23 @@ afterEach(() => {
   for (const restore of restores.splice(0)) restore();
 });
 
-/** One provider "pulse" with a base type read by base.read; sql.run is no reader. */
-function provider(answer: (id: string) => "ok" | "FORBIDDEN" | "NOT_FOUND" | "UNAVAILABLE", pulseOnPublicRoutes = false) {
+/** One provider "pulse" with a base type read by base.read; sql.run names its base in `baseId` (inputRefs). */
+function provider(
+  answer: (id: string) => "ok" | "FORBIDDEN" | "NOT_FOUND" | "VALIDATION_FAILED" | "UNAVAILABLE",
+  pulseOnPublicRoutes = false,
+) {
   const asked: { capabilityId: string; id: string; authority: unknown }[] = [];
   type Facts = Awaited<ReturnType<typeof capabilities.getCapabilityCodeReadFacts>>;
   const facts = spyOn(capabilities, "getCapabilityCodeReadFacts").mockImplementation(
     async (appId): Promise<Facts> =>
       appId === "pulse"
-        ? { readers: { "pulse.base.read": "pulse.base" }, typeReaders: { "pulse.base": "base.read" }, publicRoutes: pulseOnPublicRoutes }
+        ? {
+            inputRefs: { "pulse.base.read": { id: "pulse.base" }, "pulse.sql.run": { baseId: "pulse.base" } },
+            typeReaders: { "pulse.base": "base.read" },
+            publicRoutes: pulseOnPublicRoutes,
+          }
         : appId === "grids"
-          ? { readers: {}, typeReaders: {}, publicRoutes: true }
+          ? { inputRefs: {}, typeReaders: {}, publicRoutes: true }
           : null,
   );
   const invoke = spyOn(capabilities, "invokeCapabilityWithDataSchema").mockImplementation((async (
@@ -50,13 +57,15 @@ const base = (id: string): CodeRouteRead => ({ kind: "target", ref: { type: "pul
 test("a route that read nothing is delivered without asking any provider", async () => {
   const asked = provider(() => "FORBIDDEN");
   expect(await check([], { public: false })).toBe("deliver");
-  expect(await check([{ kind: "reader", capability: "pulse.sql.run", id: "x" }], { public: false })).toBe("deliver");
+  expect(await check([{ kind: "input", capability: "pulse.base.list", fields: { query: "x", id: "y" } }], { public: false })).toBe(
+    "deliver",
+  );
   expect(asked).toEqual([]);
 });
 
 test("every target, ref and reader call is checked once with the type's reader under the visitor's authority", async () => {
   const asked = provider(() => "ok");
-  const reads = [base("A"), base("A"), { kind: "reader", capability: "pulse.base.read", id: "B" } as const];
+  const reads = [base("A"), base("A"), { kind: "input", capability: "pulse.base.read", fields: { id: "B" } } as const];
   expect(await check(reads, { public: false })).toBe("deliver");
   expect(asked.map(({ capabilityId, id }) => [capabilityId, id]).sort()).toEqual([
     ["base.read", "A"],
@@ -119,4 +128,18 @@ test("a public route needs owner-data for any app Query, and never calls an app 
 test("a member route without a visitor authority is refused", async () => {
   provider(() => "ok");
   expect(await check([base("A")], { public: false }, null)).toBe("forbidden");
+});
+
+test("the app-wide form names its base in the input: sql.run({ baseId }) is checked like the target form", async () => {
+  const asked = provider((id) => (id === "Secret" ? "FORBIDDEN" : "ok"));
+  const old = (baseId: string): CodeRouteRead => ({ kind: "input", capability: "pulse.sql.run", fields: { baseId, sql: "SELECT 1" } });
+  expect(await check([old("Open01")], { public: false })).toBe("deliver");
+  expect(await check([old("Secret")], { public: false })).toBe("forbidden");
+  expect(asked.map(({ capabilityId, id }) => [capabilityId, id])).toEqual([
+    ["base.read", "Open01"],
+    ["base.read", "Secret"],
+  ]);
+  // A reader that refuses the ID as input (for example a UUID where it takes a short ID) never delivers.
+  provider(() => "VALIDATION_FAILED");
+  expect(await check([old("not-a-short-id")], { public: false })).toBe("forbidden");
 });

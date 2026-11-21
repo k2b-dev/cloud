@@ -855,8 +855,9 @@ Each Query that reads one base exists twice. The app-wide form keeps `baseId`
 in `input` (`sql.run`, `source.list`, `alert.list`, `alert.read`,
 `saved_query.list`). The target form takes the Base ref as `target`
 (`base.sql.run`, `base.source.list`, `base.alert.list`, `base.alert.read`,
-`base.saved_query.list`, `schema.read`). Code uses only the target form, so a
-Code page shows base data only to people who may read that base
+`base.saved_query.list`, `schema.read`). Code may use both; the target form is
+recommended. In both forms a Code page shows base data only to people who may
+read that base
 ([Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read)).
 Pulse data never appears on a public Code route.
 

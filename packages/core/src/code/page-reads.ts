@@ -10,7 +10,8 @@ export class CodeRouteReadsUnavailable extends Error {}
 
 /** Readers asked at once for one answer; the run's call budget bounds how many there are in total. */
 const READ_CHECK_CONCURRENCY = 4;
-const REFUSED = new Set(["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"]);
+/** A reader that says no, cannot find the resource, or refuses the ID as input: Cloud cannot show it to this visitor. */
+const REFUSED = new Set(["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED", "VALIDATION_FAILED", "BAD_INPUT"]);
 const ReaderDataSchema = z.object({ view: CloudResourceReaderViewSchema });
 
 type Facts = NonNullable<Awaited<ReturnType<typeof getCapabilityCodeReadFacts>>>;
@@ -20,7 +21,8 @@ const isCodeOwnData = (capability: string) => capability === "db.query" || capab
 
 /**
  * G1: Cloud delivers a Code route's answer only to a visitor who may read every resource the route read: the target or
- * a ref of a succeeded Query, or the resource whose type reader it called. Queries without such a resource (lists,
+ * a ref of a succeeded Query, or a resource an app-wide Query names in its input (a type reader's `id`, declared
+ * `inputRefs` such as Pulse's `baseId`). Queries without such a resource (lists,
  * searches, other app-wide reads) stay the route handler's job on member routes. Each is checked with the type's reader under
  * the visitor's own authority, so the check is the same one the app applies everywhere else.
  *
@@ -55,14 +57,17 @@ export async function checkCodeRouteReads(input: {
     return apps.size === 0 || input.route.audience === "owner-data" ? "deliver" : "forbidden";
   }
   const resources = new Map<string, { type: string; id: string }>();
+  const add = (ref: { type: string; id: string }) => resources.set(JSON.stringify([ref.type, ref.id]), ref);
   for (const read of input.reads) {
-    let ref: { type: string; id: string } | null = read.kind === "target" ? read.ref : null;
-    if (read.kind === "reader") {
-      const type = (await factsOf(appOf(read.capability))).readers[read.capability];
-      // A Query that is no type's reader reads no named resource; the route's handler checks such data (09.11.).
-      if (type) ref = { type, id: read.id };
+    if (read.kind === "target") add(read.ref);
+    if (read.kind !== "input") continue;
+    // A type reader's `id` and declared `inputRefs` name the resources an app-wide Query read. Other input names no
+    // resource; the route's handler checks such data (09.11.).
+    const named = (await factsOf(appOf(read.capability))).inputRefs[read.capability] ?? {};
+    for (const [field, type] of Object.entries(named)) {
+      const id = read.fields[field];
+      if (id) add({ type, id });
     }
-    if (ref) resources.set(JSON.stringify([ref.type, ref.id]), ref);
   }
   if (resources.size === 0) return "deliver";
   if (input.route.audience === "owner-data") return "deliver";

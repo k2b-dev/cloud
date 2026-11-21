@@ -26,12 +26,12 @@ owner's account could read.
   its approval; the administrators see the option in the review.
 - A public route that calls any app Query needs `audience: "owner-data"`. Pulse
   keeps its data off public routes entirely (`code.publicRoutes: false`).
-- Code reads Pulse only through a `pulse.base` target:
-  `pulse.base(id).sql.run(...)`, `.source.list`, `.alert.list`, `.alert.read`
-  and `.savedQuery.list`. The app-wide forms with `baseId` keep working for
-  people, the CLI, the API and Gustav, but the Code SDK no longer offers them
-  and the bridge refuses them with `code_disabled`. Replace
-  `pulse.sql.run({ baseId, sql })` with `pulse.base(baseId).sql.run({ sql })`.
+- Pulse reads have a target form, recommended for Code:
+  `pulse.base(id).sql.run(...)`, `.source.list`, `.alert.list`, `.alert.read`,
+  `.savedQuery.list` and `.schema.read`. The app-wide forms with `baseId` keep
+  working everywhere, also in Code; Cloud checks the base they name for each
+  visitor like a target. They are planned for removal from Code in a later
+  release, which this page will announce.
 - `sql.run` and `base.sql.run` return a cursor for the next page; use `ORDER BY`
   so pages stay stable.
 

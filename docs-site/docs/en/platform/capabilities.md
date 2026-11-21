@@ -1019,10 +1019,17 @@ marker when offering operations. It does not change ordinary person calls or
 replace the Action's service authorization.
 
 A Query may declare `code: false` too: the Code SDK leaves it out and the bridge
-refuses it for every Code. Use it for an app-wide form that also exists with a
-target, so that Code pages read through the target and Cloud checks it for each
-visitor. Pulse keeps `sql.run` with `baseId` for people, CLI and Gustav, and
-offers `base.sql.run` with a `pulse.base` target to Code.
+refuses it for every Code.
+
+An app-wide Query that takes the resource it reads in its input declares
+`inputRefs: { baseId: "base" }`: each named top-level string field holds the ID
+of a resource of that local Type. Code page hosting checks those resources for
+each visitor like a target
+([Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read)).
+The declaration grants nothing; the Query still authorizes its caller. Pulse
+declares it on `sql.run`, `source.list`, `alert.list`, `alert.read`,
+`saved_query.list` and `dashboard.list`, and offers target forms such as
+`base.sql.run` as well.
 
 Call the public client with explicit coordinates:
 
