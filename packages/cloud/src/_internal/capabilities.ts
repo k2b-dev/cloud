@@ -86,6 +86,7 @@ import {
   CAPABILITY_SENTENCE_MAX_CHARS,
   type CapabilityActionWording,
   capabilitySentenceFields,
+  localSchemaRef,
   parseCapabilitySentence,
   resolveCapabilityActionSentences,
 } from "./capability-sentences";
@@ -347,17 +348,6 @@ const typeCount = (count: { one: string; other: string }, localId: string) => {
   assertText(count.one, `Resource type ${localId} count.one`, 60);
   assertText(count.other, `Resource type ${localId} count.other`, 60);
   return { one: count.one.trim(), other: count.other.trim() };
-};
-
-/** The target of a local `$ref` such as `#/$defs/Format`; manifest schemas never reference other documents. */
-const localSchemaRef = (root: unknown, ref: unknown): Record<string, unknown> | undefined => {
-  if (typeof ref !== "string" || (ref !== "#" && !ref.startsWith("#/"))) return undefined;
-  let target: unknown = root;
-  for (const part of ref === "#" ? [] : ref.slice(2).split("/")) {
-    if (!target || typeof target !== "object" || Array.isArray(target)) return undefined;
-    target = (target as Record<string, unknown>)[part.replaceAll("~1", "/").replaceAll("~0", "~")];
-  }
-  return target && typeof target === "object" && !Array.isArray(target) ? (target as Record<string, unknown>) : undefined;
 };
 
 /** Field paths of a projected schema, following local `$ref`s once per path so shared `$defs` keep their paths. */
@@ -1410,7 +1400,8 @@ const applySchemaPresentation = (schema: Record<string, unknown>, descriptions: 
     const node = value as Record<string, unknown>;
     // A shared `$defs` entry serves several paths. Copy it into this place only when a localized field
     // lies below it, so one path's wording never reaches the others; the registry record stays shared.
-    const target = typeof node.$ref === "string" ? localSchemaRef(localized, node.$ref) : undefined;
+    // Resolve against the unlocalized schema, so a copy never carries another path's translations.
+    const target = typeof node.$ref === "string" ? localSchemaRef(schema, node.$ref) : undefined;
     if (target && paths.some((path) => !prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[]`))) {
       const { $ref: _ref, ...siblings } = node;
       delete node.$ref;
