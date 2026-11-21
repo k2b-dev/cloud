@@ -902,12 +902,12 @@ for (const mode of ["write", "book", "graph", "graph&from=readonly"] as const)
     expect(shell.panel.context.scope.id).not.toBe(notebook.id);
   });
 
-// Write and Links draw no workspace head: the toolbar holds the navigation and Details buttons (old head button →
-// toolbar button). Read and version history have no toolbar, so they keep the head's buttons.
+// A note and Links draw no workspace head (K6): the note's pills and the graph's toolbar hold the navigation and
+// Details buttons (old head button → pill button), in Write and in Read. Version history keeps the head's buttons.
 test.each([
   { mode: "write", head: 0, ownDetails: 0 },
   { mode: "graph", head: 0, ownDetails: 0 },
-  { mode: "readonly", head: 1, ownDetails: 1 },
+  { mode: "readonly", head: 0, ownDetails: 0 },
 ] as const)("$mode: the workspace head and its Details button", async ({ mode, head, ownDetails }) => {
   const html = await renderNotebookWithNotes({}, mode);
   expect(await select(html, ".k2b-app-workspace__head")).toHaveLength(head);
