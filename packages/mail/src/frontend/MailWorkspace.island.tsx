@@ -426,15 +426,18 @@ function createMailboxController(props: MailboxControllerProps) {
   ): Promise<MailboxPageData | null> => {
     const target = resolveMailWorkspaceUrl(href, mailboxId, window.location.origin);
     if (!target) return null;
+    // The drag's people come with the first load; a reload of this mailbox keeps them instead of loading them again.
+    const kept = unwrap(data).dropAssignees;
     const response = await apiClient.mailboxes[":mailboxId"]["workspace-route"].$get(
       {
         param: { mailboxId },
-        query: { href: `${target.pathname}${target.search}`, listMode },
+        query: { href: `${target.pathname}${target.search}`, listMode, dropAssignees: kept ? "keep" : "load" },
       },
       { init: { signal } },
     );
     if (!response.ok) return null;
-    return await response.json();
+    const snapshot = await response.json();
+    return kept ? { ...snapshot, dropAssignees: kept } : snapshot;
   };
 
   /** Every request path resolves against this mailbox and the browser origin; the list never carries a selection. */

@@ -5,7 +5,7 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { buildActorAssignmentIndex } from "../migrate";
-import { grantMailboxAccess, revokeMailboxAccess } from "./access";
+import { grantMailboxAccess, requireMailboxAccess, revokeMailboxAccess, withOneAccessRead } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
   applyConversationCompletions,
@@ -21,6 +21,7 @@ import { currentEligibleAssigneeIds, isUnassignedConversation, listLapsedAssigne
 import { assignConversation, assignConversations, updateConversationCollaboration } from "./conversation-assignments";
 import { mergeConversations } from "./conversations";
 import { createMailbox } from "./mailboxes";
+import { loadMailboxPageData, resolveWorkspaceRequest } from "./workspace";
 
 const suite = suiteFor("database", "nats");
 
@@ -850,5 +851,37 @@ suite("mail conversation assignment", () => {
     `;
     expect(index?.valid).toBeTrue();
     expect(index?.definition).toContain("(mailbox_id, actor_id, id DESC)");
+  });
+
+  test("a workspace reload keeps the drag's people instead of loading them again", async () => {
+    const [mailbox] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    const request = await resolveWorkspaceRequest(new URL(`https://cloud.example.test/app/mail/${mailbox!.short_id}`), mailboxId);
+    if (!request) throw new Error("Workspace route not resolved");
+    const page = (dropAssignees: "load" | "keep") =>
+      loadMailboxPageData({ context: contextFor(owner), mailboxId, ...request, dropAssignees });
+    // Warm the cached counts, so both loads below read the same way.
+    expect((await page("load")).ok).toBeTrue();
+    const meter = await meterSql();
+    try {
+      let kept: Awaited<ReturnType<typeof page>> | undefined;
+      const reload = await meter.during(async () => {
+        kept = await page("keep");
+      });
+      const first = await meter.during(() => page("load"));
+      // A reload costs what it cost before the drag existed: none of the drag's statements, and its answer has none.
+      expect(kept?.ok && kept.data.dropAssignees).toBeNull();
+      expect(reload.filter((statement) => statement.includes("mail.activity_events activity WHERE activity.mailbox_id"))).toEqual([]);
+      expect(reload.filter((statement) => statement.includes("SELECT added.user_id"))).toEqual([]);
+      // The first load adds the drag's people: the one order query and the eligible people, no more than they cost alone.
+      expect(first.filter((statement) => statement.includes("SELECT added.user_id"))).toHaveLength(1);
+      const shared = withOneAccessRead(contextFor(owner));
+      expect((await requireMailboxAccess(shared, mailboxId, "read")).ok).toBeTrue();
+      const alone = await meter.during(() => listDropAssignees({ context: shared, mailboxId }));
+      expect(first.length - reload.length).toBeGreaterThan(0);
+      expect(first.length - reload.length).toBeLessThanOrEqual(alone.length);
+      console.info("MAIL_WORKSPACE_ROUTE_STATEMENTS", JSON.stringify({ reload: reload.length, first: first.length, drag: alone.length }));
+    } finally {
+      await meter.close();
+    }
   });
 });
