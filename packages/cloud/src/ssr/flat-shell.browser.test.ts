@@ -5,7 +5,8 @@ import { launchBrowser } from "../../../ui/test/browser";
 import { layoutProblems } from "../../../ui/test/head-overlap";
 import { installFlatShellHarness, openFlatShell } from "./flat-shell.browser-harness";
 
-installFlatShellHarness(launchBrowser);
+// Classic visible scrollbars, as a desktop with a mouse draws them: their tracks take room as they do for people.
+installFlatShellHarness((options) => launchBrowser({ ...options, ignoreDefaultArgs: ["--hide-scrollbars"] }));
 
 // `FLAT_SHELL_SHOTS=<dir>` also saves light screenshots of the invented pages for review.
 const shots = process.env.FLAT_SHELL_SHOTS;
@@ -27,10 +28,10 @@ test.if(Boolean(shots))("saves screenshots of the invented pages", async () => {
 });
 
 // K15 and "one line, one owner" (K2): in the flat shell nothing overlaps, spills, is cut, draws a double line, or
-// scrolls sideways, at every version (phone, tablet, laptop, wide), on the invented Spaces, Files, Notebooks, and
-// Mail pages.
+// scrolls sideways, at every version (phone, tablet, a narrow laptop with Detail, laptop, wide), on the invented Spaces,
+// Files, Notebooks, and Mail pages. No box draws a border on a column line, which the column's hairline already owns.
 for (const name of ["spaces", "files", "notebooks", "mail"])
-  for (const width of [390, 768, 1440, 1920])
+  for (const width of [390, 768, 1100, 1440, 1920])
     test(`${name} ${width} px: nothing overlaps, spills, is cut, or draws a double line`, async () => {
       // A mouse: a coarse pointer gives icon buttons a 44 px hit area beyond their box on purpose.
       const page = await openFlatShell(width, `/app/${name}`, { touch: false });
@@ -43,6 +44,36 @@ for (const name of ["spaces", "files", "notebooks", "mail"])
             ".k2b-app-workspace__resize, .k2b-app-workspace__head-heading, .k2b-app-workspace__head-primary-label, .k2b-sr-only, [data-layout-check='skip']",
         });
         expect(found.problems).toEqual([]);
+        const doubled = await page.evaluate(() => {
+          const shown = (element: Element) => element.getClientRects().length > 0 && getComputedStyle(element).display !== "none";
+          // Every column line: after the sidebar, between panes and levels, and before Detail.
+          const lines = [
+            ...document.querySelectorAll(".k2b-app-workspace__content, [data-workspace-main-region], .k2b-app-workspace__detail"),
+          ]
+            .filter(shown)
+            .map((element) => element.getBoundingClientRect().left);
+          const found: string[] = [];
+          for (const element of document.querySelectorAll<HTMLElement>(".layout-content-main .k2b-app-workspace *")) {
+            const box = element.getBoundingClientRect();
+            if (box.width === 0 || box.height === 0) continue;
+            const style = getComputedStyle(element);
+            for (const [side, x] of [
+              ["Left", box.left],
+              ["Right", box.right],
+            ] as const) {
+              const drawn =
+                Number.parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0 &&
+                style.getPropertyValue(`border-${side.toLowerCase()}-style`) !== "none" &&
+                !/rgba\(.*,\s*0\)$|transparent/.test(style.getPropertyValue(`border-${side.toLowerCase()}-color`));
+              if (drawn && lines.some((line) => Math.abs(line - x) <= 1.5))
+                found.push(
+                  `${element.tagName.toLowerCase()}.${element.className.toString().split(" ")[0]} border-${side.toLowerCase()} at ${Math.round(x)}`,
+                );
+            }
+          }
+          return found;
+        });
+        expect(doubled).toEqual([]);
       } finally {
         await page.context().close();
       }
