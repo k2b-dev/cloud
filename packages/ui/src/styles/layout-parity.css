@@ -2701,10 +2701,13 @@ html {
   opacity: 0.85;
 }
 
-/* After filters and compact views give way, the primary keeps its name
-   for assistive technology while its icon frees space for the view strip.
+/* K15: in a head narrower than 48 rem the actions give way first, before any
+   view moves into "More +n": the primary shows only its icon and keeps its
+   name for assistive technology, and an app's search in `actions` turns into
+   its icon by the same query (`@container k2b-head (width < 48rem)`). The
+   views compact only when the lead is still narrower than 32 rem after that.
    If the lead and actions still cannot fit, flex puts them on separate rows. */
-@container k2b-head (width < 32rem) {
+@container k2b-head (width < 48rem) {
   .k2b-ui .k2b-app-workspace__head-primary {
     width: 2.5rem;
     min-width: 2.5rem;
