@@ -1231,13 +1231,14 @@ export function AppsView(props: { data: AppsViewData }) {
         heading="page"
         description={
           data.list.state === "ok" && data.list.apps.length > 0 ? (
-            // One line of key figures (K15): a figure that does not fit wraps onto a hidden second line, so figures
-            // leave whole from the end and none is cut; the problems stay countable in the "Problems" filter.
-            <span data-apps-summary class="block h-[1lh] overflow-hidden whitespace-normal">
-              {summaryFigures(t, data.list.apps).map((part, index) => (
+            // One line of key figures (K15): see `.apps-figures` in Core's stylesheet.
+            <span data-apps-summary class="apps-figures">
+              {summaryFigures(t, data.list.apps).map((part, index, all) => (
                 <>
                   {index > 0 && " "}
-                  <span class="inline-block whitespace-nowrap">{index > 0 ? `· ${part}` : part}</span>
+                  <span class="apps-figures__figure" data-more={index < all.length - 1 ? all.length - 1 - index : undefined}>
+                    {index > 0 ? `· ${part}` : part}
+                  </span>
                 </>
               ))}
             </span>

@@ -159,6 +159,34 @@
   background: var(--k2b-surface);
 }
 
+/* Admin › Apps key figures (K15): one line; figures never break or get cut.
+   A figure that does not fit wraps whole onto a hidden second line, so the
+   figures leave from the end in their fixed order. Every figure but the last
+   carries "· +n" (the figures after it) just past its end; the next figure
+   covers it with the head's fill while it stands on the same line, so only
+   the last shown figure's "+n" is seen, in the room kept free at the line's
+   end. No script, so the server's first frame is final. All figures stay in
+   the accessible name; the "+n" is decoration. */
+.k2b-ui .apps-figures {
+  display: block;
+  height: 1lh;
+  overflow: hidden;
+  padding-inline-end: 3.25em;
+  white-space: normal;
+}
+.k2b-ui .apps-figures__figure {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+  background: var(--k2b-surface);
+}
+.k2b-ui .apps-figures__figure[data-more]::after {
+  content: " · +" attr(data-more) / "";
+  position: absolute;
+  inset-inline-start: 100%;
+  white-space: pre;
+}
+
 /* Account pages space their flat sections with the page's gap. A section that
    directly follows another keeps @k2b/ui's own 2rem margin outside a settings
    page, which would double that space; island wrappers between sections would
