@@ -68,6 +68,7 @@ const render = (overrides: Partial<PulseSource> = {}, locale = "en", scrapes: Pu
           dateContext: { locale: "en", timeZone: "UTC", now: "2026-01-02T12:00:00.000Z" },
           loading: false,
           scrapes,
+          canManageKeys: true,
           apiKeys: [],
           scrapeColumns: [{ id: "status", header: "Status" }],
           renderScrapeCell: () => "ok",

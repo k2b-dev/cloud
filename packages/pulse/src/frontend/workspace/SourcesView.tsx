@@ -73,6 +73,8 @@ export type SourcesViewProps = {
   selectedSource: Accessor<PulseSource | null>;
   selectedSourceScrapes: Accessor<PulseSourceScrape[]>;
   selectedSourceApiKeys: Accessor<ResourceApiKey[]>;
+  /** Keys show only to people who manage the base. */
+  canManageKeys?: Accessor<boolean>;
   origin: Accessor<string>;
   dateContext: Accessor<PulseDateContext>;
   copySetupText: (text: string, label: string) => void;
@@ -187,6 +189,7 @@ export function SourcesDetailPanel(props: SourcesViewProps) {
           loading={props.loading()}
           scrapes={props.selectedSourceScrapes()}
           apiKeys={props.selectedSourceApiKeys()}
+          canManageKeys={props.canManageKeys?.() ?? true}
           scrapeColumns={sourceScrapeColumns(t())}
           renderScrapeCell={renderSourceScrapeCell}
           copySetupText={props.copySetupText}
