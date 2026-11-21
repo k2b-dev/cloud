@@ -198,7 +198,8 @@
    body of every Cloud page, so the aliases resolve there too; each element
    reads the token of its own theme. */
 .k2b-ui {
-  --ui-shadow-frame: var(--k2b-shadow-frame);
+  /* The app card never floats (K3): no shadow, a transparent no-op layer. */
+  --ui-shadow-frame: 0 0 #0000;
   --ui-shadow-float: var(--k2b-shadow-float);
   --ui-context-menu-shadow: var(--k2b-shadow-float);
   --ui-dropdown-menu-shadow: var(--k2b-shadow-float);
@@ -207,7 +208,7 @@
 
 .dark .k2b-ui,
 .k2b-ui.dark {
-  --ui-shadow-frame: inset 0 0 0 1px var(--ui-border), var(--k2b-shadow-frame);
+  --ui-shadow-frame: inset 0 0 0 1px var(--ui-border);
 }
 
 /* Custom properties resolve where declared. Each app scope must re-read its

@@ -180,7 +180,7 @@ describe("shared icon tile contract", () => {
     const shared = declarationsFor(".k2b-ui .k2b-icon-tile");
     expect(shared).toHaveLength(1);
     expect(shared[0]!.body).toContain("background:color-mix(in srgb,currentColor var(--k2b-icon-tile-fill),transparent)");
-    expect(shared[0]!.body).toContain("border-radius:28%");
+    expect(shared[0]!.body).toContain("border-radius:var(--k2b-radius-mark)");
     for (const [scope, fill] of [
       [".k2b-ui", "12%"],
       [".k2b-ui[data-theme=dark]", "22%"],
