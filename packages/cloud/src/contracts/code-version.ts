@@ -97,6 +97,7 @@ export const CODE_POLICY_ROWS = [
   "ai_chat_you",
   "internet",
   "public_routes",
+  "owner_data",
 ] as const;
 export const CodePolicyRowSchema = z.enum(CODE_POLICY_ROWS);
 /** Stable call classification shared by checker, activation, dispatcher and administration. */
@@ -161,6 +162,8 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
   .superRefine((manifest, ctx) => {
     if (manifest.entrypoints.some((entry) => entry.route?.public) && !manifest.policyRows.includes("public_routes"))
       ctx.addIssue({ code: "custom", message: "Public route classification missing from policyRows" });
+    if (manifest.entrypoints.some((entry) => entry.route?.audience === "owner-data") && !manifest.policyRows.includes("owner_data"))
+      ctx.addIssue({ code: "custom", message: "Owner-data route classification missing from policyRows" });
     if (manifest.internet?.length && !manifest.policyRows.includes("internet"))
       ctx.addIssue({ code: "custom", message: "Internet classification missing from policyRows" });
     if (manifest.secrets?.length && !manifest.policyRows.includes("internet"))

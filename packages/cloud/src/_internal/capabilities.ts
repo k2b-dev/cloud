@@ -178,6 +178,8 @@ const QUERY_FIELDS = {
   stream: true,
   universalSearch: true,
   codeResourceTitle: true,
+  code: true,
+  inputRefs: true,
   run: true,
 } satisfies DefinedFields<CapabilityQueryDefinition>;
 const ACTION_FIELDS = {
@@ -1062,6 +1064,17 @@ export const compileCapabilities = (
       if (!field || field.length > 100 || !typeIds.has(qualifiedId(appId, type)))
         throw new Error(`${label} ref ${field} must name a declared type of the same app: ${type}`);
     }
+    if (definition.inputRefs !== undefined && definition.target !== undefined)
+      throw new Error(`${label} declares a target; inputRefs are for app-wide Queries only`);
+    for (const [field, type] of Object.entries(definition.inputRefs ?? {})) {
+      // Required and without a default: a missing field would let the Query read a resource Cloud never checked.
+      const property = (schemas.inputSchema.properties as Record<string, { type?: unknown; default?: unknown }> | undefined)?.[field];
+      const required = Array.isArray(schemas.inputSchema.required) && schemas.inputSchema.required.includes(field);
+      if (!typeIds.has(qualifiedId(appId, type)) || property?.type !== "string" || !required || property.default !== undefined)
+        throw new Error(
+          `${label} inputRefs ${field} must be a required string input field without a default naming a declared type of the same app: ${type}`,
+        );
+    }
 
     if (definition.universalSearch) {
       const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
@@ -1083,6 +1096,7 @@ export const compileCapabilities = (
       ...(definition.target !== undefined ? { target: definition.target } : {}),
       ...(definition.refs !== undefined ? { refs: definition.refs } : {}),
       ...("code" in definition && definition.code !== undefined ? { code: definition.code } : {}),
+      ...(definition.inputRefs !== undefined ? { inputRefs: { ...definition.inputRefs } } : {}),
       ...("unattended" in definition && definition.unattended !== undefined
         ? { unattended: z.literal(false).parse(definition.unattended) }
         : {}),
@@ -1318,6 +1332,7 @@ export const compileCapabilities = (
           code: {
             owners: [...(definitions.code?.owners ?? [])].sort(),
             ...(definitions.code?.pages ? { pages: { ...definitions.code.pages } } : {}),
+            ...(definitions.code?.publicRoutes === false ? { publicRoutes: false as const } : {}),
           },
         }
       : {}),

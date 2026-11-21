@@ -4,7 +4,9 @@ import type { CapabilityDefinitions } from "../contracts/capabilities";
 export const validateCodeOwners = (definitions: CapabilityDefinitions): void => {
   const code = definitions.code;
   if (code) {
-    for (const key of Object.keys(code)) if (!["owners", "pages"].includes(key)) throw new Error(`code: unsupported field ${key}`);
+    for (const key of Object.keys(code))
+      if (!["owners", "pages", "publicRoutes"].includes(key)) throw new Error(`code: unsupported field ${key}`);
+    if (code.publicRoutes !== undefined && code.publicRoutes !== false) throw new Error("code.publicRoutes must be false or absent");
     if (code.owners && !Array.isArray(code.owners)) throw new Error("code.owners must be a list of declared types");
     for (const [type, page] of Object.entries(code.pages ?? {})) {
       if (!code.owners?.includes(type)) throw new Error(`code.pages: ${type} is not a declared owner`);

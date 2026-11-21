@@ -37,6 +37,8 @@ The values are `automatic` (**Automatisch**), `admin` (**Admin gibt frei**) and
 | AI use | `ai` | Admin approval |
 | Bounded AI in the person’s own chat | `ai_chat_you` | Automatic |
 | External requests and public endpoints | `internet` | Admin approval |
+| Pages reachable without sign-in | `public_routes` | Admin approval |
+| Pages that show the owner's data to every member | `owner_data` | Admin approval |
 
 **Off** (`off`, **Aus**) sets every row to `never`. **Open** (`open`, **Offen**)
 sets every eligible row to `automatic`. Applying a preset replaces group overrides too.
@@ -104,6 +106,16 @@ requirement: `admin` stays `admin`, `never` stays `never`, and `automatic` stays
 the new row. The off preset remains forbidden. Existing `ai_chat_you` rules are
 preserved on restart. Operators can then edit the row through the normal policy
 settings.
+
+## Pages with the owner's data
+
+A route with `{ audience: "owner-data" }` shows what the Code read with its
+owner's rights to every member who opens it. A version with such a route
+carries `owner_data`; a public one carries `public_routes` as well. The
+Admin preset requires approval, Open runs it automatically and Off forbids it.
+Existing installations receive `owner_data` from their stored preset: Off
+stays `never`, Open becomes `automatic`, and Admin or a custom table becomes
+`admin`. Existing `owner_data` rules are preserved on restart.
 
 ## Resolve groups
 
