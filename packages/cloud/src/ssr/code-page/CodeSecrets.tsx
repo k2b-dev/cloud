@@ -2,10 +2,11 @@ import { documentNavigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, NoticeCard, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { z } from "zod";
+import { secretCheck as checkDestination, valueAllowed, writeSecret } from "../../browser/code-secrets";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { CodeSecretBindingSchema, CodeSecretNameSchema } from "../../contracts/code-secrets";
 import { Failed } from "./CodeRuns";
-import { type CodePageData, type CodePageReady, type CodePageSecret, SecretSetSchema } from "./data";
+import type { CodePageData, CodePageReady, CodePageSecret } from "./data";
 import { type CodePageMessages, codePageMessages } from "./messages";
 import { Island, Quiet, Row, Status } from "./page-kit";
 
@@ -32,15 +33,11 @@ const authoring = async <T extends z.ZodType>(
     return { ok: false, status: null };
   }
 };
-const AllowedSchema = z.object({ allowed: z.boolean() });
 const SubmittedSchema = z.object({ submission: z.object({ version: z.object({ number: z.number() }) }) });
 const DeletedSchema = z.object({ deleted: z.boolean() });
 
 const pageUrl = (data: CodePageData, params: Record<string, string>) =>
   `${data.href}?${new URLSearchParams({ tab: "secrets", ...params }).toString()}`;
-
-/** Core's value contract: printable text for a request header. */
-const valueAllowed = (value: string) => /^[\x20-\x7e]+$/.test(value);
 
 /** Accepts a trailing slash and upper case in a host, since the stored form is exact. */
 const normalizedOrigin = (text: string) => {
@@ -73,20 +70,9 @@ const bindingErrors = (draft: BindingDraft, t: CodePageMessages): BindingErrors 
   };
 };
 
-/** Writes through Core's editor capability. It takes no idempotency key, so nothing keeps a digest of the value. */
-const writeSecret = (codeId: string, input: { name: string; value: string; binding_revision: string | null; binding?: unknown }) =>
-  invokeCapabilityWithDataSchema(
-    { appId: "core", capabilityId: "code.secret.set", kind: "action", target: { type: "core.code", id: codeId }, input },
-    SecretSetSchema,
-  );
 const writeFailure = (status: number, t: CodePageMessages) =>
   status === 409 ? t.secretNameTaken : status === 403 ? t.secretSetRefused : status >= 500 ? t.secretSetUnknown : t.secretSetFailed;
 
-/** Asks Core whether this address may receive a credential, before any value travels. */
-const checkDestination = async (codeId: string, binding: unknown) => {
-  const checked = await authoring("secretCheck", { codeId, binding }, AllowedSchema);
-  return checked.ok ? checked.data.allowed : null;
-};
 /** A changed destination reaches a version only by submitting one; the outcome shows on the reloaded page. */
 const submitAndShow = async (data: CodePageData, state: CodePageReady, name: string) => {
   const latest = state.secrets?.latest;

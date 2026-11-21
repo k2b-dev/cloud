@@ -1,7 +1,18 @@
 import { expect, test } from "bun:test";
-import { CODE_RUNTIME_TOOL_NAMES, parseCodeToolInput } from "./browser-code-contracts";
+import { z } from "zod";
+import { CODE_RUNTIME_TOOL_NAMES, CodeSecretInput, parseCodeToolInput } from "./browser-code-contracts";
 
 const id = "aBc234";
+test("code_secret model schema exposes the name pattern while runtime keeps target-specific validation", () => {
+  expect(z.toJSONSchema(CodeSecretInput, { target: "draft-07" })).toHaveProperty(
+    "properties.name.pattern",
+    "^(?:[A-Za-z][A-Za-z0-9_-]{0,79}|_[A-Za-z0-9_]{0,63})$",
+  );
+  expect(CodeSecretInput.safeParse({ name: "my-key", origin: "https://example.com" }).success).toBe(true);
+  expect(
+    CodeSecretInput.safeParse({ name: "_API", origin: "https://example.com", prefix: "", target: { code: id, pathPrefix: "/" } }).success,
+  ).toBe(true);
+});
 test("code_interact and node inspection no longer exist", () => {
   expect(() => parseCodeToolInput("code_interact", { runId: "run", id: "count" })).toThrow();
   expect(() => parseCodeToolInput("code_inspect", { runId: "run", nodeId: "table" })).toThrow();
@@ -37,4 +48,36 @@ test("retired Studio tools and resource contexts cannot execute", () => {
   }
   expect(() => parseCodeToolInput("code_run", { code: "export default () => 1", resourceId: id })).toThrow();
   expect(() => parseCodeToolInput("code_secret", { name: "crm", origin: "https://example.com", resourceId: id })).toThrow();
+});
+
+test("code_secret keeps legacy names/defaults and validates automation identifiers, bindings and empty prefix", () => {
+  const legacy = parseCodeToolInput("code_secret", { name: "my-key", origin: "https://example.com", header: "Authorization" });
+  expect(legacy).toMatchObject({ name: "my-key", header: "Authorization", prefix: "Bearer " });
+  const input = {
+    name: "_API",
+    origin: "https://example.com",
+    header: "Authorization",
+    prefix: "",
+    target: { code: id, pathPrefix: "/v1" },
+  };
+  expect(parseCodeToolInput("code_secret", input)).toMatchObject({ header: "authorization", target: input.target });
+  for (const patch of [
+    { name: "my-key" },
+    { name: "a".repeat(65) },
+    { name: "äpi" },
+    { prefix: "Bearer " },
+    { prefix: undefined },
+    { header: "cookie" },
+    { header: "host" },
+    { header: "a\nb" },
+    { origin: "http://example.com" },
+    { origin: "https://example.com/path" },
+    { target: { code: id, pathPrefix: "/v1/../admin" } },
+    { target: { code: id, pathPrefix: "/v1%2f" } },
+    { target: { code: "not-a-code", pathPrefix: "/" } },
+    { target: { code: id, pathPrefix: "/", value: "never-here" } },
+    { value: "never-here" },
+  ])
+    expect(() => parseCodeToolInput("code_secret", { ...input, ...patch })).toThrow();
+  expect(() => parseCodeToolInput("code_secret", { name: "_API", origin: "https://example.com" })).toThrow();
 });

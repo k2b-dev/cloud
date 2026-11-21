@@ -18,6 +18,21 @@ export class JmapRateLimitError extends Error {
     super("JMAP request rate limited");
     this.name = "JmapRateLimitError";
   }
+  /**
+   * The wait Retry-After asks for at `now`, in delta seconds or as an HTTP date, never shortened.
+   * A date in the past allows the next request at once. Null leaves the fallback to the caller.
+   */
+  retryAfterMs(now: number): number | null {
+    const value = this.retryAfter;
+    if (value === null) return null;
+    if (/^\d+$/.test(value)) {
+      const milliseconds = Number(value) * 1_000;
+      return Number.isSafeInteger(milliseconds) ? milliseconds : null;
+    }
+    const at = Date.parse(value);
+    // The syntax check admits impossible dates such as 31 Feb; only a date that formats back is one.
+    return Number.isFinite(at) && new Date(at).toUTCString() === value ? Math.max(0, at - now) : null;
+  }
 }
 export class JmapRequestError extends Error {
   readonly code = "JMAP_REQUEST";
@@ -37,9 +52,10 @@ export function checkJmapHttp(response: JmapResponse): void {
     throw new JmapRateLimitError(retryAfter);
   }
   if (response.status >= 200 && response.status < 300) return;
-  // A refused login stays an HTTP status whatever body the server adds: servers such as Stalwart
-  // answer every error as problem+json, which would otherwise turn it into a request error.
-  if (response.status === 401 || response.status === 403) throw new JmapHttpError(response.status);
+  // A refused login or a server failure stays an HTTP status whatever body the server adds: servers
+  // such as Stalwart answer every error as problem+json, which would otherwise turn it into a
+  // request error without its status.
+  if (response.status === 401 || response.status === 403 || response.status >= 500) throw new JmapHttpError(response.status);
   let problem: unknown;
   try {
     problem = JSON.parse(response.body);

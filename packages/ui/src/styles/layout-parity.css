@@ -1041,7 +1041,7 @@ html {
   /* Space a host keeps clear along the workspace's bottom edge, such as the
      home indicator's safe area where the workspace meets the window's bottom. */
   --k2b-workspace-inset-bottom: 0px;
-  --k2b-workspace-radius: var(--k2b-radius-dialog);
+  --k2b-workspace-radius: var(--k2b-radius-card);
   position: relative;
   display: grid;
   width: 100%;

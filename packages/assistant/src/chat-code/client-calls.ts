@@ -46,7 +46,10 @@ async function authorize(call: z.infer<typeof ClientCall>, identity: ArtifactIde
   )
     throw new ArtifactError("CONFLICT");
   // Schema parsing gives canonical property order and strips no unknown fields.
-  if (JSON.stringify(CodeRuntimeInput.parse(parseCodeToolInput(block.name, block.args))) !== JSON.stringify(call.input))
+  if (
+    JSON.stringify(CodeRuntimeInput.parse(parseCodeToolInput(block.name, block.args))) !==
+    JSON.stringify(CodeRuntimeInput.parse(call.input))
+  )
     throw new ArtifactError("INVALID_INPUT");
   // The stored result becomes this turn's tool result, also when another window delivers it: same writer rule as the result itself.
   const config = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: active.turn.id });
