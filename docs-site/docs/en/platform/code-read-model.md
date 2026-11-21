@@ -5,7 +5,7 @@ section: Platform services
 order: 972
 description: Read authorized version facts, example results and confirmed automation activity in the request language.
 tags: [code, versions, runs]
-updated: 2026-11-18
+updated: 2026-11-21
 ---
 
 # Code in words
@@ -180,6 +180,41 @@ never replaced by an identifier. Pause transitions record `pausedAt` for every
 pause cause; other updates preserve it, and resuming clears it. Older pauses
 without a recorded timestamp remain null. Read/list use their existing SQL
 statements for these fields.
+
+## See which Code reads a resource
+
+An app can show which Code pages and automations read one of its resources,
+for example on a usage tab. Its browser island calls Core with the person's
+session:
+
+```ts
+const search = new URLSearchParams({ type: "pulse.base", id: baseShortId });
+const response = await fetch(`/api/code/usage?${search}`, { credentials: "same-origin" });
+// 200 { data: { items, others, since } }
+```
+
+Only a signed-in member in their own browser session may ask. Guests, API
+keys, OAuth tokens and workload credentials get
+`403 { "code": "code_usage_forbidden" }`. Before Core reads any call, it asks
+the type's reader with the person's own access, like the check of
+[what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read).
+If the reader says no or cannot find the resource, the answer is the same
+`403`. If the reader does not answer, the answer is
+`503 { "code": "code_usage_unavailable" }`.
+
+A Code read the resource when one of its succeeded Queries in the last 30 days
+has it as target or ref, or names its ID in a field of an app-wide Query: the
+`id` of the type's reader, or a declared `inputRefs` field. Actions and
+failed calls do not count. Core looks at up to 500 active Codes and reads
+the calls in one SQL statement.
+
+Each entry in `items` has `codeId`, `title`, `kind` (`page` or `automation`),
+`owner`, `lastCalledAt` and `href`, newest first and at most 50. The answer
+names only Codes the person may open with their Code rights. All other matches
+count in `others`, without a name. The answer has no counts per person or per
+call. `owner` follows the rules of the page label: a person's name, an app's
+name, or a resource's name when the person may read it, else its type. `href`
+opens the page, or the automation's Code page.
 
 ## Read the Code tab
 
