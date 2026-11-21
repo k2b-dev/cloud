@@ -33,6 +33,8 @@ export type TextInputProps = Omit<
     multiline?: boolean;
     monospace?: boolean;
     password?: boolean;
+    /** The eye's fixed name in a `password` field, such as "Show key"; `aria-pressed` tells whether the value shows. */
+    revealLabel?: string;
     markdown?: boolean;
     onSubmit?: () => void;
     onKeyDown?: JSX.EventHandlerUnion<HTMLInputElement | HTMLTextAreaElement, KeyboardEvent>;
@@ -73,6 +75,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
     "password",
     "prefix",
     "required",
+    "revealLabel",
     "suffix",
     "suggestion",
     "type",
@@ -227,10 +230,11 @@ export function TextInput(props: TextInputProps): JSX.Element {
                 </button>
               </Show>
               <Show when={local.password && !multiline()}>
+                {/* A toggle keeps one name; `aria-pressed` says whether the value shows. */}
                 <button
                   type="button"
-                  class="k2b-input-shell__clear"
-                  aria-label={passwordVisible() ? inputMessages().hidePassword : inputMessages().showPassword}
+                  class="k2b-input-shell__clear k2b-input-shell__reveal"
+                  aria-label={local.revealLabel ?? inputMessages().showPassword}
                   aria-pressed={passwordVisible()}
                   disabled={rest.disabled}
                   onClick={() => setPasswordVisible((visible) => !visible)}
