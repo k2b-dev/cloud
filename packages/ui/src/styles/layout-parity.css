@@ -2452,8 +2452,11 @@ html {
    in the first frame. The row is there in every layout; only its title
    follows the head's rules above and below: it shows only where the old head
    showed it, and beside a sidebar that marks the page it is gone, with a
-   visually hidden `h1` when Main has none. The row draws no line. The
-   selector outweighs every rule that hides or clips the head. */
+   visually hidden `h1` when Main has none. K1, K2, K5, K6: the first line
+   is 56 px tall and ends on the head line, a 1 px hairline that carries the
+   selected view's 2 px mark; the row starts and ends on the column's text
+   edge (20 px, 16 px on a phone). The selector outweighs every rule that
+   hides or clips the head. */
 .k2b-ui
   .k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head.k2b-app-workspace__head[data-row][data-row][data-row]:is(
     [data-trail],
@@ -2464,13 +2467,15 @@ html {
   width: auto;
   /* WebKit must recompute every wrapped line instead of reusing the grid item's stretched height while the host narrows. */
   height: max-content;
-  min-height: 3.5rem;
+  min-height: var(--k2b-workspace-head-line);
   container: k2b-head / inline-size;
   flex-wrap: wrap;
   margin: 0;
   align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.5rem var(--k2b-workspace-head-end, 0.75rem) 0.5rem 0.75rem;
+  gap: 0 0.75rem;
+  /* K5: the row stands on the column's text edge, `--k2b-gutter` (20 px, 16 px on a phone). */
+  padding: 0 var(--k2b-workspace-head-end, var(--k2b-gutter, 1.25rem)) 0 var(--k2b-gutter, 1.25rem);
+  box-shadow: inset 0 -1px 0 var(--k2b-border);
   overflow: visible;
   clip-path: none;
   white-space: normal;
@@ -2480,7 +2485,25 @@ html {
    title, the views, the filters, and the actions share one centre in the
    first row, also when the lead wraps below them. */
 .k2b-ui .k2b-app-workspace__head[data-row] {
-  --k2b-workspace-head-line: 2.5rem;
+  --k2b-workspace-head-line: var(--k2b-h-head, 3.5rem);
+}
+
+@media not all and (min-width: 48rem) {
+  /* K12: on a phone the tabs row is 44 px. */
+  .k2b-ui .k2b-app-workspace__head[data-row] {
+    --k2b-workspace-head-line: var(--k2b-h-tabs-phone, 2.75rem);
+  }
+}
+
+/* In the head, the view strip reaches the head line, so the selected view's
+   mark lies on it (K2, K6). The strip keeps its sideways focus room. */
+.k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-views .k2b-view-tabs__list {
+  margin-block: 0;
+  padding-block: 0;
+}
+
+.k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-views .k2b-view-tabs__tab {
+  min-height: var(--k2b-workspace-head-line);
 }
 
 .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
@@ -2688,8 +2711,8 @@ html {
     ) {
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.25rem 0.5rem;
-    padding: 0.5rem var(--k2b-workspace-head-end, 1rem) 0.25rem 1rem;
+    gap: 0 0.5rem;
+    padding: 0 var(--k2b-workspace-head-end, var(--k2b-gutter, 1rem)) 0 var(--k2b-gutter, 1rem);
   }
 
   .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
@@ -2776,13 +2799,21 @@ html {
     display: none;
   }
 
+  /* K12, K16: on a phone the main action floats at the bottom right, above
+     a host's bottom bar and the home indicator, with the small overlay
+     shadow; it leaves the tabs row to the views. */
   .k2b-ui .k2b-app-workspace__head-primary {
+    position: fixed;
+    z-index: 30;
+    right: calc(var(--k2b-gutter, 1rem) + env(safe-area-inset-right, 0px));
+    bottom: calc(max(var(--k2b-mobile-shell-footer-height, 0px), env(safe-area-inset-bottom, 0px)) + 1.25rem);
     width: 3rem;
     min-width: 3rem;
     height: 3rem;
     min-height: 3rem;
     padding: 0;
-    border-radius: 999px;
+    border-radius: var(--k2b-radius-round, 9999px);
+    box-shadow: var(--k2b-shadow-overlay-sm, var(--k2b-shadow-float));
   }
 
   .k2b-ui .k2b-app-workspace__head-primary > i {
@@ -5851,4 +5882,137 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-button.k2b-breadcrumbs__link {
   min-height: 1.75rem;
   font-size: inherit;
+}
+
+/* ------------------------------------------------------------ status row */
+
+/* K6, K10, K15: the status row is the first line under a column's head,
+   52 px tall, on the column's text edge. The lead statement is never
+   shortened and keeps its place and size in every state; the key figures,
+   a disturbance, a selection count, or an announcement share the place after
+   it; filters or selection actions stand at the end. Key figures give way in
+   their order when space is short: they wrap into a line that the row's one
+   line height hides, so none shows half. */
+.k2b-ui .k2b-status-row {
+  display: flex;
+  min-width: 0;
+  min-height: var(--k2b-h-status, 3.25rem);
+  flex: none;
+  align-items: center;
+  gap: 0.25rem 1.25rem;
+  padding: 0 var(--k2b-gutter, 1.25rem);
+  color: var(--k2b-text-muted);
+  font-size: var(--k2b-font-size-row, 0.8125rem);
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-status-row[data-line] {
+  box-shadow: inset 0 -1px 0 var(--k2b-border);
+}
+
+.k2b-ui .k2b-status-row__lead {
+  flex: none;
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: var(--k2b-font-size-lead, 1.125rem);
+  font-weight: 600;
+  line-height: 1.5rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-status-row__middle {
+  display: flex;
+  min-width: 0;
+  height: 1.25rem;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 1.25rem;
+  overflow: hidden;
+}
+
+.k2b-ui :is(.k2b-status-row__fact, .k2b-status-row__state, .k2b-status-row__announcement) {
+  display: inline-flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-status-row__announcement {
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--k2b-text);
+  text-overflow: ellipsis;
+}
+
+.k2b-ui :is(.k2b-status-row__fact, .k2b-status-row__state) b {
+  color: var(--k2b-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-status-row__state {
+  flex: 0 1 auto;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-status-row__next {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The round sign of a disturbance: 20 px, tinted by its tone. */
+.k2b-ui .k2b-status-row__sign {
+  display: inline-grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  place-items: center;
+  border-radius: var(--k2b-radius-round, 9999px);
+  color: var(--k2b-warning-text, #b45309);
+  background: var(--k2b-warning-surface, #fffbeb);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-status-row[data-tone="danger"] .k2b-status-row__sign {
+  color: var(--k2b-danger-text, #b91c1c);
+  background: var(--k2b-danger-surface, #fef2f2);
+}
+
+.k2b-ui .k2b-status-row[data-tone="neutral"] .k2b-status-row__sign {
+  color: var(--k2b-text-muted);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-status-row__end {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+  overflow: hidden;
+}
+
+.k2b-ui .k2b-status-row__end > * {
+  flex: none;
+}
+
+/* A phone stacks the filters under the lead statement; they scroll sideways. */
+@media not all and (min-width: 48rem) {
+  .k2b-ui .k2b-status-row {
+    flex-wrap: wrap;
+    padding: 0.75rem var(--k2b-gutter, 1rem);
+  }
+
+  .k2b-ui .k2b-status-row__end {
+    width: 100%;
+    justify-content: flex-start;
+    overflow: auto hidden;
+    scrollbar-width: none;
+  }
 }

@@ -265,3 +265,5 @@ export type { TabBarItem, TabBarProps } from "./TabBar";
 export { default as TabBar } from "./TabBar";
 export type { TableOfContentsItem, TableOfContentsProps } from "./TableOfContents";
 export { TableOfContents } from "./TableOfContents";
+export type { StatusRowFact, StatusRowProps, StatusRowSelection, StatusRowState } from "./StatusRow";
+export { StatusRow } from "./StatusRow";
