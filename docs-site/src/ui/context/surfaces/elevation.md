@@ -59,6 +59,12 @@ The former layer tokens without an overlay (`--k2b-shadow-surface`,
 `--k2b-island-shadow`) stay as names so existing code keeps building, and
 draw nothing. `--k2b-shadow-frame` is only the app card's hairline edge.
 
+## Dark mode
+
+Overlays keep their shadows in dark mode; the tokens switch with the theme.
+The app card shows its one edge as its border there instead of the frame
+ring, never both. No surface turns lighter to stand for depth.
+
 ## Glass
 
 Glass (`k2b-overlay-surface`) stays the one exception, for a floating layer
