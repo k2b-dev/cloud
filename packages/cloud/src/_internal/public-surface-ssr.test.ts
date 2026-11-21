@@ -145,13 +145,17 @@ test("a German public page loads the German island build and keeps its @k2b/ui t
     const result = JSON.parse(stdout.trim().split("\n").at(-1)!);
     const ssr = join(root, "dist", "_ssr");
     const manifest = JSON.parse(await Bun.file(join(ssr, "manifest.json")).text());
+    const variants: Record<string, { version: string }> = manifest.variants;
     // The page asks for the German build, and the public asset route serves that build's entry.
-    expect(result.assets).toBe(`/_ssr/${manifest.variants.de.version}`);
+    expect(result.assets).toBe(`/_ssr/${variants.de?.version}`);
     expect(result.assetStatus).toBe(200);
-    const entry = join(ssr, "de", `${result.id}.js`);
+    // The directory of the build the page asked for, as the asset route maps a version to it.
+    const version = result.assets.split("/").at(-1);
+    const served = Object.entries(variants).find(([, build]) => build.version === version)?.[0];
+    const entry = join(served ? join(ssr, served) : ssr, `${result.id}.js`);
     expect(result.asset).toBe(await Bun.file(entry).text());
 
-    // Mount the served entry over the server markup in a German document: the text stays the same German text.
+    // Mount that entry over the server markup in a German document: the island replaces the markup with the same text.
     await writeFile(join(root, "island.html"), result.island);
     const client = join(root, "client.ts");
     await writeFile(
@@ -163,16 +167,29 @@ test("a German public page loads the German island build and keeps its @k2b/ui t
       dom.document.body.innerHTML = await Bun.file(markup).text();
       const island = dom.document.querySelector("solid-island");
       const server = island.textContent;
+      const serverNode = island.firstElementChild;
       await import(entry);
-      console.log(JSON.stringify({ server, client: island.textContent }));
+      const replaced = island.firstElementChild !== null && island.firstElementChild !== serverNode;
+      console.log(JSON.stringify({ server, client: island.textContent, replaced }));
       process.exit(0);`,
     );
-    const child = Bun.spawn([process.execPath, client, entry, join(root, "island.html")], { stdout: "pipe", stderr: "pipe" });
-    const [status, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
-    expect({ status, err }).toEqual({ status: 0, err: "" });
-    const mounted = JSON.parse(out.trim().split("\n").at(-1)!);
-    expect(mounted.server).toContain("Auswählen...");
-    expect(mounted.client).toBe(mounted.server);
+    const child = Bun.spawn([process.execPath, client, entry, join(root, "island.html")], {
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 20000,
+    });
+    try {
+      const [status, out, err] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+      expect({ status, err }).toEqual({ status: 0, err: "" });
+      const mounted = JSON.parse(out.trim().split("\n").at(-1)!);
+      expect(mounted.server).toContain("Auswählen...");
+      expect(mounted).toEqual({ server: mounted.server, client: mounted.server, replaced: true });
+    } finally {
+      if (child.exitCode === null) {
+        child.kill();
+        await child.exited;
+      }
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

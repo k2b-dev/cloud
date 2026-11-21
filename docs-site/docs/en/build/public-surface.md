@@ -99,7 +99,7 @@ import { appAssetPath } from "@k2b/cloud/server";
 import { app } from "./config";
 import ProductFinder from "./ProductFinder.island";
 
-const site = app.publicSsr<{ title: string; lang: string }>(({ body, scripts, title, lang }) =>
+const site = app.publicSsr<{ title: string; lang: "en" | "de" }>(({ body, scripts, title, lang }) =>
   `<!doctype html><html lang="${lang}"><head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${Bun.escapeHTML(title)}</title><link rel="stylesheet" href="/site.css">
