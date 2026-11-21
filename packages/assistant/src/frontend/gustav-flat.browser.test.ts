@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation, AiStoredMessage } from "@k2b/cloud/ai";
 import type { Browser } from "playwright";
-import { galleryScenes } from "../../../cloud/src/ai/chat/chat-gallery.fixtures";
+import { chatDoneMessage } from "../../../../scripts/fixtures/chat-done";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { layoutProblems } from "../../../ui/test/head-overlap";
 import { emptySidebarSnapshot, sidebarSnapshot } from "./AssistantChatSidebar.fixture";
@@ -42,17 +42,30 @@ const chats = [
   conversation("Many01", "Angebot Eichenplatten"),
   conversation("Ctx001", "Umsatzbericht Q1–Q3"),
 ];
-/** The failed answer once, or the whole chat four times over, so the timeline scrolls. */
-const messagesOf = (id: string): AiStoredMessage[] => {
-  if (id !== "Many01") return galleryScenes.fehler().messages;
-  const rounds = [galleryScenes.antwort(), galleryScenes.antwort(), galleryScenes.antwort(), galleryScenes.fehler()];
-  let seq = 0;
-  return rounds.flatMap((round, index) =>
-    round.messages.map((message) => {
-      seq += 1;
-      return { ...message, id: `m${seq}`, shortId: `m${seq}`, seq, loopId: message.loopId ? `${message.loopId}-${index}` : null };
+/** One round: the person's question and Gustav's answer; the last answer of a chat was cut off by the model service. */
+const round = (index: number, failed: boolean): AiStoredMessage[] => {
+  const loopId = `Turn${String(index).padStart(2, "0")}`;
+  const question = "Was hat Jana zum Angebot für den Messestand gefragt? Und was kostet uns die Beleuchtung?";
+  const answer = failed
+    ? "Jana Berger fragt zwei Dinge:"
+    : "Jana Berger fragt, ob der Aufbau am Sonntag möglich ist und ob die Beleuchtung im Preis enthalten ist. Der Aufbau ist ab Samstag möglich; die Beleuchtung kostet 480,00 € netto.";
+  return [
+    chatDoneMessage(index * 2 + 1, question, {
+      loopId,
+      stopReason: null,
+      loopDoneReason: null,
+      message: { role: "user", content: [{ type: "text", text: question }] },
     }),
-  );
+    chatDoneMessage(index * 2 + 2, answer, {
+      loopId,
+      ...(failed ? { loopDoneReason: "error", meta: { turnError: { code: "model_unavailable" } } } : {}),
+    }),
+  ];
+};
+/** Two rounds, or eight so the timeline scrolls; the last answer failed. */
+const messagesOf = (id: string): AiStoredMessage[] => {
+  const rounds = id === "Many01" ? 8 : 2;
+  return Array.from({ length: rounds }, (_, index) => round(index, index === rounds - 1)).flat();
 };
 
 let browser: Browser;
