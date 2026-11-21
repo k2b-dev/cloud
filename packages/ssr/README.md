@@ -795,6 +795,7 @@ per-tab connections as a compatibility fallback.
 - props must be serializable via `seroval`; do not pass functions, callbacks, event handlers, Solid signals/stores, DOM nodes, or class instances as island/client props
 - island/client modules must not import other island/client modules, directly, through plain modules, as named imports, or with a literal dynamic `import()`; an island must also not import itself back through plain modules. The build fails in dev and production. A computed `import()` path is not detected. Type-only imports are fine.
 - move shared components into plain `.tsx` modules and import them from both files; keep each island/client entry as a thin re-export, such as `export { default } from "./Inner";`
+- browser code should not load a package's re-export entry (a barrel such as `@k2b/ui`) with `import()` when other browser code imports it statically. A static import reads only the re-exports it names; an `import()` needs every export, so the barrel keeps all of them and code splitting puts unused modules into the static closure of every island that imports the barrel. Import a small module on demand that re-exports only the needed names, such as `export { toast } from "@k2b/ui";`. The build warns in dev and production, names the files, and still succeeds. An entry that re-exports a single module, such as `@k2b/ui/hover-card`, may load on demand.
 
 ## Development
 

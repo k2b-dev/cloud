@@ -131,7 +131,7 @@ export const imageCropRectToPixels = (rect: ImageCropRect, imageSize: ImageCropS
 };
 
 const cropped = async (source: ImageCropSource, state: ImageCropState, output: ImageCropOutput) => {
-  const { img } = await import("@k2b/stdlib/browser");
+  const { img } = await import("./image-tools");
   let data = await img.create(source);
   if (state.rotation) data = await img.rotate(state.rotation)(data);
   const crop = imageCropRectToPixels(state.crop, { width: data.width, height: data.height });
