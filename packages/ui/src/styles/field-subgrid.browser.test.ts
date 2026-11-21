@@ -175,7 +175,7 @@ describe("@k2b/ui fields with a description", () => {
       }
     });
 
-    test(`at ${width} px a field grid keeps 20 px label rows and lines its controls up, or stacks below 360 px`, async () => {
+    test(`at ${width} px a field grid keeps 20 px label rows and lines its controls up, or stacks when narrow`, async () => {
       const page = await load(options);
       try {
         const fields = await page.locator("#grid .k2b-field").evaluateAll((items) =>
@@ -203,11 +203,12 @@ describe("@k2b/ui fields with a description", () => {
           // A field without a label keeps the empty label row: its control starts 24 px below the field's top.
           expect(field.controlTop - field.top).toBe(24);
         }
-        if (gridWidth >= 360) {
+        // Three fields keep at least 160 px each and 12 px between them; below that they stack.
+        if (gridWidth >= 504) {
           expect(new Set(fields.map((field) => field.controlTop)).size).toBe(1);
           expect(new Set(fields.map((field) => field.left)).size).toBe(3);
         } else {
-          // K15: under 360 px of width the fields stand one under the other.
+          // K15: in a narrow column the fields stand one under the other.
           expect(new Set(fields.map((field) => field.left)).size).toBe(1);
           for (let i = 1; i < fields.length; i++) expect(fields[i]!.top).toBeGreaterThan(fields[i - 1]!.top);
         }

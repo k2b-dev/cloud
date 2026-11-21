@@ -130,8 +130,8 @@ title with its symbol and one pencil (`onEdit`), then each label in 12 px grey
 and its value in 13 px dark. `copy` puts a copy button at values people carry
 elsewhere, such as a phone number, an address, an IBAN, or a code. Groups stand
 apart by space, without lines. A group of one value belongs into another group.
-Below 360 px of width each label stands above its value. Put the groups into a
-column of at most 400 px.
+In a column under 360 px each label stands above its value. Put the groups
+into a column of at most 400 px.
 
 ```tsx
 <FactGroup title="Bank" icon="ti ti-building-bank" onEdit={editBank} items={[
@@ -145,8 +145,9 @@ column of at most 400 px.
 `FieldGrid` puts the fields of one row on one grid (K5). Every label row is
 20 px, so the controls share their top edge, and a description or an error only
 makes its own field taller below its control. A field without a label keeps the
-empty label row. Below 360 px of width the fields stand one under the other.
-Choose `columns` from 2 to 4.
+empty label row. In a column under 360 px the fields stand one under the
+other, and three or four fields stack earlier, so no field gets narrower than
+160 px. Choose `columns` from 2 to 4.
 
 ```tsx
 <FieldGrid columns={3}>

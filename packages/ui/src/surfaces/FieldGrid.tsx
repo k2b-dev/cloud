@@ -9,8 +9,8 @@ export type FieldGridProps = Omit<JSX.HTMLAttributes<HTMLDivElement>, "children"
 
 /**
  * A row of fields on one grid (K5): every label row is 20 px, so the controls share their top edge, and help or an
- * error grows only its own field below the control. Below 360 px of width the fields stand one under the other, so a
- * label never runs into its neighbour (K15).
+ * error grows only its own field below the control. In a column under 360 px the fields stand one under the other, so
+ * a label never runs into its neighbour (K15); three or four fields stack earlier, so no field gets narrower than 160 px.
  */
 export function FieldGrid(props: FieldGridProps): JSX.Element {
   const [local, rest] = splitProps(props, ["children", "columns", "class"]);

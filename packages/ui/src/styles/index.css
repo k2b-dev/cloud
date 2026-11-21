@@ -4443,8 +4443,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: var(--k2b-h-label, 1.25rem);
 }
 
-@container k2b-field-grid (max-width: 359.98px) {
+/* K15: fields stack in a column under 360 px; the grid stands inside the
+   column's 20 px text edges, so it measures 320 px there. Three or four fields
+   stack earlier, so no field gets narrower than 160 px. */
+@container k2b-field-grid (max-width: 319.98px) {
   .k2b-ui .k2b-field-grid__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container k2b-field-grid (max-width: 503.98px) {
+  .k2b-ui .k2b-field-grid__row[data-columns="3"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container k2b-field-grid (max-width: 675.98px) {
+  .k2b-ui .k2b-field-grid__row[data-columns="4"] {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -4510,6 +4525,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-area {
   min-width: 0;
   box-shadow: inset 0 -1px 0 var(--k2b-border);
+  container: k2b-area / inline-size;
+}
+
+/* K15: in a narrow area the open head keeps its name whole and puts state and
+   actions on a line of their own under the meta line; it grows in steps. A
+   closed row stays 40 px and shows only what fits beside its name. */
+@container k2b-area (max-width: 479.98px) {
+  .k2b-ui .k2b-area[data-open="true"] > .k2b-area__head {
+    height: auto;
+    min-height: var(--k2b-h-area-head, 3.5rem);
+    padding-block: 0.5rem;
+    row-gap: 0.25rem;
+  }
+
+  .k2b-ui .k2b-area[data-open="true"] > .k2b-area__head > .k2b-area__end {
+    grid-row: 3;
+    grid-column: 2 / -1;
+    flex-wrap: wrap;
+  }
+
+  .k2b-ui .k2b-area__title {
+    min-width: 6rem;
+  }
 }
 
 .k2b-ui .k2b-area[data-open="true"] {
@@ -4787,7 +4825,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-subtle);
 }
 
-@container k2b-fact-group (max-width: 359.98px) {
+/* K15: a column under 360 px, which leaves the group's content box 320 px. */
+@container k2b-fact-group (max-width: 319.98px) {
   .k2b-ui .k2b-fact-group__facts {
     grid-template-columns: minmax(0, 1fr) 1.75rem;
   }
@@ -13132,7 +13171,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     display: block;
   }
 
-  .k2b-ui .k2b-table-shell[data-list] :is(.k2b-data-table__head, .k2b-data-table__details, .k2b-data-table__details-toggle) {
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__head,
+  .k2b-ui .k2b-table-shell[data-list] tbody > tr.k2b-data-table__details:not([hidden]),
+  .k2b-ui .k2b-table-shell[data-list] .k2b-data-table__row > td.k2b-data-table__details-toggle {
     display: none;
   }
 
