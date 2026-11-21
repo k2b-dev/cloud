@@ -289,8 +289,9 @@ describe("Pulse base page after the cut", () => {
       {
         ...workspaceFixture,
         initialBases: [clearing],
-        initialRouteState: { view: "dashboards", sourceId: "" },
-        initialDashboards: { items: [], total: 0, nextOffset: null, selected: null, error: null },
+        // The SQL view has no periodic source refresh, so only the settings poll reads the base list.
+        initialRouteState: { view: "sql", sourceId: "", sql: "" },
+        initialSql: { limits: sqlTestLimits, query: null, error: null },
       },
       "de",
       (url) => {
