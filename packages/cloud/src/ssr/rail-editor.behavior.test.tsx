@@ -147,7 +147,12 @@ test("the keyboard reorders pinned entries from the grip, and the grip keeps foc
   await idle();
   const grip = button("Move Mail")!;
   grip.focus();
-  grip.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+  // Space lifts the entry, ArrowUp chooses the place above, Enter drops it.
+  const press = (key: string) => grip.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  press(" ");
+  await settle(() => !!document.querySelector(".rail-editor-pinned [data-sortable-dragging]"));
+  press("ArrowUp");
+  press("Enter");
   expect(rows(".rail-editor-pinned")).toEqual(["Mail", "Chat"]);
   await settle(() => stored.shortcuts[0]?.kind === "app" && stored.shortcuts[0].appId === "mail");
   await idle();
