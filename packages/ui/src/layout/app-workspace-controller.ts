@@ -1730,10 +1730,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       if (typeof spec === "number") {
         // Sidebar and drawer have no CSS fit. Keep their configured default
         // in the map, but render within today's bounds and recover it later.
+        // From 1920 px the sidebar and Detail start wider (K12); a reset returns to that start, not the narrow one.
+        const wide = kind === "sidebar" ? "--k2b-workspace-sidebar-wide" : kind === "detail" ? "--k2b-workspace-detail-wide" : undefined;
+        const start = (px: number) => (wide ? `calc(${px}px + var(${wide}, 0px))` : `${px}px`);
         if (kind === "sidebar" || kind === "drawer") {
           const { min, max } = sizeLimits(root, region.configuration, kind);
-          root.style.setProperty(variable, `${clamp(spec, min, max)}px`);
-        } else root.style.setProperty(variable, `${spec}px`);
+          const bounded = clamp(spec, min, max);
+          root.style.setProperty(variable, bounded === spec ? start(spec) : `${bounded}px`);
+        } else root.style.setProperty(variable, start(spec));
       } else {
         root.style.removeProperty(variable);
         if (getComputedStyle(root).getPropertyValue(variable).trim()) root.style.setProperty(variable, "initial");

@@ -25,7 +25,7 @@
 export type LayoutProblemOptions = {
   /** The element to check; the whole document by default. */
   root?: string;
-  /** Boxes whose children overlap or clip on purpose; they and everything inside them are skipped. */
+  /** Boxes whose children overlap or clip on purpose, or that lie over a sibling on purpose; they and everything inside them are skipped. */
   ignore?: string;
   /**
    * How far content may reach past its box before it counts, in px. 7 as in the mockups: an icon button at a column
@@ -72,7 +72,8 @@ export function layoutProblems(options: LayoutProblemOptions = {}): LayoutProble
     if (/flex|grid/.test(style.display)) {
       const children = Array.from(box.children)
         .flatMap(drawn)
-        .filter((child) => seen(child) && inFlow(child));
+        // An ignored box also takes no part as a sibling, such as a grip that lies over its column on purpose (K13).
+        .filter((child) => seen(child) && inFlow(child) && !child.matches(ignore));
       for (const [index, a] of children.entries())
         for (const b of children.slice(index + 1)) {
           const x = a.getBoundingClientRect();

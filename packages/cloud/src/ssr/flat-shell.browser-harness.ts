@@ -34,7 +34,7 @@ const probe = defineApp({
   icon: "ti ti-layout",
   description: "Flat shell probe",
   baseUrl: "http://flat-shell-probe:3000",
-  routes: ["/app/spaces", "/app/files", "/app/notebooks"],
+  routes: ["/app/spaces", "/app/files", "/app/notebooks", "/app/mail"],
 });
 const apps = [
   { id: "spaces", name: "Spaces", icon: "ti ti-layout-kanban", accent: "#4d7c0f", from: "#65a30d", to: "#84cc16" },
@@ -301,10 +301,76 @@ const notePage = () =>
     },
   });
 
+/** A mail-like split: folders, a list pane beside the reader, and an open detail. Invented content. */
+const mailPage = () =>
+  h(AppWorkspace, {
+    class: "min-h-0 flex-1",
+    get children() {
+      return [
+        sidebar("mail-navigation", "Postfächer", [
+          { label: "Verfassen", icon: "ti ti-pencil" },
+          { label: "Eingang", icon: "ti ti-inbox", active: true, meta: "8" },
+          { label: "Gesendet", icon: "ti ti-send" },
+          { label: "Archiv", icon: "ti ti-archive" },
+        ]),
+        h(AppWorkspace.Head, {
+          views: h(ViewTabs, {
+            label: "Ansichten",
+            current: "all",
+            items: [
+              { id: "all", label: "Alle", href: "?view=all", count: 8 },
+              { id: "action", label: "Handlungsbedarf", href: "?view=action", count: 3 },
+              { id: "mine", label: "Mir zugewiesen", href: "?view=mine", count: 2 },
+            ],
+          }),
+          primary: { label: "Verfassen", icon: "ti ti-pencil", href: "?compose=1" },
+        }),
+        h(AppWorkspace.Content, {
+          get children() {
+            return [
+              h(AppWorkspace.Main, {
+                get children() {
+                  return [
+                    h(AppWorkspace.MainPane, {
+                      id: "list",
+                      label: "Nachrichten",
+                      get children() {
+                        return h(StatusRow, { lead: "8 Nachrichten", facts: [{ value: "3", label: "ungelesen" }] });
+                      },
+                    }),
+                    createComponent(Dynamic, {
+                      component: "article",
+                      style: "padding:0 1.25rem",
+                      children: "Hallo Mira, anbei der Lieferschein für Halle 3. Viele Grüße, Jonas",
+                    }),
+                  ];
+                },
+              }),
+              h(AppWorkspace.Detail, {
+                id: "mail-detail",
+                open: true,
+                width: "sm",
+                get children() {
+                  return h(DetailPanel, {
+                    surface: "plain",
+                    get children() {
+                      return h(DetailPanel.Header, { title: "Jonas Weil", subtitle: "Logistik" });
+                    },
+                  });
+                },
+              }),
+            ];
+          },
+        }),
+      ];
+    },
+  });
+
 const pages: Record<string, (c: { req: { query: (key: string) => string | undefined } }) => JSX.Element> = {
   spaces: (c) => spacesPage(c.req.query("detail") !== "0", c),
   files: () => filesPage(),
   notebooks: () => notePage(),
+  mail: () => mailPage(),
 };
 const server = new Hono().get(
   "/app/:app",

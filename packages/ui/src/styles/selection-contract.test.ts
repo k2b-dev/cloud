@@ -40,7 +40,7 @@ const fillSelected = [
 ];
 const markSelected = [
   '.k2b-ui .k2b-view-tabs__tab[aria-current="page"]',
-  '.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[aria-selected="true"]',
+  '.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"][aria-selected="true"]',
 ];
 const selectedEdge = "color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface))";
 const selectedFill = "color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))";

@@ -1068,13 +1068,13 @@ html {
    in dark, never both. One line, one owner: a workspace inside another
    stands in a column whose edges the boundary lines and the head line
    already draw, so it draws no edge of its own. */
-.k2b-ui .k2b-app-workspace:not(.k2b-app-workspace *) {
+.k2b-ui .k2b-app-workspace:not(.k2b-app-workspace *, [data-flat="true"]) {
   box-shadow: var(--k2b-shadow-frame);
 }
 
-.k2b-ui[data-theme="dark"] .k2b-app-workspace:not(.k2b-app-workspace *),
-.k2b-ui.k2b-dark .k2b-app-workspace:not(.k2b-app-workspace *),
-.dark .k2b-ui .k2b-app-workspace:not(.k2b-app-workspace *) {
+.k2b-ui[data-theme="dark"] .k2b-app-workspace:not(.k2b-app-workspace *, [data-flat="true"]),
+.k2b-ui.k2b-dark .k2b-app-workspace:not(.k2b-app-workspace *, [data-flat="true"]),
+.dark .k2b-ui .k2b-app-workspace:not(.k2b-app-workspace *, [data-flat="true"]) {
   border-color: var(--k2b-border);
   box-shadow: none;
 }
@@ -2815,21 +2815,16 @@ html {
     display: none;
   }
 
-  /* K12, K16: on a phone the main action floats at the bottom right, above
-     a host's bottom bar and the home indicator, with the small overlay
-     shadow; it leaves the tabs row to the views. */
+  /* The primary action is a round 44 px button in the tabs row, so the row
+     keeps its 44 px (K12) and the current view's mark stays on the head
+     line. A host with a bottom bar places it beside the bar. */
   .k2b-ui .k2b-app-workspace__head-primary {
-    position: fixed;
-    z-index: 30;
-    right: calc(var(--k2b-gutter, 1rem) + env(safe-area-inset-right, 0px));
-    bottom: calc(max(var(--k2b-mobile-shell-footer-height, 0px), env(safe-area-inset-bottom, 0px)) + 1.25rem);
-    width: 3rem;
-    min-width: 3rem;
-    height: 3rem;
-    min-height: 3rem;
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
     padding: 0;
     border-radius: var(--k2b-radius-round, 9999px);
-    box-shadow: var(--k2b-shadow-overlay-sm, var(--k2b-shadow-float));
   }
 
   .k2b-ui .k2b-app-workspace__head-primary > i {
@@ -6116,11 +6111,13 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-breadcrumbs {
   display: flex;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .k2b-ui .k2b-breadcrumbs__list {
   --scroll-fade-size: 1.5rem;
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
@@ -6363,6 +6360,14 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   width: max-content;
   max-width: 100%;
   margin: 0.75rem 0 calc(-1 * (var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px)) auto;
+}
+
+/* Below 48 rem the column is narrower than the measure and the pill, so the
+   pill takes its room above the text instead of covering its first lines. */
+@media not all and (min-width: 48rem) {
+  .k2b-ui .k2b-floating-pill {
+    margin-bottom: 0.75rem;
+  }
 }
 
 .k2b-ui .k2b-floating-pill__separator {

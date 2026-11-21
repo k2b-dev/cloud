@@ -29,6 +29,7 @@ export type BreadcrumbsProps = {
  */
 export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
   const messages = useUiMessages();
+  let nav: HTMLElement | undefined;
   let list: HTMLOListElement | undefined;
   // How many front levels wait behind "…"; the current level never does.
   const [hidden, setHidden] = createSignal(0);
@@ -45,11 +46,21 @@ export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
     while (!fits() && count < props.items.length - 1) setHidden(++count);
     if (fits()) list.scrollLeft = getComputedStyle(list).direction === "rtl" ? -list.scrollWidth : list.scrollWidth;
   };
+  // Measure after Solid has written the hidden levels, never inside an effect, where writes wait until it ends.
+  let frame = 0;
+  const schedule = () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(settle);
+  };
   onMount(() => {
-    if (!list || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => settle());
-    observer.observe(list);
-    onCleanup(() => observer.disconnect());
+    if (!nav || typeof ResizeObserver === "undefined") return;
+    // The nav follows its room, also when the room grows back; the list follows its own content.
+    const observer = new ResizeObserver(schedule);
+    observer.observe(nav);
+    onCleanup(() => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    });
   });
   // The current level is the end of the path: keep it in view after every change. Horizontal RTL counts negative.
   createEffect(
@@ -57,26 +68,32 @@ export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
       () => props.items.map((item) => item.label).join("\u0000"),
       () => {
         if (!list) return;
-        settle();
         const rtl = getComputedStyle(list).direction === "rtl";
         list.scrollLeft = rtl ? -list.scrollWidth : list.scrollWidth;
+        schedule();
       },
     ),
   );
   const select = (index: number) => {
-    props.onSelect?.(index);
+    if (!props.disabled) props.onSelect?.(index);
   };
   const hiddenItems = (): DropdownItem[] =>
     props.items
       .slice(0, hidden())
       .map((item, index) => (item.href ? { label: item.label, href: item.href } : { label: item.label, action: () => select(index) }));
   return (
-    <nav class={`k2b-breadcrumbs ${props.class ?? ""}`} aria-label={props.label}>
+    <nav ref={nav} class={`k2b-breadcrumbs ${props.class ?? ""}`} aria-label={props.label}>
       <ol ref={list} class="k2b-breadcrumbs__list" data-scroll-fade-mode="both" data-scroll-fade-axis="horizontal">
         <Show when={hidden() > 0}>
           <li class="k2b-breadcrumbs__item k2b-breadcrumbs__more">
             <Dropdown items={hiddenItems()}>
-              <Dropdown.Trigger class="k2b-breadcrumbs__link" variant="ghost" size="sm" label={messages().pathLevelsAbove}>
+              <Dropdown.Trigger
+                class="k2b-breadcrumbs__link"
+                variant="ghost"
+                size="sm"
+                label={messages().pathLevelsAbove}
+                disabled={props.disabled}
+              >
                 …
               </Dropdown.Trigger>
             </Dropdown>
@@ -107,7 +124,8 @@ export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
                     }
                   >
                     {(href) => (
-                      <a class="k2b-breadcrumbs__link" href={href()} aria-disabled={props.disabled ? "true" : undefined}>
+                      // A disabled level is no link: without `href` it neither navigates nor takes focus.
+                      <a class="k2b-breadcrumbs__link" href={props.disabled ? undefined : href()} aria-disabled={props.disabled ? "true" : undefined}>
                         {item.label}
                       </a>
                     )}

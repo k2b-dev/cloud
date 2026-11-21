@@ -19658,7 +19658,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
-.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button {
+.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"] {
   --k2b-tab-mark: transparent;
   min-height: 2.25rem;
   padding-inline: 0;
@@ -19671,17 +19671,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring);
 }
 
-.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[aria-selected="true"] {
+.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"][aria-selected="true"] {
   --k2b-tab-mark: var(--k2b-app-workspace-active);
   color: var(--k2b-text);
   background: transparent;
 }
 
-.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[aria-selected="true"]:hover {
+.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"][aria-selected="true"]:hover {
   background: transparent;
 }
 
-.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button:hover:not(:disabled, [aria-selected="true"]) {
+.k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"]:hover:not(:disabled, [aria-selected="true"]) {
   color: var(--k2b-text);
   background: transparent;
 }

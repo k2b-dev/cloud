@@ -2121,7 +2121,7 @@ describe("floating detail controller", () => {
         expect(root.dataset.sidebarCollapsed).toBe("true");
         handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
         flushFrames();
-        expect(root.style.getPropertyValue(variable)).toBe("208px");
+        expect(root.style.getPropertyValue(variable)).toBe("calc(208px + var(--k2b-workspace-sidebar-wide, 0px))"); // K12: the start width, wider from 1920 px
         expect(root.hasAttribute("data-sidebar-collapsed")).toBe(false);
         expect(handle.getAttribute("aria-valuenow")).toBe("208");
         expect(written.at(-1)).toEqual({ version: 2, detailWidths: { other: 420 } });
@@ -2230,7 +2230,7 @@ describe("floating detail controller", () => {
     flushFrames();
     expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("500px");
     handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("416px");
+    expect(root.style.getPropertyValue("--k2b-workspace-detail-record-width")).toBe("calc(416px + var(--k2b-workspace-detail-wide, 0px))"); // K12: the start width, wider from 1920 px
     expect(handle.getAttribute("aria-valuenow")).toBe("416");
     expect(written.at(-1)).toMatchObject({ detailWidths: { other: 420 } });
     dispose();
@@ -2261,7 +2261,7 @@ describe("floating detail controller", () => {
     });
     flushFrames();
     handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-    expect(root.style.getPropertyValue(variable)).toBe(`${APP_WORKSPACE_DETAIL_DEFAULT}px`);
+    expect(root.style.getPropertyValue(variable)).toBe(`calc(${APP_WORKSPACE_DETAIL_DEFAULT}px + var(--k2b-workspace-detail-wide, 0px))`);
     expect(written.at(-1)).toMatchObject({ detailWidths: { other: 420 } });
     expect(written.at(-1)).not.toMatchObject({ detailWidths: { record: 500 } });
     dispose();
