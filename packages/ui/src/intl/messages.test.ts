@@ -41,6 +41,7 @@ const catalogs = {
   DataTable: (await import("../content/data-table-messages")).checkDataTableMessages,
   FlowAmount: (await import("../content/flow-amount-messages")).checkFlowAmountMessages,
   BalanceSummary: (await import("../content/balance-summary-messages")).checkBalanceSummaryMessages,
+  ProgressPath: (await import("../content/progress-path-messages")).checkProgressPathMessages,
   Budget: (await import("../surfaces/budget-messages")).checkBudgetMessages,
   StatCell: (await import("../surfaces/stat-cell-messages")).checkStatCellMessages,
   Lightbox: (await import("../content/lightbox-messages")).checkLightboxMessages,

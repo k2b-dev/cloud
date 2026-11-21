@@ -1,5 +1,6 @@
 import { For, type JSX, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
+import { useProgressPathMessages } from "./progress-path-messages";
 
 export type ProgressPathStep = {
   /** What happens at this step, such as "Received". */
@@ -36,6 +37,7 @@ const stateOf = (step: ProgressPathStep): StepState => (step.current ? "current"
  */
 export function ProgressPath(props: ProgressPathProps): JSX.Element {
   const messages = useUiMessages();
+  const pathMessages = useProgressPathMessages();
   return (
     <div class={props.class ? `k2b-progress-path ${props.class}` : "k2b-progress-path"}>
       <ol class="k2b-progress-path__list" aria-label={props.label} style={{ "--k2b-progress-path-count": props.steps.length }}>
@@ -55,7 +57,7 @@ export function ProgressPath(props: ProgressPathProps): JSX.Element {
                 <span class="k2b-sr-only">
                   ,{" "}
                   {stateOf(step) === "current"
-                    ? messages().progressCurrent
+                    ? pathMessages().current
                     : stateOf(step) === "done"
                       ? messages().progressDone
                       : messages().progressOpen}
