@@ -89,7 +89,7 @@ describe(`k2b-quiet-scrollbar (${browserName})`, () => {
   beforeAll(async () => {
     // Headless Chromium hides classic scrollbars by default; this test needs them painted.
     browser = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
-  });
+  }, 30_000);
 
   afterAll(async () => {
     await browser?.close();

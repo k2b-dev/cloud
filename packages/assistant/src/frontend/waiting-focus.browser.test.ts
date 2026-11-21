@@ -39,7 +39,7 @@ let browser: Browser;
 let script: string;
 beforeAll(async () => {
   [script, browser] = await Promise.all([buildHarness(), launchBrowser()]);
-});
+}, 30_000);
 afterAll(async () => {
   await browser?.close();
 });
