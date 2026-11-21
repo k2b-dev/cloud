@@ -6194,6 +6194,24 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   font-weight: 600;
 }
 
+/* K15: once every level above waits behind "…", the current level is the
+   last to give way: it shortens with an ellipsis, so the path never scrolls
+   and never cuts a word. A path of one level does the same. */
+.k2b-ui .k2b-breadcrumbs__list:is([data-squeezed], :has(> .k2b-breadcrumbs__item:only-child)) {
+  overflow-x: hidden;
+}
+
+.k2b-ui .k2b-breadcrumbs__list:is([data-squeezed], :has(> .k2b-breadcrumbs__item:only-child)) > .k2b-breadcrumbs__item:last-child {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.k2b-ui .k2b-breadcrumbs__list:is([data-squeezed], :has(> .k2b-breadcrumbs__item:only-child)) .k2b-breadcrumbs__current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* The levels above are quiet text that darkens on hover; the place is their
    mark, not blue (K8). */
 .k2b-ui :is(.k2b-button.k2b-breadcrumbs__link, a.k2b-breadcrumbs__link) {

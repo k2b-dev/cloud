@@ -75,7 +75,14 @@ export function Breadcrumbs(props: BreadcrumbsProps): JSX.Element {
       .map((item, index) => (item.href ? { label: item.label, href: item.href } : { label: item.label, action: () => select(index) }));
   return (
     <nav ref={nav} class={`k2b-breadcrumbs ${props.class ?? ""}`} aria-label={props.label}>
-      <ol ref={list} class="k2b-breadcrumbs__list" data-scroll-fade-mode="both" data-scroll-fade-axis="horizontal">
+      <ol
+        ref={list}
+        class="k2b-breadcrumbs__list"
+        data-scroll-fade-mode="both"
+        data-scroll-fade-axis="horizontal"
+        // Every level above waits behind "…": now the current level shortens with an ellipsis instead of scrolling.
+        data-squeezed={props.items.length > 1 && hidden() >= props.items.length - 1 ? "" : undefined}
+      >
         <Show when={hidden() > 0}>
           <li class="k2b-breadcrumbs__item k2b-breadcrumbs__more">
             <Dropdown items={hiddenItems()}>
