@@ -8,6 +8,7 @@ import type { MailRequestContext } from "./auth";
 import {
   applyConversationCompletions,
   listAssignableUsers,
+  listDropAssignees,
   loadConversationAssigneeIds,
   updateConversationCollaborationInTransaction,
   writeConversationAssignees,
@@ -712,5 +713,65 @@ suite("mail conversation assignment", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]?.payload.d).toEqual({ conversationId: conversation.shortId });
     });
+  });
+
+  test("a drag's people list whom the person assigned most often first, then A–Z, and only for people who may assign", async () => {
+    const dropMailboxId = await createFixtureMailbox("Drop targets");
+    const zed = await createUser("zed");
+    const amy = await createUser("amy");
+    const assignedOnly = await createUser("drop-assigned");
+    for (const [user, permission, scope] of [
+      [zed, "write", "mailbox"],
+      [amy, "write", "mailbox"],
+      [writer, "write", "mailbox"],
+      [reader, "read", "mailbox"],
+      [assignedOnly, "write", "assigned"],
+    ] as const) {
+      const access = await grantMailboxAccess({
+        context: contextFor(owner),
+        mailboxId: dropMailboxId,
+        principal: { type: "user", userId: user.id },
+        permission,
+        ...(scope === "assigned" ? { scope } : {}),
+      });
+      if (!access.ok) throw new Error(access.error.message);
+    }
+    const first = await createConversation(dropMailboxId, "Drop first");
+    const second = await createConversation(dropMailboxId, "Drop second");
+    // The owner gave Zed two conversations and Amy one; Writer assigned no one.
+    for (const [conversation, user] of [
+      [first, zed],
+      [second, zed],
+      [first, amy],
+    ] as const) {
+      const assigned = await assignConversations({
+        context: contextFor(owner),
+        mailboxId: dropMailboxId,
+        conversationIds: [conversation.shortId],
+        assigneeUserIds: [user.id],
+        mode: "add",
+        locale: "en",
+      });
+      if (!assigned.ok) throw new Error(assigned.error.message);
+    }
+
+    const forOwner = await listDropAssignees({ context: contextFor(owner), mailboxId: dropMailboxId });
+    if (!forOwner.ok) throw new Error(forOwner.error.message);
+    const names = (people: Array<{ displayName: string }>) => people.map((person) => person.displayName);
+    const alphabetical = [owner, writer, zed, amy, assignedOnly].map((user) => user.displayName).sort((a, b) => a.localeCompare(b));
+    expect(names(forOwner.data.people).slice(0, 2)).toEqual([zed.displayName, amy.displayName]);
+    expect(names(forOwner.data.people).slice(2)).toEqual(
+      alphabetical.filter((name) => name !== zed.displayName && name !== amy.displayName),
+    );
+    expect(forOwner.data.more).toBeFalse();
+    expect(names(forOwner.data.people)).not.toContain(reader.displayName);
+
+    const forWriter = await listDropAssignees({ context: contextFor(writer), mailboxId: dropMailboxId });
+    expect(forWriter.ok && names(forWriter.data.people)).toEqual(alphabetical);
+
+    for (const refused of [reader, assignedOnly]) {
+      const result = await listDropAssignees({ context: contextFor(refused), mailboxId: dropMailboxId });
+      expect(!result.ok && result.error.status).toBe(403);
+    }
   });
 });

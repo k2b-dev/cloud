@@ -34,6 +34,7 @@ import type {
   MailActivityEvent,
   MailActivityPerson,
   MailAssignableUser,
+  MailDropAssignees,
 } from "./collaboration";
 import * as collaboration from "./collaboration";
 import { listConversationDraftSummaries } from "./conversation-draft-summaries";
@@ -246,6 +247,11 @@ export type MailboxPageData = {
   comments: ConversationComment[];
   commentsCursor: string | null;
   assignableUsers: MailAssignableUser[];
+  /**
+   * Whom a dragged conversation can go to, loaded with the page so a drag needs no request before its drop. Null for
+   * people who may not assign (they read only or see assigned conversations only) and when the lookup failed.
+   */
+  dropAssignees: MailDropAssignees | null;
   activity: MailActivityEvent[];
   reminder: ConversationReminder | null;
   keep: ConversationKeep | null;
@@ -1110,6 +1116,7 @@ export const loadMailboxPageData = async (pageParams: {
     viewPreference,
     workspacePreference,
     doneTodayCounts,
+    dropAssigneesResult,
   ] = await Promise.all([
     mailboxes.getMailbox(params.context, params.mailboxId),
     folders,
@@ -1130,6 +1137,9 @@ export const loadMailboxPageData = async (pageParams: {
     getMailboxViewPreference(params.context, params.mailboxId),
     getMailboxWorkspacePreference(params.context, params.mailboxId),
     getMailboxDoneTodayCounts(params.context, params.mailboxId),
+    permission.data.scope === "mailbox" && permission.data.permission !== "read"
+      ? collaboration.listDropAssignees({ context: params.context, mailboxId: params.mailboxId })
+      : null,
   ]);
   if (!mailboxResult.ok) return fail(mailboxResult.error);
   if (!viewPreference.ok) return viewPreference;
@@ -1176,6 +1186,7 @@ export const loadMailboxPageData = async (pageParams: {
     identities: identityResult.ok ? identityResult.data : [],
     scheduledCount: listView.scheduledPage ? listView.scheduledPage.total : scheduledCountResult.ok ? scheduledCountResult.data : 0,
     localTags: localTagResult.ok ? localTagResult.data : [],
+    dropAssignees: dropAssigneesResult?.ok ? dropAssigneesResult.data : null,
     savedViews: savedViewResult.ok ? savedViewResult.data : [],
     viewCounts: viewCountsResult.ok ? viewCountsResult.data : EMPTY_VIEW_COUNTS,
     selectedConversationId,
