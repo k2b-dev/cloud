@@ -36,7 +36,11 @@ const load = async (chat: string, theme: "light" | "dark", options: BrowserConte
     page.setDefaultTimeout(5_000);
     const errors = pageErrors(page);
     await page.goto(new URL(`/app/chat/c/${chat}`, harness.url).href);
-    await settled(page);
+    // Measure the rendered composer with its fonts, independently of shell button color transitions (#2062).
+    await field(page).waitFor();
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
     const server = await page.evaluate(geometry);
     await page.evaluate(
       ({ props }) => {
