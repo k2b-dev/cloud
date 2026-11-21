@@ -1045,19 +1045,23 @@ describe("@k2b/ui action geometry parity", () => {
     expect(actionsCss).toMatch(/\.k2b-segmented-control__option:not\([^)]*\):hover/);
   });
 
-  test("menu items and section spacing follow Cloud's menu-item and menu-section metrics", () => {
+  test("menu rows reach the menu's edges and sections part with one hairline", () => {
     const item = rule(".k2b-ui .k2b-dropdown__item");
     const filterOption = rule(".k2b-ui .k2b-filter-chip__option");
     const section = rule('.k2b-ui .k2b-dropdown__section[data-divided="true"]');
 
     expect(item).toContain("gap: 0.625rem");
-    expect(item).toContain("padding: 0.4375rem 0.75rem");
+    // K1, K16: a 36 px row that reaches every edge of the menu, square, so the menu's radius clips it.
+    expect(item).toContain("min-height: var(--k2b-h-control, 2.25rem)");
+    expect(item).toContain("padding: 0.5rem 0.75rem");
+    expect(item).toContain("border-radius: 0");
     expect(item).toContain("font-size: 0.8125rem");
     expect(item).toContain("line-height: 1rem");
     expect(filterOption).toContain("line-height: 1rem");
-    // Cloud separates sections with spacing, never a rule line.
-    expect(section).not.toContain("border-top");
-    expect(section).toContain("margin-top: 0.25rem");
+    // K2, K16: one hairline from edge to edge separates sections, with no white strip beside it.
+    expect(section).toContain("border-top: 1px solid var(--k2b-border)");
+    expect(section).not.toContain("margin-top");
+    expect(rule(".k2b-ui .k2b-dropdown__menu")).toContain("padding: 0;");
   });
 
   test("the filter trigger matches the geometry and surface of adjacent fields", () => {

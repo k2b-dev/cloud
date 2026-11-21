@@ -685,11 +685,11 @@ function DropdownSubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
       hide();
     }
   };
-  onMount(() => {
-    // The menu around it closed: its submenu closes with it.
+  /** While open: the menu around it closing or the window changing size closes it too. */
+  const watchClose = () => {
     const host = row.parentElement?.closest<HTMLElement>("[popover]");
     const closed = (event: Event) => {
-      if ((event as ToggleEvent).newState === "closed") menu.level.set(undefined);
+      if (event.type === "resize" || (event as ToggleEvent).newState === "closed") menu.level.set(undefined);
     };
     host?.addEventListener("toggle", closed);
     window.addEventListener("resize", closed);
@@ -697,7 +697,7 @@ function DropdownSubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
       host?.removeEventListener("toggle", closed);
       window.removeEventListener("resize", closed);
     });
-  });
+  };
   return (
     <>
       <button
@@ -730,6 +730,7 @@ function DropdownSubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
         <i class="ti ti-chevron-right k2b-dropdown__more" aria-hidden="true" />
       </button>
       <Show when={open()}>
+        {watchClose()}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: a menu owns its keys. */}
         <div
           ref={(element) => {
