@@ -13,11 +13,16 @@ export const removedPublicLink = (c: Context<AuthContext>) => {
   c.header("X-Robots-Tag", "noindex, nofollow");
   return ssr.error(c, 410, { title: t.publicLinkRemovedTitle, description: t.publicLinkRemovedDetail, layout: "minimal" });
 };
+/** Old bookmarks of removed views open the base. */
+export const redirectRemovedView = (notice?: "dashboards-removed") => (c: Context<AuthContext>) =>
+  c.redirect(`/app/pulse/${encodeURIComponent(c.req.param("baseId") ?? "")}${notice ? `?notice=${notice}` : ""}`, 302);
+
 const workspacePages = new Hono<AuthContext>()
   .get("/sql", auth.requireRole("user", ssr.access), ...basePage)
   .get("/sql/:queryId", auth.requireRole("user", ssr.access), ...basePage)
-  .get("/dashboards", auth.requireRole("user", ssr.access), ...basePage)
-  .get("/dashboards/:dashboardId", auth.requireRole("user", ssr.access), ...basePage)
+  .get("/dashboards", auth.requireRole("user", ssr.access), redirectRemovedView("dashboards-removed"))
+  .get("/dashboards/:dashboardId", auth.requireRole("user", ssr.access), redirectRemovedView("dashboards-removed"))
+  .get("/overview", auth.requireRole("user", ssr.access), redirectRemovedView())
   .get("/sources/:sourceId", auth.requireRole("user", ssr.access), ...basePage)
   .get("/sources", auth.requireRole("user", ssr.access), ...basePage)
   .get("/", auth.requireRole("user", ssr.access), ...basePage);

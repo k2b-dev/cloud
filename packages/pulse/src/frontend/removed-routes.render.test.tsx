@@ -34,7 +34,7 @@ const block = spyOn(gate, "pulseNotSetUpGate").mockImplementation(() => async (c
 });
 // An unconfigured store must not turn the removed link into a 503.
 const configured = spyOn(store, "pulseStoreConfigured").mockResolvedValue(false);
-const { default: routes } = await import("./index");
+const { default: routes, redirectRemovedView } = await import("./index");
 const { default: api } = await import("../api");
 const pages = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>()
   .use(
@@ -83,6 +83,18 @@ test("the public dashboard API answers 410 before the store gate", async () => {
   // Paths outside the declared public routes stay behind sign-in.
   for (const path of ["/api/pulse/public/fictional-token/private", "/app/pulse/public/fictional-token/private"])
     expect((await pages.request(path)).status).toBe(401);
+});
+
+test("old dashboard and overview paths open the base", async () => {
+  const app = new Hono<AuthContext>()
+    .get("/app/pulse/:baseId/dashboards/:dashboardId", redirectRemovedView("dashboards-removed"))
+    .get("/app/pulse/:baseId/overview", redirectRemovedView());
+  const dashboard = await app.request("/app/pulse/Base01/dashboards/Dash01?range=7d");
+  expect(dashboard.status).toBe(302);
+  expect(dashboard.headers.get("location")).toBe("/app/pulse/Base01?notice=dashboards-removed");
+  const overview = await app.request("/app/pulse/Base01/overview");
+  expect(overview.status).toBe(302);
+  expect(overview.headers.get("location")).toBe("/app/pulse/Base01");
 });
 
 test("only current workspace routes render pages", () => {
