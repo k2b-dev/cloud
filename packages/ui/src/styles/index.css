@@ -319,8 +319,9 @@
   --k2b-shadow-overlay-lg: 0 2px 4px rgb(9 9 11 / 0.06), 0 24px 64px -16px rgb(9 9 11 / 0.32);
   --k2b-scrim: rgb(9 9 11 / 0.28);
   --k2b-shadow-surface: 0 0 #0000;
-  /* The app card casts no shadow; its edge is a hairline drawn inside it. */
-  --k2b-shadow-frame: inset 0 0 0 1px rgb(9 9 11 / 0.07);
+  /* The app card casts no shadow; its edge is a 1 px ring around it (a ring,
+     not depth: the columns inside would paint over an inner one). */
+  --k2b-shadow-frame: 0 0 0 1px rgb(9 9 11 / 0.07);
   /* The quiet shadow at every workspace column boundary stays until the
      workspace draws its hairline (K2); both change together, so columns are
      never left without a divider. */
@@ -573,7 +574,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-ai-suggestion: #c99abb;
   --k2b-shadow-overlay-sm: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
   --k2b-shadow-overlay-lg: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.66);
-  --k2b-shadow-frame: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+  --k2b-shadow-frame: 0 0 0 1px rgb(255 255 255 / 0.08);
   --k2b-shadow-column-mid: rgb(0 0 0 / 0.014);
   --k2b-shadow-column-edge: rgb(0 0 0 / 0.055);
   --k2b-shadow-column-active-mid: rgb(0 0 0 / 0.04);

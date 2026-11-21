@@ -80,7 +80,7 @@ building block "area" (planned with the building block).
 | `--k2b-radius-tile` | 4 px below 24 px, 8 px from 24 px | an icon tile: a step on its own width |
 | `--k2b-shadow-overlay-sm`, `-overlay-lg` | small, large | menu, popover, toast, pill, drag preview; dialog |
 | `--k2b-shadow-side`, `-sheet` | directed | drawer, phone sheet |
-| `--k2b-shadow-frame` | a 1 px inner hairline | the edge of the app card, no shadow |
+| `--k2b-shadow-frame` | a 1 px ring | the edge of the app card, no shadow |
 | `--k2b-scrim` | 28 % | behind a dialog or sheet, without blur |
 
 The layer tokens of things that never float (`--k2b-shadow-surface`, `-raised`,
