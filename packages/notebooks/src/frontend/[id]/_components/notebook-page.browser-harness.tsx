@@ -62,6 +62,24 @@ const section = (index: number) =>
     "| Kantenanleimer | Jonte Kramer | alle zwei Jahre |",
     "",
   ].join("\n");
+// The three open comments the page pill counts.
+const comments = [
+  ["Felix Tannert", "Gilt das mit der Aufsicht auch für die Dickenhobelmaschine?"],
+  ["Ida Marten", "Ja. Ich ergänze das im Abschnitt „Maschinen“."],
+  ["Jonte Kramer", "Die Schutzbrillen liegen jetzt im Schrank neben der Tür."],
+].map(([name, content], index) => ({
+  id: `c${index}`,
+  notebookId: "Book01",
+  noteId: "Note01",
+  authorUserId: `00000000-0000-4000-8000-00000000000${index + 2}`,
+  authorDisplayName: name!,
+  authorAvatarHash: null,
+  content: content!,
+  createdAt: minutesAgo(60 - index * 10),
+  updatedAt: minutesAgo(60 - index * 10),
+  canEdit: false,
+  canDelete: false,
+}));
 const markdown = many ? [few, ...Array.from({ length: 8 }, (_, index) => section(index + 1))].join("\n\n") : few;
 
 function NotePage(props: { ctx: NotebookContext }) {
@@ -157,7 +175,7 @@ function NotePage(props: { ctx: NotebookContext }) {
           canWrite
           currentUserId={ME}
           noteAuthors={{ createdBy: null, lastEditedBy: null }}
-          initialCommentsPage={{ items: [], page: 1, perPage: 30, total: 0, hasNext: false }}
+          initialCommentsPage={{ items: comments, page: 1, perPage: 30, total: comments.length, hasNext: false }}
           dateConfig={{ locale: "de", timeZone: "Europe/Berlin" }}
           now={now}
         />

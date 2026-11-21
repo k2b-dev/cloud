@@ -20,7 +20,8 @@ type PagePillProps = {
 
 /**
  * The note's page pill (K6): a note has neither head nor status row, so its views and actions float in this pill at
- * the bottom of the text, in Write beside the formatting pill and in Read on its own.
+ * the bottom of the text, in Write beside the formatting pill and in Read on its own. Read and Write lead it as each
+ * other's way back; the Detail's "View" menu keeps every view and the text options.
  */
 export function PagePill(props: PagePillProps) {
   const locale = useLocale();
@@ -33,6 +34,20 @@ export function PagePill(props: PagePillProps) {
       aria-label={notebookWorkspaceMessages.resolve([locale()]).t.noteActionsLabel}
     >
       {props.status}
+      {/* The way between Write and Read stands first: Read in Write, the pencil in Read. */}
+      <Show when={!props.read}>
+        <Tooltip.Anchor content={notebookWorkspaceMessages.resolve([locale()]).t.openAsRead}>
+          <IconButtonLink
+            href={buildNoteUrl(props.notebookId, props.noteId, "readonly")}
+            label={notebookWorkspaceMessages.resolve([locale()]).t.openAsRead}
+            tooltip={false}
+            size="xs"
+            class="text-dimmed"
+          >
+            <i class="ti ti-eye" aria-hidden="true" />
+          </IconButtonLink>
+        </Tooltip.Anchor>
+      </Show>
       <Show when={props.read}>
         {(read) => (
           <>

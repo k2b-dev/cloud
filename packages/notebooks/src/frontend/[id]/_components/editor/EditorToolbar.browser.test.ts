@@ -145,10 +145,10 @@ const load = (page: Page, doc: string) =>
     await harness.settle();
   }, doc);
 
-// On the full note page, beside the notebook sidebar, the two pills float at the edges of the main column, and the
-// note scrolls beneath them yet ends above them.
+// On the full note page, beside the notebook sidebar, the two pills float side by side, centered on the main column
+// (K6, mockup), at least 16 px from its edges, and the note scrolls beneath them yet ends above them.
 for (const width of [1440, 900])
-  test(`on the full note page at ${width} px the pills sit at the main column's edges and the note ends above them`, async () => {
+  test(`on the full note page at ${width} px the pills stand centered on the main column and the note ends above them`, async () => {
     const page = await open({ viewport: { width, height: 800 } }, { shell: true });
     try {
       const text = Array.from({ length: 40 }, (_, index) => `Paragraph ${index + 1}`).join("\n\n");
@@ -166,14 +166,16 @@ for (const width of [1440, 900])
           sidebarBeside: !!sidebar && sidebar.getClientRects().length > 0 && box(sidebar).right <= main.left + 0.5,
           formatInset: Math.round(format!.left - main.left),
           pageInset: Math.round(main.right - pageActions!.right),
+          between: Math.round(pageActions!.left - format!.right),
           bottomInset: Math.round(main.bottom - Math.max(format!.bottom, pageActions!.bottom)),
           lastAbovePills: box(last).bottom <= Math.min(format!.top, pageActions!.top) + 0.5,
           pillShadow: getComputedStyle(document.querySelector(".notebooks-editor-pill")!).boxShadow,
         };
       });
       expect(geometry.sidebarBeside).toBe(true);
-      expect(geometry.formatInset).toBe(16);
-      expect(geometry.pageInset).toBe(16);
+      expect(geometry.formatInset).toBeGreaterThanOrEqual(16);
+      expect(Math.abs(geometry.formatInset - geometry.pageInset)).toBeLessThanOrEqual(1);
+      expect(geometry.between).toBe(12);
       expect(geometry.bottomInset).toBe(16);
       expect(geometry.lastAbovePills).toBe(true);
       expect(geometry.pillShadow).not.toBe("none");

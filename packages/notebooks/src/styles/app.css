@@ -1045,6 +1045,16 @@
   margin: 0;
   padding: 0;
 }
+/* The text fades out above the pills, so no word stands half between them; the end gap keeps the last line
+   scrollable above the fade. */
+.k2b-ui .notebooks-editor-toolbar::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -2rem 0 0;
+  background: linear-gradient(transparent, var(--k2b-surface) 2rem);
+  pointer-events: none;
+}
 .k2b-ui .notebooks-editor-pill {
   min-width: 0;
   pointer-events: auto;
@@ -1060,7 +1070,7 @@
 @media not all and (min-width: 48rem) {
   .k2b-ui .notebooks-editor-toolbar {
     justify-content: flex-end;
-    padding-inline: 0.5rem;
+    padding-inline: var(--k2b-gutter);
     gap: 0.375rem;
   }
   .k2b-ui .notebooks-editor-pill--format .notebooks-editor-toolbar__tools {
