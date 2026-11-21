@@ -185,7 +185,8 @@ describe("Pulse flat base page", () => {
       // The document request of the next base stays open: keep this page and look at it while it waits.
       await tab.evaluate(() => document.addEventListener("click", (event) => event.preventDefault(), { once: true }));
       await tab.locator(".k2b-app-workspace__sidebar a[href='/app/pulse/Web001']").first().click();
-      await tab.locator("[aria-busy='true'], .k2b-skeleton").first().waitFor();
+      await tab.locator(".k2b-status-row__lead .k2b-skeleton").waitFor();
+      expect(await tab.getByText("Basis wird geladen").count()).toBe(1);
       await shoot(tab, "05-laedt", width);
       expect(await problems(tab)).toEqual([]);
       await tab.close();

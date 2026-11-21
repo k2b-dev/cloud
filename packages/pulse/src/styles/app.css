@@ -160,7 +160,7 @@
 .pulse-padded { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: var(--k2b-space-2, 8px); padding: var(--k2b-space-3, 12px) var(--k2b-gutter) var(--k2b-space-6, 24px); }
 .pulse-lead { display: inline-flex; align-items: center; gap: var(--k2b-space-2, 8px); }
 .pulse-lead__icon[data-tone="ok"] { color: var(--k2b-success-text); font-size: 18px; }
-.pulse-lead-skeleton { width: min(60%, 280px); height: 20px; }
+.pulse-lead-skeleton { display: block; flex: none; width: 280px; max-width: 60vw; height: 20px; }
 .pulse-dot { display: inline-block; width: 8px; height: 8px; flex: none; border-radius: var(--k2b-radius-round, 9999px); background: var(--k2b-border-strong); }
 .pulse-dot[data-tone="ok"] { background: var(--k2b-success-500); }
 .pulse-dot[data-tone="danger"] { background: var(--k2b-danger-500); }
