@@ -15,7 +15,6 @@ const sortableListMessages = /* @__PURE__ */ i18n.define({
       statusPlace: ({ position, list }: { position: number; list: string }) => `to “${list}”, place ${position} · Esc cancels`,
       statusStay: "stays where it is · Esc cancels",
       moveTo: "Move to",
-      unavailable: "Moving by keyboard is not available right now. Reload the page and try again.",
     },
     de: {
       handle: ({ label }: { label: string }) => `${label} verschieben`,
@@ -26,7 +25,6 @@ const sortableListMessages = /* @__PURE__ */ i18n.define({
       statusPlace: ({ position, list }: { position: number; list: string }) => `nach „${list}“, Platz ${position} · Esc bricht ab`,
       statusStay: "bleibt an seinem Platz · Esc bricht ab",
       moveTo: "Verschieben nach",
-      unavailable: "Verschieben mit der Tastatur geht gerade nicht. Lade die Seite neu und versuch es noch einmal.",
     },
   },
 });

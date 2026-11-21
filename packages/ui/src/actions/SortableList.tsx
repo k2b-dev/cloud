@@ -1,9 +1,10 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, untrack } from "solid-js";
 import { useLocale } from "../intl/locale";
 import type { DropdownSection } from "./Dropdown";
-import { activeDrag, announce, bindDragSource, registerDropTarget } from "./drag-and-drop";
+import { activeDrag, announce, bindDragSource, onPointerPress, registerDropTarget } from "./drag-and-drop";
 import { useDragAndDropMessages } from "./drag-and-drop-messages";
 import { PHONE_SHEET_QUERY } from "./phone-sheet";
+import { preloadWhenIdle } from "./preload-when-idle";
 import {
   commit,
   type Entry,
@@ -73,6 +74,10 @@ let pointerPlan: Lift | undefined;
 /** Loaded on the first focus of a grip; a lift waits for it. */
 let keyboard: typeof import("./sortable-keyboard") | undefined;
 const loadKeyboard = () => import("./sortable-keyboard").then((module) => (keyboard = module));
+/** Quietly ahead of use; a failure shows when a lift needs the module. */
+const preloadKeyboard = () => {
+  if (!keyboard) loadKeyboard().catch(() => undefined);
+};
 
 const usePhone = () => {
   const [phone, setPhone] = createSignal(false);
@@ -189,6 +194,9 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
   };
 
   onMount(() => {
+    // The keyboard lift loads while the page is idle and on any press of a drag source, before anyone lifts a row.
+    onCleanup(preloadWhenIdle(list.ownerDocument.defaultView!, preloadKeyboard));
+    onCleanup(onPointerPress(preloadKeyboard));
     // The nearest column, unless another list lies between, such as a checklist inside a card of a board column.
     const outer = list.parentElement?.closest<HTMLElement>("[data-sortable-column], .k2b-sortable-list");
     area = outer?.hasAttribute("data-sortable-column") ? outer : list;
@@ -293,7 +301,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
                     if (!pending.off && grip.ownerDocument.activeElement === grip)
                       module.startLift(entry, key, label(), locale(), dragMessages());
                   })
-                  .catch(() => announce(list, messages().unavailable))
+                  .catch(() => announce(list, dragMessages().unavailable))
                   .finally(() => {
                     if (lifting === pending) lifting = undefined;
                   });

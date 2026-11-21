@@ -2,6 +2,7 @@ import { createEffect, type JSX, onCleanup, onMount } from "solid-js";
 import { useLocale } from "../intl/locale";
 import { announce, bindDragSource, type DragPayload, registerDropTarget } from "./drag-and-drop";
 import { useDragAndDropMessages } from "./drag-and-drop-messages";
+import { preloadWhenIdle } from "./preload-when-idle";
 
 export type { DragPayload, DragStatus } from "./drag-and-drop";
 export { activeDrag, dragStatus } from "./drag-and-drop";
@@ -104,6 +105,8 @@ export function useKeyboardDrag(): (payload: DragPayload, origin: HTMLElement) =
     request = undefined;
     cancel?.();
   });
+  // The pickup sequence loads while the page is idle, so the menu entry starts it at once.
+  onMount(() => onCleanup(preloadWhenIdle(window, () => void import("./drag-and-drop-keyboard").catch(() => undefined))));
   return (payload, origin) => {
     cancel?.();
     cancel = undefined;

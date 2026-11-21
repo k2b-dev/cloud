@@ -1,6 +1,7 @@
 import { createComponent, createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { activeDrag, announce, type DragPayload, onDragEnd, onPointerPress } from "./drag-and-drop";
 import { useDragAndDropMessages } from "./drag-and-drop-messages";
+import { preloadWhenIdle } from "./preload-when-idle";
 
 /** One place to drop on, in a level of a `DropOverlay`. */
 export type DropOverlayTile = {
@@ -77,14 +78,7 @@ export function DropOverlay(props: DropOverlayProps): JSX.Element {
         if (!dropped && props.accept.includes(payload.type)) props.onCancel?.(payload);
       }),
     );
-    const win = anchor.ownerDocument.defaultView!;
-    if (typeof win.requestIdleCallback === "function") {
-      const idle = win.requestIdleCallback(preload, { timeout: 2000 });
-      onCleanup(() => win.cancelIdleCallback(idle));
-    } else {
-      const timer = win.setTimeout(preload, 200);
-      onCleanup(() => win.clearTimeout(timer));
-    }
+    onCleanup(preloadWhenIdle(anchor.ownerDocument.defaultView!, preload));
   });
   const payload = () => {
     const drag = activeDrag();
