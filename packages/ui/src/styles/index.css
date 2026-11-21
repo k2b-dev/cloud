@@ -19044,32 +19044,33 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-drag-source[data-dragging] {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
-/* Targets change colour only, never size: "ok" while a drag they take is
-   active, "over" under the pointer. "refused" keeps the calm look; the
-   announcement says why. */
+/* Targets change colour only, never size. "over" is the target under the
+   pointer: a blue tint, the colour of "this is where it goes" (K7, K8).
+   Other targets that would take the drag stay calm; the announcement and
+   the status line say where it can go. */
 .k2b-ui .k2b-drop-target {
   border-radius: var(--k2b-radius-control);
 }
 
-.k2b-ui .k2b-drop-target[data-drop="ok"] {
-  background: var(--k2b-selected);
-}
-
 .k2b-ui .k2b-drop-target[data-drop="over"] {
-  background: var(--k2b-action-solid);
-  color: #ffffff;
+  background: var(--k2b-info-surface);
+  color: var(--k2b-info-text);
 }
 
-/* SortableList: rows keep their own look while a row moves. The dragged row
-   dims in place; the row under the pointer shows a line on the side the row
-   would land on. Nothing changes size. */
+/* SortableList (K7): the moved row stays dimmed in its place until it is
+   dropped; a 2 px blue line in the gap shows where it lands. The line lies
+   over the gap and takes no space, so no row moves before the drop.
+   --k2b-sortable-gap, set on the list or any ancestor, is the space between
+   rows, such as 0px for the cards of a board column that a hairline
+   separates. */
 .k2b-ui .k2b-sortable-list {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--k2b-sortable-gap, 0.125rem);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -19080,18 +19081,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-sortable-list__item[data-sortable-dragging] {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
-.k2b-ui .k2b-sortable-list__target:is([data-drop="ok"], [data-drop="over"]) {
-  background: transparent;
-  color: inherit;
+/* The row dims once, not again through its drag source. */
+.k2b-ui .k2b-sortable-list__item .k2b-drag-source[data-dragging] {
+  opacity: 1;
 }
 
-.k2b-ui .k2b-sortable-list__item[data-sortable-side]:has(> .k2b-sortable-list__target[data-drop="over"])::before {
+.k2b-ui .k2b-sortable-list__item[data-sortable-line]::before,
+.k2b-ui .k2b-sortable-list[data-sortable-line="empty"]::before {
   position: absolute;
-  z-index: 1;
-  inset-inline: 0.5rem;
+  z-index: 2;
+  inset-inline: var(--k2b-sortable-line-inset, var(--k2b-space-2, 8px));
   height: 2px;
   border-radius: 1px;
   background: var(--k2b-action-solid);
@@ -19099,17 +19101,60 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: none;
 }
 
-.k2b-ui .k2b-sortable-list__item[data-sortable-side="before"]::before {
-  top: -0.125rem;
+/* A dot at its start tells the line from a hairline. */
+.k2b-ui .k2b-sortable-list__item[data-sortable-line]::after,
+.k2b-ui .k2b-sortable-list[data-sortable-line="empty"]::after {
+  position: absolute;
+  z-index: 2;
+  inset-inline-start: calc(var(--k2b-sortable-line-inset, var(--k2b-space-2, 8px)) - 4px);
+  width: 8px;
+  height: 8px;
+  border-radius: var(--k2b-radius-round, 9999px);
+  background: var(--k2b-action-solid);
+  content: "";
+  pointer-events: none;
 }
 
-.k2b-ui .k2b-sortable-list__item[data-sortable-side="after"]::before {
-  bottom: -0.125rem;
+.k2b-ui .k2b-sortable-list__item[data-sortable-line="before"]::before {
+  top: calc(var(--k2b-sortable-gap, 0.125rem) / -2 - 1px);
+}
+
+.k2b-ui .k2b-sortable-list__item[data-sortable-line="before"]::after {
+  top: calc(var(--k2b-sortable-gap, 0.125rem) / -2 - 4px);
+}
+
+.k2b-ui .k2b-sortable-list__item[data-sortable-line="after"]::before {
+  bottom: calc(var(--k2b-sortable-gap, 0.125rem) / -2 - 1px);
+}
+
+.k2b-ui .k2b-sortable-list__item[data-sortable-line="after"]::after {
+  bottom: calc(var(--k2b-sortable-gap, 0.125rem) / -2 - 4px);
+}
+
+.k2b-ui .k2b-sortable-list[data-sortable-line="empty"]::before {
+  top: 0;
+}
+
+.k2b-ui .k2b-sortable-list[data-sortable-line="empty"]::after {
+  top: -3px;
+}
+
+/* The head of the column a row would land in is tinted. A host marks the
+   column with data-sortable-column and its head with
+   data-sortable-column-head; the list marks the column while it is the
+   target. */
+.k2b-ui [data-sortable-column][data-sortable-target] [data-sortable-column-head] {
+  background: var(--k2b-info-surface);
+  color: var(--k2b-info-text);
 }
 
 .k2b-ui .k2b-sortable-list__grip {
   display: flex;
   flex: none;
+}
+
+.k2b-ui .k2b-sortable-list__row {
+  min-width: 0;
 }
 
 .k2b-ui .k2b-sortable-list__handle {
@@ -19141,8 +19186,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   opacity: 0.5;
 }
 
-/* The preview rides above the pointer, so neither a finger nor the preview
-   hides the target and its "over" state. */
+/* The preview floats with a small shadow and hangs below the pointer, so it
+   never covers the line that shows the target (K7, K16). */
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) {
   position: fixed;
   z-index: 2147483000;
@@ -19155,14 +19200,28 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   padding: 0.55rem 0.8rem;
-  border-radius: 0.75rem;
+  border-radius: var(--k2b-radius-overlay, 8px);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-sm, 0 0 0 1px rgb(9 9 11 / 0.08), 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28));
   color: var(--k2b-text);
   font-size: 0.8125rem;
   font-weight: 500;
   pointer-events: none;
-  translate: -20px calc(-100% - 0.75rem);
+  translate: -1rem 1rem;
+}
+
+/* A sortable row floats as itself, at its own width. */
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-preview="row"] {
+  display: block;
+  max-width: min(24rem, calc(100vw - 2rem));
+  padding: 0;
+  overflow: hidden;
+  background: var(--k2b-surface);
+  cursor: grabbing;
+}
+
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-preview="row"] .k2b-sortable-list__item {
+  list-style: none;
 }
 
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview) > i {

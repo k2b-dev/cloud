@@ -18,11 +18,23 @@ export type DragPayload<Type extends string = string> = {
 
 const SLOP = 10;
 const IGNORE = "input, textarea, select, [contenteditable]:not([contenteditable='false']), [data-drag-ignore]";
-const HOLD_MS = 500;
+/** K7: a finger held this long lifts the item; before that it scrolls. */
+const HOLD_MS = 300;
 const AUTOSCROLL_EDGE = 32;
 const [readActiveDrag, setActiveDrag] = createSignal<DragPayload>();
 /** Reactive payload of the drag in progress, or undefined. */
 export const activeDrag = (): DragPayload | undefined => readActiveDrag();
+
+/**
+ * What the drag in progress moves and where it goes, in words a status line can show; the same words reach screen
+ * readers through the live region. `lead` names what moves, `detail` where it goes and how to cancel.
+ */
+export type DragStatus = { lead: string; detail: string };
+const [readDragStatus, writeDragStatus] = createSignal<DragStatus>();
+/** Reactive status of the drag in progress, for a status line; undefined while nothing is dragged. */
+export const dragStatus = (): DragStatus | undefined => readDragStatus();
+/** Internal: SortableList states the exact place, which a plain target cannot. */
+export const setDragStatus = (status: DragStatus | undefined) => writeDragStatus(status);
 const dragStartListeners = new Set<(pointerId: number) => void>();
 /** Internal hand-over to the gesture menu that owns this press. */
 export const onPointerDragStart = (listener: (pointerId: number) => void): (() => void) => {
@@ -37,6 +49,8 @@ type Target = {
   messages: DragAndDropMessages;
   disabled?: boolean;
   drop: (payload: DragPayload) => void;
+  /** Internal: told where the pointer is while it rests over this target, and `undefined` when it leaves. */
+  hover?: (point: { x: number; y: number } | undefined) => void;
 };
 type Session = {
   payload: DragPayload;
@@ -168,12 +182,55 @@ export const registerDropTarget = (element: HTMLElement, initial: Omit<Target, "
   };
 };
 
+const statusFor = (messages: DragAndDropMessages, payload: DragPayload, over?: Target): DragStatus => ({
+  lead: messages.statusLead({ label: payload.label, count: payload.count ?? 1 }),
+  detail: over ? messages.statusOver({ target: over.label }) : messages.statusIdle,
+});
+
+/** Attributes that mark the dragged row itself; its copy in the preview shows the row as it was. */
+const DRAG_MARKS = ["data-dragging", "data-held", "data-pressing", "data-sortable-dragging", "data-sortable-line", "id"];
+/**
+ * A copy of `shown` for the preview, inside a shallow copy of its parent, so the parent's class and attribute
+ * selectors still style it. Custom elements become plain boxes, so no island hydrates a second time; canvases keep
+ * their picture.
+ */
+const copyOf = (shown: HTMLElement): HTMLElement => {
+  const doc = shown.ownerDocument;
+  const copy = shown.cloneNode(true) as HTMLElement;
+  const clean = (element: Element) => {
+    for (const name of DRAG_MARKS) element.removeAttribute(name);
+  };
+  clean(copy);
+  for (const element of copy.querySelectorAll("*")) clean(element);
+  for (const element of [...copy.querySelectorAll("*")].filter((element) => element.localName.includes("-"))) {
+    const box = doc.createElement("div");
+    box.style.display = "contents";
+    box.append(...element.childNodes);
+    element.replaceWith(box);
+  }
+  const canvases = shown.querySelectorAll("canvas");
+  copy.querySelectorAll("canvas").forEach((canvas, index) => {
+    const original = canvases[index];
+    if (original?.width && original.height) canvas.getContext("2d")?.drawImage(original, 0, 0);
+  });
+  const parent = shown.parentElement;
+  if (!parent) return copy;
+  const frame = parent.localName.includes("-") ? doc.createElement("div") : (parent.cloneNode(false) as HTMLElement);
+  if (frame.localName === "div" && parent.localName.includes("-")) frame.className = parent.className;
+  clean(frame);
+  for (const name of ["aria-label", "aria-labelledby", "aria-describedby", "role", "style"]) frame.removeAttribute(name);
+  frame.style.display = "contents";
+  frame.append(copy);
+  return frame;
+};
+
 const clearSession = (engine: Engine, session: Session, source?: HTMLElement) => {
   if (engine.session !== session) return;
   engine.session = undefined;
   if (source) delete source.dataset.dragging;
   for (const target of engine.targets) mark(target);
   setActiveDrag(undefined);
+  writeDragStatus(undefined);
 };
 
 /**
@@ -279,7 +336,13 @@ const scrollAt = (doc: Document, hit: Element | null, x: number, y: number, cach
 
 export const bindDragSource = (
   source: HTMLElement,
-  read: () => { payload: DragPayload; disabled?: boolean; messages: DragAndDropMessages },
+  read: () => {
+    payload: DragPayload;
+    disabled?: boolean;
+    messages: DragAndDropMessages;
+    /** Internal: the element the preview shows a copy of, such as a sortable row; else the preview is a label. */
+    preview?: HTMLElement;
+  },
 ): (() => void) => {
   const doc = source.ownerDocument;
   const win = doc.defaultView!;
@@ -401,18 +464,21 @@ export const bindDragSource = (
       }
       const rejected = next ? undefined : inner;
       if (next !== over || rejected !== refused) {
+        if (next !== over) over?.hover?.(undefined);
         if (over) mark(over, engine.targets.has(over) ? payload : undefined);
         if (refused) mark(refused, engine.targets.has(refused) ? payload : undefined);
         over = next;
         refused = rejected;
         if (over) {
           over.element.dataset.drop = "over";
-          announce(source, over.messages.over({ target: over.label }));
+          if (!over.hover) announce(source, over.messages.over({ target: over.label }));
         } else if (refused) {
           refused.element.dataset.drop = "refused";
           announce(source, refused.messages.refused({ target: refused.label, label: payload.label }));
         }
+        if (!over?.hover) writeDragStatus(statusFor(messages, payload, over));
       }
+      over?.hover?.(point);
       if (over) over.element.dataset.drop = "over";
       if (refused) refused.element.dataset.drop = "refused";
       return hit;
@@ -462,12 +528,21 @@ export const bindDragSource = (
       const scope = source.parentElement?.closest<HTMLElement>(".k2b-ui");
       preview.className = scope ? "k2b-drag-preview" : "k2b-ui k2b-drag-preview";
       preview.setAttribute("aria-hidden", "true");
-      const icon = doc.createElement("i");
-      icon.className = payload.icon ?? "ti ti-file";
-      const label = doc.createElement("span");
-      label.className = "k2b-drag-preview__label";
-      label.textContent = payload.label;
-      preview.append(icon, label);
+      const shown = current.preview;
+      if (shown?.isConnected) {
+        // The row itself floats, at its own width, so its text wraps as it did in place.
+        preview.dataset.preview = "row";
+        preview.style.width = `${Math.round(shown.getBoundingClientRect().width)}px`;
+        preview.setAttribute("inert", "");
+        preview.append(copyOf(shown));
+      } else {
+        const icon = doc.createElement("i");
+        icon.className = payload.icon ?? "ti ti-file";
+        const label = doc.createElement("span");
+        label.className = "k2b-drag-preview__label";
+        label.textContent = payload.label;
+        preview.append(icon, label);
+      }
       if (payload.count && payload.count > 1) {
         const count = doc.createElement("span");
         count.className = "k2b-drag-preview__count";
@@ -480,6 +555,7 @@ export const bindDragSource = (
       preview.showPopover?.();
       preview.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
       for (const target of engine.targets) mark(target, payload);
+      writeDragStatus(statusFor(messages, payload));
       setActiveDrag(payload);
       if (finished) return;
       announce(source, messages.pickedUp(payload));
@@ -622,6 +698,7 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     current = target;
     current.element.dataset.drop = "over";
     current.element.scrollIntoView({ block: "nearest", inline: "nearest" });
+    writeDragStatus(statusFor(messages, payload, target));
     announce(origin, text);
   };
   const key = (event: KeyboardEvent) => {
@@ -691,6 +768,7 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
   engine.session = session;
   for (const target of engine.targets) mark(target, payload);
   if (source) source.dataset.dragging = "";
+  writeDragStatus(statusFor(messages, payload));
   setActiveDrag(payload);
   if (finished) return cancel;
   if (choices().length) settle();

@@ -2,8 +2,8 @@ import { createEffect, type JSX, onCleanup, onMount } from "solid-js";
 import { bindDragSource, type DragPayload, registerDropTarget, startKeyboardDrag } from "./drag-and-drop";
 import { useDragAndDropMessages } from "./drag-and-drop-messages";
 
-export type { DragPayload } from "./drag-and-drop";
-export { activeDrag } from "./drag-and-drop";
+export type { DragPayload, DragStatus } from "./drag-and-drop";
+export { activeDrag, dragStatus } from "./drag-and-drop";
 
 export type DragSourceProps<Type extends string = string> = {
   /** Read when the drag starts, so a selection can decide what is dragged. */

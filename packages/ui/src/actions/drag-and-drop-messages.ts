@@ -14,6 +14,10 @@ const dragAndDropMessages = i18n.define({
       dropped: ({ label, target }: { label: string; target: string }) => `${label} dropped on ${target}.`,
       cancelled: ({ label }: { label: string }) => `${label} not moved.`,
       noTarget: ({ label }: { label: string }) => `No place here takes ${label}.`,
+      statusLead: ({ label, count }: { label: string; count: number }) =>
+        count > 1 ? `${count} items are being moved` : `“${label}” is being moved`,
+      statusOver: ({ target }: { target: string }) => `to “${target}” · Esc cancels`,
+      statusIdle: "Esc cancels",
     },
     de: {
       pickedUp: ({ label }: { label: string }) => `${label} angehoben. Zieh es an einen Ort und lass los, oder drück Escape zum Abbrechen.`,
@@ -25,6 +29,10 @@ const dragAndDropMessages = i18n.define({
       dropped: ({ label, target }: { label: string; target: string }) => `${label} auf ${target} abgelegt.`,
       cancelled: ({ label }: { label: string }) => `${label} nicht verschoben.`,
       noTarget: ({ label }: { label: string }) => `Hier nimmt kein Ort ${label} an.`,
+      statusLead: ({ label, count }: { label: string; count: number }) =>
+        count > 1 ? `${count} Einträge werden verschoben` : `„${label}“ wird verschoben`,
+      statusOver: ({ target }: { target: string }) => `nach „${target}“ · Esc bricht ab`,
+      statusIdle: "Esc bricht ab",
     },
   },
 });

@@ -9,8 +9,8 @@ export { CopyButton } from "./CopyButton";
 export type { CommandContext, CommandItem, CommandSource, CommandStep } from "./command-items";
 export type { DisclosureProps } from "./Disclosure";
 export { Disclosure } from "./Disclosure";
-export type { DragPayload, DragSourceProps, DropTargetProps } from "./DragAndDrop";
-export { activeDrag, DragSource, DropTarget, useKeyboardDrag } from "./DragAndDrop";
+export type { DragPayload, DragSourceProps, DragStatus, DropTargetProps } from "./DragAndDrop";
+export { activeDrag, DragSource, DropTarget, dragStatus, useKeyboardDrag } from "./DragAndDrop";
 export type {
   DropdownAction,
   DropdownActionBase,
@@ -37,8 +37,8 @@ export type { SelectionActionProps, SelectionActionSelection } from "./Selection
 export { SelectionAction } from "./SelectionAction";
 export type { SelectionToolbarProps } from "./SelectionToolbar";
 export { SelectionToolbar } from "./SelectionToolbar";
-export type { SortableListProps } from "./SortableList";
-export { SortableList } from "./SortableList";
+export type { SortableListProps, SortableMove } from "./SortableList";
+export { SortableList, useSortableMoveMenu } from "./SortableList";
 export type { SplitButtonProps } from "./SplitButton";
 export { SplitButton } from "./SplitButton";
 export type {

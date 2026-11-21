@@ -429,7 +429,7 @@ describe(`drag and drop in ${browserName}`, () => {
     try {
       const point = await center(page, ".row >> nth=2");
       const target = await center(page, ".archive");
-      // Android sends contextmenu for a long press at about 400 ms, before the 500 ms timer; all of this runs well before it.
+      // Android may send contextmenu for a long press before the hold timer fires; all of this runs well before it.
       const seen = await page.evaluate(
         async ({ point }) => {
           const row = document.querySelectorAll(".row")[2]!;
