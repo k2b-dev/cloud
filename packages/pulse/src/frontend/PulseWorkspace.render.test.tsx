@@ -55,7 +55,7 @@ const props: PulseWorkspaceProps = {
   initialNow: "2026-01-01T00:00:00.000Z",
   initialOrigin: "https://cloud.example.test",
 };
-const render = (view: "sources" | "dashboards", locale = "en") =>
+const render = (view: "sources", locale = "en") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -63,7 +63,6 @@ const render = (view: "sources" | "dashboards", locale = "en") =>
         return createComponent(PulseWorkspace, {
           ...props,
           initialRouteState: { view, sourceId: "" },
-          initialDashboards: { items: [], total: 0, nextOffset: null, selected: null, error: null },
         });
       },
     }),
@@ -79,16 +78,14 @@ test("sources render from their server snapshot without measurement counts or re
   expect(html).not.toContain("No sources");
 });
 
-test("empty dashboards render SQL and Assistant actions in each locale", () => {
-  for (const [locale, title, action] of [
-    ["en", "No dashboard yet", "Open SQL console"],
-    ["de", "Noch kein Dashboard", "SQL-Konsole öffnen"],
+test("the sidebar offers sources, SQL and settings, but no overview or dashboards", () => {
+  for (const [locale, gone] of [
+    ["en", ["Overview", "Dashboards", "No dashboard yet"]],
+    ["de", ["Übersicht", "Dashboards", "Noch kein Dashboard"]],
   ] as const) {
-    const html = render("dashboards", locale);
-    expect(html.split(`<h2>${title}</h2>`)).toHaveLength(2);
-    expect(html).toContain(action);
-    expect(html).not.toContain("Warehouse importer");
-    expect(html).not.toContain("<hr");
+    const html = render("sources", locale);
+    expect(html).toContain("SQL");
+    for (const text of gone) expect(html).not.toContain(text);
   }
 });
 

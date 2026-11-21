@@ -13,9 +13,6 @@ export const pulseWorkspaceStyles = `
   .pulse-workspace .pulse-sidebar__secondary,.pulse-workspace .pulse-sidebar__identity{display:none!important}
   .pulse-workspace__desktop-action{display:none!important}
   .pulse-workspace .pulse-sidebar__chip{padding-inline:8px!important;gap:6px!important;border-radius:12px!important}
-  .pulse-workspace .pulse-overview__assistant-desktop{display:none}
-  .pulse-workspace .pulse-overview__toolbar{min-height:0;gap:0}
-  .pulse-workspace .pulse-overview__assistant-feedback:empty{display:none}
   .pulse-workspace .k2b-app-workspace__sidebar[data-mobile=stacked]>.k2b-app-workspace__sidebar-all{width:32px;min-width:32px;padding:0;justify-content:center}
   .pulse-workspace .k2b-app-workspace__sidebar[data-mobile=stacked]>.k2b-app-workspace__sidebar-all>span{display:none}
 

@@ -3,11 +3,10 @@ import { launchBrowser } from "../../../ui/test/browser";
 import {
   buildWorkspaceHarness,
   origin,
-  overviewWorkspaceFixture,
   pauseWorkspaceClock,
   renderWorkspaceSnapshot,
+  workspaceFixture,
 } from "./PulseWorkspace.browser-fixture";
-import { dashboardTestDashboard, dashboardTestSnapshot } from "./workspace/dashboard-test-fixtures";
 import { buildPulseWorkspaceHref } from "./workspace/routes";
 import { sqlTestLimits } from "./workspace/sql-test-fixtures";
 import type { PulseWorkspaceProps } from "./workspace/types";
@@ -22,16 +21,15 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const snapshot = (view: "overview" | "sources" | "sql"): PulseWorkspaceProps => ({
-  ...overviewWorkspaceFixture,
-  initialBases: overviewWorkspaceFixture.initialBases.map((base) => ({ ...base, description: "Telemetry for the shop" })),
+const snapshot = (view: "sources" | "sql"): PulseWorkspaceProps => ({
+  ...workspaceFixture,
+  initialBases: workspaceFixture.initialBases.map((base) => ({ ...base, description: "Telemetry for the shop" })),
   initialRouteState: { view, sourceId: "", ...(view === "sql" ? { sql: "SELECT :host", params: { host: "shop-01" } } : {}) },
-  initialDashboards: { ...dashboardTestSnapshot, selected: null },
   initialSql: { limits: sqlTestLimits, query: null, error: null },
 });
 
-for (const view of ["overview", "sources", "sql"] as const) {
-  test(`${view} composes its phone header before three chips and main, with SSR and first client parity`, async () => {
+for (const view of ["sources", "sql"] as const) {
+  test(`${view} composes its phone header before two chips and main, with SSR and first client parity`, async () => {
     const props = snapshot(view);
     const serverHtml = await renderWorkspaceSnapshot(props, "de", true);
     for (const width of [390, 900, 1440]) {
@@ -51,19 +49,13 @@ for (const view of ["overview", "sources", "sql"] as const) {
         const geometry = async () => {
           expect(await header.isVisible()).toBe(width < 768);
           if (width >= 768) return null;
-          expect(await header.locator(".pulse-workspace__mobile-title").innerText()).toBe(
-            view === "overview" ? "Übersicht" : view === "sources" ? "Quellen" : "SQL",
-          );
+          expect(await header.locator(".pulse-workspace__mobile-title").innerText()).toBe(view === "sources" ? "Quellen" : "SQL");
           const nav = tab.locator(".pulse-workspace > nav");
           const main = tab.locator(".pulse-workspace .k2b-app-workspace__main");
           const [headBox, navBox, mainBox] = await Promise.all([header.boundingBox(), nav.boundingBox(), main.boundingBox()]);
           expect(headBox!.y + headBox!.height).toBeLessThanOrEqual(navBox!.y + 1);
           expect(navBox!.y + navBox!.height).toBeLessThanOrEqual(mainBox!.y + 1);
-          for (const chip of [
-            nav.getByRole("button", { name: /^Übersicht/ }),
-            nav.getByRole("button", { name: "SQL", exact: true }),
-            nav.getByRole("link", { name: dashboardTestDashboard.name, exact: true }),
-          ]) {
+          for (const chip of [nav.getByRole("button", { name: /^Quellen/ }), nav.getByRole("button", { name: "SQL", exact: true })]) {
             expect(await chip.isVisible()).toBe(true);
             const box = (await chip.boundingBox())!;
             expect(box.x).toBeGreaterThanOrEqual(0);
@@ -180,41 +172,6 @@ test("the phone All sheet keeps Sources and settings reachable without replacing
     await tab.keyboard.press("Escape");
     expect(await editor.inputValue()).toBe("SELECT :host, 2");
     expect(await editor.getAttribute("data-original-editor")).toBe("true");
-  } finally {
-    await tab.close();
-  }
-});
-
-test.each(["ready", "loading", "denied"] as const)("overview phone action preserves its authorized state (%s)", async (mode) => {
-  const props = {
-    ...snapshot("overview"),
-    ...(mode === "loading"
-      ? { initialOverview: undefined }
-      : mode === "denied"
-        ? { initialOverview: { data: null, error: { code: "FORBIDDEN", message: "Denied" } } }
-        : {}),
-  };
-  const tab = await browser.newPage({ viewport: { width: 390, height: 1000 } });
-  try {
-    await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
-    await tab.route(`${origin}/api/**`, (route) => route.fulfill({ status: 503, json: { code: "REQUEST_FAILED" } }));
-    await tab.route(`${origin}/app/pulse/**`, (route) => route.fulfill({ contentType: "text/html", body: harness(props, "de", true) }));
-    await tab.goto(`${origin}/app/pulse/Lad001`);
-    await tab.locator('#root[data-mounted="true"]').waitFor();
-    const header = tab.locator(".pulse-workspace__mobile-header");
-    const action = header.getByRole("button", { name: "Mit KI fragen", exact: true });
-    if (mode === "ready") {
-      await action.click();
-      await tab.locator(".pulse-overview__assistant-feedback").filter({ hasText: "Assistant" }).waitFor();
-      expect(await action.isEnabled()).toBe(true);
-    } else {
-      expect(await action.count()).toBe(0);
-      if (mode === "denied") {
-        const switcher = await header.locator(".k2b-sidebar-switcher").innerText();
-        expect(switcher).toContain("Pulse");
-        expect(switcher).not.toContain("Laden");
-      }
-    }
   } finally {
     await tab.close();
   }

@@ -1,17 +1,12 @@
-import type { DashboardRange } from "../../dashboard-contracts";
 import { SQL_MAX_BYTES, SQL_MAX_PARAMETERS, SQL_PARAMETER_MAX_BYTES } from "../../sql-params";
-import { dashboardRangeSearch } from "./dashboard-client";
-import { readDashboardRange } from "./dashboard-data";
 
-export type WorkspaceView = "overview" | "sources" | "sql" | "dashboards";
+export type WorkspaceView = "sources" | "sql";
 export const PULSE_SIDEBAR_SQL_ID = "sql";
 export const PULSE_SETTINGS_TABS = ["general", "members", "retention", "usage", "danger"] as const;
 export type PulseSettingsTab = (typeof PULSE_SETTINGS_TABS)[number];
 export type WorkspaceRouteState = {
   view: WorkspaceView;
   sourceId: string;
-  dashboardId?: string;
-  dashboardRange?: DashboardRange;
   queryId?: string;
   alertId?: string;
   sql?: string;
@@ -46,12 +41,10 @@ export const readConsoleParams = (raw: unknown): Record<string, string> | null =
 export const readWorkspacePathState = (path: string, baseId: string): WorkspaceRouteState => {
   const url = new URL(path, "http://pulse.invalid");
   const basePath = `/app/pulse/${encodeURIComponent(baseId)}`;
-  let state: WorkspaceRouteState = { view: "overview", sourceId: "" };
+  let state: WorkspaceRouteState = { view: "sources", sourceId: "" };
   if (!baseId || (url.pathname !== basePath && !url.pathname.startsWith(`${basePath}/`))) return state;
   const [view, id] = url.pathname.slice(basePath.length).split("/").filter(Boolean);
   if (view === "sources") state = { view: "sources", sourceId: decode(id ?? "") };
-  else if (view === "dashboards")
-    state = { view: "dashboards", sourceId: "", dashboardId: decode(id ?? ""), dashboardRange: readDashboardRange(path) };
   else if (view === "sql") {
     state = { view: "sql", sourceId: "", queryId: decode(id ?? ""), sql: undefined, params: {} };
     const alertId = url.searchParams.get("alert");
@@ -78,14 +71,10 @@ export const buildPulseWorkspaceHref = ({ baseId, state }: WorkspaceHrefOptions)
   if (!baseId) return "/app/pulse";
   const base = `/app/pulse/${encodeURIComponent(baseId)}`;
   const path =
-    state.view === "overview"
-      ? base
-      : state.view === "dashboards"
-        ? `${base}/dashboards${state.dashboardId ? `/${encodeURIComponent(state.dashboardId)}` : ""}`
-        : state.view === "sql"
-          ? `${base}/sql${state.queryId ? `/${encodeURIComponent(state.queryId)}` : ""}`
-          : `${base}/sources${state.sourceId ? `/${encodeURIComponent(state.sourceId)}` : ""}`;
-  const search = new URLSearchParams(state.view === "dashboards" ? dashboardRangeSearch(state.dashboardRange ?? {}) : undefined);
+    state.view === "sql"
+      ? `${base}/sql${state.queryId ? `/${encodeURIComponent(state.queryId)}` : ""}`
+      : `${base}/sources${state.sourceId ? `/${encodeURIComponent(state.sourceId)}` : ""}`;
+  const search = new URLSearchParams();
   if (state.settings) search.set("settings", state.settings);
   if (state.view === "sql" && state.alertId && !state.queryId) search.set("alert", state.alertId);
   const fallback = `${path}${search.size ? `?${search}` : ""}`;

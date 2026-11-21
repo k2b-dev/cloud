@@ -1,15 +1,11 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { clipboard } from "@k2b/stdlib/browser";
 import { AppWorkspace, appWorkspaceLayoutStyle, Button, IconButton, NoticeCard, toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { usePulseMessages } from "./use-messages";
 import { createBaseController } from "./workspace/base-controller";
-import DashboardsView from "./workspace/DashboardsView";
-import { createDashboardActions } from "./workspace/dashboard-actions";
 import { navigatePulseWorkspace } from "./workspace/navigation";
-import OverviewView from "./workspace/OverviewView";
-import { createOverviewController } from "./workspace/overview-controller";
-import PulseSidebar, { PulseMobileDashboardHeader, PulseMobileFeatureHeader } from "./workspace/PulseSidebar";
+import PulseSidebar, { PulseMobileFeatureHeader } from "./workspace/PulseSidebar";
 import { installPeriodicRefresh } from "./workspace/periodic-refresh";
 import { launchPulseOverviewAssistant } from "./workspace/pulse-assistant-launch";
 import SourcesView, { SourcesDetailPanel, type SourcesViewProps } from "./workspace/SourcesView";
@@ -33,11 +29,6 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const [settingsDialogOpen, setSettingsDialogOpen] = createSignal(false);
   const [search, setSearch] = createSignal("");
   const activeView = () => props.initialRouteState.view;
-  const overview = createOverviewController({
-    baseId: props.initialBaseId,
-    active: () => activeView() === "overview" || activeView() === "dashboards",
-    initial: props.initialOverview,
-  });
   const selectedBaseId = () => props.initialBaseId;
   const [sourcesRequested, setSourcesRequested] = createSignal(false);
   const queries = createPulseWorkspaceQueries(props, selectedSourceId, () => activeView() === "sources" || sourcesRequested());
@@ -45,7 +36,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const sources = () => queries.baseData.data() ?? props.initialSources;
   const selectedBase = () => bases().find((base) => base.id === props.initialBaseId) ?? null;
   const askAssistant = async () => {
-    if (assistantPending() || overview.accessLost()) return;
+    if (assistantPending()) return;
     setAssistantPending(true);
     setAssistantError(null);
     try {
@@ -60,17 +51,6 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       if (!disposed) setAssistantPending(false);
     }
   };
-  const dashboardActions = createMemo(
-    on(overview.accessLost, (lost) =>
-      props.initialDashboards?.selected && !lost
-        ? createDashboardActions({
-            dashboard: props.initialDashboards.selected,
-            base: { id: props.initialBaseId, name: selectedBase()?.name ?? t().appName },
-            canWrite: props.initialPermissions?.write ?? false,
-          })
-        : undefined,
-    ),
-  );
   const selectedSource = () => sources().find((source) => source.id === selectedSourceId()) ?? null;
   const navigate: Parameters<typeof createSourceController>[0]["navigate"] = (state) =>
     navigatePulseWorkspace({ baseId: props.initialBaseId, state });
@@ -81,12 +61,11 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       : selectedSourceId()
         ? [queries.bases, queries.baseData, queries.sourceDetail]
         : [queries.bases, queries.baseData];
-  const writeBlocked = () =>
-    overview.accessLost() || readQueries().some((query) => query.loading() || query.stale() || query.error() !== null);
+  const writeBlocked = () => readQueries().some((query) => query.loading() || query.stale() || query.error() !== null);
   const refresh = async () => {
     await Promise.all([
       queries.bases.refresh(),
-      ...(activeView() === "sources" ? [queries.baseData.refresh()] : activeView() === "overview" ? [overview.refresh()] : []),
+      ...(activeView() === "sources" ? [queries.baseData.refresh()] : []),
       ...(selectedSourceId() ? [queries.sourceDetail.refresh()] : []),
     ]);
     const error = readQueries()
@@ -128,7 +107,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     },
     refreshWorkspace: refresh,
     writeBlocked,
-    navigateToBase: (baseId) => navigatePulseWorkspace({ baseId, state: { view: "overview" } }),
+    navigateToBase: (baseId) => navigatePulseWorkspace({ baseId, state: { view: "sources" } }),
   });
   onMount(() => {
     if (props.initialRouteState.settings) void openSettings();
@@ -161,7 +140,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       queries.bases.data,
       (next) => {
         if (next && !next.some((base) => base.id === props.initialBaseId))
-          navigatePulseWorkspace({ baseId: next[0]?.id ?? "", state: { view: "overview" } });
+          navigatePulseWorkspace({ baseId: next[0]?.id ?? "", state: { view: "sources" } });
       },
       { defer: true },
     ),
@@ -202,73 +181,41 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const renderFrame = (sqlContent?: JSX.Element, sqlAction?: JSX.Element) => (
     <>
       <style>{`.pulse-workspace{${appWorkspaceLayoutStyle({ version: 2, sidebarWidth: 236 })}}${pulseWorkspaceStyles}`}</style>
-      <Show when={activeView() === "dashboards" && props.initialDashboards?.selected}>
-        {(dashboard) => (
-          <PulseMobileDashboardHeader
-            title={overview.accessLost() ? t().appName : (selectedBase()?.name ?? t().appName)}
-            bases={overview.accessLost() ? bases().filter((base) => base.id !== props.initialBaseId) : bases()}
-            baseId={props.initialBaseId}
-            name={dashboard().name}
-            actions={dashboardActions()}
-          />
-        )}
-      </Show>
-      <Show when={activeView() !== "dashboards"}>
-        <PulseMobileFeatureHeader
-          title={overview.accessLost() ? t().appName : (selectedBase()?.name ?? t().appName)}
-          bases={overview.accessLost() ? bases().filter((base) => base.id !== props.initialBaseId) : bases()}
-          baseId={props.initialBaseId}
-          name={activeView() === "sql" ? "SQL" : activeView() === "sources" ? t().sources : t().overview}
-          action={
-            activeView() === "sql" ? (
-              sqlAction
-            ) : activeView() === "sources" ? (
-              <IconButton
-                variant="ghost"
-                label={t().sourcePickTitle({ base: selectedBase()?.name ?? t().appName })}
-                disabled={!selectedBaseId() || loading() || writeBlocked()}
-                onClick={() => void actions.addSource()}
-              >
-                <i class="ti ti-plus" aria-hidden="true" />
-              </IconButton>
-            ) : (
-              <Show when={overview.data() && !overview.accessLost()}>
-                <IconButton
-                  variant="ai"
-                  label={assistantPending() ? t().sqlAssistantLaunching : t().sqlAskAssistant}
-                  loading={assistantPending()}
-                  onClick={() => void askAssistant()}
-                >
-                  <i class="ti ti-sparkles" aria-hidden="true" />
-                </IconButton>
-              </Show>
-            )
-          }
-        />
-      </Show>
+      <PulseMobileFeatureHeader
+        title={selectedBase()?.name ?? t().appName}
+        bases={bases()}
+        baseId={props.initialBaseId}
+        name={activeView() === "sql" ? "SQL" : t().sources}
+        action={
+          activeView() === "sql" ? (
+            sqlAction
+          ) : (
+            <IconButton
+              variant="ghost"
+              label={t().sourcePickTitle({ base: selectedBase()?.name ?? t().appName })}
+              disabled={!selectedBaseId() || loading() || writeBlocked()}
+              onClick={() => void actions.addSource()}
+            >
+              <i class="ti ti-plus" aria-hidden="true" />
+            </IconButton>
+          )
+        }
+      />
       <AppWorkspace class="pulse-workspace" mobileSurface="flush">
         <PulseSidebar
-          title={overview.accessLost() ? t().appName : (selectedBase()?.name ?? t().appName)}
-          bases={overview.accessLost() ? bases().filter((base) => base.id !== props.initialBaseId) : bases()}
+          title={selectedBase()?.name ?? t().appName}
+          bases={bases()}
           baseId={props.initialBaseId}
           activeView={activeView()}
-          sourceCount={overview.data()?.sources.total ?? sources().length}
-          attentionCount={overview.data()?.attention.total}
-          openOverview={() => navigate({ view: "overview" })}
-          settingsDisabled={!selectedBase() || loading() || overview.accessLost()}
+          sourceCount={sources().length}
+          settingsDisabled={!selectedBase() || loading()}
           openSettings={openSettings}
           openSources={openSources}
           openSql={() => navigate({ view: "sql" })}
-          openDashboards={() => navigate({ view: "dashboards" })}
-          dashboards={props.initialDashboards?.items}
-          dashboardId={props.initialDashboards?.selected?.id}
-          dashboardsNextOffset={props.initialDashboards?.nextOffset}
-          dashboardsError={props.initialDashboards?.error}
-          selectedDashboard={props.initialDashboards?.selected ?? undefined}
         />
         <AppWorkspace.Content>
           <AppWorkspace.Main class="gap-2 px-4 py-[var(--ui-space-shell)] md:px-5">
-            <Show when={activeView() !== "overview" && readError()}>
+            <Show when={readError()}>
               {(error) => (
                 <NoticeCard tone="danger" title={t().pulseDataRefreshFailed} detail={error().message}>
                   <Button variant="secondary" onClick={() => void refresh().catch(() => {})}>
@@ -277,78 +224,8 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
                 </NoticeCard>
               )}
             </Show>
-            <Show when={activeView() === "dashboards" && overview.error() && !overview.accessLost()}>
-              <NoticeCard role="alert" tone="danger" title={t().pulseDataRefreshFailed} detail={t().overviewLoadFailedHint}>
-                <Button
-                  variant="secondary"
-                  disabled={overview.loading() || overview.refreshing()}
-                  onClick={() => void overview.refresh().catch(() => {})}
-                >
-                  {t().retry}
-                </Button>
-              </NoticeCard>
-            </Show>
-            <Show
-              when={activeView() === "overview"}
-              fallback={
-                <Show
-                  when={activeView() === "sources"}
-                  fallback={
-                    <Show
-                      when={activeView() === "sql"}
-                      fallback={
-                        <Show when={activeView() === "dashboards"}>
-                          <Show
-                            when={!overview.accessLost()}
-                            fallback={
-                              <NoticeCard role="alert" tone="warning" title={t().dashboardDenied} detail={t().overviewNoAccessHint}>
-                                <Button variant="secondary" onClick={() => window.location.reload()}>
-                                  {t().retry}
-                                </Button>
-                              </NoticeCard>
-                            }
-                          >
-                            <DashboardsView
-                              base={{
-                                id: props.initialBaseId,
-                                name: selectedBase()?.name ?? t().appName,
-                                // A base that left the list is about to show lost access; until then its times read in UTC.
-                                timezone: selectedBase()?.timezone ?? "UTC",
-                              }}
-                              actions={dashboardActions()}
-                              route={props.initialRouteState}
-                              snapshot={props.initialDashboards}
-                              overview={overview.data()}
-                              canWrite={props.initialPermissions?.write ?? false}
-                            />
-                          </Show>
-                        </Show>
-                      }
-                    >
-                      {sqlContent}
-                    </Show>
-                  }
-                >
-                  <SourcesView {...sourceProps} />
-                </Show>
-              }
-            >
-              <OverviewView
-                data={overview.data()}
-                loading={overview.loading()}
-                error={overview.error()}
-                canWrite={(props.initialPermissions?.write ?? false) && !writeBlocked()}
-                retry={overview.retry}
-                addSource={() => void actions.addSource()}
-                openSource={(sourceId) => navigate({ view: "sources", sourceId })}
-                openAlert={(alertId) => navigatePulseWorkspace({ baseId: props.initialBaseId, state: { view: "sql", alertId } })}
-                askAssistant={() => void askAssistant()}
-                assistantPending={assistantPending()}
-                assistantError={assistantError()}
-                paging={overview.paging()}
-                loadAttention={overview.loadAttention}
-                loadActivity={overview.loadActivity}
-              />
+            <Show when={activeView() === "sources"} fallback={sqlContent}>
+              <SourcesView {...sourceProps} />
             </Show>
           </AppWorkspace.Main>
           <AppWorkspace.Detail

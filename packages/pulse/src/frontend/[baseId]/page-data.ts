@@ -8,8 +8,6 @@ import { pulseService } from "../../service";
 import { accessScopeFor, requireBaseAccess } from "../../service/access-control";
 import { alertRules } from "../../service/alert-rules";
 import { readBasePolicy } from "../../service/base-policy";
-import { dashboards } from "../../service/dashboards";
-import { readOverview } from "../../service/overview";
 import { projectBases, projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
 import { savedQueries } from "../../service/saved-queries";
 import { baseSqlLimits } from "../../service/sql-service";
@@ -76,38 +74,6 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     initialNow: new Date().toISOString(),
     initialOrigin: publicOrigin(appUrl, url.origin),
   };
-  const dashboardIdentity = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId };
-  const dashboardPage = await dashboards.list(dashboardIdentity);
-  const dashboard =
-    route.view === "dashboards" && route.dashboardId
-      ? await dashboards.get({ ...dashboardIdentity, dashboardId: route.dashboardId })
-      : null;
-  props.initialDashboards = {
-    items: dashboardPage.ok ? dashboardPage.data.items : [],
-    total: dashboardPage.ok ? dashboardPage.data.total : 0,
-    nextOffset: dashboardPage.ok ? dashboardPage.data.nextOffset : null,
-    selected:
-      route.view === "dashboards"
-        ? dashboard?.ok
-          ? dashboard.data
-          : !route.dashboardId && dashboardPage.ok
-            ? (dashboardPage.data.items[0] ?? null)
-            : null
-        : null,
-    error:
-      dashboard && !dashboard.ok
-        ? { code: dashboard.error.code, message: dashboard.error.message }
-        : dashboardPage.ok
-          ? null
-          : { code: dashboardPage.error.code, message: dashboardPage.error.message },
-  };
-  if (route.view === "overview" || route.view === "dashboards") {
-    const overview = await readOverview({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId, signal: c.req.raw.signal });
-    if (!overview.ok && [403, 404].includes(overview.error.status)) return { kind: "error", status: overview.error.status };
-    props.initialOverview = overview.ok
-      ? { data: overview.data, error: null }
-      : { data: null, error: { code: overview.error.code, message: overview.error.message } };
-  }
   if (route.view === "sql") {
     const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId };
     if (route.alertId) {
