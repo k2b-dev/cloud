@@ -12,6 +12,9 @@ use it with Playwright or any browser test that can run a function in the page.
 - Text that is cut without an ellipsis or a fade.
 - A double line: two parallel visible borders that touch or lie at most 1 px
   apart, also across components ("one line, one owner").
+- A scroll container that scrolls sideways, such as a detail panel body whose
+  content is a few pixels too wide. A box with only `overflow-y: auto` counts
+  too, because the browser makes its `overflow-x` auto as well.
 - A page that scrolls sideways.
 
 It does not see what runs out of the bottom of a scroll area or what a floating
@@ -44,10 +47,26 @@ uses nothing from outside the function.
 | `ignore` | `string` | A selector for boxes whose children overlap or clip on purpose, such as an avatar stack. |
 | `slack` | `number` | How far content may reach past its box before it counts, in px. The default is 7. |
 
-It returns `overlap`, `spill`, `cut`, and `double` as lists of readable lines,
+A scroller that is meant to scroll sideways, such as a row of chips, says so
+with `data-layout-check="scroll-x"`. A toolbar (`role="toolbar"`) may scroll
+sideways below 768 px, because on a phone its tools scroll instead of moving
+into "⋯". Everywhere else, a sideways scroller is a finding.
+
+It returns `overlap`, `spill`, `cut`, `scroll`, and `double` as lists of readable lines,
 `sideways` as a boolean, and `problems` as every problem in one list. If the
 page is clean, `problems` is empty. To skip a box, give it
 `data-layout-check="skip"`.
+
+## Run with classic scrollbars
+
+Headless Chromium hides scrollbars by default, so a scrollbar never takes
+space in a test. On most desktops it does: a list that is exactly as wide as its
+column then scrolls sideways by the scrollbar's width. Launch the browser with
+classic scrollbars for page tests:
+
+```ts
+const browser = await chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+```
 
 ## Example: a page test at four widths
 

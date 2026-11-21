@@ -30,7 +30,7 @@ const clean = `
     </h1>
     <button style="flex:none;height:36px">Share</button>
   </header>
-  <nav style="display:flex;gap:4px;overflow-x:auto;padding:0 20px">
+  <nav data-layout-check="scroll-x" style="display:flex;gap:4px;overflow-x:auto;padding:0 20px">
     ${Array.from({ length: 14 }, (_, index) => `<a style="flex:none;padding:8px">View ${index + 1}</a>`).join("")}
   </nav>
   <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:0 20px">
@@ -57,13 +57,15 @@ const defects = `
   <div data-probe="spilling" style="width:120px"><div style="width:200px">A box wider than its parent</div></div>
   <div data-probe="cut" style="width:120px;overflow:hidden;white-space:nowrap">A title that is cut without a sign</div>
   <div data-probe="cut-in-scroller" style="width:120px;height:40px;overflow-x:hidden;overflow-y:auto;white-space:nowrap">A row that scrolls down but is cut sideways</div>
+  <div data-probe="panel-body" style="width:300px;height:80px;overflow-y:auto"><div style="width:340px">A detail body that scrolls sideways by 40 px</div></div>
   <div data-probe="wide" style="position:absolute;top:0;left:0;width:2400px;height:1px"></div>`;
 
 const widths = [390, 768, 1440, 1920];
 let browser: Browser;
 let page: Page;
 beforeAll(async () => {
-  browser = await launchBrowser();
+  // Classic scrollbars, as on most desktops: only then does a scrollbar take its width.
+  browser = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
   page = await browser.newPage();
 }, 30_000);
 afterAll(async () => {
@@ -92,6 +94,8 @@ describe(`layout self-check in ${browserName}`, () => {
       ]);
       expect(result.spill).toEqual(['[data-probe="spilling"] spills 80 px out of its box']);
       expect(result.cut.map((line) => line.split(" is cut")[0])).toEqual(['[data-probe="cut"]', '[data-probe="cut-in-scroller"]']);
+      // A scroll area with only `overflow-y: auto` scrolls sideways too when its content is too wide.
+      expect(result.scroll.map((line) => line.split(" by ")[0])).toEqual(['[data-probe="panel-body"] scrolls sideways']);
       // Both neighbours draw the line, and a child repeats its parent's edge; the outline of a focus ring is no border.
       expect(result.double.map((line) => line.replace(/ at .*$/, ""))).toEqual([
         'double line: [data-probe="row-a"] bottom and [data-probe="row-b"] top',
@@ -101,6 +105,36 @@ describe(`layout self-check in ${browserName}`, () => {
       expect(result.problems.at(-1)).toBe("the page scrolls sideways (2400 px)");
     });
   }
+});
+
+// Scroll containers: a scroller that says it scrolls on purpose passes, a toolbar scrolls only on a phone (K15), and a
+// column that a classic scrollbar makes too narrow for its content is caught.
+const toolbar = `<div data-probe="toolbar" role="toolbar" aria-label="Format" style="display:flex;gap:4px;width:200px;overflow-x:auto">
+  ${Array.from({ length: 12 }, (_, index) => `<button type="button" style="flex:none;width:36px">${index + 1}</button>`).join("")}
+</div>`;
+describe(`scroll containers in ${browserName}`, () => {
+  test("390 px: a scroller that opts in and a toolbar on a phone pass", async () => {
+    const result = await check(
+      390,
+      `<div data-layout-check="scroll-x" style="width:200px;overflow-x:auto"><div style="width:400px">Chips in a row</div></div>${toolbar}`,
+    );
+    expect(result.problems).toEqual([]);
+  });
+
+  test("1440 px: a toolbar does not scroll sideways on a wide screen", async () => {
+    const result = await check(1440, toolbar);
+    expect(result.scroll.map((line) => line.split(" scrolls")[0])).toEqual(['[data-probe="toolbar"]']);
+  });
+
+  test.if(browserName === "chromium")("1440 px: a classic scrollbar that makes a column too narrow is caught", async () => {
+    const result = await check(
+      1440,
+      `<div data-probe="list" style="width:300px;height:120px;overflow-y:auto"><div style="width:300px;height:400px">A list as wide as its column</div></div>`,
+    );
+    // The vertical scrollbar takes its width, so the 300 px content no longer fits beside it.
+    expect(await page.locator('[data-probe="list"]').evaluate((list) => list.offsetWidth - list.clientWidth)).toBeGreaterThan(7);
+    expect(result.scroll.map((line) => line.split(" by ")[0])).toEqual(['[data-probe="list"] scrolls sideways']);
+  });
 });
 
 // Touch: small controls reach 44 px with an empty, invisible pseudo-element (the hit area). That is no spill. A drawn
