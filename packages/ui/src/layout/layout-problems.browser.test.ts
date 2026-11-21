@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { browserName, launchWithScrollbars, settled } from "../../test/browser";
 import { layoutProblems } from "../../test/head-overlap";
-import { layoutWidths } from "../layout-check";
+import { layoutWidths, scrollbarWidth } from "../layout-check";
 
 // Error class: a box that overlaps its sibling, spills, or cuts its text without a sign at one width only (K15), and a
 // line drawn twice because both neighbours draw it (K2, "one line, one owner").
@@ -116,6 +116,20 @@ const toolbar = `<div data-probe="toolbar" role="toolbar" aria-label="Format" st
   ${Array.from({ length: 12 }, (_, index) => `<button type="button" style="flex:none;width:36px">${index + 1}</button>`).join("")}
 </div>`;
 describe(`scroll containers in ${browserName}`, () => {
+  // A classic run is only worth its name when a scrollbar takes room. With phone emulation Chromium draws overlay
+  // scrollbars that take none, even with classic scrollbars: such a run belongs to a desktop window without touch.
+  test.if(browserName === "chromium")("classic scrollbars take room on a desktop page, and none with touch emulation", async () => {
+    await check(1100, "<p>Room</p>");
+    expect(await page.evaluate(scrollbarWidth)).toBeGreaterThan(0);
+    const phone = await browser.newPage({ viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true });
+    try {
+      await phone.setContent("<!doctype html><html><body><p>Room</p></body></html>");
+      expect(await phone.evaluate(scrollbarWidth)).toBe(0);
+    } finally {
+      await phone.close();
+    }
+  });
+
   test("390 px: a scroller that opts in, a code block, and a toolbar on a phone pass", async () => {
     const result = await check(
       390,

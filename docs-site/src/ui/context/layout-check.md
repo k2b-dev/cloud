@@ -30,13 +30,21 @@ pseudo-element that draws something and reaches past its box still counts.
 ## Import
 
 ```ts
-import { classicScrollbars, layoutProblems, layoutWidths, type LayoutProblemOptions, type LayoutProblems } from "@k2b/ui/layout-check";
+import {
+  classicScrollbars,
+  layoutProblems,
+  layoutWidths,
+  scrollbarWidth,
+  type LayoutProblemOptions,
+  type LayoutProblems,
+} from "@k2b/ui/layout-check";
 ```
 
 `layoutWidths` is the list of widths every page test checks: 390, 768, 1100,
 and 1440 px. At 1100 px a docked detail column leaves the least room, so test
 it with the detail column open. `classicScrollbars` holds the launch options
-for visible scrollbars.
+for visible scrollbars, and `scrollbarWidth()` measures in the page how much
+room a scrollbar takes.
 
 The subpath is separate from the main entry of `@k2b/ui`. It has no
 dependencies and adds nothing to the bundles of an app.
@@ -71,10 +79,17 @@ column then scrolls sideways by the scrollbar's width. Launch the browser with
 classic scrollbars for page tests:
 
 ```ts
-import { classicScrollbars } from "@k2b/ui/layout-check";
+import { classicScrollbars, scrollbarWidth } from "@k2b/ui/layout-check";
 
 const browser = await chromium.launch(classicScrollbars);
+const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+expect(await page.evaluate(scrollbarWidth)).toBeGreaterThan(0);
 ```
+
+Use narrow desktop windows without touch for this run. With `isMobile` or
+`hasTouch`, Chromium draws overlay scrollbars that take no room, even with
+`classicScrollbars`. Such a run looks green and measures nothing. Check that
+`scrollbarWidth()` is above 0, and test touch in a separate run.
 
 ## Example: a page test at four widths
 

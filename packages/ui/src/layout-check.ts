@@ -39,9 +39,25 @@ export const layoutWidths = [390, 768, 1100, 1440] as const;
 
 /**
  * Launch options for classic, visible scrollbars, as on most desktops: headless Chromium hides them by default, so a
- * scrollbar never takes its width in a test. Pass them to `chromium.launch`.
+ * scrollbar never takes its width in a test. Pass them to `chromium.launch`, and test in narrow desktop windows without
+ * touch: with `isMobile` or `hasTouch`, Chromium draws overlay scrollbars that take no room. Check `scrollbarWidth()`.
  */
 export const classicScrollbars: { ignoreDefaultArgs: string[] } = { ignoreDefaultArgs: ["--hide-scrollbars"] };
+
+/**
+ * How much room a vertical scrollbar takes in this page, in px. Runs in the page: pass it to `page.evaluate`. A test
+ * that relies on classic scrollbars checks that this is above 0: Chromium draws overlay scrollbars that take no room
+ * when the page emulates a phone (`isMobile` or `hasTouch`), even with `classicScrollbars`, and such a run measures
+ * nothing a desktop scrollbar would change.
+ */
+export function scrollbarWidth(): number {
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:absolute;top:-9999px;left:0;width:100px;height:100px;overflow:scroll";
+  document.body.append(probe);
+  const width = probe.offsetWidth - probe.clientWidth;
+  probe.remove();
+  return width;
+}
 
 export type LayoutProblemOptions = {
   /** The element to check; the whole document by default. */

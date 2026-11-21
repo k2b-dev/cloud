@@ -643,7 +643,9 @@ export const launchBrowser = async ({
 /**
  * A browser with classic, visible scrollbars, as on most desktops, for page tests that call `layoutProblems`: only then
  * does a scrollbar take its width, so a column that is a few pixels too wide shows up as a sideways scroller. The
- * `layout-check-coverage` rule requires it in every browser test that calls `layoutProblems`.
+ * `layout-check-coverage` rule requires it in every browser test that calls `layoutProblems`. Use narrow desktop
+ * windows without touch for that run: with `isMobile` or `hasTouch`, Chromium draws overlay scrollbars that take no
+ * room even here. Assert `page.evaluate(scrollbarWidth)` above 0, so the run measures what it claims.
  */
 export const launchWithScrollbars = (options: Parameters<typeof launchBrowser>[0] = {}): Promise<Browser> =>
   launchBrowser({

@@ -178,19 +178,26 @@ Every app lane tests each page it builds this way. This rule is binding:
   (`launchWithScrollbars()` in this repository, `classicScrollbars` from
   `@k2b/ui/layout-check` elsewhere). A hidden scrollbar takes no width, so a
   column that is a few pixels too wide never scrolls sideways in a test.
+- **Desktop windows without touch for that run:** with `isMobile` or
+  `hasTouch`, Chromium draws overlay scrollbars that take no room, even with
+  classic scrollbars. The run checks `scrollbarWidth()` above 0, so it measures
+  what it claims. Touch is a separate run.
 - **Check:** `layoutProblems` finds overlap, spill, cut text, a double line, a
   scroll container that scrolls sideways, and a page that scrolls sideways.
   `problems` is empty at every width.
 
 The `layout-check-coverage` rule fails a browser test that calls
-`layoutProblems` without visible scrollbars or without 1100 px. Tests that
+`layoutProblems` without visible scrollbars, without the `scrollbarWidth`
+probe, or without 1100 px. Tests that
 existed before the rule are listed in its baseline until they move.
 
 ```ts
-import { layoutWidths } from "@k2b/ui/layout-check";
+import { layoutWidths, scrollbarWidth } from "@k2b/ui/layout-check";
 import { launchWithScrollbars } from "../../test/browser";
 
 const browser = await launchWithScrollbars();
+// A narrow desktop window without touch; a scrollbar must take room here.
+expect(await page.evaluate(scrollbarWidth)).toBeGreaterThan(0);
 for (const width of layoutWidths)
   test(`${width} px: the record page has no layout problem`, async () => {
     await page.setViewportSize({ width, height: 900 });

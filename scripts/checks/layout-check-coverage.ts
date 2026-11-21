@@ -11,7 +11,8 @@ import type { Rule } from "./rule";
  * detail column that scrolls sideways and a head that wraps pass (flat-design QA, 21 November 2026).
  *
  * Classic scrollbars: the file uses `launchWithScrollbars` (`packages/ui/test/browser.ts`), `classicScrollbars`
- * (`@k2b/ui/layout-check`), or `--hide-scrollbars`. 1100 px: the file uses `layoutWidths` or the number 1100.
+ * (`@k2b/ui/layout-check`), or `--hide-scrollbars`, and checks `scrollbarWidth` (touch emulation draws overlay
+ * scrollbars that take no room). 1100 px: the file uses `layoutWidths` or the number 1100.
  * Known findings live in `layout-check-coverage.baseline`; files remove their lines as they move, the rule never adds.
  */
 const RULE = "layout-check-coverage";
@@ -34,11 +35,13 @@ export const collectCoverageFindings = (workspaceRoot: string): KeyedFinding[] =
       if (!/\blayoutProblems\b/.test(source)) return [];
       const path = relative(workspaceRoot, file);
       const findings: KeyedFinding[] = [];
-      if (!/\blaunchWithScrollbars\b|\bclassicScrollbars\b|--hide-scrollbars/.test(source))
+      // Classic scrollbars, and a probe that they take room: with touch emulation Chromium draws overlay scrollbars
+      // that take none, so a "classic" run would measure nothing.
+      if (!/\blaunchWithScrollbars\b|\bclassicScrollbars\b|--hide-scrollbars/.test(source) || !/\bscrollbarWidth\b/.test(source))
         findings.push({
           file,
           key: `${path} | scrollbars`,
-          message: `calls layoutProblems with hidden scrollbars: launch with launchWithScrollbars() or classicScrollbars; ${page}`,
+          message: `calls layoutProblems without classic scrollbars that take room: launch with launchWithScrollbars() or classicScrollbars in a desktop window without touch, and assert page.evaluate(scrollbarWidth) above 0; ${page}`,
         });
       if (!/\blayoutWidths\b|(?<![\d.])1100(?![\d.])/.test(source))
         findings.push({
