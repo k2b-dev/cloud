@@ -1784,6 +1784,10 @@ export default function Browser(props: {
     [view().groupFolders ? b().foldersFirst : null, sortLabel(view().sort), view().type !== "all" ? filterLabel(view().type) : null]
       .filter(Boolean)
       .join(", ");
+  const VIEWS = ["list", "grid", "tree"] as const;
+  const viewLabel = (key: (typeof VIEWS)[number]) => (key === "grid" ? b().grid : key === "tree" ? b().tree : b().list);
+  const viewIcon = (key: (typeof VIEWS)[number]) =>
+    key === "grid" ? "ti ti-layout-grid" : key === "tree" ? "ti ti-list-tree" : "ti ti-list";
   const browseChip = (iconOnly: boolean) => (
     <FilterChip
       label={iconOnly ? b().sortAndFilter : sortSummary()}
@@ -1791,10 +1795,22 @@ export default function Browser(props: {
       iconOnly={iconOnly}
       variant={iconOnly ? "input" : undefined}
       position="bottom-right"
-      value={[view().sort, view().direction, typeFilter(), ...(view().groupFolders ? ["groupFolders"] : [])]}
-      defaultValue={["name", "asc", "all", "groupFolders"]}
+      value={[
+        view().sort,
+        view().direction,
+        typeFilter(),
+        ...(view().groupFolders ? ["groupFolders"] : []),
+        ...(iconOnly && narrow() ? [view().view] : []),
+      ]}
+      defaultValue={["name", "asc", "all", "groupFolders", ...(iconOnly && narrow() ? ["list"] : [])]}
       isActive={view().sort !== "name" || view().direction !== "asc" || typeFilter() !== "all" || !view().groupFolders}
       onValueChange={(values) => {
+        const shown = VIEWS.find((key) => values.includes(key));
+        // A new way of showing the folder changes nothing else, so the listing does not load again.
+        if (shown && shown !== view().view) {
+          updateView({ view: shown });
+          return;
+        }
         updateView({
           sort: SORT_KEYS.find((key) => values.includes(key)) ?? "name",
           direction: values.includes("desc") ? "desc" : "asc",
@@ -1803,6 +1819,10 @@ export default function Browser(props: {
         });
       }}
       options={[
+        // K15: on a phone the view segment waits here, so the path keeps its room in the head.
+        ...(iconOnly && narrow()
+          ? [{ label: b().view, options: VIEWS.map((key) => ({ value: key, label: viewLabel(key), icon: viewIcon(key) })) }]
+          : []),
         { label: b().sort, options: SORT_KEYS.map((key) => ({ value: key, label: sortLabel(key) })) },
         {
           label: b().sortDirection,

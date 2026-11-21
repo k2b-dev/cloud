@@ -507,6 +507,9 @@
   }
   .filesv2-list__cell--info {
     grid-area: 1 / 5 / 3 / 6;
+    align-self: center;
+    justify-content: flex-end;
+    margin: 0;
   }
   .filesv2-list__none {
     display: none;
@@ -560,6 +563,12 @@
 /* Head (K6): the path, then search, sort and filter, the view segment and New. */
 .filesv2-view-switch-place {
   display: inline-flex;
+}
+/* K15: on a phone the segment waits in "Sort and filter" (its View section), and the path keeps its room. */
+@container k2b-head (width < 32rem) {
+  .filesv2-view-switch-place {
+    display: none;
+  }
 }
 .k2b-ui .filesv2-search {
   flex: 0 0 14.5rem;
@@ -761,6 +770,7 @@
 /* Selection mode: a checkbox column in lists, a floating checkbox on tiles. */
 .filesv2-list__cell--check {
   flex: 0 0 2rem;
+  width: 2rem;
   justify-content: center;
   padding: 0;
 }
