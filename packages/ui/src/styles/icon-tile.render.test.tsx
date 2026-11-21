@@ -56,7 +56,7 @@ describe("shared icon tile contract", () => {
       declarationsFor(".k2b-ui .k2b-placeholder__icon")
         .map((rule) => rule.body)
         .join(";"),
-    ).toMatch(/border-radius:var\(--k2b-radius-round,\s*9999px\)/);
+    ).toMatch(/border-radius:var\(--k2b-radius-round\)/);
   });
 
   test("overview, dialog, widget and link card icons use the shared chip", () => {
