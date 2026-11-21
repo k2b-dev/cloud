@@ -1,0 +1,294 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, readFileSync } from "node:fs";
+import { basename, resolve } from "node:path";
+import type { AiConversation, AiStoredMessage } from "@k2b/cloud/ai";
+import type { Browser } from "playwright";
+import { galleryScenes } from "../../../cloud/src/ai/chat/chat-gallery.fixtures";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { layoutProblems } from "../../../ui/test/head-overlap";
+import { emptySidebarSnapshot, sidebarSnapshot } from "./AssistantChatSidebar.fixture";
+
+// Gustav flat (concept ui-flach-gustav v3) in the full workspace: the reading column with its cards, the docked column
+// "In this chat" with its grip, and the phone. Every scene runs the layout self-check with few and with many messages,
+// so a scrollbar appears. GUSTAV_FLAT_SHOTS=<dir> keeps light screenshots at 390, 768, 1440, and 1920 px. Fictional data.
+const ui = resolve(import.meta.dir, "../../../ui");
+const cloud = resolve(import.meta.dir, "../../../cloud");
+const shots = process.env.GUSTAV_FLAT_SHOTS?.trim();
+const now = "2026-11-13T10:00:00.000Z";
+const conversation = (id: string, title: string): AiConversation => ({
+  id,
+  shortId: id,
+  title,
+  titleSource: "user",
+  description: "",
+  descriptionSource: "default",
+  keywords: [],
+  pinnedAt: null,
+  done: null,
+  isDone: false,
+  lastUsedAt: now,
+  archivedAt: null,
+  runStatus: "idle",
+  runError: null,
+  unreadCompletion: false,
+  projectId: null,
+  draft: { content: [], revision: 0, updatedAt: null },
+  createdByUserId: "user123",
+  createdAt: now,
+  updatedAt: now,
+});
+const chats = [
+  conversation("Few001", "Messestand Köln"),
+  conversation("Many01", "Angebot Eichenplatten"),
+  conversation("Ctx001", "Umsatzbericht Q1–Q3"),
+];
+/** The failed answer once, or the whole chat four times over, so the timeline scrolls. */
+const messagesOf = (id: string): AiStoredMessage[] => {
+  if (id !== "Many01") return galleryScenes.fehler().messages;
+  const rounds = [galleryScenes.antwort(), galleryScenes.antwort(), galleryScenes.antwort(), galleryScenes.fehler()];
+  let seq = 0;
+  return rounds.flatMap((round, index) =>
+    round.messages.map((message) => {
+      seq += 1;
+      return { ...message, id: `m${seq}`, shortId: `m${seq}`, seq, loopId: message.loopId ? `${message.loopId}-${index}` : null };
+    }),
+  );
+};
+
+let browser: Browser;
+let staticAsset: (request: Request) => Response | undefined;
+const entry = resolve(import.meta.dir, "gustav-flat.browser-entry.tsx");
+const fakeLive = resolve(import.meta.dir, "gustav-flat.browser-live.ts");
+const entrySource = `import { LocaleProvider } from "@k2b/ui";
+import { mount } from ${JSON.stringify(resolve(import.meta.dir, "../../../ssr/src/mount.ts"))};
+import { toJSON } from ${JSON.stringify(Bun.resolveSync("seroval", cloud))};
+import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
+function Workspace(props) { return <LocaleProvider locale="de"><AssistantWorkspace {...props} /></LocaleProvider>; }
+document.getElementById("root").dataset.props = JSON.stringify(toJSON(window.harness));
+mount(Workspace, "#root");`;
+const fakeLiveSource = `export const liveConnection = () => ({ subscribe: () => ({ close() {} }) });`;
+beforeAll(async () => {
+  const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
+  const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
+  const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
+  const build = await Bun.build({
+    entrypoints: [entry],
+    files: { [entry]: entrySource, [fakeLive]: fakeLiveSource },
+    target: "browser",
+    format: "esm",
+    splitting: true,
+    minify: true,
+    conditions: ["browser"],
+    define: { "process.env.NODE_ENV": JSON.stringify("production") },
+    plugins: [
+      {
+        name: "gustav-flat-test",
+        setup(builder) {
+          builder.onResolve({ filter: /^@k2b\/cloud\/browser\/live$/ }, () => ({ path: fakeLive }));
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(path === entry ? entrySource : await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
+  });
+  if (!build.success) throw new AggregateError(build.logs, "Could not bundle the Gustav flat workspace.");
+  const entryOutput = build.outputs.find((output) => output.kind === "entry-point")!;
+  const scripts = new Map(build.outputs.map((output) => [`/${basename(output.path)}`, output]));
+  scripts.set("/harness.js", entryOutput);
+  const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", cloud))).default;
+  const styles: string[] = [];
+  for (const path of [resolve(import.meta.dir, "../styles/app.css"), resolve(import.meta.dir, "../../../../styles.css")]) {
+    const built = await Bun.build({ entrypoints: [path], plugins: [tailwind], minify: true });
+    if (!built.success) throw new AggregateError(built.logs, "Could not compile workspace styles.");
+    styles.push(await built.outputs[0]!.text());
+  }
+  const fonts = ["plex.css", "tabler.css"]
+    .map((file) =>
+      readFileSync(resolve(ui, "dist", file), "utf8").replace(/url\((?!["']?(?:data:|https?:))(["']?)(?:\.\/)?/g, "url($1/ui/"),
+    )
+    .join("\n");
+  const css = [fonts, "@layer properties, theme, base, components, utilities;", ...styles].join("\n");
+  const cache = { "cache-control": "public, max-age=3600" };
+  staticAsset = (request) => {
+    const path = new URL(request.url).pathname;
+    const script = scripts.get(path);
+    if (script) return new Response(script, { headers: { "content-type": "text/javascript", ...cache } });
+    if (path === "/harness.css") return new Response(css, { headers: { "content-type": "text/css", ...cache } });
+    if (path.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", path.slice(4))), { headers: cache });
+  };
+  browser = await launchBrowser();
+}, 180_000);
+afterAll(async () => {
+  await browser?.close();
+});
+
+const open = async (id: string, width: number) => {
+  const context = await browser.newContext({
+    viewport: { width, height: width < 768 ? 780 : 900 },
+    reducedMotion: "reduce",
+    locale: "de",
+    isMobile: width < 768,
+    hasTouch: width < 768,
+  });
+  const page = await context.newPage();
+  page.setDefaultTimeout(5000);
+  const errors = pageErrors(page);
+  await page.addInitScript((at) => {
+    const RealDate = Date;
+    globalThis.Date = new Proxy(RealDate, {
+      construct(target, args) {
+        return Reflect.construct(target, args.length ? args : [at]);
+      },
+      get(target, key) {
+        return key === "now" ? () => at : Reflect.get(target, key);
+      },
+    });
+  }, Date.parse(now));
+  const detail = (chatId: string) => ({
+    conversation: chats.find((chat) => chat.id === chatId)!,
+    hasMoreMessages: false,
+    activeTurn: null,
+    messages: messagesOf(chatId).map((message) => ({ ...message, conversationId: chatId })),
+    timeline: [],
+  });
+  const snapshot = (chatId: string) =>
+    chatId === "Few001" ? emptySidebarSnapshot({ chatId }) : sidebarSnapshot({ chatId, now, viewerUserId: "user123" });
+  const assets = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const asset = staticAsset(request);
+      if (asset) return asset;
+      const url = new URL(request.url);
+      const path = url.pathname;
+      if (path === "/app/assistant") {
+        const chatId = url.searchParams.get("conversation") ?? "Few001";
+        const props = {
+          userId: "user123",
+          cloudUrl: url.origin,
+          status: {
+            ok: true,
+            enabled: true,
+            status: "ok",
+            selection: null,
+            effectiveDefault: { class: "balanced" },
+            classes: [],
+            visionModelConfigured: false,
+            error: null,
+            options: [],
+          },
+          models: [
+            { id: "standard", label: "Standard", description: "", icon: { kind: "mark", text: "AI", color: "0" }, classes: ["balanced"] },
+          ],
+          selection: null,
+          timeZone: "Europe/Berlin",
+          renderedAt: now,
+          initialLiveCursor: "s6t.cloud-live-core.0",
+          initialConversations: chats,
+          initialDoneCount: 0,
+          initialQuestions: { items: [], count: 0 },
+          initialConversationId: chatId,
+          initialArtifactPath: null,
+          initialWorkspaceHref: path + url.search,
+          initialDetail: detail(chatId),
+          initialContext: null,
+          projects: [],
+          initialProject: null,
+          initialProjectChats: null,
+          initialProjectContext: null,
+          approvals: { page: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, open: false },
+        };
+        return new Response(
+          `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;width:100%;height:100dvh"></div><script>window.harness=${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script type="module" src="/harness.js"></script></body></html>`,
+          { headers: { "content-type": "text/html", "cache-control": "no-store" } },
+        );
+      }
+      if (path === "/api/assistant/workspace/sidebar")
+        return Response.json({ conversations: chats, projects: [], doneCount: 0, questions: { items: [], count: 0 } });
+      const chat = /^\/api\/ai\/conversations\/(\w+)$/.exec(path);
+      if (chat) return Response.json(detail(chat[1]!));
+      if (path.endsWith("/stream")) return new Response(new ReadableStream(), { headers: { "content-type": "text/event-stream" } });
+      if (path.endsWith("/viewed")) return new Response(null, { status: 204 });
+      if (path.endsWith("/queue")) return Response.json([]);
+      if (path.endsWith("/dictations")) return Response.json({ items: [], nextCursor: null });
+      if (path === "/api/approvals") return Response.json({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
+      if (path === "/api/capabilities/v1/queries/core/code.attention.list") return Response.json({ data: { items: [], nextCursor: null } });
+      if (path === "/api/capabilities/v1/catalog") return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
+      if (path.endsWith("/tabs")) return Response.json({ state: { tabs: [], layout: null, front: null }, revision: 0 });
+      const sidebar = /^\/api\/assistant\/workspace\/conversations\/(\w+)\/context$/.exec(path);
+      if (sidebar) return Response.json(snapshot(sidebar[1]!));
+      if (path === "/api/assistant/workspace/web-reader") return Response.json({ available: false });
+      const empty: Record<string, unknown> = {
+        "/api/ai/resources/recent": { resources: [] },
+        "/api/ai/quotas": { enabled: false, balances: [] },
+        "/api/ai/skills": { skills: [] },
+        "/api/ai/tasks": [],
+      };
+      if (path in empty) return Response.json(empty[path]);
+      return Response.json({ message: "unavailable" }, { status: 503 });
+    },
+  });
+  try {
+    await page.goto(`${assets.url.origin}/app/assistant?conversation=${id}`);
+    await page.locator("textarea").first().waitFor();
+    await settled(page);
+  } catch (error) {
+    console.error("Gustav flat workspace errors:", errors);
+    await context.close();
+    assets.stop(true);
+    throw error;
+  }
+  return {
+    page,
+    errors,
+    close: async () => {
+      await context.close();
+      assets.stop(true);
+    },
+  };
+};
+
+const SCENES = [
+  ["Few001", "few messages"],
+  ["Many01", "many messages"],
+  ["Ctx001", "the column In this chat"],
+] as const;
+
+for (const width of [1440, 390])
+  describe(`${width} px`, () => {
+    for (const [id, name] of SCENES)
+      test(`${name}: nothing overlaps, spills, is cut, or draws a double line`, async () => {
+        const view = await open(id, width);
+        try {
+          const report = await view.page.evaluate(layoutProblems, { root: "#root", ignore: ".k2b-chat-timeline__latest" });
+          expect(report.problems).toEqual([]);
+          expect(view.errors).toEqual([]);
+        } finally {
+          await view.close();
+        }
+      }, 30_000);
+  });
+
+test.skipIf(!shots)(
+  "screenshots for the design review",
+  async () => {
+    mkdirSync(shots!, { recursive: true });
+    for (const width of [390, 768, 1440, 1920])
+      for (const [id] of SCENES) {
+        const view = await open(id, width);
+        try {
+          await view.page.screenshot({ path: resolve(shots!, `${id}-${width}.png`) });
+        } finally {
+          await view.close();
+        }
+      }
+  },
+  300_000,
+);

@@ -119,3 +119,18 @@
 
 .k2b-ui .cloud-approval-details__edit { margin-inline-end: auto; }
 .k2b-ui .cloud-approval-details__decisions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
+
+/* An approval looks the same in every place (Gustav flat F2): the card of the chat, also on the approvals page and on a
+   Code page. The tint of the AI colour, a thin edge in its hue, the radius of a control, no shadow. */
+.k2b-ui .cloud-approval-frame.k2b-notice-card,
+.k2b-ui .cloud-approval-frame.k2b-notice-card[data-row][data-detail] {
+  --k2b-chat-card-edge: color-mix(in srgb, var(--k2b-notice-ink) 22%, var(--k2b-surface));
+  padding: calc(0.75rem - 1px) calc(1rem - 1px);
+  border: 1px solid var(--k2b-chat-card-edge);
+  border-radius: var(--k2b-radius-control);
+}
+
+.k2b-ui .cloud-approval-frame.k2b-notice-card[data-row][data-detail] {
+  block-size: auto;
+  min-block-size: var(--k2b-h-row-3);
+}

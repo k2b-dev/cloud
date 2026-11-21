@@ -36,7 +36,7 @@ const mount = (initial: AssistantChatContextSnapshot) => {
       () => (
         <LocaleProvider locale="de">
           <AssistantChatContextBox
-            variant="island"
+            variant="column"
             state={{ snapshot, projectContext: () => null, error: () => undefined, refresh: async () => undefined }}
             actions={{ onOpen: noop, onJump: noop, onOpenAll: noop, onOpenSources: noop, onOpenContext: noop }}
             frozen={() => false}

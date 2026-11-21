@@ -28,9 +28,12 @@ const HEADER = [
 const message =
   "a component draws no outer edge of its own; let its container draw the line (`k2b-divided`, the column boundary, the head) or use a framed element; see /en/ui/surfaces/flat-criteria (K2)";
 
-/** Framed by definition: field, button, card, overlay, chip, area, and their usual names. */
+/**
+ * Framed by definition: field, button, card, overlay, chip, area, and their usual names. A chat decision is a card
+ * (Gustav flat: cards in the conversation have a thin edge in the hue of their tint).
+ */
 export const FRAMED =
-  /(?:^|[-_])(?:field|input|textarea|select|combobox|button|btn|card|tile|menu|dropdown|popover|dialog|sheet|toast|tooltip|hover-card|chip|badge|tag|pill|area|switch|checkbox|radio|kbd|swatch|toolbar|segmented|picker|calendar-event|window|overlay|popup|dropzone|avatar|control)(?:$|[-_])/;
+  /(?:^|[-_])(?:field|input|textarea|select|combobox|button|btn|card|decision|tile|menu|dropdown|popover|dialog|sheet|toast|tooltip|hover-card|chip|badge|tag|pill|area|switch|checkbox|radio|kbd|swatch|toolbar|segmented|picker|calendar-event|window|overlay|popup|dropzone|avatar|control)(?:$|[-_])/;
 
 const OUTER = /^border(?:-(?:top|right|bottom|left|block|inline|block-start|block-end|inline-start|inline-end))?$/;
 const NO_LINE = /^(?:none|0|0px|hidden|initial|unset|inherit|revert)$|(?:^|\s)(?:none|hidden|transparent)(?:\s|$)|^0(?:px)?\s/;

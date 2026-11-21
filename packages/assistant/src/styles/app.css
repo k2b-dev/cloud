@@ -21,35 +21,29 @@
   width: 100%;
 }
 
-/* The timeline owns the full-width scrollport; its contents keep the same
-   column as the composer. The chat sidebar occupies the reserved column without
-   moving the native scrollbar between the two columns. */
+/* The chat's layout (Gustav flat): the head row with the chat's title, the timeline, and the composer in the first
+   column; "In this chat" docked as the second column while there is room. Each column scrolls by itself, so the
+   timeline's scrollbar stands at the column boundary. */
 .k2b-ui .assistant-chat-layout {
-  --assistant-chat-context-width: 0px;
-  /* How the sidebar shows when its toggle is used; read by the island, set by
-     the container and media queries below. */
+  /* How "In this chat" shows when its button is used; read by the island, set by the container and media queries below. */
   --assistant-context-mode: drawer;
   position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) var(--assistant-chat-context-width);
+  grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
 .k2b-ui .assistant-chat-messages {
-  grid-column: 1 / -1;
+  grid-column: 1;
   grid-row: 1;
 }
 
 .k2b-ui .assistant-chat-composer {
   grid-column: 1;
   grid-row: 2;
-}
-
-.k2b-ui .assistant-chat-layout .k2b-chat-timeline__viewport {
-  padding-inline-end: var(--assistant-chat-context-width);
 }
 
 .k2b-ui .assistant-chat-layout .k2b-chat-timeline__viewport:focus-visible {
@@ -63,6 +57,7 @@
 .k2b-ui .assistant-chat-layout {
   --assistant-layer-waiting: 2;
   --assistant-layer-to-latest: 3;
+  --assistant-layer-drawer: 4;
   /* The timeline's free end below its last message, always there (v12 §9); "Waiting for you" lies on it. */
   --assistant-free-end: 3.375rem;
   --assistant-waiting-height: 2rem;
@@ -70,70 +65,103 @@
   --assistant-to-latest-above-waiting: calc(var(--assistant-waiting-height) + var(--assistant-waiting-offset));
 }
 .k2b-ui .assistant-chat-layout .k2b-chat-timeline__latest {
-  left: calc((100% - var(--assistant-chat-context-width)) / 2);
+  left: 50%;
   bottom: calc(max(0.5rem, env(safe-area-inset-bottom)) + var(--assistant-to-latest-above-waiting));
   z-index: var(--assistant-layer-to-latest);
 }
 
-/* Measure the chat pane, including its sidebar column, independently of the
-   viewport and the neighboring artifact workspace. */
+/* Measure the chat pane, including its column, independently of the viewport and the neighboring artifact workspace. */
 .k2b-ui .assistant-chat-pane { container: assistant-chat / inline-size; }
 
-/* The box "In this chat" (concept gustav-ui-neu 3k). CSS alone decides its
-   presentation, so the server's first frame is final: an island at the top right
-   beside the timeline while the chat area is at least 56rem wide and no tabs are
-   open; otherwise a button at the top of the chat that opens the same box below
-   it; on phones the button opens a sheet. The island never moves the chat. */
-.k2b-ui .assistant-context-boxcol { display: none; }
-/* The button's head row above the timeline: it takes its own grid row, so the timeline scrolls below it and no message
-   passes under the button. */
+/* The chat's head (Gustav flat, K1): 56 px, the chat's title, and at the end the button "In this chat" while the column
+   is not docked. The head owns the hairline under it. It takes its own grid row, so the timeline scrolls below it and
+   no message passes under the button. */
 .k2b-ui .assistant-chat-layout:has(> .assistant-context-head) { grid-template-rows: auto minmax(0, 1fr) auto; }
 .k2b-ui .assistant-chat-layout:has(> .assistant-context-head) .assistant-chat-messages { grid-row: 2; }
 .k2b-ui .assistant-chat-layout:has(> .assistant-context-head) .assistant-chat-composer { grid-row: 3; }
 .k2b-ui .assistant-context-head {
   display: flex;
-  grid-column: 1 / -1;
+  grid-column: 1;
   grid-row: 1;
   align-items: center;
-  justify-content: flex-end;
   gap: 0.75rem;
   min-width: 0;
-  padding: 0.375rem 1.25rem 0;
+  height: var(--k2b-h-head);
+  padding-inline: var(--k2b-gutter) calc(var(--k2b-gutter) - 0.25rem);
+  border-block-end: 1px solid var(--k2b-border);
 }
-.k2b-ui .assistant-context-head__title { display: none; }
-@media (max-width: 47.999rem) {
-  .k2b-ui .assistant-chat-layout { --assistant-context-mode: sheet; }
-  .k2b-ui .assistant-context-button .k2b-button__label > span { display: none; }
-  /* On a phone the head names the chat, as the app's head names only the app. */
-  .k2b-ui .assistant-context-head { justify-content: space-between; padding: 0.25rem 0.5rem 0 1rem; }
-  .k2b-ui .assistant-context-head__title {
-    display: block;
-    min-width: 0;
-    margin: 0;
-    overflow: hidden;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    white-space: nowrap;
-  }
+.k2b-ui .assistant-context-head__title {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: var(--k2b-font-size-body);
+  font-weight: 600;
+  white-space: nowrap;
 }
+.k2b-ui .assistant-context-button { flex: none; margin-inline-start: auto; }
+
+/* "In this chat" waits behind its button until it is docked or opened as a drawer. */
+.k2b-ui .assistant-context-boxcol { display: none; }
+.k2b-ui .assistant-context-boxcol {
+  --assistant-context-column-default: 20rem;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  width: var(--assistant-context-column, var(--assistant-context-column-default));
+  background: var(--k2b-surface);
+}
+@media (min-width: 120rem) {
+  .k2b-ui .assistant-context-boxcol { --assistant-context-column-default: 23.75rem; }
+}
+/* The grip sits on the column boundary and draws its hairline; the column draws no border of its own. */
+.k2b-ui .assistant-context-grip {
+  position: absolute !important;
+  inset-block: 0;
+  inset-inline-start: -7px;
+  z-index: 1;
+}
+
+/* Docked: the second column, from the head row to the bottom, while the chat pane is at least 56 rem wide and no tabs
+   are open. The person may close it; the button in the chat's head brings it back. */
 @container assistant-chat (min-width: 56rem) {
   .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) { --assistant-context-mode: column; }
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol) {
-    --assistant-chat-context-width: 19.5rem;
-  }
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-head { display: none; }
-  /* Above the messages' full-width scrollport, which spans this column too; only the island takes the pointer. */
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-boxcol {
-    display: block;
-    position: relative;
-    z-index: 1;
-    min-width: 0;
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-boxcol:not([data-closed]) {
+    display: flex;
     grid-column: 2;
     grid-row: 1 / -1;
-    padding: 0.75rem 0.75rem 0 0;
-    pointer-events: none;
   }
-  .k2b-ui .assistant-context-boxcol > .assistant-context-box { pointer-events: auto; }
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol:not([data-closed])) .assistant-context-button {
+    display: none;
+  }
+}
+
+/* A drawer over the chat (Gustav flat: 768 to 1023 px, and while tabs are open): the same column at the right edge,
+   floating, so it casts the side shadow; nothing in the chat moves. */
+.k2b-ui .assistant-chat-layout[data-tabs="open"] > .assistant-context-boxcol[data-drawer="open"] {
+  display: flex;
+}
+@container assistant-chat (max-width: 55.999rem) {
+  .k2b-ui .assistant-chat-layout > .assistant-context-boxcol[data-drawer="open"] { display: flex; }
+}
+.k2b-ui .assistant-chat-layout > .assistant-context-boxcol[data-drawer="open"] {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: var(--assistant-layer-drawer);
+  width: min(var(--assistant-context-column, var(--assistant-context-column-default)), 100%);
+  box-shadow: var(--k2b-shadow-side);
+}
+.k2b-ui .assistant-chat-layout > .assistant-context-boxcol[data-drawer="open"] > .assistant-context-grip { display: none; }
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .assistant-chat-layout { --assistant-context-mode: sheet; }
+  .k2b-ui .assistant-chat-layout > .assistant-context-boxcol { display: none !important; }
+  .k2b-ui .assistant-context-button .k2b-button__label > span { display: none; }
+  /* On a phone the head is the phone head's height and names the chat, as the app's head names only the app. */
+  .k2b-ui .assistant-context-head { height: var(--k2b-h-head-phone); padding-inline: 1rem 0.5rem; }
 }
 
 /* The third grey for meta text (F8), light and dark. */
@@ -151,22 +179,54 @@
   color: var(--k2b-text);
   font-size: 0.8125rem;
 }
-.k2b-ui .assistant-context-box[data-variant="island"] {
-  border-radius: 0.75rem;
-  background: var(--k2b-island-surface, var(--k2b-surface));
-  box-shadow: var(--k2b-island-shadow);
-}
-.k2b-ui .assistant-context-popover .assistant-context-box { padding: 0.375rem 0.375rem 0.5rem; }
 /* In the sheet, the text edge sits 16 px from the screen's edge, like the concept's. */
 .k2b-ui .assistant-context-box[data-variant="sheet"] { padding: 0 0 0.5rem; margin-inline: -0.5rem; }
 .k2b-ui .assistant-context-box__head {
-  display: grid;
+  display: flex;
   height: 2rem;
-  grid-template-columns: minmax(0, 1fr) auto 1.75rem;
   align-items: center;
   gap: 0.25rem;
   padding-inline-start: 0.5rem;
 }
+.k2b-ui .assistant-context-box__head > .assistant-context-box__heading { flex: 1; }
+/* The column (Gustav flat): its own 56 px head with the hairline it owns, then the sections, which scroll; between them
+   hairlines from edge to edge. A row's hover area reaches 8 px past the text edge, so the text stands on the gutter. */
+.k2b-ui .assistant-context-box[data-variant="column"] {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+}
+.k2b-ui .assistant-context-box[data-variant="column"] > .assistant-context-box__head {
+  flex: none;
+  height: var(--k2b-h-head);
+  padding-inline: var(--k2b-gutter) calc(var(--k2b-gutter) - 0.375rem);
+  border-block-end: 1px solid var(--k2b-border);
+}
+.k2b-ui .assistant-context-box[data-variant="column"] .assistant-context-box__heading { font-size: var(--k2b-font-size-body); }
+.k2b-ui .assistant-context-box[data-variant="column"] > .assistant-context-box__body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.k2b-ui .assistant-context-box[data-variant="column"] > .assistant-context-box__body > * {
+  padding: 0.5rem calc(var(--k2b-gutter) - 0.5rem) 0.625rem;
+}
+.k2b-ui .assistant-context-box[data-variant="column"] .assistant-context-box__lines { margin: 0; border-block-start: 0; }
+.k2b-ui .assistant-context-box[data-variant="column"] .assistant-context-box__label {
+  height: 2rem;
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.k2b-ui .assistant-context-box[data-variant="column"] .assistant-context-box__count { color: var(--assistant-context-meta); font-weight: 400; }
+.k2b-ui .assistant-context-box[data-variant="column"] .assistant-context-box__all { font-size: 0.75rem; font-weight: 400; }
+.k2b-ui .assistant-context-box[data-variant="column"] :is(.assistant-context-box__row, .assistant-context-box__main) { height: 2.25rem; }
+.k2b-ui .assistant-context-box[data-variant="column"] .assistant-context-box__act { inset-block-start: 0.375rem; }
 .k2b-ui .assistant-context-box__heading {
   min-width: 0;
   margin: 0;
@@ -239,7 +299,7 @@
 }
 .k2b-ui .assistant-context-box__empty { height: auto; padding: 0.25rem 0.5rem 0.375rem; line-height: 1.45; }
 /* One row per thing: 28 px, sign, title, and at the end a fixed place for a word or the one action. */
-.k2b-ui .assistant-context-box__row { position: relative; height: 1.75rem; border-radius: 0.4375rem; }
+.k2b-ui .assistant-context-box__row { position: relative; height: 1.75rem; border-radius: var(--k2b-radius-mark); }
 .k2b-ui .assistant-context-box__row:hover,
 .k2b-ui .assistant-context-box__row:focus-within { background: var(--k2b-edge-hover-bg, var(--k2b-hover)); }
 .k2b-ui .assistant-context-box__main {
@@ -278,13 +338,13 @@
   cursor: pointer;
 }
 .k2b-ui .assistant-context-box__unfold:hover { text-decoration: underline; text-underline-offset: 2px; }
-.k2b-ui .assistant-context-box__unfold:focus-visible { border-radius: 0.25rem; outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
+.k2b-ui .assistant-context-box__unfold:focus-visible { border-radius: var(--k2b-radius-mark); outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
 .k2b-ui .assistant-context-box__tile {
   display: grid;
   width: 1.125rem;
   height: 1.125rem;
   place-items: center;
-  border-radius: 0.3125rem;
+  border-radius: var(--k2b-radius-tile);
   background: color-mix(in srgb, var(--assistant-context-box-accent, var(--k2b-text-secondary)) 5%, var(--k2b-surface));
   color: var(--assistant-context-box-accent, var(--k2b-text-secondary));
   font-size: 0.75rem;
@@ -312,7 +372,7 @@
   inset-block-start: 0.125rem;
   inset-inline-end: 0.25rem;
   display: none;
-  border-radius: 0.375rem;
+  border-radius: var(--k2b-radius-mark);
   background: var(--k2b-edge-hover-bg, var(--k2b-hover));
 }
 .k2b-ui .assistant-context-box__act .k2b-button { width: 1.5rem; height: 1.5rem; min-height: 0; }
@@ -338,7 +398,6 @@
   cursor: pointer;
 }
 .k2b-ui .assistant-context-box__retry:hover { text-decoration: underline; }
-.k2b-ui .assistant-context-popover { padding: 0; }
 
 /* One surface, shared with the chat; sections are separated by space. */
 .k2b-ui .assistant-context-sidebar {
@@ -427,7 +486,7 @@
 .k2b-ui .assistant-result__jump {
   padding: 0;
   border: 0;
-  border-radius: 0.25rem;
+  border-radius: var(--k2b-radius-mark);
   background: none;
   cursor: pointer;
   font: inherit;
@@ -536,8 +595,9 @@
   .k2b-ui .assistant-dictation-control[data-cancelable="true"] .assistant-dictation-trash { display: inline-block; position: absolute; right: -0.125rem; bottom: -0.125rem; font-size: 0.625rem; }
 }
 
-/* The tabs beside the chat (concept gustav-ui-neu 3k): Panes from @k2b/ui, unchanged. Each pane has the same head
-   (title 14/600, one meta line 12/400, at most two actions and "…"), its content flat on the pane's surface. A tab's
+/* The tabs beside the chat (concept gustav-ui-neu 3k): Panes from @k2b/ui, unchanged. Each pane has the same head, a
+   status row of 52 px under the tabs (Gustav flat): the title as its lead, the facts in one quiet line after it, at most
+   two actions and "…"; the row owns the hairline under it. The content stands flat on the pane's surface. A tab's
    content is made once and moves between panes, so a run or an editor survives switching and arranging. */
 .artifact-workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: var(--k2b-surface); }
 .artifact-workspace__panes { flex: 1; min-height: 0; }
@@ -545,36 +605,48 @@
 @media (max-width: 767px) { .k2b-ui .artifact-workspace .artifact-mobile-toggle { display: inline-flex; } }
 .artifact-pane { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
 .artifact-pane__head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex: none;
   align-items: center;
   gap: 0.75rem;
-  min-height: 3.25rem;
-  padding: 0.375rem 0.75rem 0.625rem 1rem;
+  height: var(--k2b-h-status);
+  padding-inline: var(--k2b-gutter) calc(var(--k2b-gutter) - 0.375rem);
+  border-block-end: 1px solid var(--k2b-border);
 }
-.artifact-pane__heading { min-width: 0; }
-.artifact-pane__title { margin: 0; overflow: hidden; font-size: 0.875rem; font-weight: 600; line-height: 1.35; white-space: nowrap; }
-.artifact-pane__meta {
-  min-height: 1rem;
-  margin: 0.0625rem 0 0;
+.artifact-pane__heading { display: flex; min-width: 0; flex: 1; align-items: baseline; gap: 0.75rem; }
+.artifact-pane__title {
+  min-width: 0;
+  flex: 0 1 auto;
+  margin: 0;
   overflow: hidden;
-  color: var(--assistant-context-meta);
-  font-size: 0.75rem;
-  line-height: 1.35;
+  font-size: var(--k2b-font-size-lead);
+  font-weight: 600;
+  line-height: 1.5rem;
   white-space: nowrap;
 }
+.artifact-pane__meta {
+  min-width: 0;
+  flex: 1 1 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: var(--k2b-font-size-row);
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+.artifact-pane__actions { flex: none; }
 .artifact-pane__actions { display: inline-flex; align-items: center; gap: 0.25rem; }
 .k2b-ui .artifact-pane__actions .k2b-button { width: 1.75rem; height: 1.75rem; min-height: 0; }
 .k2b-ui .artifact-pane__actions .k2b-button i { font-size: 1rem; }
 .artifact-pane__hint { color: var(--assistant-context-meta); font-size: 0.75rem; }
-.artifact-pane__body { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; padding: 0 1rem 1rem; }
+.artifact-pane__body { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; padding: 0.75rem var(--k2b-gutter) 1rem; scrollbar-gutter: stable; }
 /* A file tab is the file itself: the head names it, and the plain preview fills the rest without a second frame, so an
    editor takes the whole pane and a long file scrolls inside the preview. */
 .k2b-ui .artifact-pane__body > .k2b-content-file-view[data-variant] { flex: 1 1 auto; min-height: 0; }
 /* Read-only source code has no scrolling preview around it; it keeps its full height and the pane scrolls it. */
 .k2b-ui .artifact-pane__body > .k2b-content-file-view[data-variant] > .k2b-content-code-display { flex: none; }
 .k2b-ui .artifact-pane__body > .k2b-content-file-view[data-variant] > .k2b-content-code-display > .k2b-content-code-display__header { justify-content: flex-end; padding-inline: 0; }
-.k2b-ui .artifact-pane__body > .assistant-context-tab { margin: 0 -1rem -1rem; }
+.k2b-ui .artifact-pane__body > .assistant-context-tab { margin: -0.75rem calc(-1 * var(--k2b-gutter)) -1rem; }
 .k2b-ui .artifact-pane[data-kind="web"] > .artifact-pane__body { padding: 0; }
 
 /* A web page in the reading view (concept 3l, stage 1): the address bar is the pane's head. */
@@ -589,7 +661,7 @@
   gap: 0.375rem;
   margin-inline: 0.25rem;
   padding: 0 0.625rem;
-  border-radius: 0.5rem;
+  border-radius: var(--k2b-radius-control);
   box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge);
   color: var(--k2b-text);
   font-size: 0.8125rem;
@@ -635,7 +707,8 @@
   gap: 0.625rem;
   max-width: 48rem;
   padding: 1rem;
-  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--k2b-ai-accent) 22%, var(--k2b-surface));
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-ai-surface);
   font-size: 0.8125rem;
 }
@@ -646,7 +719,7 @@
 .web-reader__ask-title { margin: 0; font-size: 1.125rem; font-weight: 400; }
 .web-reader__ask-why { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0; }
 .web-reader__ask-why > i { margin-top: 0.1875rem; }
-.k2b-ui .web-reader__ask-address { display: grid; gap: 0.375rem; padding: 0.75rem 0.875rem; border-radius: 0.5rem; background: var(--k2b-surface); }
+.k2b-ui .web-reader__ask-address { display: grid; gap: 0.375rem; padding: 0.75rem 0.875rem; border-radius: var(--k2b-radius-mark); background: var(--k2b-surface); }
 .web-reader__ask-label { font-weight: 600; }
 .web-reader__ask-address code { overflow-wrap: anywhere; font-family: var(--k2b-font-mono, ui-monospace, monospace); font-size: 0.8125rem; }
 .web-reader__ask-query { color: var(--assistant-context-meta); font-size: 0.75rem; }
@@ -665,8 +738,8 @@
 
 .assistant-starters { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; margin-block-start:2rem; }
 /* A suggestion is a flat card (v12 image 11): a tile, the area in a small line, a bold title, and what it does below. */
-.k2b-ui .k2b-button.assistant-starter { height:auto; min-width:0; justify-content:flex-start; align-items:flex-start; gap:.75rem; padding:.75rem .875rem; text-align:start; white-space:normal; font-size:.8125rem; line-height:1.25rem; font-weight:400; border-radius:.625rem; background:var(--k2b-surface); box-shadow:inset 0 0 0 var(--k2b-edge-width) var(--k2b-control-border-soft); }
-.assistant-starter__tile { flex:none; inline-size:1.75rem; block-size:1.75rem; border-radius:.5rem; color:var(--k2b-text-secondary); font-size:1rem; }
+.k2b-ui .k2b-button.assistant-starter { height:auto; min-width:0; justify-content:flex-start; align-items:flex-start; gap:.75rem; padding:.75rem .875rem; text-align:start; white-space:normal; font-size:.8125rem; line-height:1.25rem; font-weight:400; border-radius:var(--k2b-radius-control); background:var(--k2b-surface); box-shadow:inset 0 0 0 1px var(--k2b-border); }
+.assistant-starter__tile { flex:none; inline-size:1.75rem; block-size:1.75rem; border-radius:var(--k2b-radius-tile); color:var(--k2b-text-secondary); font-size:1rem; }
 .assistant-starter__text { display:flex; flex-direction:column; min-width:0; overflow-wrap:anywhere; }
 .assistant-starter__area { color:var(--k2b-text-muted); font-size:.75rem; line-height:1rem; }
 .assistant-starter__title { color:var(--k2b-text); font-size:.8125rem; font-weight:600; }
@@ -809,7 +882,7 @@
 .k2b-ui .assistant-waiting__item { display: flex; flex: none; max-inline-size: 15.625rem; }
 .k2b-ui .assistant-waiting__item:first-child:is(:last-child, :has(+ [data-cut])) { flex: 0 1 auto; min-inline-size: 4rem; }
 .k2b-ui .assistant-waiting__item[data-cut] { display: none; }
-.k2b-ui .assistant-waiting__entry { display: inline-flex; flex: 1 1 auto; align-items: center; gap: .375rem; min-inline-size: 0; block-size: 1.625rem; padding: 0 0 0 .5rem; border: 0; border-radius: .5rem; color: var(--k2b-text); background: var(--k2b-ai-surface); font: inherit; font-size: .8125rem; font-weight: 400; white-space: nowrap; cursor: pointer; }
+.k2b-ui .assistant-waiting__entry { display: inline-flex; flex: 1 1 auto; align-items: center; gap: .375rem; min-inline-size: 0; block-size: 1.625rem; padding: 0 0 0 .5rem; border: 0; border-radius: var(--k2b-radius-control); color: var(--k2b-text); background: var(--k2b-ai-surface); font: inherit; font-size: .8125rem; font-weight: 400; white-space: nowrap; cursor: pointer; }
 .k2b-ui .assistant-waiting__entry:hover { background: color-mix(in srgb, var(--k2b-ai-accent) 14%, var(--k2b-surface)); }
 .k2b-ui .assistant-waiting__entry:focus-visible,
 .k2b-ui .assistant-waiting__more:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
@@ -819,7 +892,7 @@
 .k2b-ui .k2b-dropdown__item.assistant-waiting__menu-entry--attention > i { color: var(--k2b-warning-text); }
 /* The sentence ends on the chip's padding, where its fade ends, so a sentence that fits stays whole. */
 .k2b-ui .assistant-waiting__short { min-inline-size: 0; padding-inline-end: .625rem; --k2b-truncate-fade-length: .625rem; }
-.k2b-ui .assistant-waiting__more { flex: none; min-inline-size: 2.125rem; block-size: 1.625rem; padding: 0 .5rem; border: 0; border-radius: .5rem; color: var(--k2b-text-secondary); background: var(--k2b-surface-muted); font: inherit; font-size: .75rem; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
+.k2b-ui .assistant-waiting__more { flex: none; min-inline-size: 2.125rem; block-size: 1.625rem; padding: 0 .5rem; border: 0; border-radius: var(--k2b-radius-control); color: var(--k2b-text-secondary); background: var(--k2b-surface-muted); font: inherit; font-size: .75rem; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
 .k2b-ui .assistant-waiting__more:hover { background: var(--k2b-hover); }
 .k2b-ui .assistant-waiting__count[data-width="narrow"] { display: none; }
 .k2b-ui .assistant-waiting__more:not([data-wide]) { display: none; }
@@ -855,7 +928,7 @@
 .k2b-ui .assistant-queue[data-layout="line"] {
   block-size: 2rem;
   padding: 0 .25rem 0 .625rem;
-  border-radius: .625rem;
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface-muted);
 }
 .k2b-ui .assistant-queue { display: flex; align-items: center; gap: .5rem; min-inline-size: 0; color: var(--k2b-text-secondary); font-size: .8125rem; line-height: 1rem; }
@@ -883,7 +956,7 @@
   block-size: 1.625rem;
   padding: 0 .375rem;
   border: 0;
-  border-radius: .4375rem;
+  border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-subtle);
   background: transparent;
   font: inherit;
@@ -907,16 +980,16 @@
   inset-block-end: calc(100% + .375rem);
   padding: .375rem;
   border: 1px solid var(--k2b-border);
-  border-radius: .75rem;
+  border-radius: var(--k2b-radius-overlay);
   background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-overlay-sm);
 }
 .k2b-ui .assistant-queue__list[hidden] { display: none; }
 .k2b-ui .assistant-queue__list-head { display: flex; justify-content: space-between; gap: .75rem; padding: .25rem .5rem .375rem; color: var(--k2b-text-subtle); font-size: .75rem; }
 .k2b-ui .assistant-queue__list-head > span:first-child { flex: none; color: var(--k2b-text); font-weight: 600; white-space: nowrap; }
 .k2b-ui .assistant-queue__hint { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .assistant-queue__rows { max-block-size: calc(7.5 * 2.25rem); margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
-.k2b-ui .assistant-queue__row { display: flex; align-items: center; gap: .5rem; min-block-size: 2.25rem; padding: 0 .25rem 0 .5rem; border-radius: .5rem; transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
+.k2b-ui .assistant-queue__row { display: flex; align-items: center; gap: .5rem; min-block-size: 2.25rem; padding: 0 .25rem 0 .5rem; border-radius: var(--k2b-radius-mark); transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
 .k2b-ui .assistant-queue__row:hover { background: var(--k2b-edge-hover-bg); }
 /* A fixed place of 94 px for three 30 px sign buttons: showing and hiding them changes paint only. */
 .k2b-ui .assistant-queue__actions { display: inline-flex; flex: none; align-items: center; justify-content: flex-end; gap: .125rem; inline-size: 5.875rem; }
@@ -977,7 +1050,7 @@
 .k2b-ui .assistant-wakeups[data-layout="line"] {
   block-size: 2rem;
   padding: 0 .25rem 0 .625rem;
-  border-radius: .625rem;
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface-muted);
 }
 .k2b-ui .assistant-wakeups { display: flex; align-items: center; gap: .5rem; min-inline-size: 0; color: var(--k2b-text-secondary); font-size: .8125rem; line-height: 1rem; }
@@ -1040,9 +1113,9 @@
 
 /* A Studio app in the chat: one surface with a quiet header and the app below it, at a fixed height so nothing moves. */
 /* svh, not dvh: the height must not follow the phone's address bar while the chat scrolls. */
-/* The card is an island (layers and shadows): lifted in the chat, flat in a side panel, and flat inside. */
-.assistant-chat-presentation { display: flex; flex-direction: column; height: min(600px, 45vh); height: min(600px, 45svh); min-width: 0; overflow: hidden; border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent); border-radius: var(--k2b-radius-surface); background: var(--k2b-island-surface); box-shadow: var(--k2b-island-shadow); }
-.assistant-chat-presentation > * { --k2b-island-shadow: 0 0 #0000; --k2b-surface-beneath: var(--k2b-island-surface); }
+/* The card is flat (Gustav flat: nothing in the conversation casts a shadow): a thin edge and the radius of a control. */
+.assistant-chat-presentation { display: flex; flex-direction: column; height: min(600px, 45vh); height: min(600px, 45svh); min-width: 0; overflow: hidden; border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-control); background: var(--k2b-surface); }
+.assistant-chat-presentation > * { --k2b-surface-beneath: var(--k2b-surface); }
 .assistant-chat-presentation__header { display: flex; flex: none; align-items: center; gap: .5rem; min-height: 2.75rem; padding: .25rem .5rem 0 1.5rem; }
 .assistant-chat-presentation__header > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; font-weight: 600; }
 .assistant-chat-presentation__header > small { flex: none; color: var(--k2b-text-muted); font-size: .6875rem; }
@@ -1157,10 +1230,10 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 @container (max-width: 34rem) {
   .k2b-ui .assistant-apps .k2b-app-overview__cards.assistant-apps__cards { grid-template-columns: minmax(0, 1fr); }
 }
-.k2b-ui .assistant-apps .k2b-paper.assistant-apps__card { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; padding: 0.875rem 1rem 0.75rem; border-radius: 10px; color: inherit; text-decoration: none; }
+.k2b-ui .assistant-apps .k2b-paper.assistant-apps__card { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; padding: 0.875rem 1rem 0.75rem; border-radius: var(--k2b-radius-control); color: inherit; text-decoration: none; }
 .assistant-apps__card-top { display: flex; align-items: flex-start; gap: 0.625rem; min-width: 0; }
 .assistant-apps__tile,
-.assistant-waiting-page__tile { display: grid; flex: none; place-items: center; width: 1.625rem; height: 1.625rem; border-radius: 7px; background: var(--k2b-surface-muted); color: var(--k2b-text); }
+.assistant-waiting-page__tile { display: grid; flex: none; place-items: center; width: 1.625rem; height: 1.625rem; border-radius: var(--k2b-radius-tile); background: var(--k2b-surface-muted); color: var(--k2b-text); }
 .assistant-apps__card-copy { display: flex; flex: 1; flex-direction: column; gap: 0.125rem; min-width: 0; }
 .assistant-apps__card-title { overflow: hidden; color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-apps__card-schedule { overflow: hidden; color: var(--k2b-text-subtle); font-size: 0.8125rem; text-overflow: ellipsis; white-space: nowrap; }
@@ -1201,7 +1274,7 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .assistant-code-block {
   margin: 0.25rem 0.875rem 0.625rem;
   padding: 0.25rem 0.25rem 0.5rem;
-  border-radius: var(--k2b-radius-surface);
+  border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface-muted);
   font-size: 0.8125rem;
 }

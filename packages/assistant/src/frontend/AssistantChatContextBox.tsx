@@ -1,7 +1,7 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
-import { AnchoredPopover, Button, formatFileViewSize, IconButton, IconButtonLink, Skeleton, useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, on, Show, untrack } from "solid-js";
+import { Button, formatFileViewSize, IconButton, IconButtonLink, ResizeSeparator, Skeleton, useLocale } from "@k2b/ui";
+import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show, untrack } from "solid-js";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { type ChatSidebarState, createReadingFreeze } from "./AssistantChatSidebar";
 import {
@@ -192,8 +192,8 @@ function BoxGroup(props: {
 }
 
 /**
- * The box "In this chat": a small island beside the chat while there is room, the content of a popover under the
- * chat's button otherwise, and of a sheet on phones. One row per thing, at most ten rows; a click opens the thing as a
+ * "In this chat": a column docked beside the chat while there is room (or a drawer over it), and the content of a
+ * sheet on phones. One row per thing, at most ten rows, in sections between hairlines; a click opens the thing as a
  * tab. While the pointer or focus is inside, it keeps what the person reads and collects news behind "New · n".
  */
 export function AssistantChatContextBox(props: {
@@ -201,10 +201,12 @@ export function AssistantChatContextBox(props: {
   actions: ContextBoxActions;
   project?: AiProject | null;
   frozen: Accessor<boolean>;
-  variant: "island" | "popover" | "sheet";
+  variant: "column" | "sheet";
   headingId?: string;
   headingRef?: (element: HTMLHeadingElement) => void;
   handlers?: JSX.HTMLAttributes<HTMLElement>;
+  /** Closes the column or the drawer; the sheet closes itself. */
+  onClose?: () => void;
 }) {
   const copy = useCopy();
   const locale = useLocale();
@@ -274,122 +276,172 @@ export function AssistantChatContextBox(props: {
           tooltip={copy().boxOpenAsTab}
           onClick={() => props.actions.onOpenAll()}
         >
-          <i class="ti ti-layout-sidebar-right-expand" aria-hidden="true" />
+          <i class="ti ti-arrows-diagonal" aria-hidden="true" />
         </IconButton>
+        <Show when={props.onClose}>
+          {(close) => (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              class="assistant-context-box__close"
+              label={copy().boxClose}
+              tooltip={copy().boxClose}
+              onClick={() => close()()}
+            >
+              <i class="ti ti-x" aria-hidden="true" />
+            </IconButton>
+          )}
+        </Show>
       </header>
-      <Show
-        when={model()}
-        fallback={
-          <Show
-            when={props.state.error()}
-            fallback={
-              <div class="assistant-context-box__loading" role="status" aria-label={copy().loading}>
-                <Skeleton class="assistant-context-box__skeleton" />
-                <Skeleton class="assistant-context-box__skeleton" />
-                <Skeleton class="assistant-context-box__skeleton" />
+      {/* The sections stand between hairlines that the body draws (one line, one owner). */}
+      <div class="assistant-context-box__body k2b-divided">
+        <Show
+          when={model()}
+          fallback={
+            <Show
+              when={props.state.error()}
+              fallback={
+                <div class="assistant-context-box__loading" role="status" aria-label={copy().loading}>
+                  <Skeleton class="assistant-context-box__skeleton" />
+                  <Skeleton class="assistant-context-box__skeleton" />
+                  <Skeleton class="assistant-context-box__skeleton" />
+                </div>
+              }
+            >
+              <div class="assistant-context-box__failed" role="alert">
+                <p>
+                  {copy().boxFailed}
+                  <span class="assistant-context-box__meta">{copy().boxFailedDetail}</span>
+                </p>
+                <button type="button" class="assistant-context-box__retry" onClick={() => void props.state.refresh()}>
+                  {copy().retry}
+                </button>
               </div>
-            }
-          >
-            <div class="assistant-context-box__failed" role="alert">
-              <p>
-                {copy().boxFailed}
-                <span class="assistant-context-box__meta">{copy().boxFailedDetail}</span>
-              </p>
-              <button type="button" class="assistant-context-box__retry" onClick={() => void props.state.refresh()}>
-                {copy().retry}
-              </button>
-            </div>
-          </Show>
-        }
-      >
-        {(box) => (
-          <Show when={!box().empty} fallback={<p class="assistant-context-box__empty">{copy().boxEmpty}</p>}>
-            <BoxGroup group={box().results} actions={props.actions} downloadHref={downloadHref} onAll={() => props.actions.onOpenAll()} />
-            <For each={box().groups}>
-              {(group) => (
-                <BoxGroup group={group} actions={props.actions} downloadHref={downloadHref} onAll={() => props.actions.onOpenAll()} />
-              )}
-            </For>
-            <ul class="assistant-context-box__lines">
-              <Show when={box().sources}>
-                {(summary) => (
-                  <li class="assistant-context-box__row">
-                    <button
-                      type="button"
-                      class="assistant-context-box__main"
-                      title={`${copy().boxSources}: ${summary()}`}
-                      onClick={() => props.actions.onOpenSources()}
-                    >
-                      <i class="assistant-context-box__icon ti ti-world" aria-hidden="true" />
-                      <span class="assistant-context-box__title k2b-truncate-fade">
-                        <span class="assistant-context-box__key">{copy().boxSources}</span>
-                        {summary()}
-                      </span>
-                    </button>
-                  </li>
+            </Show>
+          }
+        >
+          {(box) => (
+            <Show when={!box().empty} fallback={<p class="assistant-context-box__empty">{copy().boxEmpty}</p>}>
+              <BoxGroup group={box().results} actions={props.actions} downloadHref={downloadHref} onAll={() => props.actions.onOpenAll()} />
+              <For each={box().groups}>
+                {(group) => (
+                  <BoxGroup group={group} actions={props.actions} downloadHref={downloadHref} onAll={() => props.actions.onOpenAll()} />
                 )}
-              </Show>
-              <Show when={box().context}>
-                {(summary) => (
-                  <li class="assistant-context-box__row">
-                    <button
-                      type="button"
-                      class="assistant-context-box__main"
-                      title={`${copy().boxContext}: ${summary()}`}
-                      onClick={() => props.actions.onOpenContext()}
-                    >
-                      <i class="assistant-context-box__icon ti ti-adjustments" aria-hidden="true" />
-                      <span class="assistant-context-box__title k2b-truncate-fade">
-                        <span class="assistant-context-box__key">{copy().boxContext}</span>
-                        {summary()}
-                      </span>
-                    </button>
-                  </li>
-                )}
-              </Show>
-            </ul>
-          </Show>
-        )}
-      </Show>
+              </For>
+              <ul class="assistant-context-box__lines">
+                <Show when={box().sources}>
+                  {(summary) => (
+                    <li class="assistant-context-box__row">
+                      <button
+                        type="button"
+                        class="assistant-context-box__main"
+                        title={`${copy().boxSources}: ${summary()}`}
+                        onClick={() => props.actions.onOpenSources()}
+                      >
+                        <i class="assistant-context-box__icon ti ti-world" aria-hidden="true" />
+                        <span class="assistant-context-box__title k2b-truncate-fade">
+                          <span class="assistant-context-box__key">{copy().boxSources}</span>
+                          {summary()}
+                        </span>
+                      </button>
+                    </li>
+                  )}
+                </Show>
+                <Show when={box().context}>
+                  {(summary) => (
+                    <li class="assistant-context-box__row">
+                      <button
+                        type="button"
+                        class="assistant-context-box__main"
+                        title={`${copy().boxContext}: ${summary()}`}
+                        onClick={() => props.actions.onOpenContext()}
+                      >
+                        <i class="assistant-context-box__icon ti ti-adjustments" aria-hidden="true" />
+                        <span class="assistant-context-box__title k2b-truncate-fade">
+                          <span class="assistant-context-box__key">{copy().boxContext}</span>
+                          {summary()}
+                        </span>
+                      </button>
+                    </li>
+                  )}
+                </Show>
+              </ul>
+            </Show>
+          )}
+        </Show>
+      </div>
     </aside>
   );
 }
 
 /**
- * The places of the box in the chat layout: the island in its column, and the button that stands in for it when there
- * is no room or tabs are open. The button opens the box as a popover below it, or as a sheet on phones. CSS decides
- * which shows, so the server's first frame is final. Rendered inside `.assistant-chat-layout`.
+ * The places of "In this chat" in the chat layout: the head row of the chat with its title and the button, and the
+ * column with its grip. CSS decides whether the column is docked beside the chat or waits behind the button, so the
+ * server's first frame is final; the person may close the docked column. Without room the button opens the same
+ * column as a drawer over the chat, and on phones a sheet. Rendered inside `.assistant-chat-layout`.
  */
 export function AssistantChatContextPlaces(props: {
   chatId: string | null;
   state: ChatSidebarState;
   actions: ContextBoxActions;
   project?: AiProject | null;
-  /** The chat's title, for the head row on phones, where the app's head names only the app. */
+  /** The chat's title, for the chat's head row. */
   title?: string | null;
   onSheet: () => void;
 }) {
   const copy = useCopy();
   const host = createChatContextHost({ onSheet: () => props.onSheet() });
-  createEffect(on(() => props.chatId, host.close, { defer: true }));
+  createEffect(on(() => props.chatId, host.closeDrawer, { defer: true }));
   const freeze = createReadingFreeze();
-  /** In the popover, every action leaves the box: it closes first. */
+  let column: HTMLDivElement | undefined;
+  let button: HTMLElement | undefined;
+  // The width the person gave the column with its grip, in rem; until then the stylesheet's.
+  const [width, setWidth] = createSignal<number | null>(null);
+  const REM = 16;
+  const shownWidth = () => width() ?? (column ? column.getBoundingClientRect().width / REM : 20);
+  // The chat keeps at least 400 px (Gustav flat); the column takes at most 30 rem.
+  const widest = () => {
+    const layout = column?.parentElement;
+    return layout ? Math.max(20, Math.min(30, (layout.getBoundingClientRect().width - 400) / REM)) : 30;
+  };
+  /** In the drawer every action that leaves the column closes it first. */
   const leave =
     <A extends unknown[]>(run: (...args: A) => void) =>
     (...args: A) => {
-      host.close();
+      host.closeDrawer();
       run(...args);
     };
-  const popoverActions: ContextBoxActions = {
+  const actions: ContextBoxActions = {
     onOpen: (target) => leave(props.actions.onOpen)(target),
     onJump: (target) => leave(props.actions.onJump)(target),
     onOpenAll: () => leave(props.actions.onOpenAll)(),
     onOpenSources: () => leave(props.actions.onOpenSources)(),
     onOpenContext: () => leave(props.actions.onOpenContext)(),
   };
+  // A drawer closes with Escape and with a press anywhere outside it and its button.
+  createEffect(() => {
+    if (!host.drawer()) return;
+    const outside = (event: PointerEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (target && (column?.contains(target) || button?.contains(target))) return;
+      host.closeDrawer();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      host.close();
+    };
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", escape);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("keydown", escape);
+    });
+  });
   return (
     <>
-      {/* The button stands in a head row above the timeline, never over it, so it covers no message. */}
+      {/* The chat's head row: its title and, while the column is not docked, the button. The timeline scrolls below it,
+          so no message passes under the button. */}
       <div class="assistant-context-head">
         <Show when={props.title}>
           {(title) => (
@@ -399,48 +451,58 @@ export function AssistantChatContextPlaces(props: {
           )}
         </Show>
         <Button
-          ref={host.buttonRef}
+          ref={(element: HTMLElement) => {
+            button = element;
+            host.buttonRef(element);
+          }}
           class="assistant-context-button"
           data-k2b-primary="ai"
           size="sm"
-          variant="ghost"
+          variant="secondary"
           aria-label={copy().title}
-          aria-haspopup="dialog"
-          aria-expanded={host.anchor() ? "true" : "false"}
+          aria-controls="assistant-chat-context-column"
+          aria-expanded={host.drawer() ? "true" : "false"}
           onClick={host.toggle}
         >
-          <i class="ti ti-layout-list" aria-hidden="true" />
+          <i class="ti ti-list-details" aria-hidden="true" />
           <span>{copy().title}</span>
         </Button>
       </div>
-      <div class="assistant-context-boxcol">
+      <div
+        ref={column}
+        id="assistant-chat-context-column"
+        class="assistant-context-boxcol"
+        data-closed={host.closed() ? "" : undefined}
+        data-drawer={host.drawer() ? "open" : undefined}
+        style={width() === null ? undefined : { "--assistant-context-column": `${width()}rem` }}
+      >
+        <ResizeSeparator
+          class="assistant-context-grip"
+          label={copy().boxResize}
+          orientation="vertical"
+          controls="assistant-chat-context-column"
+          grow="start"
+          unit={REM}
+          step={1}
+          largeStep={4}
+          min={20}
+          max={widest()}
+          value={shownWidth()}
+          onResize={(value) => setWidth(Math.min(value, widest()))}
+          onReset={() => setWidth(null)}
+        />
         <AssistantChatContextBox
-          variant="island"
+          variant="column"
           state={props.state}
-          actions={props.actions}
+          actions={actions}
           project={props.project}
           frozen={freeze.frozen}
           handlers={freeze.handlers}
           headingId="assistant-chat-context-title"
+          headingRef={host.headingRef}
+          onClose={host.close}
         />
       </div>
-      <AnchoredPopover
-        anchor={host.anchor()}
-        onClose={host.close}
-        label={copy().title}
-        width="19.5rem"
-        sheet={false}
-        class="assistant-context-popover"
-      >
-        {/* While open, it keeps what the person reads; news wait behind "New · n". */}
-        <AssistantChatContextBox
-          variant="popover"
-          state={props.state}
-          actions={popoverActions}
-          project={props.project}
-          frozen={() => true}
-        />
-      </AnchoredPopover>
     </>
   );
 }
