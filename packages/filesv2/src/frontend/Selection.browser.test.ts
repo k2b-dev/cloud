@@ -516,10 +516,11 @@ const many = (): Item[] =>
   }));
 
 /**
- * A phone without touch for the layout self-check: on touch every button grows an invisible 44 px hit area (`::after`),
- * which the check would count as content spilling out of its box. The hit area is no layout.
+ * A narrow desktop window for the layout self-check, without `isMobile` and touch: with them Chromium draws overlay
+ * scrollbars that take no room, also without `--hide-scrollbars`, and every button grows an invisible 44 px hit area
+ * (`::after`) that the check would count as content spilling out of its box.
  */
-const phoneLayout: BrowserContextOptions = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true };
+const phoneLayout: BrowserContextOptions = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 };
 
 describe("Files folder is flat (K1–K15)", () => {
   // Valentin 21.11.: no two borders on one edge, nothing overlaps or is cut, and a scrollbar moves no line.
@@ -543,6 +544,11 @@ describe("Files folder is flat (K1–K15)", () => {
         const { tab, errors } = await open(options, "", "en", items());
         try {
           if (shots) await tab.screenshot({ path: `${shots}/folder-${amount}-light-${width}.png` });
+          // With many files the list's classic scrollbar really takes room, so the check sees what a person sees.
+          if (amount === "many")
+            expect(
+              await tab.$eval(".filesv2-browser__collection .k2b-scroll-area", (area) => area.offsetWidth - area.clientWidth),
+            ).toBeGreaterThan(0);
           expect((await problems(tab)).problems).toEqual([]);
           const names = items().map((item) => item.name);
           await row(tab, names[1]!).click();
