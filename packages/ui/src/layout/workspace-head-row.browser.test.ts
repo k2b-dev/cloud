@@ -550,7 +550,8 @@ test("keyboard order follows views, chips, Reset, secondary, primary with unclip
         const element = document.activeElement as HTMLElement;
         const style = getComputedStyle(element);
         const box = element.getBoundingClientRect();
-        const inset = parseFloat(style.outlineOffset) + parseFloat(style.outlineWidth);
+        // Only a drawn outline reaches past the box; an inset edge stays inside it.
+        const inset = style.outlineStyle === "none" ? 0 : parseFloat(style.outlineOffset) + parseFloat(style.outlineWidth);
         const clips: string[] = [];
         for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
           const clip = getComputedStyle(ancestor);
@@ -652,12 +653,22 @@ for (const theme of ["light", "dark"])
           separators: read(".k2b-segmented-control__option", "::after"),
         };
       });
+      // K2: a line tab strip stands on one hairline, drawn inside; view tabs use the head's own line. No list has a fill or a border.
+      const hairline = await page.evaluate(() => {
+        const probe = document.createElement("i");
+        probe.style.color = "var(--k2b-border)";
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return `${color} 0px -1px 0px 0px inset`;
+      });
+      // The Tabs strip renders last, after the head's view strip.
+      expect(styles.lists.map((list) => list.shadow)).toEqual(styles.lists.map((_, index) => (index === styles.lists.length - 1 ? hairline : "none")));
       for (const list of styles.lists) {
         expect(list.background).toBe("rgba(0, 0, 0, 0)");
-        expect(list.shadow).toBe("none");
         expect(list.borders).toEqual(["0px", "0px", "0px", "0px"]);
       }
-      // Edges are drawn inside: an inset shadow, never a drop shadow or a baseline. The only outer layer is the flat
+      // Edges and the selected mark are drawn inside: inset shadows, never a drop shadow. The only outer layer is the flat
       // focus ring (spread only, no offset or blur), transparent at rest.
       const insetOnly = (shadow: string) =>
         shadow === "none" ||

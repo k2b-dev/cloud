@@ -412,7 +412,10 @@ for (const dir of ["ltr", "rtl"]) {
         expect(focused.id).toBe(id);
         // Focus turns the tab's own inset edge blue, inside the tab where the strip cannot clip it.
         expect(focused.edge).toContain("inset");
-        expect(focused.edge).not.toContain("rgba(0, 0, 0, 0)");
+        // The first layer is the selected view's 2 px mark (K6), transparent on another view; the edge layers follow.
+        const edge = focused.edge.split(/,(?![^(]*\))/).filter((layer) => !layer.includes("-2px"));
+        expect(edge.length).toBeGreaterThan(0);
+        for (const layer of edge) expect(layer).not.toContain("rgba(0, 0, 0, 0)");
         expectVisible(focused);
       }
     } finally {
@@ -491,7 +494,11 @@ test("resizing a narrow workspace host settles the current view again before pai
     await settled(page);
     const resized = await snapshot(page);
     expectVisible(resized);
-    expect(Math.abs(resized.scroll)).toBeGreaterThan(0);
+    // The narrow strip still overflows, so the current view's place is a settled choice, not the whole strip
+    // fitting. With 24 px between views (K6), view 5 now sits in the first screen, so no scroll is needed for it.
+    expect(
+      await page.locator(".k2b-view-tabs__list").evaluate((list) => list.scrollWidth > list.clientWidth + 0.5),
+    ).toBe(true);
   } finally {
     await page.close();
   }

@@ -2506,6 +2506,12 @@ html {
   min-height: var(--k2b-workspace-head-line);
 }
 
+/* The filters keep their sideways focus room but no room above or below, so
+   a wrapped filter row starts under the views' row. */
+.k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-filters {
+  margin-block: 0;
+}
+
 .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
   min-width: min(100%, 18rem);
   flex-wrap: wrap;
