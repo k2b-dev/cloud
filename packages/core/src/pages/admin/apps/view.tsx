@@ -214,9 +214,10 @@ function tableRows(t: AppsPageMessages, f: AppsFormat, apps: readonly AppEntry[]
       accent: app.accent,
       status: app.status,
       release: app.neverStarted ? null : app.release,
+      added: app.neverStarted && app.firstKnownAt ? f.date(app.firstKnownAt) : null,
       routes: app.neverStarted
         ? app.firstKnownAt
-          ? t.addedOn({ date: f.date(app.firstKnownAt) })
+          ? `${t.addedOn} ${f.date(app.firstKnownAt)}`
           : t.statusIdle
         : app.routes.length
           ? `${routes.shown}${routes.more ? ` +${routes.more}` : ""}`
@@ -1200,6 +1201,18 @@ const detailTitle = (t: AppsPageMessages, view: AppView, name: string) =>
     errors: t.titleErrors,
   })[view];
 
+/** The list's key figures in their fixed order; a status without apps has no figure. */
+function summaryFigures(t: AppsPageMessages, apps: readonly AppEntry[]): string[] {
+  const { ok, warn, error, idle } = countStatuses(apps);
+  return [
+    t.appCount({ count: apps.length }),
+    ok ? t.figureRunning({ count: ok }) : "",
+    warn ? t.figureDisturbed({ count: warn }) : "",
+    error ? t.figureNotRunning({ count: error }) : "",
+    idle ? t.figureNotStarted({ count: idle }) : "",
+  ].filter(Boolean);
+}
+
 // ── The page ─────────────────────────────────────────────────────────────────
 
 export function AppsView(props: { data: AppsViewData }) {
@@ -1218,7 +1231,16 @@ export function AppsView(props: { data: AppsViewData }) {
         heading="page"
         description={
           data.list.state === "ok" && data.list.apps.length > 0 ? (
-            <span data-apps-summary>{t.summary({ total: data.list.apps.length, ...countStatuses(data.list.apps) })}</span>
+            // One line of key figures (K15): a figure that does not fit wraps onto a hidden second line, so figures
+            // leave whole from the end and none is cut; the problems stay countable in the "Problems" filter.
+            <span data-apps-summary class="block h-[1lh] overflow-hidden whitespace-normal">
+              {summaryFigures(t, data.list.apps).map((part, index) => (
+                <>
+                  {index > 0 && " "}
+                  <span class="inline-block whitespace-nowrap">{index > 0 ? `· ${part}` : part}</span>
+                </>
+              ))}
+            </span>
           ) : undefined
         }
         href={appsHref({ list })}
