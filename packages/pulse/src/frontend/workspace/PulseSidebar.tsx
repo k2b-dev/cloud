@@ -45,9 +45,17 @@ export default function PulseSidebar(props: Props) {
                   <AppWorkspace.SidebarItem
                     icon={base.icon || "ti ti-activity-heartbeat"}
                     href={baseHref(base)}
-                    navigation="enhanced"
-                    onNavigate={() => {
-                      if (base.id !== props.baseId) props.switching(base.id);
+                    onClick={(event) => {
+                      // A plain click replaces this page; a new tab or window leaves it as it is.
+                      if (
+                        base.id !== props.baseId &&
+                        event.button === 0 &&
+                        !event.metaKey &&
+                        !event.ctrlKey &&
+                        !event.shiftKey &&
+                        !event.altKey
+                      )
+                        props.switching(base.id);
                     }}
                     active={base.id === props.baseId}
                     meta={(() => {

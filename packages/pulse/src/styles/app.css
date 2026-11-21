@@ -155,7 +155,8 @@
 .pulse-tab { display: flex; min-width: 0; flex-direction: column; padding-bottom: var(--k2b-space-6, 24px); }
 .pulse-head__title { display: flex; align-items: center; gap: var(--k2b-space-2, 8px); margin: 0; font-size: var(--k2b-font-size-body, 14px); font-weight: 600; }
 .pulse-head__title > i { color: var(--k2b-text-muted); font-size: 16px; }
-.pulse-head__assistant-icon { display: none; }
+.k2b-ui .pulse-head__assistant-icon { display: none; }
+.pulse-padded { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: var(--k2b-space-2, 8px); padding: var(--k2b-space-3, 12px) var(--k2b-gutter) var(--k2b-space-6, 24px); }
 .pulse-lead { display: inline-flex; align-items: center; gap: var(--k2b-space-2, 8px); }
 .pulse-lead__icon[data-tone="ok"] { color: var(--k2b-success-text); font-size: 18px; }
 .pulse-lead-skeleton { width: min(60%, 280px); height: 20px; }
@@ -174,9 +175,9 @@
 .pulse-source-cell__meta { overflow: hidden; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-meta, 12px); text-overflow: ellipsis; white-space: nowrap; }
 /* A lost store: the rows are the last known state, grey, without chips. */
 .pulse-sources--frozen .pulse-source-cell__name { color: var(--k2b-text-muted); }
-.pulse-attention__row--danger .k2b-task-row__icon { color: var(--k2b-danger-text); }
-.pulse-attention__row--warning .k2b-task-row__icon { color: var(--k2b-warning-text); }
-.pulse-way--ai .k2b-task-row__icon { color: var(--k2b-ai-solid); }
+.k2b-ui .pulse-attention__row--danger .k2b-task-row__icon { color: var(--k2b-danger-text); }
+.k2b-ui .pulse-attention__row--warning .k2b-task-row__icon { color: var(--k2b-warning-text); }
+.k2b-ui .pulse-way--ai .k2b-task-row__icon { color: var(--k2b-ai-solid); }
 .pulse-usage-name { display: inline-flex; align-items: center; gap: var(--k2b-space-2, 8px); font-weight: 600; }
 .pulse-usage-name > i { color: var(--k2b-text-muted); font-size: 16px; font-weight: 400; }
 .pulse-detail-text { margin: 0 0 var(--k2b-space-2, 8px); color: var(--k2b-text); font-size: var(--k2b-font-size-row, 13px); overflow-wrap: anywhere; }
@@ -200,10 +201,10 @@
 .pulse-kinds__none { margin: 0; padding: var(--k2b-space-1, 4px) var(--k2b-gutter); color: var(--k2b-text-muted); font-size: var(--k2b-font-size-row, 13px); }
 .pulse-kinds__list { margin: 0; padding: 0; list-style: none; }
 .pulse-kinds__item { display: flex; width: 100%; min-height: var(--k2b-h-row-dense, 32px); align-items: center; gap: var(--k2b-space-2, 8px); padding: 0 var(--k2b-gutter); border: 0; background: transparent; color: var(--k2b-text); font-size: var(--k2b-font-size-row, 13px); text-align: start; cursor: pointer; }
-.pulse-kinds__item:hover { background: var(--k2b-surface-hover, var(--k2b-surface-muted)); }
+.pulse-kinds__item:hover { background: var(--k2b-hover); }
 .pulse-kinds__item:focus-visible { outline: 2px solid var(--k2b-focus-ring); outline-offset: -2px; }
-.pulse-kinds__item[aria-current="true"] { background: var(--k2b-selected-surface, color-mix(in srgb, var(--k2b-action) 10%, transparent)); color: var(--k2b-selected-text, var(--k2b-action)); }
-.pulse-kinds__name { min-width: 0; flex: 1; overflow: hidden; font-family: var(--k2b-font-mono, ui-monospace, monospace); text-overflow: ellipsis; white-space: nowrap; }
+.pulse-kinds__item[aria-current="true"] { background: var(--k2b-row-selected); color: var(--k2b-text); }
+.pulse-kinds__name { min-width: 0; flex: 1; overflow: hidden; font-size: var(--k2b-font-size-row, 13px); font-family: var(--k2b-font-mono, ui-monospace, monospace); text-overflow: ellipsis; white-space: nowrap; }
 .pulse-kinds__trailing { flex: none; color: var(--k2b-text-muted); font-size: var(--k2b-font-size-meta, 12px); font-variant-numeric: tabular-nums; }
 .pulse-kind { min-width: 0; overflow-y: auto; padding-bottom: var(--k2b-space-6, 24px); scrollbar-gutter: stable; }
 .pulse-kind__phone-pick { display: none; }
@@ -214,9 +215,12 @@
 .pulse-kind__meta { color: var(--k2b-text-muted); font-size: var(--k2b-font-size-meta, 12px); font-weight: 400; }
 .pulse-skeleton-line { height: 20px; margin: var(--k2b-space-2, 8px) var(--k2b-gutter); }
 
+/* The button's label goes first when the head gets narrow (K15); a detail column narrows it too. */
+@container k2b-app-area (max-width: 1180px) {
+  .k2b-ui .pulse-head__assistant { display: none; }
+  .k2b-ui .pulse-head__assistant-icon { display: inline-flex; }
+}
 @container k2b-app-area (max-width: 767px) {
-  .pulse-head__assistant { display: none; }
-  .pulse-head__assistant-icon { display: inline-flex; }
   .pulse-phone-only { display: inline-flex !important; }
   .pulse-data { display: block; }
   .pulse-kinds { display: none; }

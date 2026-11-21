@@ -1,3 +1,4 @@
+import { dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { DataTable, type DataTableColumn, Dropdown, Placeholder, Skeleton } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
@@ -46,6 +47,8 @@ export default function DataTab(props: {
     load: ({ baseId, kind }, { abortSignal }) =>
       jsonFetch<BaseSchemaRead>(`/api/pulse/bases/${baseId}/schema?kind=${encodeURIComponent(kind)}`, { signal: abortSignal }),
   });
+  /** Entries are seconds apart: the sample shows the time with seconds, in the base's zone. */
+  const sampleTime = (value: string) => dates.instantToZonedInput(value, props.dateContext.timeZone ?? "UTC").slice(11, 19);
   const choose = (name: string) => {
     setPicked(name);
     // The open kind lives in the URL, so reload and back return to it; the list keeps its place.
@@ -112,7 +115,7 @@ export default function DataTab(props: {
         samples:
           samples?.map((sample) => ({
             id: sample.id,
-            cells: [absoluteTime(sample.ts, props.dateContext), ...shown.map((key) => text(sample.attributes?.[key]))],
+            cells: [sampleTime(sample.ts), ...shown.map((key) => text(sample.attributes?.[key]))],
           })) ?? null,
       };
     }
@@ -135,7 +138,7 @@ export default function DataTab(props: {
         samples:
           samples?.map((sample, index) => ({
             id: `${sample.ts}-${index}`,
-            cells: [absoluteTime(sample.ts, props.dateContext), text(sample.value), ...shown.map((key) => text(sample.dimensions?.[key]))],
+            cells: [sampleTime(sample.ts), text(sample.value), ...shown.map((key) => text(sample.dimensions?.[key]))],
           })) ?? null,
       };
     }

@@ -126,7 +126,6 @@ describe("Pulse base overview", () => {
           return {
             host: rect(".layout-content-main", true),
             workspace: rect(".k2b-app-workspace"),
-            header: rect(".pulse-workspace__mobile-header"),
             numbers: rect(".pulse-overview__numbers"),
             documentHeight: document.documentElement.scrollHeight,
             documentWidth: document.documentElement.scrollWidth,
@@ -147,7 +146,8 @@ describe("Pulse base overview", () => {
         await tab.evaluate(() => document.fonts.ready);
         await tab.locator(".pulse-overview__headline").waitFor();
         const before = await geometry();
-        expect(before.workspace.top).toBeCloseTo(before.host.top + before.header.height, 0);
+        // The phone's base switcher is the host's title; the workspace starts at the top of the app area.
+        expect(before.workspace.top).toBeCloseTo(before.host.top, 0);
         expect(before.workspace.bottom).toBeCloseTo(before.host.bottom, 0);
         expect(before.host.bottom).toBeLessThanOrEqual(view.height);
         expect(before.documentHeight).toBeLessThanOrEqual(view.height + 1);
@@ -308,7 +308,7 @@ describe("Pulse base overview", () => {
       await tab.reload();
       await assertDraft();
       await tab.goBack();
-      await tab.waitForURL(`${origin}/app/pulse/Lad001`);
+      await tab.waitForURL(`${origin}/app/pulse/Lad001/overview`);
       await tab.getByRole("heading", { name: "1 Sache braucht Aufmerksamkeit" }).waitFor();
       expect(await tab.getByRole("textbox", { name: "SQL", exact: true }).count()).toBe(0);
     } finally {
@@ -331,7 +331,7 @@ describe("Pulse base overview", () => {
       );
       try {
         if (sourcePicker) {
-          await tab.getByRole("button", { name: "Quelle", exact: true }).click();
+          await tab.getByRole("button", { name: "Quelle anlegen", exact: true }).click();
           const dialog = tab.locator("dialog[open]");
           await dialog.getByRole("heading", { name: "Neue Quelle in Laden" }).waitFor();
           await dialog.getByRole("button", { name: /Mit KI fragen/ }).click();
@@ -387,7 +387,7 @@ describe("Pulse base overview", () => {
     });
     tab.setDefaultTimeout(5_000);
     try {
-      await tab.getByRole("button", { name: "Quelle", exact: true }).click();
+      await tab.getByRole("button", { name: "Quelle anlegen", exact: true }).click();
       const dialog = tab.locator("dialog[open]");
       expect(await dialog.getByRole("button", { name: /Mit KI fragen/ }).isVisible()).toBe(true);
       await dialog.getByRole("button", { name: /Senden/ }).click();
@@ -520,7 +520,8 @@ describe("Pulse base overview", () => {
         answer = { status: 403, json: { ...baseOverviewFixture } };
         await tab.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
         await tab.clock.runFor(1);
-        await tab.getByRole("link", { name: "Zu meinen Bases", exact: true }).waitFor();
+        // Lost access replaces the base with the head "Kein Zugriff" and who gives access.
+        await tab.getByRole("heading", { name: "Kein Zugriff", exact: true }).waitFor();
         expect(await tab.locator(".pulse-overview__number").count()).toBe(0);
         expect(await tab.getByText("Antwortzeit", { exact: true }).count()).toBe(0);
       } finally {
@@ -794,7 +795,8 @@ describe("Pulse base page after the cut", () => {
       },
     );
     try {
-      await tab.getByRole("button", { name: "Einstellungen" }).click();
+      await tab.getByRole("button", { name: "Mehr zu dieser Basis" }).click();
+      await tab.getByRole("menuitem", { name: "Einstellungen der Basis" }).click();
       const settings = tab.locator("dialog[open]");
       const retry = settings.getByRole("button", { name: "Erneut versuchen" });
       await settings.getByText("Allgemein").first().waitFor();
@@ -878,7 +880,8 @@ test("Browser Back asks before discarding base settings and Cancel preserves the
   const confirmation = tab.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
   const confirmDiscard = confirmation.getByRole("button", { name: "Verwerfen", exact: true });
   try {
-    await tab.getByRole("button", { name: "Einstellungen", exact: true }).click();
+    await tab.getByRole("button", { name: "Mehr zu dieser Basis" }).click();
+    await tab.getByRole("menuitem", { name: "Einstellungen der Basis" }).click();
     const name = tab.getByRole("textbox", { name: "Name", exact: true });
     await name.fill("Laden Entwurf");
     await tab.evaluate(() => window.history.back());

@@ -81,8 +81,8 @@ describe("Pulse flat base page", () => {
       for (const props of [flatStates.error, many(flatStates.error)]) {
         const tab = await open(width, props);
         await tab.getByText("Was nicht ankommt").first().waitFor();
-        expect(await problems(tab)).toEqual([]);
         if (props === flatStates.error) await shoot(tab, "02-quelle-fehler", width);
+        expect(await problems(tab)).toEqual([]);
         await tab.close();
       }
     }, 60_000);
@@ -92,8 +92,8 @@ describe("Pulse flat base page", () => {
         const tab = await open(width, flatStates.data, { many: rows });
         await tab.getByText("Stichprobe", { exact: false }).first().waitFor();
         await tab.getByText("/sammlung/vasen").first().waitFor();
-        expect(await problems(tab)).toEqual([]);
         if (!rows) await shoot(tab, "06-daten", width);
+        expect(await problems(tab)).toEqual([]);
         await tab.close();
       }
     }, 60_000);
@@ -112,8 +112,8 @@ describe("Pulse flat base page", () => {
       for (const [name, props, text] of states) {
         const tab = await open(width, props);
         await tab.getByText(text, { exact: false }).first().waitFor();
-        expect({ name, problems: await problems(tab) }).toEqual({ name, problems: [] });
         await shoot(tab, name, width);
+        expect({ name, problems: await problems(tab) }).toEqual({ name, problems: [] });
         await tab.close();
       }
     }, 120_000);
@@ -158,8 +158,8 @@ describe("Pulse flat base page", () => {
       const tab = await open(width, flatStates.healthy, { hold: true });
       await tab.evaluate(() => (document.querySelector("a[href='/app/pulse/Web001']") as HTMLAnchorElement | null)?.click());
       await tab.locator("[aria-busy='true'], .k2b-skeleton").first().waitFor();
-      expect(await problems(tab)).toEqual([]);
       await shoot(tab, "05-laedt", width);
+      expect(await problems(tab)).toEqual([]);
       await tab.close();
     }
   }, 60_000);

@@ -442,7 +442,7 @@ test("the last of 32 parameters keeps its visible external diagnosis alongside s
     });
     await saveDiagnosis.waitFor();
     await tab.route(`${origin}/api/ai/conversations`, (route) => route.fulfill({ status: 500, json: { code: "REQUEST_FAILED" } }));
-    await tab.getByRole("button", { name: "Mit KI fragen", exact: true }).click();
+    await tab.getByRole("button", { name: "Mit Gustav auswerten", exact: true }).click();
     const assistantDiagnosis = result.getByRole("heading", {
       name: "Der Assistant ließ sich nicht öffnen",
       exact: true,

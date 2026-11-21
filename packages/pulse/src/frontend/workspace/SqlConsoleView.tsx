@@ -354,7 +354,9 @@ export default function SqlConsoleView(props: {
                 >
                   <i class="ti ti-player-play" aria-hidden="true" />
                   {t().sqlRun}
-                  <Kbd class="pulse-run-kbd" keys="mod+enter" />
+                  <span class="pulse-run-kbd" aria-hidden="true">
+                    <Kbd keys="mod+enter" />
+                  </span>
                 </span>
                 <span
                   class="col-start-1 row-start-1 inline-flex items-center justify-center gap-[7px]"

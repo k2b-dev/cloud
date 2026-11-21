@@ -31,7 +31,15 @@ export type SourcesTabProps = {
 
 const now = (context: PulseDateContext) => context.now ?? new Date();
 /** "vor 22 s": the age of a time against the page's clock. */
-export const ago = (value: string, context: PulseDateContext) => dates.formatTimeSpan(value, { ...context, base: now(context) });
+export const ago = (value: string, context: PulseDateContext) => {
+  const seconds = Math.max(0, Math.round((new Date(now(context)).getTime() - Date.parse(value)) / 1000));
+  // Arrivals are seconds or minutes old; "this minute" would hide that a source sends every 10 s.
+  if (seconds < 3600) {
+    const format = new Intl.RelativeTimeFormat(context.locale ?? "en", { style: "narrow", numeric: "always" });
+    return seconds < 60 ? format.format(-seconds, "second") : format.format(-Math.floor(seconds / 60), "minute");
+  }
+  return dates.formatTimeSpan(value, { ...context, base: now(context) });
+};
 /** "14:05" today, "19. Nov. 14:05" before: times that must not age while the page waits. */
 export const absoluteTime = (value: string, context: PulseDateContext) => {
   const sameDay = compactDay(value, context) === compactDay(new Date(now(context)).toISOString(), context);

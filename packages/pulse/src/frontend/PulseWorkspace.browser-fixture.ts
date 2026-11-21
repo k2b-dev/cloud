@@ -219,6 +219,12 @@ export const baseOverviewFixture: Overview = {
   },
 };
 
+// Sources renders the alerts and the store state from the server's overview read, as the page does.
+workspaceFixture.initialOverview = {
+  data: { ...baseOverviewFixture, attention: { total: 0, nextOffset: null, items: [] } },
+  error: null,
+};
+
 export const overviewWorkspaceFixture: PulseWorkspaceProps = {
   ...workspaceFixture,
   initialRouteState: { view: "overview", sourceId: "" },

@@ -42,6 +42,14 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   onCleanup(() => {
     disposed = true;
   });
+  // Back from the next base restores this page from the cache: it shows the base again, not the switch.
+  onMount(() => {
+    const restored = (event: PageTransitionEvent) => {
+      if (event.persisted) setSwitchingTo(null);
+    };
+    window.addEventListener("pageshow", restored);
+    onCleanup(() => window.removeEventListener("pageshow", restored));
+  });
   const selectedSourceId = () => props.initialRouteState.sourceId;
   const selectedAlertId = () => (props.initialRouteState.view === "sources" ? (props.initialRouteState.alertId ?? "") : "");
   const [loading, setLoading] = createSignal(false);
@@ -211,8 +219,6 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const canManage = () => props.initialPermissions?.admin ?? false;
   const dateContext = () => ({ ...props.initialDateConfig, now: props.initialNow });
   const sourceProps: SourcesViewProps = {
-    search: () => "",
-    setSearch: () => {},
     selectedBaseId,
     loading: () => loading() || writeBlocked(),
     sources,
@@ -325,11 +331,13 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
           <AppWorkspace.Main class="pulse-main">
             <Show when={!denied() && !switchingTo() && activeView() !== "overview" && readError()}>
               {(error) => (
-                <NoticeCard tone="danger" title={t().pulseDataRefreshFailed} detail={error().message}>
-                  <Button variant="secondary" onClick={() => void refresh().catch(() => {})}>
-                    {t().retry}
-                  </Button>
-                </NoticeCard>
+                <div class="pulse-padded pulse-padded--notice">
+                  <NoticeCard tone="danger" title={t().pulseDataRefreshFailed} detail={error().message}>
+                    <Button variant="secondary" onClick={() => void refresh().catch(() => {})}>
+                      {t().retry}
+                    </Button>
+                  </NoticeCard>
+                </div>
               )}
             </Show>
             <Show when={!denied()} fallback={<NoAccessView managers={props.initialAccess?.managers ?? []} />}>
@@ -385,7 +393,8 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   };
   const mainView = (sqlContent?: JSX.Element): JSX.Element => {
     const view = activeView();
-    if (view === "sql") return sqlContent;
+    // The console and the views behind "…" keep their own layout: they stand on the text edge.
+    if (view === "sql") return <div class="pulse-padded">{sqlContent}</div>;
     if (view === "data")
       return (
         <DataTab
@@ -409,26 +418,28 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       );
     if (view === "overview")
       return (
-        <OverviewView
-          data={overview.data()}
-          loading={overview.loading()}
-          error={overview.error()}
-          canWrite={canWrite() && !writeBlocked()}
-          retry={overview.retry}
-          addSource={() => void actions.addSource()}
-          openSource={(sourceId) => navigate({ view: "sources", sourceId })}
-          openAlert={(alertId) => navigatePulseWorkspace({ baseId: props.initialBaseId, state: { view: "sources", alertId } })}
-          askAssistant={() => void askAssistant()}
-          assistantPending={assistantPending()}
-          assistantError={assistantError()}
-          paging={overview.paging()}
-          loadAttention={overview.loadAttention}
-          loadActivity={overview.loadActivity}
-        />
+        <div class="pulse-padded">
+          <OverviewView
+            data={overview.data()}
+            loading={overview.loading()}
+            error={overview.error()}
+            canWrite={canWrite() && !writeBlocked()}
+            retry={overview.retry}
+            addSource={() => void actions.addSource()}
+            openSource={(sourceId) => navigate({ view: "sources", sourceId })}
+            openAlert={(alertId) => navigatePulseWorkspace({ baseId: props.initialBaseId, state: { view: "sql", alertId } })}
+            askAssistant={() => void askAssistant()}
+            assistantPending={assistantPending()}
+            assistantError={assistantError()}
+            paging={overview.paging()}
+            loadAttention={overview.loadAttention}
+            loadActivity={overview.loadActivity}
+          />
+        </div>
       );
     if (view === "dashboards")
       return (
-        <>
+        <div class="pulse-padded">
           <Show when={overview.error() && !overview.accessLost()}>
             <NoticeCard role="alert" tone="danger" title={t().pulseDataRefreshFailed} detail={t().overviewLoadFailedHint}>
               <Button
@@ -453,7 +464,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
             overview={overview.data()}
             canWrite={canWrite()}
           />
-        </>
+        </div>
       );
     return sourcesTab();
   };
