@@ -9,8 +9,8 @@ The library never interprets the reference or moves application data itself.
 
 ```tsx
 import {
-  DragSource, DropTarget, useKeyboardDrag, activeDrag,
-  type DragPayload, type DragSourceProps, type DropTargetProps,
+  DragSource, DropTarget, useKeyboardDrag, activeDrag, dragStatus,
+  type DragPayload, type DragSourceProps, type DragStatus, type DropTargetProps,
 } from "@k2b/ui";
 ```
 
@@ -47,9 +47,12 @@ Elsewhere in a source, native link and image dragging is prevented, and on
 touch-only screens its text is not selectable.
 The drag captures the mouse, so a release over an iframe such as a PDF
 preview still ends it. The source keeps its box and dims; a fixed preview
-with the icon, the label, and the count follows the pointer.
+with the icon, the label, and the count follows the pointer. The preview
+floats with the small overlay shadow and hangs below the pointer, so it never
+covers the target under it. [SortableList](./sortable-list) shows a copy of
+the row instead.
 
-**Touch and pen.** Hold still for `HOLD_MS = 500` ms, then move at least 10 px
+**Touch and pen.** Hold still for `HOLD_MS = 300` ms, then move at least 10 px
 from the original point. Moving 10 px before the hold abandons the press and
 lets the browser scroll. Once held, the page stays still under the finger,
 also for a source without a `GestureMenu`. A platform long press that arrives
@@ -63,7 +66,9 @@ accepting ancestor can take a drop through an incompatible nested target.
 If none accepts, the innermost target shows `data-drop="refused"` and its
 refusal is announced. Other accepting targets show `data-drop="ok"`; the
 current destination shows `data-drop="over"`. Release checks the destination
-again at the final pointer position.
+again at the final pointer position. Only `over` changes the look: a blue
+tint with blue text. `ok` and `refused` keep the calm look; the
+announcement and the status line say where the item can go.
 
 **Autoscroll.** Rest within `AUTOSCROLL_EDGE = 32` px of a scroll container's
 edge to keep scrolling. The first ancestor that can scroll in that direction
@@ -111,6 +116,15 @@ returns to the origin, or to its nearest focusable ancestor such as the
 `GestureMenu` group, if it is still connected. When a held finger turns a
 `GestureMenu` into a drag, focus returns from the closed menu to its group.
 Starting another keyboard pickup cancels the previous drag first.
+
+## Status line
+
+`dragStatus()` is reactive and defined while a drag or a keyboard pickup
+runs. Its `lead` names what moves ("“Review draft” is being moved", or "3
+items are being moved"); its `detail` says where it goes and how to cancel
+("to “Today” · Esc cancels"). A host's status line shows it in place of its
+key figures, in a box of fixed height, so nothing moves. The same words reach
+screen readers through the live region.
 
 ## Hosts and far-away targets
 
@@ -182,6 +196,8 @@ export function DragSource<Type extends string = string>(props: DragSourceProps<
 export function DropTarget<Type extends string = string>(props: DropTargetProps<Type>): JSX.Element;
 export function useKeyboardDrag(): (payload: DragPayload, origin: HTMLElement) => void;
 export function activeDrag(): DragPayload | undefined;
+export type DragStatus = { lead: string; detail: string };
+export function dragStatus(): DragStatus | undefined;
 ```
 
 `type` selects accepting targets; `value` stays opaque. `label` names the item

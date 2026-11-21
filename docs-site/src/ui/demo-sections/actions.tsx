@@ -9,6 +9,7 @@ import {
   CopyButton,
   Disclosure,
   DragSource,
+  dragStatus,
   Dropdown,
   DropTarget,
   FilterChip,
@@ -26,13 +27,16 @@ import {
   SelectionToolbar,
   SlashCommands,
   SortableList,
+  type SortableMove,
   SplitButton,
   SpotlightButton,
   type SpotlightSearchResolver,
   Tabs,
   Toolbar,
   ToolbarDock,
+  toast,
   useKeyboardDrag,
+  useSortableMoveMenu,
 } from "@k2b/ui";
 import { createSignal, For } from "solid-js";
 import { DemoCard } from "../DemoCard";
@@ -775,6 +779,132 @@ const SortableListDemo = () => {
   );
 };
 
+const sortableBoardExample = `import { SortableList, toast, useSortableMoveMenu, type SortableMove } from "@k2b/ui";
+
+// Columns of one group exchange cards. The host owns every column and saves each move.
+const [board, setBoard] = createSignal<Record<string, string[]>>({ open: [...], doing: [...], done: [...] });
+const move = (key: string, index: number, move: SortableMove) => {
+  setBoard((all) => {
+    const next = { ...all, [move.from]: all[move.from].filter((other) => other !== key) };
+    const to = next[move.to].filter((other) => other !== key);
+    to.splice(index, 0, key);
+    return { ...next, [move.to]: to };
+  });
+  toast("Moved", { action: { label: "Undo", variant: "ghost", onClick: move.undo } });
+};
+const moveMenu = useSortableMoveMenu("board");
+
+<section data-sortable-column>
+  <header data-sortable-column-head>In progress</header>
+  <SortableList
+    group="board" listKey="doing" listLabel="In progress" dragBy="row"
+    items={board().doing} itemKey={(id) => id} itemLabel={title} onMove={move}
+    // A sorted column: the line shows where the card lands.
+    placement={column === "done" ? byTitle : undefined}
+  >
+    {(id, handle) => <Card id={id()} grip={handle} menu={[moveMenu(id())]} />}
+  </SortableList>
+</section>
+`;
+
+type BoardCard = { title: string; due: string; tag: string; priority: "high" | "normal" | "low" };
+const boardCards: Record<string, BoardCard> = {
+  c1: { title: "Impressum und Datenschutz prüfen lassen", due: "Fri, 21 Nov", tag: "Legal", priority: "high" },
+  c2: { title: "Startseite: Texte gegenlesen", due: "Mon, 23 Nov", tag: "Content", priority: "high" },
+  c3: { title: "Bilder für die Teamseite auswählen", due: "Wed, 25 Nov", tag: "Content", priority: "normal" },
+  c4: { title: "Kontaktformular testen", due: "Fri, 27 Nov", tag: "Tech", priority: "normal" },
+  c5: { title: "Navigation und Seitenstruktur festlegen", due: "Tue, 24 Nov", tag: "Structure", priority: "high" },
+  c6: { title: "Produktseiten umziehen", due: "Mon, 30 Nov", tag: "Content", priority: "high" },
+  c7: { title: "Farben und Schriften übernehmen", due: "Thu, 26 Nov", tag: "Design", priority: "normal" },
+  c8: { title: "Hosting-Angebote vergleichen", due: "Fri, 13 Nov", tag: "Tech", priority: "normal" },
+  c9: { title: "Zielgruppen festhalten", due: "Tue, 10 Nov", tag: "Structure", priority: "low" },
+};
+const boardColumns = [
+  { key: "open", label: "Open", dot: "var(--k2b-text-muted)" },
+  { key: "doing", label: "In progress", dot: "var(--k2b-action-solid)" },
+  { key: "done", label: "Done · by title", dot: "var(--k2b-success-text)" },
+] as const;
+const priorityIcon = { high: "ti ti-arrow-up", normal: "ti ti-minus", low: "ti ti-arrow-down" };
+
+const SortableBoardDemo = () => {
+  const [board, setBoard] = createSignal<Record<string, string[]>>({ open: ["c1", "c2", "c3", "c4"], doing: ["c5", "c6", "c7"], done: ["c8", "c9"] });
+  const moveMenu = useSortableMoveMenu("ui-demo-board");
+  const byTitle = (key: string) =>
+    board().done.filter((other) => other !== key && boardCards[other]!.title.localeCompare(boardCards[key]!.title) < 0).length;
+  const move = (key: string, index: number, move: SortableMove) => {
+    setBoard((all) => {
+      const next = { ...all, [move.from]: all[move.from]!.filter((other) => other !== key) };
+      const to = next[move.to]!.filter((other) => other !== key);
+      to.splice(index, 0, key);
+      return { ...next, [move.to]: to };
+    });
+    if (move.from !== move.to) toast(`Moved to ${boardColumns.find((column) => column.key === move.to)?.label}`, { action: { label: "Undo", variant: "ghost", onClick: move.undo } });
+  };
+  return (
+    <DemoCard
+      id="sortable-board"
+      chip={[{ kind: "component", name: "SortableList", from: "@k2b/ui" }]}
+      description="Columns of one group exchange cards. Drag a card; it stays dimmed in place while the line and the tinted column head show where it lands. Space on a grip lifts, arrows choose, Enter drops. On a phone the card menu moves it."
+      code={sortableBoardExample}
+    >
+      <p class="ui-sortable-board__status" aria-hidden="true">
+        {dragStatus() ? (
+          <>
+            <b>{dragStatus()!.lead}</b> {dragStatus()!.detail}
+          </>
+        ) : (
+          `${Object.values(board()).flat().length} cards`
+        )}
+      </p>
+      <div class="ui-sortable-board">
+        <For each={boardColumns}>
+          {(column) => (
+            <section class="ui-sortable-board__column" data-sortable-column>
+              <header class="ui-sortable-board__head" data-sortable-column-head>
+                <span class="ui-sortable-board__dot" style={{ background: column.dot }} aria-hidden="true" />
+                <b>{column.label}</b>
+                <span class="ui-sortable-board__count">{board()[column.key]!.length}</span>
+              </header>
+              <SortableList
+                group="ui-demo-board"
+                listKey={column.key}
+                label={column.label}
+                listLabel={column.label}
+                dragBy="row"
+                items={board()[column.key]!}
+                itemKey={(key) => key}
+                itemLabel={(key) => boardCards[key]!.title}
+                placement={column.key === "done" ? byTitle : undefined}
+                onMove={move}
+              >
+                {(key, handle) => {
+                  const card = () => boardCards[key()]!;
+                  const menu = () => [moveMenu(key())].filter((section) => section !== undefined);
+                  return (
+                    <div class="ui-sortable-board__card">
+                      {handle}
+                      <i class={`${priorityIcon[card().priority]} ui-sortable-board__priority`} data-priority={card().priority} aria-hidden="true" />
+                      <span class="ui-sortable-board__title">{card().title}</span>
+                      <Dropdown.Root items={menu()} label={`${card().title}: actions`}>
+                        <Dropdown.Trigger iconOnly label={`${card().title}: more actions`}>
+                          <i class="ti ti-dots" aria-hidden="true" />
+                        </Dropdown.Trigger>
+                      </Dropdown.Root>
+                      <span class="ui-sortable-board__meta">
+                        {card().due} · <span class="ui-sortable-board__tag">{card().tag}</span>
+                      </span>
+                    </div>
+                  );
+                }}
+              </SortableList>
+            </section>
+          )}
+        </For>
+      </div>
+    </DemoCard>
+  );
+};
+
 const gestureMessages = [
   { id: "nora", author: "Nora Weber", text: "Can you check the draft before noon?", time: "10:42" },
   { id: "tobias", author: "Tobias Brandt", text: "Sure, I will look at it right after the call.", time: "10:44" },
@@ -1480,6 +1610,7 @@ const demos: DemoSection = {
   "sortable-list": () => (
     <DemoGrid columns="one">
       <SortableListDemo />
+      <SortableBoardDemo />
     </DemoGrid>
   ),
   gestures: () => (

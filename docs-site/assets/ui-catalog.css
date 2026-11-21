@@ -1841,6 +1841,113 @@
   font-weight: 500;
 }
 
+/* Board demo (K7): columns are narrow tables, cards are rows between
+   hairlines. The status line keeps one height, so nothing moves while a
+   card is dragged. */
+.ui-sortable-board__status {
+  height: 1.25rem;
+  margin: 0 0 0.75rem;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-sortable-board__status b {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+
+.ui-sortable-board {
+  --k2b-sortable-gap: 0px;
+  --k2b-sortable-line-inset: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(13rem, 1fr));
+  overflow-x: auto;
+  border-top: 1px solid var(--k2b-border);
+}
+
+.ui-sortable-board__column {
+  min-width: 0;
+  min-height: 16rem;
+  border-inline-end: 1px solid var(--k2b-border);
+}
+
+.ui-sortable-board__column:last-child {
+  border-inline-end: 0;
+}
+
+.ui-sortable-board__head {
+  display: flex;
+  height: 2.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+  border-bottom: 1px solid var(--k2b-border);
+  font-size: 0.75rem;
+}
+
+.ui-sortable-board__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
+
+.ui-sortable-board__count {
+  color: var(--k2b-text-muted);
+}
+
+.ui-sortable-board__card {
+  display: grid;
+  grid-template-columns: auto 1rem minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.25rem;
+  min-height: 3.5rem;
+  padding: 0.25rem 0.25rem 0.5rem 0;
+  border-bottom: 1px solid var(--k2b-border);
+  background: var(--k2b-surface);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  box-sizing: border-box;
+}
+
+.ui-sortable-board__card .k2b-sortable-list__handle {
+  width: 1.5rem;
+  color: var(--k2b-text-muted);
+}
+
+.ui-sortable-board__priority[data-priority="high"] {
+  color: var(--k2b-danger-text);
+}
+
+.ui-sortable-board__priority[data-priority="normal"] {
+  color: var(--k2b-warning-text);
+}
+
+.ui-sortable-board__priority[data-priority="low"] {
+  color: var(--k2b-action);
+}
+
+.ui-sortable-board__title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-weight: 500;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ui-sortable-board__meta {
+  grid-column: 3 / -1;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.ui-sortable-board__tag {
+  color: var(--k2b-text-secondary);
+}
+
 .ui-dnd-demo__targets {
   display: flex;
   flex-wrap: wrap;
