@@ -916,7 +916,7 @@ const SortableListDemo = () => {
     <DemoCard
       id="sortable-list"
       chip={[{ kind: "component", name: "SortableList", from: "@k2b/ui" }]}
-      description="Drag a row by its grip, or focus the grip and use the arrow keys, Home, or End. The line shows where the row lands."
+      description="Drag a row by its grip, or focus the grip, press Space, choose the place with the arrow keys, and press Enter. The line shows where the row lands."
       code={sortableListExample}
     >
       <SortableList

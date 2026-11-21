@@ -115,7 +115,8 @@ const move = (id: string, index: number, move: SortableMove) => {
   below the pointer; the preview, a copy of the row with a small shadow and
   without its controls, hangs 16 px below the pointer, and below the line
   when a sorted list shows it further down, so it never covers the line. It
-  stays 8 px inside the viewport.
+  stays 8 px inside the viewport; near the lower edge it flips above the
+  pointer and the line.
 - **Cancel.** Escape, or letting go outside every list of the group, puts the
   row back. There is no separate cancel area.
 - **Keyboard.** On a focused grip, Space or Enter lifts the row. While it is
@@ -125,9 +126,9 @@ const move = (id: string, index: number, move: SortableMove) => {
   until the drop; the line and the tinted head show the place, and focus
   stays on the grip, also after the drop into another column when the host
   renders the move at once. A lifted row that leaves the list, for example
-  because someone else deleted it, ends the lift and says so. Without
-  lifting, ArrowUp and ArrowDown move the row by one at once, Home and End to
-  the start or end. At the edges a key does nothing.
+  because someone else deleted it, ends the lift and says so. Without a
+  lift, the arrow keys, Home, and End belong to the page, such as moving to
+  the next card; they never move the row.
 - **Loading.** The keyboard lift loads on the first focus of a grip. Keys
   pressed while it loads wait for it; Escape or Tab call the lift off. If it
   cannot load, the live region says so.

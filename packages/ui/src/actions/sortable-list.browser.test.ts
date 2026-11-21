@@ -391,32 +391,56 @@ describe(`sortable list in ${browserName}`, () => {
     }
   });
 
-  test("the grip's arrow keys alone move one step, keep focus, and say where it is", async () => {
+  test("without a lift the arrow keys belong to the page; Space, an arrow, and Enter move the row and keep focus", async () => {
     const { page, context } = await open();
     try {
       await page.locator('[data-sortable-handle="delta"]').focus();
-      await page.keyboard.press("ArrowUp");
-      expect(await order(page)).toEqual(["alpha", "beta", "delta", "gamma"]);
-      await page.keyboard.press("Home");
-      expect(await order(page)).toEqual(["delta", "alpha", "beta", "gamma"]);
-      // The first row cannot move further up; nothing happens.
-      await page.keyboard.press("ArrowUp");
-      expect(await order(page)).toEqual(["delta", "alpha", "beta", "gamma"]);
-      expect(await page.evaluate(() => document.activeElement?.getAttribute("data-sortable-handle"))).toBe("delta");
-      await announced(page, "Delta, position 1 of 4.");
-      await page.keyboard.press("End");
+      // The page sees the arrow keys untouched, such as for moving to the next card.
+      await page.evaluate(() => {
+        window.addEventListener("keydown", (event) => {
+          (window as unknown as { seen: string[] }).seen ??= [];
+          (window as unknown as { seen: string[] }).seen.push(`${event.key}:${event.defaultPrevented}`);
+        });
+      });
+      for (const key of ["ArrowUp", "Home", "End"]) await page.keyboard.press(key);
       expect(await order(page)).toEqual(["alpha", "beta", "gamma", "delta"]);
+      expect(await page.evaluate(() => (window as unknown as { seen: string[] }).seen)).toEqual([
+        "ArrowUp:false",
+        "Home:false",
+        "End:false",
+      ]);
+      await page.keyboard.press("Space");
+      await page.keyboard.press("ArrowUp");
+      expect(await order(page)).toEqual(["alpha", "beta", "gamma", "delta"]);
+      await page.keyboard.press("Enter");
+      expect(await order(page)).toEqual(["alpha", "beta", "delta", "gamma"]);
+      await page.waitForFunction(() => document.activeElement?.getAttribute("data-sortable-handle") === "delta");
       await settled(page);
       const handle = await page.locator('[data-sortable-handle="delta"]').evaluate((element) => ({
         name: element.getAttribute("aria-label"),
         hint: document.getElementById(element.getAttribute("aria-describedby")!)?.textContent,
         outline: getComputedStyle(element).outlineStyle,
       }));
-      expect(handle).toEqual({
-        name: "Move Delta",
-        hint: "Drag, or press Space, then the arrow keys and Enter. The arrow keys alone move one step.",
-        outline: "solid",
+      expect(handle).toEqual({ name: "Move Delta", hint: "Drag, or press Space, then the arrow keys and Enter.", outline: "solid" });
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("near the window's lower edge the preview flips above the pointer and stays in view", async () => {
+    const { page, context } = await open();
+    try {
+      await lift(page, "o1");
+      await page.mouse.move(700, 712, { steps: 4 });
+      await settled(page);
+      const box = await page.evaluate(() => {
+        const preview = document.querySelector(".k2b-drag-preview")!.getBoundingClientRect();
+        return { top: preview.top, bottom: preview.bottom, height: innerHeight };
       });
+      expect(box.bottom).toBeLessThanOrEqual(box.height);
+      expect(box.bottom).toBeLessThan(712);
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
     } finally {
       await context.close();
     }

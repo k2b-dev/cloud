@@ -14,7 +14,6 @@ import {
   landing,
   lift,
   listsOf,
-  moveOf,
   place,
   placesIn,
   refocus,
@@ -234,20 +233,6 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
   /** A keyboard lift of this list that waits for its module. */
   let lifting: { off: boolean } | undefined;
 
-  /** One step at once, without lifting: the existing quick path for the grip's arrow keys, Home, and End. */
-  const step = (key: string, index: number) => {
-    const count = keys().length;
-    const target = clampIndex(index, count);
-    const from = keys().indexOf(key);
-    const item = itemFor(key);
-    if (from < 0 || from === target || props.disabled || item === undefined) return;
-    props.onMove(key, target, moveOf(group, key, listKey, listKey, from, target));
-    queueMicrotask(() => {
-      refocus(group, key);
-      announce(list, messages().moved({ label: props.itemLabel(item), position: keys().indexOf(key) + 1, count }));
-    });
-  };
-
   return (
     <>
       <span id={hintId} hidden>
@@ -312,10 +297,7 @@ export function SortableList<Item>(props: SortableListProps<Item>): JSX.Element 
                 if (event.key !== "Tab") event.preventDefault();
                 return;
               }
-              const wanted = { ArrowUp: index() - 1, ArrowDown: index() + 1, Home: 0, End: keys().length - 1 }[event.key];
-              if (wanted === undefined || event.shiftKey) return;
-              event.preventDefault();
-              step(key, wanted);
+              // Without a lift, the arrow keys belong to the page, such as moving to the next card (K7).
             };
             /** The part a pointer drags: the grip, or the whole row for cards. */
             const Grab = (grab: { class: string; children: JSX.Element }) => {

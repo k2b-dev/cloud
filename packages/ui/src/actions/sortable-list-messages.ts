@@ -8,9 +8,7 @@ const sortableListMessages = /* @__PURE__ */ i18n.define({
   messages: {
     en: {
       handle: ({ label }: { label: string }) => `Move ${label}`,
-      hint: "Drag, or press Space, then the arrow keys and Enter. The arrow keys alone move one step.",
-      moved: ({ label, position, count }: { label: string; position: number; count: number }) =>
-        `${label}, position ${position} of ${count}.`,
+      hint: "Drag, or press Space, then the arrow keys and Enter.",
       position: ({ position, count, list }: Place) => `Position ${position} of ${count} in “${list}”.`,
       statusPlace: ({ position, list }: { position: number; list: string }) => `to “${list}”, place ${position} · Esc cancels`,
       statusStay: "stays where it is · Esc cancels",
@@ -18,9 +16,7 @@ const sortableListMessages = /* @__PURE__ */ i18n.define({
     },
     de: {
       handle: ({ label }: { label: string }) => `${label} verschieben`,
-      hint: "Ziehen, oder Leertaste, dann Pfeiltasten und Enter. Pfeiltasten allein verschieben um einen Schritt.",
-      moved: ({ label, position, count }: { label: string; position: number; count: number }) =>
-        `${label}, Position ${position} von ${count}.`,
+      hint: "Ziehen, oder Leertaste, dann Pfeiltasten und Enter.",
       position: ({ position, count, list }: Place) => `Position ${position} von ${count} in „${list}“.`,
       statusPlace: ({ position, list }: { position: number; list: string }) => `nach „${list}“, Platz ${position} · Esc bricht ab`,
       statusStay: "bleibt an seinem Platz · Esc bricht ab",

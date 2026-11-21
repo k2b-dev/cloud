@@ -393,6 +393,11 @@ export const bindDragSource = (
   const nativeDrag = (event: Event) => {
     if (!ignored(event.target)) event.preventDefault();
   };
+  /** A mouse that moved sideways before the threshold may have begun selecting the source's text; a drag ends that. */
+  const clearStartedSelection = () => {
+    const selection = doc.getSelection();
+    if (selection && !selection.isCollapsed && selection.anchorNode && source.contains(selection.anchorNode)) selection.removeAllRanges();
+  };
   const down = (event: PointerEvent) => {
     if (!event.isPrimary || event.button !== 0 || engine.session || read().disabled) return;
     if (!(event.target instanceof Element) || event.target.closest(".k2b-drag-source") !== source) return;
@@ -467,6 +472,8 @@ export const bindDragSource = (
       if (engine.abandonPress === cancel) engine.abandonPress = undefined;
       if (abandon === cancel) abandon = undefined;
       if (session) {
+        // The browser may have extended that selection during the drag; nothing of it stays.
+        clearStartedSelection();
         clearSession(engine, session, source);
         swallowRelease(doc, released ? undefined : id);
       } else if (held) swallowRelease(doc, released ? undefined : id);
@@ -523,6 +530,7 @@ export const bindDragSource = (
       return hit;
     };
     let previewWidth = 0;
+    let previewHeight = 0;
     /** The line the target shows, such as a sorted list's place far below the pointer. */
     let lineY: number | undefined;
     /**
@@ -532,7 +540,13 @@ export const bindDragSource = (
      */
     const place = () => {
       const x = previewWidth ? Math.max(24, Math.min(point.x, win.innerWidth - previewWidth + 8)) : point.x;
-      const y = lineY === undefined ? point.y : Math.max(point.y, lineY - 8);
+      let y = lineY === undefined ? point.y : Math.max(point.y, lineY - 8);
+      // Near the viewport's lower edge the preview would leave the window: it flips above the pointer and above the
+      // line, so it stays in view and still never covers the line. The CSS translate adds 16 px.
+      if (previewHeight && y + 16 + previewHeight > win.innerHeight - 8) {
+        const above = lineY === undefined ? point.y : Math.min(point.y, lineY - 4);
+        y = Math.max(-8, above - 8 - previewHeight - 16);
+      }
       preview!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
     };
     const renderFrame = () => {
@@ -565,9 +579,7 @@ export const bindDragSource = (
       source.dataset.dragging = "";
       win.addEventListener("contextmenu", preventContext, true);
       releaseSelection = suppressTextSelection(id);
-      // A mouse that moved sideways before the threshold may have begun selecting the row's text; the drag ends that.
-      const selection = doc.getSelection();
-      if (selection && !selection.isCollapsed && selection.anchorNode && source.contains(selection.anchorNode)) selection.removeAllRanges();
+      clearStartedSelection();
       // Captured, the mouse's moves and release reach this drag also over an iframe, such as a PDF preview. A finger
       // or pen is captured by the browser already.
       if (mouse)
@@ -610,6 +622,7 @@ export const bindDragSource = (
       getK2bPortalRoot(scope ?? doc.body, source, doc).append(preview);
       preview.showPopover?.();
       previewWidth = preview.offsetWidth;
+      previewHeight = preview.offsetHeight;
       place();
       for (const target of engine.targets) mark(target, payload);
       writeDragStatus(statusFor(messages, payload));
