@@ -128,7 +128,7 @@ export function AssistantWaitingStrip(props: {
     const item = (entry: Entry) => ({
       // The kind's colour, as on the chip: the menu renders in its own layer, so the entry carries it.
       class:
-        entry.kind === "approval"
+        entry.kind === "approval" || entry.kind === "secret"
           ? "assistant-waiting__menu-entry"
           : "assistant-waiting__menu-entry assistant-waiting__menu-entry--attention",
       icon: WAITING_KIND_ICON[entry.kind],
@@ -241,8 +241,12 @@ const questionElement = (content: HTMLElement | undefined, anchor: string): HTML
   Array.from(content?.querySelectorAll<HTMLElement>("[data-chat-anchor]") ?? []).find((element) => element.dataset.chatAnchor === anchor) ??
   null;
 
-/** Where the focus lands on a card: its sentence, its outcome once answered, else its main button. */
+/**
+ * Where the focus lands on a card: the field of a question that asks for a value, while this window may answer it; its
+ * sentence; its outcome once answered; else its main button.
+ */
 const landingTarget = (element: HTMLElement): HTMLElement | null =>
+  element.querySelector<HTMLElement>(".k2b-chat-decision__field input:not(:disabled)") ??
   element.querySelector<HTMLElement>(".k2b-notice-card__title, .k2b-chat-decision__sentence") ??
   element.querySelector<HTMLElement>(".k2b-chat-outcome") ??
   element.querySelector<HTMLElement>('[data-chat-primary]:not(:disabled), .k2b-button[data-variant="primary"]:not(:disabled)') ??
@@ -284,7 +288,10 @@ export const createWaitingQuestionFocus = (input: {
     });
     const attach = () => {
       frame = undefined;
-      const answers = questionElement(content, anchor)?.querySelector(".k2b-notice-card__actions, .k2b-chat-decision__answers") ?? null;
+      const answers =
+        questionElement(content, anchor)?.querySelector(
+          ".k2b-notice-card__actions, .k2b-chat-decision__answers, .k2b-chat-decision__entry",
+        ) ?? null;
       if (answers === observed) return;
       if (observed) observer.unobserve(observed);
       observed = answers;

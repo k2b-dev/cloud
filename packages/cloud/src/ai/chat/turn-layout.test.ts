@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { CODE_SECRET_ERRORS } from "../code-secret-errors";
 import type { AiTurnBlock } from "../protocol";
 import { hasCompleteSentence, layoutAiTurn, storedPhase, submittedCodeVersion, waitsForUser } from "./turn-layout";
 
@@ -351,4 +352,14 @@ test("secret cards and reloaded receipts contain only metadata and configured/na
     expect(layout.actions.map((action) => action.state)).toEqual([expected]);
     expect(JSON.stringify(layout)).not.toContain(value);
   }
+});
+
+test("a failed secret call keeps only one of the fixed reasons, so its outcome line survives a reload", () => {
+  const failed = (error: string) =>
+    layoutAiTurn([tool("secret", "code_secret", { status: "completed", args: { name: "API" }, result: { failed: true, error } })], {
+      phase: "completed",
+    }).actions[0]?.block.result;
+  expect(failed(CODE_SECRET_ERRORS.accessLost)).toEqual({ failed: true, error: CODE_SECRET_ERRORS.accessLost });
+  expect(failed(CODE_SECRET_ERRORS.expired)).toEqual({ failed: true, error: CODE_SECRET_ERRORS.expired });
+  expect(failed("fixture-private-secret in a message")).toEqual({ failed: true, error: CODE_SECRET_ERRORS.incomplete });
 });

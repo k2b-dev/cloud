@@ -2,8 +2,11 @@ import { fetchAppAction } from "../browser/app-actions";
 
 export {
   CODE_RUNTIME_TOOL_NAMES,
+  CODE_SECRET_ERRORS,
+  CODE_SECRET_GUIDANCE,
   CodeResourceId,
   CodeRuntimeInput,
+  CodeSecretResult,
   CodeToolFailure,
   parseCodeToolInput,
 } from "./browser-code-contracts";

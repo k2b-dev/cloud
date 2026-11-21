@@ -36,6 +36,53 @@ export type AssistantApprovalsViewProps = {
   timeZone: string;
 };
 
+/** Questions that each lead to their card in a chat, under one heading with their count. */
+function QuestionRows(props: {
+  id: string;
+  heading: string;
+  questions: readonly AiOpenQuestion[];
+  onJump: (question: AiOpenQuestion) => void;
+}) {
+  const locale = useLocale();
+  const t = () => assistantMessages.resolve([locale()]).t;
+  return (
+    <section class="assistant-waiting-page__section" aria-labelledby={props.id}>
+      <h2 id={props.id} class="assistant-waiting-page__heading">
+        {props.heading} <span class="assistant-waiting-page__count">{props.questions.length}</span>
+      </h2>
+      <Paper class="assistant-waiting-page__rows">
+        <ul class="assistant-waiting-page__list">
+          <For each={props.questions}>
+            {(question) => (
+              <li class="assistant-waiting-page__row" data-kind={question.kind} data-waiting-question={question.id} tabIndex={-1}>
+                <span class="assistant-waiting-page__tile" aria-hidden="true">
+                  <i class={WAITING_KIND_ICON[question.kind]} />
+                </span>
+                <span class="assistant-waiting-page__row-copy">
+                  <span class="assistant-waiting-page__row-title">{question.short}</span>
+                  <Show when={question.conversationTitle}>
+                    {(title) => <span class="assistant-waiting-page__row-sub">{t().waitingInChat({ title: title() })}</span>}
+                  </Show>
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  class="assistant-waiting-page__open"
+                  aria-label={t().waitingViewLabel({ title: question.short })}
+                  onClick={() => props.onJump(question)}
+                >
+                  {t().waitingView}
+                </Button>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Paper>
+    </section>
+  );
+}
+
 export default function AssistantApprovalsView(props: AssistantApprovalsViewProps) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
@@ -105,6 +152,8 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
 
   const loading = () => approvals() === undefined || automations() === undefined;
   const versions = createMemo(() => allQuestions().filter((question) => VERSION_KINDS.has(question.kind)));
+  // Secrets Gustav asks for in a chat: each leads to its card, so the count above the field never stands beside an empty page.
+  const secrets = createMemo(() => allQuestions().filter((question) => question.kind === "secret"));
   // A failed read shows its row with "Try again"; an empty one shows no section.
   const shownAutomations = createMemo(() =>
     automations() == null
@@ -122,7 +171,12 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
   );
   const automationsShow = () => shownAutomations() === null || (shownAutomations()?.length ?? 0) > 0;
   const empty = () =>
-    (approvals()?.count ?? 0) === 0 && approvals() !== null && versions().length === 0 && !automationsShow() && !paging().cursor;
+    (approvals()?.count ?? 0) === 0 &&
+    approvals() !== null &&
+    versions().length === 0 &&
+    secrets().length === 0 &&
+    !automationsShow() &&
+    !paging().cursor;
 
   return (
     <ScrollArea class="min-h-0 flex-1">
@@ -187,46 +241,16 @@ export default function AssistantApprovalsView(props: AssistantApprovalsViewProp
                     </Show>
                   </section>
                 </Show>
+                <Show when={secrets().length > 0}>
+                  <QuestionRows id="assistant-waiting-secrets" heading={t().waitingSecrets} questions={secrets()} onJump={props.onJump} />
+                </Show>
                 <Show when={versions().length > 0}>
-                  <section class="assistant-waiting-page__section" aria-labelledby="assistant-waiting-versions">
-                    <h2 id="assistant-waiting-versions" class="assistant-waiting-page__heading">
-                      {t().waitingVersions} <span class="assistant-waiting-page__count">{versions().length}</span>
-                    </h2>
-                    <Paper class="assistant-waiting-page__rows">
-                      <ul class="assistant-waiting-page__list">
-                        <For each={versions()}>
-                          {(question) => (
-                            <li
-                              class="assistant-waiting-page__row"
-                              data-kind={question.kind}
-                              data-waiting-question={question.id}
-                              tabIndex={-1}
-                            >
-                              <span class="assistant-waiting-page__tile" aria-hidden="true">
-                                <i class={WAITING_KIND_ICON[question.kind]} />
-                              </span>
-                              <span class="assistant-waiting-page__row-copy">
-                                <span class="assistant-waiting-page__row-title">{question.short}</span>
-                                <Show when={question.conversationTitle}>
-                                  {(title) => <span class="assistant-waiting-page__row-sub">{t().waitingInChat({ title: title() })}</span>}
-                                </Show>
-                              </span>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                class="assistant-waiting-page__open"
-                                aria-label={t().waitingViewLabel({ title: question.short })}
-                                onClick={() => props.onJump(question)}
-                              >
-                                {t().waitingView}
-                              </Button>
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </Paper>
-                  </section>
+                  <QuestionRows
+                    id="assistant-waiting-versions"
+                    heading={t().waitingVersions}
+                    questions={versions()}
+                    onJump={props.onJump}
+                  />
                 </Show>
                 <Show when={automationsShow()}>
                   <AssistantWaitingAutomations
