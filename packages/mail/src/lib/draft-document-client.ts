@@ -48,6 +48,7 @@ export const mailSharedDraftMessages = i18n.define({
       recover: "Recover unsent changes",
       frozen: "This draft was closed or replaced. Your unsent text remains here for recovery.",
       permission: "Editing is unavailable. Your unsent text remains here to copy.",
+      sessionExpired: "Your sign-in expired. Your unsent text remains here until you sign in again.",
       syncFirst: "Wait for the connection and synchronization, then retry saving.",
       generation: "This draft changed. Keep your text and reopen the draft.",
       bodyEditFailed: "This body change could not be applied safely. Keep your proposed text and try a smaller change.",
@@ -86,6 +87,7 @@ export const mailSharedDraftMessages = i18n.define({
       recover: "Ungesendete Änderungen sichern",
       frozen: "Dieser Entwurf wurde geschlossen oder ersetzt. Dein ungesendeter Text bleibt hier zur Wiederherstellung.",
       permission: "Bearbeiten ist nicht möglich. Dein ungesendeter Text bleibt hier zum Kopieren.",
+      sessionExpired: "Deine Anmeldung ist abgelaufen. Dein ungesendeter Text bleibt hier, bis du dich erneut anmeldest.",
       syncFirst: "Warte auf die Verbindung und den Abgleich und versuche das Speichern erneut.",
       generation: "Dieser Entwurf hat sich geändert. Behalte deinen Text und öffne ihn erneut.",
       bodyEditFailed:
@@ -267,7 +269,10 @@ export async function openMailDraftDocumentClient(options: {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!response.ok) {
-      if (response.status === 401) options.onAuthenticationRequired();
+      if (response.status === 401) {
+        options.onAuthenticationRequired();
+        throw new Error(t().sessionExpired);
+      }
       const result: unknown = await response.json().catch(() => null);
       const message =
         result && typeof result === "object" && "message" in result && typeof result.message === "string" ? result.message : t().pending;
@@ -519,11 +524,12 @@ export async function openMailDraftDocumentClient(options: {
     const socketUrl = new URL(`${path}/socket?${accountQuery}`, window.location.href);
     socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
     const fatal = (error: SharedTextProviderError) => {
-      if (error.code === "SESSION_EXPIRED") options.onAuthenticationRequired();
+      const expired = error.code === "SESSION_EXPIRED";
+      if (expired) options.onAuthenticationRequired();
       state.terminal = true;
       state.ready = false;
       state.connected = false;
-      state.message = error.message || t().permission;
+      state.message = expired ? t().sessionExpired : error.message || t().permission;
       state.error = true;
       emit();
       if (error.reopen) {

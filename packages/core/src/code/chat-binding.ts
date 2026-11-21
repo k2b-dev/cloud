@@ -82,11 +82,13 @@ export function codeChatMissingCondition(chatSchemaAvailable: boolean, db: SQL =
     : db`TRUE`;
   return db`(c.owner_kind='person' AND ${codeUsesBoundChatCondition(db)} AND ${missing})`;
 }
-/** Whether Code c writes with `chat.send` to its bound chat: its running version, or its newest before one runs. */
+/** SQL form of `codeUsesBoundChat` (`bound-chat.ts`) for Code c: its running version, or its newest before one runs. */
 export function codeUsesBoundChatCondition(db: SQL = sql) {
-  return db`COALESCE((SELECT v.manifest->'permissions' FROM code.versions v WHERE v.code_id=c.id
-    ORDER BY (v.id=c.active_version_id) IS TRUE DESC,v.number DESC LIMIT 1)
-    @> '[{"operation":"core.ai.chat.send","target":{"type":"core.ai.chat","id":null}}]'::jsonb,false)`;
+  return db`COALESCE((SELECT v.manifest->'permissions'
+      @> '[{"operation":"core.ai.chat.send","target":{"type":"core.ai.chat","id":null}}]'::jsonb
+    AND NOT v.manifest->'permissions' @> '[{"operation":"core.ai.chat.create"}]'::jsonb
+    FROM code.versions v WHERE v.code_id=c.id
+    ORDER BY (v.id=c.active_version_id) IS TRUE DESC,v.number DESC LIMIT 1),false)`;
 }
 export async function codeChatMissing(codeId: string, db: SQL = sql): Promise<boolean> {
   const condition = codeChatMissingCondition(await codeChatSchemaAvailable(db), db);

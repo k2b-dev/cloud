@@ -10,7 +10,7 @@ import { errorMessage } from "../utils/api-helpers";
 import { GqlSourceEditor } from "./GqlSourceEditor";
 import { queryMessages } from "./messages";
 import QueryResultTable from "./QueryResultTable";
-import { launchQueryAssistant } from "./query-assistant";
+import { launchQueryAssistant, preloadQueryAssistant } from "./query-assistant";
 import {
   currentSourceForApi,
   type QueryWorkspaceCurrentSource,
@@ -220,7 +220,9 @@ export default function QueryWorkspace(props: Props) {
         title: t.queryWithAi,
         prompt: t.queryAiPrompt,
       }),
-    onSuccess: (result) => window.location.assign(result.href),
+    onSuccess: (result) => {
+      if (result) window.location.assign(result.href);
+    },
   });
   const sourceTables = createMemo(() => props.tables.filter((table) => !table.deletedAt));
   const sourceRows = createMemo<QuerySourceRow[]>(() =>
@@ -535,6 +537,8 @@ export default function QueryWorkspace(props: Props) {
                     size="sm"
                     type="button"
                     disabled={assistant.loading()}
+                    onPointerEnter={preloadQueryAssistant}
+                    onFocus={preloadQueryAssistant}
                     onClick={() => void assistant.mutate(undefined)}
                   >
                     <i class={assistant.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-sparkles"} /> {t.queryWithAi}

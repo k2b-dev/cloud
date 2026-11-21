@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { navigationState } from "./navigation-catalog";
 import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
 
 // Load once outside any test, so the cold Solid transform of the navigation's source graph does not count against the
@@ -70,7 +71,10 @@ describe("Grids phone navigation", () => {
     const dom = createDomTestHarness();
     delegateEvents(["click"], dom.document);
     const { Navigation, readWorkspaceNavigation, GridsNavigation } = modules!;
-    const disposeProvider = render(() => createComponent(GridsNavigation, { canCreate: false, state: state(canManageBase) }), dom.root);
+    const disposeProvider = render(
+      () => createComponent(GridsNavigation, { canCreate: false, state: navigationState(state(canManageBase)) }),
+      dom.root,
+    );
     await Bun.sleep(0);
     const provided = readWorkspaceNavigation();
     if (!provided) throw new Error("GridsNavigation did not provide the workspace navigation.");

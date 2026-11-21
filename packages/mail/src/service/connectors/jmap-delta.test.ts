@@ -112,9 +112,9 @@ for (const kind of ["Email", "Mailbox"] as const) {
     { oldState: "wrong" },
     { newState: "x".repeat(1_025) },
     { created: ["a", "a"] },
-    { created: ["a"], updated: ["a"] },
-    { created: ["a"], destroyed: ["a"] },
-    { updated: ["a"], destroyed: ["a"] },
+    { updated: ["a", "a"] },
+    { destroyed: ["a", "a"] },
+    { created: ["a"], updated: ["a"], destroyed: ["a"] },
     { created: ["bad/id"] },
     { created: ["a", "b", "c"] },
     { hasMoreChanges: true, newState: `${kind}:0` },
@@ -288,3 +288,111 @@ test("input states are opaque and bounded; invalid accounts fail before network 
   }
   expect(f.requests.filter((request) => request.calls)).toHaveLength(0);
 });
+
+// RFC 8620 §5.2 lets a server repeat an id across created, updated and destroyed.
+const emailOverlaps = [
+  {
+    form: "created and updated",
+    changes: { created: ["x"], updated: ["x"], destroyed: [] },
+    remote: ["x"],
+    delta: { createdIds: ["x"], updatedIds: [], destroyedIds: [], notFoundIds: [] },
+    objects: ["x"],
+  },
+  {
+    form: "updated and destroyed while get reports notFound",
+    changes: { created: [], updated: ["x"], destroyed: ["x"] },
+    remote: [],
+    delta: { createdIds: [], updatedIds: [], destroyedIds: ["x"], notFoundIds: [] },
+    objects: [],
+  },
+  {
+    form: "updated and destroyed while get still returns the email",
+    changes: { created: [], updated: ["x"], destroyed: ["x"] },
+    remote: ["x"],
+    delta: { createdIds: [], updatedIds: [], destroyedIds: ["x"], notFoundIds: [] },
+    objects: [],
+  },
+  {
+    form: "created and destroyed",
+    changes: { created: ["x"], updated: [], destroyed: ["x"] },
+    remote: [],
+    delta: { createdIds: [], updatedIds: [], destroyedIds: ["x"], notFoundIds: [] },
+    objects: [],
+  },
+  {
+    form: "every form beside plain ids",
+    changes: { created: ["new", "both", "flash", "lost"], updated: ["edit", "both", "gone"], destroyed: ["old", "gone", "flash"] },
+    remote: ["new", "both", "edit", "gone"],
+    delta: { createdIds: ["new", "both", "lost"], updatedIds: ["edit"], destroyedIds: ["old", "gone", "flash"], notFoundIds: ["lost"] },
+    objects: ["new", "both", "edit"],
+  },
+];
+
+for (const maxCalls of [1, 3]) {
+  for (const overlap of emailOverlaps) {
+    test(`email changes accept ${overlap.form} at maxCallsInRequest=${maxCalls}`, async () => {
+      const { f, emails } = await setup(maxCalls);
+      f.emails.push(...overlap.remote.map((id) => fixtureEmail(id)));
+      f.controls.transform = ([name, args, id]) => [name, name === "Email/changes" ? { ...args, ...overlap.changes } : args, id];
+      const delta = await emails();
+      expect(delta).toEqual({
+        oldState: "Email:0",
+        newState: "Email:0",
+        hasMoreChanges: false,
+        ...overlap.delta,
+        objects: overlap.objects.map((id) => fixtureEmail(id)),
+      });
+      const listed = [...delta.createdIds, ...delta.updatedIds];
+      expect(new Set([...listed, ...delta.destroyedIds]).size).toBe(listed.length + delta.destroyedIds.length);
+      expect([...delta.objects.map((email) => email.id), ...delta.notFoundIds].sort()).toEqual([...listed].sort());
+      const gets = f.requests.flatMap((request) => request.calls ?? []).filter(([name]) => name === "Email/get");
+      if (maxCalls === 3)
+        expect(gets.map(([, args]) => args["#ids"])).toEqual([
+          { resultOf: "changes", name: "Email/changes", path: "/created" },
+          { resultOf: "changes", name: "Email/changes", path: "/updated" },
+        ]);
+      else expect(gets.map(([, args]) => args.ids)).toEqual(listed.length ? [listed] : []);
+    });
+  }
+}
+
+for (const overlap of [
+  {
+    form: "created and updated",
+    changes: { created: ["c"], updated: ["c"], destroyed: [] },
+    created: ["c"],
+    updated: [],
+    gets: [["c"], ["b"]],
+  },
+  {
+    form: "updated and destroyed",
+    changes: { created: [], updated: ["a", "gone"], destroyed: ["gone"] },
+    created: [],
+    updated: ["a"],
+    gets: [["a"]],
+  },
+  { form: "created and destroyed", changes: { created: ["gone"], updated: [], destroyed: ["gone"] }, created: [], updated: [], gets: [] },
+  {
+    form: "every form beside plain ids",
+    changes: { created: ["b", "c", "flash"], updated: ["a", "c", "gone"], destroyed: ["old", "gone", "flash"] },
+    created: ["b", "c"],
+    updated: ["a"],
+    gets: [["b", "c", "a"]],
+  },
+]) {
+  test(`mailbox changes accept ${overlap.form} and never get a destroyed id`, async () => {
+    const { f, mailboxes } = await setup();
+    f.controls.transform = ([name, args, id]) => [name, name === "Mailbox/changes" ? { ...args, ...overlap.changes } : args, id];
+    const delta = await mailboxes();
+    expect(delta.created.map((folder) => folder.mailboxId).sort()).toEqual(overlap.created);
+    expect(delta.updated.map((folder) => folder.mailboxId)).toEqual(overlap.updated);
+    expect(delta.destroyedIds).toEqual(overlap.changes.destroyed);
+    expect(delta.notFoundIds).toEqual([]);
+    expect(
+      f.requests
+        .flatMap((request) => request.calls ?? [])
+        .filter(([name]) => name === "Mailbox/get")
+        .map(([, args]) => args.ids),
+    ).toEqual(overlap.gets);
+  });
+}

@@ -2,10 +2,12 @@ import { dates } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
 import { announce, Button, ButtonLink, Format, IconButton, Kbd, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, createUniqueId, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { SEARCH_APP_RESULT_LIMIT, SEARCH_PAGE_SIZE, type SearchApp, type SearchItem } from "../api/search/schemas";
-import { BlockTree } from "../blocks/BlockTree";
+import type { BlockTree } from "../blocks/BlockTree";
 import type { CloudResourceRef } from "../contracts";
 import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigation-search";
+import { importOnDemand } from "./reload";
 import { cloudResourceSearchUrl, filterCloudResourceSearchItems, groupCloudResourceSearchItems } from "./resource-search";
 import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./resource-search-input";
 import { resourceSearchMessages } from "./resource-search-messages";
@@ -51,6 +53,8 @@ export type CloudResourceSearchProps = {
 
 /** What `/api/search` accepts as `q`; a prefilled query is cut to it as typing is. */
 const MAX_QUERY_LENGTH = 500;
+
+const loadBlockTree = () => import("../blocks/BlockTree");
 
 const isLinkableCommand = (command: PaletteCommand) => typeof command.action !== "function" && "command" in command.action;
 
@@ -501,9 +505,26 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     const item = showResults() ? previewItem() : undefined;
     return item && "ref" in item && item.readable ? item.ref : undefined;
   });
+  // A reader view draws with the block renderer, which pages using the search must not carry up front: the dialog
+  // warms it silently, and a view that answers first keeps the held loading room until the renderer is there.
+  const [blockTree, setBlockTree] = createSignal<typeof BlockTree>();
+  const [blockTreeFailed, setBlockTreeFailed] = createSignal(false);
+  let blockTreeRequested = false;
+  onMount(
+    () =>
+      void loadBlockTree().then(
+        (module) => setBlockTree(() => module.BlockTree),
+        () => undefined,
+      ),
+  );
+  createEffect(() => {
+    if (preview().state !== "view" || blockTree() || blockTreeRequested) return;
+    blockTreeRequested = true;
+    void importOnDemand(loadBlockTree).then((module) => (module ? setBlockTree(() => module.BlockTree) : setBlockTreeFailed(true)));
+  });
   const previewView = () => {
     const state = preview();
-    return state.state === "view" ? state.view : undefined;
+    return state.state === "view" && !blockTreeFailed() ? state.view : undefined;
   };
   const previewMetadata = () => (previewItem()?.metadata ?? []).filter((entry) => entry.label.trim() && entry.value.trim());
 
@@ -939,12 +960,14 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
             </div>
             <h2>{item().title}</h2>
             <Switch>
-              <Match when={preview().state === "loading"}>
+              <Match when={preview().state === "loading" || (previewView() && !blockTree())}>
                 {/* The reader answers within a moment; its room is held so the column does not jump. */}
                 <div class="cloud-resource-search__preview-loading" aria-busy="true" />
               </Match>
-              <Match when={previewView()}>
-                {(view) => <BlockTree blocks={view().blocks} host="preview" locale={locale()} timeZone={localTimeZone()} />}
+              <Match when={previewView() && blockTree()}>
+                {(tree) => (
+                  <Dynamic component={tree()} blocks={previewView()!.blocks} host="preview" locale={locale()} timeZone={localTimeZone()} />
+                )}
               </Match>
               <Match when={true}>
                 <Show when={item().previewUrl?.startsWith("/") && !previewFailed()}>

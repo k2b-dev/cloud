@@ -20,6 +20,7 @@ const { codePageFixture } = await import("./page.test-fixture");
 const { CODE_INITIAL_PAGE_SOURCE } = await import("./authoring-contracts");
 const { CODE_NEWSLETTER_DEMO_SOURCE } = await import("./page.newsletter-demo");
 const { buildCodePage } = await import("./page.test-source");
+const { CodeRequestError } = await import("./requests");
 const { Layout } = await import("@k2b/cloud/ssr");
 const { ssr } = await import("../config");
 const railSnapshot = await import("@k2b/cloud/services/rail-snapshot");
@@ -282,15 +283,27 @@ describe("Code pages in the Cloud layout", () => {
       },
     ],
   };
-  const route = (layout?: "plain") => ({ method: "GET" as const, path: "/", public: true, ...(layout ? { layout } : {}) });
-  const host = (signedIn: boolean, layout?: "plain") => {
+  const route = (layout?: "plain", isPublic = true) => ({
+    method: "GET" as const,
+    path: "/",
+    public: isPublic,
+    ...(layout ? { layout } : {}),
+  });
+  const host = (
+    signedIn: boolean,
+    layout?: "plain",
+    options: { viewer?: typeof person; isPublic?: boolean; fails?: { code: string; status: 404 | 503 } } = {},
+  ) => {
+    const viewer = options.viewer ?? person;
     const manifest: CodeCheckedVersionManifest = {
       version: 1,
       entry: "code.tsx",
-      entrypoints: [{ kind: "route", entrypoint: "route:GET:/", route: route(layout), cron: null, file: "code.tsx", line: 1 }],
+      entrypoints: [
+        { kind: "route", entrypoint: "route:GET:/", route: route(layout, options.isPublic), cron: null, file: "code.tsx", line: 1 },
+      ],
       permissions: [],
       ai: false,
-      policyRows: ["public_routes"],
+      policyRows: options.isPublic === false ? [] : ["public_routes"],
       hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
     };
     return new Hono<server.AuthContext>()
@@ -298,9 +311,9 @@ describe("Code pages in the Cloud layout", () => {
         c.set("runtime" as never, runtime as never);
         c.set("settings" as never, { app: { name: "Probe Cloud" } } as never);
         if (signedIn) {
-          c.set("user", person);
-          c.set("actor", { kind: "user", user: person });
-          c.set("accessSubject", { type: "user", userId: person.id });
+          c.set("user", viewer);
+          c.set("actor", { kind: "user", user: viewer });
+          c.set("accessSubject", { type: "user", userId: viewer.id });
           c.set("credentialKind", "session");
           c.set("sessionToken", "fixture-session");
         }
@@ -310,11 +323,14 @@ describe("Code pages in the Cloud layout", () => {
       .route(
         "/",
         createCodeHostingRoutes({
-          version: async () => ({
-            versionId: "v_hidden",
-            manifest,
-            owner: { kind: "person" as const, userId: "22222222-2222-4222-8222-222222222222", name: "owner-hidden" },
-          }),
+          version: async () => {
+            if (options.fails) throw new CodeRequestError(options.fails.code, options.fails.status);
+            return {
+              versionId: "v_hidden",
+              manifest,
+              owner: { kind: "person" as const, userId: "22222222-2222-4222-8222-222222222222", name: "owner-hidden" },
+            };
+          },
           request: async () => ({ kind: "page", status: 200, tree }),
         }),
       );
@@ -446,6 +462,57 @@ describe("Code pages in the Cloud layout", () => {
       expect(html).toContain("Self-built page");
       expect(html).toContain("Someone built this page themselves");
       expect(html).not.toContain("This page belongs to");
+    }));
+
+  test("a person who opens a missing, paused or closed page reads one Cloud page; scripts and the island keep the code", () =>
+    withRateLimit(async () => {
+      const opened = { headers: { Accept: "text/html,application/xhtml+xml", "Accept-Language": "de" } };
+      const guest = UserSchema.parse({ ...person, id: "33333333-3333-4333-8333-333333333333", uid: "gast", profile: "guest" });
+      const gone = { code: "code_route_not_found", status: 404 } as const;
+      // The same guest on a paused or removed Code and on a page only members may open: nothing tells them apart.
+      const missing = await host(true, undefined, { viewer: guest, fails: gone }).request("https://cloud.test/code/c_page/", opened);
+      const closed = await host(true, undefined, { viewer: guest, isPublic: false }).request("https://cloud.test/code/c_page/", opened);
+      const unknownPath = await host(true).request("https://cloud.test/code/c_page/elsewhere", opened);
+      expect([missing.status, closed.status, unknownPath.status]).toEqual([404, 404, 404]);
+      const html = await missing.text();
+      expect(await closed.text()).toBe(html);
+      for (const page of [html, await unknownPath.text()]) {
+        expect(page).toContain("Diese Seite ist gerade nicht erreichbar");
+        expect(page).toContain("Vielleicht ist sie pausiert, der Link stimmt nicht mehr, oder sie ist nicht für dich freigegeben.");
+        expect(page).toContain('href="/"');
+        expect(page).toContain("Zur Startseite");
+        expect(page).toContain("data-layout-header");
+        expect(page).not.toContain("code_");
+        expect(page).not.toContain("data-code-page-version");
+      }
+      expect(missing.headers.get("content-type")).toContain("text/html");
+      expect(missing.headers.get("cache-control")).toContain("no-store");
+      // A busy Code offers to open the same page again, in the reader's language.
+      const busy = await host(false, undefined, { fails: { code: "code_request_busy", status: 503 } }).request(
+        "https://cloud.test/code/c_page/?week=45",
+        { headers: { Accept: "text/html" } },
+      );
+      expect(busy.status).toBe(503);
+      const busyHtml = await busy.text();
+      expect(busyHtml).toContain("This page is not available right now");
+      expect(busyHtml).toContain("Try again in a moment.");
+      expect(busyHtml).toContain('href="/code/c_page/?week=45"');
+      // Requests that are not a navigation keep the stable JSON contract.
+      // An API client, a script's fetch (`*/*`), JSON clients and the page's own island: never the page.
+      const requests: Record<string, string>[] = [
+        {},
+        { Accept: "*/*" },
+        { Accept: "application/json" },
+        { Accept: "text/html", "X-Code-Page": "tree" },
+      ];
+      for (const headers of requests) {
+        const answer = await host(true, undefined, { viewer: guest, fails: gone }).request("https://cloud.test/code/c_page/", { headers });
+        expect(answer.status).toBe(404);
+        expect(await answer.json()).toEqual({ code: "code_route_not_found" });
+      }
+      const closedFetch = await host(true, undefined, { viewer: guest, isPublic: false }).request("https://cloud.test/code/c_page/");
+      expect(closedFetch.status).toBe(403);
+      expect(await closedFetch.json()).toEqual({ code: "code_members_only" });
     }));
 
   test("a route with layout plain renders the page alone, as before", () =>

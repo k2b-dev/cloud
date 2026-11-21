@@ -1,5 +1,6 @@
 import { Button, Checkbox, dialogCore, NumberInput, PanelDialog, panelDialogOptions, Select, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
+import { preloadBarcodes } from "#barcode-drawing";
 import type { FormatSpec } from "../../../contracts";
 import { effectiveDisplayField } from "../../../lookup-display";
 import type { Field } from "../../../service";
@@ -215,7 +216,11 @@ export function ColumnFormatControls(props: {
         <Select
           label={t().textFormat}
           value={textFormat}
-          onValueChange={(v) => touch(setTextFormat)((v as TextFormatChoice | null) ?? "default")}
+          onValueChange={(v) => {
+            // The table draws the new barcodes right after saving; their code loads while the dialog is open.
+            if (v === "barcode") preloadBarcodes();
+            touch(setTextFormat)((v as TextFormatChoice | null) ?? "default");
+          }}
           options={[
             { id: "default", label: t().default },
             { id: "barcode", label: t().barcode, description: t().barcodeDescription },
@@ -234,7 +239,10 @@ export function ColumnFormatControls(props: {
         <Select
           label={t().formulaFormat}
           value={formulaFormat}
-          onValueChange={(v) => touch(setFormulaFormat)((v as FormulaFormatChoice | null) ?? "default")}
+          onValueChange={(v) => {
+            if (v === "barcode") preloadBarcodes();
+            touch(setFormulaFormat)((v as FormulaFormatChoice | null) ?? "default");
+          }}
           options={[
             { id: "default", label: t().default },
             { id: "number", label: t().number },

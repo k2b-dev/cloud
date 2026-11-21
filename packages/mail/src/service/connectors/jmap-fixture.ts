@@ -144,6 +144,40 @@ export function createJmapFixture() {
       ...(type === "Mailbox" ? { updatedProperties: controls.updatedProperties } : {}),
     };
   };
+  // Newest receivedAt first unless isAscending; ties ordered by ID. RFC 8621 §4.4.1: before is exclusive, after inclusive.
+  const emailQuery = (args: Record<string, unknown>): Record<string, unknown> => {
+    const filter = z.object({ before: z.string().optional(), after: z.string().optional() }).strict().nullish().safeParse(args.filter);
+    if (!filter.success) return { type: "unsupportedFilter" };
+    const sort = z
+      .array(z.object({ property: z.string(), isAscending: z.boolean().optional() }))
+      .optional()
+      .parse(args.sort);
+    if (sort?.some((comparator) => comparator.property !== "receivedAt")) return { type: "unsupportedSort" };
+    const direction = sort?.[0]?.isAscending === true ? 1 : -1;
+    const time = (value: string) => Date.parse(value);
+    const { before, after } = filter.data ?? {};
+    const ids = emails
+      .filter(
+        (email) =>
+          (before === undefined || time(email.receivedAt) < time(before)) && (after === undefined || time(email.receivedAt) >= time(after)),
+      )
+      .sort((a, b) => direction * (time(a.receivedAt) - time(b.receivedAt)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((email) => email.id);
+    const position = z.number().int().nonnegative().optional().parse(args.position) ?? 0;
+    const requested = z.number().int().positive().optional().parse(args.limit);
+    const cap = controls.emailQueryLimit;
+    const limit = cap !== undefined && (requested === undefined || cap < requested) ? cap : requested;
+    return {
+      accountId: "d333333",
+      // Changes exactly when this query's complete result list changes.
+      queryState: `query-${Bun.hash(ids.join(",")).toString(36)}`,
+      canCalculateChanges: false,
+      position,
+      ids: ids.slice(position, limit === undefined ? undefined : position + limit),
+      ...(args.calculateTotal === true ? { total: ids.length } : {}),
+      ...(limit !== requested ? { limit } : {}),
+    };
+  };
   const methodErrors = new Map<string, string>(); // Call ID -> method error, independent of sibling calls.
   const controls: {
     redirect: string | null;
@@ -154,7 +188,11 @@ export function createJmapFixture() {
     abort: boolean;
     updatedProperties: string[] | null;
     getState?: string;
+    /** A server-side cap below the requested Email/query limit. */
+    emailQueryLimit?: number;
     afterChanges?: (type: FixtureType) => void;
+    /** Runs between Email/query and a get in the same request, to stage races deterministically. */
+    afterEmailQuery?: () => void;
     transform?: (response: JmapInvocation) => JmapInvocation;
     handle?: (request: Request) => Response | undefined | Promise<Response | undefined>;
   } = { redirect: null, status: null, apiStatus: null, methodError: null, oversized: false, abort: false, updatedProperties: null };
@@ -225,8 +263,15 @@ export function createJmapFixture() {
           controls.afterChanges?.(type);
           return [result.type ? "error" : name, result, id];
         }
+        if (name === "Email/query") {
+          const result = emailQuery(args);
+          controls.afterEmailQuery?.();
+          return [result.type ? "error" : name, result, id];
+        }
         if (args["#ids"]) {
-          const ref = z.object({ resultOf: z.string(), name: z.string(), path: z.enum(["/created", "/updated"]) }).parse(args["#ids"]);
+          const ref = z
+            .object({ resultOf: z.string(), name: z.string(), path: z.enum(["/created", "/updated", "/ids"]) })
+            .parse(args["#ids"]);
           const result = methodResponses.find(([method, , callId]) => method === ref.name && callId === ref.resultOf);
           if (!result) return ["error", { type: "invalidResultReference" }, id];
           args = { ...args, ids: result[1][ref.path.slice(1)] };

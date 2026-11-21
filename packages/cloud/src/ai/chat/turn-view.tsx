@@ -665,11 +665,14 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean; a
       setContinuing(false);
     }
   };
+  // A turn that reached its work limit only pauses: a note from Cloud in grey, not a warning (Pause v10).
+  const paused = () => props.notice.kind === "code_authoring" || props.notice.kind === "automation";
+  const offered = () => props.continuable && Boolean(actions.onContinueTurn);
   // One form with the error notice (v12, 05): the sign of its tone, what happened, what stays, and a real answer.
   return (
     <NoticeCard
-      tone="warning"
-      icon="ti ti-alert-triangle"
+      tone={paused() ? "neutral" : "warning"}
+      icon={paused() ? "ti ti-player-pause" : "ti ti-alert-triangle"}
       layout="card"
       class="ai-turn__notice"
       title={
@@ -686,11 +689,14 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean; a
           ? t().outputLimitReasoning
           : props.notice.kind === "no_answer"
             ? t().noAnswerDetail
-            : t().keptSoFar
+            : // Without the button, the pause still says how the work goes on.
+              paused() && !offered()
+              ? `${t().keptSoFar} ${t().turnErrorContinueHint}`
+              : t().keptSoFar
       }
       actions={
         <>
-          <Show when={props.continuable && actions.onContinueTurn}>
+          <Show when={offered()}>
             <Button
               variant="secondary"
               size="sm"
@@ -699,7 +705,7 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean; a
               onClick={() => void continueAnswer()}
             >
               <i class="ti ti-player-play" aria-hidden="true" />
-              {props.notice.kind === "no_answer" ? t().continueTurn : t().continueAnswer}
+              {props.notice.kind === "no_answer" || paused() ? t().continueTurn : t().continueAnswer}
             </Button>
           </Show>
           <Show when={props.notice.kind === "no_answer" && props.answerAgain}>

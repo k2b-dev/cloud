@@ -7,6 +7,7 @@ import {
   type CodeReadModelRow,
   type CodeVersionReadModel,
 } from "@k2b/cloud/contracts";
+import { codeUsesBoundChat } from "../bound-chat";
 import { codeAdminPermissionChanges } from "../permission-changes";
 import { type CodePolicyRow, type CodePolicyValue, isCodeAiOperation } from "../policy-contracts";
 import type { CodeVersionEvidence } from "../version-evidence";
@@ -139,6 +140,7 @@ export function presentCodeVersion(input: {
     return !target.readable && !target.unavailable;
   });
   const restrictedText = !denied && targets.some((ref) => names.target(ref).unavailable) ? t.unresolvedDescription : t.restricted;
+  const usesBoundChat = codeUsesBoundChat(manifest.permissions);
   const mayDo = [
     ...new Map(
       manifest.permissions.map(({ operation, target }): [string, CodeVersionReadModel["mayDo"]["items"][number]] => {
@@ -151,10 +153,15 @@ export function presentCodeVersion(input: {
               note: input.runsAs ? t.chatSendNoteOther(input.runsAs) : t.chatSendNote,
               // Without a readable bound chat the row still carries the SDK's own handle, so the page finds the chat
               // row and offers its owner to choose one; no reader names that handle, so the safe sentence stays.
-              target: {
-                ref: input.boundChat ?? { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
-                text: t.chatSendNamed({ name: "{name}" }),
-              },
+              // Code that creates its own chats names none: which one it writes to is decided at run time.
+              ...(usesBoundChat
+                ? {
+                    target: {
+                      ref: input.boundChat ?? { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
+                      text: t.chatSendNamed({ name: "{name}" }),
+                    },
+                  }
+                : {}),
               ...(action.app ? { app: action.app } : {}),
               ...(action.icon ? { icon: action.icon } : {}),
             },

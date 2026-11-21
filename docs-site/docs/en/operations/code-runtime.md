@@ -5,7 +5,7 @@ section: Operations
 order: 920
 description: Size and diagnose Code route requests in the shared runner pool.
 tags: [code, runner, limits]
-updated: 2026-11-17
+updated: 2026-11-20
 ---
 
 # Operate Code requests
@@ -120,7 +120,10 @@ recover after a failed wake-up. A waiting turn appears in the chat and remains
 subject to its normal wait and execution limits.
 
 A personal Code using `chat.send` needs a chat even before its first binding.
-Its owner can recover from the Code page or Waiting for you. A binding change
+Its owner can recover from the Code page or Waiting for you. A version that
+also creates chats with `ai.chat.create` writes to the chats it creates, so it
+is not reported as missing a chat; should it still send to its bound chat
+without one, that run fails with `chat_unbound`. A binding change
 during send admission returns `chat_busy` (409) without queuing a message;
 retry with the same idempotency key to use the current chat. Messages already
 queued keep their destination. This requires no additional configuration.
