@@ -9,6 +9,10 @@ const FILL = new Set(["flex-1", "grow", "size-full", "inset-0"]);
 const RADIUS = /^rounded-(?:lg|xl|2xl|3xl|\[var\(--(?:ui-radius-(?:surface|frame)|k2b-radius-(?:surface|dialog))\)\])$/;
 const BORDER =
   /^border(?:-(?:2|4|8|\[(?:0|(?:\d*\.)?\d+(?:px|rem|em|ex|ch|cap|ic|lh|rlh|vw|vh|vi|vb|vmin|vmax|dvw|dvh|svw|svh|lvw|lvh|cqw|cqh|cqi|cqb|cqmin|cqmax|cm|mm|Q|in|pt|pc))\]))?$/;
+/** Any rounded corner, for the nested-frame rule (K14). */
+const ANY_RADIUS = /^rounded(?:-(?:sm|md|lg|xl|2xl|3xl|\[[^\]]*\]))?$/;
+const NESTED_ADVICE =
+  "draws a frame whose only content is another frame: K14 drops the inner one; its content stands directly in the outer area.";
 const ADVICE =
   "fills its area with a second card: a view in AppWorkspace.Main uses the workspace's surface edge to edge; drop the radius and border, or inset a card with Main padding where the content needs another level.";
 
@@ -66,6 +70,29 @@ export const rule: Rule = {
           const radius = tokens.find((token) => RADIUS.test(token));
           const border = tokens.find((token) => BORDER.test(token));
           const tag = node.tagName.getText();
+          // K14: a framed element (radius and border) whose only child element is framed again nests a box in a box.
+          const element = node.parent;
+          if (ts.isJsxOpeningElement(node) && ts.isJsxElement(element) && tokens.some((t) => ANY_RADIUS.test(t)) && border) {
+            const kids = element.children.filter(
+              (child) => ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child) || (ts.isJsxExpression(child) && child.expression),
+            );
+            const only = kids.length === 1 ? kids[0] : undefined;
+            const opening =
+              only && ts.isJsxElement(only) ? only.openingElement : only && ts.isJsxSelfClosingElement(only) ? only : undefined;
+            const inner = opening
+              ? opening.attributes.properties
+                  .filter(ts.isJsxAttribute)
+                  .filter((attr) => ["class", "className"].includes(attr.name.getText()) && attr.initializer)
+                  .flatMap((attr) => (attr.initializer ? classTokens(attr.initializer) : []))
+              : [];
+            if (inner.some((t) => ANY_RADIUS.test(t)) && inner.some((t) => BORDER.test(t))) {
+              findings.push({
+                file,
+                line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+                message: `${tokens.filter((t) => ANY_RADIUS.test(t) || BORDER.test(t)).join(" ")} ${NESTED_ADVICE}`,
+              });
+            }
+          }
           const literalProp = (name: string, value: string) =>
             attributes.some((attr) => {
               if (attr.name.getText() !== name || !attr.initializer) return false;

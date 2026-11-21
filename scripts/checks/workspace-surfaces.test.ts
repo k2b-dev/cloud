@@ -78,3 +78,17 @@ test("a workspace inside a standalone page still owns its surface", async () => 
     "packages/demo/src/Panel.tsx:1",
   ]);
 });
+
+test("reports a frame whose only content is another frame (K14)", async () => {
+  expect(
+    await findings(
+      [
+        "export const Panel = () => (<>",
+        '  <div class="rounded-lg border p-3"><section class="rounded-md border p-2">Rows</section></div>',
+        '  <div class="rounded-lg border p-3"><h2>Title</h2><section class="rounded-md border p-2">Rows</section></div>',
+        '  <div class="rounded-lg border p-3"><section class="p-2">Rows</section></div>',
+        "</>);",
+      ].join("\n"),
+    ),
+  ).toEqual(["packages/demo/src/Panel.tsx:2"]);
+});

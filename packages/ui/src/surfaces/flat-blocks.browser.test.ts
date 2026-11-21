@@ -1,0 +1,188 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { Browser, Page } from "playwright";
+import { launchBrowser, settled } from "../../test/browser";
+
+// Cloud flat (K7, K10, K15, K17): the geometry of the flat building blocks in a real layout engine. All data is invented.
+const ui = resolve(import.meta.dir, "../..");
+const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
+const entry = resolve(import.meta.dir, "flat-blocks.fixture.ts");
+const fixture = `
+import { createComponent, render } from "solid-js/web";
+import { Area, Button, DataTable, NoticeCard, RowGroup, StatusBadge } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+
+const row = (text) => { const div = document.createElement("div"); div.className = "row"; div.textContent = text; return div; };
+render(() => [
+  createComponent(Area, { id: "a1", name: "Stack 1", marker: 1, collapsible: true, count: 2, meta: "2 lists",
+    state: createComponent(StatusBadge, { tone: "ok", label: "Complete" }),
+    actions: createComponent(Button, { size: "sm", variant: "secondary", children: "Reopen" }),
+    get children() { return [row("L-1001"), row("L-1002")]; } }),
+  createComponent(Area, { id: "a2", name: "Stack 2", marker: 2, collapsible: true, defaultOpen: false, count: 1,
+    state: createComponent(StatusBadge, { tone: "warning", label: "Open" }), get children() { return row("L-1003"); } }),
+  createComponent(Area, { id: "a3", name: "Stack 3", marker: 3, collapsible: true, empty: "No list yet" }),
+  createComponent(RowGroup, { id: "g1", title: "Open", count: 2, get children() { return [row("Call the carrier"), row("Print labels")]; } }),
+  createComponent(RowGroup, { id: "g2", title: "Done", count: 0 }),
+], document.getElementById("areas"));
+
+const columns = [
+  { id: "name", header: "Name", value: "name", primary: true, list: "title" },
+  { id: "place", header: "Place", value: "place", list: "meta" },
+  { id: "owner", header: "Owner", value: "owner" },
+  { id: "amount", header: "Amount", value: "amount", type: "amount", format: { currency: "EUR" }, list: "end" },
+];
+const rows = [
+  { name: "Oak cabinet", place: "Shelf B 4", owner: "Mira", amount: 1240 },
+  { name: "Brass lamp", place: "Shelf A 1", owner: "Jonte", amount: 85.5 },
+];
+render(() => createComponent(DataTable, { columns, rows, surface: "plain", ariaLabel: "Items" }), document.getElementById("table"));
+
+const notice = (id) => createComponent(NoticeCard, { id, tone: "warning", icon: true, title: "The receipt waits for a signature.",
+  detail: "Payout starts after it is signed.", actions: createComponent(Button, { size: "sm", variant: "secondary", children: "Open receipt" }) });
+render(() => [notice("wide"), notice("narrow")], document.getElementById("notices"));
+`;
+const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
+if (!build.success) throw new AggregateError(build.logs, "Could not bundle the flat blocks fixture");
+const script = await build.outputs[0]!.text();
+
+let browser: Browser;
+beforeAll(async () => {
+  browser = await launchBrowser();
+}, 30_000);
+afterAll(async () => {
+  await browser?.close();
+});
+
+const load = async (width: number) => {
+  const page = await browser.newPage({ viewport: { width, height: 900 } });
+  await page.setContent(
+    `<!doctype html><html><head><style>${css}</style><style>.row{height:40px;display:flex;align-items:center}#narrow-host{width:320px}</style></head>` +
+      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="notices"></div></body></html>`,
+  );
+  await page.addScriptTag({ content: script });
+  await page.locator("#a3").waitFor();
+  await settled(page);
+  return page;
+};
+
+const box = (page: Page, selector: string) =>
+  page.locator(selector).evaluate((element) => {
+    const { top, left, width, height, bottom, right } = element.getBoundingClientRect();
+    return { top, left, width, height, bottom, right };
+  });
+
+describe("Cloud flat building blocks", () => {
+  test("a closed area is one 40 px row; an open one has a 56 px head; toggling moves only what lies below", async () => {
+    const page = await load(1440);
+    try {
+      // Closed: the height of a list row, without a gap or a surface.
+      expect((await box(page, "#a2")).height).toBe(40);
+      expect(await page.locator("#a2").evaluate((area) => getComputedStyle(area).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+      expect((await box(page, "#a1 > .k2b-area__head")).height).toBe(56);
+      // The empty area stays and says so.
+      expect(await page.locator("#a3 .k2b-area__empty").textContent()).toBe("No list yet");
+
+      const before = { a1: await box(page, "#a1"), a2: await box(page, "#a2"), a3: await box(page, "#a3") };
+      await page.locator("#a2 .k2b-area__chevron").click();
+      await settled(page);
+      const opened = { a1: await box(page, "#a1"), a2: await box(page, "#a2"), a3: await box(page, "#a3") };
+      // Nothing above and not the area's own head moves; only the area grows and what lies below follows.
+      expect(opened.a1).toEqual(before.a1);
+      expect(opened.a2.top).toBe(before.a2.top);
+      expect((await box(page, "#a2 > .k2b-area__head")).height).toBe(56);
+      // The next area follows by the growth and the 8 px that stand after an open area.
+      expect(opened.a3.top - before.a3.top).toBe(opened.a2.height - before.a2.height + 8);
+      expect(await page.locator("#a2 .k2b-area__chevron").getAttribute("aria-expanded")).toBe("true");
+
+      await page.locator("#a1 .k2b-area__chevron").click();
+      await settled(page);
+      const closed = await box(page, "#a1");
+      expect(closed.top).toBe(before.a1.top);
+      expect(closed.height).toBe(40);
+      // A closed row has no gap after it: the next area moves up by the shrink and the 8 px.
+      expect((await box(page, "#a2")).top - opened.a2.top).toBe(closed.height - opened.a1.height - 8);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a group has a 36 px head and disappears when it is empty", async () => {
+    const page = await load(1440);
+    try {
+      expect((await box(page, "#g1 > .k2b-row-group__head")).height).toBe(36);
+      expect(await page.locator("#g2").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a table keeps a 36 px head and 40 px rows, and becomes a list of two-line entries below 480 px", async () => {
+    const wide = await load(1440);
+    try {
+      expect((await box(wide, "#table thead th:first-child")).height).toBe(36);
+      expect((await box(wide, "#table tbody tr:first-child")).height).toBe(40);
+      // Numbers stand right-aligned and whole.
+      const amount = await wide
+        .locator("#table tbody tr td:last-child")
+        .first()
+        .evaluate((cell) => ({ align: getComputedStyle(cell).textAlign, cut: cell.scrollWidth > cell.clientWidth }));
+      expect(amount).toEqual({ align: "right", cut: false });
+    } finally {
+      await wide.close();
+    }
+    const phone = await load(390);
+    try {
+      expect(await phone.locator("#table thead").isVisible()).toBe(false);
+      const entry = await phone
+        .locator("#table tbody tr:first-child")
+        .first()
+        .evaluate((row) => {
+          const part = (selector: string) => row.querySelector(selector)!.getBoundingClientRect();
+          const title = part('td[data-list="title"]');
+          const meta = part('td[data-list="meta"]');
+          const end = part('td[data-list="end"]');
+          const owner = row.querySelector<HTMLElement>("td:not([data-list])")!;
+          return {
+            height: row.getBoundingClientRect().height,
+            metaBelow: meta.top >= title.bottom,
+            endRight: end.left >= title.right,
+            ownerHidden: getComputedStyle(owner).display === "none",
+          };
+        });
+      expect(entry.height).toBeGreaterThanOrEqual(60);
+      expect(entry).toMatchObject({ metaBelow: true, endRight: true, ownerHidden: true });
+    } finally {
+      await phone.close();
+    }
+  });
+
+  test("an alert cell is square and tinted; its deed stands beside the text when wide and below it when narrow", async () => {
+    const page = await load(1440);
+    try {
+      // The same cell in a 320 px column.
+      await page.evaluate(() => {
+        const host = document.createElement("div");
+        host.id = "narrow-host";
+        document.body.append(host);
+        host.append(document.querySelector("article#narrow")!);
+      });
+      await settled(page);
+      const layout = (selector: string) =>
+        page.locator(selector).evaluate((cell) => {
+          const text = cell.querySelector(".k2b-notice-card__text")!.getBoundingClientRect();
+          const actions = cell.querySelector(".k2b-notice-card__actions")!.getBoundingClientRect();
+          const style = getComputedStyle(cell);
+          return {
+            radius: style.borderTopLeftRadius,
+            tinted: style.backgroundColor !== "rgba(0, 0, 0, 0)",
+            beside: actions.left >= text.right && actions.top < text.bottom,
+            below: actions.top >= text.bottom,
+          };
+        });
+      expect(await layout("article#wide")).toEqual({ radius: "0px", tinted: true, beside: true, below: false });
+      expect(await layout("article#narrow")).toEqual({ radius: "0px", tinted: true, beside: false, below: true });
+    } finally {
+      await page.close();
+    }
+  });
+});

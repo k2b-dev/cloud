@@ -52,9 +52,11 @@ describe("shared icon tile contract", () => {
         expect(html.includes("data-sign"), `${variant} ${state}`).toBe(state !== "loading");
       }
     }
-    expect(declarationsFor(".k2b-ui .k2b-placeholder__icon").map((rule) => rule.body).join(";")).toMatch(
-      /border-radius:var\(--k2b-radius-round,\s*9999px\)/,
-    );
+    expect(
+      declarationsFor(".k2b-ui .k2b-placeholder__icon")
+        .map((rule) => rule.body)
+        .join(";"),
+    ).toMatch(/border-radius:var\(--k2b-radius-round,\s*9999px\)/);
   });
 
   test("overview, dialog, widget and link card icons use the shared chip", () => {
