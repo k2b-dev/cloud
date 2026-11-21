@@ -239,6 +239,8 @@ export function createRunnerCodeHost(options: Options) {
             let response = await ask();
             // An Action that changed after the person was asked (an app update) is asked once more with a note on the card.
             for (let asked = 0; ; asked++) {
+              // Only a person who saw a card was asked; an automatic call that changed asks without the note.
+              const shown = response.status === "approval";
               if (response.status === "approval") {
                 const id = response.id;
                 try {
@@ -254,7 +256,7 @@ export function createRunnerCodeHost(options: Options) {
               if (response.status !== "changed") break;
               if (asked > 0) throw new CloudError("conflict", artifactMessages.resolve([context.locale]).t.actionChangedAgain);
               callId = crypto.randomUUID();
-              response = await ask(true);
+              response = await ask(shown ? true : undefined);
             }
             if (response.status !== "completed") throw new CloudError("denied", "Capability Action was rejected by the user.");
             const envelope = z

@@ -358,6 +358,8 @@ export type LegacyCardInput = {
   outcome: { running: string; done: string; rejected: string; notRun: string; unknown: string; unknownStill: string };
   /** The call's own input, shown on demand when the question has nothing else to show. */
   input?: unknown;
+  /** Why the question is asked, in place of the generic reason, such as an Action that changed since it was first asked. */
+  reason?: string;
 };
 
 /** An old row's value as people read it: a day as a date, an instant in the reader's zone. Other text stays literal. */
@@ -380,7 +382,10 @@ export const legacyActionCard = (input: LegacyCardInput, context: ActionCardCont
     app: context.app,
     question: plainText(input.question),
     questionText: input.question,
-    reason: actionReason("app_asks", { locale: context.locale, appName: context.app.name }),
+    reason: {
+      ...actionReason("app_asks", { locale: context.locale, appName: context.app.name }),
+      ...(input.reason ? { text: input.reason } : {}),
+    },
     timeZone: context.timeZone,
     view: [
       // An older server's rows read as its lines did: "Label: value", or the value alone, never under a dash.
@@ -433,13 +438,17 @@ export const toolBlockReview = (block: ToolBlock): AiStoredActionReview | null =
  * The lines an approval message adds for a Cloud tool, such as "HTTP request: GET https://…": the first line naming
  * the app and the call repeats the question, and the generic hint says nothing.
  */
-const messageRows = (block: ToolBlock): AiLegacyReviewRow[] => {
+const messageRows = (block: ToolBlock): { reason?: string; rows: AiLegacyReviewRow[] } => {
   const message = block.approval?.message?.trim();
-  if (!message || block.presentation?.kind === "capability") return [];
+  if (!message || block.presentation?.kind === "capability") return { rows: [] };
+  const lines = message.split("\n").map((entry) => entry.trim());
+  // Managed code starts every approval with a "Label: value" line. A sentence before it says why the code asks
+  // (again), for example after the app changed the Action; the card shows it as its reason, not hidden in the rows.
+  const reason = block.name === "code_run" && lines.length > 1 && !/^[^:]{1,40}:(\s|$)/.test(lines[0]!) ? lines[0] : undefined;
   const rows: AiLegacyReviewRow[] = [];
   // "Label: value" is one row; "Label:" alone starts a row whose value is the lines after it.
   let open: AiLegacyReviewRow | null = null;
-  for (const line of message.split("\n").map((entry) => entry.trim())) {
+  for (const line of reason ? lines.slice(1) : lines) {
     if (!line || /^Review the validated arguments below before running this action\.$/i.test(line)) continue;
     const heading = /^([^:]{1,40}):$/.exec(line);
     // The value starts at its first visible character, so the pattern never backtracks over the white space before it.
@@ -453,7 +462,7 @@ const messageRows = (block: ToolBlock): AiLegacyReviewRow[] => {
     } else if (open) open.value = open.value ? `${open.value}\n${line}` : line;
     else rows.push({ label: "", value: line });
   }
-  return rows;
+  return { ...(reason ? { reason } : {}), rows };
 };
 
 export type ToolOutcomeWords = LegacyCardInput["outcome"];
@@ -476,11 +485,13 @@ export const toolActionCard = (
     toolSubject(block, context.locale, context.timeZone) ?? presentation?.title ?? displayToolName(block.name, context.locale);
   const title = presentation?.title ?? subject;
   const legacy = review?.legacy;
+  const message = legacy ? null : messageRows(block);
   return legacyActionCard(
     {
       // An old review's message stays literal; Cloud's own sentence for the call is asked as a question.
       question: legacy?.question ?? capabilityQuestionText(subject, context.locale),
-      rows: legacy?.rows ?? messageRows(block),
+      rows: legacy?.rows ?? message?.rows ?? [],
+      ...(message?.reason ? { reason: message.reason } : {}),
       ...(legacy?.markdown ? { markdown: legacy.markdown } : {}),
       ...(legacy?.links ? { links: legacy.links } : {}),
       ...(legacy?.summary ? { summary: legacy.summary } : {}),

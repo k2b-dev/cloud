@@ -1058,8 +1058,8 @@ files. For lasting Code, use the Code tools and [Code authoring](/en/docs/platfo
 
 If a Capability Action or its reviewed consequence changes while the person is
 asked, for example because the app was updated, nothing runs and no refusal is
-recorded. The run asks once more. The new card starts with a sentence that the
-app changed the Action, so the person approves the current version. If it changes
+recorded. The run asks once more. The new card gives as its reason that the app
+changed the Action, so the person approves the current version. If it changes
 again during that second question, the run ends with a sentence that nothing has
 run and the person can start it again. Remembered approvals stay valid.
 

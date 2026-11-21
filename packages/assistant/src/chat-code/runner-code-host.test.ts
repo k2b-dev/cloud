@@ -361,6 +361,44 @@ test("an Action that changed after the person was asked is asked once more with 
   }
 }, 20_000);
 
+test("an automatic call that changed asks without claiming the person was asked before", async () => {
+  const f = fixture();
+  f.capability.mockResolvedValueOnce({ status: "changed" }).mockImplementationOnce(async (request, _identity, _caller, options) => ({
+    status: "approval" as const,
+    id: z.object({ id: z.string() }).parse(request).id,
+    name: "demo.list",
+    input: {},
+    appName: "Demo",
+    appIcon: "folder",
+    appId: "demo",
+    localId: "list",
+    kind: "action" as const,
+    schemaHash: "fixture",
+    approval: "rememberable" as const,
+    title: "List",
+    review: null,
+    allowAlways: false,
+    scope: null,
+    ...(options?.changed ? { changed: true as const } : {}),
+  }));
+  const resolve = spyOn(runtimeCapabilities, "resolve").mockResolvedValue({
+    status: "completed",
+    result: { ok: true, data: { data: [{ name: "Current", amount: 3 }] } },
+  });
+  try {
+    const result = await f.execute("code_run", {
+      code: 'import {demo} from "@sdk"; export default async()=>(await demo.folder("folder").list({})).data;',
+    });
+    expect(result).toMatchObject({ status: "ready", output: '[{"name":"Current","amount":3}]' });
+    expect(f.capability.mock.calls[1]?.[3]).toEqual({});
+    expect(f.approve).toHaveBeenCalledTimes(1);
+    expect(f.approve.mock.calls[0]?.[0]).not.toHaveProperty("changed");
+  } finally {
+    resolve.mockRestore();
+    await f.close();
+  }
+}, 20_000);
+
 test("an Action that changes again while asked ends the run with a sentence instead of asking forever", async () => {
   const f = fixture();
   f.capability.mockImplementation(async (request) => ({
