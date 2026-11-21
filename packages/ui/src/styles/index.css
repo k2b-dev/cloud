@@ -5723,12 +5723,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: var(--k2b-surface);
   /* K5: the text edge, 20 px, 16 px on a phone. */
-  --k2b-panel-dialog-inset: var(--k2b-edge, 1.25rem);
+  --k2b-panel-dialog-inset: var(--k2b-gutter, 1.25rem);
 }
 
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-panel-dialog {
-    --k2b-panel-dialog-inset: var(--k2b-edge, 1rem);
+    --k2b-panel-dialog-inset: var(--k2b-gutter, 1rem);
   }
 }
 

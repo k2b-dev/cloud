@@ -1,7 +1,7 @@
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { useUiMessages } from "../intl/messages";
 import { dialogCore } from "../feedback/dialog-core";
 import { LocaleProvider } from "../intl/locale";
+import { useUiMessages } from "../intl/messages";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
 import type { DropdownAction, DropdownChoice, DropdownItem, DropdownSearch, DropdownSubmenu } from "./Dropdown";
 import { focusMenuRow, focusRowSegment } from "./menu-rows";

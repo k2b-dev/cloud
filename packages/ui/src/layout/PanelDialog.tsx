@@ -2,10 +2,10 @@ import { createComputed, createContext, createEffect, createSignal, createUnique
 import { Button } from "../actions/Button";
 import { Tabs } from "../actions/Tabs";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
+import { keepDialogFoot } from "../feedback/dialog-foot";
 import { type DialogTone, dialogToneIcon, dialogToneLabel } from "../feedback/dialog-tone";
 import { sharedPrompts } from "../feedback/prompt-confirm";
 import { resolvePromptMessages } from "../feedback/prompt-messages";
-import { keepDialogFoot } from "../feedback/dialog-foot";
 import { SuccessCheck } from "../feedback/success-check";
 import { showTruncatedTitle } from "../internal/truncated-title";
 import { useUiMessages } from "../intl/messages";
@@ -225,7 +225,13 @@ const PanelDialogFooter = (props: PanelDialogFooterProps): JSX.Element => {
       { defer: true },
     ),
   );
-  createEffect(on(() => Boolean(title()), () => keepDialogFoot(footer, before), { defer: true }));
+  createEffect(
+    on(
+      () => Boolean(title()),
+      () => keepDialogFoot(footer, before),
+      { defer: true },
+    ),
+  );
   return (
     <>
       <Show when={title()}>

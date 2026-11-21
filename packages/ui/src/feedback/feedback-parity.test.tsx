@@ -342,7 +342,9 @@ describe("@k2b/ui Cloud feedback parity", () => {
       indexCss.match(/@media \(min-width: 48rem\) \{\s*(\.k2b-ui \.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive[\s\S]*?)\n\}/)?.[1] ??
       "";
     // Centered, lifted by what grew under its footer (K16).
-    expect(adaptive).toMatch(/\.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive \{[^}]*top:\s*calc\(50% - var\(--k2b-dialog-lift, 0px\)\);/);
+    expect(adaptive).toMatch(
+      /\.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive \{[^}]*top:\s*calc\(50% - var\(--k2b-dialog-lift, 0px\)\);/,
+    );
     expect(adaptive).toMatch(/\.k2b-bottom-sheet-frame\.is-adaptive \.k2b-bottom-sheet__handle \{\s*display:\s*none;/);
     expect(indexCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{\s*\.k2b-ui \.k2b-dialog\.k2b-bottom-sheet-frame \{\s*animation:\s*none;/,

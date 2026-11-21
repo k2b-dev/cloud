@@ -15,16 +15,16 @@ import {
 import { Dynamic } from "solid-js/web";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
-import { inheritUiScope } from "../internal/portal-scope";
 import { KeyedFor } from "../internal/keyed-for";
 import { optionDescription } from "../internal/option-description";
+import { inheritUiScope } from "../internal/portal-scope";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
 import { focusMenuRow, focusRowSegment, levelItems } from "./menu-rows";
 import { MenuSearch, type MenuSearchApi } from "./menu-search";
-import { createMenuLevel, MAX_MENU_DEPTH, type MenuLevel, placeSubmenu } from "./menu-submenu";
 import { menuSheetReady, openMenuSheet } from "./menu-sheet-open";
+import { createMenuLevel, MAX_MENU_DEPTH, type MenuLevel, placeSubmenu } from "./menu-submenu";
 import { prefersMenuSheet } from "./phone-sheet";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
@@ -547,7 +547,13 @@ export function DropdownItems(props: {
       const submenu = () => item() as DropdownSubmenu;
       // A list box cannot open a menu: there the entries stand under the row's name, as a section's do.
       if (props.role === "option")
-        return <DropdownItems items={[{ sectionLabel: submenu().label, items: flatEntries(submenu().submenu) }]} close={props.close} role="option" />;
+        return (
+          <DropdownItems
+            items={[{ sectionLabel: submenu().label, items: flatEntries(submenu().submenu) }]}
+            close={props.close}
+            role="option"
+          />
+        );
       return <DropdownSubmenuRow item={submenu()} />;
     }
     const action = () => item() as DropdownAction;
@@ -730,32 +736,35 @@ function DropdownSubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
         <i class="ti ti-chevron-right k2b-dropdown__more" aria-hidden="true" />
       </button>
       <Show when={open()}>
-        {watchClose()}
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: a menu owns its keys. */}
-        <div
-          ref={(element) => {
-            panel = element;
-            inheritUiScope(element, row);
-            queueMicrotask(() => {
-              if (!element.isConnected) return;
-              if (typeof element.showPopover === "function") element.showPopover();
-              place();
-              if (focusFirst) focusMenuRow(actionableItems(element), "Home");
-              focusFirst = false;
-            });
-          }}
-          id={`${id}-menu`}
-          popover="manual"
-          role="menu"
-          aria-label={props.item.label}
-          class="k2b-dropdown__menu k2b-dropdown__submenu"
-          data-depth={menu.depth + 1}
-          on:keydown={onPanelKey}
-          onPointerEnter={() => menu.level.hold()}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <DropdownItems items={props.item.submenu} close={menu.close} depth={menu.depth + 1} />
-        </div>
+        {(_open) => {
+          watchClose();
+          return (
+            <div
+              ref={(element) => {
+                panel = element;
+                inheritUiScope(element, row);
+                queueMicrotask(() => {
+                  if (!element.isConnected) return;
+                  if (typeof element.showPopover === "function") element.showPopover();
+                  place();
+                  if (focusFirst) focusMenuRow(actionableItems(element), "Home");
+                  focusFirst = false;
+                });
+              }}
+              id={`${id}-menu`}
+              popover="manual"
+              role="menu"
+              aria-label={props.item.label}
+              class="k2b-dropdown__menu k2b-dropdown__submenu"
+              data-depth={menu.depth + 1}
+              on:keydown={onPanelKey}
+              onPointerEnter={() => menu.level.hold()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <DropdownItems items={props.item.submenu} close={menu.close} depth={menu.depth + 1} />
+            </div>
+          );
+        }}
       </Show>
     </>
   );
