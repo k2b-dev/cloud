@@ -1037,7 +1037,7 @@ code tools report it to the model as a tool error.
 Runs execute in the Code runner (workerd), with the person's turn approvals.
 Scheduled chat routines are retired; rebuild timed work as reviewed personal Code. Studio RSQL database
 grants and app storage are unavailable; use application capabilities and
-chat/Project file tools. `code_secret` opens trusted secret entry in the chat
+chat/Project file tools. `code_secret` offers trusted private entry as a Secret card in the chat
 UI; it does not start a browser execution host.
 See [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs) for limits:
 the runner's deadline includes approval waits and its bridge limits also
@@ -1105,8 +1105,23 @@ routine tabs. Scheduled chat routines are retired; historical results remain rea
 
 
 
+A `code_secret` request occupies a decision-card position in the conversation.
+Its headless state exposes entry, replacement, validation, saving, locked-window
+and expired-lease states to the host. Successful creation and replacement share
+one saved receipt; declining records `configured: false`. Receipts and reloads
+contain only metadata, never the entered value. With an automation target,
+editor access and the destination are checked before the card opens. A lost
+right closes the request without guessing whether the Code was deleted.
+
+Open secret requests join **Waiting for you** with their tool-block anchor.
+Selecting the chip opens the conversation at its card; only the window holding
+the claim may accept input. Completion removes the waiting entry. The value
+stays only in that window's controller until completion, including when a
+recoverable write fails. **Retry** reads the current metadata before another
+write; a changed destination is shown before replacement.
+
 Secrets management uses a list with an empty-state action. Adding or replacing
-a secret opens a separate dialog. Validation errors appear at their fields;
+a secret from this management list opens a separate dialog. Validation errors appear at their fields;
 network errors and revision conflicts remain explicit. A Bearer preset supplies
 the exact `Bearer ` prefix. API-key and custom-header modes remain available.
 The target is an HTTPS origin: URL paths and query parameters do not narrow the
