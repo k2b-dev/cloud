@@ -108,7 +108,7 @@ status icons or avatars.
 
 The glyph color (`currentColor`) drives the fill: `--k2b-icon-tile-fill`
 sets its share (12% light, 22% dark) over whatever surface lies below.
-The radius is 28%. The owning element sets a fixed box and the glyph color.
+The radius is `--k2b-radius-tile`, 8 px; a tile below 24 px is a mark and sets `--k2b-radius-mark` (K4). The owning element sets a fixed box and the glyph color.
 Hover, focus, and selection never change the tile.
 
 ```tsx

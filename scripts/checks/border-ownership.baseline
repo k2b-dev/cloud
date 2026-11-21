@@ -1,0 +1,44 @@
+# Known outer borders outside framed elements (K2, one line, one owner), one per occurrence:
+# <file> | <css|class> | <selector or tag> <property or class>. Lanes remove lines as containers take the lines over.
+# `bun scripts/check.ts border-ownership --fix` removes lines whose finding is gone.
+docs-site/src/ui/demo-sections/cloud.tsx | class | <div> border
+packages/cloud/src/desktop/solid.tsx | class | <div> border-b
+packages/core/src/pages/admin/ai/AiModelDetail.island.tsx | class | <section> border-t
+packages/core/src/pages/admin/storage/view.tsx | class | <div> border-t
+packages/core/src/pages/auth/PasswordSetupFields.tsx | class | <div> border
+packages/gateway-ops/src/observability/telemetry/browser/ModeNav.tsx | class | <nav> border-[var(--k2b-border)]
+packages/gateway-ops/src/observability/telemetry/browser/ModeNav.tsx | class | <nav> border-b
+packages/grids/src/frontend/custom-app/Scanner.island.tsx | class | <div> border
+packages/grids/src/frontend/custom-app/Scanner.island.tsx | class | <div> border-[var(--ui-border)]
+packages/mail/src/frontend/_components/MailSearchBuilder.tsx | class | <div> border
+packages/mail/src/frontend/_components/MailSearchBuilder.tsx | class | <div> border-[var(--ui-border)]
+packages/mail/src/frontend/_components/MailTemplateHelpDisclosure.tsx | class | <details> border
+packages/mail/src/frontend/_components/MailTemplateHelpDisclosure.tsx | class | <details> border-[var(--ui-border)]
+packages/ui/src/styles/content-parity.css | css | .k2b-ui .k2b-calendar-preview border
+packages/ui/src/styles/content-parity.css | css | .k2b-ui .k2b-content-calendar border
+packages/ui/src/styles/content-parity.css | css | .k2b-ui .k2b-content-doc-code border
+packages/ui/src/styles/content-parity.css | css | .k2b-ui .k2b-content-doc-lead border-left
+packages/ui/src/styles/content-parity.css | css | .k2b-ui .k2b-flow-amount[data-direction="in"] border
+packages/ui/src/styles/content-parity.css | css | .k2b-ui .k2b-run-log border
+packages/ui/src/styles/editors-parity.css | css | .k2b-ui .k2b-autocomplete border
+packages/ui/src/styles/editors-parity.css | css | .k2b-ui .k2b-markdown-editor border
+packages/ui/src/styles/editors-parity.css | css | .k2b-ui .k2b-template-preview border
+packages/ui/src/styles/editors-parity.css | css | .k2b-ui .k2b-template-sample border
+packages/ui/src/styles/feedback-parity.css | css | .k2b-ui .k2b-prompt-search border
+packages/ui/src/styles/feedback-parity.css | css | .k2b-ui [popover].k2b-hover-preview border
+packages/ui/src/styles/feedback-parity.css | css | .k2b-ui [popover].k2b-moved-hint border
+packages/ui/src/styles/index.css | css | .k2b-ui .k2b-chat-composer-accessory[data-search] border
+packages/ui/src/styles/index.css | css | .k2b-ui .k2b-choice-list[data-variant="list"] border
+packages/ui/src/styles/index.css | css | .k2b-ui .k2b-disclosure border
+packages/ui/src/styles/index.css | css | .k2b-ui .k2b-discussion-thread border-inline-start
+packages/ui/src/styles/index.css | css | .k2b-ui .k2b-discussion-thread[data-writing] border-inline-start
+packages/ui/src/styles/index.css | css | .k2b-ui .k2b-log-table border
+packages/ui/src/styles/index.css | css | .k2b-ui .k2b-section[data-frame="line"] border
+packages/ui/src/styles/index.css | css | .k2b-ui .k2b-settings-save-bar border
+packages/ui/src/styles/layout-parity.css | css | .k2b-ui .k2b-settings border
+packages/ui/src/styles/surfaces-widgets-parity.css | css | .k2b-ui .k2b-dashboard-panel border
+packages/ui/src/styles/surfaces-widgets-parity.css | css | .k2b-ui .k2b-paper border
+packages/ui/src/styles/surfaces-widgets-parity.css | css | .k2b-ui .k2b-stat-cell border
+packages/ui/src/styles/surfaces-widgets-parity.css | css | .k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"] border-inline-start
+packages/ui/src/styles/text-editor.css | css | .k2b-ui .k2b-ste-recovery border
+packages/ui/src/styles/text-editor.css | css | .k2b-ui .k2b-ste-table-source border

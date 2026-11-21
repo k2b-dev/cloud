@@ -1,0 +1,401 @@
+# Known radii outside the K4 scale (0, 4 px, 8 px, 14 px, round, or a radius token), one per occurrence:
+# <file> | <css|class|style> | <value>. Lanes remove lines as they migrate; the rule never adds lines.
+# `bun scripts/check.ts radius-scale --fix` removes lines whose finding is gone.
+docs-site/src/ui/demo-sections/input.tsx | class | rounded-xl
+packages/accounts/src/frontend/agents/AgentPictureTrigger.island.tsx | class | rounded-[28%]
+packages/accounts/src/frontend/groups/PersonalGroupTag.tsx | class | rounded-md
+packages/assistant/src/frontend/AssistantAllChatsList.tsx | class | rounded-md
+packages/assistant/src/frontend/AssistantChatSidebar.browser-fixture.tsx | style | 1rem
+packages/assistant/src/frontend/AssistantConversationEditor.tsx | class | rounded-md
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | class | rounded-md
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | class | rounded-md
+packages/assistant/src/frontend/AssistantPrefsModals.tsx | class | rounded-md
+packages/assistant/src/styles/app.css | css | .375rem
+packages/assistant/src/styles/app.css | css | .4375rem
+packages/assistant/src/styles/app.css | css | .625rem
+packages/assistant/src/styles/app.css | css | .625rem
+packages/assistant/src/styles/app.css | css | .625rem
+packages/assistant/src/styles/app.css | css | .75rem
+packages/assistant/src/styles/app.css | css | 0.3125rem
+packages/assistant/src/styles/app.css | css | 0.375rem
+packages/assistant/src/styles/app.css | css | 0.375rem
+packages/assistant/src/styles/app.css | css | 0.4375rem
+packages/assistant/src/styles/app.css | css | 0.75rem
+packages/assistant/src/styles/app.css | css | 0.75rem
+packages/assistant/src/styles/app.css | css | 10px
+packages/assistant/src/styles/app.css | css | 2px
+packages/assistant/src/styles/app.css | css | 2px
+packages/assistant/src/styles/app.css | css | 3px
+packages/assistant/src/styles/app.css | css | 7px
+packages/assistant/src/styles/pwa.css | css | 0.375rem
+packages/assistant/src/styles/pwa.css | css | 0.375rem
+packages/assistant/src/styles/pwa.css | css | 0.75rem
+packages/assistant/src/styles/pwa.css | css | 0.75rem
+packages/assistant/src/styles/pwa.css | css | 1.25rem
+packages/cloud-cli/src/login-page.ts | style | .75rem
+packages/cloud/src/ai/chat/blocks.tsx | class | rounded-md
+packages/cloud/src/ai/chat/blocks.tsx | class | rounded-md
+packages/cloud/src/ai/chat/blocks.tsx | class | rounded-md
+packages/cloud/src/ai/chat/blocks.tsx | class | rounded-md
+packages/cloud/src/ai/chat/blocks.tsx | class | rounded-md
+packages/cloud/src/ai/chat/blocks.tsx | class | rounded-md
+packages/cloud/src/ai/chat/builtin-tools.tsx | class | rounded-md
+packages/cloud/src/ai/chat/builtin-tools.tsx | class | rounded-md
+packages/cloud/src/ai/chat/builtin-tools.tsx | class | rounded-md
+packages/cloud/src/ai/chat/turn-navigator.tsx | class | rounded-md
+packages/cloud/src/ai/chat/visual-tools.tsx | class | rounded-md
+packages/cloud/src/ai/chat/visual-tools.tsx | class | rounded-md
+packages/cloud/src/ai/chat/web-tools.tsx | class | rounded-md
+packages/cloud/src/ai/chat/web-tools.tsx | class | rounded-md
+packages/cloud/src/ai/chat/web-tools.tsx | class | rounded-md
+packages/cloud/src/ai/chat/web-tools.tsx | class | rounded-md
+packages/cloud/src/ai/chat/web-tools.tsx | class | rounded-md
+packages/cloud/src/ai/model-card.tsx | class | rounded-md
+packages/cloud/src/ai/model-chooser.tsx | class | rounded-[5px]
+packages/cloud/src/ai/model-chooser.tsx | class | rounded-[5px]
+packages/cloud/src/ai/model-chooser.tsx | class | rounded-[9px]
+packages/cloud/src/ai/model-icon.tsx | class | rounded-[5px]
+packages/cloud/src/ai/model-icon.tsx | class | rounded-md
+packages/cloud/src/services/notifications/email-frame.ts | style | 0 0 12px 12px
+packages/cloud/src/services/notifications/email-frame.ts | style | 12px 12px 0 0
+packages/cloud/src/services/pdf/markdown.ts | style | .3em
+packages/cloud/src/services/pdf/markdown.ts | style | .8em
+packages/cloud/src/services/pdf/markdown.ts | style | 3px
+packages/cloud/src/services/pdf/markdown.ts | style | 3px
+packages/cloud/src/services/pdf/markdown.ts | style | 6px
+packages/cloud/src/services/settings/core-settings.ts | style | 6px
+packages/cloud/src/shared/markdown/extensions/code.ts | class | rounded-md
+packages/cloud/src/shared/markdown/extensions/code.ts | class | rounded-md
+packages/cloud/src/ssr/AppAccessDenied.tsx | class | rounded-xl
+packages/cloud/src/ssr/AppLaunchpadPanel.tsx | class | rounded-2xl
+packages/cloud/src/ssr/AppLaunchpadPanel.tsx | class | rounded-[0.95rem]
+packages/cloud/src/ssr/AppLaunchpadPanel.tsx | class | rounded-md
+packages/cloud/src/ssr/AppLaunchpadPanel.tsx | class | sm:rounded-[1.25rem]
+packages/cloud/src/styles/blocks.css | css | 0.3125rem
+packages/cloud/src/styles/effects.css | class | rounded-md
+packages/cloud/src/styles/effects.css | css | 0.375rem
+packages/cloud/src/styles/effects.css | css | 0.375rem
+packages/cloud/src/styles/effects.css | css | 0.38rem
+packages/cloud/src/styles/effects.css | css | 1.5rem
+packages/cloud/src/styles/file-chooser.css | css | 0.3125rem
+packages/cloud/src/styles/file-chooser.css | css | 0.3125rem
+packages/cloud/src/styles/file-chooser.css | css | 0.375rem
+packages/cloud/src/styles/file-chooser.css | css | 0.375rem
+packages/cloud/src/styles/file-chooser.css | css | 0.375rem
+packages/cloud/src/styles/file-chooser.css | css | 1rem
+packages/cloud/src/styles/file-chooser.css | css | var(--k2b-radius-surface, 0.75rem)
+packages/cloud/src/styles/global.css | css | 1.1rem
+packages/cloud/src/styles/global.css | css | 1.25rem
+packages/cloud/src/styles/global.css | css | 1.25rem
+packages/cloud/src/styles/global.css | css | 1.75rem 1.75rem 0 0
+packages/cloud/src/styles/global.css | css | 1.75rem 1.75rem 0 0
+packages/cloud/src/styles/global.css | css | 1.75rem 1.75rem 0 0
+packages/cloud/src/styles/global.css | css | 1.75rem 1.75rem 0 0
+packages/cloud/src/styles/global.css | css | round(clamp(0.625rem, calc(0.625rem + (100vw - 64rem) / 104), 0.875rem), 1px)
+packages/cloud/src/styles/panel.css | css | 0.375rem
+packages/cloud/src/styles/panel.css | css | 1.125rem 1.125rem 0 0
+packages/cloud/src/styles/profile-picture.css | css | 0.75rem
+packages/cloud/src/styles/profile-picture.css | css | 28%
+packages/cloud/src/styles/profile-picture.css | css | 28%
+packages/cloud/src/styles/resource-search.css | css | 0.375rem
+packages/cloud/src/styles/tokens.css | css | 0.75rem
+packages/cloud/src/styles/utilities-feedback.css | class | rounded-md
+packages/cloud/src/styles/utilities-layout.css | css | calc(var(--ui-radius-control) - 0.125rem)
+packages/cloud/src/styles/utilities-markdown-editor.css | css | 0.42rem !important
+packages/cloud/src/styles/utilities-navigation.css | class | rounded-xl
+packages/cloud/src/styles/utilities-navigation.css | css | 0.625rem
+packages/cloud/src/styles/utilities-navigation.css | css | 0.75rem
+packages/cloud/src/styles/utilities-navigation.css | css | 0.75rem
+packages/cloud/src/styles/utilities-navigation.css | css | 0.75rem
+packages/contacts/src/frontend/_components/ContactAddressMap.tsx | class | rounded-xl
+packages/contacts/src/frontend/_components/ContactOrgTreeView.tsx | class | rounded-md
+packages/contacts/src/frontend/_components/ContactQuickEdit.tsx | class | rounded-md
+packages/contacts/src/frontend/_components/ContactSearchPicker.tsx | class | rounded-md
+packages/contacts/src/frontend/_components/ContactUpsertForm.tsx | class | rounded-md
+packages/core/src/code/PageTree.island.tsx | class | rounded-xl
+packages/core/src/notifications.ts | style | 10px
+packages/core/src/pages/admin/ai/AiClassDetail.island.tsx | class | rounded-xl
+packages/core/src/pages/admin/ai/AiModelDetail.island.tsx | class | rounded-md
+packages/core/src/pages/admin/ai/view.tsx | class | rounded-md
+packages/core/src/pages/admin/settings/_components/AiSkillAdminActions.island.tsx | class | rounded-md
+packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | class | rounded-md
+packages/core/src/pages/admin/settings/_components/CoreSettingsForm.island.tsx | class | rounded-md
+packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | class | rounded-xl
+packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | class | rounded-xl
+packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | style | 0 0 12px 12px
+packages/core/src/pages/admin/settings/_components/setting-inputs.tsx | style | 12px 12px 0 0
+packages/core/src/pages/auth/consent.page.tsx | class | rounded-2xl
+packages/core/src/pages/auth/new-password/page.tsx | class | rounded-2xl
+packages/core/src/pages/auth/new-password/page.tsx | class | rounded-md
+packages/core/src/pages/auth/page.tsx | class | rounded-2xl
+packages/core/src/pages/auth/password-reset/page.tsx | class | rounded-2xl
+packages/core/src/pages/auth/password-reset/page.tsx | class | rounded-md
+packages/core/src/styles/app.css | css | 0.625rem
+packages/core/src/styles/app.css | css | 0.625rem
+packages/core/src/styles/app.css | css | 1rem 1rem 0 0
+packages/core/src/styles/app.css | css | calc(var(--ui-radius-control) + 3px)
+packages/editor/src/markdown/lists.ts | style | 1px
+packages/editor/src/markdown/mark.ts | style | 2px
+packages/filesv2/src/frontend/PublicShare.island.tsx | class | rounded-md
+packages/filesv2/src/frontend/ShareDialog.tsx | class | rounded-md
+packages/filesv2/src/styles/app.css | css | 0.125rem
+packages/filesv2/src/styles/app.css | css | 0.125rem
+packages/filesv2/src/styles/history.css | css | 12px
+packages/filesv2/src/styles/history.css | css | 2px
+packages/gateway-ops/src/observability/logs/_components/LogEntryDetail.island.tsx | class | rounded-md
+packages/gateway-ops/src/observability/metrics/_components/MetricsTokens.island.tsx | class | rounded-md
+packages/gateway-ops/src/observability/notifications/_components/NotificationActions.island.tsx | class | rounded-md
+packages/gateway/src/maintenance-page.ts | style | 12px
+packages/grids/src/document-template-starters.ts | style | 1px
+packages/grids/src/document-template-starters.ts | style | 5px
+packages/grids/src/document-template-starters.ts | style | 5px
+packages/grids/src/document-template-starters.ts | style | 6px
+packages/grids/src/frontend/_components/documents/DocumentDetailsDialog.tsx | class | rounded-md
+packages/grids/src/frontend/_components/forms/PublicFormSubmit.tsx | class | rounded-md
+packages/grids/src/frontend/_components/records-view/RecordCardsView.tsx | class | rounded-md
+packages/grids/src/frontend/_components/records/FormSubmitModal.tsx | class | rounded-md
+packages/grids/src/frontend/_components/toolbar/FilterPanel.tsx | class | rounded-md
+packages/grids/src/frontend/_components/workflows/WorkflowEmailTemplates.tsx | style | 0 0 12px 12px
+packages/grids/src/frontend/_components/workflows/WorkflowEmailTemplates.tsx | style | 12px 12px 0 0
+packages/grids/src/frontend/_components/workflows/WorkflowRevisionHistory.tsx | class | rounded-md
+packages/grids/src/frontend/_components/workflows/WorkflowScannerSurface.tsx | class | rounded-xl
+packages/grids/src/styles/app.css | css | calc(var(--ui-radius-control) - 0.125rem)
+packages/grids/src/templates/bookshop.ts | style | 6px
+packages/grids/src/templates/bookshop.ts | style | 6px
+packages/grids/src/templates/finance.ts | style | 6px
+packages/grids/src/templates/finance.ts | style | 6px
+packages/grids/src/templates/inventory.ts | style | 6px
+packages/grids/src/templates/inventory.ts | style | 6px
+packages/mail/src/frontend/_components/MailAdminKeptDetail.tsx | class | rounded-md
+packages/mail/src/frontend/_components/MailConversationRow.tsx | class | rounded-md
+packages/mail/src/frontend/_components/mail-draft-document-presence.ts | style | 3px
+packages/mail/src/frontend/_components/mail-message-document.ts | style | 6px
+packages/mail/src/service/compose-renderer.ts | style | 3px
+packages/mail/src/styles/app.css | css | 0.375rem
+packages/mail/src/styles/app.css | css | 0.3rem
+packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | class | rounded-md
+packages/notebooks/src/frontend/[id]/_components/editor/NoteEditor.client.tsx | class | rounded-md
+packages/notebooks/src/service/note-pdf.ts | style | 3px
+packages/notebooks/src/styles/app.css | css | 0.125rem
+packages/notebooks/src/styles/app.css | css | 0.2em
+packages/notebooks/src/styles/app.css | css | 0.3125rem
+packages/notebooks/src/styles/app.css | css | 0.375rem
+packages/notebooks/src/styles/app.css | css | 0.75rem
+packages/notebooks/src/styles/app.css | css | 0.75rem
+packages/notebooks/src/styles/app.css | css | 12px
+packages/notebooks/src/styles/app.css | css | 12px
+packages/notebooks/src/styles/app.css | css | 2px
+packages/notebooks/src/styles/app.css | css | 3px
+packages/notebooks/src/styles/app.css | css | 3px
+packages/notebooks/src/styles/app.css | css | 3px
+packages/notebooks/src/styles/app.css | css | 9px
+packages/notebooks/src/styles/app.css | css | 9px
+packages/pulse/src/frontend/workspace/SavedQueriesView.tsx | class | rounded-[10px]
+packages/pulse/src/frontend/workspace/SourcesView.tsx | class | rounded-md
+packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | class | rounded-[10px]
+packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | class | rounded-md
+packages/pulse/src/frontend/workspace/SqlConsoleView.tsx | class | rounded-xl
+packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded-[10px]
+packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded-[9px]
+packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded-[9px]
+packages/pulse/src/frontend/workspace/base-settings-dialog.tsx | class | rounded-[9px]
+packages/pulse/src/frontend/workspace/dashboard-styles.ts | style | 0 0 calc(var(--k2b-radius-surface) - 1px) calc(var(--k2b-radius-surface) - 1px)
+packages/pulse/src/frontend/workspace/workspace-styles.ts | style | 12px!important
+packages/pulse/src/styles/app.css | css | 10px
+packages/pulse/src/styles/app.css | css | 10px
+packages/spaces/src/frontend/[id]/_components/detail/ItemLinksSection.tsx | class | rounded-[2px]
+packages/spaces/src/frontend/admin.tsx | class | rounded-md
+packages/spaces/src/styles/app.css | css | .125rem
+packages/spaces/src/styles/app.css | css | .375rem
+packages/spaces/src/styles/app.css | css | .375rem
+packages/spaces/src/styles/app.css | css | .4375rem
+packages/spaces/src/styles/app.css | css | .625rem
+packages/spaces/src/styles/app.css | css | .625rem
+packages/spaces/src/styles/app.css | css | .625rem
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | class | rounded-md
+packages/ui/src/base/base.css | css | 0.125rem
+packages/ui/src/base/base.css | css | 0.3rem
+packages/ui/src/base/base.css | css | 0.75rem
+packages/ui/src/base/base.css | css | 2px
+packages/ui/src/base/base.css | css | 3px
+packages/ui/src/base/base.css | css | 7px
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | class | rounded-md
+packages/ui/src/styles/content-parity.css | css | 0 0 0 7px
+packages/ui/src/styles/content-parity.css | css | 0.125rem
+packages/ui/src/styles/content-parity.css | css | 0.3125rem
+packages/ui/src/styles/content-parity.css | css | 0.3125rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.375rem
+packages/ui/src/styles/content-parity.css | css | 0.3em
+packages/ui/src/styles/content-parity.css | css | 0.625rem
+packages/ui/src/styles/content-parity.css | css | 0.625rem
+packages/ui/src/styles/content-parity.css | css | 0.625rem
+packages/ui/src/styles/content-parity.css | css | 0.625rem
+packages/ui/src/styles/content-parity.css | css | 0.625rem 0.625rem 0 0
+packages/ui/src/styles/content-parity.css | css | 0.625rem 0.625rem 0 0
+packages/ui/src/styles/content-parity.css | css | 0.75rem
+packages/ui/src/styles/content-parity.css | css | 10px
+packages/ui/src/styles/content-parity.css | css | 10px
+packages/ui/src/styles/content-parity.css | css | 12px
+packages/ui/src/styles/content-parity.css | css | 15px
+packages/ui/src/styles/content-parity.css | css | 15px
+packages/ui/src/styles/content-parity.css | css | 15px
+packages/ui/src/styles/content-parity.css | css | 17px
+packages/ui/src/styles/content-parity.css | css | 18px 18px 0 0
+packages/ui/src/styles/content-parity.css | css | 1px
+packages/ui/src/styles/content-parity.css | css | 2px
+packages/ui/src/styles/content-parity.css | css | 2px
+packages/ui/src/styles/content-parity.css | css | 2px
+packages/ui/src/styles/content-parity.css | css | 2px
+packages/ui/src/styles/content-parity.css | css | 2px
+packages/ui/src/styles/content-parity.css | css | 3px
+packages/ui/src/styles/content-parity.css | css | 5px
+packages/ui/src/styles/content-parity.css | css | 5px
+packages/ui/src/styles/content-parity.css | css | 7px
+packages/ui/src/styles/content-parity.css | css | 7px
+packages/ui/src/styles/content-parity.css | css | 9px
+packages/ui/src/styles/content-parity.css | css | 9px
+packages/ui/src/styles/content-parity.css | css | calc(var(--k2b-radius-control) - 0.125rem)
+packages/ui/src/styles/content-parity.css | css | calc(var(--k2b-radius-surface) - 1px)
+packages/ui/src/styles/content-parity.css | css | calc(var(--k2b-radius-surface) - 1px)
+packages/ui/src/styles/content-parity.css | css | calc(var(--k2b-radius-surface) - 1px)
+packages/ui/src/styles/content-parity.css | css | calc(var(--k2b-radius-surface) - 1px) calc(var(--k2b-radius-surface) - 1px) 0 0
+packages/ui/src/styles/feedback-parity.css | css | 0.4375rem
+packages/ui/src/styles/feedback-parity.css | css | calc(var(--k2b-radius-surface) + 0.5rem)
+packages/ui/src/styles/index.css | css | .75rem
+packages/ui/src/styles/index.css | css | .75rem
+packages/ui/src/styles/index.css | css | 0.2rem
+packages/ui/src/styles/index.css | css | 0.3125rem
+packages/ui/src/styles/index.css | css | 0.3125rem
+packages/ui/src/styles/index.css | css | 0.35rem
+packages/ui/src/styles/index.css | css | 0.35rem
+packages/ui/src/styles/index.css | css | 0.375rem
+packages/ui/src/styles/index.css | css | 0.375rem
+packages/ui/src/styles/index.css | css | 0.375rem
+packages/ui/src/styles/index.css | css | 0.375rem
+packages/ui/src/styles/index.css | css | 0.375rem
+packages/ui/src/styles/index.css | css | 0.375rem
+packages/ui/src/styles/index.css | css | 0.375rem
+packages/ui/src/styles/index.css | css | 0.375rem
+packages/ui/src/styles/index.css | css | 0.375rem
+packages/ui/src/styles/index.css | css | 0.5625rem
+packages/ui/src/styles/index.css | css | 0.5625rem
+packages/ui/src/styles/index.css | css | 0.625rem
+packages/ui/src/styles/index.css | css | 0.625rem
+packages/ui/src/styles/index.css | css | 0.625rem
+packages/ui/src/styles/index.css | css | 0.625rem
+packages/ui/src/styles/index.css | css | 0.625rem
+packages/ui/src/styles/index.css | css | 0.65rem
+packages/ui/src/styles/index.css | css | 0.6875rem
+packages/ui/src/styles/index.css | css | 0.75rem
+packages/ui/src/styles/index.css | css | 0.75rem
+packages/ui/src/styles/index.css | css | 0.75rem
+packages/ui/src/styles/index.css | css | 0.75rem
+packages/ui/src/styles/index.css | css | 1.125rem
+packages/ui/src/styles/index.css | css | 1.375rem
+packages/ui/src/styles/index.css | css | 1px
+packages/ui/src/styles/index.css | css | 1px
+packages/ui/src/styles/index.css | css | 1px
+packages/ui/src/styles/index.css | css | 1rem
+packages/ui/src/styles/index.css | css | 1rem
+packages/ui/src/styles/index.css | css | 1rem 1rem 0.3125rem 1rem
+packages/ui/src/styles/index.css | css | 2px
+packages/ui/src/styles/index.css | css | 2px
+packages/ui/src/styles/index.css | css | 2px
+packages/ui/src/styles/index.css | css | 2px
+packages/ui/src/styles/index.css | css | 2px
+packages/ui/src/styles/index.css | css | 3px
+packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-control) + 3px)
+packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-control) + 3px)
+packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-control) - 0.0625rem)
+packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-surface) + 0.125rem)
+packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-surface) + 0.25rem)
+packages/ui/src/styles/index.css | css | calc(var(--k2b-radius-surface) - 1px)
+packages/ui/src/styles/layout-parity.css | css | 0.3125rem
+packages/ui/src/styles/layout-parity.css | css | 0.375rem
+packages/ui/src/styles/layout-parity.css | css | 0.4375rem
+packages/ui/src/styles/layout-parity.css | css | 0.625rem
+packages/ui/src/styles/layout-parity.css | css | 1.25rem
+packages/ui/src/styles/layout-parity.css | css | 1.625rem
+packages/ui/src/styles/layout-parity.css | css | calc(var(--k2b-radius-surface) - 1px)
+packages/ui/src/styles/layout-parity.css | css | clamp( 0px, var(--k2b-workspace-inner-radius) - var(--k2b-workspace-sidebar-space) * 1000, var(--k2b-workspace-inner-radius) )
+packages/ui/src/styles/layout-parity.css | css | max(0px, var(--k2b-workspace-radius) - 1px)
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 0.2rem
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 0.375rem
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 0.375rem
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 0.3rem
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 0.625rem
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 1px
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 2.5px
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 28%
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 28%
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 28%
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 2px
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 2px
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 2px
+packages/ui/src/styles/surfaces-widgets-parity.css | css | 3px
+packages/ui/src/styles/surfaces-widgets-parity.css | css | calc(var(--k2b-radius-control) * 0.6)
+packages/ui/src/styles/surfaces-widgets-parity.css | css | calc(var(--k2b-radius-surface) + 0.25rem)
+packages/ui/src/styles/text-editor.css | css | 10px
+packages/ui/src/styles/text-editor.css | css | 10px
+packages/ui/src/styles/text-editor.css | css | 12px
+packages/ui/src/styles/text-editor.css | css | 3px
+packages/ui/src/styles/text-editor.css | css | 6px
+packages/ui/src/styles/text-editor.css | css | 6px
+packages/ui/src/styles/text-editor.css | css | 6px
+packages/ui/src/styles/text-editor.css | css | 6px
+packages/ui/src/styles/text-editor.css | css | 6px 6px 6px 0
+packages/ui/src/styles/text-editor.css | css | 99px
+packages/venue/src/frontend/_components/PublicFeedbackForm.tsx | class | rounded-xl
+packages/venue/src/frontend/_components/PublicFeedbackForm.tsx | class | rounded-xl
+packages/venue/src/frontend/_components/public-page-view.tsx | class | rounded-2xl
+packages/venue/src/frontend/_components/public-page-view.tsx | class | rounded-2xl
+packages/venue/src/frontend/_components/public-page-view.tsx | class | rounded-2xl
+packages/venue/src/frontend/_components/public-page-view.tsx | class | rounded-xl
+packages/venue/src/frontend/_components/public-page-view.tsx | class | rounded-xl
+packages/venue/src/frontend/_components/venue-workspace/public-page-editor.tsx | class | rounded-xl
+packages/venue/src/frontend/public-refresh-notice.tsx | class | rounded-xl
+packages/venue/src/frontend/public/[slug]/feedback/page.tsx | class | rounded-xl
+packages/venue/src/frontend/public/[slug]/feedback/page.tsx | class | rounded-xl
+pwas/notes/src/styles.css | css | 10px
+pwas/notes/src/styles.css | css | 10px
+pwas/notes/src/styles.css | css | 10px
+pwas/notes/src/styles.css | css | 10px
+pwas/notes/src/styles.css | css | 10px
+pwas/notes/src/styles.css | css | 12px !important
+pwas/notes/src/styles.css | css | 16px
+pwas/notes/src/styles.css | css | 18px
+pwas/notes/src/styles.css | css | 2.5px
+pwas/notes/src/styles.css | css | 20px
+pwas/notes/src/styles.css | css | 5px 5px 5px 0
+pwas/notes/src/styles.css | css | 6px
+pwas/notes/src/styles.css | css | 6px
+pwas/notes/src/styles.css | css | 7px
+pwas/notes/src/styles.css | css | 99px
+pwas/notes/src/styles.css | css | 99px
+pwas/notes/src/styles.css | css | 99px
+pwas/notes/src/styles.css | css | 99px
+pwas/notes/src/styles.css | css | 99px
+pwas/notes/src/styles.css | css | 99px

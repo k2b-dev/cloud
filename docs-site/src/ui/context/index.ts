@@ -118,6 +118,7 @@ import surfaceColor from "./surfaces/color.md" with { type: "text" };
 import surfaceDetails from "./surfaces/details.md" with { type: "text" };
 import surfaceElevation from "./surfaces/elevation.md" with { type: "text" };
 import surfaceEmptyStates from "./surfaces/empty-states.md" with { type: "text" };
+import surfaceFlatCriteria from "./surfaces/flat-criteria.md" with { type: "text" };
 import surfaceObservability from "./surfaces/observability.md" with { type: "text" };
 import surfacePaper from "./surfaces/paper.md" with { type: "text" };
 import surfaceProgress from "./surfaces/progress.md" with { type: "text" };
@@ -199,6 +200,7 @@ const catalogContextSources = {
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
   "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
   "surfaces/elevation": { file: "surfaces/elevation.md", content: surfaceElevation },
+  "surfaces/flat-criteria": { file: "surfaces/flat-criteria.md", content: surfaceFlatCriteria },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
   "surfaces/section": { file: "surfaces/section.md", content: surfaceSection },
