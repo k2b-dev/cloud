@@ -7,14 +7,29 @@ type Entry = Exclude<DropdownItem, { items: unknown }>;
 
 const entriesOf = (items: readonly DropdownItem[]): Entry[] => items.flatMap((item) => ("items" in item ? item.items : [item]));
 
-/** The actions and choices whose label or description contains the query, kept in their sections. */
+type Leaf = Exclude<Entry, { submenu: unknown }>;
+
+/** The actions and choices of a submenu and the submenus inside it. */
+const leavesOf = (items: readonly DropdownItem[]): Leaf[] =>
+  items.flatMap((item) => ("items" in item ? leavesOf(item.items) : "submenu" in item ? leavesOf(item.submenu) : [item]));
+
+/**
+ * The actions and choices whose label or description contains the query, kept in their sections. A submenu's matches
+ * stand in a section named after it, since a list of matches does not open further menus.
+ */
 export const filterDropdownItems = (items: readonly DropdownItem[], query: string, locale?: string): DropdownItem[] => {
   const needle = query.trim().toLocaleLowerCase(locale);
   const matches = (entry: Entry) => `${entry.label} ${entry.description ?? ""}`.toLocaleLowerCase(locale).includes(needle);
+  const submenu = (entry: Entry & { submenu: readonly DropdownItem[] }): DropdownItem[] => {
+    const kept = leavesOf(entry.submenu).filter(matches);
+    return kept.length ? [{ sectionLabel: entry.label, items: kept }] : [];
+  };
   return items.flatMap((item): DropdownItem[] => {
+    if ("submenu" in item) return submenu(item);
     if (!("items" in item)) return matches(item) ? [item] : [];
-    const kept = item.items.filter(matches);
-    return kept.length ? [{ ...item, items: kept }] : [];
+    const kept = item.items.filter((entry) => !("submenu" in entry) && matches(entry));
+    const nested = item.items.flatMap((entry) => ("submenu" in entry ? submenu(entry) : []));
+    return [...(kept.length ? [{ ...item, items: kept }] : []), ...nested];
   });
 };
 

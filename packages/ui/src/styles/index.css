@@ -7562,6 +7562,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-danger-text);
 }
 
+/* K16: "▸" marks a row that opens a menu beside it; the row stays marked while its menu is open. */
+.k2b-ui .k2b-dropdown__more {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-dropdown__item--submenu[data-open="true"] {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui [dir="rtl"] .k2b-dropdown__more,
+.k2b-ui .k2b-dropdown__more:dir(rtl) {
+  transform: scaleX(-1);
+}
+
+/* On a phone a submenu takes the sheet's place; its first row leads back, a band with a hairline below. */
+.k2b-ui .k2b-dropdown__back {
+  border-bottom: 1px solid var(--k2b-border);
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+
 .k2b-ui .k2b-dropdown__item[data-danger="true"]:is(:hover, :focus-visible) {
   background: var(--k2b-danger-surface);
 }

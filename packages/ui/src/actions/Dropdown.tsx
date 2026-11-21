@@ -15,13 +15,15 @@ import {
 import { Dynamic } from "solid-js/web";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
+import { inheritUiScope } from "../internal/portal-scope";
 import { KeyedFor } from "../internal/keyed-for";
 import { optionDescription } from "../internal/option-description";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
-import { focusMenuRow, focusRowSegment } from "./menu-rows";
+import { focusMenuRow, focusRowSegment, levelItems } from "./menu-rows";
 import { MenuSearch, type MenuSearchApi } from "./menu-search";
+import { createMenuLevel, MAX_MENU_DEPTH, type MenuLevel, placeSubmenu } from "./menu-submenu";
 import { menuSheetReady, openMenuSheet } from "./menu-sheet-open";
 import { prefersMenuSheet } from "./phone-sheet";
 
@@ -88,7 +90,22 @@ export type DropdownAction =
       action?: never;
       href?: never;
       external?: never;
-    });
+    })
+  | DropdownSubmenu;
+
+/**
+ * A row that opens a further menu beside it, marked with "▸" (K16). The submenu stands level with its row and turns
+ * to the other side or upwards where room ends. It opens after the pointer rests on the row for 150 ms, on click, and
+ * with Right or Enter; Left and Escape close one level. Moving the pointer towards it closes nothing. On a phone the
+ * sheet shows one level at a time, with Back at its top. A menu has at most three levels: a submenu row on the third
+ * level is not offered.
+ */
+export type DropdownSubmenu = DropdownActionBase & {
+  submenu: readonly DropdownItem[];
+  action?: never;
+  href?: never;
+  external?: never;
+};
 
 /** A second, smaller action at the end of a row, such as "Only" beside a checkbox; it keeps the menu open. */
 export type DropdownSecondaryAction = {
@@ -245,7 +262,25 @@ type MenuContextValue = {
   close: (restoreFocus?: boolean) => void;
   /** `option` inside a searchable menu's list box, whose field keeps the focus. */
   role: "menuitem" | "option";
+  /** 1 for the menu itself, 2 and 3 for its submenus. */
+  depth: number;
+  /** Which row of this level has its submenu open. */
+  level: MenuLevel;
+  /** In a phone sheet, a submenu row shows its entries in place of the sheet's instead of a menu beside it. */
+  drill?: (item: DropdownSubmenu, row: HTMLElement) => void;
 };
+
+/** The pointer and focus of a row tell its level which submenu stays open. */
+const rowEvents = (menu: MenuContextValue | undefined, id: string) => ({
+  onPointerEnter: (event: PointerEvent) => {
+    if (event.pointerType !== "touch") menu?.level.enter(id, { x: event.clientX, y: event.clientY });
+  },
+  onPointerMove: (event: PointerEvent) => menu?.level.move({ x: event.clientX, y: event.clientY }),
+  onFocus: () => {
+    const open = menu?.level.open();
+    if (open && open !== id) menu?.level.set(undefined);
+  },
+});
 
 type DropdownContextValue = {
   disabled: () => boolean;
@@ -261,18 +296,15 @@ const MenuContext = createContext<MenuContextValue>();
 const DropdownContext = createContext<DropdownContextValue>();
 
 const actionableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
-  menu
-    ? Array.from(
-        menu.querySelectorAll<HTMLElement>(
-          [
-            "[role='menuitem']:not([aria-disabled='true'])",
-            "[role='menuitemcheckbox']:not([aria-disabled='true'])",
-            "[role='menuitemradio']:not([aria-disabled='true'])",
-            "[role='option']:not([aria-disabled='true'])",
-          ].join(", "),
-        ),
-      )
-    : [];
+  levelItems(
+    menu,
+    [
+      "[role='menuitem']:not([aria-disabled='true'])",
+      "[role='menuitemcheckbox']:not([aria-disabled='true'])",
+      "[role='menuitemradio']:not([aria-disabled='true'])",
+      "[role='option']:not([aria-disabled='true'])",
+    ].join(", "),
+  );
 
 const focusMenuItem = (menu: HTMLElement | undefined, index: number): void => {
   const items = actionableItems(menu).filter((item) => !item.classList.contains("k2b-dropdown__secondary"));
@@ -328,6 +360,7 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
   const danger = () => props.danger || props.variant === "danger";
   const role = () => menu?.role ?? "menuitem";
   const content = itemContent(props);
+  const events = rowEvents(menu, `k2b-row-${createUniqueId()}`);
 
   return (
     <Show
@@ -343,6 +376,9 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           data-accent={props.variant === "accent" ? "true" : undefined}
           disabled={props.disabled}
           aria-disabled={props.disabled ? "true" : undefined}
+          onPointerEnter={events.onPointerEnter}
+          onPointerMove={events.onPointerMove}
+          onFocus={events.onFocus}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -367,6 +403,9 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           class={`k2b-dropdown__item ${props.class ?? ""}`}
           data-danger={danger() ? "true" : undefined}
           data-accent={props.variant === "accent" ? "true" : undefined}
+          onPointerEnter={events.onPointerEnter}
+          onPointerMove={events.onPointerMove}
+          onFocus={events.onFocus}
           onClick={(event) => {
             // With `onSelect`, a plain click runs it in place of the link; a modified click keeps its browser meaning.
             const select = props.onSelect;
@@ -423,6 +462,7 @@ function DropdownSecondaryButton(props: DropdownSecondaryAction & { class: strin
 function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
   const menu = useContext(MenuContext);
   const checked = () => (typeof props.checked === "function" ? props.checked() : props.checked);
+  const events = rowEvents(menu, `k2b-row-${createUniqueId()}`);
   let element: HTMLElement | undefined;
   return (
     <Dynamic
@@ -440,6 +480,9 @@ function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
       class={`k2b-dropdown__item ${props.class ?? ""}`}
       data-selected={checked() ? "true" : undefined}
       disabled={props.disabled}
+      onPointerEnter={events.onPointerEnter}
+      onPointerMove={events.onPointerMove}
+      onFocus={events.onFocus}
       onClick={(event: MouseEvent) => {
         if (props.href && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
           menu?.close(false);
@@ -488,12 +531,25 @@ export function DropdownItems(props: {
   items: readonly DropdownItem[];
   close: (restoreFocus?: boolean) => void;
   role?: "menuitem" | "option";
+  /** Internal: the level of a submenu's entries, 1 for the menu itself. */
+  depth?: number;
+  /** Internal: a phone sheet shows a submenu's entries in its own place. */
+  drill?: (item: DropdownSubmenu, row: HTMLElement) => void;
 }): JSX.Element {
   const messages = useUiMessages();
+  const level = createMenuLevel();
+  const depth = untrack(() => props.depth ?? 1);
   // Rows read their current item: a host that rebuilds equal items while the menu is open keeps each row element (#2140).
   const renderItem = (item: () => DropdownAction | DropdownChoice): JSX.Element => {
     const initial = untrack(item);
     if ("choice" in initial) return <DropdownChoiceItem {...mergeProps(() => item() as DropdownChoice)} />;
+    if ("submenu" in initial) {
+      const submenu = () => item() as DropdownSubmenu;
+      // A list box cannot open a menu: there the entries stand under the row's name, as a section's do.
+      if (props.role === "option")
+        return <DropdownItems items={[{ sectionLabel: submenu().label, items: flatEntries(submenu().submenu) }]} close={props.close} role="option" />;
+      return <DropdownSubmenuRow item={submenu()} />;
+    }
     const action = () => item() as DropdownAction;
     return (
       <DropdownItem
@@ -517,7 +573,7 @@ export function DropdownItems(props: {
   };
 
   return (
-    <MenuContext.Provider value={{ close: props.close, role: props.role ?? "menuitem" }}>
+    <MenuContext.Provider value={{ close: props.close, role: props.role ?? "menuitem", depth, level, drill: props.drill }}>
       <KeyedFor each={props.items} by={(item) => ("items" in item ? `section:${item.sectionLabel ?? ""}` : `item:${item.label}`)}>
         {(current, index) => {
           const item = current();
@@ -567,6 +623,140 @@ export function DropdownItems(props: {
         }}
       </KeyedFor>
     </MenuContext.Provider>
+  );
+}
+
+/** The actions and choices of a menu and its submenus, without sections or submenu rows. */
+const flatEntries = (items: readonly DropdownItem[]): (DropdownAction | DropdownChoice)[] =>
+  items.flatMap((item) => ("items" in item ? flatEntries(item.items) : "submenu" in item ? flatEntries(item.submenu) : [item]));
+
+function DropdownSubmenuRow(props: { item: DropdownSubmenu }): JSX.Element {
+  const menu = useContext(MenuContext);
+  if (!menu) throw new Error("A submenu row must be inside a menu");
+  const id = `k2b-submenu-${createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const events = rowEvents(menu, id);
+  const open = () => menu.level.open() === id;
+  // A fourth level is not offered (K16): its row stays, but cannot open.
+  const disabled = () => Boolean(props.item.disabled) || menu.depth >= MAX_MENU_DEPTH;
+  let row!: HTMLButtonElement;
+  let panel: HTMLDivElement | undefined;
+  let focusFirst = false;
+  const rtl = () => getComputedStyle(row).direction === "rtl";
+  const show = (moveFocus: boolean) => {
+    if (disabled()) return;
+    if (menu.drill) return menu.drill(props.item, row);
+    focusFirst = moveFocus;
+    if (open() && moveFocus) focusMenuRow(actionableItems(panel), "Home");
+    menu.level.set(id);
+  };
+  const hide = () => {
+    menu.level.set(undefined);
+    row.focus();
+  };
+  const place = () => {
+    if (!panel?.isConnected) return;
+    const host = row.closest<HTMLElement>("[role='menu'], [role='dialog'], [role='listbox']") ?? row;
+    const at = placeSubmenu(
+      row.getBoundingClientRect(),
+      host.getBoundingClientRect(),
+      panel.getBoundingClientRect(),
+      { width: window.innerWidth, height: window.innerHeight },
+      rtl(),
+    );
+    panel.style.left = `${at.left}px`;
+    panel.style.top = `${at.top}px`;
+    panel.dataset.side = at.side;
+  };
+  const onRowKey = (event: KeyboardEvent) => {
+    if (event.key !== (rtl() ? "ArrowLeft" : "ArrowRight")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    show(true);
+  };
+  const onPanelKey = (event: KeyboardEvent) => {
+    const items = actionableItems(panel);
+    if (focusMenuRow(items, event.key) || focusRowSegment(items, event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
+    } else if (event.key === "Escape" || event.key === (rtl() ? "ArrowRight" : "ArrowLeft")) {
+      // Only this level closes; the menu around it stays, as the browser's own Escape would close it.
+      event.preventDefault();
+      event.stopPropagation();
+      hide();
+    }
+  };
+  onMount(() => {
+    // The menu around it closed: its submenu closes with it.
+    const host = row.parentElement?.closest<HTMLElement>("[popover]");
+    const closed = (event: Event) => {
+      if ((event as ToggleEvent).newState === "closed") menu.level.set(undefined);
+    };
+    host?.addEventListener("toggle", closed);
+    window.addEventListener("resize", closed);
+    onCleanup(() => {
+      host?.removeEventListener("toggle", closed);
+      window.removeEventListener("resize", closed);
+    });
+  });
+  return (
+    <>
+      <button
+        ref={row}
+        type="button"
+        role={menu.role}
+        tabIndex={-1}
+        class={`k2b-dropdown__item k2b-dropdown__item--submenu ${props.item.class ?? ""}`}
+        aria-label={props.item.ariaLabel}
+        aria-haspopup="menu"
+        aria-expanded={open()}
+        aria-controls={open() ? `${id}-menu` : undefined}
+        aria-disabled={disabled() ? "true" : undefined}
+        disabled={disabled()}
+        data-open={open() ? "true" : undefined}
+        data-danger={props.item.variant === "danger" ? "true" : undefined}
+        data-accent={props.item.variant === "accent" ? "true" : undefined}
+        onPointerEnter={events.onPointerEnter}
+        onPointerMove={events.onPointerMove}
+        onFocus={events.onFocus}
+        on:keydown={onRowKey}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          // Enter and Space click with no pointer: the keyboard goes into the submenu, a pointer stays where it is.
+          show(event.detail === 0);
+        }}
+      >
+        {itemContent({ ...props.item, children: props.item.label })}
+        <i class="ti ti-chevron-right k2b-dropdown__more" aria-hidden="true" />
+      </button>
+      <Show when={open()}>
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: a menu owns its keys. */}
+        <div
+          ref={(element) => {
+            panel = element;
+            inheritUiScope(element, row);
+            queueMicrotask(() => {
+              if (!element.isConnected) return;
+              if (typeof element.showPopover === "function") element.showPopover();
+              place();
+              if (focusFirst) focusMenuRow(actionableItems(element), "Home");
+              focusFirst = false;
+            });
+          }}
+          id={`${id}-menu`}
+          popover="manual"
+          role="menu"
+          aria-label={props.item.label}
+          class="k2b-dropdown__menu k2b-dropdown__submenu"
+          data-depth={menu.depth + 1}
+          on:keydown={onPanelKey}
+          onPointerEnter={() => menu.level.hold()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <DropdownItems items={props.item.submenu} close={menu.close} depth={menu.depth + 1} />
+        </div>
+      </Show>
+    </>
   );
 }
 
