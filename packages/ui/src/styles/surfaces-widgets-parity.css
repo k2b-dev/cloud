@@ -132,6 +132,12 @@
 .k2b-ui .k2b-avatar[data-ring][data-size="xs"] { font-size: 0.5625rem; }
 
 /* -------------------------------------------------------------- LinkCard -- */
+/* A card (K17): one of several independent things side by side, flat, with a
+   border and 8 px corners. */
+.k2b-ui .k2b-paper.k2b-link-card {
+  border-radius: var(--k2b-radius-control);
+}
+
 .k2b-ui .k2b-link-card {
   display: flex;
   min-width: 0;
@@ -325,11 +331,12 @@
   padding-block: 0;
   /* The 1 px frame belongs to the inset, so icon and text keep their place. */
   padding-inline: calc(0.625rem - 1px) calc(0.875rem - 1px);
-  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
-  border-radius: var(--k2b-radius-surface);
+  /* A card (K17): flat, a 1 px border, 8 px corners, never nested. */
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
-  background: var(--k2b-island-surface);
-  box-shadow: var(--k2b-island-shadow);
+  background: var(--k2b-surface);
+  box-shadow: none;
   font: inherit;
   text-align: start;
   text-decoration: none;

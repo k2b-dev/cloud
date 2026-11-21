@@ -1471,46 +1471,8 @@ html {
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* The panel is the one raised surface: its summary, groups, and sections are
-   separated by space, their headings, and one hairline, not by boxes of their
-   own, and they start where the header's title does. */
-.k2b-ui
-  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
-  :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-detail-panel__body > .k2b-section) {
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-/* One vertical rhythm: every section, discussion, and group sits the body's
-   gap apart, and a group's sections keep that gap between them too. */
-.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group {
-  gap: 1.5rem;
-}
-
-.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > .k2b-section,
-.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group > .k2b-section + .k2b-section {
-  padding: 0;
-}
-
-/* One subtle hairline separates the panel's topics: every section,
-   discussion, or group after the body's first element starts below it. A
-   group's own sections stay together without lines. Apps draw no line. */
-.k2b-ui
-  :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"])
-  .k2b-detail-panel__body
-  > :is(.k2b-section, .k2b-detail-panel__group):not(:first-child) {
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--k2b-border);
-}
-
-/* The body's scrollbar sits on the panel's edge, and its content keeps the
-   panel's inset inside the scrollport, so overlay scrollbars never leave the
-   text against the rounded edge. */
-.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__body {
-  gap: 1.25rem;
-  padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem);
-}
+/* The detail panel's topics, lines, and insets are the same on every surface;
+   index.css owns them with DetailPanel (Cloud flat, K9). */
 
 @media (max-width: 47.999rem) {
   /* `phone="page"`: the panel is a destination of its own, so it covers the
