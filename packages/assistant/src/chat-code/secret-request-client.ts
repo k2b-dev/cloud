@@ -130,13 +130,10 @@ export function secretRequestPorts(input: SecretRequestInput, conversationId: st
         return error(cause);
       }
     },
+    // Like the Code page: the destination check has no response window of its own; only this request's lease ends it.
     check: (binding) =>
       input.target
-        ? secretCheck(
-            input.target.code,
-            { origin: binding.origin, pathPrefix: binding.pathPrefix, headers: binding.headers },
-            responseSignal(),
-          )
+        ? secretCheck(input.target.code, { origin: binding.origin, pathPrefix: binding.pathPrefix, headers: binding.headers }, signal)
         : Promise.resolve(true),
     async save({ value, revision, binding }) {
       if (signal?.aborted) return { ok: false, code: "CANCELLED", status: null };

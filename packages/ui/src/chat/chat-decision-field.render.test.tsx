@@ -91,12 +91,14 @@ describe("Chat.Decision with a field, SSR", () => {
     ]);
   });
 
-  test("the field is a password field named by its label, without autofill or spelling, described by the current line", () => {
+  test("the field is a password field named by its label, without autofill, password managers or spelling, described by the current line", () => {
     const body = render(() => decision());
     const input = body.querySelector<HTMLInputElement>(".k2b-chat-decision__field input")!;
     expect(input.type).toBe("password");
     expect(input.getAttribute("aria-label")).toBe("Value for Parcel_API");
-    expect(input.getAttribute("autocomplete")).toBe("off");
+    expect(input.getAttribute("autocomplete")).toBe("new-password");
+    for (const ignored of ["data-1p-ignore", "data-lpignore", "data-bwignore", "data-form-type"])
+      expect(input.hasAttribute(ignored)).toBe(true);
     expect(input.getAttribute("spellcheck")).toBe("false");
     expect(input.getAttribute("placeholder")).toBe("Paste the key");
     expect(input.hasAttribute("aria-invalid")).toBe(false);

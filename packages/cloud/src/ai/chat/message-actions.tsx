@@ -20,8 +20,15 @@ import { type AiQuoteDraft, aiQuoteVisibleTextOfHtml } from "../quote-markers";
 import type { AiCodeAuthoringStop, AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage, AiTurnError } from "../types";
 import type { AiForkMessageInput, AiRetryMessageInput } from "./message-utils";
 import { aiChatMessages } from "./messages";
-import type { AiSubmittedCodeVersion } from "./turn-layout";
+import type { AiSubmittedCodeVersion, AiTurnActionState } from "./turn-layout";
 import type { AiWakeupLineInput } from "./wakeup-plan";
+
+/** A `code_secret` call as its host draws it; the block carries metadata and the outcome only, never a value. */
+export type AiSecretRequestView = {
+  turnId: string;
+  block: () => Extract<AiTurnBlock, { kind: "tool" }>;
+  state: () => AiTurnActionState;
+};
 
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
 export type AiTurnActionRequest = { turnId: string; callId: string; name: string };
@@ -61,6 +68,12 @@ export type AiChatActions = {
    * on next. Without it, the call is a step like any other.
    */
   renderCodeVersion?: (version: AiSubmittedCodeVersion) => JSX.Element;
+  /**
+   * Host-owned entry of a `code_secret` call in its place in the timeline: the card while the call waits for this
+   * person's browser, then its outcome line in the same element. Called once per call. Without it, the call is a step
+   * while it waits and a receipt afterwards.
+   */
+  renderSecretRequest?: (request: AiSecretRequestView) => JSX.Element;
   /** Prevents turn-continuation actions while the current turn is stopping. */
   actionDisabled?: () => boolean;
   onApproval?: ApprovalHandler;

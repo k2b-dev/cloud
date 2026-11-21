@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { CODE_SECRET_ERRORS, CODE_SECRET_GUIDANCE } from "@k2b/cloud/ai/browser";
 import {
   createSecretRequest,
   type SecretRequestEntry,
@@ -216,8 +217,42 @@ for (const code of [false, true])
     await f.controller.submit();
     expect(f.controller.state.state).toBe("access-lost");
     expect(f.controller.state).not.toHaveProperty("value");
-    expect(await f.controller.result).toMatchObject({ failed: true });
+    expect(await f.controller.result).toEqual({
+      failed: true,
+      error: CODE_SECRET_ERRORS.accessLost,
+      guidance: code ? CODE_SECRET_GUIDANCE.editorRequired : CODE_SECRET_GUIDANCE.chatAccess,
+    });
   });
+// The reason follows the answer's status, never the mode: an expired sign-in says so in both cases.
+for (const code of [false, true])
+  for (const [failed, step] of [
+    [{ ok: false, code: "HTTP_401", status: 401 }, "save"],
+    [{ ok: false, code: "UNAUTHENTICATED", status: 401 }, "list"],
+    [{ ok: false, code: "FORBIDDEN", status: 403 }, "save"],
+    [{ ok: false, code: "NOT_FOUND", status: 404 }, "list"],
+  ] as const)
+    test(`${code ? "code" : "chat"}: ${failed.code} on ${step} names its own cause`, async () => {
+      const f = fixture(code);
+      await f.controller.start();
+      f.controller.input(privateValue);
+      if (step === "save") f.fail(failed);
+      else {
+        f.fail({ ok: false, code: "CONFLICT", status: 409 });
+        f.listFail(failed);
+      }
+      await f.controller.submit();
+      const signedOut = failed.status === 401;
+      expect(f.controller.state.state).toBe(signedOut ? "signed-out" : "access-lost");
+      expect(await f.controller.result).toEqual(
+        signedOut
+          ? { failed: true, error: CODE_SECRET_ERRORS.signInExpired, guidance: CODE_SECRET_GUIDANCE.signIn }
+          : {
+              failed: true,
+              error: CODE_SECRET_ERRORS.accessLost,
+              guidance: code ? CODE_SECRET_GUIDANCE.editorRequired : CODE_SECRET_GUIDANCE.chatAccess,
+            },
+      );
+    });
 for (const status of [400, 422, 500, null])
   test(`code failure ${status} preserves field, retry reads first`, async () => {
     const f = fixture(true);
@@ -375,18 +410,55 @@ test("a failed list or check throws no private exception into a tool result", as
   f.controller.expire();
 });
 
-test("binding is sent only for a new name or a changed destination", async () => {
-  const initial = entry();
-  initial.binding = { ...destination, pathPrefix: "/previous" };
-  const f = fixture(true, initial);
+test("binding is sent only for a new name", async () => {
+  const f = fixture(true);
   await f.controller.start();
   f.controller.input(privateValue);
-  await f.controller.replace();
+  await f.controller.submit();
   expect(f.writes[0]?.binding).toEqual(destination);
+  expect(await f.controller.result).toEqual({ configured: true, name: "API" });
+});
+
+for (const configured of [true, false])
+  test(`an existing ${configured ? "" : "deleted "}secret with another destination keeps it and says so`, async () => {
+    const stored = { ...entry(configured), binding: { ...destination, origin: "https://old.example.com", pathPrefix: "/a" } };
+    const f = fixture(true, stored);
+    await f.controller.start();
+    // The card shows and checks the destination that approved versions really use, never Gustav's request.
+    expect(f.controller.state).toMatchObject({ binding: stored.binding, kept: true, before: null });
+    f.controller.input(privateValue);
+    await (configured ? f.controller.replace() : f.controller.submit());
+    expect(f.writes).toHaveLength(1);
+    expect(f.writes[0]?.binding).toBeUndefined();
+    expect(f.controller.state.state).toBe("saved");
+    expect(await f.controller.result).toEqual({ configured: true, name: "API", guidance: CODE_SECRET_GUIDANCE.keptDestination });
+  });
+
+test("an existing secret with the requested destination saves without a hint", async () => {
+  const f = fixture(true, entry());
+  await f.controller.start();
+  expect(f.controller.state).toMatchObject({ kept: false, before: null });
+  f.controller.input(privateValue);
+  await f.controller.replace();
+  expect(f.writes[0]?.binding).toBeUndefined();
+  expect(await f.controller.result).toEqual({ configured: true, name: "API" });
+});
+
+test("a stored destination that differs from the request is no conflict on retry", async () => {
+  const stored = { ...entry(), binding: { ...destination, pathPrefix: "/a" } };
+  const f = fixture(true, stored);
+  await f.controller.start();
+  f.controller.input(privateValue);
+  f.fail({ ok: false, code: "FAILED", status: 503 });
+  await f.controller.replace();
+  expect(f.controller.state.state).toBe("no-answer");
+  await f.controller.retry();
+  // Nobody moved it: the card stays a replacement of A and never claims "changed: A (was B)".
+  expect(f.controller.state).toMatchObject({ state: "replace", binding: stored.binding, kept: true, before: null });
 });
 
 test("window registry scopes controllers to chat, turn and call and removes them on cleanup", async () => {
-  const { getSecretRequest, registerSecretRequest, observeSecretRequests } = await import("./secret-request");
+  const { getSecretRequest, registerSecretRequest, observeSecretRequests } = await import("./secret-request-registry");
   const key = { conversationId: "chat-1", turnId: "turn-1", callId: "call-1" };
   const f = fixture();
   let updates = 0;
@@ -410,6 +482,7 @@ test("retry after a lost answer also adopts a concurrently changed destination",
   await f.controller.retry();
   expect(f.controller.state.state).toBe("conflict");
   expect(f.controller.state.binding.pathPrefix).toBe("/v2");
+  expect(f.controller.state.before?.pathPrefix).toBe("/v1");
   expect(f.writes).toHaveLength(1);
   f.fail(null);
   await f.controller.replace();
@@ -427,7 +500,7 @@ const scenes = [
   ["abgelehnt", false, "declined"],
   ["f-leer", false, "empty"],
   ["f-ungueltig", false, "characters"],
-  ["f-recht", false, "access-lost"],
+  ["f-recht", false, "signed-out"],
   ["f-speichern", false, "save-failed"],
   ["konflikt", false, "conflict"],
   ["anderswo", false, "held"],
@@ -458,13 +531,14 @@ for (const [scene, code, expected] of scenes)
     const f = fixture(code, scene === "c-geloescht" ? entry(false) : replacing ? entry() : null);
     if (expected === "unavailable") f.listFail({ ok: false, code: "FORBIDDEN", status: 403 });
     await f.controller.start();
-    if (["entered", "saving", "saved", "conflict", "save-failed", "not-saved", "no-answer", "access-lost"].includes(expected))
+    if (["entered", "saving", "saved", "conflict", "save-failed", "not-saved", "no-answer", "access-lost", "signed-out"].includes(expected))
       f.controller.input(privateValue);
     if (expected === "characters") f.controller.input("…");
     if (expected === "held") f.controller.held();
     if (expected === "expired") f.controller.expire();
     if (expected === "declined") f.controller.decline();
     if (expected === "access-lost") f.fail({ ok: false, code: "NOT_FOUND", status: 404 });
+    if (expected === "signed-out") f.fail({ ok: false, code: "HTTP_401", status: 401 });
     if (expected === "conflict") f.fail({ ok: false, code: "CONFLICT", status: 409 });
     if (["save-failed", "not-saved", "no-answer"].includes(expected))
       f.fail({ ok: false, code: "FAILED", status: expected === "not-saved" ? 422 : 503 });
@@ -478,7 +552,9 @@ for (const [scene, code, expected] of scenes)
       await pending;
       return;
     }
-    if (["saved", "empty", "characters", "conflict", "save-failed", "not-saved", "no-answer", "access-lost"].includes(expected))
+    if (
+      ["saved", "empty", "characters", "conflict", "save-failed", "not-saved", "no-answer", "access-lost", "signed-out"].includes(expected)
+    )
       await (replacing ? f.controller.replace() : f.controller.submit());
     expect(f.controller.state.state).toBe(expected);
     f.controller.expire();

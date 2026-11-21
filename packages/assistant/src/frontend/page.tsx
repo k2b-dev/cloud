@@ -23,6 +23,7 @@ import { type CodeQueryInvoke, hasPersonalCode, loadCodeSummaries } from "../cod
 import { chatCodeVersionRefs, loadCodeVersionCards } from "../code-version-cards";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
+import { chatSecretTitleRefs, loadSecretTitles } from "../secret-titles";
 import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
 import { loadWaitingAutomations } from "../waiting-automations";
 import AssistantWorkspace from "./AssistantWorkspace.island";
@@ -181,9 +182,12 @@ export default ssr<AuthContext>(async (c) => {
       ])
     : [null, [], null, null];
 
-  const initialCodeVersionCards = initialDetail
-    ? await loadCodeVersionCards(invokeCode, chatCodeVersionRefs(initialDetail.messages, initialDetail.activeTurn))
-    : [];
+  const [initialCodeVersionCards, initialSecretTitles] = initialDetail
+    ? await Promise.all([
+        loadCodeVersionCards(invokeCode, chatCodeVersionRefs(initialDetail.messages, initialDetail.activeTurn)),
+        loadSecretTitles(invokeCode, chatSecretTitleRefs(initialDetail.messages, initialDetail.activeTurn)),
+      ])
+    : [[], {}];
   // The chat's alarm lines in words for the first frame; the chat writes them itself once its words loaded.
   const wakeupLines = initialDetail ? collectAiWakeupLines(buildAiMessageTimeline(initialDetail.messages)) : new Map();
   const initialWakeupLines = wakeupLines.size
@@ -203,6 +207,7 @@ export default ssr<AuthContext>(async (c) => {
   const workspace = () => (
     <AssistantWorkspace
       initialCodeVersionCards={initialCodeVersionCards}
+      initialSecretTitles={initialSecretTitles}
       embedded={embedded}
       initialPanelContext={panelContext}
       initialPlace={initialPlace}
