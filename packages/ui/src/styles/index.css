@@ -19279,7 +19279,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Targets change colour only, never size. "over" is the target under the
-   pointer: the platform fill with blue text, "this is where it goes" (K7,
+   pointer: the platform fill with a 2 px ring inside, "this is where it goes" (K7,
    K8). Other targets that would take the drag stay calm; the announcement
    and the status line say where it can go. */
 .k2b-ui .k2b-drop-target {
@@ -19288,7 +19288,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-drop-target[data-drop="over"] {
   background: var(--k2b-selected);
-  color: var(--k2b-action);
+  box-shadow: inset 0 0 0 2px var(--k2b-action-solid);
 }
 
 /* SortableList (K7): the moved row stays dimmed in its place until it is
@@ -19457,6 +19457,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   translate: -1rem 1rem;
 }
 
+/* Over a drop overlay, which names the item, the preview shrinks to its
+   icon and count, so it covers less of the targets. */
+:is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-compact] > .k2b-drag-preview__label {
+  display: none;
+}
+
 /* A sortable row floats as itself, at its own width. */
 :is(.k2b-ui .k2b-drag-preview, .k2b-ui.k2b-drag-preview)[data-preview="row"] {
   display: block;
@@ -19493,8 +19499,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-direction: column;
   gap: var(--k2b-space-3);
   padding: var(--k2b-space-4) var(--k2b-gutter);
-  overflow: auto;
-  background: color-mix(in srgb, var(--k2b-surface) 94%, transparent);
+  overflow: hidden;
+  border: 0;
+  background: var(--k2b-surface);
   contain: layout paint;
   animation: k2b-drop-overlay-in var(--k2b-motion-fast) var(--k2b-ease-out);
 }
@@ -19541,9 +19548,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 600;
 }
 
+/* Only the tiles scroll; the area that changes nothing stays in view (S7). */
 .k2b-ui .k2b-drop-overlay__grid {
   display: grid;
-  flex: 1 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
   align-content: start;
   gap: var(--k2b-space-3);
   grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
@@ -19570,12 +19580,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   user-select: none;
 }
 
+/* On the first level the icon, the title (two lines at most), and the
+   description sit on fixed rows, so the icons of a row stay on one line. */
 .k2b-ui .k2b-drop-overlay[data-level="root"] .k2b-drop-overlay__tile:not([data-back]) {
   min-height: 112px;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--k2b-space-2);
   text-align: center;
+}
+
+.k2b-ui .k2b-drop-overlay[data-level="root"] .k2b-drop-overlay__tile:not([data-back]) .k2b-drop-overlay__label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .k2b-ui .k2b-drop-overlay__icon {
@@ -19604,6 +19622,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-drop-overlay__tile[data-drop="over"] {
   border-color: var(--k2b-action-solid);
   background: var(--k2b-selected);
+  box-shadow: inset 0 0 0 1px var(--k2b-action-solid);
 }
 
 .k2b-ui .k2b-drop-overlay__tile[data-drop="over"] .k2b-drop-overlay__icon {
@@ -19614,6 +19633,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-color: var(--k2b-border);
   background: var(--k2b-surface-muted);
   color: var(--k2b-text-muted);
+}
+
+/* Under the pointer, a disabled tile states its reason plainly. */
+.k2b-ui .k2b-drop-overlay__tile[data-drop="refused"] .k2b-drop-overlay__description {
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-drop-overlay__chevron {
+  position: absolute;
+  top: var(--k2b-space-2);
+  right: var(--k2b-space-2);
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+}
+
+.k2b-ui .k2b-drop-overlay__tile[data-dwell] .k2b-drop-overlay__chevron {
+  visibility: hidden;
 }
 
 @property --k2b-drop-ring {
@@ -19629,7 +19665,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 1.125rem;
   height: 1.125rem;
   border-radius: var(--k2b-radius-round);
-  background: conic-gradient(var(--k2b-action-solid) calc(var(--k2b-drop-ring) * 1turn), var(--k2b-selected) 0);
+  background: conic-gradient(var(--k2b-action-solid) calc(var(--k2b-drop-ring) * 1turn), var(--k2b-border-strong) 0);
+  /* A 2 px ring, not a pie: its track shows from the first moment of resting. */
+  -webkit-mask: radial-gradient(circle closest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  mask: radial-gradient(circle closest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
   opacity: 0;
 }
 
@@ -19659,8 +19698,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 600;
 }
 
-.k2b-ui .k2b-drop-overlay__cancel[data-drop="over"] {
-  background: var(--k2b-hover);
+/* Over the area, or anywhere around the tiles: letting go changes nothing,
+   in grey, so it never looks like a target. */
+.k2b-ui .k2b-drop-overlay__cancel[data-drop="over"],
+.k2b-ui .k2b-drop-overlay[data-drop="over"] .k2b-drop-overlay__cancel {
+  border-color: var(--k2b-text-muted);
+  background: var(--k2b-surface-muted);
   color: var(--k2b-text);
 }
 

@@ -17,6 +17,11 @@ export type DragSourceProps<Type extends string = string> = {
    * `GestureMenu`; the mouse and a pen still drag. "drag" (default): a held finger drags.
    */
   touch?: "drag" | "none";
+  /**
+   * With `touch: "none"`: a finger held 500 ms, moving at most 8 px, calls this instead of dragging, so the host opens
+   * the row's menu there (S7). The release after it never clicks the row.
+   */
+  onLongPress?: (point: { x: number; y: number }) => void;
   class?: string;
   children: JSX.Element;
 };
@@ -43,6 +48,7 @@ export function DragSource<Type extends string = string>(props: DragSourceProps<
         messages: messages(),
         threshold: props.threshold,
         touch: props.touch,
+        onLongPress: props.onLongPress,
       })),
     ),
   );

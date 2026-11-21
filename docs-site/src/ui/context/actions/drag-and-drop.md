@@ -12,6 +12,7 @@ import {
   DragSource, DropTarget, DropOverlay, useKeyboardDrag, activeDrag, dragStatus,
   type DragPayload, type DragSourceProps, type DragStatus, type DropTargetProps,
   type DropOverlayProps, type DropOverlayLevel, type DropOverlayTile,
+  dropOverlayPages, type DropOverlayPageLabels,
 } from "@k2b/ui";
 ```
 
@@ -123,8 +124,11 @@ Starting another keyboard pickup cancels the previous drag first.
 
 `DropOverlay` covers the host's main area with large drop targets while an
 item it takes is dragged, such as "Assign to me" or "Move to folder" for a
-mail. Place it in a positioned box over the list it serves; it lies above the
-list, takes no space, and moves nothing. Targets elsewhere, such as folders in
+mail. Place it in a positioned box beside the list it serves, not inside a
+`k2b-divided` list; it lies above the list, takes no space, and moves
+nothing. Only its tiles scroll; the area where letting go changes nothing
+stays in view. Each tile says its name to screen readers and in the status
+line; a disabled tile says its reason. Targets elsewhere, such as folders in
 a sidebar, stay `DropTarget`s of the same drag.
 
 ```tsx
@@ -155,9 +159,10 @@ a sidebar, stay `DropTarget`s of the same drag.
   `"root"`, from data the page already has: the overlay asks for nothing over
   the network. Tiles on the first level are at least 112 px high, others
   72 px.
-- **Resting.** A tile with `opens` fills a ring while the pointer rests on it;
-  after 450 ms its level opens, and "Back" returns. Sweeping over it opens
-  nothing. A tile with `opens` and `onDrop` takes a drop as well, such as
+- **Resting.** A tile with `opens` shows a chevron and fills a ring while the
+  pointer rests on it; after 450 ms its level opens, and "Back" returns.
+  Sweeping over it opens nothing, and after a level change resting opens
+  nothing until the pointer has moved, so levels never open by themselves. A tile with `opens` and `onDrop` takes a drop as well, such as
   "Assign to someone else" opening a person search.
 - **Arming.** New tiles take nothing for 220 ms, so a tile that appears under
   the pointer is never hit by accident; then the target under the resting
@@ -166,15 +171,38 @@ a sidebar, stay `DropTarget`s of the same drag.
   around the tiles, and a tile with `disabled` (its reason shows in place of
   the description) change nothing, like Escape, leaving the window, or a
   cancelled pointer.
-- **Touch.** Give the rows `touch="none"`: a finger never drags them, and a
-  long press opens the row's `GestureMenu` with the same targets.
-  `threshold={6}` starts a mouse drag after 6 px.
+- **Touch.** Give the rows `touch="none"`: a finger never drags them.
+  With `onLongPress`, a finger held 500 ms, moving at most 8 px, calls it at
+  the press point, so the host opens the row's menu with the same targets;
+  the release after it never clicks the row. `threshold={6}` starts a mouse
+  drag after 6 px.
+- **Long lists.** `dropOverlayPages(id, tiles, labels)` splits many tiles
+  over levels: the first 11 and "More N", behind it the rest or, when it does
+  not fit one level, ranges of at most 12 in the given order. Ask it first in
+  `level`:
+  ```tsx
+  const people = dropOverlayPages("people", persons().map(toTile), {
+    title: "Assign to someone else · Frequent",
+    moreTitle: "Assign to someone else · More",
+    more: (count) => `More ${count} people`,
+    range: (first, last) => `${first} – ${last}`,
+  });
+  const level = (id: string) => people(id) ?? rootLevel;
+  ```
+- **Cancelled.** `onCancel(payload)` runs when a drag of an item the overlay
+  takes ends without a drop, so the host can say "Cancelled, nothing
+  changed". After a drop, the tile's `onDrop` shows the host's toast with
+  "Undo".
 - **Loading.** The overlay's code loads on demand: while the page is idle
   after the overlay mounts, and on every press of a drag source. The first
   drag shows it at once; when loading fails, the live region says so and the
   menu remains.
 
-The overlay is for the pointer; every target also needs a menu entry.
+The overlay is for the pointer; every target also needs a menu entry. A
+keyboard pickup (`useKeyboardDrag`) offers the tiles of the current level
+that take a drop, never the areas that change nothing. A pen drags like the
+mouse on a source with `touch="none"`. Over the overlay the preview shows
+only its icon and count, as the top line names the item.
 
 ## Status line
 
@@ -242,6 +270,7 @@ export type DragSourceProps<Type extends string = string> = {
   disabled?: boolean;
   threshold?: number;
   touch?: "drag" | "none";
+  onLongPress?: (point: { x: number; y: number }) => void;
   class?: string;
   children: JSX.Element;
 };
@@ -272,9 +301,22 @@ export type DropOverlayProps = {
   accept: readonly string[];
   level: (id: string, payload: DragPayload) => DropOverlayLevel;
   hint?: string;
+  onCancel?: (payload: DragPayload) => void;
   class?: string;
 };
 export function DropOverlay(props: DropOverlayProps): JSX.Element;
+export type DropOverlayPageLabels = {
+  title?: string;
+  moreTitle?: string;
+  more: (count: number) => string;
+  range: (first: string, last: string, count: number) => string;
+};
+export function dropOverlayPages(
+  id: string,
+  tiles: readonly DropOverlayTile[],
+  labels: DropOverlayPageLabels,
+  limits?: { first?: number; size?: number },
+): (level: string) => DropOverlayLevel | undefined;
 export type DragStatus = { lead: string; detail: string };
 export function dragStatus(): DragStatus | undefined;
 ```

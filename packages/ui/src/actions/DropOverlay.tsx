@@ -1,5 +1,5 @@
 import { createComponent, createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { activeDrag, announce, type DragPayload, onPointerPress } from "./drag-and-drop";
+import { activeDrag, announce, type DragPayload, onDragEnd, onPointerPress } from "./drag-and-drop";
 import { useDragAndDropMessages } from "./drag-and-drop-messages";
 
 /** One place to drop on, in a level of a `DropOverlay`. */
@@ -34,6 +34,11 @@ export type DropOverlayProps = {
   level: (id: string, payload: DragPayload) => DropOverlayLevel;
   /** Added to the help line, such as "Folders on the left work too". */
   hint?: string;
+  /**
+   * A drag of an item the overlay takes ended without a drop: Escape, leaving the window, letting go on the
+   * "nothing happens" area or outside every target. The host shows its note, such as "Cancelled, nothing changed".
+   */
+  onCancel?: (payload: DragPayload) => void;
   class?: string;
 };
 
@@ -61,16 +66,17 @@ export function DropOverlay(props: DropOverlayProps): JSX.Element {
   const messages = useDragAndDropMessages();
   const [ready, setReady] = createSignal(view);
   let anchor!: HTMLSpanElement;
-  let failed = false;
+  /** Loads ahead of a drag; a failure stays quiet here and is tried again on the next press. */
   const preload = () => {
-    if (ready() || failed) return;
-    load().then(setReady, () => {
-      failed = true;
-      announce(anchor, messages().overlayUnavailable);
-    });
+    if (!ready()) load().then(setReady, () => {});
   };
   onMount(() => {
     onCleanup(onPointerPress(preload));
+    onCleanup(
+      onDragEnd((payload, dropped) => {
+        if (!dropped && props.accept.includes(payload.type)) props.onCancel?.(payload);
+      }),
+    );
     const win = anchor.ownerDocument.defaultView!;
     if (typeof win.requestIdleCallback === "function") {
       const idle = win.requestIdleCallback(preload, { timeout: 2000 });
@@ -84,9 +90,13 @@ export function DropOverlay(props: DropOverlayProps): JSX.Element {
     const drag = activeDrag();
     return drag && props.accept.includes(drag.type) ? drag : undefined;
   };
-  // A drag that starts before the idle load still gets the overlay, a moment later.
+  // A drag that starts before the idle load still gets the overlay, a moment later; if it cannot load, the drag says
+  // so, and the item's menu still moves it.
   createEffect(() => {
-    if (payload()) preload();
+    if (!payload() || ready()) return;
+    load().then(setReady, () => {
+      if (payload()) announce(anchor, messages().overlayUnavailable);
+    });
   });
   return (
     <>

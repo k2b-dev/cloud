@@ -6,6 +6,7 @@ import {
   type DragPayload,
   engineFor,
   mark,
+  notifyDragEnd,
   type Session,
   setActiveDrag,
   statusFor,
@@ -79,7 +80,8 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
   const payload = { ...input };
   const choices = () =>
     [...engine.targets]
-      .filter((target) => accepts(target, payload) && reachable(target, origin))
+      // An area where letting go changes nothing is no place to choose; Escape does that.
+      .filter((target) => accepts(target, payload) && !target.cancels && reachable(target, origin))
       .sort((a, b) => (a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   let targets: Target[] = [];
   let current: Target | undefined;
@@ -99,6 +101,7 @@ export const startKeyboardDrag = (input: DragPayload, origin: HTMLElement, messa
     const drop = target?.drop;
     clearSession(engine, session, source);
     announce(origin, result);
+    notifyDragEnd(payload, target !== undefined);
     // Focus scrolls the origin back into view when choosing a destination scrolled it away.
     if (origin.isConnected) focusTarget(origin).focus();
     drop?.(payload);

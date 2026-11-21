@@ -14,6 +14,7 @@ import {
   type DropOverlayLevel,
   DropTarget,
   dragStatus,
+  dropOverlayPages,
   FilterChip,
   FilterToggle,
   GestureMenu,
@@ -736,17 +737,37 @@ const overlayMails = [
 const DropOverlayDemo = () => {
   const [last, setLast] = createSignal("Nothing yet");
   const done = (target: string) => (payload: { label: string }) => setLast(`${payload.label} → ${target}`);
+  const names = [
+    "Nora",
+    "Tobias",
+    "Mira",
+    "Jonas",
+    "Lea",
+    "Paul",
+    "Anna",
+    "Ben",
+    "Clara",
+    "David",
+    "Emma",
+    "Felix",
+    "Greta",
+    "Hugo",
+    "Ida",
+    "Jan",
+  ];
+  const people = dropOverlayPages(
+    "people",
+    names.map((name) => ({ id: name, label: `${name} Example`, icon: "ti ti-user", onDrop: done(name) })),
+    {
+      title: "Assign to someone else · Frequent",
+      moreTitle: "Assign to someone else · More",
+      more: (count) => `More ${count} people`,
+      range: (first, last) => `${first} – ${last}`,
+    },
+  );
   const level = (id: string): DropOverlayLevel => {
-    if (id === "people")
-      return {
-        title: "Assign to someone else · Frequent",
-        tiles: ["Nora Weber", "Tobias Brandt", "Mira Frank"].map((name) => ({
-          id: name,
-          label: name,
-          icon: "ti ti-user",
-          onDrop: done(name),
-        })),
-      };
+    const page = people(id);
+    if (page) return page;
     if (id === "folders")
       return {
         title: "Move to folder · Recently used",
@@ -780,19 +801,27 @@ const DropOverlayDemo = () => {
             Archive
           </DropTarget>
         </div>
-        <div class="ui-drop-overlay-demo__main k2b-divided">
-          <For each={overlayMails}>
-            {(mail) => (
-              <DragSource
-                threshold={6}
-                touch="none"
-                payload={{ type: "ui-demo.mail", value: mail.id, label: mail.subject, icon: "ti ti-mail" }}
-              >
-                <div class="ui-drop-overlay-demo__row">{mail.subject}</div>
-              </DragSource>
-            )}
-          </For>
-          <DropOverlay accept={["ui-demo.mail"]} level={level} hint="Archive on the left works too" />
+        <div class="ui-drop-overlay-demo__main">
+          <div class="k2b-divided">
+            <For each={overlayMails}>
+              {(mail) => (
+                <DragSource
+                  threshold={6}
+                  touch="none"
+                  onLongPress={() => setLast(`Menu of ${mail.subject}`)}
+                  payload={{ type: "ui-demo.mail", value: mail.id, label: mail.subject, icon: "ti ti-mail" }}
+                >
+                  <div class="ui-drop-overlay-demo__row">{mail.subject}</div>
+                </DragSource>
+              )}
+            </For>
+          </div>
+          <DropOverlay
+            accept={["ui-demo.mail"]}
+            level={level}
+            hint="Archive on the left works too"
+            onCancel={() => setLast("Cancelled, nothing changed")}
+          />
         </div>
       </div>
       <p class="ui-dnd-demo__status" aria-live="polite">

@@ -1,8 +1,8 @@
 import { i18n } from "@k2b/stdlib";
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { useLocale } from "../intl/locale";
 import type { DropOverlayProps, DropOverlayTile } from "./DropOverlay";
-import { type DragPayload, registerDropTarget } from "./drag-and-drop";
+import { announce, currentPreview, type DragPayload, registerDropTarget, setDragStatus } from "./drag-and-drop";
 import { useDragAndDropMessages } from "./drag-and-drop-messages";
 
 /*
@@ -14,6 +14,8 @@ import { useDragAndDropMessages } from "./drag-and-drop-messages";
 export const DWELL_MS = 450;
 /** New tiles take nothing for this long, so a tile that appears under the pointer is never hit by accident (S7). */
 export const ARM_MS = 220;
+/** After a level change, resting opens a level only once the pointer has moved this far, so levels never cascade. */
+const REST_SLOP = 6;
 
 const dropOverlayMessages = /* @__PURE__ */ i18n.define({
   baseLocale: "en",
@@ -49,6 +51,10 @@ export function DropOverlayView(props: { overlay: DropOverlayProps; payload: () 
   let root!: HTMLDivElement;
   let cancel!: HTMLDivElement;
   let armTimer = 0;
+  /** The pointer's last place over the overlay, and where it was when the level opened. */
+  let pointer: { x: number; y: number } | undefined;
+  let openedAt: { x: number; y: number } | undefined;
+  const moved = () => !openedAt || !pointer || Math.hypot(pointer.x - openedAt.x, pointer.y - openedAt.y) >= REST_SLOP;
   const arm = () => {
     setArmed(false);
     window.clearTimeout(armTimer);
@@ -57,28 +63,58 @@ export function DropOverlayView(props: { overlay: DropOverlayProps; payload: () 
   onCleanup(() => window.clearTimeout(armTimer));
   arm();
   const open = (next: string, back: boolean) => {
-    if (back) setPath((all) => all.slice(0, -1));
-    else setPath((all) => [...all, level()]);
-    setLevel(next);
-    arm();
+    openedAt = pointer;
+    batch(() => {
+      arm();
+      if (back) setPath((all) => all.slice(0, -1));
+      else setPath((all) => [...all, level()]);
+      setLevel(next);
+    });
   };
   const current = createMemo(() => props.overlay.level(level(), props.payload()));
-  const tiles = createMemo<Tile[]>(() => {
+  /** Keyed by `id`: a tile whose words stay the same keeps its element, also when the host's data updates. */
+  const tiles = createMemo<Tile[]>((previous) => {
     const above = path().at(-1);
     const back: Tile[] =
       above === undefined ? [] : [{ id: "k2b-back", label: t().back, icon: "ti ti-arrow-left", opens: above, back: true }];
-    return [...back, ...current().tiles];
+    const same = (a: Tile, b: Tile) =>
+      a.label === b.label && a.description === b.description && a.disabled === b.disabled && a.opens === b.opens && a.icon === b.icon;
+    return [...back, ...current().tiles].map(
+      (tile) => previous.find((old) => old.id === tile.id && same(old, tile) && old.onDrop === tile.onDrop) ?? tile,
+    );
+  }, []);
+  const status = (detail: string) => {
+    const messages = dragMessages();
+    const payload = props.payload();
+    setDragStatus({ lead: messages.statusLead({ label: payload.label, count: payload.count ?? 1 }), detail });
+  };
+  // Over the overlay, the item is named in the top line; the preview shrinks to its icon and count.
+  onMount(() => {
+    const preview = currentPreview();
+    preview?.setAttribute("data-compact", "");
+    onCleanup(() => preview?.removeAttribute("data-compact"));
   });
 
-  // Anywhere on the overlay outside a tile, letting go changes nothing; so does the marked area.
+  // Anywhere on the overlay outside a tile, letting go changes nothing; so does the marked area, which says so.
   onMount(() => {
     for (const element of [root, cancel]) {
+      let inside = false;
       const target = registerDropTarget(element, {
         accept: props.overlay.accept,
         label: t().cancel,
         messages: dragMessages(),
         cancels: true,
         drop: () => {},
+        hover: (point) => {
+          if (point) pointer = point;
+          if (!point) inside = false;
+          else if (!inside) {
+            inside = true;
+            status(dragMessages().statusIdle);
+            if (element === cancel) announce(root, dragMessages().over({ target: t().cancel }));
+          }
+          return undefined;
+        },
       });
       onCleanup(() => target.dispose());
     }
@@ -88,7 +124,9 @@ export function DropOverlayView(props: { overlay: DropOverlayProps; payload: () 
     let element!: HTMLDivElement;
     let dwell = 0;
     let resting = false;
+    let inside = false;
     const stop = () => {
+      inside = false;
       resting = false;
       window.clearTimeout(dwell);
       delete element.dataset.dwell;
@@ -106,8 +144,19 @@ export function DropOverlayView(props: { overlay: DropOverlayProps; payload: () 
           cancels: !tile.onDrop,
           drop: (payload) => tile.onDrop?.(payload),
           hover: (point) => {
-            if (!point) stop();
-            else if (!resting && tile.opens !== undefined) {
+            if (!point) {
+              stop();
+              return undefined;
+            }
+            pointer = point;
+            if (!inside) {
+              inside = true;
+              status(tile.onDrop ? dragMessages().statusOver({ target: tile.label }) : dragMessages().statusIdle);
+              announce(root, dragMessages().over({ target: tile.label }));
+            }
+            // Resting opens the level only after the pointer moved since the last change, so a tile that appears
+            // under a still pointer never opens by itself.
+            if (!resting && tile.opens !== undefined && moved()) {
               resting = true;
               element.dataset.dwell = "";
               const opens = tile.opens;
@@ -136,6 +185,9 @@ export function DropOverlayView(props: { overlay: DropOverlayProps; payload: () 
           <span class="k2b-drop-overlay__label">{tile.label}</span>
           <Show when={description()}>{(text) => <span class="k2b-drop-overlay__description">{text()}</span>}</Show>
         </span>
+        <Show when={tile.opens !== undefined && !tile.back}>
+          <i class="ti ti-chevron-right k2b-drop-overlay__chevron" aria-hidden="true" />
+        </Show>
         <Show when={tile.opens !== undefined}>
           <span class="k2b-drop-overlay__ring" aria-hidden="true" />
         </Show>

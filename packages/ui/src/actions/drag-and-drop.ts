@@ -45,6 +45,21 @@ export const dragStatus = (): DragStatus | undefined => readDragStatus();
 export const setDragStatus = (status: DragStatus | undefined) => writeDragStatus(status);
 const dragStartListeners = new Set<(pointerId: number) => void>();
 /** Internal hand-over to the gesture menu that owns this press. */
+const endListeners = new Set<(payload: DragPayload, dropped: boolean) => void>();
+/** Internal: told when a drag or keyboard pickup ends, and whether something took it; for a host's "nothing changed" note. */
+export const onDragEnd = (listener: (payload: DragPayload, dropped: boolean) => void): (() => void) => {
+  endListeners.add(listener);
+  return () => endListeners.delete(listener);
+};
+export const notifyDragEnd = (payload: DragPayload, dropped: boolean) => {
+  for (const listener of endListeners) listener(payload, dropped);
+};
+/** S7: a finger held this long on a source that does not drag by touch opens its menu; moving further cancels. */
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP = 8;
+let shownPreview: HTMLElement | undefined;
+/** Internal: the preview of the pointer drag in progress, such as for a drop overlay that shows it compact. */
+export const currentPreview = (): HTMLElement | undefined => shownPreview;
 const pressListeners = new Set<() => void>();
 /** Internal: told about every press on a drag source, before any drag, so code a drag needs can load in time. */
 export const onPointerPress = (listener: () => void): (() => void) => {
@@ -346,6 +361,8 @@ export const bindDragSource = (
     threshold?: number;
     /** "none": a finger never drags this source; its press stays with the host, such as a long-press menu. */
     touch?: "drag" | "none";
+    /** With `touch: "none"`: a finger held 500 ms, moving at most 8 px, calls this instead of dragging (S7). */
+    onLongPress?: (point: { x: number; y: number }) => void;
   },
 ): (() => void) => {
   const doc = source.ownerDocument;
@@ -380,7 +397,11 @@ export const bindDragSource = (
     if (!event.isPrimary || event.button !== 0 || engine.session || read().disabled) return;
     if (!(event.target instanceof Element) || event.target.closest(".k2b-drag-source") !== source) return;
     if (ignored(event.target)) return;
-    if (event.pointerType === "touch" && read().touch === "none") return;
+    if (event.pointerType === "touch" && read().touch === "none") {
+      const longPress = read().onLongPress;
+      if (longPress) pressLong(event, longPress);
+      return;
+    }
     for (const listener of pressListeners) listener();
     const slop = read().threshold ?? SLOP;
     engine.abandonPress?.();
@@ -388,6 +409,8 @@ export const bindDragSource = (
     announcerFor(source);
     const id = event.pointerId;
     const mouse = event.pointerType === "mouse";
+    // A pen drags like the mouse where a finger does not drag at all (S7); elsewhere it holds first, like a finger.
+    const fine = mouse || (event.pointerType === "pen" && read().touch === "none");
     const start = { x: event.clientX, y: event.clientY };
     let point = start;
     let held = false;
@@ -439,6 +462,7 @@ export const bindDragSource = (
       delete source.dataset.held;
       delete source.dataset.pressing;
       preview?.remove();
+      if (shownPreview === preview) shownPreview = undefined;
       releaseSelection?.();
       if (engine.abandonPress === cancel) engine.abandonPress = undefined;
       if (abandon === cancel) abandon = undefined;
@@ -453,7 +477,10 @@ export const bindDragSource = (
       // The target forgets the place it showed, so nothing of a cancelled drag can land later.
       over?.hover?.(undefined);
       clean();
-      if (payload) announce(source, messages.cancelled(payload));
+      if (payload) {
+        announce(source, messages.cancelled(payload));
+        notifyDragEnd(payload, false);
+      }
     };
     const hitTest = () => {
       const payload = session!.payload;
@@ -471,6 +498,9 @@ export const bindDragSource = (
           break;
         }
       }
+      // A target that takes nothing inside an area where letting go changes nothing, such as a disabled tile on a
+      // drop overlay, refuses: it says why, instead of the area around it.
+      if (next?.cancels && inner && inner !== next) next = undefined;
       const rejected = next ? undefined : inner;
       if (next !== over || rejected !== refused) {
         if (next !== over) over?.hover?.(undefined);
@@ -545,6 +575,7 @@ export const bindDragSource = (
           // The pointer is already gone; its pointerup or pointercancel ends the drag.
         }
       preview = doc.createElement("div");
+      shownPreview = preview;
       // Inside the source's own .k2b-ui scope the preview inherits its theme, also a scoped dark one; a second
       // .k2b-ui would reset the tokens to light.
       const scope = source.parentElement?.closest<HTMLElement>(".k2b-ui");
@@ -588,7 +619,7 @@ export const bindDragSource = (
       if (event.pointerId !== id || finished) return;
       point = { x: event.clientX, y: event.clientY };
       if (!session && Math.hypot(point.x - start.x, point.y - start.y) >= slop) {
-        if (event.pointerType !== "mouse" && !held) {
+        if (!fine && !held) {
           cancel();
           return;
         }
@@ -613,6 +644,7 @@ export const bindDragSource = (
       clean();
       announce(source, result);
       drop?.(payload);
+      notifyDragEnd(payload, target !== undefined);
     };
     // Capture ends without a release only when the browser takes the pointer away.
     const lostCapture = (event: PointerEvent) => {
@@ -644,12 +676,44 @@ export const bindDragSource = (
     win.addEventListener("pointercancel", cancelPointer, true);
     win.addEventListener("pointerdown", other, true);
     win.addEventListener("blur", cancel);
-    if (event.pointerType !== "mouse") {
+    if (!fine) {
       // A held finger drags: it selects no text, and Android's long-press menu does not open, also before the hold fires.
       source.dataset.pressing = "";
       win.addEventListener("contextmenu", preventContext, true);
       timer = win.setTimeout(hold, read().hold ?? HOLD_MS);
     }
+  };
+  /**
+   * A finger on a source that does not drag by touch: held still, it calls `open` at the point; moving, lifting,
+   * or another pointer ends the wait. The release after it never clicks the row.
+   */
+  const pressLong = (event: PointerEvent, open: (point: { x: number; y: number }) => void) => {
+    const id = event.pointerId;
+    const start = { x: event.clientX, y: event.clientY };
+    const stop = () => {
+      win.clearTimeout(timer);
+      win.removeEventListener("pointermove", move, true);
+      win.removeEventListener("pointerup", end, true);
+      win.removeEventListener("pointercancel", end, true);
+      win.removeEventListener("contextmenu", menu, true);
+    };
+    const move = (next: PointerEvent) => {
+      if (next.pointerId === id && Math.hypot(next.clientX - start.x, next.clientY - start.y) > LONG_PRESS_SLOP) stop();
+    };
+    const end = (next: PointerEvent) => {
+      if (next.pointerId === id) stop();
+    };
+    // The platform's own long-press menu would cover the host's.
+    const menu = (next: Event) => next.preventDefault();
+    const timer = win.setTimeout(() => {
+      stop();
+      swallowRelease(doc, id);
+      open(start);
+    }, LONG_PRESS_MS);
+    win.addEventListener("pointermove", move, true);
+    win.addEventListener("pointerup", end, true);
+    win.addEventListener("pointercancel", end, true);
+    win.addEventListener("contextmenu", menu, true);
   };
   announcerFor(source);
   source.addEventListener("pointerdown", down);
