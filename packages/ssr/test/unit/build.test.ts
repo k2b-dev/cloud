@@ -677,8 +677,55 @@ describe("buildIslands() barrel imports", () => {
     for (const island of ["Static", "Lazy", "OnDemand"]) {
       const closure = manifest.entries[islandIdFromFile(join(cwd, "src", `${island}.island.tsx`), cwd)]!;
       const code = closure.map((file) => readFileSync(join(outdir, file), "utf8")).join("\n");
-      for (const unused of ["SHEET_CODE", "MOTION_CODE", "OTHER_CODE"]) expect(code).not.toContain(unused);
+      for (const unused of ["SHEET_CODE", "MOTION_CODE"]) expect(code).not.toContain(unused);
     }
+  });
+
+  // The premise of the guard below: if Bun stops tying a barrel's modules to static importers, this fails and the
+  // guard can go.
+  test("Bun keeps unused barrel modules in a static closure when the barrel is also imported on demand", async () => {
+    const cwd = makeTempRoot();
+    writeBarrelProject(cwd);
+    const entries = {
+      static: `import { used } from "fixture-ui"; console.log(used());`,
+      dynamic: `import("fixture-ui").then((m) => m.used());`,
+      lazy: `import { used } from "fixture-ui"; console.log(used()); import("./sheet");`,
+    };
+    for (const [name, source] of Object.entries(entries)) writeTempFile(join(cwd, "src", `${name}.js`), source);
+    const outdir = join(cwd, "bun-out");
+    const result = await Bun.build({
+      entrypoints: Object.keys(entries).map((name) => join(cwd, "src", `${name}.js`)),
+      outdir,
+      splitting: true,
+      target: "browser",
+    });
+    expect(result.success).toBe(true);
+    const closure = new Set(["static.js"]);
+    for (const file of closure)
+      for (const edge of new Bun.Transpiler({ loader: "js" }).scanImports(readFileSync(join(outdir, file), "utf8")))
+        if (edge.kind === "import-statement") closure.add(edge.path.replace(/^\.\//, ""));
+    expect([...closure].map((file) => readFileSync(join(outdir, file), "utf8")).join("\n")).toContain("SHEET_CODE");
+  });
+
+  test("allows an on-demand import of an entry that re-exports a single module", async () => {
+    const cwd = makeTempRoot();
+    writeBarrelProject(cwd);
+    const pkg = join(cwd, "node_modules", "fixture-ui");
+    writeTempFile(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "fixture-ui", type: "module", sideEffects: false, exports: { ".": "./index.js", "./sheet": "./sheet.js" } }),
+    );
+    writeTempFile(join(pkg, "sheet.js"), `export { Sheet } from "./layout/Sheet.js";`);
+    writeTempFile(
+      join(cwd, "src", "Sheet.island.tsx"),
+      `import { Sheet } from "fixture-ui/sheet"; export default () => <span>{Sheet()}</span>;`,
+    );
+    writeTempFile(
+      join(cwd, "src", "OnDemand.island.tsx"),
+      `export default () => <button onClick={async () => console.log((await import("fixture-ui/sheet")).Sheet())}>Load</button>;`,
+    );
+    await buildIslands(options(cwd));
+    expect(existsSync(join(cwd, "_ssr", "manifest.json"))).toBe(true);
   });
 
   test.each([false, true])("rejects an on-demand import of a statically imported barrel (dev: %p)", async (dev) => {

@@ -88,8 +88,8 @@ build, mount runtime, or adapters reaches every application: also run the
    `mount(C, selector, Fallback?)`.
 4. Checks the successful build's metafile for nested island/client imports
    and throws before any cleanup if it finds them. It also rejects an
-   `import()` of a package's re-export module (no output bytes of its own)
-   that the graph imports statically too: Bun then keeps every re-export of
+   `import()` of a package's re-export module (no output bytes of its own,
+   more than one re-exported module) that the graph imports statically too: Bun then keeps every re-export of
    that barrel, and code splitting ties the modules behind it to each static
    importer's entry (#3504). A file under `node_modules` only warns.
 5. Removes obsolete generated JavaScript and source maps after a successful

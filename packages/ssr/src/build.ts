@@ -102,13 +102,14 @@ const rejectDynamicBarrelImports = (metafile: Bun.BuildMetafile, cwd: string): v
   const staticTargets = new Set<string>();
   for (const input of Object.values(metafile.inputs))
     for (const edge of input.imports) if (edge.kind === "import-statement" && !edge.external) staticTargets.add(edge.path);
-  // A re-export module emits no code of its own; a package specifier is what Bun's barrel optimization narrows.
-  const isBarrel = (path: string) => !outputBytes.get(path) && (metafile.inputs[path]?.imports.length ?? 0) > 0;
+  // A re-export module emits no code of its own; a package specifier is what Bun's barrel optimization narrows. A module
+  // that re-exports a single module, such as a narrow package subpath, has nothing to narrow.
+  const isBarrel = (path: string) => !outputBytes.get(path) && (metafile.inputs[path]?.imports.length ?? 0) > 1;
   const errors: string[] = [];
   const warnings: string[] = [];
   for (const [importer, input] of Object.entries(metafile.inputs)) {
     for (const edge of input.imports) {
-      if (edge.kind !== "dynamic-import" || /^(?:\.|\/)/.test(edge.original)) continue;
+      if (edge.kind !== "dynamic-import" || !edge.original || /^[./]/.test(edge.original)) continue;
       const target = edge.external ? metafile.outputs[edge.path]?.entryPoint : edge.path;
       if (!target || !staticTargets.has(target) || !isBarrel(target)) continue;
       const file = relative(canonicalCwd, resolve(process.cwd(), importer));

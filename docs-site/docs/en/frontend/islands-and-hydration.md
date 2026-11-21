@@ -201,9 +201,11 @@ export { toast } from "@k2b/ui";
 void import("./pairing-toast").then(({ toast }) => toast(text));
 ```
 
-The island build fails when application code imports a statically imported
-package entry on demand and names the file. When a dependency does it, the
-build only warns.
+The island build fails and names the file when application code imports a
+package entry on demand that only re-exports other modules and that browser
+code also imports statically. When a dependency does it, the build only warns.
+An entry that re-exports a single module, such as `@k2b/ui/hover-card`, may
+load on demand.
 
 ## Preserve the server result
 
