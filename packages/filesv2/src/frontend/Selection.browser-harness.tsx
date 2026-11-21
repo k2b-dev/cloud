@@ -60,6 +60,8 @@ render(() => {
             source="/app/filesv2"
             uploads={uploads}
             selectionHint={new URLSearchParams(location.search).has("hint")}
+            error={new URLSearchParams(location.search).has("error") ? "The folder could not be loaded again." : undefined}
+            onRetry={() => host.setAttribute("data-retried", "true")}
             onShare={(paths) => host.setAttribute("data-shared", JSON.stringify(paths))}
             onChanged={async () => {
               setDirectory(await listing());

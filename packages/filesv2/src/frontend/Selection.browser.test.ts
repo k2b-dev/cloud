@@ -125,10 +125,10 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const html = (lang: string) =>
+const html = (lang: string, theme = "light") =>
   `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="/tabler.css"><style>${css}</style></head>` +
-  `<body class="k2b-ui" data-theme="light" style="margin:0;height:100vh"><div id="root" style="height:100vh;display:flex"></div>` +
+  `<body class="k2b-ui" data-theme="${theme}" style="margin:0;height:100vh"><div id="root" style="height:100vh;display:flex"></div>` +
   `<script type="module" src="/harness.js"></script></body></html>`;
 
 type PdfAnswer = { hold?: Promise<void>; fail?: { code: string; message: string; path?: string } };
@@ -154,7 +154,8 @@ const open = async (options: BrowserContextOptions, query = "", lang = "en", ite
   await tab.route("http://files-selection.test/**", async (route: Route) => {
     const url = new URL(route.request().url());
     const path = decodeURIComponent(url.pathname);
-    if (path === "/app/filesv2") return route.fulfill({ contentType: "text/html", body: html(lang) });
+    if (path === "/app/filesv2")
+      return route.fulfill({ contentType: "text/html", body: html(lang, url.searchParams.get("theme") ?? "light") });
     if (path === "/harness/items") return route.fulfill({ json: session.items.map(entry) });
     if (path === "/tabler.css") return route.fulfill({ contentType: "text/css", body: readFileSync(`${ui}dist/tabler.css`, "utf8") });
     if (path.endsWith(".woff2")) return route.fulfill({ contentType: "font/woff2", body: readFileSync(`${ui}dist${path}`) });
@@ -584,4 +585,56 @@ describe("Files folder is flat (K1–K15)", () => {
         await tab.context().close();
       }
     });
+});
+
+describe("Files folder states", () => {
+  const problems = (tab: Page) =>
+    tab.evaluate(layoutProblems, {
+      root: "#root",
+      ignore:
+        ".k2b-avatar-stack, [data-layout-check='skip'], .k2b-file-drop-target, .sr-only, .k2b-sr-only, .k2b-app-workspace__head-primary-label, .k2b-breadcrumbs__more, .k2b-section__header",
+    });
+  // K12: the tablet and the very wide screen keep one head row, the name column's cap and every line once.
+  for (const width of [768, 1920])
+    test(`${width} px with many files: nothing overlaps, spills, is cut, or draws a double line`, async () => {
+      const { tab, errors } = await open({ viewport: { width, height: 900 } }, "", "en", many());
+      try {
+        if (shots) await tab.screenshot({ path: `${shots}/folder-many-light-${width}.png` });
+        expect((await problems(tab)).problems).toEqual([]);
+        expect(errors).toEqual([]);
+      } finally {
+        await tab.context().close();
+      }
+    });
+
+  test("an empty folder, a failed refresh and keyboard focus keep the column's lines and places", async () => {
+    const { tab, errors } = await open(desktop, "?error", "en", []);
+    try {
+      // The folder is empty: the parent row, then the quiet empty state without a box (K10).
+      expect(await tab.getByText("This folder is empty").first().isVisible()).toBe(true);
+      // A failed refresh says so under the status row and offers the way on.
+      expect(await tab.getByRole("alert").textContent()).toContain("The folder could not be loaded again.");
+      await tab.locator(".filesv2-list__row--up").focus();
+      await settled(tab);
+      if (shots) await tab.screenshot({ path: `${shots}/folder-empty-light-1440.png` });
+      expect((await problems(tab)).problems).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("dark: the folder and its details stay readable", async () => {
+    const { tab, errors } = await open(desktop, "?theme=dark");
+    try {
+      await row(tab, "Expertise").click();
+      await tab.locator(".k2b-detail-panel h2").first().waitFor();
+      await settled(tab);
+      if (shots) await tab.screenshot({ path: `${shots}/detail-few-dark-1440.png` });
+      expect((await problems(tab)).problems).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await tab.context().close();
+    }
+  });
 });
