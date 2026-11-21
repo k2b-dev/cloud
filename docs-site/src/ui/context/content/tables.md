@@ -269,8 +269,9 @@ Hairlines under the rows, nothing else (Cloud flat, K7):
 Every line is an inset shadow inside its cell, so hover and selection never
 change a row's size and a sticky head lies on the same pixels as the body.
 There is no prop to change the lines, and no app adds row borders or its own
-selection fill. Inside a frame the table runs edge to edge; it never adds a
-second frame. `data-table-lines.browser.test.ts` pins this presentation.
+selection fill. One line, one owner: a table draws no outer frame, also with
+`surface="paper"`; the column, section, or container around it owns the lines
+at its edges, and the table runs edge to edge inside it. `data-table-lines.browser.test.ts` pins this presentation.
 
 Pass `loading` for the initial read. With no rows, `loadingRows` renders
 row-height placeholders (default 5, clamped to an integer from 1 to 50).

@@ -4,7 +4,7 @@ import { Button } from "../actions/Button";
 import { useUiMessages } from "../intl/messages";
 import { useDetailPanelMessages } from "../layout/detail-panel-messages";
 
-/** Named after the status tokens; a tone colours the frame, the title, and the icon, never the fill. */
+/** Named after the status tokens; a tone colours the symbol tile only, never the fill or the title (K8, K17). */
 export type SectionTone = "neutral" | "success" | "warning" | "danger" | "info" | "ai";
 /** `sm` for detail panels and other narrow columns, `md` for topics on a full page. */
 export type SectionSize = "sm" | "md";

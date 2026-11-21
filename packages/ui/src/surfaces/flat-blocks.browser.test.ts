@@ -10,7 +10,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "flat-blocks.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { Area, Button, DataTable, NoticeCard, Placeholder, RowGroup, StatusBadge } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Area, Button, DataTable, DetailPanel, NoticeCard, Placeholder, RowGroup, Section, StatusBadge } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const row = (text) => { const div = document.createElement("div"); div.className = "row"; div.textContent = text; return div; };
 render(() => [
@@ -42,6 +42,16 @@ render(() => createComponent(DataTable, { columns, rows: [...rows, { name: "Pine
 const notice = (id) => createComponent(NoticeCard, { id, tone: "warning", icon: true, title: "The receipt waits for a signature.",
   detail: "Payout starts after it is signed.", actions: createComponent(Button, { size: "sm", variant: "secondary", children: "Open receipt" }) });
 render(() => [notice("wide"), notice("narrow")], document.getElementById("notices"));
+// One line, one owner: a table in a section in the detail column, and an alert cell between the rows of a list.
+render(() => createComponent(DetailPanel, { get children() { return createComponent(DetailPanel.Body, { get children() { return [
+  createComponent(Section, { title: "Items", icon: "ti ti-box", count: 2, get children() { return createComponent(DataTable, { columns, rows, ariaLabel: "Panel items" }); } }),
+  createComponent(Section, { title: "Notes", icon: "ti ti-notes", children: "Collect on Friday." }),
+]; } }); } }), document.getElementById("panel"));
+render(() => createComponent(RowGroup, { title: "Today", count: 3, get children() { return [
+  row("Call the carrier"),
+  createComponent(NoticeCard, { tone: "yours", icon: true, title: "The receipt waits for a signature.", actions: createComponent(Button, { size: "sm", variant: "secondary", children: "Open receipt" }) }),
+  row("Print labels"),
+]; } }), document.getElementById("list"));
 render(() => [
   createComponent(Placeholder, { surface: "paper", variant: "panel", icon: "ti ti-folder-off", title: "No projects yet", description: "Create the first project." }),
   createComponent(Placeholder, { state: "error", title: "The files could not load", onRetry: () => {} }),
@@ -63,7 +73,7 @@ const load = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style><style>.row{height:40px;display:flex;align-items:center}#narrow-host{width:320px}</style></head>` +
-      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="grouped"></div><div id="notices"></div><div id="empty"></div></body></html>`,
+      `<body class="k2b-ui" style="margin:0"><div id="areas"></div><div id="table"></div><div id="grouped"></div><div id="notices"></div><div id="empty"></div><div id="panel" style="width:380px"></div><div id="list"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator("#a3").waitFor();
@@ -76,6 +86,36 @@ const box = (page: Page, selector: string) =>
     const { top, left, width, height, bottom, right } = element.getBoundingClientRect();
     return { top, left, width, height, bottom, right };
   });
+
+/**
+ * Visible horizontal lines below a root: top and bottom borders and 1 px inset shadows. Two lines of different
+ * elements that touch or stand at most 1 px apart over the same x range read as one double line.
+ */
+const doubleLines = (page: Page, root: string) =>
+  page.evaluate((root) => {
+    const lines: { y: number; left: number; right: number; owner: string }[] = [];
+    const visible = (color: string) => !/rgba\(0, 0, 0, 0\)|transparent/.test(color);
+    for (const element of document.querySelectorAll<HTMLElement>(`${root} *`)) {
+      const box = element.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) continue;
+      const style = getComputedStyle(element);
+      const owner = element.className.toString().split(" ")[0] || element.tagName;
+      if (Number.parseFloat(style.borderTopWidth) > 0 && visible(style.borderTopColor))
+        lines.push({ y: Math.round(box.top), left: box.left, right: box.right, owner });
+      if (Number.parseFloat(style.borderBottomWidth) > 0 && visible(style.borderBottomColor))
+        lines.push({ y: Math.round(box.bottom - 1), left: box.left, right: box.right, owner });
+      for (const [, color, y] of style.boxShadow.matchAll(/(rgba?\([^)]*\)|color\([^)]*\)) 0px (-?1)px 0px 0px inset/g))
+        if (visible(color!)) lines.push({ y: Math.round(y === "1" ? box.top : box.bottom - 1), left: box.left, right: box.right, owner });
+    }
+    const doubles: string[] = [];
+    for (const [i, a] of lines.entries())
+      for (const b of lines.slice(i + 1)) {
+        const gap = Math.abs(a.y - b.y);
+        const overlap = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        if (gap >= 1 && gap <= 2 && overlap > 4) doubles.push(`${a.owner}@${a.y} + ${b.owner}@${b.y}`);
+      }
+    return doubles;
+  }, root);
 
 describe("Cloud flat building blocks", () => {
   test("a closed area is one 40 px row; an open one has a 56 px head; toggling moves only what lies below", async () => {
@@ -234,6 +274,25 @@ describe("Cloud flat building blocks", () => {
       await page.close();
     }
   });
+
+  for (const width of [1440, 390])
+    test(`at ${width} px every line has one owner: a table in a section in the detail column, an alert cell between rows`, async () => {
+      const page = await load(width);
+      try {
+        expect(await doubleLines(page, "#panel")).toEqual([]);
+        expect(await doubleLines(page, "#list")).toEqual([]);
+        expect(await doubleLines(page, "#areas")).toEqual([]);
+        // The alert cell has exactly one line before and after it: the list's own divider.
+        const around = await page.locator("#list .k2b-notice-card").evaluate((cell) => {
+          const style = getComputedStyle(cell);
+          const next = getComputedStyle(cell.nextElementSibling!);
+          return [style.borderTopWidth, style.borderTopColor === "rgba(0, 0, 0, 0)", next.borderTopWidth];
+        });
+        expect(around).toEqual(["1px", false, "1px"]);
+      } finally {
+        await page.close();
+      }
+    });
 
   test("an empty or failed area shows a round sign and no box", async () => {
     const page = await load(1440);

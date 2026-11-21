@@ -72,13 +72,13 @@ describe("Section", () => {
     ]) {
       expect(rule(`.k2b-ui .k2b-section[data-tone="${tone}"]`)).toContain(`--k2b-section-tone: var(${token})`);
     }
-    // A tone colours the frame and the symbol tile, never the section's fill or its title (K8, K17).
-    expect(rule('.k2b-ui .k2b-section[data-tone][data-frame="line"]')).toContain("border-color");
+    // A tone colours the symbol tile, never the section's fill, frame, or title (K8, K17, one line one owner).
+    expect(rule('.k2b-ui .k2b-section[data-tone][data-frame="line"]')).toBeUndefined();
     expect(css).not.toMatch(/\.k2b-section\[data-tone[^\]]*\](?:\[[^\]]*\])* \{[^}]*background:/);
     expect(css).not.toMatch(/\.k2b-section\[data-tone[^{]*\.k2b-section__title[^{]*\{[^}]*color:/);
   });
 
-  test("is a frame on a page, flat in a detail panel, and never a frame inside another frame", async () => {
+  test("draws no outer frame on a page or in a detail panel, and never a frame inside another frame", async () => {
     const { default: DetailPanel } = await import("../layout/DetailPanel");
     const page = renderToString(() => createComponent(Section, { title: "Details", size: "md", children: "…" }));
     const panel = renderToString(() =>
@@ -90,14 +90,11 @@ describe("Section", () => {
     );
     const feedbackCss = await Bun.file(resolve(import.meta.dir, "../styles/feedback-parity.css")).text();
     const flatten = css.match(/\.k2b-ui\s*:is\(\s*(\.k2b-section,[^)]*)\)\s*\.k2b-section\[data-frame="line"\] \{([^}]*)\}/);
-    const paperBorder = (await Bun.file(resolve(import.meta.dir, "../styles/surfaces-widgets-parity.css")).text()).match(
-      /\.k2b-ui \.k2b-paper \{[^}]*?(border: [^;]+);/,
-    )?.[1];
 
     expect(page).toContain('data-frame="line"');
     expect(panel).toContain('data-frame="none"');
-    // On a full page the frame is Paper's hairline with square corners and no shadow (K2-K4).
-    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain(paperBorder!);
+    // One line, one owner: a page section draws no outer frame; its container draws the hairline between topics.
+    expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("border: 0;");
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("border-radius: var(--k2b-radius-flat, 0)");
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("box-shadow: none");
     expect(rule('.k2b-ui .k2b-section[data-frame="line"]')).toContain("background: var(--k2b-surface)");

@@ -1,12 +1,12 @@
 # Section and Field
 
 `Section` is one topic of an object: a symbol in a 20 px tile, a title with its
-count or state, at most two quiet text controls, and its content. On a full
-page, such as a customer file, every section has the 1 px hairline frame of
-`Paper`, square corners, and no shadow. In a column, such as a detail panel, the
-same component stands borderless and the column separates its topics with one
-hairline (Cloud flat, K9). `Section.Part` divides a section into sub-topics
-without a frame of its own, and `Field` shows one value with its label.
+count or state, at most two quiet text controls, and its content. In a column,
+such as a detail panel, and on a full page a section draws no outer frame: one
+line, one owner. Its container draws the hairline between topics, the detail
+panel itself and any other host with `k2b-divided` (Cloud flat, K9).
+`Section.Part` divides a section into sub-topics without a frame of its own,
+and `Field` shows one value with its label.
 
 The heading follows three levels (K17): the title is 13 px bold in a column and
 14 px bold on a page, the count is a quiet grey number right after the title,
@@ -41,8 +41,8 @@ host outside a panel frames its sections itself.
 
 ### Tones
 
-A tone is named after a status token and colors the frame and the symbol
-tile, never the fill or the title (K8): `neutral` (the default), `success`, `warning`, `danger`,
+A tone is named after a status token and colors the symbol tile, never the
+fill or the title (K8): `neutral` (the default), `success`, `warning`, `danger`,
 `info`, and `ai` for content the AI delivered. Color is never the only signal:
 the heading also says the state in words, usually through `meta`, such as
 "Expires soon" with `warning` or "Payment failed" with `danger`. Use a tone only
@@ -55,7 +55,7 @@ Visibility is a marker, not a color. When only some people see a section, pass
 `restricted` with the app's words for who sees it, such as "Only with
 permission" or "nur mit Recht". The section shows a lock and these words after
 its title and adds them to its accessible name. It combines with any tone and
-keeps the neutral frame by default, so green stays reserved for success.
+keeps the neutral tile by default, so green stays reserved for success.
 
 ### States
 
@@ -171,8 +171,8 @@ import { Area, FactGroup, Field, FieldGrid, RowGroup, Section } from "@k2b/ui";
 | `icon` | `string` | none | Icon class in a 20 px box with 4 px corners. |
 | `iconColor` | `string` | none | The area colour as a CSS colour; sets the icon in a 20 px tile of that colour. |
 | `size` | `"sm" \| "md"` | `"sm"` | `sm` for panels and narrow columns, `md` for page topics. |
-| `frame` | `"line" \| "none"` | `"line"`, `"none"` in a `DetailPanel` | Draws the hairline frame with square corners. |
-| `tone` | `"neutral" \| "success" \| "warning" \| "danger" \| "info" \| "ai"` | `"neutral"` | Colors the frame and the symbol tile by status. |
+| `frame` | `"line" \| "none"` | `"line"`, `"none"` in a `DetailPanel` | `line` keeps a page section's inset; neither draws an outer frame. |
+| `tone` | `"neutral" \| "success" \| "warning" \| "danger" \| "info" \| "ai"` | `"neutral"` | Colors the symbol tile by status. |
 | `restricted` | `string` | none | Lock and words for restricted visibility. |
 | `count` | `number` | none | Quiet number after the title; `0` reads "None yet". |
 | `meta` | `JSX.Element` | none | Short state after the title, such as "2 of 4 done". |

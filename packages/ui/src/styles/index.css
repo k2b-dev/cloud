@@ -3984,7 +3984,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section[data-frame="line"] {
   padding: 0.75rem var(--k2b-gutter, 1.25rem) 1rem;
-  border: 1px solid var(--k2b-border);
+  /* One line, one owner: a section draws no outer frame; its container draws
+     the hairline between topics (k2b-divided). */
+  border: 0;
   border-radius: var(--k2b-radius-flat, 0);
   background: var(--k2b-surface);
   box-shadow: none;
@@ -4015,9 +4017,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: none;
 }
 
-/* Named tones follow the status tokens. A tone colours the frame and the
-   symbol tile, never the fill or the title, and always comes with words in
-   the heading. */
+/* Named tones follow the status tokens. A tone colours the symbol tile,
+   never the fill or the title, and always comes with words in the heading. */
 .k2b-ui .k2b-section[data-tone="success"] {
   --k2b-section-tone: var(--k2b-success-text);
 }
@@ -4036,10 +4037,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-section[data-tone="ai"] {
   --k2b-section-tone: var(--k2b-ai-accent);
-}
-
-.k2b-ui .k2b-section[data-tone][data-frame="line"] {
-  border-color: color-mix(in srgb, var(--k2b-section-tone) 45%, var(--k2b-surface));
 }
 
 /* K8, K17: a section named like a state carries the tone in its symbol tile,
@@ -4509,13 +4506,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.5rem;
   padding-inline: var(--k2b-gutter, 1.25rem) 0.75rem;
   background: var(--k2b-surface-canvas);
+  box-shadow: inset 0 -1px 0 var(--k2b-border);
+}
+
+/* After another group the head also closes that group's last row. Anything
+   else above it owns its own lower line. */
+.k2b-ui .k2b-row-group + .k2b-row-group > .k2b-row-group__head {
   box-shadow:
     inset 0 1px 0 var(--k2b-border),
     inset 0 -1px 0 var(--k2b-border);
-}
-
-.k2b-ui .k2b-row-group:first-child > .k2b-row-group__head {
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
 }
 
 .k2b-ui .k2b-row-group__title {
@@ -4546,6 +4545,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-row-group__rows {
   min-width: 0;
+}
+
+/* One line, one owner: the group draws the line between its rows, also above
+   an alert cell, whose transparent forced-colours border it replaces. */
+.k2b-ui .k2b-row-group > .k2b-row-group__rows > * + * {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 /* Area (K17 "Bereich"). Open: a square area of its own, closed above and below
@@ -4706,6 +4711,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-area__body:empty {
   display: none;
+}
+
+/* One line, one owner: the area draws the line between its rows. */
+.k2b-ui .k2b-area > .k2b-area__body > * + * {
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-area__body::before {
@@ -5504,7 +5514,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-section {
   padding-inline: var(--k2b-gutter, 1.25rem);
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-section[data-open="true"] {
@@ -12609,9 +12619,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 }
 
-/* Cloud's default container class is `paper overflow-auto flex-1 min-h-0`. */
+/* Cloud's default container class is `paper overflow-auto flex-1 min-h-0`.
+   One line, one owner: a table draws no outer frame of its own; the column,
+   the section, or the container around it owns the lines at its edges. */
 .k2b-ui .k2b-table-shell[data-surface="paper"] {
   @apply min-h-0 flex-1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .k2b-ui .k2b-table-wrap {

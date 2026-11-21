@@ -32,7 +32,7 @@ without overriding the surface contract.
 Inside `AppWorkspace.Main`, empty, error, and loading placeholders draw no
 Paper box. A workspace view such as a list, a board, or a table stays one
 surface without inset frames, and a `DataTable` there uses `surface="plain"`.
-A page with several topics frames each topic once with a hairline. See
+A page with several topics separates them with one hairline that the page owns (`k2b-divided`), never a frame per topic. See
 [UI-22](/en/docs/conventions/frontend#visual-ui-ui).
 
 ## Import
