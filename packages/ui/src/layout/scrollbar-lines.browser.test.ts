@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, settled } from "../../test/browser";
-import { layoutProblems } from "../../test/head-overlap";
+import { layoutProblems } from "../layout-check";
 
 // "A scrollbar moves nothing" (Valentin 21.11.: "dass durch eine Scrollbar plötzlich Platz eingenommen wird und dann
 // Linien nicht mehr verbunden sind in einer Tabelle"). The page forces classic 15 px scrollbars, also where DataTable

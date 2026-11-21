@@ -72,6 +72,9 @@ Every line has exactly one owner:
   divider or the grip of K13). Neither column draws it.
 - **Head line and tab mark:** the line under the head belongs to the head. The
   2 px tab mark lies on it and is no second line.
+- **Exception, the way:** the line between the dots of `ProgressPath` is the
+  only line that divides nothing. It connects the stages of one thing, so the
+  path draws it itself: 2 px in the colour of a field edge, never as a border.
 
 **Measure:** `layoutProblems` reports a double line: two parallel visible
 borders that touch or lie at most 1 px apart, also across components (the
@@ -196,8 +199,8 @@ keys ([ResizeSeparator](/en/ui/layout/resize-separator)).
 
 The criteria are CSS tokens and building blocks; they render on the server and
 need no browser code. In a browser test, call `layoutProblems` from
-`packages/ui/test/head-overlap.ts` with `page.evaluate`, once per width in its
-own test.
+`@k2b/ui/layout-check` with `page.evaluate`, once per width in its own test
+([Layout self-check](/en/ui/layout-check)).
 
 ## Example
 

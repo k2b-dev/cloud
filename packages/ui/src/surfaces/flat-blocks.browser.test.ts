@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
-import { layoutProblems } from "../../test/head-overlap";
+import { layoutProblems } from "../layout-check";
 
 // Cloud flat (K7, K10, K15, K17): the geometry of the flat building blocks in a real layout engine. All data is invented.
 const ui = resolve(import.meta.dir, "../..");
