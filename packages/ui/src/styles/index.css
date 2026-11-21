@@ -207,8 +207,55 @@
   --k2b-reading-column: 47.5rem;
   /* One measure for label–value rows (budgets, sums): the value stays within reach of its label on a wide screen. */
   --k2b-row-measure: 40rem;
-  --k2b-radius-surface: 0.75rem;
-  --k2b-radius-dialog: 0.875rem;
+  /* Radius roles (K4): round is what a person presses, square is what orders.
+     flat 0 for columns, bands, rows, cells, and sections; mark 4 px for small
+     marks under 24 px (check, icon tile); control 8 px for buttons and fields;
+     overlay 8 px for menus, toasts, popovers, and dialogs; round for chips,
+     people, dots, grips, and pills; card 14 px for the app card and the top of
+     a phone sheet. No other radius exists. `--k2b-radius-surface` and
+     `--k2b-radius-dialog` stay as names and resolve to the overlay role. */
+  --k2b-radius-flat: 0;
+  --k2b-radius-mark: 4px;
+  --k2b-radius-overlay: 8px;
+  --k2b-radius-round: 9999px;
+  --k2b-radius-card: 14px;
+  --k2b-radius-surface: var(--k2b-radius-overlay);
+  --k2b-radius-dialog: var(--k2b-radius-overlay);
+  /* Spacing (K1): every gap is one step of 4 px or a sum of steps. */
+  --k2b-space-1: 4px;
+  --k2b-space-2: 8px;
+  --k2b-space-3: 12px;
+  --k2b-space-4: 16px;
+  --k2b-space-5: 20px;
+  --k2b-space-6: 24px;
+  --k2b-space-8: 32px;
+  /* The text edge of a column (K5a): tabs, path, status row, and row text start
+     here, or after exactly one icon. 16 px below 768 px. (`--k2b-edge` is the
+     colour of a control's edge, not this inset.) */
+  --k2b-text-edge: 20px;
+  /* Fixed heights (K1): head, status row, column head, rows of one, two, and
+     three text lines, a dense row, a field label, a control, and the heads of
+     an area and a group (K17); phone title row, tabs, and row. */
+  --k2b-h-head: 56px;
+  --k2b-h-status: 52px;
+  --k2b-h-colhead: 36px;
+  --k2b-h-row: 40px;
+  --k2b-h-row-2: 52px;
+  --k2b-h-row-3: 72px;
+  --k2b-h-row-dense: 32px;
+  --k2b-h-label: 20px;
+  --k2b-h-control: 36px;
+  --k2b-h-area-head: 56px;
+  --k2b-h-group-head: 36px;
+  --k2b-h-head-phone: 52px;
+  --k2b-h-tabs-phone: 44px;
+  --k2b-h-row-phone: 60px;
+  /* Four sizes in the controls (K11): meta 12, rows and controls 13, reading
+     text and the head title 14, the lead statement 18. */
+  --k2b-font-size-meta: var(--k2b-type-12);
+  --k2b-font-size-row: var(--k2b-type-13);
+  --k2b-font-size-body: var(--k2b-type-14);
+  --k2b-font-size-lead: var(--k2b-type-18);
   /* One motion vocabulary: every time and curve comes from these tokens. */
   --k2b-motion-fast: 120ms; /* color, hover, press */
   --k2b-motion-base: 180ms; /* pop, slide, fade in */
@@ -254,21 +301,24 @@
   --k2b-type-13: 0.8125rem;
   --k2b-type-14: 0.875rem;
   --k2b-type-18: 1.125rem;
-  /* Cloud pins `--ui-shadow-surface: none` in both themes: flat surfaces carry
-     a border, not a drop shadow, and an outer shadow is clipped anyway by the
-     `overflow: hidden` parents these surfaces sit in. Only genuinely floating,
-     portaled layers (dialogs, popovers, tooltips, toasts) get `--*-shadow-float`. */
-  --k2b-shadow-surface: none;
-  --k2b-shadow-frame:
-    0 -3px 10px -8px rgb(15 23 19 / 0.16), 0 0 16px -9px rgb(15 23 19 / 0.16), 0 14px 36px -32px rgb(15 23 19 / 0.22),
-    0 1px 5px rgb(15 23 19 / 0.04);
-  /* The quiet shadow at every workspace column boundary: centre and edge of
-     its 24 px gradient. */
-  --k2b-shadow-column-mid: rgb(24 24 27 / 0.0055);
-  --k2b-shadow-column-edge: rgb(24 24 27 / 0.022);
-  /* The same shadow while its resize handle is hovered, focused, or dragged. */
-  --k2b-shadow-column-active-mid: rgb(24 24 27 / 0.016);
-  --k2b-shadow-column-active-edge: rgb(24 24 27 / 0.055);
+  /* Shadows only for what floats (K3, K16). A shadow means "lies above the
+     page": small for a menu, popover, toast, floating pill, a phone's main
+     action, and a drag preview; large for a dialog; directed for a drawer
+     (`-side`) and a phone sheet (`-sheet`). The scrim dims the page behind a
+     dialog or sheet, without blur.
+     The layer tokens of things that never float (app card, columns, islands,
+     surfaces) draw nothing. They stay as names, as a transparent no-op layer
+     (`0 0 #0000`) so lists such as `ring, var(--k2b-shadow-raised)` stay
+     valid, and the column tokens as transparent colours. */
+  --k2b-shadow-overlay-sm: 0 1px 2px rgb(9 9 11 / 0.06), 0 12px 32px -12px rgb(9 9 11 / 0.28);
+  --k2b-shadow-overlay-lg: 0 2px 4px rgb(9 9 11 / 0.06), 0 24px 64px -16px rgb(9 9 11 / 0.32);
+  --k2b-scrim: rgb(9 9 11 / 0.28);
+  --k2b-shadow-surface: 0 0 #0000;
+  --k2b-shadow-frame: 0 0 #0000;
+  --k2b-shadow-column-mid: transparent;
+  --k2b-shadow-column-edge: transparent;
+  --k2b-shadow-column-active-mid: transparent;
+  --k2b-shadow-column-active-edge: transparent;
   --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
   /* Light glass for layers that float over a picture, video, or map (`k2b-overlay-surface`). */
   --k2b-overlay-surface: rgb(255 255 255 / 0.78);
@@ -281,12 +331,12 @@
   --k2b-shadow-toast: 0 8px 24px -12px rgb(9 9 11 / 0.28);
   --k2b-shadow-side: -14px 0 36px rgb(9 9 11 / 0.16);
   --k2b-shadow-sheet: 0 -14px 36px rgb(9 9 11 / 0.16); /* a sheet rising from the bottom edge */
-  /* Layer 1, an island in the main content: a section, a content card, a dashboard frame. */
-  --k2b-shadow-raised: 0 1px 2px rgb(15 23 19 / 0.05), 0 4px 12px -6px rgb(15 23 19 / 0.12);
+  /* Layer 1, an island in the main content: flat since Cloud flach (K3). */
+  --k2b-shadow-raised: 0 0 #0000;
   /* The surface of an island. In dark mode a lighter surface replaces the shadow. */
   --k2b-surface-raised: var(--k2b-surface);
-  /* A floating pill or toolbar that stays open: softer than a menu that opens for a moment. */
-  --k2b-shadow-toolbar: 0 1px 2px rgb(9 9 11 / 0.06), 0 6px 18px -8px rgb(9 9 11 / 0.16);
+  /* A floating pill or toolbar over content: it floats, so it takes the small overlay shadow (K16). */
+  --k2b-shadow-toolbar: var(--k2b-shadow-overlay-sm);
   /* A floating pill of small round controls (`k2b-pill`), such as an editor's formatting, a viewer's zoom, or a
      selection's actions: the control size and the space inside the pill's 1 px edge, the same on every side. The pill
      is the control plus that space, 38 px. */
@@ -309,6 +359,13 @@
   font-size: 0.9375rem;
   font-weight: 400;
   color-scheme: light;
+}
+
+/* On a phone the text edge is 16 px (K5a). */
+@media (max-width: 767px) {
+  .k2b-ui {
+    --k2b-text-edge: 16px;
+  }
 }
 
 /* Reduced motion means instant: color may change, movement does not.
@@ -505,13 +562,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   /* shadow-tokens: allow the approved glow outside the assistant composer (Composer v3), the one control exception. */
   --k2b-ai-glow: 0 0 0 4px rgb(240 171 220 / 0.16), 0 6px 22px rgb(240 171 220 / 0.1);
   --k2b-ai-suggestion: #c99abb;
-  --k2b-shadow-surface: none;
-  --k2b-shadow-frame:
-    0 -3px 10px -8px rgb(0 0 0 / 0.32), 0 0 16px -9px rgb(0 0 0 / 0.56), 0 16px 40px -30px rgb(0 0 0 / 0.48), 0 1px 7px rgb(0 0 0 / 0.14);
-  --k2b-shadow-column-mid: rgb(0 0 0 / 0.014);
-  --k2b-shadow-column-edge: rgb(0 0 0 / 0.055);
-  --k2b-shadow-column-active-mid: rgb(0 0 0 / 0.04);
-  --k2b-shadow-column-active-edge: rgb(0 0 0 / 0.14);
+  --k2b-shadow-overlay-sm: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+  --k2b-shadow-overlay-lg: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.66);
   --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
   --k2b-overlay-surface: rgb(30 36 44 / 0.86);
   --k2b-overlay-surface-hover: rgb(44 51 61 / 0.95);
@@ -521,10 +573,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-shadow-toast: 0 10px 28px -14px rgb(0 0 0 / 0.58);
   --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
   --k2b-shadow-sheet: 0 -16px 40px rgb(0 0 0 / 0.5);
-  /* No shadow, as a transparent no-op layer so lists such as `ring, var(--k2b-shadow-raised)` stay valid. */
-  --k2b-shadow-raised: 0 0 #0000;
   --k2b-surface-raised: var(--k2b-surface-elevated);
-  --k2b-shadow-toolbar: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 22px -10px rgb(0 0 0 / 0.5);
   color-scheme: dark;
   --k2b-chart-highlight-mix: white;
 }
