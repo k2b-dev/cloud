@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.75.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.74.1...npm-cloud-v0.75.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **code:** Studio apps, Mail rules and automatic replies, and routines in their old form are removed. Export Mail rules and routines before the upgrade; Gustav rebuilds them as Code. See "Upgrade to Code": https://github.com/k2b-dev/cloud/blob/main/docs-site/docs/en/operations/upgrade-to-code.md
+
+### Features
+
+* **cloud:** accept stdlib service error statuses ([#3806](https://github.com/k2b-dev/cloud/issues/3806)) ([09a9c2f](https://github.com/k2b-dev/cloud/commit/09a9c2f9a234516a353dea616d36c1613e04f98a))
+* **cloud:** apps can color only their icon with appearance.iconColor ([#3811](https://github.com/k2b-dev/cloud/issues/3811)) ([3b9753c](https://github.com/k2b-dev/cloud/commit/3b9753cba2c1f502f0e1389e82c4c58c1f499ac0))
+* **code:** Gustav writes and runs Code for people, mailboxes and other apps ([#3010](https://github.com/k2b-dev/cloud/issues/3010)) ([d3ec882](https://github.com/k2b-dev/cloud/commit/d3ec88209d488af76a4db6e19db21be7cf2c5b5e))
+* **ssr:** load islands with only the page language's catalogs ([#3813](https://github.com/k2b-dev/cloud/issues/3813)) ([e39e932](https://github.com/k2b-dev/cloud/commit/e39e932c555d1db7e734cc932a52fe3a75ca7bc2))
+
+
+### Bug Fixes
+
+* **ai:** app sessions act only on turns they may start ([8f96896](https://github.com/k2b-dev/cloud/commit/8f968960ad363b02e475b4d738cdd999ad6aa5b4))
+* **cloud:** a shared text reconnect refused after the sign-in expired asks to sign in ([#3857](https://github.com/k2b-dev/cloud/issues/3857)) ([f7eb8a6](https://github.com/k2b-dev/cloud/commit/f7eb8a6f41cbca7ef7ff2f504aeea1541c002062))
+* **cloud:** an expired sign-in on a shared text socket asks to sign in again ([#3853](https://github.com/k2b-dev/cloud/issues/3853)) ([7da4132](https://github.com/k2b-dev/cloud/commit/7da4132354d1f7f22198830437ea25fe86b1c1ec))
+* **cloud:** the privacy screen covers every pixel evenly ([#3858](https://github.com/k2b-dev/cloud/issues/3858)) ([8f96896](https://github.com/k2b-dev/cloud/commit/8f968960ad363b02e475b4d738cdd999ad6aa5b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.22.0 to 0.23.0
+    * @k2b/ui bumped from 0.62.0 to 0.63.0
+    * @k2b/editor bumped from 0.12.2 to 0.13.0
+
 ## [0.74.1](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.74.0...npm-cloud-v0.74.1) (2026-11-19)
 
 
