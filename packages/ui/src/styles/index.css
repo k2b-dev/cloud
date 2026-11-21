@@ -21533,7 +21533,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     top: calc(50% - var(--k2b-dialog-lift, 0px));
     bottom: auto;
     transform: translate(-50%, -50%);
-    width: min(var(--k2b-dialog-available-width), 32rem);
     max-height: min(86dvh, var(--k2b-dialog-available-height));
     border-bottom: 1px solid var(--k2b-border);
     border-radius: var(--k2b-radius-overlay);
@@ -21560,6 +21559,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
         overlay var(--k2b-motion-fast) allow-discrete,
         display var(--k2b-motion-fast) allow-discrete;
     }
+  }
+  /* A sheet's decision or short form is narrow; a panel dialog keeps its own width as a dialog. */
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive:not(.k2b-panel-dialog-frame) {
+    width: min(var(--k2b-dialog-available-width), 32rem);
+  }
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive.k2b-panel-dialog-frame {
+    width: min(96vw, 48rem);
+    max-width: var(--k2b-dialog-available-width);
+  }
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive.k2b-panel-dialog-frame.is-wide {
+    width: min(96vw, 72rem);
   }
   .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive[open] {
     opacity: 1;
