@@ -60,10 +60,11 @@
   box-shadow: var(--k2b-shadow-frame);
 }
 
-/* A clickable card (K17): flat, the same 1 px hairline as every card
-   (LinkCard, ResourceCard) in every state, 8 px corners; hover darkens the
-   fill only. */
+/* A clickable card (K17): flat, 8 px corners, and the one edge every
+   clickable card shares (interactive Paper, LinkCard, a ResourceCard that
+   opens): 1 px of the control tone in every state; hover darkens the fill. */
 .k2b-ui .k2b-paper[data-interactive="true"] {
+  border-color: var(--k2b-border-strong);
   border-radius: var(--k2b-radius-control);
 }
 
@@ -345,7 +346,9 @@
   transition: background-color 120ms ease;
 }
 
+/* A card that opens carries the clickable cards' edge. */
 .k2b-ui :is(a, button).k2b-resource-card {
+  border-color: var(--k2b-border-strong);
   cursor: pointer;
 }
 
