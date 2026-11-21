@@ -57,6 +57,8 @@ const messagesOf = (id: string): AiStoredMessage[] => {
 
 let browser: Browser;
 let staticAsset: (request: Request) => Response | undefined;
+/** The entry's own URL: lazy chunks import shared code from it, so the page loads it under that one URL. */
+let entryUrl = "/harness.js";
 const entry = resolve(import.meta.dir, "gustav-flat.browser-entry.tsx");
 const fakeLive = resolve(import.meta.dir, "gustav-flat.browser-live.ts");
 const entrySource = `import { LocaleProvider } from "@k2b/ui";
@@ -101,7 +103,7 @@ beforeAll(async () => {
   if (!build.success) throw new AggregateError(build.logs, "Could not bundle the Gustav flat workspace.");
   const entryOutput = build.outputs.find((output) => output.kind === "entry-point")!;
   const scripts = new Map(build.outputs.map((output) => [`/${basename(output.path)}`, output]));
-  scripts.set("/harness.js", entryOutput);
+  entryUrl = `/${basename(entryOutput.path)}`;
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", cloud))).default;
   const styles: string[] = [];
   for (const path of [resolve(import.meta.dir, "../styles/app.css"), resolve(import.meta.dir, "../../../../styles.css")]) {
@@ -118,7 +120,7 @@ beforeAll(async () => {
   const cache = { "cache-control": "public, max-age=3600" };
   staticAsset = (request) => {
     const path = new URL(request.url).pathname;
-    // A lazy chunk may be asked for under its source directory; every output is served by its file name.
+    // A lazy chunk may ask for a module under its source directory; every output is served by its file name.
     const script = scripts.get(path) ?? (path.endsWith(".js") ? scripts.get(`/${basename(path)}`) : undefined);
     if (script) return new Response(script, { headers: { "content-type": "text/javascript", ...cache } });
     if (path === "/harness.css") return new Response(css, { headers: { "content-type": "text/css", ...cache } });
@@ -217,7 +219,7 @@ const open = async (id: string, width: number) => {
           approvals: { page: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, open: false },
         };
         return new Response(
-          `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;width:100%;height:100dvh"></div><script>window.harness=${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script type="module" src="/harness.js"></script></body></html>`,
+          `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;width:100%;height:100dvh"></div><script>window.harness=${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script type="module" src="${entryUrl}"></script></body></html>`,
           { headers: { "content-type": "text/html", "cache-control": "no-store" } },
         );
       }
