@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { CODE_SECRET_ERRORS } from "../code-secret-errors";
 import type { AiTurnBlock } from "../protocol";
 import { hasCompleteSentence, layoutAiTurn, storedPhase, submittedCodeVersion, waitsForUser } from "./turn-layout";
 
@@ -329,4 +330,36 @@ test("a Code check's notices stand as a result until a clean check of the same C
   // A result from before words existed shows no building block at all.
   const old = { ...check("old", []), result: { version: 1, result: { ok: true }, manifest: null, permissions: [] } } as AiTurnBlock;
   expect(layoutAiTurn([old], { phase: "completed" }).results).toEqual([]);
+});
+
+test("secret cards and reloaded receipts contain only metadata and configured/name", () => {
+  const value = "fixture-private-secret";
+  const args = {
+    name: "API",
+    origin: "https://api.example.com",
+    header: "authorization",
+    prefix: "",
+    target: { code: "Abc234", pathPrefix: "/v1", value },
+    value,
+  };
+  for (const [phase, status, result, expected] of [
+    ["waiting", "awaiting_client", undefined, "interaction"],
+    ["completed", "completed", { configured: true, name: "API", value }, "done"],
+    ["completed", "completed", { configured: false, name: "API", value }, "rejected"],
+    ["completed", "completed", { failed: true, error: value }, "failed"],
+  ] as const) {
+    const layout = layoutAiTurn([tool("secret", "code_secret", { status, args, result })], { phase });
+    expect(layout.actions.map((action) => action.state)).toEqual([expected]);
+    expect(JSON.stringify(layout)).not.toContain(value);
+  }
+});
+
+test("a failed secret call keeps only one of the fixed reasons, so its outcome line survives a reload", () => {
+  const failed = (error: string) =>
+    layoutAiTurn([tool("secret", "code_secret", { status: "completed", args: { name: "API" }, result: { failed: true, error } })], {
+      phase: "completed",
+    }).actions[0]?.block.result;
+  expect(failed(CODE_SECRET_ERRORS.accessLost)).toEqual({ failed: true, error: CODE_SECRET_ERRORS.accessLost });
+  expect(failed(CODE_SECRET_ERRORS.expired)).toEqual({ failed: true, error: CODE_SECRET_ERRORS.expired });
+  expect(failed("fixture-private-secret in a message")).toEqual({ failed: true, error: CODE_SECRET_ERRORS.incomplete });
 });

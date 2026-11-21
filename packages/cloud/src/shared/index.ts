@@ -50,6 +50,7 @@ export * from "./app-presentation";
 export * from "./app-url";
 export * from "./avatar-art";
 export * from "./branding";
+export { codePersonName, type SecretPerson, secretSetter } from "./code-people";
 export { workflowEffectKey } from "./effect-key";
 export * from "./email-html";
 export * from "./format";

@@ -6,6 +6,7 @@ import {
   createAiConversationView,
   isAiSettingsError,
 } from "@k2b/cloud/ai";
+import { CodeSecretResult } from "@k2b/cloud/ai/browser";
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { type AuthContext, auth, getLocale } from "@k2b/cloud/server";
 import { appAccessAuthority, GotenbergRenderError, SettingUnreadableError } from "@k2b/cloud/services";
@@ -42,7 +43,7 @@ const identity = (c: Context<AuthContext>) => ({
 });
 const secretCall = <T extends z.infer<typeof ClientCall>>(call: T) => {
   if (call.input.operation !== "secret") throw new ArtifactError("ACCESS_DENIED");
-  return call;
+  return { ...call, input: call.input };
 };
 /** Chat-only services: no resource resolver, app storage, HTML host or database admission. */
 export const createChatCodeServiceRoutes = (caller: (c: Context<AuthContext>) => CapabilityCaller = capabilityCaller) =>
@@ -100,7 +101,7 @@ export const createChatCodeServiceRoutes = (caller: (c: Context<AuthContext>) =>
                   : 400,
           t[error.code],
         );
-      console.error("Assistant chat code request failed", error);
+      console.error("Assistant chat code request failed", c.req.path.endsWith("/runtime/secrets") ? undefined : error);
       return reply("REQUEST_FAILED", 500, t.REQUEST_FAILED);
     })
     .post("/runtime/views", async (c) => {
@@ -179,7 +180,11 @@ export const createChatCodeServiceRoutes = (caller: (c: Context<AuthContext>) =>
       c.body(await chunkSource(ChunkName.parse(c.req.param("name"))), 200, { "Content-Type": "text/javascript" }),
     )
     .post("/runtime/claim", async (c) => c.json(await clientCalls.claim(secretCall(ClientCall.parse(await c.req.json())), identity(c))))
-    .post("/runtime/complete", async (c) =>
-      c.json(await clientCalls.complete(secretCall(ClientCallResult.parse(await c.req.json())), identity(c))),
-    );
+    .post("/runtime/complete", async (c) => {
+      const call = secretCall(ClientCallResult.parse(await c.req.json()));
+      // Persist only the established tool output and fixed sentences, even if a browser adds a private field or text.
+      const result = CodeSecretResult.parse(call.result);
+      if ("configured" in result) result.name = call.input.name;
+      return c.json(await clientCalls.complete({ ...call, result }, identity(c)));
+    });
 export const chatCodeApi = createChatCodeServiceRoutes();

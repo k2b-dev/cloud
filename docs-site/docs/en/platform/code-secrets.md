@@ -21,7 +21,9 @@ and `core.code.secret.delete`. All three require an editor of that Code.
 Cloud administration alone gives no access. Set and delete also require a
 write-capable credential, and have `code: false`: Code cannot manage its own
 credentials. Set accepts only private HTTP input from the editor or CLI;
-Assistant, MCP, app tools and background mandates cannot set values. It uses
+Assistant, MCP, app tools and background mandates cannot set values. A Secret
+card in a chat is such editor input: the editor's browser sends the value, and
+Gustav only learns whether it was stored. It uses
 `idempotency: "none"`, so clients must omit idempotency keys. Reconcile a lost
 response by reading metadata before replacing the value again.
 
@@ -83,6 +85,75 @@ Core exports `codeSecretContracts`, `CodeSecretMetadataSchema`,
 `currentCodeSecretBindings`, `reviewCodeSecretDeletion` and `deleteCodeSecret`
 from `packages/core/src/code/index.ts` for its CLI and editor hosts. These
 services take `CodeContext` and enforce the same authority on every surface.
+
+## Ask for private entry in Gustav
+
+`code_secret` asks for a value through the browser's private Secret card in the
+conversation. Its arguments contain metadata only:
+
+```json
+{
+  "name": "API",
+  "origin": "https://api.example.com",
+  "header": "Authorization",
+  "prefix": "",
+  "target": { "code": "Abc234", "pathPrefix": "/v1" }
+}
+```
+
+With `target`, `name` follows `CodeSecretNameSchema`
+(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`). The browser normalizes `header` to lowercase
+and uses `headers: [header]`. `prefix` must be explicitly empty; put the prefix
+in Code, for example ``Bearer ${secrets.API}``. The destination follows
+`CodeSecretBindingSchema`, including its origin, path and header restrictions.
+
+Before offering entry, the browser reads `core.code.secret.list` and calls
+`secretCheck`. A forbidden or missing Code, a refused destination or a failed
+check produces `CodeToolFailure` without a card. Only someone who can edit the
+Code may enter or replace its values; Cloud administrator status alone grants
+no such right. Core enforces that right again on every list, check and write.
+
+The browser writes through `core.code.secret.set`, with
+`target: { type: "core.code", id: code }`, without an idempotency key. A new
+name uses `binding_revision: null` and the requested binding. An existing name
+uses its current revision and never sends a binding: the card replaces only the
+value, checks and names the stored destination, and keeps it. When Gustav asked
+for another destination, the card says **Goes to …, as before** and the result
+carries a fixed `guidance` sentence; an editor changes the destination on the
+automation's **Secrets** tab. A deleted value keeps its revision and binding and
+is offered as entry again. When someone else changes the destination while the
+card is open, the card reads the list again, shows the current destination and
+the one shown before, and offers replacement without restoring the old one.
+An uncertain answer never causes an automatic write: **Retry** reads metadata
+first, and an existing value needs explicit replacement.
+
+The tool result stays `{ configured, name }`, with an optional fixed `guidance`
+sentence; declining returns `configured: false`. Hosts keep only the fixed
+failure sentences (`CODE_SECRET_ERRORS`) and hints (`CODE_SECRET_GUIDANCE`). Neither the value nor a digest enters tool arguments,
+results, conversation history, waiting entries or logs. The value stays in this
+window's field and its private write request, and is discarded on completion.
+The browser holds the existing claim, renews it every 15 seconds and stops when
+the two-minute lease expires. Another window shows a locked request and never
+replays it. Successful creation and replacement both leave one metadata-only
+outcome line after reload. An expired sign-in ends the request as **not saved**
+with that reason. A lost right ends it as **not saved** without a reason,
+because Core answers a deleted automation and a removed right alike. See [the Secret card](/en/docs/ai/chat-interface) for its states.
+
+Without `target`, existing chat-secret names, header/prefix defaults, storage
+and validation remain unchanged. The browser uses Assistant's private
+`PUT runtime/secrets` path; those values belong only to this person in this
+chat. Each HTTP request with one still asks for approval.
+
+Browser hosts that share the Code page's private editor can use
+`writeSecret`, `secretCheck`, `valueAllowed`, `SecretListSchema` and
+`SecretSetSchema` from `@k2b/cloud/browser/code-secrets`. These helpers do not
+grant access or return stored values. `secretCheck` returns `true`, `false`, or
+`null` for an unavailable check; never treat `null` as permission.
+
+For setter labels, `codePersonName`, `secretSetter` and the `SecretPerson` type
+from `@k2b/cloud/shared` use the same name fallback as the Code page. Resolve
+UUIDs through the caller-visible directory first. An absent person stays `null`;
+show only **Stored** rather than a UUID or an invented name.
 
 ## Bind the destination to a version
 

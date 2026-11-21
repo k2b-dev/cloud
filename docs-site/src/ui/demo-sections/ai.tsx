@@ -2,6 +2,7 @@ import type { ChatCommand, ChatDictationState, ChatMention, ChatTask } from "@k2
 import {
   Button,
   Chat,
+  ChatDecisionField,
   type ChatDecisionState,
   type ChatTimelineItem,
   CodeDisplay,
@@ -12,6 +13,7 @@ import {
   ProgressBar,
   ReferenceChip,
   rememberEmoji,
+  SegmentedControl,
   Toolbar,
 } from "@k2b/ui";
 import { createSignal, For, type JSX, onCleanup } from "solid-js";
@@ -645,6 +647,142 @@ const MailDecisionDemo = () => {
   );
 };
 
+const fieldLines = {
+  safe: { text: "Not in the chat history; nobody sees the value again.", icon: "ti ti-shield-lock" },
+  held: { text: "Open in another window. Answer there.", icon: "ti ti-devices" },
+  empty: { text: "Paste the key first.", icon: "ti ti-alert-circle", tone: "danger" },
+  failed: { text: "Saving failed. Try again; your value stays in the field.", icon: "ti ti-alert-circle", tone: "danger" },
+  conflict: { text: "Changed meanwhile. Use your value anyway?", icon: "ti ti-alert-triangle", tone: "warning" },
+} as const;
+const fieldFaces = {
+  save: { label: "Save securely", icon: "ti ti-lock" },
+  saving: { label: "Saving …", icon: "ti ti-loader-2 k2b-spin" },
+  retry: { label: "Try again", icon: "ti ti-refresh" },
+  force: { label: "Replace anyway" },
+} as const;
+const fieldStates = {
+  open: { line: "safe", face: "save" },
+  saving: { line: "safe", face: "saving", locked: true },
+  error: { line: "empty", face: "save", invalid: true },
+  failed: { line: "failed", face: "retry" },
+  locked: { line: "held", face: "save", locked: true },
+  conflict: { line: "conflict", face: "force" },
+} as const satisfies Record<string, { line: keyof typeof fieldLines; face: keyof typeof fieldFaces; invalid?: boolean; locked?: boolean }>;
+type FieldDemoState = keyof typeof fieldStates;
+
+const DecisionFieldDemo = () => {
+  const [view, setView] = createSignal<FieldDemoState>("open");
+  const [state, setState] = createSignal<ChatDecisionState>("open");
+  const [outcome, setOutcome] = createSignal("saved");
+  // The value lives only here, in the host, and never leaves the field.
+  const [value, setValue] = createSignal("");
+  const row = () => fieldStates[view()];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(timer));
+  const show = (next: FieldDemoState) => {
+    clearTimeout(timer);
+    setState("open");
+    setView(next);
+  };
+  const save = () => {
+    if (!value()) return show("error");
+    show("saving");
+    return new Promise<void>((done) => {
+      timer = setTimeout(() => {
+        setValue("");
+        setOutcome("saved");
+        setState("decided");
+        done();
+      }, 1200);
+    });
+  };
+  return (
+    <DemoCard
+      id="chat-decision-field"
+      chip={{ kind: "component", name: "Chat.Decision", from: "@k2b/ui" }}
+      description="A question that asks for one value. Every state keeps one geometry; the value stays with the host."
+      code={`<Chat.Decision
+  state={state()}
+  kind={{ label: "Secret", icon: "ti ti-key" }}
+  sentence={<>Add <strong>Parcel_API</strong>?</>}
+  entry={<ChatDecisionField
+    facts={[
+      { text: "Stays only for you in this chat until you remove it", icon: "ti ti-message-circle" },
+      { text: "Goes only to api.parcel.example", icon: "ti ti-world" },
+    ]}
+    label="Value for Parcel_API" value={value()} onValueChange={setValue}
+    placeholder="Paste the key" revealLabel="Show value"
+    lines={{ safe: { text: "Not in the chat history …", icon: "ti ti-shield-lock" }, empty: { … } }}
+    current={current()} invalid={invalid()} disabled={heldElsewhere()}
+    confirm={{ label: "Save securely", icon: "ti ti-lock", alternates: [{ label: "Saving …" }, { label: "Try again" }], onSelect: save }}
+    decline={{ label: "Decline", onSelect: decline }}
+  />}
+  outcome={<Chat.Outcome current="saved" lines={{ saved: { tone: "done", text: "Secret Parcel_API saved" } }} />}
+/>`}
+    >
+      <SegmentedControl
+        ariaLabel="Field state"
+        value={view()}
+        onValueChange={(next) => show(next as FieldDemoState)}
+        options={(Object.keys(fieldStates) as FieldDemoState[]).map((value) => ({
+          value,
+          label: value[0]!.toUpperCase() + value.slice(1),
+        }))}
+      />
+      <Chat.Decision
+        state={state()}
+        kind={{ label: "Secret", icon: "ti ti-key" }}
+        sentence={
+          <>
+            Add <strong>Parcel_API</strong>?
+          </>
+        }
+        entry={
+          <ChatDecisionField
+            facts={[
+              { text: "Stays only for you in this chat until you remove it", icon: "ti ti-message-circle" },
+              { text: "Goes only to api.parcel.example; every request with it asks you first", icon: "ti ti-world" },
+            ]}
+            label="Value for Parcel_API"
+            value={value()}
+            onValueChange={(next) => {
+              setValue(next);
+              if ("invalid" in row()) setView("open");
+            }}
+            placeholder="Paste the key"
+            revealLabel="Show value"
+            lines={fieldLines}
+            current={row().line}
+            invalid={"invalid" in row()}
+            disabled={"locked" in row()}
+            confirm={{ ...fieldFaces[row().face], alternates: Object.values(fieldFaces), onSelect: save }}
+            decline={{
+              label: "Decline",
+              onSelect: () => {
+                setValue("");
+                setOutcome("declined");
+                setState("decided");
+              },
+            }}
+          />
+        }
+        outcome={
+          <Chat.Outcome
+            current={outcome()}
+            lines={{
+              saved: { tone: "done", text: "Secret Parcel_API saved", time: "19:42" },
+              declined: { tone: "off", text: "Secret Parcel_API declined", time: "19:43" },
+            }}
+          />
+        }
+      />
+      <Button size="sm" variant="subtle" onClick={() => show("open")}>
+        Ask again
+      </Button>
+    </DemoCard>
+  );
+};
+
 const DecisionPoliciesDemo = () => {
   const [deleteResult, setDeleteResult] = createSignal("done");
   const [deleted, setDeleted] = createSignal(false);
@@ -1019,6 +1157,7 @@ const demos: DemoSection = {
       <StepListDemo />
       <StepRowsDemo />
       <MailDecisionDemo />
+      <DecisionFieldDemo />
       <DecisionPoliciesDemo />
       <OutcomeStatesDemo />
       <ReferenceChipsDemo />

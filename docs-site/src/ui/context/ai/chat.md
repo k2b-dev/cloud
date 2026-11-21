@@ -171,6 +171,59 @@ raised island instead of the tint, a ghost decline ("Discard"), and a secondary
 changes only ground, edge, and shadow in 200 ms, without a transition under
 `prefers-reduced-motion`.
 
+`source` and `reason` are optional: without `source` the head names only the
+`kind`.
+
+### A question that asks for one value
+
+Pass `entry={<ChatDecisionField … />}` when the answer is one value the person
+types, such as a key. `entry` takes the answer row's place, so the question's
+own `meta`, `back`, `more`, `link`, `remember`, `confirm`, and `decline` are not
+shown; `ChatDecisionField` brings its `confirm` and `decline`. It is a named
+export of `@k2b/ui`, not a member of `Chat`. Code that loads such a question on
+demand imports it from `@k2b/ui/chat-decision-field`, so it stays out of the
+page's first JavaScript. Its `facts`, each a `ChatDecisionReason` with its icon,
+such as where the value goes, lie on the surface colour like `details`, without
+a label. Under them sits the field with the filled `confirm` beside it, one line
+under the field with a quiet `decline` in the AI colour beside that. The field
+is a password field: its eye has one fixed name (`revealLabel`, such as "Show
+value") and `aria-pressed` says whether the value shows; on touch screens the
+eye is 44 px wide with a 44 px hit area that does not reach into the text. The
+field sets `autocomplete="off"` and `spellcheck="false"`.
+
+The value stays with the host: pass it as `value` and take changes from
+`onValueChange`. The component never stores, logs, or writes the value into an
+attribute; once the question closes, the field and its value are gone.
+
+`lines` are every line the flow can show under the field, such as where the
+value goes, an error, or "Open in another window", and `current` names the
+visible one. Like `Chat.Outcome`, all lines share one grid cell, and every label
+an answer can take shares one cell inside its button: list them in the answer's
+`alternates`, such as "Saving …" and "Try again" beside "Save". So open, typed,
+saving, error, locked, and conflict states have one geometry and nothing moves.
+One polite live region announces each change of `current`, the same words again
+included. `invalid` draws the red edge, marks the input `aria-invalid`, makes
+the current line its error, and takes the focus back into the field unless the
+person is somewhere else by now; otherwise the input is described by the
+current line. `disabled` locks the field, the eye, and both answers, such as
+while another window holds the question. The question's
+`waiting` turns both answers off but keeps the field, and its `unavailable`
+turns `confirm` off. Use `inputRef` to move the focus into the field, such as
+after a jump to the question.
+
+Typing, or the focus in the field, turns the question into the raised island of
+`edit` for good, with the facts on the canvas colour; in server HTML the
+question keeps its tinted ground, as on the first frame in the browser.
+`confirm` stays the filled answer. A promise that `confirm` or `decline` returns
+holds the question like any other answer: until it settles the field and the
+eye are disabled, as `disabled` draws them, both answers have `aria-disabled`,
+the pressed one `aria-busy`, and Enter, a second press, or a held key sends
+nothing. So a host can save while the question stays open and set `state` to
+`decided` before the promise resolves: the outcome takes the focus as for any
+other answer. A failed save that keeps the question open gives working answers
+back and the focus to the field, unless the person is somewhere else by now. Below 32.5 rem the field and its line take the full width and both
+answers share one row in equal halves, without icons, each label on one line.
+
 Use [ReferenceChip](/en/ui/content/label-chip#referencechip) for objects, places,
 people, and times inside the sentence. Chips show at most 40 user-perceived
 characters, cut in the middle, while retaining the full title as their accessible
@@ -321,17 +374,28 @@ type ChatMention = { start: number; end: number; attachment: ChatAttachment };
 ```ts
 type ChatDecisionState = "open" | "sending" | "decided" | "expired";
 type ChatDecisionAnswer = {
-  label: string; icon?: string; onSelect: () => void | Promise<void>;
+  label: string; icon?: string; busy?: boolean;
+  alternates?: readonly { label: string; icon?: string }[];
+  onSelect: () => void | Promise<void>;
+};
+type ChatDecisionFieldProps = {
+  facts?: readonly ChatDecisionReason[];
+  label: string; value: string; onValueChange: (value: string) => void;
+  placeholder?: string; revealLabel?: string;
+  lines: Readonly<Record<string, ChatDecisionReason>>; current: string;
+  invalid?: boolean; disabled?: boolean; inputRef?: (input: HTMLInputElement) => void;
+  confirm: ChatDecisionAnswer; decline?: ChatDecisionAnswer;
 };
 type ChatDecisionReason = {
   text: JSX.Element; icon?: string; tone?: "neutral" | "danger" | "warning";
 };
 type ChatDecisionProps = {
   state: ChatDecisionState; mode?: "approve" | "edit";
-  kind: { label: string; icon: string }; source: { name: string; icon: string; accent?: string };
+  kind: { label: string; icon: string }; source?: { name: string; icon: string; accent?: string };
   status?: { label: string; icon: string; tone: ChatOutcomeTone };
-  sentence: JSX.Element; reason: ChatDecisionReason;
+  sentence: JSX.Element; reason?: ChatDecisionReason;
   details?: { label: string; content: JSX.Element };
+  entry?: JSX.Element;
   meta?: readonly { text: string; icon: string }[];
   confirm: ChatDecisionAnswer; decline: ChatDecisionAnswer; back?: ChatDecisionAnswer;
   remember?: ChatDecisionAnswer;
@@ -352,7 +416,8 @@ type ChatOutcomeProps = {
 
 | Member | Props / behavior |
 | --- | --- |
-| `Chat.Decision` | `ChatDecisionProps`; confirm is the filled `ai` answer (`secondary` in `edit` mode), decline and `more` are `secondary` on the tint (decline is quiet `text` in `edit` mode), `back` and `link` are quiet `text`, remember is a checkbox. Reason defaults to `neutral` and an info icon. |
+| `Chat.Decision` | `ChatDecisionProps`; confirm is the filled `ai` answer (`secondary` in `edit` mode), decline and `more` are `secondary` on the tint (decline is quiet `text` in `edit` mode), `back` and `link` are quiet `text`, remember is a checkbox. Reason defaults to `neutral` and an info icon. With an `entry`, the entry brings its own answers. |
+| `ChatDecisionField` | `ChatDecisionFieldProps`; a named export, passed as a decision's `entry`. Confirm is always the filled `ai` answer, decline quiet `text`. |
 | `Chat.Outcome` | `ChatOutcomeProps`; tone chooses the default icon, `icon` overrides it. The root accepts programmatic focus with `tabindex=-1`. |
 
 ### Commands and file selection

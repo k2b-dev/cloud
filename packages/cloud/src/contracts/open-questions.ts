@@ -5,14 +5,14 @@ import { APPROVALS_PAGE_SIZE } from "./approvals";
  * What waits for the person, by kind: each kind has its sign in "Waiting for you" and its own way to the thing. Cloud
  * lists approvals; Code adds its entries with kinds of its own (Bauplan 3m).
  */
-export const AI_OPEN_QUESTION_KINDS = ["approval", "code_activate", "code_changes", "code_expired", "code_attention"] as const;
+export const AI_OPEN_QUESTION_KINDS = ["approval", "secret", "code_activate", "code_changes", "code_expired", "code_attention"] as const;
 export type AiOpenQuestionKind = (typeof AI_OPEN_QUESTION_KINDS)[number];
 
 export type AiOpenQuestion = {
   kind: AiOpenQuestionKind;
   /** An entry without a chat opens its authorized source page. */
   href?: string;
-  /** The approval request id (approvals.requests.id). */
+  /** Stable question ID: approval request, pending secret call, or source-owned entry. */
   id: string;
   /** Short id of the chat the question waits in. */
   conversationId: string;
