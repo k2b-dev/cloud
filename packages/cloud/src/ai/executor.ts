@@ -43,6 +43,7 @@ import {
 import { aiChatMessages } from "./chat/messages";
 import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
+import { layoutAiTurn, showsNothing } from "./chat/turn-layout";
 import { createChoiceCapabilityOrigin, projectAiChoices, viewChoice } from "./choices";
 import {
   AUTOMATION_TURN_BUDGET,
@@ -188,6 +189,11 @@ const lastToolRoundFailed = (messages: AiStoredMessage[], blocks: AiTurnBlock[])
     blocks.some((block) => block.kind === "tool" && callIds.has(block.callId) && isFailedTool(block))
   );
 };
+
+// The chat's rule for an ending without any answer, applied to the whole turn. Code presentations and versions count
+// as results, as in every host that shows them.
+const leavesNothingToShow = (blocks: readonly AiTurnBlock[]): boolean =>
+  showsNothing(layoutAiTurn(blocks, { phase: "completed", codePresentations: true, codeVersions: true }));
 
 const indexConversationResources = async (input: Parameters<typeof aiConversations.indexConversationResources>[0]): Promise<void> => {
   try {
@@ -1911,6 +1917,7 @@ export class AiTurnExecutor {
           authoringBudget.noteToolCall(call);
           turnPolicy.noteToolCall(call);
         },
+        stoppedWithNotice: () => Boolean(authoringBudget?.stopped() || authoringBudget?.automationStopped()),
         failureReason,
         rejectedToolCallIds,
         unavailablePlaceToolNames,
@@ -1984,6 +1991,11 @@ export class AiTurnExecutor {
     appliedSteers: AiTurnSteer[];
     noteToolRound: () => void;
     noteToolCall: (call: AiTurnPolicyToolCall) => void;
+    /**
+     * The turn's safety budget stopped it: its empty closing message carries the pause, which the chat shows as a
+     * notice. Such an ending is visible, so it never counts as one without any answer.
+     */
+    stoppedWithNotice?: () => boolean;
     /**
      * Why the turn would fail now, as a model call or the turn's own checks said. A new model call starts without one,
      * so a context overflow that compaction resolved never names a later failure. Only the model calls and checks set
@@ -2120,7 +2132,16 @@ export class AiTurnExecutor {
             followedFailedRound &&
             lastResponse !== undefined &&
             !lastResponse.content.some((block) => block.type === "tool_call" || (block.type === "text" && block.text.trim() !== ""));
-          const doneReason = stoppedAfterFailure ? "error" : event.reason;
+          // A stop that leaves nothing to show fails visibly, for every reader of the turn (#3755).
+          const stoppedWithoutAnswer =
+            event.reason === "stop" &&
+            !abortController.signal.aborted &&
+            !stoppedAfterFailure &&
+            lastResponse !== undefined &&
+            !lastResponse.content.some((block) => block.type === "tool_call" || (block.type === "text" && block.text.trim() !== "")) &&
+            !input.stoppedWithNotice?.() &&
+            leavesNothingToShow(pipeline.blocks);
+          const doneReason = stoppedAfterFailure || stoppedWithoutAnswer ? "error" : event.reason;
           const aggregate = await withDurableTurnTiming(turnId, event.aggregate);
           if (aggregate.assistantMessageCount > 0) {
             await aiConversations
@@ -2134,6 +2155,13 @@ export class AiTurnExecutor {
               kind: "finished",
               status: "failed",
               failure: { error: { code: "tool_failed" }, detail: "The model stopped without an answer after a failed tool call." },
+              timing,
+            };
+          if (stoppedWithoutAnswer)
+            return {
+              kind: "finished",
+              status: "failed",
+              failure: { error: { code: "provider_stopped" }, detail: "The model stopped without any answer, result, or action." },
               timing,
             };
           if (event.reason === "stop") return { kind: "finished", status: "completed", failure: null, timing };

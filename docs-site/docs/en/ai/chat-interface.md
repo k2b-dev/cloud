@@ -503,7 +503,8 @@ order:
    quiet line and **Answer again**. A turn that finished its steps but left no
    text, result, or action, such as a model's empty answer, never ends in
    silence: a notice says the answer ended without any text and offers
-   **Continue** and **Answer again**.
+   **Continue** and **Answer again**. Cloud stores such a turn as failed with
+   `provider_stopped`, and the chat shows that notice for it as well.
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
    receipts for capability actions and for every approval the user decided.
    The question and result use the same card: a sentence with typed chips,
