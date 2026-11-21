@@ -142,11 +142,6 @@
    floating, so it casts the side shadow; nothing in the chat moves. */
 .k2b-ui .assistant-chat-layout[data-tabs="open"] > .assistant-context-boxcol[data-drawer="open"] {
   display: flex;
-}
-@container assistant-chat (max-width: 55.999rem) {
-  .k2b-ui .assistant-chat-layout > .assistant-context-boxcol[data-drawer="open"] { display: flex; }
-}
-.k2b-ui .assistant-chat-layout > .assistant-context-boxcol[data-drawer="open"] {
   position: absolute;
   inset-block: 0;
   inset-inline-end: 0;
@@ -154,7 +149,23 @@
   width: min(var(--assistant-context-column, var(--assistant-context-column-default)), 100%);
   box-shadow: var(--k2b-shadow-side);
 }
-.k2b-ui .assistant-chat-layout > .assistant-context-boxcol[data-drawer="open"] > .assistant-context-grip { display: none; }
+/* Only without room for the column: where it has room again, an open drawer stands docked instead. */
+@container assistant-chat (max-width: 55.999rem) {
+  .k2b-ui .assistant-chat-layout > .assistant-context-boxcol[data-drawer="open"] {
+    display: flex;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    z-index: var(--assistant-layer-drawer);
+    width: min(var(--assistant-context-column, var(--assistant-context-column-default)), 100%);
+    box-shadow: var(--k2b-shadow-side);
+  }
+}
+/* A drawer has no grip (K13: drawers are not resized). */
+.k2b-ui .assistant-chat-layout[data-tabs="open"] .assistant-context-grip { display: none; }
+@container assistant-chat (max-width: 55.999rem) {
+  .k2b-ui .assistant-context-grip { display: none; }
+}
 
 @media (max-width: 47.999rem) {
   .k2b-ui .assistant-chat-layout { --assistant-context-mode: sheet; }
