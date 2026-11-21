@@ -48,8 +48,8 @@ Open the shell with `dialogCore.open`.
   content clear of notches and the home indicator. It takes the width of the
   viewport without a reserved scrollbar gutter, so it stays centred.
 
-Below 48rem the first three are a sheet from the bottom edge (K16): 14 px at
-the top, the upward shadow, and a grip that a finger pulls or taps to close
+Opened below 48rem, the first three are a sheet from the bottom edge (K16):
+14 px at the top, the upward shadow, and a grip that a finger pulls or taps to close
 the dialog, as `BottomSheet` has; the dialog's cancel behavior and guard
 decide, as for Escape. From 48rem they are a centered dialog. The first focus
 goes to the first field, else to the first control on a desktop and to the

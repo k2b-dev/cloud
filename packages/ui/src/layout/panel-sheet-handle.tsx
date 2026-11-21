@@ -18,8 +18,7 @@ const requestClose = (frame: HTMLDialogElement, panel: HTMLElement) =>
 
 /**
  * The grip of a `PanelDialog` that opened as a sheet below 48rem (K13, K16): the finger pulls the sheet down to close
- * it, a tap closes it, and it moves like a `BottomSheet`. From 48rem the stylesheet hides it and the dialog stays a
- * centered frame.
+ * it, a tap closes it, and it moves like a `BottomSheet`. `PanelDialog` renders it only when it opens on a phone.
  */
 export function PanelSheetHandle(props: { frame: HTMLDialogElement }): JSX.Element {
   const messages = useUiMessages();
@@ -39,6 +38,15 @@ export function PanelSheetHandle(props: { frame: HTMLDialogElement }): JSX.Eleme
     });
     motion = own;
     queueMicrotask(() => own.open());
+    // Turned to 48rem and wider, the dialog is centered again: the sheet's motion lets go of the frame.
+    const wide = window.matchMedia("(min-width: 48rem)");
+    const release = () => {
+      if (!wide.matches) return;
+      motion?.dispose();
+      motion = undefined;
+    };
+    wide.addEventListener("change", release);
+    onCleanup(() => wide.removeEventListener("change", release));
   });
   onCleanup(() => {
     releaseTextSelection?.();

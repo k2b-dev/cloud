@@ -11137,18 +11137,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-danger-text);
 }
 
-/* Days on the phone sheet are full touch targets. */
+/* Days on the phone sheet are full touch targets: 44 px in px, so no rem or token math lands a hair below (#3917). */
 .k2b-ui .k2b-date-sheet .k2b-date-calendar__header {
-  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
 }
 
 .k2b-ui .k2b-date-sheet .k2b-date-calendar__nav {
-  min-width: 2.75rem;
-  min-height: 2.75rem;
+  min-inline-size: 44px;
+  min-block-size: 44px;
 }
 
 .k2b-ui .k2b-date-sheet .k2b-date-grid button {
-  min-height: 2.75rem;
+  min-block-size: 44px;
   font-size: 0.9375rem;
 }
 
@@ -21533,6 +21533,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     top: calc(50% - var(--k2b-dialog-lift, 0px));
     bottom: auto;
     transform: translate(-50%, -50%);
+    width: min(var(--k2b-dialog-available-width), 32rem);
     max-height: min(86dvh, var(--k2b-dialog-available-height));
     border-bottom: 1px solid var(--k2b-border);
     border-radius: var(--k2b-radius-overlay);
@@ -21559,17 +21560,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
         overlay var(--k2b-motion-fast) allow-discrete,
         display var(--k2b-motion-fast) allow-discrete;
     }
-  }
-  /* A sheet's decision or short form is narrow; a panel dialog keeps its own width as a dialog. */
-  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive:not(.k2b-panel-dialog-frame) {
-    width: min(var(--k2b-dialog-available-width), 32rem);
-  }
-  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive.k2b-panel-dialog-frame {
-    width: min(96vw, 48rem);
-    max-width: var(--k2b-dialog-available-width);
-  }
-  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive.k2b-panel-dialog-frame.is-wide {
-    width: min(96vw, 72rem);
   }
   .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive[open] {
     opacity: 1;
@@ -21611,6 +21601,47 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive[data-sheet-detents] > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
     transform: none;
+  }
+}
+/* K16: opened on a phone, a panel dialog is a sheet from the bottom edge, as a
+ * `BottomSheet` is; `PanelDialog` then brings the grip and the sheet's motion
+ * (panel-sheet-handle.tsx). From 48rem it stays the centered dialog it was.
+ * The doubled class outranks the dialog's rise and fade, which a sheet does
+ * not use: it slides. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-dialog.k2b-dialog.k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame) {
+    top: auto;
+    bottom: 0;
+    left: 50%;
+    margin: 0;
+    transform: translate3d(-50%, var(--k2b-sheet-y, 0px), 0);
+    width: min(100%, 36rem);
+    max-width: 100%;
+    max-height: min(92dvh, var(--k2b-dialog-available-height));
+    border-bottom: 0;
+    border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
+    box-shadow: var(--k2b-shadow-sheet);
+    opacity: 1;
+    translate: none;
+    transition: none;
+    animation: k2b-bottom-sheet-enter 160ms ease-out;
+  }
+  .k2b-ui .k2b-dialog.k2b-dialog.k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame)[data-sheet-motion] {
+    animation-name: none;
+    box-shadow: 0 6rem 0 0 var(--k2b-surface), var(--k2b-shadow-sheet);
+  }
+  .k2b-ui .k2b-dialog.k2b-dialog.k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame)::backdrop {
+    opacity: var(--k2b-sheet-dim, 1);
+    transition: none;
+  }
+  .k2b-ui .k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame) > .k2b-panel-dialog-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+/* Turned to 48rem and wider while open, the dialog is centered again; its grip has no use there. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-panel-dialog-frame:not(.k2b-bottom-sheet-frame) .k2b-bottom-sheet__handle {
+    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

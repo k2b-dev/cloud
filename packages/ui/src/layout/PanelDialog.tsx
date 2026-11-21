@@ -113,6 +113,9 @@ const PanelDialogToneContext = createContext<() => DialogTone | undefined>(() =>
 const PanelDialogCelebrateContext = createContext<() => boolean>(() => false);
 const PanelDialogMediaContext = createContext(false);
 
+/** Below 48rem, where a panel dialog is a sheet (K16). */
+const PHONE = "(max-width: 47.999rem)";
+
 const FIELD =
   "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role='combobox']:not([disabled]):not([aria-disabled='true'])";
 
@@ -124,7 +127,7 @@ function panelInitialFocus(dialog: HTMLDialogElement): HTMLElement | null {
   const level = dialog.lastElementChild ?? dialog;
   const field = level.querySelector<HTMLElement>(FIELD);
   if (field) return field;
-  if (window.matchMedia("(max-width: 47.999rem)").matches) {
+  if (window.matchMedia(PHONE).matches) {
     dialog.tabIndex = -1;
     return dialog;
   }
@@ -134,31 +137,24 @@ function panelInitialFocus(dialog: HTMLDialogElement): HTMLElement | null {
 }
 
 const panelDialogBasePanelClass = "k2b-dialog k2b-panel-dialog-frame";
-/**
- * K16: below 48rem a panel dialog is a sheet from the bottom edge with a grip, from 48rem a centered dialog, as
- * `bottomSheetAdaptiveOptions` frames are; the stylesheet decides, so the first frame is already right.
- */
-const adaptive = "k2b-bottom-sheet-frame is-adaptive";
-const sheetContent = "k2b-panel-dialog-viewport k2b-bottom-sheet-viewport";
-
-export const panelDialogPanelClass = `${panelDialogBasePanelClass} ${adaptive} is-standard`;
+export const panelDialogPanelClass = `${panelDialogBasePanelClass} is-standard`;
 export const panelDialogOptions = {
   panelClassName: panelDialogPanelClass,
-  contentClassName: sheetContent,
+  contentClassName: "k2b-panel-dialog-viewport",
   initialFocus: panelInitialFocus,
 } satisfies OpenDialogOptions;
 
-export const panelDialogWidePanelClass = `${panelDialogBasePanelClass} ${adaptive} is-wide`;
+export const panelDialogWidePanelClass = `${panelDialogBasePanelClass} is-wide`;
 export const panelDialogWideOptions = {
   panelClassName: panelDialogWidePanelClass,
-  contentClassName: sheetContent,
+  contentClassName: "k2b-panel-dialog-viewport",
   initialFocus: panelInitialFocus,
 } satisfies OpenDialogOptions;
 
-export const panelDialogFixedPanelClass = `${panelDialogBasePanelClass} ${adaptive} is-fixed`;
+export const panelDialogFixedPanelClass = `${panelDialogBasePanelClass} is-fixed`;
 export const panelDialogFixedOptions = {
   panelClassName: panelDialogFixedPanelClass,
-  contentClassName: `${sheetContent} is-fixed`,
+  contentClassName: "k2b-panel-dialog-viewport is-fixed",
   initialFocus: panelInitialFocus,
 } satisfies OpenDialogOptions;
 
@@ -395,11 +391,12 @@ const PanelDialogTabs = <T extends string>(props: PanelDialogTabsProps<T>): JSX.
 const PanelDialog = ((props: PanelDialogProps): JSX.Element => {
   const surface = props.surface ?? "contained";
   let root!: HTMLDivElement;
-  // Opened as a sheet (below 48rem, K16): the dialog brings its grip, unless a `BottomSheet` around it already does.
+  // K16: opened on a phone (below 48rem) a panel dialog's frame is a sheet from the bottom edge (the stylesheet), and
+  // the dialog brings the sheet's grip; from 48rem it stays the centered dialog it was, without one.
   const [sheetFrame, setSheetFrame] = createSignal<HTMLDialogElement>();
   onMount(() => {
-    const frame = root.closest<HTMLDialogElement>("dialog.k2b-bottom-sheet-frame.k2b-panel-dialog-frame");
-    if (frame && !root.querySelector(":scope > .k2b-bottom-sheet__handle")) setSheetFrame(frame);
+    const frame = root.closest<HTMLDialogElement>(`dialog.k2b-panel-dialog-frame:not(.is-workspace, .k2b-bottom-sheet-frame)`);
+    if (frame && window.matchMedia(PHONE).matches && !root.querySelector(":scope > .k2b-bottom-sheet__handle")) setSheetFrame(frame);
   });
   return (
     <PanelDialogSurfaceContext.Provider value={surface}>
