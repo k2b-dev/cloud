@@ -630,9 +630,9 @@
   .k2b-ui .k2b-notice-card[data-row][data-detail] :is(.k2b-notice-card__title, .k2b-notice-card__detail-text) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; }
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-detail-lines="2"] .k2b-notice-card__description { min-block-size: 2lh; }
   /* K15: two actions share a row at equal width while both labels fit; when one does not, each takes a row. A label
-     never wraps. */
+     wraps only when it is wider than a whole row, so it never leaves the cell. */
   .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions { grid-column: 1 / -1; grid-row: 4; display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; }
-  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions > * { flex: 1 1 calc(50% - .25rem); min-width: max-content; }
+  .k2b-ui .k2b-notice-card[data-row][data-detail] .k2b-notice-card__actions > * { flex: 1 1 calc(50% - .25rem); min-width: min(100%, max-content); }
   /* A final row sizes to its contents, including stable controls. The empty third track belongs only to the
      transition reserve; keeping it here would leave 8px plus an extra row gap above a receipt's actions. */
   .k2b-ui .k2b-notice-card[data-row][data-detail][data-actions]:not([data-reserve]) { grid-template-rows: auto auto auto; }

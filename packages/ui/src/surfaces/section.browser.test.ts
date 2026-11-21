@@ -184,7 +184,13 @@ describe("Section in a real engine", () => {
           const oneLine =
             width(".k2b-section__icon") + gap + title.scrollWidth + (count ? inner + count : 0) + gap + width(".k2b-section__actions");
           return {
-            tight: oneLine > header.getBoundingClientRect().width + 0.5,
+            // The heading row holds the section's text edge as its own inline padding; the row's content box is the room.
+            tight:
+              oneLine >
+              header.clientWidth -
+                Number.parseFloat(getComputedStyle(header).paddingInlineStart) -
+                Number.parseFloat(getComputedStyle(header).paddingInlineEnd) +
+                0.5,
             truncated: title.scrollWidth > title.clientWidth + 0.5,
             actionInside: buttonBox.left >= box.left - 0.5 && buttonBox.right <= box.right + 0.5,
             actionBelowTitle: buttonBox.top >= title.getBoundingClientRect().bottom - 0.5,

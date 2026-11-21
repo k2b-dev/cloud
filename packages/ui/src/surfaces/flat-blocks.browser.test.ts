@@ -309,11 +309,9 @@ describe("Cloud flat building blocks", () => {
           expect({ root, spill: found.spill }).toEqual({ root, spill: [] });
         }
         // On a page the row still fills the section from edge to edge, and its text stands on the gutter.
-        const [section, toggle, title] = await Promise.all(
-          ["#disclosure > .k2b-section", "#disclosure .k2b-section__toggle", "#disclosure .k2b-section__title"].map((selector) =>
-            box(page, selector),
-          ),
-        );
+        const section = await box(page, "#disclosure > .k2b-section:first-child");
+        const toggle = await box(page, "#disclosure > :first-child .k2b-section__toggle");
+        const title = await box(page, "#disclosure > :first-child .k2b-section__title");
         expect([toggle.left, toggle.right]).toEqual([section.left, section.right]);
         expect(title.left - section.left).toBe(width < 768 ? 16 : 20);
       } finally {
