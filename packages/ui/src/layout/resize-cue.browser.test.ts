@@ -354,13 +354,15 @@ async function exercise(page: Page, spec: Edge) {
   expect(focused.background).toBe(focused.focusColor);
   const increase = spec.axis === "width" ? (edge === "start" ? "ArrowLeft" : "ArrowRight") : edge === "start" ? "ArrowUp" : "ArrowDown";
   const decrease = spec.axis === "width" ? (edge === "start" ? "ArrowRight" : "ArrowLeft") : edge === "start" ? "ArrowDown" : "ArrowUp";
+  // K13: a workspace handle steps 16 px; the standalone separators here are configured with 8.
+  const keyStep = spec.column ? 16 : 8;
   await page.keyboard.press(increase);
-  await waitSize(page, spec, initial.rendered + 8);
+  await waitSize(page, spec, initial.rendered + keyStep);
   // Same page, same handle: #1525 lost this second arrow in WebKit.
   await page.keyboard.press(decrease);
   await waitSize(page, spec, initial.rendered);
   await page.keyboard.press(increase);
-  await waitSize(page, spec, initial.rendered + 8);
+  await waitSize(page, spec, initial.rendered + keyStep);
   await page.keyboard.press("Enter");
   await waitSize(page, spec, initial.rendered);
   await away(page);
@@ -428,7 +430,8 @@ test("sidebar keeps paired arrow keys while the page does frame work (#1525)", a
     });
     for (let pair = 0; pair < 24; pair++) {
       await page.keyboard.press("ArrowRight");
-      await waitSize(page, spec, initial.rendered + 8);
+      // K13: a workspace handle steps 16 px.
+      await waitSize(page, spec, initial.rendered + 16);
       await page.keyboard.press("ArrowLeft");
       await waitSize(page, spec, initial.rendered);
     }

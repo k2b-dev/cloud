@@ -5763,8 +5763,8 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-resize-separator {
   position: relative;
   flex: none;
-  /* K13: the 13 px area that grabs the grip. */
-  width: 13px;
+  /* In the flow between two regions, so applications size their split by it; the grip and line sit centred. */
+  width: 12px;
   align-self: stretch;
   cursor: col-resize;
   outline: 0;
@@ -5775,7 +5775,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 }
 .k2b-ui .k2b-resize-separator[data-orientation="horizontal"] {
   width: auto;
-  height: 13px;
+  height: 12px;
   cursor: row-resize;
 }
 /* An app with separate visibility keeps one shared way to reopen its current

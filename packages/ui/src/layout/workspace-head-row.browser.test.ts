@@ -303,7 +303,8 @@ test("More lists exactly the CSS-hidden views at each level and always keeps the
     ]);
     expect(await menu.locator("a").last().locator(".k2b-view-tabs__count").textContent()).toBe("3");
     await page.keyboard.press("Escape");
-    await resizeHost(page, 760);
+    // K15: views give way only when they do not fit, so the compact strip starts below a 32 rem head lead.
+    await resizeHost(page, 600);
     expect(await current.isVisible()).toBe(true);
     expect(
       await page.locator("[data-compact-hidden]").evaluateAll((items) => items.every((item) => item.getClientRects().length === 0)),

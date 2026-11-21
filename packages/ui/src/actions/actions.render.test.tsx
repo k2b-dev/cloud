@@ -1251,7 +1251,7 @@ describe("workspace head navigation", () => {
       }),
     );
     expect(de).toContain('aria-label="Weitere Ansichten"');
-    expect(de).toContain(">Mehr<");
+    expect(de).toContain(">Weitere<");
   });
   test("with showValue, active chips name the first option in section order and show additional values", () => {
     const chip = (value: string[], isActive?: boolean, showValue = true) =>

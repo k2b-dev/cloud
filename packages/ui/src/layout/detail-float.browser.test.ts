@@ -733,20 +733,15 @@ describe("floating workspace detail", () => {
     }
   });
   for (const fixed of [false, true]) {
-    // K12: on a tablet a Detail is always a drawer that waits behind its Details button, also where it would fit.
-    test(`820×1180: a ${fixed ? "permanent" : "closable"} detail that would fit waits as a drawer on a tablet`, async () => {
+    test(`820×1180: a fitting ${fixed ? "permanent" : "closable"} detail is a column even with touch`, async () => {
       const page = await load(820, 1180, fixed ? "fixed=1" : "", { hasTouch: true });
       try {
         await openRow(page);
         const shape = await geometry(page);
-        // Main reaches the workspace's end: the waiting Detail takes no column.
-        expect(shape.main.right).toBeCloseTo(shape.root.right - shape.border, 1);
-        expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(true);
-        expect(
-          await page
-            .locator(".k2b-app-workspace__detail")
-            .evaluate((element) => getComputedStyle(element).getPropertyValue("--k2b-workspace-detail-waiting").trim()),
-        ).toBe("1");
+        expectInset(shape);
+        expect(shape.main.width).toBeCloseTo(shape.root.width - shape.detail.width - 8, 1);
+        expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(false);
+        expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBeNull();
       } finally {
         await page.close();
       }
@@ -1400,7 +1395,9 @@ for (const theme of ["light", "dark"] as const) {
       await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), theme === "dark");
       await page.addStyleTag({
         content:
-          ".fixture-main{background:var(--k2b-surface)}.fixture-main>*{visibility:hidden}.k2b-app-workspace__head>*{visibility:hidden}",
+          ".fixture-main{background:var(--k2b-surface)}.fixture-main>*{visibility:hidden}.k2b-app-workspace__head>*{visibility:hidden}" +
+          // Classic scrollbars are no part of the line; they would paint beside it.
+          "*::-webkit-scrollbar{width:0!important;height:0!important}",
       });
       await settlePanel(page);
       await settled(page);

@@ -19666,9 +19666,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
   box-shadow:
-    inset 0 -2px 0 var(--k2b-tab-mark),
     inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
-    inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring);
+    inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring),
+    inset 0 -2px 0 var(--k2b-tab-mark);
 }
 
 .k2b-ui .k2b-tabs[data-variant="line"]:not([data-orientation="vertical"]) .k2b-tabs__list button[role="tab"][aria-selected="true"] {
@@ -19787,9 +19787,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
   /* Views sit in a strip that scrolls and clips, so the mark and the soft focus band lie inside the tab. */
   box-shadow:
-    inset 0 -2px 0 var(--k2b-tab-mark),
     inset 0 0 0 var(--k2b-edge-width) var(--k2b-edge-color),
-    inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring);
+    inset 0 0 0 calc(var(--k2b-edge-width) + var(--k2b-edge-ring-width)) var(--k2b-edge-ring),
+    inset 0 -2px 0 var(--k2b-tab-mark);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 500;

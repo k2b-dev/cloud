@@ -456,7 +456,8 @@ for (const touch of [false, true])
         expect(result.gaps).toHaveLength(width === 1440 ? 2 : 1);
         expect(result.action).toBeLessThanOrEqual(result.gaps.at(-1)!.left);
         for (const gap of result.gaps) {
-          expect(gap.width).toBe(touch ? 44 : 20);
+          // K13: a mouse grabs a 13 px area over the line; a touch screen keeps the 44 px level target.
+          expect(gap.width).toBe(touch ? 44 : 13);
           if (!touch) continue;
           expect(gap.left).toBeGreaterThanOrEqual(gap.before - 0.5);
           expect(gap.left + gap.width).toBeLessThanOrEqual(gap.after + 0.5);
