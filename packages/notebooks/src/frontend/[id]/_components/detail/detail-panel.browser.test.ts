@@ -510,12 +510,13 @@ for (const width of [320, 390, 768, 1440]) {
         expect(menu!.height).toBe(action!.height);
         expect(action!.padding).toBe(menu!.padding);
         expect(action!.fontSize).toBe(menu!.fontSize);
-        if (width === 320) {
-          // K15: two actions whose labels do not fit side by side stand one below the other, never shortened; the
-          // menu starts on the action's edge, one 0.625rem row gap below it.
+        // K15: two actions stand side by side while both labels fit; otherwise they stand one below the other, never
+        // shortened, the menu on the action's edge one 0.625rem row gap below it. With "…" in the head bar (K9) the
+        // row has room for both at every width here; a narrower row still stacks.
+        if (Math.abs(menu!.y - action!.y) > 1) {
           closeTo(menu!.x, action!.x);
           closeTo(menu!.y, action!.y + action!.height + 10);
-        } else closeTo(action!.y, menu!.y);
+        } else expect(menu!.x).toBeGreaterThanOrEqual(action!.x + action!.width);
         // The content width is independent of the room left by the view menu.
         const intrinsicWidth = await ai.evaluate((button) => {
           const style = getComputedStyle(button);

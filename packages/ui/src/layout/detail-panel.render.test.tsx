@@ -136,7 +136,7 @@ describe("DetailPanel", () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const layoutCss = await Bun.file(resolve(import.meta.dir, "../styles/layout-parity.css")).text();
     const panelRule = css.match(/\.k2b-ui \.k2b-detail-panel \{([^}]*)\}/)?.[1];
-    const headerRule = css.match(/\.k2b-ui \.k2b-detail-panel__header \{([^}]*)\}/)?.[1];
+    const barRule = css.match(/\.k2b-ui \.k2b-detail-panel__header-main \{([^}]*)\}/)?.[1];
     const bodyRule = css.match(/\.k2b-ui \.k2b-detail-panel__body \{([^}]*)\}/)?.[1];
     const workspaceDetailRule = layoutCss.match(/\.k2b-ui \.k2b-app-workspace__detail \{([^}]*)\}/)?.[1];
 
@@ -144,7 +144,9 @@ describe("DetailPanel", () => {
     expect(workspaceDetailRule).toContain("padding: 0 0.5rem env(safe-area-inset-bottom, 0px)");
     expect(panelRule).toContain("width: calc(100% + var(--k2b-detail-panel-scroll-inset, 0rem))");
     expect(panelRule).toContain("margin-inline-end: calc(-1 * var(--k2b-detail-panel-scroll-inset, 0rem))");
-    expect(headerRule).toContain("padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem)");
+    // The bar holds the inset beside its own 12 px edge, so the header's lines run from edge to edge.
+    expect(barRule).toContain("padding-inline-end: calc(0.75rem + var(--k2b-detail-panel-scroll-inset, 0rem))");
+    expect(barRule).toContain("scrollbar-gutter: stable");
     expect(bodyRule).toContain("padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem)");
     expect(bodyRule).toContain("scrollbar-gutter: stable");
   });

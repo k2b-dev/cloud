@@ -3832,13 +3832,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
   flex: 0 0 auto;
   flex-direction: column;
+  /* The header holds the bar and the first section; each holds its own
+     insets, so the line between them runs from edge to edge. */
   padding: 0;
-  padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem);
-  /* The same gutter as the body's scrollbar, without a scrollbar, so the
-     header's trailing controls end on the body's trailing edge. Popovers and
-     tooltips sit in the top layer and are not clipped. */
-  overflow: hidden;
-  scrollbar-gutter: stable;
 }
 
 /* Identity, title, and the compact actions share the bar. */
@@ -3851,6 +3847,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   column-gap: 0.5rem;
   padding: 0 0.75rem 0 var(--k2b-gutter);
+  padding-inline-end: calc(0.75rem + var(--k2b-detail-panel-scroll-inset, 0rem));
+  /* The same gutter as the body's scrollbar, without a scrollbar, so the bar's
+     trailing controls end on the body's trailing edge. Popovers and tooltips
+     sit in the top layer and are not clipped. */
+  overflow: hidden;
+  scrollbar-gutter: stable;
 }
 
 .k2b-ui .k2b-detail-panel__header-main[data-identity="true"] {
@@ -3910,6 +3912,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
   padding: 0.75rem var(--k2b-gutter);
   padding-inline-end: calc(var(--k2b-gutter) + var(--k2b-detail-panel-scroll-inset, 0rem));
+  /* The first section stands in the header under the bar, on one hairline from edge to edge. */
+  border-block-start: 1px solid var(--k2b-border);
 }
 
 /* One line: the subtitle ends with an ellipsis, and `meta` keeps its place at
