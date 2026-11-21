@@ -12,6 +12,7 @@ import {
   RowGroup,
   Section,
   StatusBadge,
+  splitFileName,
   TextInput,
 } from "@k2b/ui";
 import { For } from "solid-js";
@@ -202,6 +203,7 @@ export const FlatTableDemo = () => (
           { id: "place", header: "Place", value: "place", list: "meta" },
           { id: "owner", header: "Owner", value: "owner", priority: 3 },
           { id: "file", header: "File", value: "file", priority: 2 },
+          { id: "type", header: "Type", value: (row) => splitFileName(row.file).ext.slice(1).toUpperCase(), priority: 3 },
           { id: "amount", header: "Estimate", value: "amount", type: "amount", format: { currency: "EUR" }, list: "end" },
         ]}
         renderCell={({ col, value, render }) => (col.id === "file" ? <FileName name={String(value)} /> : render(value))}
