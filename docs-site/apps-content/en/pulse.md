@@ -859,7 +859,8 @@ in `input` (`sql.run`, `source.list`, `alert.list`, `alert.read`,
 (`base.sql.run`, `base.source.list`, `base.alert.list`, `base.alert.read`,
 `base.saved_query.list`, `schema.read`). Code may use both; the target form is
 recommended. In both forms a Code page shows base data only to people who may
-read that base
+read that base. In Code, pass the base's short ID from `base.list`: the visitor
+check reads the base by its short ID and refuses a long UUID
 ([Who may see what a page read](/en/docs/platform/code-sdk#who-may-see-what-a-page-read)).
 Pulse data never appears on a public Code route.
 

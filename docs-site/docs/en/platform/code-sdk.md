@@ -650,8 +650,11 @@ The manifest records it with the `owner_data` policy classification, which
 needs administrator approval by default; the administrators see it in the
 approval review.
 A public route has no visitor who could read anything, so a public route that
-calls any app Query, a list or search included, needs `owner-data`. The Code's
-own database and files do not count. An app can keep its data off public routes
+calls any app Query, a list or search included, needs `owner-data`. So does a
+public route that reads the Code's own database, because the database outlives
+versions and may hold app data copied earlier; the Code's own files and AI calls
+without a resource do not count. A Code version that has a database and a public
+route without `owner-data` does not pass the check. An app can keep its data off public routes
 entirely with `code.publicRoutes: false`; the checker then refuses such a
 version, and Cloud refuses the answer. Pulse does this.
 

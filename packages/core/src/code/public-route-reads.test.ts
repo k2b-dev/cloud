@@ -81,8 +81,8 @@ test("a call the checker could not place counts for every public route", () => {
 
 test("AI on a public route needs no owner-data; a database that may hold app data does", () => {
   expect(publicRouteReadRefusals(manifest, [permission("core.ai.generate", null, ["route:GET:/open"])], catalogs, "en")).toEqual([]);
-  const withDatabase = { ...manifest, database: true };
-  expect(publicRouteReadRefusals(withDatabase, [], catalogs, "en", false)).toEqual([]);
-  // Only the public route without owner-data is refused, at its own line.
-  expect(publicRouteReadRefusals(withDatabase, [], catalogs, "en", true).map((entry) => entry.code)).toEqual(["code_public_route_reads"]);
+  // The Code's database may hold app data from any version: only the public route without owner-data is refused.
+  expect(publicRouteReadRefusals({ ...manifest, database: true }, [], catalogs, "en").map((entry) => entry.code)).toEqual([
+    "code_public_route_reads",
+  ]);
 });

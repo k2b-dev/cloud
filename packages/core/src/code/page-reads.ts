@@ -1,6 +1,6 @@
 import { getCapabilityCodeReadFacts, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import type { CodeRoute } from "@k2b/cloud/code";
-import { CLOUD_RESOURCE_ID_MAX_LENGTH, CloudResourceReaderViewSchema } from "@k2b/cloud/contracts";
+import { CLOUD_RESOURCE_ID_MAX_LENGTH } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { z } from "zod";
 import { isCodeAiOperation } from "./policy-contracts";
@@ -13,7 +13,8 @@ export class CodeRouteReadsUnavailable extends Error {}
 const READ_CHECK_CONCURRENCY = 4;
 /** A reader that says no, cannot find the resource, or refuses the ID as input: Cloud cannot show it to this visitor. */
 const REFUSED = new Set(["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED", "VALIDATION_FAILED", "BAD_INPUT"]);
-const ReaderDataSchema = z.object({ view: CloudResourceReaderViewSchema });
+/** Only the reader's yes or no counts; a reader without a `view` (an older contract) still answers. */
+const ReaderDataSchema = z.unknown();
 
 type Facts = NonNullable<Awaited<ReturnType<typeof getCapabilityCodeReadFacts>>>;
 const appOf = (qualified: string) => qualified.slice(0, qualified.indexOf("."));
@@ -38,11 +39,6 @@ export async function checkCodeRouteReads(input: {
   route: Pick<CodeRoute, "public" | "audience">;
   /** The signed-in visitor of a route that is not public; `null` on a public route. */
   visitor: RequestAuthority | null;
-  /**
-   * The version reads app data and has its own database (manifest `database` and policy row `read`), so its database
-   * may hold app data it copied earlier: a public route that reads the database then needs owner-data too.
-   */
-  databaseMayHoldAppData: boolean;
   locale: string;
   signal: AbortSignal;
 }): Promise<"deliver" | "forbidden"> {
@@ -65,7 +61,8 @@ export async function checkCodeRouteReads(input: {
     const ownerData =
       apps.size > 0 ||
       input.reads.some((read) => read.kind === "target") ||
-      (input.databaseMayHoldAppData && input.reads.some((read) => read.kind === "query" && read.capability === "db.query"));
+      // The Code's database outlives its versions and may hold app data an earlier version copied.
+      input.reads.some((read) => read.kind === "query" && read.capability === "db.query");
     return !ownerData || input.route.audience === "owner-data" ? "deliver" : "forbidden";
   }
   const resources = new Map<string, { type: string; id: string }>();

@@ -1059,10 +1059,16 @@ export const compileCapabilities = (
       if (!field || field.length > 100 || !typeIds.has(qualifiedId(appId, type)))
         throw new Error(`${label} ref ${field} must name a declared type of the same app: ${type}`);
     }
+    if (definition.inputRefs !== undefined && definition.target !== undefined)
+      throw new Error(`${label} declares a target; inputRefs are for app-wide Queries only`);
     for (const [field, type] of Object.entries(definition.inputRefs ?? {})) {
-      const property = (schemas.inputSchema.properties as Record<string, { type?: unknown }> | undefined)?.[field];
-      if (!typeIds.has(qualifiedId(appId, type)) || property?.type !== "string")
-        throw new Error(`${label} inputRefs ${field} must be a string input field naming a declared type of the same app: ${type}`);
+      // Required and without a default: a missing field would let the Query read a resource Cloud never checked.
+      const property = (schemas.inputSchema.properties as Record<string, { type?: unknown; default?: unknown }> | undefined)?.[field];
+      const required = Array.isArray(schemas.inputSchema.required) && schemas.inputSchema.required.includes(field);
+      if (!typeIds.has(qualifiedId(appId, type)) || property?.type !== "string" || !required || property.default !== undefined)
+        throw new Error(
+          `${label} inputRefs ${field} must be a required string input field without a default naming a declared type of the same app: ${type}`,
+        );
     }
 
     if (definition.universalSearch) {

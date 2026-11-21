@@ -89,12 +89,15 @@ export const getCapabilityCodeReadFacts = async (
   const typeReaders: Record<string, string> = {};
   for (const type of capability.manifest.types) {
     if (!type.reader || !queries.has(type.reader)) continue;
-    (inputRefs[`${appId}.${type.reader}`] ??= {}).id ??= `${appId}.${type.localId}`;
+    const reader = `${appId}.${type.reader}`;
+    inputRefs[reader] = { id: `${appId}.${type.localId}`, ...inputRefs[reader] };
     typeReaders[`${appId}.${type.localId}`] = type.reader;
   }
-  for (const query of capability.manifest.queries)
+  for (const query of capability.manifest.queries) {
+    const capabilityId = `${appId}.${query.localId}`;
     for (const [field, type] of Object.entries(query.inputRefs ?? {}))
-      (inputRefs[`${appId}.${query.localId}`] ??= {})[field] = `${appId}.${type}`;
+      inputRefs[capabilityId] = { ...inputRefs[capabilityId], [field]: `${appId}.${type}` };
+  }
   return { inputRefs, typeReaders, publicRoutes: capability.manifest.code?.publicRoutes !== false };
 };
 

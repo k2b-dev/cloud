@@ -12,7 +12,7 @@ const messages = i18n.define({
       ownerData: ({ operation }: { operation: string }) =>
         `A public route that calls ${operation} shows data read with the owner's rights to everyone. Declare { public: true, audience: "owner-data" } if that is intended, or serve the page to members.`,
       database:
-        'This Code reads app data and has its own database, so its public route may show copied app data to everyone. Declare { public: true, audience: "owner-data" } if that is intended, or serve the page to members.',
+        'This Code has its own database, which may hold app data that this or an earlier version copied, so its public route may show it to everyone. Declare { public: true, audience: "owner-data" } if that is intended, or serve the page to members.',
     },
     de: {
       app: ({ operation }) =>
@@ -20,7 +20,7 @@ const messages = i18n.define({
       ownerData: ({ operation }) =>
         `Eine öffentliche Route, die ${operation} aufruft, zeigt allen Daten mit den Rechten des Besitzers. Deklariere { public: true, audience: "owner-data" }, wenn das gewollt ist, oder stelle die Seite für Mitglieder bereit.`,
       database:
-        'Dieser Code liest App-Daten und hat eine eigene Datenbank, also kann seine öffentliche Route kopierte App-Daten allen zeigen. Deklariere { public: true, audience: "owner-data" }, wenn das gewollt ist, oder stelle die Seite für Mitglieder bereit.',
+        'Dieser Code hat eine eigene Datenbank, die App-Daten enthalten kann, die diese oder eine frühere Version kopiert hat. Seine öffentliche Route könnte sie allen zeigen. Deklariere { public: true, audience: "owner-data" }, wenn das gewollt ist, oder stelle die Seite für Mitglieder bereit.',
     },
   },
 });
@@ -42,8 +42,6 @@ export function publicRouteReadRefusals(
   permissions: readonly CodePermission[],
   catalogs: ReadonlyMap<string, Pick<CapabilityManifest, "appId" | "queries" | "code"> | null | undefined>,
   locale: string | undefined,
-  /** The version reads app data (policy row `read`); with its own database, that database may hold app data. */
-  readsAppData = false,
 ): CodeCheckDiagnostic[] {
   const publicRoutes = new Map(
     manifest.entrypoints.flatMap((entry) =>
@@ -67,8 +65,8 @@ export function publicRouteReadRefusals(
           : null;
     if (message) diagnostics.push({ code: "code_public_route_reads", message, file: permission.file, line: permission.line, column: 1 });
   }
-  // App data copied into the Code's own database earlier is still app data on a public route.
-  if (manifest.database && readsAppData)
+  // The Code's database outlives its versions: app data an earlier version copied into it is still app data.
+  if (manifest.database)
     for (const entry of manifest.entrypoints)
       if (entry.route?.public && entry.route.audience !== "owner-data")
         diagnostics.push({ code: "code_public_route_reads", message: t.database, file: entry.file, line: entry.line, column: 1 });

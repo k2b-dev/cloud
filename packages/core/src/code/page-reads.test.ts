@@ -50,12 +50,8 @@ function provider(
   );
   return asked;
 }
-const check = (
-  reads: CodeRouteRead[],
-  route: { public: boolean; audience?: "owner-data" },
-  who: RequestAuthority | null = visitor,
-  databaseMayHoldAppData = false,
-) => checkCodeRouteReads({ reads, route, visitor: who, databaseMayHoldAppData, locale: "en", signal: new AbortController().signal });
+const check = (reads: CodeRouteRead[], route: { public: boolean; audience?: "owner-data" }, who: RequestAuthority | null = visitor) =>
+  checkCodeRouteReads({ reads, route, visitor: who, locale: "en", signal: new AbortController().signal });
 const base = (id: string): CodeRouteRead => ({ kind: "target", ref: { type: "pulse.base", id } });
 
 test("a route that read nothing is delivered without asking any provider", async () => {
@@ -113,17 +109,8 @@ test("a public route needs owner-data for any app Query, and never calls an app 
   expect(await check([pulseList], { public: true, audience: "owner-data" }, null)).toBe("forbidden");
   expect(await check([gridsList], { public: true }, null)).toBe("forbidden");
   expect(await check([gridsList], { public: true, audience: "owner-data" }, null)).toBe("deliver");
-  // The Code's own database and files are no app data.
-  expect(
-    await check(
-      [
-        { kind: "query", capability: "db.query" },
-        { kind: "query", capability: "core.code.file.read" },
-      ],
-      { public: true },
-      null,
-    ),
-  ).toBe("deliver");
+  // The Code's own files are no app data (its database is: see below).
+  expect(await check([{ kind: "query", capability: "core.code.file.read" }], { public: true }, null)).toBe("deliver");
   provider(() => "ok", true);
   expect(await check([pulseList, base("A")], { public: true, audience: "owner-data" }, null)).toBe("deliver");
   expect(asked).toEqual([]);
@@ -155,12 +142,12 @@ test("AI reads no resource by itself on a public route, but a resource it is giv
   expect(await check([ai, base("A")], { public: true }, null)).toBe("forbidden");
 });
 
-test("a public route that reads the Code's own database needs owner-data when that database may hold app data", async () => {
+test("a public route that reads the Code's own database needs owner-data: it outlives versions and may hold app data", async () => {
   provider(() => "ok");
   const db: CodeRouteRead = { kind: "query", capability: "db.query" };
-  expect(await check([db], { public: true }, null, false)).toBe("deliver");
-  expect(await check([db], { public: true }, null, true)).toBe("forbidden");
-  expect(await check([db], { public: true, audience: "owner-data" }, null, true)).toBe("deliver");
+  expect(await check([db], { public: true }, null)).toBe("forbidden");
+  expect(await check([db], { public: true, audience: "owner-data" }, null)).toBe("deliver");
+  expect(await check([{ kind: "query", capability: "core.code.file.read" }], { public: true }, null)).toBe("deliver");
 });
 
 test("a named input field that is empty or longer than any resource ID is never delivered (fail closed)", async () => {
