@@ -96,7 +96,6 @@ export const SavedQueryDataSchema = z
     name: z.string().min(1).max(120),
     sql: z.string().max(16 * 1024),
     params: SqlParamsSchema,
-    pinned: z.boolean(),
     revision: z.number().int().positive(),
     createdBy: z.string().nullable(),
     updatedBy: z.string().nullable(),
@@ -108,7 +107,6 @@ export const SavedQueryListInputSchema = z.object({ baseId: BaseSelectorSchema, 
 export const SavedQueryListDataSchema = z.array(SavedQueryDataSchema).max(100);
 export const SavedQuerySaveInputSchema = SqlRunInputSchema.omit({ baseId: true })
   .extend({
-    pinned: z.boolean().optional().describe("Show this query on the overview, at most four per base."),
     queryId: z.string().min(1).max(36).optional().describe("Saved query ID for an update; omit to create."),
     expectedRevision: z.number().int().positive().optional().describe("Current revision, required when queryId is supplied."),
     name: z.string().trim().min(1).max(120).describe("Name unique within the base."),

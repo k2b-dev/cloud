@@ -3,14 +3,12 @@ import { sql } from "@k2b/cloud";
 import { clickhouseAdminQuery } from "../../../../scripts/fixtures/test-clickhouse";
 import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { ALERT_CHECKS_PER_HOUR } from "../alert-contracts";
-import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { baseStore } from "../store/base-store";
 import { cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore, installFixtureStore } from "../store/base-store.test-fixture";
 import { settingsFixture } from "../store/settings.test-fixture";
 import { sqlQueryId, sqlRunner } from "../store/sql-run";
 import { waitUntil } from "../store/sql-run.test-fixture";
 import { applyAlertEvaluation, claimDueAlert, evaluateDueAlerts } from "./alert-evaluator";
-import { createOverviewQueries } from "./overview-queries";
 import { sqlAdmission } from "./sql-admission";
 import { SqlError } from "./sql-errors";
 import { runAlertSql } from "./sql-service";
@@ -72,60 +70,6 @@ suiteFor(
       SELECT state,severity,last_error FROM pulse.alert_rules WHERE id=${id}::uuid`;
     return row;
   };
-  test("pinned overview queries use the real runner and cache without consuming the question quota", async () => {
-    const base = await fixtureBase();
-    const run = spyOn(sqlRunner, "run");
-    const cached = spyOn(sqlAdmission, "cached");
-    try {
-      await createBaseLifecycle(store)(base.id);
-      const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name)
-        VALUES('pulse_overview_runner','local','user','Overview reader') RETURNING id`;
-      const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission)
-        VALUES(${user!.id}::uuid,'read') RETURNING id`;
-      await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${base.id}::uuid,${grant!.id}::uuid)`;
-      const query =
-        "SELECT toDateTime(:to) AS at, toFloat64(42) AS value, 'ms' AS unit, toString(:bucket) AS detail, 'success' AS detailTone WHERE toDateTime(:from) < toDateTime(:to)";
-      await sql`INSERT INTO pulse.saved_queries(short_id,base_id,name,sql,params,pinned,created_at,updated_at)
-        VALUES('RealO5',${base.id}::uuid,'Real overview',${query},'{}',true,${start},${start})`;
-      const input = { ...adminFixtureIdentity(user!.id, false), baseId: base.id, scope: { id: user!.id } };
-      const read = createOverviewQueries({ testOnly: { now: () => start } });
-      const first = await read(input);
-      expect(first).toMatchObject([
-        {
-          queryId: "RealO5",
-          status: "ready",
-          errorCode: null,
-          lastGood: {
-            evaluatedAt: start.toISOString(),
-            windowFrom: "2026-10-19T10:00:00.000Z",
-            windowTo: start.toISOString(),
-            data: {
-              value: 42,
-              valueAt: start.toISOString(),
-              unit: "ms",
-              detail: "300",
-              detailTone: "success",
-              points: [{ x: start.getTime(), y: 42 }],
-            },
-          },
-        },
-      ]);
-      expect(run).toHaveBeenCalledTimes(1);
-      const second = await createOverviewQueries({ testOnly: { now: () => start } })(input);
-      expect(second).toEqual(first);
-      expect(run).toHaveBeenCalledTimes(1);
-      expect(cached.mock.calls.length).toBeGreaterThan(0);
-      expect(await sqlAdmission.cached(cached.mock.calls.at(-1)![0])).not.toBeNull();
-      expect((await sqlAdmission.usage(base.id)).used).toBe(0);
-      await sql`DELETE FROM auth.access WHERE id=${grant!.id}::uuid`;
-      expect(await read(input)).toEqual([]);
-      expect(run).toHaveBeenCalledTimes(1);
-    } finally {
-      run.mockRestore();
-      cached.mockRestore();
-      await cleanupFixtureBase(base);
-    }
-  }, 30_000);
   test("above/below, pending, escalation and recovery use actual rows; malformed or missing results never become ok", async () => {
     const base = await fixtureBase();
     try {

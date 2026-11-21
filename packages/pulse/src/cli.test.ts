@@ -136,16 +136,6 @@ describe("pulse CLI", () => {
     expect(lines[0]).toBe(`Ops123 (${baseId})`);
   });
 
-  test("lists the panels of a dashboard", async () => {
-    const panels = [{ id: "views", title: "Page views", kind: "number", section: "", width: "third" }];
-    const { ctx, calls, tables } = createContext(["dashboards", "panels", "Dash01"], { base: baseId }, [
-      jsonResponse({ id: "Dash01", name: "Website", definition: { panels } }),
-    ]);
-    await pulseCli.run(ctx);
-    expect(calls.map((call) => call.path)).toEqual([`/api/pulse/bases/${baseId}/dashboards/Dash01`]);
-    expect(JSON.stringify(tables)).toContain("Page views");
-  });
-
   test("rejects an ambiguous exact six-character base name after an ID miss", async () => {
     const matches = [
       { ...base, id: "Base02", name: "Ops123" },
@@ -868,26 +858,23 @@ test("source expectation flags replace the other mode and preserve the read revi
   expect(JSON.parse(String(clear.calls[2]?.init?.body))).toEqual({ expectedRevision: 3, expectEverySeconds: null, expectDailyBy: null });
 });
 
-test("new overview pin and expectation help follows each request locale", async () => {
-  for (const { locale, pinHelp, expectationHelp } of [
-    { locale: "de-DE", pinHelp: "Diese Abfrage auf der Übersicht anzeigen", expectationHelp: "Täglich erwartet bis HH:MM" },
-    { locale: "en", pinHelp: "Show this query on the overview", expectationHelp: "Expected daily HH:MM" },
+test("source expectation help follows each request locale", async () => {
+  for (const { locale, expectationHelp } of [
+    { locale: "de-DE", expectationHelp: "Täglich erwartet bis HH:MM" },
+    { locale: "en", expectationHelp: "Expected daily HH:MM" },
   ]) {
-    for (const { command, expected } of [
-      { command: "queries save", expected: pinHelp },
-      { command: "sources update", expected: expectationHelp },
-    ]) {
-      const help = createContext([...command.split(" "), "--help"]);
-      help.ctx.options.locale = locale;
-      await pulseCli.run(help.ctx);
-      expect(help.lines.join("\n")).toContain(expected);
-      expect(help.calls).toHaveLength(0);
-    }
+    const help = createContext(["sources", "update", "--help"]);
+    help.ctx.options.locale = locale;
+    await pulseCli.run(help.ctx);
+    expect(help.lines.join("\n")).toContain(expectationHelp);
+    expect(help.calls).toHaveLength(0);
   }
-  const context = createContext(["queries", "save", "SELECT 1"], { base: baseId, name: "CPU", pin: true, unpin: true });
-  context.ctx.options.locale = "de";
-  await expect(pulseCli.run(context.ctx)).rejects.toThrow("entweder --pin oder --unpin");
-  expect(context.calls).toHaveLength(0);
+});
+
+test("saved queries no longer accept pin flags", async () => {
+  const help = createContext(["queries", "save", "--help"]);
+  await pulseCli.run(help.ctx);
+  expect(help.lines.join("\n")).not.toContain("--pin");
 });
 
 test("ordinary Pulse administrator changes stop before requests without --yes", async () => {

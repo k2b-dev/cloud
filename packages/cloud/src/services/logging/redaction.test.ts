@@ -49,8 +49,8 @@ describe("redactSensitivePath", () => {
     [`/api/grids/forms/public/${formToken}/submit`, "/api/grids/forms/public/:token/submit"],
     [`/api/grids/forms/public/${formToken}/relations/fld/lookup`, "/api/grids/forms/public/:token/relations/fld/lookup"],
     [`/tools/api/webhooks/receive/${hex}`, "/tools/api/webhooks/receive/:token"],
-    [`/api/pulse/public-dashboard/${uuid}`, "/api/pulse/public-dashboard/:id"],
-    [`/app/pulse/display/${uuid}`, "/app/pulse/display/:id"],
+    [`/api/demo/records/${uuid}`, "/api/demo/records/:id"],
+    [`/app/demo/display/${uuid}`, "/app/demo/display/:id"],
     [`/api/grids/apps/runtime/short/page/block/files/${formToken}.${hex}`, "/api/grids/apps/runtime/short/page/block/files/:token"],
     [`/api/demo/${Array.from(formToken, (letter) => `%${letter.charCodeAt(0).toString(16)}`).join("")}`, "/api/demo/:token"],
   ])("redacts bearer-shaped segments outside share routes: %s", (path, expected) => {

@@ -4,9 +4,8 @@ Pulse collects metrics, events, and states in bases. Use `cld pulse` to inspect
 bases and source health, configure sources and access, and ingest batches.
 Read one base with `cld pulse sql` or the `sql.run` capability. Save reusable
 SQL with `cld pulse queries`. Read [SQL and saved queries](sql.md) for parameters,
-limits, cancellation, result formats, and exit codes. Use `queries save --pin`
-to show a saved number on the base overview (at most four), or `--unpin` to
-remove it. Read [Alert rules](alerts.md) for rule CRUD and source expectations.
+limits, cancellation, result formats, and exit codes. Read
+[Alert rules](alerts.md) for rule CRUD and source expectations.
 
 Read [Data kinds](schema.md) for `cld pulse schema`: metrics, event fields with
 type and fill rate, state keys, and the newest entries of one kind.
@@ -125,7 +124,7 @@ administrator repairs it; see [Administration](admin.md).
 
 `delete` starts asynchronous deletion and revokes source tokens and database
 read access. Normal CLI `list` and `get` exclude deleting bases. The Pulse
-overview retains them for base administrators, and `admin bases list` includes
+base list retains them for base administrators, and `admin bases list` includes
 them. Failed operations need **Retry** or `admin bases retry`.
 
 Deleting a source invalidates its credentials and removes it from the source
@@ -184,6 +183,3 @@ Metrics sources require an endpoint; scraping applies only to metrics sources.
 Source-token commands apply only to HTTP ingest sources. For `admin store`,
 `admin policy`, `admin bases`, `admin orphans`, and `admin targets`, use the
 [Administration reference](admin.md).
-
-For JSON plus SQL panels, publication, revisions and retry keys, read
-[Dashboards](dashboards.md). Commands: `dashboards list|get|panels|save|panel|publish|unpublish|delete`.
