@@ -325,7 +325,7 @@ describe("Filesv2 progressive navigation", () => {
       expect(dom.root.querySelectorAll('.k2b-app-workspace__sidebar-body a[href="/app/filesv2"]').length).toBe(0);
       expect(dom.root.querySelectorAll(".filesv2-list__row--up").length).toBe(0);
       expect(dom.root.querySelectorAll(".k2b-link-card").length).toBe(0);
-      expect(dom.root.querySelectorAll(".filesv2-browser__header").length).toBe(1);
+      expect(dom.root.querySelectorAll(".filesv2-browser").length).toBe(1);
       expect(dom.root.textContent).not.toContain("All storage");
     };
     await flush();
@@ -399,7 +399,7 @@ describe("Filesv2 progressive navigation", () => {
     expect(apiRequests[2]!.input).toEqual({ query: { actor: "me", limit: "5" } });
     expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/filesv2");
     expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
-    expect(dom.root.querySelector(".filesv2-browser__header")).toBeNull();
+    expect(dom.root.querySelector(".filesv2-browser")).toBeNull();
     // The overview has no search button of its own any more; the sidebar's Search is the one way.
     expect([...dom.root.querySelectorAll(".filesv2-overview button")].some((button) => button.textContent?.includes("Search"))).toBe(false);
     expect(dom.root.textContent).toContain("No favorites yet.");

@@ -72,7 +72,7 @@ test("view changes preserve selection; superseded details cannot replace current
   await flush();
   expect(requests).toHaveLength(0);
   const rows = [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")];
-  const header = dom.root.querySelector(".filesv2-browser__header")!;
+  const header = dom.root.querySelector(".k2b-status-row")!;
   const headerBlocks = header.childElementCount;
   rows[0]!.click();
   await flush();

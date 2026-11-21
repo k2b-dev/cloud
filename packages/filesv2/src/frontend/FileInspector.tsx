@@ -66,6 +66,8 @@ export default function FileInspector(props: {
   onTrash: (entry: FileEntry) => void;
   onShare?: (entry: FileEntry) => void;
   onShareInbox?: (entry: FileEntry) => void;
+  /** Commands the host adds at the top of the "…" menu for one entry, such as taking pages out of a PDF. */
+  extraMenu?: (entry: FileEntry) => DropdownItem[];
   onChanged: (selectPath?: string | null) => void;
   history?: InspectorHistory;
 }) {
@@ -171,6 +173,7 @@ export default function FileInspector(props: {
   const headerMenu = (item: FileEntry): DropdownItem[] => [
     {
       items: [
+        ...(props.extraMenu?.(item) ?? []),
         ...(!item.directory && notPdf() !== revision(item)
           ? [{ label: t().openInTab, icon: "ti ti-external-link", disabled: props.busy, action: () => void openInTab(item) }]
           : []),

@@ -85,8 +85,8 @@ render(() => {
   });
   return (
     <LocaleProvider locale={document.documentElement.lang || "en"}>
+      {/* Browser brings its head and columns, as in the workspace. */}
       <AppWorkspace mobileSurface="flush">
-        <AppWorkspace.Content>
           <Browser
             directory={shown()}
             bases={[base]}
@@ -98,7 +98,6 @@ render(() => {
             onRetry={() => host.setAttribute("data-retried", "true")}
             onNavigate={async (event) => host.setAttribute("data-navigated", `${event.url.pathname}${event.url.search}`)}
           />
-        </AppWorkspace.Content>
       </AppWorkspace>
     </LocaleProvider>
   );

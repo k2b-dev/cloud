@@ -83,7 +83,7 @@ describe("Filesv2 office editing", () => {
       dom.cleanup();
     };
     await flush();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>("button[data-workspace-primary]")!.click();
     await flush();
     expect(dom.document.body.textContent).not.toContain("New text document");
     dispose();
@@ -103,7 +103,7 @@ describe("Filesv2 office editing", () => {
     rows[0]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     await flush();
     expect(edited).toEqual(["Minutes.odt"]);
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>("button[data-workspace-primary]")!.click();
     await flush();
     const item = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) =>
       node.textContent?.includes("New spreadsheet"),
@@ -127,7 +127,7 @@ describe("Filesv2 office editing", () => {
     );
     await flush();
     expect(edited).toEqual(["Minutes.odt", "Budget.ods"]);
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>("button[data-workspace-primary]")!.click();
     await flush();
     [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
       .find((node) => node.textContent?.includes("New spreadsheet"))!

@@ -289,7 +289,7 @@ describe("Filesv2 ordering and drag-and-drop", () => {
     const button = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Sort and filter"]')!;
     expect(button.getAttribute("data-variant")).toBe("input");
     expect(button.classList.contains("k2b-icon-button")).toBe(true);
-    expect(button.closest(".filesv2-browser__header")?.querySelector('input[type="search"]')).not.toBeNull();
+    expect(button.closest(".k2b-app-workspace__head")?.querySelector('input[type="search"]')).not.toBeNull();
     expect(button.textContent?.trim()).toBe("");
     const firstRow = () => dom.root.querySelector(".filesv2-list__row .filesv2-list__name")?.textContent;
     expect(firstRow()).toBe("Parent folder");

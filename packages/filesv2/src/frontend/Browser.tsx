@@ -1,13 +1,13 @@
 import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { markHintSeen } from "@k2b/cloud/browser/hints";
-import { PageTrail } from "@k2b/cloud/ssr/islands";
 import { downloadArchive } from "@k2b/filegate/utils";
 import { navigate as commitHistory, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
+  Breadcrumbs,
   Button,
   ButtonLink,
   Checkbox,
@@ -27,8 +27,8 @@ import {
   ScrollArea,
   SegmentedControl,
   Skeleton,
+  StatusRow,
   TextInput,
-  Toolbar,
   toast,
   useLocale,
 } from "@k2b/ui";
@@ -61,6 +61,7 @@ import {
   viewFor,
   withView,
 } from "./browser-preferences";
+import { SELECTION_ACTIONS_HINT } from "./hints";
 import { readDroppedEntries, uploadRelativePath } from "./dropped-files";
 import FileInspector from "./FileInspector";
 import FileList, { type FileOperationView, type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
@@ -70,7 +71,6 @@ import { IssueMessage } from "./feedback";
 import { fileLightboxItem } from "./file-lightbox";
 import { apiFailure, contentLease } from "./file-preview";
 import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploads";
-import { SELECTION_PILL_HINT } from "./hints";
 import type { HistoryActions, HistoryEnvironment } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { openDestinationDialog } from "./MoveDialog";
@@ -154,8 +154,10 @@ export default function Browser(props: {
   onNavigate: (event: LinkNavigateEvent) => Promise<void>;
   /** The workspace's upload queue; it outlives this view, so leaving the folder does not stop an upload. */
   uploads: FilesUploads;
-  /** The server shows, once, where the header's Actions menu went: to the selection pill at the bottom. */
-  selectionPillHint?: boolean;
+  /** The server shows, once, where the selection's actions went: from the pill at the bottom to the status row. */
+  selectionHint?: boolean;
+  /** Receives the way to choose files to upload here, for the sidebar's quiet Upload entry; null when leaving. */
+  onUploadReady?: (upload: (() => void) | null) => void;
 }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
@@ -1152,6 +1154,8 @@ export default function Browser(props: {
   const selectionItems = () => {
     const items = selected();
     return [
+      // What fits the selection, such as taking pages out of a PDF, leads its context menu too.
+      ...suggestions().map((suggestion) => ({ label: suggestion.label, icon: suggestion.icon, disabled: busy(), action: suggestion.run })),
       {
         label: items.length === 1 && !items[0]!.directory ? t().download : b().downloadZip,
         icon: "ti ti-download",
@@ -1187,12 +1191,10 @@ export default function Browser(props: {
     ];
   };
   /*
-   * The selection pill at the bottom: the count, what fits the selection (such as Merge for several PDFs), then
-   * Download, Share and Move, and the rarer commands under More. It replaces the header's Actions menu.
+   * While choosing several entries, the status row holds the count, what fits the selection (such as Merge for several
+   * PDFs), then Download, Share and Move, and the rarer commands under More.
    */
-  const [pillHint, setPillHint] = createSignal(!!props.selectionPillHint);
   const isPdf = (entry: FileEntry) => !entry.directory && previewSource(entry) === "pdf";
-  const pillKind = (items: readonly FileEntry[]) => (items.length && items.every(isPdf) ? "pdf" : "any");
   const suggestions = () => {
     const items = selected();
     if (!items.length || searching() || !canCreate() || !items.every(isPdf)) return [];
@@ -1201,9 +1203,36 @@ export default function Browser(props: {
       { label: b().pdfExtract, icon: "ti ti-files", run: () => void extractPages(items) },
     ];
   };
-  const pillMore = (): DropdownItem[] => {
+  const selectionMore = (): DropdownItem[] => {
     const items = selected();
     return [
+      // The buttons beside the count give way in a fixed order as the column narrows (K15); their commands then lead
+      // this menu: first Share and Move, then what fits the selection.
+      ...(columnTier() >= 1
+        ? []
+        : suggestions().map((suggestion) => ({
+            label: suggestion.label,
+            icon: suggestion.icon,
+            disabled: busy(),
+            action: suggestion.run,
+          }))),
+      ...(columnTier() >= 2
+        ? []
+        : [
+            ...(props.onShare && shareable(items)
+              ? [{ label: b().shareSelection, icon: "ti ti-world-share", action: () => props.onShare?.(items.map((item) => item.path)) }]
+              : []),
+            ...(searching()
+              ? []
+              : [
+                  {
+                    disabled: busy() || !movable(items),
+                    label: b().moveTo,
+                    icon: "ti ti-arrow-move-right",
+                    action: () => void moveOrCopy(items),
+                  },
+                ]),
+          ]),
       ...(searching()
         ? []
         : [
@@ -1657,6 +1686,7 @@ export default function Browser(props: {
     size: t().size,
     modified: t().modified,
     details: b().detailsFor,
+    folder: b().folderKind,
     toggle: b().toggleFolder,
     select: b().selectEntry,
     more: b().more,
@@ -1738,708 +1768,777 @@ export default function Browser(props: {
     if (focused) selection.focus(focused);
   };
 
+  /** The path from the storage to this folder; every level but the last leads to its folder. */
+  const pathItems = () => {
+    const parts = folder().split("/").filter(Boolean);
+    return [
+      { label: baseLabel(props.directory.base, b(), locale()), href: parts.length ? filesUrl(baseId()) : undefined },
+      ...parts.map((part, index) => ({
+        label: part,
+        href: index < parts.length - 1 ? filesUrl(baseId(), parts.slice(0, index + 1).join("/")) : undefined,
+      })),
+    ];
+  };
+  const pathClick = (event: MouseEvent) => {
+    const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+    if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    props.onOpenDirectory?.(new URL(link.href).searchParams.get("path") ?? "");
+  };
+  const folderCount = () => props.directory.items.filter((entry) => entry.directory).length;
+  /** The current order in words, such as "Folders first, Name", for the chip in the status row. */
+  const sortSummary = () =>
+    [view().groupFolders ? b().foldersFirst : null, sortLabel(view().sort), view().type !== "all" ? filterLabel(view().type) : null]
+      .filter(Boolean)
+      .join(", ");
+  const browseChip = (iconOnly: boolean) => (
+    <FilterChip
+      label={iconOnly ? b().sortAndFilter : sortSummary()}
+      icon={iconOnly ? "ti ti-adjustments-horizontal" : view().direction === "desc" ? "ti ti-sort-descending" : "ti ti-sort-ascending"}
+      iconOnly={iconOnly}
+      variant={iconOnly ? "input" : undefined}
+      position="bottom-right"
+      value={[view().sort, view().direction, typeFilter(), ...(view().groupFolders ? ["groupFolders"] : [])]}
+      defaultValue={["name", "asc", "all", "groupFolders"]}
+      isActive={view().sort !== "name" || view().direction !== "asc" || typeFilter() !== "all" || !view().groupFolders}
+      onValueChange={(values) => {
+        updateView({
+          sort: SORT_KEYS.find((key) => values.includes(key)) ?? "name",
+          direction: values.includes("desc") ? "desc" : "asc",
+          groupFolders: values.includes("groupFolders"),
+          type: TYPE_FILTERS.find((key) => values.includes(key)) ?? "all",
+        });
+      }}
+      options={[
+        { label: b().sort, options: SORT_KEYS.map((key) => ({ value: key, label: sortLabel(key) })) },
+        {
+          label: b().sortDirection,
+          options: [
+            { value: "asc", label: b().sortAscending },
+            { value: "desc", label: b().sortDescending },
+          ],
+        },
+        { label: b().filter, options: TYPE_FILTERS.map((key) => ({ value: key, label: filterLabel(key) })) },
+        { multiple: true, options: [{ value: "groupFolders", label: b().groupFolders }] },
+      ]}
+    />
+  );
+  const searchSortChip = (current: SearchState) => (
+    <FilterChip
+      label={b().sortAndFilter}
+      icon="ti ti-adjustments-horizontal"
+      iconOnly
+      variant="input"
+      position="bottom-right"
+      value={[effectiveSort(current), current.order, current.exact ? "exact" : "similar"]}
+      defaultValue={[defaultSort(current), "asc", "similar"]}
+      isActive={effectiveSort(current) !== defaultSort(current) || current.order !== "asc" || current.exact}
+      onValueChange={(values) =>
+        changeSearch({
+          sort: (["relevance", "name", "modified", "size"] as const).find((key) => values.includes(key)),
+          order: values.includes("desc") ? "desc" : "asc",
+          exact: values.includes("exact"),
+        })
+      }
+      options={[
+        {
+          label: b().sort,
+          options: [
+            ...(current.q ? [{ value: "relevance", label: b().sortRelevance }] : []),
+            ...SORT_KEYS.map((key) => ({ value: key, label: sortLabel(key) })),
+          ],
+        },
+        ...(effectiveSort(current) === "relevance"
+          ? []
+          : [
+              {
+                label: b().sortDirection,
+                options: [
+                  { value: "asc", label: b().sortAscending },
+                  { value: "desc", label: b().sortDescending },
+                ],
+              },
+            ]),
+        {
+          label: b().match,
+          options: [
+            { value: "similar", label: b().matchSimilar },
+            { value: "exact", label: b().matchExact },
+          ],
+        },
+      ]}
+    />
+  );
+  const [selectionHint, setSelectionHint] = createSignal(!!props.selectionHint);
+  // The sidebar's quiet Upload entry chooses files for this folder, as "New" → Upload does.
+  createEffect(() => {
+    if (!canCreate() || searching()) return;
+    props.onUploadReady?.(() => filePicker?.click());
+    onCleanup(() => props.onUploadReady?.(null));
+  });
+  let openAdd: ((anchor: HTMLElement, returnFocus?: HTMLElement) => void) | undefined;
+  const openAddMenu = (event: MouseEvent) => {
+    if (busy() || !(event.currentTarget instanceof HTMLElement)) return;
+    openAdd?.(event.currentTarget, event.currentTarget);
+  };
+  // Selection commands stand as buttons beside the count only where the column has room for them (K15).
+  // 2: every command; 1: what fits the selection and Download; 0: Download only.
+  const [columnTier, setColumnTier] = createSignal(2);
+  onMount(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setColumnTier(surface.clientWidth >= 1040 ? 2 : surface.clientWidth >= 640 ? 1 : 0));
+    observer.observe(surface);
+    onCleanup(() => observer.disconnect());
+  });
+
   return (
     <>
-      <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
-        <div ref={surface} class="filesv2-browser__surface">
-          <FileDropTarget
-            label={b().dropInto({ name: folderLabel(folder()) })}
-            disabled={searching() || !canCreate()}
-            onDrop={(files, { dataTransfer }) => dropFiles(files, dataTransfer, folder())}
-          />
-          <header class="filesv2-browser__header">
-            {/* The folder's name alone at every depth; Files draws this header itself, so it holds the shell's title. */}
-            <PageTrail />
-            <div class="flex items-center gap-2">
-              <input
-                ref={filePicker}
-                type="file"
-                multiple
-                class="sr-only"
-                tabIndex={-1}
-                aria-hidden="true"
-                onChange={(event) => {
-                  startUpload(Array.from(event.currentTarget.files ?? []));
-                  event.currentTarget.value = "";
-                }}
-              />
-              <input
-                ref={folderPicker}
-                type="file"
-                multiple
-                class="sr-only"
-                tabIndex={-1}
-                aria-hidden="true"
-                {...{ webkitdirectory: "" }}
-                onChange={(event) => {
-                  startUpload(Array.from(event.currentTarget.files ?? []));
-                  event.currentTarget.value = "";
-                }}
-              />
-              <Dropdown.Root items={addItems()}>
-                <Dropdown.Trigger iconOnly label={b().add} variant="input" disabled={busy() || searching() || !canCreate()}>
-                  <i class="ti ti-plus" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-              <TextInput
-                type="search"
-                icon="ti ti-search"
-                placeholder={b().search}
-                aria-label={b().searchIn(folder().split("/").at(-1) || baseLabel(props.directory.base, b(), locale()))}
-                value={searchText()}
-                onValueChange={setSearchText}
-                onSubmit={submitSearch}
-                clearable
-                clearLabel={b().clearSearch}
-                onClear={() => {
-                  setSearchText("");
-                  if (searching()) props.onSearch?.(null);
-                }}
-                class="filesv2-search"
-              />
-              <Show
-                when={search()}
-                fallback={
-                  <FilterChip
-                    label={b().sortAndFilter}
-                    icon="ti ti-adjustments-horizontal"
-                    iconOnly
-                    variant="input"
-                    position="bottom-right"
-                    value={[view().sort, view().direction, typeFilter(), ...(view().groupFolders ? ["groupFolders"] : [])]}
-                    defaultValue={["name", "asc", "all", "groupFolders"]}
-                    isActive={view().sort !== "name" || view().direction !== "asc" || typeFilter() !== "all" || !view().groupFolders}
-                    onValueChange={(values) => {
-                      updateView({
-                        sort: SORT_KEYS.find((key) => values.includes(key)) ?? "name",
-                        direction: values.includes("desc") ? "desc" : "asc",
-                        groupFolders: values.includes("groupFolders"),
-                        type: TYPE_FILTERS.find((key) => values.includes(key)) ?? "all",
-                      });
-                    }}
-                    options={[
-                      { label: b().sort, options: SORT_KEYS.map((key) => ({ value: key, label: sortLabel(key) })) },
-                      {
-                        label: b().sortDirection,
-                        options: [
-                          { value: "asc", label: b().sortAscending },
-                          { value: "desc", label: b().sortDescending },
-                        ],
-                      },
-                      { label: b().filter, options: TYPE_FILTERS.map((key) => ({ value: key, label: filterLabel(key) })) },
-                      { multiple: true, options: [{ value: "groupFolders", label: b().groupFolders }] },
-                    ]}
-                  />
-                }
-              >
-                {(current) => (
-                  <FilterChip
-                    label={b().sortAndFilter}
-                    icon="ti ti-adjustments-horizontal"
-                    iconOnly
-                    variant="input"
-                    position="bottom-right"
-                    value={[effectiveSort(current()), current().order, current().exact ? "exact" : "similar"]}
-                    defaultValue={[defaultSort(current()), "asc", "similar"]}
-                    isActive={effectiveSort(current()) !== defaultSort(current()) || current().order !== "asc" || current().exact}
-                    onValueChange={(values) =>
-                      changeSearch({
-                        sort: (["relevance", "name", "modified", "size"] as const).find((key) => values.includes(key)),
-                        order: values.includes("desc") ? "desc" : "asc",
-                        exact: values.includes("exact"),
-                      })
-                    }
-                    options={[
-                      {
-                        label: b().sort,
-                        options: [
-                          ...(current().q ? [{ value: "relevance", label: b().sortRelevance }] : []),
-                          ...SORT_KEYS.map((key) => ({ value: key, label: sortLabel(key) })),
-                        ],
-                      },
-                      ...(effectiveSort(current()) === "relevance"
-                        ? []
-                        : [
-                            {
-                              label: b().sortDirection,
-                              options: [
-                                { value: "asc", label: b().sortAscending },
-                                { value: "desc", label: b().sortDescending },
-                              ],
-                            },
-                          ]),
-                      {
-                        label: b().match,
-                        options: [
-                          { value: "similar", label: b().matchSimilar },
-                          { value: "exact", label: b().matchExact },
-                        ],
-                      },
-                    ]}
-                  />
-                )}
-              </Show>
-            </div>
-            <Show when={props.notice}>
-              <InlineGuidance tone="info">{props.notice}</InlineGuidance>
+      {/* K6: the head shows the folder's path, never tabs; the ways to show the folder are a segment at its end. */}
+      <AppWorkspace.Head
+        views={
+          // The path's links move in place like every other folder link here, so uploads keep running.
+          <span class="filesv2-path" onClick={pathClick}>
+            <Breadcrumbs label={b().path} items={pathItems()} />
+          </span>
+        }
+        actions={
+          <>
+            <TextInput
+              type="search"
+              icon="ti ti-search"
+              placeholder={b().search}
+              aria-label={b().searchIn(folder().split("/").at(-1) || baseLabel(props.directory.base, b(), locale()))}
+              value={searchText()}
+              onValueChange={setSearchText}
+              onSubmit={submitSearch}
+              clearable
+              clearLabel={b().clearSearch}
+              onClear={() => {
+                setSearchText("");
+                if (searching()) props.onSearch?.(null);
+              }}
+              class="filesv2-search"
+            />
+            <Show when={search()} fallback={browseChip(true)}>
+              {(current) => searchSortChip(current())}
             </Show>
-            <div class="filesv2-toolbar">
-              <Show when={search()}>
-                {(current) => (
-                  <>
-                    <div class="filesv2-search-filters" role="group" aria-label={b().searchFilters}>
-                      <FilterChip
-                        label={b().filterType}
-                        icon="ti ti-file-search"
-                        showValue
-                        value={current().kind ? [current().kind!] : []}
-                        onValueChange={(values) =>
-                          changeSearch({ kind: (Object.keys(SEARCH_KINDS) as SearchKind[]).find((kind) => values.includes(kind)) })
-                        }
-                        options={[
-                          {
-                            options: (Object.keys(SEARCH_KINDS) as SearchKind[]).map((kind) => ({
-                              value: kind,
-                              label: kindLabel(kind),
-                              icon: kindIcon(kind),
-                            })),
-                          },
-                        ]}
-                      />
-                      <FilterChip
-                        label={b().filterSize}
-                        icon="ti ti-ruler-2"
-                        showValue
-                        value={current().size ? [current().size!] : []}
-                        onValueChange={(values) =>
-                          changeSearch({ size: (Object.keys(SEARCH_SIZES) as SearchSize[]).find((size) => values.includes(size)) })
-                        }
-                        options={[
-                          { options: (Object.keys(SEARCH_SIZES) as SearchSize[]).map((size) => ({ value: size, label: sizeLabel(size) })) },
-                        ]}
-                      />
-                      <FilterChip
-                        label={b().filterModified}
-                        icon="ti ti-calendar"
-                        showValue
-                        value={current().modified ? [current().modified!] : []}
-                        onValueChange={(values) =>
-                          changeSearch({
-                            modified: (Object.keys(SEARCH_MODIFIED) as SearchModified[]).find((modified) => values.includes(modified)),
-                          })
-                        }
-                        options={[
-                          {
-                            options: (Object.keys(SEARCH_MODIFIED) as SearchModified[]).map((modified) => ({
-                              value: modified,
-                              label: modifiedLabel(modified),
-                            })),
-                          },
-                        ]}
-                      />
-                      <Show when={searchFiltered(current())}>
-                        <Button
-                          size="xs"
-                          variant="text"
-                          onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
-                        >
-                          {b().resetFilters}
-                        </Button>
-                      </Show>
-                    </div>
-                    <span class="flex-1" />
-                  </>
-                )}
-              </Show>
-              <Show
-                when={selecting()}
-                fallback={
-                  <span class="grid min-h-6 items-center text-xs text-dimmed" role={searching() ? "status" : undefined}>
-                    {/* Both states reserve their space so the toolbar cannot rewrap when a search starts. */}
-                    <span class="col-start-1 row-start-1 flex items-center gap-2" classList={{ invisible: props.pendingSearch }}>
-                      {searching() ? !props.directory.failure && searchCount() : b().pageItems(props.directory.items.length)}
-                      <Show when={props.directory.items.length}>
-                        <span aria-hidden="true">·</span>
-                        <Button size="xs" variant="text" onClick={() => toggleSelecting(true)}>
-                          {b().select}
-                        </Button>
-                      </Show>
-                    </span>
-                    <Show when={searching()}>
-                      <span class="col-start-1 row-start-1" classList={{ invisible: !props.pendingSearch }}>
-                        {b().searching}
-                      </span>
-                    </Show>
+            <Show when={!searching()}>
+              <SegmentedControl
+                label={b().view}
+                size="sm"
+                class="filesv2-view-switch"
+                value={view().view}
+                options={[
+                  { value: "list", label: b().list, icon: "ti ti-list" },
+                  { value: "grid", label: b().grid, icon: "ti ti-layout-grid" },
+                  { value: "tree", label: b().tree, icon: "ti ti-list-tree" },
+                ]}
+                onValueChange={(value) => updateView({ view: value })}
+              />
+            </Show>
+          </>
+        }
+        primary={canCreate() && !searching() ? { label: b().newItem, icon: "ti ti-plus", popup: "menu", onClick: openAddMenu } : undefined}
+      />
+      <AppWorkspace.Content>
+        <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
+          <div ref={surface} class="filesv2-browser__surface">
+            <FileDropTarget
+              label={b().dropInto({ name: folderLabel(folder()) })}
+              disabled={searching() || !canCreate()}
+              onDrop={(files, { dataTransfer }) => dropFiles(files, dataTransfer, folder())}
+            />
+            <input
+              ref={filePicker}
+              type="file"
+              multiple
+              class="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={(event) => {
+                startUpload(Array.from(event.currentTarget.files ?? []));
+                event.currentTarget.value = "";
+              }}
+            />
+            <input
+              ref={folderPicker}
+              type="file"
+              multiple
+              class="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
+              {...{ webkitdirectory: "" }}
+              onChange={(event) => {
+                startUpload(Array.from(event.currentTarget.files ?? []));
+                event.currentTarget.value = "";
+              }}
+            />
+            {/* The head's "New" opens this menu beside itself; on a phone it is a sheet. */}
+            <Dropdown items={addItems()} label={b().add} align="end" phone="sheet" openAt={(open) => (openAdd = open)} />
+            {/* K6: the status row says what is here; a selection shows its count and its actions in the same place. */}
+            <StatusRow
+              class="filesv2-toolbar"
+              lead={
+                <span class="filesv2-status-lead" data-pending={props.pendingSearch ? "true" : undefined}>
+                  <span class="filesv2-status-lead__count">
+                    {searching()
+                      ? !props.directory.failure && searchCount()
+                      : props.directory.next || props.after
+                        ? b().pageItems(props.directory.items.length)
+                        : b().entries(props.directory.items.length)}
                   </span>
-                }
-              >
-                <span class="filesv2-selection-status text-xs font-medium" role="status">
-                  {b().selectedActions(selectedPaths().length)}
+                  <Show when={searching()}>
+                    <span class="filesv2-status-lead__pending" role="status">
+                      {props.pendingSearch ? b().searching : ""}
+                    </span>
+                  </Show>
                 </span>
-                {/* The Actions menu that stood here moved to the pill at the bottom; this says so once. */}
-                <MovedHint
-                  open={pillHint()}
-                  target={() => document.querySelector<HTMLElement>(".filesv2-selection-status") ?? undefined}
-                  placement="bottom"
-                  onDismiss={() => {
-                    setPillHint(false);
-                    markHintSeen(SELECTION_PILL_HINT);
-                  }}
-                  action={{ label: b().gotIt, onClick: () => {} }}
-                >
-                  <strong>{b().pillMovedTitle}</strong> {b().pillMovedText}
-                </MovedHint>
-                <Button size="xs" variant="text" onClick={() => toggleSelecting(false)}>
-                  {b().endSelect}
-                </Button>
-              </Show>
-              <Show when={!searching()}>
-                <span class="flex-1" />
-              </Show>
-              <span class="flex shrink-0 items-center gap-1" hidden={searching()}>
-                <Show when={view().view === "grid"}>
-                  <SegmentedControl
-                    label={b().viewSize}
-                    size="sm"
-                    value={view().size}
-                    options={[
-                      { value: "sm", label: "S" },
-                      { value: "md", label: "M" },
-                      { value: "lg", label: "L" },
-                    ]}
-                    onValueChange={(value) => updateView({ size: value })}
-                  />
+              }
+              facts={!searching() && folderCount() > 0 ? [{ value: folderCount(), label: b().folderFact(folderCount()) }] : undefined}
+              filters={
+                <>
+                  <Show when={search()}>
+                    {(current) => (
+                      <div class="filesv2-search-filters" role="group" aria-label={b().searchFilters}>
+                        <FilterChip
+                          label={b().filterType}
+                          icon="ti ti-file-search"
+                          showValue
+                          value={current().kind ? [current().kind!] : []}
+                          onValueChange={(values) =>
+                            changeSearch({ kind: (Object.keys(SEARCH_KINDS) as SearchKind[]).find((kind) => values.includes(kind)) })
+                          }
+                          options={[
+                            {
+                              options: (Object.keys(SEARCH_KINDS) as SearchKind[]).map((kind) => ({
+                                value: kind,
+                                label: kindLabel(kind),
+                                icon: kindIcon(kind),
+                              })),
+                            },
+                          ]}
+                        />
+                        <FilterChip
+                          label={b().filterSize}
+                          icon="ti ti-ruler-2"
+                          showValue
+                          value={current().size ? [current().size!] : []}
+                          onValueChange={(values) =>
+                            changeSearch({ size: (Object.keys(SEARCH_SIZES) as SearchSize[]).find((size) => values.includes(size)) })
+                          }
+                          options={[
+                            {
+                              options: (Object.keys(SEARCH_SIZES) as SearchSize[]).map((size) => ({ value: size, label: sizeLabel(size) })),
+                            },
+                          ]}
+                        />
+                        <FilterChip
+                          label={b().filterModified}
+                          icon="ti ti-calendar"
+                          showValue
+                          value={current().modified ? [current().modified!] : []}
+                          onValueChange={(values) =>
+                            changeSearch({
+                              modified: (Object.keys(SEARCH_MODIFIED) as SearchModified[]).find((modified) => values.includes(modified)),
+                            })
+                          }
+                          options={[
+                            {
+                              options: (Object.keys(SEARCH_MODIFIED) as SearchModified[]).map((modified) => ({
+                                value: modified,
+                                label: modifiedLabel(modified),
+                              })),
+                            },
+                          ]}
+                        />
+                        <Show when={searchFiltered(current())}>
+                          <Button
+                            size="xs"
+                            variant="text"
+                            onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
+                          >
+                            {b().resetFilters}
+                          </Button>
+                        </Show>
+                      </div>
+                    )}
+                  </Show>
+                  <Show when={!searching()}>
+                    <span class="filesv2-sort-summary">{browseChip(false)}</span>
+                    <Show when={view().view === "grid"}>
+                      <SegmentedControl
+                        label={b().viewSize}
+                        size="sm"
+                        value={view().size}
+                        options={[
+                          { value: "sm", label: "S" },
+                          { value: "md", label: "M" },
+                          { value: "lg", label: "L" },
+                        ]}
+                        onValueChange={(value) => updateView({ size: value })}
+                      />
+                    </Show>
+                  </Show>
+                  <Show when={props.directory.items.length}>
+                    {/* Both states keep the button's place, so the row cannot move when a search starts. */}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      class="filesv2-select-start"
+                      classList={{ invisible: !!props.pendingSearch }}
+                      onClick={() => toggleSelecting(true)}
+                    >
+                      <i class="ti ti-checkbox" aria-hidden="true" />
+                      {b().select}
+                    </Button>
+                  </Show>
+                </>
+              }
+              selection={
+                selecting()
+                  ? {
+                      count: selectedPaths().length,
+                      actions: (
+                        <span class="filesv2-selection-actions" role="group" aria-label={b().selectionActions}>
+                          <For each={columnTier() >= 1 ? suggestions() : []}>
+                            {(suggestion) => (
+                              <Button size="sm" variant="secondary" disabled={busy()} onClick={suggestion.run}>
+                                <i class={suggestion.icon} aria-hidden="true" />
+                                {suggestion.label}
+                              </Button>
+                            )}
+                          </For>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={busy() || !selected().length}
+                            onClick={() => startDownload(selected())}
+                          >
+                            <i class="ti ti-download" aria-hidden="true" />
+                            {selected().length === 1 && !selected()[0]!.directory ? t().download : b().downloadZip}
+                          </Button>
+                          <Show when={columnTier() >= 2 && props.onShare && shareable(selected())}>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={!selected().length}
+                              onClick={() => props.onShare?.(selected().map((item) => item.path))}
+                            >
+                              <i class="ti ti-world-share" aria-hidden="true" />
+                              {b().shareSelection}
+                            </Button>
+                          </Show>
+                          <Show when={columnTier() >= 2 && !searching()}>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={busy() || !selected().length || !movable(selected())}
+                              onClick={() => void moveOrCopy(selected())}
+                            >
+                              <i class="ti ti-arrow-move-right" aria-hidden="true" />
+                              {b().moveTo}
+                            </Button>
+                          </Show>
+                          <Dropdown items={selectionMore()} align="end" phone="sheet">
+                            <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={b().moreActions} disabled={!selected().length}>
+                              <i class="ti ti-dots" aria-hidden="true" />
+                            </Dropdown.Trigger>
+                          </Dropdown>
+                          <Button size="sm" variant="ghost" onClick={() => toggleSelecting(false)}>
+                            {b().endSelect}
+                          </Button>
+                          <MovedHint
+                            open={selectionHint()}
+                            target={() => surface.querySelector<HTMLElement>(".k2b-status-row__middle") ?? undefined}
+                            placement="bottom"
+                            onDismiss={() => {
+                              setSelectionHint(false);
+                              markHintSeen(SELECTION_ACTIONS_HINT);
+                            }}
+                            action={{ label: b().gotIt, onClick: () => {} }}
+                          >
+                            <strong>{b().pillMovedTitle}</strong> {b().pillMovedText}
+                          </MovedHint>
+                        </span>
+                      ),
+                    }
+                  : undefined
+              }
+            />
+            <Show when={props.notice || props.issues?.length || (props.error && !loadingMore() && !moreError())}>
+              <div class="filesv2-browser__notes">
+                <Show when={props.notice}>
+                  <InlineGuidance tone="info">{props.notice}</InlineGuidance>
                 </Show>
-                <SegmentedControl
-                  label={b().view}
-                  size="sm"
-                  value={view().view}
-                  disabled={searching()}
-                  options={[
-                    { value: "list", label: b().list, icon: "ti ti-list" },
-                    { value: "grid", label: b().grid, icon: "ti ti-layout-grid" },
-                    { value: "tree", label: b().tree, icon: "ti ti-list-tree" },
-                  ]}
-                  onValueChange={(value) => updateView({ view: value })}
-                />
-              </span>
-            </div>
-            <For each={props.issues}>
-              {(issue) => (
-                <InlineGuidance tone="info">
-                  <strong>{t()[issue.area]}: </strong>
-                  <IssueMessage code={issue.code} />
-                </InlineGuidance>
-              )}
-            </For>
-            <Show when={props.error && !loadingMore() && !moreError()}>
-              <InlineGuidance tone="danger" role="alert">
-                {props.error}{" "}
-                <Button size="xs" variant="text" onClick={props.onRetry}>
-                  {b().retry}
-                </Button>
+                <For each={props.issues}>
+                  {(issue) => (
+                    <InlineGuidance tone="info">
+                      <strong>{t()[issue.area]}: </strong>
+                      <IssueMessage code={issue.code} />
+                    </InlineGuidance>
+                  )}
+                </For>
+                <Show when={props.error && !loadingMore() && !moreError()}>
+                  <InlineGuidance tone="danger" role="alert">
+                    {props.error}{" "}
+                    <Button size="xs" variant="text" onClick={props.onRetry}>
+                      {b().retry}
+                    </Button>
+                  </InlineGuidance>
+                </Show>
+              </div>
+            </Show>
+            <Show when={view().view !== "tree" && props.directory.readme}>
+              {(readme) => {
+                const [overflowing, setOverflowing] = createSignal(false);
+                let viewport!: HTMLDivElement;
+                let content!: HTMLDivElement;
+                onMount(() => {
+                  const measure = () => setOverflowing(content.scrollHeight > viewport.clientHeight);
+                  const observer = new ResizeObserver(measure);
+                  observer.observe(viewport);
+                  observer.observe(content);
+                  measure();
+                  onCleanup(() => observer.disconnect());
+                });
+                return (
+                  <section class="filesv2-folder-readme" aria-label={b().folderReadme}>
+                    <div ref={viewport} class="filesv2-folder-readme__content" data-overflow={overflowing()}>
+                      <div ref={content}>
+                        <FilePreview
+                          baseId={baseId()}
+                          locationKey={props.directory.base.locationKey}
+                          entry={readme()}
+                          headingScale="compact"
+                          variant="plain"
+                          onDownload={() => startDownload([readme()])}
+                        />
+                      </div>
+                    </div>
+                    <Show when={overflowing()}>
+                      <div class="filesv2-folder-readme__expand">
+                        <Button size="sm" variant="text" onClick={() => void preview(readme())}>
+                          {b().showAll}
+                        </Button>
+                      </div>
+                    </Show>
+                  </section>
+                );
+              }}
+            </Show>
+            <Show when={view().view === "tree" && !searching() && folder() && (!branch("") || branch("")?.loading || branch("")?.error)}>
+              <InlineGuidance>
+                {branch("")?.error ? b().treeLoadFailed : t().loadingFiles}
+                <Show when={branch("")?.error}>
+                  <Button size="xs" variant="text" onClick={() => void loadBranch("")}>
+                    {b().retry}
+                  </Button>
+                </Show>
               </InlineGuidance>
             </Show>
-          </header>
-          <Show when={view().view !== "tree" && props.directory.readme}>
-            {(readme) => {
-              const [overflowing, setOverflowing] = createSignal(false);
-              let viewport!: HTMLDivElement;
-              let content!: HTMLDivElement;
-              onMount(() => {
-                const measure = () => setOverflowing(content.scrollHeight > viewport.clientHeight);
-                const observer = new ResizeObserver(measure);
-                observer.observe(viewport);
-                observer.observe(content);
-                measure();
-                onCleanup(() => observer.disconnect());
-              });
-              return (
-                <section class="filesv2-folder-readme" aria-label={b().folderReadme}>
-                  <div ref={viewport} class="filesv2-folder-readme__content" data-overflow={overflowing()}>
-                    <div ref={content}>
-                      <FilePreview
-                        baseId={baseId()}
-                        locationKey={props.directory.base.locationKey}
-                        entry={readme()}
-                        headingScale="compact"
-                        variant="plain"
-                        onDownload={() => startDownload([readme()])}
+            <Show when={!props.pendingSearch && !(searching() && props.directory.failure)} fallback={searchStatus()}>
+              <Show
+                when={props.directory.items.length || (!searching() && (folder() || props.onOpenTrash || props.onOpenOverview))}
+                fallback={
+                  <Show
+                    when={search()}
+                    fallback={
+                      <Placeholder
+                        class="flex-1"
+                        variant="panel"
+                        icon="ti ti-folder"
+                        title={b().emptyTitle}
+                        description={b().emptyDescription}
                       />
-                    </div>
-                  </div>
-                  <Show when={overflowing()}>
-                    <div class="filesv2-folder-readme__expand">
-                      <Button size="sm" variant="text" onClick={() => void preview(readme())}>
-                        {b().showAll}
-                      </Button>
-                    </div>
-                  </Show>
-                </section>
-              );
-            }}
-          </Show>
-          <Show when={view().view === "tree" && !searching() && folder() && (!branch("") || branch("")?.loading || branch("")?.error)}>
-            <InlineGuidance>
-              {branch("")?.error ? b().treeLoadFailed : t().loadingFiles}
-              <Show when={branch("")?.error}>
-                <Button size="xs" variant="text" onClick={() => void loadBranch("")}>
-                  {b().retry}
-                </Button>
-              </Show>
-            </InlineGuidance>
-          </Show>
-          <Show when={!props.pendingSearch && !(searching() && props.directory.failure)} fallback={searchStatus()}>
-            <Show
-              when={props.directory.items.length || (!searching() && (folder() || props.onOpenTrash || props.onOpenOverview))}
-              fallback={
-                <Show
-                  when={search()}
-                  fallback={
-                    <Placeholder
-                      class="flex-1"
-                      variant="panel"
-                      icon="ti ti-folder"
-                      title={b().emptyTitle}
-                      description={b().emptyDescription}
-                    />
-                  }
-                >
-                  {(current) => (
-                    <Show
-                      when={current().q ? props.onSearchHistory : undefined}
-                      fallback={
-                        <Placeholder
-                          class="flex-1"
-                          variant="panel"
-                          state="no-results"
-                          title={b().noResultsTitle}
-                          description={searchFiltered(current()) ? b().noResultsFiltered : b().noResultsDescription}
-                          action={
-                            <Show when={searchFiltered(current())}>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
-                              >
-                                {b().resetFilters}
-                              </Button>
-                            </Show>
-                          }
-                        />
-                      }
-                    >
-                      {(searchHistory) => (
-                        <Placeholder
-                          class="filesv2-history-placeholder"
-                          state="no-results"
-                          icon="ti ti-search"
-                          title={h().emptySearchTitle.replace("{query}", current().q)}
-                          description={h().emptySearchText}
-                          action={
-                            <div class="flex flex-wrap justify-center gap-2">
-                              <Button variant="primary" onClick={() => searchHistory()(current().q)}>
-                                <i class="ti ti-history" aria-hidden="true" />
-                                {h().searchInHistory}
-                              </Button>
+                    }
+                  >
+                    {(current) => (
+                      <Show
+                        when={current().q ? props.onSearchHistory : undefined}
+                        fallback={
+                          <Placeholder
+                            class="flex-1"
+                            variant="panel"
+                            state="no-results"
+                            title={b().noResultsTitle}
+                            description={searchFiltered(current()) ? b().noResultsFiltered : b().noResultsDescription}
+                            action={
                               <Show when={searchFiltered(current())}>
                                 <Button
+                                  size="sm"
                                   variant="secondary"
                                   onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
                                 >
                                   {b().resetFilters}
                                 </Button>
                               </Show>
-                              <Button variant="secondary" onClick={() => props.onSearch?.(null)}>
-                                <i class="ti ti-x" aria-hidden="true" />
-                                {h().clearSearch}
-                              </Button>
-                            </div>
-                          }
-                        />
-                      )}
-                    </Show>
-                  )}
-                </Show>
-              }
-            >
-              <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={contextItems()} label={t().actions} disabled={busy()}>
-                <ScrollArea
-                  class="filesv2-browser__scroll h-full"
-                  scrollPreserveKey={`filesv2:${folderKey(baseIdentity(), folder())}:${props.after ?? ""}:${view().view}`}
-                >
-                  <Show
-                    when={view().view === "grid"}
-                    fallback={
-                      <>
-                        <FileList
-                          baseId={baseId()}
-                          rows={listRows()}
+                            }
+                          />
+                        }
+                      >
+                        {(searchHistory) => (
+                          <Placeholder
+                            class="filesv2-history-placeholder"
+                            state="no-results"
+                            icon="ti ti-search"
+                            title={h().emptySearchTitle.replace("{query}", current().q)}
+                            description={h().emptySearchText}
+                            action={
+                              <div class="flex flex-wrap justify-center gap-2">
+                                <Button variant="primary" onClick={() => searchHistory()(current().q)}>
+                                  <i class="ti ti-history" aria-hidden="true" />
+                                  {h().searchInHistory}
+                                </Button>
+                                <Show when={searchFiltered(current())}>
+                                  <Button
+                                    variant="secondary"
+                                    onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
+                                  >
+                                    {b().resetFilters}
+                                  </Button>
+                                </Show>
+                                <Button variant="secondary" onClick={() => props.onSearch?.(null)}>
+                                  <i class="ti ti-x" aria-hidden="true" />
+                                  {h().clearSearch}
+                                </Button>
+                              </div>
+                            }
+                          />
+                        )}
+                      </Show>
+                    )}
+                  </Show>
+                }
+              >
+                <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={contextItems()} label={t().actions} disabled={busy()}>
+                  <ScrollArea
+                    class="filesv2-browser__scroll h-full"
+                    scrollPreserveKey={`filesv2:${folderKey(baseIdentity(), folder())}:${props.after ?? ""}:${view().view}`}
+                  >
+                    <Show
+                      when={view().view === "grid"}
+                      fallback={
+                        <>
+                          <FileList
+                            baseId={baseId()}
+                            rows={listRows()}
+                            selection={interactiveSelection}
+                            label={t().files}
+                            tree={view().view === "tree"}
+                            pathBase={searching() ? folder() : null}
+                            hereLabel={folderLabel(folder())}
+                            showModified
+                            timeZone={props.history?.env.timeZone}
+                            opening={opening()}
+                            currentPath={view().view === "tree" ? folder() : null}
+                            selecting={selecting()}
+                            before={virtualBefore()}
+                            after={virtualAfter()}
+                            rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row), ...hoverProps(row) })}
+                            virtualProps={(row) => (row.key === "up" ? upDrop() : {})}
+                            messages={listMessages()}
+                            sort={listSort()}
+                            onSort={(key) => {
+                              const current = search();
+                              if (!current) {
+                                updateView(
+                                  view().sort === key
+                                    ? { direction: view().direction === "asc" ? "desc" : "asc" }
+                                    : { sort: key, direction: "asc" },
+                                );
+                                return;
+                              }
+                              const sorted = effectiveSort(current) === key;
+                              changeSearch({ sort: key, order: sorted && current.order === "asc" ? "desc" : "asc" });
+                            }}
+                            onOpen={open}
+                            onToggle={toggleBranch}
+                            onLoadMore={(row) => {
+                              const path = row.path.replace(/ more$/, "");
+                              void loadBranch(path, branch(path)?.next);
+                            }}
+                            onDetails={(row) => selection.select(row.path)}
+                            onContextMenu={focusContext}
+                            onRowClick={rowClick}
+                          />
+                          <Show when={!props.directory.items.length && !rows().length}>
+                            <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
+                          </Show>
+                          <Show when={filtered()}>
+                            <Placeholder class="mx-2" icon="ti ti-filter-off" title={b().noMatches} />
+                          </Show>
+                        </>
+                      }
+                    >
+                      <div class="filesv2-grid-wrap">
+                        <FileGrid
+                          rows={gridRows()}
+                          getRowId={(row) => row.path}
                           selection={interactiveSelection}
                           label={t().files}
-                          tree={view().view === "tree"}
-                          pathBase={searching() ? folder() : null}
-                          hereLabel={folderLabel(folder())}
-                          showModified
-                          timeZone={props.history?.env.timeZone}
-                          opening={opening()}
-                          currentPath={view().view === "tree" ? folder() : null}
-                          selecting={selecting()}
-                          before={virtualBefore()}
-                          after={virtualAfter()}
-                          rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row), ...hoverProps(row) })}
-                          virtualProps={(row) => (row.key === "up" ? upDrop() : {})}
-                          messages={listMessages()}
-                          sort={listSort()}
-                          onSort={(key) => {
-                            const current = search();
-                            if (!current) {
-                              updateView(
-                                view().sort === key
-                                  ? { direction: view().direction === "asc" ? "desc" : "asc" }
-                                  : { sort: key, direction: "asc" },
+                          size={view().size}
+                          onOpen={(row) => {
+                            if (row.operation) return;
+                            if (virtualOf(row)) virtualOf(row)!.onClick();
+                            else open(row);
+                          }}
+                          itemProps={(row) =>
+                            row.operation
+                              ? { "data-operation": row.operation.state }
+                              : virtualOf(row)
+                                ? virtualOf(row)!.key === "up"
+                                  ? upDrop()
+                                  : {}
+                                : { ...dragProps(row), ...folderDrop(row), ...hoverProps(row) }
+                          }
+                          onContextMenu={(row) => !virtualOf(row) && !row.operation && focusContext(row)}
+                          onRowClick={(row) => {
+                            if (row.operation) return;
+                            const virtual = virtualOf(row);
+                            if (virtual) virtual.onClick();
+                            else if (!selecting() && row.directory) open(row);
+                          }}
+                          renderPreview={(row) => {
+                            // A file in the making shows its progress or failure in the tile's place.
+                            if (row.operation)
+                              return (
+                                <span
+                                  class="filesv2-thumbnail filesv2-thumbnail--large filesv2-thumbnail--virtual"
+                                  data-state={row.operation.state}
+                                >
+                                  <i
+                                    class={row.operation.state === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"}
+                                    aria-hidden="true"
+                                  />
+                                </span>
                               );
-                              return;
-                            }
-                            const sorted = effectiveSort(current) === key;
-                            changeSearch({ sort: key, order: sorted && current.order === "asc" ? "desc" : "asc" });
+                            const virtual = virtualOf(row);
+                            if (virtual)
+                              return (
+                                <span class="filesv2-thumbnail filesv2-thumbnail--large filesv2-thumbnail--virtual">
+                                  <i class={opening() === virtual.key ? "ti ti-loader-2 animate-spin" : virtual.icon} aria-hidden="true" />
+                                </span>
+                              );
+                            return (
+                              <>
+                                {gridCheck(row)}
+                                {opening() === row.path ? (
+                                  <i class="ti ti-loader-2 animate-spin text-3xl text-dimmed" aria-hidden="true" />
+                                ) : (
+                                  <FileThumbnail baseId={baseId()} locationKey={props.directory.base.locationKey} entry={row} large />
+                                )}
+                              </>
+                            );
                           }}
-                          onOpen={open}
-                          onToggle={toggleBranch}
-                          onLoadMore={(row) => {
-                            const path = row.path.replace(/ more$/, "");
-                            void loadBranch(path, branch(path)?.next);
+                          renderLabel={(row) => <span title={virtualOf(row) ? undefined : row.name}>{row.name}</span>}
+                          renderMeta={(row) => {
+                            if (row.operation)
+                              return (
+                                <span class="filesv2-grid-operation" data-state={row.operation.state}>
+                                  <span
+                                    class="filesv2-grid-operation__text"
+                                    role={row.operation.state === "failed" ? "alert" : "status"}
+                                    title={row.operation.text}
+                                  >
+                                    {row.operation.text}
+                                  </span>
+                                  <span class="filesv2-grid-operation__actions">
+                                    <For each={row.operation.actions}>
+                                      {(action) => (
+                                        <Button size="xs" variant="link" onClick={action.onClick}>
+                                          {action.label}
+                                        </Button>
+                                      )}
+                                    </For>
+                                  </span>
+                                </span>
+                              );
+                            if (row.fresh)
+                              return (
+                                <span class="filesv2-list__fresh">
+                                  <i class="ti ti-circle-check" aria-hidden="true" />
+                                  {row.fresh}
+                                </span>
+                              );
+                            const virtual = virtualOf(row);
+                            if (virtual) return virtual.detail ?? null;
+                            return searching() ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null;
                           }}
-                          onDetails={(row) => selection.select(row.path)}
-                          onContextMenu={focusContext}
-                          onRowClick={rowClick}
                         />
-                        <Show when={!props.directory.items.length && !rows().length}>
+                        <Show when={!props.directory.items.length}>
                           <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
                         </Show>
                         <Show when={filtered()}>
                           <Placeholder class="mx-2" icon="ti ti-filter-off" title={b().noMatches} />
                         </Show>
-                      </>
-                    }
-                  >
-                    <div class="filesv2-grid-wrap">
-                      <FileGrid
-                        rows={gridRows()}
-                        getRowId={(row) => row.path}
-                        selection={interactiveSelection}
-                        label={t().files}
-                        size={view().size}
-                        onOpen={(row) => {
-                          if (row.operation) return;
-                          if (virtualOf(row)) virtualOf(row)!.onClick();
-                          else open(row);
-                        }}
-                        itemProps={(row) =>
-                          row.operation
-                            ? { "data-operation": row.operation.state }
-                            : virtualOf(row)
-                              ? virtualOf(row)!.key === "up"
-                                ? upDrop()
-                                : {}
-                              : { ...dragProps(row), ...folderDrop(row), ...hoverProps(row) }
-                        }
-                        onContextMenu={(row) => !virtualOf(row) && !row.operation && focusContext(row)}
-                        onRowClick={(row) => {
-                          if (row.operation) return;
-                          const virtual = virtualOf(row);
-                          if (virtual) virtual.onClick();
-                          else if (!selecting() && row.directory) open(row);
-                        }}
-                        renderPreview={(row) => {
-                          // A file in the making shows its progress or failure in the tile's place.
-                          if (row.operation)
-                            return (
-                              <span
-                                class="filesv2-thumbnail filesv2-thumbnail--large filesv2-thumbnail--virtual"
-                                data-state={row.operation.state}
-                              >
-                                <i
-                                  class={row.operation.state === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"}
-                                  aria-hidden="true"
-                                />
-                              </span>
-                            );
-                          const virtual = virtualOf(row);
-                          if (virtual)
-                            return (
-                              <span class="filesv2-thumbnail filesv2-thumbnail--large filesv2-thumbnail--virtual">
-                                <i class={opening() === virtual.key ? "ti ti-loader-2 animate-spin" : virtual.icon} aria-hidden="true" />
-                              </span>
-                            );
-                          return (
-                            <>
-                              {gridCheck(row)}
-                              {opening() === row.path ? (
-                                <i class="ti ti-loader-2 animate-spin text-3xl text-dimmed" aria-hidden="true" />
-                              ) : (
-                                <FileThumbnail baseId={baseId()} locationKey={props.directory.base.locationKey} entry={row} large />
-                              )}
-                            </>
-                          );
-                        }}
-                        renderLabel={(row) => <span title={virtualOf(row) ? undefined : row.name}>{row.name}</span>}
-                        renderMeta={(row) => {
-                          if (row.operation)
-                            return (
-                              <span class="filesv2-grid-operation" data-state={row.operation.state}>
-                                <span
-                                  class="filesv2-grid-operation__text"
-                                  role={row.operation.state === "failed" ? "alert" : "status"}
-                                  title={row.operation.text}
-                                >
-                                  {row.operation.text}
-                                </span>
-                                <span class="filesv2-grid-operation__actions">
-                                  <For each={row.operation.actions}>
-                                    {(action) => (
-                                      <Button size="xs" variant="link" onClick={action.onClick}>
-                                        {action.label}
-                                      </Button>
-                                    )}
-                                  </For>
-                                </span>
-                              </span>
-                            );
-                          if (row.fresh)
-                            return (
-                              <span class="filesv2-list__fresh">
-                                <i class="ti ti-circle-check" aria-hidden="true" />
-                                {row.fresh}
-                              </span>
-                            );
-                          const virtual = virtualOf(row);
-                          if (virtual) return virtual.detail ?? null;
-                          return searching() ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null;
-                        }}
-                      />
-                      <Show when={!props.directory.items.length}>
-                        <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
-                      </Show>
-                      <Show when={filtered()}>
-                        <Placeholder class="mx-2" icon="ti ti-filter-off" title={b().noMatches} />
-                      </Show>
-                    </div>
-                  </Show>
-                  <Show when={props.directory.next}>
-                    <div class="filesv2-browser__pagination">
-                      <Button size="sm" variant="link" loading={loadingMore()} onClick={() => void loadMore()}>
-                        {moreError() ? b().retry : b().loadMore}
-                        <i class={moreError() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
-                      </Button>
-                      <Show when={moreError()}>
-                        <InlineGuidance role="alert">{b().loadMoreFailed}</InlineGuidance>
-                      </Show>
-                    </div>
-                  </Show>
-                  {/*
-                   * The selection's actions float at the bottom of the column; the list scrolls beneath and ends above.
-                   * The pill keeps its place while nothing is selected, only hidden, so showing or hiding it never moves a
-                   * row, also at the end of a long list.
-                   */}
-                  <Toolbar
-                    label={b().selectionActions}
-                    variant="floating"
-                    moreItems={selected().length ? pillMore() : undefined}
-                    class={selected().length ? "filesv2-selection-pill" : "filesv2-selection-pill filesv2-selection-pill--idle"}
-                  >
-                    <Show when={selected().length > 0}>
-                      <Toolbar.Action label={b().clear} icon="ti ti-x" onClick={() => toggleSelecting(false)} />
-                      <Toolbar.Label>{b().pillCount({ n: selected().length, kind: pillKind(selected()) })}</Toolbar.Label>
-                      <Toolbar.Separator />
-                      <For each={suggestions()}>
-                        {(suggestion, index) => (
-                          <Toolbar.Action
-                            label={suggestion.label}
-                            icon={suggestion.icon}
-                            text
-                            priority={2 + index()}
-                            disabled={busy()}
-                            onClick={suggestion.run}
-                          />
-                        )}
-                      </For>
-                      <Toolbar.Separator />
-                      <Toolbar.Action
-                        label={selected().length === 1 && !selected()[0]!.directory ? t().download : b().downloadZip}
-                        icon="ti ti-download"
-                        priority={5}
-                        disabled={busy()}
-                        onClick={() => startDownload(selected())}
-                      />
-                      <Show when={props.onShare && shareable(selected())}>
-                        <Toolbar.Action
-                          label={b().shareSelection}
-                          icon="ti ti-world-share"
-                          priority={6}
-                          onClick={() => props.onShare?.(selected().map((item) => item.path))}
-                        />
-                      </Show>
-                      <Show when={!searching()}>
-                        <Toolbar.Action
-                          label={b().moveTo}
-                          icon="ti ti-arrow-move-right"
-                          priority={7}
-                          disabled={busy() || !movable(selected())}
-                          onClick={() => void moveOrCopy(selected())}
-                        />
-                      </Show>
+                      </div>
                     </Show>
-                  </Toolbar>
-                </ScrollArea>
-              </ContextMenu>
+                    <Show when={props.directory.next}>
+                      <div class="filesv2-browser__pagination">
+                        <Button size="sm" variant="link" loading={loadingMore()} onClick={() => void loadMore()}>
+                          {moreError() ? b().retry : b().loadMore}
+                          <i class={moreError() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
+                        </Button>
+                        <Show when={moreError()}>
+                          <InlineGuidance role="alert">{b().loadMoreFailed}</InlineGuidance>
+                        </Show>
+                      </div>
+                    </Show>
+                  </ScrollArea>
+                </ContextMenu>
+              </Show>
             </Show>
-          </Show>
-          <Show when={props.after}>
-            <div class="filesv2-browser__pagination">
-              <ButtonLink
-                href={filesUrl(baseId(), folder(), null, null, search(), activeBrowse())}
-                navigation="enhanced"
-                onNavigate={props.onNavigate}
-                size="sm"
-                variant="text"
-              >
-                {t().first}
-              </ButtonLink>
-            </div>
-          </Show>
-        </div>
-      </AppWorkspace.Main>
-      <Show when={viewing()}>
-        <Lightbox items={lightboxItems()} index={viewingIndex()} onIndexChange={showInLightbox} onClose={() => setViewing(null)} />
-      </Show>
-      <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md" phone="page">
-        <Show when={detailOpen()}>
-          <FileInspector
-            base={props.directory.base}
-            paths={selectedPaths().length > 1 ? selected().map((row) => row.path) : selectedPaths()}
-            selected={selected()}
-            initial={props.detail}
-            busy={busy()}
-            onClose={closeInspector}
-            onOpen={open}
-            onPreview={preview}
-            editable={editable}
-            canEdit={selected().length === 1 ? selected()[0]?.actions?.write : undefined}
-            onDownload={startDownload}
-            onRename={(item) => void rename(item)}
-            onDuplicate={duplicate}
-            onMove={(item) => void moveOrCopy([item])}
-            onCopy={(item) => void moveOrCopy([item], true)}
-            onTrash={(item) => void trashItems([item])}
-            onShare={props.onShare ? (item) => props.onShare?.([item.path]) : undefined}
-            onShareInbox={props.onShareInbox ? (item) => props.onShareInbox?.(item.path) : undefined}
-            onChanged={refresh}
-            onMarksChanged={props.onMarksChanged}
-            history={props.history}
-          />
+            <Show when={props.after}>
+              <div class="filesv2-browser__pagination">
+                <ButtonLink
+                  href={filesUrl(baseId(), folder(), null, null, search(), activeBrowse())}
+                  navigation="enhanced"
+                  onNavigate={props.onNavigate}
+                  size="sm"
+                  variant="text"
+                >
+                  {t().first}
+                </ButtonLink>
+              </div>
+            </Show>
+          </div>
+        </AppWorkspace.Main>
+        <Show when={viewing()}>
+          <Lightbox items={lightboxItems()} index={viewingIndex()} onIndexChange={showInLightbox} onClose={() => setViewing(null)} />
         </Show>
-      </AppWorkspace.Detail>
+        <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md" phone="page">
+          <Show when={detailOpen()}>
+            <FileInspector
+              base={props.directory.base}
+              paths={selectedPaths().length > 1 ? selected().map((row) => row.path) : selectedPaths()}
+              selected={selected()}
+              initial={props.detail}
+              busy={busy()}
+              onClose={closeInspector}
+              onOpen={open}
+              onPreview={preview}
+              editable={editable}
+              canEdit={selected().length === 1 ? selected()[0]?.actions?.write : undefined}
+              onDownload={startDownload}
+              onRename={(item) => void rename(item)}
+              onDuplicate={duplicate}
+              onMove={(item) => void moveOrCopy([item])}
+              onCopy={(item) => void moveOrCopy([item], true)}
+              onTrash={(item) => void trashItems([item])}
+              onShare={props.onShare ? (item) => props.onShare?.([item.path]) : undefined}
+            extraMenu={(item) =>
+              !searching() && canCreate() && isPdf(item)
+                ? [{ label: b().pdfExtract, icon: "ti ti-files", disabled: busy(), action: () => void extractPages([item]) }]
+                : []
+            }
+              onShareInbox={props.onShareInbox ? (item) => props.onShareInbox?.(item.path) : undefined}
+              onChanged={refresh}
+              onMarksChanged={props.onMarksChanged}
+              history={props.history}
+            />
+          </Show>
+        </AppWorkspace.Detail>
+      </AppWorkspace.Content>
     </>
   );
 }
