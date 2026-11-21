@@ -735,6 +735,7 @@ export const pulseMessages = i18n.define({
       usageLoadFailed: "Pulse could not load the accounts and keys",
       manageMembers: "Manage members",
       assistantRetry: "Try again in a moment.",
+      assistantFailedTitle: "Gustav unavailable",
       copyLinkFailed: "Link not copied",
       usageLead: ({ count }: { count: number }) => (count === 1 ? "1 access through the API" : `${count} accesses through the API`),
       assistantPagePrompt: ({ base }: { base: string }) =>
@@ -1487,6 +1488,7 @@ export const pulseMessages = i18n.define({
       usageLoadFailed: "Pulse konnte die Konten und Schlüssel nicht laden",
       manageMembers: "Mitglieder verwalten",
       assistantRetry: "Versuche es gleich noch einmal.",
+      assistantFailedTitle: "Gustav nicht erreichbar",
       copyLinkFailed: "Link nicht kopiert",
       usageLead: ({ count }) => (count === 1 ? "1 Zugang über die API" : `${count} Zugänge über die API`),
       assistantPagePrompt: ({ base }) =>

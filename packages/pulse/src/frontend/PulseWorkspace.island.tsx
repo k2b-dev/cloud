@@ -83,7 +83,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     } catch {
       if (!disposed) {
         setAssistantError(t().sqlAssistantFailureTitle);
-        toast.error(t().assistantRetry, { title: t().sqlAssistantFailureTitle });
+        toast.error(t().assistantRetry, { title: t().assistantFailedTitle });
       }
     } finally {
       if (!disposed) setAssistantPending(false);
