@@ -1114,7 +1114,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   left: 50%;
   width: 5px;
   height: 2rem;
-  border-radius: var(--k2b-radius-round, 9999px);
+  border-radius: var(--k2b-radius-round);
   background: #8a8a94;
   box-shadow: 0 0 0 2px var(--k2b-surface);
   transform: translate(-50%, -50%);

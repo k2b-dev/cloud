@@ -1337,7 +1337,7 @@ html {
   left: 50%;
   width: 5px;
   height: 2rem;
-  border-radius: var(--k2b-radius-round, 9999px);
+  border-radius: var(--k2b-radius-round);
   background: var(--k2b-resize-grip);
   /* A ring of the surface keeps the grip apart from the line under it. */
   box-shadow: 0 0 0 2px var(--k2b-surface);
@@ -2485,7 +2485,7 @@ html {
   align-items: flex-start;
   gap: 0 0.75rem;
   /* K5: the row stands on the column's text edge, `--k2b-gutter` (20 px, 16 px on a phone). */
-  padding: 0 var(--k2b-workspace-head-end, var(--k2b-gutter, 1.25rem)) 0 var(--k2b-gutter, 1.25rem);
+  padding: 0 var(--k2b-workspace-head-end, var(--k2b-gutter)) 0 var(--k2b-gutter);
   box-shadow: inset 0 -1px 0 var(--k2b-border);
   overflow: visible;
   clip-path: none;
@@ -2496,13 +2496,13 @@ html {
    title, the views, the filters, and the actions share one centre in the
    first row, also when the lead wraps below them. */
 .k2b-ui .k2b-app-workspace__head[data-row] {
-  --k2b-workspace-head-line: var(--k2b-h-head, 3.5rem);
+  --k2b-workspace-head-line: var(--k2b-h-head);
 }
 
 @media not all and (min-width: 48rem) {
   /* K12: on a phone the tabs row is 44 px. */
   .k2b-ui .k2b-app-workspace__head[data-row] {
-    --k2b-workspace-head-line: var(--k2b-h-tabs-phone, 2.75rem);
+    --k2b-workspace-head-line: var(--k2b-h-tabs-phone);
   }
 }
 
@@ -2735,7 +2735,7 @@ html {
     flex-wrap: wrap;
     align-items: center;
     gap: 0 0.5rem;
-    padding: 0 var(--k2b-workspace-head-end, var(--k2b-gutter, 1rem)) 0 var(--k2b-gutter, 1rem);
+    padding: 0 var(--k2b-workspace-head-end, var(--k2b-gutter)) 0 var(--k2b-gutter);
   }
 
   .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead {
@@ -2832,7 +2832,7 @@ html {
     height: 2.75rem;
     min-height: 2.75rem;
     padding: 0;
-    border-radius: var(--k2b-radius-round, 9999px);
+    border-radius: var(--k2b-radius-round);
   }
 
   .k2b-ui .k2b-app-workspace__head-primary > i {
@@ -6206,13 +6206,13 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 .k2b-ui .k2b-status-row {
   display: flex;
   min-width: 0;
-  min-height: var(--k2b-h-status, 3.25rem);
+  min-height: var(--k2b-h-status);
   flex: none;
   align-items: center;
   gap: 0.25rem 1.25rem;
-  padding: 0 var(--k2b-gutter, 1.25rem);
+  padding: 0 var(--k2b-gutter);
   color: var(--k2b-text-muted);
-  font-size: var(--k2b-font-size-row, 0.8125rem);
+  font-size: var(--k2b-font-size-row);
   line-height: 1.25rem;
 }
 
@@ -6224,7 +6224,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   flex: none;
   margin: 0;
   color: var(--k2b-text);
-  font-size: var(--k2b-font-size-lead, 1.125rem);
+  font-size: var(--k2b-font-size-lead);
   font-weight: 600;
   line-height: 1.5rem;
   white-space: nowrap;
@@ -6290,15 +6290,15 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   height: 1.25rem;
   flex: none;
   place-items: center;
-  border-radius: var(--k2b-radius-round, 9999px);
-  color: var(--k2b-warning-text, #b45309);
-  background: var(--k2b-warning-surface, #fffbeb);
+  border-radius: var(--k2b-radius-round);
+  color: var(--k2b-warning-text);
+  background: var(--k2b-warning-surface);
   font-size: 0.8125rem;
 }
 
 .k2b-ui .k2b-status-row[data-tone="danger"] .k2b-status-row__sign {
-  color: var(--k2b-danger-text, #b91c1c);
-  background: var(--k2b-danger-surface, #fef2f2);
+  color: var(--k2b-danger-text);
+  background: var(--k2b-danger-surface);
 }
 
 .k2b-ui .k2b-status-row[data-tone="neutral"] .k2b-status-row__sign {
@@ -6325,7 +6325,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
 @media not all and (min-width: 48rem) {
   .k2b-ui .k2b-status-row {
     flex-wrap: wrap;
-    padding: 0.75rem var(--k2b-gutter, 1rem);
+    padding: 0.75rem var(--k2b-gutter);
   }
 
   .k2b-ui .k2b-status-row__end {
@@ -6352,18 +6352,12 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
    text gets the whole height at a 720 px measure, centered; the floating pill
    holds its views and actions. */
 .k2b-ui .k2b-app-workspace__main[data-width="reading"] {
-  padding-inline: var(--k2b-gutter, 1.25rem);
+  padding-inline: var(--k2b-gutter);
 }
 
 .k2b-ui .k2b-app-workspace__main[data-width="reading"] > :not(.k2b-floating-pill) {
   width: min(100%, 45rem);
   margin-inline: auto;
-}
-
-@media not all and (min-width: 48rem) {
-  .k2b-ui .k2b-app-workspace__main[data-width="reading"] {
-    padding-inline: var(--k2b-gutter, 1rem);
-  }
 }
 
 /* K16: the pill floats at the top end of its column. Its look is the shared
@@ -6393,4 +6387,25 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   flex: none;
   margin-inline: 0.25rem;
   background: var(--k2b-border);
+}
+
+/* ------------------------------------------------- scrollbars move nothing */
+
+/* "A scrollbar moves nothing" (Valentin 21.11.): every scroller of the shell
+   keeps its scrollbar's room whether it overflows or not, so a column's
+   content, its lines, and the boundary with its grip keep their x when a
+   scrollbar comes or goes. Main, its panes, level bodies, the reading column,
+   and DetailPanel's body already reserve it; the sidebar, the drawer, and a
+   Detail that scrolls its own content do here. The sidebar takes the track
+   from its own end padding, so its rows keep their width. */
+@media (min-width: 48rem) and (pointer: fine) {
+  .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body {
+    margin-inline-end: -0.5rem;
+    scrollbar-gutter: stable;
+  }
+
+  .k2b-ui .k2b-app-workspace__drawer,
+  .k2b-ui .k2b-app-workspace__detail:not(:has(.k2b-detail-panel__body)) {
+    scrollbar-gutter: stable;
+  }
 }

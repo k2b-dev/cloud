@@ -424,3 +424,42 @@ for (const [width, options] of [
       await page.close();
     }
   });
+
+// "A scrollbar moves nothing" (Valentin 21.11.): with classic scrollbars (Chromium on Linux draws the shared 0.5 rem
+// scrollbar), every scroller of the shell keeps its room for the scrollbar. Few rows, then so many that each column
+// scrolls: the boundaries with their lines and grips, the columns, and each scroller's inner width stay where they were.
+const scrollers =
+  ".k2b-app-workspace__sidebar-body, .k2b-app-workspace__main, .k2b-app-workspace__main-pane, .k2b-app-workspace__level-body, .k2b-app-workspace__detail, .k2b-app-workspace__drawer";
+for (const { label, options } of scenarios)
+  test(`1440: ${label}: a scrollbar that comes or goes moves no boundary, grip, column, or content edge`, async () => {
+    const page = await load(1440, { ...options, rows: true }, false, false);
+    try {
+      const measure = async () => ({
+        edges: await boundaries(page),
+        frame: await frame(page),
+        inner: await page.evaluate(
+          (selector) =>
+            [...document.querySelectorAll<HTMLElement>(selector)]
+              .filter((element) => element.getClientRects().length > 0)
+              .map((element) => `${element.className.split(" ")[0]} ${element.clientWidth}`),
+          scrollers,
+        ),
+      });
+      const few = await measure();
+      const scrolled = await page.evaluate((selector) => {
+        const elements = [...document.querySelectorAll<HTMLElement>(selector)].filter((element) => element.getClientRects().length > 0);
+        for (const element of elements) {
+          const filler = document.createElement("div");
+          filler.style.height = "4000px";
+          element.append(filler);
+        }
+        // The scrollers that now overflow, so the test knows a scrollbar is really there.
+        return elements.filter((element) => element.scrollHeight > element.clientHeight + 1).length;
+      }, scrollers);
+      await settled(page);
+      expect(scrolled).toBeGreaterThanOrEqual(2);
+      expect(await measure()).toEqual(few);
+    } finally {
+      await page.close();
+    }
+  });

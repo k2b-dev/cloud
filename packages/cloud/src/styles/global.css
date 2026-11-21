@@ -405,7 +405,7 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated] .layout-content-main {
     overflow: auto;
     border-top: 1px solid transparent;
-    border-radius: var(--k2b-radius-card, 0.875rem) var(--k2b-radius-card, 0.875rem) 0 0;
+    border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
     background: var(--k2b-surface);
     box-shadow: none;
   }
@@ -453,20 +453,20 @@ solid-island {
         min-height: 0;
         pointer-events: none;
         border-top: 1px solid transparent;
-        border-radius: var(--k2b-radius-card, 0.875rem) var(--k2b-radius-card, 0.875rem) 0 0;
+        border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
         background: var(--k2b-surface);
         box-shadow: none;
       }
 
       & > .k2b-app-workspace__head {
-        border-radius: var(--k2b-radius-card, 0.875rem) var(--k2b-radius-card, 0.875rem) 0 0;
+        border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
         background: transparent;
       }
 
       /* Cloud's page title hides the automatic head on phones. With no
          explicit head, Content itself owns the card's rounded clip. */
       &:not(:has(> .k2b-app-workspace__head[data-row])) > .k2b-app-workspace__content {
-        border-radius: var(--k2b-radius-card, 0.875rem) var(--k2b-radius-card, 0.875rem) 0 0;
+        border-radius: var(--k2b-radius-card) var(--k2b-radius-card) 0 0;
       }
     }
 
@@ -610,7 +610,7 @@ solid-island {
       gap: 0.5rem;
     }
     .cloud-app-canvas[data-layout-authenticated] .layout-content-main .k2b-app-workspace:not(.k2b-app-workspace *) {
-      --k2b-workspace-radius: var(--k2b-radius-card, 0.875rem);
+      --k2b-workspace-radius: var(--k2b-radius-card);
     }
   }
 }
@@ -627,7 +627,7 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated] {
     --cloud-card-inset: round(clamp(0.25rem, calc(0.25rem + (100vw - 64rem) / 104), 0.5rem), 1px);
     /* K4: the app card keeps the one card radius at every width. */
-    --cloud-card-radius: var(--k2b-radius-card, 0.875rem);
+    --cloud-card-radius: var(--k2b-radius-card);
     --cloud-card-inset-bottom: max(0px, env(safe-area-inset-bottom, 0px) - var(--cloud-card-inset));
     padding: max(var(--cloud-card-inset), env(safe-area-inset-top, 0px)) max(var(--cloud-card-inset), env(safe-area-inset-right, 0px))
       var(--cloud-card-inset) 0;
