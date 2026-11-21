@@ -204,7 +204,13 @@ describe("DetailPanel", () => {
       ".k2b-ui .k2b-detail-panel__body > :is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group)";
     const escaped = topic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const frame = css.match(new RegExp(`${escaped} \\{([^}]*)\\}`))?.[1];
-    const separator = css.match(new RegExp(`${escaped}:not\\(:first-child\\) \\{([^}]*)\\}`))?.[1];
+    // A topic after shown content (not after a hidden node or a floating layer) gets the line.
+    const topics = ":is(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group)";
+    const separator = css.match(
+      new RegExp(
+        `\\.k2b-detail-panel__body\\s*> :not\\(\\[hidden\\][^)]*\\)\\s*~ ${topics.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`,
+      ),
+    )?.[1];
     const sectionIconRule = css.match(/\.k2b-ui \.k2b-section__icon \{([^}]*)\}/)?.[1];
 
     expect(html).toContain('class="k2b-detail-panel__header-icon"');

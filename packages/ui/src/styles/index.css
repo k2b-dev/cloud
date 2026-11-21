@@ -5160,7 +5160,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    alert cell keeps its edge-to-edge tint (K10). */
 .k2b-ui .k2b-detail-panel__body > :not(.k2b-detail-panel__summary, .k2b-detail-panel__group, .k2b-section, .k2b-fact-group, dialog, [popover], template, script, style, .k2b-notice-card, .k2b-notice-card-container) {
   /* A child that sets its own full width still ends on the text edge, so the
-     body never scrolls sideways (QA B1). */
+     detail never scrolls sideways (QA B1). */
   max-width: calc(100% - 2 * var(--k2b-gutter));
   margin-inline: var(--k2b-gutter);
 }
