@@ -102,3 +102,52 @@ describe(`layout self-check in ${browserName}`, () => {
     });
   }
 });
+
+// Touch: small controls reach 44 px with an empty, invisible pseudo-element (the hit area). That is no spill. A drawn
+// pseudo-element that reaches out, or real content next to a hit area, still is.
+const hitAreaStyle = `<style>
+  .app-hit { position: relative; display: inline-block; width: 20px; height: 20px; }
+  .app-hit::after { content: ""; position: absolute; inset: -12px; }
+  .app-badge { position: relative; display: inline-block; width: 20px; height: 20px; }
+  .app-badge::after { content: "3"; position: absolute; top: -6px; right: -18px; padding: 0 4px; background: #dc2626; color: #fff; }
+</style>`;
+const touchClean = `${hitAreaStyle}
+  <div data-probe="toolbar" style="display:flex;gap:4px;padding:0 20px">
+    <button type="button" class="k2b-button k2b-icon-button" data-variant="ghost" data-size="sm" aria-label="More">…</button>
+    <span data-probe="app-hit" class="app-hit"></span>
+  </div>`;
+const touchDefects = `${hitAreaStyle}
+  <div data-probe="badge-box" style="width:24px"><span class="app-badge"></span></div>
+  <div data-probe="hit-and-content" style="width:120px"><span class="app-hit"></span><div style="width:200px">Wider than its box</div></div>`;
+
+describe(`layout self-check with touch in ${browserName}`, () => {
+  let touch: Page;
+  beforeAll(async () => {
+    touch = await browser.newPage({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true });
+  });
+  const checkTouch = async (body: string) => {
+    await touch.setContent(
+      `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;font:13px sans-serif"><main id="app">${body}</main></body></html>`,
+    );
+    return touch.evaluate(layoutProblems, { root: "#app" });
+  };
+
+  test("390 px: hit areas of small controls are no spill", async () => {
+    // The hit area is real: the icon button is smaller than 44 px and its pseudo-element reaches past it.
+    const result = await checkTouch(touchClean);
+    expect(await touch.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(true);
+    expect(await touch.locator(".k2b-icon-button").evaluate((button) => getComputedStyle(button, "::after").position)).toBe("absolute");
+    // Without the hit-area rule this box would spill: its pseudo-element reaches 12 px past it.
+    expect(await touch.locator('[data-probe="app-hit"]').evaluate((box) => box.scrollWidth - box.clientWidth)).toBeGreaterThan(7);
+    expect(result.problems).toEqual([]);
+  });
+
+  test("390 px: a drawn pseudo-element or real content beside a hit area still spills", async () => {
+    const result = await checkTouch(touchDefects);
+    expect(result.spill.map((line) => line.split(" spills")[0])).toEqual([
+      '[data-probe="badge-box"]',
+      "span.app-badge",
+      '[data-probe="hit-and-content"]',
+    ]);
+  });
+});
