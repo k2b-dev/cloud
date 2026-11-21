@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 import { layoutProblems } from "../../test/head-overlap";
 
 // Error class: a box that overlaps its sibling, spills, or cuts its text without a sign at one width only (K15), and a
@@ -129,6 +129,7 @@ describe(`layout self-check with touch in ${browserName}`, () => {
     await touch.setContent(
       `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;font:13px sans-serif"><main id="app">${body}</main></body></html>`,
     );
+    await settled(touch);
     return touch.evaluate(layoutProblems, { root: "#app" });
   };
 
