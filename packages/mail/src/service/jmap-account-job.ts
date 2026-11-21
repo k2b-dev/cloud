@@ -8,6 +8,7 @@ import { type JmapAccountAccess, type JmapAccountUnavailableReason, loadJmapAcco
 import { extendJmapCooldown, type JmapAccountFailureContext, jmapCooldownMs, recordJmapAccountFailure } from "./jmap-account-failure";
 import { classifyJmapFailure } from "./jmap-failure";
 import {
+  JMAP_SCAN_RESTART_LIMIT,
   JMAP_SCAN_STALL_MS,
   type JmapAccountRead,
   type JmapAccountScanResult,
@@ -91,25 +92,58 @@ export type JmapAccountTurn =
   | { kind: "start"; reason: JmapAccountScan["reason"]; result: JmapAccountScanStartResult }
   | { kind: "scan"; result: JmapAccountScanResult };
 
-// A scan or delta that reported `folders_required` although the delta of its account had no
-// folder change asks again; the second report within the scan's stall pause starts a repair from
-// a folder snapshot instead of repeating. A repair does not reset the count: a report after it
-// fails the turn visibly, so a folder the server never shows ends in the job's attempts instead of
-// endless repairs. Only a delta that brings folder changes forgets it. Ephemeral Valkey state.
-const foldersRequiredKey = (remoteResourceId: string): string => `mail:jmap-folders-required:{${remoteResourceId}}`;
-const countFoldersRequired = async (remoteResourceId: string): Promise<number> => {
-  const key = foldersRequiredKey(remoteResourceId);
+/**
+ * Counters of one account that keep a turn from repeating forever, as ephemeral Valkey state that
+ * lives for the scan's stall pause after its last change. A lost counter costs only some more turns.
+ *
+ * `folders-required`: a delta or scan step reported `folders_required` although the account's
+ * delta had no folder change.
+ *
+ * | value | state | next report |
+ * |---|---|---|
+ * | none | no report | stores 1; the next turn is a delta, which brings the folders |
+ * | 1 | one report | stores 2 and starts a repair |
+ * | 2 | repair due, not committed yet (`retry`, `superseded`) | starts the repair again |
+ * | 3 | repair committed | fails the turn visibly (`JMAP_FOLDERS_UNRESOLVED`) |
+ *
+ * A committed repair stores 3. Only a delta that brings folder changes forgets the counter.
+ *
+ * `delta-required`: scan steps that yielded to a delta since the Email state last moved on. A
+ * server whose Email/get state never matches its Email/changes state would otherwise make scan and
+ * quiet delta alternate forever; at the scan's restart limit the turn fails visibly
+ * (`JMAP_SCAN_STATE_MISMATCH`). A delta that moves the Email state on forgets it.
+ *
+ * `start-retry`: starts in a row whose snapshot saw a state move (`retry`). The next start waits
+ * along the folder job's backoff; after its last attempt the turn fails visibly
+ * (`JMAP_SCAN_START_UNSTABLE`). A committed start forgets it.
+ */
+type AccountCounter = "folders-required" | "delta-required" | "start-retry";
+const counterKey = (counter: AccountCounter, remoteResourceId: string): string => `mail:jmap-${counter}:{${remoteResourceId}}`;
+const countUp = async (counter: AccountCounter, remoteResourceId: string, unknown: number): Promise<number> => {
+  const key = counterKey(counter, remoteResourceId);
   try {
     const count = Number(await redis.send("INCR", [key]));
     await redis.send("PEXPIRE", [key, String(JMAP_SCAN_STALL_MS)]);
     return count;
   } catch {
-    // Without the count, repair now rather than risk an endless repetition.
-    return 2;
+    return unknown;
   }
 };
-const forgetFoldersRequired = (remoteResourceId: string): Promise<unknown> =>
-  redis.send("DEL", [foldersRequiredKey(remoteResourceId)]).catch(() => 0);
+const readCounter = async (counter: AccountCounter, remoteResourceId: string, unknown: number): Promise<number> => {
+  try {
+    return Number((await redis.send("GET", [counterKey(counter, remoteResourceId)])) ?? 0);
+  } catch {
+    return unknown;
+  }
+};
+const storeCounter = (counter: AccountCounter, remoteResourceId: string, value: number): Promise<unknown> =>
+  redis.send("SET", [counterKey(counter, remoteResourceId), String(value), "PX", String(JMAP_SCAN_STALL_MS)]).catch(() => null);
+const forgetCounter = (counter: AccountCounter, remoteResourceId: string): Promise<unknown> =>
+  redis.send("DEL", [counterKey(counter, remoteResourceId)]).catch(() => 0);
+const FOLDERS_REPORTED = 1;
+const FOLDERS_REPAIR_DUE = 2;
+const FOLDERS_REPAIRED = 3;
+const visibleFailure = (code: string, message: string): Error => Object.assign(new Error(message), { code });
 
 const leaseLost = (code: string): boolean => code === "SYNC_LEASE_LOST" || code === "SYNC_JOB_LEASE_LOST";
 
@@ -158,7 +192,8 @@ export const runJmapAccountJob = async (
   });
   if (!turn.lock) {
     join(turn.left);
-    // As for a folder sync: the breaker's window ends the turn; the next request queues it again.
+    // As for a folder sync: the breaker's window ends the turn without a continuation. The
+    // account's planner (next slice) queues the account again once the window ends.
     if (turn.unreachableForMs !== null) return { kind: "deferred", code: "PROVIDER_UNREACHABLE", retryAfterMs: turn.unreachableForMs };
     if (!turn.parked) continueWith(phase, turn.retryAfterMs);
     // A wake that came while this job still ran started no new job, so it goes on itself.
@@ -195,6 +230,8 @@ export const runJmapAccountJob = async (
           after.next = { phase: route.phase, delayMs: 0 };
           return { kind: "deferred", code: "JMAP_PHASE" };
         }
+        // A stalled scan ends the turn without a continuation; the account's planner (next slice)
+        // queues the account again, and the scan goes on once its pause has passed.
         if (route.work === "stalled") return { kind: "ended", reason: "stalled" };
 
         const load = () =>
@@ -249,23 +286,35 @@ export const runJmapAccountJob = async (
           if (result === "changed") return ended();
           if (result.status === "committed") {
             after.reached = true;
+            await forgetCounter("start-retry", resource);
             after.next = { phase: "scan", delayMs: 0 };
           } else if (result.status === "retry") {
-            // A state moved while the snapshot was read: try again after the first retry delay.
+            // A state moved while the snapshot was read: try again along the backoff, a bounded number of times.
             after.reached = true;
-            after.next = { phase: "scan", delayMs: SYNC_FOLDER_DELIVERY.backoffMs[0] };
+            const retries = await countUp("start-retry", resource, 1);
+            if (retries > SYNC_FOLDER_MAX_ATTEMPTS)
+              throw visibleFailure("JMAP_SCAN_START_UNSTABLE", "JMAP account states kept moving while a scan started");
+            const backoff = SYNC_FOLDER_DELIVERY.backoffMs;
+            after.next = { phase: "scan", delayMs: backoff[Math.min(retries, backoff.length) - 1] ?? backoff[0] };
           }
           return { kind: "start", reason, result };
         };
         // `folders_required` although the delta has no folder change: the next turn is a delta,
         // which brings the folders; a repetition starts a repair instead.
         const foldersRequired = async (turnResult: JmapAccountTurn): Promise<JmapAccountTurn> => {
-          const reports = await countFoldersRequired(resource);
-          if (reports > 2)
-            throw Object.assign(new Error("JMAP mailboxes stay unknown after a repair"), { code: "JMAP_FOLDERS_UNRESOLVED" });
-          if (reports === 2) return start("repair");
-          after.next = { phase: "delta", delayMs: 0 };
-          return turnResult;
+          // Without the counter, repair rather than risk an endless repetition.
+          const reports = await readCounter("folders-required", resource, FOLDERS_REPAIR_DUE);
+          if (reports >= FOLDERS_REPAIRED) throw visibleFailure("JMAP_FOLDERS_UNRESOLVED", "JMAP mailboxes stay unknown after a repair");
+          if (reports < FOLDERS_REPORTED) {
+            await storeCounter("folders-required", resource, FOLDERS_REPORTED);
+            after.next = { phase: "delta", delayMs: 0 };
+            return turnResult;
+          }
+          await storeCounter("folders-required", resource, FOLDERS_REPAIR_DUE);
+          const repair = await start("repair");
+          if (repair.kind === "start" && repair.result.status === "committed")
+            await storeCounter("folders-required", resource, FOLDERS_REPAIRED);
+          return repair;
         };
 
         if (route.work === "start") return start("initial");
@@ -277,7 +326,8 @@ export const runJmapAccountJob = async (
           if (result.status === "superseded") return result.cause === "folders_required" ? foldersRequired(turnResult) : ended();
           after.reached = true;
           if (result.hydrationRequested) after.hydrationMailbox = access.mailboxId;
-          if (result.stats.folders > 0) await forgetFoldersRequired(resource);
+          if (result.stats.folders > 0) await forgetCounter("folders-required", resource);
+          if (result.emailAdvanced) await forgetCounter("delta-required", resource);
           if (result.hasMore) after.next = { phase: "delta", delayMs: 0 };
           else if (scanRunning) after.next = { phase: "scan", delayMs: 0 };
           return turnResult;
@@ -286,11 +336,17 @@ export const runJmapAccountJob = async (
         if (result === "changed") return ended();
         const turnResult: JmapAccountTurn = { kind: "scan", result };
         if (result.status === "superseded") return result.cause === "folders_required" ? foldersRequired(turnResult) : ended();
+        // A scan that stalls now ends like a stalled route above: the planner queues it again.
         if (result.status === "idle" || result.status === "stalled") return turnResult;
         after.reached = true;
-        // New mail arrives through the delta first; the scan goes on after it, without a failure.
-        if (result.status === "delta_required") after.next = { phase: "delta", delayMs: 0 };
-        else {
+        // New mail arrives through the delta first; the scan goes on after it, without a failure,
+        // unless the scan keeps yielding to a delta that never moves the Email state on.
+        if (result.status === "delta_required") {
+          // Without the counter, go on: an unreadable counter is no evidence of a mismatch.
+          if ((await countUp("delta-required", resource, 1)) >= JMAP_SCAN_RESTART_LIMIT)
+            throw visibleFailure("JMAP_SCAN_STATE_MISMATCH", "JMAP Email/get state keeps differing from the stored Email state");
+          after.next = { phase: "delta", delayMs: 0 };
+        } else {
           if (result.hydrationRequested) after.hydrationMailbox = access.mailboxId;
           // After the scan, a delta brings the account up to date.
           after.next = { phase: result.scanComplete ? "delta" : "scan", delayMs: 0 };

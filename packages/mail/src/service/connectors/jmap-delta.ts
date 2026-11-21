@@ -76,10 +76,11 @@ function parseChanges(
   accountId: string,
   sinceState: string,
   maxChanges: number,
+  callId = "changes",
 ) {
   let value: Record<string, unknown>;
   try {
-    value = requireJmapMethodResult(response, "changes", method);
+    value = requireJmapMethodResult(response, callId, method);
   } catch (error) {
     // Evaluate changes before dependent gets: invalidResultReference must not hide a rejected state.
     if (error instanceof JmapMethodError) {
@@ -258,4 +259,52 @@ export async function readJmapMailboxDelta(
     destroyedIds: page.destroyed,
     notFoundIds,
   };
+}
+
+/** What a quiet probe found: both states unchanged, or which state the server rejected. */
+export type JmapAccountQuiet = { quiet: boolean } | { rejected: "mailbox" | "email"; cause: JmapReconciliationRequiredError["cause"] };
+
+/**
+ * Probes whether an account changed since its stored states, without reading any object:
+ * `Mailbox/changes` and `Email/changes` with one change at most, in one request when the server
+ * allows two calls, under the small JSON budget. Quiet exactly when neither state moved and no ID
+ * is reported. Mailboxes are judged first, as the delta reads them first: a moved mailbox state is
+ * not quiet whatever the Email state does. A rejected state is reported with its axis instead of
+ * thrown; every other failure is thrown as by the delta readers.
+ */
+export async function readJmapAccountQuiet(
+  session: JmapSession,
+  authorization: string,
+  accountId: string,
+  states: { mailboxState: string; emailState: string },
+  signal: AbortSignal,
+  deps: JmapTransportDependencies = {},
+): Promise<JmapAccountQuiet> {
+  validateInput(session, accountId, states.mailboxState, signal);
+  if (!jmapStateSchema.safeParse(states.emailState).success) throw new JmapError("JMAP_INVALID_RESPONSE");
+  const call = (methodCalls: JmapInvocation[]) =>
+    callJmap({ session, authorization, signal, using: [JMAP_CORE, JMAP_MAIL], methodCalls, maxBytes: JMAP_JSON_BYTES }, deps);
+  const mailboxCall: JmapInvocation = ["Mailbox/changes", { accountId, sinceState: states.mailboxState, maxChanges: 1 }, "mailbox"];
+  const emailCall: JmapInvocation = ["Email/changes", { accountId, sinceState: states.emailState, maxChanges: 1 }, "email"];
+  const combined = session.core.maxCallsInRequest >= 2;
+  const first = await call(combined ? [mailboxCall, emailCall] : [mailboxCall]);
+  const judge = (
+    response: Awaited<ReturnType<typeof callJmap>>,
+    axis: "mailbox" | "email",
+    method: "Mailbox/changes" | "Email/changes",
+    sinceState: string,
+  ): JmapAccountQuiet => {
+    try {
+      const page = parseChanges(response, method, accountId, sinceState, 1, axis);
+      return { quiet: page.newState === page.oldState && page.created.length + page.updated.length + page.destroyed.length === 0 };
+    } catch (error) {
+      if (error instanceof JmapReconciliationRequiredError) return { rejected: axis, cause: error.cause };
+      throw error;
+    }
+  };
+  const mailbox = judge(first, "mailbox", "Mailbox/changes", states.mailboxState);
+  if (!("quiet" in mailbox) || !mailbox.quiet) return mailbox;
+  const email = judge(combined ? first : await call([emailCall]), "email", "Email/changes", states.emailState);
+  if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
+  return email;
 }

@@ -3580,9 +3580,6 @@ const hydrateJmapSourceBatch = async (params: {
   const { message, signal } = params;
   const resource = message.remote_resource_id;
   const none: HydrationBatch = { hydrated: false, settled: 0, stopped: false, missingFromUid: null, targetError: null };
-  // The account's rate-limit cooldown holds every JMAP request back, this batch's too.
-  const coolingMs = await jmapCooldownMs(resource);
-  if (coolingMs > 0) throw jmapRateLimited(coolingMs);
   const transportFence = await loadMailboxTransportFence(message.remote_resource_id);
   if (!transportFence) {
     throw Object.assign(new Error("Mailbox transport changed before hydration"), { code: "MAILBOX_TRANSPORT_CHANGED" });
@@ -3755,6 +3752,11 @@ export const hydrateMessageBatch = async (
         return { hydrated: false };
       }
       if (!message) return { hydrated: false };
+      // The JMAP account's rate-limit cooldown holds the batch back before it takes the lease.
+      if (message.jmap) {
+        const coolingMs = await jmapCooldownMs(message.remote_resource_id);
+        if (coolingMs > 0) throw jmapRateLimited(coolingMs);
+      }
       // Only the first batch of a completed incremental arrival shares sync priority.
       // Backfill, later body batches and retries retain background rank, so importing old
       // mail cannot repeatedly displace envelope continuations and commands.

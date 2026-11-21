@@ -81,12 +81,21 @@ describe("summarizeJmapAccountTurn", () => {
     expect(summarizeJmapAccountTurn({ kind: "deferred", code: "MAIL_RATE_LIMITED", retryAfterMs: 1_000 })).toBeNull();
     expect(summarizeJmapAccountTurn({ kind: "ended", reason: "paused" })).toBeNull();
     expect(
-      summarizeJmapAccountTurn({ kind: "delta", result: { status: "committed", hasMore: false, stats, hydrationRequested: false } }),
+      summarizeJmapAccountTurn({
+        kind: "delta",
+        result: { status: "committed", hasMore: false, stats, hydrationRequested: false, emailAdvanced: false },
+      }),
     ).toBeNull();
     expect(
       summarizeJmapAccountTurn({
         kind: "delta",
-        result: { status: "committed", hasMore: false, stats: { ...stats, imported: 1, memberships: 1 }, hydrationRequested: true },
+        result: {
+          status: "committed",
+          hasMore: false,
+          stats: { ...stats, imported: 1, memberships: 1 },
+          hydrationRequested: true,
+          emailAdvanced: true,
+        },
       }),
     ).toEqual({ pass: "delta", ...stats, imported: 1, memberships: 1 });
     expect(summarizeJmapAccountTurn({ kind: "scan", result: { status: "delta_required" } })).toEqual({

@@ -67,8 +67,9 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
     await attachmentExtractionRuntime.start();
     await scheduledMailRuntime.start();
-    await jmapAccountRuntime.start();
     await imapPushRuntime.start();
+    // Last: a failure to create its worker comes after every IMAP part started.
+    await jmapAccountRuntime.start();
   },
   stop: () =>
     stopRuntimeResources([

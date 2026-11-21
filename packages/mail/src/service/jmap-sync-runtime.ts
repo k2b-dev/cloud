@@ -9,6 +9,7 @@ import {
   type JmapEmailDelta,
   type JmapMailboxDelta,
   JmapReconciliationRequiredError,
+  readJmapAccountQuiet,
   readJmapEmailDelta,
   readJmapMailboxDelta,
 } from "./connectors/jmap-delta";
@@ -61,7 +62,9 @@ export type JmapAccountCommitResult =
   | { status: "committed"; hasMore: boolean; stats: Stats; hydrationRequested: boolean }
   | SupersededResult;
 export type JmapAccountSyncResult =
-  | JmapAccountCommitResult
+  /** `emailAdvanced`: the commit moved the stored Email state on. */
+  | (Extract<JmapAccountCommitResult, { status: "committed" }> & { emailAdvanced: boolean })
+  | SupersededResult
   /** `axis` names the rejected state: a mailbox state calls for a repair, an Email state for a reconciliation. */
   | { status: "reconciliation_required"; cause: JmapReconciliationRequiredError["cause"]; axis: "mailbox" | "email" };
 /** `retry`: a state moved while the start snapshot was read; nothing was written. */
@@ -678,28 +681,19 @@ async function confirmQuietJmapAccount(params: Account, beforeState: JmapSyncSta
   return (row?.settled ?? 0) > 0;
 }
 
-/** Both deltas are empty and neither state moved: a commit would change nothing. */
-const quietBatch = (batch: Batch, beforeState: JmapSyncState): boolean =>
-  batch.kind === "email" &&
-  batch.mailboxState.oldState === beforeState.mailboxState &&
-  batch.mailboxState.newState === beforeState.mailboxState &&
-  batch.delta.oldState === beforeState.emailState &&
-  batch.delta.newState === beforeState.emailState &&
-  !batch.delta.hasMoreChanges &&
-  batch.delta.createdIds.length + batch.delta.updatedIds.length + batch.delta.destroyedIds.length === 0;
-
 /**
  * A single bounded page. Folders always catch up before any email page is read.
  *
  * The caller holds the mailbox's provider lease, as the IMAP sync does: the lease keeps credential,
  * binding and mailbox administration, which lock the mailbox first, away from this commit.
  *
- * With `quiet`, the account job's pass, both deltas are read before any fence: a quiet account
- * (both empty, states unchanged) is confirmed by one statement without a fence or a run, unless a
- * sync command waits for a fresh checkpoint (`awaited`). Any other account claims the fence and
- * reads again after the claim, so a completed run covers what the server held when it started. A
- * read that fails before the fence still leaves a failed run, as the IMAP quiet check does. Without
- * `quiet`, every pass claims the fence first.
+ * With `quiet`, the account job's pass, a small probe asks both states before any fence, without
+ * reading any object (`readJmapAccountQuiet`): a quiet account (neither state moved, no ID) is
+ * confirmed by one statement without a fence or a run, unless a sync command waits for a fresh
+ * checkpoint (`awaited`). Any other account claims the fence and then reads its page once, so a
+ * completed run covers what the server held when it started; nothing the probe saw is committed.
+ * A probe that fails still leaves a failed run, as the IMAP quiet check does, and a state the probe
+ * finds rejected reports its axis. Without `quiet`, every pass claims the fence first.
  */
 export async function syncJmapAccountDelta(
   params: Account & Network & PreRead & { quiet?: { awaited: boolean } },
@@ -741,21 +735,33 @@ export async function syncJmapAccountDelta(
     throw error;
   };
   if (params.quiet && !params.quiet.awaited) {
-    let quiet: boolean;
+    // The probe's failure ends a run of its own; an aborted pass may have lost its lease: it writes nothing.
+    const recordFailedProbe = async (code: string) => {
+      if (params.signal.aborted) return;
+      await claimAccountFence(params, "incremental")
+        .then((claimed) => claimed?.finish(code, "failed"))
+        .catch(() => undefined);
+    };
+    let probe: Awaited<ReturnType<typeof readJmapAccountQuiet>>;
     try {
-      quiet = quietBatch((await readBatch()).batch, beforeState);
+      probe = await readJmapAccountQuiet(
+        params.session,
+        params.authorization,
+        params.accountId,
+        { mailboxState, emailState },
+        params.signal,
+        params.transport,
+      );
     } catch (error) {
-      // An aborted pass may have lost its lease: it writes nothing.
-      if (!params.signal.aborted) {
-        const code = error instanceof JmapReconciliationRequiredError ? error.code : "JMAP_SYNC_FAILED";
-        await claimAccountFence(params, "incremental")
-          .then((claimed) => claimed?.finish(code, "failed"))
-          .catch(() => undefined);
-      }
-      return failed(error);
+      await recordFailedProbe("JMAP_SYNC_FAILED");
+      throw error;
     }
-    if (quiet && (await confirmQuietJmapAccount(params, beforeState)))
-      return { status: "committed", hasMore: false, stats: emptyStats(), hydrationRequested: false };
+    if ("rejected" in probe) {
+      await recordFailedProbe("JMAP_RECONCILIATION_REQUIRED");
+      return { status: "reconciliation_required", cause: probe.cause, axis: probe.rejected };
+    }
+    if (probe.quiet && (await confirmQuietJmapAccount(params, beforeState)))
+      return { status: "committed", hasMore: false, stats: emptyStats(), hydrationRequested: false, emailAdvanced: false };
   }
   const claimed = await claimAccountFence(params, "incremental");
   if (!claimed) return { status: "superseded", cause: "account_changed" };
@@ -763,9 +769,13 @@ export async function syncJmapAccountDelta(
   try {
     const { batch, folderPending } = await readBatch();
     const result = await commitJmapAccountBatch({ ...params, fence, beforeState, batch });
-    if (result.status === "superseded") await finish("JMAP_SYNC_SUPERSEDED", "stale_fence");
+    if (result.status === "superseded") {
+      await finish("JMAP_SYNC_SUPERSEDED", "stale_fence");
+      return result;
+    }
+    const emailAdvanced = batch.kind === "email" && batch.delta.newState !== batch.delta.oldState;
     // Even the final folder page leaves the email axis for the next call.
-    return result.status === "committed" && folderPending ? { ...result, hasMore: true } : result;
+    return { ...result, hasMore: result.hasMore || folderPending, emailAdvanced };
   } catch (error) {
     await finish(error instanceof JmapReconciliationRequiredError ? error.code : "JMAP_SYNC_FAILED", "failed");
     return failed(error);

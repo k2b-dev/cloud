@@ -8,7 +8,7 @@ import { mailCapabilities } from "../capabilities";
 import { newShortId } from "../lib/short-id";
 import { buildFolderIdentityIndexes, migrate } from "../migrate";
 import { type JmapSyncState, readJmapSyncState } from "./connectors/jmap-account-state";
-import { JMAP_CORE } from "./connectors/jmap-client";
+import { JMAP_CORE, type JmapInvocation } from "./connectors/jmap-client";
 import type { JmapEmailSnapshot } from "./connectors/jmap-email";
 import { createJmapFixture, fixtureEmail, fixtureMailbox } from "./connectors/jmap-fixture";
 import type { JmapTransportDependencies } from "./connectors/jmap-transport";
@@ -17,6 +17,7 @@ import { JMAP_RATE_LIMIT_MAX_MS, jmapCooldownMs } from "./jmap-account-failure";
 import { jmapAccountRuntime, runJmapAccountJob } from "./jmap-account-job";
 import { mailLive } from "./live";
 import { type JmapScopeEvidence, jmapScopeFingerprint } from "./provider-identity";
+import * as providerLeases from "./provider-operation-lock";
 import {
   acquireProviderLease,
   mailProviderOperationMutex,
@@ -287,9 +288,9 @@ suite("JMAP account job", () => {
     try {
       await jmapAccountRuntime.start();
       for (let index = 0; index < 3; index++) expect(await submitJmapAccountJob(input), `submit ${index}`).toBeTrue();
-      const deadline = Date.now() + 30_000;
+      const deadline = performance.now() + 30_000;
       while (entered === 0) {
-        if (Date.now() > deadline) throw new Error("drain: the turn never started");
+        if (performance.now() > deadline) throw new Error("drain: the turn never started");
         await Bun.sleep(25);
       }
       expect(
@@ -297,12 +298,11 @@ suite("JMAP account job", () => {
         "coalesced: the running job holds the key",
       ).toBeTrue();
       expect(await leaseFree(), "running: the turn holds the provider lease").toBeFalse();
-      let stopped = false;
-      const stopping = jmapAccountRuntime.stop().then(() => {
-        stopped = true;
-      });
-      await Promise.resolve();
-      expect(stopped, "drain: waits for the running turn").toBeFalse();
+      const stopping = jmapAccountRuntime.stop();
+      // Stopping takes no new turn and leaves the running one alone: it still hangs in its pass
+      // and holds the lease until it ends.
+      expect(entered, "stopping: the turn is still in its pass").toBe(1);
+      expect(await leaseFree(), "stopping: the running turn still holds the lease").toBeFalse();
       gate.resolve();
       await stopping;
       expect(entered, "one turn for every submission").toBe(1);
@@ -393,7 +393,20 @@ suite("JMAP account job", () => {
       next: { phase: "delta" },
       delayMs: 0,
     });
-    expect(await turn("delta"), "repeated: a repair").toMatchObject({
+    // The repair's snapshot sees the mailbox state move: nothing was repaired yet.
+    let moves = 0;
+    source.f.controls.transform = ([name, args, id]) =>
+      name === "Mailbox/get" && Array.isArray(args.list) && args.list.length === 0
+        ? [name, { ...args, state: `moved-${++moves}` }, id]
+        : [name, args, id];
+    expect(await turn("delta"), "repeated: a repair, which must retry").toMatchObject({
+      result: { kind: "start", reason: "repair", result: { status: "retry" } },
+      next: { phase: "scan" },
+      delayMs: 5_000,
+    });
+    expect((await turn("scan")).result, "no scan yet: the delta goes first").toMatchObject({ kind: "deferred", code: "JMAP_PHASE" });
+    source.f.controls.transform = undefined;
+    expect(await turn("delta"), "the next report tries the repair again instead of failing").toMatchObject({
       result: { kind: "start", reason: "repair", result: { status: "committed" } },
       next: { phase: "scan" },
     });
@@ -408,8 +421,83 @@ suite("JMAP account job", () => {
       () => null,
       (error: unknown) => error,
     );
-    expect(codeOf(failure), "third report: the attempt fails").toBe("JMAP_FOLDERS_UNRESOLVED");
-    expect((await health())?.mailbox, "third report: visible").toBe("degraded");
+    expect(codeOf(failure), "a report after the committed repair: the attempt fails").toBe("JMAP_FOLDERS_UNRESOLVED");
+    expect((await health())?.mailbox, "after the committed repair: visible").toBe("degraded");
+  }, 60_000);
+
+  /** Starts a repair on an initialized account, so a scan runs. */
+  const runningScan = async () => {
+    await initialize();
+    source.f.methodErrors.set("Mailbox/changes", "invalidArguments");
+    expect((await turn("delta")).result, "repair started").toMatchObject({
+      kind: "start",
+      reason: "repair",
+      result: { status: "committed" },
+    });
+    source.f.methodErrors.clear();
+  };
+  /** One scan turn that yields to the delta, then the delta turn after it. */
+  const yieldRound = async (label: string) => {
+    expect(await turn("scan"), `${label}: the scan yields`).toMatchObject({
+      result: { kind: "scan", result: { status: "delta_required" } },
+      next: { phase: "delta" },
+      delayMs: 0,
+    });
+    expect(await turn("delta"), `${label}: the delta, then the scan again`).toMatchObject({
+      result: { kind: "delta", result: { status: "committed" } },
+      next: { phase: "scan" },
+    });
+  };
+
+  test("state mismatch: a scan that keeps yielding to a delta that moves nothing fails visibly; moving the Email state resets", async () => {
+    await runningScan();
+    // A server whose Email/get state never equals its Email/changes state.
+    source.f.controls.getState = "drifted";
+    await yieldRound("first");
+    await yieldRound("second");
+    // New mail moves the Email state on: the count starts again.
+    change(message("FRESH", "45"));
+    await yieldRound("new mail");
+    // The new-mail round counted once before its delta reset the count: four more rounds pass, the
+    // fifth yield in a row fails.
+    for (const round of ["after reset 1", "after reset 2", "after reset 3", "after reset 4"]) await yieldRound(round);
+    const failure = await turn("scan").then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(codeOf(failure), "at the restart limit: the attempt fails").toBe("JMAP_SCAN_STATE_MISMATCH");
+    expect((await health())?.mailbox, "visible").toBe("degraded");
+  }, 60_000);
+
+  test("start retry: waits along the backoff, fails visibly after the last attempt; a committed start resets", async () => {
+    // Every snapshot sees the mailbox state move between its first and last read.
+    let moves = 0;
+    const moving = ([name, args, id]: JmapInvocation): JmapInvocation =>
+      name === "Mailbox/get" && Array.isArray(args.list) && args.list.length === 0
+        ? [name, { ...args, state: `moved-${++moves}` }, id]
+        : [name, args, id];
+    source.f.controls.transform = moving;
+    const delays: Array<number | null> = [];
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const retried = await turn("scan");
+      expect(retried.result, `retry ${attempt + 1}`).toMatchObject({ kind: "start", reason: "initial", result: { status: "retry" } });
+      delays.push(retried.delayMs);
+    }
+    expect(delays, "backoff").toEqual([5_000, 10_000, 20_000, 40_000, 40_000]);
+    const failure = await turn("scan").then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(codeOf(failure), "after the last attempt").toBe("JMAP_SCAN_START_UNSTABLE");
+    source.f.controls.transform = undefined;
+    expect((await turn("scan")).result, "a start that commits").toMatchObject({ kind: "start", result: { status: "committed" } });
+    // The next start that retries waits the first delay again.
+    source.f.methodErrors.set("Mailbox/changes", "invalidArguments");
+    source.f.controls.transform = moving;
+    expect(await turn("delta"), "reset: the first delay again").toMatchObject({
+      result: { kind: "start", reason: "repair", result: { status: "retry" } },
+      delayMs: 5_000,
+    });
   }, 60_000);
 
   test("quiet: no fence, no run, sync time at most once a minute; a waiting command takes the fenced commit", async () => {
@@ -437,6 +525,21 @@ suite("JMAP account job", () => {
     expect(await fenceToken(), "awaited: the fenced commit").toBe((token ?? 0) + 1);
     expect(await runs(), "awaited: an empty run leaves no trace").toEqual(before);
   }, 60_000);
+
+  test("probe: a quiet turn asks for no Email; a turn with new mail asks for it in exactly one request", async () => {
+    await initialize();
+    const getRequests = () => source.f.requests.filter((request) => request.calls?.some(([name]) => name === "Email/get")).length;
+    const quietBefore = getRequests();
+    expect((await turn("delta")).result, "quiet").toMatchObject({ kind: "delta", result: { status: "committed", stats: { imported: 0 } } });
+    expect(getRequests() - quietBefore, "quiet: no Email/get").toBe(0);
+    change(message("ONCE", "30"));
+    const newBefore = getRequests();
+    expect((await turn("delta")).result, "new mail").toMatchObject({
+      kind: "delta",
+      result: { status: "committed", stats: { imported: 1 } },
+    });
+    expect(getRequests() - newBefore, "new mail: Email/get once, after the fence").toBe(1);
+  }, 30_000);
 
   test("DATA-13: statements of a quiet turn, a turn with one new message and a busy turn", async () => {
     await initialize();
@@ -522,9 +625,9 @@ suite("JMAP account job", () => {
     const wakes = captureWakes();
     try {
       const first = turn("delta");
-      const deadline = Date.now() + 10_000;
+      const deadline = performance.now() + 10_000;
       while (sessions === 0) {
-        if (Date.now() > deadline) throw new Error("coalescing: first turn missing");
+        if (performance.now() > deadline) throw new Error("coalescing: first turn missing");
         await Bun.sleep(10);
       }
       expect((await turn("delta")).result, "second: busy").toMatchObject({ kind: "deferred", code: "SYNC_BUSY" });
@@ -566,9 +669,9 @@ suite("JMAP account job", () => {
         return undefined;
       };
       const running = turn("scan");
-      const deadline = Date.now() + 10_000;
+      const deadline = performance.now() + 10_000;
       while (!waiting) {
-        if (Date.now() > deadline) throw new Error("lease: turn missing");
+        if (performance.now() > deadline) throw new Error("lease: turn missing");
         await Bun.sleep(10);
       }
       expect(await leaseFree(), "turn: holds the barrier's lease").toBeFalse();
@@ -606,21 +709,36 @@ suite("JMAP account job", () => {
     expect(source.f.requests, "no request").toHaveLength(requests);
   }, 30_000);
 
-  for (const [name, retryAfter, expected] of [
-    ["seconds", "30", 30_000],
-    ["date", new Date(at.getTime() + 120_000).toUTCString(), 120_000],
-    ["above the cap", "86400", JMAP_RATE_LIMIT_MAX_MS],
+  // A date names a whole second; whether `setSystemTime` freezes the clock or lets it run, the wait
+  // is the time from the job's own reading of the clock to that second, so it lies between the
+  // time left when the turn has ended and that plus the turn's own duration.
+  for (const [name, plan] of [
+    ["seconds", () => ({ header: "30", range: () => [30_000, 30_000] as const })],
+    [
+      "date",
+      () => {
+        const target = Math.ceil(Date.now() / 1_000) * 1_000 + 120_000;
+        return { header: new Date(target).toUTCString(), range: () => [target - Date.now(), target - Date.now() + 10_000] as const };
+      },
+    ],
+    ["above the cap", () => ({ header: "86400", range: () => [JMAP_RATE_LIMIT_MAX_MS, JMAP_RATE_LIMIT_MAX_MS] as const })],
   ] as const) {
     test(`429 (${name}): the full wait up to its cap, a shared cooldown, no failure`, async () => {
       await initialize();
       const id = await arrive("BODY");
+      const { header, range } = plan();
       source.f.controls.handle = (request) =>
-        request.method === "POST" ? new Response("", { status: 429, headers: { "retry-after": retryAfter } }) : undefined;
-      expect(await turn("delta"), "rate limited: waits as asked").toMatchObject({
-        result: { kind: "deferred", code: "MAIL_RATE_LIMITED", retryAfterMs: expected },
+        request.method === "POST" ? new Response("", { status: 429, headers: { "retry-after": header } }) : undefined;
+      const limited = await turn("delta");
+      expect(limited, "rate limited: waits, no failure").toMatchObject({
+        result: { kind: "deferred", code: "MAIL_RATE_LIMITED" },
         next: { phase: "delta" },
-        delayMs: expected,
       });
+      const [lowest, highest] = range();
+      const waited = limited.delayMs ?? 0;
+      expect(waited >= lowest && waited <= highest, `rate limited: ${waited} ms within ${lowest}..${highest}`).toBeTrue();
+      expect(limited.result.kind === "deferred" && limited.result.retryAfterMs, "the wait the turn reports").toBe(waited);
+      const expected = waited;
       expect(await jmapCooldownMs(source.remoteResourceId), "cooldown set").toBeGreaterThan(expected - 5_000);
       expect(await health(), "no auth or health failure").toEqual(settled);
       expect(await providerBreakerOpenForMs(source.remoteResourceId), "no breaker").toBe(0);
@@ -629,8 +747,21 @@ suite("JMAP account job", () => {
       const held = await turn("delta");
       expect(held.result, "cooldown: a second turn waits").toMatchObject({ kind: "deferred", code: "MAIL_RATE_LIMITED" });
       expect(held.delayMs ?? 0, "cooldown: the rest of the wait").toBeGreaterThan(0);
-      const failure = await hydrate(id);
-      expect(codeOf(failure), "cooldown: hydration waits too").toBe("MAIL_RATE_LIMITED");
+      // The hydration batch waits before it asks for the lease or loads the account.
+      const leases = spyOn(providerLeases, "acquireProviderLease");
+      const loads = spyOn(accountAccess, "loadJmapAccountAccess");
+      try {
+        const failure = await hydrate(id);
+        expect(codeOf(failure), "cooldown: hydration waits too").toBe("MAIL_RATE_LIMITED");
+        expect(
+          leases.mock.calls.filter(([params]) => params.resource === source.remoteResourceId),
+          "cooldown: no lease asked",
+        ).toEqual([]);
+        expect(loads, "cooldown: no account loaded").not.toHaveBeenCalled();
+      } finally {
+        leases.mockRestore();
+        loads.mockRestore();
+      }
       expect(source.f.requests, "cooldown: no request").toHaveLength(requests);
     }, 60_000);
   }
@@ -669,6 +800,9 @@ suite("JMAP account job", () => {
   test("hydration: a 401 records the same login health; a missing source queues the account delta", async () => {
     await initialize();
     const gone = await arrive("GONE");
+    // hydrateMessageBatch calls submitJmapAccountJob inside sync-runtime. A probe in Bun 1.4.4
+    // showed that spyOn on the module namespace also replaces such calls within the same module
+    // (outer() called the mocked inner()); a red here first means that this no longer holds.
     const queued = spyOn(syncRuntime, "submitJmapAccountJob").mockImplementation(async () => true);
     try {
       source.f.emails.splice(
@@ -843,7 +977,7 @@ suite("JMAP account job", () => {
     try {
       const statements = await meter.during(() => turn("delta"));
       expect(slots.mock.calls.length, "one slot per request").toBe(source.f.requests.length - requests);
-      expect(slots.mock.calls.length, "Session and two deltas").toBe(3);
+      expect(slots.mock.calls.length, "the Session and one probe request").toBe(2);
       expect(statements.length, "a quiet turn costs the same with counted slots: they use Valkey only").toBe(before);
     } finally {
       await meter.close();
