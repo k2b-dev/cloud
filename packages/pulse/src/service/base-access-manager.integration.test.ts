@@ -4,7 +4,7 @@ import type { PermissionLevel, Principal } from "@k2b/cloud/server";
 import { inLockOrder } from "../../../../scripts/fixtures/lock-order";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { getBase, grantBaseAccess, revokeBaseAccess, updateBaseAccess } from "./base-management";
+import { checkBaseCreation, getBase, grantBaseAccess, revokeBaseAccess, updateBaseAccess } from "./base-management";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 
 const suite = databaseSuite();
@@ -66,6 +66,48 @@ const expectLastManager = (result: { ok: boolean; error?: { code: string; status
 };
 
 suite("Pulse base keeps a manager", () => {
+  test("normal sharing grants Code View/Edit while base creation and Manage remain refused", async () => {
+    const baseId = await insertBase(),
+      userId = await insertUser(),
+      accountId = crypto.randomUUID();
+    await bind(baseId, { type: "user", userId }, "admin");
+    await sql`INSERT INTO auth.service_accounts(id, name, kind) VALUES (${accountId}::uuid, ${accountId}, 'code')`;
+    try {
+      const granted = await grantBaseAccess({
+        baseId,
+        user: { id: userId },
+        principal: { type: "service_account", serviceAccountId: accountId },
+        permission: "write",
+      });
+      expect(granted.ok).toBe(true);
+      if (!granted.ok) throw new Error(granted.error.message);
+      for (const permission of ["read", "write"] as const) {
+        expect((await updateBaseAccess({ baseId, accessId: granted.data.id, user: { id: userId }, permission })).ok).toBe(true);
+        const [saved] = await sql`SELECT permission FROM auth.access WHERE id = ${granted.data.id}::uuid`;
+        expect(saved.permission).toBe(permission);
+      }
+      expect(
+        (
+          await checkBaseCreation({
+            user: {
+              subject: { type: "service_account", serviceAccountId: accountId },
+              serviceAccount: { kind: "code", appId: null, resourceType: null, resourceId: null },
+              scopes: ["admin"],
+            },
+            agent: true,
+          })
+        ).ok,
+      ).toBe(false);
+      expect(await updateBaseAccess({ baseId, accessId: granted.data.id, user: { id: userId }, permission: "admin" })).toMatchObject({
+        ok: false,
+        error: { status: 400 },
+      });
+      expect((await revokeBaseAccess({ baseId, accessId: granted.data.id, user: { id: userId } })).ok).toBe(true);
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${accountId}::uuid`;
+    }
+  });
+
   test("the only manager can neither lower nor remove their own access", async () => {
     const baseId = await insertBase();
     const userId = await insertUser();

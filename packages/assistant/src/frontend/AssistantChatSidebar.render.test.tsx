@@ -52,7 +52,8 @@ describe('Tab "In this chat", server render', () => {
     expect(html).toContain("Der fertige Bericht: Umsatz je Quartal");
     expect(html).toContain("Interaktives Dashboard zum Filtern");
     expect(html).toContain("Herunterladen");
-    expect(html).toContain("Link kopieren");
+    // Studio apps gave way to Code: no result carries an app link to copy.
+    expect(html).not.toContain("Link kopieren");
     // Working files and sources stay one level deeper: their rows are closed and their contents not rendered.
     expect(html).toContain("2 Bilder");
     expect(html).not.toContain(">für Umsatzbericht Q1-Q3.pdf");
@@ -67,7 +68,7 @@ describe('Tab "In this chat", server render', () => {
   test("keeps the results heading and explains the empty state in a chat without results", () => {
     const html = renderSidebar(emptySidebarSnapshot());
     expect(html).toContain("Ergebnisse");
-    expect(html).toContain("Dateien, Apps und Visualisierungen, die der Assistent für dich erstellt, erscheinen hier.");
+    expect(html).toContain("Dateien, Apps und Visualisierungen, die Gustav für dich erstellt, erscheinen hier.");
     expect(html).not.toContain(">Deine Dateien<");
     expect(html).not.toContain(">Quellen<");
     expect(html).toContain("Kontext");

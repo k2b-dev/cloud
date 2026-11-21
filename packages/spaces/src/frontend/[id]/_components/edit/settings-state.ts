@@ -5,9 +5,10 @@ import { spacesPublicResources } from "@/service/public-resources";
 import type { SpaceSettingsContext, SpaceUserSettings } from "@/settings-context";
 
 export const loadSpaceSettingsContext = async (params: {
-  user: Pick<User, "id">;
+  user: Pick<User, "id"> & Partial<Pick<User, "roles">>;
   spaceId: string;
   settings: SpaceUserSettings;
+  locale?: string;
 }): Promise<Result<SpaceSettingsContext>> => {
   const [existingSpace, permission] = await Promise.all([
     spacesService.space.get({ id: params.spaceId }),
@@ -38,7 +39,12 @@ export const loadSpaceSettingsContext = async (params: {
 
   const actor = spacesService.wormhole.actorForUser(params.user);
   const [access, apiKeys, wormholes, githubTokenConfigured] = await Promise.all([
-    spacesService.access.list({ spaceId: params.spaceId }),
+    spacesService.access.list({
+      spaceId: params.spaceId,
+      canManageTarget: true,
+      cloudAdmin: params.user.roles?.includes("admin"),
+      locale: params.locale,
+    }),
     spacesService.access.apiKeys.list({ spaceId: params.spaceId }),
     spacesService.wormhole.listConfigured({ sourceSpaceId: params.spaceId, actor }),
     spacesService.space.githubToken.has({ id: params.spaceId }),

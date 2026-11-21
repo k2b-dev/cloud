@@ -144,7 +144,7 @@ domTest("housekeeping folds at step level and opens in place; steps a reader wat
     expect(group!.querySelector("summary")?.textContent).toContain("3 steps");
     expect(rest.map((step) => step.querySelector("summary")?.textContent)).toEqual([
       expect.stringContaining("Ran code"),
-      expect.stringContaining("App check"),
+      expect.stringContaining("Checks"),
     ]);
     // Its steps start on the group's text edge, a real level below it.
     expect(group!.getAttribute("data-body-inset")).toBeNull();
@@ -266,7 +266,7 @@ domTest("repeated reads open in place with their title, target and call count", 
     expect(repeat.querySelector("summary")?.textContent).toContain("3 times");
     expect(steps.slice(1).map((step) => step.querySelector("summary")?.textContent)).toEqual([
       expect.stringContaining("Ran code"),
-      expect.stringContaining("App check"),
+      expect.stringContaining("Checks"),
     ]);
     // Its parts start on the row's text edge, a real level below it.
     expect(repeat.getAttribute("data-body-inset")).toBeNull();

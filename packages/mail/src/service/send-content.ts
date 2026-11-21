@@ -83,6 +83,7 @@ export const loadSendContent = async (params: {
   actor: ActorRef;
   context?: MailRequestContext;
   lock?: boolean;
+  edits?: { subject?: string; body?: string };
 }): Promise<Result<{ snapshot: OutboundDraftSnapshot; contentHash: string; source: SendSource }>> => {
   const actorUserId =
     params.actor.kind === "user" ? params.actor.userId : params.actor.kind === "service_account" ? params.actor.delegatedUserId : null;
@@ -160,6 +161,7 @@ export const loadSendContent = async (params: {
     ${params.lock ? params.db`FOR UPDATE OF d, si` : params.db``}
   `;
   if (!draft) return fail(err.badInput("Draft or sender identity is no longer available"));
+  if (draft.origin === "workflow" || draft.delivery_class !== "normal") return fail(err.forbidden("Automatic replies are retired"));
   if (draft.sender_status !== "verified")
     return fail(senderIdentityUnverified(draft.sender_status === "disabled" ? null : draft.from_address));
   if (draft.edit_mode === "shared") {
@@ -193,6 +195,30 @@ export const loadSendContent = async (params: {
     }
   }
   if (actorUserId && !draft.actor_uid) return fail(err.badInput("The delegated compose user is no longer available"));
+  const quote = draft.quote_source
+    ? await loadDraftSourceQuote({
+        quoteSource: draft.quote_source,
+        db: params.db,
+        mailboxId: params.mailboxId,
+        sourceMessageId: draft.source_message_id,
+        access: params.context ? await getMailboxAccess(params.context, params.mailboxId, params.db) : null,
+      })
+    : ok(null);
+  if (!quote.ok) return quote;
+  const base = renderSendContent(draft, quote.data);
+  if (!base.ok || (params.edits?.subject === undefined && params.edits?.body === undefined)) return base;
+  const edited = renderSendContent(
+    { ...draft, subject: params.edits?.subject ?? draft.subject, body_markdown: params.edits?.body ?? draft.body_markdown },
+    quote.data,
+  );
+  return edited.ok ? ok({ ...edited.data, contentHash: base.data.contentHash, source: draft }) : edited;
+};
+
+/** Pure MIME/render snapshot builder, shared by review and atomic send. */
+export const renderSendContent = (
+  draft: SendSource,
+  sourceQuote: string | null,
+): Result<{ snapshot: OutboundDraftSnapshot; contentHash: string; source: SendSource }> => {
   const content = internalDraftEditableContentInputSchema.safeParse({
     senderIdentityId: draft.sender_identity_id,
     signatureTemplateId: draft.signature_template_id,
@@ -214,22 +240,12 @@ export const loadSendContent = async (params: {
   if (!content.data.to.length && !content.data.cc.length && !content.data.bcc.length)
     return fail(err.badInput("At least one recipient is required before sending"));
   const contentId = draft.logo_id ? mailboxLogoContentId(draft.logo_id, draft.from_address) : "";
-  const quote = draft.quote_source
-    ? await loadDraftSourceQuote({
-        quoteSource: draft.quote_source,
-        db: params.db,
-        mailboxId: params.mailboxId,
-        sourceMessageId: draft.source_message_id,
-        access: params.context ? await getMailboxAccess(params.context, params.mailboxId, params.db) : null,
-      })
-    : ok(null);
-  if (!quote.ok) return quote;
   const rendered = renderComposeContent({
     body: draft.signature ? withoutSignatureSegments(content.data.body, draft.signature) : content.data.body,
     format: content.data.format,
     signature: draft.signature,
     quoteSource: draft.quote_source,
-    sourceQuote: quote.data,
+    sourceQuote,
     customCss: draft.custom_css,
     renderLiquid: draft.origin === "user",
     context: {
@@ -272,8 +288,8 @@ export const loadSendContent = async (params: {
     from: { name: draft.display_name, address: draft.from_address },
     replyTo: draft.reply_to,
     envelopeFrom: draft.envelope_sender,
-    useNullEnvelopeSender: draft.delivery_class === "automatic_reply",
-    automaticReply: draft.delivery_class === "automatic_reply",
+    useNullEnvelopeSender: false,
+    automaticReply: false,
     priority: draft.priority,
     requestDeliveryReceipt: draft.request_delivery_receipt,
     requestReadReceipt: draft.request_read_receipt,

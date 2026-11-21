@@ -1,4 +1,4 @@
-import type { AiStoredMessage } from "../types";
+import type { AiCodeAuthoringStop, AiStoredMessage } from "../types";
 
 /**
  * The person stopped the turn: its loop ended as aborted, which only the stop request does; without a loop ending, the
@@ -14,11 +14,18 @@ export const stoppedByPerson = (entries: readonly Pick<AiStoredMessage, "loopDon
  * `no_answer`: the turn ended normally after its steps but left nothing to read, act on, or explain, such as a model
  * that answers with an empty message. An ending never stays silent, so the chat says so and offers to go on.
  */
-export type AiStopNotice = { kind: "output_limit"; reasoning: boolean } | { kind: "stopped" } | { kind: "no_answer" };
+export type AiStopNotice =
+  | { kind: "code_authoring"; state: AiCodeAuthoringStop }
+  | { kind: "automation" }
+  | { kind: "output_limit"; reasoning: boolean }
+  | { kind: "stopped" }
+  | { kind: "no_answer" };
 
 /** Silent truncation guard: every non-normal terminal reason has a message-level explanation. */
 export function aiMessageStopNotice(entry: AiStoredMessage): AiStopNotice | null {
   if (entry.message.role !== "assistant") return null;
+  if (entry.meta?.codeAuthoringStop) return { kind: "code_authoring", state: entry.meta.codeAuthoringStop };
+  if (entry.meta?.automationTurnStop) return { kind: "automation" };
   const reason = entry.stopReason ?? entry.message.stopReason;
   if (!reason || reason === "stop" || reason === "tool_use") return null;
   if (reason === "max_tokens" || reason === "length") {

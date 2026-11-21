@@ -37,6 +37,7 @@ function fixture(events: ProviderEvent[]) {
     details?: AiCallDetails;
   }[] = [];
   const contexts: AiCallContext[] = [];
+  const observed: ({ input: number; output: number; estimated?: boolean } | undefined)[] = [];
   let calls = 0;
   const provider: Provider = {
     name: "fixture",
@@ -49,7 +50,14 @@ function fixture(events: ProviderEvent[]) {
     },
   };
   const lifecycle = {
-    begin: async (_profile: AiModelProfile, context: AiCallContext) => {
+    begin: async (
+      _profile: AiModelProfile,
+      context: AiCallContext,
+      _inputTokens?: number,
+      _requestedOutput?: number,
+      _outputBound?: number,
+      _unmeasuredInput?: boolean,
+    ) => {
       contexts.push(context);
       return { id: crypto.randomUUID(), maxOutputTokens: 100 };
     },
@@ -63,12 +71,25 @@ function fixture(events: ProviderEvent[]) {
     },
     heartbeat: async (_id: string) => {},
   };
-  const wrap = () => inferenceProvider(withProviderErrors(provider), profile, { kind: "chat", task: "chat" }, lifecycle);
+  const wrap = () =>
+    inferenceProvider(
+      withProviderErrors(provider),
+      profile,
+      {
+        kind: "chat",
+        task: "chat",
+        onUsage: (usage) => {
+          observed.push(usage);
+        },
+      },
+      lifecycle,
+    );
   return {
     provider,
     lifecycle,
     wrap,
     booked,
+    observed,
     contexts,
     get calls() {
       return calls;
@@ -85,6 +106,7 @@ test("usage snapshots count once", async () => {
   await drain(f.wrap());
   expect(f.booked.map((b) => b.usage)).toEqual([{ input: 8, output: 2 }]);
   expect(f.contexts.map((c) => c.kind)).toEqual(["chat"]);
+  expect(f.observed).toEqual(f.booked.map((b) => b.usage));
 });
 test("every actual model call is recorded separately", async () => {
   const f = fixture([event]);
@@ -101,6 +123,7 @@ test("rejected admission never invokes provider", async () => {
   };
   await expect(drain(f.wrap())).rejects.toThrow("Background AI");
   expect(f.calls).toBe(0);
+  expect(f.observed).toEqual([]);
 });
 test("accounting completion failure never retries successful inference", async () => {
   const f = fixture([event]);
@@ -109,6 +132,26 @@ test("accounting completion failure never retries successful inference", async (
   };
   await drain(f.wrap());
   expect(f.calls).toBe(1);
+  expect(f.observed).toEqual([{ input: 8, output: 2 }]);
+});
+test("observer failure cannot change inference or book it twice", async () => {
+  const f = fixture([event]);
+  await drain(
+    inferenceProvider(
+      f.provider,
+      profile,
+      {
+        kind: "chat",
+        task: "chat",
+        onUsage: () => {
+          throw new Error("observer");
+        },
+      },
+      f.lifecycle,
+    ),
+  );
+  expect(f.calls).toBe(1);
+  expect(f.booked).toHaveLength(1);
 });
 test("consumer return preserves already reported usage", async () => {
   const f = fixture([event, event]);
@@ -141,6 +184,7 @@ test("normal missing or synthetic zero usage remains unknown", async () => {
     const f = fixture(events);
     await drain(f.wrap());
     expect(f.booked[0]?.usage).toBeUndefined();
+    expect(f.observed).toEqual([undefined]);
   }
 });
 test("early return estimates partial output including final-only tool blocks", async () => {
@@ -160,6 +204,7 @@ test("a stream exception preserves estimated input", async () => {
   expect(f.booked).toHaveLength(1);
   expect(f.booked[0]).toMatchObject({ status: "failed", usage: { estimated: true } });
   expect(f.booked[0]!.usage!.input).toBeGreaterThan(0);
+  expect(f.observed).toEqual(f.booked.map((b) => b.usage));
 });
 test("chunking does not change estimates and encoded file data is excluded", async () => {
   const failure: ProviderEvent = { type: "issue", issue: { kind: "provider_error", message: "lost", retryable: true } };
@@ -180,6 +225,31 @@ test("chunking does not change estimates and encoded file data is excluded", asy
   expect(a.booked).toEqual(b.booked);
   expect(a.booked[0]!.usage!.output).toBe(3);
   expect(a.booked[0]!.usage!.input).toBeLessThan(200);
+});
+test("arguments a lost connection cut off while previewed are charged, and a final call is not charged twice", async () => {
+  const failure: ProviderEvent = { type: "issue", issue: { kind: "provider_error", message: "lost", retryable: true } };
+  const preview = (delta: string): ProviderEvent => ({ type: "tool_args_delta", callId: "call", name: "code_write", delta });
+  const cut = fixture([preview('{"content":"'), preview("x".repeat(388)), failure]);
+  await drain(cut.wrap());
+  expect(cut.booked[0]?.usage).toMatchObject({ estimated: true, output: 100 });
+  // The final call's block repeats the arguments; stopped before its end, they still count once.
+  const json = JSON.stringify({ content: "x".repeat(386) });
+  const final = fixture([
+    preview(json.slice(0, 12)),
+    preview(json.slice(12)),
+    { type: "block_start", blockId: "tool", index: 0, kind: "tool_call", callId: "call", name: "code_write" },
+    { type: "block_delta", blockId: "tool", delta: json },
+    failure,
+  ]);
+  await drain(final.wrap());
+  expect(final.booked[0]?.usage?.output).toBe(Math.ceil(json.length / 4));
+  // Stopped right after the final block started, the previews still count.
+  const started = fixture([
+    preview(json),
+    { type: "block_start", blockId: "tool", index: 0, kind: "tool_call", callId: "call", name: "code_write" },
+  ]);
+  for await (const event of started.wrap().stream(request)) if (event.type === "block_start") break;
+  expect(started.booked[0]?.usage).toMatchObject({ estimated: true, output: Math.ceil(json.length / 4) });
 });
 test("explicit stream abort estimates synthetic zero usage", async () => {
   const f = fixture([{ type: "usage", usage: { input: 0, output: 0, total: 0 }, finishReason: "aborted" }]);
@@ -404,4 +474,23 @@ test("dispatch admission rejection clears reservations without estimated usage",
   expect(f.booked.map((booking) => booking.usage)).toEqual([{ input: 0, output: 0 }]);
   expect(f.booked.every((booking) => booking.status === "failed")).toBe(true);
   expect(f.calls).toBe(0);
+});
+
+test("measured cache reads survive provider accounting snapshots; malformed cache counts never undercharge", async () => {
+  for (const cacheRead of [6, 0, 9, -1, 1.5, NaN]) {
+    const f = fixture([{ type: "usage", usage: { input: 8, output: 2, total: 10, cacheRead } }]);
+    await drain(f.wrap());
+    expect(f.booked[0]?.usage).toEqual({ input: 8, output: 2, ...([6, 0].includes(cacheRead) ? { cacheRead } : {}) });
+  }
+});
+
+test("non-text parts reach shared admission as unmeasured input without changing provider input", async () => {
+  const f = fixture([event]);
+  const begin = spyOn(f.lifecycle, "begin");
+  const input = { messages: [{ role: "user" as const, content: [{ type: "file" as const, data: "encoded", mediaType: "image/png" }] }] };
+  for await (const _ of f.wrap().stream(input)) {
+    /* drain */
+  }
+  expect(begin.mock.calls[0]?.at(5)).toBe(true);
+  begin.mockRestore();
 });

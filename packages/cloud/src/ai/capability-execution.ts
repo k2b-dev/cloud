@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { ToolContext } from "@k2b/nessi";
 import { capabilityActionReceiptIssues, capabilityQueryChecksActionOutcome } from "../_internal/capability-reviews";
 import { type CapabilityDispatchDependencies, dispatchCapability } from "../api/capabilities";
+import { capabilityCallFromTool, capabilityInvocationBody } from "../capabilities/calls";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
   type CapabilityActionCallReview,
@@ -11,15 +12,18 @@ import {
   CapabilityActionReviewDataSchema,
 } from "../contracts/capabilities";
 import type { RequestActor, RequestAuthority } from "../server";
-import { isAppSessionActor } from "../server/actor";
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import { isAccountExpired } from "../services/account-model";
 import { accounts } from "../services/accounts";
+import { panelContextConsent } from "../services/panel-context-consent";
 import { withoutAdminRole } from "../services/session/user";
 import { LOCALE_HEADER } from "../shared/locale";
 import type { AiActionCheck } from "./action-review";
 import type { AiCapabilityCatalogEntry } from "./capabilities";
 import { AiCapabilityExecutionError } from "./capability-result";
+import { runPlaceProvider } from "./place-provider";
+import type { AiPlaceToolDependencies } from "./place-tools";
+import { aiConversations } from "./store";
 import { aiToolAudit } from "./tool-audit";
 import type { AiConversationService } from "./types";
 
@@ -57,17 +61,6 @@ export const resolveAiCapabilityActor = async (input: {
   return { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id }, credentialKind: "session", scopes: [] };
 };
 
-/**
- * Whether `writer` may add text to a turn or queued message that runs as `stored`. Text added there runs with the
- * stored actor's authority, so the writer must not be weaker: a mobile app session may only write into turns started
- * in the app. Other callers, such as `cld`, keep their access.
- */
-export const mayWriteIntoAiTurn = (writer: RequestActor, stored: RequestActor | undefined): boolean =>
-  !isAppSessionActor(writer) || isAppSessionActor(stored);
-
-/** The `403` message when {@link mayWriteIntoAiTurn} refuses. */
-export const AI_TURN_WRITE_FORBIDDEN = "This was started outside the Cloud app. Continue it where it was started.";
-
 const idempotencyKey = (conversationId: string, callId: string): string =>
   `ai-${createHash("sha256").update(`${conversationId}\0${callId}`).digest("hex")}`;
 
@@ -100,6 +93,8 @@ const parseCapabilityResponse = async (response: Response, dispatched: boolean):
 };
 
 type AiCapabilityCall = {
+  /** Set only for the server-authored first Query of a choice turn. */
+  origin?: "choice";
   conversationId: string;
   turnId?: string;
   authority: AiCapabilityAuthority;
@@ -114,6 +109,7 @@ type AiCapabilityCall = {
   traceToolCall?: boolean;
   dependencies?: CapabilityDispatchDependencies & {
     dispatch?: typeof dispatchCapability;
+    place?: AiPlaceToolDependencies;
   };
 };
 
@@ -121,9 +117,40 @@ const dispatchAiCapability = async (
   input: Omit<AiCapabilityCall, "context"> & { context: Pick<ToolContext, "callId" | "signal"> },
   review: boolean,
 ): Promise<unknown> => {
+  if (input.origin === "choice" && input.entry.kind !== "query") throw new Error("Choices can only execute Queries.");
   if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.authority.actor.user.id) {
     throw new Error("Cloud capability authority is inconsistent.");
   }
+  if (input.entry.place) {
+    try {
+      const dependencies = input.dependencies?.place;
+      const store = dependencies?.store ?? aiConversations;
+      input.authority = await resolveAiCapabilityActor({
+        conversationId: input.conversationId,
+        persistedActor: input.authority.actor,
+        store,
+        getUser: dependencies?.getUser,
+      });
+      const consent = await (dependencies?.getConsent ?? panelContextConsent.get)(input.authority.actor.user.id, "assistant");
+      if (!consent?.allowed) throw new Error("Place consent is not allowed");
+      const conversation = await store.getConversation({ conversationId: input.conversationId });
+      const ref = conversation?.place?.ref;
+      if (!ref || ref.type !== input.entry.place.type || ref.id !== input.entry.place.id) throw new Error("Place binding changed");
+      const place = await (dependencies?.provider ?? runPlaceProvider)(input.authority, ref, {
+        ...dependencies?.providerOptions,
+        locale: input.locale,
+        signal: input.context.signal,
+      });
+      if ("unavailable" in place || !place.tools.includes(input.entry.operation.localId)) throw new Error("Place tool no longer available");
+    } catch (error) {
+      if (input.context.signal.aborted) throw error;
+      throw new AiCapabilityExecutionError("PLACE_REJECTED", 403, "This place tool is no longer available for the person.");
+    }
+  }
+  const body =
+    input.entry.operation.target !== undefined || input.entry.operation.refs !== undefined
+      ? capabilityInvocationBody(capabilityCallFromTool(input.entry.appId, input.entry.operation, input.args, input.entry.place))
+      : { input: input.args };
   const dispatch = input.dependencies?.dispatch ?? dispatchCapability;
   const headers = new Headers();
   if (input.locale) headers.set(LOCALE_HEADER, input.locale);
@@ -157,12 +184,13 @@ const dispatchAiCapability = async (
   const response = await dispatch({
     request,
     kind: input.entry.kind === "query" ? "queries" : "actions",
-    origin: "assistant",
+    origin: input.origin ?? "assistant",
+    ...(input.entry.place ? { assistantPlace: input.entry.place } : {}),
     ...(input.turnId ? { assistantTurn: { conversationId: input.conversationId, turnId: input.turnId } } : {}),
     review,
     appId: input.entry.appId,
     capabilityId: input.entry.operation.localId,
-    input: input.args,
+    ...body,
     authority: input.authority,
     mandate: input.mandate
       ? {

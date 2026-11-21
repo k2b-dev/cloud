@@ -5,7 +5,7 @@ import { sql } from "../runtime/clients";
 import { coreSettings } from "../services";
 import { logger } from "../services/logging";
 import { normalizeLocale } from "../shared/locale";
-import { parseAiAttachmentMarkers } from "./attachments";
+import { aiUserWordsForModel } from "./chat/message-utils";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { type AiBackgroundMemoryProposal, aiMemories } from "./memories";
 import { type AiMemoryLearningChange, aiMemoryLearningRuns } from "./memory-learning-runs";
@@ -163,6 +163,7 @@ export const listAiMemoryLearningCandidates = async (limit: number, monthlyToken
         AND COALESCE(prefs.memory_learning_enabled, ${AI_MEMORY_LEARNING_DEFAULT_ENABLED})
         AND turn.status = 'completed'
         AND COALESCE(turn.run_config->>'kind', 'chat') = 'chat'
+        AND NOT (turn.run_config ? 'inferenceBudget')
         AND turn.memory_learned_at IS NULL
         AND COALESCE(usage.used_tokens, 0) < ${monthlyTokenBudget}
         AND (
@@ -218,6 +219,7 @@ const turnEligible = async (candidate: Candidate): Promise<boolean> => {
       AND conversation.archived_at IS NULL
       AND turn.status = 'completed'
       AND turn.memory_learned_at IS NULL
+      AND NOT (turn.run_config ? 'inferenceBudget')
   `;
   return Boolean(row);
 };
@@ -235,14 +237,17 @@ export const buildMemoryLearningTranscript = (messages: AiStoredMessage[]): stri
   messages
     .flatMap((stored) => {
       const message = stored.message;
-      if (stored.kind !== "message" || message.role !== "user" || stored.meta?.agentMessage || stored.meta?.scheduledTask) return [];
-      return message.content.flatMap((part) => {
-        if (typeof part === "string") return part.trim() ? [part.trim()] : [];
-        if (part.type !== "text") return [];
-        const text = parseAiAttachmentMarkers(part.text).text.trim();
-        if (!text || text.startsWith("[Attached Cloud resource ")) return [];
-        return [text];
-      });
+      if (
+        stored.kind !== "message" ||
+        message.role !== "user" ||
+        stored.meta?.agentMessage ||
+        stored.meta?.scheduledTask ||
+        stored.meta?.codeOrigin
+      )
+        return [];
+      // Only the person's own visible words are evidence: never a quote, an attached item, or a marker.
+      const text = aiUserWordsForModel(stored);
+      return text ? [text] : [];
     })
     .join("\n\n");
 
@@ -262,7 +267,8 @@ const loadTurnEvidence = async (candidate: Candidate): Promise<TurnEvidence> => 
     listAiTurnWorkflowEvidence(candidate.userId, candidate.turnId),
   ]);
   const firstUser = messages.find(
-    (message) => message.message.role === "user" && !message.meta?.agentMessage && !message.meta?.scheduledTask,
+    (message) =>
+      message.message.role === "user" && !message.meta?.agentMessage && !message.meta?.scheduledTask && !message.meta?.codeOrigin,
   );
   return {
     candidate,
@@ -377,6 +383,7 @@ const workflowPatternInput = async (
         JOIN ai.conversations conversation ON conversation.id = turn.conversation_id
         WHERE turn.id = ${turnId}::uuid AND conversation.created_by_user_id = ${pattern.userId}::uuid
           AND conversation.archived_at IS NULL
+          AND NOT (turn.run_config ? 'inferenceBudget')
       `;
       if (!row) return null;
       return loadTurnEvidence({

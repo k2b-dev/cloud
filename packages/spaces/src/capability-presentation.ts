@@ -2,6 +2,12 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
 export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
+  results: {
+    "task.create": { countText: "Tasks created", targetType: "item", kind: "task", text: "Created {target}" },
+    "task.update": { countText: "Tasks updated", targetType: "item", kind: "task", text: "Updated {target}" },
+    "event.create": { countText: "Events created", targetType: "item", kind: "event", text: "Created {target}" },
+    "item.tags.set": { countText: "Item tags updated", targetType: "item", kind: "item", text: "Updated tags on {target}" },
+  },
   // What a finished Query did, named in the chat's step list; each German translation gives its own `doneTitle`.
   doneTitles: {
     "space.containers": "Listed discussion containers",
@@ -100,6 +106,26 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "space.managers": {
+          title: "Verwaltende ermitteln",
+          description: "Eine begrenzte Seite von Personen mit aktuellen Verwaltungsrechten ermitteln.",
+          input: {
+            id: "Öffentliche ID des Eintrags.",
+            afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
+            userId: "Nur die Verwaltungsrechte dieser Person prüfen.",
+            limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50.",
+          },
+        },
+        "item.managers": {
+          title: "Verwaltende ermitteln",
+          description: "Eine begrenzte Seite von Personen mit aktuellen Verwaltungsrechten ermitteln.",
+          input: {
+            id: "Öffentliche ID des Eintrags.",
+            afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
+            userId: "Nur die Verwaltungsrechte dieser Person prüfen.",
+            limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50.",
+          },
+        },
         "space.containers": {
           title: "Diskussionsorte auflisten",
           doneTitle: "Diskussionsorte aufgelistet",
@@ -260,7 +286,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Kalenderziele auflisten",
           doneTitle: "Kalenderziele aufgelistet",
           description:
-            "Listen Sie das beschreibbare Ziel Spaces auf, nachdem calendar-invitation.preview kein verknüpftes Ereignis gefunden hat. Übergeben Sie eine zurückgegebene spaceId an calendar-invitation.import.",
+            "Listen Sie das beschreibbare Ziel Spaces auf, nachdem calendar-invitation.preview kein verknüpftes Ereignis gefunden hat. Übergeben Sie eine zurückgegebene ID als space-Ziel an calendar-invitation.import.",
           input: { cursor: "Fortsetzung der vorherigen Seite.", limit: "Maximal 100 Ziele pro Seite; page.hasMore beachten." },
         },
         "calendar-invitation.preview": {
@@ -507,7 +533,6 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine Aufgaben- oder Terminvorlage in einem Space anlegen, in den der Akteur schreiben darf. Namen sind je Space und Art eindeutig.",
           input: {
-            spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             kind: "Ob die Vorlage Aufgaben oder Termine anlegt.",
             name: "Name der Vorlage, je Space und Art eindeutig.",
             icon: "Tabler-Symbolklasse neben dem Namen, zum Beispiel ti ti-report; null nimmt das Standardsymbol der Art.",
@@ -627,7 +652,6 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             mailboxId: "Quelle Mail Postfach ID.",
             messageId: "Quelle Mail-Nachricht ID.",
             calendar: "Rohinhalt der iCalendar-Einladung, begrenzt auf 96 KiB.",
-            spaceId: "Beschreibbares Ziel Space ID.",
             conversation: "Quell-Mail-Konversation, die mit dem importierten Ereignis verknüpft ist.",
             "conversation.ref": "Stabile Cloud-Ressource reference",
             "conversation.ref.type": "Namespace-Ressourcentyp, der von der besitzenden App deklariert wird.",
@@ -708,6 +732,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "event.create": {
+          result: { targetType: "item", kind: "Termin", text: "{target} angelegt", countText: "Termine angelegt" },
           title: "Kalenderereignis erstellen",
           sentences: {
             approval: "Termin {input.title} am {input.startsAt} erstellen",
@@ -718,7 +743,6 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Einen Termin in einem beschreibbaren Space anlegen, mit gültigem Zeitraum oder mit templateId und einem Datum aus den Vorschlägen von template.list.",
           input: {
-            spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             columnId: "Zielspalte ID, zurückgegeben vom Lesebereich für den ausgewählten Space.",
             title: "Veranstaltungstitel.",
             description: "Optionale Ereignisbeschreibung.",
@@ -819,6 +843,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "item.tags.set": {
+          result: { targetType: "item", kind: "Eintrag", text: "Tags für {target} geändert", countText: "Tags für Einträge geändert" },
           title: "Artikel-Tags festlegen",
           description:
             "Ersetzen Sie die Tags für eine beschreibbare Aufgabe oder ein beschreibbares Ereignis, ohne die anderen Felder zu ändern.",
@@ -844,6 +869,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "task.create": {
+          result: { targetType: "item", kind: "Aufgabe", text: "{target} angelegt", countText: "Aufgaben angelegt" },
           title: "Aufgabe erstellen",
           sentences: {
             approval: "Aufgabe {input.title} erstellen",
@@ -854,7 +880,6 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine Aufgabe in einem ausgewählten beschreibbaren Space und einer Spalte anlegen. Mit templateId füllt die Vorlage jedes weggelassene Feld samt Checkliste; date wählt den Fälligkeitstag aus den Vorschlägen.",
           input: {
-            spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             columnId: "Zielspalte ID, zurückgegeben vom Lesebereich für den ausgewählten Space.",
             title: "Aufgabentitel.",
             description: "Optionale Aufgabenbeschreibung.",
@@ -888,6 +913,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "task.update": {
+          result: { targetType: "item", kind: "Aufgabe", text: "{target} geändert", countText: "Aufgaben geändert" },
           title: "Aufgabe aktualisieren",
           description:
             "Aufgabenfelder ändern. Zuständige einzeln mit addAssigneeIds/removeAssigneeIds ändern. Ein neuer Titel braucht den zuvor gelesenen expectedTitle; bei TITLE_CONFLICT neu laden und prüfen.",

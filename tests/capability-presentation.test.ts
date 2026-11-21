@@ -1,8 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { compileCapabilities, resolveCapabilityManifestPresentation } from "../packages/cloud/src/_internal/capabilities";
-import type { CapabilityDefinitions, CapabilityPresentationTranslation } from "../packages/cloud/src/contracts/capabilities";
+import { chatCapabilities } from "../packages/chat/src/capabilities";
+import {
+  compileCapabilities,
+  isPersonVisibleCapabilityQuery,
+  resolveCapabilityManifestPresentation,
+} from "../packages/cloud/src/_internal/capabilities";
+import { CAPABILITY_REGISTRY_CONFIG } from "../packages/cloud/src/_internal/registry";
+import {
+  CAPABILITY_APP_ID_MAX_LENGTH,
+  type CapabilityDefinitions,
+  type CapabilityPresentationTranslation,
+} from "../packages/cloud/src/contracts/capabilities";
 import { contactsCapabilities } from "../packages/contacts/src/capabilities";
 import { aiCapabilities } from "../packages/core/src/capabilities";
+import { filesCapabilities } from "../packages/filesv2/src/capabilities";
 import { gridsCapabilities } from "../packages/grids/src/capabilities";
 import { mailCapabilities } from "../packages/mail/src/capabilities";
 import { notebooksCapabilities } from "../packages/notebooks/src/capabilities";
@@ -70,8 +81,66 @@ const missingPresentation = (appId: string, definitions: CapabilityDefinitions):
 };
 
 describe("built-in Capability presentation", () => {
+  test("Core's complete registry envelope leaves room for a maximum-size manifest", () => {
+    const { manifest, presentation } = compileCapabilities("core", aiCapabilities);
+    const record = { appId: "x".repeat(CAPABILITY_APP_ID_MAX_LENGTH), manifest, presentation };
+    const envelopeBytes = Buffer.byteLength(JSON.stringify(record)) - Buffer.byteLength(JSON.stringify(manifest));
+    expect(envelopeBytes + 400 * 1024).toBeLessThan(CAPABILITY_REGISTRY_CONFIG.maxValueBytes);
+  });
+
   test.each(builtIns)("%s ships complete German registry and input-schema presentation", (appId, definitions) => {
     expect(missingPresentation(appId, definitions)).toEqual([]);
+  });
+
+  test("Core file helpers localize every input field, including schema variants", () => {
+    const compiled = compileCapabilities("core", aiCapabilities);
+    const localized = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de-DE");
+    const queries = localized.queries.filter((entry) => entry.localId.startsWith("file."));
+    expect(queries).toHaveLength(6);
+
+    for (const query of queries) {
+      const input = compiled.presentation?.translations.de?.queries?.[query.localId]?.input;
+      const visit = (schema: unknown, prefix = ""): void => {
+        if (!schema || typeof schema !== "object" || Array.isArray(schema)) return;
+        const node = schema as Record<string, unknown>;
+        if (node.properties && typeof node.properties === "object" && !Array.isArray(node.properties)) {
+          for (const [field, definition] of Object.entries(node.properties)) {
+            const path = prefix ? `${prefix}.${field}` : field;
+            expect(input?.[path], `${query.localId}.${path}`).toBeTruthy();
+            expect(definition).toHaveProperty("description", input?.[path]);
+            visit(definition, path);
+          }
+        }
+        if (node.items) visit(node.items, `${prefix}[]`);
+        for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
+          if (Array.isArray(node[keyword])) node[keyword].forEach((variant) => visit(variant, prefix));
+        }
+      };
+      visit(query.inputSchema);
+    }
+  });
+
+  test.each([
+    ["chat", chatCapabilities, "conversation.readable"],
+    ["filesv2", filesCapabilities, "entry.readable"],
+  ] as const)("%s translates the generated event-place reader and every input field", (appId, definitions, localId) => {
+    const compiled = compileCapabilities(appId, definitions);
+    const query = compiled.manifest.queries.find((entry) => entry.localId === localId);
+    expect(query?.appOnly).toBe(true);
+    const copy = compiled.presentation?.translations.de?.queries?.[localId];
+    expect(copy?.title).toBeTruthy();
+    expect(copy?.description).toBeTruthy();
+    for (const path of schemaFieldPaths(query?.inputSchema)) expect(copy?.input?.[path]).toBeTruthy();
+  });
+
+  // Files discussions (#3487) put `filesv2.entry` inside `filesv2.folder`. Its upload events keep the entry as their place,
+  // so Code checks that place itself (#3539): the derived reader is generated again, and its input names no container.
+  test("filesv2 derives an event-place reader for its contained entry place without a container input (#3539)", () => {
+    const compiled = compileCapabilities("filesv2", filesCapabilities);
+    const query = compiled.manifest.queries.find((entry) => entry.localId === "entry.readable");
+    expect(query?.appOnly).toBe(true);
+    expect(compiled.manifest.resourceTypes).toContainEqual(expect.objectContaining({ type: "entry", container: "folder", readable: true }));
+    expect(Object.keys((query?.inputSchema.properties ?? {}) as object).sort()).toEqual(["id", "principals"]);
   });
 
   test("resolves declared German contact field descriptions through language ancestors", () => {
@@ -84,4 +153,30 @@ describe("built-in Capability presentation", () => {
     expect(properties?.pronouns?.description).toBe("Bevorzugte Pronomen.");
     expect(properties?.preferredLanguage?.description).toBe("Bevorzugter Sprachcode.");
   });
+});
+
+const codeOwnerApps: ReadonlyArray<[string, CapabilityDefinitions, readonly string[]]> = [
+  ["spaces", spacesCapabilities, ["space.managers", "item.managers"]],
+  ["notebooks", notebooksCapabilities, ["notebook.managers", "note.managers"]],
+  ["contacts", contactsCapabilities, ["book.managers"]],
+  ["grids", gridsCapabilities, ["base.managers"]],
+  ["pulse", pulseCapabilities, ["base.managers"]],
+  ["venue", venueCapabilities, ["venue.managers"]],
+  ["chat", chatCapabilities, ["conversation.managers"]],
+  ["filesv2", filesCapabilities, ["storage.managers", "template.managers"]],
+];
+
+test.each(codeOwnerApps)("%s manager projections are app-only and absent from the person catalog", (appId, definitions, ids) => {
+  const manifest = compileCapabilities(appId, definitions).manifest;
+  expect(
+    manifest.queries
+      .filter((query) => query.localId.endsWith(".managers"))
+      .map((query) => query.localId)
+      .sort(),
+  ).toEqual([...ids].sort());
+  for (const id of ids) {
+    const query = manifest.queries.find((query) => query.localId === id)!;
+    expect(query.appOnly).toBe(true);
+    expect(isPersonVisibleCapabilityQuery(query)).toBe(false);
+  }
 });

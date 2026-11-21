@@ -7,11 +7,13 @@
  */
 
 export { AccessDialog, type AccessDialogProps, type FoundServiceAccount, openAccessDialog } from "./AccessDialog";
+export { AccessLevelMenu, type AccessLevelOption, AccessRowControls, AccessRowFrame, serviceAccountLevels } from "./AccessRow";
 export { AccessSummary } from "./AccessSummary";
 export { type AppAccessEditorProps, default as AppAccessEditor } from "./AppAccessEditor";
 export { accessMemberEntries } from "./access-members";
 export { appAccessAdapter } from "./app-access-adapter";
 export { appAccessMessages } from "./app-access-messages";
+export { codeSharing } from "./code-sharing";
 export { isManagerEntry, type ManagerCandidate } from "./managers";
 export type { AllowedLevel, GrantableLevel } from "./PermissionEditor";
 export { default as PermissionEditor } from "./PermissionEditor";
@@ -23,3 +25,5 @@ export type {
   ResourceApiKeysProps,
 } from "./ResourceApiKeys";
 export { default as ResourceApiKeys } from "./ResourceApiKeys";
+export { ServiceAccountLookup } from "./ServiceAccountLookup";
+export { ServiceAccountSection, serviceAccountLine } from "./ServiceAccountSection";

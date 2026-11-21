@@ -1,0 +1,1278 @@
+/*
+ * The shared Code page (v12): a head with the state in one large word, tabs, and topics as islands. Islands come from
+ * `Section frame="line"`; inside them everything is flat. Sizes stay on the 12 / 13 / 14 / 18 px steps; metadata uses the
+ * quietest text token (`--k2b-text-muted`), since @k2b/ui has no third grey yet.
+ */
+.cloud-code {
+  --cloud-code-line: color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  --cloud-code-bleed: 1.125rem;
+  container-type: inline-size;
+  container-name: cloud-code;
+  display: flex;
+  width: 100%;
+  max-width: 76rem;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+
+/* Head: state, one quiet line, actions on the right. */
+.cloud-code__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.625rem 1rem;
+}
+.cloud-code__head-text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 18rem;
+  flex-direction: column;
+  gap: 0.1875rem;
+}
+.cloud-code__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.875rem;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+}
+.cloud-code__name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-code__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--k2b-text-subtle);
+}
+.cloud-code__state[data-tone="ok"] {
+  color: var(--k2b-success-text);
+}
+.cloud-code__state[data-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
+.cloud-code__state[data-tone="warn"] {
+  color: var(--k2b-warning-text);
+}
+.cloud-code__head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.cloud-code__meta {
+  margin: 0;
+  color: var(--k2b-text-subtle);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-code__meta-link {
+  margin-left: auto;
+  color: var(--k2b-action);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.cloud-code__lede {
+  max-width: 46rem;
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  min-height: 40px;
+}
+.cloud-code__ai-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--k2b-ai-accent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cloud-code__body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Status: sign and word, never colour alone. */
+.cloud-code__st {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  color: var(--k2b-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.cloud-code__st[data-tone="ok"] {
+  color: var(--k2b-success-text);
+}
+.cloud-code__st[data-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
+.cloud-code__st[data-tone="warn"] {
+  color: var(--k2b-warning-text);
+}
+.cloud-code__st[data-tone="ai"] {
+  color: var(--k2b-ai-accent);
+}
+.cloud-code__st[data-tone="muted"] {
+  color: var(--k2b-text-subtle);
+}
+.cloud-code__st-reserve {
+  display: inline-grid;
+  justify-items: end;
+}
+.cloud-code__st-reserve > span {
+  grid-area: 1 / 1;
+}
+.cloud-code__st-reserve > span[aria-hidden="true"] {
+  visibility: hidden;
+}
+.cloud-code__st-shown {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+}
+.cloud-code__spin {
+  animation: cloud-code-spin var(--k2b-motion-spin) linear infinite;
+}
+
+/* Islands: the shared Section frame; the page sets its title and count on the type steps. */
+.cloud-code .cloud-code__island > .k2b-section__header .k2b-section__title {
+  font-size: 14px;
+  line-height: 20px;
+}
+.cloud-code .cloud-code__island > .k2b-section__header .k2b-section__meta {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+/* A list island needs no visible title: the tab names it, the region keeps its name for screen readers. */
+.cloud-code .cloud-code__list-island > .k2b-section__header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* The list starts at the island's edge: no band above the first row (Bild 22). */
+.k2b-ui .cloud-code .k2b-section.cloud-code__list-island[data-frame="line"] {
+  position: relative;
+  gap: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Rows inside an island: tile, title, one quiet line, right column; lines between rows reach the frame. */
+.cloud-code__rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--cloud-code-bleed));
+  padding: 0;
+  list-style: none;
+}
+.cloud-code__row + .cloud-code__row {
+  border-top: 1px solid var(--cloud-code-line);
+}
+/* "What it may do" reads as one list (Bild 19): rows without lines between them. */
+.cloud-code__rows[data-plain] > .cloud-code__row + .cloud-code__row {
+  border-top: 0;
+}
+.cloud-code__row-main {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.625rem var(--cloud-code-bleed);
+  color: inherit;
+  text-decoration: none;
+}
+a.cloud-code__row-main:hover {
+  background: var(--k2b-hover);
+}
+a.cloud-code__row-main:focus-visible {
+  outline: 2px solid var(--k2b-focus-ring);
+  outline-offset: -2px;
+}
+.cloud-code__row[data-current] > .cloud-code__row-main {
+  background: var(--ui-app-selected);
+}
+.cloud-code__tile {
+  width: 26px;
+  height: 26px;
+  color: var(--k2b-text-secondary);
+  font-size: 15px;
+}
+.cloud-code__tile[data-size="sm"] {
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+}
+.cloud-code__tile[data-tile="app"],
+.cloud-code__tile[data-tile="web"] {
+  color: var(--k2b-tint-blue);
+}
+.cloud-code__tile[data-tile="event"],
+.cloud-code__tile[data-tile="key"] {
+  color: var(--k2b-tint-amber);
+}
+.cloud-code__tile[data-tile="data"] {
+  color: var(--k2b-tint-violet);
+}
+.cloud-code__tile[data-tile="page"] {
+  color: var(--k2b-tint-emerald);
+}
+.cloud-code__row-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.0625rem;
+}
+.cloud-code__row-title {
+  color: var(--k2b-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+/* In a pick list every row keeps one height: title and quiet line run out instead of wrapping (Bilder 22, 23). */
+.cloud-code__rows--pick .cloud-code__row-title,
+.cloud-code__rows--pick .cloud-code__row-sub {
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-code__row-sub {
+  color: var(--k2b-text-subtle);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+/* Runs have no icon tile. Keep the result beside the title, also on phones; long text may wrap. */
+.cloud-code__run-rows .cloud-code__row-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.0625rem 0.75rem;
+}
+.cloud-code__run-rows .cloud-code__row-text {
+  display: contents;
+}
+.cloud-code__run-rows .cloud-code__row-title {
+  grid-column: 1;
+  grid-row: 1;
+}
+.cloud-code__run-rows .cloud-code__row-sub {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.cloud-code__run-rows .cloud-code__row-trail {
+  grid-column: 2;
+  grid-row: 1;
+  margin-left: 0;
+  padding-left: 0;
+}
+.cloud-code__run-rows .cloud-code__row-title,
+.cloud-code__run-rows .cloud-code__row-sub {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+.cloud-code__row-sub a,
+.cloud-code__step-text a {
+  color: var(--k2b-action);
+}
+/* In a result only the name is the link. Link text stays running text; only its underline carries the tint (Leitfaden). */
+.cloud-code__feed-text a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--k2b-link-accent);
+  text-underline-offset: 3px;
+}
+.cloud-code__row-trail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.125rem;
+  margin-left: auto;
+  padding-left: 0.75rem;
+  text-align: right;
+}
+.cloud-code__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.cloud-code__row-extra {
+  margin-top: 0.375rem;
+  color: var(--k2b-text-subtle);
+  font-size: 12px;
+}
+.cloud-code__row-error {
+  margin: 0.375rem 0 0;
+  color: var(--k2b-danger-text);
+  font-size: 12px;
+}
+.cloud-code__more,
+.cloud-code__inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k2b-action);
+  font: inherit;
+  cursor: pointer;
+}
+.cloud-code__more {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cloud-code__inline-link {
+  text-decoration: underline;
+}
+.cloud-code__foot {
+  margin: 0.625rem 0 0;
+  color: var(--k2b-text-subtle);
+  font-size: 12px;
+  line-height: 17px;
+}
+.cloud-code__quiet-line {
+  margin: 0.25rem 0;
+  color: var(--k2b-text-subtle);
+  font-size: 13px;
+  line-height: 18px;
+}
+.cloud-code__quiet {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--k2b-text-subtle);
+  font-size: 12px;
+  line-height: 17px;
+}
+.cloud-code__quiet > i {
+  margin-top: 0.125rem;
+}
+.cloud-code__run-summary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.cloud-code__run-summary,
+.cloud-code__run-access {
+  overflow-wrap: anywhere;
+}
+.cloud-code__quiet code,
+.cloud-code__command code {
+  font-family: var(--k2b-font-mono, ui-monospace, monospace);
+}
+
+/*
+ * The situation: a fixed grid, so changing words never move the strip (6b). The first column holds the longest next
+ * run, a date in another year ("Fri, 01/01/2027, 06:00"); the two columns keep their sum, so the strip stays put.
+ */
+.cloud-code__lage {
+  display: grid;
+  grid-template-columns: 14rem 17.5rem minmax(0, 1fr);
+  align-items: end;
+  gap: 0.75rem 1.75rem;
+  padding: 0.875rem 1rem 0.8125rem;
+  border: 1px solid var(--cloud-code-line);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
+}
+.cloud-code__lage--runs {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cloud-code__lage-cell {
+  display: grid;
+  min-width: 0;
+  gap: 0.125rem;
+}
+.cloud-code__lage-value {
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-code__lage-last {
+  display: flex;
+  min-width: 0;
+  min-height: 24px;
+  align-items: center;
+  gap: 0.375rem;
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.cloud-code__lage-last[data-fresh] {
+  animation: cloud-code-fade var(--k2b-motion-settle) ease;
+}
+.cloud-code__lage-what {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cloud-code__runs {
+  display: grid;
+  min-width: 0;
+  gap: 0.4375rem;
+}
+.cloud-code__runs-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+.cloud-code__strip {
+  overflow: hidden;
+}
+.cloud-code__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  color: var(--k2b-text-subtle);
+  font-size: 12px;
+  line-height: 16px;
+}
+.cloud-code__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+}
+
+/* Overview columns: on a narrow page one column, in the mockup's order. */
+.cloud-code__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+}
+.cloud-code__stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+.cloud-code__stack > div:empty {
+  display: none;
+}
+/* Islands never grow past their column: long lines run out with a fade instead of widening the page. */
+.cloud-code__grid > *,
+.cloud-code__stack > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* What it did: two large numbers in fixed columns, then a fixed number of rows of fixed height. */
+.cloud-code__did-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 10.5rem));
+  gap: 0 1.75rem;
+}
+/* A week without counted effects says so where the numbers stand, at their height, above the latest results. */
+.cloud-code__did-counts-none {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--k2b-text-subtle);
+  font-size: 13px;
+  line-height: 18px;
+}
+.cloud-code__did-counts b {
+  display: block;
+  min-width: 4ch;
+  height: 24px;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-code__did-counts span {
+  color: var(--k2b-text-subtle);
+  font-size: 12px;
+  line-height: 16px;
+}
+.cloud-code__feed {
+  display: flex;
+  flex-direction: column;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cloud-code__feed > li {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 13px;
+}
+.cloud-code__feed > li + li {
+  border-top: 1px solid var(--cloud-code-line);
+}
+.cloud-code__feed > li[data-fresh] {
+  animation: cloud-code-slide var(--k2b-motion-enter-row) var(--k2b-ease-out);
+}
+.cloud-code__feed-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-code__feed-time {
+  color: var(--k2b-text-subtle);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* List and detail: two columns; on a phone one of them, switched by the URL. */
+.cloud-code__md {
+  display: grid;
+  grid-template-columns: minmax(17.5rem, 23.75rem) minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+  min-width: 0;
+}
+.cloud-code__list-col,
+.cloud-code__detail-col,
+.cloud-code__detail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.cloud-code__detail {
+  gap: 0.875rem;
+}
+.cloud-code__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.cloud-code__back {
+  display: none;
+  align-items: center;
+  gap: 0.25rem;
+  align-self: flex-start;
+  color: var(--k2b-action);
+  font-size: 13px;
+}
+.cloud-code__detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.cloud-code__detail-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.cloud-code__detail-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+}
+.cloud-code__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cloud-code__steps > li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 0.625rem;
+  padding: 0.3125rem 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+.cloud-code__step-sign {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-secondary);
+  font-size: 12px;
+}
+.cloud-code__step-note {
+  display: block;
+  color: var(--k2b-text-subtle);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* Versions: Gustav's words and the examples with their result words at a fixed width. */
+.cloud-code__story {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+.cloud-code__examples {
+  display: flex;
+  flex-direction: column;
+  margin: 0.375rem calc(-1 * var(--cloud-code-bleed)) 0;
+  padding: 0;
+  list-style: none;
+}
+.cloud-code__examples > li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.625rem;
+  padding: 0.5625rem var(--cloud-code-bleed);
+  border-top: 1px solid var(--cloud-code-line);
+}
+.cloud-code__examples > li > i {
+  margin-top: 0.0625rem;
+  font-size: 18px;
+}
+.cloud-code__examples > li[data-state="succeeded"] > i {
+  color: var(--k2b-success-text);
+}
+.cloud-code__examples > li[data-state="failed"] > i {
+  color: var(--k2b-danger-text);
+}
+.cloud-code__example-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.cloud-code__example-status {
+  min-width: 7rem;
+  justify-content: flex-end;
+}
+.cloud-code__example-diff {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.125rem 0.75rem;
+  margin: 0.375rem 0 0;
+  font-size: 13px;
+}
+.cloud-code__example-diff dt {
+  color: var(--k2b-text-subtle);
+}
+.cloud-code__example-diff dd {
+  margin: 0;
+}
+.cloud-code__example-diff .cloud-code__example-subject {
+  grid-column: 1 / -1;
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+
+/* The short approval card; the lead moves its frame onto ApprovalFrame. */
+.cloud-code__approval-message {
+  margin-top: 0.5rem;
+  display: block;
+}
+.cloud-code__approval-from {
+  color: var(--k2b-text-subtle);
+  font-size: 12px;
+}
+.cloud-code__approval-message p {
+  margin: 0.125rem 0 0;
+  font-size: 13px;
+}
+/* Loading: placeholders at the heights of the lines they stand for (Bild 33). */
+.cloud-code__skeleton {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.cloud-code__skel-title {
+  width: 12rem;
+  height: 24px;
+}
+.cloud-code__skel-heading {
+  position: relative;
+}
+.cloud-code__skel-heading > :not(.k2b-skeleton) {
+  visibility: hidden;
+}
+.cloud-code__skel-heading > .k2b-skeleton {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+}
+.cloud-code__skel-actions {
+  width: 22rem;
+  max-width: 100%;
+  height: 32px;
+}
+.cloud-code__skel-meta {
+  width: 21rem;
+  max-width: 100%;
+  height: 16px;
+}
+.cloud-code__skel-tabs {
+  width: 24rem;
+  max-width: 100%;
+  height: 32px;
+}
+.cloud-code__skel-lede {
+  width: 60%;
+  height: 20px;
+}
+.cloud-code__skel-label {
+  width: 6rem;
+  height: 16px;
+}
+.cloud-code__skel-big {
+  width: 7rem;
+  height: 24px;
+}
+.cloud-code__skel-last {
+  width: 14rem;
+  max-width: 100%;
+  height: 24px;
+}
+.cloud-code__skel-strip {
+  width: 100%;
+  height: 22px;
+}
+.cloud-code__skel-island {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.125rem;
+  border: 1px solid var(--cloud-code-line);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
+}
+.cloud-code__skel-row {
+  display: flex;
+  min-height: 3.75rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+.cloud-code__skel-row > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.cloud-code__skel-tile {
+  width: 26px;
+  height: 26px;
+}
+.cloud-code__skel-line {
+  width: 46%;
+  height: 20px;
+}
+.cloud-code__skel-line--short {
+  width: 64%;
+  height: 18px;
+}
+
+/* Kept for Administration › Code, which shows the same refusal notice and account line. */
+.cloud-code__lead {
+  margin: 0;
+  /* N4-l127-schrift: the account line reads in the muted text colour, as the mockup's note does. */
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+.cloud-code__note-actions,
+.cloud-code__dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.cloud-code__note-actions {
+  margin-top: 0.5rem;
+}
+.cloud-code__refusal {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.cloud-code__refusal .cloud-code__note-actions {
+  margin-top: 0;
+}
+.cloud-code__refusal code {
+  font-family: var(--k2b-font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+/* Under a refusal notice (Administration › Code) the hint has the notice's text size, not the page's meta size. */
+.cloud-code__refusal .cloud-code__quiet {
+  font-size: 14px;
+  line-height: 20px;
+}
+.cloud-code__refusal .cloud-code__quiet code {
+  white-space: nowrap;
+}
+
+/* "Choose another chat" sits under the chat row's quiet line, aligned with its text (a link button has no inline padding). */
+.cloud-code__row-act {
+  display: flex;
+  margin-top: 0.25rem;
+}
+/* Core could not say which chat: a quiet sentence and the way to read it again, on one line where it fits. */
+.cloud-code__row-act--failed {
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+/* The chat chooser: the hint first, then the search and a list that scrolls within the dialog. */
+.cloud-code__chat-chooser {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.cloud-code__chat-chooser-hint {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+.cloud-code__chat-chooser-list {
+  max-height: min(22rem, 50dvh);
+  overflow-y: auto;
+}
+/* While the first list loads: two rows the size of a chat option, in the list's grid. */
+.cloud-code__chat-chooser-skel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+  gap: 0.5rem;
+}
+.cloud-code__chat-chooser-skel-row {
+  height: 3.75rem;
+}
+
+/* Dialogs: switching on, running again, fetching the source, and the secret forms. */
+.cloud-code__dialog-actions {
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+.cloud-code__dialog {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  font-size: 0.875rem;
+}
+.cloud-code__dialog p {
+  margin: 0;
+}
+.cloud-code__progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--k2b-text-secondary);
+}
+.cloud-code__command code {
+  display: block;
+  overflow-x: auto;
+  padding: 0.375rem 0.625rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.cloud-code__confirm-list {
+  margin: 0.25rem 0 0.5rem;
+  padding-left: 1.125rem;
+  font-size: 13px;
+}
+.cloud-code__secret-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.cloud-code__secret-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.cloud-code__secret-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.cloud-code .k2b-button.cloud-code__secret-delete {
+  color: var(--k2b-danger-text);
+}
+.cloud-code__secret-actions-gap {
+  flex: 1 1 auto;
+}
+.cloud-code__secret-name {
+  font-family: var(--k2b-font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+.cloud-code__binding-change {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+.cloud-code__binding-change li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.cloud-code__ok {
+  color: var(--k2b-success-text);
+}
+.cloud-code__bad {
+  color: var(--k2b-danger-text);
+}
+
+/* Motion follows a change of state only, from the shared tokens; reduced motion stands still. */
+@keyframes cloud-code-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes cloud-code-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes cloud-code-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cloud-code__spin,
+  .cloud-code__lage-last[data-fresh],
+  .cloud-code__feed > li[data-fresh] {
+    animation: none;
+  }
+}
+
+@container cloud-code (width < 860px) {
+  .cloud-code__grid {
+    align-items: stretch;
+    display: flex;
+    flex-direction: column;
+  }
+  .cloud-code__stack {
+    display: contents;
+  }
+  .cloud-code__o0 {
+    order: 0;
+  }
+  .cloud-code__o1 {
+    order: 1;
+  }
+  .cloud-code__o2 {
+    order: 2;
+  }
+  .cloud-code__o5 {
+    order: 5;
+  }
+}
+@container cloud-code (width < 760px) {
+  .cloud-code {
+    --cloud-code-bleed: 0.75rem;
+  }
+  .cloud-code__head-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+  .cloud-code__lage {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.75rem 1.25rem;
+    padding: 0.75rem;
+  }
+  .cloud-code__lage .cloud-code__runs {
+    grid-column: 1 / -1;
+  }
+  /* Half a phone is too narrow for the result and its title on one line: the title takes its own lines, at most two,
+     and the cell keeps the height of all three, so a new last run never moves the strip (6b). */
+  .cloud-code__lage-last {
+    flex-wrap: wrap;
+    align-content: flex-start;
+    row-gap: 0;
+    height: calc(24px + 2 * 1.125rem);
+  }
+  .cloud-code__lage-what {
+    display: -webkit-box;
+    flex-basis: 100%;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 1.125rem;
+    white-space: normal;
+  }
+  .cloud-code__did-counts {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.875rem 1.25rem;
+  }
+  .cloud-code__md {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cloud-code__md[data-phone="detail"] > .cloud-code__list-col,
+  .cloud-code__md[data-phone="list"] > .cloud-code__detail-col {
+    display: none;
+  }
+  .cloud-code__md[data-phone="detail"] .cloud-code__back {
+    display: inline-flex;
+  }
+  .cloud-code__row-main {
+    flex-wrap: wrap;
+  }
+  .cloud-code__row-trail {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+    margin-left: 38px;
+    padding-left: 0;
+    text-align: left;
+    flex-basis: 100%;
+  }
+  .cloud-code__examples > li {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+  .cloud-code__examples > li > .cloud-code__example-status {
+    grid-column: 2;
+    justify-content: flex-start;
+    min-width: 0;
+  }
+  .cloud-code__secret-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Loading keeps the content's geometry: two lede lines, the counts' height, rows of the content's height. */
+.cloud-code__skel-lede-block {
+  display: grid;
+  gap: 0;
+  height: 40px;
+}
+.cloud-code__skel-counts {
+  display: grid;
+  grid-template-columns: 10.5rem 10.5rem;
+  height: 3.25rem;
+  align-items: center;
+}
+
+/* No description yet: the same place, one quiet line (6b). */
+.cloud-code__lede--missing {
+  color: var(--k2b-text-subtle);
+  font-size: 13px;
+}
+
+/* The v7 launch stays in place while the command and the latest run change state. */
+.cloud-code__state {
+  display: inline-grid;
+}
+.cloud-code__state > span {
+  display: inline-flex;
+  grid-area: 1 / 1;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cloud-code__state-reserve {
+  visibility: hidden;
+}
+.cloud-code__launch {
+  min-width: 10rem;
+}
+.cloud-code__change-short,
+.cloud-code__paused-reason {
+  display: none;
+}
+.cloud-code__change[data-variant="secondary"] .k2b-button__label > i {
+  color: var(--k2b-ai-accent);
+}
+.cloud-code__run-active {
+  color: var(--k2b-ai-accent);
+}
+.cloud-code__lage-cell:nth-child(2) {
+  min-height: 42px;
+}
+.cloud-code__pages .cloud-code__row-trail {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0.625rem;
+}
+.cloud-code .cloud-code__public-tag {
+  color: color-mix(in srgb, var(--k2b-text-secondary) 65%, var(--k2b-text));
+  background: var(--k2b-hover);
+}
+.cloud-code__skel-sub {
+  width: 64%;
+  height: 18px;
+}
+.cloud-code__skel-status {
+  width: 7rem;
+  height: 18px;
+}
+.cloud-code__skel-run-now {
+  width: 8.5rem;
+  height: 28px;
+}
+.cloud-code__skeleton .cloud-code__tile > i {
+  visibility: hidden;
+}
+.cloud-code__lage--skeleton .cloud-code__lage-cell {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* Two explanatory lines keep the owner/page wording from moving the following content. */
+.cloud-code__may .cloud-code__foot {
+  min-height: 34px;
+}
+.cloud-code__skeleton .cloud-code__foot .k2b-skeleton {
+  height: 34px;
+}
+@container cloud-code (width < 760px) {
+  .cloud-code__head-actions {
+    min-width: 0;
+    flex-wrap: nowrap;
+  }
+  .cloud-code__head-actions > .cloud-code__launch {
+    min-width: 0;
+    flex: 1;
+  }
+  .cloud-code__launch > .k2b-split-button__primary,
+  .cloud-code__launch > .k2b-split-button__primary-menu {
+    flex: 1;
+  }
+  .cloud-code__launch.k2b-dropdown:not(.k2b-split-button) > .k2b-button {
+    width: 100%;
+  }
+  .cloud-code__head-actions .k2b-button,
+  .cloud-code .cloud-code__run-now.k2b-button[data-size="sm"],
+  .cloud-code__pages .cloud-code__row-trail .k2b-button {
+    min-height: 44px;
+  }
+  .cloud-code__skel-actions {
+    width: 100%;
+    height: 44px;
+  }
+  .cloud-code__head-actions .k2b-icon-button {
+    min-width: 44px;
+    width: 44px;
+    flex: 0 0 auto;
+  }
+  .cloud-code__head-actions > .cloud-code__change {
+    flex: 0 0 auto;
+  }
+  .cloud-code__head-actions > .cloud-code__change--alone {
+    flex: 1;
+  }
+  .cloud-code__change-full {
+    display: none;
+  }
+  .cloud-code__change-short {
+    display: inline;
+  }
+  .cloud-code__paused-reason {
+    display: block;
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--k2b-text-subtle);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .cloud-code__lage-cell:nth-child(2) {
+    min-height: 94px;
+  }
+  /* A half-width cell may need two lines for a date in another year; the row's 94 px already hold them. */
+  .cloud-code__lage-cell:first-child > .cloud-code__lage-value {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+  }
+  .cloud-code__lage-cell:nth-child(2) > .cloud-code__meta,
+  .cloud-code__lage--skeleton .cloud-code__lage-cell:nth-child(2) > .cloud-code__skel-label {
+    height: 32px;
+  }
+  /* A failed run adds its count to the caption: reserve its second line before it arrives. */
+  .cloud-code__runs-head {
+    min-height: 32px;
+  }
+  .cloud-code__lage--skeleton .cloud-code__runs > .cloud-code__skel-label:first-child {
+    height: 32px;
+  }
+  .cloud-code__pages .cloud-code__row-trail {
+    grid-column: 2;
+  }
+  .cloud-code__when .cloud-code__row-trail {
+    min-width: 0;
+    max-width: calc(100% - 38px);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+    min-height: 39px;
+  }
+  .cloud-code__lede {
+    min-height: 60px;
+  }
+  .cloud-code__skel-lede-block {
+    height: 60px;
+  }
+  .cloud-code__skel-last {
+    height: calc(24px + 2 * 1.125rem);
+  }
+  .cloud-code__legend {
+    min-height: 36px;
+    align-content: flex-start;
+  }
+  .cloud-code__skel-strip + .cloud-code__skel-label {
+    height: 36px;
+  }
+  .cloud-code__skel-run-now {
+    height: 44px;
+  }
+}

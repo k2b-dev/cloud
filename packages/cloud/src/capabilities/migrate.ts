@@ -33,7 +33,7 @@ export const migrateCloudCapabilities = async (): Promise<void> => {
       started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       completed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       duration_ms INTEGER NOT NULL DEFAULT 0,
-      CONSTRAINT capabilities_executions_origin_check CHECK (origin IN ('assistant', 'mcp', 'http', 'app')),
+      CONSTRAINT capabilities_executions_origin_check CHECK (origin IN ('assistant', 'mcp', 'http', 'app', 'choice')),
       CONSTRAINT capabilities_executions_kind_check CHECK (kind IN ('query', 'action')),
       CONSTRAINT capabilities_executions_actor_kind_check CHECK (actor_kind IS NULL OR actor_kind IN ('user', 'service_account', 'app')),
       CONSTRAINT capabilities_executions_subject_check CHECK (access_subject_type IS NULL OR access_subject_type IN ('user', 'service_account')),
@@ -70,6 +70,15 @@ export const migrateCloudCapabilities = async (): Promise<void> => {
     END IF;
   END $$`.simple();
 
+  await sql`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'capabilities.executions'::regclass
+      AND conname = 'capabilities_executions_origin_check' AND position('''choice''' in pg_get_constraintdef(oid)) = 0) THEN
+      ALTER TABLE capabilities.executions DROP CONSTRAINT capabilities_executions_origin_check;
+      ALTER TABLE capabilities.executions ADD CONSTRAINT capabilities_executions_origin_check
+        CHECK (origin IN ('assistant', 'mcp', 'http', 'app', 'choice'));
+    END IF;
+  END $$`.simple();
+
   // Platform-owned idempotency claims. One row per
   // (app, capability, principal, key); the dispatcher claims before it
   // forwards and resolves the row once the outcome is known. Response bodies
@@ -91,6 +100,10 @@ export const migrateCloudCapabilities = async (): Promise<void> => {
     )
   `.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_capabilities_claims_created ON capabilities.idempotency_claims(created_at)`.simple();
+
+  // Former adapter routing metadata is never a source of authority. Actual shares
+  // stay in auth.access and the target application's ordinary access junction.
+  await sql`DROP TABLE IF EXISTS capabilities.code_access_grants`.simple();
 
   console.log("  ✓ capability execution history");
 };

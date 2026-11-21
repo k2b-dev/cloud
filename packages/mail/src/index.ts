@@ -22,8 +22,7 @@ import {
 import { migrateSharedDrafts } from "./migrate-shared-drafts";
 import { createMailNotificationService } from "./notifications";
 import { router } from "./router";
-import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
-
+import { commandRuntime, mailRuntime } from "./service";
 import { applicationAiRuntime } from "./service/application-ai-runtime";
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
 import { stopDraftDocumentPruning } from "./service/draft-document-log";
@@ -32,6 +31,7 @@ import { retryPendingDraftSendCloses } from "./service/draft-document-send";
 import { draftDocumentSnapshots, stopDraftDocumentSnapshots } from "./service/draft-document-snapshots";
 import { stopDraftDocumentCancellation } from "./service/draft-document-socket-sql";
 import { finishReplyDraftRetirements } from "./service/draft-retirement";
+import { retireMailRuleBroker } from "./service/retired-rule-broker";
 import { stopConversationViewCountCache } from "./service/view-count-cache";
 
 const mailNotifications = createMailNotificationService(app.notifications);
@@ -45,7 +45,6 @@ const stopMailRuntimes = (): Promise<void> =>
     stopConversationViewCountCache,
     () => stopConversationSummaryRuntime(),
     () => mailRuntime.stop(),
-    () => workflowRuntime.stop(),
     applicationAiRuntime.stop,
     () => commandRuntime.stop(),
     () => mailNotifications.stop(),
@@ -79,13 +78,13 @@ const result = await app.start({
     start: async () => {
       try {
         await requireIdentityAccessEvents();
+        await retireMailRuleBroker();
         await finishReplyDraftRetirements();
         await draftDocumentSnapshots.start();
         await mailNotifications.start();
         await mailRuntime.start();
         await commandRuntime.start();
         await applicationAiRuntime.start();
-        await workflowRuntime.start();
         await startConversationSummaryRuntime();
       } catch (startError) {
         try {

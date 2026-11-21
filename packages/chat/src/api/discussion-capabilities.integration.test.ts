@@ -139,8 +139,8 @@ suiteFor(
     expect(forbidden.ok).toBe(false);
     calls.length = 0;
     const editReview = await chatCapabilities.actions["message.edit"].review(
-      { id: first.ref.id, revision: 0, body: "Corrected" },
-      context(author, "edit-review"),
+      { revision: 0, body: "Corrected" },
+      { ...context(author, "edit-review"), target: { type: "chat.message", id: first.ref.id } },
     );
     expect(editReview.ok).toBe(true);
     expect(calls).toEqual(["resource.fetch", "collection.read"]);
@@ -173,8 +173,8 @@ suiteFor(
     expect(mcpEdit.ok && mcpEdit.data.data.via).toBe("mcp");
     calls.length = 0;
     const deleteReview = await chatCapabilities.actions["message.delete"].review(
-      { id: first.ref.id, revision: 2 },
-      context(author, "delete-review"),
+      { revision: 2 },
+      { ...context(author, "delete-review"), target: { type: "chat.message", id: first.ref.id } },
     );
     expect(deleteReview.ok).toBe(true);
     expect(calls).toEqual(["resource.fetch", "collection.read"]);
@@ -268,9 +268,10 @@ suiteFor(
       { ref: item, body: "Agreed.", quotes },
       context(agent, "review"),
     );
-    expect(reviewed.ok && "content" in reviewed.data && reviewed.data.content?.body).toBe(
-      "> disapprove of this plan — Lea Muster\n> quarterly report is — Lea Muster\n\nAgreed.",
-    );
+    expect(reviewed.ok && "view" in reviewed.data && reviewed.data.view?.blocks.slice(0, 2)).toEqual([
+      { kind: "Text", text: "> disapprove of this plan — Lea Muster" },
+      { kind: "Text", text: "> quarterly report is — Lea Muster" },
+    ]);
     const quoted = await postDiscussion({ ref: item, body: "Agreed.", quotes }, context(agent, "quote"));
     if (!quoted.ok) throw new Error("Expected quote");
     const by = { type: "user" as const, id: author.id, name: "Lea Muster" };

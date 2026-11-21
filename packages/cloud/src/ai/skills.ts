@@ -9,9 +9,12 @@ import {
   deleteAccess,
   ensureManagerRemains,
   hasPermission,
+  lockAccessMutationAuthority,
   type PermissionLevel,
   type Principal,
+  updateAccess,
 } from "../server/services/access";
+import { resolveDisplayNames } from "../server/services/access-display";
 import { accessRevision } from "../server/services/access-revision";
 import { evaluateAppAccess, usableAppIds } from "../services/app-access";
 import { logger } from "../services/logging";
@@ -251,6 +254,7 @@ const getRowByName = async (name: string, db: SQL = sql): Promise<SkillRow | nul
  * second connection can exhaust the pool under concurrent requests.
  */
 type SkillAudience = {
+  guest: boolean;
   roles: readonly string[];
   usableAppIds: readonly string[];
   declaredAppIds: readonly string[];
@@ -280,6 +284,7 @@ const subjectRoles = async (subject: AiResourceContext | null, authority: Reques
       : null;
   return {
     roles,
+    guest: (actor?.kind === "user" ? actor.user : actor?.delegatedUser)?.profile === "guest",
     usableAppIds: usable,
     declaredAppIds: apps.filter((app) => app.access !== undefined).map((app) => app.id),
     brokerReadAppIds: usable.filter(
@@ -411,11 +416,12 @@ const requireSkill = async (
   return skill && hasPermission(skill.permission, required) ? skill : null;
 };
 
+// Transaction callers need grant state only; presentation may use other connections and registry I/O.
 const listSkillAccess = async (skillId: string, db: SQL = sql): Promise<AiSkillAccess[]> => {
   const rows = await db<SkillAccessRow[]>`
     SELECT skill_access.short_id, access.user_id, access.group_id, access.service_account_id, access.authenticated_only,
            access.permission, access.created_at,
-           COALESCE(NULLIF(users.display_name, ''), users.uid, groups.name, service_accounts.name) AS display_name,
+           COALESCE(NULLIF(users.display_name, ''), users.uid, groups.name) AS display_name,
            users.avatar_hash, service_accounts.kind AS service_account_kind
     FROM ai.skill_access skill_access
     JOIN auth.access access ON access.id = skill_access.access_id
@@ -489,7 +495,7 @@ const updateSkillAccess = async (skillId: string, accessId: string, permission: 
     after: before.map((entry) => (entry.shortId === accessId ? { ...entry, permission } : entry)),
   });
   if (!guarded.ok) throw new AiSkillLastAdminError();
-  return (await db`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${bound.id}::uuid`).count === 1;
+  return (await updateAccess({ id: bound.id, permission }, db)).ok;
 };
 
 const revokeSkillAccess = async (skillId: string, accessId: string, db: SQL): Promise<boolean> => {
@@ -629,6 +635,7 @@ async function listSkillSummaries(
     LEFT JOIN ai.skill_user_disabled disabled
       ON disabled.skill_id = skill.id AND disabled.user_id = ${userId}::uuid
     WHERE access.permission <> 'none'
+      AND (NOT ${roles.guest} OR skill.name <> 'code-authoring')
       AND ${options.name === undefined ? sql`true` : sql`skill.name = ${options.name}`}
       AND ${options.shortIds === undefined ? sql`true` : sql`skill.short_id = ANY(${toPgTextArray([...options.shortIds])}::text[])`}
       AND (${!options.manageOnly} OR access.permission='admin')
@@ -900,13 +907,15 @@ export const aiSkills = {
     skillId: string,
     subject: AiResourceContext | null,
     authority: RequestAuthority | null = null,
+    locale?: string,
   ): Promise<AiSkillAccess[] | null> {
     const roles = await subjectRoles(subject, authority);
-    return sql.begin(async (tx) => {
+    const entries = await sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id=${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return null;
       return listSkillAccess(skillId, tx);
     });
+    return entries === null ? null : resolveDisplayNames(entries, { canManageTarget: true, locale });
   },
 
   async grantAccess(
@@ -915,14 +924,17 @@ export const aiSkills = {
     input: { principal: Principal; permission: AiSkillPermission },
     expectedAccessRevision?: string,
     authority: RequestAuthority | null = null,
+    locale?: string,
   ): Promise<AiSkillAccess | null> {
     const roles = await subjectRoles(subject, authority);
-    return sql.begin(async (tx) => {
+    const entry = await sql.begin(async (tx) => {
+      if (!subject || !(await lockAccessMutationAuthority({ subject: subject.accessSubject, principal: input.principal }, tx))) return null;
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return null;
       await checkAccessRevision(skillId, expectedAccessRevision, tx);
       return createSkillAccess(skillId, input, tx);
     });
+    return entry ? (await resolveDisplayNames([entry], { canManageTarget: true, locale }))[0]! : null;
   },
 
   async updateAccess(
@@ -935,6 +947,17 @@ export const aiSkills = {
   ): Promise<boolean> {
     const roles = await subjectRoles(subject, authority);
     return sql.begin(async (tx) => {
+      if (
+        !subject ||
+        !(await lockAccessMutationAuthority(
+          {
+            subject: subject.accessSubject,
+            accessId: sql`(SELECT access_id FROM ai.skill_access WHERE skill_id = ${skillId}::uuid AND short_id = ${accessId})`,
+          },
+          tx,
+        ))
+      )
+        return false;
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return false;
       await checkAccessRevision(skillId, expectedAccessRevision, tx);
@@ -951,6 +974,17 @@ export const aiSkills = {
   ): Promise<boolean> {
     const roles = await subjectRoles(subject, authority);
     return sql.begin(async (tx) => {
+      if (
+        !subject ||
+        !(await lockAccessMutationAuthority(
+          {
+            subject: subject.accessSubject,
+            accessId: sql`(SELECT access_id FROM ai.skill_access WHERE skill_id = ${skillId}::uuid AND short_id = ${accessId})`,
+          },
+          tx,
+        ))
+      )
+        return false;
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       if (!row || !(await canMutate(row.id, subject, "admin", tx, roles))) return false;
       await checkAccessRevision(skillId, expectedAccessRevision, tx);
@@ -1044,14 +1078,20 @@ export const aiSkills = {
       return rows[0] ? toAdminSkill(rows[0]) : null;
     },
 
-    listAccess: listSkillAccess,
+    listAccess: async (skillId: string, locale?: string) =>
+      resolveDisplayNames(await listSkillAccess(skillId), { canManageTarget: true, cloudAdmin: true, locale }),
 
-    async grantAccess(skillId: string, input: { principal: Principal; permission: AiSkillPermission }): Promise<AiSkillAccess | null> {
-      return sql.begin(async (tx) => {
+    async grantAccess(
+      skillId: string,
+      input: { principal: Principal; permission: AiSkillPermission },
+      locale?: string,
+    ): Promise<AiSkillAccess | null> {
+      const entry = await sql.begin(async (tx) => {
         const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
         if (!row) return null;
         return createSkillAccess(skillId, input, tx);
       });
+      return entry ? (await resolveDisplayNames([entry], { canManageTarget: true, cloudAdmin: true, locale }))[0]! : null;
     },
 
     async updateAccess(skillId: string, accessId: string, permission: AiSkillPermission): Promise<boolean> {
@@ -1200,6 +1240,7 @@ export const aiSkills = {
       const [row] = await tx<SkillRow[]>`
         SELECT * FROM ai.skills WHERE name = ${name} OR short_id = ${shortId} FOR SHARE
       `;
+      if (roles.guest && row?.name === "code-authoring") return null;
       const skill = await requireSkill(row ?? null, subject, "read", tx, roles);
       if (!skill?.enabled) return null;
       if (name !== null && skill.manualOnly)

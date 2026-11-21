@@ -27,7 +27,6 @@ import { applyDraftTableAction } from "./draft-table-actions";
 import {
   createDeliveryRecoveryDraft,
   createDraft,
-  createWorkflowDraftInTransaction,
   deriveDraftFromMessage,
   discardDraft,
   getDraft,
@@ -234,7 +233,7 @@ suite("Mail document lifecycle boundaries", () => {
     }
   });
 
-  test("derived user drafts inherit shared while workflow authors retain lock editing", async () => {
+  test("derived user drafts inherit shared editing", async () => {
     const supported = spyOn(documentService, "sharedDraftsSupported").mockResolvedValue(true);
     try {
       value(await updateMailbox({ context, mailboxId, draftEditMode: "shared" }));
@@ -252,29 +251,9 @@ suite("Mail document lifecycle boundaries", () => {
         }),
       );
       expect(derived.editMode).toBe("shared");
-      await sql`UPDATE mail.sender_identities SET automation_policy='mailbox' WHERE id=${senderId}::uuid`;
-      const workflow = value(
-        await sql.begin((db) =>
-          createWorkflowDraftInTransaction({
-            db,
-            mailboxId,
-            senderIdentityId: senderId,
-            workflowVersionId: crypto.randomUUID(),
-            draftId: crypto.randomUUID(),
-            to: [{ address: "recipient@example.test" }],
-            cc: [],
-            bcc: [],
-            subject: "Workflow",
-            body: "Workflow body",
-            format: "plain",
-          }),
-        ),
-      );
-      expect(value(await getDraft(context, mailboxId, workflow.id)).editMode).toBe("lock");
     } finally {
       supported.mockRestore();
       value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
-      await sql`UPDATE mail.sender_identities SET automation_policy='disabled' WHERE id=${senderId}::uuid`;
     }
   });
 
@@ -567,6 +546,176 @@ suite("Mail document lifecycle boundaries", () => {
       value(await updateMailbox({ context, mailboxId, draftEditMode: "lock" }));
     }
   });
+
+  test.each([{ subject: "Approved subject" }, { body: "Approved body" }, { subject: "Approved subject", body: "Approved body" }])(
+    "approval edits %j reach every send boundary and undo; retry never reapplies them",
+    async (edits) => {
+      const target = await draft("Base body");
+      const checked = await review(target);
+      const subject = edits.subject ?? "Shared draft";
+      const body = edits.body ?? "Base body";
+      const input = {
+        kind: "send" as const,
+        draftId: target.draftId,
+        senderIdentityId: senderId,
+        expectedDraftRevision: checked.revision,
+        expectedContentHash: checked.contentHash,
+        ...edits,
+        undoSeconds: 60,
+        idempotencyKey: crypto.randomUUID(),
+        safetyApproval: {
+          revision: checked.revision,
+          fingerprint: checked.fingerprint,
+          warningIds: checked.warnings.map((warning) => warning.id),
+        },
+      };
+      const command = value(await createActorCommand({ ...target, input, enqueue: false }));
+      const stored = value(await getDraft(context, mailboxId, target.draftId));
+      expect(stored).toMatchObject({ subject, body, revision: checked.revision + 1 });
+      const [submission] = await sql<{ id: string; draft_snapshot: { subject: string; body: string; revision: number } }[]>`
+      SELECT id, draft_snapshot FROM mail.outbox_submissions WHERE command_id=${command.id}::uuid`;
+      if (!submission) throw new Error("Missing edited submission");
+      expect(submission.draft_snapshot).toMatchObject({ subject, body, revision: stored.revision });
+      const read = value(await readDraftDocument(target));
+      expect(read.fresh.content).toMatchObject({ subject, body });
+      expect(read.durable.content).toMatchObject({ subject, body });
+      const [boundary] = await sql<{ matches: boolean }[]>`SELECT sends.state = drafts.doc_state AS matches
+      FROM mail.draft_document_sends sends JOIN mail.drafts drafts ON drafts.id = sends.draft_id
+      WHERE sends.command_id=${command.id}::uuid`;
+      expect(boundary?.matches).toBeTrue();
+      value(await cancelScheduledSend({ context, mailboxId, scheduledSendId: submission.id, input: { disposition: "draft" } }));
+      const restored = value(await getDraft(context, mailboxId, target.draftId));
+      expect(restored).toMatchObject({ subject, body, state: "draft" });
+      expect(value(await readDraftDocument(target)).fresh.content).toMatchObject({ subject, body });
+      const freeze = spyOn(mailDraftRoom, "freeze");
+      try {
+        expect(value(await createActorCommand({ ...target, input, enqueue: false })).id).toBe(command.id);
+        expect(freeze).not.toHaveBeenCalled();
+        expect(value(await getDraft(context, mailboxId, target.draftId)).revision).toBe(restored.revision);
+      } finally {
+        freeze.mockRestore();
+      }
+    },
+    30_000,
+  );
+
+  test("approval edits stay saved when the subsequent room freeze fails", async () => {
+    const target = await draft("Base body");
+    const checked = await review(target);
+    const freeze = spyOn(mailDraftRoom, "freeze").mockRejectedValueOnce(
+      Object.assign(new Error("Freeze failed"), {
+        code: "SEND_CONTENT_CHANGED",
+        status: 409,
+      }),
+    );
+    try {
+      expect(
+        await createActorCommand({
+          ...target,
+          enqueue: false,
+          input: {
+            kind: "send",
+            draftId: target.draftId,
+            senderIdentityId: senderId,
+            expectedDraftRevision: checked.revision,
+            expectedContentHash: checked.contentHash,
+            subject: "Saved approval edit",
+            body: "Saved body",
+            undoSeconds: 60,
+            idempotencyKey: crypto.randomUUID(),
+          },
+        }),
+      ).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED", status: 409 } });
+      expect(value(await getDraft(context, mailboxId, target.draftId))).toMatchObject({
+        subject: "Saved approval edit",
+        body: "Saved body",
+        state: "draft",
+      });
+      expect(value(await readDraftDocument(target)).fresh.content).toMatchObject({ subject: "Saved approval edit", body: "Saved body" });
+      expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id=${target.draftId}::uuid`).toHaveLength(0);
+    } finally {
+      freeze.mockRestore();
+    }
+  }, 30_000);
+
+  test("approval edits reject a changed base revision or content hash with SEND_CONTENT_CHANGED", async () => {
+    for (const change of ["revision", "hash"]) {
+      const target = await draft("Base body");
+      const checked = await review(target);
+      if (change === "revision") {
+        const base = value(await readDraftDocument(target));
+        value(
+          await updateDraft({
+            ...target,
+            expectedRevision: checked.revision,
+            input: {
+              ...base.durable.content,
+              senderIdentityId: senderId,
+              subject: "Changed base",
+            },
+          }),
+        );
+      } else {
+        // A sender display name changes the MIME snapshot without changing the draft revision.
+        await sql`UPDATE mail.sender_identities SET display_name='Changed base' WHERE id=${senderId}::uuid`;
+      }
+      expect(
+        await createActorCommand({
+          ...target,
+          enqueue: false,
+          input: {
+            kind: "send",
+            draftId: target.draftId,
+            senderIdentityId: senderId,
+            expectedDraftRevision: checked.revision,
+            expectedContentHash: checked.contentHash,
+            subject: "Approval edit",
+            undoSeconds: 60,
+            idempotencyKey: crypto.randomUUID(),
+          },
+        }),
+      ).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED", status: 409 } });
+      expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id=${target.draftId}::uuid`).toHaveLength(0);
+    }
+  }, 30_000);
+
+  test("approval subject/body edits cannot silently approve new safety warnings in shared or lock mode", async () => {
+    for (const mode of ["shared", "lock"]) {
+      for (const edits of [{ subject: "" }, { body: "See the attachment." }]) {
+        const target = await draft("Base body");
+        await sql`UPDATE mail.drafts SET edit_mode=${mode} WHERE id=${target.draftId}::uuid`;
+        const checked =
+          mode === "shared" ? await review(target) : value(await reviewDraftComposeSafety({ ...target, expectedRevision: 1 }));
+        expect(
+          await createActorCommand({
+            ...target,
+            enqueue: false,
+            input: {
+              kind: "send",
+              draftId: target.draftId,
+              senderIdentityId: senderId,
+              expectedDraftRevision: checked.revision,
+              expectedContentHash: checked.contentHash,
+              ...edits,
+              undoSeconds: 60,
+              idempotencyKey: crypto.randomUUID(),
+              safetyApproval: {
+                revision: checked.revision,
+                fingerprint: checked.fingerprint,
+                warningIds: checked.warnings.map((warning) => warning.id),
+              },
+            },
+          }),
+        ).toMatchObject({ ok: false, error: { code: "CONFLICT", status: 409 } });
+        expect(value(await getDraft(context, mailboxId, target.draftId))).toMatchObject({
+          subject: "Shared draft",
+          body: "Base body",
+          state: "draft",
+        });
+        expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id=${target.draftId}::uuid`).toHaveLength(0);
+      }
+    }
+  }, 30_000);
 
   test("an idempotent send retry after undo skips room freeze and flush", async () => {
     const target = await draft("Retry after Undo");

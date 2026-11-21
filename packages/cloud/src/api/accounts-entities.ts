@@ -3,6 +3,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {
+  CODE_ACCOUNT_HANDLE_PATTERN,
   createPagination,
   EntityKindSchema,
   EntityListItemSchema,
@@ -15,10 +16,14 @@ import {
   UserProfileSchema,
   UserProviderSchema,
 } from "../contracts";
-import { type AuthContext, auth, jsonResponse, requiresAuth, respond, userFromActor, v } from "../server";
+import { CloudResourceRefSchema } from "../contracts/capabilities";
+import { type AuthContext, auth, getLocale, jsonResponse, requiresAuth, respond, userFromActor, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
+import { ratelimit } from "../server/ratelimit";
 import { accountsAppService as accountsService } from "../services";
 import { directoryShares } from "../services/accounts/directory-shares";
+import * as settings from "../services/settings";
+import { managesPrincipalSearchTarget } from "./principal-search-target";
 
 const EntitiesListResponseSchema = z.object({
   items: z.array(EntityListItemSchema),
@@ -31,6 +36,10 @@ const QuerySchema = z
   .object({
     ...PaginationQuerySchema.shape,
     search: z.string().optional(),
+    target_type: CloudResourceRefSchema.shape.type
+      .optional()
+      .describe("Target resource type; Code handle matches require Manage here and target_id."),
+    target_id: CloudResourceRefSchema.shape.id.optional().describe("Target resource ID, together with target_type."),
     kinds: z.string().optional(),
     provider: UserProviderSchema.optional(),
     profile: UserProfileSchema.optional(),
@@ -48,6 +57,10 @@ const QuerySchema = z
     parent_group_id: z.uuid().optional(),
     managed_by_user_id: z.uuid().optional(),
     recursive: z.enum(["true", "false"]).optional(),
+  })
+  .refine((value) => Boolean(value.target_type) === Boolean(value.target_id), {
+    message: "A target needs both target_type and target_id.",
+    path: ["target_type"],
   })
   .refine(
     (value) => {
@@ -98,10 +111,17 @@ const parseUuidList = (value: string | undefined, label: string) => {
   return { ok: false as const, message: `Invalid ${label} query parameter.` };
 };
 
-type AccountsEntitiesRouteDependencies = {
+export type AccountsEntitiesRouteDependencies = {
   authenticate?: MiddlewareHandler<AuthContext>;
   listEntities?: typeof accountsService.entity.list;
   searchShares?: typeof directoryShares.search;
+  managesTarget?: (...args: Parameters<typeof managesPrincipalSearchTarget>) => Promise<boolean | undefined>;
+  limitHandleLookup?: (userId: string) => Promise<boolean>;
+};
+
+const limitHandleLookup = async (userId: string) => {
+  const limit = await settings.get<number>("security.rate_limit_per_second");
+  return (await ratelimit({ id: "principal-handle-lookup", limit: Math.max(1, Math.floor(limit)) }).check(userId)).limited;
 };
 
 export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRouteDependencies = {}) =>
@@ -116,6 +136,7 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
       ...requiresAuth,
       responses: {
         200: jsonResponse(EntitiesListResponseSchema, "Paginated mixed entity list"),
+        429: jsonResponse(z.object({ code: z.literal("RATE_LIMITED"), message: z.string() }), "Handle lookup budget exceeded"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Directory read access required; relation filters require a full user account"),
       },
@@ -185,10 +206,23 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
         if (!result.ok) return respond(c, result);
         return c.json({ items: result.data.items, pagination: createPagination(params, result.data.total) });
       }
+      let codeAccountHandle: string | undefined;
+      if (query.search?.trim().startsWith("code-")) {
+        if (await (dependencies.limitHandleLookup ?? limitHandleLookup)(user.id))
+          return c.json({ code: "RATE_LIMITED", message: "Too many requests" }, 429);
+        if (CODE_ACCOUNT_HANDLE_PATTERN.test(query.search.trim()) && query.target_type && query.target_id) {
+          const target = { type: query.target_type, id: query.target_id };
+          const args = [target, auth.getAuthority(c), getLocale(c), c.req.raw.signal] as const;
+          const manages = (await dependencies.managesTarget?.(...args)) ?? (await managesPrincipalSearchTarget(...args));
+          if (manages) codeAccountHandle = query.search.trim();
+        }
+      }
       const result = await (dependencies.listEntities ?? accountsService.entity.list)({
         actor: { userId: user.id, uid: user.uid, roles: user.roles, provider: user.provider },
         pagination: { page: params.page, perPage: params.perPage },
         ...filters,
+        codeAccountHandle,
+        locale: getLocale(c),
       });
 
       return respond(c, {

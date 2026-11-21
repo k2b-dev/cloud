@@ -3,7 +3,7 @@ import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
-import { app, ssr } from "../config";
+import { ssr } from "../config";
 import { requestContactDirectoryConfig } from "../contact-directory-settings";
 import type { PlatformMailboxOperationSummary } from "../contracts";
 import { contactDirectory, operations, storageObservability } from "../service";
@@ -11,7 +11,6 @@ import { localizeMailError } from "../service/error-messages";
 import MailAdminContactDirectory from "./_components/MailAdminContactDirectory.island";
 import MailAdminMailboxActions from "./_components/MailAdminMailboxActions.island";
 import MailAdminStorageActions from "./_components/MailAdminStorageActions.island";
-import MailAdminWorkflowAi from "./_components/MailAdminWorkflowAi.island";
 import { MailAdminTabs } from "./admin-tabs";
 import { mailPageMessages } from "./pages-messages";
 
@@ -45,7 +44,7 @@ export default ssr<AuthContext>(async (c) => {
   };
   const query = (c.req.query("q") ?? "").trim();
   const cursor = c.req.query("cursor") || undefined;
-  const [storageResult, operationsResult, contactDirectoryResult, workflowAiLimit] = await Promise.all([
+  const [storageResult, operationsResult, contactDirectoryResult] = await Promise.all([
     storageObservability.getMailStorageSummary(context),
     operations.getPlatformMailOperations(context, {
       q: query || undefined,
@@ -53,7 +52,6 @@ export default ssr<AuthContext>(async (c) => {
       limit: PAGE_SIZE,
     }),
     contactDirectory.loadContactDirectoryAdmin(context, requestContactDirectoryConfig(c), locale),
-    app.settings.read("mail.workflow_ai_body_max_chars"),
   ]);
   const storage = storageResult.ok ? storageResult.data : null;
   const logicalStorage = storage?.mailboxes.reduce((total, mailbox) => total + mailbox.logicalTotalBytes, 0) ?? null;
@@ -151,7 +149,6 @@ export default ssr<AuthContext>(async (c) => {
             </StatGrid>
 
             {contactDirectoryResult.ok ? <MailAdminContactDirectory view={contactDirectoryResult.data} /> : null}
-            <MailAdminWorkflowAi bodyMaxChars={workflowAiLimit.value} unreadable={workflowAiLimit.stored === "unreadable"} />
 
             {operationsResult.ok ? (
               <section class="paper overflow-hidden">

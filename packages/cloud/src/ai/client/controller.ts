@@ -2,12 +2,16 @@ import { type Accessor, batch, createEffect, createMemo, createSignal, onCleanup
 import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
 import { beginAppAction, fetchAppAction } from "../../browser/app-actions";
-import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
+import type { ApprovalDraftResult } from "../../contracts/approvals";
+import { CapabilityActionReceiptSchema, type CloudResourceRef } from "../../contracts/capabilities";
 import type { AiModelRequest } from "../../shared/ai-models";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
+import { reconcileProjectedAiChoices } from "../choice-state";
+import { aiDraftPartTurnText } from "../draft-content";
 import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
+import type { AiMessageQuote, AiQuoteDraft } from "../quote-markers";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
   AiClientToolId,
@@ -48,6 +52,7 @@ type ComposerDraftInput = {
   content?: AiUserContentPart[];
   files?: File[];
   resources?: AiResourceMarker[];
+  quotes?: AiQuoteDraft[];
   storedFiles?: Array<{ path: string; mediaType: string; size: number; version: number }>;
 };
 
@@ -579,7 +584,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       // (same rule as the SSE state snapshot) so the scrollback never shrinks.
       const windowOldest = detail.messages[0]?.seq;
       const preservedOlder = cached && windowOldest !== undefined ? cached.messages.filter((message) => message.seq < windowOldest) : [];
-      setProjection({ ...detailToProjection(viewedDetail), messages: [...preservedOlder, ...detail.messages] }, conversationId);
+      setProjection(
+        { ...detailToProjection(viewedDetail), messages: reconcileProjectedAiChoices([...preservedOlder, ...detail.messages]) },
+        conversationId,
+      );
       if (preservedOlder.length === 0) setHasMore(conversationId, detail.hasMoreMessages ?? false);
       if (detail.timeline) setTimeline(conversationId, detail.timeline);
       runFrontendTools();
@@ -620,7 +628,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     if (currentDraft && currentDraft.revision > detail.conversation.draft.revision) detail.conversation.draft = currentDraft;
     const windowOldest = detail.messages[0]?.seq;
     const preservedOlder = windowOldest === undefined ? [] : state.messages.filter((message) => message.seq < windowOldest);
-    setProjection({ ...detailToProjection(detail), messages: [...preservedOlder, ...detail.messages] }, conversationId);
+    setProjection(
+      { ...detailToProjection(detail), messages: reconcileProjectedAiChoices([...preservedOlder, ...detail.messages]) },
+      conversationId,
+    );
     if (preservedOlder.length === 0) setHasMore(conversationId, detail.hasMoreMessages ?? false);
     if (detail.timeline) setTimeline(conversationId, detail.timeline);
     setRunError(conversationRunError(detail.conversation));
@@ -726,16 +737,21 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const createConversation = async (
     input: {
       requestId?: string;
+      /** A place chat: created with its first message as `draft`, never with a title or launch settings. */
+      place?: CloudResourceRef;
       title?: string;
       projectId?: string;
       draft?: { content: AiDraftContentPart[] };
       preloadTools?: Array<{ name: string } | { appId: string; kind: "query" | "action"; id: string }>;
     } = {},
-    /** Runs in the same update that makes the new chat active, so views keyed by it never see it without their local state. */
-    beforeOpen?: (conversation: AiConversation) => void,
+    options: {
+      activate?: boolean;
+      /** Runs in the same update that makes the new chat active, so views keyed by it never see it without their local state. */
+      beforeOpen?: (conversation: AiConversation) => void;
+    } = {},
   ) => {
-    const generation = ++conversationOpenGeneration;
-    clearErrors();
+    const generation = options.activate === false ? conversationOpenGeneration : ++conversationOpenGeneration;
+    if (options.activate !== false) clearErrors();
     setCreationErrorStatus(null);
     try {
       const conversation = await request<AiConversation>(
@@ -746,9 +762,9 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       const projection = emptyProjection(conversation);
       cache.set(conversation.id, projection);
       setHasMore(conversation.id, false);
-      if (generation !== conversationOpenGeneration) return conversation;
+      if (generation !== conversationOpenGeneration || options.activate === false) return conversation;
       batch(() => {
-        beforeOpen?.(conversation);
+        options.beforeOpen?.(conversation);
         setState(reconcile(projection, { key: "id", merge: true }));
         setActiveConversationIdSignal(conversation.id);
         setLoadingConversationId(null);
@@ -842,6 +858,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const content: AiDraftContentPart[] = [
       ...(input.draftContent ?? textParts),
       ...(input.resources ?? []).map((resource) => ({ type: "resource" as const, ...resource })),
+      ...(input.quotes ?? []).map((quote) => ({ type: "quote" as const, ...quote })),
       ...(input.storedFiles ?? []).map((file) => ({ type: "file" as const, ...file })),
       ...uploaded.map((file) => ({ type: "file" as const, ...file })),
     ];
@@ -984,7 +1001,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         loopAggregate: null,
         loopDoneReason: null,
         compactedAt: null,
-        meta: null,
+        // Until the server checks them, the message shows its quotes as the composer held them.
+        meta: input.quotes?.length ? { quotes: pendingQuotes(input.quotes) } : null,
         createdAt: new Date().toISOString(),
       };
       setPendingSends((current) => ({ ...current, [conversationId]: optimistic }));
@@ -1005,20 +1023,23 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
           ...current,
           [conversationId]: {
             ...optimistic,
-            meta: { submittedDraftRevision: savedDraft.revision },
+            meta: {
+              submittedDraftRevision: savedDraft.revision,
+              ...(optimistic.meta?.quotes ? { quotes: optimistic.meta.quotes } : {}),
+            },
             message: {
               role: "user",
-              content: savedDraft.content.map((part) => ({
-                type: "text",
-                text:
-                  part.type === "text"
-                    ? part.text
-                    : part.type === "file"
-                      ? aiAttachmentMarker(part)
-                      : part.type === "project-file"
-                        ? `Project file: ${part.path}`
-                        : aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }),
-              })),
+              content: savedDraft.content.flatMap((part) =>
+                part.type === "quote"
+                  ? []
+                  : [
+                      {
+                        type: "text" as const,
+                        text:
+                          part.type === "text" ? part.text : part.type === "file" ? aiAttachmentMarker(part) : aiDraftPartTurnText(part),
+                      },
+                    ],
+              ),
             },
           },
         }));
@@ -1440,7 +1461,9 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     conversationId: string,
     turnId: string,
     callId: string,
-    action: { type: "approval_response"; approved: boolean; remember?: "chat" | "always" } | { type: "tool_result"; result: unknown },
+    action:
+      | { type: "approval_response"; approved: boolean; remember?: "chat" | "always"; digest?: string }
+      | { type: "tool_result"; result: unknown },
   ) => {
     if (isActiveConversation(conversationId) && runStatus() === "stopping") return false;
     try {
@@ -1481,7 +1504,9 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const submitTurnAction = (
     turnId: string,
     callId: string,
-    action: { type: "approval_response"; approved: boolean; remember?: "chat" | "always" } | { type: "tool_result"; result: unknown },
+    action:
+      | { type: "approval_response"; approved: boolean; remember?: "chat" | "always"; digest?: string }
+      | { type: "tool_result"; result: unknown },
   ) => {
     const conversationId = activeConversationId();
     if (!conversationId) return Promise.resolve(false);
@@ -1491,7 +1516,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   const respondToApproval = async (
     request: { turnId: string; callId: string },
-    input: { approved: boolean; remember?: "chat" | "always" },
+    input: { approved: boolean; remember?: "chat" | "always"; digest?: string },
   ) => {
     const conversationId = activeConversationId();
     if (!conversationId) return false;
@@ -1499,10 +1524,72 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       type: "approval_response",
       approved: input.approved,
       remember: input.remember,
+      digest: input.digest,
     });
     if (submitted)
       showActionResolved(conversationId, request.turnId, { type: "approval_response", callId: request.callId, approved: input.approved });
     return submitted;
+  };
+
+  const submitChoice = async (requestInput: { turnId: string; toolCallId: string }, blockId: string, ids: string[]): Promise<boolean> => {
+    const conversationId = activeConversationId();
+    if (!conversationId || state.activeTurn || Boolean(pendingSends()[conversationId])) return false;
+    clearErrors();
+    try {
+      await request<SubmitTurnResult>(
+        `/conversations/${encodeURIComponent(conversationId)}/choices`,
+        {
+          method: "POST",
+          body: JSON.stringify({ ...requestInput, blockId, ids }),
+        },
+        "Failed to submit choice",
+      );
+      if (isActiveConversation(conversationId)) await refreshActiveConversation();
+      else cache.delete(conversationId);
+      return true;
+    } catch (choiceError) {
+      if (isActiveConversation(conversationId))
+        setActiveError(choiceError instanceof Error ? choiceError.message : "Failed to submit choice");
+      return false;
+    }
+  };
+
+  const editDraft = async (
+    requestInput: { turnId: string; callId: string; requestId: string },
+    values: Record<string, string>,
+    digest: string,
+  ): Promise<ApprovalDraftResult> => {
+    const conversationId = activeConversationId();
+    if (!conversationId) throw new Error("No active conversation.");
+    // Only sending an edited draft needs this code, so it loads when a person sends one; a failed load fails the send,
+    // which the card shows with its own way to try again.
+    const draft = await import("../../approvals/draft");
+    const result = await draft.editApprovalDraft(requestInput.requestId, values, digest);
+    const projection = isActiveConversation(conversationId) ? state : cache.get(conversationId);
+    if (projection && "sentence" in result.review) {
+      const review = result.review;
+      const parent = requestInput.callId.replace(/-approval-[0-9]+$/, "");
+      const messages = projection.messages.map((message) =>
+        message.loopId === requestInput.turnId && message.meta?.toolReviews?.[parent]
+          ? { ...message, meta: { ...message.meta, toolReviews: { ...message.meta.toolReviews, [parent]: review } } }
+          : message,
+      );
+      const activeTurn =
+        projection.activeTurn?.turnId === requestInput.turnId
+          ? {
+              ...projection.activeTurn,
+              blocks: projection.activeTurn.blocks.map((block) =>
+                block.kind === "tool" && block.callId === requestInput.callId
+                  ? { ...block, review, approval: block.approval ? { ...block.approval, review, digest: result.digest } : undefined }
+                  : block,
+              ),
+            }
+          : projection.activeTurn;
+      const next = { ...projection, messages, activeTurn };
+      cache.set(conversationId, next);
+      if (isActiveConversation(conversationId)) setState(reconcile(next));
+    }
+    return result;
   };
 
   const checkAction = async (requestInput: { turnId: string; callId: string }): Promise<AiActionCheck> => {
@@ -1637,6 +1724,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     clearMessageFeedback,
     submitTurnAction,
     respondToApproval,
+    editDraft,
+    submitChoice,
     checkAction,
     submitFrontendToolResult,
     fileContentUrl,
@@ -1644,6 +1733,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 };
 
 export type AiChatController = ReturnType<typeof createAiChatController>;
+
+/** The composer's quotes as a sent message shows them until the server's checked quotes replace them. */
+const pendingQuotes = (quotes: readonly AiQuoteDraft[]): AiMessageQuote[] =>
+  quotes.map((quote) => ({ messageId: quote.messageId, from: quote.from ?? "assistant", text: quote.text }));
 
 const isComposerDraftSendable = (input: ComposerDraftInput): boolean =>
   Boolean(

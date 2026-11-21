@@ -1,0 +1,107 @@
+import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import type { AiWakeup } from "@k2b/cloud/ai";
+import { createComponent } from "solid-js";
+import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
+import { describeWakeupLine } from "./wakeup-line";
+
+const root = mkdtempSync(resolve(tmpdir(), "assistant-wakeup-line-"));
+const serovalLink = resolve(import.meta.dir, "../../node_modules/seroval");
+const createdSerovalLink = !existsSync(serovalLink);
+if (createdSerovalLink) symlinkSync(resolve(import.meta.dir, "../../../cloud/node_modules/seroval"), serovalLink, "dir");
+registerSsrTestPlugin({ dev: true, rootDir: root });
+beforeAll(() => setSystemTime(new Date("2026-11-16T09:00:00.000Z")));
+afterAll(() => {
+  setSystemTime();
+  rmSync(root, { recursive: true, force: true });
+  if (createdSerovalLink) unlinkSync(serovalLink);
+});
+
+const { AssistantWakeupLine } = await import("./wakeup-line-view");
+const host = { act: () => undefined, retry: async () => undefined };
+const wakeup: AiWakeup = {
+  id: "6f9619ff-8b86-4d11-b42d-00c04fc964ff",
+  at: "2026-11-16T15:00:00.000Z",
+  cron: null,
+  timezone: "Europe/Berlin",
+  endsAt: null,
+  note: "Antwort von Lena Vogt prüfen",
+  noteSource: { kind: "person", userId: "6f9619ff-8b86-4d11-b42d-00c04fc96400" },
+  snoozes: 0,
+  status: "active",
+  missedReason: null,
+  revision: 0,
+  rhythm: "Einmalig",
+};
+const draw = (deleted: boolean, current: AiWakeup[]) =>
+  renderToString(() =>
+    createComponent(AssistantWakeupLine, {
+      host,
+      line: describeWakeupLine(
+        { plan: { event: { id: "e", kind: "created", at: "2026-11-16T09:00:00.000Z", wakeup }, latest: true, deleted } },
+        { locale: "de", timeZone: "Europe/Berlin", current },
+      ),
+    }),
+  );
+
+test("a set alarm is one line without a box: plum sign, words, and pencil and cross named for screen readers", () => {
+  const html = draw(false, [wakeup]);
+  expect(html).toContain('class="assistant-wakeup-line__sign ti ti-alarm"');
+  expect(html.replace(/<[^>]*>/g, "")).toContain("Wecker · heute 16:00 · Antwort von Lena Vogt prüfen");
+  expect(html).toContain('aria-label="Wecker ändern"');
+  expect(html).toContain('aria-label="Wecker löschen"');
+  expect(html).toContain("k2b-progressive-action");
+});
+
+test("a deleted alarm stays as a struck line with the word Deleted and no actions", () => {
+  const html = draw(true, []);
+  expect(html).toContain("data-struck");
+  expect(html).toContain(">Gelöscht<");
+  expect(html).not.toContain("Wecker ändern");
+});
+
+test("until its words load, a line keeps its place without text", () => {
+  const html = renderToString(() => createComponent(AssistantWakeupLine, { host, line: undefined }));
+  expect(html).toContain('class="assistant-wakeup-line k2b-progressive-row"');
+  expect(html).not.toContain("Wecker");
+});
+
+test("the way out is the library's link button, so the activity row's bare-button reset never greys it", () => {
+  const missed = { ...wakeup, status: "missed" as const, missedReason: "budget" as const };
+  const html = renderToString(() =>
+    createComponent(AssistantWakeupLine, {
+      host,
+      line: describeWakeupLine(
+        { plan: { event: { id: "e", kind: "missed", at: "2026-11-16T09:00:00.000Z", wakeup: missed }, latest: true, deleted: false } },
+        { locale: "de", timeZone: "Europe/Berlin", current: [missed] },
+      ),
+    }),
+  );
+  expect(html).toMatch(/class="[^"]*k2b-button[^"]*assistant-wakeup-line__link|assistant-wakeup-line__link[^"]*k2b-button/);
+  expect(html).toContain('data-variant="link"');
+  expect(html).toContain("Jetzt nachholen");
+});
+
+test("pencil and cross hide only for a hovering mouse or trackpad: on touch they show at rest, nothing in Assistant hides them", () => {
+  const css = (path: string) => readFileSync(resolve(import.meta.dir, path), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const hiding = (stylesheet: string) =>
+    [...stylesheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(
+        ([, selector = "", body = ""]) =>
+          /progressive-action|wakeup-line__acts/.test(selector) && /opacity:\s*0(?![.\d])|display:\s*none|visibility:\s*hidden/.test(body),
+      )
+      .map(([, selector = ""]) => selector.trim());
+  expect(hiding(css("../styles/app.css"))).toEqual([]);
+  const ui = css("../../../ui/src/styles/index.css");
+  expect(hiding(ui)).toEqual([
+    ':where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-progressive-action',
+    ':where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-progressive-action',
+  ]);
+  // The first rule holds only where a pointer can hover; a wheel scroll marks the page as trackpad.
+  expect(ui).toMatch(
+    /@media \(any-hover: hover\) \{\s*:where\(html:not\(\[data-k2b-input="touch"\]\)\) \.k2b-ui \.k2b-progressive-action \{/,
+  );
+});

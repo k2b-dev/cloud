@@ -5,8 +5,9 @@ Numbers computed in `code_run` stay in the run. Call `await cloud.view.chart(spe
 `await cloud.view.stats(spec)`, `await cloud.view.details(spec)` or
 `await cloud.view.explorer(spec)` there, then call
 the **tool** `present({path})` for each returned view the person should see. Never retype run values into
-`chart` arguments, app data or Markdown; an app's data module is the file the
-run wrote, copied with `code_file_copy` or `code_import` ([File transfers](files.md)). Return only the key figures mentioned
+`chart` arguments or Markdown. Export the file the run wrote and copy its
+exact reference with the chat/Project tools ([File transfers](files.md)).
+For lasting Code or pages load `code-authoring`. Return only the key figures mentioned
 in the answer. If a view is missing, rerun the script with `cloud.view.*`.
 A few values that did not come from a run use the `chart` tool.
 
@@ -136,7 +137,11 @@ Explicit types are `text`, `number`, `date`, `datetime` and `ref`. Dates are
 `YYYY-MM-DD`; datetimes are `YYYY-MM-DDTHH:mm` or `YYYY-MM-DDTHH:mm:ss`, without
 an offset. Dates supplied as `Date` become wall-clock strings in `cloud.timeZone`.
 Missing and undefined cells become null; objects other than Cloud references,
-booleans and non-finite numbers must be converted to text or numbers. The optional footer uses the
+booleans and non-finite numbers must be converted to text or numbers. A reference
+cell shows its `title` and opens the thing. Pass the title you have: results
+that carry `ref` and `title` side by side pass both, `{ ...item.ref, title: item.title }`.
+Without one, Cloud asks the thing's app for each reader, and a thing that reader
+may not see shows as not available. The optional footer uses the
 same columns. `sort: {column: "id", direction: "asc" | "desc"}` sets the initial
 order; the reader can sort again. `search: true` adds a search field above the
 table that matches the shown cells. `groupBy: [{id, label?}]` lets the reader
@@ -162,6 +167,10 @@ Use short text values (1..80 trimmed characters) only for states such as `"OK"`.
 Keep numbers numeric; a Date value is an error. Format it as text or use details.
 Tiles are narrow (up to six share a chat column) and cut long values: prefer
 `compact` or whole-number formats for large amounts.
+
+Give each item an `icon`: a Tabler icon name such as `wallet`, `receipt` or
+`truck`, drawn as the small sign before the label. Without one the tile shows a
+neutral sign; a name that is no Tabler icon name is an error.
 
 Numeric values may have the number `format` described under Tables and a finite
 `delta` in the value's units. Set `better: "up" | "down"` only with a delta and
@@ -199,9 +208,9 @@ export default async (_input, { files }) => {
   await cloud.view.stats({
     title: "Offers overview", subtitle: "Selected CSV · listed months",
     items: [
-      { label: "Offers", value: rows.length, sub: "All rows" },
-      { label: "Sum of prices", value: total, format: { style: "currency", currency: "EUR", decimals: 2 } },
-      { label: "Offers in latest month", value: latest, sub: ordered.at(-1)[0],
+      { label: "Offers", icon: "file-text", value: rows.length, sub: "All rows" },
+      { label: "Sum of prices", icon: "coin-euro", value: total, format: { style: "currency", currency: "EUR", decimals: 2 } },
+      { label: "Offers in latest month", icon: "calendar", value: latest, sub: ordered.at(-1)[0],
         delta: latest - counts.at(-2), better: "up", sparkline: counts.slice(-480) },
     ],
   });
@@ -326,7 +335,7 @@ number columns. No extra keys, markup options or functions belong in the spec.
 Filtering, steps, comparison, row selection and sorting happen locally and reset
 on reload. The table shows the rows of the current state, including the pinned
 step when comparing; **Copy data** copies those rows. The CLI prints the initial
-state's table. Interaction an explorer cannot express belongs in a Studio App.
+state's table. Interaction an explorer cannot express uses lasting Code and code-authoring.
 
 ## Choose and label
 
@@ -366,9 +375,9 @@ export default async (_input, { files }) => {
   await cloud.view.stats({
     title: "Inventory overview", subtitle: "Selected CSV · stock value = price × stock",
     items: [
-      { label: "Products", value: rows.length },
-      { label: "Stock", value: stock, sub: "Units" },
-      { label: "Stock value", value: stockValue,
+      { label: "Products", icon: "package", value: rows.length },
+      { label: "Stock", icon: "stack-2", value: stock, sub: "Units" },
+      { label: "Stock value", icon: "coin-euro", value: stockValue,
         format: { style: "currency", currency: "EUR", decimals: 2 } },
     ],
   });
@@ -443,4 +452,4 @@ Fix the script using that message.
 Files live under `/views/<title-slug>-<hash8>.view.json`, appear in the chat's
 file list and can be downloaded. Model write tools cannot write below `/views`.
 Every reader validates again; a missing or invalid file shows unavailable.
-HTML apps cannot call `cloud.view.*`; draw with `cloud.chart()` inside an app.
+Use `cloud.chart()` for chart markup inside PDFs.

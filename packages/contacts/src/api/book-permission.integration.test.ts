@@ -157,8 +157,9 @@ const observe = async (subject: Subject, target: Book) => {
   const listed = await queries["book.list"].run({ query: target.suffix, minimumPermission: "read", limit: 100 }, context);
   const suggested = await queries["contact.suggest"].run({ query: target.suffix, limit: 25 }, context);
   const action = contactsCapabilities.actions["contact.create"];
-  const created = await action.run(action.input.parse({ bookId: target.shortId, firstName: "Capability permission probe" }), {
+  const created = await action.run(action.input.parse({ firstName: "Capability permission probe" }), {
     ...context,
+    target: { type: "contacts.book", id: target.shortId },
     idempotencyKey: crypto.randomUUID(),
   });
   return {

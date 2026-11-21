@@ -17,6 +17,7 @@ import {
   isOnAxis,
   LINE_DASH_PATTERNS,
   linePathD,
+  linePointsSvg,
   normalizePadding,
   type Point,
   pickMapper,
@@ -245,6 +246,7 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
           `<svg class="${cls}" x="${fmt(left)}" y="${fmt(area.y0)}" width="${fmt(right - left)}" height="${fmt(area.y1 - area.y0)}" viewBox="${fmt(left)} ${fmt(area.y0)} ${fmt(right - left)} ${fmt(area.y1 - area.y0)}" overflow="hidden">${content}</svg>`;
         body.push(clipped(area.x0, cut, path(), "k2b-line-observed"), clipped(cut, area.x1, path(true), "k2b-line-forecast"));
       }
+      if (opts.points) body.push(linePointsSvg(mapped, i));
     }
   });
   body.push(...inspectionMarks);

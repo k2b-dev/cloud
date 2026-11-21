@@ -46,6 +46,26 @@ const fixture = async () => {
 };
 
 suite("Space manager mutation invariants", () => {
+  test("Code metadata follows target management in the custom Space access presenter", async () => {
+    const f = await fixture();
+    const [account] = await sql<{ id: string; handle: string }[]>`INSERT INTO auth.service_accounts (name, kind, title, handle)
+      VALUES (${"code:spaces.space:" + f.spaceId}, 'code', 'Private Space', 'code-b100000002') RETURNING id, handle`;
+    try {
+      const grant = await f.grant({ type: "service_account", serviceAccountId: account!.id }, "read");
+      for (const context of [{}, { cloudAdmin: true }, { permission: "read" as const }]) {
+        const entry = (await listSpaceAccess(f.spaceId, sql, context)).find((row) => row.id === grant.id);
+        expect(entry?.serviceAccountHandle).toBeUndefined();
+        expect(entry?.displayName).not.toContain("Private Space");
+      }
+      const entry = (await listSpaceAccess(f.spaceId, sql, { permission: "admin" })).find((row) => row.id === grant.id);
+      expect(entry?.serviceAccountHandle).toBe(account!.handle);
+      expect(entry?.displayName).toContain("Private Space");
+    } finally {
+      await f.cleanup();
+      await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+    }
+  });
+
   test("public and resource-bound admin entries cannot replace the final independent manager, including adapter removal", async () => {
     const f = await fixture();
     try {

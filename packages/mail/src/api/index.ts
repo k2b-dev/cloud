@@ -36,7 +36,6 @@ import {
   type AttachmentLinkPage,
   acquiredDraftLeaseSchema,
   archiveComposeTemplateInputSchema,
-  automaticReplyManagementPermissionSchema,
   cancelConversationReminderSchema,
   cancelScheduledSendInputSchema,
   commandStateSchema,
@@ -202,6 +201,7 @@ import {
   triage,
 } from "../service";
 import { resolveByteRange } from "../service/byte-range";
+import { startMailboxCodeAttention } from "../service/code-attention";
 import { requestContactDirectory } from "../service/contact-directory";
 import { conversationSummaryStateSchema } from "../service/conversation-summary-contract";
 import { generateConversationSummary, generateConversationSummarySchema } from "../service/conversation-summary-jobs";
@@ -239,8 +239,6 @@ import {
   respondPublic,
 } from "./public-resource-boundary";
 import resourceRoutes from "./resources";
-import workflowAiSettingsRoutes from "./workflow-ai-settings";
-import workflowRoutes from "./workflows";
 
 const mailboxAndIdParamSchema = (name: string, idSchema: z.ZodType = ResourceShortIdSchema) =>
   z.object({ mailboxId: ResourceShortIdSchema, [name]: idSchema });
@@ -373,7 +371,6 @@ const updateMailboxSchema = z
     description: z.string().trim().max(2_000).nullable().optional(),
     syncEnabled: z.boolean().optional(),
     searchBackend: searchBackendSchema.optional(),
-    automaticReplyManagementPermission: automaticReplyManagementPermissionSchema.optional(),
     composeSafety: composeSafetyConfigSchema.optional(),
     /** How new drafts are edited: one person at a time, or together. Existing drafts keep their mode. */
     draftEditMode: draftEditModeSchema.optional(),
@@ -529,6 +526,7 @@ const requestContext = (c: Context<MailApiContext>): MailRequestContext => ({
   actor: c.get("actor"),
   accessSubject: c.get("accessSubject"),
   requestId: c.req.header("x-request-id") ?? null,
+  locale: getLocale(c),
 });
 
 const integrationRequest = (c: Context<MailApiContext>) => ({
@@ -1152,6 +1150,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
       const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
       const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
       if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+      // A mailbox switched in place gets its Code entry like a page load, within the same short grace.
+      const codeAttention = startMailboxCodeAttention(c, c.req.valid("param").mailboxId);
       const data = await loadMailboxPageData({
         context: requestContext(c),
         mailboxId,
@@ -1159,7 +1159,10 @@ const mailOperationsApi = new Hono<MailApiContext>()
         listMode: query.listMode,
         locale: getLocale(c),
       });
-      return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+      return respondAggregate(
+        c,
+        data.ok ? { ...data, data: { ...data.data, codeAttention: await codeAttention.settle() } } : fail(err.notFound("Mailbox")),
+      );
     } catch (error) {
       if (error instanceof CountRefreshBusy)
         return respond(c, { ok: false, error: error.message, status: 503, code: "MAIL_COUNTS_REFRESHING" });
@@ -1438,7 +1441,16 @@ const mailOperationsApi = new Hono<MailApiContext>()
     },
   )
   .get("/mailboxes/:mailboxId/settings-context", v("param", mailboxParamSchema), async (c) =>
-    respondAggregate(c, settingsContext.loadMailboxSettingsContext(requestContext(c), internalMailboxId(c), auth.getAuthority(c))),
+    respondAggregate(
+      c,
+      settingsContext.loadMailboxSettingsContext(
+        requestContext(c),
+        internalMailboxId(c),
+        auth.getAuthority(c),
+        integrationRequest(c),
+        getLocale(c),
+      ),
+    ),
   )
   .get("/mailboxes/:mailboxId/details", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxDetails.getMailboxDetails(requestContext(c), internalMailboxId(c))),
@@ -1714,6 +1726,20 @@ const mailOperationsApi = new Hono<MailApiContext>()
           context: requestContext(c),
           mailboxId: internalMailboxId(c),
           input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
+  )
+  .get(
+    "/mailboxes/:mailboxId/senders/preview",
+    v("param", mailboxParamSchema),
+    v("query", senderDisposition.senderPreviewQuerySchema),
+    (c) =>
+      respondPublic(
+        c,
+        senderDisposition.previewSenderMatches({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: c.req.valid("query"),
         }),
       ),
   )
@@ -3918,7 +3944,6 @@ const mailOperationsApi = new Hono<MailApiContext>()
       ),
   )
   .route("/", automationExportRoutes)
-  .route("/", workflowRoutes)
   .route("/", automationLogRoutes);
 
 const adminApi = new Hono<MailApiContext>()
@@ -4045,7 +4070,6 @@ const adminApi = new Hono<MailApiContext>()
       ),
   )
   .route("/", contactDirectoryRoutes)
-  .route("/", workflowAiSettingsRoutes)
   .get("/admin/operations", v("query", platformOperationsQuerySchema), async (c) =>
     respondPublic(c, operations.getPlatformMailOperations(requestContext(c), c.req.valid("query"))),
   )

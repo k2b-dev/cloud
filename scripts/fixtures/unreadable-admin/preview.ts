@@ -7,7 +7,7 @@ export async function unreadableAdminPreview() {
   const build = Bun.spawn(
     [
       "bun",
-      resolve(workspaceRoot, "packages/assistant/src/artifacts/workspace-browser-build.ts"),
+      resolve(workspaceRoot, "packages/assistant/src/frontend/workspace-browser-build.ts"),
       resolve(workspaceRoot, "packages/core/src/pages/admin/settings/_components/unreadable-admin.browser-harness.tsx"),
     ],
     { cwd: workspaceRoot, stdout: "pipe", stderr: "pipe" },

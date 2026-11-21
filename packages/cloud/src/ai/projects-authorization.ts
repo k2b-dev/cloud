@@ -22,7 +22,7 @@ export const aiResourcePermissionCap = (subject: AiResourceContext | null): Perm
       : "none";
   }
   if (
-    (actor.serviceAccount.kind !== "standalone" && actor.serviceAccount.kind !== "agent") ||
+    (actor.serviceAccount.kind !== "standalone" && actor.serviceAccount.kind !== "agent" && actor.serviceAccount.kind !== "code") ||
     accessSubject.type !== "service_account" ||
     accessSubject.serviceAccountId !== actor.serviceAccount.id
   )
@@ -49,5 +49,9 @@ export class AiResourceCredentialError extends Error {
 }
 
 export const requireAiResourceCreation = (subject: AiResourceContext): void => {
-  if (!hasPermission(aiResourcePermissionCap(subject), "write")) throw new AiResourceCredentialError();
+  if (
+    !hasPermission(aiResourcePermissionCap(subject), "write") ||
+    (subject.actor.kind === "service_account" && subject.actor.serviceAccount.kind === "code")
+  )
+    throw new AiResourceCredentialError();
 };

@@ -9,12 +9,18 @@ export const GRIDS_ROUTE_EAGER_BROTLI_BUDGET = 809 * 1024;
 
 const entry = resolve(import.meta.dir, "GridsRoute.island.tsx");
 
-test("the Grids route island loads its barcode drawing code on demand and stays within its eager budget", async () => {
+test("the Grids route island loads its barcode drawing, Assistant and preview code on demand and stays within its eager budget", async () => {
   for (const language of ["en", "de"]) {
     const size = await islandBundleSize([entry], undefined, cloudLanguageBuild(language));
     console.info(`Grids route eager (${language}): ${size.eagerBrotliBytes}/${GRIDS_ROUTE_EAGER_BROTLI_BUDGET} B Brotli`);
     expect(size.eagerBrotliBytes).toBeLessThanOrEqual(GRIDS_ROUTE_EAGER_BROTLI_BUDGET);
-    for (const onDemand of [/\/barcode-rendering\.ts$/, /\/@bwip-js\/generic\//]) {
+    // The Assistant client and the search preview's block renderer serve one action each (sync 69 found both eager).
+    for (const onDemand of [
+      /\/barcode-rendering\.ts$/,
+      /\/@bwip-js\/generic\//,
+      /\/cloud\/src\/ai\/browser\.ts$/,
+      /\/cloud\/src\/blocks\/BlockTree\.tsx$/,
+    ]) {
       expect(size.dynamicInputs.some((input) => onDemand.test(input))).toBe(true);
       expect(size.eagerInputs.filter((input) => onDemand.test(input))).toEqual([]);
     }

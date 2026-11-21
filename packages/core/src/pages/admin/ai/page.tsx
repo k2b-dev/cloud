@@ -37,16 +37,6 @@ export default ssr<AuthContext>(async (c) => {
   const query = parseAiAreaQuery(c.req.query());
   const runtime = getLocalizedRuntimeContext(c);
 
-  const studioLinks = runtime.apps.flatMap((app) =>
-    (app.adminNav ?? [])
-      .filter((group) => group.section === "ai")
-      .flatMap((group) =>
-        group.links
-          .filter((link) => link.href.startsWith("/admin/"))
-          .map((link) => ({ href: link.href, label: link.label, icon: link.icon.replace(/^ti\s+/, ""), app: t.fromApp({ p: app.name }) })),
-      ),
-  );
-
   let overview: Overview | null = null;
   let index: AiCatalogIndex | null = null;
   let loadFailed = false;
@@ -222,7 +212,6 @@ export default ssr<AuthContext>(async (c) => {
         index={index}
         loadFailed={loadFailed}
         detailLoadFailed={detailLoadFailed}
-        studioLinks={studioLinks}
         provider={provider}
         providerDetail={providerDetail}
         model={model}

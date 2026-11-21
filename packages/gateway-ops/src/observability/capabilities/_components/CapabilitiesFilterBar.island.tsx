@@ -25,6 +25,7 @@ export default function CapabilitiesFilterBar(props: Props) {
       { value: "mcp", label: t.originMcp, icon: "ti ti-plug-connected" },
       { value: "http", label: t.originHttp, icon: "ti ti-world" },
       { value: "app", label: t.originApp, icon: "ti ti-app-window" },
+      { value: "choice", label: t.originChoice, icon: "ti ti-hand-click" },
     ]);
   const statusOptions = () =>
     section([

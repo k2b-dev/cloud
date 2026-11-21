@@ -15,6 +15,7 @@ type JsonTypedResponse<T, Status extends StatusCode> = Response & TypedResponse<
 export type ApiErrorBody = {
   message: string;
   code?: string;
+  retryable?: boolean;
 };
 export type ApiErrorResponse = JsonTypedResponse<ApiErrorBody, ApiErrorStatus>;
 
@@ -34,6 +35,7 @@ const toErrorResponse = (result: AnyResult): [ApiErrorBody, number] => {
       {
         message: result.error.message,
         code: result.error.code,
+        ...("retryable" in result.error && typeof result.error.retryable === "boolean" ? { retryable: result.error.retryable } : {}),
       },
       result.error.status,
     ];

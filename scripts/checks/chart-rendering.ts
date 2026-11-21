@@ -53,11 +53,6 @@ const UPSTREAM_CHART_EXPORTS = new Set([
   "stepPathD",
 ]);
 const upstreamChartModule = (name: string | undefined): boolean => name === "@k2b/stdlib" || name === "@k2b/stdlib/charts";
-// Temporary B3b boundary: #3010 deletes Studio and moves Code to chat-code/runtime.
-const frozenStudioPath = (path: string): boolean =>
-  path.startsWith("packages/assistant/src/artifacts/") ||
-  path === "packages/assistant/src/frontend/AssistantWorkspace.island.tsx" ||
-  path === "packages/assistant/src/styles/app.css";
 const rawChartModule = (name: string | undefined): boolean => name === "@k2b/ui/charts/core" || name === "@k2b/ui/charts";
 const CHART_COMPONENTS = new Set(["Chart", "ChartExplorer", "ChartSnapshotView", "StatCell"]);
 const LIBRARIES = new Set(["ui", "cloud", "ssr", "editor"]);
@@ -71,11 +66,11 @@ const ALLOWED_RENDERERS = new Map([
     "The shared bar renderer behind Chart; Chart calls it with inspect: true and attaches createChartInspection.",
   ],
   [
-    "packages/assistant/src/artifacts/runtime/lib.ts",
+    "packages/assistant/src/chat-code/runtime/lib.ts",
     "Studio cloud.chart() runs in a sandbox whose frame prelude enhances SVG with inspectChart.",
   ],
   [
-    "packages/assistant/src/artifacts/runtime/chart-renderers-rare.ts",
+    "packages/assistant/src/chat-code/runtime/chart-renderers-rare.ts",
     "Offline cloud.chart() drawings use inspect: true; the frame attaches inspectChart after loading. Script/PDF output stays inert.",
   ],
   ["packages/editor/src/charts.ts", "Reads SVG marks for validation and tables; the SVG never reaches the DOM."],
@@ -83,7 +78,7 @@ const ALLOWED_RENDERERS = new Map([
 
 // These raw parts share the dispatcher's inspection contract: cloud.chart()
 // passes inspect: true and the frame enhances SVG; scripts/PDFs stay inert.
-const APP_CHART_KIND = /^packages\/assistant\/src\/artifacts\/runtime\/chart-kind-[a-z][a-zA-Z0-9-]*\.ts$/;
+const APP_CHART_KIND = /^packages\/assistant\/src\/chat-code\/runtime\/chart-kind-[a-z][a-zA-Z0-9-]*\.ts$/;
 
 const skipped = (file: string): boolean =>
   isTestFile(file) || /\.browser-(?:harness|fixture|suite)\.tsx?$/.test(file) || /^packages\/[^/]+\/fixture\//.test(file);
@@ -367,7 +362,7 @@ export const rule: Rule = {
       const text = readFileSync(file, "utf8");
       // Upstream chart drawing is forbidden even in tests, scripts and otherwise allowed core adapters.
       // String fixtures in this rule's tests are data; the AST reports only real imports and accesses.
-      if (!frozenStudioPath(path) && text.includes("@k2b/stdlib")) {
+      if (text.includes("@k2b/stdlib")) {
         const source = parse(file, text);
         rawRenderers(
           source,

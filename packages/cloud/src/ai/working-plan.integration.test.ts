@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
 import { sql } from "../runtime/clients";
@@ -17,6 +18,7 @@ databaseSuite()("working plan and execution budget in disposable Postgres", () =
   beforeAll(async () => {
     fresh = await useFreshDatabase("working_plan");
     await migrateAuth();
+    await migrateAudit();
     await sql`CREATE SCHEMA settings`;
     await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text)`;
     await migrateEvents();

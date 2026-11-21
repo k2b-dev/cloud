@@ -744,7 +744,14 @@ const sourceLabel = (source: SettingValueSource, t: ReturnType<typeof settingsMe
   return t.codeDefault;
 };
 
-const formatSettingPreview = (entry: SettingFieldDef, value: unknown, t: ReturnType<typeof settingsMessages.resolve>["t"]): string => {
+const formatSettingPreview = (
+  entry: SettingFieldDef,
+  value: unknown,
+  t: ReturnType<typeof settingsMessages.resolve>["t"],
+  locale: string,
+): string => {
+  // Grouped like every number on the page, so a byte limit reads "104.857.600", not as a long code.
+  if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
   if (entry.kind === "secret") return entry.resetValueSource === "env" ? t.environmentFallbackHidden : t.emptySecret;
   if (entry.kind === "boolean") return value ? t.enabled : t.disabled;
   if (entry.kind === "image") return typeof value === "string" && value ? t.imageConfigured : t.noImage;
@@ -1159,7 +1166,8 @@ function FieldRow(props: {
             {e().description}
           </p>
           <p class="mt-1 text-[11px] text-dimmed">
-            {t().useDefaultPreview} <span class="font-medium text-secondary">{formatSettingPreview(e(), e().resetValue, t())}</span>
+            {t().useDefaultPreview}{" "}
+            <span class="font-medium text-secondary">{formatSettingPreview(e(), e().resetValue, t(), locale())}</span>
             <span class="text-dimmed"> ({sourceLabel(e().resetValueSource, t()).toLowerCase()})</span>
           </p>
         </div>

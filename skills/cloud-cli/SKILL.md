@@ -33,6 +33,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 
 | Task | Start with |
 | --- | --- |
+| Develop Code in local files, check permissions, test or submit a version | `cld code reference`, then `cld code help`; pull into a new directory when updating, preserve `baseVersionId`, and use CI credentials only for checks/tests/pushes |
 | Write a note with callouts, tasks, tables, formulas, charts, or data | `cld notebooks reference markdown.md`, then `cld notebooks write "<notebook>:<path>" --from note.md` |
 | Change part of an existing note | `cld notebooks reference`, then `cld notebooks cat <note> --json` and `cld notebooks edit` |
 | Review comments on a note's text, reply with suggestions, or accept them | `cld notebooks reference comments.md`, then `cld notebooks comments list <note> --state open`; the page discussion is `cld notebooks discussion` |
@@ -47,7 +48,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 | Query Pulse measurements or save SQL | `cld pulse reference sql.md`; `cld pulse sql --base <id> --file <path>` and `cld pulse queries --help`; one base per query |
 | Configure Pulse SQL alerts and source expectations | `cld pulse reference alerts.md`; `cld pulse alerts --help`; SQL alert writes need approval |
 | Set up Pulse sources, ingest batches, or inspect collection status | `cld pulse reference`, then `cld pulse reference ingest.md` |
-| Set up the Assistant for someone: Projects, knowledge, references, Skills, memories, or routines | `cld assistant reference how-it-works.md` first: whose permissions it uses, what is live or a copy, and what needs approval. Then `cld assistant reference` |
+| Set up the Assistant for someone: Projects, knowledge, references, Skills, or memories | `cld assistant reference how-it-works.md` first: whose permissions it uses, what is live or a copy, and what needs approval. Then `cld assistant reference` |
 
 ## Agent workflow
 

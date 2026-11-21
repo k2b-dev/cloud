@@ -454,21 +454,24 @@ describe("AI Skill routes", () => {
       createdAt: "2026-10-01T00:00:00Z",
     };
     const add = spyOn(aiSkills, "grantAccess").mockResolvedValue(grant);
+    const list = spyOn(aiSkills, "listAccess").mockResolvedValue([grant]);
     const update = spyOn(aiSkills, "updateAccess").mockResolvedValue(true);
     const revoke = spyOn(aiSkills, "revokeAccess").mockResolvedValue(true);
     const remove = spyOn(aiSkills, "delete").mockResolvedValue(true);
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     const input = { principal: grant.principal, permission: grant.permission };
+    expect((await routes.request(`/${skillShortId}/access`, { headers: { "x-cloud-locale": "de" } })).status).toBe(200);
+    expect(list).toHaveBeenCalledWith(skillId, authorization, sessionAuthority, "de");
     expect(
       (
         await routes.request(`/${skillShortId}/access`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", "x-cloud-locale": "de" },
           body: JSON.stringify(input),
         })
       ).status,
     ).toBe(201);
-    expect(add).toHaveBeenCalledWith(skillId, authorization, input, undefined, sessionAuthority);
+    expect(add).toHaveBeenCalledWith(skillId, authorization, input, undefined, sessionAuthority, "de");
     expect(
       (
         await routes.request(`/${skillShortId}/access/${grant.shortId}`, {

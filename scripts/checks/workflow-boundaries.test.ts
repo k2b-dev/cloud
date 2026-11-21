@@ -83,3 +83,13 @@ test("only command services may enter the explicit legacy drain bridge", () => {
 test("Mail startup keeps the old effect-order schema until rule commands drain", () => {
   expect(checkSource(resolve(root, "packages/mail/src/migrate.ts"), 'import "./service/workflow-effect-order-schema";', root)).toEqual([]);
 });
+
+test("only Mail startup may migrate stored incoming-automation targets", () => {
+  expect(
+    checkSource(resolve(root, "packages/mail/src/migrate.ts"), 'import "./service/incoming-automation-targets-migrate";', root),
+  ).toEqual([]);
+  expect(
+    checkSource(resolve(root, "packages/mail/src/index.ts"), 'import "./service/incoming-automation-targets-migrate";', root),
+  ).toHaveLength(1);
+  expect(checkSource(resolve(root, "packages/mail/src/migrate.ts"), 'import "./service/incoming-automations";', root)).toHaveLength(1);
+});

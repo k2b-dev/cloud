@@ -1,0 +1,36 @@
+import { expect, test } from "bun:test";
+import { RunnerCallError, RunnerCallResponseSchema } from "./runner-protocol";
+
+test("trusted translated refusal text survives the runner envelope and Error", () => {
+  const message = "Für das Modell fehlen Kontext- oder Ausgabegrenzen. Bitte die Administration um Hilfe.";
+  const error = { code: "code_ai_budget_unknown", status: 409, message };
+  expect(RunnerCallResponseSchema.parse({ ok: false, error })).toEqual({ ok: false, error });
+  expect(new RunnerCallError(error.code, undefined, error.status, message).message).toBe(message);
+});
+
+test("runner refusal text is nonempty and bounded before entering the sandbox", () => {
+  const refusal = (message: string) => ({ ok: false, error: { code: "code_ai_budget_unknown", message } });
+  expect(RunnerCallResponseSchema.safeParse(refusal("x".repeat(500))).success).toBe(true);
+  expect(RunnerCallResponseSchema.safeParse(refusal("x".repeat(501))).success).toBe(false);
+  expect(RunnerCallResponseSchema.safeParse(refusal("")).success).toBe(false);
+});
+
+test("an undeclared-origin refusal names only the canonical origin through the runner error", () => {
+  const error = { code: "code_http_origin_undeclared", origin: "https://api.example:8443" };
+  expect(RunnerCallResponseSchema.parse({ ok: false, error })).toEqual({ ok: false, error });
+  expect(new RunnerCallError(error.code, error.origin).message).toBe("code_http_origin_undeclared: https://api.example:8443");
+  for (const origin of ["https://api.example/path", "https://user:secret@api.example", "http://api.example", "https://*.example"])
+    expect(RunnerCallResponseSchema.safeParse({ ok: false, error: { ...error, origin } }).success).toBe(false);
+  expect(new RunnerCallError("code_access_removed").message).toBe("code_access_removed");
+});
+
+test("target status is optional, bounded metadata on runner refusals", () => {
+  for (const status of [400, 403, 404, 500, 599]) {
+    const value = { ok: false as const, error: { code: "not_found", status } };
+    expect(RunnerCallResponseSchema.parse(value)).toEqual(value);
+    expect(new RunnerCallError("not_found", undefined, status).status).toBe(status);
+  }
+  for (const status of [200, 399, 600, 403.5, "404", null])
+    expect(RunnerCallResponseSchema.safeParse({ ok: false, error: { code: "not_found", status } }).success).toBe(false);
+  expect(RunnerCallResponseSchema.parse({ ok: false, error: { code: "not_found" } })).toEqual({ ok: false, error: { code: "not_found" } });
+});

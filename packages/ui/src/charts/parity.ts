@@ -130,6 +130,17 @@ export const chartParity: readonly ChartParityRow[] = [
     legacyId: "kind-line",
   },
   {
+    id: "line-points",
+    feature: "Line: hollow points",
+    proof: {
+      file: "packages/ui/src/charts/core/line-points.test.ts",
+      test: "points mark every value as a hollow ring in its series colour, above the line, on both line paths",
+    },
+    spec: { ...line, points: true },
+    legacySpec: line,
+    legacyId: "kind-line",
+  },
+  {
     id: "line-zero",
     feature: "Line: negative zone",
     proof: {
@@ -825,10 +836,10 @@ export const chartParity: readonly ChartParityRow[] = [
   },
   {
     id: "cloud-chart",
-    feature: "cloud.chart()",
+    feature: "Chat native charts",
     proof: {
-      file: "packages/assistant/src/artifacts/runtime/cloud-lib.test.ts",
-      test: "chart function formats survive validation and measured redraws",
+      file: "packages/assistant/src/chat-code/runtime/views.test.ts",
+      test: "canonical chart forms pass through for every kind including gauge",
     },
     spec: line,
   },

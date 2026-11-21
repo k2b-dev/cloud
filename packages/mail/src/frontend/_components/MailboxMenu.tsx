@@ -76,9 +76,9 @@ export function createMailboxMenu(options: () => MailboxMenuOptions) {
         items: [
           {
             id: "automations",
-            label: t.automations,
+            label: t.automationLog,
             icon: "ti ti-route",
-            action: () => documentNavigate(`/app/mail/${current.mailboxId}/automations`),
+            action: () => documentNavigate(`/app/mail/${current.mailboxId}/automations/log`),
           },
           ...(current.canAdmin
             ? [

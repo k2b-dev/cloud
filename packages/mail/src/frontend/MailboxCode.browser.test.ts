@@ -1,0 +1,704 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { CODE_PAGE_FIXTURE_STATES } from "@k2b/cloud/ssr/code-page/code-page.fixture";
+import type { Browser, BrowserContextOptions, Page } from "playwright";
+import { launchBrowser, settled } from "../../../ui/test/browser";
+import { MAIL_CODE_CATCH_UP_STATES } from "./MailCodeTools.fixture";
+
+// The shared Code page inside Mail: layout at real widths, the switch-on flow with Core's answers, and recovery.
+const buildHarness = async (): Promise<string> => {
+  const ui = new URL("../../../ui/", import.meta.url).pathname;
+  const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
+  const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
+  const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
+  const build = await Bun.build({
+    entrypoints: [new URL("./MailboxCode.browser-harness.tsx", import.meta.url).pathname],
+    target: "browser",
+    format: "iife",
+    conditions: ["browser"],
+    plugins: [
+      {
+        name: "solid-mailbox-code-test",
+        setup(builder) {
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
+  });
+  if (!build.success) throw new AggregateError(build.logs, "Mailbox Code harness build failed");
+  return build.outputs[0]!.text();
+};
+
+const buildCss = async (entry: string): Promise<string> => {
+  const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", new URL("../../../cloud/", import.meta.url).pathname))).default;
+  const build = await Bun.build({ entrypoints: [entry], plugins: [tailwind] });
+  if (!build.success) throw new AggregateError(build.logs, `Could not compile ${entry}`);
+  return build.outputs[0]!.text();
+};
+
+const harness = await buildHarness();
+const css =
+  (await buildCss(resolve(import.meta.dir, "../../../../styles.css"))) + (await buildCss(resolve(import.meta.dir, "../styles/app.css")));
+// Screenshots show the real icons: the Tabler font is served beside the stylesheet.
+const iconCss = fileURLToPath(import.meta.resolve("@k2b/ui/icons/tabler.css"));
+const iconSource = await Bun.file(iconCss).text();
+const iconFont = iconSource.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
+if (!iconFont) throw new Error("Missing Tabler WOFF2 file");
+const icons = { css: iconSource.replace(iconFont, "/tabler.woff2"), font: resolve(dirname(iconCss), iconFont) };
+// And the product's typeface, IBM Plex, so widths and wraps match what people see.
+const plexCss = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
+const plexSource = await Bun.file(plexCss).text();
+const plexFiles = new Map(
+  [...new Set(plexSource.match(/\.\/fonts\/[^)"']+\.woff2/g) ?? [])].map((file) => [
+    `/plex/${file.split("/").at(-1)}`,
+    resolve(dirname(plexCss), file),
+  ]),
+);
+let plex = plexSource;
+for (const [path, file] of plexFiles) plex = plex.replaceAll(`./fonts/${file.split("/").at(-1)}`, path);
+/** What Core answers while the person switches on: the activation's final state. */
+let activationEnd: "active" | "owner_refused" | "unavailable" | "lost-active" | "silent" = "active";
+const activations: unknown[] = [];
+/** What the chat chooser of personal Code asked Core to bind. */
+const chatBindingSets: { input?: unknown; target?: unknown }[] = [];
+/** Core answers a change at revision 1 with a conflict: someone chose another chat meanwhile. */
+let chatBindingConflict = false;
+let chatBindingReads = 0;
+const chatView = (id: string, title: string) => ({
+  ref: { type: "core.ai.chat", id },
+  title,
+  links: [{ rel: "open", href: `/app/assistant?conversation=${id}` }],
+});
+const unexpectedRoutes: string[] = [];
+const server = Bun.serve({
+  port: 0,
+  hostname: "127.0.0.1",
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
+    if (url.pathname === "/styles.css")
+      return new Response(css + icons.css + plex, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+    if (url.pathname === "/tabler.woff2") return new Response(Bun.file(icons.font), { headers: { "Content-Type": "font/woff2" } });
+    const plexFile = plexFiles.get(url.pathname);
+    if (plexFile) return new Response(Bun.file(plexFile), { headers: { "Content-Type": "font/woff2" } });
+    if (url.pathname === "/api/code/activate") {
+      const body = (await request.json()) as { activationId: string; versionId: string };
+      activations.push(body);
+      // Core's answer gets lost on the way back: it may or may not have accepted.
+      if (activationEnd === "unavailable" || activationEnd === "lost-active" || activationEnd === "silent")
+        return Response.json({ code: "INTERNAL", message: "Core nicht erreichbar" }, { status: 503 });
+      return Response.json({ data: { id: body.activationId, versionId: body.versionId, state: "preflight", failure: null } });
+    }
+    if (url.pathname === "/api/code/activation/read") {
+      const body = (await request.json()) as { activationId: string };
+      // The refusal names the target the harness was told about, with its title and manager even where it should not.
+      if (activationEnd === "owner_refused")
+        return Response.json({
+          data: {
+            id: body.activationId,
+            versionId: "00000000-0000-4000-8000-000000000005",
+            state: "failed",
+            failure: { target: null, code: "not_owner_manager", reason: "Nur Verwalter des Besitzers können Code einschalten." },
+          },
+        });
+      if (activationEnd === "unavailable") return Response.json({ code: "NOT_FOUND", message: "Activation not found." }, { status: 404 });
+      if (activationEnd === "silent") return Response.json({ code: "INTERNAL", message: "Core nicht erreichbar" }, { status: 503 });
+      return Response.json({
+        data: {
+          id: body.activationId,
+          versionId: "00000000-0000-4000-8000-000000000005",
+          state: "active",
+          failure: null,
+        },
+      });
+    }
+    // Personal Code's chat chooser: the owner's active chats, then the binding change.
+    if (url.pathname === "/api/capabilities/v1/queries/core/ai.chats.search") {
+      const query = ((await request.json()) as { input?: { query?: string } }).input?.query?.toLowerCase() ?? "";
+      const chats = [chatView("Wk7chat", "Wochenbericht"), chatView("Lyon42", "Reise nach Lyon")];
+      return Response.json({ data: chats.filter((chat) => chat.title.toLowerCase().includes(query)) });
+    }
+    if (url.pathname === "/api/capabilities/v1/queries/core/code.chat_binding.read") {
+      chatBindingReads++;
+      return Response.json({
+        data: {
+          codeId: "c_woche1",
+          revision: 2,
+          canChange: true,
+          chat: { state: "available", id: "Wk7chat", title: "Wochenbericht", project: null, href: "/app/assistant" },
+        },
+      });
+    }
+    if (url.pathname === "/api/capabilities/v1/actions/core/code.chat_binding.set") {
+      const body = (await request.json()) as { input?: { chatId?: string; revision?: number }; target?: unknown };
+      chatBindingSets.push(body);
+      if (chatBindingConflict && body.input?.revision === 1)
+        return Response.json({ code: "CONFLICT", message: "Chat binding changed. Read it again." }, { status: 409 });
+      return Response.json({
+        data: {
+          codeId: "c_woche1",
+          revision: 2,
+          canChange: true,
+          chat: { state: "available", id: body.input?.chatId ?? "", title: "Reise nach Lyon", project: null, href: "/app/assistant" },
+        },
+      });
+    }
+    if (url.pathname.startsWith("/api/")) unexpectedRoutes.push(url.pathname);
+    return new Response(
+      '<!doctype html><html class="light" style="--app-accent:#2563eb"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+        '<link rel="stylesheet" href="/styles.css"><style>#root{position:fixed;inset:0;display:flex}</style></head>' +
+        '<body class="k2b-ui" style="margin:0"><div id="root"></div><script src="/harness.js"></script></body></html>',
+      { headers: { "Content-Type": "text/html" } },
+    );
+  },
+});
+
+let browser: Browser;
+beforeAll(async () => {
+  browser = await launchBrowser();
+}, 30_000);
+afterAll(async () => {
+  await browser?.close();
+  server.stop(true);
+});
+
+const widths = { desktop: 1440, tablet: 1024, phone: 390 } as const;
+const contextFor = (width: number): BrowserContextOptions =>
+  width < 768
+    ? { viewport: { width, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
+    : { viewport: { width, height: 900 } };
+/** Set CODE_PAGE_SHOTS to a directory to keep light screenshots of every state for review. */
+const shots = process.env.CODE_PAGE_SHOTS;
+if (shots) mkdirSync(shots, { recursive: true });
+
+const load = async (
+  state: string,
+  width: number,
+  options: { phone?: boolean; dark?: boolean; catchUp?: string; locale?: "de" | "en"; usesBoundChat?: boolean } = {},
+): Promise<Page> => {
+  const page = await (await browser.newContext(contextFor(width))).newPage();
+  await page.goto(server.url.href);
+  if (options.dark) await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
+  await page.evaluate((params) => window.mountMailboxCode(params as Parameters<typeof window.mountMailboxCode>[0]), {
+    state,
+    locale: options.locale ?? "de",
+    phone: options.phone,
+    catchUp: options.catchUp,
+    usesBoundChat: options.usesBoundChat,
+  });
+  await settled(page);
+  return page;
+};
+const shoot = async (page: Page, name: string) => {
+  if (shots) await page.screenshot({ path: resolve(shots, `${name}.png`), fullPage: false });
+};
+const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+describe("Mailbox Code page in a browser", () => {
+  for (const [name, width] of Object.entries(widths))
+    test(
+      `${name} ${width}px: every state fits without horizontal scrolling`,
+      async () => {
+        for (const state of CODE_PAGE_FIXTURE_STATES) {
+          const page = await load(state, width);
+          try {
+            expect({ state, overflow: await overflow(page) }).toEqual({ state, overflow: 0 });
+            expect(await page.locator(".cloud-code").count()).toBe(1);
+            await shoot(page, `${state}-${width}`);
+          } finally {
+            await page.context().close();
+          }
+        }
+      },
+      CODE_PAGE_FIXTURE_STATES.length * 4_000,
+    );
+
+  test("the page heads with its state and its row titles stay no larger than the island titles", async () => {
+    for (const width of [1440, 390])
+      for (const state of ["overview", "runs", "versions"]) {
+        const page = await load(state, width);
+        try {
+          const measured = await page.evaluate(() => {
+            const size = (element: Element) => Number.parseFloat(getComputedStyle(element).fontSize);
+            const titles = Array.from(document.querySelectorAll(".cloud-code__island .k2b-section__title"));
+            const largest = Math.max(0, ...titles.map(size));
+            return {
+              state: document.querySelector(".cloud-code h1 .cloud-code__state")?.textContent?.trim() ?? null,
+              rowsAboveIsland: Array.from(document.querySelectorAll(".cloud-code__row-title")).filter((row) => size(row) > largest).length,
+            };
+          });
+          expect({ state, width, heading: Boolean(measured.state), rowsAboveIsland: measured.rowsAboveIsland }).toEqual({
+            state,
+            width,
+            heading: true,
+            rowsAboveIsland: 0,
+          });
+        } finally {
+          await page.context().close();
+        }
+      }
+  }, 60_000);
+
+  test("the code tab shows the source in the monospace face, so indentation lines up", async () => {
+    const page = await load("code", 1440);
+    try {
+      const fonts = await page.evaluate(() => {
+        const line = document.querySelector(".k2b-code-diff__line code");
+        const token = document.querySelector(".k2b-code-diff__line code span");
+        return [line, token].map((element) => (element ? getComputedStyle(element).fontFamily : null));
+      });
+      // Cloud sets a sans face on every element; the code surface must win for its lines and tokens.
+      for (const font of fonts) expect(font ?? "").toContain("Mono");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("what it did for you links only named results; a result the reader may not open keeps its row, without link or ID", async () => {
+    for (const width of [1440, 390]) {
+      const page = await load("overview", width);
+      try {
+        const rows = await page.evaluate(() =>
+          Array.from(document.querySelectorAll(".cloud-code__feed li")).map((row) => ({
+            text: row.querySelector(".cloud-code__feed-text")?.textContent ?? "",
+            href: row.querySelector(".cloud-code__feed-text a")?.getAttribute("href") ?? null,
+            height: Math.round(row.getBoundingClientRect().height),
+          })),
+        );
+        // Only the name is the link; the quotation marks around it go (v12 picture 19).
+        expect(rows.find((row) => row.text === "Aufgabe Lieferung Polsterei Weber angelegt")?.href).toBe("/app/spaces/Lg8x2q");
+        expect(rows.find((row) => row.text === "Aufgabe angelegt")).toMatchObject({ href: null });
+        expect(JSON.stringify(rows)).not.toMatch(/Hd7q2w|\{name\}/);
+        // Leitfaden: link text stays running text; only the underline carries the tint (Rundgang 6, Fable 8).
+        const link = await page.evaluate(() => {
+          const anchor = document.querySelector<HTMLElement>(".cloud-code__feed-text a");
+          const text = anchor?.closest<HTMLElement>(".cloud-code__feed-text");
+          if (!anchor || !text) return null;
+          const style = getComputedStyle(anchor);
+          return {
+            same: style.color === getComputedStyle(text).color,
+            underline: style.textDecorationLine,
+            tinted: style.textDecorationColor !== style.color,
+          };
+        });
+        expect(link).toEqual({ same: true, underline: "underline", tinted: true });
+        // 6b: every row keeps one height, named or not.
+        expect(new Set(rows.map((row) => row.height)).size).toBe(1);
+      } finally {
+        await page.context().close();
+      }
+    }
+  });
+
+  test("390px: the last run keeps its whole title on lines of its own, at a fixed height (#76)", async () => {
+    const page = await load("overview", 390);
+    try {
+      const last = await page.evaluate(() => {
+        const cell = document.querySelector<HTMLElement>(".cloud-code__lage-last");
+        const what = document.querySelector<HTMLElement>(".cloud-code__lage-what");
+        return {
+          title: what?.textContent ?? null,
+          cut: what ? what.scrollWidth > what.clientWidth + 1 || what.scrollHeight > what.clientHeight + 1 : null,
+          height: cell ? Math.round(cell.getBoundingClientRect().height) : 0,
+        };
+      });
+      expect(last.title).toBeTruthy();
+      expect({ title: last.title, cut: last.cut }).toEqual({ title: last.title, cut: false });
+      expect(last.height).toBeGreaterThanOrEqual(40);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  // Automations v5, 4.4: the owner chooses the chat their personal Code writes to; the page never moves for it.
+  test("the owner chooses another chat for personal Code in a dialog, with Core's revision", async () => {
+    for (const width of [1440, 390]) {
+      chatBindingSets.length = 0;
+      const page = await load("personal", width);
+      try {
+        const row = page.locator(".cloud-code__may .cloud-code__row", { hasText: "In den Chat „Wochenbericht“ schreiben" });
+        await row.getByRole("button", { name: "Anderen Chat wählen" }).click();
+        const dialog = page.getByRole("dialog", { name: "Chat für diese Automation" });
+        await dialog.getByText("Gustav antwortet im gewählten Chat, mit dessen Projekt, Modell und Dateien.", { exact: false }).waitFor();
+        await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).waitFor();
+        // The current chat is marked; choosing it again changes nothing.
+        expect(await dialog.getByText("Aktuell").count()).toBe(1);
+        expect(await dialog.getByRole("button", { name: "Diesen Chat nehmen" }).isDisabled()).toBe(true);
+        await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).check();
+        await dialog.getByRole("button", { name: "Diesen Chat nehmen", disabled: false }).waitFor();
+        await shoot(page, `chat-chooser-${width}`);
+        const box = await dialog.boundingBox();
+        expect(box !== null && box.x >= 0 && box.x + box.width <= width).toBe(true);
+        await dialog.getByRole("button", { name: "Diesen Chat nehmen" }).click();
+        // The dialog closes only after Core answered.
+        await dialog.waitFor({ state: "hidden" });
+        expect(chatBindingSets).toHaveLength(1);
+        expect(chatBindingSets[0]).toMatchObject({
+          input: { chatId: "Lyon42", revision: 1 },
+          target: { type: "core.code", id: "c_woche1" },
+        });
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
+
+  test("the chat chooser saves only a visible choice, says when nothing matches, and recovers from a conflict in place", async () => {
+    chatBindingSets.length = 0;
+    chatBindingConflict = true;
+    chatBindingReads = 0;
+    const page = await load("personal", 1440);
+    try {
+      await page.locator(".cloud-code__may").getByRole("button", { name: "Anderen Chat wählen" }).click();
+      const dialog = page.getByRole("dialog", { name: "Chat für diese Automation" });
+      const save = dialog.getByRole("button", { name: "Diesen Chat nehmen" });
+      await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).check();
+      expect(await save.isDisabled()).toBe(false);
+      // A search that hides the choice takes it out of reach; nothing invisible is saved.
+      const search = dialog.getByRole("searchbox", { name: "Deine Chats durchsuchen" });
+      await search.fill("Woch");
+      await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).waitFor({ state: "detached" });
+      expect(await save.isDisabled()).toBe(true);
+      await search.fill("Zürich");
+      await dialog.getByText("Kein aktiver Chat passt zu „Zürich“.").waitFor();
+      await search.fill("");
+      await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).waitFor();
+      expect(await save.isDisabled()).toBe(false);
+      // Someone changed the chat meanwhile: the dialog stays, says so, and works on with Core's current revision.
+      await save.click();
+      await dialog.getByText("Der Chat wurde inzwischen geändert.").waitFor();
+      await dialog.getByRole("button", { name: "Diesen Chat nehmen", disabled: false }).waitFor();
+      await shoot(page, "chat-chooser-conflict-1440");
+      expect(chatBindingReads).toBe(1);
+      expect(await dialog.isVisible()).toBe(true);
+      await save.click();
+      await dialog.waitFor({ state: "hidden" });
+      expect(chatBindingSets.map((set) => set.input)).toEqual([
+        { chatId: "Lyon42", revision: 1 },
+        { chatId: "Lyon42", revision: 2 },
+      ]);
+    } finally {
+      chatBindingConflict = false;
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("an unused archived chat binding adds no notice or needs-you state", async () => {
+    for (const width of [1440, 390]) {
+      for (const locale of ["de", "en"] as const) {
+        const page = await load("personal-chat-missing", width, { locale, dark: width === 390, usesBoundChat: false });
+        try {
+          expect(await page.locator(".cloud-code__state").getAttribute("data-tone")).toBe("ok");
+          expect(await page.getByRole("button", { name: locale === "de" ? "Chat wählen …" : "Choose a chat…", exact: true }).count()).toBe(
+            0,
+          );
+          expect(
+            await page.getByRole("button", { name: locale === "de" ? "Chat wiederherstellen" : "Restore chat", exact: true }).count(),
+          ).toBe(0);
+          expect(
+            await page
+              .locator(".k2b-notice-card")
+              .filter({ hasText: locale === "de" ? "ist archiviert" : "is archived" })
+              .count(),
+          ).toBe(0);
+          expect(await overflow(page)).toBe(0);
+        } finally {
+          await page.context().close();
+        }
+      }
+    }
+  }, 60_000);
+
+  test("a missing chat is said above the page, with choose and restore for the owner, at a fixed place", async () => {
+    for (const width of [1440, 390]) {
+      const page = await load("personal-chat-missing", width);
+      try {
+        const notice = page.getByText("Der Chat „Wochenbericht“ ist archiviert.");
+        await notice.waitFor();
+        await page.getByRole("button", { name: "Chat wählen …" }).first().waitFor();
+        await page.getByRole("button", { name: "Chat wiederherstellen" }).waitFor();
+        const geometry = await page.evaluate(() => {
+          const may = document.querySelector(".cloud-code__may");
+          const notice = Array.from(document.querySelectorAll(".k2b-notice-card")).find((card) =>
+            card.textContent?.includes("ist archiviert"),
+          );
+          return {
+            aboveMay: Boolean(notice && may && notice.getBoundingClientRect().bottom <= may.getBoundingClientRect().top),
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          };
+        });
+        expect(geometry).toEqual({ aboveMay: true, overflow: 0 });
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
+
+  test("the sidebar shows a warning dot, never a number, when the Code needs attention", async () => {
+    for (const [state, dot] of [
+      ["refused", true],
+      ["overview", false],
+    ] as const) {
+      const page = await load(state, 1440);
+      try {
+        const entry = page.locator('.mail-sidebar a[href="/app/mail/Mb4kd2/code"]').first();
+        const mark = entry.locator(".k2b-app-workspace__sidebar-status-attention");
+        expect(await mark.count()).toBe(dot ? 1 : 0);
+        if (dot) {
+          expect(await mark.isVisible()).toBe(true);
+          expect(await entry.getByText(", Code braucht Aufmerksamkeit").count()).toBe(1);
+        }
+        expect(/\d/.test((await entry.textContent()) ?? "")).toBe(false);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
+
+  test("the sidebar marks Code under the open mailbox, after Sent", async () => {
+    const page = await load("overview", 1440);
+    try {
+      const code = page.locator('.mail-sidebar a[href="/app/mail/Mb4kd2/code"]').first();
+      expect(await code.getAttribute("aria-current")).toBe("page");
+      const sent = await page.locator(".mail-sidebar").getByText("Gesendet", { exact: true }).first().boundingBox();
+      const entry = await code.boundingBox();
+      expect(entry!.y).toBeGreaterThan(sent!.y);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("switching on uses current account rights and makes no target preflight request", async () => {
+    activationEnd = "active";
+    activations.length = 0;
+    unexpectedRoutes.length = 0;
+    const page = await load("waiting", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      const dialog = page.getByRole("dialog");
+      expect((await dialog.textContent()) ?? "").not.toContain("Operation an Ziel");
+      expect((await dialog.textContent()) ?? "").not.toContain("du verwaltest");
+      await dialog.getByRole("button", { name: "Version 5 einschalten" }).click();
+      await page.waitForURL(/activated=5/);
+      expect(activations).toHaveLength(1);
+      // The page's own run updates follow Core's live socket; that is no target preflight.
+      expect(unexpectedRoutes.filter((path) => path !== "/api/ai/live")).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("lost owner authority leaves the old version active and offers retry", async () => {
+    activationEnd = "owner_refused";
+    const page = await load("waiting", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Version 5 einschalten" }).click();
+      await dialog.getByText("Nur Verwalter des Besitzers können Code einschalten.", { exact: false }).waitFor();
+      expect((await dialog.textContent()) ?? "").toContain("Version 4 läuft weiter");
+      expect(await dialog.getByRole("button", { name: "Erneut versuchen" }).isEnabled()).toBe(true);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("when Core cannot start switching on, nothing changed and the person can try again", async () => {
+    activationEnd = "unavailable";
+    const page = await load("waiting", 1024);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Version 5 einschalten" }).click();
+      // The answer was lost, and Core knows no such activation: nothing changed, and trying again is safe.
+      await dialog.getByText("Cloud konnte das Einschalten nicht starten. Es hat sich nichts geändert.").waitFor();
+      expect(await dialog.getByRole("button", { name: "Erneut versuchen" }).isEnabled()).toBe(true);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("when Core's answer is lost but it switched on, the page shows the result instead of a false failure", async () => {
+    activationEnd = "lost-active";
+    activations.length = 0;
+    const page = await load("waiting", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      await page.getByRole("dialog").getByRole("button", { name: "Version 5 einschalten" }).click();
+      await page.waitForURL(/activated=5/);
+      expect(activations).toHaveLength(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("an unconfirmed attempt survives closing the dialog and is resumed by reading its status, never by starting another", async () => {
+    activationEnd = "silent";
+    activations.length = 0;
+    const page = await load("waiting", 1440);
+    try {
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Version 5 einschalten" }).click();
+      await dialog.getByText("Cloud hat noch nicht bestätigt.", { exact: false }).waitFor();
+      expect(await dialog.getByRole("button", { name: "Stand prüfen" }).isEnabled()).toBe(true);
+      await dialog.getByRole("button", { name: "Schließen", exact: true }).click();
+      // Core finished in the meantime; reopening asks for that attempt's status.
+      activationEnd = "lost-active";
+      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
+      await page.waitForURL(/activated=5/);
+      expect(activations).toHaveLength(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a phone session explains why it cannot switch on, at the button and without a dialog", async () => {
+    const page = await load("waiting", 390, { phone: true });
+    try {
+      const button = page.getByRole("button", { name: "Version 5 einschalten" }).first();
+      expect(await button.isDisabled()).toBe(true);
+      expect(await page.getByRole("dialog").count()).toBe(0);
+      expect(await page.locator(".cloud-code").getByText("Telefon", { exact: false }).first().isVisible()).toBe(true);
+      expect(await overflow(page)).toBe(0);
+      await shoot(page, "telefon-gesperrt-390");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("dark theme keeps the page readable", async () => {
+    const page = await load("refused", 1440, { dark: true });
+    try {
+      const color = await page
+        .locator(".cloud-code__meta")
+        .first()
+        .evaluate((element) => getComputedStyle(element).color);
+      expect(color).not.toBe("rgb(0, 0, 0)");
+      await shoot(page, "refused-dark-1440");
+    } finally {
+      await page.context().close();
+    }
+  });
+});
+
+describe("Process existing mail in a browser", () => {
+  test("the overview ends with one quiet line that leads to the flow, and a paused Code offers none", async () => {
+    for (const [state, shown] of [
+      ["overview", true],
+      ["paused", false],
+      ["runs", false],
+    ] as const) {
+      const page = await load(state, 1440);
+      try {
+        const link = page.getByRole("link", { name: "Vorhandene E-Mails nachholen" });
+        expect({ state, count: await link.count() }).toEqual({ state, count: shown ? 1 : 0 });
+        if (shown) {
+          expect(await link.getAttribute("href")).toBe("/app/mail/Mb4kd2/code/catch-up");
+          // The line ends the Code page's overview, where "Incoming mail" stood, without a divider.
+          expect(await page.locator(".cloud-code .mail-code-backfill").count()).toBe(1);
+          expect(await page.locator("main hr").count()).toBe(0);
+        }
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
+
+  for (const width of [1440, 390])
+    test(`${width}px: every step fits, keeps the type steps, and puts leading signs on one axis`, async () => {
+      for (const step of MAIL_CODE_CATCH_UP_STATES) {
+        const page = await load("overview", width, { catchUp: step });
+        try {
+          expect({ step, overflow: await overflow(page) }).toEqual({ step, overflow: 0 });
+          const measured = await page.evaluate(() => {
+            const flow = document.querySelector(".mail-code-catchup");
+            if (!flow) return null;
+            // Every element of the flow's own text that carries words itself, plus the island titles and meta.
+            const own = Array.from(
+              flow.querySelectorAll(
+                '[class*="mail-code-catchup__"], [class*="mail-code-catchup__"] > span, .k2b-section__title, .k2b-section__meta',
+              ),
+            ).filter((element) =>
+              Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()),
+            );
+            const sizes = [...new Set(own.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)))].sort((a, b) => a - b);
+            const axes = Array.from(flow.querySelectorAll(".mail-code-catchup__rows")).map(
+              (list) =>
+                new Set(Array.from(list.querySelectorAll(":scope > li > i")).map((icon) => Math.round(icon.getBoundingClientRect().left)))
+                  .size,
+            );
+            return { sizes, axes, hr: flow.querySelectorAll("hr, details").length };
+          });
+          expect(measured).not.toBeNull();
+          expect({ step, extra: measured!.sizes.filter((size) => ![12, 13, 14, 18].includes(size)) }).toEqual({ step, extra: [] });
+          expect({ step, axes: measured!.axes.filter((count) => count !== 1) }).toEqual({ step, axes: [] });
+          expect(measured!.hr).toBe(0);
+          await shoot(page, `nachholen-${step}-${width}`);
+        } finally {
+          await page.context().close();
+        }
+      }
+    }, 120_000);
+
+  test("“Load preview” sits on the row of the selection controls", async () => {
+    const page = await load("overview", 1440, { catchUp: "auswahl" });
+    try {
+      const boxes = await page.evaluate(() => {
+        const row = document.querySelector(".mail-code-catchup__pick");
+        const control = row?.querySelector(".k2b-field .k2b-select-trigger, .k2b-field button, .k2b-field input");
+        const button = row?.querySelector(".mail-code-catchup__load button");
+        return [control, button].map((element) => {
+          const box = element?.getBoundingClientRect();
+          return box ? { top: Math.round(box.top), height: Math.round(box.height) } : null;
+        });
+      });
+      const [control, button] = boxes;
+      // Same middle line, so the button reads as part of the controls' row.
+      expect({
+        control,
+        button,
+        gap: Math.abs(control!.top + control!.height / 2 - (button!.top + button!.height / 2)) <= 1,
+      }).toMatchObject({
+        gap: true,
+      });
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("the progress number keeps its place while the share grows", async () => {
+    const page = await load("overview", 1440, { catchUp: "laeuft" });
+    try {
+      const box = () => page.locator(".mail-code-catchup__progress .k2b-progress").boundingBox();
+      const before = await box();
+      await page.locator(".mail-code-catchup__percent").evaluate((element) => {
+        element.textContent = "100 %";
+      });
+      expect(await box()).toEqual(before);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("dark theme keeps the flow readable", async () => {
+    const page = await load("overview", 1440, { catchUp: "teilfehler", dark: true });
+    try {
+      const color = await page.locator(".mail-code-catchup__lead").evaluate((element) => getComputedStyle(element).color);
+      expect(color).not.toBe("rgb(0, 0, 0)");
+      await shoot(page, "nachholen-teilfehler-dark-1440");
+    } finally {
+      await page.context().close();
+    }
+  });
+});

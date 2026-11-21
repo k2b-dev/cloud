@@ -10,9 +10,8 @@ import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { DISPOSITION_LIMIT } from "./bulk-disposition";
-import { previewIncomingAutomationMatches } from "./incoming-automations";
 import { createMailbox } from "./mailboxes";
-import { applySenderDisposition } from "./sender-disposition";
+import { applySenderDisposition, previewSenderMatches } from "./sender-disposition";
 
 const required = <T>(value: T | undefined): T => {
   if (value === undefined) throw new Error("Missing fixture value");
@@ -367,15 +366,10 @@ suite("sender bulk disposition", () => {
       FROM mail.remote_message_refs WHERE id = ${second}::uuid`;
     await sql`DELETE FROM mail.message_addresses WHERE message_id =
       (SELECT message_id FROM mail.remote_message_refs WHERE id = ${missing}::uuid)`;
-    const preview = await previewIncomingAutomationMatches({
+    const preview = await previewSenderMatches({
       context: ownerContext,
       mailboxId,
-      input: {
-        scope: {
-          mode: "matching",
-          conditions: { mode: "all", items: [{ field: "sender_domain", operator: "is", value: "first-from.test" }] },
-        },
-      },
+      input: { match: "domain", value: "first-from.test" },
     });
     expect(preview.ok && preview.data.messageCount).toBe(0);
     expect(await move({ match: "domain", value: "first-from.test", destination: "archive" })).toEqual({
@@ -406,15 +400,10 @@ suite("sender bulk disposition", () => {
     const source = await addMessage("INBOX", "placeholder@other.test");
     await sql`UPDATE mail.message_addresses SET normalized_email = ${'"a@b"@lastat.test'}
       WHERE message_id = (SELECT message_id FROM mail.remote_message_refs WHERE id = ${source}::uuid)`;
-    const preview = await previewIncomingAutomationMatches({
+    const preview = await previewSenderMatches({
       context: ownerContext,
       mailboxId,
-      input: {
-        scope: {
-          mode: "matching",
-          conditions: { mode: "all", items: [{ field: "sender_domain", operator: "is", value: "lastat.test" }] },
-        },
-      },
+      input: { match: "domain", value: "lastat.test" },
     });
     expect(preview.ok).toBe(true);
     if (preview.ok) expect(preview.data.messageCount).toBe(1);

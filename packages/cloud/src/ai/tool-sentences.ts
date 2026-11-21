@@ -1,12 +1,35 @@
 import { actionReview } from "../capabilities/reviews";
 import type { CapabilityActionCallReview } from "../contracts/capabilities";
-import { CodeActionInput } from "./browser-code-contracts";
 
 // Like the catalog these forms replace, code runs name no "not run" form: code asks about what it does inside the run,
 // so a declined or stopped question does not mean the code did not run. No tool names a "rejected" form, so a declined
 // call keeps Cloud's own words.
 const forms = {
   en: {
+    wakeup_create: {
+      action: "Set alarm",
+      running: "Setting alarm",
+      done: "Alarm set",
+      confirm: "Set alarm",
+      decline: "Cancel",
+      notRun: "Alarm not set",
+    },
+    wakeup_update: {
+      action: "Change alarm",
+      running: "Changing alarm",
+      done: "Alarm changed",
+      confirm: "Save",
+      decline: "Cancel",
+      notRun: "Alarm not changed",
+    },
+    wakeup_delete: {
+      action: "Delete alarm",
+      running: "Deleting alarm",
+      done: "Alarm deleted",
+      confirm: "Delete",
+      decline: "Cancel",
+      notRun: "Alarm not deleted",
+    },
     code_run: {
       action: "Run code",
       running: "Running code",
@@ -47,6 +70,30 @@ const forms = {
     },
   },
   de: {
+    wakeup_create: {
+      action: "Wecker stellen",
+      running: "Stellt den Wecker …",
+      done: "Wecker gestellt",
+      confirm: "Wecker stellen",
+      decline: "Abbrechen",
+      notRun: "Wecker nicht gestellt",
+    },
+    wakeup_update: {
+      action: "Wecker ändern",
+      running: "Ändert den Wecker …",
+      done: "Wecker geändert",
+      confirm: "Speichern",
+      decline: "Abbrechen",
+      notRun: "Wecker nicht geändert",
+    },
+    wakeup_delete: {
+      action: "Wecker löschen",
+      running: "Löscht den Wecker …",
+      done: "Wecker gelöscht",
+      confirm: "Löschen",
+      decline: "Abbrechen",
+      notRun: "Wecker nicht gelöscht",
+    },
     code_run: {
       action: "Code ausführen",
       running: "Code wird ausgeführt",
@@ -107,13 +154,10 @@ export const cloudToolReview = (name: string, args: unknown, locale: string): Ca
   const input = args;
   const sentence = forms[language];
   try {
+    if (name === "wakeup_create" || name === "wakeup_update" || name === "wakeup_delete")
+      return actionReview({ locale: language, sentence: sentence[name] }, {});
     if (name === "code_run") {
       return actionReview({ locale: language, sentence: sentence.code_run }, {});
-    }
-    if (name === "code_action") {
-      const parsed = CodeActionInput.shape.action.safeParse(input.action);
-      if (!parsed.success) return null;
-      return actionReview({ locale: language, sentence: sentence.code_action }, { action: { kind: "text", value: parsed.data } });
     }
     if (name === "web_extract" || name === "fetch_file") {
       if (typeof input.url !== "string" || !input.url.trim()) return null;
@@ -126,12 +170,12 @@ export const cloudToolReview = (name: string, args: unknown, locale: string): Ca
           { locale: language, sentence: sentence[name] },
           // A place title holds 200 characters; the address rows keep the whole host.
           { site: { kind: "place", title: url.host.length > 200 ? `${url.host.slice(0, 99)}…${url.host.slice(-100)}` : url.host } },
-          { preview: { kind: "fields", rows } },
+          { view: { version: 1 as const, blocks: [{ kind: "Detail" as const, title: "Details", items: rows }] } },
         );
       // One address row holds at most 2,000 characters. An address whose encoded form is longer shows as written;
       // if even that does not fit, the encoded address continues over numbered rows, so every character stays visible.
       for (const address of [href, readableAddress(href)])
-        if (address && address.length <= ADDRESS_MAX) {
+        if (address && address.length <= ADDRESS_MAX && !/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(address)) {
           try {
             return review([{ label, value: address }]);
           } catch {

@@ -3,15 +3,14 @@ import { mutation } from "@k2b/stdlib/solid";
 import { Dropdown, type DropdownItem, prompts, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { DraftDerivationKind, MailAutomationConditions, SenderIdentity, SenderMatchKind } from "../../contracts";
+import type { DraftDerivationKind, SenderIdentity } from "../../contracts";
 import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
-import type { AutomationActionKind } from "./mail-automation-actions";
 import { useMailCloudId } from "./mail-cloud-id";
 import { isOutgoingMessage } from "./mail-conversation-history";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { resolveMailMessageActionVisibility } from "./mail-message-action-visibility";
-import { buildExactSenderSearchHref, buildMailingListHref, mailRouteUrl, senderDomainFromAddress } from "./mail-navigation";
+import { buildExactSenderSearchHref, buildMailingListHref, mailRouteUrl } from "./mail-navigation";
 import { mailReaderMessages } from "./mail-reader-messages";
 
 type SelectionContext = {
@@ -41,7 +40,7 @@ export type MailMessageMenu = ReturnType<typeof createMailMessageMenu>;
 
 /** One thing to do about a message's sender, for the sender card. */
 export type SenderAction = {
-  id: "find" | "automation" | "block" | "block-domain" | "unsubscribe";
+  id: "find" | "unsubscribe";
   label: string;
   icon: string;
   href?: string;
@@ -53,37 +52,6 @@ export function createMailMessageMenu(props: MailMessageMenuProps) {
   const locale = useLocale();
   const cloudId = useMailCloudId();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
-  const [automationLoading, setAutomationLoading] = createSignal(false);
-  const openIncomingAutomation = async (
-    address: string,
-    options: { matchKind?: SenderMatchKind; action?: AutomationActionKind; name?: string } = {},
-  ) => {
-    if (automationLoading()) return;
-    const matchKind = options.matchKind ?? "sender";
-    const matchValue = matchKind === "domain" ? senderDomainFromAddress(address) : address;
-    if (!matchValue) return void prompts.error(t().incompleteSenderDomain);
-    const initialConditions: MailAutomationConditions = {
-      mode: "all",
-      items: [
-        matchKind === "sender"
-          ? { field: "sender_address", operator: "is", value: matchValue }
-          : { field: "sender_domain", operator: "is", value: matchValue },
-      ],
-    };
-    // The editor loads on first use; until its modal opens, another choice must not open a second one.
-    setAutomationLoading(true);
-    const editor = await importOnDemand(() => import("./MailIncomingAutomationSettings"));
-    setAutomationLoading(false);
-    if (!editor) return;
-    await editor.openIncomingAutomationEditor({
-      mailboxId: props.mailboxId,
-      initialName: options.name ?? t().messagesFrom({ value: matchValue }),
-      initialScope: { mode: "matching", conditions: initialConditions },
-      initialAction: options.action ?? "mark_read",
-      onSaved: () => undefined,
-    });
-  };
-
   const reportPhishing = mutation.create<boolean, SelectionContext>({
     mutation: async (_, { abortSignal }) => {
       const confirmed = await prompts.confirm(t().phishingReportDescription, {
@@ -139,41 +107,6 @@ export function createMailMessageMenu(props: MailMessageMenuProps) {
     const visibility = actionVisibility();
     return [
       ...(findSenderHref() ? [{ id: "find" as const, label: t().findSender, icon: "ti ti-search", href: findSenderHref()! }] : []),
-      ...(visibility.createIncomingAutomation
-        ? [
-            {
-              id: "automation" as const,
-              label: t().createSenderAutomation,
-              icon: "ti ti-filter-plus",
-              action: () => void openIncomingAutomation(address),
-            },
-          ]
-        : []),
-      ...(visibility.blockSender
-        ? [
-            {
-              id: "block" as const,
-              label: t().blockSender,
-              icon: "ti ti-user-x",
-              action: () => void openIncomingAutomation(address, { action: "junk", name: t().blockNamed({ value: address }) }),
-            },
-            ...(senderDomainFromAddress(address)
-              ? [
-                  {
-                    id: "block-domain" as const,
-                    label: t().blockSenderDomain,
-                    icon: "ti ti-world-x",
-                    action: () =>
-                      void openIncomingAutomation(address, {
-                        matchKind: "domain",
-                        action: "junk",
-                        name: t().blockNamed({ value: senderDomainFromAddress(address)! }),
-                      }),
-                  },
-                ]
-              : []),
-          ]
-        : []),
       ...(visibility.manageUnsubscribe && props.message.mailingList?.unsubscribe
         ? [
             {
@@ -254,25 +187,14 @@ export function createMailMessageMenu(props: MailMessageMenuProps) {
     ...cloudId.section({ messageId: props.message.id, conversationId: props.selectedConversationId }),
   ];
 
-  return { items, senderActions, pending, automationLoading, label: () => t().messageActions };
+  return { items, senderActions, pending, label: () => t().messageActions };
 }
 
 export function MailMessageMenuTrigger(props: { menu: MailMessageMenu }) {
   return (
     <Dropdown.Root position="bottom-left" width="16rem" items={props.menu.items()}>
-      <Dropdown.Trigger
-        iconOnly
-        size="sm"
-        type="button"
-        variant="ghost"
-        label={props.menu.label()}
-        disabled={props.menu.pending()}
-        aria-busy={props.menu.automationLoading() ? "true" : undefined}
-      >
-        <i
-          class={`ti ${props.menu.pending() || props.menu.automationLoading() ? "ti-loader-2 animate-spin" : "ti-dots"}`}
-          aria-hidden="true"
-        />
+      <Dropdown.Trigger iconOnly size="sm" type="button" variant="ghost" label={props.menu.label()} disabled={props.menu.pending()}>
+        <i class={`ti ${props.menu.pending() ? "ti-loader-2 animate-spin" : "ti-dots"}`} aria-hidden="true" />
       </Dropdown.Trigger>
     </Dropdown.Root>
   );

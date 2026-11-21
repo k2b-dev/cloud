@@ -12,7 +12,7 @@ import { z } from "zod";
 
 export const CAPABILITIES_BASE_PATH = "/admin/observability/capabilities";
 
-export const ORIGIN_FILTERS = ["all", "assistant", "mcp", "http", "app"] as const;
+export const ORIGIN_FILTERS = ["all", "assistant", "mcp", "http", "app", "choice"] as const;
 export type OriginFilter = (typeof ORIGIN_FILTERS)[number];
 
 export const STATUS_FILTERS = ["all", "succeeded", "failed", "denied", "invalid_input", "timed_out", "rejected"] as const;

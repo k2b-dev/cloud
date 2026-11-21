@@ -449,7 +449,8 @@ Keep these rules in every call:
 - List only entries the caller can open. Report `writable` for the folder from
   the caller's current permission; `save` still checks it again.
 - Keep identifiers and cursors opaque. A page may be short or empty and still
-  continue while `next` is set; return `next: null` on the last page.
+  continue while `next` is set; return `next: null` on the last page. Also
+  return the capability envelope `page: capabilityPage(next)` on every page.
 - Fail when storage cannot be reached, for example with `503`. Never answer
   an outage with an empty or shorter page; it looks like lost files.
 - Bound `maxBytes` by what you can serve. Consumers combine it with their own

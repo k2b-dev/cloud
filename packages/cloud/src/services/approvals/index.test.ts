@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { capabilityRequestHash } from "../../capabilities/claims";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "../../contracts/approvals";
 import type { RequestActor } from "../../server/middleware/auth";
-import { approvalArgsDigest, approvalDecisionChannel, approvalReviewDigest, approvalScopeFromToolName } from ".";
+import { approvalArgsDigest, approvalDecisionChannel, approvalReviewDigest, approvalScopeFromToolName, decide, request } from ".";
 
 const actor: RequestActor = {
   kind: "user",
@@ -54,4 +54,33 @@ describe("approval identity and binding", () => {
     expect(approvalReviewDigest(undefined)).toBe(capabilityRequestHash(null));
     expect(approvalReviewDigest({ message: "Write?" })).toBe(capabilityRequestHash({ message: "Write?" }));
   });
+});
+
+test("Code requests reject unrepresentable lifetimes before writing a request", async () => {
+  for (const expiresInMs of [Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_VALUE]) {
+    await expect(
+      request({
+        kind: "code_version",
+        appId: "demo",
+        action: "version.approve",
+        authorUserId: "c5000000-0000-4000-8000-000000000001",
+        approverRole: "admin",
+        requester: { kind: "code_version", ref: "attempt", appId: "demo", href: "/code/demo/" },
+        sentence: "Approve the version?",
+        input: { versionId: "one" },
+        expiresInMs,
+      }),
+    ).rejects.toThrow("Code approval expiry must be finite and fit in a JavaScript Date.");
+  }
+});
+
+test("decision detail is finite JSON with a bounded transport size before a database call", async () => {
+  for (const detail of [{ message: "x".repeat(32 * 1024) }, { invalid: undefined }])
+    await expect(
+      decide(
+        "11111111-1111-4111-8111-111111111111",
+        { approved: true, detail },
+        { userId: "11111111-1111-4111-8111-111111111111", via: "web_session" },
+      ),
+    ).rejects.toThrow();
 });

@@ -2,6 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import type { AiOpenQuestion } from "@k2b/cloud/ai";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
@@ -71,10 +72,120 @@ test("the server renders the waiting row of every case as the first client frame
       }),
     );
     expect([name, waitingStripSummary(html)]).toEqual([name, fixture.server]);
-    // Chats with an open question carry the dot from the first paint, in the list and in the phone menu's data.
+    // Chats with an open question carry the dot from the first paint, in the list, the collapsed rail's chat menu, and
+    // the phone menu's data.
     if (name === "three") {
-      expect(html.match(/<i class="assistant-chat-waiting"/g)?.length).toBe(2);
+      expect(html.match(/<span class="assistant-chat-marker" data-tone="attention"[^>]*><i class="assistant-chat-waiting"/g)?.length).toBe(
+        2,
+      );
+      expect(html.match(/<i class="assistant-chat-waiting"/g)?.length).toBe(4);
       expect(html.match(/"status":\{"icon":"assistant-chat-waiting"/g)?.length).toBe(2);
     }
   }
+});
+
+test("Code waiting kinds keep their own sign in the shared chip row", async () => {
+  const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");
+  const signs = {
+    code_activate: "ti ti-power",
+    code_changes: "ti ti-message-2",
+    code_expired: "ti ti-clock-off",
+    code_attention: "ti ti-alert-circle",
+  } as const;
+  for (const kind of ["code_activate", "code_changes", "code_expired", "code_attention"] as const) {
+    const icon = signs[kind];
+    const question: AiOpenQuestion = { ...waitingFixture.questions.items[0]!, kind };
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AssistantWaitingStrip, {
+            view: { attention: [], entries: [question], total: 1, more: 0, onlyHere: null, onlyHereAtEnd: false },
+            conversationId: question.conversationId,
+            quiet: false,
+            onJump: () => {},
+            onShowMore: () => {},
+          });
+        },
+      }),
+    );
+    expect(html).toContain(`data-kind="${kind}"`);
+    expect(html).toContain(`assistant-waiting__icon ${icon}`);
+  }
+});
+
+test("a Code entry shows the sign of its kind and its own sentence, never the approval prefix", async () => {
+  const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");
+  const base = waitingFixture.conversations[0]!;
+  const question = {
+    id: "q-code",
+    kind: "code_activate" as const,
+    conversationId: base.id,
+    conversationTitle: base.title,
+    anchor: "code-version-66666666-6666-4666-8666-666666666666",
+    short: "Version 5 einschalten",
+    createdAt: WAITING_NOW,
+  };
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(AssistantWaitingStrip, {
+          view: { attention: [], entries: [question] as never, more: 0, total: 1, onlyHere: null, onlyHereAtEnd: false },
+          conversationId: base.id,
+          quiet: false,
+          onJump: () => undefined,
+          onShowMore: () => undefined,
+        });
+      },
+    }),
+  );
+  expect(html).toContain("ti-power");
+  expect(html).toContain("Version 5 einschalten");
+  expect(html).not.toContain("Freigabe:");
+});
+
+// v12 3m, P4 Rundgang f02: while this chat's one entry (its version card) is in view, the row leaves it out and keeps
+// the entries of other chats; "+n" counts only what it does not show.
+test("this chat's entry in view leaves the row, other chats' entries stay", async () => {
+  const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");
+  const base = waitingFixture.conversations[0]!;
+  const version = {
+    id: "q-code",
+    kind: "code_activate" as const,
+    conversationId: base.id,
+    conversationTitle: base.title,
+    anchor: "code-version-66666666-6666-4666-8666-666666666666",
+    short: "Version 2 einschalten",
+    createdAt: WAITING_NOW,
+  };
+  const other = {
+    ...version,
+    id: "q-other",
+    conversationId: "zz9999",
+    conversationTitle: "Lieferavise",
+    anchor: "x",
+    short: "Lieferavise ansehen",
+  };
+  const render = (inView: string | null) =>
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AssistantWaitingStrip, {
+            view: { attention: [], entries: [version, other] as never, more: 0, total: 2, onlyHere: version.anchor, onlyHereAtEnd: false },
+            conversationId: base.id,
+            quiet: false,
+            inView,
+            onJump: () => undefined,
+            onShowMore: () => undefined,
+          });
+        },
+      }),
+    );
+  const shown = render(version.anchor);
+  expect(shown).not.toContain("Version 2 einschalten");
+  expect(shown).toContain("Lieferavise ansehen");
+  expect(shown).not.toContain("data-quiet");
+  expect(render(null)).toContain("Version 2 einschalten");
 });

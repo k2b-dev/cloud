@@ -62,6 +62,11 @@ type LayoutProps = {
   /** Final localized app-specific export or printing guidance, shown when no data-print-region exists. */
   printHint?: string;
   workspaceSidebarCollapsible?: boolean /** Resolve persisted sidebar geometry for the page's sidebar policy during SSR. */;
+  /**
+   * What the header names on phones: the current app (default) or this page's own title, falling back to the Cloud's
+   * name. For pages an app hosts for someone else, such as a Code page, whose app name would be an internal detail.
+   */
+  headTitle?: "app" | "page";
 }; // ==========================
 // Helpers
 function buildNavLinks(
@@ -387,7 +392,7 @@ export default function Layout(props: LayoutProps) {
               );
             })()}
           </PageTrailProvider>
-          {/* Focus pages also expose the canonical origin to their islands. */}
+          {/* Focus pages keep the request's profile and canonical origin available to their islands. */}
           <ShellDataProvider
             data={{
               cloudOrigin,
@@ -397,7 +402,7 @@ export default function Layout(props: LayoutProps) {
               apps: [],
               legalLinks: [],
               searchLinks: {},
-              ...(user ? { privacyTimerSeconds } : {}),
+              ...(user ? { privacyTimerSeconds, profile: shellData.profile } : {}),
             }}
           >
             {panel && <PanelSlot panel={panel} state={{ ...panelState, open: false }} platform={shellData.platform} />}
@@ -462,7 +467,7 @@ export default function Layout(props: LayoutProps) {
               <LayoutHeader
                 panelOpen={panel ? panelState.open : undefined}
                 authenticated={showRail}
-                title={appLabel ?? breadcrumbs.at(-1)?.title}
+                title={props.headTitle === "page" ? breadcrumbs.at(-1)?.title : (appLabel ?? breadcrumbs.at(-1)?.title)}
                 launchpad={!!(user || appLabel)}
                 breadcrumbs={user ? undefined : breadcrumbs}
                 loginHref={user ? undefined : createLoginRedirectUrl(c.req.raw.url)}

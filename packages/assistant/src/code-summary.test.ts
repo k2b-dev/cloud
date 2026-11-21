@@ -1,0 +1,237 @@
+import { expect, test } from "bun:test";
+import type { z } from "zod";
+import {
+  automationStatus,
+  type CodeQueryInvoke,
+  type CodeRunSummary,
+  type CodeSummary,
+  codeStatus,
+  hasPersonalCode,
+  loadCodeNextRun,
+  loadCodeSummaries,
+  nextCodeRun,
+} from "./code-summary";
+
+const code = (id: string, state = "active") => ({
+  id,
+  owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
+  title: `Code ${id}`,
+  serviceAccountId: "44444444-4444-4444-8444-444444444444",
+  state,
+  activeVersionId: null,
+  createdBy: null,
+  createdAt: "2026-10-28T08:00:00.000Z",
+  permission: "reader",
+});
+const run = (state: string) => ({
+  id: "55555555-5555-4555-8555-555555555555",
+  codeId: "c_info01",
+  versionId: "66666666-6666-4666-8666-666666666666",
+  trigger: "schedule",
+  entrypoint: "sort",
+  state,
+  outcome: null,
+  createdAt: "2026-10-31T09:41:00.000Z",
+  startedAt: "2026-10-31T09:41:01.000Z",
+  endedAt: "2026-10-31T09:41:03.000Z",
+});
+
+/** Core's answers by capability, parsed through the caller's own schema like the real transport. */
+const fakeCore = (answers: Record<string, (input: { codeId?: string; cursor?: string }) => unknown>) => {
+  const calls: Array<{ capabilityId: string; input: unknown }> = [];
+  const invoke: CodeQueryInvoke = async <T extends z.ZodType>(
+    invocation: { appId: string; capabilityId: string; input: unknown },
+    schema: T,
+  ) => {
+    calls.push({ capabilityId: invocation.capabilityId, input: invocation.input });
+    expect(invocation.appId).toBe("core");
+    const answer = answers[invocation.capabilityId]?.(invocation.input as { codeId?: string; cursor?: string });
+    if (answer === undefined) return { ok: false as const, error: { code: "NOT_FOUND", message: "missing", status: 404 } };
+    return { ok: true as const, data: { data: schema.parse(answer) } };
+  };
+  return { invoke, calls };
+};
+
+test("asks Core for one personal Code item to decide whether the entry shows", async () => {
+  const empty = fakeCore({ "code.list": () => ({ items: [], nextCursor: null }) });
+  expect(await hasPersonalCode(empty.invoke, "11111111-1111-4111-8111-111111111111")).toBe(false);
+  expect(empty.calls).toEqual([
+    { capabilityId: "code.list", input: { owner: { kind: "person", userId: "11111111-1111-4111-8111-111111111111" }, limit: 1 } },
+  ]);
+  const some = fakeCore({ "code.list": () => ({ items: [code("c_week01")], nextCursor: "c_week01" }) });
+  expect(await hasPersonalCode(some.invoke, "11111111-1111-4111-8111-111111111111")).toBe(true);
+  await expect(hasPersonalCode(fakeCore({}).invoke, "11111111-1111-4111-8111-111111111111")).rejects.toThrow("missing");
+});
+
+test("lists one owner's Code with its newest run; a missing run history keeps the Code", async () => {
+  const core = fakeCore({
+    "code.list": () => ({ items: [code("c_info01"), code("c_info02", "paused")], nextCursor: "c_info02" }),
+    "code.run.list": (input) => (input.codeId === "c_info01" ? { items: [run("failed")], nextCursor: null } : undefined),
+  });
+  const page = await loadCodeSummaries(core.invoke, { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } });
+  expect(page.nextCursor).toBe("c_info02");
+  expect(page.items.map((item) => [item.id, item.state, item.lastRun === undefined ? "unknown" : (item.lastRun?.state ?? null)])).toEqual([
+    ["c_info01", "active", "failed"],
+    // Core could not read this run history: unknown, not "never ran".
+    ["c_info02", "paused", "unknown"],
+  ]);
+  expect(core.calls[0]).toEqual({
+    capabilityId: "code.list",
+    input: { owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } }, limit: 20 },
+  });
+  expect(core.calls.slice(1).map((call) => [call.capabilityId, call.input])).toEqual([
+    ["code.run.list", { codeId: "c_info01", limit: 1 }],
+    ["code.automation.list", { codeId: "c_info01" }],
+    ["code.run.list", { codeId: "c_info02", limit: 1 }],
+    ["code.automation.list", { codeId: "c_info02" }],
+  ]);
+  // Core could not list the automations: the Code stays one row, the list itself is unaffected.
+  expect(page.items[0]!.automations).toBeUndefined();
+});
+
+test("a Code carries its automations, removed access and earliest next run", async () => {
+  const automation = (entrypoint: string, nextRunAt: string | null, missing = false) => ({
+    entrypoint,
+    ...(entrypoint === "deliveries" ? { title: "Lieferungen eintragen" } : {}),
+    kind: "schedule",
+    cron: "0 7 * * 1",
+    nextRunAt,
+    lastRun: null,
+    missingTargets: missing ? [{ type: "spaces.space", id: "sp_2lg8", title: "Logistik", typeTitle: "Space" }] : [],
+  });
+  const core = fakeCore({
+    "code.list": () => ({ items: [code("c_info01")], nextCursor: null }),
+    "code.run.list": () => ({ items: [], nextCursor: null }),
+    "code.automation.list": () => ({
+      codeId: "c_info01",
+      items: [automation("sort", "2026-11-03T06:00:00.000Z"), automation("deliveries", "2026-11-02T06:00:00.000Z", true)],
+      removedTargets: [{ type: "spaces.space", id: "sp_2lg8", title: "Logistik", typeTitle: "Space" }],
+    }),
+  });
+  const [item] = (await loadCodeSummaries(core.invoke, { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } })).items;
+  expect(item!.automations!.map((entry) => entry.entrypoint)).toEqual(["sort", "deliveries"]);
+  expect(item!.automations!.map((entry) => entry.title)).toEqual([undefined, "Lieferungen eintragen"]);
+  expect(nextCodeRun(item!)).toBe("2026-11-02T06:00:00.000Z");
+  expect(codeStatus(item!)).toEqual({ key: "access_missing", tone: "warning" });
+  // Only the automation that needs the access lacks it; the other keeps running.
+  expect(automationStatus(item!, item!.automations![0]!)).toEqual({ key: "on", tone: "success" });
+  expect(automationStatus(item!, item!.automations![1]!)).toEqual({ key: "access_missing", tone: "warning" });
+  // Only the whole Code pauses.
+  expect(automationStatus({ ...item!, state: "paused" }, item!.automations![1]!)).toEqual({ key: "paused", tone: "warning" });
+});
+
+test("one-time schedule metadata survives Core response parsing", async () => {
+  const timing = { at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" };
+  const core = fakeCore({
+    "code.list": () => ({ items: [code("c_once01")], nextCursor: null }),
+    "code.run.list": () => ({ items: [], nextCursor: null }),
+    "code.automation.list": () => ({
+      items: [
+        {
+          entrypoint: "reminder",
+          kind: "schedule",
+          cron: null,
+          ...timing,
+          nextRunAt: "2026-12-01T08:15:30.000Z",
+          lastRun: null,
+          missingTargets: [],
+        },
+      ],
+      removedTargets: [],
+    }),
+  });
+  const page = await loadCodeSummaries(core.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" });
+  expect(page.items[0]?.automations?.[0]).toMatchObject(timing);
+});
+
+test("a transport that throws for the automations does not fail the list", async () => {
+  const core = fakeCore({
+    "code.list": () => ({ items: [code("c_info01")], nextCursor: null }),
+    "code.run.list": () => ({ items: [], nextCursor: null }),
+    "code.automation.list": () => {
+      throw new Error("Core is unavailable");
+    },
+  });
+  const { items } = await loadCodeSummaries(core.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" });
+  expect(items.map((item) => item.automations)).toEqual([undefined]);
+});
+
+test("a failed list is an error, not an empty list", async () => {
+  await expect(loadCodeSummaries(fakeCore({}).invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" })).rejects.toThrow(
+    "missing",
+  );
+});
+
+test("one status per Code: paused and a failed last run come before on", () => {
+  const summary = (state: CodeSummary["state"], last: CodeRunSummary["state"] | null): CodeSummary => ({
+    id: "c_a1b2",
+    title: "A",
+    state,
+    lastRun: last ? { state: last, createdAt: "2026-10-31T09:41:00.000Z", endedAt: null } : null,
+  });
+  expect(codeStatus(summary("active", null))).toEqual({ key: "on", tone: "success" });
+  expect(codeStatus(summary("active", "succeeded"))).toEqual({ key: "on", tone: "success" });
+  expect(codeStatus(summary("active", "failed"))).toEqual({ key: "failed", tone: "danger" });
+  expect(codeStatus(summary("paused", "failed"))).toEqual({ key: "paused", tone: "warning" });
+  expect(codeStatus(summary("draft", null))).toEqual({ key: "draft", tone: "neutral" });
+  expect(codeStatus(summary("deleting", null))).toEqual({ key: "deleting", tone: "neutral" });
+});
+
+test("a Code with a page and an event keeps its schedule's next run", async () => {
+  const entry = (entrypoint: string, kind: string, nextRunAt: string | null) => ({
+    entrypoint,
+    kind,
+    cron: kind === "schedule" ? "0 7 * * *" : null,
+    nextRunAt,
+    lastRun: null,
+    missingTargets: [],
+  });
+  const core = fakeCore({
+    "code.automation.list": () => ({
+      codeId: "c_info01",
+      items: [
+        entry("GET /", "route", null),
+        entry("event:mail.message.received@1:place:0", "event", null),
+        entry("morning", "schedule", "2026-11-03T06:00:00.000Z"),
+      ],
+      removedTargets: [],
+    }),
+  });
+  expect(await loadCodeNextRun(core.invoke, "c_info01")).toBe("2026-11-03T06:00:00.000Z");
+});
+
+// #75: a draft runs nothing yet, so Core lists no automations; its card says when its newest version would run.
+test("a draft carries its newest version's timing in Core's words; active Code asks no version", async () => {
+  const core = fakeCore({
+    "code.list": () => ({ items: [code("c_draft1", "draft"), code("c_live01")], nextCursor: null }),
+    "code.run.list": () => ({ items: [], nextCursor: null }),
+    "code.automation.list": (input) => ({ codeId: input.codeId, items: [], removedTargets: [] }),
+    "code.version.list": () => ({ items: [{ version: { id: "77777777-7777-4777-8777-777777777777" } }] }),
+    "code.version.words": () => ({ timing: { items: [{ text: "Freitags um 15:00" }] } }),
+  });
+  const page = await loadCodeSummaries(core.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" });
+  expect(page.items.map((item) => [item.id, item.proposedTiming])).toEqual([
+    ["c_draft1", ["Freitags um 15:00"]],
+    ["c_live01", undefined],
+  ]);
+  expect(core.calls.filter((call) => call.capabilityId.startsWith("code.version.")).map((call) => call.input)).toEqual([
+    { codeId: "c_draft1", limit: 1 },
+    { codeId: "c_draft1", versionId: "77777777-7777-4777-8777-777777777777" },
+  ]);
+  // A draft Gustav still writes has no version: no schedule, which the card says, apart from a read Core refused.
+  const unwritten = fakeCore({
+    "code.list": () => ({ items: [code("c_draft3", "draft")], nextCursor: null }),
+    "code.run.list": () => ({ items: [], nextCursor: null }),
+    "code.automation.list": (input) => ({ codeId: input.codeId, items: [], removedTargets: [] }),
+    "code.version.list": () => ({ items: [] }),
+  });
+  expect(
+    (await loadCodeSummaries(unwritten.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" })).items[0]
+      ?.proposedTiming,
+  ).toEqual([]);
+  // Without a version list or its words the card keeps its general word.
+  const bare = fakeCore({ "code.list": () => ({ items: [code("c_draft2", "draft")], nextCursor: null }) });
+  expect(
+    (await loadCodeSummaries(bare.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" })).items[0]?.proposedTiming,
+  ).toBe(undefined);
+});

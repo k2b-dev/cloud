@@ -12,7 +12,6 @@ import {
   assistantRecentCommands,
   createAssistantCommandSession,
   createAssistantRecentResources,
-  createAssistantTaskRunKeys,
 } from "./composer-commands";
 import { assistantCopyFor } from "./ui-copy";
 
@@ -102,7 +101,6 @@ const withRecent = params.has("recent");
 const recent = createAssistantRecentResources();
 if (withRecent) recent.ensure(locale);
 const sessionLoader = createAssistantCommandSession();
-const runKeys = createAssistantTaskRunKeys();
 const partCount = () => attachmentCount + mentions().length;
 const draftRefs = () => assistantDraftRefs([], mentions());
 Object.assign(window, { harness: { value, mentions, recentLoaded: () => recent.items() !== undefined } });
@@ -147,7 +145,7 @@ render(
               scope: search.scope,
               session: search.opening,
               sessionLoader,
-              runKeys,
+
               models,
               selectedModelId: "standard",
               chooseModel: () => {},

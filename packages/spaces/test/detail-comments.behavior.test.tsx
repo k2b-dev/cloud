@@ -69,6 +69,7 @@ describe("Spaces live detail comments", () => {
         [":id"]: {
           items: {
             [":itemId"]: {
+              activity: { $get: async () => Response.json({ data: [], nextCursor: null }) },
               comments: {
                 page: {
                   $get: ({ query }: { query: { page: string } }, options?: { init?: { signal?: AbortSignal } }) =>

@@ -39,7 +39,7 @@ export function CustomAppSettings(props: {
         </SettingsModal.Tab>
         <SettingsModal.Tab id="access" title={text("Access")} icon="ti ti-shield">
           <ScopedAccessSection
-            scope={{ type: "customApp", id: props.appId }}
+            scope={{ type: "customApp", id: props.appId, baseId: props.definition.baseId }}
             resourceName={props.definition.name}
             title={text("Who can open the published app")}
             canEdit

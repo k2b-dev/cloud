@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "weather",
-  "manifestHash": "05d55a63f70920eb5d8b23dcce38b72a640b6aaae4aec246cfe97e606a9378e2",
+  "manifestHash": "6c300752c4d76c9e708b6b69ce701d4c3c4c9dff96b64afcee733b0249a3a5ac",
   "types": [
     {
       "localId": "location",
@@ -1101,14 +1101,7 @@
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
-        "properties": {
-          "locationId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Saved-location ID returned by saved-location search/list or a weather.location ref."
-          }
-        },
-        "required": ["locationId"],
+        "properties": {},
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1127,11 +1120,12 @@
         "required": ["locationId", "deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "9bdc3b312c1b0ec001b4360509a08c5194ec7f790a97f30b4c764cbebdfae361",
+      "schemaHash": "373b99fb6a0e83347ac8193dcb594d0e3ad2c4a1c76a7878194f41ab5dcb63b7",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "location"
     }
   ],
   "commands": []

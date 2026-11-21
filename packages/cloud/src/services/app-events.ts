@@ -20,6 +20,7 @@ import { superviseRuntimeTask } from "./runtime-lifecycle";
 export { APP_EVENT_DELIVERY_ATTEMPTS, APP_EVENT_DELIVERY_BACKOFF_MS } from "./app-events/deliver";
 export type { ResourceEventBinding, ResourceEventConsumer } from "./app-events/resources";
 export {
+  authorizeResourceEvent,
   cancelResourceEventSubscriptions,
   registerResourceEventConsumer,
   replayResourceEventDelivery,

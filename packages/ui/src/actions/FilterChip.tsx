@@ -235,7 +235,8 @@ export default FilterChip;
 
 export type FilterToggleProps = {
   label: JSX.Element;
-  icon: string;
+  /** A leading Tabler icon. Leave it out when the label alone names the choice, as with reasons in a form. */
+  icon?: string;
   /** Whether the filter is on. An active toggle carries the same tint as an active `FilterChip`. */
   active: boolean;
   /** Link to the URL with the filter switched. The link keeps working without JavaScript. */
@@ -257,7 +258,9 @@ export type FilterToggleProps = {
 export function FilterToggle(props: FilterToggleProps): JSX.Element {
   const content = () => (
     <>
-      <i class={props.icon} aria-hidden="true" />
+      <Show when={props.icon}>
+        <i class={props.icon} aria-hidden="true" />
+      </Show>
       <span class="k2b-filter-chip__label">{props.label}</span>
     </>
   );

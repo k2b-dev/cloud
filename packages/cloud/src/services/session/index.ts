@@ -277,7 +277,9 @@ const insertFamily = async (
   const notice = options.knownBrowser
     ? await rememberSignIn(tx, { ...options.knownBrowser, userId, firstName: noticeFirstName(user.given_name), now: issuedAt })
     : null;
-  if (options.recordLogin !== false) await tx`UPDATE auth.users SET last_login_local = ${issuedAt} WHERE id = ${userId}::uuid`;
+  if (options.recordLogin !== false)
+    await tx`UPDATE auth.users SET last_login_local = ${issuedAt},
+    notification_locale=COALESCE(${options.knownBrowser?.locale && options.knownBrowser.locale.length <= 35 ? options.knownBrowser.locale : null},notification_locale) WHERE id = ${userId}::uuid`;
   return { userId, sid, authEpoch: epoch, issuedAt, expiresAt, signer, options, notice };
 };
 

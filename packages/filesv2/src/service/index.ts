@@ -16,7 +16,7 @@ import {
   previews,
   serviceAccounts,
 } from "@k2b/cloud/services";
-import { publicCloudOrigin } from "@k2b/cloud/shared";
+import { previewSourceKind, publicCloudOrigin } from "@k2b/cloud/shared";
 import { type ExecutionContext, type ExecutionIdentity, FilegateError, type Node, type RootInfo } from "@k2b/filegate";
 import { z } from "zod";
 import type { ActivityInput, ActivityPage } from "../activity-contracts";
@@ -106,6 +106,7 @@ import {
   principalMetadata,
   readTransferTicket,
   revokeStorage,
+  type StorageGrantAccounts,
   storageBaseId,
   storageCandidates,
   storageGrants,
@@ -1738,6 +1739,12 @@ export function createFilesService(
         return activityReader.activity({ ...call, requestAbort: budget.signal }, { ...input, ...filter });
       });
     },
+    async machineStorageById(call: UserFilesCall, baseId: string) {
+      await requireAdmin(call.actor);
+      const owner = await machineOwner(baseId);
+      if (!owner) throw new FilesError("not_found", 404);
+      return { id: baseId, owner };
+    },
     async machineStorage(call: UserFilesCall, after?: string) {
       await requireAdmin(call.actor);
       return listMachineStorage(after);
@@ -1775,9 +1782,9 @@ export function createFilesService(
         state: "active",
       };
     },
-    async storageGrants(call: UserFilesCall, baseId: string, after?: string) {
+    async storageGrants(call: UserFilesCall, baseId: string, after?: string, accounts?: StorageGrantAccounts) {
       await requireAdmin(call.actor);
-      return storageGrants(baseId, after);
+      return storageGrants(baseId, after, undefined, "admin", accounts);
     },
     async grantStorage(
       call: UserFilesCall,
@@ -1785,7 +1792,7 @@ export function createFilesService(
       input: { path: string; principal: Principal; permission: "read" | "write" | "admin" },
     ) {
       await requireAdmin(call.actor);
-      const result = await grantStorage(baseId, userPath(input.path), input.principal, input.permission);
+      const result = await grantStorage(call.actor, baseId, userPath(input.path), input.principal, input.permission);
       await audit.record({
         actor: filesAuditActor(call.actor),
         action: "files.storage.grant",
@@ -1798,7 +1805,7 @@ export function createFilesService(
     },
     async revokeStorage(call: UserFilesCall, baseId: string, accessId: string) {
       await requireAdmin(call.actor);
-      await revokeStorage(baseId, accessId);
+      await revokeStorage(call.actor, baseId, accessId);
       await audit.record({
         actor: filesAuditActor(call.actor),
         action: "files.storage.revoke",
@@ -2040,6 +2047,22 @@ export function createFilesService(
       return (await shares.activeDownloadItems(binding.id)).some((items) =>
         items.some((item) => within(relative, item) || within(item, relative)),
       );
+    },
+    /** Resolve a fixed storage-root target without requiring read access to the root's children.
+     * Operations still authorize their own path, including Unix ancestor traversal and leaf rights.
+     */
+    async rootLocation(call: UserFilesCall, id: string): Promise<{ baseId: string }> {
+      const stable = parseStableEntryRefId(id);
+      if (stable) {
+        await authorizedBase(call.actor, stable.baseId);
+        // Storage roots always use path refs, including on storage with stable entry IDs.
+        throw new FilesError("root_target_required", 400);
+      }
+      const ref = await resolveEntryRefId(id);
+      if (!ref) throw new FilesError("not_found", 404);
+      const current = await authorizedBase(call.actor, ref.baseId);
+      if (ref.path !== "") throw new FilesError("root_target_required", 400);
+      return { baseId: current.inspection.summary.id };
     },
     /** The base and base-relative path of a folder named by its file ID, after the usual access checks. */
     async folderLocation(call: UserFilesCall, id: string): Promise<{ baseId: string; path: string }> {
@@ -2854,12 +2877,13 @@ export function createFilesService(
       const actor = call.actor;
       const current = await located(actor, id);
       if (!current.relative) {
-        // The file provider exposes storage roots as empty-path refs; they are readable places too.
+        // A storage root is an addressable entry too; it has no parent entry or favorite state.
         const base = current.inspection.summary;
+        const resourceId = await entryRef(base.id, { path: "" });
         return {
           base,
-          entry: { ...fileEntry({ id: base.id }, "", current.node), name: base.name },
-          resourceId: id,
+          entry: { ...fileEntry(base, "", current.node), name: base.name, resourceId },
+          resourceId,
         };
       }
       return entryResult(current);
@@ -2909,6 +2933,22 @@ export function createFilesService(
       const current = await authorized(call.actor, input.baseId, input.path, false);
       const source = filePreviewSource(current.inspection.summary, current.relative, current.node);
       return { result: await previews.read(source, input.size, { signal }), immutable: input.rev === source.revision };
+    },
+    /**
+     * The picture of an image entry for capability views, by its entry ref: the download checks on every request, then
+     * the large preview Files' details panel shows. Refused, foreign, missing, and non-image entries answer alike.
+     */
+    async entryImage(call: UserFilesCall, input: { id: string; rev: string }, signal: AbortSignal) {
+      try {
+        const current = await located(call.actor, input.id, false, signal);
+        const source = filePreviewSource(current.inspection.summary, current.relative, current.node);
+        if (previewSourceKind(source.name) !== "image") throw new FilesError("not_found", 404);
+        return { result: await previews.read(source, "large", { signal }), immutable: input.rev === source.revision };
+      } catch (error) {
+        if ((error instanceof FilesError || error instanceof FilegateError) && [400, 403, 404].includes(error.status))
+          throw new FilesError("not_found", 404);
+        throw error;
+      }
     },
     async retryPreview(call: UserFilesCall, input: { baseId: string; path: string }) {
       const current = await authorized(call.actor, input.baseId, input.path, false);

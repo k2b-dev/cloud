@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getApp } from "../_internal/registry";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
-import { type AuthContext, auth, err, fail, ok, rateLimit, respond, v } from "../server";
+import { type AuthContext, auth, err, fail, getLocale, ok, rateLimit, respond, v } from "../server";
 import { appAccessDeniedBody } from "../server/middleware/app-access";
 import { noTransform } from "../server/middleware/no-transform";
 import { appAccessAuthority, canUseApp } from "../services/app-access";
@@ -212,13 +212,13 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
     })
     .get("/:skillId/access", async (c) => {
       const skill = await aiSkills.getByShortId(c.req.param("skillId")!, resourceSubject(c), "admin", appAccessAuthority(c));
-      const access = skill ? await aiSkills.listAccess(skill.id, resourceSubject(c), appAccessAuthority(c)) : null;
+      const access = skill ? await aiSkills.listAccess(skill.id, resourceSubject(c), appAccessAuthority(c), getLocale(c)) : null;
       return access ? respond(c, ok({ access })) : respond(c, fail(err.notFound("Skill")));
     })
     .post("/:skillId/access", v("json", SkillAccessSchema), async (c) => {
       const skill = await aiSkills.getByShortId(c.req.param("skillId")!, resourceSubject(c), "admin", appAccessAuthority(c));
       const access = skill
-        ? await aiSkills.grantAccess(skill.id, resourceSubject(c), c.req.valid("json"), undefined, appAccessAuthority(c))
+        ? await aiSkills.grantAccess(skill.id, resourceSubject(c), c.req.valid("json"), undefined, appAccessAuthority(c), getLocale(c))
         : null;
       return access ? respond(c, ok({ access }), 201) : respond(c, fail(err.notFound("Skill")));
     })

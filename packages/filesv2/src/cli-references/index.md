@@ -564,9 +564,13 @@ Read the live capability catalog before composing a Studio list or CLI workflow:
 
 ```bash
 cld capabilities query filesv2 bases.list --input '{}' --json
-cld capabilities query filesv2 entry.list --input '{"baseId":"<returned-area-id>","path":"Documents"}' --json
+cld capabilities query filesv2 entry.list --target '{"type":"filesv2.entry","id":"<returned-root-ref-id>"}' --input '{"path":"Documents"}' --json
 cld capabilities query filesv2 content.download --input '{"id":"<filesv2.entry-ref-id>"}' --json
 ```
+
+`bases.list` returns each base's root ref as `data.items[].ref`. Pass it as
+`--target` when browsing or changing entries; paths stay relative to that root.
+`entry.copy` also needs `--refs '{"targetRootId":{"type":"filesv2.entry","id":"<destination-root-ref-id>"}}'`.
 
 `entry.list` and `entry.search-in-base` return `data.items` with a qualified
 `filesv2.entry` ref next to each entry. Its `id` is the same file ID that the

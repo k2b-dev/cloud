@@ -21,6 +21,7 @@ const context = (): CapabilityExecutionContext => {
 test("Gateway implements the same public app-status contract as third-party providers", () => {
   const manifest = compileCapabilityManifest("monitor", gatewayOpsCapabilities);
   expect(appStatusIssues(manifest)).toEqual([]);
+  expect(manifest.actions.find((action) => action.localId === "app-status.forget")?.code).toBe(false);
   expect(manifest.appStatus).toEqual({ summary: "app-status.summary", detail: "app-status.detail", forget: "app-status.forget" });
 });
 test("all Gateway operations reject missing or non-admin authority before reading data", async () => {

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
-import { splitTopLevel } from "../styles/css-contract-test-helpers";
+import { cssDeclarations, readShippedCssRules, splitTopLevel } from "../styles/css-contract-test-helpers";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-surfaces-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -88,6 +88,68 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(renderToString(() => createComponent(NoticeCard, { layout: "card", title: "x" }))).toBe(
       renderToString(() => createComponent(NoticeCard, { title: "x" })),
     );
+  });
+
+  test("NoticeRow server-renders its two summary lines, AI tone and reserved actions", () => {
+    const html = renderToString(() =>
+      createComponent(NoticeRow, {
+        tone: "ai",
+        icon: "ti ti-shield-check",
+        children: "Ready to enable.",
+        detail: "Mailbox · reads mail",
+        detailTitle: "Mailbox · reads mail",
+        actions: ["See everything", "Enable"],
+      }),
+    );
+    expect(html).toContain('data-row=""');
+    expect(html).toContain('data-tone="ai"');
+    expect(html).toContain('data-reserve=""');
+    expect(html.match(/<div class="k2b-notice-card__actions">([\s\S]*?)<\/div>/)?.[1]?.replace(/<!--.*?-->/g, "")).toBe(
+      "See everythingEnable",
+    );
+    expect(html).toContain('<p class="k2b-notice-card__title">Ready to enable.</p>');
+    expect(html).toContain('class="k2b-notice-card__detail-text" title="Mailbox · reads mail">Mailbox · reads mail</span>');
+    expect(html).not.toContain("k2b-notice-card__body");
+    const terminal = renderToString(() => createComponent(NoticeRow, { children: "Done.", reserve: false }));
+    expect(terminal).not.toContain("data-reserve");
+    expect(terminal).not.toContain("k2b-notice-card__actions");
+  });
+
+  test("a final NoticeRow with controls has no empty phone spacer, while transitions retain their reserve", () => {
+    const html = renderToString(() =>
+      createComponent(NoticeRow, { children: "Saved.", detail: "Version 2", reserve: false, actions: "Open" }),
+    );
+    expect(html).toContain('data-actions=""');
+    expect(html).not.toContain("data-reserve");
+    const rules = readShippedCssRules(stylesDir).filter((rule) => rule.context === "@container (max-width: 35rem)");
+    const declaration = (selector: string, property: string) =>
+      rules.filter((rule) => rule.selector === selector).flatMap((rule) => cssDeclarations(rule.body).get(property) ?? []);
+    const row = ".k2b-ui .k2b-notice-card[data-row][data-detail]";
+    expect(declaration(`${row}[data-actions]:not([data-reserve])`, "grid-template-rows")).toEqual(["auto auto auto"]);
+    expect(declaration(`${row}:not([data-reserve]) .k2b-notice-card__actions`, "grid-row")).toEqual(["3"]);
+    expect(declaration(row, "grid-template-rows")).toEqual(["auto auto minmax(.5rem, 1fr) auto"]);
+    expect(declaration(`${row} .k2b-notice-card__actions`, "grid-row")).toEqual(["4"]);
+  });
+
+  test("NoticeRow icon=true resolves each tone icon and inherits its screen-reader language", () => {
+    for (const locale of ["en", "de"])
+      for (const [tone, icon, en, de] of [
+        ["success", "ti-circle-check", "Success", "Erfolgreich"],
+        ["warning", "ti-alert-triangle", "Warning", "Warnung"],
+        ["danger", "ti-alert-octagon", "Caution", "Achtung"],
+      ] as const) {
+        const html = renderToString(() =>
+          createComponent(LocaleProvider, {
+            locale,
+            get children() {
+              return createComponent(NoticeRow, { tone, icon: true, children: "Review result", detail: "No changes" });
+            },
+          }),
+        );
+        expect(html).toContain(icon);
+        expect(html).toContain(`k2b-sr-only">${locale === "de" ? de : en}: `);
+        expect(html).not.toContain("ti-info-circle");
+      }
   });
 
   test("NoticeRow renders one notice row: decorative tile, text, then the action, with NoticeCard's tones", () => {

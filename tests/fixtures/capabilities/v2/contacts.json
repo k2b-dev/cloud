@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "contacts",
-  "manifestHash": "3d000276515c088c1fc1a9172378e324dd25018236e2dcb5b08223804176454b",
+  "manifestHash": "902ab89bdcf65f0b6a79214cd996abdcfec8ec91c14dcc519461a3df24f117fb",
   "types": [
     {
       "localId": "book",
@@ -1729,11 +1729,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "bookId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Public address-book ID that will own the contact."
-          },
           "label": {
             "description": "Optional explicit display label.",
             "anyOf": [
@@ -2146,7 +2141,6 @@
             }
           }
         },
-        "required": ["bookId"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2484,12 +2478,13 @@
         "required": ["contact"],
         "additionalProperties": false
       },
-      "schemaHash": "07af81460ad938859cf4daecda8f1ba36cdb7166224c5fd92e34d2c39422fd8b",
+      "schemaHash": "ddf4aeba83d82fe8940bf4c938ea52fcc6f34d3731c0d54131245d48a75304b2",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "book"
     },
     {
       "localId": "contact.delete",
@@ -2530,11 +2525,12 @@
         "required": ["contactId", "deleted"],
         "additionalProperties": false
       },
-      "schemaHash": "b14de91275e6a28e3346ce8aff1693b61d438b1ce0d6b0f0d1a371ac6a019fce",
+      "schemaHash": "de7b9b99d5ba6b8460b8971e805f66a4b16bd194673482ed8d2e367c06f0ce21",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "book"
     },
     {
       "localId": "contact.move",
@@ -2549,11 +2545,6 @@
             "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Stable public contact ID to move."
           },
-          "targetBookId": {
-            "type": "string",
-            "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Public writable destination address-book ID."
-          },
           "expectedUpdatedAt": {
             "type": "string",
             "format": "date-time",
@@ -2561,7 +2552,7 @@
             "description": "updatedAt value returned by the last read; prevents stale moves."
           }
         },
-        "required": ["contactId", "targetBookId", "expectedUpdatedAt"],
+        "required": ["contactId", "expectedUpdatedAt"],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -2899,11 +2890,15 @@
         "required": ["contact"],
         "additionalProperties": false
       },
-      "schemaHash": "b318c35ca56be1dd335c8bcbb2759a05cc42df451b30bbb568b680409143c786",
+      "schemaHash": "8751e588a73d5dea6a486212c740b7246623057c63882b5bb9429dc95118daaf",
       "destructive": true,
       "openWorld": false,
       "idempotency": "required",
-      "review": true
+      "review": true,
+      "target": "book",
+      "refs": {
+        "targetBookId": "book"
+      }
     },
     {
       "localId": "contact.update",
@@ -3674,12 +3669,13 @@
         "required": ["contact"],
         "additionalProperties": false
       },
-      "schemaHash": "fb6e3e1b8d2a52efd769c72e94f66f5be2d0afed68d40d36f45bca5f28593aff",
+      "schemaHash": "9daa9b64ef41cfe066091ec0b9f71a3d399ead95a631532abe652a71b47e193d",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "book"
     },
     {
       "localId": "favorite.set",
@@ -3717,12 +3713,13 @@
         "required": ["contactId", "favorite"],
         "additionalProperties": false
       },
-      "schemaHash": "83ee1f90fc8a99f132cdbc30accb439034d793af0010866b12d7aed22a413525",
+      "schemaHash": "d5927423b40eb4d65a128423a450e97808d2a51618fccb1d6acf13450a62f76e",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "book"
     },
     {
       "localId": "note.create",
@@ -3800,12 +3797,13 @@
         "required": ["note"],
         "additionalProperties": false
       },
-      "schemaHash": "9d4af032311ab8d1148f29ecb95352715d36c5ac1608a0a5bff4611381e6d7ab",
+      "schemaHash": "8d0981c9063043e689588e3e39d869e6accdb814b75318955f9241080838b3fa",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "book"
     },
     {
       "localId": "tag.change",
@@ -3926,12 +3924,13 @@
         "required": ["contactId", "tags", "tagsTruncated"],
         "additionalProperties": false
       },
-      "schemaHash": "78b6eff827d797d796ae2082b033c3662d359221c3f55c4b74fda1f005bc1a7a",
+      "schemaHash": "b76bf46ce9098929d803965bd00ce846ac9659908be06168bf07a6797883babe",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
       "approval": "rememberable",
-      "review": true
+      "review": true,
+      "target": "book"
     }
   ],
   "commands": [

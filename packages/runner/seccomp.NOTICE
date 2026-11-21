@@ -1,0 +1,4 @@
+Docker seccomp profile: moby/profiles, Apache-2.0.
+Source: https://github.com/moby/profiles/blob/4b8214fc4971e06172938a1f1554ccff6647ee80/seccomp/default.json
+Changes: allow the job launcher clone flags and namespace-local mounts without host CAP_SYS_ADMIN.
+Native workerd retains its independent mandatory seccomp filter.

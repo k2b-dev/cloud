@@ -21,6 +21,16 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "venue.managers": {
+          title: "Verwaltende ermitteln",
+          description: "Eine begrenzte Seite von Personen mit aktuellen Verwaltungsrechten ermitteln.",
+          input: {
+            id: "Öffentliche ID des Eintrags.",
+            afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
+            userId: "Nur die Verwaltungsrechte dieser Person prüfen.",
+            limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50.",
+          },
+        },
         "assignment.mine": {
           title: "Meine Schichteinsätze auflisten",
           description:
@@ -121,7 +131,6 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Löscht nur deinen eigenen Schichteinsatz. Gib einen Idempotenzschlüssel mit, damit du einen Versuch mit unklarem Ausgang sicher wiederholen kannst.",
           input: {
-            venueId: venueIdInput,
             assignmentId: "ID deines Schichteinsatzes aus „Meine Schichteinsätze auflisten“ oder einem venue.assignment-Ref.",
           },
         },
@@ -130,7 +139,6 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Legt einen Schichteinsatz für eine wöchentliche oder einmalige Schicht an einem Tag an, den shift.list zurückgegeben hat. Der Aufruf ist nicht idempotent.",
           input: {
-            venueId: venueIdInput,
             templateId: templateIdInput,
             date: dateInput,
           },
@@ -140,7 +148,6 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Trägt dich für einen freien Zeitraum mit genauem Beginn und Ende ein, höchstens 24 Stunden lang und innerhalb des nächsten Jahres. Der Aufruf ist nicht idempotent.",
           input: {
-            venueId: venueIdInput,
             startsAt: "Genauer Beginn nach RFC 3339 mit Zeitzonenabstand.",
             endsAt: "Genaues Ende nach RFC 3339 mit Zeitzonenabstand.",
             note: "Optionale private Notiz zu diesem Einsatz.",

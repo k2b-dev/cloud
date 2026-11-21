@@ -3,10 +3,12 @@ import { fileIcons } from "@k2b/stdlib";
 import { formatBytes as sharedFormatBytes } from "../../shared/format";
 import { type AiAttachmentRef, parseAiAttachmentMarkers } from "../attachments";
 import { AI_AUDIO_EXTENSIONS } from "../audio-format";
+import { CODE_RUNTIME_TOOL_NAMES } from "../browser-code-contracts";
 import { normalizeAiUploadMediaType } from "../file-media-type";
 import { aiProjectFilePathFromMount, aiSkillFilePathFromMount } from "../file-mount";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "../limits";
-import { type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
+import { type AiMessageQuote, aiNeutralizeQuoteMarkers, aiQuoteModelTexts } from "../quote-markers";
+import { AI_RESOURCE_MARKER_PREFIX, type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
 import { assistantVisibleTextFromMessage } from "../timeline";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
 import { AI_IMAGE_MEDIA_TYPES, isAiImageMediaType } from "../types";
@@ -186,17 +188,40 @@ export const textFromMessage = (message: Message): string => {
     .trim();
 };
 
-export const userVisibleTextFromMessage = (message: Message): string => {
+/** The person's own words in a user message; its checked quotes (`meta.quotes`) and attached items are left out. */
+export const userVisibleTextFromMessage = (message: Message, quotes?: readonly AiMessageQuote[]): string => {
   if (message.role !== "user") return textFromMessage(message);
+  const quoted = aiQuoteModelTexts(quotes);
   return message.content
     .map((part) => {
       const text = typeof part === "string" ? part : part.type === "text" ? part.text : "";
-      if (text.startsWith(ATTACHMENT_CONTEXT_PREFIX)) return "";
+      if (text.startsWith(ATTACHMENT_CONTEXT_PREFIX) || quoted.has(text)) return "";
       if (parseAiResourceMarker(text)) return "";
       return parseAiAttachmentMarkers(text).text;
     })
     .join("")
     .trim();
+};
+
+/**
+ * The person's own words of a stored user message as a model reads them in a transcript (titles, search summaries,
+ * memory learning), part by part: a checked quote, an attached-files note, and an attached Cloud item in any form
+ * (also one no parser reads any more) are left out as whole parts, attachment markers are cut out, and any other quote
+ * marker is broken. Parts stay apart by a blank line, so words of two parts never run together. Quoted words are never
+ * the person's own evidence.
+ */
+export const aiUserWordsForModel = (entry: Pick<AiStoredMessage, "message" | "meta">): string => {
+  if (entry.message.role !== "user") return "";
+  const quoted = aiQuoteModelTexts(entry.meta?.quotes);
+  return entry.message.content
+    .flatMap((part) => {
+      const text = typeof part === "string" ? part : part.type === "text" ? part.text : "";
+      if (quoted.has(text) || text.startsWith(ATTACHMENT_CONTEXT_PREFIX) || text.trimStart().startsWith(AI_RESOURCE_MARKER_PREFIX))
+        return [];
+      const words = parseAiAttachmentMarkers(text).text.trim();
+      return words ? [aiNeutralizeQuoteMarkers(words)] : [];
+    })
+    .join("\n\n");
 };
 
 /** VFS attachments referenced by this user message (rendered as chips). */
@@ -370,14 +395,14 @@ const BUILT_IN_TOOL_ICONS = new Map<string, string>([
   ["read_cloud_resource", "ti ti-ai-gateway"],
 ]);
 
-/** What an app check found: errors stop it from passing, warnings are counted separately. */
-export type AiCodeCheckOutcome = { passed: boolean; errors: number; warnings: number };
+/** What a Code check found: any diagnostic stops it from passing. */
+export type AiCodeCheckOutcome = { passed: boolean; errors: number };
 
+/** Reads Core's check result `{ result: { ok, diagnostics } }`; a failed command has no `result` and reads as a failed step. */
 export const codeCheckOutcome = (name: string, result: unknown): AiCodeCheckOutcome | null => {
-  if (name !== "code_check" || !isRecord(result) || typeof result.passed !== "boolean") return null;
-  const issues = Array.isArray(result.issues) ? result.issues.filter(isRecord) : [];
-  const warnings = issues.filter((issue) => issue.severity === "warning").length;
-  return { passed: result.passed, errors: issues.length - warnings, warnings };
+  if (name !== "code_check" || !isRecord(result) || !isRecord(result.result) || typeof result.result.ok !== "boolean") return null;
+  const diagnostics = Array.isArray(result.result.diagnostics) ? result.result.diagnostics : [];
+  return { passed: result.result.ok, errors: diagnostics.length };
 };
 
 /** The chat image a view_image call looked at. Project and skill files are not chat files and have no preview here. */
@@ -388,6 +413,26 @@ export const viewedChatImage = (name: string, result: unknown): { path: string; 
   if (aiProjectFilePathFromMount(path) !== null || aiSkillFilePathFromMount(path) !== null) return null;
   return { path, description: typeof description === "string" ? description.trim() : "" };
 };
+
+/**
+ * Chat Code runs and lasting Code authoring show the feat/code sign where a row can draw one.
+ * Shared chat/Project file tools keep their semantic icons despite the common `code_` prefix.
+ */
+const FEAT_CODE_TOOLS: ReadonlySet<string> = new Set([
+  ...CODE_RUNTIME_TOOL_NAMES,
+  "code_init",
+  "code_pull",
+  "code_sdk",
+  "code_test",
+  "code_simulate",
+  "code_submit",
+  "code_diff",
+  "code_review",
+  "code_read",
+  "code_write",
+  "code_check",
+]);
+export const isFeatCodeTool = (name: string): boolean => FEAT_CODE_TOOLS.has(name);
 
 export const aiToolIcon = (name: string, appIcon?: string | null): string => {
   if (appIcon) return appIcon;

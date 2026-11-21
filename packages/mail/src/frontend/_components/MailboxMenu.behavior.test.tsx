@@ -32,7 +32,7 @@ for (const permission of ["writer", "reader", "admin", "assigned-only"] as const
       expect(menu.sections().flatMap((section) => section.items.map((item) => item.id))).toEqual(
         permission === "assigned-only"
           ? []
-          : // Mail v5: Automations, Sync, Mailbox status and Settings first; the rest stays one step further.
+          : // Mail v5: Retired rule history, Sync, Mailbox status and Settings first; the rest stays one step further.
             [
               "automations",
               ...(permission === "admin" ? ["sync", "health"] : []),

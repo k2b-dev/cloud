@@ -57,6 +57,11 @@ export type ChartExplorerProps<T extends ChartExplorerRow> = {
   /** Owner actions in the header before Copy data, such as showing the query behind the chart. */
   actions?: JSX.Element;
   /**
+   * `owner`: the owner's `actions` are the header's only controls; the explorer leaves out its own Copy data and view
+   * switcher, as a chart in a chat answer whose copy, large view and data come from its frame.
+   */
+  headerControls?: "explorer" | "owner";
+  /**
    * Rows and the prepared chart. Without `chart`, `children` draws the chart view, such as a live `<Chart>`; the
    * table and Copy data still come from the typed rows.
    */
@@ -326,26 +331,28 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
         <div class="k2b-chart-explorer__actions">
           {props.actions}
           {/* Without rows the view controls keep their place but are hidden, so the header never rewraps. */}
-          <span class="k2b-chart-explorer__views" inert={state() && !data().rows.length ? true : undefined}>
-            <CopyButton
-              text={copyText()}
-              label={chartMessages().chartCopyData}
-              iconOnly
-              size="sm"
-              variant="ghost"
-              disabled={!rows().length}
-              onCopyError={() => setCopyFailed(true)}
-              onCopied={() => setCopyFailed(false)}
-            />
-            {/* The switcher keeps the width of its longest view, so picking one never rewraps the header. */}
-            <SelectChip<string>
-              stableWidth
-              value={switcherValue()}
-              onValueChange={pick}
-              aria-label={chartMessages().chartView}
-              options={switcherOptions()}
-            />
-          </span>
+          <Show when={props.headerControls !== "owner"}>
+            <span class="k2b-chart-explorer__views" inert={state() && !data().rows.length ? true : undefined}>
+              <CopyButton
+                text={copyText()}
+                label={chartMessages().chartCopyData}
+                iconOnly
+                size="sm"
+                variant="ghost"
+                disabled={!rows().length}
+                onCopyError={() => setCopyFailed(true)}
+                onCopied={() => setCopyFailed(false)}
+              />
+              {/* The switcher keeps the width of its longest view, so picking one never rewraps the header. */}
+              <SelectChip<string>
+                stableWidth
+                value={switcherValue()}
+                onValueChange={pick}
+                aria-label={chartMessages().chartView}
+                options={switcherOptions()}
+              />
+            </span>
+          </Show>
         </div>
       </header>
       <Show when={copyFailed()}>

@@ -6,7 +6,7 @@ export { APPROVAL_COUNTS_PATH, APPROVALS_API_PATH, APPROVALS_PAGE_PATH } from ".
 
 /**
  * Pending Action approvals as every app lists and decides them: one Core route under `/api/approvals` and the
- * `Approvals` component from `@k2b/cloud/approvals/ui`. A list shows only the signed-in person's own open requests.
+ * `Approvals` component from `@k2b/cloud/approvals/ui`. A list shows the signed-in person's own open requests and Code-version reviews for current Cloud admins.
  */
 
 /** One page of a list, the same as a Cloud Login inbox page. */
@@ -34,6 +34,14 @@ export type ApprovalListQuery = z.infer<typeof ApprovalListQuerySchema>;
 export const PendingApprovalSchema = z
   .object({
     id: z.uuid(),
+    digest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    /** False for the Code author unless they are the sole active human Cloud admin. Rechecked when deciding. */
+    canApprove: z.boolean().optional(),
+    /** Localized mandatory notice for a currently eligible sole-admin self-approval. */
+    soleAdminNotice: z.string().optional(),
     /** The app that owns the effect, named from the registry in the reader's language. */
     app: z.object({ id: z.string(), name: z.string(), icon: z.string().nullable() }).strict(),
     action: z.string(),
@@ -44,7 +52,16 @@ export const PendingApprovalSchema = z
     /** The owning app's review as the person saw it when Cloud asked. */
     review: CapabilityActionReviewPresentationSchema.nullable(),
     /** Where the request waits. The title is chat content, written by a person or a model, never Cloud's own words. */
-    requester: z.object({ kind: z.literal("chat"), appId: z.string(), title: z.string().nullable(), href: z.string() }).strict(),
+    requester: z
+      .object({
+        kind: z.enum(["chat", "code_version"]),
+        appId: z.string(),
+        title: z.string().nullable(),
+        href: z.string(),
+        /** The person's own automation whose message started the chat's turn; its title as it was when it wrote. */
+        automation: z.object({ title: z.string(), href: z.string() }).strict().optional(),
+      })
+      .strict(),
     /** Ways the person may remember this approval, the same the chat card offers. */
     remember: z.object({ chat: z.boolean(), always: z.boolean(), website: z.boolean() }).strict(),
     createdAt: z.string(),
@@ -74,8 +91,27 @@ export const ApprovalCountsSchema = z
   .strict();
 export type ApprovalCounts = z.infer<typeof ApprovalCountsSchema>;
 
-export const ApprovalDecisionInputSchema = z.object({ approved: z.boolean(), remember: z.enum(["chat", "always"]).optional() }).strict();
+export const ApprovalDecisionInputSchema = z
+  .object({
+    approved: z.boolean(),
+    remember: z.enum(["chat", "always"]).optional(),
+    digest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+  })
+  .strict();
 export type ApprovalDecisionInput = z.infer<typeof ApprovalDecisionInputSchema>;
 
 export const ApprovalDecisionResultSchema = z.object({ status: z.enum(["approved", "rejected"]) }).strict();
 export type ApprovalDecisionResult = z.infer<typeof ApprovalDecisionResultSchema>;
+
+export const ApprovalDraftInputSchema = z.strictObject({
+  values: z.record(z.string(), z.string()),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export const ApprovalDraftResultSchema = z.strictObject({
+  review: CapabilityActionReviewPresentationSchema,
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export type ApprovalDraftResult = z.infer<typeof ApprovalDraftResultSchema>;

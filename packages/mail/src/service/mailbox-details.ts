@@ -48,7 +48,11 @@ export const getMailboxDetails = async (context: MailRequestContext, mailboxId: 
   const permission = allowed.data;
   if (permission === "none") return fail(err.forbidden("Access denied"));
   const [access, [account], [sync]] = await Promise.all([
-    loadMailboxAccessEntries(mailboxId),
+    loadMailboxAccessEntries(mailboxId, {
+      canManageTarget: permission === "admin",
+      locale: context.locale,
+      cloudAdmin: userBackedActor(context)?.roles.includes("admin"),
+    }),
     sql<{ email: string; imap_host: string }[]>`
       SELECT pc.email, pc.imap_host
       FROM mail.provider_connections pc

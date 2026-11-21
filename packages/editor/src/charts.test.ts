@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
 import { type ChartDatum, charts } from "@k2b/ui/charts/core";
+import { z } from "zod";
 import {
   type ChartInput,
   chartKinds,
@@ -23,6 +24,54 @@ const chartDatums = (svg: string): ChartDatum[] =>
     if (!isChartDatum(datum)) throw new Error("Invalid chart datum");
     return datum;
   });
+
+test("bounded chart schemas export to JSON Schema for generated consumers", () => {
+  const exported = z.fromJSONSchema(z.toJSONSchema(schema, { io: "input" }));
+  for (const input of [
+    { kind: "heatmap", title: "Grid", data: [{ x: "A", y: "B", value: 1 }] },
+    { kind: "heatmap", title: "Calendar", layout: "calendar", data: [["2026-11-07", 1]], scale: "sequential" },
+    {
+      kind: "line",
+      title: "Forecast with a gap",
+      series: [
+        {
+          data: [
+            { x: 1, y: null },
+            { x: 2, y: 10 },
+          ],
+        },
+      ],
+      forecast: { from: 2 },
+      zero: true,
+    },
+  ]) {
+    expect(schema.safeParse(input).success).toBeTrue();
+    expect(exported.safeParse(input).success).toBeTrue();
+  }
+  const invalid = { kind: "heatmap", title: "Invalid", layout: "other", data: [{ x: "A", y: "B", value: 1 }] };
+  expect(schema.safeParse(invalid).success).toBeFalse();
+  expect(exported.safeParse(invalid).success).toBeFalse();
+  const invalidLine = { kind: "line", title: "Invalid", series: [{ data: [{ x: 1, y: "bad" }] }], zero: true };
+  expect(schema.safeParse(invalidLine).success).toBeFalse();
+  expect(exported.safeParse(invalidLine).success).toBeFalse();
+});
+
+test("chart validation retains discriminator and field paths", () => {
+  const cases = [
+    [{ kind: "unknown" }, ["kind"]],
+    [{ kind: "bar", title: "Bar", data: [{ label: "A", value: "bad" }] }, ["data", 0, "value"]],
+    [{ kind: "stat", title: "Stat", value: "bad" }, ["value"]],
+    [{ kind: "heatmap", title: "Grid", data: [{ x: "A", y: "B", value: "bad" }] }, ["data", 0, "value"]],
+    [{ kind: "heatmap", title: "Calendar", layout: "calendar", data: [["2026-11-07", "bad"]], scale: "sequential" }, ["data", 0, 1]],
+    [{ kind: "heatmap", title: "Unknown layout", layout: "other", data: [] }, ["layout"]],
+  ] as const;
+  for (const [input, path] of cases) {
+    const result = schema.safeParse(input);
+    expect(result.success).toBeFalse();
+    if (result.success) throw new Error("Expected invalid chart");
+    expect(result.error.issues[0]?.path).toEqual([...path]);
+  }
+});
 
 describe("chart table", () => {
   test("has the same labels in every locale", () => {
@@ -246,6 +295,22 @@ test("saved references preserve their individual style and tone through schema a
   expect(charts.line(options)).toContain('style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-success-text,#047857)"');
   expect(schema.safeParse({ ...spec, references: [{ value: 3, style: "unknown" }] }).success).toBe(false);
   expect(schema.safeParse({ ...spec, references: [{ value: 3, tone: "unknown" }] }).success).toBe(false);
+});
+
+test("a saved line keeps its hollow points through schema and rendering; without them it draws none", () => {
+  const spec = {
+    kind: "line",
+    title: "Saldo",
+    series: [{ data: [1, 0, 0, 3].map((y, x) => ({ x, y })) }],
+    points: true,
+  } satisfies ChartInput;
+  const options = chartRenderOptions(parse(spec), "en");
+  if (options.kind !== "line") throw new Error("Expected line");
+  expect(options.points).toBe(true);
+  expect(charts.line(options).match(/class="k2b-line-point"/g)).toHaveLength(4);
+  const plain = chartRenderOptions(parse({ ...spec, points: undefined }), "en");
+  if (plain.kind !== "line") throw new Error("Expected line");
+  expect(charts.line(plain)).not.toContain("k2b-line-point");
 });
 
 describe("chart axes", () => {

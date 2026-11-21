@@ -1,7 +1,6 @@
 import type { AiConversationService, AiStoredMessage, aiProjects } from "@k2b/cloud/ai";
 import type { CapabilityExecutionContext, CloudResourceView, UniversalSearchInput } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/stdlib";
-import type { artifacts } from "./artifacts/service";
 import { assistantCommandMessages } from "./commands";
 
 type SearchStore = Pick<AiConversationService, "listConversations" | "getConversationByShortId" | "searchConversationMessages">;
@@ -20,6 +19,7 @@ export const searchAssistant = async (
   context: Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale">,
   store: SearchStore,
   projects: Pick<typeof aiProjects, "getByShortId">,
+  places = false,
 ) => {
   const t = assistantCommandMessages.resolve([context.locale]).t;
   if (context.accessSubject.type !== "user") return fail(err.forbidden(t.userRequired));
@@ -48,14 +48,17 @@ export const searchAssistant = async (
   const chats = await store.listConversations({
     ownerUserId,
     search: input.query,
+    ...(places ? { place: "any" as const } : {}),
     limit: input.limit,
     ...(projectId ? { projectId } : {}),
   });
   const data: CloudResourceView[] = chats.map((chat) => ({
     ref: { type: "assistant.chat", id: chat.shortId },
     title: chat.title.slice(0, 500),
+    ...(chat.place ? { group: t.atPlaces } : {}),
     preview: (chat.description || "").slice(0, 2000),
-    icon: "ti ti-messages",
+    icon: chat.place ? "ti ti-map-pin" : "ti ti-messages",
+    ...(chat.place ? { context: chat.place.title, metadata: [{ label: t.app, value: chat.place.ref.type.split(".")[0]! }] } : {}),
     priority: 7,
     links: [{ rel: "open", href: `/app/assistant?conversation=${encodeURIComponent(chat.shortId)}` }],
   }));
@@ -85,26 +88,5 @@ export const searchAssistantProjects = async (
       priority: 7,
       links: [{ rel: "open", href: `/app/assistant?project=${encodeURIComponent(project.shortId)}` }],
     }));
-  return ok({ data });
-};
-
-/** Studio search uses the same permission-aware published/draft projection as its catalog. */
-export const searchAssistantApps = async (
-  input: UniversalSearchInput,
-  context: Pick<CapabilityExecutionContext, "actor" | "actor" | "accessSubject" | "locale">,
-  store: Pick<typeof artifacts, "list">,
-) => {
-  const t = assistantCommandMessages.resolve([context.locale]).t;
-  if (input.scope) return fail(err.badInput(t.invalidSearchScope));
-  if (context.accessSubject.type !== "user") return fail(err.forbidden(t.userRequired));
-  const page = await store.list(context, 1, input.query, input.limit);
-  const data: CloudResourceView[] = page.items.map((app) => ({
-    ref: { type: "assistant.app", id: app.id },
-    title: app.title.slice(0, 500),
-    preview: (app.description || "").slice(0, 2000),
-    icon: app.icon || "ti ti-app-window",
-    priority: 7,
-    links: [{ rel: "open", href: `/app/assistant/apps/${encodeURIComponent(app.id)}` }],
-  }));
   return ok({ data });
 };

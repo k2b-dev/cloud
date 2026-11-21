@@ -1,3 +1,4 @@
+import type { SQL } from "bun";
 /**
  * Typed async settings API.
  *
@@ -26,7 +27,7 @@ import { deleteKey, readKey, readKeyState, type StoredSettingState, writeKey } f
  * app's `defineApp({ settings: ... })` block.
  */
 export interface SettingsAPI<F extends Record<string, unknown>> {
-  get<K extends keyof F & string>(key: K): Promise<F[K]>;
+  get<K extends keyof F & string>(key: K, db?: SQL): Promise<F[K]>;
   read<K extends keyof F & string>(key: K): Promise<{ value: F[K]; stored: StoredSettingState; bindingMismatch?: true }>;
   set<K extends keyof F & string>(key: K, value: F[K], options?: { replaceUnreadable?: boolean }): Promise<void>;
   remove<K extends keyof F & string>(key: K): Promise<void>;
@@ -41,7 +42,7 @@ export interface SettingsAPI<F extends Record<string, unknown>> {
 export const createSettingsAPI = <S extends AppSettingsMap>(): SettingsAPI<{
   [K in keyof S]: KindToType<S[K]["kind"]>;
 }> => ({
-  get: async (key) => readKey(key) as never,
+  get: async (key, db) => (db ? (await readKeyState(key, db)).value : await readKey(key)) as never,
   read: async (key) => readKeyState(key) as never,
   set: async (key, value, options) => writeKey(key, value, undefined, options),
   remove: async (key) => deleteKey(key),
@@ -58,7 +59,7 @@ export const createSettingsAPI = <S extends AppSettingsMap>(): SettingsAPI<{
  *   await coreSettings.set("freeipa.enable", true);       // value type free
  */
 export const coreSettings = {
-  get: <T = unknown>(key: string): Promise<T> => readKey(key) as Promise<T>,
+  get: async <T = unknown>(key: string, db?: SQL): Promise<T> => (db ? (await readKeyState(key, db)).value : await readKey(key)) as T,
   read: <T = unknown>(key: string): Promise<{ value: T; stored: StoredSettingState; bindingMismatch?: true }> =>
     readKeyState(key) as Promise<{ value: T; stored: StoredSettingState; bindingMismatch?: true }>,
   set: (key: string, value: unknown, options?: { replaceUnreadable?: boolean }): Promise<void> => writeKey(key, value, undefined, options),
