@@ -816,7 +816,9 @@ sent nothing in time is **Stale**.
 `cld pulse schema <base>`, `GET /api/pulse/bases/:baseId/schema` and the
 `schema.read` Query list the base's metrics with type, unit and dimensions, its
 event kinds with attribute fields (type and fill rate from the newest
-10,000 events of the last seven days), and its state keys. Pass `kind` for the
+10,000 events of a kind within seven days before its newest event; a kind
+outside that sample shows no fields until you ask for it by name), and its
+state keys. Pass `kind` for the
 five newest entries of one kind. The read uses the base's read views, so
 confidential event data never appears, and it needs read access. Results are
 cached for five minutes; a read of one kind that is not cached counts against

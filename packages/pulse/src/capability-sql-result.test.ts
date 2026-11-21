@@ -85,3 +85,15 @@ test("P1 cursor: an offset beyond the result is an empty last page", () => {
   expect(page.rows).toEqual([]);
   expect(sqlCapabilityNextOffset(result, 5, page)).toBeNull();
 });
+
+test("P1 cursor: a row too large for one page is skipped, so the rows after it stay reachable", () => {
+  const result = fixture([["a"], ["x".repeat(CAPABILITY_MAX_RESULT_BYTES)], ["c"]]);
+  const first = boundSqlCapabilityResult(result, "en", 0);
+  expect(first.rows).toEqual([["a"]]);
+  const second = boundSqlCapabilityResult(result, "en", 1);
+  expect(second.rows).toEqual([]);
+  expect(second.truncated).toBe(true);
+  const next = sqlCapabilityNextOffset(result, 1, second);
+  expect(next).toBe(2);
+  expect(boundSqlCapabilityResult(result, "en", next!).rows).toEqual([["c"]]);
+});

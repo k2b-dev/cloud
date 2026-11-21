@@ -180,6 +180,7 @@ async function describeCheck(
     result.permissions,
     new Map([...catalogs].map(([appId, catalog]) => [appId, catalog.ok ? catalog.data?.manifest : null])),
     context.locale,
+    policyRows.has("read"),
   );
   if (refusals.length) return { version: 1, result: { ok: false, diagnostics: refusals }, manifest: null, permissions: [] };
   return { version: 1, result, manifest: { ...result.manifest, entry: request.entry, policyRows: [...policyRows].sort() }, permissions };

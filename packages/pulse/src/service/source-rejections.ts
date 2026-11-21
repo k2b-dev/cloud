@@ -104,13 +104,14 @@ export const sourceRejectionSummaries = async (
 ): Promise<Map<string, PulseSourceRejections>> => {
   if (!sourceIds.length) return new Map();
   const rows = await db<{ source_id: string; last24h: string | number; last_reason: string | null; last_at: Date | string | null }[]>`
-    SELECT source_id,
-      coalesce(sum(count) FILTER (WHERE minute>${new Date(now.getTime() - 86_400_000)}),0)::bigint AS last24h,
-      (array_agg(last_reason ORDER BY last_at DESC))[1] AS last_reason,
-      max(last_at) AS last_at
-    FROM pulse.source_rejections
-    WHERE source_id=ANY(${sql.array(sourceIds, "UUID")})
-    GROUP BY source_id`;
+    SELECT s.id AS source_id, coalesce(t.total,0)::bigint AS last24h, l.last_reason, l.last_at
+    FROM unnest(${sql.array(sourceIds, "UUID")}::uuid[]) AS s(id)
+    -- Both reads use the (source_id, minute) key: one day of minutes to count, one newest row for the reason.
+    LEFT JOIN LATERAL (SELECT sum(r.count) AS total FROM pulse.source_rejections r
+      WHERE r.source_id=s.id AND r.minute>${new Date(now.getTime() - 86_400_000)}) t ON true
+    LEFT JOIN LATERAL (SELECT r.last_reason,r.last_at FROM pulse.source_rejections r
+      WHERE r.source_id=s.id ORDER BY r.minute DESC LIMIT 1) l ON true
+    WHERE l.last_at IS NOT NULL`;
   return new Map(
     rows.map((row) => [row.source_id, { last24h: Number(row.last24h), lastReason: row.last_reason, lastAt: isoNullable(row.last_at) }]),
   );

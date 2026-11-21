@@ -163,7 +163,7 @@ test("changed Internet, public-page and AI accesses retain one localized approva
   }
 });
 
-test("an owner-data page needs its own approval; a public owner-data page stays a public page", () => {
+test("an owner-data page needs its own approval; a public owner-data page needs both, like enforcement", () => {
   const page = (route: { public: boolean; audience?: "owner-data" }) => ({
     ...manifest,
     policyRows: [...(route.public ? (["public_routes"] as const) : []), ...(route.audience ? (["owner_data"] as const) : [])],
@@ -189,7 +189,8 @@ test("an owner-data page needs its own approval; a public owner-data page stays 
     );
     expect(present({ locale, manifest: page({ public: false }), policy: { owner_data: "admin" } }).changes.approval).toBeNull();
     const open = page({ public: true, audience: "owner-data" });
-    expect(present({ locale, manifest: open, policy: { owner_data: "admin" } }).changes.approval).toBeNull();
+    // Enforcement reads both rows from policyRows; the review shows each one that needs an approval.
+    expect(present({ locale, manifest: open, policy: { owner_data: "admin" } }).changes.approval?.count).toBe(1);
     expect(present({ locale, manifest: open, policy: { public_routes: "admin" } }).changes.approval?.count).toBe(1);
   }
 });

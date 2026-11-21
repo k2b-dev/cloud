@@ -90,8 +90,8 @@ suiteFor("database")("Code route reads for the visitor check (G1)", () => {
         { kind: "target", ref: { type: "grids.view", id: "V1" } },
         { kind: "input", capability: "pulse.source.read", fields: { id: "Src001" } },
         { kind: "input", capability: "pulse.base.list", fields: { query: "x" } },
-        // Strings longer than a resource ID (here 600 characters) cannot name a resource and stay out.
-        { kind: "input", capability: "pulse.sql.run", fields: { baseId: "Base02", sql: "SELECT 1" } },
+        // Strings are cut one character past the longest resource ID, so an over-long value stays visible as unusable.
+        { kind: "input", capability: "pulse.sql.run", fields: { baseId: "Base02", sql: "SELECT 1", note: "y".repeat(513) } },
         { kind: "query", capability: "pulse.base.sql.run" },
         { kind: "query", capability: "grids.row.list" },
         { kind: "query", capability: "pulse.source.read" },

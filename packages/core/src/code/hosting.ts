@@ -193,6 +193,7 @@ export function createCodeHostingRoutes(
             reads: response.reads,
             route: selected.route,
             visitor: isPublic ? null : auth.getAuthority(c),
+            databaseMayHoldAppData: version.manifest.database === true && version.manifest.policyRows.includes("read"),
             locale: getLocale(c),
             signal,
           }),

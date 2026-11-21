@@ -44,6 +44,8 @@ export type RejectionRecorder = {
 };
 
 /** A dedicated connection like the ingest quota: never queue while disconnected, and never delay an ingest answer. */
+/** How long recording pauses after Valkey failed once. */
+const RECORDER_PAUSE_MS = 5_000;
 export const createRejectionRecorder = ({
   createClient = () => createRedis({ enableOfflineQueue: false, connectionTimeout: 1000 }),
   clock = () => new Date(),
@@ -55,29 +57,39 @@ export const createRejectionRecorder = ({
 } = {}): RejectionRecorder => {
   let client: RedisClient | undefined;
   let connecting: Promise<void> | undefined;
+  // After a failure, recording pauses briefly: a flood of refused requests never opens a connection each.
+  let pausedUntil = 0;
   const close = () => {
     client?.close();
     client = undefined;
     connecting = undefined;
   };
+  /** Drops only the failed client; a request that failed late never closes a newer, healthy one. */
+  const drop = (failed: RedisClient | undefined) => {
+    if (!failed || failed !== client) return;
+    close();
+  };
   return {
     close,
     record: async (sourceShortId, reason) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
+      let current: RedisClient | undefined;
       try {
         const now = clock();
+        if (now.getTime() < pausedUntil) return;
         const minute = Math.floor(now.getTime() / 60_000) * 60_000;
         const member = `${sourceShortId}:${minute}`;
         client ??= createClient();
-        const current = client;
+        current = client;
+        const used = current;
         const operation = async () => {
-          if (!current.connected) {
-            connecting ??= current.connect().finally(() => {
+          if (!used.connected) {
+            connecting ??= used.connect().finally(() => {
               connecting = undefined;
             });
             await connecting;
           }
-          await current.send("EVAL", [
+          await used.send("EVAL", [
             RECORD,
             "2",
             rejectionBucketKey(namespace, member),
@@ -98,7 +110,8 @@ export const createRejectionRecorder = ({
         ]);
       } catch {
         // A lost count is acceptable; closing cancels a timed-out command.
-        close();
+        pausedUntil = clock().getTime() + RECORDER_PAUSE_MS;
+        drop(current);
       } finally {
         clearTimeout(timer);
       }

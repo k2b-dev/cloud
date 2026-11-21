@@ -48,6 +48,11 @@ export const boundSqlCapabilityResult = (result: SqlResult, locale: string, offs
   return data;
 };
 
-/** Where the next page of this result starts, or null when the page reached its last row. */
-export const sqlCapabilityNextOffset = (result: SqlResult, offset: number, page: { rowCount: number }): number | null =>
-  page.rowCount > 0 && offset + page.rowCount < result.rows.length ? offset + page.rowCount : null;
+/**
+ * Where the next page of this result starts, or null when the page reached its last row. A single row too large for a
+ * page is skipped (the page says the result is truncated), so the rows after it stay reachable.
+ */
+export const sqlCapabilityNextOffset = (result: SqlResult, offset: number, page: { rowCount: number }): number | null => {
+  const next = offset + Math.max(page.rowCount, 1);
+  return next < result.rows.length ? next : null;
+};

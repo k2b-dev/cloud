@@ -1,6 +1,7 @@
 import type { CodeCheckDiagnostic, CodePermission, CodeVersionManifest } from "@k2b/cloud/code";
 import type { CapabilityManifest } from "@k2b/cloud/contracts";
 import { i18n } from "@k2b/stdlib";
+import { isCodeAiOperation } from "./policy-contracts";
 
 const messages = i18n.define({
   baseLocale: "en",
@@ -10,18 +11,25 @@ const messages = i18n.define({
         `A public route cannot call ${operation}. Its app keeps its data off pages without sign-in, also with audience "owner-data". Serve the page to members instead.`,
       ownerData: ({ operation }: { operation: string }) =>
         `A public route that calls ${operation} shows data read with the owner's rights to everyone. Declare { public: true, audience: "owner-data" } if that is intended, or serve the page to members.`,
+      database:
+        'This Code reads app data and has its own database, so its public route may show copied app data to everyone. Declare { public: true, audience: "owner-data" } if that is intended, or serve the page to members.',
     },
     de: {
       app: ({ operation }) =>
         `Eine öffentliche Route kann ${operation} nicht aufrufen. Die App hält ihre Daten von Seiten ohne Anmeldung fern, auch mit audience "owner-data". Stelle die Seite stattdessen für Mitglieder bereit.`,
       ownerData: ({ operation }) =>
         `Eine öffentliche Route, die ${operation} aufruft, zeigt allen Daten mit den Rechten des Besitzers. Deklariere { public: true, audience: "owner-data" }, wenn das gewollt ist, oder stelle die Seite für Mitglieder bereit.`,
+      database:
+        'Dieser Code liest App-Daten und hat eine eigene Datenbank, also kann seine öffentliche Route kopierte App-Daten allen zeigen. Deklariere { public: true, audience: "owner-data" }, wenn das gewollt ist, oder stelle die Seite für Mitglieder bereit.',
     },
   },
 });
 
 /** The Code's own database and files belong to the Code, not to an app. */
 const isCodeOwnData = (operation: string) => operation === "db.query" || operation.startsWith("core.code.file.");
+/** AI reads no resource by itself; a resource it is given is a target or ref and counts on its own. */
+const isUnnamedRead = (permission: CodePermission) =>
+  isCodeOwnData(permission.operation) || (isCodeAiOperation(permission.operation) && !permission.target);
 
 /**
  * G1 for the checker, in step with hosting: a public route has no visitor who could read anything, so every Query it
@@ -30,10 +38,12 @@ const isCodeOwnData = (operation: string) => operation === "db.query" || operati
  * call; an empty list means the version may be submitted.
  */
 export function publicRouteReadRefusals(
-  manifest: Pick<CodeVersionManifest, "entrypoints">,
+  manifest: Pick<CodeVersionManifest, "entrypoints" | "database">,
   permissions: readonly CodePermission[],
   catalogs: ReadonlyMap<string, Pick<CapabilityManifest, "appId" | "queries" | "code"> | null | undefined>,
   locale: string | undefined,
+  /** The version reads app data (policy row `read`); with its own database, that database may hold app data. */
+  readsAppData = false,
 ): CodeCheckDiagnostic[] {
   const publicRoutes = new Map(
     manifest.entrypoints.flatMap((entry) =>
@@ -45,7 +55,7 @@ export function publicRouteReadRefusals(
   const diagnostics: CodeCheckDiagnostic[] = [];
   for (const permission of permissions) {
     const routes = permission.entrypoints ? permission.entrypoints.filter((entry) => publicRoutes.has(entry)) : [...publicRoutes.keys()];
-    if (routes.length === 0 || isCodeOwnData(permission.operation)) continue;
+    if (routes.length === 0 || isUnnamedRead(permission)) continue;
     const appId = permission.operation.split(".")[0]!;
     const app = catalogs.get(appId);
     if (!app?.queries.some((query) => query.localId === permission.operation.slice(appId.length + 1))) continue;
@@ -57,5 +67,10 @@ export function publicRouteReadRefusals(
           : null;
     if (message) diagnostics.push({ code: "code_public_route_reads", message, file: permission.file, line: permission.line, column: 1 });
   }
+  // App data copied into the Code's own database earlier is still app data on a public route.
+  if (manifest.database && readsAppData)
+    for (const entry of manifest.entrypoints)
+      if (entry.route?.public && entry.route.audience !== "owner-data")
+        diagnostics.push({ code: "code_public_route_reads", message: t.database, file: entry.file, line: entry.line, column: 1 });
   return diagnostics;
 }

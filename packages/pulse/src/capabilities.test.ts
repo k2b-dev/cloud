@@ -41,7 +41,7 @@ test("declares SQL and saved query capabilities with base and source readers", (
   // visitor of a Code page. The app-wide forms stay available to Code until the removal release.
   for (const id of ["alert.list", "alert.read", "dashboard.list", "saved_query.list", "source.list", "sql.run"] as const) {
     expect(pulseCapabilities.queries[id].inputRefs).toEqual({ baseId: "base" });
-    expect(pulseCapabilities.queries[id].code).toBeUndefined();
+    expect("code" in pulseCapabilities.queries[id]).toBe(false);
   }
   for (const id of [
     "base.alert.list",

@@ -1,8 +1,9 @@
 import { getCapabilityCodeReadFacts, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import type { CodeRoute } from "@k2b/cloud/code";
-import { CloudResourceReaderViewSchema } from "@k2b/cloud/contracts";
+import { CLOUD_RESOURCE_ID_MAX_LENGTH, CloudResourceReaderViewSchema } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { z } from "zod";
+import { isCodeAiOperation } from "./policy-contracts";
 import type { CodeRouteRead } from "./requests";
 
 /** The read check could not finish (a provider or the registry did not answer). Hosting answers 503, never the data. */
@@ -18,6 +19,8 @@ type Facts = NonNullable<Awaited<ReturnType<typeof getCapabilityCodeReadFacts>>>
 const appOf = (qualified: string) => qualified.slice(0, qualified.indexOf("."));
 /** The Code's own database and files belong to the Code, not to an app. */
 const isCodeOwnData = (capability: string) => capability === "db.query" || capability.startsWith("core.code.file.");
+/** AI reads no resource by itself; whatever it was given came from a call that is recorded on its own. */
+const isUnnamedRead = (capability: string) => isCodeOwnData(capability) || isCodeAiOperation(capability);
 
 /**
  * G1: Cloud delivers a Code route's answer only to a visitor who may read every resource the route read: the target or
@@ -35,6 +38,11 @@ export async function checkCodeRouteReads(input: {
   route: Pick<CodeRoute, "public" | "audience">;
   /** The signed-in visitor of a route that is not public; `null` on a public route. */
   visitor: RequestAuthority | null;
+  /**
+   * The version reads app data and has its own database (manifest `database` and policy row `read`), so its database
+   * may hold app data it copied earlier: a public route that reads the database then needs owner-data too.
+   */
+  databaseMayHoldAppData: boolean;
   locale: string;
   signal: AbortSignal;
 }): Promise<"deliver" | "forbidden"> {
@@ -51,10 +59,14 @@ export async function checkCodeRouteReads(input: {
   };
   if (input.route.public) {
     const apps = new Set(
-      input.reads.flatMap((read) => (read.kind === "query" && !isCodeOwnData(read.capability) ? [appOf(read.capability)] : [])),
+      input.reads.flatMap((read) => (read.kind === "query" && !isUnnamedRead(read.capability) ? [appOf(read.capability)] : [])),
     );
     for (const appId of apps) if (!(await factsOf(appId)).publicRoutes) return "forbidden";
-    return apps.size === 0 || input.route.audience === "owner-data" ? "deliver" : "forbidden";
+    const ownerData =
+      apps.size > 0 ||
+      input.reads.some((read) => read.kind === "target") ||
+      (input.databaseMayHoldAppData && input.reads.some((read) => read.kind === "query" && read.capability === "db.query"));
+    return !ownerData || input.route.audience === "owner-data" ? "deliver" : "forbidden";
   }
   const resources = new Map<string, { type: string; id: string }>();
   const add = (ref: { type: string; id: string }) => resources.set(JSON.stringify([ref.type, ref.id]), ref);
@@ -66,7 +78,10 @@ export async function checkCodeRouteReads(input: {
     const named = (await factsOf(appOf(read.capability))).inputRefs[read.capability] ?? {};
     for (const [field, type] of Object.entries(named)) {
       const id = read.fields[field];
-      if (id) add({ type, id });
+      if (id === undefined) continue;
+      // An empty or over-long value cannot be checked (the reads cut strings past the longest resource ID).
+      if (id.length === 0 || id.length > CLOUD_RESOURCE_ID_MAX_LENGTH) return "forbidden";
+      add({ type, id });
     }
   }
   if (resources.size === 0) return "deliver";

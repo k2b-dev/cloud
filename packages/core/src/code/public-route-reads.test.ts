@@ -18,6 +18,7 @@ const catalogs = new Map([
   ["pulse", { appId: "pulse", queries: [query("base.sql.run"), query("base.list")], code: { owners: [], publicRoutes: false } } as never],
   ["grids", { appId: "grids", queries: [query("table.read"), query("table.list")] } as never],
   ["spaces", { appId: "spaces", queries: [] } as never],
+  ["core", { appId: "core", queries: [query("ai.generate")] } as never],
 ]);
 const permission = (operation: string, target: CodePermission["target"], entrypoints?: string[]): CodePermission => ({
   operation,
@@ -76,4 +77,12 @@ test("a call the checker could not place counts for every public route", () => {
   expect(
     publicRouteReadRefusals({ entrypoints: [route("route:GET:/members", false)] }, [permission("pulse.base.list", null)], catalogs, "en"),
   ).toEqual([]);
+});
+
+test("AI on a public route needs no owner-data; a database that may hold app data does", () => {
+  expect(publicRouteReadRefusals(manifest, [permission("core.ai.generate", null, ["route:GET:/open"])], catalogs, "en")).toEqual([]);
+  const withDatabase = { ...manifest, database: true };
+  expect(publicRouteReadRefusals(withDatabase, [], catalogs, "en", false)).toEqual([]);
+  // Only the public route without owner-data is refused, at its own line.
+  expect(publicRouteReadRefusals(withDatabase, [], catalogs, "en", true).map((entry) => entry.code)).toEqual(["code_public_route_reads"]);
 });

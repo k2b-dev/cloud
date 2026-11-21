@@ -50,8 +50,12 @@ function provider(
   );
   return asked;
 }
-const check = (reads: CodeRouteRead[], route: { public: boolean; audience?: "owner-data" }, who: RequestAuthority | null = visitor) =>
-  checkCodeRouteReads({ reads, route, visitor: who, locale: "en", signal: new AbortController().signal });
+const check = (
+  reads: CodeRouteRead[],
+  route: { public: boolean; audience?: "owner-data" },
+  who: RequestAuthority | null = visitor,
+  databaseMayHoldAppData = false,
+) => checkCodeRouteReads({ reads, route, visitor: who, databaseMayHoldAppData, locale: "en", signal: new AbortController().signal });
 const base = (id: string): CodeRouteRead => ({ kind: "target", ref: { type: "pulse.base", id } });
 
 test("a route that read nothing is delivered without asking any provider", async () => {
@@ -142,4 +146,27 @@ test("the app-wide form names its base in the input: sql.run({ baseId }) is chec
   // A reader that refuses the ID as input (for example a UUID where it takes a short ID) never delivers.
   provider(() => "VALIDATION_FAILED");
   expect(await check([old("not-a-short-id")], { public: false })).toBe("forbidden");
+});
+
+test("AI reads no resource by itself on a public route, but a resource it is given still needs owner-data", async () => {
+  provider(() => "ok");
+  const ai: CodeRouteRead = { kind: "query", capability: "core.ai.generate" };
+  expect(await check([ai], { public: true }, null)).toBe("deliver");
+  expect(await check([ai, base("A")], { public: true }, null)).toBe("forbidden");
+});
+
+test("a public route that reads the Code's own database needs owner-data when that database may hold app data", async () => {
+  provider(() => "ok");
+  const db: CodeRouteRead = { kind: "query", capability: "db.query" };
+  expect(await check([db], { public: true }, null, false)).toBe("deliver");
+  expect(await check([db], { public: true }, null, true)).toBe("forbidden");
+  expect(await check([db], { public: true, audience: "owner-data" }, null, true)).toBe("deliver");
+});
+
+test("a named input field that is empty or longer than any resource ID is never delivered (fail closed)", async () => {
+  const asked = provider(() => "ok");
+  const old = (baseId: string): CodeRouteRead => ({ kind: "input", capability: "pulse.sql.run", fields: { baseId } });
+  expect(await check([old("")], { public: false })).toBe("forbidden");
+  expect(await check([old("b".repeat(513))], { public: false })).toBe("forbidden");
+  expect(asked).toEqual([]);
 });

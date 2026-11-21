@@ -73,8 +73,8 @@ export type CodeRouteAnswer = CodeRouteResponse & { reads: readonly CodeRouteRea
 
 /**
  * G1: what a run read, as one subquery for a larger statement. Only succeeded Queries can have put data into the answer:
- * their target, each ref, the string input fields of an app-wide Query that could be a resource ID (longer strings such
- * as SQL cannot), and the Query itself.
+ * their target, each ref, the string input fields of an app-wide Query, cut one character past the longest resource ID
+ * (so a longer value stays visible as unusable), and the Query itself.
  * Actions are writes and stay outside; the run's call budget bounds the rows.
  */
 export const codeRunReadsQuery = (runId: string) => sql`SELECT COALESCE(jsonb_agg(DISTINCT x.read),'[]'::jsonb) FROM code.calls c
@@ -83,9 +83,9 @@ export const codeRunReadsQuery = (runId: string) => sql`SELECT COALESCE(jsonb_ag
     UNION ALL SELECT jsonb_build_object('kind','target','ref',ref.value) FROM jsonb_each(
       CASE WHEN jsonb_typeof(c.call->'refs')='object' THEN c.call->'refs' ELSE '{}'::jsonb END) ref
     UNION ALL SELECT jsonb_build_object('kind','input','capability',c.call->>'capability','fields',f.fields)
-      FROM (SELECT jsonb_object_agg(e.key,e.value) AS fields FROM jsonb_each(
+      FROM (SELECT jsonb_object_agg(e.key,to_jsonb(left(e.value#>>'{}',${CLOUD_RESOURCE_ID_MAX_LENGTH + 1}))) AS fields FROM jsonb_each(
         CASE WHEN jsonb_typeof(c.call->'input')='object' THEN c.call->'input' ELSE '{}'::jsonb END) e
-        WHERE jsonb_typeof(e.value)='string' AND length(e.value#>>'{}')<=${CLOUD_RESOURCE_ID_MAX_LENGTH}) f
+        WHERE jsonb_typeof(e.value)='string') f
       WHERE jsonb_typeof(c.call->'target')='null' AND f.fields IS NOT NULL
     UNION ALL SELECT jsonb_build_object('kind','query','capability',c.call->>'capability')
   ) x
