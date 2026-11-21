@@ -45,8 +45,17 @@ become `c.user`. This rule is the same for personal, resource and app Code.
 
 Use this identity to decide what a page shows or
 which form it accepts. It is never data authority: every SDK call runs with
-the Code's account, not the visitor's access. A page therefore must not show
-mailbox data to a visitor who should not see it.
+the Code's account, not the visitor's access.
+
+Cloud adds one check of its own: it delivers a route's answer only to a
+visitor who may read every resource the route read (a Query's target or ref,
+or a type reader such as `pulse.base.read`). Others see **No access**. Write
+`{ audience: "owner-data" }` on a route only when every member should see
+the owner's data; say so to the person, because the administrators see it in
+the review. A public route that reads a resource needs `owner-data`, and some
+types, such as Pulse bases, never appear on public routes. Data without a
+resource, such as lists or the Code's own database, still needs the checks
+below.
 
 <!-- check: resource mail.mailbox -->
 ```tsx

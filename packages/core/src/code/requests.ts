@@ -6,7 +6,8 @@ import {
   type CodeRouteResponse,
   CodeRouteResponseSchema,
 } from "@k2b/cloud/code";
-import { type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { CloudResourceRefSchema, type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { z } from "zod";
 import { CodeDataError } from "./access";
 import { codeAdmissionLock } from "./admission";
 import type { CodeOwner } from "./contracts";
@@ -52,6 +53,37 @@ export async function codeRequestVersion(
     owner: owner.kind === "person" ? { ...owner, name: row.owner_name } : owner,
   };
 }
+/**
+ * One read of a finished route run (G1): the target or a ref of a succeeded Query, or the id a succeeded Query passed
+ * to an operation that may be its type's reader. Hosting decides which candidates are readers.
+ */
+export type CodeRouteRead = { kind: "target"; ref: { type: string; id: string } } | { kind: "reader"; capability: string; id: string };
+/** The route's answer and what it read on the way; hosting checks the reads for the visitor before it delivers. */
+export type CodeRouteAnswer = CodeRouteResponse & { reads: readonly CodeRouteRead[] };
+
+/**
+ * G1: what a run read, as one subquery for a larger statement. Only succeeded Queries can have put data into the answer:
+ * their target, each ref, and the `id` of an app-wide Query, which hosting keeps when the Query is a type's reader.
+ * Actions are writes and stay outside; the run's call budget bounds the rows.
+ */
+export const codeRunReadsQuery = (runId: string) => sql`SELECT COALESCE(jsonb_agg(DISTINCT x.read),'[]'::jsonb) FROM code.calls c
+  CROSS JOIN LATERAL (
+    SELECT jsonb_build_object('kind','target','ref',c.call->'target') AS read WHERE jsonb_typeof(c.call->'target')='object'
+    UNION ALL SELECT jsonb_build_object('kind','target','ref',ref.value) FROM jsonb_each(
+      CASE WHEN jsonb_typeof(c.call->'refs')='object' THEN c.call->'refs' ELSE '{}'::jsonb END) ref
+    UNION ALL SELECT jsonb_build_object('kind','reader','capability',c.call->>'capability','id',c.call->'input'->>'id')
+      WHERE jsonb_typeof(c.call->'target')='null' AND jsonb_typeof(c.call->'input'->'id')='string'
+  ) x
+  WHERE c.run_id=${runId}::uuid AND c.kind='query' AND c.state='succeeded'`;
+export const parseCodeRouteReads = (value: unknown): CodeRouteRead[] => CodeRouteReadsSchema.parse(value ?? []);
+
+const CodeRouteReadsSchema = z.array(
+  z.union([
+    z.object({ kind: z.literal("target"), ref: CloudResourceRefSchema }),
+    z.object({ kind: z.literal("reader"), capability: z.string().min(1), id: CloudResourceRefSchema.shape.id }),
+  ]),
+);
+
 /** One bounded request/response job, backed by the normal run lease, mandate and audit trail.
  * No automatic retries: even a disconnected client must never cause an implicit second POST. */
 export async function requestCodeRoute(input: {
@@ -60,7 +92,7 @@ export async function requestCodeRoute(input: {
   entrypoint: string;
   request: CodeRouteRequest;
   signal: AbortSignal;
-}): Promise<CodeRouteResponse> {
+}): Promise<CodeRouteAnswer> {
   input.signal.throwIfAborted();
   const request = CodeRouteRequestSchema.parse(input.request);
   const started = Date.now();
@@ -105,8 +137,11 @@ export async function requestCodeRoute(input: {
   });
   try {
     while (!signal.aborted) {
-      const [row] = await sql<{ state: string; output: unknown }[]>`SELECT state,output FROM code.runs WHERE id=${runId}::uuid`;
-      if (row?.state === "succeeded") return CodeRouteResponseSchema.parse(row.output);
+      // The same statement reads what the run read once it succeeded (G1), so the check costs no statement of its own.
+      const [row] = await sql<{ state: string; output: unknown; reads: unknown }[]>`SELECT r.state,r.output,
+        CASE WHEN r.state='succeeded' THEN (${codeRunReadsQuery(runId)}) END AS reads
+        FROM code.runs r WHERE r.id=${runId}::uuid`;
+      if (row?.state === "succeeded") return { ...CodeRouteResponseSchema.parse(row.output), reads: parseCodeRouteReads(row.reads) };
       if (!row || !["queued", "running"].includes(row.state)) throw new CodeRequestError("code_request_failed", 503);
       await new Promise<void>((resolve) => {
         const done = () => {

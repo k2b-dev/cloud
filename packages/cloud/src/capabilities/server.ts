@@ -70,6 +70,30 @@ export const getCapabilityCatalogApp = async (
 };
 
 /**
+ * Live registry facts for the read check of Code route hosting (G1): which Query reads which resource type, and which
+ * types the app never lets a public Code route read. No presentation, no authority; `null` for an unknown app.
+ */
+export const getCapabilityCodeReadFacts = async (
+  appId: string,
+): Promise<{
+  readers: Readonly<Record<string, string>>;
+  typeReaders: Readonly<Record<string, string>>;
+  noPublicRoutes: readonly string[];
+} | null> => {
+  const capability = await getCapability(appId);
+  if (!capability) return null;
+  const queries = new Set(capability.manifest.queries.map((query) => query.localId));
+  const readers: Record<string, string> = {};
+  const typeReaders: Record<string, string> = {};
+  for (const type of capability.manifest.types) {
+    if (!type.reader || !queries.has(type.reader)) continue;
+    readers[`${appId}.${type.reader}`] ??= `${appId}.${type.localId}`;
+    typeReaders[`${appId}.${type.localId}`] = type.reader;
+  }
+  return { readers, typeReaders, noPublicRoutes: (capability.manifest.code?.noPublicRoutes ?? []).map((type) => `${appId}.${type}`) };
+};
+
+/**
  * How people read calls of one Action in a locale, from the live registry like the Assistant's own calls: its title,
  * the app's sentences, and the labelled fields of the generic sentence. Pass `sentences` and `fields` to the chat's
  * approval card, so an approval a script or app asks for reads like the same call in a chat. `null` for an unknown

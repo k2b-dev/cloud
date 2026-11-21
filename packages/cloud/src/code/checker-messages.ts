@@ -47,7 +47,8 @@ export const codeCheckerMessages = i18n.define({
       static_event: "Declare events at module level.",
       duplicate_on: "A second app.on for the same event at the same place is not allowed.",
       duplicate_on2: "This event name is already in use.",
-      static_route: 'Declare routes at module level with a constant path and optional { public: true | false, layout: "plain" }.',
+      static_route:
+        'Declare routes at module level with a constant path and optional { public: true | false, layout: "plain", audience: "owner-data" }.',
       duplicate_route: "This route is already registered.",
       static_title: "The title must be constant plain text of 1–200 characters, without markup, control or formatting characters.",
       static_schedule: "Declare schedules at module level as { cron | at, timeZone?, name, title? } with constant values.",
@@ -109,7 +110,8 @@ export const codeCheckerMessages = i18n.define({
       static_event: "Deklariere Ereignisse auf Modulebene.",
       duplicate_on: "Ein zweites app.on für dasselbe Ereignis am selben Ort ist nicht erlaubt.",
       duplicate_on2: "Der Ereignis-Name ist bereits vergeben.",
-      static_route: 'Deklariere Routen auf Modulebene mit konstantem Pfad und optional { public: true | false, layout: "plain" }.',
+      static_route:
+        'Deklariere Routen auf Modulebene mit konstantem Pfad und optional { public: true | false, layout: "plain", audience: "owner-data" }.',
       duplicate_route: "Diese Route ist bereits registriert.",
       static_title: "Der Titel muss konstanter Klartext mit 1 bis 200 Zeichen sein, ohne Markup, Steuer- oder Formatzeichen.",
       static_schedule: "Deklariere Zeitpläne auf Modulebene als { cron | at, timeZone?, name, title? } mit konstanten Werten.",

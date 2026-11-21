@@ -86,7 +86,7 @@ function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, loca
       .map((entry) => ({
         key: `page:${stable(entry.route)}`,
         ...(entry.route?.public ? { policyRow: "public_routes" as const } : {}),
-        text: `${t.page({ audience: entry.route?.public ? t.public : t.members })} · ${entry.route?.method} ${entry.route?.path}`,
+        text: `${t.page({ audience: entry.route?.public ? t.public : t.members })}${entry.route?.audience === "owner-data" ? ` · ${t.ownerData}` : ""} · ${entry.route?.method} ${entry.route?.path}`,
       })),
     ...(manifest.database ? [{ key: "database", text: t.database }] : []),
     ...(manifest.ai && !manifest.permissions.some((permission) => isCodeAiOperation(permission.operation))

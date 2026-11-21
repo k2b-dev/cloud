@@ -921,6 +921,11 @@ export type CapabilityQueryDefinition<
    * access refusals before Code calls run.
    */
   codeResourceTitle?: (tx: import("bun").SQL, id: string) => string | null | Promise<string | null>;
+  /**
+   * Excludes this Query from all Code: the SDK omits it and the bridge refuses it. Use it for an app-wide form that
+   * also exists as a targeted Query, so a Code page reads through the target that Cloud checks for its visitors.
+   */
+  code?: false;
   appOnly?: never;
   app?: CapabilityAppHandler<Input, Data>;
   title: string;
@@ -1093,6 +1098,7 @@ const CapabilityOperationManifestBaseSchema = z
   .strict();
 
 export const CapabilityQueryManifestSchema = CapabilityOperationManifestBaseSchema.extend({
+  code: z.literal(false).optional(),
   appOnly: z.literal(true).optional(),
   openWorld: z.boolean(),
   universalSearch: z

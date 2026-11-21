@@ -173,7 +173,10 @@ databaseSuite()("Code page label card and page reports", () => {
             }
             await next();
           })
-          .route("/", createCodeHostingRoutes({ version: codeRequestVersion, request: async () => ({ kind: "page", status: 200, tree }) }));
+          .route(
+            "/",
+            createCodeHostingRoutes({ version: codeRequestVersion, request: async () => ({ kind: "page", status: 200, tree, reads: [] }) }),
+          );
         let status = 0;
         const statements = await meter.during(async () => {
           status = (await router.request(`https://cloud.test/code/${codeId}/open`)).status;

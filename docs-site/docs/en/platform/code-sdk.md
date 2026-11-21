@@ -619,6 +619,40 @@ app.post("/answer/:token", async c => {
 export default app;
 ```
 
+## Who may see what a page read
+
+A route reads with the Code's rights, but Cloud delivers its answer only to a
+visitor who may read every resource the route read. Cloud collects these reads
+from the run itself, also for IDs the route chose at runtime:
+
+- the target and each ref of a Query that succeeded;
+- a resource whose type reader the route called, for example `pulse.base.read`
+  with an `id`.
+
+Before the answer leaves, Cloud asks each type's reader with the visitor's own
+access. If one says no, the visitor gets the shared **No access** page and a
+script gets `403 { "code": "code_page_access_denied" }`. If a reader does not
+answer, the visitor gets the error page with **Try again** and a script gets
+`503 { "code": "code_page_access_unavailable" }`. The page never names the
+resource. Actions are writes and stay outside the check, so a form may still
+write to a resource that its visitors cannot read. Data that the route reads
+without a resource, such as a list of the owner's bases or the Code's own
+database, stays the handler's job: check `c.user` as shown above.
+
+`{ audience: "owner-data" }` on a route turns the check off on purpose:
+everyone who opens the route sees what the Code read with its owner's rights.
+The manifest records it, and the administrators see it in the approval review.
+A public route has no visitor who could read anything, so a public route that
+reads a resource needs `owner-data`. An app can keep a type off public routes
+entirely with `code.noPublicRoutes`; the checker then refuses such a version,
+and Cloud refuses the answer. Pulse does this for bases, sources and
+dashboards.
+
+```ts
+// Every signed-in member sees this report, including people without access to the base.
+app.get("/report", c => c.page(report), { audience: "owner-data" });
+```
+
 ## Call operations on a handle
 
 For a provider that declares a `workshop` Type and an `item.create` Action

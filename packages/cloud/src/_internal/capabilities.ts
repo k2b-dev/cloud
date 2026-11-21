@@ -177,6 +177,7 @@ const QUERY_FIELDS = {
   stream: true,
   universalSearch: true,
   codeResourceTitle: true,
+  code: true,
   run: true,
 } satisfies DefinedFields<CapabilityQueryDefinition>;
 const ACTION_FIELDS = {
@@ -1313,6 +1314,7 @@ export const compileCapabilities = (
           code: {
             owners: [...(definitions.code?.owners ?? [])].sort(),
             ...(definitions.code?.pages ? { pages: { ...definitions.code.pages } } : {}),
+            ...(definitions.code?.noPublicRoutes ? { noPublicRoutes: [...definitions.code.noPublicRoutes].sort() } : {}),
           },
         }
       : {}),
