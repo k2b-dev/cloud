@@ -84,6 +84,68 @@ Core exports `codeSecretContracts`, `CodeSecretMetadataSchema`,
 from `packages/core/src/code/index.ts` for its CLI and editor hosts. These
 services take `CodeContext` and enforce the same authority on every surface.
 
+## Ask for private entry in Gustav
+
+`code_secret` asks for a value through the browser's private Secret card in the
+conversation. Its arguments contain metadata only:
+
+```json
+{
+  "name": "API",
+  "origin": "https://api.example.com",
+  "header": "Authorization",
+  "prefix": "",
+  "target": { "code": "Abc234", "pathPrefix": "/v1" }
+}
+```
+
+With `target`, `name` follows `CodeSecretNameSchema`
+(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`). The browser normalizes `header` to lowercase
+and uses `headers: [header]`. `prefix` must be explicitly empty; put the prefix
+in Code, for example ``Bearer ${secrets.API}``. The destination follows
+`CodeSecretBindingSchema`, including its origin, path and header restrictions.
+
+Before offering entry, the browser reads `core.code.secret.list` and calls
+`secretCheck`. A forbidden or missing Code, a refused destination or a failed
+check produces `CodeToolFailure` without a card. Only someone who can edit the
+Code may enter or replace its values; Cloud administrator status alone grants
+no such right. Core enforces that right again on every list, check and write.
+
+The browser writes through `core.code.secret.set`, with
+`target: { type: "core.code", id: code }`, without an idempotency key. A new
+name uses `binding_revision: null` and the requested binding. An existing name
+uses its current revision; the browser sends a binding only when the destination
+differs. A deleted value keeps its revision and is offered as entry again.
+After a binding conflict the card reads the list again, shows the current
+destination and offers replacement without restoring the old destination.
+An uncertain answer never causes an automatic write: **Retry** reads metadata
+first, and an existing value needs explicit replacement.
+
+The tool result stays `{ configured, name }`; declining returns
+`configured: false`. Neither the value nor a digest enters tool arguments,
+results, conversation history, waiting entries or logs. The value stays in this
+window's field and its private write request, and is discarded on completion.
+The browser holds the existing claim, renews it every 15 seconds and stops when
+the two-minute lease expires. Another window shows a locked request and never
+replays it. Successful creation and replacement both leave one metadata-only
+receipt after reload.
+
+Without `target`, existing chat-secret names, header/prefix defaults, storage
+and validation remain unchanged. The browser uses Assistant's private
+`PUT runtime/secrets` path; those values belong only to this person in this
+chat. Each HTTP request with one still asks for approval.
+
+Browser hosts that share the Code page's private editor can use
+`writeSecret`, `secretCheck`, `valueAllowed`, `SecretListSchema` and
+`SecretSetSchema` from `@k2b/cloud/browser/code-secrets`. These helpers do not
+grant access or return stored values. `secretCheck` returns `true`, `false`, or
+`null` for an unavailable check; never treat `null` as permission.
+
+For setter labels, `codePersonName`, `secretSetter` and the `SecretPerson` type
+from `@k2b/cloud/shared` use the same name fallback as the Code page. Resolve
+UUIDs through the caller-visible directory first. An absent person stays `null`;
+show only **Stored** rather than a UUID or an invented name.
+
 ## Bind the destination to a version
 
 `cld code submit`, `cld code submit`, Gustav's submit tool and the Code page's

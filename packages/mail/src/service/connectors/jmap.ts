@@ -275,7 +275,10 @@ const emailGetSchema = z.object({
   notFound: z.array(jmapIdSchema),
 });
 
-/** Bounded Email/get only. No checkpoint or mailbox projection is performed here. */
+/**
+ * Bounded Email/get only. No checkpoint or mailbox projection is performed here. `state` is the
+ * Email state of the last get, `null` when no ID needed one.
+ */
 export async function readJmapEmails(
   session: JmapSession,
   authorization: string,
@@ -283,7 +286,7 @@ export async function readJmapEmails(
   ids: readonly string[],
   signal: AbortSignal,
   deps: JmapTransportDependencies = {},
-): Promise<{ objects: JmapEmailSnapshot[]; notFoundIds: string[] }> {
+): Promise<{ objects: JmapEmailSnapshot[]; notFoundIds: string[]; state: string | null }> {
   validateJmapId(accountId);
   const account = Object.hasOwn(session.accounts, accountId) ? session.accounts[accountId] : undefined;
   if (!account) throw new JmapError("JMAP_ACCOUNT");
@@ -292,6 +295,7 @@ export async function readJmapEmails(
   if (new Set(ids).size !== ids.length) throw new JmapError("JMAP_INVALID_ID");
   const objects: JmapEmailSnapshot[] = [];
   const notFoundIds: string[] = [];
+  let state: string | null = null;
   let batchSize = Math.min(ENVELOPE_BATCH_SIZE, session.core.maxObjectsInGet);
   for (let offset = 0; offset < ids.length; ) {
     if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
@@ -324,10 +328,11 @@ export async function readJmapEmails(
     const page = parseJmapEmailGet(requireJmapMethodResult(response, "emails", "Email/get"), accountId, batch);
     objects.push(...page.list);
     notFoundIds.push(...page.notFound);
+    state = page.state;
     offset += batch.length;
   }
   if (signal.aborted) throw new JmapTransportError("JMAP_ABORTED");
-  return { objects, notFoundIds };
+  return { objects, notFoundIds, state };
 }
 
 /** Validate exact coverage, including objects removed between changes and get. */

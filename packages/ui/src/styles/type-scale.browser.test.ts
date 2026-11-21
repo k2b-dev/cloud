@@ -209,4 +209,30 @@ describe(`type scale in ${browserName}`, () => {
     },
     TEST_TIMEOUT,
   );
+
+  // Cloud flach (K11): four sizes in the controls, as tokens a building block sets instead of choosing a size.
+  test(
+    "the four control sizes are 12, 13, 14, and 18 px",
+    async () => {
+      const page = await load();
+      try {
+        const sizes = await page.evaluate(() =>
+          Object.fromEntries(
+            ["meta", "row", "body", "lead"].map((step) => {
+              const probe = document.createElement("span");
+              probe.style.fontSize = `var(--k2b-font-size-${step})`;
+              document.getElementById("app")!.append(probe);
+              const size = getComputedStyle(probe).fontSize;
+              probe.remove();
+              return [step, size];
+            }),
+          ),
+        );
+        expect(sizes).toEqual({ meta: "12px", row: "13px", body: "14px", lead: "18px" });
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
 });

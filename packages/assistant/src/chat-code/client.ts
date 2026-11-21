@@ -10,7 +10,7 @@ export async function chatCodeRequest(path: string, body: unknown, signal?: Abor
   const value: unknown = await response.json();
   if (!response.ok) {
     const error = z.object({ message: z.string().optional(), code: z.string().optional() }).catch({}).parse(value);
-    throw Object.assign(new Error(error.message ?? `HTTP ${response.status}`), { code: error.code });
+    throw Object.assign(new Error(error.message ?? `HTTP ${response.status}`), { code: error.code, status: response.status });
   }
   return value;
 }
