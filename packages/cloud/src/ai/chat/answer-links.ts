@@ -23,8 +23,10 @@ export function rootResourceLinks(html: string, citeLabel?: (number: string) => 
     const kept = destinations.get(number);
     return kept === undefined ? null : chip(kept, number);
   });
-  return marked.replace(CITATION_RUN, (_run, word: string, chips: string, punctuation = "") =>
-    `<span class="ai-cite-run">${word}${chips.replace(/>\s+</g, "><")}${punctuation.trim()}</span>`,
+  return marked.replace(
+    CITATION_RUN,
+    (_run, word: string, chips: string, punctuation = "") =>
+      `<span class="ai-cite-run">${word}${chips.replace(/>\s+</g, "><")}${punctuation.trim()}</span>`,
   );
 }
 
@@ -35,10 +37,7 @@ export function rootResourceLinks(html: string, citeLabel?: (number: string) => 
  */
 const CHIP = String.raw`<a\b[^>]*\sclass="ai-cite"[^>]*>[1-9]\d?<\/a>`;
 const CLOSING_PUNCTUATION = String.raw`(?:[.,;:!?…)\]}»”’]|&quot;|&#39;)`;
-const CITATION_RUN = new RegExp(
-  String.raw`([^\s<>]*)\s*((?:${CHIP}\s*)*${CHIP})(\s*${CLOSING_PUNCTUATION}+)?`,
-  "g",
-);
+const CITATION_RUN = new RegExp(String.raw`([^\s<>]*)\s*((?:${CHIP}\s*)*${CHIP})(\s*${CLOSING_PUNCTUATION}+)?`, "g");
 
 /** A link's own attributes without what made it a reference or an inline link: its destination and how it opens. */
 const linkAttributes = (attributes: string) => attributes.replace(/\s(?:class|data-reference|data-link|aria-label)="[^"]*"/g, "");
